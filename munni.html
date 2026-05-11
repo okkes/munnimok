@@ -14,21 +14,3015 @@
 </head>
 <body>
   <div id="root"></div>
-  <script type="text/babel" src="munni/ios-frame.jsx"></script>
-  <script type="text/babel" src="munni/theme.jsx"></script>
-  <script type="text/babel" src="munni/data.jsx"></script>
-  <script type="text/babel" src="munni/nav.jsx"></script>
-  <script type="text/babel" src="munni/charts.jsx"></script>
-  <script type="text/babel" src="munni/screens-stub.jsx"></script>
-  <script type="text/babel" src="munni/screens-home.jsx"></script>
-  <script type="text/babel" src="munni/screens-tx.jsx"></script>
-  <script type="text/babel" src="munni/screens-events.jsx"></script>
-  <script type="text/babel" src="munni/screens-profile.jsx"></script>
-  <script type="text/babel" src="munni/screens-budgets.jsx"></script>
-  <script type="text/babel" src="munni/screens-allocate.jsx"></script>
-  <script type="text/babel" src="munni/screens-investment.jsx"></script>
-  <script type="text/babel" src="munni/screens-goals.jsx"></script>
-  <script type="text/babel" src="munni/screens-review.jsx"></script>
-  <script type="text/babel" src="munni/app.jsx"></script>
+
+  <script type="text/babel">
+// ── ios-frame.jsx ──────────────────────────────────────────────
+
+function IOSStatusBar({ dark = false, time = '9:41' }) {
+  const c = dark ? '#fff' : '#000';
+  return (
+    <div style={{
+      display: 'flex', gap: 154, alignItems: 'center', justifyContent: 'center',
+      padding: '21px 24px 19px', boxSizing: 'border-box',
+      position: 'relative', zIndex: 20, width: '100%',
+    }}>
+      <div style={{ flex: 1, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', paddingTop: 1.5 }}>
+        <span style={{
+          fontFamily: '-apple-system, "SF Pro", system-ui', fontWeight: 590,
+          fontSize: 17, lineHeight: '22px', color: c,
+        }}>{time}</span>
+      </div>
+      <div style={{ flex: 1, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, paddingTop: 1, paddingRight: 1 }}>
+        <svg width="19" height="12" viewBox="0 0 19 12">
+          <rect x="0" y="7.5" width="3.2" height="4.5" rx="0.7" fill={c}/>
+          <rect x="4.8" y="5" width="3.2" height="7" rx="0.7" fill={c}/>
+          <rect x="9.6" y="2.5" width="3.2" height="9.5" rx="0.7" fill={c}/>
+          <rect x="14.4" y="0" width="3.2" height="12" rx="0.7" fill={c}/>
+        </svg>
+        <svg width="17" height="12" viewBox="0 0 17 12">
+          <path d="M8.5 3.2C10.8 3.2 12.9 4.1 14.4 5.6L15.5 4.5C13.7 2.7 11.2 1.5 8.5 1.5C5.8 1.5 3.3 2.7 1.5 4.5L2.6 5.6C4.1 4.1 6.2 3.2 8.5 3.2Z" fill={c}/>
+          <path d="M8.5 6.8C9.9 6.8 11.1 7.3 12 8.2L13.1 7.1C11.8 5.9 10.2 5.1 8.5 5.1C6.8 5.1 5.2 5.9 3.9 7.1L5 8.2C5.9 7.3 7.1 6.8 8.5 6.8Z" fill={c}/>
+          <circle cx="8.5" cy="10.5" r="1.5" fill={c}/>
+        </svg>
+        <svg width="27" height="13" viewBox="0 0 27 13">
+          <rect x="0.5" y="0.5" width="23" height="12" rx="3.5" stroke={c} strokeOpacity="0.35" fill="none"/>
+          <rect x="2" y="2" width="20" height="9" rx="2" fill={c}/>
+          <path d="M25 4.5V8.5C25.8 8.2 26.5 7.2 26.5 6.5C26.5 5.8 25.8 4.8 25 4.5Z" fill={c} fillOpacity="0.4"/>
+        </svg>
+      </div>
+    </div>
+  );
+}
+
+function IOSGlassPill({ children, dark = false, style = {} }) {
+  return (
+    <div style={{
+      height: 44, minWidth: 44, borderRadius: 9999,
+      position: 'relative', overflow: 'hidden',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      boxShadow: dark
+        ? '0 2px 6px rgba(0,0,0,0.35), 0 6px 16px rgba(0,0,0,0.2)'
+        : '0 1px 3px rgba(0,0,0,0.07), 0 3px 10px rgba(0,0,0,0.06)',
+      ...style,
+    }}>
+      <div style={{
+        position: 'absolute', inset: 0, borderRadius: 9999,
+        backdropFilter: 'blur(12px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(12px) saturate(180%)',
+        background: dark ? 'rgba(120,120,128,0.28)' : 'rgba(255,255,255,0.5)',
+      }} />
+      <div style={{
+        position: 'absolute', inset: 0, borderRadius: 9999,
+        boxShadow: dark
+          ? 'inset 1.5px 1.5px 1px rgba(255,255,255,0.15), inset -1px -1px 1px rgba(255,255,255,0.08)'
+          : 'inset 1.5px 1.5px 1px rgba(255,255,255,0.7), inset -1px -1px 1px rgba(255,255,255,0.4)',
+        border: dark ? '0.5px solid rgba(255,255,255,0.15)' : '0.5px solid rgba(0,0,0,0.06)',
+      }} />
+      <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', padding: '0 4px' }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function IOSNavBar({ title = 'Title', dark = false, trailingIcon = true }) {
+  const muted = dark ? 'rgba(255,255,255,0.6)' : '#404040';
+  const text = dark ? '#fff' : '#000';
+  const pillIcon = (content) => (
+    <IOSGlassPill dark={dark}>
+      <div style={{ width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {content}
+      </div>
+    </IOSGlassPill>
+  );
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column', gap: 10,
+      paddingTop: 62, paddingBottom: 10, position: 'relative', zIndex: 5,
+    }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '0 16px',
+      }}>
+        {pillIcon(
+          <svg width="12" height="20" viewBox="0 0 12 20" fill="none" style={{ marginLeft: -1 }}>
+            <path d="M10 2L2 10l8 8" stroke={muted} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        )}
+        {trailingIcon && pillIcon(
+          <svg width="22" height="6" viewBox="0 0 22 6">
+            <circle cx="3" cy="3" r="2.5" fill={muted}/>
+            <circle cx="11" cy="3" r="2.5" fill={muted}/>
+            <circle cx="19" cy="3" r="2.5" fill={muted}/>
+          </svg>
+        )}
+      </div>
+      <div style={{
+        padding: '0 16px',
+        fontFamily: '-apple-system, system-ui',
+        fontSize: 34, fontWeight: 700, lineHeight: '41px',
+        color: text, letterSpacing: 0.4,
+      }}>{title}</div>
+    </div>
+  );
+}
+
+function IOSListRow({ title, detail, icon, chevron = true, isLast = false, dark = false }) {
+  const text = dark ? '#fff' : '#000';
+  const sec = dark ? 'rgba(235,235,245,0.6)' : 'rgba(60,60,67,0.6)';
+  const ter = dark ? 'rgba(235,235,245,0.3)' : 'rgba(60,60,67,0.3)';
+  const sep = dark ? 'rgba(84,84,88,0.65)' : 'rgba(60,60,67,0.12)';
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', minHeight: 52,
+      padding: '0 16px', position: 'relative',
+      fontFamily: '-apple-system, system-ui', fontSize: 17,
+      letterSpacing: -0.43,
+    }}>
+      {icon && (
+        <div style={{
+          width: 30, height: 30, borderRadius: 7, background: icon,
+          marginRight: 12, flexShrink: 0,
+        }} />
+      )}
+      <div style={{ flex: 1, color: text }}>{title}</div>
+      {detail && <span style={{ color: sec, marginRight: 6 }}>{detail}</span>}
+      {chevron && (
+        <svg width="8" height="14" viewBox="0 0 8 14" style={{ flexShrink: 0 }}>
+          <path d="M1 1l6 6-6 6" stroke={ter} strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      )}
+      {!isLast && (
+        <div style={{
+          position: 'absolute', bottom: 0, right: 0,
+          left: icon ? 58 : 16, height: 0.5, background: sep,
+        }} />
+      )}
+    </div>
+  );
+}
+
+function IOSList({ header, children, dark = false }) {
+  const hc = dark ? 'rgba(235,235,245,0.6)' : 'rgba(60,60,67,0.6)';
+  const bg = dark ? '#1C1C1E' : '#fff';
+  return (
+    <div>
+      {header && (
+        <div style={{
+          fontFamily: '-apple-system, system-ui', fontSize: 13,
+          color: hc, textTransform: 'uppercase',
+          padding: '8px 36px 6px', letterSpacing: -0.08,
+        }}>{header}</div>
+      )}
+      <div style={{
+        background: bg, borderRadius: 26,
+        margin: '0 16px', overflow: 'hidden',
+      }}>{children}</div>
+    </div>
+  );
+}
+
+function IOSDevice({
+  children, width = 402, height = 874, dark = false,
+  title, keyboard = false,
+}) {
+  return (
+    <div style={{
+      width, height, borderRadius: 48, overflow: 'hidden',
+      position: 'relative', background: dark ? '#000' : '#F2F2F7',
+      boxShadow: '0 40px 80px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.12)',
+      fontFamily: '-apple-system, system-ui, sans-serif',
+      WebkitFontSmoothing: 'antialiased',
+    }}>
+      <div style={{
+        position: 'absolute', top: 11, left: '50%', transform: 'translateX(-50%)',
+        width: 126, height: 37, borderRadius: 24, background: '#000', zIndex: 50,
+      }} />
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 }}>
+        <IOSStatusBar dark={dark} />
+      </div>
+      <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+        {title !== undefined && <IOSNavBar title={title} dark={dark} />}
+        <div style={{ flex: 1, overflow: 'auto' }}>{children}</div>
+        {keyboard && <IOSKeyboard dark={dark} />}
+      </div>
+      <div style={{
+        position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 60,
+        height: 34, display: 'flex', justifyContent: 'center', alignItems: 'flex-end',
+        paddingBottom: 8, pointerEvents: 'none',
+      }}>
+        <div style={{
+          width: 139, height: 5, borderRadius: 100,
+          background: dark ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.25)',
+        }} />
+      </div>
+    </div>
+  );
+}
+
+function IOSKeyboard({ dark = false }) {
+  const glyph = dark ? 'rgba(255,255,255,0.7)' : '#595959';
+  const sugg = dark ? 'rgba(255,255,255,0.6)' : '#333';
+  const keyBg = dark ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.85)';
+
+  const icons = {
+    shift: <svg width="19" height="17" viewBox="0 0 19 17"><path d="M9.5 1L1 9.5h4.5V16h8V9.5H18L9.5 1z" fill={glyph}/></svg>,
+    del: <svg width="23" height="17" viewBox="0 0 23 17"><path d="M7 1h13a2 2 0 012 2v11a2 2 0 01-2 2H7l-6-7.5L7 1z" fill="none" stroke={glyph} strokeWidth="1.6" strokeLinejoin="round"/><path d="M10 5l7 7M17 5l-7 7" stroke={glyph} strokeWidth="1.6" strokeLinecap="round"/></svg>,
+    ret: <svg width="20" height="14" viewBox="0 0 20 14"><path d="M18 1v6H4m0 0l4-4M4 7l4 4" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+  };
+
+  const key = (content, { w, flex, ret, fs = 25, k } = {}) => (
+    <div key={k} style={{
+      height: 42, borderRadius: 8.5,
+      flex: flex ? 1 : undefined, width: w, minWidth: 0,
+      background: ret ? '#08f' : keyBg,
+      boxShadow: '0 1px 0 rgba(0,0,0,0.075)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontFamily: '-apple-system, "SF Compact", system-ui',
+      fontSize: fs, fontWeight: 458, color: ret ? '#fff' : glyph,
+    }}>{content}</div>
+  );
+
+  const row = (keys, pad = 0) => (
+    <div style={{ display: 'flex', gap: 6.5, justifyContent: 'center', padding: `0 ${pad}px` }}>
+      {keys.map(l => key(l, { flex: true, k: l }))}
+    </div>
+  );
+
+  return (
+    <div style={{
+      position: 'relative', zIndex: 15, borderRadius: 27, overflow: 'hidden',
+      padding: '11px 0 2px',
+      display: 'flex', flexDirection: 'column', alignItems: 'center',
+      boxShadow: dark
+        ? '0 -2px 20px rgba(0,0,0,0.09)'
+        : '0 -1px 6px rgba(0,0,0,0.018), 0 -3px 20px rgba(0,0,0,0.012)',
+    }}>
+      <div style={{
+        position: 'absolute', inset: 0, borderRadius: 27,
+        backdropFilter: 'blur(12px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(12px) saturate(180%)',
+        background: dark ? 'rgba(120,120,128,0.14)' : 'rgba(255,255,255,0.25)',
+      }} />
+      <div style={{
+        position: 'absolute', inset: 0, borderRadius: 27,
+        boxShadow: dark
+          ? 'inset 1.5px 1.5px 1px rgba(255,255,255,0.15)'
+          : 'inset 1.5px 1.5px 1px rgba(255,255,255,0.7), inset -1px -1px 1px rgba(255,255,255,0.4)',
+        border: dark ? '0.5px solid rgba(255,255,255,0.15)' : '0.5px solid rgba(0,0,0,0.06)',
+        pointerEvents: 'none',
+      }} />
+      <div style={{
+        display: 'flex', gap: 20, alignItems: 'center',
+        padding: '8px 22px 13px', width: '100%', boxSizing: 'border-box',
+        position: 'relative',
+      }}>
+        {['"The"', 'the', 'to'].map((w, i) => (
+          <React.Fragment key={i}>
+            {i > 0 && <div style={{ width: 1, height: 25, background: '#ccc', opacity: 0.3 }} />}
+            <div style={{
+              flex: 1, textAlign: 'center',
+              fontFamily: '-apple-system, system-ui', fontSize: 17,
+              color: sugg, letterSpacing: -0.43, lineHeight: '22px',
+            }}>{w}</div>
+          </React.Fragment>
+        ))}
+      </div>
+      <div style={{
+        display: 'flex', flexDirection: 'column', gap: 13,
+        padding: '0 6.5px', width: '100%', boxSizing: 'border-box',
+        position: 'relative',
+      }}>
+        {row(['q','w','e','r','t','y','u','i','o','p'])}
+        {row(['a','s','d','f','g','h','j','k','l'], 20)}
+        <div style={{ display: 'flex', gap: 14.25, alignItems: 'center' }}>
+          {key(icons.shift, { w: 45, k: 'shift' })}
+          <div style={{ display: 'flex', gap: 6.5, flex: 1 }}>
+            {['z','x','c','v','b','n','m'].map(l => key(l, { flex: true, k: l }))}
+          </div>
+          {key(icons.del, { w: 45, k: 'del' })}
+        </div>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          {key('ABC', { w: 92.25, fs: 18, k: 'abc' })}
+          {key('', { flex: true, k: 'space' })}
+          {key(icons.ret, { w: 92.25, ret: true, k: 'ret' })}
+        </div>
+      </div>
+      <div style={{ height: 56, width: '100%', position: 'relative' }} />
+    </div>
+  );
+}
+  </script>
+
+  <script type="text/babel">
+// ── theme.jsx ──────────────────────────────────────────────────
+
+const M = {
+  paper:   '#F7F4EE',
+  paper2:  '#EFEAE0',
+  card:    '#FFFFFF',
+  ink:     '#1B1A17',
+  ink2:    '#3D3A33',
+  ink3:    '#6B6558',
+  ink4:    '#9A9384',
+  line:    '#E2DCCE',
+  line2:   '#EFEAE0',
+  sage:    '#4A6A4F',
+  sageDk:  '#2F4A33',
+  sageSoft:'#DDE6DA',
+  clay:    '#B5503A',
+  claySoft:'#F2DDD3',
+  ochre:   '#A8782B',
+  ochreSoft:'#F0E2C2',
+  slate:   '#3F4E63',
+  slateSoft:'#DDE2EA',
+  violet:   '#5E4A78',
+  violetSoft:'#E3DCED',
+
+  fontUI:    "'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif",
+  fontDisp:  "'Source Serif 4', 'Source Serif Pro', Georgia, serif",
+  fontMono:  "'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace",
+};
+
+if (typeof document !== 'undefined' && !document.getElementById('m-styles')) {
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600;8..60,700&family=JetBrains+Mono:wght@400;500&display=swap';
+  document.head.appendChild(link);
+
+  const s = document.createElement('style');
+  s.id = 'm-styles';
+  s.textContent = `
+    .m, .m * { box-sizing: border-box; }
+    .m-app { font-family: ${M.fontUI}; color: ${M.ink}; background: ${M.paper}; -webkit-font-smoothing: antialiased; }
+    .m-num { font-family: ${M.fontDisp}; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+    .m-mono { font-family: ${M.fontMono}; }
+    .m-row { display: flex; align-items: center; }
+    .m-col { display: flex; flex-direction: column; }
+    .m-card { background: ${M.card}; border-radius: 16px; }
+    .m-card-bordered { background: ${M.card}; border: 1px solid ${M.line}; border-radius: 16px; }
+    .m-divider { height: 1px; background: ${M.line2}; }
+    .m-cap { font-size: 11px; color: ${M.ink3}; letter-spacing: 0.04em; text-transform: uppercase; font-weight: 500; }
+    .m-label { font-size: 12px; color: ${M.ink3}; }
+    .m-chip { display:inline-flex; align-items:center; gap:5px; padding:6px 12px; border-radius:999px; font-size:12px; font-weight:500; border:1px solid ${M.line}; background:${M.card}; color:${M.ink2}; }
+    .m-pill { display:inline-flex; align-items:center; padding:3px 8px; border-radius:999px; font-size:10px; font-weight:600; letter-spacing:0.02em; }
+    .m-btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; height:48px; padding:0 22px; border-radius:14px; font-size:15px; font-weight:600; border:none; background:${M.ink}; color:${M.paper}; cursor:pointer; transition: transform 0.1s, opacity 0.15s; font-family: ${M.fontUI}; }
+    .m-btn:active { transform: scale(0.98); opacity: 0.9; }
+    .m-btn.outline { background:transparent; color:${M.ink}; border:1px solid ${M.line}; }
+    .m-btn.ghost { background:transparent; color:${M.ink}; }
+    .m-btn.sage { background:${M.sage}; color:#fff; }
+    .m-btn.sm { height: 36px; padding: 0 14px; font-size: 13px; border-radius: 10px; }
+    .m-input { height:48px; border:1px solid ${M.line}; border-radius:12px; padding:0 16px; font-size:15px; background:${M.card}; color:${M.ink}; display:flex; align-items:center; gap:8px; font-family: ${M.fontUI}; }
+    .m-input.empty { color:${M.ink4}; }
+    .m-section-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: ${M.ink3}; }
+    .m-h1 { font-family: ${M.fontDisp}; font-size: 32px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; }
+    .m-h2 { font-family: ${M.fontDisp}; font-size: 24px; font-weight: 600; letter-spacing: -0.015em; line-height: 1.15; }
+    .m-h3 { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+    .m-body { font-size: 14px; color: ${M.ink2}; line-height: 1.45; }
+    .m-tap { cursor: pointer; transition: opacity 0.15s, transform 0.1s; }
+    .m-tap:active { opacity: 0.7; transform: scale(0.98); }
+    .m-screen { width:100%; height:100%; background:${M.paper}; color:${M.ink}; font-family:${M.fontUI}; display:flex; flex-direction:column; overflow:hidden; }
+    .m-body-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; padding: 0 20px 24px; }
+    .m-body-scroll::-webkit-scrollbar { display: none; }
+    .m-appbar { display:flex; align-items:center; justify-content:space-between; padding: 8px 16px 12px; gap: 8px; flex-shrink: 0; }
+    .m-iconbtn { width:36px; height:36px; border-radius:999px; background:transparent; border:none; display:flex; align-items:center; justify-content:center; cursor:pointer; color:${M.ink}; }
+    .m-iconbtn.filled { background:${M.card}; border:1px solid ${M.line}; }
+    @keyframes mFadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+    .m-fade { animation: mFadeIn 0.28s ease-out both; }
+    .m-logo { font-family: ${M.fontDisp}; font-weight: 600; letter-spacing: -0.04em; }
+    .m-logo .dot { color: ${M.sage}; }
+  `;
+  document.head.appendChild(s);
+}
+
+function I({ name, size = 20, color = 'currentColor', stroke = 1.6 }) {
+  const p = { stroke: color, strokeWidth: stroke, fill: 'none', strokeLinecap: 'round', strokeLinejoin: 'round' };
+  const f = { fill: color, stroke: 'none' };
+  const w = (kids) => <svg width={size} height={size} viewBox="0 0 24 24" style={{ display: 'block', flexShrink: 0 }}>{kids}</svg>;
+  switch (name) {
+    case 'home': return w(<path d="M3.5 11.5L12 4l8.5 7.5V20a1 1 0 01-1 1h-4.5v-6h-6v6H4.5a1 1 0 01-1-1z" {...p}/>);
+    case 'list': return w(<><path d="M4 7h16M4 12h16M4 17h12" {...p}/></>);
+    case 'star': return w(<path d="M12 4l2.4 5.4L20 10l-4 4 1 6-5-3-5 3 1-6-4-4 5.6-.6z" {...p}/>);
+    case 'user': return w(<><circle cx="12" cy="9" r="3.5" {...p}/><path d="M5 20c1.2-3.4 4-5 7-5s5.8 1.6 7 5" {...p}/></>);
+    case 'plus': return w(<path d="M12 5v14M5 12h14" {...p}/>);
+    case 'minus': return w(<path d="M5 12h14" {...p}/>);
+    case 'check': return w(<path d="M5 12.5l4 4 10-10" {...p}/>);
+    case 'x': return w(<path d="M6 6l12 12M18 6L6 18" {...p}/>);
+    case 'arrowR': return w(<path d="M9 5l7 7-7 7" {...p}/>);
+    case 'arrowL': return w(<path d="M15 5l-7 7 7 7" {...p}/>);
+    case 'arrowDn': return w(<path d="M5 9l7 7 7-7" {...p}/>);
+    case 'arrowUp': return w(<path d="M19 15l-7-7-7 7" {...p}/>);
+    case 'caretR': return w(<path d="M10 6l6 6-6 6" {...p}/>);
+    case 'edit': return w(<><path d="M4 20h4l10-10-4-4L4 16v4z" {...p}/><path d="M14 6l4 4" {...p}/></>);
+    case 'search': return w(<><circle cx="11" cy="11" r="6.5" {...p}/><path d="M20.5 20.5l-4-4" {...p}/></>);
+    case 'filter': return w(<path d="M5 6h14M7 12h10M10 18h4" {...p}/>);
+    case 'sliders': return w(<><path d="M4 7h10M16 7h4M4 17h4M10 17h10" {...p}/><circle cx="15" cy="7" r="2" {...p}/><circle cx="9" cy="17" r="2" {...p}/></>);
+    case 'cal': return w(<><rect x="3.5" y="5" width="17" height="15.5" rx="2.5" {...p}/><path d="M3.5 9.5h17M8 3.5v3.5M16 3.5v3.5" {...p}/></>);
+    case 'sync': return w(<><path d="M4 12a8 8 0 0114-5.3L20 5v5h-5" {...p}/><path d="M20 12a8 8 0 01-14 5.3L4 19v-5h5" {...p}/></>);
+    case 'bell': return w(<><path d="M6 16V11a6 6 0 1112 0v5l1.5 2H4.5z" {...p}/><path d="M10 20a2 2 0 004 0" {...p}/></>);
+    case 'lock': return w(<><rect x="5" y="11" width="14" height="9" rx="2.5" {...p}/><path d="M8 11V8a4 4 0 018 0v3" {...p}/></>);
+    case 'help': return w(<><circle cx="12" cy="12" r="9" {...p}/><path d="M9.5 9.5a2.5 2.5 0 015 0c0 1.5-2.5 2-2.5 4M12 17.5v.5" {...p}/></>);
+    case 'menu': return w(<path d="M4 7h16M4 12h16M4 17h16" {...p}/>);
+    case 'more': return w(<><circle cx="6" cy="12" r="1.4" {...f}/><circle cx="12" cy="12" r="1.4" {...f}/><circle cx="18" cy="12" r="1.4" {...f}/></>);
+    case 'piggy': return w(<><path d="M5 13a6 6 0 0112 0v3a2 2 0 01-2 2h-1l-.5 2h-2l-.5-2h-2l-.5 2h-2L6 18a2 2 0 01-1-2z" {...p}/><circle cx="14" cy="12" r="0.7" {...f}/></>);
+    case 'wallet': return w(<><rect x="3" y="6" width="18" height="13" rx="2.5" {...p}/><path d="M16 12.5h3" {...p}/></>);
+    case 'card': return w(<><rect x="3" y="6" width="18" height="13" rx="2.5" {...p}/><path d="M3 11h18M7 16h3" {...p}/></>);
+    case 'goal': return w(<><circle cx="12" cy="12" r="9" {...p}/><circle cx="12" cy="12" r="5" {...p}/><circle cx="12" cy="12" r="1.5" {...f}/></>);
+    case 'rocket': return w(<><path d="M12 3c4 2 6 6 6 10l-3 3-3-1-1-3-3-1 3-3c4 0 8 2 10 6" {...p}/><circle cx="14" cy="10" r="1.4" {...f}/></>);
+    case 'house': return w(<path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z" {...p}/>);
+    case 'shop': return w(<><path d="M5 8h14l-1.2 12H6.2z" {...p}/><path d="M9 8a3 3 0 016 0" {...p}/></>);
+    case 'bag': return w(<><path d="M5 8h14l-1.2 12H6.2z" {...p}/><path d="M9 8V6a3 3 0 016 0v2" {...p}/></>);
+    case 'fork': return w(<><path d="M7 3v7a2 2 0 002 2v9M7 7h4M11 3v7a2 2 0 01-2 2M16 3c-1 3-1 5 0 7v11" {...p}/></>);
+    case 'car': return w(<><path d="M5 16v-4l2-5h10l2 5v4M5 16h14M5 16v2h2v-2M17 16v2h2v-2" {...p}/><circle cx="8" cy="13.5" r="0.7" {...f}/><circle cx="16" cy="13.5" r="0.7" {...f}/></>);
+    case 'health': return w(<path d="M12 21s-7-4.7-7-11a4 4 0 017-2.6A4 4 0 0119 10c0 6.3-7 11-7 11z" {...p}/>);
+    case 'film': return w(<><rect x="3" y="5" width="18" height="14" rx="2.5" {...p}/><path d="M7 5v14M17 5v14M3 9h4M3 15h4M17 9h4M17 15h4" {...p}/></>);
+    case 'globe': return w(<><circle cx="12" cy="12" r="9" {...p}/><path d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18" {...p}/></>);
+    case 'flame': return w(<path d="M12 3c1 4 5 5 5 10a5 5 0 11-10 0c0-3 2-4 2-7 1 1 2 2 3 0z" {...p}/>);
+    case 'box': return w(<><rect x="3" y="6" width="18" height="14" rx="2" {...p}/><path d="M3 10h18M9 14h6" {...p}/></>);
+    case 'receipt': return w(<><path d="M5 3h14v18l-3-2-2 2-2-2-2 2-2-2-3 2z" {...p}/><path d="M8 8h8M8 11h8M8 14h5" {...p}/></>);
+    case 'split': return w(<path d="M4 5h6l8 14h2M4 19h6l4-7" {...p}/>);
+    case 'link': return w(<><path d="M10 14a4 4 0 005.66 0l3-3a4 4 0 10-5.66-5.66L11 7" {...p}/><path d="M14 10a4 4 0 00-5.66 0l-3 3a4 4 0 105.66 5.66L13 17" {...p}/></>);
+    case 'cam': return w(<><rect x="3" y="7" width="18" height="13" rx="2.5" {...p}/><path d="M8 7l2-3h4l2 3" {...p}/><circle cx="12" cy="13.5" r="3.5" {...p}/></>);
+    case 'eye': return w(<><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z" {...p}/><circle cx="12" cy="12" r="3" {...p}/></>);
+    case 'logout': return w(<path d="M14 8V5a1 1 0 00-1-1H5a1 1 0 00-1 1v14a1 1 0 001 1h8a1 1 0 001-1v-3M10 12h11m0 0l-3-3m3 3l-3 3" {...p}/>);
+    case 'switch': return w(<path d="M4 8h13l-3-3M20 16H7l3 3" {...p}/>);
+    case 'tag': return w(<><path d="M3 12V4h8l9 9-8 8z" {...p}/><circle cx="7.5" cy="7.5" r="1" {...f}/></>);
+    case 'g': return w(<><circle cx="12" cy="12" r="9" {...p}/><path d="M12 8v8M8 12h8" {...p}/></>);
+    case 'apple': return w(<path d="M16 6c0-2 1.5-3 1.5-3s-1.5-.2-2.5 1c-1 1.2-1 2.5-1 2.5M8 8c-2 0-4 2-4 5 0 4 2.8 8 5 8 1 0 1.5-.6 2.5-.6s1.5.6 2.5.6c2.2 0 5-4 5-8 0-3-2-5-4-5-1.5 0-2.3 1-3.5 1S9.5 8 8 8z" {...p}/>);
+    case 'sun': return w(<><circle cx="12" cy="12" r="4" {...p}/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4l1.4-1.4M17 7l1.4-1.4" {...p}/></>);
+    case 'moon': return w(<path d="M20 14a8 8 0 11-9.5-10A6.5 6.5 0 0020 14z" {...p}/>);
+    case 'arrow-up-right': return w(<path d="M7 17L17 7M9 7h8v8" {...p}/>);
+    case 'arrow-dn-right': return w(<path d="M7 7l10 10M17 9v8H9" {...p}/>);
+    case 'trending-up': return w(<path d="M3 17l6-6 4 4 8-8M14 7h7v7" {...p}/>);
+    case 'wave': return w(<path d="M3 12c2-4 4-4 6 0s4 4 6 0 4-4 6 0" {...p}/>);
+    default: return w(<rect x="4" y="4" width="16" height="16" rx="3" {...p}/>);
+  }
+}
+
+function Divider({ inset = 0, style = {} }) {
+  return <div className="m-divider" style={{ marginLeft: inset, ...style }} />;
+}
+
+function StatusBar({ dark = false, time = '9:41' }) {
+  const c = dark ? '#fff' : M.ink;
+  return (
+    <div style={{
+      height: 44, padding: '14px 24px 0', display: 'flex',
+      alignItems: 'center', justifyContent: 'space-between', flexShrink: 0,
+    }}>
+      <div style={{ fontSize: 15, fontWeight: 600, color: c, fontFamily: M.fontUI }}>{time}</div>
+      <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+        <svg width="17" height="11" viewBox="0 0 17 11"><rect x="0" y="7" width="2.5" height="4" rx="0.6" fill={c}/><rect x="4" y="5" width="2.5" height="6" rx="0.6" fill={c}/><rect x="8" y="3" width="2.5" height="8" rx="0.6" fill={c}/><rect x="12" y="0.5" width="2.5" height="10.5" rx="0.6" fill={c}/></svg>
+        <svg width="14" height="11" viewBox="0 0 14 11"><path d="M7 1.5C9.4 1.5 11.7 2.5 13.3 4l-1 1A7 7 0 007 3a7 7 0 00-5.3 2L0.7 4C2.3 2.5 4.6 1.5 7 1.5zM7 5a4.7 4.7 0 013.5 1.5l-1 1A3.3 3.3 0 007 6.5a3.3 3.3 0 00-2.5 1l-1-1A4.7 4.7 0 017 5zM7 8.5A1.5 1.5 0 118.5 10a1.5 1.5 0 01-1.5-1.5z" fill={c}/></svg>
+        <svg width="25" height="12" viewBox="0 0 25 12"><rect x="0.5" y="0.5" width="21" height="11" rx="3" fill="none" stroke={c} strokeOpacity="0.4"/><rect x="2" y="2" width="18" height="8" rx="1.5" fill={c}/><path d="M23 4.5v3c.6-.2 1-.8 1-1.5s-.4-1.3-1-1.5z" fill={c} opacity="0.4"/></svg>
+      </div>
+    </div>
+  );
+}
+
+function HomeIndicator({ dark = false }) {
+  return (
+    <div style={{ height: 34, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', paddingBottom: 8, flexShrink: 0 }}>
+      <div style={{ width: 134, height: 5, borderRadius: 3, background: dark ? '#fff' : M.ink, opacity: 0.85 }}/>
+    </div>
+  );
+}
+
+function AppBar({ title, sub, leading, trailing, large }) {
+  if (large) {
+    return (
+      <div style={{ padding: '4px 20px 8px', flexShrink: 0 }}>
+        <div className="m-row" style={{ justifyContent: 'space-between', minHeight: 36 }}>
+          <div className="m-row" style={{ gap: 4 }}>{leading}</div>
+          <div className="m-row" style={{ gap: 4 }}>{trailing}</div>
+        </div>
+        <div style={{ marginTop: 6 }}>
+          <div className="m-h1">{title}</div>
+          {sub && <div className="m-label" style={{ marginTop: 4 }}>{sub}</div>}
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="m-appbar">
+      <div className="m-row" style={{ width: 56, justifyContent: 'flex-start', gap: 4 }}>{leading}</div>
+      <div style={{ flex: 1, textAlign: 'center', minWidth: 0 }}>
+        <div className="m-h3" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</div>
+        {sub && <div className="m-label" style={{ marginTop: 1 }}>{sub}</div>}
+      </div>
+      <div className="m-row" style={{ width: 56, justifyContent: 'flex-end', gap: 4 }}>{trailing}</div>
+    </div>
+  );
+}
+
+function Logo({ size = 32, color = M.ink }) {
+  return (
+    <div className="m-logo" style={{ fontSize: size, color, lineHeight: 1, display: 'inline-flex', alignItems: 'baseline' }}>
+      munni<span className="dot" style={{ color: M.sage }}>.</span>
+    </div>
+  );
+}
+  </script>
+
+  <script type="text/babel">
+// ── data.jsx ───────────────────────────────────────────────────
+
+const CATEGORIES = {
+  housing:    { id: 'housing',    name: 'Housing',       icon: 'house',  group: 'Essentials' },
+  groceries:  { id: 'groceries',  name: 'Groceries',     icon: 'shop',   group: 'Consumptions', parent: 'consumptions' },
+  restaurants:{ id: 'restaurants',name: 'Restaurants',   icon: 'fork',   group: 'Consumptions', parent: 'consumptions' },
+  coffee:     { id: 'coffee',     name: 'Coffee',        icon: 'flame',  group: 'Consumptions', parent: 'consumptions' },
+  transport:  { id: 'transport',  name: 'Transport',     icon: 'car',    group: 'Transport' },
+  health:     { id: 'health',     name: 'Health',        icon: 'health', group: 'Health' },
+  hobby:      { id: 'hobby',      name: 'Hobby',         icon: 'bag',    group: 'Hobby' },
+  subs:       { id: 'subs',       name: 'Subscriptions', icon: 'film',   group: 'Recurring' },
+  income:     { id: 'income',     name: 'Income',        icon: 'arrow-dn-right', group: 'Income', positive: true },
+  reimburse:  { id: 'reimburse',  name: 'Reimbursement', icon: 'link',   group: 'Income', positive: true },
+  invest:     { id: 'invest',     name: 'Investment',    icon: 'rocket', group: 'Savings' },
+  savings:    { id: 'savings',    name: 'Savings',       icon: 'piggy',  group: 'Savings' },
+};
+
+const ACCOUNTS = [
+  { id: 'main', name: 'Main · ING',     iban: 'NL47…4231', balance: 5240.18, type: 'checking', color: '#4A6A4F' },
+  { id: 'save', name: 'Savings · ING',  iban: 'NL47…7782', balance: 3120.50, type: 'savings',  color: '#A8782B' },
+  { id: 'inv',  name: 'Brokerage · DEGIRO', iban: 'NL47…1015', balance: 365.00, type: 'invest', color: '#5E4A78' },
+];
+
+const TRANSACTIONS = [
+  { id: 't1',  date: '2026-02-18', time: '13:24', merchant: 'Vapiano',           desc: 'VAPIANO 1234 AMSTERDAM',     cat: 'restaurants', amount: -18.40, account: 'main', confidence: 92 },
+  { id: 't2',  date: '2026-02-18', time: '11:08', merchant: 'Albert Heijn',      desc: 'AH 5821 AMS-CENTRAAL',       cat: 'groceries',   amount: -42.10, account: 'main', confidence: 99, hasReceipt: true },
+  { id: 't3',  date: '2026-02-18', time: '08:00', merchant: 'Acme Salary',       desc: 'ACME BV PAYROLL FEB',        cat: 'income',      amount: 2480.00, account: 'main' },
+  { id: 't4',  date: '2026-02-17', time: '20:14', merchant: 'Spotify',           desc: 'SPOTIFY P34520',             cat: 'subs',        amount: -9.99,  account: 'main', recurring: true },
+  { id: 't5',  date: '2026-02-17', time: '17:38', merchant: 'NS · Sprinter',     desc: 'NS REIZIGERS 2026',          cat: 'transport',   amount: -12.20, account: 'main' },
+  { id: 't6',  date: '2026-02-17', time: '12:50', merchant: 'Apotheek Centraal', desc: 'APOTHEEK 7842',              cat: 'health',      amount: -8.50,  account: 'main', confidence: 71, needsReview: true },
+  { id: 't7',  date: '2026-02-17', time: '19:20', merchant: 'Friend · Tikkie',   desc: 'TIKKIE J. DE VRIES',         cat: 'reimburse',   amount: 9.20,   account: 'main', linkedTo: 't1' },
+  { id: 't8',  date: '2026-02-16', time: '21:00', merchant: 'Amazon.nl',         desc: 'AMZN MKTPLC 49281',          cat: 'hobby',       amount: -34.99, account: 'main', confidence: 54, needsReview: true },
+  { id: 't9',  date: '2026-02-16', time: '09:00', merchant: 'Rent · Stadgenoot', desc: 'STADGENOOT HUUR FEB',        cat: 'housing',     amount: -740.00,account: 'main', recurring: true },
+  { id: 't10', date: '2026-02-16', time: '08:30', merchant: 'Koffie ☕',         desc: 'TOKI ESPRESSO',              cat: 'coffee',      amount: -3.80,  account: 'main' },
+  { id: 't11', date: '2026-02-14', time: '20:00', merchant: "L'Osteria",         desc: "L'OSTERIA AMS",              cat: 'restaurants', amount: -32.00, account: 'main' },
+  { id: 't12', date: '2026-02-13', time: '11:00', merchant: 'Albert Heijn',      desc: 'AH 5821',                    cat: 'groceries',   amount: -28.40, account: 'main' },
+  { id: 't13', date: '2026-02-12', time: '10:00', merchant: 'DEGIRO Buy',        desc: 'DEGIRO MTHLY ETF',           cat: 'invest',      amount: -300.00,account: 'main', recurring: true },
+  { id: 't14', date: '2026-02-10', time: '16:00', merchant: 'Etos',              desc: 'ETOS 0341',                  cat: 'health',      amount: -14.20, account: 'main', needsReview: true },
+  { id: 't15', date: '2026-02-08', time: '20:30', merchant: 'Vapiano',           desc: 'VAPIANO 1234',               cat: 'restaurants', amount: -22.50, account: 'main' },
+  { id: 't16', date: '2026-02-05', time: '12:00', merchant: 'Albert Heijn',      desc: 'AH 5821',                    cat: 'groceries',   amount: -38.10, account: 'main' },
+  { id: 't17', date: '2026-02-03', time: '21:30', merchant: 'Five Guys',         desc: 'FIVEGUYS AMS',               cat: 'restaurants', amount: -22.50, account: 'main' },
+  { id: 't18', date: '2026-02-01', time: '08:00', merchant: 'Netflix',           desc: 'NETFLIX SUBSCR',             cat: 'subs',        amount: -13.99, account: 'main', recurring: true, needsReview: true },
+  { id: 't19', date: '2026-01-30', time: '14:00', merchant: 'NS · OV Chip',      desc: 'NS REIZIGERS',               cat: 'transport',   amount: -38.20, account: 'main' },
+  { id: 't20', date: '2026-01-28', time: '20:00', merchant: 'Sushi Place',       desc: 'SUSHITIME AMS',              cat: 'restaurants', amount: -22.50, account: 'main' },
+  { id: 't21', date: '2026-01-26', time: '11:00', merchant: 'Albert Heijn',      desc: 'AH 5821',                    cat: 'groceries',   amount: -56.20, account: 'main' },
+  { id: 't22', date: '2026-01-24', time: '15:00', merchant: 'Bol.com',           desc: 'BOL.COM 02938',              cat: 'hobby',       amount: -45.00, account: 'main', needsReview: true },
+  { id: 't23', date: '2026-01-22', time: '09:00', merchant: 'Koffie ☕',         desc: 'TOKI ESPRESSO',              cat: 'coffee',      amount: -3.80,  account: 'main' },
+  { id: 't24', date: '2026-01-20', time: '08:00', merchant: 'Eneco',             desc: 'ENECO ENERGIE',              cat: 'housing',     amount: -65.00, account: 'main', recurring: true },
+];
+
+const BUDGETS = [
+  { id: 'b1', name: 'Restaurants',  icon: 'fork',  spent: 95.40,  total: 120, period: 'Weekly',   renew: 'every week',    cats: ['restaurants', 'coffee'], stack: false },
+  { id: 'b2', name: 'Groceries',    icon: 'shop',  spent: 164.80, total: 300, period: 'Monthly',  renew: 'every month',   cats: ['groceries'], stack: true, stackMax: 600, stackCur: 30 },
+  { id: 'b3', name: 'Transport',    icon: 'car',   spent: 50.40,  total: 80,  period: 'Monthly',  renew: 'every month',   cats: ['transport'], stack: false },
+  { id: 'b4', name: 'Hobby',        icon: 'bag',   spent: 79.99,  total: 200, period: '2 weeks',  renew: 'every 2 weeks', cats: ['hobby'], stack: false },
+  { id: 'b5', name: 'Coffee runs',  icon: 'flame', spent: 18.00,  total: 60,  period: '3 weeks',  renew: 'every 3 weeks', cats: ['coffee'], stack: true, stackMax: 120, stackCur: 42 },
+];
+
+const RECURRING = [
+  { id: 'r1', name: 'Rent · Stadgenoot', icon: 'house', amount: -740.00, every: 'monthly · 1st',   next: '01 Mar', cat: 'housing', active: true },
+  { id: 'r2', name: 'Eneco · Energy',    icon: 'flame', amount: -65.00,  every: 'monthly · 20th',  next: '20 Feb', cat: 'housing', active: true },
+  { id: 'r3', name: 'Spotify',           icon: 'film',  amount: -9.99,   every: 'monthly · 17th',  next: '17 Mar', cat: 'subs',    active: true },
+  { id: 'r4', name: 'Netflix',           icon: 'film',  amount: -13.99,  every: 'monthly · 1st',   next: '01 Mar', cat: 'subs',    active: true },
+  { id: 'r5', name: 'DEGIRO ETF',        icon: 'rocket',amount: -300.00, every: 'monthly · 12th',  next: '12 Mar', cat: 'invest',  active: true },
+  { id: 'r6', name: 'Acme Salary',       icon: 'arrow-dn-right', amount: 2480.00, every: 'monthly · 18th', next: '18 Mar', cat: 'income', active: true },
+  { id: 'r7', name: 'Audible',           icon: 'film',  amount: -7.95,   every: 'monthly · 22nd',  next: '22 Feb', cat: 'subs',    active: false },
+];
+
+const GOALS = [
+  { id: 'g1', name: 'Emergency fund',   icon: 'piggy',  current: 2400, target: 6000, by: 'Dec 2026', monthly: 300, color: '#4A6A4F' },
+  { id: 'g2', name: 'Trip to Lisbon',   icon: 'globe',  current: 720,  target: 1200, by: 'Jun 2026', monthly: 120, color: '#A8782B' },
+  { id: 'g3', name: 'New laptop',       icon: 'box',    current: 380,  target: 1800, by: 'Sep 2026', monthly: 200, color: '#5E4A78' },
+];
+
+const EVENTS = [
+  { id: 'e1', name: 'Lisbon trip 2025',     start: '2025-09-12', end: '2025-09-19', total: 1186.30, txCount: 28, status: 'closed', icon: 'globe' },
+  { id: 'e2', name: 'Anna · Birthday',      start: '2026-01-30', end: '2026-02-02', total: 312.40,  txCount: 9,  status: 'closed', icon: 'star' },
+  { id: 'e3', name: 'Berlin weekend',       start: '2026-02-21', end: '2026-02-23', total: 0,       txCount: 0,  status: 'upcoming', icon: 'globe' },
+];
+
+const SPEND_HISTORY = {
+  total:       [1340, 1180, 1402, 1290, 1308, 1220],
+  restaurants: [62, 88, 71, 102, 84, 95],
+  groceries:   [220, 245, 280, 250, 268, 165],
+  transport:   [42, 55, 68, 50, 58, 50],
+  hobby:       [120, 0, 80, 240, 35, 80],
+  coffee:      [22, 28, 35, 30, 28, 18],
+  health:      [45, 30, 22, 18, 60, 22],
+  housing:     [805, 805, 805, 805, 805, 805],
+};
+
+const PORTFOLIO = {
+  total: 12480.50,
+  contributed: 11200,
+  pnl: 1280.50,
+  pnlPct: 11.43,
+  monthly: 300,
+  positions: [
+    { ticker: 'VWCE', name: 'FTSE All-World ETF',  alloc: 65, value: 8112.32, change: 1.24 },
+    { ticker: 'IUSA', name: 'S&P 500 ETF',         alloc: 20, value: 2496.10, change: 0.86 },
+    { ticker: 'IBGS', name: 'EUR Govt Bond ETF',   alloc: 10, value: 1248.05, change: -0.18 },
+    { ticker: 'CASH', name: 'Cash',                alloc: 5,  value: 624.03,  change: 0.00 },
+  ],
+  curve: [10100, 10240, 10800, 10920, 11340, 11200, 11680, 11920, 12120, 12080, 12340, 12480],
+};
+
+const fmtEur = (n, opts = {}) => {
+  const sign = n < 0 ? '−' : (opts.signed && n > 0 ? '+' : '');
+  const abs = Math.abs(n);
+  const s = abs.toLocaleString('nl-NL', { minimumFractionDigits: opts.decimals ?? 2, maximumFractionDigits: opts.decimals ?? 2 });
+  return `${sign}€${s.replace('.', ',').replace(/,(\d{2})$/, ',$1')}`;
+};
+const fmtEurInt = n => fmtEur(n, { decimals: 0 });
+const fmtDate = (iso, fmt = 'short') => {
+  const d = new Date(iso);
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  if (fmt === 'short') return `${d.getDate()} ${months[d.getMonth()]}`;
+  return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+};
+const dayLabel = (iso) => {
+  const d = new Date(iso);
+  const today = new Date('2026-02-18');
+  const diff = Math.floor((today - d) / (86400000));
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Yesterday';
+  const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  return `${days[d.getDay()]}, ${fmtDate(iso)}`;
+};
+
+const PERIOD = {
+  start: '2026-01-20', end: '2026-02-19',
+  income: 2480.00,
+  expense: 1220.50,
+  savings: 640.00,
+  invest: 300.00,
+  unallocated: 620.00,
+  prevExpense: 1308.00,
+  prevIncome: 2380.00,
+};
+  </script>
+
+  <script type="text/babel">
+// ── nav.jsx ────────────────────────────────────────────────────
+
+const NavCtx = React.createContext(null);
+
+function NavProvider({ children, initial = 'home' }) {
+  const [tab, setTab] = React.useState(initial);
+  const [stacks, setStacks] = React.useState({ home: [], tx: [], events: [], profile: [] });
+
+  const push = (screen, params = {}) => {
+    setStacks(s => ({ ...s, [tab]: [...s[tab], { screen, params }] }));
+  };
+  const pop = () => {
+    setStacks(s => ({ ...s, [tab]: s[tab].slice(0, -1) }));
+  };
+  const popAll = () => {
+    setStacks(s => ({ ...s, [tab]: [] }));
+  };
+  const switchTab = (t) => setTab(t);
+  const replace = (screen, params = {}) => {
+    setStacks(s => ({ ...s, [tab]: [...s[tab].slice(0, -1), { screen, params }] }));
+  };
+
+  const value = { tab, stack: stacks[tab], push, pop, popAll, switchTab, replace };
+  return <NavCtx.Provider value={value}>{children}</NavCtx.Provider>;
+}
+
+const useNav = () => React.useContext(NavCtx);
+
+function TabBar({ active, onChange }) {
+  const tabs = [
+    { id: 'home',    icon: 'home', label: 'Home' },
+    { id: 'tx',      icon: 'list', label: 'Transactions' },
+    { id: 'events',  icon: 'star', label: 'Events' },
+    { id: 'profile', icon: 'user', label: 'Profile' },
+  ];
+  return (
+    <div style={{
+      flexShrink: 0,
+      borderTop: `1px solid ${M.line}`,
+      background: 'rgba(247, 244, 238, 0.92)',
+      backdropFilter: 'blur(20px)',
+      WebkitBackdropFilter: 'blur(20px)',
+      paddingBottom: 18, paddingTop: 8,
+      display: 'flex',
+    }}>
+      {tabs.map(t => {
+        const a = t.id === active;
+        return (
+          <button key={t.id}
+            onClick={() => onChange(t.id)}
+            className="m-tap"
+            style={{
+              flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
+              justifyContent: 'center', gap: 3, padding: '6px 0',
+              background: 'transparent', border: 'none', cursor: 'pointer',
+              color: a ? M.ink : M.ink4, fontFamily: M.fontUI,
+            }}>
+            <I name={t.icon} size={22} stroke={a ? 1.9 : 1.5}/>
+            <div style={{ fontSize: 10, fontWeight: a ? 600 : 500, letterSpacing: 0.02 }}>{t.label}</div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function StackScreen({ children, depth = 0 }) {
+  return (
+    <div key={depth} style={{
+      position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+      animation: depth > 0 ? 'mSlideIn 0.28s cubic-bezier(.2,.7,.2,1) both' : undefined,
+      background: M.paper,
+    }}>
+      {children}
+    </div>
+  );
+}
+
+if (typeof document !== 'undefined' && !document.getElementById('m-nav-styles')) {
+  const s = document.createElement('style');
+  s.id = 'm-nav-styles';
+  s.textContent = `
+    @keyframes mSlideIn { from { transform: translateX(100%); } to { transform: none; } }
+    @keyframes mSheetUp { from { transform: translateY(100%); } to { transform: none; } }
+  `;
+  document.head.appendChild(s);
+}
+
+function Sheet({ children, onClose }) {
+  return (
+    <div style={{
+      position: 'absolute', inset: 0, background: 'rgba(27,26,23,0.45)', zIndex: 50,
+      display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
+      animation: 'mFadeIn 0.2s ease-out',
+    }} onClick={onClose}>
+      <div style={{
+        background: M.paper, borderTopLeftRadius: 24, borderTopRightRadius: 24,
+        animation: 'mSheetUp 0.32s cubic-bezier(.2,.7,.2,1)',
+        maxHeight: '88%', display: 'flex', flexDirection: 'column',
+      }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '8px 0 4px' }}>
+          <div style={{ width: 36, height: 4, borderRadius: 999, background: M.line }}/>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+  </script>
+
+  <script type="text/babel">
+// ── charts.jsx ─────────────────────────────────────────────────
+
+function Sparkline({ data, width = 60, height = 20, color = M.ink, fill, strokeWidth = 1.5 }) {
+  if (!data || data.length === 0) return null;
+  const min = Math.min(...data), max = Math.max(...data);
+  const range = max - min || 1;
+  const stepX = width / (data.length - 1);
+  const pts = data.map((v, i) => [i * stepX, height - ((v - min) / range) * height]);
+  const d = pts.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
+  const fillD = fill ? `${d} L${width},${height} L0,${height} Z` : null;
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{ display: 'block', overflow: 'visible' }}>
+      {fill && <path d={fillD} fill={fill} stroke="none"/>}
+      <path d={d} fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
+function BarChart({ data, labels, width = 280, height = 96, highlightLast = true, color = M.ink, accent = M.sage }) {
+  const max = Math.max(...data, 1);
+  const padding = 6;
+  const barAreaH = height - 18;
+  const barW = (width - padding * (data.length - 1)) / data.length;
+  return (
+    <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} style={{ display: 'block' }}>
+      {data.map((v, i) => {
+        const h = (v / max) * (barAreaH - 4);
+        const x = i * (barW + padding);
+        const y = barAreaH - h;
+        const isLast = i === data.length - 1;
+        return (
+          <g key={i}>
+            <rect x={x} y={y} width={barW} height={h} rx={3}
+              fill={highlightLast && isLast ? accent : color}
+              opacity={highlightLast && !isLast ? 0.18 : 0.92}/>
+            {labels && <text x={x + barW / 2} y={height - 2} fontSize="9" fill={M.ink4} textAnchor="middle" fontFamily={M.fontUI} fontWeight="500">{labels[i]}</text>}
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+function Donut({ data, size = 130, thickness = 18, center }) {
+  const total = data.reduce((s, d) => s + d.value, 0) || 1;
+  const r = (size - thickness) / 2;
+  const cx = size / 2, cy = size / 2;
+  let acc = 0;
+  return (
+    <div style={{ position: 'relative', width: size, height: size }}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ transform: 'rotate(-90deg)' }}>
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke={M.line2} strokeWidth={thickness}/>
+        {data.map((d, i) => {
+          const dash = (d.value / total) * (2 * Math.PI * r);
+          const offset = (acc / total) * (2 * Math.PI * r);
+          acc += d.value;
+          return (
+            <circle key={i} cx={cx} cy={cy} r={r} fill="none"
+              stroke={d.color} strokeWidth={thickness}
+              strokeDasharray={`${dash} ${2 * Math.PI * r}`}
+              strokeDashoffset={-offset}
+              strokeLinecap="butt"/>
+          );
+        })}
+      </svg>
+      {center && (
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
+          {center}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StackedBar({ segments, height = 8, radius = 999 }) {
+  const total = segments.reduce((s, x) => s + x.value, 0) || 1;
+  return (
+    <div style={{
+      display: 'flex', height, borderRadius: radius,
+      overflow: 'hidden', background: M.line2,
+    }}>
+      {segments.map((s, i) => (
+        <div key={i} style={{
+          width: `${(s.value / total) * 100}%`,
+          background: s.color,
+          borderRight: i < segments.length - 1 ? `1.5px solid ${M.paper}` : 'none',
+        }}/>
+      ))}
+    </div>
+  );
+}
+
+function LineChart({ data, width = 320, height = 120, color = M.sage, fill = 'rgba(74,106,79,0.10)', dots = false }) {
+  if (!data || data.length === 0) return null;
+  const min = Math.min(...data), max = Math.max(...data);
+  const range = (max - min) || 1;
+  const padding = 4;
+  const stepX = (width - padding * 2) / (data.length - 1);
+  const pts = data.map((v, i) => [padding + i * stepX, padding + (height - padding * 2) * (1 - (v - min) / range)]);
+  const d = pts.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
+  const fillD = `${d} L${pts[pts.length - 1][0]},${height} L${pts[0][0]},${height} Z`;
+  return (
+    <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} style={{ display: 'block' }}>
+      <path d={fillD} fill={fill} stroke="none"/>
+      <path d={d} fill="none" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"/>
+      {dots && pts.map((p, i) => (
+        <circle key={i} cx={p[0]} cy={p[1]} r={i === pts.length - 1 ? 3 : 0} fill={color}/>
+      ))}
+    </svg>
+  );
+}
+
+function TxRow({ tx, onClick, showCat = true, showDate = false, dense = false }) {
+  const cat = CATEGORIES[tx.cat] || {};
+  const positive = tx.amount > 0;
+  return (
+    <div onClick={onClick} className={onClick ? 'm-tap' : ''} style={{
+      display: 'flex', alignItems: 'center', gap: 12,
+      padding: dense ? '10px 0' : '12px 0',
+    }}>
+      <div style={{
+        width: 38, height: 38, borderRadius: 10, background: M.paper2,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        flexShrink: 0,
+      }}>
+        <I name={cat.icon || 'box'} size={18} color={M.ink2} stroke={1.6}/>
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+          <div style={{ fontSize: 14, fontWeight: 500, color: M.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tx.merchant}</div>
+          <div className="m-num" style={{ fontSize: 15, fontWeight: 600, color: positive ? M.sage : M.ink, flexShrink: 0 }}>
+            {positive ? '+' : ''}{fmtEur(tx.amount)}
+          </div>
+        </div>
+        {showCat && (
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 2 }}>
+            <div style={{ fontSize: 12, color: M.ink3 }}>
+              {showDate ? fmtDate(tx.date) : cat.name}
+              {tx.recurring && <span style={{ color: M.ink4, marginLeft: 6 }}>· recurring</span>}
+              {tx.linkedTo && <span style={{ color: M.sage, marginLeft: 6 }}>· reimburse</span>}
+            </div>
+            {tx.needsReview && <span className="m-pill" style={{ background: M.ochreSoft, color: M.ochre }}>Review</span>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+  </script>
+
+  <script type="text/babel">
+// ── screens-stub.jsx ───────────────────────────────────────────
+
+function ScreenStub({ title }) {
+  const nav = useNav();
+  return (
+    <div className="m-screen">
+      <StatusBar/>
+      <AppBar title={title || 'Screen'} leading={
+        <button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>
+      }/>
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 8, color: M.ink3 }}>
+        <I name="box" size={32} color={M.ink4}/>
+        <div style={{ fontSize: 14 }}>{title} — coming up</div>
+      </div>
+    </div>
+  );
+}
+  </script>
+
+  <script type="text/babel">
+// ── screens-home.jsx ───────────────────────────────────────────
+
+function ScreenHome() {
+  const nav = useNav();
+  const reviewCount = TRANSACTIONS.filter(t => t.needsReview).length;
+  const budgetTop = [...BUDGETS].sort((a, b) => (b.spent / b.total) - (a.spent / a.total)).slice(0, 3);
+
+  return (
+    <div className="m-screen">
+      <StatusBar/>
+
+      <div style={{ padding: '4px 20px 16px', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+        <div style={{
+          width: 40, height: 40, borderRadius: 999, background: M.sage, color: '#fff',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, fontSize: 15, fontFamily: M.fontDisp, letterSpacing: '-0.02em',
+        }}>J</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 12, color: M.ink3 }}>Good morning, Jules</div>
+          <div style={{ fontSize: 11, color: M.ink4, marginTop: 1, display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ width: 5, height: 5, borderRadius: 999, background: M.sage }}/>
+            Synced 15:38
+          </div>
+        </div>
+        <button className="m-iconbtn filled m-tap" onClick={() => nav.push('sync')}>
+          <I name="sync" size={18}/>
+        </button>
+        <button className="m-iconbtn filled m-tap" onClick={() => nav.push('notifications')}>
+          <I name="bell" size={18}/>
+        </button>
+      </div>
+
+      <div className="m-body-scroll">
+        <div className="m-fade" style={{ padding: '8px 0 28px' }}>
+          <div className="m-cap" style={{ marginBottom: 8 }}>Total balance</div>
+          <div className="m-num" style={{ fontSize: 44, fontWeight: 600, letterSpacing: '-0.025em', lineHeight: 1 }}>
+            €8 725<span style={{ fontSize: 24, color: M.ink3 }}>,68</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8 }}>
+            <span className="m-pill" style={{ background: M.sageSoft, color: M.sageDk }}>
+              <I name="trending-up" size={11} stroke={2.2} color={M.sageDk}/>
+              <span style={{ marginLeft: 4 }}>+€420 this period</span>
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, marginTop: 18, overflowX: 'auto', marginLeft: -20, paddingLeft: 20, paddingRight: 20, marginRight: -20 }}>
+            {ACCOUNTS.map(a => (
+              <div key={a.id} className="m-tap"
+                onClick={() => nav.push('accountDetail', { id: a.id })}
+                style={{
+                  flexShrink: 0, width: 152, padding: 14, borderRadius: 14,
+                  background: M.card, border: `1px solid ${M.line}`,
+                }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                  <div style={{ width: 8, height: 8, borderRadius: 2, background: a.color }}/>
+                  <div style={{ fontSize: 11, color: M.ink3, fontWeight: 500 }}>{a.name.split(' · ')[0]}</div>
+                </div>
+                <div className="m-num" style={{ fontSize: 18, fontWeight: 600 }}>
+                  {fmtEurInt(a.balance)}
+                </div>
+                <div className="m-mono" style={{ fontSize: 10, color: M.ink4, marginTop: 2 }}>{a.iban}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="m-card m-fade" style={{ padding: 20, marginBottom: 14, border: `1px solid ${M.line}` }}>
+          <PeriodHeader/>
+
+          <div style={{ display: 'flex', gap: 18, alignItems: 'center', marginTop: 18 }}>
+            <Donut size={120} thickness={14} data={[
+              { value: PERIOD.expense, color: M.clay },
+              { value: PERIOD.savings, color: M.ochre },
+              { value: PERIOD.invest,  color: M.violet },
+              { value: PERIOD.unallocated, color: M.line },
+            ]} center={
+              <>
+                <div style={{ fontSize: 9, color: M.ink3, letterSpacing: 0.06, fontWeight: 600 }}>OUT OF</div>
+                <div className="m-num" style={{ fontSize: 18, fontWeight: 600, marginTop: 1 }}>{fmtEurInt(PERIOD.income)}</div>
+              </>
+            }/>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <PeriodLegendRow color={M.clay}   label="Spent"     value={PERIOD.expense}/>
+              <PeriodLegendRow color={M.ochre}  label="Saved"     value={PERIOD.savings}/>
+              <PeriodLegendRow color={M.violet} label="Invested"  value={PERIOD.invest}/>
+              <PeriodLegendRow color={M.line}   label="To allocate" value={PERIOD.unallocated} dim/>
+            </div>
+          </div>
+
+          <button className="m-btn outline m-tap" style={{ width: '100%', marginTop: 14, height: 42, fontSize: 13, justifyContent: 'space-between' }}
+            onClick={() => nav.push('allocate')}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <I name="goal" size={16}/>
+              Allocate {fmtEurInt(PERIOD.unallocated)}
+            </span>
+            <I name="arrowR" size={16}/>
+          </button>
+        </div>
+
+        {reviewCount > 0 && (
+          <div className="m-tap m-card m-fade" style={{
+            padding: 16, marginBottom: 14,
+            border: `1px solid ${M.ochreSoft}`,
+            background: '#FBF6E9',
+            display: 'flex', alignItems: 'center', gap: 14,
+          }} onClick={() => nav.push('reviewSwipe')}>
+            <div style={{
+              width: 44, height: 44, borderRadius: 12, background: M.ochreSoft,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <I name="sliders" size={20} color={M.ochre}/>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>Review {reviewCount} categories</div>
+              <div style={{ fontSize: 12, color: M.ink3, marginTop: 1 }}>AI's not sure about these — quick check?</div>
+            </div>
+            <I name="arrowR" size={18} color={M.ink3}/>
+          </div>
+        )}
+
+        <div className="m-card m-fade" style={{ padding: 18, marginBottom: 14, border: `1px solid ${M.line}` }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <div className="m-h3">Budgets</div>
+            <div className="m-tap" onClick={() => nav.push('budgets')} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: M.ink3, fontWeight: 500 }}>
+              See all {BUDGETS.length} <I name="caretR" size={12}/>
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {budgetTop.map(b => <BudgetMini key={b.id} b={b} onClick={() => nav.push('budgetDetail', { id: b.id })}/>)}
+          </div>
+        </div>
+
+        <div className="m-card m-fade" style={{ padding: 18, marginBottom: 14, border: `1px solid ${M.line}` }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <div className="m-h3">Goals</div>
+            <div className="m-tap" onClick={() => nav.push('goals')} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: M.ink3, fontWeight: 500 }}>
+              See all <I name="caretR" size={12}/>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 10, overflowX: 'auto', marginLeft: -18, paddingLeft: 18, marginRight: -18, paddingRight: 18 }}>
+            {GOALS.map(g => <GoalCard key={g.id} g={g} onClick={() => nav.push('goalDetail', { id: g.id })}/>)}
+          </div>
+        </div>
+
+        <div className="m-tap m-card m-fade" onClick={() => nav.push('investment')} style={{
+          padding: 18, marginBottom: 14, border: `1px solid ${M.line}`,
+          display: 'flex', alignItems: 'center', gap: 14,
+        }}>
+          <div style={{ width: 44, height: 44, borderRadius: 12, background: M.violetSoft, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <I name="rocket" size={20} color={M.violet}/>
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 14, fontWeight: 600 }}>Portfolio</div>
+            <div className="m-num" style={{ fontSize: 16, fontWeight: 600, marginTop: 2 }}>
+              {fmtEurInt(PORTFOLIO.total)}
+              <span style={{ fontSize: 12, color: M.sage, marginLeft: 8, fontFamily: M.fontUI, fontWeight: 600 }}>+{PORTFOLIO.pnlPct.toFixed(1)}%</span>
+            </div>
+          </div>
+          <Sparkline data={PORTFOLIO.curve} width={64} height={28} color={M.violet} fill="rgba(94,74,120,0.12)" strokeWidth={1.6}/>
+          <I name="caretR" size={16} color={M.ink4}/>
+        </div>
+
+        <div style={{ height: 12 }}/>
+      </div>
+
+      <TabBar active="home" onChange={(t) => nav.switchTab(t)}/>
+    </div>
+  );
+}
+
+function PeriodHeader() {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div className="m-cap">This period</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, color: M.ink3 }}>
+        <I name="arrowL" size={14}/>
+        <div style={{ fontSize: 12, fontWeight: 600, color: M.ink2 }}>20 Jan – 19 Feb</div>
+        <I name="arrowR" size={14}/>
+      </div>
+    </div>
+  );
+}
+
+function PeriodLegendRow({ color, label, value, dim }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ width: 8, height: 8, borderRadius: 2, background: color }}/>
+      <div style={{ fontSize: 12, color: dim ? M.ink4 : M.ink2, flex: 1 }}>{label}</div>
+      <div className="m-num" style={{ fontSize: 13, fontWeight: 600, color: dim ? M.ink3 : M.ink }}>{fmtEurInt(value)}</div>
+    </div>
+  );
+}
+
+function BudgetMini({ b, onClick }) {
+  const ratio = b.spent / b.total;
+  const over = ratio > 1;
+  const close = ratio >= 0.8 && !over;
+  const color = over ? M.clay : (close ? M.ochre : M.sage);
+  const left = b.total - b.spent;
+  return (
+    <div className="m-tap" onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ width: 32, height: 32, borderRadius: 9, background: over ? M.claySoft : (close ? M.ochreSoft : M.sageSoft), display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <I name={b.icon} size={16} color={color}/>
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+          <div style={{ fontSize: 13, fontWeight: 500 }}>{b.name}</div>
+          <div className="m-num" style={{ fontSize: 12, fontWeight: 600, color: over ? M.clay : M.ink2 }}>
+            {over ? `−${fmtEurInt(Math.abs(left))}` : `${fmtEurInt(left)} left`}
+          </div>
+        </div>
+        <div style={{ height: 5, marginTop: 6, borderRadius: 999, background: M.line2, overflow: 'hidden', display: 'flex' }}>
+          <div style={{ width: `${Math.min(100, ratio * 100)}%`, height: '100%', background: color }}/>
+          {over && <div style={{ flex: 1, background: `repeating-linear-gradient(45deg, ${M.clay} 0 3px, ${M.claySoft} 3px 6px)` }}/>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GoalCard({ g, onClick }) {
+  const pct = (g.current / g.target) * 100;
+  return (
+    <div className="m-tap" onClick={onClick} style={{
+      flexShrink: 0, width: 168, padding: 14, borderRadius: 14, background: M.paper2,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        <div style={{ width: 28, height: 28, borderRadius: 8, background: M.card, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <I name={g.icon} size={14} color={g.color}/>
+        </div>
+        <div style={{ fontSize: 12, fontWeight: 600 }}>{g.name}</div>
+      </div>
+      <div className="m-num" style={{ fontSize: 18, fontWeight: 600 }}>{fmtEurInt(g.current)}</div>
+      <div style={{ fontSize: 11, color: M.ink3, marginTop: 1 }}>of {fmtEurInt(g.target)} · by {g.by}</div>
+      <div style={{ height: 4, marginTop: 10, borderRadius: 999, background: M.line, overflow: 'hidden' }}>
+        <div style={{ width: `${pct}%`, height: '100%', background: g.color }}/>
+      </div>
+      <div style={{ fontSize: 10, color: M.ink3, marginTop: 6, fontWeight: 500 }}>{pct.toFixed(0)}% · +{fmtEurInt(g.monthly)}/mo</div>
+    </div>
+  );
+}
+  </script>
+
+  <script type="text/babel">
+// ── screens-tx.jsx ─────────────────────────────────────────────
+
+function ScreenTransactions() {
+  const nav = useNav();
+  const [filter, setFilter] = React.useState('all');
+  const [query, setQuery] = React.useState('');
+
+  let filtered = TRANSACTIONS;
+  if (filter === 'income') filtered = filtered.filter(t => t.amount > 0);
+  if (filter === 'expense') filtered = filtered.filter(t => t.amount < 0);
+  if (filter === 'review') filtered = filtered.filter(t => t.needsReview);
+  if (filter === 'recurring') filtered = filtered.filter(t => t.recurring);
+  if (query) filtered = filtered.filter(t => t.merchant.toLowerCase().includes(query.toLowerCase()));
+
+  const groups = {};
+  filtered.forEach(t => {
+    const k = t.date;
+    if (!groups[k]) groups[k] = [];
+    groups[k].push(t);
+  });
+  const days = Object.keys(groups).sort((a, b) => b.localeCompare(a));
+
+  const filters = [
+    { id: 'all', label: 'All' },
+    { id: 'income', label: 'Income' },
+    { id: 'expense', label: 'Expense' },
+    { id: 'review', label: 'Review' },
+    { id: 'recurring', label: 'Recurring' },
+  ];
+
+  return (
+    <div className="m-screen">
+      <StatusBar/>
+      <AppBar title="Transactions" large
+        leading={null}
+        trailing={
+          <>
+            <button className="m-iconbtn m-tap" onClick={() => nav.push('expenses')}>
+              <I name="sliders" size={20}/>
+            </button>
+            <button className="m-iconbtn m-tap" onClick={() => nav.push('search')}>
+              <I name="search" size={20}/>
+            </button>
+          </>
+        }
+      />
+
+      <div style={{ padding: '0 20px 12px', display: 'flex', gap: 6, overflowX: 'auto', flexShrink: 0 }}>
+        {filters.map(f => (
+          <button key={f.id} onClick={() => setFilter(f.id)}
+            className="m-chip m-tap"
+            style={{
+              background: filter === f.id ? M.ink : M.card,
+              color: filter === f.id ? M.paper : M.ink2,
+              borderColor: filter === f.id ? M.ink : M.line,
+              fontWeight: filter === f.id ? 600 : 500,
+              flexShrink: 0,
+            }}>{f.label}</button>
+        ))}
+      </div>
+
+      <div className="m-body-scroll">
+        {days.map(d => {
+          const dayTotal = groups[d].reduce((s, t) => s + t.amount, 0);
+          return (
+            <div key={d} style={{ marginBottom: 18 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8, padding: '0 4px' }}>
+                <div className="m-cap">{dayLabel(d)}</div>
+                <div className="m-num" style={{ fontSize: 11, color: M.ink3, fontWeight: 600 }}>
+                  {dayTotal >= 0 ? '+' : ''}{fmtEur(dayTotal)}
+                </div>
+              </div>
+              <div className="m-card" style={{ padding: '0 16px', border: `1px solid ${M.line}` }}>
+                {groups[d].map((t, i, a) => (
+                  <React.Fragment key={t.id}>
+                    <TxRow tx={t} onClick={() => nav.push('txDetail', { id: t.id })}/>
+                    {i < a.length - 1 && <Divider inset={50}/>}
+                  </React.Fragment>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+        {days.length === 0 && (
+          <div style={{ textAlign: 'center', padding: 40, color: M.ink3 }}>
+            <I name="search" size={32} color={M.ink4}/>
+            <div style={{ marginTop: 8, fontSize: 14 }}>No transactions</div>
+          </div>
+        )}
+      </div>
+
+      <TabBar active="tx" onChange={(t) => nav.switchTab(t)}/>
+    </div>
+  );
+}
+
+function ScreenTxDetail({ params }) {
+  const nav = useNav();
+  const tx = TRANSACTIONS.find(t => t.id === params.id) || TRANSACTIONS[0];
+  const cat = CATEGORIES[tx.cat] || {};
+  const positive = tx.amount > 0;
+  const linkedTx = TRANSACTIONS.find(t => t.linkedTo === tx.id);
+  const reimburse = linkedTx ? linkedTx.amount : 0;
+  const net = tx.amount + reimburse;
+  const account = ACCOUNTS.find(a => a.id === tx.account);
+
+  return (
+    <div className="m-screen">
+      <StatusBar/>
+      <AppBar title=""
+        leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
+        trailing={<>
+          <button className="m-iconbtn m-tap"><I name="edit" size={18}/></button>
+          <button className="m-iconbtn m-tap"><I name="more" size={18}/></button>
+        </>}
+      />
+      <div className="m-body-scroll">
+        <div style={{ textAlign: 'center', padding: '8px 0 28px' }}>
+          <div style={{
+            width: 64, height: 64, borderRadius: 18, background: M.paper2,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            margin: '0 auto 14px',
+          }}>
+            <I name={cat.icon || 'box'} size={28} color={M.ink2}/>
+          </div>
+          <div className="m-num" style={{ fontSize: 38, fontWeight: 600, color: positive ? M.sage : (linkedTx ? M.clay : M.ink), letterSpacing: '-0.025em' }}>
+            {positive ? '+' : '−'}{fmtEur(Math.abs(net))}
+          </div>
+          {linkedTx && (
+            <div style={{ fontSize: 12, color: M.ink3, marginTop: 6 }}>
+              net · originally <span style={{ textDecoration: 'line-through' }}>{fmtEur(Math.abs(tx.amount))}</span> {' · '}
+              {fmtEur(reimburse)} reimbursed
+            </div>
+          )}
+          <div className="m-h2" style={{ marginTop: 14 }}>{tx.merchant}</div>
+          <div style={{ fontSize: 13, color: M.ink3, marginTop: 4 }}>{fmtDate(tx.date, 'long')} · {tx.time}</div>
+        </div>
+
+        <div className="m-card" style={{ padding: '4px 16px', marginBottom: 14, border: `1px solid ${M.line}` }}>
+          <DetailRow label="Category" value={cat.name} icon={cat.icon} caretR/>
+          <Divider inset={0}/>
+          <DetailRow label="Account" value={account?.name || '—'}/>
+          <Divider inset={0}/>
+          <DetailRow label="Description" value={tx.desc} mono/>
+          <Divider inset={0}/>
+          <DetailRow label="Note" value="Add a note…" placeholder/>
+        </div>
+
+        <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Receipt</div>
+        <div className="m-card" style={{ padding: 14, marginBottom: 14, display: 'flex', gap: 12, alignItems: 'center', border: `1px solid ${M.line}` }}>
+          {tx.hasReceipt ? (
+            <>
+              <div style={{ width: 40, height: 52, borderRadius: 6, background: M.paper2, border: `1px solid ${M.line}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <I name="receipt" size={20} color={M.ink2}/>
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 500 }}>Albert Heijn · 7 items</div>
+                <div style={{ fontSize: 11, color: M.ink3, marginTop: 2 }}>Auto-matched · €42,10</div>
+              </div>
+              <I name="caretR" size={16} color={M.ink4}/>
+            </>
+          ) : (
+            <>
+              <div style={{ width: 40, height: 52, borderRadius: 6, border: `1px dashed ${M.line}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <I name="cam" size={18} color={M.ink4}/>
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 12, color: M.ink3 }}>No receipt yet</div>
+                <div style={{ fontSize: 12, color: M.sage, fontWeight: 600, marginTop: 4 }}>Connect Albert Heijn →</div>
+              </div>
+            </>
+          )}
+        </div>
+
+        {linkedTx && (
+          <>
+            <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Reimbursed by · 1</div>
+            <div className="m-card" style={{ padding: '4px 16px', marginBottom: 14, border: `1px solid ${M.line}` }}>
+              <div className="m-tap" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0' }}
+                onClick={() => nav.replace('txDetail', { id: linkedTx.id })}>
+                <div style={{ width: 32, height: 32, borderRadius: 9, background: M.sageSoft, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <I name="link" size={16} color={M.sage}/>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 500 }}>{linkedTx.merchant}</div>
+                  <div style={{ fontSize: 11, color: M.ink3, marginTop: 1 }}>{fmtDate(linkedTx.date)} · partial</div>
+                </div>
+                <div className="m-num" style={{ fontWeight: 600, color: M.sage }}>+{fmtEur(linkedTx.amount)}</div>
+                <I name="caretR" size={14} color={M.ink4}/>
+              </div>
+            </div>
+          </>
+        )}
+
+        {!positive && (
+          <button className="m-btn outline m-tap" style={{ width: '100%', marginBottom: 18 }}
+            onClick={() => nav.push('linkReimburse', { txId: tx.id })}>
+            <I name="link" size={16}/>
+            Link a reimbursement
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DetailRow({ label, value, icon, mono, placeholder, caretR }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 0' }}>
+      <div style={{ fontSize: 12, color: M.ink3, width: 96 }}>{label}</div>
+      <div style={{ flex: 1, fontSize: 13, color: placeholder ? M.ink4 : M.ink, fontFamily: mono ? M.fontMono : M.fontUI, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+        {icon && <I name={icon} size={14} color={M.ink3}/>}
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</span>
+      </div>
+      {caretR && <I name="caretR" size={14} color={M.ink4}/>}
+    </div>
+  );
+}
+
+function ScreenExpenses() {
+  const nav = useNav();
+  const totals = {};
+  TRANSACTIONS.filter(t => t.amount < 0).forEach(t => {
+    const c = CATEGORIES[t.cat];
+    const grp = c?.parent || c?.id;
+    if (!totals[grp]) totals[grp] = { id: grp, name: CATEGORIES[grp]?.name || c?.group || c?.name, icon: CATEGORIES[grp]?.icon || c?.icon, total: 0, subs: {} };
+    totals[grp].total += Math.abs(t.amount);
+    if (c?.parent) {
+      if (!totals[grp].subs[c.id]) totals[grp].subs[c.id] = { id: c.id, name: c.name, total: 0, count: 0 };
+      totals[grp].subs[c.id].total += Math.abs(t.amount);
+      totals[grp].subs[c.id].count += 1;
+    }
+  });
+  const consumptions = { id: 'consumptions', name: 'Consumptions', icon: 'shop', total: 0, subs: {} };
+  ['restaurants','groceries','coffee'].forEach(id => {
+    const t = TRANSACTIONS.filter(x => x.cat === id).reduce((s, x) => s + Math.abs(x.amount), 0);
+    if (t > 0) {
+      consumptions.total += t;
+      consumptions.subs[id] = { id, name: CATEGORIES[id].name, total: t, count: TRANSACTIONS.filter(x => x.cat === id).length };
+    }
+    delete totals[id];
+  });
+  totals.consumptions = consumptions;
+
+  const cats = Object.values(totals).sort((a, b) => b.total - a.total);
+  const grandTotal = cats.reduce((s, c) => s + c.total, 0);
+  const [expanded, setExpanded] = React.useState({ consumptions: true });
+
+  return (
+    <div className="m-screen">
+      <StatusBar/>
+      <AppBar title="Expenses"
+        leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
+        trailing={<button className="m-iconbtn m-tap"><I name="filter" size={20}/></button>}
+      />
+      <div className="m-body-scroll">
+        <div style={{ textAlign: 'center', padding: '8px 0 22px' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 16, alignItems: 'center', color: M.ink3, marginBottom: 8 }}>
+            <button className="m-iconbtn m-tap"><I name="arrowL" size={16}/></button>
+            <div style={{ fontSize: 13, fontWeight: 600, color: M.ink2 }}>20 Jan – 19 Feb</div>
+            <button className="m-iconbtn m-tap"><I name="arrowR" size={16} color={M.ink4}/></button>
+          </div>
+          <div className="m-num" style={{ fontSize: 40, fontWeight: 600, letterSpacing: '-0.025em' }}>{fmtEur(grandTotal)}</div>
+          <div style={{ fontSize: 12, color: M.clay, marginTop: 4, fontWeight: 500 }}>+€88 vs previous period</div>
+        </div>
+
+        <StackedBar height={10} segments={cats.map((c, i) => ({
+          value: c.total, color: [M.sage, M.clay, M.ochre, M.violet, M.slate, M.ink3][i % 6],
+        }))}/>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 14, marginBottom: 18 }}>
+          {cats.map((c, i) => (
+            <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: M.ink2 }}>
+              <div style={{ width: 7, height: 7, borderRadius: 2, background: [M.sage, M.clay, M.ochre, M.violet, M.slate, M.ink3][i % 6] }}/>
+              {c.name}
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {cats.map(c => {
+            const subs = Object.values(c.subs);
+            const isOpen = expanded[c.id];
+            const pct = (c.total / grandTotal) * 100;
+            return (
+              <div key={c.id} className="m-card" style={{ border: `1px solid ${M.line}`, overflow: 'hidden' }}>
+                <div className="m-tap" onClick={() => subs.length > 0 && setExpanded({ ...expanded, [c.id]: !isOpen })}
+                  style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 10, background: M.paper2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <I name={c.icon || 'box'} size={18} color={M.ink2}/>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <div style={{ fontSize: 14, fontWeight: 600 }}>{c.name}</div>
+                      <div className="m-num" style={{ fontSize: 14, fontWeight: 600 }}>{fmtEur(c.total)}</div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+                      <div style={{ flex: 1, height: 4, borderRadius: 999, background: M.line2, overflow: 'hidden' }}>
+                        <div style={{ width: `${pct}%`, height: '100%', background: M.ink2 }}/>
+                      </div>
+                      <div style={{ fontSize: 11, color: M.ink3, fontWeight: 500, minWidth: 28, textAlign: 'right' }}>{pct.toFixed(0)}%</div>
+                    </div>
+                  </div>
+                  {subs.length > 0 && <I name={isOpen ? 'arrowDn' : 'caretR'} size={14} color={M.ink4}/>}
+                </div>
+                {isOpen && subs.length > 0 && (
+                  <div style={{ background: M.paper2, padding: '4px 0' }}>
+                    {subs.map((s, i, a) => (
+                      <React.Fragment key={s.id}>
+                        <div className="m-tap" onClick={() => nav.push('categoryDrill', { id: s.id })}
+                          style={{ padding: '12px 16px 12px 64px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                              <div style={{ fontSize: 13, fontWeight: 500 }}>{s.name}</div>
+                              <div className="m-num" style={{ fontSize: 13, fontWeight: 600 }}>{fmtEur(s.total)}</div>
+                            </div>
+                            <div style={{ fontSize: 11, color: M.ink3, marginTop: 1 }}>{s.count} transactions</div>
+                          </div>
+                          <I name="caretR" size={12} color={M.ink4}/>
+                        </div>
+                        {i < a.length - 1 && <Divider inset={64}/>}
+                      </React.Fragment>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScreenCategoryDrill({ params }) {
+  const nav = useNav();
+  const cat = CATEGORIES[params?.id] || CATEGORIES.restaurants;
+  const txs = TRANSACTIONS.filter(t => t.cat === cat.id);
+  const total = txs.reduce((s, t) => s + Math.abs(t.amount), 0);
+  const history = SPEND_HISTORY[cat.id] || [50, 60, 55, 70, 65, total];
+  const months = ['Sep','Oct','Nov','Dec','Jan','Feb'];
+
+  return (
+    <div className="m-screen">
+      <StatusBar/>
+      <AppBar title={cat.name} sub={cat.group}
+        leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
+        trailing={<button className="m-iconbtn m-tap"><I name="filter" size={20}/></button>}
+      />
+      <div className="m-body-scroll">
+        <div className="m-card" style={{ padding: 18, marginBottom: 14, border: `1px solid ${M.line}` }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <div className="m-cap">Spent this period</div>
+            <div style={{ fontSize: 11, color: M.clay, fontWeight: 600 }}>+12% vs avg</div>
+          </div>
+          <div className="m-num" style={{ fontSize: 30, fontWeight: 600, marginTop: 4 }}>{fmtEur(total)}</div>
+          <div style={{ marginTop: 16 }}>
+            <BarChart data={history} labels={months} height={84} accent={M.ink} color={M.ink}/>
+          </div>
+        </div>
+
+        <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Transactions · {txs.length}</div>
+        <div className="m-card" style={{ padding: '0 16px', border: `1px solid ${M.line}` }}>
+          {txs.map((t, i, a) => (
+            <React.Fragment key={t.id}>
+              <TxRow tx={t} showDate onClick={() => nav.push('txDetail', { id: t.id })}/>
+              {i < a.length - 1 && <Divider inset={50}/>}
+            </React.Fragment>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+  </script>
+
+  <script type="text/babel">
+// ── screens-events.jsx ─────────────────────────────────────────
+
+function ScreenEvents() {
+  const nav = useNav();
+  const [filter, setFilter] = React.useState('all');
+  const evs = filter === 'all' ? EVENTS : EVENTS.filter(e => e.status === filter);
+
+  return (
+    <div className="m-screen">
+      <StatusBar/>
+      <AppBar title="Events" large
+        trailing={<button className="m-iconbtn m-tap" onClick={() => nav.push('eventCreate')}><I name="plus" size={22}/></button>}
+      />
+      <div style={{ padding: '0 20px 14px', display: 'flex', gap: 6, flexShrink: 0 }}>
+        {[{id:'all',label:'All'},{id:'active',label:'Active'},{id:'closed',label:'Closed'},{id:'planning',label:'Planning'}].map(f => (
+          <button key={f.id} onClick={() => setFilter(f.id)} className="m-chip m-tap"
+            style={{
+              background: filter === f.id ? M.ink : M.card,
+              color: filter === f.id ? M.paper : M.ink2,
+              borderColor: filter === f.id ? M.ink : M.line,
+              fontWeight: filter === f.id ? 600 : 500,
+            }}>{f.label}</button>
+        ))}
+      </div>
+
+      <div className="m-body-scroll">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {evs.map(e => <EventCard key={e.id} ev={e} onClick={() => nav.push('eventDetail', { id: e.id })}/>)}
+        </div>
+      </div>
+
+      <TabBar active="events" onChange={(t) => nav.switchTab(t)}/>
+    </div>
+  );
+}
+
+function EventCard({ ev, onClick }) {
+  const palette = {
+    globe:    { bg: '#3F4E63', accent: '#DDE2EA' },
+    star:     { bg: '#A8782B', accent: '#F0E2C2' },
+    flame:    { bg: '#A86A4F', accent: '#F0DBC8' },
+    cal:      { bg: '#5C4977', accent: '#E3DCED' },
+  };
+  const p = palette[ev.icon] || palette.globe;
+  const status = ({
+    active:   { label: 'Active',   bg: '#DCEDDF', color: '#2E5A33' },
+    closed:   { label: 'Closed',   bg: '#EAE7E1', color: '#6E6657' },
+    planning: { label: 'Planning', bg: '#F0E2C2', color: '#7A5C20' },
+    upcoming: { label: 'Upcoming', bg: '#DDE2EA', color: '#3F4E63' },
+  }[ev.status]) || { label: ev.status || 'Draft', bg: '#EAE7E1', color: '#6E6657' };
+
+  return (
+    <div className="m-card m-tap" onClick={onClick} style={{ overflow: 'hidden', border: `1px solid ${M.line}` }}>
+      <div style={{
+        height: 120, background: `linear-gradient(135deg, ${p.bg} 0%, ${p.bg}dd 100%)`,
+        position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        <div style={{ position: 'absolute', inset: 0, opacity: 0.15,
+          backgroundImage: `radial-gradient(circle at 20% 30%, ${p.accent} 0%, transparent 40%), radial-gradient(circle at 80% 70%, ${p.accent} 0%, transparent 50%)` }}/>
+        <I name={ev.icon} size={42} color={p.accent}/>
+        <div style={{ position: 'absolute', top: 12, right: 12, padding: '4px 10px', borderRadius: 999, background: status.bg, color: status.color, fontSize: 10, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{status.label}</div>
+      </div>
+      <div style={{ padding: 16 }}>
+        <div className="m-h3" style={{ fontFamily: M.fontDisp, fontSize: 18, fontWeight: 600 }}>{ev.name}</div>
+        <div style={{ fontSize: 12, color: M.ink3, marginTop: 4 }}>
+          {fmtDate(ev.start)} – {fmtDate(ev.end)} · {ev.txCount} transactions
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 12 }}>
+          <div className="m-num" style={{ fontSize: 22, fontWeight: 600, fontFamily: M.fontDisp }}>{fmtEur(ev.total)}</div>
+          <div style={{ fontSize: 12, color: M.ink3 }}>total spent</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScreenEventDetail({ params }) {
+  const nav = useNav();
+  const ev = EVENTS.find(e => e.id === params?.id) || EVENTS[0];
+  const breakdown = [
+    { id: 'flights',     label: 'Flights',     icon: 'rocket', amount: 412.30, color: M.slate },
+    { id: 'lodging',     label: 'Lodging',     icon: 'house',  amount: 380.00, color: M.sage },
+    { id: 'food',        label: 'Food',        icon: 'fork',   amount: 248.50, color: M.clay },
+    { id: 'transport',   label: 'Transport',   icon: 'car',    amount: 86.40,  color: M.ochre },
+    { id: 'activities',  label: 'Activities',  icon: 'film',   amount: 59.10,  color: M.violet },
+  ];
+  const evTx = TRANSACTIONS.slice(0, 6);
+
+  return (
+    <div className="m-screen">
+      <div style={{ position: 'relative', height: 220, flexShrink: 0,
+        background: `linear-gradient(135deg, #3F4E63 0%, #2C3848 100%)`,
+        overflow: 'hidden',
+      }}>
+        <div style={{ position: 'absolute', inset: 0, opacity: 0.18,
+          backgroundImage: 'radial-gradient(circle at 30% 30%, #DDE2EA 0%, transparent 50%)' }}/>
+        <StatusBar dark/>
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px' }}>
+          <button className="m-iconbtn m-tap" onClick={() => nav.pop()} style={{ color: '#fff' }}><I name="arrowL" size={20} color="#fff"/></button>
+          <div style={{ display: 'flex', gap: 4 }}>
+            <button className="m-iconbtn m-tap" style={{ color: '#fff' }}><I name="edit" size={18} color="#fff"/></button>
+            <button className="m-iconbtn m-tap" style={{ color: '#fff' }}><I name="more" size={18} color="#fff"/></button>
+          </div>
+        </div>
+        <div style={{ position: 'absolute', left: 20, right: 20, bottom: 18 }}>
+          <div style={{ display: 'inline-block', padding: '4px 10px', borderRadius: 999, background: 'rgba(255,255,255,0.18)', color: '#fff', fontSize: 10, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 8 }}>Closed · 7 days</div>
+          <div style={{ fontFamily: M.fontDisp, fontSize: 26, fontWeight: 600, color: '#fff', letterSpacing: '-0.02em' }}>{ev.name}</div>
+          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.75)', marginTop: 2 }}>{fmtDate(ev.start)} – {fmtDate(ev.end)}</div>
+        </div>
+      </div>
+
+      <div className="m-body-scroll" style={{ paddingTop: 16 }}>
+        <div className="m-card" style={{ padding: 18, marginBottom: 14, border: `1px solid ${M.line}` }}>
+          <div className="m-cap">Total spent</div>
+          <div className="m-num" style={{ fontSize: 32, fontWeight: 600, fontFamily: M.fontDisp, marginTop: 4 }}>{fmtEur(ev.total)}</div>
+          <div style={{ fontSize: 12, color: M.ink3, marginTop: 2 }}>{ev.txCount} transactions · €{(ev.total/7).toFixed(0)}/day avg</div>
+          <div style={{ marginTop: 14 }}>
+            <StackedBar segments={breakdown.map(b => ({ value: b.amount, color: b.color }))} height={8}/>
+          </div>
+        </div>
+
+        <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Breakdown</div>
+        <div className="m-card" style={{ padding: '4px 16px', marginBottom: 14, border: `1px solid ${M.line}` }}>
+          {breakdown.map((b, i) => (
+            <React.Fragment key={b.id}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0' }}>
+                <div style={{ width: 32, height: 32, borderRadius: 9, background: M.paper2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <I name={b.icon} size={16} color={b.color}/>
+                </div>
+                <div style={{ flex: 1, fontSize: 14, fontWeight: 500 }}>{b.label}</div>
+                <div className="m-num" style={{ fontSize: 14, fontWeight: 600 }}>{fmtEur(b.amount)}</div>
+                <div style={{ fontSize: 11, color: M.ink3, minWidth: 36, textAlign: 'right' }}>{((b.amount/ev.total)*100).toFixed(0)}%</div>
+              </div>
+              {i < breakdown.length - 1 && <Divider/>}
+            </React.Fragment>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, paddingLeft: 4 }}>
+          <div className="m-cap">Transactions · {ev.txCount}</div>
+          <button className="m-tap" style={{ background: 'transparent', border: 'none', fontSize: 12, color: M.sage, fontWeight: 600 }}>+ Add</button>
+        </div>
+        <div className="m-card" style={{ padding: '0 16px', border: `1px solid ${M.line}`, marginBottom: 18 }}>
+          {evTx.map((t, i, a) => (
+            <React.Fragment key={t.id}>
+              <TxRow tx={t} showDate onClick={() => nav.push('txDetail', { id: t.id })}/>
+              {i < a.length - 1 && <Divider inset={50}/>}
+            </React.Fragment>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScreenEventCreate() {
+  const nav = useNav();
+  return (
+    <div className="m-screen">
+      <StatusBar/>
+      <AppBar title="New event"
+        leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="x" size={20}/></button>}
+        trailing={<button className="m-tap" style={{ background: 'transparent', border: 'none', fontSize: 14, fontWeight: 600, color: M.sage }} onClick={() => nav.pop()}>Save</button>}
+      />
+      <div className="m-body-scroll">
+        <div style={{
+          height: 140, borderRadius: 14, background: M.paper2, border: `1px dashed ${M.line}`,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          gap: 6, marginBottom: 18, color: M.ink3,
+        }}>
+          <I name="cam" size={28} color={M.ink3}/>
+          <div style={{ fontSize: 13, fontWeight: 500 }}>Add cover image</div>
+          <div style={{ fontSize: 11 }}>or pick a placeholder</div>
+        </div>
+
+        <div className="m-cap" style={{ marginBottom: 8 }}>Details</div>
+        <div className="m-card" style={{ padding: 4, marginBottom: 14, border: `1px solid ${M.line}` }}>
+          <FormRow label="Name" value="Lisbon trip 2026" placeholder="e.g. Anna's birthday"/>
+          <Divider inset={16}/>
+          <FormRow label="Type" value="Travel" caretR/>
+          <Divider inset={16}/>
+          <FormRow label="Start" value="12 Sep 2026" icon="cal"/>
+          <Divider inset={16}/>
+          <FormRow label="End" value="19 Sep 2026" icon="cal"/>
+        </div>
+
+        <div className="m-card" style={{ padding: 14, marginBottom: 14, border: `1px solid ${M.line}` }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 32, height: 32, borderRadius: 9, background: M.sageSoft, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <I name="link" size={16} color={M.sage}/>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>Auto-link transactions</div>
+              <div style={{ fontSize: 11, color: M.ink3, marginTop: 1 }}>In date range, tagged "travel"</div>
+            </div>
+            <Toggle on/>
+          </div>
+        </div>
+
+        <button className="m-btn sage m-tap" style={{ width: '100%' }} onClick={() => nav.pop()}>Create event</button>
+      </div>
+    </div>
+  );
+}
+
+function FormRow({ label, value, icon, caretR, placeholder }) {
+  const empty = !value;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 14px' }}>
+      <div style={{ fontSize: 12, color: M.ink3, width: 60 }}>{label}</div>
+      <div style={{ flex: 1, fontSize: 14, color: empty ? M.ink4 : M.ink, display: 'flex', alignItems: 'center', gap: 8 }}>
+        {icon && <I name={icon} size={14} color={M.ink3}/>}
+        {value || placeholder}
+      </div>
+      {caretR && <I name="caretR" size={14} color={M.ink4}/>}
+    </div>
+  );
+}
+
+function Toggle({ on }) {
+  return (
+    <div style={{
+      width: 40, height: 24, borderRadius: 999, background: on ? M.sage : M.line,
+      padding: 2, transition: 'background 0.2s',
+    }}>
+      <div style={{
+        width: 20, height: 20, borderRadius: 999, background: '#fff',
+        transform: on ? 'translateX(16px)' : 'none', transition: 'transform 0.2s',
+        boxShadow: '0 1px 2px rgba(0,0,0,0.2)',
+      }}/>
+    </div>
+  );
+}
+  </script>
+
+  <script type="text/babel">
+// ── screens-profile.jsx ────────────────────────────────────────
+
+function ScreenProfile() {
+  const nav = useNav();
+  return (
+    <div className="m-screen">
+      <StatusBar/>
+      <AppBar title="Profile" large
+        trailing={<button className="m-iconbtn m-tap" onClick={() => nav.push('settings')}><I name="sliders" size={20}/></button>}
+      />
+      <div className="m-body-scroll">
+        <div className="m-card" style={{ padding: 18, marginBottom: 16, border: `1px solid ${M.line}`, display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{
+            width: 56, height: 56, borderRadius: 999,
+            background: `linear-gradient(135deg, ${M.sage} 0%, ${M.sageDk || '#3D5A42'} 100%)`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 600, fontSize: 22, fontFamily: M.fontDisp,
+          }}>D</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 17, fontWeight: 600 }}>Demo van der Berg</div>
+            <div style={{ fontSize: 12, color: M.ink3, marginTop: 2 }}>demo@munni.app</div>
+          </div>
+          <I name="caretR" size={16} color={M.ink4}/>
+        </div>
+
+        <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Profile</div>
+        <div className="m-card" style={{ padding: '4px 16px', marginBottom: 16, border: `1px solid ${M.line}` }}>
+          <ProfileRow active label="Personal" sub="2 accounts · 1 card" icon="user"/>
+          <Divider inset={48}/>
+          <ProfileRow label="Family" sub="3 accounts · joint with Anna" icon="house"/>
+          <Divider inset={48}/>
+          <ProfileRow label="Freelance" sub="VAT registered · NL" icon="bag"/>
+          <Divider inset={48}/>
+          <div className="m-tap" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 0', color: M.sage }}>
+            <div style={{ width: 32, height: 32, borderRadius: 9, background: M.sageSoft, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <I name="plus" size={16} color={M.sage}/>
+            </div>
+            <div style={{ flex: 1, fontSize: 14, fontWeight: 600 }}>Add profile</div>
+          </div>
+        </div>
+
+        <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Manage</div>
+        <div className="m-card" style={{ padding: '4px 16px', marginBottom: 16, border: `1px solid ${M.line}` }}>
+          <ProfileLink icon="card" label="Bank accounts" sub="2 connected" onClick={() => nav.push('accounts')}/>
+          <Divider inset={48}/>
+          <ProfileLink icon="receipt" label="Recurring" sub="9 subscriptions · 4 fixed" onClick={() => nav.push('recurring')}/>
+          <Divider inset={48}/>
+          <ProfileLink icon="link" label="Integrations" sub="3 merchants connected"/>
+          <Divider inset={48}/>
+          <ProfileLink icon="cal" label="Periods" sub="Monthly · 20th"/>
+        </div>
+
+        <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Account</div>
+        <div className="m-card" style={{ padding: '4px 16px', marginBottom: 16, border: `1px solid ${M.line}` }}>
+          <ProfileLink icon="bell" label="Notifications"/>
+          <Divider inset={48}/>
+          <ProfileLink icon="lock" label="Privacy & security"/>
+          <Divider inset={48}/>
+          <ProfileLink icon="help" label="Help & support"/>
+          <Divider inset={48}/>
+          <ProfileLink icon="logout" label="Sign out" danger/>
+        </div>
+
+        <div style={{ textAlign: 'center', fontSize: 11, color: M.ink4, padding: '12px 0 24px' }}>
+          munni · v1.0.0 · build 248
+        </div>
+      </div>
+
+      <TabBar active="profile" onChange={(t) => nav.switchTab(t)}/>
+    </div>
+  );
+}
+
+function ProfileRow({ active, label, sub, icon }) {
+  return (
+    <div className="m-tap" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0' }}>
+      <div style={{ width: 32, height: 32, borderRadius: 9, background: active ? M.sage : M.paper2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <I name={icon} size={16} color={active ? '#fff' : M.ink2}/>
+      </div>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 14, fontWeight: 600 }}>{label}</div>
+        <div style={{ fontSize: 11, color: M.ink3, marginTop: 1 }}>{sub}</div>
+      </div>
+      {active ? (
+        <I name="check" size={16} color={M.sage}/>
+      ) : (
+        <I name="caretR" size={14} color={M.ink4}/>
+      )}
+    </div>
+  );
+}
+
+function ProfileLink({ icon, label, sub, danger, onClick }) {
+  return (
+    <div className="m-tap" onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 0' }}>
+      <div style={{ width: 32, height: 32, borderRadius: 9, background: M.paper2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <I name={icon} size={16} color={danger ? M.clay : M.ink2}/>
+      </div>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 14, fontWeight: 500, color: danger ? M.clay : M.ink }}>{label}</div>
+        {sub && <div style={{ fontSize: 11, color: M.ink3, marginTop: 1 }}>{sub}</div>}
+      </div>
+      {!danger && <I name="caretR" size={14} color={M.ink4}/>}
+    </div>
+  );
+}
+
+function ScreenSettings() {
+  const nav = useNav();
+  return (
+    <div className="m-screen">
+      <StatusBar/>
+      <AppBar title="Settings"
+        leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
+      />
+      <div className="m-body-scroll">
+        <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Appearance</div>
+        <div className="m-card" style={{ padding: '4px 16px', marginBottom: 14, border: `1px solid ${M.line}` }}>
+          <FormRow label="Theme" value="System" caretR/>
+          <Divider inset={0}/>
+          <FormRow label="Currency" value="EUR (€)" caretR/>
+          <Divider inset={0}/>
+          <FormRow label="Language" value="English" caretR/>
+        </div>
+
+        <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Behaviour</div>
+        <div className="m-card" style={{ padding: '4px 16px', marginBottom: 14, border: `1px solid ${M.line}` }}>
+          <SettingToggle label="Auto-categorize" sub="Use AI to classify new tx" on/>
+          <Divider inset={0}/>
+          <SettingToggle label="Daily summary" sub="9:00 push notification" on/>
+          <Divider inset={0}/>
+          <SettingToggle label="Round-up to savings" sub="Round purchases up to nearest €1"/>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SettingToggle({ label, sub, on: onProp }) {
+  const [on, setOn] = React.useState(!!onProp);
+  return (
+    <div className="m-tap" onClick={() => setOn(!on)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 0' }}>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 14, fontWeight: 500 }}>{label}</div>
+        {sub && <div style={{ fontSize: 11, color: M.ink3, marginTop: 2 }}>{sub}</div>}
+      </div>
+      <Toggle on={on}/>
+    </div>
+  );
+}
+
+function ScreenAccounts() {
+  const nav = useNav();
+  return (
+    <div className="m-screen">
+      <StatusBar/>
+      <AppBar title="Bank accounts"
+        leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
+        trailing={<button className="m-iconbtn m-tap"><I name="plus" size={20}/></button>}
+      />
+      <div className="m-body-scroll">
+        <div className="m-card" style={{ padding: 18, marginBottom: 16, border: `1px solid ${M.line}` }}>
+          <div className="m-cap">Combined balance</div>
+          <div className="m-num" style={{ fontSize: 32, fontWeight: 600, fontFamily: M.fontDisp, marginTop: 4 }}>
+            {fmtEur(ACCOUNTS.reduce((s, a) => s + a.balance, 0))}
+          </div>
+          <div style={{ fontSize: 12, color: M.ink3, marginTop: 2 }}>across {ACCOUNTS.length} accounts</div>
+        </div>
+
+        <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Connected accounts</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {ACCOUNTS.map(a => (
+            <div key={a.id} className="m-card" style={{ padding: 16, border: `1px solid ${M.line}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ width: 38, height: 38, borderRadius: 10, background: a.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <I name={a.type === 'savings' ? 'piggy' : 'card'} size={18} color="#fff"/>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>{a.name}</div>
+                  <div style={{ fontSize: 11, color: M.ink3, fontFamily: M.fontMono, marginTop: 2 }}>{a.iban}</div>
+                </div>
+                <div className="m-num" style={{ fontSize: 16, fontWeight: 600 }}>{fmtEur(a.balance)}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ marginTop: 18, padding: 16, borderRadius: 14, background: M.sageSoft, display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+          <I name="lock" size={18} color={M.sage}/>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: M.sage }}>Read-only access</div>
+            <div style={{ fontSize: 12, color: M.ink2, marginTop: 4, lineHeight: 1.45 }}>
+              munni uses open banking to read your transactions. We can never move money on your behalf.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScreenRecurring() {
+  const nav = useNav();
+  const [tab, setTab] = React.useState('subs');
+  const subs = RECURRING.filter(r => r.cat !== 'housing' && r.cat !== 'utilities');
+  const fixed = RECURRING.filter(r => r.cat === 'housing' || r.cat === 'utilities');
+  const items = tab === 'subs' ? subs : fixed;
+  const total = items.reduce((s, r) => s + Math.abs(r.amount), 0);
+
+  return (
+    <div className="m-screen">
+      <StatusBar/>
+      <AppBar title="Recurring"
+        leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
+        trailing={<button className="m-iconbtn m-tap"><I name="plus" size={20}/></button>}
+      />
+
+      <div style={{ padding: '0 20px 14px', display: 'flex', gap: 6, flexShrink: 0 }}>
+        {[{id:'subs',label:`Subscriptions · ${subs.length}`},{id:'fixed',label:`Fixed · ${fixed.length}`}].map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)} className="m-chip m-tap"
+            style={{
+              background: tab === t.id ? M.ink : M.card,
+              color: tab === t.id ? M.paper : M.ink2,
+              borderColor: tab === t.id ? M.ink : M.line,
+              fontWeight: tab === t.id ? 600 : 500,
+            }}>{t.label}</button>
+        ))}
+      </div>
+
+      <div className="m-body-scroll">
+        <div className="m-card" style={{ padding: 16, marginBottom: 14, border: `1px solid ${M.line}` }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <div className="m-cap">Total per period</div>
+            <div style={{ fontSize: 11, color: M.ink3 }}>{(total * 12).toFixed(0)} / year</div>
+          </div>
+          <div className="m-num" style={{ fontSize: 28, fontWeight: 600, fontFamily: M.fontDisp, marginTop: 4 }}>{fmtEur(total)}</div>
+        </div>
+
+        <div className="m-card" style={{ padding: '0 16px', border: `1px solid ${M.line}` }}>
+          {items.map((r, i, a) => (
+            <React.Fragment key={r.id}>
+              <div className="m-tap" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 0' }}>
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: M.paper2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <I name={r.icon} size={18} color={M.ink2}/>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 500 }}>{r.name}</div>
+                  <div style={{ fontSize: 11, color: M.ink3, marginTop: 2 }}>{r.every} · next {r.next}</div>
+                </div>
+                <div className="m-num" style={{ fontSize: 14, fontWeight: 600 }}>{fmtEur(r.amount)}</div>
+              </div>
+              {i < a.length - 1 && <Divider inset={48}/>}
+            </React.Fragment>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+  </script>
+
+  <script type="text/babel">
+// ── screens-budgets.jsx ────────────────────────────────────────
+
+function ScreenBudgets() {
+  const nav = useNav();
+  const sorted = [...BUDGETS].sort((a, b) => {
+    const ra = a.spent / a.total;
+    const rb = b.spent / b.total;
+    return rb - ra;
+  });
+
+  return (
+    <div className="m-screen">
+      <StatusBar/>
+      <AppBar title="Budgets"
+        leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
+        trailing={<button className="m-iconbtn m-tap" onClick={() => nav.push('budgetCreate')}><I name="plus" size={20}/></button>}
+      />
+      <div className="m-body-scroll">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {sorted.map(b => <BudgetCard key={b.id} b={b} onClick={() => nav.push('budgetDetail', { id: b.id })}/>)}
+        </div>
+
+        <button className="m-btn outline m-tap" style={{ width: '100%', marginTop: 18 }} onClick={() => nav.push('budgetCreate')}>
+          <I name="plus" size={16}/> New budget
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function BudgetCard({ b, onClick }) {
+  const ratio = b.spent / b.total;
+  const over = ratio > 1;
+  const close = ratio > 0.85 && !over;
+  const status = over ? { color: M.clay, soft: M.claySoft, label: `${fmtEur(b.spent - b.total).replace('−','')} over` }
+    : close ? { color: M.ochre, soft: M.ochreSoft, label: `${fmtEur(b.total - b.spent)} left` }
+    : { color: M.sage, soft: M.sageSoft, label: `${fmtEur(b.total - b.spent)} left` };
+  const remaining = Math.max(0, b.total - b.spent);
+  const pct = Math.min(100, ratio * 100);
+
+  return (
+    <div className="m-card m-tap" onClick={onClick} style={{ padding: 16, border: `1px solid ${M.line}` }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ width: 38, height: 38, borderRadius: 10, background: status.soft, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <I name={b.icon} size={18} color={status.color}/>
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <div style={{ fontSize: 15, fontWeight: 600 }}>{b.name}</div>
+            <div className="m-num" style={{ fontSize: 14, fontWeight: 600, color: status.color }}>{status.label}</div>
+          </div>
+          <div style={{ fontSize: 11, color: M.ink3, marginTop: 2 }}>{b.period} · resets {b.renew}</div>
+        </div>
+      </div>
+      <div style={{ marginTop: 12, height: 6, borderRadius: 999, background: M.line2, overflow: 'hidden', position: 'relative' }}>
+        <div style={{ width: `${Math.min(100, pct)}%`, height: '100%', background: status.color, borderRadius: 999 }}/>
+        {over && <div style={{ position: 'absolute', inset: 0, background: `repeating-linear-gradient(45deg, transparent 0 4px, rgba(255,255,255,0.3) 4px 8px)` }}/>}
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 11, color: M.ink3 }}>
+        <span><span className="m-num" style={{ color: M.ink2, fontWeight: 600 }}>{fmtEur(b.spent)}</span> spent</span>
+        <span>of {fmtEur(b.total)}</span>
+      </div>
+      {b.stack && (
+        <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 8, background: M.paper2, fontSize: 11, color: M.ink2, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <I name="box" size={13} color={M.ink3}/>
+          Carry-over: <span className="m-num" style={{ fontWeight: 600 }}>{fmtEur(b.stackCur)}</span> · max <span className="m-num">{fmtEur(b.stackMax)}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ScreenBudgetDetail({ params }) {
+  const nav = useNav();
+  const b = BUDGETS.find(x => x.id === params?.id) || BUDGETS[0];
+  const txs = TRANSACTIONS.filter(t => b.cats.includes(t.cat));
+  const ratio = b.spent / b.total;
+  const over = ratio > 1;
+
+  return (
+    <div className="m-screen">
+      <StatusBar/>
+      <AppBar title={b.name}
+        leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
+        trailing={<button className="m-iconbtn m-tap"><I name="edit" size={18}/></button>}
+      />
+      <div className="m-body-scroll">
+        <div className="m-card" style={{ padding: 18, marginBottom: 14, border: `1px solid ${M.line}` }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div style={{ width: 90, height: 90, position: 'relative' }}>
+              <Donut size={90} thickness={10} data={[
+                { value: Math.min(b.spent, b.total), color: over ? M.clay : (ratio > 0.85 ? M.ochre : M.sage) },
+                { value: Math.max(0, b.total - b.spent), color: M.line2 },
+              ]} center={
+                <div style={{ textAlign: 'center' }}>
+                  <div className="m-num" style={{ fontSize: 16, fontWeight: 700 }}>{(ratio * 100).toFixed(0)}%</div>
+                </div>
+              }/>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div className="m-cap">Spent of {fmtEur(b.total)}</div>
+              <div className="m-num" style={{ fontSize: 26, fontWeight: 600, fontFamily: M.fontDisp, marginTop: 4 }}>{fmtEur(b.spent)}</div>
+              <div style={{ fontSize: 12, color: over ? M.clay : M.ink3, marginTop: 4, fontWeight: over ? 600 : 400 }}>
+                {over ? `${fmtEur(b.spent - b.total).replace('−','')} over budget` : `${fmtEur(b.total - b.spent)} remaining`}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Categories</div>
+        <div className="m-card" style={{ padding: '4px 16px', marginBottom: 14, border: `1px solid ${M.line}` }}>
+          {b.cats.map((cId, i) => {
+            const c = CATEGORIES[cId];
+            const cTotal = TRANSACTIONS.filter(t => t.cat === cId).reduce((s, t) => s + Math.abs(t.amount), 0);
+            return (
+              <React.Fragment key={cId}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0' }}>
+                  <I name={c.icon} size={16} color={M.ink2}/>
+                  <div style={{ flex: 1, fontSize: 14 }}>{c.name}</div>
+                  <div className="m-num" style={{ fontSize: 14, fontWeight: 600 }}>{fmtEur(cTotal)}</div>
+                </div>
+                {i < b.cats.length - 1 && <Divider/>}
+              </React.Fragment>
+            );
+          })}
+        </div>
+
+        <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Transactions · {txs.length}</div>
+        <div className="m-card" style={{ padding: '0 16px', border: `1px solid ${M.line}` }}>
+          {txs.map((t, i, a) => (
+            <React.Fragment key={t.id}>
+              <TxRow tx={t} showDate onClick={() => nav.push('txDetail', { id: t.id })}/>
+              {i < a.length - 1 && <Divider inset={50}/>}
+            </React.Fragment>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScreenBudgetCreate() {
+  const nav = useNav();
+  const [icon, setIcon] = React.useState('fork');
+  const icons = ['fork','shop','car','flame','film','star','health','bag','globe','rocket'];
+  const [stack, setStack] = React.useState(false);
+
+  return (
+    <div className="m-screen">
+      <StatusBar/>
+      <AppBar title="New budget"
+        leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="x" size={20}/></button>}
+        trailing={<button className="m-tap" style={{ background: 'transparent', border: 'none', fontSize: 14, fontWeight: 600, color: M.sage }} onClick={() => nav.pop()}>Save</button>}
+      />
+      <div className="m-body-scroll">
+        <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Icon</div>
+        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4, marginBottom: 14 }}>
+          {icons.map(i => (
+            <button key={i} onClick={() => setIcon(i)} className="m-tap" style={{
+              flexShrink: 0, width: 48, height: 48, borderRadius: 12,
+              background: icon === i ? M.ink : M.card,
+              border: `1px solid ${icon === i ? M.ink : M.line}`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <I name={i} size={20} color={icon === i ? '#fff' : M.ink2}/>
+            </button>
+          ))}
+        </div>
+
+        <div className="m-card" style={{ padding: 4, marginBottom: 14, border: `1px solid ${M.line}` }}>
+          <FormRow label="Name" value="Restaurants" placeholder="e.g. Eating out"/>
+          <Divider inset={16}/>
+          <FormRow label="Amount" value="€120,00" icon="wallet"/>
+          <Divider inset={16}/>
+          <FormRow label="Period" value="Weekly" caretR/>
+        </div>
+
+        <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Categories · 2 selected</div>
+        <div className="m-card" style={{ padding: '4px 16px', marginBottom: 14, border: `1px solid ${M.line}` }}>
+          {[
+            { id: 'restaurants', name: 'Restaurants', selected: true },
+            { id: 'coffee', name: 'Coffee & bars', selected: true },
+            { id: 'groceries', name: 'Groceries', disabled: 'In Groceries budget' },
+            { id: 'transport', name: 'Transport' },
+            { id: 'health', name: 'Health' },
+          ].map((c, i, a) => (
+            <React.Fragment key={c.id}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', opacity: c.disabled ? 0.4 : 1 }}>
+                <div style={{
+                  width: 20, height: 20, borderRadius: 6,
+                  border: `1.5px solid ${c.selected ? M.sage : M.line}`,
+                  background: c.selected ? M.sage : 'transparent',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  {c.selected && <I name="check" size={12} color="#fff" stroke={2.5}/>}
+                </div>
+                <div style={{ flex: 1, fontSize: 14 }}>{c.name}</div>
+                {c.disabled && <span style={{ fontSize: 10, padding: '3px 7px', borderRadius: 999, background: M.paper2, color: M.ink3, fontWeight: 500 }}>{c.disabled}</span>}
+              </div>
+              {i < a.length - 1 && <Divider/>}
+            </React.Fragment>
+          ))}
+        </div>
+
+        <div className="m-card" style={{ padding: 16, marginBottom: 14, border: `1px solid ${M.line}` }}>
+          <div className="m-tap" onClick={() => setStack(!stack)} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>Stack carry-over</div>
+              <div style={{ fontSize: 11, color: M.ink3, marginTop: 2 }}>Unused budget rolls into the next period</div>
+            </div>
+            <Toggle on={stack}/>
+          </div>
+          {stack && (
+            <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${M.line2}` }}>
+              <FormRow label="Max" value="€480,00"/>
+              <div style={{ marginTop: 12, display: 'flex', gap: 4, alignItems: 'flex-end', height: 60 }}>
+                {[40, 60, 80, 100, 80, 100].map((h, i) => (
+                  <div key={i} style={{ flex: 1, height: h * 0.6, background: i === 5 ? M.sage : M.sageSoft, borderRadius: 3 }}/>
+                ))}
+              </div>
+              <div style={{ fontSize: 11, color: M.ink3, marginTop: 6 }}>Last 6 weeks · accumulated carry</div>
+            </div>
+          )}
+        </div>
+
+        <button className="m-btn sage m-tap" style={{ width: '100%', marginBottom: 18 }} onClick={() => nav.pop()}>Create budget</button>
+      </div>
+    </div>
+  );
+}
+  </script>
+
+  <script type="text/babel">
+// ── screens-allocate.jsx ───────────────────────────────────────
+
+function ScreenAllocate() {
+  const nav = useNav();
+  const allocated = 1620;
+  const spent = 980;
+  const left = allocated - spent;
+  const unallocated = 200;
+
+  const subscriptions = RECURRING.filter(r => !['housing','utilities'].includes(r.cat));
+  const fixed = RECURRING.filter(r => ['housing','utilities'].includes(r.cat));
+
+  return (
+    <div className="m-screen">
+      <StatusBar/>
+      <AppBar title="Allocate"
+        leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
+        trailing={<button className="m-iconbtn m-tap" onClick={() => nav.push('allocateYear')}><I name="cal" size={18}/></button>}
+      />
+
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 18, padding: '0 20px 14px', flexShrink: 0 }}>
+        <button className="m-iconbtn m-tap"><I name="arrowL" size={18}/></button>
+        <div style={{ textAlign: 'center' }}>
+          <div className="m-cap">Period</div>
+          <div style={{ fontSize: 14, fontWeight: 600, marginTop: 2 }}>20 Jan – 19 Feb</div>
+        </div>
+        <button className="m-iconbtn m-tap"><I name="arrowR" size={18} color={M.ink4}/></button>
+      </div>
+
+      <div className="m-body-scroll">
+        <div className="m-card" style={{ padding: 18, marginBottom: 16, border: `1px solid ${M.line}` }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <Stat label="Allocated" value={fmtEur(allocated)} color={M.ink}/>
+            <Stat label="Spent" value={fmtEur(spent)} color={M.clay}/>
+            <Stat label="Left" value={fmtEur(left)} color={M.sage}/>
+            <Stat label="Unallocated" value={fmtEur(unallocated)} color={M.ochre}/>
+          </div>
+          <div style={{ marginTop: 14 }}>
+            <StackedBar segments={[
+              { value: spent, color: M.ink },
+              { value: left, color: M.sage },
+              { value: unallocated, color: M.ochre },
+            ]} height={8}/>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8, paddingLeft: 4 }}>
+          <div className="m-cap">Subscriptions · {subscriptions.length}</div>
+          <div className="m-num" style={{ fontSize: 12, color: M.ink3, fontWeight: 600 }}>{fmtEur(subscriptions.reduce((s, r) => s + Math.abs(r.amount), 0))}/mo</div>
+        </div>
+        <div className="m-card" style={{ padding: '4px 16px', marginBottom: 16, border: `1px solid ${M.line}` }}>
+          {subscriptions.map((r, i, a) => (
+            <React.Fragment key={r.id}>
+              <AllocateRow item={r} actionable onClick={() => nav.push('allocateTopic', { id: r.id })}/>
+              {i < a.length - 1 && <Divider inset={48}/>}
+            </React.Fragment>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8, paddingLeft: 4 }}>
+          <div className="m-cap">Fixed costs · {fixed.length}</div>
+          <div className="m-num" style={{ fontSize: 12, color: M.ink3, fontWeight: 600 }}>{fmtEur(fixed.reduce((s, r) => s + Math.abs(r.amount), 0))}/mo</div>
+        </div>
+        <div className="m-card" style={{ padding: '4px 16px', marginBottom: 16, border: `1px solid ${M.line}` }}>
+          {fixed.map((r, i, a) => (
+            <React.Fragment key={r.id}>
+              <AllocateRow item={r} onClick={() => nav.push('allocateTopic', { id: r.id })}/>
+              {i < a.length - 1 && <Divider inset={48}/>}
+            </React.Fragment>
+          ))}
+        </div>
+
+        <button className="m-btn outline m-tap" style={{ width: '100%', marginBottom: 18 }}>
+          <I name="plus" size={16}/> Add allocation
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Stat({ label, value, color }) {
+  return (
+    <div>
+      <div className="m-cap">{label}</div>
+      <div className="m-num" style={{ fontSize: 18, fontWeight: 600, fontFamily: M.fontDisp, color, marginTop: 2 }}>{value}</div>
+    </div>
+  );
+}
+
+function AllocateRow({ item, actionable, onClick }) {
+  return (
+    <div className="m-tap" onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0' }}>
+      <div style={{ width: 36, height: 36, borderRadius: 10, background: M.paper2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <I name={item.icon} size={16} color={M.ink2}/>
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 14, fontWeight: 500 }}>{item.name}</div>
+        <div style={{ fontSize: 11, color: M.ink3, marginTop: 2 }}>next {item.next}{actionable ? ' · cancel anytime' : ''}</div>
+      </div>
+      <div className="m-num" style={{ fontSize: 14, fontWeight: 600 }}>{fmtEur(item.amount)}</div>
+      <I name="caretR" size={12} color={M.ink4}/>
+    </div>
+  );
+}
+
+function ScreenAllocateTopic({ params }) {
+  const nav = useNav();
+  const item = RECURRING.find(r => r.id === params?.id) || RECURRING[0];
+  const history = [Math.abs(item.amount) * 1.05, Math.abs(item.amount) * 0.98, Math.abs(item.amount) * 1.02, Math.abs(item.amount) * 1, Math.abs(item.amount), Math.abs(item.amount)];
+
+  return (
+    <div className="m-screen">
+      <StatusBar/>
+      <AppBar title=""
+        leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
+        trailing={<button className="m-iconbtn m-tap"><I name="edit" size={18}/></button>}
+      />
+      <div className="m-body-scroll">
+        <div style={{ textAlign: 'center', padding: '8px 0 24px' }}>
+          <div style={{ width: 64, height: 64, borderRadius: 18, background: M.paper2, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
+            <I name={item.icon} size={28} color={M.ink2}/>
+          </div>
+          <div className="m-h2">{item.name}</div>
+          <div style={{ fontSize: 13, color: M.ink3, marginTop: 4 }}>{item.every} · next {item.next}</div>
+          <div className="m-num" style={{ fontSize: 32, fontWeight: 600, fontFamily: M.fontDisp, marginTop: 14, letterSpacing: '-0.02em' }}>{fmtEur(item.amount)}</div>
+          <div style={{ fontSize: 12, color: M.ink3, marginTop: 4 }}>per period</div>
+        </div>
+
+        <div className="m-card" style={{ padding: 18, marginBottom: 14, border: `1px solid ${M.line}` }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+            <div className="m-cap">History · 6 periods</div>
+            <div style={{ fontSize: 11, color: M.ink3 }}>vs allocated <span style={{ color: M.sage, fontWeight: 600 }}>—— —— ——</span></div>
+          </div>
+          <BarChart data={history} labels={['Sep','Oct','Nov','Dec','Jan','Feb']} height={84} accent={M.ink}/>
+        </div>
+
+        <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Last transactions</div>
+        <div className="m-card" style={{ padding: '0 16px', marginBottom: 18, border: `1px solid ${M.line}` }}>
+          {TRANSACTIONS.slice(0, 3).map((t, i, a) => (
+            <React.Fragment key={t.id}>
+              <TxRow tx={t} showDate onClick={() => nav.push('txDetail', { id: t.id })}/>
+              {i < a.length - 1 && <Divider inset={50}/>}
+            </React.Fragment>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="m-btn outline m-tap" style={{ flex: 1 }}>Move funds</button>
+          <button className="m-btn outline m-tap" style={{ flex: 1, color: M.clay, borderColor: M.claySoft }}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+  </script>
+
+  <script type="text/babel">
+// ── screens-investment.jsx ─────────────────────────────────────
+
+function ScreenInvestment() {
+  const nav = useNav();
+  const change = PORTFOLIO.total - PORTFOLIO.contributed;
+  const changePct = (change / PORTFOLIO.contributed) * 100;
+
+  return (
+    <div className="m-screen">
+      <StatusBar/>
+      <AppBar title="Investment"
+        leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
+        trailing={<button className="m-iconbtn m-tap"><I name="more" size={18}/></button>}
+      />
+      <div className="m-body-scroll">
+        <div style={{ textAlign: 'center', padding: '8px 0 22px' }}>
+          <div className="m-cap">Portfolio value</div>
+          <div className="m-num" style={{ fontSize: 38, fontWeight: 600, fontFamily: M.fontDisp, letterSpacing: '-0.025em', marginTop: 4 }}>{fmtEur(PORTFOLIO.total)}</div>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 6, padding: '4px 10px', borderRadius: 999, background: change >= 0 ? M.sageSoft : M.claySoft }}>
+            <I name={change >= 0 ? 'arrow-up-right' : 'arrow-dn-right'} size={12} color={change >= 0 ? M.sage : M.clay}/>
+            <span className="m-num" style={{ fontSize: 12, fontWeight: 600, color: change >= 0 ? M.sage : M.clay }}>
+              {fmtEur(change)} · {changePct.toFixed(1)}%
+            </span>
+          </div>
+        </div>
+
+        <div className="m-card" style={{ padding: 16, marginBottom: 16, border: `1px solid ${M.line}` }}>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+            {['1W','1M','3M','1Y','ALL'].map((p, i) => (
+              <button key={p} className="m-tap" style={{
+                flex: 1, height: 28, borderRadius: 8, border: 'none',
+                background: i === 1 ? M.ink : 'transparent', color: i === 1 ? '#fff' : M.ink3,
+                fontSize: 11, fontWeight: 600,
+              }}>{p}</button>
+            ))}
+          </div>
+          <LineChart data={PORTFOLIO.curve} height={120} color={M.sage} fill="rgba(74,106,79,0.08)"/>
+        </div>
+
+        <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>This period</div>
+        <div className="m-card" style={{ padding: 16, marginBottom: 16, border: `1px solid ${M.line}` }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+            <Stat label="Set aside" value={fmtEur(300)} color={M.ink}/>
+            <Stat label="Deployed" value={fmtEur(250)} color={M.sage}/>
+            <Stat label="Queued" value={fmtEur(50)} color={M.ochre}/>
+          </div>
+        </div>
+
+        <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Holdings · {PORTFOLIO.positions.length}</div>
+        <div className="m-card" style={{ padding: '4px 16px', marginBottom: 18, border: `1px solid ${M.line}` }}>
+          {PORTFOLIO.positions.map((h, i, a) => (
+            <React.Fragment key={h.ticker}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 0' }}>
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: M.slate, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 600, fontSize: 11, fontFamily: M.fontMono }}>
+                  {h.ticker.slice(0, 4)}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>{h.name}</div>
+                  <div style={{ fontSize: 11, color: M.ink3, marginTop: 1 }}>{h.alloc}% allocation</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div className="m-num" style={{ fontSize: 14, fontWeight: 600 }}>{fmtEur(h.value)}</div>
+                  <div className="m-num" style={{ fontSize: 11, color: h.change >= 0 ? M.sage : M.clay, marginTop: 1, fontWeight: 600 }}>
+                    {h.change >= 0 ? '+' : ''}{h.change.toFixed(2)}%
+                  </div>
+                </div>
+              </div>
+              {i < a.length - 1 && <Divider inset={48}/>}
+            </React.Fragment>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScreenInvestmentConnect() {
+  const nav = useNav();
+  const brokers = [
+    { id: 'degiro',     name: 'DEGIRO',         sub: 'NL · most popular', supported: true },
+    { id: 'trade-rep',  name: 'Trade Republic', sub: 'EU broker',         supported: true },
+    { id: 'ibkr',       name: 'Interactive Brokers', sub: 'Global',       supported: true },
+    { id: 'bux',        name: 'BUX Zero',       sub: 'NL',                 supported: true },
+    { id: 'etoro',      name: 'eToro',          sub: 'Global',             supported: false },
+  ];
+
+  return (
+    <div className="m-screen">
+      <StatusBar/>
+      <AppBar title="Connect broker"
+        leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
+      />
+      <div className="m-body-scroll">
+        <div style={{ padding: 16, borderRadius: 14, background: M.sageSoft, marginBottom: 16, display: 'flex', gap: 12 }}>
+          <I name="lock" size={20} color={M.sage}/>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: M.sage }}>Read-only access</div>
+            <div style={{ fontSize: 12, color: M.ink2, marginTop: 4, lineHeight: 1.45 }}>
+              munni reads holdings &amp; history. No trading permissions are ever requested.
+            </div>
+          </div>
+        </div>
+
+        <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Supported brokers</div>
+        <div className="m-card" style={{ padding: '4px 16px', marginBottom: 16, border: `1px solid ${M.line}` }}>
+          {brokers.map((b, i, a) => (
+            <React.Fragment key={b.id}>
+              <div className="m-tap" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 0', opacity: b.supported ? 1 : 0.5 }}>
+                <div style={{ width: 38, height: 38, borderRadius: 10, background: M.paper2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontFamily: M.fontDisp, fontSize: 16 }}>
+                  {b.name[0]}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>{b.name}</div>
+                  <div style={{ fontSize: 11, color: M.ink3, marginTop: 1 }}>{b.sub}</div>
+                </div>
+                {b.supported ? <I name="caretR" size={14} color={M.ink4}/> : <span style={{ fontSize: 10, color: M.ink3, fontWeight: 600 }}>Soon</span>}
+              </div>
+              {i < a.length - 1 && <Divider inset={50}/>}
+            </React.Fragment>
+          ))}
+        </div>
+
+        <button className="m-btn outline m-tap" style={{ width: '100%' }}>
+          <I name="edit" size={16}/> Enter manually
+        </button>
+        <div style={{ fontSize: 11, color: M.ink3, textAlign: 'center', marginTop: 8, lineHeight: 1.5 }}>
+          Don't see your broker? Track holdings by entering<br/>them manually. Prices still update automatically.
+        </div>
+      </div>
+    </div>
+  );
+}
+  </script>
+
+  <script type="text/babel">
+// ── screens-goals.jsx ──────────────────────────────────────────
+
+function ScreenGoals() {
+  const nav = useNav();
+  const active = GOALS.filter(g => g.current < g.target);
+  const achieved = GOALS.filter(g => g.current >= g.target);
+
+  return (
+    <div className="m-screen">
+      <StatusBar/>
+      <AppBar title="Goals"
+        leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
+        trailing={<button className="m-iconbtn m-tap"><I name="plus" size={20}/></button>}
+      />
+      <div className="m-body-scroll">
+        <div className="m-card" style={{ padding: 18, marginBottom: 16, border: `1px solid ${M.line}` }}>
+          <div className="m-cap">Saving balance</div>
+          <div className="m-num" style={{ fontSize: 28, fontWeight: 600, fontFamily: M.fontDisp, marginTop: 4 }}>€3 120,50</div>
+          <div style={{ fontSize: 12, color: M.ink3, marginTop: 2 }}>across {GOALS.length} goals · linked to ING Savings</div>
+
+          <div style={{ marginTop: 14 }}>
+            <StackedBar segments={GOALS.map(g => ({ value: g.current, color: g.color }))} height={8}/>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+            {GOALS.map(g => (
+              <div key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11 }}>
+                <div style={{ width: 7, height: 7, borderRadius: 2, background: g.color }}/>
+                <span style={{ color: M.ink2 }}>{g.name}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, paddingLeft: 4 }}>
+          <div className="m-cap">Active · {active.length}</div>
+          <button className="m-tap" style={{ background: 'transparent', border: 'none', fontSize: 12, color: M.sage, fontWeight: 600 }}>Auto-allocate</button>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {active.map(g => <GoalCardLarge key={g.id} g={g} onClick={() => nav.push('goalDetail', { id: g.id })}/>)}
+        </div>
+
+        {achieved.length > 0 && (
+          <>
+            <div className="m-cap" style={{ marginTop: 18, marginBottom: 8, paddingLeft: 4 }}>Achieved · {achieved.length}</div>
+            {achieved.map(g => (
+              <div key={g.id} className="m-card" style={{ padding: 14, marginBottom: 8, border: `1px solid ${M.line}`, opacity: 0.7, display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ width: 32, height: 32, borderRadius: 9, background: M.sageSoft, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <I name="check" size={14} color={M.sage} stroke={2.5}/>
+                </div>
+                <div style={{ flex: 1, fontSize: 13, fontWeight: 500 }}>{g.name}</div>
+                <div className="m-num" style={{ fontSize: 13, fontWeight: 600 }}>{fmtEur(g.target)}</div>
+              </div>
+            ))}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function GoalCardLarge({ g, onClick }) {
+  const pct = (g.current / g.target) * 100;
+  return (
+    <div className="m-card m-tap" onClick={onClick} style={{ padding: 16, border: `1px solid ${M.line}` }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ width: 40, height: 40, borderRadius: 11, background: g.color + '22', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <I name={g.icon} size={20} color={g.color}/>
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <div style={{ fontSize: 15, fontWeight: 600 }}>{g.name}</div>
+            <div className="m-num" style={{ fontSize: 12, color: M.ink3, fontWeight: 600 }}>{pct.toFixed(0)}%</div>
+          </div>
+          <div style={{ fontSize: 11, color: M.ink3, marginTop: 2 }}>by {g.by} · {fmtEur(g.monthly)}/mo</div>
+        </div>
+      </div>
+      <div style={{ marginTop: 12, height: 6, borderRadius: 999, background: M.line2, overflow: 'hidden' }}>
+        <div style={{ width: `${pct}%`, height: '100%', background: g.color }}/>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 11, color: M.ink3 }}>
+        <span><span className="m-num" style={{ color: M.ink2, fontWeight: 600 }}>{fmtEur(g.current)}</span> saved</span>
+        <span>of {fmtEur(g.target)}</span>
+      </div>
+    </div>
+  );
+}
+
+function ScreenGoalDetail({ params }) {
+  const nav = useNav();
+  const g = GOALS.find(x => x.id === params?.id) || GOALS[0];
+  const pct = (g.current / g.target) * 100;
+  const monthsLeft = Math.ceil((g.target - g.current) / g.monthly);
+
+  return (
+    <div className="m-screen">
+      <StatusBar/>
+      <AppBar title=""
+        leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
+        trailing={<button className="m-iconbtn m-tap"><I name="edit" size={18}/></button>}
+      />
+      <div className="m-body-scroll">
+        <div style={{ textAlign: 'center', padding: '8px 0 24px' }}>
+          <div style={{ width: 70, height: 70, borderRadius: 20, background: g.color + '22', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+            <I name={g.icon} size={32} color={g.color}/>
+          </div>
+          <div className="m-h2">{g.name}</div>
+          <div style={{ fontSize: 13, color: M.ink3, marginTop: 6 }}>by {g.by}</div>
+        </div>
+
+        <div className="m-card" style={{ padding: 20, marginBottom: 14, border: `1px solid ${M.line}` }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <div className="m-num" style={{ fontSize: 32, fontWeight: 600, fontFamily: M.fontDisp, letterSpacing: '-0.02em' }}>{fmtEur(g.current)}</div>
+            <div style={{ fontSize: 13, color: M.ink3 }}>of {fmtEur(g.target)}</div>
+          </div>
+          <div style={{ marginTop: 14, height: 10, borderRadius: 999, background: M.line2, overflow: 'hidden' }}>
+            <div style={{ width: `${pct}%`, height: '100%', background: g.color }}/>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 11, color: M.ink3 }}>
+            <span>{pct.toFixed(0)}% complete</span>
+            <span>{monthsLeft} months left</span>
+          </div>
+        </div>
+
+        <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Plan</div>
+        <div className="m-card" style={{ padding: '4px 16px', marginBottom: 14, border: `1px solid ${M.line}` }}>
+          <FormRow label="Monthly" value={fmtEur(g.monthly)} icon="cal"/>
+          <Divider inset={0}/>
+          <FormRow label="Required" value={fmtEur(g.monthly)} caretR/>
+          <Divider inset={0}/>
+          <FormRow label="Source" value="ING Savings"/>
+        </div>
+
+        <button className="m-btn sage m-tap" style={{ width: '100%', marginBottom: 8 }}>
+          <I name="plus" size={16}/> Add funds
+        </button>
+      </div>
+    </div>
+  );
+}
+  </script>
+
+  <script type="text/babel">
+// ── screens-review.jsx ─────────────────────────────────────────
+
+function ScreenReviewSwipe() {
+  const nav = useNav();
+  const queue = TRANSACTIONS.filter(t => t.needsReview);
+  const [idx, setIdx] = React.useState(0);
+  const [picking, setPicking] = React.useState(false);
+  const [drag, setDrag] = React.useState(0);
+  const [done, setDone] = React.useState(false);
+
+  if (queue.length === 0 || done || idx >= queue.length) {
+    return (
+      <div className="m-screen" style={{ background: M.paper }}>
+        <StatusBar/>
+        <AppBar title="Review"
+          leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
+        />
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, textAlign: 'center', gap: 12 }}>
+          <div style={{ width: 80, height: 80, borderRadius: 24, background: M.sageSoft, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <I name="check" size={36} color={M.sage} stroke={2.5}/>
+          </div>
+          <div className="m-h2" style={{ marginTop: 8 }}>All caught up</div>
+          <div style={{ fontSize: 14, color: M.ink3, lineHeight: 1.5, maxWidth: 260 }}>
+            Nice work. We'll let you know when new transactions need a quick review.
+          </div>
+          <button className="m-btn m-tap" style={{ marginTop: 16 }} onClick={() => nav.pop()}>Done</button>
+        </div>
+      </div>
+    );
+  }
+
+  const tx = queue[idx];
+  const cat = CATEGORIES[tx.cat] || {};
+
+  const handleConfirm = () => {
+    setDrag(160);
+    setTimeout(() => {
+      if (idx + 1 >= queue.length) setDone(true);
+      else setIdx(idx + 1);
+      setDrag(0);
+    }, 200);
+  };
+  const handleSkip = () => {
+    setDrag(-160);
+    setTimeout(() => {
+      if (idx + 1 >= queue.length) setDone(true);
+      else setIdx(idx + 1);
+      setDrag(0);
+    }, 200);
+  };
+
+  return (
+    <div className="m-screen" style={{ background: M.paper2 }}>
+      <StatusBar/>
+      <AppBar title={`Review · ${idx + 1}/${queue.length}`}
+        leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="x" size={20}/></button>}
+        trailing={<button className="m-tap" style={{ background: 'transparent', border: 'none', fontSize: 13, fontWeight: 500, color: M.ink3 }} onClick={handleSkip}>Skip</button>}
+      />
+
+      <div style={{ display: 'flex', justifyContent: 'center', gap: 4, padding: '0 20px 16px', flexShrink: 0 }}>
+        {queue.map((_, i) => (
+          <div key={i} style={{
+            flex: 1, height: 3, borderRadius: 999,
+            background: i < idx ? M.sage : i === idx ? M.ink : M.line2,
+          }}/>
+        ))}
+      </div>
+
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 20px', position: 'relative' }}>
+        <div className="m-card" style={{
+          width: '100%', padding: 24, border: `1px solid ${M.line}`,
+          background: '#fff',
+          transform: `translateX(${drag}px) rotate(${drag * 0.04}deg)`,
+          opacity: 1 - Math.abs(drag) / 400,
+          transition: drag === 0 ? 'transform 0.3s, opacity 0.3s' : 'transform 0.2s, opacity 0.2s',
+          boxShadow: '0 8px 30px rgba(0,0,0,0.06)',
+        }}>
+          <div style={{ textAlign: 'center' }}>
+            <div className="m-num" style={{ fontSize: 36, fontWeight: 600, fontFamily: M.fontDisp, color: tx.amount > 0 ? M.sage : M.ink, letterSpacing: '-0.02em' }}>
+              {tx.amount > 0 ? '+' : '−'}{fmtEur(Math.abs(tx.amount))}
+            </div>
+            <div className="m-h3" style={{ marginTop: 12, fontSize: 18 }}>{tx.merchant}</div>
+            <div style={{ fontSize: 12, color: M.ink3, marginTop: 4 }}>{fmtDate(tx.date, 'long')} · {tx.time}</div>
+            <div style={{ fontSize: 11, color: M.ink4, fontFamily: M.fontMono, marginTop: 8 }}>{tx.desc}</div>
+          </div>
+
+          <div style={{ marginTop: 28, padding: '14px 16px', borderRadius: 14, background: M.paper2, border: `1px solid ${M.line2}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+              <div style={{ width: 14, height: 14, borderRadius: 999, background: M.violet, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ width: 4, height: 4, borderRadius: 999, background: '#fff' }}/>
+              </div>
+              <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: M.violet }}>AI guess · {tx.confidence}%</div>
+            </div>
+            <div className="m-tap" onClick={() => setPicking(true)} style={{
+              display: 'flex', alignItems: 'center', gap: 12, padding: 12, borderRadius: 10,
+              background: '#fff', border: `1px solid ${M.line}`,
+            }}>
+              <div style={{ width: 36, height: 36, borderRadius: 10, background: M.paper2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <I name={cat.icon} size={18} color={M.ink2}/>
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: 600 }}>{cat.name}</div>
+                <div style={{ fontSize: 11, color: M.ink3, marginTop: 1 }}>{cat.group}</div>
+              </div>
+              <span style={{ fontSize: 11, color: M.sage, fontWeight: 600 }}>Change</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 12, padding: '12px 20px 20px', flexShrink: 0 }}>
+        <button className="m-tap" onClick={handleSkip} style={{
+          flex: 1, height: 56, borderRadius: 16, border: `1px solid ${M.line}`,
+          background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+          fontSize: 14, fontWeight: 600, color: M.ink3,
+        }}>
+          <I name="x" size={18} color={M.ink3}/> Skip
+        </button>
+        <button className="m-tap" onClick={handleConfirm} style={{
+          flex: 2, height: 56, borderRadius: 16, border: 'none',
+          background: M.sage, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+          fontSize: 14, fontWeight: 600,
+        }}>
+          <I name="check" size={20} color="#fff" stroke={2.5}/> Confirm
+        </button>
+      </div>
+
+      {picking && <CategoryPicker selected={tx.cat} onClose={() => setPicking(false)} onPick={() => setPicking(false)}/>}
+    </div>
+  );
+}
+
+function CategoryPicker({ selected, onClose, onPick }) {
+  const groups = {};
+  Object.values(CATEGORIES).forEach(c => {
+    if (!groups[c.group]) groups[c.group] = [];
+    groups[c.group].push(c);
+  });
+
+  return (
+    <div style={{ position: 'absolute', inset: 0, zIndex: 100, animation: 'mFadeIn 0.2s ease-out both' }}>
+      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.4)' }} onClick={onClose}/>
+      <div style={{
+        position: 'absolute', left: 0, right: 0, bottom: 0, top: 80,
+        background: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24,
+        display: 'flex', flexDirection: 'column', overflow: 'hidden',
+      }}>
+        <div style={{ padding: '14px 20px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: `1px solid ${M.line2}` }}>
+          <button className="m-tap" onClick={onClose} style={{ background: 'transparent', border: 'none', fontSize: 14, color: M.ink3 }}>Cancel</button>
+          <div style={{ fontSize: 15, fontWeight: 600 }}>Pick category</div>
+          <div style={{ width: 50 }}/>
+        </div>
+        <div style={{ padding: 12, flexShrink: 0 }}>
+          <div className="m-input" style={{ background: M.paper2, border: 'none' }}>
+            <I name="search" size={16} color={M.ink3}/>
+            <span style={{ color: M.ink4 }}>Search categories…</span>
+          </div>
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px 20px' }}>
+          {Object.entries(groups).map(([groupName, cats]) => (
+            <div key={groupName} style={{ marginBottom: 18 }}>
+              <div className="m-cap" style={{ marginBottom: 8 }}>{groupName}</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                {cats.map(c => (
+                  <button key={c.id} onClick={onPick} className="m-tap" style={{
+                    padding: '12px 14px', borderRadius: 12, border: `1px solid ${selected === c.id ? M.sage : M.line}`,
+                    background: selected === c.id ? M.sageSoft : '#fff',
+                    display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left',
+                  }}>
+                    <I name={c.icon} size={16} color={selected === c.id ? M.sage : M.ink2}/>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: M.ink, flex: 1 }}>{c.name}</span>
+                    {selected === c.id && <I name="check" size={14} color={M.sage} stroke={2.5}/>}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScreenLinkReimburse({ params }) {
+  const nav = useNav();
+  const candidates = TRANSACTIONS.filter(t => t.amount > 0).slice(0, 5);
+  return (
+    <div className="m-screen">
+      <StatusBar/>
+      <AppBar title="Link reimbursement"
+        leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
+      />
+      <div className="m-body-scroll">
+        <div style={{ padding: 14, borderRadius: 12, background: M.sageSoft, marginBottom: 16, fontSize: 13, color: M.sage, fontWeight: 500 }}>
+          Suggested matches based on incoming tx in the same week.
+        </div>
+        <div className="m-card" style={{ padding: '0 16px', marginBottom: 14, border: `1px solid ${M.line}` }}>
+          {candidates.map((t, i, a) => (
+            <React.Fragment key={t.id}>
+              <div className="m-tap" onClick={() => nav.pop()} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 0' }}>
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: M.sageSoft, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <I name="arrow-dn-right" size={16} color={M.sage}/>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, fontWeight: 500 }}>{t.merchant}</div>
+                  <div style={{ fontSize: 11, color: M.ink3, marginTop: 2 }}>{fmtDate(t.date)}</div>
+                </div>
+                <div className="m-num" style={{ fontSize: 14, fontWeight: 600, color: M.sage }}>+{fmtEur(t.amount)}</div>
+              </div>
+              {i < a.length - 1 && <Divider inset={48}/>}
+            </React.Fragment>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+  </script>
+
+  <script type="text/babel">
+// ── app.jsx ────────────────────────────────────────────────────
+
+const SCREEN_REGISTRY = {
+  txDetail:       ({params}) => <ScreenTxDetail params={params}/>,
+  expenses:       () => <ScreenExpenses/>,
+  categoryDrill:  ({params}) => <ScreenCategoryDrill params={params}/>,
+  linkReimburse:  ({params}) => <ScreenLinkReimburse params={params}/>,
+  search:         () => <ScreenStub title="Search"/>,
+  sync:           () => <ScreenStub title="Sync"/>,
+  notifications:  () => <ScreenStub title="Notifications"/>,
+  budgets:        () => <ScreenBudgets/>,
+  budgetDetail:   ({params}) => <ScreenBudgetDetail params={params}/>,
+  budgetCreate:   () => <ScreenBudgetCreate/>,
+  goals:          () => <ScreenGoals/>,
+  goalDetail:     ({params}) => <ScreenGoalDetail params={params}/>,
+  reviewSwipe:    () => <ScreenReviewSwipe/>,
+  allocate:       () => <ScreenAllocate/>,
+  allocateTopic:  ({params}) => <ScreenAllocateTopic params={params}/>,
+  investment:     () => <ScreenInvestment/>,
+  investmentConnect: () => <ScreenInvestmentConnect/>,
+  eventDetail:    ({params}) => <ScreenEventDetail params={params}/>,
+  eventCreate:    () => <ScreenEventCreate/>,
+  recurring:      () => <ScreenRecurring/>,
+  accounts:       () => <ScreenAccounts/>,
+  settings:       () => <ScreenSettings/>,
+};
+
+function TabRoot() {
+  const nav = useNav();
+  if (nav.tab === 'home') return <ScreenHome/>;
+  if (nav.tab === 'tx') return <ScreenTransactions/>;
+  if (nav.tab === 'events') return <ScreenEvents/>;
+  if (nav.tab === 'profile') return <ScreenProfile/>;
+  return null;
+}
+
+function Router() {
+  const nav = useNav();
+  return (
+    <div style={{ position: 'relative', width: '100%', height: '100%', background: M.paper, overflow: 'hidden' }}>
+      <TabRoot/>
+      {nav.stack.map((entry, i) => {
+        const Comp = SCREEN_REGISTRY[entry.screen];
+        if (!Comp) return null;
+        return (
+          <div key={i} style={{
+            position: 'absolute', inset: 0, background: M.paper,
+            animation: 'mSlideIn 0.28s cubic-bezier(.2,.7,.2,1) both',
+          }}>
+            <Comp params={entry.params}/>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function App() {
+  return (
+    <IOSDevice>
+      <NavProvider initial="home">
+        <div className="m m-app" style={{ width: '100%', height: '100%', background: M.paper }}>
+          <Router/>
+        </div>
+      </NavProvider>
+    </IOSDevice>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App/>);
+  </script>
 </body>
 </html>
