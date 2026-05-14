@@ -551,7 +551,8 @@ const CATEGORIES = {
 function catPath(cat) {
   if (!cat) return '—';
   if (cat.parent && CATEGORIES[cat.parent]) return `${CATEGORIES[cat.parent].name} → ${cat.name}`;
-  return cat.name;
+  if (cat.isParent) return cat.name;
+  return `${cat.group} → ${cat.name}`;
 }
 
 const ACCOUNTS = [
@@ -585,6 +586,16 @@ const TRANSACTIONS = [
   { id: 't22', date: '2026-01-24', time: '15:00', merchant: 'Bol.com',           desc: 'BOL.COM 02938',              cat: 'hobby',       amount: -45.00, account: 'main', needsReview: true },
   { id: 't23', date: '2026-01-22', time: '09:00', merchant: 'Koffie ☕',         desc: 'TOKI ESPRESSO',              cat: 'coffee',      amount: -3.80,  account: 'main' },
   { id: 't24', date: '2026-01-20', time: '08:00', merchant: 'Eneco',             desc: 'ENECO ENERGIE',              cat: 'housing',     amount: -65.00, account: 'main', recurring: true },
+  { id: 't25', date: '2026-02-18', time: '10:22', merchant: 'Coolblue',           desc: 'COOLBLUE 887731',            cat: 'hobby',      amount: -149.99, account: 'main', confidence: 61, needsReview: true },
+  { id: 't26', date: '2026-02-17', time: '14:05', merchant: 'Kruidvat',           desc: 'KRUIDVAT 0281',              cat: 'health',     amount: -12.40,  account: 'main', confidence: 58, needsReview: true },
+  { id: 't27', date: '2026-02-16', time: '18:30', merchant: 'Amazon.nl',          desc: 'AMZN MKTPLC 50128',          cat: 'hobby',      amount: -22.00,  account: 'main', confidence: 49, needsReview: true },
+  { id: 't28', date: '2026-02-15', time: '09:15', merchant: 'MediaMarkt',         desc: 'MEDIAMARKT AMS',             cat: 'hobby',      amount: -89.00,  account: 'main', confidence: 55, needsReview: true },
+  { id: 't29', date: '2026-02-14', time: '16:40', merchant: 'Apotheek Centraal',  desc: 'APOTHEEK 7842',              cat: 'health',     amount: -23.90,  account: 'main', confidence: 67, needsReview: true },
+  { id: 't30', date: '2026-02-13', time: '13:00', merchant: 'HEMA',               desc: 'HEMA AMSTERDAM',             cat: 'hobby',      amount: -18.50,  account: 'main', confidence: 52, needsReview: true },
+  { id: 't31', date: '2026-02-12', time: '11:30', merchant: 'Kruidvat',           desc: 'KRUIDVAT 0281',              cat: 'health',     amount: -8.90,   account: 'main', confidence: 60, needsReview: true },
+  { id: 't32', date: '2026-02-11', time: '17:00', merchant: 'Etos',               desc: 'ETOS 0341',                  cat: 'health',     amount: -19.80,  account: 'main', confidence: 64, needsReview: true },
+  { id: 't33', date: '2026-02-10', time: '14:20', merchant: 'Coolblue',           desc: 'COOLBLUE 884290',            cat: 'hobby',      amount: -59.99,  account: 'main', confidence: 53, needsReview: true },
+  { id: 't34', date: '2026-02-09', time: '20:10', merchant: 'Amazon.nl',          desc: 'AMZN MKTPLC 49900',          cat: 'hobby',      amount: -36.50,  account: 'main', confidence: 47, needsReview: true },
 ];
 
 const BUDGETS = [
@@ -674,6 +685,11 @@ const DEBTS = [
   { id:'d3', name:'Credit card · ING',       icon:'card',   balance:480,    original:480,    rate:14.5, minPayment:25,  nextDate:'25 Mar', type:'credit',   color:'#B5503A' },
   { id:'d4', name:'Study loan · DUO',        icon:'bag',    balance:12400,  original:28000,  rate:0.0,  minPayment:180, nextDate:'01 Mar', type:'student',  color:'#5E4A78' },
 ];
+const DEBTS_PAID_OFF = [
+  { id:'dp1', name:'Personal loan · Rabobank', icon:'card',  paidAmount:3200, paidDate:'2026-01-15', type:'loan',    color:'#A8782B' },
+  { id:'dp2', name:'Credit card · ABN AMRO',   icon:'card',  paidAmount:650,  paidDate:'2026-02-03', type:'credit',  color:'#B5503A' },
+];
+const DEBT_HISTORY = [240000+12000+1200+28000, 240000+11000+1100+27800, 238000+9500+900+27600, 237000+8500+800+27400, 236000+7500+700+27200, 235680];
 
 const fmtEur = (n, opts = {}) => {
   const sign = n < 0 ? '−' : (opts.signed && n > 0 ? '+' : '');
@@ -1037,11 +1053,13 @@ function ScreenStub({ title }) {
 
 function ScreenHome() {
   const nav = useNav();
+  const alloc = useAlloc();
   const reviewCount = TRANSACTIONS.filter(t => t.needsReview).length;
   const budgetTop = [...BUDGETS].sort((a, b) => (b.spent/b.total) - (a.spent/a.total)).slice(0, 3);
   const [pidx, setPidx] = React.useState(PERIOD_HISTORY.length - 1);
   const pd = PERIOD_HISTORY[pidx];
   const isCurrent = pidx === PERIOD_HISTORY.length - 1;
+  const currentUnallocated = alloc ? alloc.unallocated : pd.unallocated;
 
   return (
     <div className="m-screen">
@@ -1091,12 +1109,12 @@ function ScreenHome() {
             onClick={() => nav.push('invested')}/>
           <div style={{ height:1, background:M.line2 }}/>
           <PeriodStatRow icon="goal"
-            iconBg={pd.unallocated===0?M.sageSoft:M.ochreSoft}
-            iconColor={pd.unallocated===0?M.sage:M.ochre}
-            label="Allocate" value={pd.unallocated}
-            valueColor={pd.unallocated===0?M.sage:M.ochre}
-            sub={pd.unallocated===0?'Every euro planned ✓':'Unallocated — tap to plan'}
-            badge={pd.unallocated>0}
+            iconBg={isCurrent?(currentUnallocated===0?M.sageSoft:M.ochreSoft):(pd.unallocated===0?M.sageSoft:M.ochreSoft)}
+            iconColor={isCurrent?(currentUnallocated===0?M.sage:M.ochre):(pd.unallocated===0?M.sage:M.ochre)}
+            label="Allocate" value={isCurrent?currentUnallocated:pd.unallocated}
+            valueColor={isCurrent?(currentUnallocated===0?M.sage:M.ochre):(pd.unallocated===0?M.sage:M.ochre)}
+            sub={isCurrent?(currentUnallocated===0?'Every euro planned ✓':'Unallocated — tap to plan'):(pd.unallocated===0?'Every euro planned ✓':'Unallocated — tap to plan')}
+            badge={isCurrent?currentUnallocated>0:pd.unallocated>0}
             onClick={() => nav.push('allocate')}/>
         </div>
 
@@ -1111,7 +1129,7 @@ function ScreenHome() {
             </div>
             <div style={{ flex:1 }}>
               <div style={{ fontSize:14, fontWeight:600 }}>Review {reviewCount} transactions</div>
-              <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>AI isn't sure about these categories</div>
+              <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>Category check needed</div>
             </div>
             <I name="arrowR" size={16} color={M.ink3}/>
           </div>
@@ -1245,6 +1263,13 @@ function GoalMiniRow({ g, onClick }) {
   );
 }
 
+function budgetDaysLeft(b) {
+  const TODAY = new Date('2026-02-18');
+  const periodStart = new Date('2026-01-20');
+  const elapsed = Math.floor((TODAY - periodStart) / 86400000) % b.periodDays;
+  return b.periodDays - elapsed;
+}
+
 function BudgetMini({ b, onClick }) {
   const ratio = b.spent / b.total;
   const over = ratio > 1;
@@ -1266,6 +1291,7 @@ function BudgetMini({ b, onClick }) {
           <div style={{ width: `${Math.min(100, ratio * 100)}%`, height: '100%', background: color }}/>
           {over && <div style={{ flex: 1, background: `repeating-linear-gradient(45deg, ${M.clay} 0 3px, ${M.claySoft} 3px 6px)` }}/>}
         </div>
+        <div style={{ fontSize:10, color:M.ink4, marginTop:4 }}>{budgetDaysLeft(b)}d left</div>
       </div>
     </div>
   );
@@ -2011,24 +2037,62 @@ function Toggle({ on }) {
 
 function ScreenProfile() {
   const nav = useNav();
+  const [editing, setEditing] = React.useState(false);
+  const [name, setName] = React.useState('Demo van der Berg');
+  const [email, setEmail] = React.useState('demo@munni.app');
+  const [draft, setDraft] = React.useState({ name: 'Demo van der Berg', email: 'demo@munni.app' });
+
+  const startEdit = () => { setDraft({ name, email }); setEditing(true); };
+  const save = () => { setName(draft.name); setEmail(draft.email); setEditing(false); };
+  const cancel = () => setEditing(false);
+  const initial = name.charAt(0).toUpperCase();
+
   return (
     <div className="m-screen">
       <StatusBar/>
       <AppBar title="Profile" large
-        trailing={<button className="m-iconbtn m-tap" onClick={() => nav.push('settings')}><I name="sliders" size={20}/></button>}
+        trailing={editing
+          ? <button className="m-tap" onClick={cancel} style={{ background:'transparent', border:'none', fontSize:14, fontWeight:600, color:M.ink3, cursor:'pointer', fontFamily:M.fontUI }}>Cancel</button>
+          : null
+        }
       />
       <div className="m-body-scroll">
         <div className="m-card" style={{ padding: 18, marginBottom: 16, border: `1px solid ${M.line}`, display: 'flex', alignItems: 'center', gap: 14 }}>
           <div style={{
             width: 56, height: 56, borderRadius: 999,
-            background: `linear-gradient(135deg, ${M.sage} 0%, ${M.sageDk || '#3D5A42'} 100%)`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 600, fontSize: 22, fontFamily: M.fontDisp,
-          }}>D</div>
+            background: `linear-gradient(135deg, ${M.sage} 0%, #3D5A42 100%)`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 600, fontSize: 22, fontFamily: M.fontDisp, flexShrink: 0,
+          }}>{initial}</div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 17, fontWeight: 600 }}>Demo van der Berg</div>
-            <div style={{ fontSize: 12, color: M.ink3, marginTop: 2 }}>demo@munni.app</div>
+            {editing ? (
+              <>
+                <input
+                  value={draft.name}
+                  onChange={e => setDraft(d => ({...d, name: e.target.value}))}
+                  style={{ width:'100%', fontSize:16, fontWeight:600, border:`1px solid ${M.sage}`, borderRadius:8, padding:'6px 10px', fontFamily:M.fontUI, background:M.paper2, outline:'none', marginBottom:6 }}
+                />
+                <input
+                  value={draft.email}
+                  onChange={e => setDraft(d => ({...d, email: e.target.value}))}
+                  style={{ width:'100%', fontSize:13, border:`1px solid ${M.line}`, borderRadius:8, padding:'5px 10px', fontFamily:M.fontUI, background:M.paper2, outline:'none', color:M.ink3 }}
+                />
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 17, fontWeight: 600 }}>{name}</div>
+                <div style={{ fontSize: 12, color: M.ink3, marginTop: 2 }}>{email}</div>
+              </>
+            )}
           </div>
-          <I name="caretR" size={16} color={M.ink4}/>
+          {editing ? (
+            <button className="m-tap" onClick={save} style={{ width:36, height:36, borderRadius:999, background:M.sage, border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+              <I name="check" size={16} color="#fff" stroke={2.5}/>
+            </button>
+          ) : (
+            <button className="m-tap" onClick={startEdit} style={{ width:36, height:36, borderRadius:999, background:M.paper2, border:`1px solid ${M.line}`, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+              <I name="edit" size={16} color={M.ink3}/>
+            </button>
+          )}
         </div>
 
         <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Profile</div>
@@ -2063,6 +2127,8 @@ function ScreenProfile() {
           <ProfileLink icon="bell" label="Notifications"/>
           <Divider inset={48}/>
           <ProfileLink icon="lock" label="Privacy & security"/>
+          <Divider inset={48}/>
+          <ProfileLink icon="sliders" label="Settings" sub="Appearance, notifications & more" onClick={() => nav.push('settings')}/>
           <Divider inset={48}/>
           <ProfileLink icon="help" label="Help & support"/>
           <Divider inset={48}/>
@@ -3181,6 +3247,48 @@ function ScreenBudgetCreate() {
   <script type="text/babel">
 // ── screens-allocate.jsx ───────────────────────────────────────
 
+const AllocCtx = React.createContext(null);
+const useAlloc = () => React.useContext(AllocCtx);
+
+const ALLOC_PERIODS = [
+  { label:'20 Sep – 19 Oct', income:2380, setaside:890, topics:[
+    { id:'at_rent', name:'Rent', icon:'house', allocated:740, actual:738, estimate:740, cats:['housing'], group:'recurring' },
+    { id:'at_energy', name:'Energy', icon:'flame', allocated:65, actual:72, estimate:65, cats:['housing'], group:'recurring' },
+    { id:'at_subs', name:'Subscriptions', icon:'film', allocated:25, actual:23.98, estimate:25, cats:['subs'], group:'recurring' },
+    { id:'at_food', name:'Food & Dining', icon:'fork', allocated:260, actual:285, estimate:290, cats:['groceries','restaurants','coffee'], group:'var' },
+    { id:'at_trans', name:'Transport', icon:'car', allocated:80, actual:42, estimate:75, cats:['transport'], group:'var' },
+    { id:'at_health', name:'Health', icon:'health', allocated:40, actual:45, estimate:35, cats:['health'], group:'var' },
+    { id:'at_hobby', name:'Hobby', icon:'bag', allocated:110, actual:120, estimate:130, cats:['hobby'], group:'var' },
+  ]},
+  { label:'20 Oct – 19 Nov', income:2380, setaside:890, topics:[
+    { id:'at_rent', name:'Rent', icon:'house', allocated:740, actual:740, estimate:740, cats:['housing'], group:'recurring' },
+    { id:'at_energy', name:'Energy', icon:'flame', allocated:65, actual:58, estimate:65, cats:['housing'], group:'recurring' },
+    { id:'at_subs', name:'Subscriptions', icon:'film', allocated:25, actual:23.98, estimate:25, cats:['subs'], group:'recurring' },
+    { id:'at_food', name:'Food & Dining', icon:'fork', allocated:260, actual:302, estimate:290, cats:['groceries','restaurants','coffee'], group:'var' },
+    { id:'at_trans', name:'Transport', icon:'car', allocated:80, actual:55, estimate:75, cats:['transport'], group:'var' },
+    { id:'at_health', name:'Health', icon:'health', allocated:40, actual:30, estimate:35, cats:['health'], group:'var' },
+    { id:'at_hobby', name:'Hobby', icon:'bag', allocated:110, actual:0, estimate:130, cats:['hobby'], group:'var' },
+  ]},
+  { label:'20 Nov – 19 Dec', income:2480, setaside:940, topics:[
+    { id:'at_rent', name:'Rent', icon:'house', allocated:740, actual:740, estimate:740, cats:['housing'], group:'recurring' },
+    { id:'at_energy', name:'Energy', icon:'flame', allocated:65, actual:80, estimate:70, cats:['housing'], group:'recurring' },
+    { id:'at_subs', name:'Subscriptions', icon:'film', allocated:25, actual:37.97, estimate:40, cats:['subs'], group:'recurring' },
+    { id:'at_food', name:'Food & Dining', icon:'fork', allocated:280, actual:260, estimate:290, cats:['groceries','restaurants','coffee'], group:'var' },
+    { id:'at_trans', name:'Transport', icon:'car', allocated:80, actual:68, estimate:75, cats:['transport'], group:'var' },
+    { id:'at_health', name:'Health', icon:'health', allocated:40, actual:22, estimate:35, cats:['health'], group:'var' },
+    { id:'at_hobby', name:'Hobby', icon:'bag', allocated:110, actual:80, estimate:130, cats:['hobby'], group:'var' },
+  ]},
+  { label:'20 Dec – 19 Jan', income:2480, setaside:940, topics:[
+    { id:'at_rent', name:'Rent', icon:'house', allocated:740, actual:740, estimate:740, cats:['housing'], group:'recurring' },
+    { id:'at_energy', name:'Energy', icon:'flame', allocated:65, actual:65, estimate:65, cats:['housing'], group:'recurring' },
+    { id:'at_subs', name:'Subscriptions', icon:'film', allocated:30, actual:23.98, estimate:30, cats:['subs'], group:'recurring' },
+    { id:'at_food', name:'Food & Dining', icon:'fork', allocated:300, actual:340, estimate:310, cats:['groceries','restaurants','coffee'], group:'var' },
+    { id:'at_trans', name:'Transport', icon:'car', allocated:80, actual:50, estimate:75, cats:['transport'], group:'var' },
+    { id:'at_health', name:'Health', icon:'health', allocated:40, actual:18, estimate:35, cats:['health'], group:'var' },
+    { id:'at_hobby', name:'Hobby', icon:'bag', allocated:110, actual:240, estimate:130, cats:['hobby'], group:'var' },
+  ]},
+];
+
 const ALLOC_INCOME   = 2480;
 const ALLOC_SETASIDE = 940;
 const ALLOC_TOALLOC  = ALLOC_INCOME - ALLOC_SETASIDE;
@@ -3191,6 +3299,21 @@ function Stat({ label, value, color }) {
       <div className="m-cap">{label}</div>
       <div className="m-num" style={{ fontSize:18, fontWeight:600, color, marginTop:2 }}>{value}</div>
     </div>
+  );
+}
+
+function AllocProvider({ children }) {
+  const [topics, setTopics] = React.useState(ALLOCATE_TOPICS);
+  const [pOffset, setPOffset] = React.useState(0);
+  const updateTopic = (id, changes) => setTopics(ts => ts.map(t => t.id === id ? { ...t, ...changes } : t));
+  const addTopicCat = (topicId, catId) => setTopics(ts => ts.map(t => t.id === topicId ? { ...t, cats: [...t.cats, catId] } : t));
+  const removeTopicCat = (topicId, catId) => setTopics(ts => ts.map(t => t.id === topicId ? { ...t, cats: t.cats.filter(c => c !== catId) } : t));
+  const allocated = topics.reduce((s, t) => s + t.allocated, 0);
+  const unallocated = (ALLOC_INCOME - ALLOC_SETASIDE) - allocated;
+  return (
+    <AllocCtx.Provider value={{ topics, setTopics, updateTopic, addTopicCat, removeTopicCat, pOffset, setPOffset, allocated, unallocated }}>
+      {children}
+    </AllocCtx.Provider>
   );
 }
 
@@ -3229,37 +3352,51 @@ function AllocateTopicRow({ topic, onClick }) {
 
 function ScreenAllocate() {
   const nav = useNav();
+  const { topics, updateTopic, pOffset, setPOffset, unallocated } = useAlloc();
   const [showAutoConfirm, setShowAutoConfirm] = React.useState(false);
+  const [recurringExpanded, setRecurringExpanded] = React.useState(false);
 
-  const recurring  = ALLOCATE_TOPICS.filter(t => t.group === 'recurring');
-  const varTopics  = ALLOCATE_TOPICS.filter(t => t.group === 'var');
-  const allocated  = ALLOCATE_TOPICS.reduce((s, t) => s + t.allocated, 0);
-  const unallocated = ALLOC_TOALLOC - allocated;
+  const isCurrent = pOffset === 0;
+  const periodIdx = ALLOC_PERIODS.length + pOffset;
+  const periodLabel = isCurrent ? '20 Jan – 19 Feb' : (ALLOC_PERIODS[periodIdx]?.label || '');
+  const displayTopics = isCurrent ? topics : (ALLOC_PERIODS[periodIdx]?.topics || []);
+  const displayIncome = isCurrent ? ALLOC_INCOME : (ALLOC_PERIODS[periodIdx]?.income || ALLOC_INCOME);
+  const displaySetaside = isCurrent ? ALLOC_SETASIDE : (ALLOC_PERIODS[periodIdx]?.setaside || ALLOC_SETASIDE);
+  const displayAllocated = displayTopics.reduce((s, t) => s + t.allocated, 0);
+  const displayUnallocated = isCurrent ? unallocated : ((displayIncome - displaySetaside) - displayAllocated);
+
+  const recurring = displayTopics.filter(t => t.group === 'recurring');
+  const varTopics = displayTopics.filter(t => t.group === 'var');
+  const recurringAllocated = recurring.reduce((s, t) => s + t.allocated, 0);
+  const recurringActual = recurring.reduce((s, t) => s + t.actual, 0);
+  const recurringOver = recurringActual > recurringAllocated;
 
   return (
     <div className="m-screen">
       <StatusBar/>
       <AppBar title="Allocate"
         leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
-        trailing={<button className="m-iconbtn m-tap" onClick={() => nav.push('allocateYear')}><I name="cal" size={18}/></button>}
       />
       <div style={{ display:'flex', justifyContent:'center', alignItems:'center', gap:18, padding:'0 20px 14px', flexShrink:0 }}>
-        <button className="m-iconbtn m-tap"><I name="arrowL" size={18}/></button>
+        <button className="m-iconbtn m-tap" onClick={() => setPOffset(o => Math.max(-(ALLOC_PERIODS.length), o-1))}
+          style={{ opacity:periodIdx===0?0.3:1 }}><I name="arrowL" size={18}/></button>
         <div style={{ textAlign:'center' }}>
           <div className="m-cap">Period</div>
-          <div style={{ fontSize:14, fontWeight:600, marginTop:2 }}>20 Jan – 19 Feb</div>
+          <div style={{ fontSize:14, fontWeight:600, marginTop:2 }}>{periodLabel}</div>
+          {isCurrent && <div style={{ fontSize:10, color:M.sage, fontWeight:600, marginTop:2 }}>Current</div>}
         </div>
-        <button className="m-iconbtn m-tap"><I name="arrowR" size={18} color={M.ink4}/></button>
+        <button className="m-iconbtn m-tap" onClick={() => setPOffset(o => Math.min(0, o+1))}
+          style={{ opacity:isCurrent?0.3:1 }}><I name="arrowR" size={18} color={M.ink4}/></button>
       </div>
 
       <div className="m-body-scroll">
         {/* Summary card */}
-        <div className="m-card" style={{ padding:18, marginBottom:14, border:`1.5px solid ${unallocated===0?M.sage:M.ochre}` }}>
+        <div className="m-card" style={{ padding:18, marginBottom:14, border:`1.5px solid ${displayUnallocated===0?M.sage:M.ochre}` }}>
           <div style={{ display:'flex', justifyContent:'space-between', marginBottom:10 }}>
-            <Stat label="Income" value={fmtEur(ALLOC_INCOME)} color={M.sage}/>
+            <Stat label="Income" value={fmtEur(displayIncome)} color={M.sage}/>
             <div style={{ textAlign:'right' }}>
               <div className="m-cap">Set aside</div>
-              <div className="m-num" style={{ fontSize:16, fontWeight:600, color:M.ink3, marginTop:2 }}>−{fmtEur(ALLOC_SETASIDE)}</div>
+              <div className="m-num" style={{ fontSize:16, fontWeight:600, color:M.ink3, marginTop:2 }}>−{fmtEur(displaySetaside)}</div>
               <div style={{ fontSize:10, color:M.ink3, marginTop:2 }}>savings + invest</div>
             </div>
           </div>
@@ -3267,52 +3404,74 @@ function ScreenAllocate() {
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-end', marginBottom:12 }}>
             <div>
               <div className="m-cap">To allocate</div>
-              <div className="m-num" style={{ fontSize:20, fontWeight:700, marginTop:2 }}>{fmtEur(ALLOC_TOALLOC)}</div>
+              <div className="m-num" style={{ fontSize:20, fontWeight:700, marginTop:2 }}>{fmtEur(displayIncome - displaySetaside)}</div>
             </div>
             <div style={{ textAlign:'right' }}>
               <div className="m-cap">Unallocated</div>
-              <div className="m-num" style={{ fontSize:20, fontWeight:700, color:unallocated===0?M.sage:M.ochre, marginTop:2 }}>{fmtEur(unallocated)}</div>
-              <div style={{ fontSize:10, fontWeight:600, color:unallocated===0?M.sage:M.ochre, marginTop:3 }}>
-                {unallocated===0 ? 'Every euro planned ✓' : 'Plan these funds →'}
+              <div className="m-num" style={{ fontSize:20, fontWeight:700, color:displayUnallocated===0?M.sage:M.ochre, marginTop:2 }}>{fmtEur(displayUnallocated)}</div>
+              <div style={{ fontSize:10, fontWeight:600, color:displayUnallocated===0?M.sage:M.ochre, marginTop:3 }}>
+                {displayUnallocated===0 ? 'Every euro planned ✓' : 'Plan these funds →'}
               </div>
             </div>
           </div>
           <StackedBar segments={[
-            { value:allocated,   color:M.ink },
-            { value:unallocated, color:unallocated===0?M.sage:M.ochre },
+            { value:displayAllocated,   color:M.ink },
+            { value:Math.max(0,displayUnallocated), color:displayUnallocated===0?M.sage:M.ochre },
           ]} height={8}/>
         </div>
 
-        {unallocated > 0 && (
+        {isCurrent && displayUnallocated > 0 && (
           <button className="m-btn sage m-tap" style={{ width:'100%', marginBottom:16 }} onClick={() => setShowAutoConfirm(true)}>
-            <I name="check" size={16}/> Auto-allocate {fmtEur(unallocated)}
+            <I name="check" size={16}/> Auto-allocate {fmtEur(displayUnallocated)}
           </button>
         )}
 
-        {/* Recurring section */}
-        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8, paddingLeft:4 }}>
-          <div className="m-cap">Recurring costs · {recurring.length}</div>
-          <button className="m-tap" onClick={() => { nav.popAll(); nav.switchTab('recurring'); }}
-            style={{ display:'flex', alignItems:'center', gap:4, background:'transparent', border:'none', color:M.ink3, fontSize:12, fontWeight:600, fontFamily:M.fontUI, cursor:'pointer', padding:'4px 0' }}>
-            Manage <I name="arrowR" size={12} color={M.ink3}/>
-          </button>
-        </div>
-        <div className="m-card" style={{ padding:'4px 16px', marginBottom:16, border:`1px solid ${M.line}` }}>
-          {recurring.map((t, i, a) => (
-            <React.Fragment key={t.id}>
-              <AllocateTopicRow topic={t} onClick={() => nav.push('allocateTopic', { id:t.id })}/>
-              {i < a.length-1 && <Divider inset={48}/>}
-            </React.Fragment>
-          ))}
+        {/* Recurring section — collapsible */}
+        <div className="m-card" style={{ padding:'0 16px', marginBottom:16, border:`1px solid ${recurringOver?M.claySoft:M.line}` }}>
+          <div className="m-tap" onClick={() => setRecurringExpanded(e => !e)} style={{ padding:'12px 0', display:'flex', alignItems:'center', gap:12 }}>
+            <div style={{ width:36, height:36, borderRadius:10, background:recurringOver?M.claySoft:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+              <I name="arrowDn" size={16} color={recurringOver?M.clay:M.ink2}/>
+            </div>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
+                <div style={{ fontSize:14, fontWeight:500 }}>Recurring · {recurring.length} items</div>
+                <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                  {recurringOver && <span style={{ fontSize:9, fontWeight:700, padding:'2px 6px', borderRadius:999, background:M.claySoft, color:M.clay, textTransform:'uppercase' }}>over</span>}
+                  <div className="m-num" style={{ fontSize:14, fontWeight:600, color:recurringOver?M.clay:M.ink }}>{fmtEur(recurringActual,{decimals:0})}</div>
+                </div>
+              </div>
+              <div style={{ height:5, borderRadius:999, background:M.line2, overflow:'hidden' }}>
+                <div style={{ width:`${Math.min(100,(recurringActual/recurringAllocated)*100)}%`, height:'100%', background:recurringOver?M.clay:M.sage, borderRadius:999 }}/>
+              </div>
+              <div style={{ display:'flex', justifyContent:'space-between', marginTop:4 }}>
+                <div className="m-cap">fixed costs</div>
+                <div className="m-cap">of {fmtEur(recurringAllocated,{decimals:0})}</div>
+              </div>
+            </div>
+            <I name={recurringExpanded?'arrowUp':'arrowDn'} size={12} color={M.ink4}/>
+          </div>
+          {recurringExpanded && (
+            <>
+              <div style={{ height:1, background:M.line2 }}/>
+              {recurring.map((t, i, a) => (
+                <React.Fragment key={t.id}>
+                  <AllocateTopicRow topic={t} onClick={() => nav.push('allocateTopic', { id:t.id })}/>
+                  {i < a.length-1 && <Divider inset={48}/>}
+                </React.Fragment>
+              ))}
+            </>
+          )}
         </div>
 
         {/* Variable topics section */}
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8, paddingLeft:4 }}>
           <div className="m-cap">Topics · {varTopics.length}</div>
-          <button className="m-tap" onClick={() => nav.push('allocateAddTopic')}
-            style={{ display:'flex', alignItems:'center', gap:4, background:'transparent', border:'none', color:M.ink3, fontSize:12, fontWeight:600, fontFamily:M.fontUI, cursor:'pointer', padding:'4px 0' }}>
-            <I name="plus" size={12} color={M.ink3}/> Add topic
-          </button>
+          {isCurrent && (
+            <button className="m-tap" onClick={() => nav.push('allocateAddTopic')}
+              style={{ display:'flex', alignItems:'center', gap:4, background:'transparent', border:'none', color:M.ink3, fontSize:12, fontWeight:600, fontFamily:M.fontUI, cursor:'pointer', padding:'4px 0' }}>
+              <I name="plus" size={12} color={M.ink3}/> Add topic
+            </button>
+          )}
         </div>
         <div className="m-card" style={{ padding:'4px 16px', marginBottom:20, border:`1px solid ${M.line}` }}>
           {varTopics.map((t, i, a) => (
@@ -3329,9 +3488,9 @@ function ScreenAllocate() {
           <div style={{ padding:'4px 20px 32px' }}>
             <div className="m-h2" style={{ marginBottom:6 }}>Auto-allocate</div>
             <div style={{ fontSize:13, color:M.ink3, marginBottom:16 }}>
-              Distribute {fmtEur(unallocated)} based on topic estimates.
+              Distribute {fmtEur(displayUnallocated)} based on topic estimates.
             </div>
-            {ALLOCATE_TOPICS.filter(t => t.estimate > t.allocated).map(t => (
+            {topics.filter(t => t.estimate > t.allocated).map(t => (
               <div key={t.id} style={{ display:'flex', justifyContent:'space-between', padding:'7px 0', fontSize:13, borderBottom:`1px solid ${M.line2}` }}>
                 <span>{t.name}</span>
                 <span className="m-num" style={{ color:M.sage, fontWeight:600 }}>+{fmtEur(t.estimate - t.allocated, {decimals:0})}</span>
@@ -3349,13 +3508,16 @@ function ScreenAllocate() {
 
 function ScreenAllocateTopic({ params }) {
   const nav = useNav();
+  const { topics, addTopicCat, removeTopicCat } = useAlloc();
   const [showMove, setShowMove] = React.useState(false);
+  const [showCatPicker, setShowCatPicker] = React.useState(false);
 
-  const topic   = ALLOCATE_TOPICS.find(t => t.id === params?.id) || ALLOCATE_TOPICS[0];
+  const topic = topics.find(t => t.id === params?.id) || topics[0];
   const over    = topic.actual > topic.allocated;
   const pct     = Math.min(topic.actual / (topic.allocated || 1), 1);
   const topicTxs = TRANSACTIONS.filter(t => topic.cats.includes(t.cat) && t.amount < 0);
   const history  = [topic.allocated*0.82, topic.allocated*0.95, topic.allocated*1.08, topic.allocated*0.91, topic.allocated*0.98, topic.actual];
+  const availableCats = Object.values(CATEGORIES).filter(c => !c.isParent && !c.positive && !topic.cats.includes(c.id));
 
   return (
     <div className="m-screen">
@@ -3394,6 +3556,39 @@ function ScreenAllocateTopic({ params }) {
           <BarChart data={history} labels={['Sep–Oct','Oct–Nov','Nov–Dec','Dec–Jan','Jan–Feb','Feb–Mar']} showValues height={84} accent={over?M.clay:M.sage}/>
         </div>
 
+        {/* Category CRUD */}
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8, paddingLeft:4 }}>
+          <div className="m-cap">Categories · {topic.cats.length}</div>
+          {availableCats.length > 0 && (
+            <button className="m-tap" onClick={() => setShowCatPicker(true)}
+              style={{ display:'flex', alignItems:'center', gap:4, background:'transparent', border:'none', color:M.ink3, fontSize:12, fontWeight:600, fontFamily:M.fontUI, cursor:'pointer', padding:'4px 0' }}>
+              <I name="plus" size={12} color={M.ink3}/> Add category
+            </button>
+          )}
+        </div>
+        <div className="m-card" style={{ padding:'4px 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
+          {topic.cats.map((catId, i, a) => {
+            const c = CATEGORIES[catId] || { id:catId, name:catId, icon:'box' };
+            return (
+              <React.Fragment key={catId}>
+                <div style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 0' }}>
+                  <div style={{ width:32, height:32, borderRadius:9, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    <I name={c.icon} size={15} color={M.ink2}/>
+                  </div>
+                  <div style={{ flex:1, fontSize:14, fontWeight:500 }}>{catPath(c)}</div>
+                  {topic.cats.length > 1 && (
+                    <button className="m-tap" onClick={() => removeTopicCat(topic.id, catId)}
+                      style={{ width:28, height:28, borderRadius:8, background:'transparent', border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                      <I name="x" size={14} color={M.ink4}/>
+                    </button>
+                  )}
+                </div>
+                {i < a.length-1 && <Divider inset={44}/>}
+              </React.Fragment>
+            );
+          })}
+        </div>
+
         <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Transactions · {topicTxs.length}</div>
         <div className="m-card" style={{ padding:'0 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
           {topicTxs.length === 0 && (
@@ -3424,6 +3619,27 @@ function ScreenAllocateTopic({ params }) {
       </div>
 
       {showMove && <AllocateMoveSheet topic={topic} onClose={() => setShowMove(false)}/>}
+
+      {showCatPicker && (
+        <Sheet onClose={() => setShowCatPicker(false)}>
+          <div style={{ padding:'4px 20px 32px' }}>
+            <div className="m-h2" style={{ marginBottom:16 }}>Add category</div>
+            {availableCats.map((c, i, a) => (
+              <React.Fragment key={c.id}>
+                <div className="m-tap" onClick={() => { addTopicCat(topic.id, c.id); setShowCatPicker(false); }}
+                  style={{ display:'flex', alignItems:'center', gap:12, padding:'11px 0' }}>
+                  <div style={{ width:32, height:32, borderRadius:9, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    <I name={c.icon} size={15} color={M.ink2}/>
+                  </div>
+                  <div style={{ flex:1, fontSize:14, fontWeight:500 }}>{catPath(c)}</div>
+                  <I name="plus" size={14} color={M.ink3}/>
+                </div>
+                {i < a.length-1 && <div style={{ height:1, background:M.line2, marginLeft:44 }}/>}
+              </React.Fragment>
+            ))}
+          </div>
+        </Sheet>
+      )}
     </div>
   );
 }
@@ -3932,6 +4148,7 @@ function ScreenReviewSwipe() {
   const [done, setDone] = React.useState(false);
   const [picking, setPicking] = React.useState(false);
   const [editAmt, setEditAmt] = React.useState(null); // { idx, initial, max }
+  const [bulkSelected, setBulkSelected] = React.useState(new Set());
 
   const tx = queue[idx];
   const isNegative = tx && tx.amount < 0;
@@ -3940,12 +4157,13 @@ function ScreenReviewSwipe() {
   const [txCats, setTxCats] = React.useState(() => tx ? initCats(tx) : []);
 
   React.useEffect(() => { if (tx) setTxCats(initCats(tx)); }, [idx]);
+  React.useEffect(() => { setBulkSelected(new Set()); }, [idx]);
 
   const allocatedSum = txCats.reduce((s, c) => s + c.amount, 0);
   const txAbs = tx ? Math.abs(tx.amount) : 0;
   const unallocated = Math.max(0, txAbs - allocatedSum);
 
-  const similarCount = tx ? TRANSACTIONS.filter(t => t.merchant === tx.merchant && t.id !== tx.id && !t.needsReview).length : 0;
+  const queueSimilar = tx ? queue.filter(t => t.merchant === tx.merchant && t.id !== tx.id) : [];
 
   const advance = (dir) => {
     setDrag(dir > 0 ? 160 : -160);
@@ -4049,11 +4267,30 @@ function ScreenReviewSwipe() {
             </button>
           </div>
 
-          {similarCount > 0 && (
-            <button className="m-tap" style={{ marginTop:14, width:'100%', padding:'10px 0', background:'transparent', border:'none', cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', justifyContent:'center', gap:6, color:M.ink3, fontSize:12 }}>
-              <I name="list" size={13} color={M.ink3}/>
-              Apply to {similarCount} similar "{tx.merchant}" transactions
-            </button>
+          {queueSimilar.length > 0 && (
+            <div style={{ marginTop:14, padding:'12px 14px', borderRadius:12, background:M.violetSoft||'#EEE8FF', border:`1px solid ${M.violet}22` }}>
+              <div style={{ fontSize:11, fontWeight:700, letterSpacing:'0.05em', textTransform:'uppercase', color:M.violet, marginBottom:8 }}>
+                Same merchant in queue · {queueSimilar.length}
+              </div>
+              {queueSimilar.map(st => (
+                <div key={st.id} className="m-tap" onClick={() => setBulkSelected(s => { const n = new Set(s); n.has(st.id) ? n.delete(st.id) : n.add(st.id); return n; })}
+                  style={{ display:'flex', alignItems:'center', gap:10, padding:'6px 0' }}>
+                  <div style={{ width:18, height:18, borderRadius:5, border:`2px solid ${bulkSelected.has(st.id) ? M.violet : M.line}`, background: bulkSelected.has(st.id) ? M.violet : 'transparent', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, transition:'all 0.15s' }}>
+                    {bulkSelected.has(st.id) && <I name="check" size={10} color="#fff" stroke={3}/>}
+                  </div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:12, fontWeight:600 }}>{st.merchant}</div>
+                    <div style={{ fontSize:11, color:M.ink3 }}>{fmtDate(st.date)} · {fmtEur(Math.abs(st.amount))}</div>
+                  </div>
+                </div>
+              ))}
+              {bulkSelected.size > 0 && (
+                <button className="m-tap" onClick={() => { setBulkSelected(new Set()); }}
+                  style={{ marginTop:10, width:'100%', height:34, borderRadius:10, border:'none', background:M.violet, color:'#fff', fontSize:12, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
+                  <I name="check" size={12} color="#fff" stroke={2.5}/> Apply to {bulkSelected.size} selected
+                </button>
+              )}
+            </div>
           )}
         </div>
         <div style={{ height:16 }}/>
@@ -4532,33 +4769,57 @@ function ScreenInsights() {
 function ScreenDebts() {
   const nav = useNav();
   const [strategy, setStrategy] = React.useState('avalanche');
-  const totalDebt = DEBTS.reduce((s, d) => s + d.balance, 0);
-  const monthlyMin = DEBTS.reduce((s, d) => s + d.minPayment, 0);
+  const [showAdd, setShowAdd] = React.useState(false);
+  const [manageDebt, setManageDebt] = React.useState(null);
+  const [debts, setDebts] = React.useState(DEBTS);
+  const totalDebt = debts.reduce((s, d) => s + d.balance, 0);
+  const monthlyMin = debts.reduce((s, d) => s + d.minPayment, 0);
 
   const sorted = strategy === 'avalanche'
-    ? [...DEBTS].sort((a, b) => b.rate - a.rate)
-    : [...DEBTS].sort((a, b) => a.balance - b.balance);
+    ? [...debts].sort((a, b) => b.rate - a.rate)
+    : [...debts].sort((a, b) => a.balance - b.balance);
 
   const strategies = [
     { id:'avalanche', label:'Avalanche', sub:'Highest interest first — saves most money' },
     { id:'snowball',  label:'Snowball',  sub:'Smallest balance first — builds momentum' },
   ];
-
   const debtTypeIcon = { mortgage:'house', loan:'car', credit:'card', student:'bag' };
+
+  const histMax = Math.max(...DEBT_HISTORY);
 
   return (
     <div className="m-screen">
       <StatusBar/>
       <AppBar title="Debts"
         leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
+        trailing={<button className="m-iconbtn m-tap" onClick={() => setShowAdd(true)}><I name="plus" size={20}/></button>}
       />
       <div className="m-body-scroll">
+        {/* Summary + history */}
         <div className="m-card" style={{ padding:18, marginBottom:16, border:`1px solid ${M.line}` }}>
           <div className="m-cap" style={{ marginBottom:6 }}>Total outstanding</div>
           <div className="m-num" style={{ fontSize:36, fontWeight:600, letterSpacing:'-0.025em', color:M.clay }}>{fmtEurInt(totalDebt)}</div>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginTop:14 }}>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginTop:14, marginBottom:16 }}>
             <Stat label="Min./month" value={fmtEurInt(monthlyMin)} color={M.ink}/>
-            <Stat label="Debts" value={DEBTS.length} color={M.ink}/>
+            <Stat label="Active debts" value={debts.length} color={M.ink}/>
+          </div>
+          <div className="m-cap" style={{ marginBottom:8 }}>6-month trend</div>
+          <div style={{ display:'flex', alignItems:'flex-end', gap:4, height:52 }}>
+            {DEBT_HISTORY.map((v, i) => {
+              const h = Math.round((v / histMax) * 52);
+              const isLast = i === DEBT_HISTORY.length - 1;
+              return (
+                <div key={i} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:3 }}>
+                  <div style={{ width:'100%', height:h, borderRadius:4, background: isLast ? M.clay : M.claySoft||'#EDD6D0', transition:'height 0.3s' }}/>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ display:'flex', justifyContent:'space-between', marginTop:4, fontSize:9, color:M.ink4 }}>
+            <span>Sep</span><span>Oct</span><span>Nov</span><span>Dec</span><span>Jan</span><span>Feb</span>
+          </div>
+          <div style={{ fontSize:11, color:M.sage, fontWeight:600, marginTop:8 }}>
+            ↓ {fmtEurInt(DEBT_HISTORY[0] - DEBT_HISTORY[DEBT_HISTORY.length-1])} paid down in 6 months
           </div>
         </div>
 
@@ -4577,7 +4838,7 @@ function ScreenDebts() {
           {strategies.find(s => s.id === strategy)?.sub}
         </div>
 
-        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Debts · {DEBTS.length}</div>
+        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Active debts · {debts.length}</div>
         <div style={{ display:'flex', flexDirection:'column', gap:10, marginBottom:16 }}>
           {sorted.map((d, rank) => {
             const progress = 1 - d.balance / d.original;
@@ -4605,14 +4866,45 @@ function ScreenDebts() {
                 <div style={{ height:8, borderRadius:999, background:M.line2, overflow:'hidden', marginBottom:6 }}>
                   <div style={{ width:`${Math.round(progress * 100)}%`, height:'100%', background:d.color, borderRadius:999, transition:'width 0.4s' }}/>
                 </div>
-                <div style={{ display:'flex', justifyContent:'space-between', fontSize:11 }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', fontSize:11 }}>
                   <span style={{ color:M.sage, fontWeight:600 }}>{Math.round(progress * 100)}% paid off</span>
-                  <span style={{ color:M.ink3 }}>Next: {d.nextDate}</span>
+                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                    <span style={{ color:M.ink3 }}>Next: {d.nextDate}</span>
+                    <button className="m-tap" onClick={() => setManageDebt(d)} style={{ padding:'3px 10px', borderRadius:8, border:`1px solid ${M.line}`, background:M.paper2, fontSize:11, fontWeight:600, color:M.ink3, cursor:'pointer', fontFamily:M.fontUI }}>
+                      Manage
+                    </button>
+                  </div>
                 </div>
               </div>
             );
           })}
         </div>
+
+        {/* Paid off this year */}
+        {DEBTS_PAID_OFF.length > 0 && (
+          <>
+            <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Paid off this year 🎉</div>
+            <div style={{ padding:'14px 16px', borderRadius:16, background:M.sageSoft, border:`1px solid ${M.sage}22`, marginBottom:16 }}>
+              <div style={{ fontSize:13, fontWeight:600, color:M.sage, marginBottom:12 }}>
+                You cleared {DEBTS_PAID_OFF.length} debt{DEBTS_PAID_OFF.length > 1 ? 's' : ''} this year. That's real progress.
+              </div>
+              {DEBTS_PAID_OFF.map((d, i) => (
+                <React.Fragment key={d.id}>
+                  <div style={{ display:'flex', alignItems:'center', gap:12, padding:'8px 0' }}>
+                    <div style={{ width:36, height:36, borderRadius:10, background:M.sage+'18', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                      <I name="check" size={16} color={M.sage} stroke={2.5}/>
+                    </div>
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontSize:13, fontWeight:600, color:M.ink }}>{d.name}</div>
+                      <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>Paid off {fmtDate(d.paidDate, 'long')} · {fmtEurInt(d.paidAmount)}</div>
+                    </div>
+                  </div>
+                  {i < DEBTS_PAID_OFF.length - 1 && <div style={{ height:1, background:M.sage+'22', margin:'0 0 0 48px' }}/>}
+                </React.Fragment>
+              ))}
+            </div>
+          </>
+        )}
 
         <div style={{ padding:14, borderRadius:12, background:M.sageSoft, display:'flex', gap:10, marginBottom:20 }}>
           <I name="help" size={15} color={M.sage}/>
@@ -4621,6 +4913,64 @@ function ScreenDebts() {
           </div>
         </div>
       </div>
+
+      {/* Add debt sheet */}
+      {showAdd && (
+        <Sheet onClose={() => setShowAdd(false)}>
+          <div style={{ padding:'4px 20px 32px' }}>
+            <div className="m-h2" style={{ marginBottom:4 }}>Add debt</div>
+            <div style={{ fontSize:13, color:M.ink3, marginBottom:20 }}>Track a new loan, credit card or other debt</div>
+            {['Mortgage','Car loan','Student loan','Credit card','Personal loan','Other'].map(type => (
+              <div key={type} className="m-tap" onClick={() => setShowAdd(false)}
+                style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0', borderBottom:`1px solid ${M.line2}` }}>
+                <div style={{ width:34, height:34, borderRadius:10, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  <I name={type==='Mortgage'?'house':type==='Car loan'?'car':type==='Credit card'?'card':'bag'} size={16} color={M.ink2}/>
+                </div>
+                <div style={{ flex:1, fontSize:14, fontWeight:500 }}>{type}</div>
+                <I name="caretR" size={14} color={M.ink4}/>
+              </div>
+            ))}
+          </div>
+        </Sheet>
+      )}
+
+      {/* Manage debt sheet */}
+      {manageDebt && (
+        <Sheet onClose={() => setManageDebt(null)}>
+          <div style={{ padding:'4px 20px 32px' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:20 }}>
+              <div style={{ width:40, height:40, borderRadius:12, background:manageDebt.color+'18', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                <I name={debtTypeIcon[manageDebt.type]||'card'} size={18} color={manageDebt.color}/>
+              </div>
+              <div>
+                <div className="m-h2" style={{ marginBottom:0 }}>{manageDebt.name.split('·')[0].trim()}</div>
+                <div style={{ fontSize:12, color:M.ink3 }}>{fmtEurInt(manageDebt.balance)} remaining</div>
+              </div>
+            </div>
+            {[
+              { icon:'swap', label:'Log a payment', sub:`Min. ${fmtEurInt(manageDebt.minPayment)}/month` },
+              { icon:'edit', label:'Edit details', sub:'Name, rate, balance' },
+              { icon:'cal', label:'Change due date', sub:`Currently ${manageDebt.nextDate}` },
+              { icon:'alert', label:'Mark as paid off', sub:'Remove from active debts' },
+            ].map((item, i, a) => (
+              <React.Fragment key={item.label}>
+                <div className="m-tap" onClick={() => setManageDebt(null)}
+                  style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
+                  <div style={{ width:34, height:34, borderRadius:10, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    <I name={item.icon} size={16} color={item.label.includes('paid')?M.sage:M.ink2}/>
+                  </div>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontSize:14, fontWeight:500, color:item.label.includes('paid')?M.sage:M.ink }}>{item.label}</div>
+                    <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{item.sub}</div>
+                  </div>
+                  <I name="caretR" size={14} color={M.ink4}/>
+                </div>
+                {i < a.length-1 && <div style={{ height:1, background:M.line2, marginLeft:46 }}/>}
+              </React.Fragment>
+            ))}
+          </div>
+        </Sheet>
+      )}
     </div>
   );
 }
@@ -4867,16 +5217,64 @@ function Router() {
   );
 }
 
+function ScreenLoginGate({ onLogin }) {
+  return (
+    <div className="m-screen">
+      <StatusBar/>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '28px 24px 32px' }}>
+        <div style={{ marginBottom: 36 }}>
+          <div className="m-logo" style={{ fontSize: 28, marginBottom: 14 }}>munni<span className="dot">.</span></div>
+          <div className="m-h2" style={{ marginBottom: 6 }}>Welcome back</div>
+          <div style={{ fontSize: 14, color: M.ink3 }}>Sign in to continue</div>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <button className="m-btn outline m-tap" style={{ height: 52, justifyContent: 'flex-start', paddingLeft: 20, gap: 12 }} onClick={onLogin}>
+            <I name="g" size={20}/> Continue with Google
+          </button>
+          <button className="m-btn outline m-tap" style={{ height: 52, justifyContent: 'flex-start', paddingLeft: 20, gap: 12 }} onClick={onLogin}>
+            <I name="apple" size={20}/> Continue with Apple
+          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '6px 0' }}>
+            <div style={{ flex: 1, height: 1, background: M.line2 }}/><div style={{ fontSize: 12, color: M.ink4 }}>or</div><div style={{ flex: 1, height: 1, background: M.line2 }}/>
+          </div>
+          <div className="m-input empty" style={{ fontSize: 15 }}>Email address</div>
+          <button className="m-btn m-tap" style={{ height: 52 }} onClick={onLogin}>Continue</button>
+        </div>
+        <div style={{ flex: 1 }}/>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: 12, color: M.ink4, marginBottom: 10 }}>Don't have an account?</div>
+          <button className="m-tap" onClick={onLogin} style={{ background: 'transparent', border: 'none', fontSize: 13, fontWeight: 600, color: M.sage, cursor: 'pointer', fontFamily: M.fontUI }}>
+            Create account →
+          </button>
+        </div>
+        <button className="m-tap" onClick={onLogin} style={{ background: 'transparent', border: 'none', fontSize: 12, color: M.ink4, cursor: 'pointer', marginTop: 20, fontFamily: M.fontUI, textAlign: 'center' }}>
+          Continue as demo user
+        </button>
+        <div style={{ fontSize: 11, color: M.ink4, textAlign: 'center', marginTop: 14, lineHeight: 1.5 }}>
+          By continuing you agree to our Terms &amp; Privacy Policy
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [dark, setDark] = React.useState(false);
+  const [loggedIn, setLoggedIn] = React.useState(false);
   return (
     <DarkCtx.Provider value={{ dark, setDark }}>
       <IOSDevice>
-        <NavProvider initial="home">
-          <div className="m m-app" style={{ width:'100%', height:'100%', background: M.paper, filter: dark ? 'invert(0.93) hue-rotate(180deg)' : 'none', transition:'filter 0.3s' }}>
-            <Router/>
-          </div>
-        </NavProvider>
+        <div className="m m-app" style={{ width:'100%', height:'100%', background: M.paper, filter: dark ? 'invert(0.93) hue-rotate(180deg)' : 'none', transition:'filter 0.3s' }}>
+          {loggedIn ? (
+            <AllocProvider>
+              <NavProvider initial="home">
+                <Router/>
+              </NavProvider>
+            </AllocProvider>
+          ) : (
+            <ScreenLoginGate onLogin={() => setLoggedIn(true)}/>
+          )}
+        </div>
       </IOSDevice>
     </DarkCtx.Provider>
   );
