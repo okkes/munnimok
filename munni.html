@@ -2,11 +2,15 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
   <title>munni — finance app</title>
   <style>
     html, body { margin: 0; padding: 0; height: 100%; background: #2A2823; font-family: -apple-system, system-ui, sans-serif; overflow: hidden; }
     #root { width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; }
+    @media (max-width: 430px) {
+      html, body { background: #F7F4EE; }
+      #root { height: 100dvh; align-items: stretch; justify-content: stretch; }
+    }
   </style>
   <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
   <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
@@ -464,6 +468,10 @@ function Divider({ inset = 0, style = {} }) {
 }
 
 function StatusBar({ dark = false, time = '9:41' }) {
+  const mobile = React.useMemo(() => window.matchMedia('(max-width: 430px)').matches, []);
+  if (mobile) {
+    return <div style={{ height: 'env(safe-area-inset-top, 0px)', flexShrink: 0 }}/>;
+  }
   const c = dark ? '#fff' : M.ink;
   return (
     <div style={{
@@ -703,6 +711,25 @@ const TRANSACTIONS = [
   { id: 't37', date: '2026-02-15', time: '20:00', merchant: 'Tandartspraktijk Centrum', desc: 'TANDARTSPR CENTRUM AMS PERIODIEK CONTROL', cat: 'dental', amount: -55.00, account: 'main', confidence: 62, needsReview: true },
   { id: 't38', date: '2026-02-14', time: '19:30', merchant: 'DJI Online Store', desc: 'DJI EUROPE B.V. ONLINE PURCHASE DRONE PARTS', cat: 'electronics', amount: -219.00, account: 'main' },
   { id: 't39', date: '2026-02-13', time: '09:00', merchant: 'Gemeente Amsterdam', desc: 'GEMEENTE AMSTERDAM PARKEERBELASTING NAHEFFING', cat: 'fines', amount: -68.00, account: 'main' },
+  // Same-merchant bulk review demo — Apotheek Centraal
+  { id: 'ta1',  date: '2026-01-18', time: '14:30', merchant: 'Apotheek Centraal', desc: 'APOTHEEK 7842 NL', cat: 'prescription', amount: -14.80, account: 'main', confidence: 55, needsReview: true },
+  { id: 'ta2',  date: '2026-01-10', time: '11:00', merchant: 'Apotheek Centraal', desc: 'APOTHEEK 7842 NL', cat: 'prescription', amount: -22.50, account: 'main', confidence: 60, needsReview: true },
+  { id: 'ta3',  date: '2025-12-28', time: '16:20', merchant: 'Apotheek Centraal', desc: 'APOTHEEK 7842 NL', cat: 'prescription', amount: -9.30,  account: 'main', confidence: 52, needsReview: true },
+  { id: 'ta4',  date: '2025-12-15', time: '13:45', merchant: 'Apotheek Centraal', desc: 'APOTHEEK 7842 NL', cat: 'healthcare', amount: -18.60, account: 'main', confidence: 58, needsReview: true },
+  { id: 'ta5',  date: '2025-12-05', time: '10:10', merchant: 'Apotheek Centraal', desc: 'APOTHEEK 7842 NL', cat: 'healthcare', amount: -7.20,  account: 'main', confidence: 49, needsReview: true },
+  { id: 'ta6',  date: '2025-11-22', time: '15:00', merchant: 'Apotheek Centraal', desc: 'APOTHEEK 7842 NL', cat: 'prescription', amount: -31.40, account: 'main', confidence: 63, needsReview: true },
+  { id: 'ta7',  date: '2025-11-10', time: '09:30', merchant: 'Apotheek Centraal', desc: 'APOTHEEK 7842 NL', cat: 'healthcare', amount: -12.90, account: 'main', confidence: 56, needsReview: true },
+  { id: 'ta8',  date: '2025-10-30', time: '17:45', merchant: 'Apotheek Centraal', desc: 'APOTHEEK 7842 NL', cat: 'prescription', amount: -8.40,  account: 'main', confidence: 51, needsReview: true },
+  { id: 'ta9',  date: '2025-10-14', time: '12:20', merchant: 'Apotheek Centraal', desc: 'APOTHEEK 7842 NL', cat: 'healthcare', amount: -24.70, account: 'main', confidence: 67, needsReview: true },
+  { id: 'ta10', date: '2025-09-28', time: '14:00', merchant: 'Apotheek Centraal', desc: 'APOTHEEK 7842 NL', cat: 'prescription', amount: -16.50, account: 'main', confidence: 54, needsReview: true },
+  { id: 'ta11', date: '2025-09-10', time: '11:30', merchant: 'Apotheek Centraal', desc: 'APOTHEEK 7842 NL', cat: 'prescription', amount: -11.20, account: 'main', confidence: 59, needsReview: true },
+  { id: 'ta12', date: '2025-08-25', time: '16:40', merchant: 'Apotheek Centraal', desc: 'APOTHEEK 7842 NL', cat: 'healthcare', amount: -28.90, account: 'main', confidence: 61, needsReview: true },
+  { id: 'ta13', date: '2025-08-12', time: '10:50', merchant: 'Apotheek Centraal', desc: 'APOTHEEK 7842 NL', cat: 'prescription', amount: -6.80,  account: 'main', confidence: 47, needsReview: true },
+  { id: 'ta14', date: '2025-07-30', time: '13:15', merchant: 'Apotheek Centraal', desc: 'APOTHEEK 7842 NL', cat: 'healthcare', amount: -19.40, account: 'main', confidence: 53, needsReview: true },
+  { id: 'ta15', date: '2025-07-18', time: '15:30', merchant: 'Apotheek Centraal', desc: 'APOTHEEK 7842 NL', cat: 'prescription', amount: -33.60, account: 'main', confidence: 65, needsReview: true },
+  { id: 'ta16', date: '2025-07-05', time: '09:00', merchant: 'Apotheek Centraal', desc: 'APOTHEEK 7842 NL', cat: 'healthcare', amount: -14.10, account: 'main', confidence: 58, needsReview: true },
+  { id: 'ta17', date: '2025-06-20', time: '17:20', merchant: 'Apotheek Centraal', desc: 'APOTHEEK 7842 NL', cat: 'prescription', amount: -9.70,  account: 'main', confidence: 50, needsReview: true },
+  { id: 'ta18', date: '2025-06-08', time: '12:40', merchant: 'Apotheek Centraal', desc: 'APOTHEEK 7842 NL', cat: 'healthcare', amount: -21.30, account: 'main', confidence: 55, needsReview: true },
 ];
 
 const BUDGETS = [
@@ -874,6 +901,7 @@ function NavProvider({ children, initial = 'home' }) {
 const useNav = () => React.useContext(NavCtx);
 
 function TabBar({ active, onChange }) {
+  const mobile = React.useMemo(() => window.matchMedia('(max-width: 430px)').matches, []);
   const tabs = [
     { id: 'home',      icon: 'home',         label: 'Home' },
     { id: 'tx',        icon: 'list',         label: 'Transactions' },
@@ -889,7 +917,8 @@ function TabBar({ active, onChange }) {
       background: 'rgba(247, 244, 238, 0.92)',
       backdropFilter: 'blur(20px)',
       WebkitBackdropFilter: 'blur(20px)',
-      paddingBottom: 18, paddingTop: 8,
+      paddingBottom: mobile ? 'env(safe-area-inset-bottom, 8px)' : 18,
+      paddingTop: 8,
       display: 'flex',
     }}>
       {tabs.map(t => {
@@ -1132,7 +1161,7 @@ function TxRow({ tx, onClick, showCat = true, showDate = false, dense = false, h
             <div style={{ fontSize: 12, color: M.ink3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
               {showDate ? fmtDate(tx.date) : (highlight ? <HighlightText text={catPath(cat)} query={highlight}/> : catPath(cat))}
             </div>
-            {tx.recurring && <div style={{ width:14, height:14, borderRadius:4, background:M.slate+'22'||M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}><I name="arrowDn" size={7} color={M.slate||M.ink3}/></div>}
+            {tx.recurring && <div style={{ width:14, height:14, borderRadius:4, background:M.paper2, border:`1px solid ${M.line}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, title:'Recurring' }}><I name="receipt" size={7} color={M.ink3}/></div>}
             {tx.needsReview && <div style={{ width:14, height:14, borderRadius:4, background:M.ochreSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}><I name="alert" size={7} color={M.ochre}/></div>}
           </div>
         )}
@@ -1561,24 +1590,52 @@ function ScreenTransactions() {
 
 function ScreenTxDetail({ params }) {
   const nav = useNav();
+  const { txs, updateTx } = useTxCtx();
+  const { recurList, addRecur } = useRecurCtx();
+
   const [showLinkRecurring, setShowLinkRecurring] = React.useState(false);
   const [showCatPicker, setShowCatPicker] = React.useState(false);
-  const tx = TRANSACTIONS.find(t => t.id === params.id) || TRANSACTIONS[0];
+  const [showReceiptEdit, setShowReceiptEdit] = React.useState(false);
+
+  const tx = txs.find(t => t.id === params.id) || txs[0] || TRANSACTIONS[0];
+  const positive = tx.amount > 0;
+
   const initCats = () => tx.cats ? tx.cats.slice() : [{ catId: tx.cat, amount: Math.abs(tx.amount) }];
   const [txCats, setTxCats] = React.useState(initCats);
   const [noteText, setNoteText] = React.useState(tx.note || '');
-  const [editingNote, setEditingNote] = React.useState(false);
+  const [hasReceiptState, setHasReceiptState] = React.useState(tx.hasReceipt || false);
+
   const NOTE_MAX = 200;
-  const positive = tx.amount > 0;
-  const linkedTx = TRANSACTIONS.find(t => t.linkedTo === tx.id);
-  const originalTx = tx.linkedTo ? TRANSACTIONS.find(t => t.id === tx.linkedTo) : null;
-  const reimburse = linkedTx ? linkedTx.amount : 0;
-  const net = tx.amount + reimburse;
+
+  const linkedTx = txs.find(t => t.linkedTo === tx.id);
+  const originalTx = tx.linkedTo ? txs.find(t => t.id === tx.linkedTo) : null;
+  const reimburseAmt = linkedTx ? linkedTx.amount : 0;
+  const net = tx.amount + reimburseAmt;
+  const netOriginalTx = originalTx ? originalTx.amount + tx.amount : 0;
+
   const account = ACCOUNTS.find(a => a.id === tx.account);
-  const linkedRecurring = RECURRING.find(r => r.txIds?.includes(tx.id));
+
+  const linkedRecurId = tx.recurId || null;
+  const linkedRecurring = recurList.find(r => r.id === linkedRecurId || r.txIds?.includes(tx.id));
+
   const primaryCat = CATEGORIES[txCats[0]?.catId] || {};
   const allocTotal = txCats.reduce((s, c) => s + c.amount, 0);
   const remaining = Math.round((Math.abs(tx.amount) - allocTotal) * 100) / 100;
+
+  const heroAmount = reimburseAmt !== 0 ? net : tx.amount;
+  const showOriginal = reimburseAmt !== 0;
+
+  const saveNote = (text) => { updateTx(tx.id, { note: text }); };
+
+  const removeCategory = (i) => {
+    setTxCats(s => {
+      if (s.length === 1) {
+        const fallback = positive ? 'incomeUncategorized' : 'expenseUncategorized';
+        return [{ catId: fallback, amount: Math.abs(tx.amount) }];
+      }
+      return s.filter((_, j) => j !== i);
+    });
+  };
 
   return (
     <div className="m-screen" style={{ position: 'relative' }}>
@@ -1588,6 +1645,7 @@ function ScreenTxDetail({ params }) {
         trailing={null}
       />
       <div className="m-body-scroll">
+        {/* Hero */}
         <div style={{ textAlign: 'center', padding: '8px 0 28px' }}>
           <div style={{
             width: 64, height: 64, borderRadius: 18, background: M.paper2,
@@ -1596,97 +1654,95 @@ function ScreenTxDetail({ params }) {
           }}>
             <I name={primaryCat.icon || 'box'} size={28} color={M.ink2}/>
           </div>
-          <div className="m-num" style={{ fontSize: 38, fontWeight: 600, color: positive ? M.sage : M.ink, letterSpacing: '-0.025em' }}>
-            {positive ? '+' : '−'}{fmtEur(Math.abs(tx.amount))}
+          <div className="m-num" style={{ fontSize: 38, fontWeight: 600, color: heroAmount > 0 ? M.sage : (heroAmount === 0 ? M.ink3 : M.ink), letterSpacing: '-0.025em' }}>
+            {heroAmount > 0 ? '+' : heroAmount < 0 ? '−' : ''}{fmtEur(Math.abs(heroAmount))}
           </div>
-          {linkedTx && (
-            <div style={{ display:'inline-flex', alignItems:'center', gap:6, marginTop:8, padding:'4px 10px', borderRadius:999, background:M.sageSoft }}>
-              <I name="link" size={11} color={M.sage}/>
-              <span style={{ fontSize:11, fontWeight:600, color:M.sage }}>Net {fmtEur(Math.abs(net))} after reimbursement</span>
-            </div>
-          )}
           <div className="m-h2" style={{ marginTop: 14 }}>{tx.merchant}</div>
           <div style={{ fontSize: 13, color: M.ink3, marginTop: 4 }}>{fmtDate(tx.date, 'long')} · {tx.time}</div>
         </div>
 
-        <div className="m-card" style={{ padding: '0 16px 4px', marginBottom: 14, border: `1px solid ${M.line}` }}>
-          <div style={{ paddingTop: 12, paddingBottom: 4 }}>
-            <div className="m-cap" style={{ marginBottom: 8 }}>Categories</div>
-            {txCats.map((c, i) => {
-              const cat = CATEGORIES[c.catId] || {};
-              return (
-                <React.Fragment key={c.catId + i}>
-                  <div style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 0' }}>
-                    <div style={{ width:28, height:28, borderRadius:8, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                      <I name={cat.icon||'box'} size={14} color={M.ink2}/>
-                    </div>
-                    <div style={{ flex:1, fontSize:13, fontWeight:500 }}>{catPath(cat)}</div>
-                    <div className="m-num" style={{ fontSize:13, color:M.ink2 }}>{fmtEur(c.amount)}</div>
-                    {txCats.length > 1 && (
-                      <button onClick={() => setTxCats(s => s.filter((_, j) => j !== i))} style={{ background:'none', border:'none', color:M.clay, padding:'0 4px', fontSize:18, lineHeight:1, cursor:'pointer', fontFamily:M.fontUI }}>×</button>
-                    )}
+        {/* Categories — own card */}
+        <div className="m-card" style={{ padding: '12px 16px', marginBottom: 14, border: `1px solid ${M.line}` }}>
+          <div className="m-cap" style={{ marginBottom: 8 }}>Categories</div>
+          {txCats.map((c, i) => {
+            const cat = CATEGORIES[c.catId] || {};
+            return (
+              <React.Fragment key={c.catId + i}>
+                <div style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 0' }}>
+                  <div style={{ width:28, height:28, borderRadius:8, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                    <I name={cat.icon||'box'} size={14} color={M.ink2}/>
                   </div>
-                  {i < txCats.length - 1 && <Divider/>}
-                </React.Fragment>
-              );
-            })}
-            {remaining > 0.005 && (
-              <div style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 0', borderTop:`1px dashed ${M.line2}`, marginTop:4 }}>
-                <div style={{ width:28, height:28 }}/>
-                <span style={{ flex:1, fontSize:12, color:M.ink4 }}>Unallocated</span>
-                <span className="m-num" style={{ fontSize:12, color:M.ink4 }}>{fmtEur(remaining)}</span>
-              </div>
-            )}
+                  <div style={{ flex:1, fontSize:13, fontWeight:500 }}>{catPath(cat)}</div>
+                  <div className="m-num" style={{ fontSize:13, color:M.ink2 }}>{fmtEur(c.amount)}</div>
+                  <button onClick={() => removeCategory(i)} style={{ background:'none', border:'none', color:M.clay, padding:'0 4px', fontSize:18, lineHeight:1, cursor:'pointer', fontFamily:M.fontUI }}>×</button>
+                </div>
+                {i < txCats.length - 1 && <Divider/>}
+              </React.Fragment>
+            );
+          })}
+          {remaining > 0.005 && (
+            <div style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 0', borderTop:`1px dashed ${M.line2}`, marginTop:4 }}>
+              <div style={{ width:28, height:28 }}/>
+              <span style={{ flex:1, fontSize:12, color:M.ink4 }}>Unallocated</span>
+              <span className="m-num" style={{ fontSize:12, color:M.ink4 }}>{fmtEur(remaining)}</span>
+            </div>
+          )}
+          {remaining > 0.005 && (
             <div className="m-tap" onClick={() => setShowCatPicker(true)} style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 0', borderTop:`1px solid ${M.line2}`, marginTop:4 }}>
               <div style={{ width:28, height:28, borderRadius:8, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center' }}>
                 <I name="plus" size={14} color={M.sage}/>
               </div>
               <span style={{ fontSize:13, color:M.sage, fontWeight:500 }}>Add category split</span>
             </div>
-          </div>
+          )}
+        </div>
 
-          <Divider inset={0}/>
+        {/* General info card */}
+        <div className="m-card" style={{ padding: '4px 16px', marginBottom: 14, border: `1px solid ${M.line}` }}>
           <DetailRow label="Account" value={account?.name || '—'}/>
+          {showOriginal && (
+            <>
+              <Divider inset={0}/>
+              <DetailRow label="Original" value={`${tx.amount > 0 ? '+' : '−'}${fmtEur(Math.abs(tx.amount))}`}/>
+            </>
+          )}
           <Divider inset={0}/>
           {!positive && (
             <>
               <div className="m-tap" onClick={() => setShowLinkRecurring(true)} style={{ display:'flex', alignItems:'center', gap:10, padding:'14px 0' }}>
                 <div style={{ fontSize:12, color:M.ink3, width:96 }}>Recurring</div>
-                <div style={{ flex:1, fontSize:13, color:linkedRecurring?M.ink:M.ink4, display:'flex', alignItems:'center', gap:8 }}>
+                <div style={{ flex:1, fontSize:13, color:linkedRecurring?M.ink:M.ink4, display:'flex', alignItems:'center', gap:8, minWidth:0 }}>
                   {linkedRecurring ? (
                     <>
                       <I name={linkedRecurring.icon} size={14} color={M.ink3}/>
-                      <span>{linkedRecurring.name}</span>
+                      <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{linkedRecurring.name}</span>
                     </>
-                  ) : 'Link to recurring cost…'}
+                  ) : 'Link to recurring…'}
                 </div>
-                <I name="caretR" size={14} color={M.ink4}/>
+                {linkedRecurring ? (
+                  <button className="m-tap" onClick={e => { e.stopPropagation(); updateTx(tx.id, { recurId: null }); }}
+                    style={{ background:'none', border:'none', color:M.clay, fontSize:16, lineHeight:1, cursor:'pointer', fontFamily:M.fontUI, padding:'0 4px' }}>×</button>
+                ) : (
+                  <I name="caretR" size={14} color={M.ink4}/>
+                )}
               </div>
               <Divider inset={0}/>
             </>
           )}
           <DetailRow label="Description" value={tx.desc} mono/>
           <Divider inset={0}/>
-          {editingNote ? (
-            <div style={{ padding:'12px 0' }}>
-              <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>Note</div>
+          {noteText !== undefined && (
+            <div className="m-tap" onClick={() => {}} style={{ display:'flex', alignItems:'flex-start', gap:10, padding:'12px 0' }}>
+              <div style={{ fontSize:12, color:M.ink3, width:96, paddingTop:1 }}>Note</div>
               <textarea
                 value={noteText}
                 onChange={e => setNoteText(e.target.value.slice(0, NOTE_MAX))}
-                onBlur={() => setEditingNote(false)}
-                autoFocus
-                rows={3}
-                style={{ width:'100%', border:`1px solid ${M.sage}`, borderRadius:10, padding:'8px 10px', fontSize:13, fontFamily:M.fontUI, resize:'none', outline:'none', background:M.paper2, color:M.ink, lineHeight:1.5 }}
+                onBlur={() => saveNote(noteText)}
+                rows={noteText ? Math.min(5, Math.ceil(noteText.length / 40) + 1) : 2}
+                placeholder="Add a note…"
+                style={{ flex:1, border:`1px solid ${M.line}`, borderRadius:8, padding:'6px 8px', fontSize:13, fontFamily:M.fontUI, resize:'none', outline:'none', background:M.paper2, color:M.ink, lineHeight:1.5 }}
               />
-              <div style={{ fontSize:10, color:M.ink4, textAlign:'right', marginTop:4 }}>{noteText.length}/{NOTE_MAX}</div>
-            </div>
-          ) : (
-            <div className="m-tap" onClick={() => setEditingNote(true)} style={{ display:'flex', alignItems:'center', gap:10, padding:'14px 0' }}>
-              <div style={{ fontSize:12, color:M.ink3, width:96 }}>Note</div>
-              <div style={{ flex:1, fontSize:13, color:noteText ? M.ink : M.ink4, fontStyle:noteText ? 'normal' : 'italic', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                {noteText || 'Add a note…'}
-              </div>
-              <I name="edit" size={13} color={M.ink4}/>
+              <div style={{ fontSize:10, color:M.ink4, alignSelf:'flex-end', paddingBottom:2, minWidth:30, textAlign:'right' }}>{noteText.length}/{NOTE_MAX}</div>
             </div>
           )}
         </div>
@@ -1697,9 +1753,9 @@ function ScreenTxDetail({ params }) {
               <div className="m-h2" style={{ marginBottom:4 }}>Link to recurring</div>
               <div style={{ fontSize:13, color:M.ink3, marginBottom:16 }}>Attach this transaction to a recurring cost.</div>
               <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}`, marginBottom:16 }}>
-                {RECURRING.filter(r => r.amount < 0).map((r, i, a) => (
+                {recurList.filter(r => r.amount < 0).map((r, i, a) => (
                   <React.Fragment key={r.id}>
-                    <div className="m-tap" onClick={() => setShowLinkRecurring(false)} style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
+                    <div className="m-tap" onClick={() => { updateTx(tx.id, { recurId: r.id }); setShowLinkRecurring(false); }} style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
                       <div style={{ width:36, height:36, borderRadius:10, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center' }}>
                         <I name={r.icon} size={16} color={M.ink2}/>
                       </div>
@@ -1726,39 +1782,49 @@ function ScreenTxDetail({ params }) {
           </Sheet>
         )}
 
+        {/* Receipt */}
         <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Receipt</div>
-        <div className="m-card" style={{ padding: 14, marginBottom: 14, display: 'flex', gap: 12, alignItems: 'center', border: `1px solid ${M.line}` }}>
-          {tx.hasReceipt ? (
-            <>
+        <div className="m-card" style={{ padding: 14, marginBottom: 14, border: `1px solid ${M.line}` }}>
+          {hasReceiptState ? (
+            <div style={{ display:'flex', gap:12, alignItems:'center' }}>
               <div style={{ width: 40, height: 52, borderRadius: 6, background: M.paper2, border: `1px solid ${M.line}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <I name="receipt" size={20} color={M.ink2}/>
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 13, fontWeight: 500 }}>{tx.merchant} · receipt</div>
                 <div style={{ fontSize: 11, color: M.ink3, marginTop: 2 }}>Auto-matched · {fmtEur(Math.abs(tx.amount))}</div>
+                <div style={{ display:'flex', gap:6, marginTop:6 }}>
+                  <button className="m-tap" style={{ fontSize:11, fontWeight:600, color:M.ink3, background:M.paper2, border:`1px solid ${M.line}`, borderRadius:6, padding:'4px 8px', cursor:'pointer', fontFamily:M.fontUI }}>
+                    Edit
+                  </button>
+                  <button className="m-tap" onClick={() => setHasReceiptState(false)} style={{ fontSize:11, fontWeight:600, color:M.clay, background:M.claySoft, border:'none', borderRadius:6, padding:'4px 8px', cursor:'pointer', fontFamily:M.fontUI }}>
+                    Remove
+                  </button>
+                </div>
               </div>
               <I name="caretR" size={16} color={M.ink4}/>
-            </>
+            </div>
           ) : (
-            <>
+            <div style={{ display:'flex', gap:12, alignItems:'center' }}>
               <div style={{ width: 40, height: 52, borderRadius: 6, border: `1px dashed ${M.line}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink:0 }}>
                 <I name="cam" size={18} color={M.ink4}/>
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 12, color: M.ink3, marginBottom: 6 }}>No receipt yet</div>
                 <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-                  <button className="m-tap" style={{ fontSize:11, fontWeight:600, color:M.sage, background:M.sageSoft, border:'none', borderRadius:6, padding:'4px 8px', cursor:'pointer', fontFamily:M.fontUI }}>
+                  <button className="m-tap" onClick={() => setHasReceiptState(true)} style={{ fontSize:11, fontWeight:600, color:M.sage, background:M.sageSoft, border:'none', borderRadius:6, padding:'4px 8px', cursor:'pointer', fontFamily:M.fontUI }}>
                     📷 Take photo
                   </button>
-                  <button className="m-tap" onClick={() => nav.push('integrations')} style={{ fontSize:11, fontWeight:600, color:M.ink3, background:M.paper2, border:`1px solid ${M.line}`, borderRadius:6, padding:'4px 8px', cursor:'pointer', fontFamily:M.fontUI }}>
-                    Connect store →
+                  <button className="m-tap" onClick={() => nav.push('integrations')} style={{ fontSize:11, fontWeight:600, color:M.ink2, background:M.paper2, border:`1px solid ${M.line}`, borderRadius:6, padding:'4px 8px', cursor:'pointer', fontFamily:M.fontUI }}>
+                    Get from connected store
                   </button>
                 </div>
               </div>
-            </>
+            </div>
           )}
         </div>
 
+        {/* Reimbursement of (this tx is a reimbursement) */}
         {originalTx && (
           <>
             <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Reimbursement of</div>
@@ -1770,7 +1836,10 @@ function ScreenTxDetail({ params }) {
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 13, fontWeight: 500 }}>{originalTx.merchant}</div>
-                  <div style={{ fontSize: 11, color: M.ink3, marginTop: 1 }}>{fmtDate(originalTx.date)} · {fmtEur(Math.abs(originalTx.amount))}</div>
+                  <div style={{ fontSize: 11, color: M.ink3, marginTop: 1 }}>{fmtDate(originalTx.date)} · original {fmtEur(Math.abs(originalTx.amount))}</div>
+                </div>
+                <div className="m-num" style={{ fontWeight: 600, color: M.clay }}>
+                  {netOriginalTx < 0 ? '−' : ''}{fmtEur(Math.abs(netOriginalTx))}
                 </div>
                 <I name="caretR" size={14} color={M.ink4}/>
               </div>
@@ -1778,37 +1847,44 @@ function ScreenTxDetail({ params }) {
           </>
         )}
 
+        {/* Reimbursed by (this expense has a reimbursement) */}
         {linkedTx && (
           <>
             <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Reimbursed by · 1</div>
             <div className="m-card" style={{ padding: '4px 16px', marginBottom: 14, border: `1px solid ${M.line}` }}>
-              <div className="m-tap" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0' }}
-                onClick={() => nav.push('txDetail', { id: linkedTx.id })}>
-                <div style={{ width: 32, height: 32, borderRadius: 9, background: M.sageSoft, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <I name="link" size={16} color={M.sage}/>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0' }}>
+                <div className="m-tap" style={{ display:'flex', alignItems:'center', gap:12, flex:1, minWidth:0 }}
+                  onClick={() => nav.push('txDetail', { id: linkedTx.id })}>
+                  <div style={{ width: 32, height: 32, borderRadius: 9, background: M.sageSoft, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink:0 }}>
+                    <I name="link" size={16} color={M.sage}/>
+                  </div>
+                  <div style={{ flex: 1, minWidth:0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{linkedTx.merchant}</div>
+                    <div style={{ fontSize: 11, color: M.ink3, marginTop: 1 }}>{fmtDate(linkedTx.date)} · reimbursed</div>
+                  </div>
+                  <div className="m-num" style={{ fontWeight: 600, color: M.sage }}>+{fmtEur(linkedTx.amount)}</div>
+                  <I name="caretR" size={14} color={M.ink4}/>
                 </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 500 }}>{linkedTx.merchant}</div>
-                  <div style={{ fontSize: 11, color: M.ink3, marginTop: 1 }}>{fmtDate(linkedTx.date)} · partial</div>
-                </div>
-                <div className="m-num" style={{ fontWeight: 600, color: M.sage }}>+{fmtEur(linkedTx.amount)}</div>
-                <I name="caretR" size={14} color={M.ink4}/>
+                <button className="m-tap" onClick={() => updateTx(linkedTx.id, { linkedTo: undefined })}
+                  style={{ background:'none', border:'none', color:M.clay, fontSize:18, lineHeight:1, cursor:'pointer', fontFamily:M.fontUI, padding:'0 0 0 8px', flexShrink:0 }}>×</button>
               </div>
             </div>
           </>
         )}
 
-        <button className="m-btn outline m-tap" style={{ width: '100%', marginBottom: 18 }}
-          onClick={() => nav.push('linkReimburse', { txId: tx.id, positive })}>
-          <I name="link" size={16}/>
-          {positive ? 'Link reimbursed expense' : 'Link a reimbursement'}
-        </button>
+        {net !== 0 && (
+          <button className="m-btn outline m-tap" style={{ width: '100%', marginBottom: 18 }}
+            onClick={() => nav.push('linkReimburse', { txId: tx.id, positive })}>
+            <I name="link" size={16}/>
+            {positive ? 'Link reimbursed expense' : 'Link a reimbursement'}
+          </button>
+        )}
       </div>
 
       {showCatPicker && (
         <CategoryPicker
           selected={txCats.length === 1 ? txCats[0].catId : null}
-          filterPositive={!positive}
+          positiveOnly={positive}
           defaultAmount={remaining > 0.005 ? remaining : 0}
           maxAmount={Math.abs(tx.amount)}
           onClose={() => setShowCatPicker(false)}
@@ -2332,8 +2408,11 @@ function ScreenProfile() {
               </>
             ) : (
               <>
-                <div style={{ fontSize: 17, fontWeight: 600 }}>{name}</div>
-                <div style={{ fontSize: 12, color: M.ink3, marginTop: 2 }}>{email}</div>
+                <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:2 }}>
+                  <div style={{ fontSize: 17, fontWeight: 600 }}>{name}</div>
+                  <div style={{ fontSize:10, fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', padding:'2px 7px', borderRadius:999, background:M.ochreSoft, color:M.ochre }}>Demo</div>
+                </div>
+                <div style={{ fontSize: 12, color: M.ink3 }}>{email}</div>
               </>
             )}
           </div>
@@ -2366,22 +2445,26 @@ function ScreenProfile() {
 
         <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Manage</div>
         <div className="m-card" style={{ padding: '4px 16px', marginBottom: 16, border: `1px solid ${M.line}` }}>
+          <ProfileLink icon="box" label="Categories" sub="Manage custom categories" onClick={() => nav.push('manageCategories')}/>
+          <Divider inset={48}/>
           <ProfileLink icon="card" label="Bank accounts" sub="2 connected" onClick={() => nav.push('accounts')}/>
           <Divider inset={48}/>
           <ProfileLink icon="link" label="Integrations" sub="3 merchants connected"/>
           <Divider inset={48}/>
-          <ProfileLink icon="cal" label="Periods" sub="Monthly · 20th"/>
+          <ProfileLink icon="cal" label="Periods" sub="Monthly · 20th" onClick={() => nav.push('periods')}/>
           <Divider inset={48}/>
           <ProfileLink icon="sliders" label="Customize home" sub="Reorder and show/hide cards" onClick={() => nav.push('customizeHome')}/>
         </div>
 
         <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Account</div>
         <div className="m-card" style={{ padding: '4px 16px', marginBottom: 16, border: `1px solid ${M.line}` }}>
-          <ProfileLink icon="bell" label="Notifications"/>
+          <ProfileLink icon="bell" label="Notifications" onClick={() => nav.push('notifications')}/>
           <Divider inset={48}/>
           <ProfileLink icon="lock" label="Privacy & security"/>
           <Divider inset={48}/>
           <ProfileLink icon="sliders" label="Settings" sub="Appearance, notifications & more" onClick={() => nav.push('settings')}/>
+          <Divider inset={48}/>
+          <ProfileLink icon="map" label="Tutorial" sub="Walkthrough of key features" onClick={() => nav.push('tutorial')}/>
           <Divider inset={48}/>
           <ProfileLink icon="help" label="Help & support"/>
           <Divider inset={48}/>
@@ -2467,6 +2550,396 @@ function ScreenSettings() {
           <SettingToggle label="Daily summary" sub="9:00 push notification" on/>
           <Divider inset={0}/>
           <SettingToggle label="Round-up to savings" sub="Round purchases up to nearest €1"/>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScreenPeriods() {
+  const nav = useNav();
+  const [selectedDay, setSelectedDay] = React.useState(20);
+  // Days 1-28 (disallow 29-31 as some months don't have them)
+  const days = Array.from({ length: 28 }, (_, i) => i + 1);
+  const ordinalStr = (d) => {
+    if (d === 1 || d === 21) return `${d}st`;
+    if (d === 2 || d === 22) return `${d}nd`;
+    if (d === 3 || d === 23) return `${d}rd`;
+    return `${d}th`;
+  };
+
+  return (
+    <div className="m-screen">
+      <StatusBar/>
+      <AppBar title="Period settings"
+        leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
+      />
+      <div className="m-body-scroll">
+        <div style={{ padding:'12px 16px', borderRadius:12, background:M.sageSoft, marginBottom:18, fontSize:13, color:M.sage, lineHeight:1.6 }}>
+          <strong>What is a period?</strong> munni organises your finances in periods rather than calendar months. A period starts on your chosen day — ideally the day your salary arrives — so income and expenses always line up.
+        </div>
+
+        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Period start day</div>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(7, 1fr)', gap:8, marginBottom:20 }}>
+          {days.map(d => (
+            <button key={d} className="m-tap" onClick={() => setSelectedDay(d)} style={{
+              height:44, borderRadius:12, border:`1.5px solid ${selectedDay === d ? M.sage : M.line}`,
+              background: selectedDay === d ? M.sage : M.card,
+              color: selectedDay === d ? '#fff' : M.ink,
+              fontSize:14, fontWeight: selectedDay === d ? 700 : 400,
+              cursor:'pointer', fontFamily:M.fontUI,
+              display:'flex', alignItems:'center', justifyContent:'center',
+            }}>{d}</button>
+          ))}
+        </div>
+
+        <div className="m-card" style={{ padding:14, marginBottom:16, border:`1px solid ${M.line}` }}>
+          <div style={{ fontSize:13, fontWeight:600, marginBottom:4 }}>Current period</div>
+          <div style={{ fontSize:13, color:M.ink3 }}>
+            {ordinalStr(selectedDay)} of each month — period runs from the <strong>{ordinalStr(selectedDay)}</strong> to the <strong>{ordinalStr(selectedDay === 1 ? 28 : selectedDay - 1)}</strong> of the following month.
+          </div>
+        </div>
+
+        <div style={{ padding:'10px 14px', borderRadius:10, background:M.ochreSoft, marginBottom:20, fontSize:12, color:M.ochre, lineHeight:1.5 }}>
+          <strong>Tip:</strong> We recommend choosing the day your salary is deposited. If there is sometimes a 1–2 day delay, pick the earliest expected day to avoid your salary landing in the wrong period.
+        </div>
+
+        <button className="m-btn sage m-tap" style={{ width:'100%' }} onClick={() => nav.pop()}>
+          Save — periods start on the {ordinalStr(selectedDay)}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ScreenTutorial() {
+  const nav = useNav();
+  const steps = [
+    {
+      title: 'Welcome to munni',
+      icon: 'home',
+      color: M.sage,
+      body: 'munni helps you understand where your money goes each period — not just each month. Let\'s walk through the key concepts.',
+      hint: null,
+    },
+    {
+      title: 'Set your period start day',
+      icon: 'cal',
+      color: M.ochre,
+      body: 'A "period" in munni starts on the day your salary lands. This keeps your income and expenses in sync — no more salary arriving on the 18th and expenses counted from the 1st.',
+      hint: 'Profile → Manage → Periods',
+    },
+    {
+      title: 'Choose the right day',
+      icon: 'wallet',
+      color: M.violet,
+      body: 'Pick the earliest day your salary reliably arrives. If there is ever a 1–2 day bank delay, choosing a slightly earlier day ensures your income always falls in the right period.',
+      hint: 'We recommend: the day of salary transfer',
+    },
+    {
+      title: 'Review new transactions',
+      icon: 'check',
+      color: M.sage,
+      body: 'When your bank syncs, munni uses AI to categorise transactions. Tap "Review" on the home screen to confirm or correct the AI\'s guesses — this improves accuracy over time.',
+      hint: 'Home → Review transactions',
+    },
+    {
+      title: 'Allocate your income',
+      icon: 'rocket',
+      color: M.violet,
+      body: 'Use the Allocate screen to plan how your income is split across topics like Housing, Food, and Fun. Create topics with categories and set a monthly estimate.',
+      hint: 'Home → Allocate',
+    },
+  ];
+  const [step, setStep] = React.useState(0);
+  const cur = steps[step];
+
+  return (
+    <div className="m-screen">
+      <StatusBar/>
+      <AppBar title="Getting started"
+        leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="x" size={20}/></button>}
+      />
+      <div style={{ flex:1, display:'flex', flexDirection:'column', padding:'0 20px' }}>
+        {/* Progress */}
+        <div style={{ display:'flex', gap:5, padding:'4px 0 20px', flexShrink:0 }}>
+          {steps.map((_, i) => (
+            <div key={i} style={{ flex:1, height:3, borderRadius:999, background: i <= step ? cur.color : M.line2, transition:'background 0.3s' }}/>
+          ))}
+        </div>
+
+        {/* Content */}
+        <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', textAlign:'center', gap:16, paddingBottom:24 }}>
+          <div style={{ width:72, height:72, borderRadius:22, background:cur.color+'22', display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <I name={cur.icon} size={32} color={cur.color}/>
+          </div>
+          <div className="m-h2" style={{ fontSize:22, lineHeight:1.3 }}>{cur.title}</div>
+          <div style={{ fontSize:14, color:M.ink3, lineHeight:1.7, maxWidth:300 }}>{cur.body}</div>
+          {cur.hint && (
+            <div style={{ display:'inline-flex', alignItems:'center', gap:8, padding:'8px 16px', borderRadius:999, background:M.paper2, border:`1px solid ${M.line}` }}>
+              <I name="map" size={13} color={M.ink3}/>
+              <span style={{ fontSize:12, fontWeight:600, color:M.ink2, fontFamily:M.fontMono }}>{cur.hint}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Navigation */}
+        <div style={{ display:'flex', gap:12, paddingBottom:28, flexShrink:0 }}>
+          {step > 0 && (
+            <button className="m-btn outline m-tap" style={{ flex:1 }} onClick={() => setStep(s => s - 1)}>
+              Back
+            </button>
+          )}
+          {step < steps.length - 1 ? (
+            <button className="m-btn sage m-tap" style={{ flex:2 }} onClick={() => setStep(s => s + 1)}>
+              Next →
+            </button>
+          ) : (
+            <button className="m-btn sage m-tap" style={{ flex:2 }} onClick={() => nav.pop()}>
+              <I name="check" size={16} color="#fff" stroke={2.5}/> Done
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScreenManageCategories() {
+  const nav = useNav();
+  const [customCats, setCustomCats] = React.useState([]);
+  const [showAdd, setShowAdd] = React.useState(false);
+  const [newName, setNewName] = React.useState('');
+  const [newParent, setNewParent] = React.useState('entertainment');
+  const [newIcon, setNewIcon] = React.useState('star');
+
+  const premadeParents = Object.values(CATEGORIES).filter(c => c.isParent && !c.positive && c.id !== 'saving' && c.id !== 'expense');
+  const icons = ['fork','shop','car','flame','film','health','bag','globe','rocket','star','house','heart','box','wallet','lock','user'];
+
+  const addCat = () => {
+    if (!newName.trim()) return;
+    const id = `custom_${Date.now()}`;
+    const parent = CATEGORIES[newParent] || {};
+    setCustomCats(cs => [...cs, { id, name: newName.trim(), icon: newIcon, group: parent.name || newParent, parent: newParent, custom: true }]);
+    setNewName(''); setShowAdd(false);
+  };
+
+  return (
+    <div className="m-screen" style={{ position: 'relative' }}>
+      <StatusBar/>
+      <AppBar title="Categories"
+        leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
+        trailing={<button className="m-iconbtn m-tap" onClick={() => setShowAdd(true)}><I name="plus" size={20}/></button>}
+      />
+      <div className="m-body-scroll">
+        <div style={{ padding:'10px 14px', borderRadius:10, background:M.paper2, marginBottom:14, fontSize:12, color:M.ink3, lineHeight:1.5 }}>
+          <strong style={{ color:M.ink }}>Premade categories</strong> are provided by munni and cannot be deleted. You can add <strong style={{ color:M.ink }}>custom sub-categories</strong> to any premade parent.
+        </div>
+
+        {customCats.length > 0 && (
+          <>
+            <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Custom · {customCats.length}</div>
+            <div className="m-card" style={{ padding:'4px 16px', marginBottom:16, border:`1px solid ${M.line}` }}>
+              {customCats.map((c, i, a) => (
+                <React.Fragment key={c.id}>
+                  <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
+                    <div style={{ width:32, height:32, borderRadius:9, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                      <I name={c.icon} size={15} color={M.sage}/>
+                    </div>
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontSize:14, fontWeight:500 }}>{catPath(c)}</div>
+                      <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>Custom subcategory</div>
+                    </div>
+                    <button className="m-tap" onClick={() => setCustomCats(cs => cs.filter(x => x.id !== c.id))}
+                      style={{ width:28, height:28, borderRadius:8, background:M.claySoft, border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                      <I name="x" size={13} color={M.clay}/>
+                    </button>
+                  </div>
+                  {i < a.length-1 && <Divider inset={44}/>}
+                </React.Fragment>
+              ))}
+            </div>
+          </>
+        )}
+
+        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Premade categories</div>
+        <div className="m-card" style={{ padding:'4px 16px', marginBottom:16, border:`1px solid ${M.line}` }}>
+          {premadeParents.map((p, i, a) => {
+            const subs = Object.values(CATEGORIES).filter(c => c.parent === p.id);
+            const customSubs = customCats.filter(c => c.parent === p.id);
+            return (
+              <React.Fragment key={p.id}>
+                <div style={{ padding:'10px 0' }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom: subs.length > 0 ? 8 : 0 }}>
+                    <div style={{ width:28, height:28, borderRadius:8, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                      <I name={p.icon} size={14} color={M.ink2}/>
+                    </div>
+                    <div style={{ flex:1, fontSize:13, fontWeight:600 }}>{p.name}</div>
+                    <div style={{ fontSize:11, color:M.ink4 }}>{subs.length + customSubs.length} subs</div>
+                  </div>
+                  <div style={{ paddingLeft:38 }}>
+                    {subs.map(s => (
+                      <div key={s.id} style={{ fontSize:12, color:M.ink3, padding:'3px 0', display:'flex', alignItems:'center', gap:6 }}>
+                        <div style={{ width:4, height:4, borderRadius:999, background:M.line, flexShrink:0 }}/>
+                        {s.name}
+                      </div>
+                    ))}
+                    {customSubs.map(s => (
+                      <div key={s.id} style={{ fontSize:12, color:M.sage, padding:'3px 0', display:'flex', alignItems:'center', gap:6, justifyContent:'space-between' }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                          <div style={{ width:4, height:4, borderRadius:999, background:M.sage, flexShrink:0 }}/>
+                          {s.name} <span style={{ fontSize:10, color:M.ink4 }}>custom</span>
+                        </div>
+                        <button className="m-tap" onClick={() => setCustomCats(cs => cs.filter(x => x.id !== s.id))}
+                          style={{ background:'none', border:'none', color:M.clay, cursor:'pointer', fontFamily:M.fontUI, fontSize:14, lineHeight:1 }}>×</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {i < a.length-1 && <Divider/>}
+              </React.Fragment>
+            );
+          })}
+        </div>
+      </div>
+
+      {showAdd && (
+        <Sheet onClose={() => setShowAdd(false)}>
+          <div style={{ padding:'4px 20px 32px' }}>
+            <div className="m-h2" style={{ marginBottom:4 }}>New sub-category</div>
+            <div style={{ fontSize:13, color:M.ink3, marginBottom:18 }}>Add a custom sub-category under an existing parent.</div>
+
+            <div className="m-cap" style={{ marginBottom:6 }}>Parent category</div>
+            <div style={{ display:'flex', gap:6, overflowX:'auto', paddingBottom:8, marginBottom:14 }}>
+              {premadeParents.map(p => (
+                <button key={p.id} className="m-tap" onClick={() => setNewParent(p.id)} style={{
+                  flexShrink:0, padding:'6px 12px', borderRadius:10,
+                  border:`1.5px solid ${newParent === p.id ? M.sage : M.line}`,
+                  background: newParent === p.id ? M.sageSoft : M.card,
+                  fontSize:12, fontWeight:600, color: newParent === p.id ? M.sage : M.ink2,
+                  fontFamily:M.fontUI, cursor:'pointer',
+                }}>{p.name}</button>
+              ))}
+            </div>
+
+            <div className="m-cap" style={{ marginBottom:6 }}>Name</div>
+            <input
+              value={newName}
+              onChange={e => setNewName(e.target.value)}
+              placeholder="e.g. VR Gaming"
+              style={{ width:'100%', padding:'10px 14px', borderRadius:12, border:`1.5px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, outline:'none', marginBottom:14, background:M.paper2, color:M.ink, boxSizing:'border-box' }}
+            />
+
+            <div className="m-cap" style={{ marginBottom:6 }}>Icon</div>
+            <div style={{ display:'flex', gap:8, overflowX:'auto', paddingBottom:8, marginBottom:18 }}>
+              {icons.map(ic => (
+                <button key={ic} className="m-tap" onClick={() => setNewIcon(ic)} style={{
+                  flexShrink:0, width:40, height:40, borderRadius:10,
+                  border:`1.5px solid ${newIcon === ic ? M.sage : M.line}`,
+                  background: newIcon === ic ? M.sageSoft : M.card,
+                  display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer',
+                }}>
+                  <I name={ic} size={16} color={newIcon === ic ? M.sage : M.ink2}/>
+                </button>
+              ))}
+            </div>
+
+            <button className="m-btn sage m-tap" style={{ width:'100%' }} onClick={addCat} disabled={!newName.trim()}>
+              Add sub-category
+            </button>
+          </div>
+        </Sheet>
+      )}
+    </div>
+  );
+}
+
+function ScreenNotifications() {
+  const nav = useNav();
+  const { addTxs } = useTxCtx();
+  const [syncing, setSyncing] = React.useState(false);
+  const [lastSynced, setLastSynced] = React.useState(null);
+  const [newCount, setNewCount] = React.useState(0);
+
+  const MERCHANTS_POOL = [
+    { merchant:'Albert Heijn', desc:'AH 5821', cat:'groceries', min:8, max:85 },
+    { merchant:'Koffie ☕', desc:'TOKI ESPRESSO', cat:'coffee', min:3, max:6 },
+    { merchant:'NS · Sprinter', desc:'NS REIZIGERS', cat:'transportPublic', min:4, max:28 },
+    { merchant:'Etos', desc:'ETOS 0341', cat:'toiletry', min:5, max:35 },
+    { merchant:'Vapiano', desc:'VAPIANO 1234', cat:'restaurants', min:12, max:38 },
+    { merchant:'Coolblue', desc:'COOLBLUE ORDER', cat:'electronics', min:29, max:199, confidence:55, needsReview:true },
+    { merchant:'Apotheek Centraal', desc:'APOTHEEK 7842', cat:'prescription', min:8, max:40, confidence:58, needsReview:true },
+  ];
+
+  const handleSync = () => {
+    setSyncing(true);
+    setTimeout(() => {
+      const count = Math.floor(Math.random() * 5) + 1;
+      const now = new Date();
+      const newTxs = Array.from({ length: count }, (_, i) => {
+        const pool = MERCHANTS_POOL[Math.floor(Math.random() * MERCHANTS_POOL.length)];
+        const amt = -(Math.round((pool.min + Math.random() * (pool.max - pool.min)) * 100) / 100);
+        const id = `tsync_${Date.now()}_${i}`;
+        return { id, date: '2026-02-18', time: `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`, merchant: pool.merchant, desc: pool.desc, cat: pool.cat, amount: amt, account: 'main', ...(pool.confidence ? { confidence: pool.confidence } : {}), ...(pool.needsReview ? { needsReview: true } : {}) };
+      });
+      addTxs(newTxs);
+      setNewCount(count);
+      setLastSynced(now.toLocaleTimeString('en-NL', { hour:'2-digit', minute:'2-digit' }));
+      setSyncing(false);
+    }, 1200);
+  };
+
+  return (
+    <div className="m-screen">
+      <StatusBar/>
+      <AppBar title="Notifications"
+        leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
+      />
+      <div className="m-body-scroll">
+        <div className="m-card" style={{ padding:16, marginBottom:16, border:`1px solid ${M.line}` }}>
+          <div style={{ display:'flex', alignItems:'center', gap:14, marginBottom:14 }}>
+            <div style={{ width:44, height:44, borderRadius:13, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+              <I name="sync" size={20} color={M.sage}/>
+            </div>
+            <div style={{ flex:1 }}>
+              <div style={{ fontSize:15, fontWeight:600 }}>Bank sync</div>
+              <div style={{ fontSize:12, color:M.ink3, marginTop:2 }}>{lastSynced ? `Last synced at ${lastSynced} · ${newCount} new` : 'Pull latest transactions from your bank'}</div>
+            </div>
+          </div>
+          <button className="m-btn sage m-tap" style={{ width:'100%' }} onClick={handleSync} disabled={syncing}>
+            {syncing ? (
+              <><I name="sync" size={16} color="#fff"/> Syncing…</>
+            ) : (
+              <><I name="sync" size={16} color="#fff"/> Sync now</>
+            )}
+          </button>
+          {newCount > 0 && (
+            <div style={{ marginTop:10, padding:'8px 12px', borderRadius:10, background:M.sageSoft, fontSize:12, color:M.sage, fontWeight:500 }}>
+              {newCount} new transaction{newCount > 1 ? 's' : ''} added — {TRANSACTIONS.filter(t => t.needsReview).length > 0 ? 'some need review' : 'all categorised'}
+            </div>
+          )}
+        </div>
+
+        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Recent notifications</div>
+        <div className="m-card" style={{ padding:'4px 16px', marginBottom:16, border:`1px solid ${M.line}` }}>
+          {[
+            { icon:'check', color:M.sage, title:'12 transactions synced', sub:'2 hours ago · all categorised' },
+            { icon:'alert', color:M.ochre, title:'3 transactions need review', sub:'2 hours ago · tap to review' },
+            { icon:'wallet', color:M.violet, title:'Salary received', sub:'Yesterday · +€2,480.00' },
+          ].map((n, i, a) => (
+            <React.Fragment key={i}>
+              <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
+                <div style={{ width:32, height:32, borderRadius:9, background:n.color+'22', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  <I name={n.icon} size={15} color={n.color}/>
+                </div>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:13, fontWeight:500 }}>{n.title}</div>
+                  <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{n.sub}</div>
+                </div>
+              </div>
+              {i < a.length - 1 && <Divider inset={44}/>}
+            </React.Fragment>
+          ))}
         </div>
       </div>
     </div>
@@ -3500,6 +3973,25 @@ function ScreenBudgetCreate() {
   <script type="text/babel">
 // ── screens-allocate.jsx ───────────────────────────────────────
 
+// ── Transaction + Recurring context ────────────────────────────
+const TxCtx = React.createContext(null);
+function TxProvider({ children }) {
+  const [txs, setTxs] = React.useState(() => TRANSACTIONS.slice());
+  const updateTx = (id, changes) => setTxs(ts => ts.map(t => t.id === id ? {...t, ...changes} : t));
+  const addTxs = (newTxs) => setTxs(ts => [...newTxs, ...ts]);
+  return <TxCtx.Provider value={{ txs, setTxs, updateTx, addTxs }}>{children}</TxCtx.Provider>;
+}
+const useTxCtx = () => React.useContext(TxCtx);
+
+const RecurCtx = React.createContext(null);
+function RecurProvider({ children }) {
+  const [recurList, setRecurList] = React.useState(() => RECURRING.slice());
+  const addRecur = (r) => setRecurList(rs => [r, ...rs]);
+  const updateRecur = (id, changes) => setRecurList(rs => rs.map(r => r.id === id ? {...r, ...changes} : r));
+  return <RecurCtx.Provider value={{ recurList, addRecur, updateRecur }}>{children}</RecurCtx.Provider>;
+}
+const useRecurCtx = () => React.useContext(RecurCtx);
+
 const AllocCtx = React.createContext(null);
 const useAlloc = () => React.useContext(AllocCtx);
 
@@ -3766,9 +4258,10 @@ function ScreenAllocateTopic({ params }) {
   const [showCatPicker, setShowCatPicker] = React.useState(false);
 
   const topic = topics.find(t => t.id === params?.id) || topics[0];
-  const over    = topic.actual > topic.allocated;
-  const pct     = Math.min(topic.actual / (topic.allocated || 1), 1);
   const topicTxs = TRANSACTIONS.filter(t => topic.cats.includes(t.cat) && t.amount < 0);
+  const computedActual = topicTxs.reduce((s, t) => s + Math.abs(t.amount), 0);
+  const over    = computedActual > topic.allocated;
+  const pct     = Math.min(computedActual / (topic.allocated || 1), 1);
   const history  = [topic.allocated*0.82, topic.allocated*0.95, topic.allocated*1.08, topic.allocated*0.91, topic.allocated*0.98, topic.actual];
   const availableCats = Object.values(CATEGORIES).filter(c => !c.isParent && !c.positive && !topic.cats.includes(c.id));
 
@@ -3787,7 +4280,7 @@ function ScreenAllocateTopic({ params }) {
           {over && (
             <div style={{ display:'inline-flex', alignItems:'center', gap:6, marginTop:8, padding:'5px 12px', borderRadius:999, background:M.claySoft }}>
               <I name="alert" size={12} color={M.clay}/>
-              <span style={{ fontSize:12, fontWeight:600, color:M.clay }}>Over budget by {fmtEur(topic.actual - topic.allocated, {decimals:0})}</span>
+              <span style={{ fontSize:12, fontWeight:600, color:M.clay }}>Over budget by {fmtEur(computedActual - topic.allocated, {decimals:0})}</span>
             </div>
           )}
         </div>
@@ -3795,7 +4288,7 @@ function ScreenAllocateTopic({ params }) {
         <div className="m-card" style={{ padding:16, marginBottom:14, border:`1px solid ${over?M.claySoft:M.line}` }}>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12, marginBottom:14 }}>
             <Stat label="Allocated" value={fmtEur(topic.allocated, {decimals:0})} color={M.ink}/>
-            <Stat label="Actual" value={fmtEur(topic.actual, {decimals:0})} color={over?M.clay:M.sage}/>
+            <Stat label="Actual" value={fmtEur(computedActual, {decimals:0})} color={over?M.clay:M.sage}/>
             <Stat label="Estimate" value={fmtEur(topic.estimate, {decimals:0})} color={M.ink3}/>
           </div>
           <div style={{ height:8, borderRadius:999, background:M.line2, overflow:'hidden' }}>
@@ -3971,20 +4464,35 @@ function AllocateMoveSheet({ topic, onClose }) {
 
 function ScreenAllocateAddTopic() {
   const nav = useNav();
+  const { unallocated } = useAlloc();
   const icons = ['fork','shop','car','flame','film','health','bag','globe','rocket','star','house','heart'];
   const [icon, setIcon] = React.useState('fork');
+  const [topicName, setTopicName] = React.useState('');
   const [selCats, setSelCats] = React.useState([]); // [{catId, amount}]
   const [showCatPicker, setShowCatPicker] = React.useState(false);
-  const totalAllocated = selCats.reduce((s, c) => s + c.amount, 0);
+  const [autoFund, setAutoFund] = React.useState(false);
+
+  const estimate = selCats.reduce((s, c) => s + c.amount, 0);
+  const canAutoFund = unallocated >= estimate && estimate > 0;
+  const allocated = autoFund && canAutoFund ? estimate : 0;
+  const canCreate = topicName.trim().length > 0 && selCats.length > 0 && estimate > 0;
+
+  // Auto-estimate from transaction history per category
+  const autoEstimate = (catId) => {
+    const catTxs = TRANSACTIONS.filter(t => t.cat === catId && t.amount < 0);
+    if (catTxs.length === 0) return 50;
+    const avg = catTxs.reduce((s, t) => s + Math.abs(t.amount), 0) / catTxs.length;
+    return Math.round(avg * 10) / 10;
+  };
 
   return (
     <div className="m-screen" style={{ position: 'relative' }}>
       <StatusBar/>
       <AppBar title="New topic"
         leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="x" size={20}/></button>}
-        trailing={<button className="m-tap" style={{ background:'transparent', border:'none', fontSize:14, fontWeight:600, color:M.sage, fontFamily:M.fontUI }} onClick={() => nav.pop()}>Save</button>}
       />
       <div className="m-body-scroll">
+        {/* 1. Icon */}
         <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Icon</div>
         <div style={{ display:'flex', gap:8, overflowX:'auto', paddingBottom:4, marginBottom:14 }}>
           {icons.map(ic => (
@@ -3998,29 +4506,32 @@ function ScreenAllocateAddTopic() {
           ))}
         </div>
 
-        <div className="m-card" style={{ padding:4, marginBottom:14, border:`1px solid ${M.line}` }}>
-          <FormRow label="Topic name" value="" placeholder="e.g. Family dining"/>
-          <Divider inset={16}/>
-          <FormRow label="Allocated" value={totalAllocated > 0 ? fmtEur(totalAllocated) : '€0,00'} icon="wallet"/>
-          <Divider inset={16}/>
-          <FormRow label="Estimate" value="€0,00"/>
-        </div>
+        {/* 2. Topic name */}
+        <div className="m-cap" style={{ marginBottom:6, paddingLeft:4 }}>Topic name</div>
+        <input
+          value={topicName}
+          onChange={e => setTopicName(e.target.value)}
+          placeholder="e.g. Family dining"
+          style={{ width:'100%', padding:'12px 16px', borderRadius:14, border:`1.5px solid ${topicName ? M.ink : M.line}`, fontSize:15, fontFamily:M.fontUI, outline:'none', marginBottom:14, background:M.paper2, color:M.ink, boxSizing:'border-box' }}
+        />
 
-        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Categories · {selCats.length} selected</div>
-        <div className="m-card" style={{ padding:'0 16px', marginBottom:20, border:`1px solid ${M.line}` }}>
+        {/* 3. Categories */}
+        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Categories · {selCats.length}</div>
+        <div className="m-card" style={{ padding:'0 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
           {selCats.length === 0 && (
-            <div style={{ padding:'16px 0', fontSize:13, color:M.ink4, textAlign:'center' }}>No categories yet — add one below</div>
+            <div style={{ padding:'14px 0', fontSize:13, color:M.ink4, textAlign:'center' }}>Add categories to estimate spending</div>
           )}
           {selCats.map((c, i) => {
             const cat = CATEGORIES[c.catId] || {};
             return (
               <React.Fragment key={c.catId}>
-                <div style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 0' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:10, padding:'11px 0' }}>
                   <div style={{ width:28, height:28, borderRadius:8, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                     <I name={cat.icon||'box'} size={14} color={M.ink2}/>
                   </div>
                   <div style={{ flex:1 }}>
                     <div style={{ fontSize:13, fontWeight:500 }}>{catPath(cat)}</div>
+                    <div style={{ fontSize:11, color:M.ink4, marginTop:1 }}>avg estimate</div>
                   </div>
                   <span className="m-num" style={{ fontSize:13, color:M.ink2 }}>{fmtEur(c.amount)}</span>
                   <button onClick={() => setSelCats(s => s.filter(x => x.catId !== c.catId))} style={{ background:'none', border:'none', color:M.clay, padding:'0 4px', fontSize:18, lineHeight:1, cursor:'pointer', fontFamily:M.fontUI }}>×</button>
@@ -4029,7 +4540,7 @@ function ScreenAllocateAddTopic() {
               </React.Fragment>
             );
           })}
-          <div className="m-tap" onClick={() => setShowCatPicker(true)} style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 0', borderTop: selCats.length > 0 ? `1px solid ${M.line2}` : 'none' }}>
+          <div className="m-tap" onClick={() => setShowCatPicker(true)} style={{ display:'flex', alignItems:'center', gap:10, padding:'11px 0', borderTop: selCats.length > 0 ? `1px solid ${M.line2}` : 'none' }}>
             <div style={{ width:28, height:28, borderRadius:8, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center' }}>
               <I name="plus" size={14} color={M.sage}/>
             </div>
@@ -4037,22 +4548,74 @@ function ScreenAllocateAddTopic() {
           </div>
         </div>
 
-        <button className="m-btn sage m-tap" style={{ width:'100%', marginBottom:18 }} onClick={() => nav.pop()}>
+        {/* 4. Estimate */}
+        <div className="m-cap" style={{ marginBottom:6, paddingLeft:4 }}>Estimate</div>
+        <div className="m-card" style={{ padding:'12px 16px', marginBottom:14, border:`1px solid ${M.line}`, display:'flex', alignItems:'center', gap:10 }}>
+          <I name="wallet" size={16} color={M.ink3}/>
+          <div style={{ flex:1, fontSize:13, color:M.ink2 }}>
+            {estimate > 0 ? `${fmtEur(estimate)} · based on avg category history` : 'Add categories to calculate estimate'}
+          </div>
+          <div className="m-num" style={{ fontSize:16, fontWeight:600, color:estimate > 0 ? M.ink : M.ink4 }}>
+            {estimate > 0 ? fmtEur(estimate) : '—'}
+          </div>
+        </div>
+
+        {/* 5. Allocated — auto-fund checkbox */}
+        <div className="m-cap" style={{ marginBottom:6, paddingLeft:4 }}>Auto-fund</div>
+        <div className="m-card" style={{ padding:'14px 16px', marginBottom:20, border:`1px solid ${M.line}` }}>
+          <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+            <div style={{ flex:1 }}>
+              <div style={{ fontSize:14, fontWeight:500 }}>Fund from unallocated income</div>
+              <div style={{ fontSize:12, color:M.ink3, marginTop:2 }}>
+                {canAutoFund
+                  ? `Allocate ${fmtEur(estimate)} from ${fmtEur(unallocated)} available`
+                  : estimate > 0
+                    ? `Not enough unallocated (${fmtEur(unallocated)} available)`
+                    : 'Set estimate first'}
+              </div>
+            </div>
+            <button
+              onClick={() => canAutoFund && setAutoFund(v => !v)}
+              style={{ background:'none', border:'none', cursor: canAutoFund ? 'pointer' : 'default', opacity: canAutoFund ? 1 : 0.4, padding:0 }}
+            >
+              <Toggle on={autoFund && canAutoFund}/>
+            </button>
+          </div>
+          {autoFund && canAutoFund && (
+            <div style={{ marginTop:10, padding:'8px 12px', borderRadius:10, background:M.sageSoft, fontSize:12, color:M.sage, fontWeight:500 }}>
+              {fmtEur(estimate)} will be allocated when you create this topic
+            </div>
+          )}
+        </div>
+
+        <button
+          className="m-btn sage m-tap"
+          style={{ width:'100%', marginBottom:18, opacity: canCreate ? 1 : 0.5, cursor: canCreate ? 'pointer' : 'default' }}
+          onClick={() => canCreate && nav.pop()}
+          disabled={!canCreate}
+        >
           Create topic
         </button>
+        {!canCreate && (
+          <div style={{ textAlign:'center', fontSize:12, color:M.ink3, marginBottom:20, marginTop:-10 }}>
+            {!topicName.trim() ? 'Enter a topic name' : 'Add at least one category'}
+          </div>
+        )}
       </div>
 
       {showCatPicker && (
         <CategoryPicker
-          filterPositive={true}
+          filterPositive={false}
+          positiveOnly={false}
+          skipAmount={true}
           defaultAmount={0}
           maxAmount={9999}
           onClose={() => setShowCatPicker(false)}
-          onPick={(catId, val) => {
+          onPick={(catId) => {
+            const est = autoEstimate(catId);
             setSelCats(s => {
-              const idx = s.findIndex(x => x.catId === catId);
-              if (idx >= 0) return s.map((x, i) => i === idx ? { ...x, amount: x.amount + val } : x);
-              return [...s, { catId, amount: val }];
+              if (s.findIndex(x => x.catId === catId) >= 0) return s;
+              return [...s, { catId, amount: est }];
             });
             setShowCatPicker(false);
           }}
@@ -4427,13 +4990,16 @@ function ScreenGoalDetail({ params }) {
 
 function ScreenReviewSwipe() {
   const nav = useNav();
-  const queue = TRANSACTIONS.filter(t => t.needsReview);
+  const { txs } = useTxCtx();
+  const [reviewed, setReviewed] = React.useState(new Set());
+  const queue = txs.filter(t => t.needsReview && !reviewed.has(t.id));
   const [idx, setIdx] = React.useState(0);
   const [drag, setDrag] = React.useState(0);
   const [done, setDone] = React.useState(false);
   const [picking, setPicking] = React.useState(false);
-  const [editAmt, setEditAmt] = React.useState(null); // { idx, initial, max }
+  const [editAmt, setEditAmt] = React.useState(null);
   const [bulkSelected, setBulkSelected] = React.useState(new Set());
+  const [previewTx, setPreviewTx] = React.useState(null);
 
   const tx = queue[idx];
   const isNegative = tx && tx.amount < 0;
@@ -4441,25 +5007,46 @@ function ScreenReviewSwipe() {
   const initCats = (t) => [{ id: t.cat, amount: Math.abs(t.amount) }];
   const [txCats, setTxCats] = React.useState(() => tx ? initCats(tx) : []);
 
-  React.useEffect(() => { if (tx) setTxCats(initCats(tx)); }, [idx]);
+  React.useEffect(() => { if (tx) setTxCats(initCats(tx)); }, [idx, queue.length]);
   React.useEffect(() => { setBulkSelected(new Set()); }, [idx]);
 
   const allocatedSum = txCats.reduce((s, c) => s + c.amount, 0);
   const txAbs = tx ? Math.abs(tx.amount) : 0;
   const unallocated = Math.max(0, txAbs - allocatedSum);
 
-  const queueSimilar = tx ? queue.filter(t => t.merchant === tx.merchant && t.id !== tx.id) : [];
+  // Conditional bulk: single cat → same merchant; multi-cat → same merchant + same amount
+  const singleCat = txCats.length === 1;
+  const queueSimilar = tx ? queue.filter(t => {
+    if (t.id === tx.id) return false;
+    if (singleCat) return t.merchant === tx.merchant;
+    return t.merchant === tx.merchant && t.amount === tx.amount;
+  }) : [];
 
-  const advance = (dir) => {
-    setDrag(dir > 0 ? 160 : -160);
+  const totalToConfirm = 1 + bulkSelected.size;
+
+  const advance = () => {
+    setDrag(160);
     setTimeout(() => {
-      if (idx + 1 >= queue.length) setDone(true);
-      else setIdx(i => i + 1);
+      const nextIdx = idx + 1 >= queue.length ? 0 : idx;
+      setIdx(nextIdx);
+      setDrag(0);
+      if (queue.length <= 1) setDone(true);
+    }, 220);
+  };
+
+  const confirmCurrent = () => {
+    if (txCats.length === 0) return;
+    const toMark = new Set([tx.id, ...Array.from(bulkSelected)]);
+    setReviewed(r => new Set([...r, ...toMark]));
+    setBulkSelected(new Set());
+    setDrag(160);
+    setTimeout(() => {
+      setIdx(0);
       setDrag(0);
     }, 220);
   };
 
-  if (queue.length === 0 || done || idx >= queue.length) {
+  if (queue.length === 0 || done) {
     return (
       <div className="m-screen">
         <StatusBar/>
@@ -4484,9 +5071,10 @@ function ScreenReviewSwipe() {
       />
 
       <div style={{ display:'flex', justifyContent:'center', gap:4, padding:'0 20px 14px', flexShrink:0 }}>
-        {queue.map((_, i) => (
+        {queue.slice(0, Math.min(queue.length, 20)).map((_, i) => (
           <div key={i} style={{ flex:1, height:3, borderRadius:999, background: i < idx ? M.sage : i === idx ? M.ink : M.line2 }}/>
         ))}
+        {queue.length > 20 && <div style={{ fontSize:10, color:M.ink4, alignSelf:'center', marginLeft:4 }}>+{queue.length - 20}</div>}
       </div>
 
       <div style={{ flex:1, overflowY:'auto', padding:'0 20px' }}>
@@ -4553,28 +5141,47 @@ function ScreenReviewSwipe() {
           </div>
 
           {queueSimilar.length > 0 && (
-            <div style={{ marginTop:14, padding:'12px 14px', borderRadius:12, background:M.violetSoft||'#EEE8FF', border:`1px solid ${M.violet}22` }}>
-              <div style={{ fontSize:11, fontWeight:700, letterSpacing:'0.05em', textTransform:'uppercase', color:M.violet, marginBottom:8 }}>
-                Same merchant in queue · {queueSimilar.length}
-              </div>
-              {queueSimilar.map(st => (
-                <div key={st.id} className="m-tap" onClick={() => setBulkSelected(s => { const n = new Set(s); n.has(st.id) ? n.delete(st.id) : n.add(st.id); return n; })}
-                  style={{ display:'flex', alignItems:'center', gap:10, padding:'6px 0' }}>
-                  <div style={{ width:18, height:18, borderRadius:5, border:`2px solid ${bulkSelected.has(st.id) ? M.violet : M.line}`, background: bulkSelected.has(st.id) ? M.violet : 'transparent', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, transition:'all 0.15s' }}>
-                    {bulkSelected.has(st.id) && <I name="check" size={10} color="#fff" stroke={3}/>}
-                  </div>
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:12, fontWeight:600 }}>{st.merchant}</div>
-                    <div style={{ fontSize:11, color:M.ink3 }}>{fmtDate(st.date)} · {fmtEur(Math.abs(st.amount))}</div>
-                  </div>
+            <div style={{ marginTop:14, borderRadius:12, background:M.violetSoft||'#EEE8FF', border:`1px solid ${M.violet}22`, overflow:'hidden' }}>
+              <div style={{ padding:'10px 14px 8px', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                <div style={{ fontSize:11, fontWeight:700, letterSpacing:'0.05em', textTransform:'uppercase', color:M.violet }}>
+                  {singleCat ? `Same merchant in queue` : `Same merchant & amount`} · {queueSimilar.length}
                 </div>
-              ))}
-              {bulkSelected.size > 0 && (
-                <button className="m-tap" onClick={() => { setBulkSelected(new Set()); }}
-                  style={{ marginTop:10, width:'100%', height:34, borderRadius:10, border:'none', background:M.violet, color:'#fff', fontSize:12, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
-                  <I name="check" size={12} color="#fff" stroke={2.5}/> Apply to {bulkSelected.size} selected
-                </button>
-              )}
+                {bulkSelected.size > 0 && (
+                  <div style={{ fontSize:11, fontWeight:600, color:M.violet }}>{bulkSelected.size} selected</div>
+                )}
+              </div>
+              <div style={{ maxHeight:220, overflowY:'auto' }}>
+                {queueSimilar.map((st, stIdx) => (
+                  <div key={st.id} style={{
+                    display:'flex', alignItems:'center', gap:10,
+                    padding:'9px 14px',
+                    background: bulkSelected.has(st.id) ? M.violet+'18' : 'transparent',
+                    borderTop: stIdx > 0 ? `1px solid ${M.violet}18` : 'none',
+                    transition:'background 0.15s',
+                  }}>
+                    <div
+                      className="m-tap"
+                      onClick={() => setBulkSelected(s => { const n = new Set(s); n.has(st.id) ? n.delete(st.id) : n.add(st.id); return n; })}
+                      style={{ width:22, height:22, borderRadius:7, border:`2px solid ${bulkSelected.has(st.id) ? M.violet : M.violet+'60'}`, background: bulkSelected.has(st.id) ? M.violet : 'transparent', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, transition:'all 0.15s', cursor:'pointer' }}
+                    >
+                      {bulkSelected.has(st.id) && <I name="check" size={10} color="#fff" stroke={3}/>}
+                    </div>
+                    <div className="m-tap" onClick={() => setBulkSelected(s => { const n = new Set(s); n.has(st.id) ? n.delete(st.id) : n.add(st.id); return n; })} style={{ flex:1, minWidth:0, cursor:'pointer' }}>
+                      <div style={{ fontSize:12, fontWeight:600, color:M.ink }}>{fmtDate(st.date)} · {fmtEur(Math.abs(st.amount))}</div>
+                      <div style={{ fontSize:11, color:M.violet+'BB', marginTop:1 }}>{st.desc}</div>
+                    </div>
+                    <button className="m-tap" onClick={e => { e.stopPropagation(); setPreviewTx(st); }}
+                      style={{ width:28, height:28, borderRadius:8, background:M.violet+'18', border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                      <I name="caretR" size={13} color={M.violet}/>
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <div style={{ padding:'8px 14px', borderTop:`1px solid ${M.violet}22`, fontSize:11, color:M.violet+'99' }}>
+                {bulkSelected.size === 0
+                  ? 'Tap a row or checkbox to also update these transactions'
+                  : `Confirming will apply the same categories to all ${totalToConfirm} transactions`}
+              </div>
             </div>
           )}
         </div>
@@ -4582,14 +5189,14 @@ function ScreenReviewSwipe() {
       </div>
 
       <div style={{ display:'flex', gap:12, padding:'12px 20px 20px', flexShrink:0 }}>
-        <button className="m-tap" onClick={() => advance(-1)} style={{
+        <button className="m-tap" onClick={() => advance()} style={{
           flex:1, height:54, borderRadius:16, border:`1px solid ${M.line}`,
           background:'#fff', display:'flex', alignItems:'center', justifyContent:'center', gap:8,
           fontSize:14, fontWeight:600, color:M.ink3,
         }}>
           <I name="x" size={18} color={M.ink3}/> Skip
         </button>
-        <button className="m-tap" onClick={() => txCats.length > 0 && advance(1)} style={{
+        <button className="m-tap" onClick={confirmCurrent} style={{
           flex:2, height:54, borderRadius:16, border:'none',
           background: txCats.length > 0 ? M.sage : M.line2,
           color: txCats.length > 0 ? '#fff' : M.ink4,
@@ -4598,7 +5205,8 @@ function ScreenReviewSwipe() {
           opacity: txCats.length > 0 ? 1 : 0.6,
           cursor: txCats.length > 0 ? 'pointer' : 'default',
         }}>
-          <I name="check" size={20} color={txCats.length > 0 ? '#fff' : M.ink4} stroke={2.5}/> Confirm
+          <I name="check" size={20} color={txCats.length > 0 ? '#fff' : M.ink4} stroke={2.5}/>
+          {totalToConfirm > 1 ? `Confirm · ${totalToConfirm} txs` : 'Confirm'}
         </button>
       </div>
 
@@ -4619,6 +5227,34 @@ function ScreenReviewSwipe() {
           onConfirm={(val) => { setTxCats(cs => cs.map((x, j) => j === editAmt.idx ? { ...x, amount: val } : x)); setEditAmt(null); }}
           onClose={() => setEditAmt(null)}
         />
+      )}
+
+      {previewTx && (
+        <Sheet onClose={() => setPreviewTx(null)}>
+          <div style={{ padding:'4px 20px 32px' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:16 }}>
+              <div style={{ width:36, height:36, borderRadius:10, background:M.claySoft, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                <I name={CATEGORIES[previewTx.cat]?.icon || 'box'} size={16} color={M.clay}/>
+              </div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:15, fontWeight:600 }}>{previewTx.merchant}</div>
+                <div style={{ fontSize:12, color:M.ink3 }}>{fmtDate(previewTx.date, 'long')} · {previewTx.time}</div>
+              </div>
+              <div className="m-num" style={{ fontSize:16, fontWeight:700, color:M.ink }}>−{fmtEur(Math.abs(previewTx.amount))}</div>
+            </div>
+            <div className="m-card" style={{ padding:'4px 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
+              <DetailRow label="Category" value={catPath(CATEGORIES[previewTx.cat] || {})} icon={CATEGORIES[previewTx.cat]?.icon}/>
+              <Divider inset={0}/>
+              <DetailRow label="Description" value={previewTx.desc} mono/>
+              <Divider inset={0}/>
+              <DetailRow label="AI confidence" value={`${previewTx.confidence || 0}%`}/>
+            </div>
+            <div style={{ padding:'8px 12px', borderRadius:10, background:M.ochreSoft, fontSize:12, color:M.ochre, marginBottom:14 }}>
+              Read-only preview. Confirm on the main card to apply categories to this transaction too.
+            </div>
+            <button className="m-btn outline m-tap" style={{ width:'100%' }} onClick={() => setPreviewTx(null)}>Close</button>
+          </div>
+        </Sheet>
       )}
     </div>
   );
@@ -4693,11 +5329,13 @@ function AmountEditSheet({ cat, initialAmount, maxAmount, onConfirm, onClose }) 
   );
 }
 
-function CategoryPicker({ selected, onClose, onPick, filterPositive = false, defaultAmount = 0, maxAmount = 999 }) {
+function CategoryPicker({ selected, onClose, onPick, filterPositive = false, positiveOnly = false, skipAmount = false, defaultAmount = 0, maxAmount = 999 }) {
   const [pickedId, setPickedId] = React.useState(null);
   const [str, press, setStr] = useNumpadStr(defaultAmount);
+  const [searchQ, setSearchQ] = React.useState('');
 
   const handlePickCat = (id) => {
+    if (skipAmount) { onPick(id, 0); return; }
     setStr(defaultAmount > 0 ? defaultAmount.toFixed(2).replace('.', ',') : '0');
     setPickedId(id);
   };
@@ -4705,7 +5343,14 @@ function CategoryPicker({ selected, onClose, onPick, filterPositive = false, def
   const groups = {};
   Object.values(CATEGORIES).forEach(c => {
     if (c.isParent) return;
-    if (filterPositive && c.positive) return;
+    if (positiveOnly && !c.positive) return;
+    if (!positiveOnly && c.positive) return;
+    if (!positiveOnly && c.group === 'Saving') return;
+    if (searchQ) {
+      const q = searchQ.toLowerCase();
+      const parentName = c.parent ? (CATEGORIES[c.parent]?.name || '').toLowerCase() : '';
+      if (!c.name.toLowerCase().includes(q) && !parentName.includes(q) && !c.group.toLowerCase().includes(q)) return;
+    }
     if (!groups[c.group]) groups[c.group] = [];
     groups[c.group].push(c);
   });
@@ -4722,20 +5367,29 @@ function CategoryPicker({ selected, onClose, onPick, filterPositive = false, def
         transition:'top 0.2s ease',
       }}>
         {!pickedId ? (
-          // ── Step 1: category list ──
           <>
             <div style={{ padding:'14px 20px 12px', display:'flex', alignItems:'center', justifyContent:'space-between', borderBottom:`1px solid ${M.line2}`, flexShrink:0 }}>
               <button className="m-tap" onClick={onClose} style={{ background:'transparent', border:'none', fontSize:14, color:M.ink3 }}>Cancel</button>
               <div style={{ fontSize:15, fontWeight:600 }}>Pick category</div>
               <div style={{ width:50 }}/>
             </div>
-            <div style={{ padding:12, flexShrink:0 }}>
-              <div className="m-input" style={{ background:M.paper2, border:'none' }}>
-                <I name="search" size={16} color={M.ink3}/>
-                <span style={{ color:M.ink4 }}>Search categories…</span>
+            <div style={{ padding:'10px 12px 4px', flexShrink:0 }}>
+              <div style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 12px', borderRadius:10, background:M.paper2, border:`1px solid ${M.line}` }}>
+                <I name="search" size={15} color={M.ink3}/>
+                <input
+                  value={searchQ}
+                  onChange={e => setSearchQ(e.target.value)}
+                  placeholder="Search categories…"
+                  autoFocus={false}
+                  style={{ flex:1, border:'none', background:'transparent', fontSize:13, color:M.ink, outline:'none', fontFamily:M.fontUI }}
+                />
+                {searchQ ? <button onClick={() => setSearchQ('')} style={{ background:'none', border:'none', color:M.ink3, cursor:'pointer', fontFamily:M.fontUI, fontSize:16, lineHeight:1 }}>×</button> : null}
               </div>
             </div>
             <div style={{ flex:1, overflowY:'auto', padding:'0 20px 20px' }}>
+              {Object.keys(groups).length === 0 && (
+                <div style={{ textAlign:'center', padding:'32px 0', color:M.ink3, fontSize:13 }}>No results for "{searchQ}"</div>
+              )}
               {Object.entries(groups).map(([groupName, cats]) => (
                 <div key={groupName} style={{ marginBottom:18 }}>
                   <div className="m-cap" style={{ marginBottom:8 }}>{groupName}</div>
@@ -4748,7 +5402,9 @@ function CategoryPicker({ selected, onClose, onPick, filterPositive = false, def
                         display:'flex', alignItems:'center', gap:10, textAlign:'left',
                       }}>
                         <I name={c.icon} size={16} color={selected === c.id ? M.sage : M.ink2}/>
-                        <span style={{ fontSize:13, fontWeight:500, color:M.ink, flex:1 }}>{c.name}</span>
+                        <span style={{ fontSize:13, fontWeight:500, color:M.ink, flex:1 }}>
+                          {searchQ ? <HighlightText text={c.name} query={searchQ}/> : c.name}
+                        </span>
                         {selected === c.id && <I name="check" size={14} color={M.sage} stroke={2.5}/>}
                       </button>
                     ))}
@@ -4756,9 +5412,13 @@ function CategoryPicker({ selected, onClose, onPick, filterPositive = false, def
                 </div>
               ))}
             </div>
+            <div style={{ padding:'8px 20px 20px', borderTop:`1px solid ${M.line2}`, flexShrink:0 }}>
+              <button className="m-tap" onClick={() => {}} style={{ fontSize:12, color:M.ink3, background:'transparent', border:'none', fontFamily:M.fontUI, cursor:'pointer', display:'flex', alignItems:'center', gap:4 }}>
+                <I name="plus" size={12} color={M.ink3}/> Manage custom categories
+              </button>
+            </div>
           </>
         ) : (
-          // ── Step 2: amount numpad ──
           <>
             <div style={{ padding:'14px 20px 12px', display:'flex', alignItems:'center', gap:12, borderBottom:`1px solid ${M.line2}`, flexShrink:0 }}>
               <button className="m-tap" onClick={() => setPickedId(null)} style={{ background:'transparent', border:'none', display:'flex', alignItems:'center', gap:4, color:M.ink3, fontSize:14, cursor:'pointer' }}>
@@ -4795,7 +5455,7 @@ function ScreenLinkReimburse({ params }) {
   const [selected, setSelected] = React.useState(null);
   const [str, pressStr, setStr] = useNumpadStr(0);
 
-  const maxAmt = selected ? Math.abs(selected.amount) : 999;
+  const maxAmt = sourceTx ? Math.abs(sourceTx.amount) : 999;
 
   // Opposite-type transactions: if source is expense (negative), show income; if source is income, show expenses
   const allCandidates = TRANSACTIONS.filter(t => {
@@ -5532,7 +6192,10 @@ const SCREEN_REGISTRY = {
   linkReimburse:  ({params}) => <ScreenLinkReimburse params={params}/>,
   search:         () => <ScreenStub title="Search"/>,
   sync:           () => <ScreenStub title="Sync"/>,
-  notifications:  () => <ScreenStub title="Notifications"/>,
+  notifications:  () => <ScreenNotifications/>,
+  periods:        () => <ScreenPeriods/>,
+  tutorial:       () => <ScreenTutorial/>,
+  manageCategories: () => <ScreenManageCategories/>,
   budgets:        () => <ScreenBudgets/>,
   budgetDetail:   ({params}) => <ScreenBudgetDetail params={params}/>,
   budgetCreate:   () => <ScreenBudgetCreate/>,
@@ -5747,21 +6410,29 @@ function ScreenLoginGate({ onLogin }) {
 function App() {
   const [dark, setDark] = React.useState(false);
   const [loggedIn, setLoggedIn] = React.useState(false);
-  return (
-    <DarkCtx.Provider value={{ dark, setDark }}>
-      <IOSDevice>
-        <div className="m m-app" style={{ width:'100%', height:'100%', background: M.paper, filter: dark ? 'invert(0.93) hue-rotate(180deg)' : 'none', transition:'filter 0.3s' }}>
-          {loggedIn ? (
+  const isMobile = React.useMemo(() => window.matchMedia('(max-width: 430px)').matches, []);
+
+  const appContent = (
+    <div className="m m-app" style={{ width:'100%', height:'100%', background: M.paper, filter: dark ? 'invert(0.93) hue-rotate(180deg)' : 'none', transition:'filter 0.3s' }}>
+      {loggedIn ? (
+        <TxProvider>
+          <RecurProvider>
             <AllocProvider>
               <NavProvider initial="home">
                 <Router/>
               </NavProvider>
             </AllocProvider>
-          ) : (
-            <ScreenLoginGate onLogin={() => setLoggedIn(true)}/>
-          )}
-        </div>
-      </IOSDevice>
+          </RecurProvider>
+        </TxProvider>
+      ) : (
+        <ScreenLoginGate onLogin={() => setLoggedIn(true)}/>
+      )}
+    </div>
+  );
+
+  return (
+    <DarkCtx.Provider value={{ dark, setDark }}>
+      {isMobile ? appContent : <IOSDevice>{appContent}</IOSDevice>}
     </DarkCtx.Provider>
   );
 }
