@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
   <title>munni — finance app</title>
   <style>
-    html, body { margin: 0; padding: 0; height: 100%; background: #2A2823; font-family: -apple-system, system-ui, sans-serif; overflow: hidden; }
+    html, body { margin: 0; padding: 0; height: 100%; background: #2A2823; font-family: -apple-system, system-ui, sans-serif; overflow: hidden; overscroll-behavior: none; }
     #root { width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; }
     @media (max-width: 430px) {
       html, body { background: #F7F4EE; }
@@ -383,7 +383,7 @@ if (typeof document !== 'undefined' && !document.getElementById('m-styles')) {
     .m-tap { cursor: pointer; transition: opacity 0.15s, transform 0.1s; }
     .m-tap:active { opacity: 0.7; transform: scale(0.98); }
     .m-screen { width:100%; height:100%; background:${M.paper}; color:${M.ink}; font-family:${M.fontUI}; display:flex; flex-direction:column; overflow:hidden; }
-    .m-body-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; padding: 0 20px 24px; }
+    .m-body-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; padding: 0 20px 24px; overscroll-behavior: contain; }
     .m-body-scroll::-webkit-scrollbar { display: none; }
     .m-appbar { display:flex; align-items:center; justify-content:space-between; padding: 8px 16px 12px; gap: 8px; flex-shrink: 0; }
     .m-iconbtn { width:36px; height:36px; border-radius:999px; background:transparent; border:none; display:flex; align-items:center; justify-content:center; cursor:pointer; color:${M.ink}; }
@@ -711,6 +711,9 @@ const TRANSACTIONS = [
   { id: 't37', date: '2026-02-15', time: '20:00', merchant: 'Tandartspraktijk Centrum', desc: 'TANDARTSPR CENTRUM AMS PERIODIEK CONTROL', cat: 'dental', amount: -55.00, account: 'main', confidence: 62, needsReview: true },
   { id: 't38', date: '2026-02-14', time: '19:30', merchant: 'DJI Online Store', desc: 'DJI EUROPE B.V. ONLINE PURCHASE DRONE PARTS', cat: 'electronics', amount: -219.00, account: 'main' },
   { id: 't39', date: '2026-02-13', time: '09:00', merchant: 'Gemeente Amsterdam', desc: 'GEMEENTE AMSTERDAM PARKEERBELASTING NAHEFFING', cat: 'fines', amount: -68.00, account: 'main' },
+  // Same-merchant + same-amount edge case test
+  { id: 'tb1', date: '2026-02-18', time: '09:30', merchant: 'Jumbo', desc: 'JUMBO SUPERMARKT 0042', cat: 'groceries', amount: -23.50, account: 'main', confidence: 58, needsReview: true },
+  { id: 'tb2', date: '2026-02-17', time: '16:15', merchant: 'Jumbo', desc: 'JUMBO SUPERMARKT 0042', cat: 'groceries', amount: -23.50, account: 'main', confidence: 56, needsReview: true },
   // Same-merchant bulk review demo — Apotheek Centraal
   { id: 'ta1',  date: '2026-01-18', time: '14:30', merchant: 'Apotheek Centraal', desc: 'APOTHEEK 7842 NL', cat: 'prescription', amount: -14.80, account: 'main', confidence: 55, needsReview: true },
   { id: 'ta2',  date: '2026-01-10', time: '11:00', merchant: 'Apotheek Centraal', desc: 'APOTHEEK 7842 NL', cat: 'prescription', amount: -22.50, account: 'main', confidence: 60, needsReview: true },
@@ -1481,6 +1484,7 @@ function HighlightText({ text, query }) {
 
 function ScreenTransactions() {
   const nav = useNav();
+  const { txs } = useTxCtx();
   const [filter, setFilter] = React.useState('all');
   const [query, setQuery] = React.useState('');
   const [searchOpen, setSearchOpen] = React.useState(false);
@@ -1488,7 +1492,7 @@ function ScreenTransactions() {
 
   React.useEffect(() => { if (searchOpen && searchRef.current) searchRef.current.focus(); }, [searchOpen]);
 
-  let filtered = TRANSACTIONS;
+  let filtered = txs;
   if (filter === 'income') filtered = filtered.filter(t => t.amount > 0);
   if (filter === 'expense') filtered = filtered.filter(t => t.amount < 0);
   if (filter === 'review') filtered = filtered.filter(t => t.needsReview);
@@ -1621,6 +1625,13 @@ function ScreenTxDetail({ params }) {
   const primaryCat = CATEGORIES[txCats[0]?.catId] || {};
   const allocTotal = txCats.reduce((s, c) => s + c.amount, 0);
   const remaining = Math.round((Math.abs(tx.amount) - allocTotal) * 100) / 100;
+  const isOnlyUncategorized = txCats.length === 1 && (txCats[0].catId === 'expenseUncategorized' || txCats[0].catId === 'incomeUncategorized');
+  const effectiveRemaining = isOnlyUncategorized ? Math.abs(tx.amount) : remaining;
+  const [showAllocInfo, setShowAllocInfo] = React.useState(false);
+
+  React.useEffect(() => {
+    updateTx(tx.id, { cats: txCats });
+  }, [txCats]);
 
   const heroAmount = reimburseAmt !== 0 ? net : tx.amount;
   const showOriginal = reimburseAmt !== 0;
@@ -1662,37 +1673,58 @@ function ScreenTxDetail({ params }) {
         </div>
 
         {/* Categories — own card */}
-        <div className="m-card" style={{ padding: '12px 16px', marginBottom: 14, border: `1px solid ${M.line}` }}>
+        <div className="m-card" style={{ padding: '12px 16px', marginBottom: 14, border: `1px solid ${M.line}`, position:'relative' }}>
           <div className="m-cap" style={{ marginBottom: 8 }}>Categories</div>
           {txCats.map((c, i) => {
             const cat = CATEGORIES[c.catId] || {};
+            const isUncategorized = c.catId === 'expenseUncategorized' || c.catId === 'incomeUncategorized';
             return (
               <React.Fragment key={c.catId + i}>
-                <div style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 0' }}>
-                  <div style={{ width:28, height:28, borderRadius:8, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                    <I name={cat.icon||'box'} size={14} color={M.ink2}/>
+                <div style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 0', opacity: isUncategorized ? 0.6 : 1 }}>
+                  <div style={{ width:28, height:28, borderRadius:8, background: isUncategorized ? M.line2 : M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                    <I name={cat.icon||'box'} size={14} color={isUncategorized ? M.ink4 : M.ink2}/>
                   </div>
-                  <div style={{ flex:1, fontSize:13, fontWeight:500 }}>{catPath(cat)}</div>
-                  <div className="m-num" style={{ fontSize:13, color:M.ink2 }}>{fmtEur(c.amount)}</div>
-                  <button onClick={() => removeCategory(i)} style={{ background:'none', border:'none', color:M.clay, padding:'0 4px', fontSize:18, lineHeight:1, cursor:'pointer', fontFamily:M.fontUI }}>×</button>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontSize:13, fontWeight:500, fontStyle: isUncategorized ? 'italic' : 'normal', color: isUncategorized ? M.ink3 : M.ink }}>{catPath(cat) || c.catId}</div>
+                    {isUncategorized && <div style={{ fontSize:10, color:M.ink4, marginTop:1 }}>Auto-set · add a category above to replace</div>}
+                  </div>
+                  <div className="m-num" style={{ fontSize:13, color: isUncategorized ? M.ink4 : M.ink2 }}>{fmtEur(c.amount)}</div>
+                  {!isUncategorized && (
+                    <button onClick={() => removeCategory(i)} style={{ background:'none', border:'none', color:M.clay, padding:'0 4px', fontSize:18, lineHeight:1, cursor:'pointer', fontFamily:M.fontUI }}>×</button>
+                  )}
                 </div>
                 {i < txCats.length - 1 && <Divider/>}
               </React.Fragment>
             );
           })}
-          {remaining > 0.005 && (
+          {remaining > 0.005 && !isOnlyUncategorized && (
             <div style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 0', borderTop:`1px dashed ${M.line2}`, marginTop:4 }}>
               <div style={{ width:28, height:28 }}/>
               <span style={{ flex:1, fontSize:12, color:M.ink4 }}>Unallocated</span>
               <span className="m-num" style={{ fontSize:12, color:M.ink4 }}>{fmtEur(remaining)}</span>
             </div>
           )}
-          {remaining > 0.005 && (
+          {effectiveRemaining > 0.005 ? (
             <div className="m-tap" onClick={() => setShowCatPicker(true)} style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 0', borderTop:`1px solid ${M.line2}`, marginTop:4 }}>
               <div style={{ width:28, height:28, borderRadius:8, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center' }}>
                 <I name="plus" size={14} color={M.sage}/>
               </div>
               <span style={{ fontSize:13, color:M.sage, fontWeight:500 }}>Add category split</span>
+            </div>
+          ) : (
+            <div style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 0', borderTop:`1px solid ${M.line2}`, marginTop:4 }}>
+              <div style={{ width:28, height:28, borderRadius:8, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                <I name="plus" size={14} color={M.ink4}/>
+              </div>
+              <span style={{ fontSize:13, color:M.ink3, fontWeight:500, flex:1 }}>Add category split</span>
+              <button onClick={() => setShowAllocInfo(s => !s)} style={{ width:20, height:20, borderRadius:999, border:`1.5px solid ${M.ink4}`, background:'none', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, cursor:'pointer', padding:0 }}>
+                <span style={{ fontSize:11, fontWeight:700, color:M.ink4, lineHeight:1 }}>i</span>
+              </button>
+              {showAllocInfo && (
+                <div style={{ position:'absolute', right:16, bottom:52, background:M.ink, color:'#fff', fontSize:11, padding:'6px 10px', borderRadius:8, maxWidth:200, zIndex:20, lineHeight:1.5 }}>
+                  Full amount already allocated across categories.
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1883,13 +1915,19 @@ function ScreenTxDetail({ params }) {
 
       {showCatPicker && (
         <CategoryPicker
-          selected={txCats.length === 1 ? txCats[0].catId : null}
+          selected={txCats.length === 1 && !isOnlyUncategorized ? txCats[0].catId : null}
           positiveOnly={positive}
-          defaultAmount={remaining > 0.005 ? remaining : 0}
+          defaultAmount={effectiveRemaining > 0.005 ? effectiveRemaining : 0}
           maxAmount={Math.abs(tx.amount)}
           onClose={() => setShowCatPicker(false)}
           onPick={(catId, val) => {
             setTxCats(s => {
+              if (isOnlyUncategorized) {
+                const uncatId = positive ? 'incomeUncategorized' : 'expenseUncategorized';
+                const leftover = Math.round((Math.abs(tx.amount) - val) * 100) / 100;
+                if (leftover < 0.005) return [{ catId, amount: val }];
+                return [{ catId, amount: val }, { catId: uncatId, amount: leftover }];
+              }
               const idx = s.findIndex(x => x.catId === catId);
               if (idx >= 0) return s.map((x, i) => i === idx ? { ...x, amount: val } : x);
               return [...s, { catId, amount: val }];
@@ -2612,94 +2650,231 @@ function ScreenPeriods() {
   );
 }
 
+function MunniSVG({ expr }) {
+  expr = expr || 'happy';
+  const p = { stroke:'#4A2E1E', strokeWidth:1.5, fill:'none', strokeLinecap:'round', strokeLinejoin:'round' };
+  return (
+    <svg viewBox="0 0 80 120" width="72" height="108" style={{ flexShrink:0 }}>
+      {/* Papers */}
+      <g transform="translate(1,64) rotate(-18)"><rect width="24" height="32" rx="2" fill="#fff" stroke="#ddd" strokeWidth="1"/><line x1="4" y1="8" x2="20" y2="8" stroke="#e5e5e5" strokeWidth="1"/><line x1="4" y1="13" x2="17" y2="13" stroke="#e5e5e5" strokeWidth="1"/><line x1="4" y1="18" x2="21" y2="18" stroke="#e5e5e5" strokeWidth="1"/></g>
+      <g transform="translate(5,67) rotate(-7)"><rect width="24" height="32" rx="2" fill="#F7F4EE" stroke="#ccc" strokeWidth="1"/></g>
+      <g transform="translate(9,70) rotate(-1)"><rect width="24" height="32" rx="2" fill="#fff" stroke="#bbb" strokeWidth="1"/><line x1="4" y1="8" x2="19" y2="8" stroke="#e5e5e5" strokeWidth="1"/><line x1="4" y1="13" x2="15" y2="13" stroke="#e5e5e5" strokeWidth="1"/></g>
+      {/* Body */}
+      <path d="M28 65 Q22 73 21 92 Q20 106 22 114 L58 114 Q60 106 59 92 Q58 73 52 65 Z" fill="#6CAE75"/>
+      <path d="M36 65 L40 75 L44 65" fill="none" stroke="#5a9c63" strokeWidth="1.5"/>
+      {/* Arms */}
+      <path d="M28 70 Q16 81 18 96" fill="none" stroke="#F4C2A1" strokeWidth="7" strokeLinecap="round"/>
+      <path d="M52 70 Q63 79 61 94" fill="none" stroke="#F4C2A1" strokeWidth="7" strokeLinecap="round"/>
+      {/* Neck */}
+      <rect x="36.5" y="56" width="7" height="11" rx="3" fill="#F4C2A1"/>
+      {/* Head */}
+      <ellipse cx="40" cy="42" rx="14" ry="16" fill="#F4C2A1"/>
+      {/* Hair */}
+      <path d="M26 37 Q26 23 40 21 Q54 23 54 37 Q52 26 40 24 Q28 26 26 37 Z" fill="#4A2E1E"/>
+      <path d="M26 35 Q23 47 26 56" stroke="#4A2E1E" strokeWidth="5" fill="none" strokeLinecap="round"/>
+      <path d="M54 35 Q57 47 54 57" stroke="#4A2E1E" strokeWidth="5" fill="none" strokeLinecap="round"/>
+      <path d="M35 22 Q32 14 37 11" stroke="#4A2E1E" strokeWidth="2.5" fill="none" strokeLinecap="round"/>
+      {/* Glasses */}
+      <circle cx="35.5" cy="42" r="5" fill="rgba(200,220,255,0.12)" stroke="#4A2E1E" strokeWidth="1.5"/>
+      <circle cx="44.5" cy="42" r="5" fill="rgba(200,220,255,0.12)" stroke="#4A2E1E" strokeWidth="1.5"/>
+      <line x1="40.5" y1="42" x2="39.5" y2="42" stroke="#4A2E1E" strokeWidth="1.5"/>
+      <line x1="30" y1="41" x2="28" y2="40" stroke="#4A2E1E" strokeWidth="1.5"/>
+      <line x1="50" y1="41" x2="52" y2="40" stroke="#4A2E1E" strokeWidth="1.5"/>
+      {/* Eyes */}
+      {expr === 'tired' ? (
+        <><path d="M32.5 42.5 Q35.5 44.5 38.5 42.5" {...p}/><path d="M41.5 42.5 Q44.5 44.5 47.5 42.5" {...p}/><path d="M53 34 Q55.5 30 53 28 Q50.5 30 53 34 Z" fill="#A8D4E6"/></>
+      ) : expr === 'celebrating' ? (
+        <><path d="M32 42 Q35.5 40 38.5 42" {...p}/><path d="M41.5 42 Q44.5 40 47.5 42" {...p}/></>
+      ) : (
+        <><circle cx="35.5" cy="42" r="1.8" fill="#4A2E1E"/><circle cx="44.5" cy="42" r="1.8" fill="#4A2E1E"/><circle cx="36.4" cy="41" r="0.7" fill="#fff"/><circle cx="45.4" cy="41" r="0.7" fill="#fff"/></>
+      )}
+      {/* Eyebrows */}
+      {(expr === 'focused' || expr === 'tired') ? (
+        <><path d="M32 37 Q35.5 36 38.5 37" {...p} strokeWidth="1.8"/><path d="M41.5 37 Q44.5 36 47.5 37" {...p} strokeWidth="1.8"/></>
+      ) : (
+        <><path d="M32 37 Q35.5 35.5 38.5 37" {...p} strokeWidth="1.2"/><path d="M41.5 37 Q44.5 35.5 47.5 37" {...p} strokeWidth="1.2"/></>
+      )}
+      {/* Mouth */}
+      {expr === 'happy' && <path d="M36 49 Q40 52 44 49" {...p} strokeWidth="1.8"/>}
+      {expr === 'excited' && <path d="M35 48.5 Q40 53 45 48.5" {...p} strokeWidth="1.8"/>}
+      {expr === 'focused' && <path d="M37 49.5 Q40 48.5 43 49.5" {...p} strokeWidth="1.5"/>}
+      {expr === 'tired' && <path d="M37 49 Q40 47.5 43 49" {...p} strokeWidth="1.5"/>}
+      {expr === 'celebrating' && <path d="M35 48 Q40 54.5 45 48" {...p} strokeWidth="2"/>}
+      {/* Blush */}
+      {(expr === 'happy' || expr === 'excited' || expr === 'celebrating') && (
+        <><ellipse cx="31" cy="46" rx="3.5" ry="2" fill="#FFB5B5" opacity="0.45"/><ellipse cx="49" cy="46" rx="3.5" ry="2" fill="#FFB5B5" opacity="0.45"/></>
+      )}
+    </svg>
+  );
+}
+
 function ScreenTutorial() {
   const nav = useNav();
-  const steps = [
-    {
-      title: 'Welcome to munni',
-      icon: 'home',
-      color: M.sage,
-      body: 'munni helps you understand where your money goes each period — not just each month. Let\'s walk through the key concepts.',
-      hint: null,
-    },
-    {
-      title: 'Set your period start day',
-      icon: 'cal',
-      color: M.ochre,
-      body: 'A "period" in munni starts on the day your salary lands. This keeps your income and expenses in sync — no more salary arriving on the 18th and expenses counted from the 1st.',
-      hint: 'Profile → Manage → Periods',
-    },
-    {
-      title: 'Choose the right day',
-      icon: 'wallet',
-      color: M.violet,
-      body: 'Pick the earliest day your salary reliably arrives. If there is ever a 1–2 day bank delay, choosing a slightly earlier day ensures your income always falls in the right period.',
-      hint: 'We recommend: the day of salary transfer',
-    },
-    {
-      title: 'Review new transactions',
-      icon: 'check',
-      color: M.sage,
-      body: 'When your bank syncs, munni uses AI to categorise transactions. Tap "Review" on the home screen to confirm or correct the AI\'s guesses — this improves accuracy over time.',
-      hint: 'Home → Review transactions',
-    },
-    {
-      title: 'Allocate your income',
-      icon: 'rocket',
-      color: M.violet,
-      body: 'Use the Allocate screen to plan how your income is split across topics like Housing, Food, and Fun. Create topics with categories and set a monthly estimate.',
-      hint: 'Home → Allocate',
-    },
-  ];
   const [step, setStep] = React.useState(0);
-  const cur = steps[step];
+
+  const STEPS = [
+    { expr:'happy',       speech:"Hi! I'm Munni — your finance assistant. I'll show you the key features. It only takes a minute!", noTarget:true },
+    { expr:'excited',     speech:"New bank transactions need your review! Tap the Review card to check and categorize them.", targetHint:'Review transactions' },
+    { expr:'focused',     speech:"Once you're happy with the category, tap Confirm. You can bulk-apply to similar transactions too!", targetHint:'Confirm' },
+    { expr:'excited',     speech:"The Allocate section shows your spending plan. Set budgets per topic and track your progress!", targetHint:'Allocate' },
+    { expr:'focused',     speech:"Set your period start day to match when your salary lands — keeps income and expenses in sync.", targetHint:'Manage Periods' },
+    { expr:'celebrating', speech:"You're all set! Explore munni and remember — I'm always here if you need help. 💚", noTarget:true, isLast:true },
+  ];
+  const cur = STEPS[step];
+  const next = () => setStep(s => Math.min(s + 1, STEPS.length - 1));
+
+  const Overlay = () => <div style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.58)', zIndex:8, pointerEvents:'none' }}/>;
+
+  const Spotlight = ({ children, color, onClick }) => (
+    <div onClick={onClick} className="m-tap" style={{ position:'relative', zIndex:9, cursor:'pointer', borderRadius:14 }}>
+      {children}
+      <div style={{ position:'absolute', inset:-5, borderRadius:18, border:`2.5px solid ${color || M.sage}`, opacity:0.7, animation:'munniPulse 1.4s ease-in-out infinite', pointerEvents:'none' }}/>
+    </div>
+  );
 
   return (
-    <div className="m-screen">
+    <div className="m-screen" style={{ background:M.paper }}>
+      <style>{`@keyframes munniPulse{0%,100%{opacity:.8;transform:scale(1)}50%{opacity:.3;transform:scale(1.05)}}`}</style>
       <StatusBar/>
-      <AppBar title="Getting started"
-        leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="x" size={20}/></button>}
-      />
-      <div style={{ flex:1, display:'flex', flexDirection:'column', padding:'0 20px' }}>
-        {/* Progress */}
-        <div style={{ display:'flex', gap:5, padding:'4px 0 20px', flexShrink:0 }}>
-          {steps.map((_, i) => (
-            <div key={i} style={{ flex:1, height:3, borderRadius:999, background: i <= step ? cur.color : M.line2, transition:'background 0.3s' }}/>
+
+      {/* Mock screen area — fills flex space */}
+      <div style={{ flex:1, position:'relative', overflow:'hidden' }}>
+
+        {step === 0 && (
+          <div style={{ height:'100%', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'0 36px', textAlign:'center', gap:10 }}>
+            <div style={{ width:68, height:68, borderRadius:20, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', marginBottom:4 }}>
+              <I name="wallet" size={30} color={M.sage}/>
+            </div>
+            <div style={{ fontSize:22, fontWeight:700, color:M.ink, lineHeight:1.3 }}>Welcome to munni</div>
+            <div style={{ fontSize:13, color:M.ink3, lineHeight:1.7, maxWidth:250 }}>Your smart personal finance companion — built around the way you actually get paid.</div>
+          </div>
+        )}
+
+        {step === 1 && (
+          <>
+            <Overlay/>
+            <div style={{ padding:'14px 20px 10px', fontSize:17, fontWeight:700, position:'relative', zIndex:1 }}>Home</div>
+            <div style={{ padding:'0 20px', position:'relative', zIndex:1 }}>
+              <div style={{ padding:'12px 16px', borderRadius:14, background:M.card, border:`1px solid ${M.line}`, marginBottom:10, opacity:0.25 }}>
+                <div style={{ fontSize:12, color:M.ink3 }}>Feb 2026 · Period overview</div>
+              </div>
+              <Spotlight color={M.sage} onClick={next}>
+                <div style={{ borderRadius:14, background:M.sage, padding:'14px 18px', display:'flex', alignItems:'center', gap:12 }}>
+                  <div style={{ width:36, height:36, borderRadius:11, background:'rgba(255,255,255,0.22)', display:'flex', alignItems:'center', justifyContent:'center' }}><I name="check" size={18} color="#fff" stroke={2.5}/></div>
+                  <div style={{ flex:1 }}><div style={{ fontSize:14, fontWeight:700, color:'#fff' }}>Review transactions</div><div style={{ fontSize:12, color:'rgba(255,255,255,0.85)', marginTop:1 }}>7 waiting</div></div>
+                  <I name="arrowR" size={15} color="rgba(255,255,255,0.7)"/>
+                </div>
+              </Spotlight>
+            </div>
+          </>
+        )}
+
+        {step === 2 && (
+          <>
+            <Overlay/>
+            <div style={{ padding:'14px 20px 8px', fontSize:17, fontWeight:700, position:'relative', zIndex:1 }}>Review · 1/7</div>
+            <div style={{ padding:'0 20px', position:'relative', zIndex:1 }}>
+              <div className="m-card" style={{ padding:18, border:`1px solid ${M.line}`, background:'#fff', marginBottom:10, opacity:0.35 }}>
+                <div style={{ textAlign:'center' }}>
+                  <div className="m-num" style={{ fontSize:26, fontWeight:600 }}>−€34.99</div>
+                  <div style={{ fontSize:14, fontWeight:600, marginTop:6 }}>Amazon.nl</div>
+                  <div style={{ marginTop:10, padding:'8px 10px', borderRadius:10, background:M.paper2 }}>
+                    <div style={{ display:'flex', gap:8, alignItems:'center' }}><div style={{ width:22, height:22, borderRadius:7, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center' }}><I name="box" size={11} color={M.sage}/></div><div style={{ fontSize:12 }}>Hobby · €34.99</div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div style={{ padding:'0 20px', flexShrink:0, position:'relative', zIndex:9 }}>
+              <Spotlight color={M.sage} onClick={next}>
+                <div style={{ height:50, borderRadius:14, background:M.sage, display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
+                  <I name="check" size={18} color="#fff" stroke={2.5}/>
+                  <span style={{ fontSize:14, fontWeight:600, color:'#fff', fontFamily:M.fontUI }}>Confirm</span>
+                </div>
+              </Spotlight>
+            </div>
+          </>
+        )}
+
+        {step === 3 && (
+          <>
+            <Overlay/>
+            <div style={{ padding:'14px 20px 10px', fontSize:17, fontWeight:700, position:'relative', zIndex:1 }}>Home</div>
+            <div style={{ padding:'0 20px', position:'relative', zIndex:1 }}>
+              <div style={{ padding:'12px 16px', borderRadius:14, background:M.card, border:`1px solid ${M.line}`, marginBottom:10, opacity:0.25 }}>
+                <div style={{ fontSize:12, color:M.ink3 }}>Period balance · +€320</div>
+              </div>
+              <Spotlight color={M.violet} onClick={next}>
+                <div style={{ borderRadius:14, background:M.card, border:`1px solid ${M.line}`, padding:'14px 18px', display:'flex', alignItems:'center', gap:12 }}>
+                  <div style={{ width:36, height:36, borderRadius:11, background:M.violetSoft||'#EEE8FF', display:'flex', alignItems:'center', justifyContent:'center' }}><I name="wallet" size={18} color={M.violet}/></div>
+                  <div style={{ flex:1 }}><div style={{ fontSize:14, fontWeight:600 }}>Allocate</div><div style={{ fontSize:12, color:M.ink3, marginTop:1 }}>€340 left to plan</div></div>
+                  <I name="arrowR" size={14} color={M.ink4}/>
+                </div>
+              </Spotlight>
+            </div>
+          </>
+        )}
+
+        {step === 4 && (
+          <>
+            <Overlay/>
+            <div style={{ padding:'14px 20px 10px', fontSize:17, fontWeight:700, position:'relative', zIndex:1 }}>Profile</div>
+            <div style={{ padding:'0 20px', position:'relative', zIndex:1 }}>
+              <div style={{ padding:'12px 16px', borderRadius:14, background:M.card, border:`1px solid ${M.line}`, marginBottom:10, opacity:0.25 }}>
+                <div style={{ fontSize:12, color:M.ink3 }}>Manage · Categories</div>
+              </div>
+              <Spotlight color={M.ochre} onClick={next}>
+                <div style={{ borderRadius:14, background:M.card, border:`1px solid ${M.line}`, padding:'13px 16px', display:'flex', alignItems:'center', gap:12 }}>
+                  <div style={{ width:34, height:34, borderRadius:10, background:M.ochreSoft, display:'flex', alignItems:'center', justifyContent:'center' }}><I name="cal" size={16} color={M.ochre}/></div>
+                  <div style={{ flex:1 }}><div style={{ fontSize:14, fontWeight:500 }}>Manage Periods</div><div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>Set salary start day</div></div>
+                  <I name="arrowR" size={14} color={M.ink4}/>
+                </div>
+              </Spotlight>
+            </div>
+          </>
+        )}
+
+        {step === 5 && (
+          <div style={{ height:'100%', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'0 36px', textAlign:'center', gap:8 }}>
+            <div style={{ fontSize:52, lineHeight:1 }}>🎉</div>
+            <div style={{ fontSize:22, fontWeight:700, color:M.ink, marginTop:4 }}>You're all set!</div>
+            <div style={{ fontSize:13, color:M.ink3, lineHeight:1.7, maxWidth:250 }}>Explore munni — and come back to this tutorial anytime from your Profile.</div>
+          </div>
+        )}
+      </div>
+
+      {/* Bottom: Munni + speech bubble */}
+      <div style={{ flexShrink:0, padding:'8px 20px 28px', background:M.paper, borderTop:`1px solid ${M.line2}` }}>
+        <div style={{ display:'flex', justifyContent:'center', gap:5, marginBottom:12 }}>
+          {STEPS.map((_, i) => (
+            <div key={i} style={{ width: i===step ? 20 : 6, height:6, borderRadius:999, background: i===step ? M.sage : i<step ? M.sage+'66' : M.line2, transition:'all 0.3s' }}/>
           ))}
         </div>
 
-        {/* Content */}
-        <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', textAlign:'center', gap:16, paddingBottom:24 }}>
-          <div style={{ width:72, height:72, borderRadius:22, background:cur.color+'22', display:'flex', alignItems:'center', justifyContent:'center' }}>
-            <I name={cur.icon} size={32} color={cur.color}/>
-          </div>
-          <div className="m-h2" style={{ fontSize:22, lineHeight:1.3 }}>{cur.title}</div>
-          <div style={{ fontSize:14, color:M.ink3, lineHeight:1.7, maxWidth:300 }}>{cur.body}</div>
-          {cur.hint && (
-            <div style={{ display:'inline-flex', alignItems:'center', gap:8, padding:'8px 16px', borderRadius:999, background:M.paper2, border:`1px solid ${M.line}` }}>
-              <I name="map" size={13} color={M.ink3}/>
-              <span style={{ fontSize:12, fontWeight:600, color:M.ink2, fontFamily:M.fontMono }}>{cur.hint}</span>
+        <div style={{ display:'flex', alignItems:'flex-end', gap:10 }}>
+          <MunniSVG expr={cur.expr}/>
+          <div style={{ flex:1, marginBottom:2 }}>
+            <div style={{ background:'#fff', border:`1.5px solid ${M.line}`, borderRadius:16, padding:'11px 13px', marginBottom:10, fontSize:13, color:M.ink, lineHeight:1.6, boxShadow:'0 2px 10px rgba(0,0,0,0.05)', position:'relative' }}>
+              {cur.speech}
+              <div style={{ position:'absolute', left:-8, bottom:13, width:0, height:0, borderTop:'5px solid transparent', borderBottom:'5px solid transparent', borderRight:`8px solid ${M.line}` }}/>
+              <div style={{ position:'absolute', left:-6, bottom:14, width:0, height:0, borderTop:'4px solid transparent', borderBottom:'4px solid transparent', borderRight:'7px solid #fff' }}/>
             </div>
-          )}
+            {cur.noTarget ? (
+              <button className="m-btn sage m-tap" style={{ width:'100%' }} onClick={cur.isLast ? () => nav.pop() : next}>
+                {cur.isLast ? <><I name="check" size={14} color="#fff" stroke={2.5}/> Done</> : "Let's go →"}
+              </button>
+            ) : (
+              <div style={{ fontSize:12, color:M.ink4, textAlign:'center', fontStyle:'italic' }}>
+                Tap <strong style={{ color:M.ink3, fontStyle:'normal' }}>{cur.targetHint}</strong> above to continue
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Navigation */}
-        <div style={{ display:'flex', gap:12, paddingBottom:28, flexShrink:0 }}>
-          {step > 0 && (
-            <button className="m-btn outline m-tap" style={{ flex:1 }} onClick={() => setStep(s => s - 1)}>
-              Back
-            </button>
-          )}
-          {step < steps.length - 1 ? (
-            <button className="m-btn sage m-tap" style={{ flex:2 }} onClick={() => setStep(s => s + 1)}>
-              Next →
-            </button>
-          ) : (
-            <button className="m-btn sage m-tap" style={{ flex:2 }} onClick={() => nav.pop()}>
-              <I name="check" size={16} color="#fff" stroke={2.5}/> Done
-            </button>
-          )}
-        </div>
+        {step < STEPS.length - 1 && (
+          <button onClick={() => nav.pop()} style={{ display:'block', margin:'10px auto 0', background:'none', border:'none', fontSize:12, color:M.ink4, cursor:'pointer', fontFamily:M.fontUI, padding:'4px 16px' }}>
+            Skip tutorial
+          </button>
+        )}
       </div>
     </div>
   );
@@ -2707,25 +2882,105 @@ function ScreenTutorial() {
 
 function ScreenManageCategories() {
   const nav = useNav();
+  const { txs } = useTxCtx();
   const [customCats, setCustomCats] = React.useState([]);
   const [showAdd, setShowAdd] = React.useState(false);
   const [newName, setNewName] = React.useState('');
   const [newParent, setNewParent] = React.useState('entertainment');
   const [newIcon, setNewIcon] = React.useState('star');
+  const [newType, setNewType] = React.useState('sub');
+  const [swipedId, setSwipedId] = React.useState(null);
+  const [deleteTarget, setDeleteTarget] = React.useState(null);
+  const [dragId, setDragId] = React.useState(null);
+  const [dragOverParent, setDragOverParent] = React.useState(null);
+  const swipeRef = React.useRef({ startX: 0 });
 
   const premadeParents = Object.values(CATEGORIES).filter(c => c.isParent && !c.positive && c.id !== 'saving' && c.id !== 'expense');
   const icons = ['fork','shop','car','flame','film','health','bag','globe','rocket','star','house','heart','box','wallet','lock','user'];
 
+  const customParents = customCats.filter(c => c.isParent);
+  const allParentOptions = [...premadeParents, ...customParents];
+
+  const countAffected = (catId) =>
+    txs.filter(t => t.cat === catId || (t.cats && t.cats.some(c => c.catId === catId))).length;
+
   const addCat = () => {
     if (!newName.trim()) return;
     const id = `custom_${Date.now()}`;
-    const parent = CATEGORIES[newParent] || {};
-    setCustomCats(cs => [...cs, { id, name: newName.trim(), icon: newIcon, group: parent.name || newParent, parent: newParent, custom: true }]);
-    setNewName(''); setShowAdd(false);
+    if (newType === 'parent') {
+      setCustomCats(cs => [...cs, { id, name: newName.trim(), icon: newIcon, isParent: true, custom: true }]);
+    } else {
+      const parent = CATEGORIES[newParent] || customParents.find(p => p.id === newParent) || {};
+      setCustomCats(cs => [...cs, { id, name: newName.trim(), icon: newIcon, group: parent.name || newParent, parent: newParent, custom: true }]);
+    }
+    setNewName(''); setNewType('sub'); setShowAdd(false);
+  };
+
+  const confirmDelete = (cat) => { setDeleteTarget(cat); setSwipedId(null); };
+  const doDelete = () => { setCustomCats(cs => cs.filter(x => x.id !== deleteTarget.id)); setDeleteTarget(null); };
+
+  const onPtrDown = (id, e) => { swipeRef.current = { startX: e.clientX }; };
+  const onPtrUp = (id, e) => {
+    const dx = e.clientX - swipeRef.current.startX;
+    if (dx < -40) setSwipedId(id);
+    else if (dx > 10) setSwipedId(s => s === id ? null : s);
+  };
+
+  const onDragStart = (catId, e) => { setDragId(catId); e.dataTransfer.effectAllowed = 'move'; };
+  const onDragOver = (parentId, e) => { e.preventDefault(); setDragOverParent(parentId); };
+  const onDragLeave = () => setDragOverParent(null);
+  const onDrop = (parentId, e) => {
+    e.preventDefault();
+    if (dragId) {
+      const parent = CATEGORIES[parentId] || customParents.find(p => p.id === parentId);
+      setCustomCats(cs => cs.map(c => c.id === dragId ? { ...c, parent: parentId, group: parent?.name || parentId } : c));
+    }
+    setDragId(null); setDragOverParent(null);
+  };
+
+  const CatRow = ({ c }) => {
+    const isSwiped = swipedId === c.id;
+    const parentCat = CATEGORIES[c.parent] || customParents.find(p => p.id === c.parent);
+    return (
+      <div style={{ position:'relative', overflow:'hidden' }} onClick={() => isSwiped && setSwipedId(null)}>
+        <div style={{ position:'absolute', right:0, top:0, bottom:0, width:88, background:M.clay, display:'flex', alignItems:'center', justifyContent:'center' }}>
+          <button onClick={(e) => { e.stopPropagation(); confirmDelete(c); }}
+            style={{ background:'none', border:'none', color:'#fff', fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, width:'100%', height:'100%' }}>
+            Delete
+          </button>
+        </div>
+        <div
+          draggable={!c.isParent}
+          onDragStart={!c.isParent ? (e) => onDragStart(c.id, e) : undefined}
+          onPointerDown={(e) => onPtrDown(c.id, e)}
+          onPointerUp={(e) => onPtrUp(c.id, e)}
+          style={{
+            display:'flex', alignItems:'center', gap:12, padding:'12px 16px 12px 12px',
+            background:'#fff',
+            transform: isSwiped ? 'translateX(-88px)' : 'translateX(0)',
+            transition:'transform 0.25s cubic-bezier(0.25,0.46,0.45,0.94)',
+            touchAction:'pan-y', userSelect:'none',
+          }}
+        >
+          {!c.isParent && <div style={{ flexShrink:0 }}><I name="menu" size={14} color={M.ink4}/></div>}
+          <div style={{ width:32, height:32, borderRadius:9,
+            background: c.isParent ? (M.violetSoft||'#EEE8FF') : M.sageSoft,
+            display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+            <I name={c.icon} size={15} color={c.isParent ? M.violet : M.sage}/>
+          </div>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontSize:14, fontWeight:500 }}>{c.name}</div>
+            <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>
+              {c.isParent ? 'Custom parent' : `Sub · ${parentCat?.name || c.parent}`}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   return (
-    <div className="m-screen" style={{ position: 'relative' }}>
+    <div className="m-screen" style={{ position:'relative' }} onClick={() => swipedId && setSwipedId(null)}>
       <StatusBar/>
       <AppBar title="Categories"
         leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
@@ -2733,29 +2988,17 @@ function ScreenManageCategories() {
       />
       <div className="m-body-scroll">
         <div style={{ padding:'10px 14px', borderRadius:10, background:M.paper2, marginBottom:14, fontSize:12, color:M.ink3, lineHeight:1.5 }}>
-          <strong style={{ color:M.ink }}>Premade categories</strong> are provided by munni and cannot be deleted. You can add <strong style={{ color:M.ink }}>custom sub-categories</strong> to any premade parent.
+          Premade categories cannot be deleted. Add custom <strong style={{ color:M.ink }}>sub-categories</strong> or your own <strong style={{ color:M.ink }}>parent categories</strong>. Swipe left on a custom item to delete. Drag sub-categories between parents.
         </div>
 
         {customCats.length > 0 && (
           <>
             <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Custom · {customCats.length}</div>
-            <div className="m-card" style={{ padding:'4px 16px', marginBottom:16, border:`1px solid ${M.line}` }}>
-              {customCats.map((c, i, a) => (
+            <div className="m-card" style={{ padding:0, marginBottom:16, border:`1px solid ${M.line}`, overflow:'hidden' }}>
+              {customCats.map((c, i) => (
                 <React.Fragment key={c.id}>
-                  <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
-                    <div style={{ width:32, height:32, borderRadius:9, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center' }}>
-                      <I name={c.icon} size={15} color={M.sage}/>
-                    </div>
-                    <div style={{ flex:1 }}>
-                      <div style={{ fontSize:14, fontWeight:500 }}>{catPath(c)}</div>
-                      <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>Custom subcategory</div>
-                    </div>
-                    <button className="m-tap" onClick={() => setCustomCats(cs => cs.filter(x => x.id !== c.id))}
-                      style={{ width:28, height:28, borderRadius:8, background:M.claySoft, border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                      <I name="x" size={13} color={M.clay}/>
-                    </button>
-                  </div>
-                  {i < a.length-1 && <Divider inset={44}/>}
+                  <CatRow c={c}/>
+                  {i < customCats.length - 1 && <Divider inset={56}/>}
                 </React.Fragment>
               ))}
             </div>
@@ -2763,70 +3006,133 @@ function ScreenManageCategories() {
         )}
 
         <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Premade categories</div>
-        <div className="m-card" style={{ padding:'4px 16px', marginBottom:16, border:`1px solid ${M.line}` }}>
-          {premadeParents.map((p, i, a) => {
-            const subs = Object.values(CATEGORIES).filter(c => c.parent === p.id);
-            const customSubs = customCats.filter(c => c.parent === p.id);
-            return (
-              <React.Fragment key={p.id}>
-                <div style={{ padding:'10px 0' }}>
-                  <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom: subs.length > 0 ? 8 : 0 }}>
-                    <div style={{ width:28, height:28, borderRadius:8, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center' }}>
-                      <I name={p.icon} size={14} color={M.ink2}/>
-                    </div>
-                    <div style={{ flex:1, fontSize:13, fontWeight:600 }}>{p.name}</div>
-                    <div style={{ fontSize:11, color:M.ink4 }}>{subs.length + customSubs.length} subs</div>
+        {premadeParents.map((p) => {
+          const subs = Object.values(CATEGORIES).filter(c => c.parent === p.id);
+          const customSubs = customCats.filter(c => c.parent === p.id);
+          const isDropTarget = dragOverParent === p.id;
+          return (
+            <div key={p.id} className="m-card" style={{
+              padding:'4px 16px', marginBottom:8,
+              border:`1.5px solid ${isDropTarget ? M.sage : M.line}`,
+              background: isDropTarget ? M.sageSoft : undefined,
+              transition:'border-color 0.15s, background 0.15s',
+            }}
+              onDragOver={(e) => onDragOver(p.id, e)}
+              onDragLeave={onDragLeave}
+              onDrop={(e) => onDrop(p.id, e)}
+            >
+              <div style={{ padding:'10px 0' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:(subs.length + customSubs.length) > 0 ? 8 : 0 }}>
+                  <div style={{ width:28, height:28, borderRadius:8, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    <I name={p.icon} size={14} color={M.ink2}/>
                   </div>
-                  <div style={{ paddingLeft:38 }}>
-                    {subs.map(s => (
-                      <div key={s.id} style={{ fontSize:12, color:M.ink3, padding:'3px 0', display:'flex', alignItems:'center', gap:6 }}>
-                        <div style={{ width:4, height:4, borderRadius:999, background:M.line, flexShrink:0 }}/>
-                        {s.name}
+                  <div style={{ flex:1, fontSize:13, fontWeight:600 }}>{p.name}</div>
+                  <div style={{ fontSize:11, color:M.ink4 }}>{subs.length + customSubs.length} subs</div>
+                </div>
+                <div style={{ paddingLeft:38 }}>
+                  {subs.map(s => (
+                    <div key={s.id} style={{ fontSize:12, color:M.ink3, padding:'3px 0', display:'flex', alignItems:'center', gap:6 }}>
+                      <div style={{ width:4, height:4, borderRadius:999, background:M.line, flexShrink:0 }}/>
+                      {s.name}
+                    </div>
+                  ))}
+                  {customSubs.map(s => (
+                    <div key={s.id} draggable onDragStart={(e) => onDragStart(s.id, e)}
+                      style={{ fontSize:12, color:M.sage, padding:'3px 0', display:'flex', alignItems:'center', gap:6, cursor:'grab', userSelect:'none' }}>
+                      <I name="menu" size={10} color={M.sage}/>
+                      {s.name} <span style={{ fontSize:10, color:M.ink4 }}>custom</span>
+                    </div>
+                  ))}
+                  {isDropTarget && <div style={{ fontSize:12, color:M.sage, padding:'3px 0', fontStyle:'italic', opacity:0.7 }}>Drop here →</div>}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+
+        {customParents.length > 0 && (
+          <>
+            <div className="m-cap" style={{ marginBottom:8, paddingLeft:4, marginTop:4 }}>Custom parent categories</div>
+            {customParents.map((p) => {
+              const customSubs = customCats.filter(c => c.parent === p.id);
+              const isDropTarget = dragOverParent === p.id;
+              return (
+                <div key={p.id} className="m-card" style={{
+                  padding:'4px 16px', marginBottom:8,
+                  border:`1.5px solid ${isDropTarget ? M.violet : M.line}`,
+                  background: isDropTarget ? (M.violetSoft||'#EEE8FF') : undefined,
+                  transition:'border-color 0.15s, background 0.15s',
+                }}
+                  onDragOver={(e) => onDragOver(p.id, e)}
+                  onDragLeave={onDragLeave}
+                  onDrop={(e) => onDrop(p.id, e)}
+                >
+                  <div style={{ padding:'10px 0' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom: customSubs.length > 0 ? 8 : 0 }}>
+                      <div style={{ width:28, height:28, borderRadius:8, background:M.violetSoft||'#EEE8FF', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                        <I name={p.icon} size={14} color={M.violet}/>
                       </div>
-                    ))}
-                    {customSubs.map(s => (
-                      <div key={s.id} style={{ fontSize:12, color:M.sage, padding:'3px 0', display:'flex', alignItems:'center', gap:6, justifyContent:'space-between' }}>
-                        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                          <div style={{ width:4, height:4, borderRadius:999, background:M.sage, flexShrink:0 }}/>
-                          {s.name} <span style={{ fontSize:10, color:M.ink4 }}>custom</span>
-                        </div>
-                        <button className="m-tap" onClick={() => setCustomCats(cs => cs.filter(x => x.id !== s.id))}
-                          style={{ background:'none', border:'none', color:M.clay, cursor:'pointer', fontFamily:M.fontUI, fontSize:14, lineHeight:1 }}>×</button>
+                      <div style={{ flex:1, fontSize:13, fontWeight:600 }}>{p.name}</div>
+                      <div style={{ fontSize:11, color:M.ink4 }}>{customSubs.length} subs</div>
+                    </div>
+                    {customSubs.length > 0 && (
+                      <div style={{ paddingLeft:38 }}>
+                        {customSubs.map(s => (
+                          <div key={s.id} draggable onDragStart={(e) => onDragStart(s.id, e)}
+                            style={{ fontSize:12, color:M.violet, padding:'3px 0', display:'flex', alignItems:'center', gap:6, cursor:'grab', userSelect:'none' }}>
+                            <I name="menu" size={10} color={M.violet+'88'}/>
+                            {s.name}
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    )}
+                    {isDropTarget && <div style={{ fontSize:12, color:M.violet, padding:'3px 0 3px 38px', fontStyle:'italic', opacity:0.7 }}>Drop here →</div>}
                   </div>
                 </div>
-                {i < a.length-1 && <Divider/>}
-              </React.Fragment>
-            );
-          })}
-        </div>
+              );
+            })}
+          </>
+        )}
+        <div style={{ height:24 }}/>
       </div>
 
       {showAdd && (
-        <Sheet onClose={() => setShowAdd(false)}>
+        <Sheet onClose={() => { setShowAdd(false); setNewType('sub'); setNewName(''); }}>
           <div style={{ padding:'4px 20px 32px' }}>
-            <div className="m-h2" style={{ marginBottom:4 }}>New sub-category</div>
-            <div style={{ fontSize:13, color:M.ink3, marginBottom:18 }}>Add a custom sub-category under an existing parent.</div>
-
-            <div className="m-cap" style={{ marginBottom:6 }}>Parent category</div>
-            <div style={{ display:'flex', gap:6, overflowX:'auto', paddingBottom:8, marginBottom:14 }}>
-              {premadeParents.map(p => (
-                <button key={p.id} className="m-tap" onClick={() => setNewParent(p.id)} style={{
-                  flexShrink:0, padding:'6px 12px', borderRadius:10,
-                  border:`1.5px solid ${newParent === p.id ? M.sage : M.line}`,
-                  background: newParent === p.id ? M.sageSoft : M.card,
-                  fontSize:12, fontWeight:600, color: newParent === p.id ? M.sage : M.ink2,
-                  fontFamily:M.fontUI, cursor:'pointer',
-                }}>{p.name}</button>
+            <div className="m-h2" style={{ marginBottom:16 }}>New category</div>
+            <div style={{ display:'flex', gap:4, marginBottom:18, padding:'4px', borderRadius:12, background:M.paper2 }}>
+              {[{id:'sub',label:'Sub-category'},{id:'parent',label:'Parent category'}].map(opt => (
+                <button key={opt.id} className="m-tap" onClick={() => setNewType(opt.id)} style={{
+                  flex:1, padding:'8px 0', borderRadius:9, border:'none', fontFamily:M.fontUI,
+                  fontSize:13, fontWeight:600, cursor:'pointer',
+                  background: newType === opt.id ? '#fff' : 'transparent',
+                  color: newType === opt.id ? M.ink : M.ink3,
+                  boxShadow: newType === opt.id ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
+                  transition:'all 0.2s',
+                }}>{opt.label}</button>
               ))}
             </div>
 
+            {newType === 'sub' && (
+              <>
+                <div className="m-cap" style={{ marginBottom:6 }}>Parent category</div>
+                <div style={{ display:'flex', gap:6, overflowX:'auto', paddingBottom:8, marginBottom:14 }}>
+                  {allParentOptions.map(p => (
+                    <button key={p.id} className="m-tap" onClick={() => setNewParent(p.id)} style={{
+                      flexShrink:0, padding:'6px 12px', borderRadius:10,
+                      border:`1.5px solid ${newParent === p.id ? M.sage : M.line}`,
+                      background: newParent === p.id ? M.sageSoft : M.card,
+                      fontSize:12, fontWeight:600, color: newParent === p.id ? M.sage : M.ink2,
+                      fontFamily:M.fontUI, cursor:'pointer',
+                    }}>{p.name}</button>
+                  ))}
+                </div>
+              </>
+            )}
+
             <div className="m-cap" style={{ marginBottom:6 }}>Name</div>
-            <input
-              value={newName}
-              onChange={e => setNewName(e.target.value)}
-              placeholder="e.g. VR Gaming"
+            <input value={newName} onChange={e => setNewName(e.target.value)}
+              placeholder={newType === 'parent' ? 'e.g. Travel' : 'e.g. VR Gaming'}
               style={{ width:'100%', padding:'10px 14px', borderRadius:12, border:`1.5px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, outline:'none', marginBottom:14, background:M.paper2, color:M.ink, boxSizing:'border-box' }}
             />
 
@@ -2845,8 +3151,35 @@ function ScreenManageCategories() {
             </div>
 
             <button className="m-btn sage m-tap" style={{ width:'100%' }} onClick={addCat} disabled={!newName.trim()}>
-              Add sub-category
+              Add {newType === 'parent' ? 'parent category' : 'sub-category'}
             </button>
+          </div>
+        </Sheet>
+      )}
+
+      {deleteTarget && (
+        <Sheet onClose={() => setDeleteTarget(null)}>
+          <div style={{ padding:'4px 20px 32px' }}>
+            <div style={{ width:52, height:52, borderRadius:15, background:M.claySoft, display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 16px' }}>
+              <I name="x" size={24} color={M.clay}/>
+            </div>
+            <div className="m-h2" style={{ textAlign:'center', marginBottom:12 }}>Delete "{deleteTarget.name}"?</div>
+            {(() => {
+              const n = countAffected(deleteTarget.id);
+              return n > 0 ? (
+                <div style={{ padding:'10px 14px', borderRadius:10, background:M.claySoft, fontSize:13, color:M.clay, marginBottom:18, lineHeight:1.5 }}>
+                  This will affect <strong>{n} transaction{n !== 1 ? 's' : ''}</strong>. They will be set to Uncategorized.
+                </div>
+              ) : (
+                <div style={{ fontSize:13, color:M.ink3, textAlign:'center', marginBottom:18, lineHeight:1.5 }}>No transactions are using this category.</div>
+              );
+            })()}
+            <button className="m-tap" onClick={doDelete} style={{
+              width:'100%', height:48, borderRadius:12, border:'none',
+              background:M.clay, color:'#fff', fontSize:15, fontWeight:600,
+              fontFamily:M.fontUI, cursor:'pointer', marginBottom:10,
+            }}>Delete</button>
+            <button className="m-btn outline m-tap" style={{ width:'100%' }} onClick={() => setDeleteTarget(null)}>Cancel</button>
           </div>
         </Sheet>
       )}
@@ -4063,8 +4396,10 @@ function AllocProvider({ children }) {
 }
 
 function AllocateTopicRow({ topic, onClick }) {
-  const over = topic.actual > topic.allocated;
-  const pct  = Math.min(topic.actual / (topic.allocated || 1), 1);
+  const { txs } = useTxCtx();
+  const computedActual = txs.filter(t => topic.cats.includes(t.cat) && t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
+  const over = computedActual > topic.allocated;
+  const pct  = Math.min(computedActual / (topic.allocated || 1), 1);
   return (
     <div className="m-tap" onClick={onClick} style={{ padding:'12px 0' }}>
       <div style={{ display:'flex', gap:12, alignItems:'flex-start' }}>
@@ -4076,7 +4411,7 @@ function AllocateTopicRow({ topic, onClick }) {
             <div style={{ fontSize:14, fontWeight:500 }}>{topic.name}</div>
             <div style={{ display:'flex', alignItems:'center', gap:6 }}>
               {over && <span style={{ fontSize:9, fontWeight:700, padding:'2px 6px', borderRadius:999, background:M.claySoft, color:M.clay, textTransform:'uppercase', letterSpacing:'0.05em' }}>over</span>}
-              <div className="m-num" style={{ fontSize:14, fontWeight:600, color:over?M.clay:M.ink }}>{fmtEur(topic.actual, {decimals:0})}</div>
+              <div className="m-num" style={{ fontSize:14, fontWeight:600, color:over?M.clay:M.ink }}>{fmtEur(computedActual, {decimals:0})}</div>
             </div>
           </div>
           <div style={{ margin:'7px 0 4px' }}>
@@ -4098,6 +4433,7 @@ function AllocateTopicRow({ topic, onClick }) {
 function ScreenAllocate() {
   const nav = useNav();
   const { topics, updateTopic, pOffset, setPOffset, unallocated } = useAlloc();
+  const { txs } = useTxCtx();
   const [showAutoConfirm, setShowAutoConfirm] = React.useState(false);
   const [recurringExpanded, setRecurringExpanded] = React.useState(false);
 
@@ -4113,7 +4449,9 @@ function ScreenAllocate() {
   const recurring = displayTopics.filter(t => t.group === 'recurring');
   const varTopics = displayTopics.filter(t => t.group === 'var');
   const recurringAllocated = recurring.reduce((s, t) => s + t.allocated, 0);
-  const recurringActual = recurring.reduce((s, t) => s + t.actual, 0);
+  const recurringActual = isCurrent
+    ? recurring.reduce((s, t) => s + txs.filter(tx => t.cats.includes(tx.cat) && tx.amount < 0).reduce((a, tx) => a + Math.abs(tx.amount), 0), 0)
+    : recurring.reduce((s, t) => s + t.actual, 0);
   const recurringOver = recurringActual > recurringAllocated;
 
   return (
@@ -4257,8 +4595,9 @@ function ScreenAllocateTopic({ params }) {
   const [showMove, setShowMove] = React.useState(false);
   const [showCatPicker, setShowCatPicker] = React.useState(false);
 
+  const { txs } = useTxCtx();
   const topic = topics.find(t => t.id === params?.id) || topics[0];
-  const topicTxs = TRANSACTIONS.filter(t => topic.cats.includes(t.cat) && t.amount < 0);
+  const topicTxs = txs.filter(t => topic.cats.includes(t.cat) && t.amount < 0);
   const computedActual = topicTxs.reduce((s, t) => s + Math.abs(t.amount), 0);
   const over    = computedActual > topic.allocated;
   const pct     = Math.min(computedActual / (topic.allocated || 1), 1);
@@ -4471,11 +4810,20 @@ function ScreenAllocateAddTopic() {
   const [selCats, setSelCats] = React.useState([]); // [{catId, amount}]
   const [showCatPicker, setShowCatPicker] = React.useState(false);
   const [autoFund, setAutoFund] = React.useState(false);
+  const [estimateStr, setEstimateStr] = React.useState('');
+  const [estimateUserEdited, setEstimateUserEdited] = React.useState(false);
 
   const estimate = selCats.reduce((s, c) => s + c.amount, 0);
-  const canAutoFund = unallocated >= estimate && estimate > 0;
-  const allocated = autoFund && canAutoFund ? estimate : 0;
-  const canCreate = topicName.trim().length > 0 && selCats.length > 0 && estimate > 0;
+
+  React.useEffect(() => {
+    if (!estimateUserEdited && estimate > 0) setEstimateStr(String(estimate));
+    if (!estimateUserEdited && estimate === 0) setEstimateStr('');
+  }, [estimate, estimateUserEdited]);
+
+  const effectiveEstimate = estimateUserEdited ? (parseFloat(estimateStr) || 0) : estimate;
+  const canAutoFund = unallocated >= effectiveEstimate && effectiveEstimate > 0;
+  const allocated = autoFund && canAutoFund ? effectiveEstimate : 0;
+  const canCreate = topicName.trim().length > 0 && selCats.length > 0 && effectiveEstimate > 0;
 
   // Auto-estimate from transaction history per category
   const autoEstimate = (catId) => {
@@ -4531,9 +4879,8 @@ function ScreenAllocateAddTopic() {
                   </div>
                   <div style={{ flex:1 }}>
                     <div style={{ fontSize:13, fontWeight:500 }}>{catPath(cat)}</div>
-                    <div style={{ fontSize:11, color:M.ink4, marginTop:1 }}>avg estimate</div>
+                    <div style={{ fontSize:11, color:M.ink4, marginTop:1 }}>avg estimate · <span className="m-num">{fmtEur(c.amount)}</span></div>
                   </div>
-                  <span className="m-num" style={{ fontSize:13, color:M.ink2 }}>{fmtEur(c.amount)}</span>
                   <button onClick={() => setSelCats(s => s.filter(x => x.catId !== c.catId))} style={{ background:'none', border:'none', color:M.clay, padding:'0 4px', fontSize:18, lineHeight:1, cursor:'pointer', fontFamily:M.fontUI }}>×</button>
                 </div>
                 {i < selCats.length - 1 && <Divider/>}
@@ -4550,13 +4897,32 @@ function ScreenAllocateAddTopic() {
 
         {/* 4. Estimate */}
         <div className="m-cap" style={{ marginBottom:6, paddingLeft:4 }}>Estimate</div>
-        <div className="m-card" style={{ padding:'12px 16px', marginBottom:14, border:`1px solid ${M.line}`, display:'flex', alignItems:'center', gap:10 }}>
-          <I name="wallet" size={16} color={M.ink3}/>
-          <div style={{ flex:1, fontSize:13, color:M.ink2 }}>
-            {estimate > 0 ? `${fmtEur(estimate)} · based on avg category history` : 'Add categories to calculate estimate'}
-          </div>
-          <div className="m-num" style={{ fontSize:16, fontWeight:600, color:estimate > 0 ? M.ink : M.ink4 }}>
-            {estimate > 0 ? fmtEur(estimate) : '—'}
+        <div className="m-card" style={{ padding:'12px 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
+          <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom: estimateUserEdited ? 6 : 0 }}>
+            <I name="wallet" size={16} color={M.ink3}/>
+            <div style={{ flex:1 }}>
+              <div style={{ fontSize:12, color:M.ink4, marginBottom:4 }}>
+                {estimate > 0 && !estimateUserEdited ? 'Based on avg category history' : estimateUserEdited ? 'Custom estimate' : 'Add categories to auto-calculate'}
+              </div>
+              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <span style={{ fontSize:13, color:M.ink3 }}>€</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  value={estimateStr}
+                  onChange={e => { setEstimateStr(e.target.value); setEstimateUserEdited(true); }}
+                  placeholder={estimate > 0 ? String(estimate) : '0'}
+                  style={{ flex:1, border:'none', outline:'none', fontSize:16, fontWeight:600, fontFamily:M.fontMono, background:'transparent', color: estimateStr ? M.ink : M.ink4, minWidth:0 }}
+                />
+                {!estimateUserEdited && estimate > 0 && (
+                  <span style={{ fontSize:10, fontWeight:700, color:M.sage, textTransform:'uppercase', letterSpacing:'0.05em' }}>auto</span>
+                )}
+                {estimateUserEdited && (
+                  <button onClick={() => { setEstimateUserEdited(false); setEstimateStr(''); }}
+                    style={{ background:'none', border:'none', fontSize:11, color:M.ink4, cursor:'pointer', fontFamily:M.fontUI, padding:'2px 6px' }}>reset</button>
+                )}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -4568,8 +4934,8 @@ function ScreenAllocateAddTopic() {
               <div style={{ fontSize:14, fontWeight:500 }}>Fund from unallocated income</div>
               <div style={{ fontSize:12, color:M.ink3, marginTop:2 }}>
                 {canAutoFund
-                  ? `Allocate ${fmtEur(estimate)} from ${fmtEur(unallocated)} available`
-                  : estimate > 0
+                  ? `Allocate ${fmtEur(effectiveEstimate)} from ${fmtEur(unallocated)} available`
+                  : effectiveEstimate > 0
                     ? `Not enough unallocated (${fmtEur(unallocated)} available)`
                     : 'Set estimate first'}
               </div>
@@ -4583,7 +4949,7 @@ function ScreenAllocateAddTopic() {
           </div>
           {autoFund && canAutoFund && (
             <div style={{ marginTop:10, padding:'8px 12px', borderRadius:10, background:M.sageSoft, fontSize:12, color:M.sage, fontWeight:500 }}>
-              {fmtEur(estimate)} will be allocated when you create this topic
+              {fmtEur(effectiveEstimate)} will be allocated when you create this topic
             </div>
           )}
         </div>
@@ -4993,6 +5359,7 @@ function ScreenReviewSwipe() {
   const { txs } = useTxCtx();
   const [reviewed, setReviewed] = React.useState(new Set());
   const queue = txs.filter(t => t.needsReview && !reviewed.has(t.id));
+  const [initialCount] = React.useState(() => txs.filter(t => t.needsReview).length || 1);
   const [idx, setIdx] = React.useState(0);
   const [drag, setDrag] = React.useState(0);
   const [done, setDone] = React.useState(false);
@@ -5027,7 +5394,7 @@ function ScreenReviewSwipe() {
   const advance = () => {
     setDrag(160);
     setTimeout(() => {
-      const nextIdx = idx + 1 >= queue.length ? 0 : idx;
+      const nextIdx = idx + 1 >= queue.length ? 0 : idx + 1;
       setIdx(nextIdx);
       setDrag(0);
       if (queue.length <= 1) setDone(true);
@@ -5066,15 +5433,14 @@ function ScreenReviewSwipe() {
   return (
     <div className="m-screen" style={{ background: M.paper2 }}>
       <StatusBar/>
-      <AppBar title={`Review · ${idx + 1} / ${queue.length}`}
+      <AppBar title={`Review · ${reviewed.size + 1} / ${initialCount}`}
         leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="x" size={20}/></button>}
       />
 
       <div style={{ display:'flex', justifyContent:'center', gap:4, padding:'0 20px 14px', flexShrink:0 }}>
-        {queue.slice(0, Math.min(queue.length, 20)).map((_, i) => (
-          <div key={i} style={{ flex:1, height:3, borderRadius:999, background: i < idx ? M.sage : i === idx ? M.ink : M.line2 }}/>
+        {Array.from({ length: Math.min(initialCount, 30) }).map((_, i) => (
+          <div key={i} style={{ flex:1, height:3, borderRadius:999, background: i < reviewed.size ? M.sage : i === reviewed.size ? M.ink : M.line2 }}/>
         ))}
-        {queue.length > 20 && <div style={{ fontSize:10, color:M.ink4, alignSelf:'center', marginLeft:4 }}>+{queue.length - 20}</div>}
       </div>
 
       <div style={{ flex:1, overflowY:'auto', padding:'0 20px' }}>
@@ -5216,7 +5582,14 @@ function ScreenReviewSwipe() {
         defaultAmount={unallocated || txAbs}
         maxAmount={unallocated || txAbs}
         onClose={() => setPicking(false)}
-        onPick={(id, amt) => { setTxCats(cs => [...cs, { id, amount: amt }]); setPicking(false); }}
+        onPick={(id, amt) => {
+          if (txCats.some(c => c.id === id)) {
+            alert(`"${CATEGORIES[id]?.name || id}" is already in the list.`);
+            return;
+          }
+          setTxCats(cs => [...cs, { id, amount: amt }]);
+          setPicking(false);
+        }}
       />}
 
       {editAmt !== null && (
@@ -5248,9 +5621,6 @@ function ScreenReviewSwipe() {
               <DetailRow label="Description" value={previewTx.desc} mono/>
               <Divider inset={0}/>
               <DetailRow label="AI confidence" value={`${previewTx.confidence || 0}%`}/>
-            </div>
-            <div style={{ padding:'8px 12px', borderRadius:10, background:M.ochreSoft, fontSize:12, color:M.ochre, marginBottom:14 }}>
-              Read-only preview. Confirm on the main card to apply categories to this transaction too.
             </div>
             <button className="m-btn outline m-tap" style={{ width:'100%' }} onClick={() => setPreviewTx(null)}>Close</button>
           </div>
