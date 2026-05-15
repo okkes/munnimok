@@ -658,9 +658,12 @@ const CATEGORIES = {
   extraOther:             { id:'extraOther',             name:'Other',              icon:'box',            group:'Extra',       parent:'extra' },
 };
 
+let _catExt = {};
+
 function catPath(cat) {
   if (!cat) return '—';
-  if (cat.parent && CATEGORIES[cat.parent]) return `${CATEGORIES[cat.parent].name} → ${cat.name}`;
+  const par = cat.parent && (CATEGORIES[cat.parent] || _catExt[cat.parent]);
+  if (par) return `${par.name} → ${cat.name}`;
   if (cat.isParent) return cat.name;
   return `${cat.group} → ${cat.name}`;
 }
@@ -1130,10 +1133,11 @@ function LineChart({ data, width = 320, height = 120, color = M.sage, fill = 'rg
 }
 
 function TxRow({ tx, onClick, showCat = true, showDate = false, dense = false, highlight = '' }) {
-  const cat = CATEGORIES[tx.cat] || {};
+  const cat = CATEGORIES[tx.cat] || _catExt[tx.cat] || {};
+  const { txs: allTxs } = useTxCtx();
   const positive = tx.amount > 0;
-  const isLinkedReimburse = tx.linkedTo; // this tx is a reimbursement (income linked to an expense)
-  const hasReimbursement = !positive && TRANSACTIONS.some(t => t.linkedTo === tx.id); // expense that has been reimbursed
+  const isLinkedReimburse = tx.linkedTo;
+  const hasReimbursement = !positive && allTxs.some(t => t.linkedTo === tx.id);
   return (
     <div onClick={onClick} className={onClick ? 'm-tap' : ''} style={{
       display: 'flex', alignItems: 'center', gap: 12,
@@ -1200,7 +1204,8 @@ function ScreenStub({ title }) {
 function ScreenHome() {
   const nav = useNav();
   const alloc = useAlloc();
-  const reviewCount = TRANSACTIONS.filter(t => t.needsReview).length;
+  const { txs } = useTxCtx();
+  const reviewCount = txs.filter(t => t.needsReview).length;
   const budgetTop = [...BUDGETS].sort((a, b) => (b.spent/b.total) - (a.spent/a.total)).slice(0, 3);
   const [pidx, setPidx] = React.useState(PERIOD_HISTORY.length - 1);
   const pd = PERIOD_HISTORY[pidx];
@@ -1676,7 +1681,7 @@ function ScreenTxDetail({ params }) {
         <div className="m-card" style={{ padding: '12px 16px', marginBottom: 14, border: `1px solid ${M.line}`, position:'relative' }}>
           <div className="m-cap" style={{ marginBottom: 8 }}>Categories</div>
           {txCats.map((c, i) => {
-            const cat = CATEGORIES[c.catId] || {};
+            const cat = CATEGORIES[c.catId] || _catExt[c.catId] || {};
             const isUncategorized = c.catId === 'expenseUncategorized' || c.catId === 'incomeUncategorized';
             return (
               <React.Fragment key={c.catId + i}>
@@ -1955,16 +1960,18 @@ function DetailRow({ label, value, icon, mono, placeholder, caretR }) {
 
 function ScreenExpenses() {
   const nav = useNav();
+  const { txs } = useTxCtx();
   const PERIOD_LABELS = ['Sep–Oct','Oct–Nov','Nov–Dec','Dec–Jan','Jan–Feb','Feb–Mar'];
   const [selBar, setSelBar] = React.useState(SPEND_HISTORY.total.length - 1);
   const periodLabel = PERIOD_LABELS[selBar] || PERIOD_LABELS[PERIOD_LABELS.length - 1];
   const isCurrentPeriod = selBar === SPEND_HISTORY.total.length - 1;
 
   const totals = {};
-  TRANSACTIONS.filter(t => t.amount < 0).forEach(t => {
-    const c = CATEGORIES[t.cat];
+  txs.filter(t => t.amount < 0).forEach(t => {
+    const c = CATEGORIES[t.cat] || _catExt[t.cat];
     const grp = c?.parent || c?.id;
-    if (!totals[grp]) totals[grp] = { id: grp, name: CATEGORIES[grp]?.name || c?.group || c?.name, icon: CATEGORIES[grp]?.icon || c?.icon, total: 0, subs: {} };
+    const grpCat = CATEGORIES[grp] || _catExt[grp];
+    if (!totals[grp]) totals[grp] = { id: grp, name: grpCat?.name || c?.group || c?.name, icon: grpCat?.icon || c?.icon, total: 0, subs: {} };
     totals[grp].total += Math.abs(t.amount);
     if (c?.parent) {
       if (!totals[grp].subs[c.id]) totals[grp].subs[c.id] = { id: c.id, name: c.name, total: 0, count: 0 };
@@ -2094,14 +2101,15 @@ function ScreenExpenses() {
 
 function ScreenCategoryDrill({ params }) {
   const nav = useNav();
-  const cat = CATEGORIES[params?.id] || CATEGORIES.restaurants;
+  const { txs: allTxs } = useTxCtx();
+  const cat = CATEGORIES[params?.id] || _catExt[params?.id] || CATEGORIES.restaurants;
   const isParent = !!cat.isParent;
 
   const childIds = isParent
-    ? Object.values(CATEGORIES).filter(c => c.parent === cat.id).map(c => c.id)
+    ? [...Object.values(CATEGORIES), ...Object.values(_catExt)].filter(c => c.parent === cat.id).map(c => c.id)
     : [cat.id];
 
-  const txs = TRANSACTIONS.filter(t => t.amount < 0 && childIds.includes(t.cat));
+  const txs = allTxs.filter(t => t.amount < 0 && childIds.includes(t.cat));
   const total = txs.reduce((s, t) => s + Math.abs(t.amount), 0);
 
   const months = ['Sep–Oct','Oct–Nov','Nov–Dec','Dec–Jan','Jan–Feb','Feb–Mar'];
@@ -2405,9 +2413,10 @@ function Toggle({ on }) {
 function ScreenProfile() {
   const nav = useNav();
   const [editing, setEditing] = React.useState(false);
-  const [name, setName] = React.useState('Demo van der Berg');
-  const [email, setEmail] = React.useState('demo@munni.app');
-  const [draft, setDraft] = React.useState({ name: 'Demo van der Berg', email: 'demo@munni.app' });
+  const [name, setName] = useLocalStorage('munni_profile_name', 'Demo van der Berg');
+  const [email, setEmail] = useLocalStorage('munni_profile_email', 'demo@munni.app');
+  const [draft, setDraft] = React.useState({ name, email });
+  const [showReset, setShowReset] = React.useState(false);
 
   const startEdit = () => { setDraft({ name, email }); setEditing(true); };
   const save = () => { setName(draft.name); setEmail(draft.email); setEditing(false); };
@@ -2509,12 +2518,44 @@ function ScreenProfile() {
           <ProfileLink icon="logout" label="Sign out" danger onClick={() => nav.push('login')}/>
         </div>
 
+        <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Demo</div>
+        <div className="m-card" style={{ padding: '4px 16px', marginBottom: 16, border: `1px solid ${M.line}` }}>
+          <div className="m-tap" onClick={() => setShowReset(true)} style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
+            <div style={{ width:32, height:32, borderRadius:9, background:M.claySoft, display:'flex', alignItems:'center', justifyContent:'center' }}>
+              <I name="refresh" size={16} color={M.clay}/>
+            </div>
+            <div style={{ flex:1 }}>
+              <div style={{ fontSize:14, fontWeight:600, color:M.clay }}>Reset demo data</div>
+              <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>Restore all transactions &amp; settings</div>
+            </div>
+            <I name="chevron-right" size={16} color={M.ink4}/>
+          </div>
+        </div>
+
         <div style={{ textAlign: 'center', fontSize: 11, color: M.ink4, padding: '12px 0 24px' }}>
           munni · v1.0.0 · build 248
         </div>
       </div>
 
       <TabBar active="profile" onChange={(t) => nav.switchTab(t)}/>
+      {showReset && (
+        <Sheet onClose={() => setShowReset(false)}>
+          <div style={{ padding:'0 4px 8px' }}>
+            <div style={{ fontSize:17, fontWeight:700, marginBottom:8 }}>Reset demo data?</div>
+            <div style={{ fontSize:14, color:M.ink3, lineHeight:1.5, marginBottom:20 }}>
+              This will restore all transactions, categories, and settings to the original demo state. All your changes will be lost.
+            </div>
+            <button onClick={() => { clearAllStorage(); window.location.reload(); }}
+              style={{ width:'100%', padding:'14px 0', background:M.clay, color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>
+              Reset everything
+            </button>
+            <button onClick={() => setShowReset(false)}
+              style={{ width:'100%', padding:'14px 0', background:M.paper2, color:M.ink, border:`1px solid ${M.line}`, borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+              Cancel
+            </button>
+          </div>
+        </Sheet>
+      )}
     </div>
   );
 }
@@ -2883,7 +2924,7 @@ function ScreenTutorial() {
 function ScreenManageCategories() {
   const nav = useNav();
   const { txs } = useTxCtx();
-  const [customCats, setCustomCats] = React.useState([]);
+  const { customCats, setCustomCats } = useCatCtx();
   const [showAdd, setShowAdd] = React.useState(false);
   const [newName, setNewName] = React.useState('');
   const [newParent, setNewParent] = React.useState('entertainment');
@@ -3189,7 +3230,7 @@ function ScreenManageCategories() {
 
 function ScreenNotifications() {
   const nav = useNav();
-  const { addTxs } = useTxCtx();
+  const { addTxs, txs } = useTxCtx();
   const [syncing, setSyncing] = React.useState(false);
   const [lastSynced, setLastSynced] = React.useState(null);
   const [newCount, setNewCount] = React.useState(0);
@@ -3248,7 +3289,7 @@ function ScreenNotifications() {
           </button>
           {newCount > 0 && (
             <div style={{ marginTop:10, padding:'8px 12px', borderRadius:10, background:M.sageSoft, fontSize:12, color:M.sage, fontWeight:500 }}>
-              {newCount} new transaction{newCount > 1 ? 's' : ''} added — {TRANSACTIONS.filter(t => t.needsReview).length > 0 ? 'some need review' : 'all categorised'}
+              {newCount} new transaction{newCount > 1 ? 's' : ''} added — {txs.filter(t => t.needsReview).length > 0 ? 'some need review' : 'all categorised'}
             </div>
           )}
         </div>
@@ -3693,9 +3734,10 @@ function ScreenRecurringTab() { return <RecurringContent showTabBar={true}/>; }
 
 function ScreenRecurringDetail({ params }) {
   const nav = useNav();
+  const { txs: allTxs } = useTxCtx();
   const [showAddTx, setShowAddTx] = React.useState(false);
   const r = RECURRING.find(x => x.id === params?.id) || RECURRING[0];
-  const txs = TRANSACTIONS.filter(t => r.txIds?.includes(t.id));
+  const txs = allTxs.filter(t => r.txIds?.includes(t.id));
   const seed = Math.abs(r.amount);
   const history = [seed*0.97, seed, seed*1.02, seed*0.99, seed*1.01, Math.abs(r.amount)];
 
@@ -3793,8 +3835,9 @@ function ScreenRecurringDetail({ params }) {
 
 function RecurringAddTxSheet({ rid, cat, onClose }) {
   const nav = useNav();
+  const { txs } = useTxCtx();
   const already = RECURRING.find(r => r.id === rid)?.txIds || [];
-  const candidates = TRANSACTIONS.filter(t => t.cat === cat && t.amount < 0 && !already.includes(t.id));
+  const candidates = txs.filter(t => t.cat === cat && t.amount < 0 && !already.includes(t.id));
   return (
     <Sheet onClose={onClose}>
       <div style={{ padding:'4px 20px 32px', maxHeight:'72vh', overflowY:'auto' }}>
@@ -4103,11 +4146,12 @@ function BudgetCard({ b, onClick }) {
 
 function ScreenBudgetDetail({ params }) {
   const nav = useNav();
+  const { txs: allTxs } = useTxCtx();
   const b = BUDGETS.find(x => x.id === params?.id) || BUDGETS[0];
   const [editMode, setEditMode] = React.useState(false);
   const [pOffset, setPOffset] = React.useState(0);
 
-  const txs   = TRANSACTIONS.filter(t => b.cats.includes(t.cat));
+  const txs   = allTxs.filter(t => b.cats.includes(t.cat));
   const ratio = b.spent / b.total;
   const over  = ratio > 1;
   const color = budgetColor(ratio);
@@ -4178,7 +4222,7 @@ function ScreenBudgetDetail({ params }) {
         <div className="m-card" style={{ padding:'4px 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
           {b.cats.map((cId, i) => {
             const c = CATEGORIES[cId];
-            const cTotal = TRANSACTIONS.filter(t => t.cat === cId).reduce((s, t) => s + Math.abs(t.amount), 0);
+            const cTotal = allTxs.filter(t => t.cat === cId).reduce((s, t) => s + Math.abs(t.amount), 0);
             return (
               <React.Fragment key={cId}>
                 <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
@@ -4306,10 +4350,40 @@ function ScreenBudgetCreate() {
   <script type="text/babel">
 // ── screens-allocate.jsx ───────────────────────────────────────
 
+// ── Persistence ────────────────────────────────────────────────
+function useLocalStorage(key, defaultValue) {
+  const [state, setState] = React.useState(() => {
+    try {
+      const s = localStorage.getItem(key);
+      return s !== null ? JSON.parse(s) : (typeof defaultValue === 'function' ? defaultValue() : defaultValue);
+    } catch { return typeof defaultValue === 'function' ? defaultValue() : defaultValue; }
+  });
+  const set = React.useCallback(val => {
+    setState(prev => {
+      const next = typeof val === 'function' ? val(prev) : val;
+      try { localStorage.setItem(key, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, [key]);
+  return [state, set];
+}
+
+const STORAGE_KEYS = ['munni_txs','munni_recur','munni_topics','munni_pOffset','munni_customCats','munni_dark','munni_profile_name','munni_profile_email'];
+function clearAllStorage() { STORAGE_KEYS.forEach(k => localStorage.removeItem(k)); }
+
+const CatCtx = React.createContext(null);
+function CatProvider({ children }) {
+  const [customCats, setCustomCats] = useLocalStorage('munni_customCats', []);
+  _catExt = Object.fromEntries(customCats.map(c => [c.id, c]));
+  React.useEffect(() => { _catExt = Object.fromEntries(customCats.map(c => [c.id, c])); }, [customCats]);
+  return <CatCtx.Provider value={{ customCats, setCustomCats }}>{children}</CatCtx.Provider>;
+}
+const useCatCtx = () => React.useContext(CatCtx);
+
 // ── Transaction + Recurring context ────────────────────────────
 const TxCtx = React.createContext(null);
 function TxProvider({ children }) {
-  const [txs, setTxs] = React.useState(() => TRANSACTIONS.slice());
+  const [txs, setTxs] = useLocalStorage('munni_txs', () => TRANSACTIONS.slice());
   const updateTx = (id, changes) => setTxs(ts => ts.map(t => t.id === id ? {...t, ...changes} : t));
   const addTxs = (newTxs) => setTxs(ts => [...newTxs, ...ts]);
   return <TxCtx.Provider value={{ txs, setTxs, updateTx, addTxs }}>{children}</TxCtx.Provider>;
@@ -4318,7 +4392,7 @@ const useTxCtx = () => React.useContext(TxCtx);
 
 const RecurCtx = React.createContext(null);
 function RecurProvider({ children }) {
-  const [recurList, setRecurList] = React.useState(() => RECURRING.slice());
+  const [recurList, setRecurList] = useLocalStorage('munni_recur', () => RECURRING.slice());
   const addRecur = (r) => setRecurList(rs => [r, ...rs]);
   const updateRecur = (id, changes) => setRecurList(rs => rs.map(r => r.id === id ? {...r, ...changes} : r));
   return <RecurCtx.Provider value={{ recurList, addRecur, updateRecur }}>{children}</RecurCtx.Provider>;
@@ -4381,8 +4455,8 @@ function Stat({ label, value, color }) {
 }
 
 function AllocProvider({ children }) {
-  const [topics, setTopics] = React.useState(ALLOCATE_TOPICS);
-  const [pOffset, setPOffset] = React.useState(0);
+  const [topics, setTopics] = useLocalStorage('munni_topics', ALLOCATE_TOPICS);
+  const [pOffset, setPOffset] = useLocalStorage('munni_pOffset', 0);
   const updateTopic = (id, changes) => setTopics(ts => ts.map(t => t.id === id ? { ...t, ...changes } : t));
   const addTopicCat = (topicId, catId) => setTopics(ts => ts.map(t => t.id === topicId ? { ...t, cats: [...t.cats, catId] } : t));
   const removeTopicCat = (topicId, catId) => setTopics(ts => ts.map(t => t.id === topicId ? { ...t, cats: t.cats.filter(c => c !== catId) } : t));
@@ -4804,6 +4878,7 @@ function AllocateMoveSheet({ topic, onClose }) {
 function ScreenAllocateAddTopic() {
   const nav = useNav();
   const { unallocated } = useAlloc();
+  const { txs } = useTxCtx();
   const icons = ['fork','shop','car','flame','film','health','bag','globe','rocket','star','house','heart'];
   const [icon, setIcon] = React.useState('fork');
   const [topicName, setTopicName] = React.useState('');
@@ -4827,7 +4902,7 @@ function ScreenAllocateAddTopic() {
 
   // Auto-estimate from transaction history per category
   const autoEstimate = (catId) => {
-    const catTxs = TRANSACTIONS.filter(t => t.cat === catId && t.amount < 0);
+    const catTxs = txs.filter(t => t.cat === catId && t.amount < 0);
     if (catTxs.length === 0) return 50;
     const avg = catTxs.reduce((s, t) => s + Math.abs(t.amount), 0) / catTxs.length;
     return Math.round(avg * 10) / 10;
@@ -4870,7 +4945,7 @@ function ScreenAllocateAddTopic() {
             <div style={{ padding:'14px 0', fontSize:13, color:M.ink4, textAlign:'center' }}>Add categories to estimate spending</div>
           )}
           {selCats.map((c, i) => {
-            const cat = CATEGORIES[c.catId] || {};
+            const cat = CATEGORIES[c.catId] || _catExt[c.catId] || {};
             return (
               <React.Fragment key={c.catId}>
                 <div style={{ display:'flex', alignItems:'center', gap:10, padding:'11px 0' }}>
@@ -5711,21 +5786,22 @@ function CategoryPicker({ selected, onClose, onPick, filterPositive = false, pos
   };
 
   const groups = {};
-  Object.values(CATEGORIES).forEach(c => {
+  const allCatValues = [...Object.values(CATEGORIES), ...Object.values(_catExt)];
+  allCatValues.forEach(c => {
     if (c.isParent) return;
     if (positiveOnly && !c.positive) return;
     if (!positiveOnly && c.positive) return;
     if (!positiveOnly && c.group === 'Saving') return;
     if (searchQ) {
       const q = searchQ.toLowerCase();
-      const parentName = c.parent ? (CATEGORIES[c.parent]?.name || '').toLowerCase() : '';
+      const parentName = c.parent ? ((CATEGORIES[c.parent] || _catExt[c.parent])?.name || '').toLowerCase() : '';
       if (!c.name.toLowerCase().includes(q) && !parentName.includes(q) && !c.group.toLowerCase().includes(q)) return;
     }
     if (!groups[c.group]) groups[c.group] = [];
     groups[c.group].push(c);
   });
 
-  const pickedCat = CATEGORIES[pickedId] || {};
+  const pickedCat = CATEGORIES[pickedId] || _catExt[pickedId] || {};
 
   return (
     <div style={{ position:'absolute', inset:0, zIndex:100, animation:'mFadeIn 0.2s ease-out both' }}>
@@ -5818,9 +5894,10 @@ function CategoryPicker({ selected, onClose, onPick, filterPositive = false, pos
 
 function ScreenLinkReimburse({ params }) {
   const nav = useNav();
+  const { txs } = useTxCtx();
   const txId = params?.txId;
   const isPositive = params?.positive === true;
-  const sourceTx = TRANSACTIONS.find(t => t.id === txId);
+  const sourceTx = txs.find(t => t.id === txId);
   const [query, setQuery] = React.useState('');
   const [selected, setSelected] = React.useState(null);
   const [str, pressStr, setStr] = useNumpadStr(0);
@@ -5828,7 +5905,7 @@ function ScreenLinkReimburse({ params }) {
   const maxAmt = sourceTx ? Math.abs(sourceTx.amount) : 999;
 
   // Opposite-type transactions: if source is expense (negative), show income; if source is income, show expenses
-  const allCandidates = TRANSACTIONS.filter(t => {
+  const allCandidates = txs.filter(t => {
     if (t.id === txId) return false;
     return isPositive ? t.amount < 0 : t.amount > 0;
   });
@@ -5948,7 +6025,8 @@ function ScreenLinkReimburse({ params }) {
 
 function ScreenIncome() {
   const nav = useNav();
-  const incomeTx = TRANSACTIONS.filter(t => t.amount > 0);
+  const { txs } = useTxCtx();
+  const incomeTx = txs.filter(t => t.amount > 0);
   const total = incomeTx.reduce((s, t) => s + t.amount, 0);
   const monthlyHistory = [1850, 2480, 2200, 2480, 2310, 2480];
 
@@ -6004,7 +6082,8 @@ function ScreenIncome() {
 
 function ScreenInvested() {
   const nav = useNav();
-  const investTx = TRANSACTIONS.filter(t => t.cat === 'invest');
+  const { txs } = useTxCtx();
+  const investTx = txs.filter(t => t.cat === 'invest');
   const total = Math.abs(investTx.reduce((s, t) => s + t.amount, 0));
   const monthlyHistory = [250, 300, 300, 280, 300, 300];
 
@@ -6778,22 +6857,24 @@ function ScreenLoginGate({ onLogin }) {
 }
 
 function App() {
-  const [dark, setDark] = React.useState(false);
+  const [dark, setDark] = useLocalStorage('munni_dark', false);
   const [loggedIn, setLoggedIn] = React.useState(false);
   const isMobile = React.useMemo(() => window.matchMedia('(max-width: 430px)').matches, []);
 
   const appContent = (
     <div className="m m-app" style={{ width:'100%', height:'100%', background: M.paper, filter: dark ? 'invert(0.93) hue-rotate(180deg)' : 'none', transition:'filter 0.3s' }}>
       {loggedIn ? (
-        <TxProvider>
-          <RecurProvider>
-            <AllocProvider>
-              <NavProvider initial="home">
-                <Router/>
-              </NavProvider>
-            </AllocProvider>
-          </RecurProvider>
-        </TxProvider>
+        <CatProvider>
+          <TxProvider>
+            <RecurProvider>
+              <AllocProvider>
+                <NavProvider initial="home">
+                  <Router/>
+                </NavProvider>
+              </AllocProvider>
+            </RecurProvider>
+          </TxProvider>
+        </CatProvider>
       ) : (
         <ScreenLoginGate onLogin={() => setLoggedIn(true)}/>
       )}
