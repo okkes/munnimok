@@ -736,6 +736,64 @@ const TRANSACTIONS = [
   { id: 'ta16', date: '2025-07-05', time: '09:00', merchant: 'Apotheek Centraal', desc: 'APOTHEEK 7842 NL', cat: 'healthcare', amount: -14.10, account: 'main', confidence: 58, needsReview: true },
   { id: 'ta17', date: '2025-06-20', time: '17:20', merchant: 'Apotheek Centraal', desc: 'APOTHEEK 7842 NL', cat: 'prescription', amount: -9.70,  account: 'main', confidence: 50, needsReview: true },
   { id: 'ta18', date: '2025-06-08', time: '12:40', merchant: 'Apotheek Centraal', desc: 'APOTHEEK 7842 NL', cat: 'healthcare', amount: -21.30, account: 'main', confidence: 55, needsReview: true },
+  // Nov 2025
+  { id: 'n1',  date: '2025-11-18', time: '08:00', merchant: 'Acme Salary',       desc: 'ACME BV PAYROLL NOV',        cat: 'salary',      amount: 2480.00, account: 'main' },
+  { id: 'n2',  date: '2025-11-17', time: '19:30', merchant: 'Albert Heijn',      desc: 'AH 5821 AMS',                cat: 'groceries',   amount: -52.40, account: 'main' },
+  { id: 'n3',  date: '2025-11-17', time: '09:99', merchant: 'Spotify',           desc: 'SPOTIFY P34520',             cat: 'subs',        amount: -9.99,  account: 'main', recurring: true },
+  { id: 'n4',  date: '2025-11-16', time: '00:00', merchant: 'Rent · Stadgenoot', desc: 'STADGENOOT HUUR NOV',        cat: 'housingRent', amount: -740.00,account: 'main', recurring: true },
+  { id: 'n5',  date: '2025-11-15', time: '12:30', merchant: 'Vapiano',           desc: 'VAPIANO 1234',               cat: 'restaurants', amount: -21.50, account: 'main' },
+  { id: 'n6',  date: '2025-11-14', time: '20:00', merchant: 'Netflix',           desc: 'NETFLIX SUBSCR',             cat: 'subs',        amount: -13.99, account: 'main', recurring: true },
+  { id: 'n7',  date: '2025-11-13', time: '08:30', merchant: 'Koffie ☕',         desc: 'TOKI ESPRESSO',              cat: 'coffee',      amount: -3.80,  account: 'main' },
+  { id: 'n8',  date: '2025-11-12', time: '11:00', merchant: 'NS · Sprinter',     desc: 'NS REIZIGERS',               cat: 'transportPublic', amount: -28.60, account: 'main' },
+  { id: 'n9',  date: '2025-11-12', time: '21:00', merchant: 'DEGIRO Buy',        desc: 'DEGIRO MTHLY ETF',           cat: 'invest',      amount: -300.00,account: 'main', recurring: true },
+  { id: 'n10', date: '2025-11-10', time: '18:00', merchant: 'Eneco',             desc: 'ENECO ENERGIE',              cat: 'housingUtility', amount: -65.00, account: 'main', recurring: true },
+  { id: 'n11', date: '2025-11-09', time: '14:20', merchant: 'Albert Heijn',      desc: 'AH 5821',                    cat: 'groceries',   amount: -43.20, account: 'main' },
+  { id: 'n12', date: '2025-11-08', time: '12:00', merchant: 'Five Guys',         desc: 'FIVEGUYS AMS',               cat: 'restaurants', amount: -19.50, account: 'main' },
+  { id: 'n13', date: '2025-11-07', time: '10:30', merchant: 'Koffie ☕',         desc: 'TOKI ESPRESSO',              cat: 'coffee',      amount: -3.80,  account: 'main' },
+  { id: 'n14', date: '2025-11-05', time: '16:00', merchant: 'Bol.com',           desc: 'BOL.COM 02100',              cat: 'hobby',       amount: -32.99, account: 'main' },
+  { id: 'n15', date: '2025-11-03', time: '09:00', merchant: 'Kruidvat',          desc: 'KRUIDVAT 0281',              cat: 'healthcare',  amount: -11.50, account: 'main' },
+  { id: 'n16', date: '2025-11-01', time: '14:00', merchant: 'Albert Heijn',      desc: 'AH 5821',                    cat: 'groceries',   amount: -58.80, account: 'main' },
+  // Dec 2025
+  { id: 'd1',  date: '2025-12-18', time: '08:00', merchant: 'Acme Salary',       desc: 'ACME BV PAYROLL DEC',        cat: 'salary',      amount: 2480.00, account: 'main' },
+  { id: 'd2',  date: '2025-12-17', time: '19:00', merchant: 'Spotify',           desc: 'SPOTIFY P34520',             cat: 'subs',        amount: -9.99,  account: 'main', recurring: true },
+  { id: 'd3',  date: '2025-12-16', time: '00:00', merchant: 'Rent · Stadgenoot', desc: 'STADGENOOT HUUR DEC',        cat: 'housingRent', amount: -740.00,account: 'main', recurring: true },
+  { id: 'd4',  date: '2025-12-15', time: '20:00', merchant: 'Albert Heijn',      desc: 'AH 5821',                    cat: 'groceries',   amount: -67.30, account: 'main' },
+  { id: 'd5',  date: '2025-12-14', time: '21:00', merchant: 'Netflix',           desc: 'NETFLIX SUBSCR',             cat: 'subs',        amount: -13.99, account: 'main', recurring: true },
+  { id: 'd6',  date: '2025-12-12', time: '12:00', merchant: 'DEGIRO Buy',        desc: 'DEGIRO MTHLY ETF',           cat: 'invest',      amount: -300.00,account: 'main', recurring: true },
+  { id: 'd7',  date: '2025-12-12', time: '19:30', merchant: 'Vapiano',           desc: 'VAPIANO XMAS DINNER',        cat: 'restaurants', amount: -45.00, account: 'main' },
+  { id: 'd8',  date: '2025-12-10', time: '10:00', merchant: 'Albert Heijn',      desc: 'AH 5821',                    cat: 'groceries',   amount: -89.50, account: 'main' },
+  { id: 'd9',  date: '2025-12-08', time: '16:00', merchant: 'Koffie ☕',         desc: 'TOKI ESPRESSO',              cat: 'coffee',      amount: -3.80,  account: 'main' },
+  { id: 'd10', date: '2025-12-07', time: '20:30', merchant: 'H&M Nederland',     desc: 'HM ONLINE ORDER WINTER',     cat: 'clothing',    amount: -78.50, account: 'main' },
+  { id: 'd11', date: '2025-12-06', time: '11:30', merchant: 'Eneco',             desc: 'ENECO ENERGIE',              cat: 'housingUtility', amount: -65.00, account: 'main', recurring: true },
+  { id: 'd12', date: '2025-12-05', time: '14:00', merchant: 'Bol.com',           desc: 'BOL.COM XMAS GIFTS',         cat: 'hobby',       amount: -124.00, account: 'main' },
+  { id: 'd13', date: '2025-12-04', time: '09:30', merchant: 'NS · Sprinter',     desc: 'NS REIZIGERS',               cat: 'transportPublic', amount: -19.40, account: 'main' },
+  { id: 'd14', date: '2025-12-22', time: '19:30', merchant: 'L\'Osteria',        desc: "L'OSTERIA AMS HOLIDAY",      cat: 'restaurants', amount: -58.00, account: 'main' },
+  { id: 'd15', date: '2025-12-24', time: '11:00', merchant: 'Albert Heijn',      desc: 'AH 5821 XMAS',               cat: 'groceries',   amount: -112.40, account: 'main' },
+  { id: 'd16', date: '2025-12-26', time: '15:00', merchant: 'MediaMarkt',        desc: 'MEDIAMARKT AMS BOXING DAY',  cat: 'electronics', amount: -199.00, account: 'main' },
+  { id: 'd17', date: '2025-12-30', time: '21:00', merchant: 'Sushi Place',       desc: 'SUSHITIME NYE',              cat: 'restaurants', amount: -35.50, account: 'main' },
+  // Jan 2026
+  { id: 'j1',  date: '2026-01-18', time: '08:00', merchant: 'Acme Salary',       desc: 'ACME BV PAYROLL JAN',        cat: 'salary',      amount: 2480.00, account: 'main' },
+  { id: 'j2',  date: '2026-01-17', time: '19:00', merchant: 'Spotify',           desc: 'SPOTIFY P34520',             cat: 'subs',        amount: -9.99,  account: 'main', recurring: true },
+  { id: 'j3',  date: '2026-01-16', time: '00:00', merchant: 'Rent · Stadgenoot', desc: 'STADGENOOT HUUR JAN',        cat: 'housingRent', amount: -740.00,account: 'main', recurring: true },
+  { id: 'j4',  date: '2026-01-15', time: '20:00', merchant: 'Netflix',           desc: 'NETFLIX SUBSCR',             cat: 'subs',        amount: -13.99, account: 'main', recurring: true },
+  { id: 'j5',  date: '2026-01-12', time: '09:00', merchant: 'DEGIRO Buy',        desc: 'DEGIRO MTHLY ETF',           cat: 'invest',      amount: -300.00,account: 'main', recurring: true },
+  { id: 'j6',  date: '2026-01-12', time: '11:30', merchant: 'Albert Heijn',      desc: 'AH 5821',                    cat: 'groceries',   amount: -61.20, account: 'main' },
+  { id: 'j7',  date: '2026-01-11', time: '18:20', merchant: 'Eneco',             desc: 'ENECO ENERGIE',              cat: 'housingUtility', amount: -65.00, account: 'main', recurring: true },
+  { id: 'j8',  date: '2026-01-10', time: '14:00', merchant: 'NS · Sprinter',     desc: 'NS REIZIGERS',               cat: 'transportPublic', amount: -22.40, account: 'main' },
+  { id: 'j9',  date: '2026-01-09', time: '20:00', merchant: 'Vapiano',           desc: 'VAPIANO 1234',               cat: 'restaurants', amount: -28.50, account: 'main' },
+  { id: 'j10', date: '2026-01-08', time: '09:30', merchant: 'Koffie ☕',         desc: 'TOKI ESPRESSO',              cat: 'coffee',      amount: -3.80,  account: 'main' },
+  { id: 'j11', date: '2026-01-07', time: '19:00', merchant: 'Amazon.nl',         desc: 'AMZN MKTPLC',                cat: 'hobby',       amount: -54.99, account: 'main' },
+  { id: 'j12', date: '2026-01-05', time: '11:00', merchant: 'Albert Heijn',      desc: 'AH 5821',                    cat: 'groceries',   amount: -44.30, account: 'main' },
+  { id: 'j13', date: '2026-01-03', time: '16:00', merchant: 'Etos',              desc: 'ETOS 0341',                  cat: 'healthcare',  amount: -18.40, account: 'main' },
+  { id: 'j14', date: '2026-01-02', time: '14:00', merchant: 'Koffie ☕',         desc: 'TOKI ESPRESSO',              cat: 'coffee',      amount: -3.80,  account: 'main' },
+  // Feb 2026 (first half — second half already covered by t1–t39, tb1–tb2)
+  { id: 'f1',  date: '2026-02-06', time: '15:00', merchant: 'Koffie ☕',         desc: 'TOKI ESPRESSO',              cat: 'coffee',      amount: -3.80,  account: 'main' },
+  { id: 'f2',  date: '2026-02-04', time: '18:30', merchant: 'Sushi Place',       desc: 'SUSHITIME AMS',              cat: 'restaurants', amount: -27.50, account: 'main' },
+  { id: 'f3',  date: '2026-02-02', time: '09:00', merchant: 'NS · OV Chip',      desc: 'NS REIZIGERS',               cat: 'transportPublic', amount: -15.20, account: 'main' },
+  { id: 'f4',  date: '2026-02-01', time: '14:00', merchant: 'Albert Heijn',      desc: 'AH 5821',                    cat: 'groceries',   amount: -49.80, account: 'main' },
+  // Google Playstore for review (must be first two in review stack)
+  { id: 'gp1', date: '2026-02-10', time: '14:30', merchant: 'Google Playstore',  desc: 'GOOGLE*PLAY 493820',        cat: 'entertainment', cats:[{catId:'entertainment',amount:22.99}], amount: -22.99, account: 'main', confidence: 60, needsReview: true, aiSuggestCat: 'hobby' },
+  { id: 'gp2', date: '2026-01-14', time: '11:20', merchant: 'Google Playstore',  desc: 'GOOGLE*PLAY 487231',        cat: 'entertainment', cats:[{catId:'entertainment',amount:8.99}],  amount: -8.99,  account: 'main', confidence: 62, needsReview: true, aiSuggestCat: 'hobby' },
 ];
 
 const BUDGETS = [
@@ -788,14 +846,14 @@ const EVENTS = [
 ];
 
 const SPEND_HISTORY = {
-  total:       [1340, 1180, 1402, 1290, 1308, 1220],
-  restaurants: [62, 88, 71, 102, 84, 95],
-  groceries:   [220, 245, 280, 250, 268, 165],
-  transport:   [42, 55, 68, 50, 58, 50],
-  hobby:       [120, 0, 80, 240, 35, 80],
-  coffee:      [22, 28, 35, 30, 28, 18],
-  health:      [45, 30, 22, 18, 60, 22],
-  housing:     [805, 805, 805, 805, 805, 805],
+  total:       [1182, 1290, 1190, 1345, 1308, 1220],
+  restaurants: [45,   88,   138,  28,   84,   95  ],
+  groceries:   [154,  250,  309,  105,  268,  165 ],
+  transport:   [29,   38,   19,   22,   50,   50  ],
+  hobby:       [33,   240,  124,  55,   35,   80  ],
+  coffee:      [14,   30,   8,    8,    28,   18  ],
+  health:      [18,   18,   11,   18,   60,   22  ],
+  housing:     [805,  805,  805,  805,  805,  805 ],
 };
 
 const PORTFOLIO = {
@@ -830,6 +888,20 @@ const DEBTS_PAID_OFF = [
   { id:'dp2', name:'Credit card · ABN AMRO',   icon:'card',  paidAmount:650,  paidDate:'2026-02-03', type:'credit',  color:'#B5503A' },
 ];
 const DEBT_HISTORY = [240000+12000+1200+28000, 240000+11000+1100+27800, 238000+9500+900+27600, 237000+8500+800+27400, 236000+7500+700+27200, 235680];
+
+const INTEGRATIONS = [
+  { id: 'int_ah', store: 'Albert Heijn', icon: '🛒', color: '#00A0E2', category: 'Supermarket', status: 'connected', connectedSince: '2025-08-14', txCount: 42, lastSync: '2026-02-18', email: 'demo@ahbonus.nl' },
+  { id: 'int_jumbo', store: 'Jumbo', icon: '🛒', color: '#FFB800', category: 'Supermarket', status: 'available' },
+  { id: 'int_paypal', store: 'PayPal', icon: '💳', color: '#003087', category: 'Payments', status: 'available' },
+  { id: 'int_amazon', store: 'Amazon', icon: '📦', color: '#FF9900', category: 'Shopping', status: 'available' },
+];
+
+const AH_RECEIPTS = [
+  { id: 'ahr1', date: '2026-02-18', store: 'AH 5821 Amsterdam Centraal', total: 42.10, items: [{ name: 'Biologische melk 1L', qty: 2, price: 2.39 }, { name: 'Halfvolle kwark 500g', qty: 1, price: 1.89 }, { name: 'Kaas 48+ jong belegen 500g', qty: 1, price: 4.79 }, { name: 'Tomaten losse 500g', qty: 1, price: 1.99 }, { name: 'Brood heel grof 800g', qty: 1, price: 2.29 }, { name: 'Kip filet 400g', qty: 1, price: 6.99 }, { name: 'Pasta farfalle 500g', qty: 2, price: 1.59 }, { name: 'Tomatensaus basilicum 350g', qty: 1, price: 1.99 }, { name: 'Douchegel men 250ml', qty: 1, price: 3.79 }, { name: 'AH Shampoo normaal 300ml', qty: 1, price: 2.99 }], matchedTxId: 't2' },
+  { id: 'ahr2', date: '2026-02-12', store: 'AH 5821 Amsterdam Centraal', total: 28.40, items: [{ name: 'Sinaasappels 8 stuks', qty: 1, price: 3.49 }, { name: 'Bananen 1kg', qty: 1, price: 2.19 }, { name: 'Yoghurt naturel 500g', qty: 1, price: 1.49 }, { name: 'Eieren 10 stuks', qty: 1, price: 3.29 }, { name: 'Butter unsalted 250g', qty: 1, price: 2.79 }, { name: 'Crackers volkoren 250g', qty: 1, price: 2.19 }, { name: 'Pindakaas 350g', qty: 1, price: 3.49 }], matchedTxId: 't12' },
+  { id: 'ahr3', date: '2026-02-05', store: 'AH 5821 Amsterdam Centraal', total: 38.10, items: [{ name: 'Rundgehakt 500g', qty: 1, price: 5.99 }, { name: 'Aardappelen 2kg', qty: 1, price: 3.29 }, { name: 'Broccoli 400g', qty: 1, price: 2.49 }, { name: 'Wortelen 1kg', qty: 1, price: 1.99 }, { name: 'Pasta spaghetti 500g', qty: 2, price: 1.49 }, { name: 'Tomatenpuree 70g', qty: 2, price: 0.79 }], matchedTxId: 't16' },
+  { id: 'ahr4', date: '2026-02-01', store: 'AH 5821 Amsterdam Centraal', total: 49.80, items: [{ name: 'Kipfilet 600g', qty: 1, price: 8.99 }, { name: 'Rijst 2kg', qty: 1, price: 3.79 }, { name: 'Groente mix 400g', qty: 2, price: 3.49 }, { name: 'Sojasaus 150ml', qty: 1, price: 2.29 }, { name: 'Kokosnoot 400ml', qty: 1, price: 2.99 }], matchedTxId: 'f4' },
+];
 
 const fmtEur = (n, opts = {}) => {
   const sign = n < 0 ? '−' : (opts.signed && n > 0 ? '+' : '');
@@ -866,11 +938,11 @@ const PERIOD = {
 };
 
 const PERIOD_HISTORY = [
-  { label:'20 Sep – 19 Oct', income:2380, expense:1402, invest:250, unallocated:420 },
-  { label:'20 Oct – 19 Nov', income:2380, expense:1308, invest:250, unallocated:380 },
-  { label:'20 Nov – 19 Dec', income:2480, expense:1190, invest:300, unallocated:520 },
-  { label:'20 Dec – 19 Jan', income:2480, expense:1345, invest:300, unallocated:290 },
-  { label:'20 Jan – 19 Feb', income:2480, expense:1220, invest:300, unallocated:620 },
+  { label:'20 Sep – 19 Oct', start:'2025-09-20', end:'2025-10-19', income:2380, expense:1402, invest:250, unallocated:420 },
+  { label:'20 Oct – 19 Nov', start:'2025-10-20', end:'2025-11-19', income:2380, expense:1308, invest:250, unallocated:380 },
+  { label:'20 Nov – 19 Dec', start:'2025-11-20', end:'2025-12-19', income:2480, expense:1190, invest:300, unallocated:520 },
+  { label:'20 Dec – 19 Jan', start:'2025-12-20', end:'2026-01-19', income:2480, expense:1345, invest:300, unallocated:290 },
+  { label:'20 Jan – 19 Feb', start:'2026-01-20', end:'2026-02-19', income:2480, expense:1220, invest:300, unallocated:620 },
 ];
   </script>
 
@@ -885,19 +957,59 @@ const NavCtx = React.createContext(null);
 function NavProvider({ children, initial = 'home' }) {
   const [tab, setTab] = React.useState(initial);
   const [stacks, setStacks] = React.useState({ home: [], tx: [], recurring: [], events: [], insights: [], profile: [] });
+  const stacksRef = React.useRef(stacks);
+  const tabRef = React.useRef(tab);
+  stacksRef.current = stacks;
+  tabRef.current = tab;
+
+  // Sync History API on mount
+  React.useEffect(() => {
+    window.history.replaceState({ tab: initial, depth: 0 }, '');
+    const onPop = (e) => {
+      const state = e.state;
+      if (!state) return;
+      const curStack = stacksRef.current[tabRef.current];
+      if (state.depth < curStack.length) {
+        setStacks(s => ({ ...s, [tabRef.current]: s[tabRef.current].slice(0, state.depth) }));
+      } else if (state.tab !== tabRef.current) {
+        setTab(state.tab);
+        setStacks(s => ({ ...s, [state.tab]: s[state.tab].slice(0, state.depth) }));
+      }
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
 
   const push = (screen, params = {}) => {
-    setStacks(s => ({ ...s, [tab]: [...s[tab], { screen, params }] }));
+    setStacks(s => {
+      const next = [...s[tabRef.current], { screen, params }];
+      window.history.pushState({ tab: tabRef.current, depth: next.length }, '');
+      return { ...s, [tabRef.current]: next };
+    });
   };
   const pop = () => {
-    setStacks(s => ({ ...s, [tab]: s[tab].slice(0, -1) }));
+    setStacks(s => {
+      const next = s[tabRef.current].slice(0, -1);
+      window.history.pushState({ tab: tabRef.current, depth: next.length }, '');
+      return { ...s, [tabRef.current]: next };
+    });
   };
   const popAll = () => {
-    setStacks(s => ({ ...s, [tab]: [] }));
+    setStacks(s => {
+      window.history.pushState({ tab: tabRef.current, depth: 0 }, '');
+      return { ...s, [tabRef.current]: [] };
+    });
   };
-  const switchTab = (t) => setTab(t);
+  const switchTab = (t) => {
+    window.history.pushState({ tab: t, depth: stacksRef.current[t].length }, '');
+    setTab(t);
+  };
   const replace = (screen, params = {}) => {
-    setStacks(s => ({ ...s, [tab]: [...s[tab].slice(0, -1), { screen, params }] }));
+    setStacks(s => {
+      const next = [...s[tabRef.current].slice(0, -1), { screen, params }];
+      window.history.replaceState({ tab: tabRef.current, depth: next.length }, '');
+      return { ...s, [tabRef.current]: next };
+    });
   };
 
   const value = { tab, stack: stacks[tab], push, pop, popAll, switchTab, replace };
@@ -966,6 +1078,8 @@ if (typeof document !== 'undefined' && !document.getElementById('m-nav-styles'))
   s.textContent = `
     @keyframes mSlideIn { from { transform: translateX(100%); } to { transform: none; } }
     @keyframes mSheetUp { from { transform: translateY(100%); } to { transform: none; } }
+    @keyframes pulse { 0%,100% { opacity:0.3; transform:scale(0.8); } 50% { opacity:1; transform:scale(1); } }
+    @keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
   `;
   document.head.appendChild(s);
 }
@@ -1045,9 +1159,10 @@ function BarChart({ data, labels, width = 280, height = 96, highlightLast = true
   );
 }
 
-function BarChartScrollable({ data, labels, height = 100, accent = M.sage, color = M.ink2, onSelect }) {
-  const [sel, setSel] = React.useState(data.length - 1);
-  const handleSelect = (i) => { setSel(i); onSelect && onSelect(i); };
+function BarChartScrollable({ data, labels, height = 100, accent = M.sage, color = M.ink2, onSelect, selected: extSel }) {
+  const [internalSel, setInternalSel] = React.useState(data.length - 1);
+  const sel = extSel !== undefined ? extSel : internalSel;
+  const handleSelect = (i) => { setInternalSel(i); onSelect && onSelect(i); };
   const barW = 28, gap = 8, totalW = Math.max(300, data.length * (barW + gap));
   const containerRef = React.useRef(null);
   React.useEffect(() => {
@@ -1137,7 +1252,10 @@ function TxRow({ tx, onClick, showCat = true, showDate = false, dense = false, h
   const { txs: allTxs } = useTxCtx();
   const positive = tx.amount > 0;
   const isLinkedReimburse = tx.linkedTo;
-  const hasReimbursement = !positive && allTxs.some(t => t.linkedTo === tx.id);
+  const reimburseTx = !positive ? allTxs.find(t => t.linkedTo === tx.id) : null;
+  const hasReimbursement = !!reimburseTx;
+  const displayAmount = hasReimbursement ? tx.amount + reimburseTx.amount : tx.amount;
+  const displayPositive = displayAmount > 0;
   return (
     <div onClick={onClick} className={onClick ? 'm-tap' : ''} style={{
       display: 'flex', alignItems: 'center', gap: 12,
@@ -1158,8 +1276,8 @@ function TxRow({ tx, onClick, showCat = true, showDate = false, dense = false, h
           <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
             {hasReimbursement && <div style={{ width:16, height:16, borderRadius:999, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center' }}><I name="link" size={9} color={M.sage}/></div>}
             {isLinkedReimburse && <div style={{ width:16, height:16, borderRadius:999, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center' }}><I name="link" size={9} color={M.sage}/></div>}
-            <div className="m-num" style={{ fontSize: 15, fontWeight: 600, color: positive ? M.sage : M.ink }}>
-              {positive ? '+' : ''}{fmtEur(tx.amount)}
+            <div className="m-num" style={{ fontSize: 15, fontWeight: 600, color: displayPositive ? M.sage : M.ink }}>
+              {displayPositive ? '+' : ''}{fmtEur(displayAmount)}
             </div>
           </div>
         </div>
@@ -1212,6 +1330,15 @@ function ScreenHome() {
   const isCurrent = pidx === PERIOD_HISTORY.length - 1;
   const currentUnallocated = alloc ? alloc.unallocated : pd.unallocated;
 
+  // Compute period savings
+  const periodTxs = React.useMemo(() => {
+    if (!txs) return [];
+    const { start, end } = pd;
+    if (!start || !end) return txs;
+    return txs.filter(t => t.date >= start && t.date <= end);
+  }, [txs, pd]);
+  const periodSavings = React.useMemo(() => periodTxs.filter(t => t.savingAccount).reduce((s,t) => s + Math.abs(t.amount), 0), [periodTxs]);
+
   return (
     <div className="m-screen">
       <StatusBar/>
@@ -1258,6 +1385,10 @@ function ScreenHome() {
           <PeriodStatRow icon="rocket" iconBg={M.violetSoft} iconColor={M.violet}
             label="Invested" value={pd.invest} valueColor={M.violet}
             onClick={() => nav.push('invested')}/>
+          <div style={{ height:1, background:M.line2 }}/>
+          <PeriodStatRow icon="piggy" iconBg={M.sageSoft} iconColor={M.sage}
+            label="Savings" value={periodSavings} valueColor={M.sage}
+            onClick={() => nav.push('savings')}/>
           <div style={{ height:1, background:M.line2 }}/>
           <PeriodStatRow icon="goal"
             iconBg={isCurrent?(currentUnallocated===0?M.sageSoft:M.ochreSoft):(pd.unallocated===0?M.sageSoft:M.ochreSoft)}
@@ -1612,7 +1743,9 @@ function ScreenTxDetail({ params }) {
   const initCats = () => tx.cats ? tx.cats.slice() : [{ catId: tx.cat, amount: Math.abs(tx.amount) }];
   const [txCats, setTxCats] = React.useState(initCats);
   const [noteText, setNoteText] = React.useState(tx.note || '');
-  const [hasReceiptState, setHasReceiptState] = React.useState(tx.hasReceipt || false);
+  // Derive from live tx so store/photo receipt additions are reflected immediately
+  const hasReceiptState = tx.hasReceipt || false;
+  const setHasReceiptState = (v) => updateTx(tx.id, { hasReceipt: v, ...(v ? {} : { receiptPhoto: undefined, receiptStore: undefined, receiptItems: undefined, receiptTotal: undefined, receiptId: undefined }) });
 
   const NOTE_MAX = 200;
 
@@ -1635,7 +1768,8 @@ function ScreenTxDetail({ params }) {
   const [showAllocInfo, setShowAllocInfo] = React.useState(false);
 
   React.useEffect(() => {
-    updateTx(tx.id, { cats: txCats });
+    const primaryCatId = txCats.find(c => c.catId !== 'expenseUncategorized' && c.catId !== 'incomeUncategorized')?.catId || txCats[0]?.catId;
+    updateTx(tx.id, { cats: txCats, cat: primaryCatId || tx.cat });
   }, [txCats]);
 
   const heroAmount = reimburseAmt !== 0 ? net : tx.amount;
@@ -1824,12 +1958,16 @@ function ScreenTxDetail({ params }) {
         <div className="m-card" style={{ padding: 14, marginBottom: 14, border: `1px solid ${M.line}` }}>
           {hasReceiptState ? (
             <div style={{ display:'flex', gap:12, alignItems:'center' }}>
-              <div style={{ width: 40, height: 52, borderRadius: 6, background: M.paper2, border: `1px solid ${M.line}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <I name="receipt" size={20} color={M.ink2}/>
+              <div style={{ width: 40, height: 52, borderRadius: 6, background: M.paper2, border: `1px solid ${M.line}`, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow:'hidden' }}>
+                {tx.receiptPhoto ? (
+                  <div style={{ width:'100%', height:'100%', background:'linear-gradient(135deg,#f5f5f5 0%,#eee 100%)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16 }}>🧾</div>
+                ) : (
+                  <I name="receipt" size={20} color={M.ink2}/>
+                )}
               </div>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 500 }}>{tx.merchant} · receipt</div>
-                <div style={{ fontSize: 11, color: M.ink3, marginTop: 2 }}>Auto-matched · {fmtEur(Math.abs(tx.amount))}</div>
+                <div style={{ fontSize: 13, fontWeight: 500 }}>{tx.receiptStore ? `${tx.receiptStore} · receipt` : `${tx.merchant} · receipt`}</div>
+                <div style={{ fontSize: 11, color: M.ink3, marginTop: 2 }}>{tx.receiptStore ? `${tx.receiptItems?.length || 0} items` : 'Photo captured'} · {fmtEur(tx.receiptTotal || Math.abs(tx.amount))}</div>
                 <div style={{ display:'flex', gap:6, marginTop:6 }}>
                   <button className="m-tap" style={{ fontSize:11, fontWeight:600, color:M.ink3, background:M.paper2, border:`1px solid ${M.line}`, borderRadius:6, padding:'4px 8px', cursor:'pointer', fontFamily:M.fontUI }}>
                     Edit
@@ -1849,10 +1987,10 @@ function ScreenTxDetail({ params }) {
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 12, color: M.ink3, marginBottom: 6 }}>No receipt yet</div>
                 <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-                  <button className="m-tap" onClick={() => setHasReceiptState(true)} style={{ fontSize:11, fontWeight:600, color:M.sage, background:M.sageSoft, border:'none', borderRadius:6, padding:'4px 8px', cursor:'pointer', fontFamily:M.fontUI }}>
+                  <button className="m-tap" onClick={() => updateTx(tx.id, { hasReceipt: true, receiptPhoto: true, receiptItems: [{ name: 'Captured item', qty: 1, price: Math.abs(tx.amount) }], receiptTotal: Math.abs(tx.amount) })} style={{ fontSize:11, fontWeight:600, color:M.sage, background:M.sageSoft, border:'none', borderRadius:6, padding:'4px 8px', cursor:'pointer', fontFamily:M.fontUI }}>
                     📷 Take photo
                   </button>
-                  <button className="m-tap" onClick={() => nav.push('integrations')} style={{ fontSize:11, fontWeight:600, color:M.ink2, background:M.paper2, border:`1px solid ${M.line}`, borderRadius:6, padding:'4px 8px', cursor:'pointer', fontFamily:M.fontUI }}>
+                  <button className="m-tap" onClick={() => nav.push('integrations', { sourceTxId: tx.id })} style={{ fontSize:11, fontWeight:600, color:M.ink2, background:M.paper2, border:`1px solid ${M.line}`, borderRadius:6, padding:'4px 8px', cursor:'pointer', fontFamily:M.fontUI }}>
                     Get from connected store
                   </button>
                 </div>
@@ -1961,13 +2099,17 @@ function DetailRow({ label, value, icon, mono, placeholder, caretR }) {
 function ScreenExpenses() {
   const nav = useNav();
   const { txs } = useTxCtx();
-  const PERIOD_LABELS = ['Sep–Oct','Oct–Nov','Nov–Dec','Dec–Jan','Jan–Feb','Feb–Mar'];
-  const [selBar, setSelBar] = React.useState(SPEND_HISTORY.total.length - 1);
-  const periodLabel = PERIOD_LABELS[selBar] || PERIOD_LABELS[PERIOD_LABELS.length - 1];
-  const isCurrentPeriod = selBar === SPEND_HISTORY.total.length - 1;
+  const PERIOD_LABELS = ['Sep–Oct','Oct–Nov','Nov–Dec','Dec–Jan','Jan–Feb'];
+  const [selBar, setSelBar] = React.useState(PERIOD_HISTORY.length - 1);
+  const selPeriod = PERIOD_HISTORY[selBar] || PERIOD_HISTORY[PERIOD_HISTORY.length - 1];
+  const periodLabel = selPeriod.label;
+  const isCurrentPeriod = selBar === PERIOD_HISTORY.length - 1;
+
+  // Filter transactions to the selected period
+  const periodTxs = txs.filter(t => t.amount < 0 && t.date >= selPeriod.start && t.date <= selPeriod.end);
 
   const totals = {};
-  txs.filter(t => t.amount < 0).forEach(t => {
+  periodTxs.forEach(t => {
     const c = CATEGORIES[t.cat] || _catExt[t.cat];
     const grp = c?.parent || c?.id;
     const grpCat = CATEGORIES[grp] || _catExt[grp];
@@ -1981,15 +2123,13 @@ function ScreenExpenses() {
   });
 
   const cats = Object.values(totals).sort((a, b) => b.total - a.total);
-  const grandTotal = isCurrentPeriod
-    ? cats.reduce((s, c) => s + c.total, 0)
-    : SPEND_HISTORY.total[selBar] || cats.reduce((s, c) => s + c.total, 0);
+  const grandTotal = cats.reduce((s, c) => s + c.total, 0);
   const [expanded, setExpanded] = React.useState({ consumptions: true, essentials: true });
 
   return (
     <div className="m-screen">
       <StatusBar/>
-      <AppBar title="Expenses"
+      <AppBar title="Spent"
         leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
         trailing={<button className="m-iconbtn m-tap"><I name="filter" size={20}/></button>}
       />
@@ -2002,13 +2142,14 @@ function ScreenExpenses() {
         </div>
 
         <div className="m-card" style={{ padding:'12px 16px 8px', marginBottom:14, border:`1px solid ${M.line}` }}>
-          <div className="m-cap" style={{ marginBottom:8 }}>6-period history · tap to navigate</div>
+          <div className="m-cap" style={{ marginBottom:8 }}>Period history · tap to navigate</div>
           <BarChartScrollable
-            data={SPEND_HISTORY.total}
-            labels={PERIOD_LABELS}
+            data={PERIOD_HISTORY.map(p => p.expense)}
+            labels={PERIOD_HISTORY.map(p => p.label.split(' – ')[0].replace('20 ',''))}
             height={90}
             accent={M.clay}
             color={M.ink3}
+            selected={selBar}
             onSelect={setSelBar}
           />
         </div>
@@ -2410,6 +2551,257 @@ function Toggle({ on }) {
   <script type="text/babel">
 // ── screens-profile.jsx ────────────────────────────────────────
 
+function ScreenIntegrations({ params }) {
+  const nav = useNav();
+  const [integrations, setIntegrations] = useLocalStorage('munni_integrations', INTEGRATIONS);
+  const sourceTxId = params?.sourceTxId;
+
+  const connect = (id) => {
+    setIntegrations(list => list.map(i => i.id === id ? { ...i, _pendingConnect: true } : i));
+    nav.push('integrationLogin', { id, sourceTxId });
+  };
+  const disconnect = (id) => {
+    setIntegrations(list => list.map(i => i.id === id ? { ...INTEGRATIONS.find(x => x.id === id), status: 'available' } : i));
+  };
+
+  const connected = integrations.filter(i => i.status === 'connected');
+  const available = integrations.filter(i => i.status !== 'connected');
+
+  return (
+    <div className="m-screen">
+      <StatusBar/>
+      <AppBar title="Integrations"
+        leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
+      />
+      <div className="m-body-scroll">
+        {sourceTxId && (
+          <div style={{ margin:'0 0 16px', padding:'12px 14px', borderRadius:12, background:M.violetSoft||'#EEE8FF', border:`1px solid #D4C8FF`, fontSize:13, color:M.violet, lineHeight:1.5 }}>
+            Select a connected store to find the receipt for this transaction.
+          </div>
+        )}
+
+        {connected.length > 0 && (
+          <>
+            <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Connected</div>
+            <div className="m-card" style={{ padding:'4px 16px', marginBottom:16, border:`1px solid ${M.line}` }}>
+              {connected.map((intg, i) => (
+                <React.Fragment key={intg.id}>
+                  <div className="m-tap" onClick={() => nav.push('integrationReceipts', { id: intg.id, sourceTxId })} style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
+                    <div style={{ width:40, height:40, borderRadius:12, background:intg.color+'22', display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, flexShrink:0 }}>{intg.icon}</div>
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontSize:14, fontWeight:600 }}>{intg.store}</div>
+                      <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{intg.category} · {intg.txCount} transactions synced</div>
+                      <div style={{ fontSize:10, color:M.ink4, marginTop:1 }}>Last sync {intg.lastSync}</div>
+                    </div>
+                    <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:6 }}>
+                      <div style={{ fontSize:10, fontWeight:700, letterSpacing:'0.04em', textTransform:'uppercase', color:M.sage, background:M.sageSoft, padding:'2px 8px', borderRadius:999 }}>Active</div>
+                      <button className="m-tap" onClick={e => { e.stopPropagation(); disconnect(intg.id); }}
+                        style={{ fontSize:11, fontWeight:600, color:M.clay, background:'transparent', border:'none', cursor:'pointer', fontFamily:M.fontUI, padding:0 }}>
+                        Disconnect
+                      </button>
+                    </div>
+                  </div>
+                  {i < connected.length - 1 && <Divider inset={52}/>}
+                </React.Fragment>
+              ))}
+            </div>
+          </>
+        )}
+
+        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Available stores</div>
+        <div className="m-card" style={{ padding:'4px 16px', marginBottom:16, border:`1px solid ${M.line}` }}>
+          {available.map((intg, i) => (
+            <React.Fragment key={intg.id}>
+              <div style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
+                <div style={{ width:40, height:40, borderRadius:12, background:intg.color+'22', display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, flexShrink:0 }}>{intg.icon}</div>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:14, fontWeight:600 }}>{intg.store}</div>
+                  <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{intg.category}</div>
+                </div>
+                <button className="m-tap" onClick={() => connect(intg.id)}
+                  style={{ fontSize:13, fontWeight:600, color:M.sage, background:M.sageSoft, border:'none', borderRadius:8, padding:'7px 14px', cursor:'pointer', fontFamily:M.fontUI, flexShrink:0 }}>
+                  Connect
+                </button>
+              </div>
+              {i < available.length - 1 && <Divider inset={52}/>}
+            </React.Fragment>
+          ))}
+        </div>
+
+        <div style={{ padding:'8px 4px 24px', fontSize:12, color:M.ink3, lineHeight:1.6 }}>
+          Connecting a store lets munni retrieve receipt details not included in your bank statements — line items, product names, and totals.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScreenIntegrationLogin({ params }) {
+  const nav = useNav();
+  const [integrations, setIntegrations] = useLocalStorage('munni_integrations', INTEGRATIONS);
+  const intg = integrations.find(i => i.id === params?.id) || INTEGRATIONS.find(i => i.id === params?.id);
+  const sourceTxId = params?.sourceTxId;
+  const [step, setStep] = React.useState('login'); // 'login' | 'connecting' | 'done'
+  const [email, setEmail] = React.useState(intg?.id === 'int_ah' ? 'demo@ahbonus.nl' : '');
+  const [password, setPassword] = React.useState(intg?.id === 'int_ah' ? '••••••••' : '');
+
+  const doLogin = () => {
+    setStep('connecting');
+    setTimeout(() => {
+      setIntegrations(list => list.map(i => i.id === intg?.id ? {
+        ...i, status: 'connected', connectedSince: '2026-02-18', txCount: 4, lastSync: '2026-02-18', email, _pendingConnect: false
+      } : i));
+      setStep('done');
+    }, 1800);
+  };
+
+  if (step === 'done') {
+    return (
+      <div className="m-screen">
+        <StatusBar/>
+        <AppBar title={intg?.store || 'Store'} leading={<button className="m-iconbtn m-tap" onClick={() => { nav.pop(); nav.pop(); }}><I name="arrowL" size={20}/></button>}/>
+        <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:32, textAlign:'center', gap:12 }}>
+          <div style={{ width:72, height:72, borderRadius:20, background:intg?.color+'22'||M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', fontSize:32 }}>{intg?.icon}</div>
+          <div style={{ width:40, height:40, borderRadius:999, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', marginTop:-16, marginLeft:32 }}>
+            <I name="check" size={20} color={M.sage} stroke={2.5}/>
+          </div>
+          <div className="m-h2" style={{ marginTop:8 }}>{intg?.store} connected!</div>
+          <div style={{ fontSize:14, color:M.ink3, lineHeight:1.5, maxWidth:260 }}>Your receipts will now be automatically matched to your transactions.</div>
+          <button className="m-btn m-tap" style={{ marginTop:16 }} onClick={() => {
+            if (sourceTxId) { nav.pop(); nav.pop(); nav.replace('integrationReceipts', { id: intg?.id, sourceTxId }); }
+            else { nav.pop(); nav.pop(); }
+          }}>
+            {sourceTxId ? 'View receipts' : 'Done'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (step === 'connecting') {
+    return (
+      <div className="m-screen">
+        <StatusBar/>
+        <AppBar title={intg?.store || 'Store'} leading={null}/>
+        <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:32, textAlign:'center', gap:16 }}>
+          <div style={{ width:72, height:72, borderRadius:20, background:intg?.color+'22'||M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', fontSize:32 }}>{intg?.icon}</div>
+          <div style={{ fontSize:15, fontWeight:600, marginTop:8 }}>Connecting…</div>
+          <div style={{ fontSize:13, color:M.ink3 }}>Retrieving your receipts</div>
+          <div style={{ display:'flex', gap:6, marginTop:8 }}>
+            {[0,1,2].map(i => (
+              <div key={i} style={{ width:8, height:8, borderRadius:999, background:M.sage, opacity:0.3, animation:`pulse 1.2s ease-in-out ${i*0.4}s infinite` }}/>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="m-screen">
+      <StatusBar/>
+      <AppBar title={`Connect ${intg?.store || 'Store'}`}
+        leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
+      />
+      <div className="m-body-scroll" style={{ padding:'0 20px' }}>
+        <div style={{ textAlign:'center', padding:'24px 0 28px' }}>
+          <div style={{ width:72, height:72, borderRadius:20, background:intg?.color+'22'||M.paper2, display:'flex', alignItems:'center', justifyContent:'center', fontSize:32, margin:'0 auto 12px' }}>{intg?.icon}</div>
+          <div style={{ fontSize:13, color:M.ink3, lineHeight:1.5 }}>Sign in with your {intg?.store} account to connect receipts.</div>
+        </div>
+
+        <div style={{ marginBottom:12 }}>
+          <div style={{ fontSize:12, color:M.ink3, marginBottom:4 }}>Email address</div>
+          <input value={email} onChange={e => setEmail(e.target.value)}
+            placeholder={`Your ${intg?.store} email`}
+            style={{ width:'100%', boxSizing:'border-box', padding:'12px 14px', border:`1px solid ${M.line}`, borderRadius:10, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', color:M.ink }}/>
+        </div>
+        <div style={{ marginBottom:20 }}>
+          <div style={{ fontSize:12, color:M.ink3, marginBottom:4 }}>Password</div>
+          <input type="password" value={password} onChange={e => setPassword(e.target.value)}
+            placeholder="Password"
+            style={{ width:'100%', boxSizing:'border-box', padding:'12px 14px', border:`1px solid ${M.line}`, borderRadius:10, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', color:M.ink }}/>
+        </div>
+        <button className="m-tap" onClick={doLogin}
+          style={{ width:'100%', padding:'14px 0', background:M.sage, color:'#fff', border:'none', borderRadius:12, fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+          Connect {intg?.store}
+        </button>
+        <div style={{ padding:'16px 0 24px', fontSize:11, color:M.ink4, textAlign:'center', lineHeight:1.6 }}>
+          munni reads your receipts read-only. Your credentials are never stored.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScreenIntegrationReceipts({ params }) {
+  const nav = useNav();
+  const { txs, updateTx } = useTxCtx();
+  const [integrations] = useLocalStorage('munni_integrations', INTEGRATIONS);
+  const intg = integrations.find(i => i.id === params?.id) || INTEGRATIONS[0];
+  const sourceTxId = params?.sourceTxId;
+  const sourceTx = sourceTxId ? txs.find(t => t.id === sourceTxId) : null;
+
+  // Use AH_RECEIPTS for Albert Heijn; otherwise show empty
+  const receipts = intg.id === 'int_ah' ? AH_RECEIPTS : [];
+
+  const selectReceipt = (receipt) => {
+    if (sourceTxId) {
+      updateTx(sourceTxId, { hasReceipt: true, receiptId: receipt.id, receiptStore: intg.store, receiptItems: receipt.items, receiptTotal: receipt.total });
+      nav.pop(); nav.pop(); // back to TxDetail
+    }
+  };
+
+  return (
+    <div className="m-screen">
+      <StatusBar/>
+      <AppBar title={`${intg.store} receipts`}
+        leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
+      />
+      <div className="m-body-scroll">
+        {sourceTx && (
+          <div style={{ margin:'0 0 16px', padding:'12px 14px', borderRadius:12, background:M.ochreSoft, fontSize:13, color:M.ochre, lineHeight:1.5 }}>
+            Matching receipts for <strong>{sourceTx.merchant}</strong> · {fmtEur(Math.abs(sourceTx.amount))}
+          </div>
+        )}
+        {receipts.length === 0 ? (
+          <div style={{ textAlign:'center', padding:'48px 0', color:M.ink3, fontSize:14 }}>No receipts found for this store.</div>
+        ) : receipts.map(r => {
+          const isMatch = r.matchedTxId === sourceTxId;
+          return (
+            <div key={r.id} className="m-tap" onClick={() => selectReceipt(r)}
+              style={{ marginBottom:12, padding:'14px 16px', borderRadius:14, background:isMatch?M.sageSoft:'#fff', border:`1px solid ${isMatch?M.sage:M.line}` }}>
+              <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:r.items.length?10:0 }}>
+                <div style={{ width:36, height:36, borderRadius:10, background:intg.color+'22', display:'flex', alignItems:'center', justifyContent:'center', fontSize:18, flexShrink:0 }}>{intg.icon}</div>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:13, fontWeight:600 }}>{r.store}</div>
+                  <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{fmtDate(r.date, 'long')} · {r.items.length} items</div>
+                </div>
+                <div className="m-num" style={{ fontSize:15, fontWeight:700, color:isMatch?M.sage:M.ink }}>{fmtEur(r.total)}</div>
+                {isMatch && <div style={{ fontSize:10, fontWeight:700, letterSpacing:'0.04em', textTransform:'uppercase', color:M.sage, background:M.sage+'22', padding:'2px 8px', borderRadius:999 }}>Match</div>}
+              </div>
+              {r.items.slice(0, 3).map((item, i) => (
+                <div key={i} style={{ display:'flex', justifyContent:'space-between', fontSize:11, color:M.ink3, padding:'2px 0', paddingLeft:48 }}>
+                  <span>{item.qty > 1 ? `${item.qty}× ` : ''}{item.name}</span>
+                  <span className="m-num">{fmtEur(item.price * item.qty)}</span>
+                </div>
+              ))}
+              {r.items.length > 3 && <div style={{ fontSize:11, color:M.ink4, paddingLeft:48, marginTop:2 }}>+{r.items.length - 3} more items</div>}
+              {sourceTxId && (
+                <div style={{ marginTop:10, paddingLeft:48 }}>
+                  <button className="m-tap" onClick={e => { e.stopPropagation(); selectReceipt(r); }}
+                    style={{ fontSize:12, fontWeight:600, color:M.sage, background:M.sageSoft, border:'none', borderRadius:8, padding:'6px 14px', cursor:'pointer', fontFamily:M.fontUI }}>
+                    Use this receipt
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function ScreenProfile() {
   const nav = useNav();
   const [editing, setEditing] = React.useState(false);
@@ -2496,7 +2888,7 @@ function ScreenProfile() {
           <Divider inset={48}/>
           <ProfileLink icon="card" label="Bank accounts" sub="2 connected" onClick={() => nav.push('accounts')}/>
           <Divider inset={48}/>
-          <ProfileLink icon="link" label="Integrations" sub="3 merchants connected"/>
+          <ProfileLink icon="link" label="Integrations" sub="Albert Heijn connected" onClick={() => nav.push('integrations')}/>
           <Divider inset={48}/>
           <ProfileLink icon="cal" label="Periods" sub="Monthly · 20th" onClick={() => nav.push('periods')}/>
           <Divider inset={48}/>
@@ -2936,6 +3328,14 @@ function ScreenManageCategories() {
   const [dragOverParent, setDragOverParent] = React.useState(null);
   const swipeRef = React.useRef({ startX: 0 });
 
+  const openQuickAdd = (parentId) => {
+    setNewParent(parentId);
+    setNewType('sub');
+    setNewName('');
+    setNewIcon('star');
+    setShowAdd(true);
+  };
+
   const premadeParents = Object.values(CATEGORIES).filter(c => c.isParent && !c.positive && c.id !== 'saving' && c.id !== 'expense');
   const icons = ['fork','shop','car','flame','film','health','bag','globe','rocket','star','house','heart','box','wallet','lock','user'];
 
@@ -2949,7 +3349,12 @@ function ScreenManageCategories() {
     if (!newName.trim()) return;
     const id = `custom_${Date.now()}`;
     if (newType === 'parent') {
-      setCustomCats(cs => [...cs, { id, name: newName.trim(), icon: newIcon, isParent: true, custom: true }]);
+      const parentName = newName.trim();
+      const subId = `custom_${Date.now()}_other`;
+      setCustomCats(cs => [...cs,
+        { id, name: parentName, icon: newIcon, isParent: true, custom: true },
+        { id: subId, name: 'Other', icon: newIcon, group: parentName, parent: id, custom: true, canDelete: false },
+      ]);
     } else {
       const parent = CATEGORIES[newParent] || customParents.find(p => p.id === newParent) || {};
       setCustomCats(cs => [...cs, { id, name: newName.trim(), icon: newIcon, group: parent.name || newParent, parent: newParent, custom: true }]);
@@ -2958,10 +3363,14 @@ function ScreenManageCategories() {
   };
 
   const confirmDelete = (cat) => { setDeleteTarget(cat); setSwipedId(null); };
-  const doDelete = () => { setCustomCats(cs => cs.filter(x => x.id !== deleteTarget.id)); setDeleteTarget(null); };
+  const doDelete = () => {
+    setCustomCats(cs => cs.filter(x => x.id !== deleteTarget.id && x.parent !== deleteTarget.id));
+    setDeleteTarget(null);
+  };
 
   const onPtrDown = (id, e) => { swipeRef.current = { startX: e.clientX }; };
-  const onPtrUp = (id, e) => {
+  const onPtrUp = (id, e, canDelete) => {
+    if (canDelete === false) return;
     const dx = e.clientX - swipeRef.current.startX;
     if (dx < -40) setSwipedId(id);
     else if (dx > 10) setSwipedId(s => s === id ? null : s);
@@ -2994,7 +3403,7 @@ function ScreenManageCategories() {
           draggable={!c.isParent}
           onDragStart={!c.isParent ? (e) => onDragStart(c.id, e) : undefined}
           onPointerDown={(e) => onPtrDown(c.id, e)}
-          onPointerUp={(e) => onPtrUp(c.id, e)}
+          onPointerUp={(e) => onPtrUp(c.id, e, c.canDelete)}
           style={{
             display:'flex', alignItems:'center', gap:12, padding:'12px 16px 12px 12px',
             background:'#fff',
@@ -3068,6 +3477,9 @@ function ScreenManageCategories() {
                     <I name={p.icon} size={14} color={M.ink2}/>
                   </div>
                   <div style={{ flex:1, fontSize:13, fontWeight:600 }}>{p.name}</div>
+                  <button className="m-tap" onClick={() => openQuickAdd(p.id)} style={{ background:'transparent', border:`1px solid ${M.sage}44`, borderRadius:7, padding:'3px 8px', fontSize:11, fontWeight:600, color:M.sage, cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', gap:4, flexShrink:0 }}>
+                    <I name="plus" size={11} color={M.sage}/> Sub
+                  </button>
                   <div style={{ fontSize:11, color:M.ink4 }}>{subs.length + customSubs.length} subs</div>
                 </div>
                 <div style={{ paddingLeft:38 }}>
@@ -3114,6 +3526,9 @@ function ScreenManageCategories() {
                         <I name={p.icon} size={14} color={M.violet}/>
                       </div>
                       <div style={{ flex:1, fontSize:13, fontWeight:600 }}>{p.name}</div>
+                      <button className="m-tap" onClick={() => openQuickAdd(p.id)} style={{ background:'transparent', border:`1px solid ${M.violet}44`, borderRadius:7, padding:'3px 8px', fontSize:11, fontWeight:600, color:M.violet, cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', gap:4, flexShrink:0 }}>
+                        <I name="plus" size={11} color={M.violet}/> Sub
+                      </button>
                       <div style={{ fontSize:11, color:M.ink4 }}>{customSubs.length} subs</div>
                     </div>
                     {customSubs.length > 0 && (
@@ -3388,6 +3803,33 @@ function ScreenAccounts() {
           </div>
         </div>
         <div style={{ height:8 }}/>
+      </div>
+    </div>
+  );
+}
+
+function ScreenSavings() {
+  const nav = useNav();
+  const { txs } = useTxCtx();
+  const savingsTxs = txs.filter(t => t.savingAccount);
+  const total = savingsTxs.reduce((s,t) => s + Math.abs(t.amount), 0);
+  return (
+    <div className="m-screen">
+      <StatusBar/>
+      <AppBar title="Savings" onBack={nav.pop}
+        leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
+      />
+      <div className="m-body-scroll" style={{padding:'0 16px'}}>
+        <div style={{padding:'20px 0 8px', fontSize:28, fontWeight:700, color:M.sage, fontFamily:M.fontDisp}} className="m-num">
+          {fmtEur(total)}
+        </div>
+        <div style={{color:M.ink3, fontSize:13, marginBottom:20}}>Total saved this period</div>
+        {savingsTxs.length === 0 ? (
+          <div style={{textAlign:'center', padding:'40px 0', color:M.ink3, fontSize:14}}>
+            No savings transactions yet.<br/>
+            <span style={{fontSize:12, marginTop:8, display:'block'}}>Attach a saving account to a transaction to track savings.</span>
+          </div>
+        ) : savingsTxs.map(t => <TxRow key={t.id} tx={t} onClick={() => nav.push('txDetail', {id:t.id})}/>)}
       </div>
     </div>
   );
@@ -4368,7 +4810,7 @@ function useLocalStorage(key, defaultValue) {
   return [state, set];
 }
 
-const STORAGE_KEYS = ['munni_txs','munni_recur','munni_topics','munni_pOffset','munni_customCats','munni_dark','munni_profile_name','munni_profile_email'];
+const STORAGE_KEYS = ['munni_txs','munni_recur','munni_topics','munni_pOffset','munni_customCats','munni_dark','munni_profile_name','munni_profile_email','munni_integrations'];
 function clearAllStorage() { STORAGE_KEYS.forEach(k => localStorage.removeItem(k)); }
 
 const CatCtx = React.createContext(null);
@@ -5431,10 +5873,18 @@ function ScreenGoalDetail({ params }) {
 
 function ScreenReviewSwipe() {
   const nav = useNav();
-  const { txs } = useTxCtx();
+  const { txs, updateTx } = useTxCtx();
   const [reviewed, setReviewed] = React.useState(new Set());
-  const queue = txs.filter(t => t.needsReview && !reviewed.has(t.id));
-  const [initialCount] = React.useState(() => txs.filter(t => t.needsReview).length || 1);
+  const [skipped, setSkipped] = React.useState(new Set());
+  const reviewTxs = txs
+    .filter(t => t.needsReview)
+    .sort((a, b) => {
+      const aGP = a.merchant === 'Google Playstore' ? 0 : 1;
+      const bGP = b.merchant === 'Google Playstore' ? 0 : 1;
+      return aGP - bGP;
+    });
+  const queue = reviewTxs.filter(t => !reviewed.has(t.id) && !skipped.has(t.id));
+  const [initialCount] = React.useState(() => reviewTxs.length || 1);
   const [idx, setIdx] = React.useState(0);
   const [drag, setDrag] = React.useState(0);
   const [done, setDone] = React.useState(false);
@@ -5442,11 +5892,12 @@ function ScreenReviewSwipe() {
   const [editAmt, setEditAmt] = React.useState(null);
   const [bulkSelected, setBulkSelected] = React.useState(new Set());
   const [previewTx, setPreviewTx] = React.useState(null);
+  const [dupError, setDupError] = React.useState(null);
 
   const tx = queue[idx];
   const isNegative = tx && tx.amount < 0;
 
-  const initCats = (t) => [{ id: t.cat, amount: Math.abs(t.amount) }];
+  const initCats = (t) => [{ id: t.aiSuggestCat || t.cat, amount: Math.abs(t.amount) }];
   const [txCats, setTxCats] = React.useState(() => tx ? initCats(tx) : []);
 
   React.useEffect(() => { if (tx) setTxCats(initCats(tx)); }, [idx, queue.length]);
@@ -5479,6 +5930,13 @@ function ScreenReviewSwipe() {
   const confirmCurrent = () => {
     if (txCats.length === 0) return;
     const toMark = new Set([tx.id, ...Array.from(bulkSelected)]);
+    // Persist: clear needsReview and update categories in localStorage
+    toMark.forEach(id => {
+      const t = txs.find(x => x.id === id);
+      if (!t) return;
+      const cats = id === tx.id ? txCats.map(c => ({ catId: c.id, amount: c.amount })) : (t.cats || [{ catId: t.cat, amount: Math.abs(t.amount) }]);
+      updateTx(id, { needsReview: false, cats, cat: cats[0]?.catId || t.cat });
+    });
     setReviewed(r => new Set([...r, ...toMark]));
     setBulkSelected(new Set());
     setDrag(160);
@@ -5508,14 +5966,19 @@ function ScreenReviewSwipe() {
   return (
     <div className="m-screen" style={{ background: M.paper2 }}>
       <StatusBar/>
-      <AppBar title={`Review · ${reviewed.size + 1} / ${initialCount}`}
+      <AppBar title={`Review · ${reviewed.size + skipped.size + 1} / ${initialCount}`}
         leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="x" size={20}/></button>}
       />
 
       <div style={{ display:'flex', justifyContent:'center', gap:4, padding:'0 20px 14px', flexShrink:0 }}>
-        {Array.from({ length: Math.min(initialCount, 30) }).map((_, i) => (
-          <div key={i} style={{ flex:1, height:3, borderRadius:999, background: i < reviewed.size ? M.sage : i === reviewed.size ? M.ink : M.line2 }}/>
-        ))}
+        {Array.from({ length: Math.min(initialCount, 30) }).map((_, i) => {
+          const done = i < reviewed.size + skipped.size;
+          const isSkipped = i >= reviewed.size && i < reviewed.size + skipped.size;
+          const isCurrent = i === reviewed.size + skipped.size;
+          return (
+            <div key={i} style={{ flex:1, height:3, borderRadius:999, background: done ? (isSkipped ? M.ink3 : M.sage) : (isCurrent ? M.ink : M.line2) }}/>
+          );
+        })}
       </div>
 
       <div style={{ flex:1, overflowY:'auto', padding:'0 20px' }}>
@@ -5587,9 +6050,13 @@ function ScreenReviewSwipe() {
                 <div style={{ fontSize:11, fontWeight:700, letterSpacing:'0.05em', textTransform:'uppercase', color:M.violet }}>
                   {singleCat ? `Same merchant in queue` : `Same merchant & amount`} · {queueSimilar.length}
                 </div>
-                {bulkSelected.size > 0 && (
-                  <div style={{ fontSize:11, fontWeight:600, color:M.violet }}>{bulkSelected.size} selected</div>
-                )}
+                <button className="m-tap" onClick={() => {
+                  const allIds = queueSimilar.map(t => t.id);
+                  const allSelected = allIds.every(id => bulkSelected.has(id));
+                  setBulkSelected(allSelected ? new Set() : new Set(allIds));
+                }} style={{ fontSize:11, fontWeight:600, color:M.violet, background:'transparent', border:`1px solid ${M.violet}44`, borderRadius:6, padding:'3px 8px', cursor:'pointer', fontFamily:M.fontUI }}>
+                  {queueSimilar.every(t => bulkSelected.has(t.id)) ? 'Deselect all' : 'Select all'}
+                </button>
               </div>
               <div style={{ maxHeight:220, overflowY:'auto' }}>
                 {queueSimilar.map((st, stIdx) => (
@@ -5630,7 +6097,7 @@ function ScreenReviewSwipe() {
       </div>
 
       <div style={{ display:'flex', gap:12, padding:'12px 20px 20px', flexShrink:0 }}>
-        <button className="m-tap" onClick={() => advance()} style={{
+        <button className="m-tap" onClick={() => { setSkipped(s => new Set([...s, tx.id])); setIdx(0); }} style={{
           flex:1, height:54, borderRadius:16, border:`1px solid ${M.line}`,
           background:'#fff', display:'flex', alignItems:'center', justifyContent:'center', gap:8,
           fontSize:14, fontWeight:600, color:M.ink3,
@@ -5659,13 +6126,20 @@ function ScreenReviewSwipe() {
         onClose={() => setPicking(false)}
         onPick={(id, amt) => {
           if (txCats.some(c => c.id === id)) {
-            alert(`"${CATEGORIES[id]?.name || id}" is already in the list.`);
+            setDupError(CATEGORIES[id]?.name || id);
+            setTimeout(() => setDupError(null), 2500);
             return;
           }
           setTxCats(cs => [...cs, { id, amount: amt }]);
           setPicking(false);
         }}
       />}
+
+      {dupError && (
+        <div style={{ position:'fixed', bottom:120, left:'50%', transform:'translateX(-50%)', background:M.ink, color:'#fff', borderRadius:10, padding:'10px 16px', fontSize:13, fontWeight:600, zIndex:200, whiteSpace:'nowrap', boxShadow:'0 4px 20px rgba(0,0,0,0.2)', animation:'fadeIn 0.2s ease' }}>
+          "{dupError}" is already added
+        </div>
+      )}
 
       {editAmt !== null && (
         <AmountEditSheet
@@ -5745,15 +6219,29 @@ function useNumpadStr(initial) {
   const [str, setStr] = React.useState(
     initial > 0 ? initial.toFixed(2).replace('.', ',') : '0'
   );
-  const press = (k) => setStr(s => {
-    if (k === '⌫') return s.length > 1 ? s.slice(0, -1) : '0';
-    if (k === ',') return s.includes(',') ? s : (s === '0' ? '0,' : s + ',');
-    if (s === '0') return k;
-    const dec = s.split(',')[1];
-    if (dec !== undefined && dec.length >= 2) return s;
-    return s + k;
-  });
-  return [str, press, setStr];
+  const [fresh, setFresh] = React.useState(initial > 0);
+  const press = (k) => {
+    if (fresh && k !== '⌫') {
+      setFresh(false);
+      if (k === ',') { setStr('0,'); return; }
+      setStr(k === '0' ? '0' : k);
+      return;
+    }
+    setStr(s => {
+      if (k === '⌫') { setFresh(false); return s.length > 1 ? s.slice(0, -1) : '0'; }
+      if (k === ',') return s.includes(',') ? s : (s === '0' ? '0,' : s + ',');
+      if (s === '0') return k;
+      const dec = s.split(',')[1];
+      if (dec !== undefined && dec.length >= 2) return s;
+      return s + k;
+    });
+  };
+  const resetStr = (val) => {
+    const n = typeof val === 'number' ? val : parseFloat(String(val).replace(',', '.')) || 0;
+    const s = n > 0 ? n.toFixed(2).replace('.', ',') : '0';
+    setStr(s); setFresh(n > 0);
+  };
+  return [str, press, resetStr];
 }
 
 // Standalone amount-edit sheet — used to edit an existing category's amount
@@ -5781,7 +6269,7 @@ function CategoryPicker({ selected, onClose, onPick, filterPositive = false, pos
 
   const handlePickCat = (id) => {
     if (skipAmount) { onPick(id, 0); return; }
-    setStr(defaultAmount > 0 ? defaultAmount.toFixed(2).replace('.', ',') : '0');
+    setStr(defaultAmount);
     setPickedId(id);
   };
 
@@ -5838,7 +6326,9 @@ function CategoryPicker({ selected, onClose, onPick, filterPositive = false, pos
               )}
               {Object.entries(groups).map(([groupName, cats]) => (
                 <div key={groupName} style={{ marginBottom:18 }}>
-                  <div className="m-cap" style={{ marginBottom:8 }}>{groupName}</div>
+                  <div className="m-cap" style={{ marginBottom:8 }}>
+                    {searchQ ? <HighlightText text={groupName} query={searchQ}/> : groupName}
+                  </div>
                   <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
                     {cats.map(c => (
                       <button key={c.id} onClick={() => handlePickCat(c.id)} className="m-tap" style={{
@@ -5858,11 +6348,13 @@ function CategoryPicker({ selected, onClose, onPick, filterPositive = false, pos
                 </div>
               ))}
             </div>
-            <div style={{ padding:'8px 20px 20px', borderTop:`1px solid ${M.line2}`, flexShrink:0 }}>
-              <button className="m-tap" onClick={() => {}} style={{ fontSize:12, color:M.ink3, background:'transparent', border:'none', fontFamily:M.fontUI, cursor:'pointer', display:'flex', alignItems:'center', gap:4 }}>
-                <I name="plus" size={12} color={M.ink3}/> Manage custom categories
-              </button>
-            </div>
+            {(Object.keys(groups).length === 0 || searchQ) && (
+              <div style={{ padding:'8px 20px 20px', borderTop:`1px solid ${M.line2}`, flexShrink:0 }}>
+                <button className="m-tap" onClick={onClose} style={{ fontSize:12, color:M.ink3, background:'transparent', border:'none', fontFamily:M.fontUI, cursor:'pointer', display:'flex', alignItems:'center', gap:4 }}>
+                  <I name="plus" size={12} color={M.ink3}/> Manage custom categories
+                </button>
+              </div>
+            )}
           </>
         ) : (
           <>
@@ -5894,7 +6386,7 @@ function CategoryPicker({ selected, onClose, onPick, filterPositive = false, pos
 
 function ScreenLinkReimburse({ params }) {
   const nav = useNav();
-  const { txs } = useTxCtx();
+  const { txs, updateTx } = useTxCtx();
   const txId = params?.txId;
   const isPositive = params?.positive === true;
   const sourceTx = txs.find(t => t.id === txId);
@@ -5951,7 +6443,11 @@ function ScreenLinkReimburse({ params }) {
           amtStr={str}
           onPress={pressStr}
           maxAmount={maxAmt}
-          onConfirm={(v) => { nav.pop(); }}
+          onConfirm={(v) => {
+            // Persist the link: selected tx links back to source
+            updateTx(selected.id, { linkedTo: txId, amount: isPositive ? -v : v });
+            nav.pop();
+          }}
           confirmLabel={ok ? `Link · ${fmtEur(val)} reimbursed` : 'Enter amount'}
         />
       </div>
@@ -6663,6 +7159,10 @@ const SCREEN_REGISTRY = {
   eventDetail:    ({params}) => <ScreenEventDetail params={params}/>,
   eventCreate:    () => <ScreenEventCreate/>,
   accounts:       () => <ScreenAccounts/>,
+  integrations:   ({params}) => <ScreenIntegrations params={params}/>,
+  integrationLogin: ({params}) => <ScreenIntegrationLogin params={params}/>,
+  integrationReceipts: ({params}) => <ScreenIntegrationReceipts params={params}/>,
+  savings:        () => <ScreenSavings/>,
   savingsDetail:  ({params}) => <ScreenSavingsDetail params={params}/>,
   settings:       () => <ScreenSettings/>,
   income:         () => <ScreenIncome/>,
