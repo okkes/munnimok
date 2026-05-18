@@ -17,7 +17,10 @@
       "PowerShell(Select-String -Path \"c:\\\\Users\\\\odoke\\\\Downloads\\\\munni \\(Copy\\)\\\\.claude\\\\worktrees\\\\agent-a2c8122a1cd5ae970\\\\munni.html\" -Pattern \"Transaction Review|HOME_CARDS_DEFAULT|upcoming_days|pinnedCards|Reset to default\" | Select-Object -First 20 | ForEach-Object { \"$\\($_.LineNumber\\): $\\($_.Line.Trim\\(\\)\\)\" })",
       "PowerShell(Select-String -Path \"c:\\\\Users\\\\odoke\\\\Downloads\\\\munni \\(Copy\\)\\\\.claude\\\\worktrees\\\\agent-a2c8122a1cd5ae970\\\\munni.html\" -Pattern \"Category Review\" | Select-Object -First 10 | ForEach-Object { \"$\\($_.LineNumber\\): $\\($_.Line.Trim\\(\\)\\)\" })",
       "Bash(git add *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "PowerShell(Select-String -Path \"c:\\\\Users\\\\odoke\\\\Downloads\\\\munni \\(Copy\\)\\\\munni.html\" -Pattern \"ScreenManageCategories|NewCatForm|handleDropOnPremadeParent|deleteCustomSub|canDeleteParent|munni_customCats\" | Select-Object -First 10 | ForEach-Object { \"$\\($_.LineNumber\\): $\\($_.Line.Trim\\(\\)\\)\" })",
+      "Bash(awk '/const ASN_TRANSACTIONS/,/^];/' \"/c/Users/odoke/Downloads/munni \\(Copy\\)/munni.html\")",
+      "PowerShell(Select-String -Path \"c:\\\\Users\\\\odoke\\\\Downloads\\\\munni \\(Copy\\)\\\\munni.html\" -Pattern \"ProfileAvatar|STOCK_AVATARS|ASN_TRANSACTIONS|munni_topics_\" | Select-Object -First 8 | ForEach-Object { \"$\\($_.LineNumber\\): $\\($_.Line.Trim\\(\\)\\)\" })"
     ]
   }
 }
