@@ -554,20 +554,20 @@ const CATEGORIES = {
   expenseReimburse:       { id:'expenseReimburse',       name:'Reimbursement',      icon:'link',           group:'Expense',     parent:'expense' },
   expenseUncategorized:   { id:'expenseUncategorized',   name:'Uncategorized',      icon:'box',            group:'Expense',     parent:'expense' },
   // ── Housing ─────────────────────────────────────────────────
-  housing:                { id:'housing',                name:'Housing',            icon:'house',          group:'Housing',     isParent:true },
+  housing:                { id:'housing',                name:'Housing',            icon:'house',          group:'Housing',     isParent:true, color:'#E67E22' },
   housingRent:            { id:'housingRent',            name:'Rent & Mortgage',    icon:'house',          group:'Housing',     parent:'housing' },
   housingUtility:         { id:'housingUtility',         name:'Utility',            icon:'flame',          group:'Housing',     parent:'housing' },
   housingMaintenance:     { id:'housingMaintenance',     name:'Maintenance',        icon:'box',            group:'Housing',     parent:'housing' },
   housingStorage:         { id:'housingStorage',         name:'Storage Area',       icon:'box',            group:'Housing',     parent:'housing' },
   housingOther:           { id:'housingOther',           name:'Other',              icon:'house',          group:'Housing',     parent:'housing' },
   // ── Transportation ──────────────────────────────────────────
-  transport:              { id:'transport',              name:'Transportation',     icon:'car',            group:'Transportation', isParent:true },
+  transport:              { id:'transport',              name:'Transportation',     icon:'car',            group:'Transportation', isParent:true, color:'#3498DB' },
   transportCar:           { id:'transportCar',           name:'Car Payment',        icon:'car',            group:'Transportation', parent:'transport' },
   transportFuel:          { id:'transportFuel',          name:'Gas & Fuel',         icon:'flame',          group:'Transportation', parent:'transport' },
   transportPublic:        { id:'transportPublic',        name:'Public Transport',   icon:'car',            group:'Transportation', parent:'transport' },
   transportOther:         { id:'transportOther',         name:'Other',              icon:'car',            group:'Transportation', parent:'transport' },
   // ── Consumption ─────────────────────────────────────────────
-  consumption:            { id:'consumption',            name:'Consumption',        icon:'fork',           group:'Consumption', isParent:true },
+  consumption:            { id:'consumption',            name:'Consumption',        icon:'fork',           group:'Consumption', isParent:true, color:'#27AE60' },
   groceries:              { id:'groceries',              name:'Grocery',            icon:'shop',           group:'Consumption', parent:'consumption' },
   breakfast:              { id:'breakfast',              name:'Breakfast & Brunch', icon:'fork',           group:'Consumption', parent:'consumption' },
   restaurants:            { id:'restaurants',            name:'Dining Out',         icon:'fork',           group:'Consumption', parent:'consumption' },
@@ -577,13 +577,13 @@ const CATEGORIES = {
   coffee:                 { id:'coffee',                 name:'Coffee',             icon:'flame',          group:'Consumption', parent:'consumption' },
   consumptionOther:       { id:'consumptionOther',       name:'Other',              icon:'fork',           group:'Consumption', parent:'consumption' },
   // ── Personal Care ───────────────────────────────────────────
-  personalCare:           { id:'personalCare',           name:'Personal Care',      icon:'user',           group:'Personal Care', isParent:true },
+  personalCare:           { id:'personalCare',           name:'Personal Care',      icon:'user',           group:'Personal Care', isParent:true, color:'#9B59B6' },
   haircut:                { id:'haircut',                name:'Haircut',            icon:'edit',           group:'Personal Care', parent:'personalCare' },
   toiletry:               { id:'toiletry',               name:'Toiletry',           icon:'health',         group:'Personal Care', parent:'personalCare' },
   beautyProduct:          { id:'beautyProduct',          name:'Health & Beauty',    icon:'health',         group:'Personal Care', parent:'personalCare' },
   personalCareOther:      { id:'personalCareOther',      name:'Other',              icon:'user',           group:'Personal Care', parent:'personalCare' },
   // ── Entertainment ───────────────────────────────────────────
-  entertainment:          { id:'entertainment',          name:'Entertainment',      icon:'star',           group:'Entertainment', isParent:true },
+  entertainment:          { id:'entertainment',          name:'Entertainment',      icon:'star',           group:'Entertainment', isParent:true, color:'#E74C3C' },
   movie:                  { id:'movie',                  name:'Movie',              icon:'film',           group:'Entertainment', parent:'entertainment' },
   concerts:               { id:'concerts',               name:'Concerts & Shows',   icon:'star',           group:'Entertainment', parent:'entertainment' },
   sportingEvent:          { id:'sportingEvent',          name:'Sporting Event',     icon:'star',           group:'Entertainment', parent:'entertainment' },
@@ -594,12 +594,12 @@ const CATEGORIES = {
   subs:                   { id:'subs',                   name:'Streaming Service',  icon:'film',           group:'Entertainment', parent:'entertainment' },
   entertainmentOther:     { id:'entertainmentOther',     name:'Other',              icon:'star',           group:'Entertainment', parent:'entertainment' },
   // ── Sport ───────────────────────────────────────────────────
-  sport:                  { id:'sport',                  name:'Sport',              icon:'bag',            group:'Sport',       isParent:true },
+  sport:                  { id:'sport',                  name:'Sport',              icon:'bag',            group:'Sport',       isParent:true, color:'#1ABC9C' },
   gym:                    { id:'gym',                    name:'Gym Membership',     icon:'bag',            group:'Sport',       parent:'sport' },
   sportsEquipment:        { id:'sportsEquipment',        name:'Sports Equipment',   icon:'bag',            group:'Sport',       parent:'sport' },
   sportOther:             { id:'sportOther',             name:'Other',              icon:'bag',            group:'Sport',       parent:'sport' },
   // ── Shopping ────────────────────────────────────────────────
-  shopping:               { id:'shopping',               name:'Shopping',           icon:'shop',           group:'Shopping',    isParent:true },
+  shopping:               { id:'shopping',               name:'Shopping',           icon:'shop',           group:'Shopping',    isParent:true, color:'#F39C12' },
   clothing:               { id:'clothing',               name:'Clothing',           icon:'shop',           group:'Shopping',    parent:'shopping' },
   electronics:            { id:'electronics',            name:'Electronic',         icon:'box',            group:'Shopping',    parent:'shopping' },
   homeGoods:              { id:'homeGoods',              name:'Home Goods',         icon:'house',          group:'Shopping',    parent:'shopping' },
@@ -611,14 +611,14 @@ const CATEGORIES = {
   childCare:              { id:'childCare',              name:'Child Care',         icon:'user',           group:'Shopping',    parent:'shopping' },
   shoppingOther:          { id:'shoppingOther',          name:'Other',              icon:'shop',           group:'Shopping',    parent:'shopping' },
   // ── Holiday ─────────────────────────────────────────────────
-  holiday:                { id:'holiday',                name:'Holiday',            icon:'globe',          group:'Holiday',     isParent:true },
+  holiday:                { id:'holiday',                name:'Holiday',            icon:'globe',          group:'Holiday',     isParent:true, color:'#16A085' },
   flight:                 { id:'flight',                 name:'Flight',             icon:'globe',          group:'Holiday',     parent:'holiday' },
   hotel:                  { id:'hotel',                  name:'Hotel & Airbnb',     icon:'house',          group:'Holiday',     parent:'holiday' },
   carRental:              { id:'carRental',              name:'Car Rental',         icon:'car',            group:'Holiday',     parent:'holiday' },
   activity:               { id:'activity',               name:'Activity',           icon:'star',           group:'Holiday',     parent:'holiday' },
   holidayOther:           { id:'holidayOther',           name:'Other',              icon:'globe',          group:'Holiday',     parent:'holiday' },
   // ── Education ───────────────────────────────────────────────
-  education:              { id:'education',              name:'Education',          icon:'box',            group:'Education',   isParent:true },
+  education:              { id:'education',              name:'Education',          icon:'box',            group:'Education',   isParent:true, color:'#2980B9' },
   tuition:                { id:'tuition',                name:'Tuition',            icon:'wallet',         group:'Education',   parent:'education' },
   course:                 { id:'course',                 name:'Course',             icon:'user',           group:'Education',   parent:'education' },
   book:                   { id:'book',                   name:'Book',               icon:'box',            group:'Education',   parent:'education' },
@@ -627,7 +627,7 @@ const CATEGORIES = {
   newspaper:              { id:'newspaper',              name:'Newspaper',          icon:'box',            group:'Education',   parent:'education' },
   educationOther:         { id:'educationOther',         name:'Other',              icon:'box',            group:'Education',   parent:'education' },
   // ── Healthcare ──────────────────────────────────────────────
-  healthcare:             { id:'healthcare',             name:'Healthcare',         icon:'health',         group:'Healthcare',  isParent:true },
+  healthcare:             { id:'healthcare',             name:'Healthcare',         icon:'health',         group:'Healthcare',  isParent:true, color:'#E91E63' },
   doctorVisit:            { id:'doctorVisit',            name:'Doctor Visit',       icon:'health',         group:'Healthcare',  parent:'healthcare' },
   dental:                 { id:'dental',                 name:'Dental Work',        icon:'health',         group:'Healthcare',  parent:'healthcare' },
   prescription:           { id:'prescription',           name:'Prescription',       icon:'health',         group:'Healthcare',  parent:'healthcare' },
@@ -636,13 +636,13 @@ const CATEGORIES = {
   mentalCare:             { id:'mentalCare',             name:'Mental Care',        icon:'health',         group:'Healthcare',  parent:'healthcare' },
   healthcareOther:        { id:'healthcareOther',        name:'Other',              icon:'health',         group:'Healthcare',  parent:'healthcare' },
   // ── Pet ─────────────────────────────────────────────────────
-  pet:                    { id:'pet',                    name:'Pet',                icon:'box',            group:'Pet',         isParent:true },
+  pet:                    { id:'pet',                    name:'Pet',                icon:'box',            group:'Pet',         isParent:true, color:'#795548' },
   petFood:                { id:'petFood',                name:'Pet Food',           icon:'fork',           group:'Pet',         parent:'pet' },
   petSupply:              { id:'petSupply',              name:'Pet Supply',         icon:'box',            group:'Pet',         parent:'pet' },
   petInsurance:           { id:'petInsurance',           name:'Pet Insurance',      icon:'lock',           group:'Pet',         parent:'pet' },
   petOther:               { id:'petOther',               name:'Other',              icon:'box',            group:'Pet',         parent:'pet' },
   // ── Extra ───────────────────────────────────────────────────
-  extra:                  { id:'extra',                  name:'Extra',              icon:'box',            group:'Extra',       isParent:true },
+  extra:                  { id:'extra',                  name:'Extra',              icon:'box',            group:'Extra',       isParent:true, color:'#607D8B' },
   birthday:               { id:'birthday',               name:'Birthday',           icon:'star',           group:'Extra',       parent:'extra' },
   funeralInsurance:       { id:'funeralInsurance',       name:'Funeral Insurance',  icon:'lock',           group:'Extra',       parent:'extra' },
   charity:                { id:'charity',                name:'Charity',            icon:'link',           group:'Extra',       parent:'extra' },
@@ -1140,13 +1140,23 @@ const PERIOD = {
   prevIncome: 2380.00,
 };
 
-const PERIOD_HISTORY = [
-  { label:'20 Sep – 19 Oct', start:'2025-09-20', end:'2025-10-19', income:2380, expense:1402, invest:250, unallocated:420 },
-  { label:'20 Oct – 19 Nov', start:'2025-10-20', end:'2025-11-19', income:2380, expense:1308, invest:250, unallocated:380 },
-  { label:'20 Nov – 19 Dec', start:'2025-11-20', end:'2025-12-19', income:2480, expense:1190, invest:300, unallocated:520 },
-  { label:'20 Dec – 19 Jan', start:'2025-12-20', end:'2026-01-19', income:2480, expense:1345, invest:300, unallocated:290 },
-  { label:'20 Jan – 19 Feb', start:'2026-01-20', end:'2026-02-19', income:2480, expense:1220, invest:300, unallocated:620 },
-];
+function computePeriodHistory(day) {
+  const result = [];
+  const today = new Date();
+  for (let i = 5; i >= 0; i--) {
+    const startDate = new Date(today.getFullYear(), today.getMonth() - i, day);
+    const endDate = new Date(today.getFullYear(), today.getMonth() - i + 1, day - 1);
+    const fmtShort = d => d.toLocaleDateString('en-GB', { day:'numeric', month:'short' });
+    result.push({
+      label: `${fmtShort(startDate)} – ${fmtShort(endDate)}`,
+      start: startDate.toISOString().slice(0,10),
+      end: endDate.toISOString().slice(0,10),
+      income: 2480, expense: 1220, invest: 300, unallocated: 620
+    });
+  }
+  return result;
+}
+const PERIOD_HISTORY = computePeriodHistory(20);
   </script>
 
   <script type="text/babel">
@@ -1545,7 +1555,7 @@ function ScreenHome() {
   const { profiles, setProfiles } = useProfiles();
   const { recurList } = useRecurCtx();
   const [homeCards] = useLocalStorage('munni_home_cards', HOME_CARDS_DEFAULT);
-  const [upcomingDays, setUpcomingDays] = useLocalStorage('munni_upcoming_days', 3);
+  const [upcomingDays] = useLocalStorage('munni_upcoming_days', 3);
   const [showProfileSwitcher, setShowProfileSwitcher] = React.useState(false);
 
   const [budgets] = useProfileBudgets();
@@ -1732,15 +1742,6 @@ function ScreenHome() {
                   See all <I name="caretR" size={12}/>
                 </div>
               </div>
-              <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:12 }}>
-                <span style={{ fontSize:12, color:M.ink3 }}>Next</span>
-                <button className="m-tap" onClick={() => setUpcomingDays(d => Math.max(1, d - 1))}
-                  style={{ width:22, height:22, borderRadius:6, border:`1px solid ${M.line}`, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', color:M.sage, fontWeight:700, fontSize:14, fontFamily:M.fontUI }}>−</button>
-                <span style={{ fontSize:13, fontWeight:700, color:M.ink, minWidth:12, textAlign:'center' }}>{upcomingDays}</span>
-                <button className="m-tap" onClick={() => setUpcomingDays(d => Math.min(7, d + 1))}
-                  style={{ width:22, height:22, borderRadius:6, border:`1px solid ${M.line}`, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', color:M.sage, fontWeight:700, fontSize:14, fontFamily:M.fontUI }}>+</button>
-                <span style={{ fontSize:12, color:M.ink3 }}>days</span>
-              </div>
               {upcomingItems.length === 0 ? (
                 <div style={{ fontSize:13, color:M.ink3, padding:'8px 0' }}>No upcoming payments in the next {upcomingDays} days.</div>
               ) : (
@@ -1748,7 +1749,7 @@ function ScreenHome() {
                   {upcomingItems.map((r, i) => (
                     <React.Fragment key={r.id}>
                       {i > 0 && <Divider inset={36}/>}
-                      <div style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 0' }}>
+                      <div className="m-tap" onClick={() => nav.push('recurringDetail', { id: r.id })} style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 0', cursor:'pointer' }}>
                         <div style={{ width:28, height:28, borderRadius:8, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                           <I name={r.icon} size={14} color={M.ink2}/>
                         </div>
@@ -1829,7 +1830,12 @@ function ScreenHome() {
       {/* Header */}
       <div style={{ padding:'16px 20px 14px', display:'flex', alignItems:'center', gap:12, flexShrink:0 }}>
         <div className="m-tap" onClick={() => setShowProfileSwitcher(true)} style={{ flexShrink:0 }}>
-          <ProfileAvatar profile={activeProfile} size={42}/>
+          <div style={{ position:'relative' }}>
+            <ProfileAvatar profile={activeProfile} size={42}/>
+            {activeProfile?.isDemo && (
+              <div style={{ position:'absolute', bottom:-4, right:-2, fontSize:8, fontWeight:700, padding:'1px 5px', borderRadius:999, background:M.ochre, color:'#fff', textTransform:'uppercase', letterSpacing:'0.04em' }}>Demo</div>
+            )}
+          </div>
         </div>
         <div style={{ flex:1, minWidth:0 }}>
           <div className="m-num" style={{ fontSize:22, fontWeight:600, letterSpacing:'-0.02em', lineHeight:1 }}>
@@ -2130,6 +2136,7 @@ function ScreenTxDetail({ params }) {
   const nav = useNav();
   const { txs, updateTx } = useTxCtx();
   const { recurList, addRecur } = useRecurCtx();
+  const [connectedAccounts] = useLocalStorage('munni_bank_accounts', () => ACCOUNTS.slice());
 
   const [showLinkRecurring, setShowLinkRecurring] = React.useState(false);
   const [showCatPicker, setShowCatPicker] = React.useState(false);
@@ -2154,7 +2161,7 @@ function ScreenTxDetail({ params }) {
   const net = tx.amount + reimburseAmt;
   const netOriginalTx = originalTx ? originalTx.amount + tx.amount : 0;
 
-  const account = ACCOUNTS.find(a => a.id === tx.account);
+  const account = connectedAccounts.find(a => a.id === tx.account) || ACCOUNTS.find(a => a.id === tx.account);
 
   const linkedRecurId = tx.recurId || null;
   const linkedRecurring = recurList.find(r => r.id === linkedRecurId || r.txIds?.includes(tx.id));
@@ -2556,39 +2563,24 @@ function DetailRow({ label, value, icon, mono, placeholder, caretR }) {
 function ScreenExpenses() {
   const nav = useNav();
   const { txs } = useTxCtx();
-  const [pidx, setPidx] = React.useState(PERIOD_HISTORY.length - 1);
-  const selPeriod = PERIOD_HISTORY[pidx] || PERIOD_HISTORY[PERIOD_HISTORY.length - 1];
+  const [periodDay] = useLocalStorage('munni_period_day', 20);
+  const periodHistory = computePeriodHistory(periodDay);
+  const [pidx, setPidx] = React.useState(periodHistory.length - 1);
+
+  const barValues = periodHistory.map(p =>
+    txs.filter(t => t.amount < 0 && !t.savingAccount && t.date >= p.start && t.date <= p.end)
+       .reduce((s,t) => s + Math.abs(t.amount), 0)
+  );
+  const barLabels = periodHistory.map(p => new Date(p.start).toLocaleString('en-GB',{month:'short'}));
+
+  const selPeriod = periodHistory[pidx] || periodHistory[periodHistory.length - 1];
   const periodStart = selPeriod.start;
   const periodEnd = selPeriod.end;
   const periodLabel = selPeriod.label;
 
-  // Compute week-based bars spanning the period
-  const periodTxsExpense = txs.filter(t =>
-    t.amount < 0 && !t.savingAccount &&
-    t.date >= periodStart && t.date <= periodEnd
-  );
-  const periodLength = Math.round((new Date(periodEnd) - new Date(periodStart)) / 86400000) + 1;
-  const barCount = 4;
-  const barDays = Math.ceil(periodLength / barCount);
-  const bars = Array.from({ length: barCount }, (_, i) => {
-    const start = new Date(periodStart);
-    start.setDate(start.getDate() + i * barDays);
-    const end = new Date(periodStart);
-    end.setDate(end.getDate() + (i + 1) * barDays - 1);
-    const startStr = start.toISOString().slice(0, 10);
-    const endStr = end.toISOString().slice(0, 10);
-    const value = periodTxsExpense
-      .filter(t => t.date >= startStr && t.date <= endStr)
-      .reduce((s, t) => s + Math.abs(t.amount), 0);
-    return { label: `W${i + 1}`, startStr, endStr, value };
-  });
-
-  const [selBar, setSelBar] = React.useState(null); // null = show full period
-  const handleBarSelect = (idx) => setSelBar(prev => prev === idx ? null : idx);
-
-  // Filter transactions: by selected week bar or full period
-  const activeStart = selBar !== null ? bars[selBar].startStr : periodStart;
-  const activeEnd   = selBar !== null ? bars[selBar].endStr   : periodEnd;
+  // Filter transactions by selected period
+  const activeStart = periodStart;
+  const activeEnd   = periodEnd;
   const periodTxs = txs.filter(t => t.amount < 0 && t.date >= activeStart && t.date <= activeEnd);
 
   const totals = {};
@@ -2620,39 +2612,29 @@ function ScreenExpenses() {
         <div style={{ textAlign: 'center', padding: '8px 0 4px' }}>
           <div className="m-num" style={{ fontSize: 38, fontWeight: 600, letterSpacing: '-0.025em' }}>{fmtEur(grandTotal)}</div>
           <div style={{ fontSize: 12, color: M.ink3, marginTop: 4, fontWeight: 500 }}>
-            {selBar !== null ? `${bars[selBar].startStr} – ${bars[selBar].endStr}` : periodLabel}
+            {periodHistory[pidx]?.label}
           </div>
         </div>
 
-        {/* Period navigation */}
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:12, padding:'8px 0 12px' }}>
-          <button className="m-iconbtn m-tap" onClick={() => { setPidx(i => Math.max(0, i-1)); setSelBar(null); }}
-            style={{ width:28, height:28, opacity:pidx===0?0.3:1 }}><I name="arrowL" size={14}/></button>
-          <div style={{ fontSize:12, fontWeight:600, color:M.ink2, width:130, textAlign:'center' }}>{periodLabel}</div>
-          <button className="m-iconbtn m-tap" onClick={() => { setPidx(i => Math.min(PERIOD_HISTORY.length-1, i+1)); setSelBar(null); }}
-            style={{ width:28, height:28, opacity:pidx===PERIOD_HISTORY.length-1?0.3:1 }}><I name="arrowR" size={14}/></button>
-        </div>
-
         <div className="m-card" style={{ padding:'12px 16px 8px', marginBottom:14, border:`1px solid ${M.line}` }}>
-          <div className="m-cap" style={{ marginBottom:8 }}>Weekly breakdown · tap to filter</div>
           <BarChart
-            data={bars.map(b => b.value)}
-            labels={bars.map(b => b.label)}
+            data={barValues}
+            labels={barLabels}
             height={90}
             accent={M.clay}
             color={M.ink3}
-            selected={selBar !== null ? selBar : -1}
-            onSelect={handleBarSelect}
+            selected={pidx}
+            onSelect={(idx) => setPidx(idx)}
           />
         </div>
 
         <StackedBar height={10} segments={cats.map((c, i) => ({
-          value: c.total, color: [M.sage, M.clay, M.ochre, M.violet, M.slate, M.ink3][i % 6],
+          value: c.total, color: CATEGORIES[c.id]?.color || _catExt[c.id]?.color || [M.sage, M.clay, M.ochre, M.violet, M.slate, M.ink3][i % 6],
         }))}/>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 14, marginBottom: 18 }}>
           {cats.map((c, i) => (
             <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: M.ink2 }}>
-              <div style={{ width: 7, height: 7, borderRadius: 2, background: [M.sage, M.clay, M.ochre, M.violet, M.slate, M.ink3][i % 6] }}/>
+              <div style={{ width: 7, height: 7, borderRadius: 2, background: CATEGORIES[c.id]?.color || _catExt[c.id]?.color || [M.sage, M.clay, M.ochre, M.violet, M.slate, M.ink3][i % 6] }}/>
               {c.name}
             </div>
           ))}
@@ -2689,7 +2671,7 @@ function ScreenExpenses() {
                     <div>
                       {/* All — shows every transaction under this parent */}
                       <Divider inset={0}/>
-                      <div className="m-tap" onClick={() => nav.push('categoryDrill', { id: c.id, periodStart: activeStart, periodEnd: activeEnd, periodLabel: selBar !== null ? `${bars[selBar].label} – ${periodLabel}` : periodLabel })}
+                      <div className="m-tap" onClick={() => nav.push('categoryDrill', { id: c.id, periodStart: activeStart, periodEnd: activeEnd, periodLabel: periodLabel })}
                         style={{ padding: '11px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
                         <div style={{ width: 30, height: 30, borderRadius: 8, background: '#fff', border: `1px solid ${M.line2}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                           <I name={c.icon || 'box'} size={14} color={M.ink3}/>
@@ -2707,7 +2689,7 @@ function ScreenExpenses() {
                         return (
                           <React.Fragment key={s.id}>
                             <Divider inset={58}/>
-                            <div className="m-tap" onClick={() => nav.push('categoryDrill', { id: s.id, periodStart: activeStart, periodEnd: activeEnd, periodLabel: selBar !== null ? `${bars[selBar].label} – ${periodLabel}` : periodLabel })}
+                            <div className="m-tap" onClick={() => nav.push('categoryDrill', { id: s.id, periodStart: activeStart, periodEnd: activeEnd, periodLabel: periodLabel })}
                               style={{ padding: '11px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
                               <div style={{ width: 30, height: 30, borderRadius: 8, background: '#fff', border: `1px solid ${M.line2}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                                 <I name={subCat.icon || 'box'} size={14} color={M.ink2}/>
@@ -2737,72 +2719,41 @@ function ScreenExpenses() {
 function ScreenCategoryDrill({ params }) {
   const nav = useNav();
   const { txs: allTxs } = useTxCtx();
+  const [periodDay] = useLocalStorage('munni_period_day', 20);
+  const periodHistory = computePeriodHistory(periodDay);
   const cat = CATEGORIES[params?.id] || _catExt[params?.id] || CATEGORIES.restaurants;
   const isParent = !!cat.isParent;
-  const periodStart = params?.periodStart;
-  const periodEnd = params?.periodEnd;
-  const periodLabel = params?.periodLabel;
-  const [selectedBar, setSelectedBar] = React.useState(null);
 
   const childIds = isParent
     ? [...Object.values(CATEGORIES), ...Object.values(_catExt)].filter(c => c.parent === cat.id).map(c => c.id)
     : [cat.id];
 
-  // Filter by category and period if provided
-  const txs = allTxs.filter(t => {
-    if (t.amount >= 0) return false;
-    if (!childIds.includes(t.cat)) return false;
-    if (periodStart && periodEnd) return t.date >= periodStart && t.date <= periodEnd;
-    return true;
+  const periodBars = periodHistory.map(p => ({
+    label: new Date(p.start).toLocaleString('en-GB',{month:'short'}),
+    start: p.start,
+    end: p.end,
+    amount: allTxs.filter(t => t.amount < 0 && childIds.includes(t.cat) && t.date >= p.start && t.date <= p.end).reduce((s,t) => s + Math.abs(t.amount), 0),
+  }));
+
+  const [selectedBar, setSelectedBar] = React.useState(() => {
+    const idx = periodHistory.findIndex(p => p.start === params?.periodStart);
+    return idx >= 0 ? idx : periodHistory.length - 1;
   });
-  const total = txs.reduce((s, t) => s + Math.abs(t.amount), 0);
 
-  // Build week-based bars for the period
-  const weekBars = React.useMemo(() => {
-    if (!periodStart || !periodEnd) {
-      // fallback: use PERIOD_HISTORY bars for this category
-      return PERIOD_HISTORY.map(p => ({
-        label: p.label.split(' – ')[0].replace('20 ',''),
-        start: p.start,
-        end: p.end,
-        amount: allTxs.filter(t => t.amount < 0 && childIds.includes(t.cat) && t.date >= p.start && t.date <= p.end).reduce((s,t) => s + Math.abs(t.amount), 0),
-      }));
-    }
-    const bars = [];
-    const start = new Date(periodStart);
-    const end = new Date(periodEnd);
-    let cur = new Date(start);
-    let weekIdx = 0;
-    while (cur <= end) {
-      const wStart = new Date(cur);
-      const wEnd = new Date(cur);
-      wEnd.setDate(wEnd.getDate() + 6);
-      if (wEnd > end) { const d = new Date(end); wEnd.setTime(d.getTime()); }
-      const wStartStr = wStart.toISOString().slice(0,10);
-      const wEndStr = wEnd.toISOString().slice(0,10);
-      const monthName = wStart.toLocaleString('en-GB', { month:'short' });
-      bars.push({
-        label: `${monthName} W${weekIdx+1}`,
-        start: wStartStr,
-        end: wEndStr,
-        amount: txs.filter(t => t.date >= wStartStr && t.date <= wEndStr).reduce((s,t) => s + Math.abs(t.amount), 0),
-      });
-      weekIdx++;
-      cur.setDate(cur.getDate() + 7);
-    }
-    return bars;
-  }, [periodStart, periodEnd, txs]);
+  // All txs for this category
+  const txs = allTxs.filter(t => t.amount < 0 && childIds.includes(t.cat));
+  const total = periodBars[selectedBar]?.amount || 0;
 
-  const barData = weekBars.map(b => b.amount);
-  const barLabels = weekBars.map(b => b.label);
+  const barData = periodBars.map(b => b.amount);
+  const barLabels = periodBars.map(b => b.label);
   const barMax = Math.max(...barData, 1);
 
   const title = isParent ? `All ${cat.name}` : cat.name;
   const sub   = isParent ? null : cat.group;
 
-  // Filter txs for selected bar
-  const visibleTxs = selectedBar !== null && weekBars[selectedBar]
-    ? txs.filter(t => t.date >= weekBars[selectedBar].start && t.date <= weekBars[selectedBar].end)
+  // Filter txs for selected period bar
+  const visibleTxs = periodBars[selectedBar]
+    ? txs.filter(t => t.date >= periodBars[selectedBar].start && t.date <= periodBars[selectedBar].end)
     : txs;
 
   // Group by day
@@ -2821,27 +2772,21 @@ function ScreenCategoryDrill({ params }) {
         trailing={<button className="m-iconbtn m-tap"><I name="filter" size={20}/></button>}
       />
       <div className="m-body-scroll">
-        {periodLabel && (
-          <div style={{ textAlign:'center', padding:'4px 0 8px', fontSize:12, color:M.ink3, fontWeight:500 }}>{periodLabel}</div>
-        )}
         <div className="m-card" style={{ padding: 18, marginBottom: 14, border: `1px solid ${M.line}` }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-            <div className="m-cap">{periodLabel ? `Spent · ${periodLabel}` : 'Spent this period'}</div>
+            <div className="m-cap">Spent · {periodBars[selectedBar]?.label || 'this period'}</div>
           </div>
-          <div className="m-num" style={{ fontSize: 30, fontWeight: 600, marginTop: 4 }}>{fmtEur(selectedBar !== null && weekBars[selectedBar] ? weekBars[selectedBar].amount : total)}</div>
-          {selectedBar !== null && weekBars[selectedBar] && (
-            <div style={{ fontSize:11, color:M.ink3, marginTop:2 }}>{weekBars[selectedBar].label} · tap bar to clear</div>
-          )}
+          <div className="m-num" style={{ fontSize: 30, fontWeight: 600, marginTop: 4 }}>{fmtEur(total)}</div>
           {/* Interactive bar chart */}
           <div style={{ marginTop: 16, display:'flex', alignItems:'flex-end', gap:4, height:84 }}>
             {barData.map((v, i) => (
-              <div key={i} onClick={() => setSelectedBar(selectedBar === i ? null : i)}
+              <div key={i} onClick={() => setSelectedBar(i)}
                 style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'flex-end', height:'100%', cursor:'pointer' }}>
                 <div style={{
                   width:'100%', borderRadius:4,
                   height: `${Math.max((v / barMax) * 74, v > 0 ? 4 : 0)}px`,
                   background: M.ink,
-                  opacity: selectedBar === null || selectedBar === i ? 1 : 0.25,
+                  opacity: selectedBar === i ? 1 : 0.25,
                   transition: 'opacity 0.2s ease, height 0.2s ease',
                 }}/>
                 <div style={{ fontSize:9, color: selectedBar === i ? M.ink : M.ink3, marginTop:3, textAlign:'center', fontWeight: selectedBar === i ? 700 : 400 }}>{barLabels[i]}</div>
@@ -2852,7 +2797,6 @@ function ScreenCategoryDrill({ params }) {
 
         <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>
           Transactions · {visibleTxs.length}
-          {selectedBar !== null && <span style={{ color:M.sage, marginLeft:6, fontWeight:500, cursor:'pointer' }} onClick={() => setSelectedBar(null)}>Clear filter ×</span>}
         </div>
         {dayKeys.length === 0 ? (
           <div className="m-card" style={{ padding:'24px 0', textAlign:'center', border:`1px solid ${M.line}`, color:M.ink3, fontSize:13 }}>No transactions</div>
@@ -3467,7 +3411,6 @@ function ScreenProfile() {
               <>
                 <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:2 }}>
                   <div style={{ fontSize: 17, fontWeight: 600 }}>{name}</div>
-                  <div style={{ fontSize:10, fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', padding:'2px 7px', borderRadius:999, background:M.ochreSoft, color:M.ochre }}>Demo</div>
                 </div>
                 <div style={{ fontSize: 12, color: M.ink3 }}>{email}</div>
               </>
@@ -3564,22 +3507,26 @@ function ScreenProfiles() {
   const [connectedAccounts] = useLocalStorage('munni_bank_accounts', () => ACCOUNTS.slice());
   const [showNewProfile, setShowNewProfile] = React.useState(false);
   const [newProfileName, setNewProfileName] = React.useState('');
+  const [newProfileIsDemo, setNewProfileIsDemo] = React.useState(false);
 
   const activateProfile = (id) => setProfiles(ps => ps.map(p => ({ ...p, active: p.id === id })));
 
   const createProfile = () => {
     if (!newProfileName.trim()) return;
+    const DEMO_ACCOUNT_IDS = ['demo_main1', 'demo_main2'];
     const newP = {
       id: `p_${Date.now()}`,
       name: newProfileName.trim(),
       icon: 'card',
       active: false,
-      accountIds: [],
+      accountIds: newProfileIsDemo ? DEMO_ACCOUNT_IDS : [],
       picture: null,
+      isDemo: newProfileIsDemo,
     };
     setProfiles(ps => [...ps, newP]);
     setShowNewProfile(false);
     setNewProfileName('');
+    setNewProfileIsDemo(false);
     nav.push('profileDetail', { id: newP.id });
   };
 
@@ -3608,7 +3555,10 @@ function ScreenProfiles() {
                     <ProfileAvatar profile={p} size={36}/>
                   </div>
                   <div className="m-tap" onClick={() => activateProfile(p.id)} style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:14, fontWeight:600 }}>{p.name}</div>
+                    <div style={{ fontSize:14, fontWeight:600, display:'flex', alignItems:'center', gap:6 }}>
+                      {p.name}
+                      {p.isDemo && <span style={{ fontSize:8, fontWeight:700, padding:'1px 5px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase' }}>Demo</span>}
+                    </div>
                     <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{sub}</div>
                   </div>
                   {p.active && (
@@ -3624,10 +3574,12 @@ function ScreenProfiles() {
             );
           })}
         </div>
-        <div style={{ padding:'12px 14px', borderRadius:12, background:M.sageSoft, display:'flex', gap:10, alignItems:'flex-start' }}>
-          <I name="help" size={16} color={M.sage}/>
-          <div style={{ fontSize:12, color:M.ink2, lineHeight:1.5 }}>
-            Tap a profile to activate it. Tap the arrow to manage its accounts. Create multiple profiles to separate personal and business finances.
+        <div style={{ borderRadius:12, overflow:'hidden', border:`1px solid ${M.line}`, marginBottom:16 }}>
+          <div style={{ padding:'14px 16px', background:M.sageSoft }}>
+            <div style={{ fontSize:13, fontWeight:600, color:M.sage, marginBottom:4 }}>About Profiles</div>
+            <div style={{ fontSize:12, color:M.ink2, lineHeight:1.6 }}>
+              Profiles let you track separate finances in one app — perfect for personal vs. business, or managing finances for different household members. Each profile has its own accounts, budgets, goals, and transaction history.
+            </div>
           </div>
         </div>
       </div>
@@ -3644,6 +3596,16 @@ function ScreenProfiles() {
               placeholder="e.g. Business, Partner, Side hustle…"
               style={{ width:'100%', padding:'12px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box', marginBottom:20 }}
             />
+            <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>Profile type</div>
+            <div style={{ display:'flex', gap:8, marginBottom:20 }}>
+              {[{v:false,l:'Real',sub:'Connect your actual bank accounts'},{v:true,l:'Demo',sub:'Uses sample data for testing'}].map(opt => (
+                <button key={String(opt.v)} className="m-tap" onClick={() => setNewProfileIsDemo(opt.v)}
+                  style={{ flex:1, padding:'12px 8px', borderRadius:12, border:`2px solid ${newProfileIsDemo===opt.v ? M.sage : M.line}`, background: newProfileIsDemo===opt.v ? M.sageSoft : M.paper2, textAlign:'center', cursor:'pointer', fontFamily:M.fontUI, boxSizing:'border-box' }}>
+                  <div style={{ fontSize:13, fontWeight:600, color:newProfileIsDemo===opt.v?M.sage:M.ink }}>{opt.l}</div>
+                  <div style={{ fontSize:10, color:M.ink3, marginTop:2 }}>{opt.sub}</div>
+                </button>
+              ))}
+            </div>
             <button onClick={createProfile}
               style={{ width:'100%', padding:'14px 0', background:newProfileName.trim() ? M.sage : M.line, color:newProfileName.trim() ? '#fff' : M.ink4, border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:newProfileName.trim()?'pointer':'default', fontFamily:M.fontUI, marginBottom:10 }}>
               Create profile
@@ -3766,9 +3728,9 @@ function ScreenProfileDetail({ params }) {
                 style={{ width:'100%', fontSize:16, fontWeight:600, border:`1px solid ${M.sage}`, borderRadius:8, padding:'6px 10px', fontFamily:M.fontUI, background:M.paper2, outline:'none', textAlign:'center', boxSizing:'border-box' }}
               />
             ) : (
-              <div className="m-tap" onClick={startEditName} style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
-                <div style={{ fontSize:16, fontWeight:600 }}>{profile.name}</div>
-                <I name="edit" size={14} color={M.ink4}/>
+              <div className="m-tap" onClick={startEditName} style={{ textAlign:'center' }}>
+                <div style={{ fontSize:16, fontWeight:600, borderBottom:`1.5px dashed ${M.line2}`, display:'inline', paddingBottom:1 }}>{profile.name}</div>
+                <div style={{ fontSize:10, color:M.ink4, marginTop:4 }}>tap to rename</div>
               </div>
             )}
             {isActive && (
@@ -3794,15 +3756,18 @@ function ScreenProfileDetail({ params }) {
             <div style={{ padding:'16px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>No saving accounts connected</div>
           )}
           {savingAccounts.map((a, i, arr) => renderAccountRow(a, i, arr))}
-          <Divider inset={0}/>
-          <div className="m-tap" onClick={() => nav.push('accountsAll')}
-            style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0', color:M.sage }}>
-            <div style={{ width:36, height:36, borderRadius:10, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-              <I name="plus" size={16} color={M.sage}/>
-            </div>
-            <div style={{ flex:1, fontSize:14, fontWeight:600 }}>Connect new bank account</div>
-            <I name="caretR" size={14} color={M.ink4}/>
+        </div>
+
+        <div className="m-tap m-card" onClick={() => nav.push('accountsAll')}
+          style={{ padding:'14px 16px', marginBottom:14, border:`1px solid ${M.line}`, display:'flex', alignItems:'center', gap:12 }}>
+          <div style={{ width:36, height:36, borderRadius:10, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+            <I name="plus" size={16} color={M.sage}/>
           </div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:14, fontWeight:600, color:M.sage }}>Connect a bank or savings account</div>
+            <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>Add checking or savings accounts to this profile</div>
+          </div>
+          <I name="caretR" size={14} color={M.ink4}/>
         </div>
 
         {/* Delete */}
@@ -3942,7 +3907,7 @@ function ScreenSettings() {
 
 function ScreenPeriods() {
   const nav = useNav();
-  const [selectedDay, setSelectedDay] = React.useState(20);
+  const [selectedDay, setSelectedDay] = useLocalStorage('munni_period_day', 20);
   // Days 1-28 (disallow 29-31 as some months don't have them)
   const days = Array.from({ length: 28 }, (_, i) => i + 1);
   const ordinalStr = (d) => {
@@ -3981,6 +3946,9 @@ function ScreenPeriods() {
           <div style={{ fontSize:13, fontWeight:600, marginBottom:4 }}>Current period</div>
           <div style={{ fontSize:13, color:M.ink3 }}>
             {ordinalStr(selectedDay)} of each month — period runs from the <strong>{ordinalStr(selectedDay)}</strong> to the <strong>{ordinalStr(selectedDay === 1 ? 28 : selectedDay - 1)}</strong> of the following month.
+          </div>
+          <div style={{ fontSize:12, color:M.sage, marginTop:6, fontWeight:500 }}>
+            {(() => { const ph = computePeriodHistory(selectedDay); const cur = ph[ph.length-1]; return cur ? cur.label : ''; })()}
           </div>
         </div>
 
@@ -4264,13 +4232,66 @@ function NewCatForm({ onSave }) {
   );
 }
 
+function EditCatSheet({ entry, txCount, onSave, onDelete }) {
+  const [nameDraft, setNameDraft] = React.useState(entry.name);
+  const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
+  const canDelete = onDelete !== null;
+  const isParent = entry.isParent;
+  if (showDeleteConfirm) {
+    return (
+      <div style={{ padding:'4px 16px 8px' }}>
+        <div style={{ fontSize:17, fontWeight:700, marginBottom:8 }}>Delete "{entry.name}"?</div>
+        {txCount > 0 && (
+          <div style={{ padding:'10px 14px', borderRadius:10, background:M.claySoft, marginBottom:14, fontSize:13, color:M.clay, lineHeight:1.5 }}>
+            <strong>{txCount} transaction{txCount!==1?'s':''}</strong> using this category will be set to Uncategorized.
+          </div>
+        )}
+        <div style={{ fontSize:13, color:M.ink3, marginBottom:20, lineHeight:1.5 }}>This action cannot be undone.</div>
+        <button onClick={onDelete} style={{ width:'100%', padding:'14px 0', background:M.clay, color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>Delete</button>
+        <button onClick={() => setShowDeleteConfirm(false)} style={{ width:'100%', padding:'14px 0', background:M.paper2, color:M.ink, border:`1px solid ${M.line}`, borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>Cancel</button>
+      </div>
+    );
+  }
+  return (
+    <div style={{ padding:'4px 16px 8px' }}>
+      <div style={{ fontSize:17, fontWeight:700, marginBottom:16 }}>{isParent ? 'Edit category' : 'Edit sub-category'}</div>
+      <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>Name</div>
+      <input autoFocus value={nameDraft} onChange={e => setNameDraft(e.target.value)}
+        style={{ width:'100%', padding:'12px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box', marginBottom:20 }}/>
+      <button onClick={() => nameDraft.trim() && onSave(nameDraft.trim(), entry.icon, entry.color)}
+        style={{ width:'100%', padding:'14px 0', background:nameDraft.trim()?M.sage:M.line, color:nameDraft.trim()?'#fff':M.ink4, border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:nameDraft.trim()?'pointer':'default', fontFamily:M.fontUI, marginBottom:canDelete?12:10 }}>
+        Save
+      </button>
+      {canDelete && (
+        <button onClick={() => setShowDeleteConfirm(true)}
+          style={{ width:'100%', padding:'14px 0', background:'transparent', color:M.clay, border:`1.5px solid ${M.clay}`, borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+          Delete category
+        </button>
+      )}
+    </div>
+  );
+}
+
 function ScreenManageCategories() {
   const nav = useNav();
-  const { setTxs } = useTxCtx();
+  const { txs, setTxs } = useTxCtx();
   const { customCats, setCustomCats } = useCatCtx();
+  const [premadeOverrides, setPremadeOverrides] = useLocalStorage('munni_cat_overrides', {});
   const [newParentSheet, setNewParentSheet] = React.useState(false);
   const [newSubSheet, setNewSubSheet] = React.useState(null);
-  const [dragCatId, setDragCatId] = React.useState(null);
+  const [dragState, setDragState] = React.useState(null);
+  const [dropTarget, setDropTarget] = React.useState(null);
+  const [editSheet, setEditSheet] = React.useState(null);
+  const [collapsedParents, setCollapsedParents] = React.useState({});
+  const [txCounts, setTxCounts] = React.useState({});
+
+  React.useEffect(() => {
+    const counts = {};
+    txs.forEach(t => {
+      if (t.cat) counts[t.cat] = (counts[t.cat] || 0) + 1;
+    });
+    setTxCounts(counts);
+  }, [txs]);
 
   // Helpers
   const customParents = customCats.filter(c => c.isParent);
@@ -4300,28 +4321,48 @@ function ScreenManageCategories() {
     return subs.length === 1 && subs[0].id === `${parentId}_other`;
   };
 
-  const handleDrop = (targetCatId, parentId) => {
-    if (!dragCatId || dragCatId === targetCatId) return;
-    setCustomCats(prev => {
-      const subs = prev.filter(c => !c.isParent && c.parent === parentId);
-      const others = prev.filter(c => c.isParent || c.parent !== parentId);
-      const dragIdx = subs.findIndex(c => c.id === dragCatId);
-      const targetIdx = subs.findIndex(c => c.id === targetCatId);
-      if (dragIdx < 0 || targetIdx < 0) return prev;
-      const reordered = [...subs];
-      const [item] = reordered.splice(dragIdx, 1);
-      reordered.splice(targetIdx, 0, item);
-      return [...others, ...reordered];
+  const startDrag = (e, catId, parentId, label, icon, color) => {
+    e.preventDefault();
+    setDragState({ catId, parentId, x: e.clientX, y: e.clientY, ghostLabel: label, ghostIcon: icon, ghostColor: color });
+    setCollapsedParents(() => {
+      const next = {};
+      [...Object.values(CATEGORIES).filter(c => c.isParent), ...customCats.filter(c => c.isParent)].forEach(p => { next[p.id] = true; });
+      return next;
     });
-    setDragCatId(null);
   };
 
-  const handleDropOnPremadeParent = (premadeParentKey) => {
-    if (!dragCatId) return;
-    setCustomCats(prev => prev.map(c =>
-      c.id === dragCatId ? { ...c, parent: premadeParentKey } : c
-    ));
-    setDragCatId(null);
+  const moveDrag = (e) => {
+    if (!dragState) return;
+    setDragState(d => d ? { ...d, x: e.clientX, y: e.clientY } : null);
+    const scrollEl = document.querySelector('.m-body-scroll');
+    if (scrollEl) {
+      const rect = scrollEl.getBoundingClientRect();
+      if (e.clientY > rect.bottom - 60) scrollEl.scrollTop += 6;
+      else if (e.clientY < rect.top + 60) scrollEl.scrollTop -= 6;
+    }
+  };
+
+  const endDrag = () => {
+    if (!dragState || !dropTarget) { setDragState(null); setDropTarget(null); setCollapsedParents({}); return; }
+    const { catId } = dragState;
+    if (dropTarget.type === 'parent') {
+      setCustomCats(prev => prev.map(c => c.id === catId ? { ...c, parent: dropTarget.parentId } : c));
+    } else if (dropTarget.type === 'reorder' && dropTarget.catId !== catId) {
+      setCustomCats(prev => {
+        const subs = prev.filter(c => !c.isParent && c.parent === dropTarget.parentId);
+        const others = prev.filter(c => c.isParent || c.parent !== dropTarget.parentId);
+        const dragIdx = subs.findIndex(c => c.id === catId);
+        const targetIdx = subs.findIndex(c => c.id === dropTarget.catId);
+        if (dragIdx < 0 || targetIdx < 0) return prev;
+        const reordered = [...subs];
+        const [item] = reordered.splice(dragIdx, 1);
+        reordered.splice(targetIdx, 0, item);
+        return [...others, ...reordered];
+      });
+    }
+    setDragState(null);
+    setDropTarget(null);
+    setCollapsedParents({});
   };
 
   const renderParentCard = (parentKey, parentCat, isCustom) => {
@@ -4329,14 +4370,19 @@ function ScreenManageCategories() {
     const customSubsHere = isCustom ? getCustomSubs(parentKey) : getCustomSubsOfPremade(parentKey);
     const allSubs = isCustom ? customSubsHere : [...premadeSubs, ...customSubsHere];
     const subCount = allSubs.length;
+    const isCollapsed = !!collapsedParents[parentKey];
+    const isDropTarget = dropTarget?.type === 'parent' && dropTarget.parentId === parentKey;
 
     return (
-      <div key={parentKey} className="m-card" style={{ marginBottom:12, border:`1px solid ${M.line}`, borderRadius:14, overflow:'hidden' }}>
+      <div key={parentKey} className="m-card"
+        style={{ marginBottom:12, border:`1.5px solid ${isDropTarget ? (parentCat.color || M.sage) : M.line}`, borderRadius:14, overflow:'hidden', background: isDropTarget ? (parentCat.color ? parentCat.color + '11' : M.sageSoft) : 'transparent', transition:'border-color 0.15s, background 0.15s' }}
+        onPointerEnter={dragState ? () => setDropTarget({ type:'parent', parentId: parentKey }) : undefined}
+      >
         {/* Parent header */}
         <div
-          style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 16px', background:M.paper }}
-          onDragOver={!isCustom ? (e) => e.preventDefault() : undefined}
-          onDrop={!isCustom ? () => handleDropOnPremadeParent(parentKey) : undefined}
+          className="m-tap"
+          style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 16px', background:M.paper, cursor:'pointer' }}
+          onClick={() => setEditSheet({ catId: parentKey, parentId: null, isCustom, isParent: true, name: parentCat.name, icon: parentCat.icon || 'box', color: parentCat.color })}
         >
           <div style={{ width:38, height:38, borderRadius:10, background:parentCat.color||M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
             <I name={parentCat.icon||'box'} size={18} color={isCustom?'#fff':M.ink2}/>
@@ -4346,57 +4392,63 @@ function ScreenManageCategories() {
           </div>
           <div style={{ display:'flex', alignItems:'center', gap:8 }}>
             <span style={{ fontSize:12, color:M.ink3 }}>{subCount} subs</span>
-            <button className="m-tap" onClick={() => setNewSubSheet(parentKey)}
+            <button className="m-tap" onClick={(e) => { e.stopPropagation(); setNewSubSheet(parentKey); }}
               style={{ background:M.sageSoft, border:'none', borderRadius:8, padding:'4px 10px', color:M.sage, fontSize:12, fontWeight:500, cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', gap:4 }}>
               <I name="plus" size={11} color={M.sage}/> Sub
             </button>
-            {isCustom && canDeleteParent(parentKey) && (
-              <button className="m-tap" onClick={() => deleteCustomParent(parentKey)}
-                style={{ background:'none', border:'none', color:M.clay, cursor:'pointer', padding:4 }}>
-                <I name="x" size={15} color={M.clay}/>
-              </button>
-            )}
+            <div style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'none', transition:'transform 0.2s ease', display:'flex' }}
+              onClick={(e) => { e.stopPropagation(); setCollapsedParents(prev => ({ ...prev, [parentKey]: !prev[parentKey] })); }}>
+              <I name="caretR" size={14} color={M.ink4}/>
+            </div>
           </div>
         </div>
         {/* Sub-categories */}
-        {allSubs.map((sub) => {
-          const subKey = Array.isArray(sub) ? sub[0] : sub.id;
-          const subCat = Array.isArray(sub) ? sub[1] : sub;
-          const isCustomSub = !Array.isArray(sub);
-          const isOther = isCustomSub && sub.id === `${parentKey}_other`;
+        <div style={{ overflow:'hidden', maxHeight: isCollapsed ? 0 : 2000, transition:'max-height 0.3s ease' }}>
+          {allSubs.map((sub) => {
+            const subKey = Array.isArray(sub) ? sub[0] : sub.id;
+            const subCat = Array.isArray(sub) ? sub[1] : sub;
+            const isCustomSub = !Array.isArray(sub);
+            const isOther = isCustomSub && sub.id === `${parentKey}_other`;
+            const subBg = !isCustomSub
+              ? (parentCat.color ? parentCat.color + '33' : M.paper2)
+              : (parentCat.color ? parentCat.color + '33' : subCat.color || M.paper2);
+            const subIconColor = !isCustomSub ? M.ink2 : (parentCat.color || '#fff');
 
-          return (
-            <div key={subKey}
-              draggable={isCustomSub}
-              onDragStart={isCustomSub ? () => setDragCatId(subKey) : undefined}
-              onDragOver={isCustomSub ? (e) => e.preventDefault() : undefined}
-              onDrop={isCustomSub ? () => handleDrop(subKey, parentKey) : undefined}
-              style={{ display:'flex', alignItems:'center', gap:10, padding:'11px 16px', borderTop:`1px solid ${M.line2}` }}
-            >
-              <div style={{ width:28, height:28, borderRadius:8, background:subCat.color||M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                <I name={subCat.icon||'box'} size={13} color={isOther?M.ink3:(isCustomSub?'#fff':M.ink2)}/>
-              </div>
-              <div style={{ flex:1 }}>
-                <div style={{ fontSize:13, fontWeight:isOther?400:500, color:isOther?M.ink3:M.ink, fontStyle:isOther?'italic':'normal' }}>{subCat.name}</div>
-              </div>
-              {(isCustomSub && !isOther) && (
-                <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-                  <I name="menu" size={15} color={M.ink4}/>
-                  <button className="m-tap" onClick={() => deleteCustomSub(subKey)}
-                    style={{ background:'none', border:'none', color:M.ink4, cursor:'pointer', padding:'2px 4px' }}>
-                    <I name="x" size={14} color={M.ink4}/>
-                  </button>
+            return (
+              <div key={subKey}
+                className={isCustomSub && !isOther ? 'm-tap' : ''}
+                style={{ display:'flex', alignItems:'center', gap:10, padding:'11px 16px', borderTop:`1px solid ${M.line2}`, background: dropTarget?.catId === subKey ? M.sageSoft : 'transparent', transition:'background 0.1s', cursor: isCustomSub && !isOther ? 'pointer' : 'default' }}
+                onClick={isCustomSub && !isOther ? () => setEditSheet({ catId: subKey, parentId: parentKey, isCustom: true, isParent: false, name: subCat.name, icon: subCat.icon || 'box' }) : (!isCustomSub ? () => setEditSheet({ catId: subKey, parentId: parentKey, isCustom: false, isParent: false, name: subCat.name, icon: subCat.icon }) : undefined)}
+                onPointerEnter={(dragState && dragState.parentId === parentKey && !isOther) ? () => setDropTarget({ type:'reorder', catId: subKey, parentId: parentKey }) : undefined}
+              >
+                {(isCustomSub && !isOther) && (
+                  <div
+                    style={{ padding:'4px 2px', cursor:'grab', touchAction:'none', flexShrink:0 }}
+                    onPointerDown={(e) => startDrag(e, subKey, parentKey, subCat.name, subCat.icon, parentCat.color || M.paper2)}
+                  >
+                    <I name="menu" size={15} color={M.ink4}/>
+                  </div>
+                )}
+                <div style={{ width:28, height:28, borderRadius:8, background: isOther ? M.paper2 : subBg, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <I name={subCat.icon||'box'} size={13} color={isOther ? M.ink3 : subIconColor}/>
                 </div>
-              )}
-            </div>
-          );
-        })}
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:13, fontWeight:isOther?400:500, color:isOther?M.ink3:M.ink, fontStyle:isOther?'italic':'normal' }}>{subCat.name}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
     );
   };
 
   return (
-    <div className="m-screen">
+    <div className="m-screen"
+      onPointerMove={moveDrag}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
+    >
       <StatusBar/>
       <AppBar title="Categories"
         leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
@@ -4414,11 +4466,6 @@ function ScreenManageCategories() {
 
         {/* PREMADE section */}
         <div className="m-cap" style={{ marginBottom:8, marginTop: customParents.length>0?16:0 }}>PREMADE CATEGORIES</div>
-        <div className="m-card" style={{ padding:'8px 16px', marginBottom:12, border:`1px solid ${M.line}` }}>
-          <div style={{ fontSize:12, color:M.ink3, lineHeight:1.5 }}>
-            Premade categories cannot be deleted. Add custom <strong>sub-categories</strong> or your own <strong>parent categories</strong>. Drag a custom sub-category onto a premade parent to move it there.
-          </div>
-        </div>
         {premadeParents.map(([k,v]) => renderParentCard(k, v, false))}
 
         <div style={{ height:32 }}/>
@@ -4450,6 +4497,56 @@ function ScreenManageCategories() {
           }}
         />
       </Sheet>
+
+      {/* Edit sheet */}
+      {editSheet && (
+        <Sheet onClose={() => setEditSheet(null)}>
+          <EditCatSheet
+            entry={editSheet}
+            txCount={txCounts[editSheet.catId] || 0}
+            onSave={(name, icon, color) => {
+              if (editSheet.isCustom) {
+                setCustomCats(prev => prev.map(c => c.id === editSheet.catId ? { ...c, name, icon, color } : c));
+              } else {
+                setPremadeOverrides(prev => ({ ...prev, [editSheet.catId]: { name } }));
+              }
+              setEditSheet(null);
+            }}
+            onDelete={editSheet.isCustom ? () => {
+              if (editSheet.isParent) {
+                deleteCustomParent(editSheet.catId);
+              } else {
+                deleteCustomSub(editSheet.catId);
+              }
+              setEditSheet(null);
+            } : null}
+          />
+        </Sheet>
+      )}
+
+      {/* Floating drag ghost */}
+      {dragState && (
+        <div style={{
+          position:'fixed',
+          left: dragState.x - 80,
+          top: dragState.y - 20,
+          zIndex: 9999,
+          pointerEvents: 'none',
+          display:'flex', alignItems:'center', gap:8,
+          padding:'8px 14px',
+          borderRadius:12,
+          background: M.card,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+          border:`1.5px solid ${dragState.ghostColor || M.line}`,
+          opacity: 0.95,
+          minWidth: 120,
+        }}>
+          <div style={{ width:28, height:28, borderRadius:8, background: dragState.ghostColor || M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+            <I name={dragState.ghostIcon || 'box'} size={13} color="#fff"/>
+          </div>
+          <div style={{ fontSize:13, fontWeight:600 }}>{dragState.ghostLabel}</div>
+        </div>
+      )}
     </div>
   );
 }
@@ -4486,9 +4583,19 @@ function ScreenNotifications() {
       addTxs(newTxs);
       setNewCount(count);
       setSyncedReviewCount(count);
-      setLastSynced(now.toLocaleTimeString('en-NL', { hour:'2-digit', minute:'2-digit' }));
+      setLastSynced(now);
       setSyncing(false);
     }, 1200);
+  };
+
+  const fmtSyncTime = (d) => {
+    if (!d) return 'Pull latest transactions from your bank';
+    const diff = Math.floor((Date.now() - d.getTime()) / 1000);
+    if (diff < 60) return `Last synced just now · ${newCount} transaction${newCount>1?'s':''} added`;
+    if (diff < 3600) return `Last synced ${Math.floor(diff/60)} min ago · ${newCount} transaction${newCount>1?'s':''} added`;
+    const hm = d.toLocaleTimeString('en-NL',{hour:'2-digit',minute:'2-digit'});
+    const isToday = new Date().toDateString() === d.toDateString();
+    return `Last synced ${isToday ? 'today' : 'yesterday'} at ${hm} · ${newCount} transaction${newCount>1?'s':''} added`;
   };
 
   return (
@@ -4505,7 +4612,7 @@ function ScreenNotifications() {
             </div>
             <div style={{ flex:1 }}>
               <div style={{ fontSize:15, fontWeight:600 }}>Bank sync</div>
-              <div style={{ fontSize:12, color:M.ink3, marginTop:2 }}>{lastSynced ? `Last synced at ${lastSynced} · ${newCount} transaction${newCount > 1 ? 's' : ''} added` : 'Pull latest transactions from your bank'}</div>
+              <div style={{ fontSize:12, color:M.ink3, marginTop:2 }}>{fmtSyncTime(lastSynced)}</div>
             </div>
           </div>
           <button className="m-btn sage m-tap" style={{ width:'100%' }} onClick={handleSync} disabled={syncing}>
@@ -4868,27 +4975,180 @@ function ScreenAccounts() {
 
 function ScreenSavings() {
   const nav = useNav();
-  const { txs } = useTxCtx();
+  const { txs, addTxs, setTxs } = useTxCtx();
+  const [connectedAccounts, setConnectedAccounts] = useLocalStorage('munni_bank_accounts', () => ACCOUNTS.slice());
+  const [showAddSheet, setShowAddSheet] = React.useState(null);
+  const [showCorrectionSheet, setShowCorrectionSheet] = React.useState(null);
+  const [addDraft, setAddDraft] = React.useState({ amount:'', desc:'', date:new Date().toISOString().slice(0,10), dir:'deposit' });
+  const [correctionBalance, setCorrectionBalance] = React.useState('');
+
+  const savingAccounts = connectedAccounts.filter(a => a.type === 'savings' || a.type === 'invest');
   const savingsTxs = txs.filter(t => t.savingAccount);
-  const total = savingsTxs.reduce((s,t) => s + Math.abs(t.amount), 0);
+
+  const doAddTx = () => {
+    if (!addDraft.amount || !showAddSheet) return;
+    const amt = parseFloat(addDraft.amount) || 0;
+    const signed = addDraft.dir === 'deposit' ? Math.abs(amt) : -Math.abs(amt);
+    const cat = addDraft.dir === 'deposit' ? 'savingDeposit' : 'savingWithdraw';
+    const newTx = {
+      id: `stx_${Date.now()}`,
+      merchant: showAddSheet.name,
+      desc: addDraft.desc || (addDraft.dir === 'deposit' ? 'Manual deposit' : 'Manual withdrawal'),
+      amount: signed,
+      date: addDraft.date,
+      time: '12:00',
+      cat,
+      account: showAddSheet.id,
+      savingAccount: showAddSheet.id,
+      cats: [{ catId: cat, amount: amt }],
+    };
+    addTxs([newTx]);
+    setConnectedAccounts(a => a.map(x => x.id === showAddSheet.id ? { ...x, balance: (x.balance||0) + signed } : x));
+    setShowAddSheet(null);
+    setAddDraft({ amount:'', desc:'', date:new Date().toISOString().slice(0,10), dir:'deposit' });
+  };
+
+  const doCorrection = () => {
+    if (!correctionBalance || !showCorrectionSheet) return;
+    const newBal = parseFloat(correctionBalance) || 0;
+    const currentBal = showCorrectionSheet.balance || 0;
+    const diff = newBal - currentBal;
+    if (Math.abs(diff) < 0.01) { setShowCorrectionSheet(null); return; }
+    const dir = diff >= 0 ? 'deposit' : 'withdraw';
+    const cat = dir === 'deposit' ? 'savingDeposit' : 'savingWithdraw';
+    const newTx = {
+      id: `stx_corr_${Date.now()}`,
+      merchant: showCorrectionSheet.name,
+      desc: 'Balance correction',
+      amount: diff,
+      date: new Date().toISOString().slice(0,10),
+      time: '12:00',
+      cat,
+      account: showCorrectionSheet.id,
+      savingAccount: showCorrectionSheet.id,
+      cats: [{ catId: cat, amount: Math.abs(diff) }],
+      isCorrection: true,
+    };
+    addTxs([newTx]);
+    setConnectedAccounts(a => a.map(x => x.id === showCorrectionSheet.id ? { ...x, balance: newBal } : x));
+    setShowCorrectionSheet(null);
+    setCorrectionBalance('');
+  };
+
   return (
     <div className="m-screen">
       <StatusBar/>
-      <AppBar title="Savings" onBack={nav.pop}
+      <AppBar title="Savings"
         leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
       />
-      <div className="m-body-scroll" style={{padding:'0 16px'}}>
-        <div style={{padding:'20px 0 8px', fontSize:28, fontWeight:700, color:M.ochre, fontFamily:M.fontDisp}} className="m-num">
-          {fmtEur(total)}
-        </div>
-        <div style={{color:M.ink3, fontSize:13, marginBottom:20}}>Total saved this period</div>
-        {savingsTxs.length === 0 ? (
-          <div style={{textAlign:'center', padding:'40px 0', color:M.ink3, fontSize:14}}>
-            No savings transactions yet.<br/>
-            <span style={{fontSize:12, marginTop:8, display:'block'}}>Attach a saving account to a transaction to track savings.</span>
+      <div className="m-body-scroll">
+        {savingAccounts.length === 0 ? (
+          <div style={{ textAlign:'center', padding:'40px 16px', color:M.ink3, fontSize:14, lineHeight:1.6 }}>
+            No saving accounts linked.<br/>
+            <span style={{ fontSize:12 }}>Create one under Settings › Accounts.</span>
           </div>
-        ) : savingsTxs.map(t => <TxRow key={t.id} tx={t} onClick={() => nav.push('txDetail', {id:t.id})}/>)}
+        ) : savingAccounts.map((acct) => {
+          const acctTxs = savingsTxs.filter(t => t.savingAccount === acct.id);
+          return (
+            <div key={acct.id} className="m-card" style={{ padding:0, marginBottom:14, border:`1px solid ${M.line}`, overflow:'hidden' }}>
+              <div style={{ padding:'14px 16px', display:'flex', alignItems:'center', gap:12, borderBottom:`1px solid ${M.line2}` }}>
+                <div style={{ width:40, height:40, borderRadius:12, background: acct.color || M.ochreSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <I name={acct.type==='invest'?'rocket':'piggy'} size={18} color={acct.manual?M.ochre:'#fff'}/>
+                </div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:15, fontWeight:600 }}>{acct.name}</div>
+                  <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono, marginTop:1 }}>{acct.iban}</div>
+                </div>
+                <div style={{ textAlign:'right' }}>
+                  <div className="m-num" style={{ fontSize:18, fontWeight:700 }}>{fmtEur(acct.balance||0)}</div>
+                  <div style={{ fontSize:10, color:M.ink3, marginTop:1 }}>balance</div>
+                </div>
+              </div>
+              <div style={{ display:'flex', borderBottom:`1px solid ${M.line2}` }}>
+                <button className="m-tap" onClick={() => { setShowAddSheet(acct); setAddDraft({ amount:'', desc:'', date:new Date().toISOString().slice(0,10), dir:'deposit' }); }}
+                  style={{ flex:1, padding:'12px 0', textAlign:'center', background:'transparent', border:'none', cursor:'pointer', borderRight:`1px solid ${M.line2}`, fontFamily:M.fontUI, display:'flex', flexDirection:'column', alignItems:'center', gap:3 }}>
+                  <I name="plus" size={16} color={M.sage}/>
+                  <span style={{ fontSize:11, fontWeight:600, color:M.sage }}>Add transaction</span>
+                </button>
+                <button className="m-tap" onClick={() => { setShowCorrectionSheet(acct); setCorrectionBalance(String(acct.balance||'')); }}
+                  style={{ flex:1, padding:'12px 0', textAlign:'center', background:'transparent', border:'none', cursor:'pointer', fontFamily:M.fontUI, display:'flex', flexDirection:'column', alignItems:'center', gap:3 }}>
+                  <I name="edit" size={16} color={M.ochre}/>
+                  <span style={{ fontSize:11, fontWeight:600, color:M.ochre }}>Set balance</span>
+                </button>
+              </div>
+              {acctTxs.length > 0 && (
+                <div>
+                  {acctTxs.slice(0,3).map((t, i, a) => (
+                    <React.Fragment key={t.id}>
+                      {i > 0 && <Divider inset={52}/>}
+                      <TxRow tx={t} onClick={() => nav.push('txDetail', { id: t.id })}/>
+                    </React.Fragment>
+                  ))}
+                  {acctTxs.length > 3 && (
+                    <div className="m-tap" onClick={() => nav.push('savingsDetail', { id: acct.id })} style={{ padding:'10px 16px', borderTop:`1px solid ${M.line2}`, fontSize:12, color:M.sage, fontWeight:600, textAlign:'center', display:'flex', alignItems:'center', justifyContent:'center', gap:4 }}>
+                      View all {acctTxs.length} transactions <I name="caretR" size={12} color={M.sage}/>
+                    </div>
+                  )}
+                </div>
+              )}
+              {acctTxs.length === 0 && (
+                <div style={{ padding:'16px', textAlign:'center', color:M.ink4, fontSize:13 }}>No transactions yet</div>
+              )}
+            </div>
+          );
+        })}
+        <div style={{ height:8 }}/>
       </div>
+
+      {showAddSheet && (
+        <Sheet onClose={() => setShowAddSheet(null)}>
+          <div style={{ padding:'4px 16px 8px' }}>
+            <div style={{ fontSize:17, fontWeight:700, marginBottom:4 }}>{showAddSheet.name}</div>
+            <div style={{ fontSize:13, color:M.ink3, marginBottom:14 }}>Add manual transaction</div>
+            <div style={{ display:'flex', gap:8, marginBottom:14 }}>
+              {[{v:'deposit',l:'Deposit'},{v:'withdraw',l:'Withdrawal'}].map(opt => (
+                <button key={opt.v} className="m-tap" onClick={() => setAddDraft(d=>({...d,dir:opt.v}))}
+                  style={{ flex:1, padding:'10px', borderRadius:10, border:`2px solid ${addDraft.dir===opt.v?M.sage:M.line}`, background:addDraft.dir===opt.v?M.sageSoft:M.paper2, fontFamily:M.fontUI, fontSize:13, fontWeight:600, color:addDraft.dir===opt.v?M.sage:M.ink, cursor:'pointer' }}>
+                  {opt.l}
+                </button>
+              ))}
+            </div>
+            <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>Amount (€)</div>
+            <input type="number" value={addDraft.amount} onChange={e=>setAddDraft(d=>({...d,amount:e.target.value}))} placeholder="0.00" autoFocus
+              style={{ width:'100%', padding:'12px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:16, fontFamily:M.fontMono, background:M.paper2, outline:'none', boxSizing:'border-box', marginBottom:10 }}/>
+            <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>Description</div>
+            <input value={addDraft.desc} onChange={e=>setAddDraft(d=>({...d,desc:e.target.value}))} placeholder="e.g. Monthly savings"
+              style={{ width:'100%', padding:'12px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box', marginBottom:10 }}/>
+            <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>Date</div>
+            <input type="date" value={addDraft.date} onChange={e=>setAddDraft(d=>({...d,date:e.target.value}))}
+              style={{ width:'100%', padding:'12px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box', marginBottom:18 }}/>
+            <button onClick={doAddTx} style={{ width:'100%', padding:'14px 0', background:addDraft.amount?M.sage:M.line, color:addDraft.amount?'#fff':M.ink4, border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:addDraft.amount?'pointer':'default', fontFamily:M.fontUI, marginBottom:10 }}>Add transaction</button>
+            <button onClick={()=>setShowAddSheet(null)} style={{ width:'100%', padding:'14px 0', background:M.paper2, color:M.ink, border:`1px solid ${M.line}`, borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>Cancel</button>
+          </div>
+        </Sheet>
+      )}
+
+      {showCorrectionSheet && (
+        <Sheet onClose={() => setShowCorrectionSheet(null)}>
+          <div style={{ padding:'4px 16px 8px' }}>
+            <div style={{ fontSize:17, fontWeight:700, marginBottom:4 }}>Set balance</div>
+            <div style={{ fontSize:13, color:M.ink3, marginBottom:4, lineHeight:1.5 }}>Enter the current actual balance. The difference will be recorded as a correction transaction.</div>
+            <div style={{ padding:'10px 14px', borderRadius:10, background:M.ochreSoft, marginBottom:14, fontSize:12, color:M.ink2 }}>
+              Current balance: <strong>{fmtEur(showCorrectionSheet.balance||0)}</strong>
+            </div>
+            <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>Actual balance (€)</div>
+            <input type="number" value={correctionBalance} onChange={e=>setCorrectionBalance(e.target.value)} placeholder={String(showCorrectionSheet.balance||0)} autoFocus
+              style={{ width:'100%', padding:'12px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:16, fontFamily:M.fontMono, background:M.paper2, outline:'none', boxSizing:'border-box', marginBottom:18 }}/>
+            {correctionBalance && Math.abs(parseFloat(correctionBalance)-(showCorrectionSheet.balance||0)) > 0.01 && (
+              <div style={{ padding:'8px 12px', borderRadius:8, background:M.sageSoft, marginBottom:14, fontSize:12, color:M.ink2 }}>
+                A {parseFloat(correctionBalance)-(showCorrectionSheet.balance||0)>0?'deposit':'withdrawal'} of <strong>{fmtEur(Math.abs(parseFloat(correctionBalance)-(showCorrectionSheet.balance||0)))}</strong> will be recorded.
+              </div>
+            )}
+            <button onClick={doCorrection} style={{ width:'100%', padding:'14px 0', background:correctionBalance?M.sage:M.line, color:correctionBalance?'#fff':M.ink4, border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:correctionBalance?'pointer':'default', fontFamily:M.fontUI, marginBottom:10 }}>Update balance</button>
+            <button onClick={()=>setShowCorrectionSheet(null)} style={{ width:'100%', padding:'14px 0', background:M.paper2, color:M.ink, border:`1px solid ${M.line}`, borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>Cancel</button>
+          </div>
+        </Sheet>
+      )}
     </div>
   );
 }
@@ -5044,6 +5304,11 @@ function ScreenSavingAccounts() {
   );
 }
 
+const DEMO_ACCOUNTS = [
+  { id:'demo_main1', name:'Demo Bank NL', type:'checking', iban:'NL20 DEMO 0000 0001', balance:2845.32, color:'#6366F1', bankId:'demo', manual:false },
+  { id:'demo_main2', name:'Demo Betaalrekening', type:'checking', iban:'NL20 DEMO 0000 0002', balance:1200.00, color:'#8B5CF6', bankId:'demo', manual:false },
+];
+
 const HOME_CARDS_DEFAULT = [
   { id:'review',     label:'Transaction Review', sub:'Verify categories for newly imported transactions', visible:true,  pinned:true  },
   { id:'period',     label:'Period',             sub:'Income, spent, savings, invest',                   visible:true,  pinned:true  },
@@ -5078,10 +5343,6 @@ function ScreenAccountsAll() {
   const savingAccounts = connectedAccounts.filter(a => a.type === 'savings' || a.type === 'invest');
   const filteredBanks = DUTCH_BANKS.filter(b => !bankSearch || b.name.toLowerCase().includes(bankSearch.toLowerCase()));
   const activeProfile = profiles.find(p => p.active) || profiles[0];
-  const activeAccountIds = activeProfile?.accountIds || [];
-  const totalCheckingBalance = connectedAccounts
-    .filter(a => a.type === 'checking' && activeAccountIds.includes(a.id))
-    .reduce((s, a) => s + (a.balance || 0), 0);
 
   const startBankConnect = (bank) => {
     setPsd2Bank(bank);
@@ -5268,18 +5529,14 @@ function ScreenAccountsAll() {
         leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
       />
       <div className="m-body-scroll">
-        {/* Total balance summary */}
-        <div style={{ padding:'12px 16px 16px', display:'flex', alignItems:'baseline', gap:8, marginBottom:4 }}>
-          <div className="m-num" style={{ fontSize:24, fontWeight:700, letterSpacing:'-0.02em' }}>{fmtEur(totalCheckingBalance)}</div>
-          <div style={{ fontSize:11, color:M.ink3 }}>total balance · active profile</div>
-        </div>
         {/* Bank accounts section */}
         <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Bank accounts</div>
         <div className="m-card" style={{ padding:'4px 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
           {bankAccounts.map((a, i) => (
             <React.Fragment key={a.id}>
               {i > 0 && <Divider inset={50}/>}
-              <div style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
+              <div className="m-tap" onClick={() => setShowDeleteConfirm(a)}
+                style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
                 <div style={{ width:38, height:38, borderRadius:10, background:a.color, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                   <I name="card" size={18} color="#fff"/>
                 </div>
@@ -5292,10 +5549,7 @@ function ScreenAccountsAll() {
                 </div>
                 <div style={{ display:'flex', alignItems:'center', gap:10 }}>
                   <div className="m-num" style={{ fontSize:15, fontWeight:600 }}>{fmtEur(a.balance)}</div>
-                  <button className="m-tap" onClick={() => setShowDeleteConfirm(a)}
-                    style={{ background:'none', border:'none', padding:4, cursor:'pointer' }}>
-                    <I name="x" size={14} color={M.ink4}/>
-                  </button>
+                  <I name="caretR" size={14} color={M.ink4}/>
                 </div>
               </div>
             </React.Fragment>
@@ -5323,7 +5577,8 @@ function ScreenAccountsAll() {
           {savingAccounts.map((a, i) => (
             <React.Fragment key={a.id}>
               {i > 0 && <Divider inset={50}/>}
-              <div style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
+              <div className="m-tap" onClick={() => { setShowRenameSheet(a); setRenameDraft(a.name); }}
+                style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
                 <div style={{ width:38, height:38, borderRadius:10, background: a.color || M.ochreSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                   <I name={a.type==='invest'?'rocket':'piggy'} size={18} color={a.manual ? M.ochre : '#fff'}/>
                 </div>
@@ -5337,18 +5592,9 @@ function ScreenAccountsAll() {
                   </div>
                   <div style={{ fontSize:11, color:M.ink3, marginTop:2, fontFamily:M.fontMono }}>{a.iban}</div>
                 </div>
-                <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                  <div className="m-num" style={{ fontSize:14, fontWeight:600 }}>{fmtEur(a.balance || 0)}</div>
-                  <button className="m-tap" onClick={() => { setShowAddTxSheet(a); setTxDraft({ amount:'', desc:'', date: new Date().toISOString().slice(0,10), dir:'deposit' }); }}
-                    style={{ background:'none', border:'none', padding:4, cursor:'pointer' }}>
-                    <I name="plus" size={14} color={M.sage}/>
-                  </button>
-                  {a.manual && (
-                    <button className="m-tap" onClick={() => { setShowRenameSheet(a); setRenameDraft(a.name); }}
-                      style={{ background:'none', border:'none', padding:4, cursor:'pointer' }}>
-                      <I name="edit" size={14} color={M.ink3}/>
-                    </button>
-                  )}
+                <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                  <div className="m-num" style={{ fontSize:15, fontWeight:600 }}>{fmtEur(a.balance || 0)}</div>
+                  <I name="caretR" size={14} color={M.ink4}/>
                 </div>
               </div>
             </React.Fragment>
@@ -5454,6 +5700,11 @@ function ScreenAccountsAll() {
               style={{ width:'100%', padding:'14px 0', background:M.sage, color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>
               Save
             </button>
+            <Divider inset={0}/>
+            <button onClick={() => { const acct = showRenameSheet; setShowRenameSheet(null); setTimeout(() => { setShowAddTxSheet(acct); setTxDraft({ amount:'', desc:'', date:new Date().toISOString().slice(0,10), dir:'deposit' }); }, 150); }}
+              style={{ width:'100%', padding:'14px 0', background:M.sageSoft, color:M.sage, border:`1px solid ${M.sage}22`, borderRadius:12, fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>
+              Add transaction
+            </button>
             <button onClick={() => setShowRenameSheet(null)}
               style={{ width:'100%', padding:'14px 0', background:M.paper2, color:M.ink, border:`1px solid ${M.line}`, borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>
               Cancel
@@ -5529,6 +5780,7 @@ function ScreenAccountsAll() {
 function ScreenCustomizeHome() {
   const nav = useNav();
   const [cards, setCards] = useLocalStorage('munni_home_cards', HOME_CARDS_DEFAULT);
+  const [upcomingDays, setUpcomingDays] = useLocalStorage('munni_upcoming_days', 3);
 
   // Separate pinned cards (fixed order) from moveable cards
   const pinnedCards = cards.filter(c => c.pinned);
@@ -5610,6 +5862,15 @@ function ScreenCustomizeHome() {
                   </button>
                 </div>
               </div>
+              {s.id === 'upcoming' && s.visible && !s.pinned && (
+                <div style={{ padding:'6px 16px 12px', borderTop:`1px solid ${M.line2}`, display:'flex', alignItems:'center', gap:8, background:M.paper2 }}>
+                  <span style={{ fontSize:12, color:M.ink3, flex:1 }}>Show upcoming payments for next</span>
+                  <button className="m-tap" onClick={() => setUpcomingDays(d => Math.max(1,d-1))} style={{ width:24, height:24, borderRadius:6, border:`1px solid ${M.line}`, background:M.card, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', color:M.sage, fontWeight:700, fontSize:14, fontFamily:M.fontUI }}>−</button>
+                  <span style={{ fontSize:13, fontWeight:700, minWidth:16, textAlign:'center', fontFamily:M.fontMono }}>{upcomingDays}</span>
+                  <button className="m-tap" onClick={() => setUpcomingDays(d => Math.min(7,d+1))} style={{ width:24, height:24, borderRadius:6, border:`1px solid ${M.line}`, background:M.card, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', color:M.sage, fontWeight:700, fontSize:14, fontFamily:M.fontUI }}>+</button>
+                  <span style={{ fontSize:12, color:M.ink3 }}>days</span>
+                </div>
+              )}
             </React.Fragment>
           ))}
         </div>
@@ -8199,8 +8460,10 @@ function ScreenLinkReimburse({ params }) {
 function ScreenIncome() {
   const nav = useNav();
   const { txs: allTxs } = useTxCtx();
-  const [selBar, setSelBar] = React.useState(PERIOD_HISTORY.length - 1);
-  const selPeriod = PERIOD_HISTORY[selBar] || PERIOD_HISTORY[PERIOD_HISTORY.length - 1];
+  const [periodDay] = useLocalStorage('munni_period_day', 20);
+  const periodHistory = computePeriodHistory(periodDay);
+  const [selBar, setSelBar] = React.useState(periodHistory.length - 1);
+  const selPeriod = periodHistory[selBar] || periodHistory[periodHistory.length - 1];
   const periodStart = selPeriod.start;
   const periodEnd = selPeriod.end;
 
@@ -8212,7 +8475,7 @@ function ScreenIncome() {
   const total = periodIncomeTxs.reduce((s, t) => s + t.amount, 0);
 
   // Bar chart data: income per period
-  const barData = PERIOD_HISTORY.map(p =>
+  const barData = periodHistory.map(p =>
     allTxs.filter(t => t.amount > 0 && t.date >= p.start && t.date <= p.end).reduce((s, t) => s + t.amount, 0)
   );
 
@@ -8227,7 +8490,7 @@ function ScreenIncome() {
   }, [allTxs, periodStart, periodEnd]);
 
   // Prev period income for comparison
-  const prevPeriod = PERIOD_HISTORY[selBar - 1];
+  const prevPeriod = periodHistory[selBar - 1];
   const prevTotal = prevPeriod
     ? allTxs.filter(t => t.amount > 0 && t.date >= prevPeriod.start && t.date <= prevPeriod.end).reduce((s, t) => s + t.amount, 0)
     : null;
@@ -8257,7 +8520,7 @@ function ScreenIncome() {
           <div className="m-cap" style={{ marginBottom:8 }}>Period history · tap to navigate</div>
           <BarChartScrollable
             data={barData}
-            labels={PERIOD_HISTORY.map(p => p.label.split(' – ')[0].replace('20 ',''))}
+            labels={periodHistory.map(p => new Date(p.start).toLocaleString('en-GB',{month:'short'}))}
             height={80}
             accent={M.sage}
             color={M.ink3}
