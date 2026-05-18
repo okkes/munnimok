@@ -12,7 +12,12 @@
       "Bash(Select-Object Name, Length, LastWriteTime)",
       "PowerShell($f = Get-Item \"c:\\\\Users\\\\odoke\\\\Downloads\\\\munni \\(Copy\\)\\\\munni.html\"; Write-Output \"Name: $\\($f.Name\\)\"; Write-Output \"Size: $\\($f.Length\\) bytes\"; Write-Output \"Modified: $\\($f.LastWriteTime\\)\")",
       "PowerShell($content = Get-Content \"c:\\\\Users\\\\odoke\\\\Downloads\\\\munni \\(Copy\\)\\\\munni.html\" -Raw; $scriptCount = \\([regex]::Matches\\($content, '<script type=\"text/babel\"'\\)\\).Count; Write-Output \"Inline babel script blocks: $scriptCount\"; $hasMount = $content -match 'createRoot'; Write-Output \"Has createRoot mount: $hasMount\"; $lastLines = $content -split \"`n\" | Select-Object -Last 5; $lastLines)",
-      "PowerShell($f = Get-Item \"c:\\\\Users\\\\odoke\\\\Downloads\\\\munni \\(Copy\\)\\\\munni.html\"; Write-Output \"Size: $\\($f.Length\\) bytes\")"
+      "PowerShell($f = Get-Item \"c:\\\\Users\\\\odoke\\\\Downloads\\\\munni \\(Copy\\)\\\\munni.html\"; Write-Output \"Size: $\\($f.Length\\) bytes\")",
+      "Bash(npx playwright *)",
+      "PowerShell(Select-String -Path \"c:\\\\Users\\\\odoke\\\\Downloads\\\\munni \\(Copy\\)\\\\.claude\\\\worktrees\\\\agent-a2c8122a1cd5ae970\\\\munni.html\" -Pattern \"Transaction Review|HOME_CARDS_DEFAULT|upcoming_days|pinnedCards|Reset to default\" | Select-Object -First 20 | ForEach-Object { \"$\\($_.LineNumber\\): $\\($_.Line.Trim\\(\\)\\)\" })",
+      "PowerShell(Select-String -Path \"c:\\\\Users\\\\odoke\\\\Downloads\\\\munni \\(Copy\\)\\\\.claude\\\\worktrees\\\\agent-a2c8122a1cd5ae970\\\\munni.html\" -Pattern \"Category Review\" | Select-Object -First 10 | ForEach-Object { \"$\\($_.LineNumber\\): $\\($_.Line.Trim\\(\\)\\)\" })",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }
