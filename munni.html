@@ -864,7 +864,7 @@ function genSeedTxs() {
 }
 const GEN_TXS = genSeedTxs();
 
-// Generate 30–50 realistic transactions for a newly connected bank account (past 3 months)
+// Generate 30–60 realistic transactions for a newly connected bank account (past 90 days)
 function generateBankTxs(accountId, bankName) {
   function rng(seed) {
     let s = (seed >>> 0) || 1;
@@ -884,13 +884,13 @@ function generateBankTxs(accountId, bankName) {
     { merchant:'H&M Nederland', desc:'HM NETHERLANDS', cat:'clothing', min:18, max:75 },
     { merchant:'GVB', desc:'GVB OV', cat:'transportPublic', min:2, max:8 },
   ];
-  const count = 30 + Math.floor(rng(accountId.length * 997)()*21);
-  const result = [];
-  const today = new Date('2026-02-18');
   const baseSeed = accountId.split('').reduce((s,c,i) => (s + c.charCodeAt(0) * (i+7)) | 0, 0);
   const r = rng(Math.abs(baseSeed) || 42);
+  const count = 30 + Math.floor(r() * 31); // 30–60 using seeded PRNG
+  const result = [];
+  const today = new Date();
   for (let i = 0; i < count; i++) {
-    const daysAgo = Math.floor(r() * 90);
+    const daysAgo = Math.floor(r() * 90); // spread pseudo-randomly across 90 days
     const d = new Date(today);
     d.setDate(d.getDate() - daysAgo);
     const iso = d.toISOString().slice(0, 10);
@@ -908,6 +908,70 @@ function generateBankTxs(accountId, bankName) {
     });
   }
   return result;
+}
+
+const ASN_TRANSACTIONS = [
+  { merchant:'Albert Heijn', amount:-42.30, cat:'groceries', desc:'AH BETAALAUTOMAAT' },
+  { merchant:'NS Reizen', amount:-28.50, cat:'transportPublic', desc:'NS TREIN MAANDKAART' },
+  { merchant:'Thuisbezorgd', amount:-24.95, cat:'restaurants', desc:'THUISBEZORGD.NL' },
+  { merchant:'Jumbo Supermarkt', amount:-38.70, cat:'groceries', desc:'JUMBO BETAALAUTOMAAT' },
+  { merchant:'Shell', amount:-65.00, cat:'transportFuel', desc:'SHELL BETAALAUTOMAAT' },
+  { merchant:'Etos', amount:-14.50, cat:'healthcare', desc:'ETOS DROGIST' },
+  { merchant:'Kruidvat', amount:-9.80, cat:'healthcare', desc:'KRUIDVAT' },
+  { merchant:'Vapiano', amount:-22.40, cat:'restaurants', desc:'VAPIANO AMSTERDAM' },
+  { merchant:'Spotify', amount:-9.99, cat:'subs', desc:'SPOTIFY NETHERLANDS' },
+  { merchant:'Netflix', amount:-13.99, cat:'subs', desc:'NETFLIX.COM' },
+  { merchant:'OV-chipkaart', amount:-20.00, cat:'transportPublic', desc:'NS CHIPKAART OPLADEN' },
+  { merchant:'HEMA', amount:-17.60, cat:'clothing', desc:'HEMA BETAALAUTOMAAT' },
+  { merchant:'Albert Heijn', amount:-55.20, cat:'groceries', desc:'AH BETAALAUTOMAAT' },
+  { merchant:'Bol.com', amount:-34.99, cat:'hobby', desc:'BOL.COM ORDER' },
+  { merchant:'Basic-Fit', amount:-24.99, cat:'healthcare', desc:'BASIC-FIT ABONNEMENT' },
+  { merchant:'Eneco', amount:-68.50, cat:'housingUtility', desc:'ENECO ENERGIE' },
+  { merchant:'Stadgenoot', amount:-740.00, cat:'housingRent', desc:'STADGENOOT HUUR' },
+  { merchant:'GVB', amount:-3.60, cat:'transportPublic', desc:'GVB OV-BETALING' },
+  { merchant:'Lidl', amount:-29.40, cat:'groceries', desc:'LIDL BETAALAUTOMAAT' },
+  { merchant:'Action', amount:-12.75, cat:'hobby', desc:'ACTION BETAALAUTOMAAT' },
+  { merchant:'Koffie Bru', amount:-4.50, cat:'coffee', desc:'KOFFIE BRU AMSTERDAM' },
+  { merchant:'Pathé Cinemas', amount:-15.00, cat:'hobby', desc:'PATHE CINEMA' },
+  { merchant:'H&M Nederland', amount:-49.95, cat:'clothing', desc:'HM NETHERLANDS' },
+  { merchant:'Picnic', amount:-44.10, cat:'groceries', desc:'PICNIC BOODSCHAPPEN' },
+  { merchant:'NS Reizen', amount:-12.80, cat:'transportPublic', desc:'NS DAGKAART' },
+  { merchant:'Coolblue', amount:-89.99, cat:'hobby', desc:'COOLBLUE ORDER' },
+  { merchant:'Spar', amount:-18.30, cat:'groceries', desc:'SPAR SUPERMARKT' },
+  { merchant:'Zalando', amount:-64.90, cat:'clothing', desc:'ZALANDO NL' },
+  { merchant:'Coffee Corner', amount:-3.80, cat:'coffee', desc:'COFFEE CORNER' },
+  { merchant:'Takeaway.com', amount:-19.50, cat:'restaurants', desc:'THUISBEZORGD.NL' },
+  { merchant:'Decathlon', amount:-34.50, cat:'hobby', desc:'DECATHLON AMSTERDAM' },
+  { merchant:'Jumbo Supermarkt', amount:-51.20, cat:'groceries', desc:'JUMBO BETAALAUTOMAAT' },
+  { merchant:'V&D Online', amount:-28.40, cat:'clothing', desc:'VD ONLINE ORDER' },
+  { merchant:'Albert Heijn', amount:-36.80, cat:'groceries', desc:'AH TO GO' },
+  { merchant:'Tandarts Amsterdam', amount:-45.00, cat:'healthcare', desc:'TANDARTSPRAKTIJK' },
+  { merchant:'NS Reizen', amount:-31.00, cat:'transportPublic', desc:'NS TREIN RETOURTJE' },
+  { merchant:'McDonald\'s', amount:-8.90, cat:'restaurants', desc:'MCDONALDS AMSTERDAM' },
+  { merchant:'Gamma', amount:-22.60, cat:'hobby', desc:'GAMMA BOUWMARKT' },
+  { merchant:'Kruidvat', amount:-16.40, cat:'healthcare', desc:'KRUIDVAT DROGIST' },
+  { merchant:'Tikkie ontvangen', amount:50.00, cat:'salary', desc:'TIKKIE BETALING ONTVANGEN' },
+];
+
+function generateAsnTxs(accountId) {
+  const today = new Date();
+  return ASN_TRANSACTIONS.map((t, i) => {
+    const daysBack = Math.floor((i / ASN_TRANSACTIONS.length) * 90);
+    const d = new Date(today);
+    d.setDate(d.getDate() - daysBack);
+    const date = d.toISOString().slice(0,10);
+    return {
+      id: `asn_${i}`,
+      date,
+      time: '10:00',
+      merchant: t.merchant,
+      desc: t.desc,
+      cat: t.cat,
+      cats: [{ catId: t.cat, amount: Math.abs(t.amount) }],
+      amount: t.amount,
+      account: accountId,
+    };
+  });
 }
 
 const BUDGETS = [
@@ -1225,7 +1289,8 @@ if (typeof document !== 'undefined' && !document.getElementById('m-nav-styles'))
   document.head.appendChild(s);
 }
 
-function Sheet({ children, onClose }) {
+function Sheet({ children, onClose, open, title }) {
+  if (open !== undefined && !open) return null;
   return (
     <div style={{
       position: 'absolute', inset: 0, background: 'rgba(27,26,23,0.45)', zIndex: 50,
@@ -1239,7 +1304,14 @@ function Sheet({ children, onClose }) {
         <div style={{ display: 'flex', justifyContent: 'center', padding: '8px 0 4px' }}>
           <div style={{ width: 36, height: 4, borderRadius: 999, background: M.line }}/>
         </div>
-        {children}
+        {title && (
+          <div style={{ fontSize: 17, fontWeight: 700, padding: '4px 16px 12px', fontFamily: M.fontUI }}>
+            {title}
+          </div>
+        )}
+        {title ? (
+          <div style={{ padding: '0 16px 16px', overflowY: 'auto' }}>{children}</div>
+        ) : children}
       </div>
     </div>
   );
@@ -1476,8 +1548,12 @@ function ScreenHome() {
   const [upcomingDays, setUpcomingDays] = useLocalStorage('munni_upcoming_days', 3);
   const [showProfileSwitcher, setShowProfileSwitcher] = React.useState(false);
 
+  const [budgets] = useProfileBudgets();
+  const [goals] = useProfileGoals();
+  const [debts] = useProfileDebts();
+
   const reviewCount = txs.filter(t => t.needsReview).length;
-  const budgetTop = [...BUDGETS].sort((a, b) => (b.spent/b.total) - (a.spent/a.total)).slice(0, 3);
+  const budgetTop = [...budgets].sort((a, b) => (b.spent/b.total) - (a.spent/a.total)).slice(0, 3);
   const [pidx, setPidx] = React.useState(PERIOD_HISTORY.length - 1);
   const pd = PERIOD_HISTORY[pidx];
   const isCurrent = pidx === PERIOD_HISTORY.length - 1;
@@ -1529,7 +1605,7 @@ function ScreenHome() {
             </div>
             <div style={{ flex:1 }}>
               <div style={{ fontSize:14, fontWeight:600 }}>Review {reviewCount} transactions</div>
-              <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>Category check needed</div>
+              <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>Transaction Review</div>
             </div>
             <I name="arrowR" size={16} color={M.ink3}/>
           </div>
@@ -1581,7 +1657,7 @@ function ScreenHome() {
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
               <div className="m-h3">Budgets</div>
               <div className="m-tap" onClick={() => nav.push('budgets')} style={{ display:'flex', alignItems:'center', gap:4, fontSize:12, color:M.ink3, fontWeight:500 }}>
-                See all {BUDGETS.length} <I name="caretR" size={12}/>
+                See all {budgets.length} <I name="caretR" size={12}/>
               </div>
             </div>
             <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
@@ -1600,22 +1676,22 @@ function ScreenHome() {
               </div>
             </div>
             <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-              {GOALS.map(g => <GoalMiniRow key={g.id} g={g} onClick={() => nav.push('goalDetail', { id:g.id })}/>)}
+              {goals.map(g => <GoalMiniRow key={g.id} g={g} onClick={() => nav.push('goalDetail', { id:g.id })}/>)}
             </div>
           </div>
         );
       case 'debts':
         if (!isVisible('debts')) return null;
         return (() => {
-          const totalDebt = DEBTS.reduce((s, d) => s + d.balance, 0);
-          const paidOff = DEBTS.reduce((s, d) => s + (d.original - d.balance), 0);
-          const total = DEBTS.reduce((s, d) => s + d.original, 0);
+          const totalDebt = debts.reduce((s, d) => s + d.balance, 0);
+          const paidOff = debts.reduce((s, d) => s + (d.original - d.balance), 0);
+          const total = debts.reduce((s, d) => s + d.original, 0);
           return (
             <div key="debts" className="m-tap m-card m-fade" onClick={() => nav.push('debts')} style={{ padding:16, marginBottom:14, border:`1px solid ${M.line}` }}>
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
                 <div className="m-h3">Debts</div>
                 <div className="m-tap" style={{ display:'flex', alignItems:'center', gap:4, fontSize:12, color:M.ink3, fontWeight:500 }}>
-                  {DEBTS.length} active <I name="caretR" size={12}/>
+                  {debts.length} active <I name="caretR" size={12}/>
                 </div>
               </div>
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:10 }}>
@@ -1752,10 +1828,9 @@ function ScreenHome() {
 
       {/* Header */}
       <div style={{ padding:'16px 20px 14px', display:'flex', alignItems:'center', gap:12, flexShrink:0 }}>
-        <div className="m-tap" onClick={() => setShowProfileSwitcher(true)} style={{
-          width:42, height:42, borderRadius:999, background:M.sage, color:'#fff', flexShrink:0,
-          display:'flex', alignItems:'center', justifyContent:'center', fontWeight:600, fontSize:16, fontFamily:M.fontDisp,
-        }}>{(activeProfile?.name || 'D').charAt(0).toUpperCase()}</div>
+        <div className="m-tap" onClick={() => setShowProfileSwitcher(true)} style={{ flexShrink:0 }}>
+          <ProfileAvatar profile={activeProfile} size={42}/>
+        </div>
         <div style={{ flex:1, minWidth:0 }}>
           <div className="m-num" style={{ fontSize:22, fontWeight:600, letterSpacing:'-0.02em', lineHeight:1 }}>
             {fmtEur(totalBalance)}
@@ -1788,9 +1863,7 @@ function ScreenHome() {
                     {i > 0 && <Divider inset={48}/>}
                     <div className="m-tap" onClick={() => activateProfile(p.id)}
                       style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
-                      <div style={{ width:36, height:36, borderRadius:10, background: p.active ? M.sage : M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                        <I name={p.icon || 'card'} size={18} color={p.active ? '#fff' : M.ink2}/>
-                      </div>
+                      <ProfileAvatar profile={p} size={36}/>
                       <div style={{ flex:1, minWidth:0 }}>
                         <div style={{ fontSize:14, fontWeight:600 }}>{p.name}</div>
                         <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{acctCount} account{acctCount !== 1 ? 's' : ''}</div>
@@ -2483,14 +2556,40 @@ function DetailRow({ label, value, icon, mono, placeholder, caretR }) {
 function ScreenExpenses() {
   const nav = useNav();
   const { txs } = useTxCtx();
-  const PERIOD_LABELS = ['Sep–Oct','Oct–Nov','Nov–Dec','Dec–Jan','Jan–Feb'];
-  const [selBar, setSelBar] = React.useState(PERIOD_HISTORY.length - 1);
-  const selPeriod = PERIOD_HISTORY[selBar] || PERIOD_HISTORY[PERIOD_HISTORY.length - 1];
+  const [pidx, setPidx] = React.useState(PERIOD_HISTORY.length - 1);
+  const selPeriod = PERIOD_HISTORY[pidx] || PERIOD_HISTORY[PERIOD_HISTORY.length - 1];
+  const periodStart = selPeriod.start;
+  const periodEnd = selPeriod.end;
   const periodLabel = selPeriod.label;
-  const isCurrentPeriod = selBar === PERIOD_HISTORY.length - 1;
 
-  // Filter transactions to the selected period
-  const periodTxs = txs.filter(t => t.amount < 0 && t.date >= selPeriod.start && t.date <= selPeriod.end);
+  // Compute week-based bars spanning the period
+  const periodTxsExpense = txs.filter(t =>
+    t.amount < 0 && !t.savingAccount &&
+    t.date >= periodStart && t.date <= periodEnd
+  );
+  const periodLength = Math.round((new Date(periodEnd) - new Date(periodStart)) / 86400000) + 1;
+  const barCount = 4;
+  const barDays = Math.ceil(periodLength / barCount);
+  const bars = Array.from({ length: barCount }, (_, i) => {
+    const start = new Date(periodStart);
+    start.setDate(start.getDate() + i * barDays);
+    const end = new Date(periodStart);
+    end.setDate(end.getDate() + (i + 1) * barDays - 1);
+    const startStr = start.toISOString().slice(0, 10);
+    const endStr = end.toISOString().slice(0, 10);
+    const value = periodTxsExpense
+      .filter(t => t.date >= startStr && t.date <= endStr)
+      .reduce((s, t) => s + Math.abs(t.amount), 0);
+    return { label: `W${i + 1}`, startStr, endStr, value };
+  });
+
+  const [selBar, setSelBar] = React.useState(null); // null = show full period
+  const handleBarSelect = (idx) => setSelBar(prev => prev === idx ? null : idx);
+
+  // Filter transactions: by selected week bar or full period
+  const activeStart = selBar !== null ? bars[selBar].startStr : periodStart;
+  const activeEnd   = selBar !== null ? bars[selBar].endStr   : periodEnd;
+  const periodTxs = txs.filter(t => t.amount < 0 && t.date >= activeStart && t.date <= activeEnd);
 
   const totals = {};
   periodTxs.forEach(t => {
@@ -2518,23 +2617,32 @@ function ScreenExpenses() {
         trailing={<button className="m-iconbtn m-tap"><I name="filter" size={20}/></button>}
       />
       <div className="m-body-scroll">
-        <div style={{ textAlign: 'center', padding: '8px 0 16px' }}>
+        <div style={{ textAlign: 'center', padding: '8px 0 4px' }}>
           <div className="m-num" style={{ fontSize: 38, fontWeight: 600, letterSpacing: '-0.025em' }}>{fmtEur(grandTotal)}</div>
           <div style={{ fontSize: 12, color: M.ink3, marginTop: 4, fontWeight: 500 }}>
-            {periodLabel}
+            {selBar !== null ? `${bars[selBar].startStr} – ${bars[selBar].endStr}` : periodLabel}
           </div>
         </div>
 
+        {/* Period navigation */}
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:12, padding:'8px 0 12px' }}>
+          <button className="m-iconbtn m-tap" onClick={() => { setPidx(i => Math.max(0, i-1)); setSelBar(null); }}
+            style={{ width:28, height:28, opacity:pidx===0?0.3:1 }}><I name="arrowL" size={14}/></button>
+          <div style={{ fontSize:12, fontWeight:600, color:M.ink2, width:130, textAlign:'center' }}>{periodLabel}</div>
+          <button className="m-iconbtn m-tap" onClick={() => { setPidx(i => Math.min(PERIOD_HISTORY.length-1, i+1)); setSelBar(null); }}
+            style={{ width:28, height:28, opacity:pidx===PERIOD_HISTORY.length-1?0.3:1 }}><I name="arrowR" size={14}/></button>
+        </div>
+
         <div className="m-card" style={{ padding:'12px 16px 8px', marginBottom:14, border:`1px solid ${M.line}` }}>
-          <div className="m-cap" style={{ marginBottom:8 }}>Period history · tap to navigate</div>
-          <BarChartScrollable
-            data={PERIOD_HISTORY.map(p => txs.filter(t => t.amount < 0 && t.date >= p.start && t.date <= p.end).reduce((s,t) => s + Math.abs(t.amount), 0))}
-            labels={PERIOD_HISTORY.map(p => p.label.split(' – ')[0].replace('20 ',''))}
+          <div className="m-cap" style={{ marginBottom:8 }}>Weekly breakdown · tap to filter</div>
+          <BarChart
+            data={bars.map(b => b.value)}
+            labels={bars.map(b => b.label)}
             height={90}
             accent={M.clay}
             color={M.ink3}
-            selected={selBar}
-            onSelect={setSelBar}
+            selected={selBar !== null ? selBar : -1}
+            onSelect={handleBarSelect}
           />
         </div>
 
@@ -2576,45 +2684,47 @@ function ScreenExpenses() {
                   </div>
                   {subs.length > 0 && <div style={{ transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s ease', display:'flex' }}><I name="caretR" size={14} color={M.ink4}/></div>}
                 </div>
-                {isOpen && subs.length > 0 && (
-                  <div style={{ background: M.paper2, animation: 'fadeIn 0.2s ease-out' }}>
-                    {/* All — shows every transaction under this parent */}
-                    <Divider inset={0}/>
-                    <div className="m-tap" onClick={() => nav.push('categoryDrill', { id: c.id, periodStart: selPeriod.start, periodEnd: selPeriod.end, periodLabel: selPeriod.label })}
-                      style={{ padding: '11px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <div style={{ width: 30, height: 30, borderRadius: 8, background: '#fff', border: `1px solid ${M.line2}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        <I name={c.icon || 'box'} size={14} color={M.ink3}/>
+                <div style={{ overflow:'hidden', maxHeight: isOpen && subs.length > 0 ? 1000 : 0, transition:'max-height 0.3s ease', background: M.paper2 }}>
+                  {subs.length > 0 && (
+                    <div>
+                      {/* All — shows every transaction under this parent */}
+                      <Divider inset={0}/>
+                      <div className="m-tap" onClick={() => nav.push('categoryDrill', { id: c.id, periodStart: activeStart, periodEnd: activeEnd, periodLabel: selBar !== null ? `${bars[selBar].label} – ${periodLabel}` : periodLabel })}
+                        style={{ padding: '11px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <div style={{ width: 30, height: 30, borderRadius: 8, background: '#fff', border: `1px solid ${M.line2}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <I name={c.icon || 'box'} size={14} color={M.ink3}/>
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600 }}>All {c.name}</div>
+                          <div style={{ fontSize: 11, color: M.ink3, marginTop: 1 }}>{subs.reduce((s, x) => s + x.count, 0)} transactions</div>
+                        </div>
+                        <div className="m-num" style={{ fontSize: 13, fontWeight: 600 }}>{fmtEur(c.total)}</div>
+                        <I name="caretR" size={12} color={M.ink4}/>
                       </div>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600 }}>All {c.name}</div>
-                        <div style={{ fontSize: 11, color: M.ink3, marginTop: 1 }}>{subs.reduce((s, x) => s + x.count, 0)} transactions</div>
-                      </div>
-                      <div className="m-num" style={{ fontSize: 13, fontWeight: 600 }}>{fmtEur(c.total)}</div>
-                      <I name="caretR" size={12} color={M.ink4}/>
+                      {/* Individual subcategories */}
+                      {subs.map((s) => {
+                        const subCat = CATEGORIES[s.id] || {};
+                        return (
+                          <React.Fragment key={s.id}>
+                            <Divider inset={58}/>
+                            <div className="m-tap" onClick={() => nav.push('categoryDrill', { id: s.id, periodStart: activeStart, periodEnd: activeEnd, periodLabel: selBar !== null ? `${bars[selBar].label} – ${periodLabel}` : periodLabel })}
+                              style={{ padding: '11px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+                              <div style={{ width: 30, height: 30, borderRadius: 8, background: '#fff', border: `1px solid ${M.line2}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                <I name={subCat.icon || 'box'} size={14} color={M.ink2}/>
+                              </div>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ fontSize: 13, fontWeight: 500 }}>{s.name}</div>
+                                <div style={{ fontSize: 11, color: M.ink3, marginTop: 1 }}>{s.count} transactions</div>
+                              </div>
+                              <div className="m-num" style={{ fontSize: 13, fontWeight: 600 }}>{fmtEur(s.total)}</div>
+                              <I name="caretR" size={12} color={M.ink4}/>
+                            </div>
+                          </React.Fragment>
+                        );
+                      })}
                     </div>
-                    {/* Individual subcategories */}
-                    {subs.map((s) => {
-                      const subCat = CATEGORIES[s.id] || {};
-                      return (
-                        <React.Fragment key={s.id}>
-                          <Divider inset={58}/>
-                          <div className="m-tap" onClick={() => nav.push('categoryDrill', { id: s.id, periodStart: selPeriod.start, periodEnd: selPeriod.end, periodLabel: selPeriod.label })}
-                            style={{ padding: '11px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-                            <div style={{ width: 30, height: 30, borderRadius: 8, background: '#fff', border: `1px solid ${M.line2}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                              <I name={subCat.icon || 'box'} size={14} color={M.ink2}/>
-                            </div>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ fontSize: 13, fontWeight: 500 }}>{s.name}</div>
-                              <div style={{ fontSize: 11, color: M.ink3, marginTop: 1 }}>{s.count} transactions</div>
-                            </div>
-                            <div className="m-num" style={{ fontSize: 13, fontWeight: 600 }}>{fmtEur(s.total)}</div>
-                            <I name="caretR" size={12} color={M.ink4}/>
-                          </div>
-                        </React.Fragment>
-                      );
-                    })}
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             );
           })}
@@ -2632,6 +2742,7 @@ function ScreenCategoryDrill({ params }) {
   const periodStart = params?.periodStart;
   const periodEnd = params?.periodEnd;
   const periodLabel = params?.periodLabel;
+  const [selectedBar, setSelectedBar] = React.useState(null);
 
   const childIds = isParent
     ? [...Object.values(CATEGORIES), ...Object.values(_catExt)].filter(c => c.parent === cat.id).map(c => c.id)
@@ -2646,17 +2757,57 @@ function ScreenCategoryDrill({ params }) {
   });
   const total = txs.reduce((s, t) => s + Math.abs(t.amount), 0);
 
-  const months = ['Sep–Oct','Oct–Nov','Nov–Dec','Dec–Jan','Jan–Feb','Feb–Mar'];
-  const history = isParent
-    ? months.map((_, i) => childIds.reduce((s, id) => s + (SPEND_HISTORY[id]?.[i] || 0), 0))
-    : (SPEND_HISTORY[cat.id] || [50, 60, 55, 70, 65, total]);
+  // Build week-based bars for the period
+  const weekBars = React.useMemo(() => {
+    if (!periodStart || !periodEnd) {
+      // fallback: use PERIOD_HISTORY bars for this category
+      return PERIOD_HISTORY.map(p => ({
+        label: p.label.split(' – ')[0].replace('20 ',''),
+        start: p.start,
+        end: p.end,
+        amount: allTxs.filter(t => t.amount < 0 && childIds.includes(t.cat) && t.date >= p.start && t.date <= p.end).reduce((s,t) => s + Math.abs(t.amount), 0),
+      }));
+    }
+    const bars = [];
+    const start = new Date(periodStart);
+    const end = new Date(periodEnd);
+    let cur = new Date(start);
+    let weekIdx = 0;
+    while (cur <= end) {
+      const wStart = new Date(cur);
+      const wEnd = new Date(cur);
+      wEnd.setDate(wEnd.getDate() + 6);
+      if (wEnd > end) { const d = new Date(end); wEnd.setTime(d.getTime()); }
+      const wStartStr = wStart.toISOString().slice(0,10);
+      const wEndStr = wEnd.toISOString().slice(0,10);
+      const monthName = wStart.toLocaleString('en-GB', { month:'short' });
+      bars.push({
+        label: `${monthName} W${weekIdx+1}`,
+        start: wStartStr,
+        end: wEndStr,
+        amount: txs.filter(t => t.date >= wStartStr && t.date <= wEndStr).reduce((s,t) => s + Math.abs(t.amount), 0),
+      });
+      weekIdx++;
+      cur.setDate(cur.getDate() + 7);
+    }
+    return bars;
+  }, [periodStart, periodEnd, txs]);
+
+  const barData = weekBars.map(b => b.amount);
+  const barLabels = weekBars.map(b => b.label);
+  const barMax = Math.max(...barData, 1);
 
   const title = isParent ? `All ${cat.name}` : cat.name;
   const sub   = isParent ? null : cat.group;
 
+  // Filter txs for selected bar
+  const visibleTxs = selectedBar !== null && weekBars[selectedBar]
+    ? txs.filter(t => t.date >= weekBars[selectedBar].start && t.date <= weekBars[selectedBar].end)
+    : txs;
+
   // Group by day
   const byDay = {};
-  txs.forEach(t => {
+  visibleTxs.forEach(t => {
     if (!byDay[t.date]) byDay[t.date] = [];
     byDay[t.date].push(t);
   });
@@ -2677,13 +2828,32 @@ function ScreenCategoryDrill({ params }) {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
             <div className="m-cap">{periodLabel ? `Spent · ${periodLabel}` : 'Spent this period'}</div>
           </div>
-          <div className="m-num" style={{ fontSize: 30, fontWeight: 600, marginTop: 4 }}>{fmtEur(total)}</div>
-          <div style={{ marginTop: 16 }}>
-            <BarChart data={history} labels={months} height={84} accent={M.ink} color={M.ink}/>
+          <div className="m-num" style={{ fontSize: 30, fontWeight: 600, marginTop: 4 }}>{fmtEur(selectedBar !== null && weekBars[selectedBar] ? weekBars[selectedBar].amount : total)}</div>
+          {selectedBar !== null && weekBars[selectedBar] && (
+            <div style={{ fontSize:11, color:M.ink3, marginTop:2 }}>{weekBars[selectedBar].label} · tap bar to clear</div>
+          )}
+          {/* Interactive bar chart */}
+          <div style={{ marginTop: 16, display:'flex', alignItems:'flex-end', gap:4, height:84 }}>
+            {barData.map((v, i) => (
+              <div key={i} onClick={() => setSelectedBar(selectedBar === i ? null : i)}
+                style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'flex-end', height:'100%', cursor:'pointer' }}>
+                <div style={{
+                  width:'100%', borderRadius:4,
+                  height: `${Math.max((v / barMax) * 74, v > 0 ? 4 : 0)}px`,
+                  background: M.ink,
+                  opacity: selectedBar === null || selectedBar === i ? 1 : 0.25,
+                  transition: 'opacity 0.2s ease, height 0.2s ease',
+                }}/>
+                <div style={{ fontSize:9, color: selectedBar === i ? M.ink : M.ink3, marginTop:3, textAlign:'center', fontWeight: selectedBar === i ? 700 : 400 }}>{barLabels[i]}</div>
+              </div>
+            ))}
           </div>
         </div>
 
-        <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Transactions · {txs.length}</div>
+        <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>
+          Transactions · {visibleTxs.length}
+          {selectedBar !== null && <span style={{ color:M.sage, marginLeft:6, fontWeight:500, cursor:'pointer' }} onClick={() => setSelectedBar(null)}>Clear filter ×</span>}
+        </div>
         {dayKeys.length === 0 ? (
           <div className="m-card" style={{ padding:'24px 0', textAlign:'center', border:`1px solid ${M.line}`, color:M.ink3, fontSize:13 }}>No transactions</div>
         ) : dayKeys.map(day => (
@@ -3212,10 +3382,43 @@ function ScreenIntegrationReceipts({ params }) {
 }
 
 const DEFAULT_PROFILES = [
-  { id:'p1', name:'Personal',  icon:'user',  active:true,  accountIds:['main','save','inv'] },
-  { id:'p2', name:'Family',    icon:'house', active:false, accountIds:['main']             },
-  { id:'p3', name:'Freelance', icon:'bag',   active:false, accountIds:['main']             },
+  { id:'p1', name:'Personal',  icon:'user',  active:true,  accountIds:['main','save','inv'], picture: null },
+  { id:'p2', name:'Family',    icon:'house', active:false, accountIds:['main'],              picture: null },
+  { id:'p3', name:'Freelance', icon:'bag',   active:false, accountIds:['main'],              picture: null },
 ];
+
+const STOCK_AVATARS = [
+  { id:'av1', emoji:'🧑', bg:'#FF6B6B' },
+  { id:'av2', emoji:'👩', bg:'#4ECDC4' },
+  { id:'av3', emoji:'👨', bg:'#45B7D1' },
+  { id:'av4', emoji:'🧔', bg:'#96CEB4' },
+  { id:'av5', emoji:'👱', bg:'#FFEAA7' },
+  { id:'av6', emoji:'🧕', bg:'#DDA0DD' },
+  { id:'av7', emoji:'🧑‍💼', bg:'#98D8C8' },
+  { id:'av8', emoji:'👨‍🎨', bg:'#F7DC6F' },
+];
+
+function ProfileAvatar({ profile, size = 36 }) {
+  const borderRadius = Math.round(size * 0.28);
+  if (profile?.picture) {
+    if (profile.picture.startsWith('av')) {
+      const av = STOCK_AVATARS.find(a => a.id === profile.picture);
+      if (av) return (
+        <div style={{ width:size, height:size, borderRadius, background:av.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:size*0.5, flexShrink:0 }}>
+          {av.emoji}
+        </div>
+      );
+    }
+    if (profile.picture.startsWith('data:')) {
+      return <img src={profile.picture} style={{ width:size, height:size, borderRadius, objectFit:'cover', flexShrink:0 }}/>;
+    }
+  }
+  return (
+    <div style={{ width:size, height:size, borderRadius, background:M.slate, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+      <span style={{ color:'#fff', fontSize:size*0.38, fontWeight:700, fontFamily:M.fontUI }}>{(profile?.name||'?')[0].toUpperCase()}</span>
+    </div>
+  );
+}
 
 function ScreenProfile() {
   const nav = useNav();
@@ -3372,6 +3575,7 @@ function ScreenProfiles() {
       icon: 'card',
       active: false,
       accountIds: [],
+      picture: null,
     };
     setProfiles(ps => [...ps, newP]);
     setShowNewProfile(false);
@@ -3400,9 +3604,8 @@ function ScreenProfiles() {
               <React.Fragment key={p.id}>
                 {i > 0 && <Divider inset={48}/>}
                 <div style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
-                  <div className="m-tap" onClick={() => activateProfile(p.id)}
-                    style={{ width:36, height:36, borderRadius:10, background: p.active ? M.sage : M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                    <I name={p.icon || 'card'} size={18} color={p.active ? '#fff' : M.ink2}/>
+                  <div className="m-tap" onClick={() => activateProfile(p.id)} style={{ flexShrink:0 }}>
+                    <ProfileAvatar profile={p} size={36}/>
                   </div>
                   <div className="m-tap" onClick={() => activateProfile(p.id)} style={{ flex:1, minWidth:0 }}>
                     <div style={{ fontSize:14, fontWeight:600 }}>{p.name}</div>
@@ -3463,6 +3666,7 @@ function ScreenProfileDetail({ params }) {
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
   const [editingName, setEditingName] = React.useState(false);
   const [nameDraft, setNameDraft] = React.useState('');
+  const [showPhotoSheet, setShowPhotoSheet] = React.useState(false);
 
   const profile = profiles.find(p => p.id === params?.id);
   if (!profile) return null;
@@ -3475,6 +3679,19 @@ function ScreenProfileDetail({ params }) {
   const saveName = () => {
     if (nameDraft.trim()) setProfiles(ps => ps.map(p => p.id === profile.id ? { ...p, name: nameDraft.trim() } : p));
     setEditingName(false);
+  };
+
+  const setPicture = (chosen) => {
+    setProfiles(ps => ps.map(p => p.id === profile.id ? { ...p, picture: chosen } : p));
+    setShowPhotoSheet(false);
+  };
+
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => setPicture(ev.target.result);
+    reader.readAsDataURL(file);
   };
 
   const toggleAccount = (accountId) => {
@@ -3495,6 +3712,35 @@ function ScreenProfileDetail({ params }) {
     nav.pop();
   };
 
+  const mainAccounts = connectedAccounts.filter(a => a.type === 'checking');
+  const savingAccounts = connectedAccounts.filter(a => a.type !== 'checking');
+
+  const renderAccountRow = (a, i, arr) => {
+    const included = accountIds.includes(a.id);
+    return (
+      <React.Fragment key={a.id}>
+        {i > 0 && <Divider inset={50}/>}
+        <div className="m-tap" onClick={() => toggleAccount(a.id)}
+          style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
+          <div style={{ width:36, height:36, borderRadius:10, background: a.color || M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+            <I name={a.type==='savings'?'piggy':a.type==='invest'?'rocket':'card'} size={16} color="#fff"/>
+          </div>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontSize:14, fontWeight:500 }}>{a.name}</div>
+            <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:2 }}>
+              <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono }}>{a.iban}</div>
+              {a.manual && <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase' }}>Manual</span>}
+              {a.bankId && <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>Bank</span>}
+            </div>
+          </div>
+          {included
+            ? <div style={{ width:22, height:22, borderRadius:999, background:M.sage, display:'flex', alignItems:'center', justifyContent:'center' }}><I name="check" size={12} color="#fff" stroke={2.5}/></div>
+            : <div style={{ width:22, height:22, borderRadius:999, border:`2px solid ${M.line2}` }}/>}
+        </div>
+      </React.Fragment>
+    );
+  };
+
   return (
     <div className="m-screen">
       <StatusBar/>
@@ -3502,12 +3748,14 @@ function ScreenProfileDetail({ params }) {
         leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
       />
       <div className="m-body-scroll">
-        {/* Profile name */}
-        <div className="m-card" style={{ padding:'14px 16px', marginBottom:16, border:`1px solid ${M.line}`, display:'flex', alignItems:'center', gap:12 }}>
-          <div style={{ width:44, height:44, borderRadius:12, background: isActive ? M.sage : M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-            <I name={profile.icon || 'card'} size={20} color={isActive ? '#fff' : M.ink2}/>
-          </div>
-          <div style={{ flex:1, minWidth:0 }}>
+        {/* Avatar + name */}
+        <div className="m-card" style={{ padding:'18px 16px', marginBottom:16, border:`1px solid ${M.line}`, display:'flex', flexDirection:'column', alignItems:'center', gap:10 }}>
+          <ProfileAvatar profile={profile} size={72}/>
+          <button className="m-tap" onClick={() => setShowPhotoSheet(true)}
+            style={{ fontSize:13, fontWeight:600, color:M.sage, background:'transparent', border:'none', cursor:'pointer', fontFamily:M.fontUI, padding:'4px 12px' }}>
+            Change photo
+          </button>
+          <div style={{ width:'100%' }}>
             {editingName ? (
               <input
                 autoFocus
@@ -3515,51 +3763,37 @@ function ScreenProfileDetail({ params }) {
                 onChange={e => setNameDraft(e.target.value)}
                 onBlur={saveName}
                 onKeyDown={e => e.key==='Enter' && saveName()}
-                style={{ width:'100%', fontSize:16, fontWeight:600, border:`1px solid ${M.sage}`, borderRadius:8, padding:'6px 10px', fontFamily:M.fontUI, background:M.paper2, outline:'none' }}
+                style={{ width:'100%', fontSize:16, fontWeight:600, border:`1px solid ${M.sage}`, borderRadius:8, padding:'6px 10px', fontFamily:M.fontUI, background:M.paper2, outline:'none', textAlign:'center', boxSizing:'border-box' }}
               />
             ) : (
-              <div className="m-tap" onClick={startEditName} style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <div className="m-tap" onClick={startEditName} style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
                 <div style={{ fontSize:16, fontWeight:600 }}>{profile.name}</div>
                 <I name="edit" size={14} color={M.ink4}/>
               </div>
             )}
             {isActive && (
-              <div style={{ fontSize:11, color:M.sage, fontWeight:600, marginTop:3 }}>Active profile</div>
+              <div style={{ fontSize:11, color:M.sage, fontWeight:600, marginTop:3, textAlign:'center' }}>Active profile</div>
             )}
           </div>
         </div>
 
-        {/* Accounts */}
-        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Accounts in this profile</div>
+        {/* Main accounts */}
+        <div className="m-cap" style={{ marginBottom:4, paddingLeft:4 }}>Main accounts</div>
+        <div style={{ fontSize:11, color:M.ink3, marginBottom:8, paddingLeft:4 }}>Transactions will sync to this profile</div>
         <div className="m-card" style={{ padding:'4px 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
-          {connectedAccounts.length === 0 && (
-            <div style={{ padding:'20px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>No accounts connected yet</div>
+          {mainAccounts.length === 0 && (
+            <div style={{ padding:'16px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>No checking accounts connected</div>
           )}
-          {connectedAccounts.map((a, i) => {
-            const included = accountIds.includes(a.id);
-            return (
-              <React.Fragment key={a.id}>
-                {i > 0 && <Divider inset={50}/>}
-                <div className="m-tap" onClick={() => toggleAccount(a.id)}
-                  style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
-                  <div style={{ width:36, height:36, borderRadius:10, background: a.color || M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                    <I name={a.type==='savings'?'piggy':a.type==='invest'?'rocket':'card'} size={16} color="#fff"/>
-                  </div>
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:14, fontWeight:500 }}>{a.name}</div>
-                    <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:2 }}>
-                      <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono }}>{a.iban}</div>
-                      {a.manual && <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase' }}>Manual</span>}
-                      {a.bankId && <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>Bank</span>}
-                    </div>
-                  </div>
-                  {included
-                    ? <div style={{ width:22, height:22, borderRadius:999, background:M.sage, display:'flex', alignItems:'center', justifyContent:'center' }}><I name="check" size={12} color="#fff" stroke={2.5}/></div>
-                    : <div style={{ width:22, height:22, borderRadius:999, border:`2px solid ${M.line2}` }}/>}
-                </div>
-              </React.Fragment>
-            );
-          })}
+          {mainAccounts.map((a, i, arr) => renderAccountRow(a, i, arr))}
+        </div>
+
+        {/* Saving & investment accounts */}
+        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Saving &amp; investment accounts</div>
+        <div className="m-card" style={{ padding:'4px 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
+          {savingAccounts.length === 0 && (
+            <div style={{ padding:'16px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>No saving accounts connected</div>
+          )}
+          {savingAccounts.map((a, i, arr) => renderAccountRow(a, i, arr))}
           <Divider inset={0}/>
           <div className="m-tap" onClick={() => nav.push('accountsAll')}
             style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0', color:M.sage }}>
@@ -3585,6 +3819,29 @@ function ScreenProfileDetail({ params }) {
         )}
         <div style={{ height:16 }}/>
       </div>
+
+      {showPhotoSheet && (
+        <Sheet onClose={() => setShowPhotoSheet(false)}>
+          <div style={{ padding:'4px 16px 8px' }}>
+            <div style={{ fontSize:17, fontWeight:700, marginBottom:16 }}>Choose photo</div>
+            <div style={{ display:'flex', gap:10, flexWrap:'wrap', marginBottom:20 }}>
+              {STOCK_AVATARS.map(av => (
+                <button key={av.id} className="m-tap" onClick={() => setPicture(av.id)}
+                  style={{ width:54, height:54, borderRadius:Math.round(54*0.28), background:av.bg, border: profile.picture===av.id ? `3px solid ${M.sage}` : '3px solid transparent', display:'flex', alignItems:'center', justifyContent:'center', fontSize:26, cursor:'pointer', boxSizing:'border-box' }}>
+                  {av.emoji}
+                </button>
+              ))}
+            </div>
+            <label style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0', cursor:'pointer' }}>
+              <div style={{ width:40, height:40, borderRadius:10, background:M.paper2, border:`1px solid ${M.line}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <I name="box" size={18} color={M.ink2}/>
+              </div>
+              <div style={{ fontSize:15, fontWeight:500 }}>Choose from library</div>
+              <input type="file" accept="image/*" onChange={handleFileChange} style={{ display:'none' }}/>
+            </label>
+          </div>
+        </Sheet>
+      )}
 
       {showDeleteConfirm && (
         <Sheet onClose={() => setShowDeleteConfirm(false)}>
@@ -3969,332 +4226,230 @@ function ScreenTutorial() {
   );
 }
 
+function NewCatForm({ onSave }) {
+  const [name, setName] = React.useState('');
+  const [icon, setIcon] = React.useState('box');
+  const [color, setColor] = React.useState(M.slate);
+  const icons = ['box','home','car','heart','star','fork','shop','flame','film','health','bag','globe','rocket','wallet','lock','user','edit','tag','link','receipt','piggy','cal','eye'];
+  const colors = [M.sage, M.clay, M.ochre, M.violet, M.slate, '#e07b39', '#6b8e6b', '#8e6b8e'];
+  return (
+    <div style={{ paddingBottom:8 }}>
+      <input
+        value={name} onChange={e => setName(e.target.value)}
+        placeholder="Category name"
+        style={{ width:'100%', boxSizing:'border-box', border:`1px solid ${M.line}`, borderRadius:10, padding:'11px 14px', fontSize:14, fontFamily:M.fontUI, marginBottom:14, outline:'none', background:M.paper2, color:M.ink }}
+      />
+      <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>Icon</div>
+      <div style={{ display:'flex', flexWrap:'wrap', gap:8, marginBottom:14 }}>
+        {icons.map(ic => (
+          <button key={ic} className="m-tap" onClick={() => setIcon(ic)}
+            style={{ width:36, height:36, borderRadius:8, background: icon===ic?M.sageSoft:M.paper2, border:`1.5px solid ${icon===ic?M.sage:M.line}`, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>
+            <I name={ic} size={15} color={icon===ic?M.sage:M.ink3}/>
+          </button>
+        ))}
+      </div>
+      <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>Color</div>
+      <div style={{ display:'flex', gap:8, marginBottom:16, flexWrap:'wrap' }}>
+        {colors.map(c => (
+          <button key={c} className="m-tap" onClick={() => setColor(c)}
+            style={{ width:28, height:28, borderRadius:'50%', background:c, border:`2.5px solid ${color===c?M.ink:'transparent'}`, cursor:'pointer' }}/>
+        ))}
+      </div>
+      <button className="m-tap" onClick={() => name.trim() && onSave(name.trim(), icon, color)}
+        disabled={!name.trim()}
+        style={{ width:'100%', background:M.sage, border:'none', borderRadius:12, padding:'13px', color:'#fff', fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, opacity: name.trim()?1:0.5 }}>
+        Add category
+      </button>
+    </div>
+  );
+}
+
 function ScreenManageCategories() {
   const nav = useNav();
-  const { txs } = useTxCtx();
+  const { setTxs } = useTxCtx();
   const { customCats, setCustomCats } = useCatCtx();
-  const [showAdd, setShowAdd] = React.useState(false);
-  const [newName, setNewName] = React.useState('');
-  const [newParent, setNewParent] = React.useState('entertainment');
-  const [newIcon, setNewIcon] = React.useState('star');
-  const [newType, setNewType] = React.useState('sub');
-  const [swipedId, setSwipedId] = React.useState(null);
-  const [deleteTarget, setDeleteTarget] = React.useState(null);
-  const [dragId, setDragId] = React.useState(null);
-  const [dragOverParent, setDragOverParent] = React.useState(null);
-  const swipeRef = React.useRef({ startX: 0 });
+  const [newParentSheet, setNewParentSheet] = React.useState(false);
+  const [newSubSheet, setNewSubSheet] = React.useState(null);
+  const [dragCatId, setDragCatId] = React.useState(null);
 
-  const openQuickAdd = (parentId) => {
-    setNewParent(parentId);
-    setNewType('sub');
-    setNewName('');
-    setNewIcon('star');
-    setShowAdd(true);
-  };
-
-  const premadeParents = Object.values(CATEGORIES).filter(c => c.isParent && !c.positive && c.id !== 'saving' && c.id !== 'expense');
-  const icons = ['fork','shop','car','flame','film','health','bag','globe','rocket','star','house','heart','box','wallet','lock','user'];
-
+  // Helpers
   const customParents = customCats.filter(c => c.isParent);
-  const allParentOptions = [...premadeParents, ...customParents];
+  const premadeParents = Object.entries(CATEGORIES).filter(([k,v]) => v.isParent && !v.positive && k !== 'saving' && k !== 'expense');
 
-  const countAffected = (catId) =>
-    txs.filter(t => t.cat === catId || (t.cats && t.cats.some(c => c.catId === catId))).length;
+  const getCustomSubs = (parentId) => customCats.filter(c => !c.isParent && c.parent === parentId);
+  const getPremadeSubs = (parentKey) => Object.entries(CATEGORIES).filter(([k,v]) => v.parent === parentKey);
+  const getCustomSubsOfPremade = (parentKey) => customCats.filter(c => !c.isParent && c.parent === parentKey);
 
-  const addCat = () => {
-    if (!newName.trim()) return;
-    const id = `custom_${Date.now()}`;
-    if (newType === 'parent') {
-      const parentName = newName.trim();
-      const subId = `custom_${Date.now()}_other`;
-      setCustomCats(cs => [...cs,
-        { id, name: parentName, icon: newIcon, isParent: true, custom: true },
-        { id: subId, name: 'Other', icon: newIcon, group: parentName, parent: id, custom: true, canDelete: false },
-      ]);
-    } else {
-      const parent = CATEGORIES[newParent] || customParents.find(p => p.id === newParent) || {};
-      setCustomCats(cs => [...cs, { id, name: newName.trim(), icon: newIcon, group: parent.name || newParent, parent: newParent, custom: true }]);
-    }
-    setNewName(''); setNewType('sub'); setShowAdd(false);
+  const deleteCustomSub = (catId) => {
+    setCustomCats(prev => prev.filter(c => c.id !== catId));
+    setTxs(prev => prev.map(t => {
+      if (t.cat === catId) {
+        const fallback = (t.amount >= 0) ? 'incomeUncategorized' : 'expenseUncategorized';
+        return { ...t, cat: fallback, cats: [{ catId: fallback, amount: Math.abs(t.amount) }] };
+      }
+      return t;
+    }));
   };
 
-  const confirmDelete = (cat) => { setDeleteTarget(cat); setSwipedId(null); };
-  const doDelete = () => {
-    setCustomCats(cs => cs.filter(x => x.id !== deleteTarget.id && x.parent !== deleteTarget.id));
-    setDeleteTarget(null);
+  const deleteCustomParent = (parentId) => {
+    setCustomCats(prev => prev.filter(c => c.id !== parentId && c.parent !== parentId));
   };
 
-  const onPtrDown = (id, e) => { swipeRef.current = { startX: e.clientX }; };
-  const onPtrUp = (id, e, canDelete) => {
-    if (canDelete === false) return;
-    const dx = e.clientX - swipeRef.current.startX;
-    if (dx < -40) setSwipedId(id);
-    else if (dx > 10) setSwipedId(s => s === id ? null : s);
+  const canDeleteParent = (parentId) => {
+    const subs = getCustomSubs(parentId);
+    return subs.length === 1 && subs[0].id === `${parentId}_other`;
   };
 
-  const onDragStart = (catId, e) => { setDragId(catId); e.dataTransfer.effectAllowed = 'move'; };
-  const onDragOver = (parentId, e) => { e.preventDefault(); setDragOverParent(parentId); };
-  const onDragLeave = () => setDragOverParent(null);
-  const onDrop = (parentId, e) => {
-    e.preventDefault();
-    if (dragId) {
-      const parent = CATEGORIES[parentId] || customParents.find(p => p.id === parentId);
-      setCustomCats(cs => cs.map(c => c.id === dragId ? { ...c, parent: parentId, group: parent?.name || parentId } : c));
-    }
-    setDragId(null); setDragOverParent(null);
+  const handleDrop = (targetCatId, parentId) => {
+    if (!dragCatId || dragCatId === targetCatId) return;
+    setCustomCats(prev => {
+      const subs = prev.filter(c => !c.isParent && c.parent === parentId);
+      const others = prev.filter(c => c.isParent || c.parent !== parentId);
+      const dragIdx = subs.findIndex(c => c.id === dragCatId);
+      const targetIdx = subs.findIndex(c => c.id === targetCatId);
+      if (dragIdx < 0 || targetIdx < 0) return prev;
+      const reordered = [...subs];
+      const [item] = reordered.splice(dragIdx, 1);
+      reordered.splice(targetIdx, 0, item);
+      return [...others, ...reordered];
+    });
+    setDragCatId(null);
   };
 
-  const CatRow = ({ c }) => {
-    const isSwiped = swipedId === c.id;
-    const parentCat = CATEGORIES[c.parent] || customParents.find(p => p.id === c.parent);
+  const handleDropOnPremadeParent = (premadeParentKey) => {
+    if (!dragCatId) return;
+    setCustomCats(prev => prev.map(c =>
+      c.id === dragCatId ? { ...c, parent: premadeParentKey } : c
+    ));
+    setDragCatId(null);
+  };
+
+  const renderParentCard = (parentKey, parentCat, isCustom) => {
+    const premadeSubs = isCustom ? [] : getPremadeSubs(parentKey);
+    const customSubsHere = isCustom ? getCustomSubs(parentKey) : getCustomSubsOfPremade(parentKey);
+    const allSubs = isCustom ? customSubsHere : [...premadeSubs, ...customSubsHere];
+    const subCount = allSubs.length;
+
     return (
-      <div style={{ position:'relative', overflow:'hidden' }} onClick={() => isSwiped && setSwipedId(null)}>
-        <div style={{ position:'absolute', right:0, top:0, bottom:0, width:88, background:M.clay, display:'flex', alignItems:'center', justifyContent:'center' }}>
-          <button onClick={(e) => { e.stopPropagation(); confirmDelete(c); }}
-            style={{ background:'none', border:'none', color:'#fff', fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, width:'100%', height:'100%' }}>
-            Delete
-          </button>
-        </div>
+      <div key={parentKey} className="m-card" style={{ marginBottom:12, border:`1px solid ${M.line}`, borderRadius:14, overflow:'hidden' }}>
+        {/* Parent header */}
         <div
-          draggable={!c.isParent}
-          onDragStart={!c.isParent ? (e) => onDragStart(c.id, e) : undefined}
-          onPointerDown={(e) => onPtrDown(c.id, e)}
-          onPointerUp={(e) => onPtrUp(c.id, e, c.canDelete)}
-          style={{
-            display:'flex', alignItems:'center', gap:12, padding:'12px 16px 12px 12px',
-            background:'#fff',
-            transform: isSwiped ? 'translateX(-88px)' : 'translateX(0)',
-            transition:'transform 0.25s cubic-bezier(0.25,0.46,0.45,0.94)',
-            touchAction:'pan-y', userSelect:'none',
-          }}
+          style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 16px', background:M.paper }}
+          onDragOver={!isCustom ? (e) => e.preventDefault() : undefined}
+          onDrop={!isCustom ? () => handleDropOnPremadeParent(parentKey) : undefined}
         >
-          {!c.isParent && <div style={{ flexShrink:0 }}><I name="menu" size={14} color={M.ink4}/></div>}
-          <div style={{ width:32, height:32, borderRadius:9,
-            background: c.isParent ? (M.violetSoft||'#EEE8FF') : M.sageSoft,
-            display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-            <I name={c.icon} size={15} color={c.isParent ? M.violet : M.sage}/>
+          <div style={{ width:38, height:38, borderRadius:10, background:parentCat.color||M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+            <I name={parentCat.icon||'box'} size={18} color={isCustom?'#fff':M.ink2}/>
           </div>
-          <div style={{ flex:1, minWidth:0 }}>
-            <div style={{ fontSize:14, fontWeight:500 }}>{c.name}</div>
-            <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>
-              {c.isParent ? 'Custom parent' : `Sub · ${parentCat?.name || c.parent}`}
-            </div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:15, fontWeight:600 }}>{parentCat.name}</div>
+          </div>
+          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+            <span style={{ fontSize:12, color:M.ink3 }}>{subCount} subs</span>
+            <button className="m-tap" onClick={() => setNewSubSheet(parentKey)}
+              style={{ background:M.sageSoft, border:'none', borderRadius:8, padding:'4px 10px', color:M.sage, fontSize:12, fontWeight:500, cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', gap:4 }}>
+              <I name="plus" size={11} color={M.sage}/> Sub
+            </button>
+            {isCustom && canDeleteParent(parentKey) && (
+              <button className="m-tap" onClick={() => deleteCustomParent(parentKey)}
+                style={{ background:'none', border:'none', color:M.clay, cursor:'pointer', padding:4 }}>
+                <I name="x" size={15} color={M.clay}/>
+              </button>
+            )}
           </div>
         </div>
+        {/* Sub-categories */}
+        {allSubs.map((sub) => {
+          const subKey = Array.isArray(sub) ? sub[0] : sub.id;
+          const subCat = Array.isArray(sub) ? sub[1] : sub;
+          const isCustomSub = !Array.isArray(sub);
+          const isOther = isCustomSub && sub.id === `${parentKey}_other`;
+
+          return (
+            <div key={subKey}
+              draggable={isCustomSub}
+              onDragStart={isCustomSub ? () => setDragCatId(subKey) : undefined}
+              onDragOver={isCustomSub ? (e) => e.preventDefault() : undefined}
+              onDrop={isCustomSub ? () => handleDrop(subKey, parentKey) : undefined}
+              style={{ display:'flex', alignItems:'center', gap:10, padding:'11px 16px', borderTop:`1px solid ${M.line2}` }}
+            >
+              <div style={{ width:28, height:28, borderRadius:8, background:subCat.color||M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <I name={subCat.icon||'box'} size={13} color={isOther?M.ink3:(isCustomSub?'#fff':M.ink2)}/>
+              </div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:13, fontWeight:isOther?400:500, color:isOther?M.ink3:M.ink, fontStyle:isOther?'italic':'normal' }}>{subCat.name}</div>
+              </div>
+              {(isCustomSub && !isOther) && (
+                <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+                  <I name="menu" size={15} color={M.ink4}/>
+                  <button className="m-tap" onClick={() => deleteCustomSub(subKey)}
+                    style={{ background:'none', border:'none', color:M.ink4, cursor:'pointer', padding:'2px 4px' }}>
+                    <I name="x" size={14} color={M.ink4}/>
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     );
   };
 
   return (
-    <div className="m-screen" style={{ position:'relative' }} onClick={() => swipedId && setSwipedId(null)}>
+    <div className="m-screen">
       <StatusBar/>
       <AppBar title="Categories"
         leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
-        trailing={<button className="m-iconbtn m-tap" onClick={() => setShowAdd(true)}><I name="plus" size={20}/></button>}
+        trailing={<button className="m-tap m-iconbtn" onClick={() => setNewParentSheet(true)}><I name="plus" size={20}/></button>}
       />
       <div className="m-body-scroll">
-        <div style={{ padding:'10px 14px', borderRadius:10, background:M.paper2, marginBottom:14, fontSize:12, color:M.ink3, lineHeight:1.5 }}>
-          Premade categories cannot be deleted. Add custom <strong style={{ color:M.ink }}>sub-categories</strong> or your own <strong style={{ color:M.ink }}>parent categories</strong>. Swipe left on a custom item to delete. Drag sub-categories between parents.
-        </div>
 
-        {customCats.length > 0 && (
-          <>
-            <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Custom · {customCats.length}</div>
-            <div className="m-card" style={{ padding:0, marginBottom:16, border:`1px solid ${M.line}`, overflow:'hidden' }}>
-              {customCats.map((c, i) => (
-                <React.Fragment key={c.id}>
-                  <CatRow c={c}/>
-                  {i < customCats.length - 1 && <Divider inset={56}/>}
-                </React.Fragment>
-              ))}
-            </div>
-          </>
-        )}
-
-        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Premade categories</div>
-        {premadeParents.map((p) => {
-          const subs = Object.values(CATEGORIES).filter(c => c.parent === p.id);
-          const customSubs = customCats.filter(c => c.parent === p.id);
-          const isDropTarget = dragOverParent === p.id;
-          return (
-            <div key={p.id} className="m-card" style={{
-              padding:'4px 16px', marginBottom:8,
-              border:`1.5px solid ${isDropTarget ? M.sage : M.line}`,
-              background: isDropTarget ? M.sageSoft : undefined,
-              transition:'border-color 0.15s, background 0.15s',
-            }}
-              onDragOver={(e) => onDragOver(p.id, e)}
-              onDragLeave={onDragLeave}
-              onDrop={(e) => onDrop(p.id, e)}
-            >
-              <div style={{ padding:'10px 0' }}>
-                <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:(subs.length + customSubs.length) > 0 ? 8 : 0 }}>
-                  <div style={{ width:28, height:28, borderRadius:8, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center' }}>
-                    <I name={p.icon} size={14} color={M.ink2}/>
-                  </div>
-                  <div style={{ flex:1, fontSize:13, fontWeight:600 }}>{p.name}</div>
-                  <button className="m-tap" onClick={() => openQuickAdd(p.id)} style={{ background:'transparent', border:`1px solid ${M.sage}44`, borderRadius:7, padding:'3px 8px', fontSize:11, fontWeight:600, color:M.sage, cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', gap:4, flexShrink:0 }}>
-                    <I name="plus" size={11} color={M.sage}/> Sub
-                  </button>
-                  <div style={{ fontSize:11, color:M.ink4 }}>{subs.length + customSubs.length} subs</div>
-                </div>
-                <div style={{ paddingLeft:38 }}>
-                  {subs.map(s => (
-                    <div key={s.id} style={{ fontSize:12, color:M.ink3, padding:'3px 0', display:'flex', alignItems:'center', gap:6 }}>
-                      <div style={{ width:4, height:4, borderRadius:999, background:M.line, flexShrink:0 }}/>
-                      {s.name}
-                    </div>
-                  ))}
-                  {customSubs.map(s => (
-                    <div key={s.id} draggable onDragStart={(e) => onDragStart(s.id, e)}
-                      style={{ fontSize:12, color:M.sage, padding:'3px 0', display:'flex', alignItems:'center', gap:6, cursor:'grab', userSelect:'none' }}>
-                      <I name="menu" size={10} color={M.sage}/>
-                      {s.name} <span style={{ fontSize:10, color:M.ink4 }}>custom</span>
-                    </div>
-                  ))}
-                  {isDropTarget && <div style={{ fontSize:12, color:M.sage, padding:'3px 0', fontStyle:'italic', opacity:0.7 }}>Drop here →</div>}
-                </div>
-              </div>
-            </div>
-          );
-        })}
-
+        {/* CUSTOM section */}
         {customParents.length > 0 && (
           <>
-            <div className="m-cap" style={{ marginBottom:8, paddingLeft:4, marginTop:4 }}>Custom parent categories</div>
-            {customParents.map((p) => {
-              const customSubs = customCats.filter(c => c.parent === p.id);
-              const isDropTarget = dragOverParent === p.id;
-              return (
-                <div key={p.id} className="m-card" style={{
-                  padding:'4px 16px', marginBottom:8,
-                  border:`1.5px solid ${isDropTarget ? M.violet : M.line}`,
-                  background: isDropTarget ? (M.violetSoft||'#EEE8FF') : undefined,
-                  transition:'border-color 0.15s, background 0.15s',
-                }}
-                  onDragOver={(e) => onDragOver(p.id, e)}
-                  onDragLeave={onDragLeave}
-                  onDrop={(e) => onDrop(p.id, e)}
-                >
-                  <div style={{ padding:'10px 0' }}>
-                    <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom: customSubs.length > 0 ? 8 : 0 }}>
-                      <div style={{ width:28, height:28, borderRadius:8, background:M.violetSoft||'#EEE8FF', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                        <I name={p.icon} size={14} color={M.violet}/>
-                      </div>
-                      <div style={{ flex:1, fontSize:13, fontWeight:600 }}>{p.name}</div>
-                      <button className="m-tap" onClick={() => openQuickAdd(p.id)} style={{ background:'transparent', border:`1px solid ${M.violet}44`, borderRadius:7, padding:'3px 8px', fontSize:11, fontWeight:600, color:M.violet, cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', gap:4, flexShrink:0 }}>
-                        <I name="plus" size={11} color={M.violet}/> Sub
-                      </button>
-                      <div style={{ fontSize:11, color:M.ink4 }}>{customSubs.length} subs</div>
-                    </div>
-                    {customSubs.length > 0 && (
-                      <div style={{ paddingLeft:38 }}>
-                        {customSubs.map(s => (
-                          <div key={s.id} draggable onDragStart={(e) => onDragStart(s.id, e)}
-                            style={{ fontSize:12, color:M.violet, padding:'3px 0', display:'flex', alignItems:'center', gap:6, cursor:'grab', userSelect:'none' }}>
-                            <I name="menu" size={10} color={M.violet+'88'}/>
-                            {s.name}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    {isDropTarget && <div style={{ fontSize:12, color:M.violet, padding:'3px 0 3px 38px', fontStyle:'italic', opacity:0.7 }}>Drop here →</div>}
-                  </div>
-                </div>
-              );
-            })}
+            <div className="m-cap" style={{ marginBottom:8 }}>CUSTOM · {customParents.length}</div>
+            {customParents.map(p => renderParentCard(p.id, p, true))}
           </>
         )}
-        <div style={{ height:24 }}/>
+
+        {/* PREMADE section */}
+        <div className="m-cap" style={{ marginBottom:8, marginTop: customParents.length>0?16:0 }}>PREMADE CATEGORIES</div>
+        <div className="m-card" style={{ padding:'8px 16px', marginBottom:12, border:`1px solid ${M.line}` }}>
+          <div style={{ fontSize:12, color:M.ink3, lineHeight:1.5 }}>
+            Premade categories cannot be deleted. Add custom <strong>sub-categories</strong> or your own <strong>parent categories</strong>. Drag a custom sub-category onto a premade parent to move it there.
+          </div>
+        </div>
+        {premadeParents.map(([k,v]) => renderParentCard(k, v, false))}
+
+        <div style={{ height:32 }}/>
       </div>
 
-      {showAdd && (
-        <Sheet onClose={() => { setShowAdd(false); setNewType('sub'); setNewName(''); }}>
-          <div style={{ padding:'4px 20px 32px' }}>
-            <div className="m-h2" style={{ marginBottom:16 }}>New category</div>
-            <div style={{ display:'flex', gap:4, marginBottom:18, padding:'4px', borderRadius:12, background:M.paper2 }}>
-              {[{id:'sub',label:'Sub-category'},{id:'parent',label:'Parent category'}].map(opt => (
-                <button key={opt.id} className="m-tap" onClick={() => setNewType(opt.id)} style={{
-                  flex:1, padding:'8px 0', borderRadius:9, border:'none', fontFamily:M.fontUI,
-                  fontSize:13, fontWeight:600, cursor:'pointer',
-                  background: newType === opt.id ? '#fff' : 'transparent',
-                  color: newType === opt.id ? M.ink : M.ink3,
-                  boxShadow: newType === opt.id ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
-                  transition:'all 0.2s',
-                }}>{opt.label}</button>
-              ))}
-            </div>
+      {/* New parent sheet */}
+      <Sheet open={newParentSheet} onClose={() => setNewParentSheet(false)} title="New parent category">
+        <NewCatForm
+          onSave={(name, icon, color) => {
+            const id = `cust_${Date.now()}`;
+            setCustomCats(prev => [...prev,
+              { id, name, icon: icon||'box', color: color||M.slate, isParent:true, parent:null },
+              { id:`${id}_other`, name:'Other', icon:'box', color:M.paper2, isParent:false, parent:id }
+            ]);
+            setNewParentSheet(false);
+          }}
+        />
+      </Sheet>
 
-            {newType === 'sub' && (
-              <>
-                <div className="m-cap" style={{ marginBottom:6 }}>Parent category</div>
-                <div style={{ display:'flex', gap:6, overflowX:'auto', paddingBottom:8, marginBottom:14 }}>
-                  {allParentOptions.map(p => (
-                    <button key={p.id} className="m-tap" onClick={() => setNewParent(p.id)} style={{
-                      flexShrink:0, padding:'6px 12px', borderRadius:10,
-                      border:`1.5px solid ${newParent === p.id ? M.sage : M.line}`,
-                      background: newParent === p.id ? M.sageSoft : M.card,
-                      fontSize:12, fontWeight:600, color: newParent === p.id ? M.sage : M.ink2,
-                      fontFamily:M.fontUI, cursor:'pointer',
-                    }}>{p.name}</button>
-                  ))}
-                </div>
-              </>
-            )}
-
-            <div className="m-cap" style={{ marginBottom:6 }}>Name</div>
-            <input value={newName} onChange={e => setNewName(e.target.value)}
-              placeholder={newType === 'parent' ? 'e.g. Travel' : 'e.g. VR Gaming'}
-              style={{ width:'100%', padding:'10px 14px', borderRadius:12, border:`1.5px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, outline:'none', marginBottom:14, background:M.paper2, color:M.ink, boxSizing:'border-box' }}
-            />
-
-            <div className="m-cap" style={{ marginBottom:6 }}>Icon</div>
-            <div style={{ display:'flex', gap:8, overflowX:'auto', paddingBottom:8, marginBottom:18 }}>
-              {icons.map(ic => (
-                <button key={ic} className="m-tap" onClick={() => setNewIcon(ic)} style={{
-                  flexShrink:0, width:40, height:40, borderRadius:10,
-                  border:`1.5px solid ${newIcon === ic ? M.sage : M.line}`,
-                  background: newIcon === ic ? M.sageSoft : M.card,
-                  display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer',
-                }}>
-                  <I name={ic} size={16} color={newIcon === ic ? M.sage : M.ink2}/>
-                </button>
-              ))}
-            </div>
-
-            <button className="m-btn sage m-tap" style={{ width:'100%' }} onClick={addCat} disabled={!newName.trim()}>
-              Add {newType === 'parent' ? 'parent category' : 'sub-category'}
-            </button>
-          </div>
-        </Sheet>
-      )}
-
-      {deleteTarget && (
-        <Sheet onClose={() => setDeleteTarget(null)}>
-          <div style={{ padding:'4px 20px 32px' }}>
-            <div style={{ width:52, height:52, borderRadius:15, background:M.claySoft, display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 16px' }}>
-              <I name="x" size={24} color={M.clay}/>
-            </div>
-            <div className="m-h2" style={{ textAlign:'center', marginBottom:12 }}>Delete "{deleteTarget.name}"?</div>
-            {(() => {
-              const n = countAffected(deleteTarget.id);
-              return n > 0 ? (
-                <div style={{ padding:'10px 14px', borderRadius:10, background:M.claySoft, fontSize:13, color:M.clay, marginBottom:18, lineHeight:1.5 }}>
-                  This will affect <strong>{n} transaction{n !== 1 ? 's' : ''}</strong>. They will be set to Uncategorized.
-                </div>
-              ) : (
-                <div style={{ fontSize:13, color:M.ink3, textAlign:'center', marginBottom:18, lineHeight:1.5 }}>No transactions are using this category.</div>
-              );
-            })()}
-            <button className="m-tap" onClick={doDelete} style={{
-              width:'100%', height:48, borderRadius:12, border:'none',
-              background:M.clay, color:'#fff', fontSize:15, fontWeight:600,
-              fontFamily:M.fontUI, cursor:'pointer', marginBottom:10,
-            }}>Delete</button>
-            <button className="m-btn outline m-tap" style={{ width:'100%' }} onClick={() => setDeleteTarget(null)}>Cancel</button>
-          </div>
-        </Sheet>
-      )}
+      {/* New sub sheet */}
+      <Sheet open={!!newSubSheet} onClose={() => setNewSubSheet(null)} title="New sub-category">
+        <NewCatForm
+          onSave={(name, icon, color) => {
+            const parentId = newSubSheet;
+            setCustomCats(prev => [...prev,
+              { id:`cust_${Date.now()}`, name, icon: icon||'box', color: color||M.slate, isParent:false, parent:parentId }
+            ]);
+            setNewSubSheet(null);
+          }}
+        />
+      </Sheet>
     </div>
   );
 }
@@ -4469,8 +4624,10 @@ function ScreenAccounts() {
           color: bankColors[bank.id] || M.slate,
           bankId: bank.id,
         };
-        setConnectedAccounts(a => [...a, newAcct]);
-        const newTxs = generateBankTxs(newAcct.id, bank.name);
+        const isAsn = bank.id === 'asn' || bank.name.toLowerCase().includes('asn');
+        const newBalance = isAsn ? 3245.67 : parseFloat((1000 + Math.random() * 8000).toFixed(2));
+        setConnectedAccounts(a => [...a, { ...newAcct, balance: newBalance }]);
+        const newTxs = isAsn ? generateAsnTxs(newAcct.id) : generateBankTxs(newAcct.id, bank.name);
         addTxs(newTxs);
         setProfiles(ps => ps.map(p => p.active ? { ...p, accountIds: [...(p.accountIds || []), newAcct.id] } : p));
         setSelectedBank(null);
@@ -4948,8 +5105,10 @@ function ScreenAccountsAll() {
           color: bankColors[bank.id] || M.slate,
           bankId: bank.id,
         };
-        setConnectedAccounts(a => [...a, newAcct]);
-        const newTxs = generateBankTxs(newAcct.id, bank.name);
+        const isAsn = bank.id === 'asn' || bank.name.toLowerCase().includes('asn');
+        const newBalance = isAsn ? 3245.67 : parseFloat((1000 + Math.random() * 8000).toFixed(2));
+        setConnectedAccounts(a => [...a, { ...newAcct, balance: newBalance }]);
+        const newTxs = isAsn ? generateAsnTxs(newAcct.id) : generateBankTxs(newAcct.id, bank.name);
         addTxs(newTxs);
         setProfiles(ps => ps.map(p => p.active ? { ...p, accountIds: [...(p.accountIds || []), newAcct.id] } : p));
         setSelectedBank(null);
@@ -5395,7 +5554,7 @@ function ScreenCustomizeHome() {
       />
       <div className="m-body-scroll">
         <div style={{ fontSize:13, color:M.ink3, marginBottom:16, paddingLeft:4, lineHeight:1.5 }}>
-          Choose which cards appear on your home screen and in what order. Pinned cards are always shown at the top in their fixed order.
+          Choose which cards appear on your home screen and in what order. Transaction Review and Period are always shown at the top.
         </div>
 
         {/* Pinned cards */}
@@ -5460,13 +5619,12 @@ function ScreenCustomizeHome() {
             Pinned cards are always shown at the top. Use the checkboxes to show or hide other cards, and arrows to reorder them.
           </div>
         </div>
-        <div style={{ marginTop:12, display:'flex', justifyContent:'center' }}>
+        <div style={{ textAlign:'center', padding:'20px 0 8px' }}>
           <button className="m-tap" onClick={() => setCards(HOME_CARDS_DEFAULT)}
-            style={{ background:'transparent', border:'none', fontSize:13, fontWeight:600, color:M.ink3, cursor:'pointer', fontFamily:M.fontUI, padding:'8px 16px', borderRadius:8 }}>
+            style={{ background:'none', border:'none', color:M.ink3, fontSize:13, cursor:'pointer', fontFamily:M.fontUI }}>
             Reset to default
           </button>
         </div>
-        <div style={{ height:16 }}/>
       </div>
     </div>
   );
@@ -5972,7 +6130,8 @@ function ScreenRecurringDeals({ params }) {
 
 function ScreenBudgets() {
   const nav = useNav();
-  const sorted = [...BUDGETS].sort((a, b) => {
+  const [budgets] = useProfileBudgets();
+  const sorted = [...budgets].sort((a, b) => {
     const ra = a.spent / a.total;
     const rb = b.spent / b.total;
     return rb - ra;
@@ -6060,7 +6219,8 @@ function BudgetCard({ b, onClick }) {
 function ScreenBudgetDetail({ params }) {
   const nav = useNav();
   const { txs: allTxs } = useTxCtx();
-  const b = BUDGETS.find(x => x.id === params?.id) || BUDGETS[0];
+  const [budgets] = useProfileBudgets();
+  const b = budgets.find(x => x.id === params?.id) || budgets[0];
   const [editMode, setEditMode] = React.useState(false);
   const [pOffset, setPOffset] = React.useState(0);
 
@@ -6284,6 +6444,23 @@ function useLocalStorage(key, defaultValue) {
 const STORAGE_KEYS = ['munni_txs','munni_recur','munni_topics','munni_pOffset','munni_customCats','munni_dark','munni_profile_name','munni_profile_email','munni_integrations','munni_bank_accounts','munni_selected_bank','munni_profiles','munni_disabled_save_accounts','munni_home_cards'];
 function clearAllStorage() { STORAGE_KEYS.forEach(k => localStorage.removeItem(k)); }
 
+// ── Profile-bound data hooks ────────────────────────────────────
+function useProfileBudgets() {
+  const { profiles } = useProfiles();
+  const activeProfileId = (profiles.find(p => p.active) || profiles[0])?.id || 'default';
+  return useLocalStorage(`munni_budgets_${activeProfileId}`, BUDGETS);
+}
+function useProfileGoals() {
+  const { profiles } = useProfiles();
+  const activeProfileId = (profiles.find(p => p.active) || profiles[0])?.id || 'default';
+  return useLocalStorage(`munni_goals_${activeProfileId}`, GOALS);
+}
+function useProfileDebts() {
+  const { profiles } = useProfiles();
+  const activeProfileId = (profiles.find(p => p.active) || profiles[0])?.id || 'default';
+  return useLocalStorage(`munni_debts_${activeProfileId}`, DEBTS);
+}
+
 const CatCtx = React.createContext(null);
 function CatProvider({ children }) {
   const [customCats, setCustomCats] = useLocalStorage('munni_customCats', []);
@@ -6387,7 +6564,10 @@ function Stat({ label, value, color }) {
 }
 
 function AllocProvider({ children }) {
-  const [topics, setTopics] = useLocalStorage('munni_topics', ALLOCATE_TOPICS);
+  const { profiles } = useProfiles();
+  const activeProfile = profiles.find(p => p.active) || profiles[0];
+  const profileId = activeProfile?.id || 'default';
+  const [topics, setTopics] = useLocalStorage(`munni_topics_${profileId}`, ALLOCATE_TOPICS);
   const [pOffset, setPOffset] = useLocalStorage('munni_pOffset', 0);
   const updateTopic = (id, changes) => setTopics(ts => ts.map(t => t.id === id ? { ...t, ...changes } : t));
   const addTopicCat = (topicId, catId) => setTopics(ts => ts.map(t => t.id === topicId ? { ...t, cats: [...t.cats, catId] } : t));
@@ -7179,9 +7359,10 @@ function ScreenInvestmentConnect() {
 
 function ScreenGoals() {
   const nav = useNav();
-  const total = GOALS.reduce((s, g) => s + g.current, 0);
-  const active = GOALS.filter(g => g.current < g.target);
-  const achieved = GOALS.filter(g => g.current >= g.target);
+  const [goals] = useProfileGoals();
+  const total = goals.reduce((s, g) => s + g.current, 0);
+  const active = goals.filter(g => g.current < g.target);
+  const achieved = goals.filter(g => g.current >= g.target);
 
   return (
     <div className="m-screen">
@@ -7194,12 +7375,12 @@ function ScreenGoals() {
         <div className="m-card" style={{ padding: 18, marginBottom: 16, border: `1px solid ${M.line}` }}>
           <div className="m-cap">Total saved</div>
           <div className="m-num" style={{ fontSize: 28, fontWeight: 600, fontFamily: M.fontDisp, marginTop: 4 }}>{fmtEur(total)}</div>
-          <div style={{ fontSize: 12, color: M.ink3, marginTop: 2 }}>across {GOALS.length} goals · linked to ING Savings</div>
+          <div style={{ fontSize: 12, color: M.ink3, marginTop: 2 }}>across {goals.length} goals · linked to ING Savings</div>
           <div style={{ marginTop: 14 }}>
-            <StackedBar segments={GOALS.map(g => ({ value: g.current, color: g.color }))} height={8}/>
+            <StackedBar segments={goals.map(g => ({ value: g.current, color: g.color }))} height={8}/>
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
-            {GOALS.map(g => (
+            {goals.map(g => (
               <div key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11 }}>
                 <div style={{ width: 7, height: 7, borderRadius: 2, background: g.color }}/>
                 <span style={{ color: M.ink2 }}>{g.name}</span>
@@ -7306,7 +7487,8 @@ function GoalCardLarge({ g, onClick }) {
 
 function ScreenGoalDetail({ params }) {
   const nav = useNav();
-  const g = GOALS.find(x => x.id === params?.id) || GOALS[0];
+  const [goals] = useProfileGoals();
+  const g = goals.find(x => x.id === params?.id) || goals[0];
   const pct = (g.current / g.target) * 100;
   const monthsLeft = Math.ceil((g.target - g.current) / g.monthly);
 
@@ -8016,10 +8198,42 @@ function ScreenLinkReimburse({ params }) {
 
 function ScreenIncome() {
   const nav = useNav();
-  const { txs } = useTxCtx();
-  const incomeTx = txs.filter(t => t.amount > 0);
-  const total = incomeTx.reduce((s, t) => s + t.amount, 0);
-  const monthlyHistory = [1850, 2480, 2200, 2480, 2310, 2480];
+  const { txs: allTxs } = useTxCtx();
+  const [selBar, setSelBar] = React.useState(PERIOD_HISTORY.length - 1);
+  const selPeriod = PERIOD_HISTORY[selBar] || PERIOD_HISTORY[PERIOD_HISTORY.length - 1];
+  const periodStart = selPeriod.start;
+  const periodEnd = selPeriod.end;
+
+  // All income txs for the selected period
+  const periodIncomeTxs = allTxs.filter(t =>
+    t.amount > 0 && t.date >= periodStart && t.date <= periodEnd
+  ).sort((a, b) => b.date.localeCompare(a.date) || (b.time || '').localeCompare(a.time || ''));
+
+  const total = periodIncomeTxs.reduce((s, t) => s + t.amount, 0);
+
+  // Bar chart data: income per period
+  const barData = PERIOD_HISTORY.map(p =>
+    allTxs.filter(t => t.amount > 0 && t.date >= p.start && t.date <= p.end).reduce((s, t) => s + t.amount, 0)
+  );
+
+  // Group by date
+  const byDate = React.useMemo(() => {
+    const map = {};
+    periodIncomeTxs.forEach(t => {
+      if (!map[t.date]) map[t.date] = [];
+      map[t.date].push(t);
+    });
+    return Object.entries(map).sort(([a], [b]) => b.localeCompare(a));
+  }, [allTxs, periodStart, periodEnd]);
+
+  // Prev period income for comparison
+  const prevPeriod = PERIOD_HISTORY[selBar - 1];
+  const prevTotal = prevPeriod
+    ? allTxs.filter(t => t.amount > 0 && t.date >= prevPeriod.start && t.date <= prevPeriod.end).reduce((s, t) => s + t.amount, 0)
+    : null;
+  const vsLabel = prevTotal != null && prevTotal > 0
+    ? (() => { const diff = ((total - prevTotal) / prevTotal) * 100; return (diff >= 0 ? '+' : '') + diff.toFixed(0) + '% vs previous'; })()
+    : null;
 
   return (
     <div className="m-screen">
@@ -8028,39 +8242,62 @@ function ScreenIncome() {
         leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
       />
       <div className="m-body-scroll">
-        <div style={{ textAlign: 'center', padding: '8px 0 20px' }}>
+        <div style={{ textAlign: 'center', padding: '8px 0 16px' }}>
           <div className="m-num" style={{ fontSize: 38, fontWeight: 600, letterSpacing: '-0.025em', color: M.sage }}>{fmtEur(total)}</div>
-          <div style={{ fontSize: 12, color: M.ink3, marginTop: 4, fontWeight: 500 }}>20 Jan – 19 Feb</div>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 8, padding: '4px 10px', borderRadius: 999, background: M.sageSoft }}>
-            <I name="trending-up" size={12} color={M.sage}/>
-            <span style={{ fontSize: 11, color: M.sage, fontWeight: 600 }}>+4% vs previous</span>
+          <div style={{ fontSize: 12, color: M.ink3, marginTop: 4, fontWeight: 500 }}>{selPeriod.label}</div>
+          {vsLabel && (
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 8, padding: '4px 10px', borderRadius: 999, background: M.sageSoft }}>
+              <I name="trending-up" size={12} color={M.sage}/>
+              <span style={{ fontSize: 11, color: M.sage, fontWeight: 600 }}>{vsLabel}</span>
+            </div>
+          )}
+        </div>
+
+        <div className="m-card" style={{ padding:'12px 16px 8px', marginBottom:14, border:`1px solid ${M.line}` }}>
+          <div className="m-cap" style={{ marginBottom:8 }}>Period history · tap to navigate</div>
+          <BarChartScrollable
+            data={barData}
+            labels={PERIOD_HISTORY.map(p => p.label.split(' – ')[0].replace('20 ',''))}
+            height={80}
+            accent={M.sage}
+            color={M.ink3}
+            selected={selBar}
+            onSelect={setSelBar}
+          />
+        </div>
+
+        {byDate.length === 0 ? (
+          <div style={{ textAlign:'center', padding:'48px 24px', color:M.ink3 }}>
+            <I name="inbox" size={32} color={M.ink4}/>
+            <div style={{ marginTop:12, fontSize:14, fontWeight:500 }}>No income this period</div>
           </div>
-        </div>
-
-        <div className="m-card" style={{ padding: 16, marginBottom: 16, border: `1px solid ${M.line}` }}>
-          <div className="m-cap" style={{ marginBottom: 12 }}>Monthly history</div>
-          <BarChart data={monthlyHistory} labels={['Sep–Oct','Oct–Nov','Nov–Dec','Dec–Jan','Jan–Feb','Feb–Mar']} showValues height={80} accent={M.sage}/>
-        </div>
-
-        <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Sources · {incomeTx.length}</div>
-        <div className="m-card" style={{ padding: '4px 16px', border: `1px solid ${M.line}` }}>
-          {incomeTx.map((t, i, a) => (
-            <React.Fragment key={t.id}>
-              <div className="m-tap" onClick={() => nav.push('txDetail', { id: t.id })}
-                style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 0' }}>
-                <div style={{ width: 36, height: 36, borderRadius: 10, background: M.sageSoft, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <I name={CATEGORIES[t.cat]?.icon || 'arrow-dn-right'} size={16} color={M.sage}/>
+        ) : (
+          <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+            {byDate.map(([date, dayTxs]) => (
+              <div key={date}>
+                <div style={{ fontSize:11, fontWeight:600, color:M.ink3, paddingLeft:4, marginBottom:4 }}>{dayLabel(date)}</div>
+                <div className="m-card" style={{ padding:'0 16px', border:`1px solid ${M.line}` }}>
+                  {dayTxs.map((t, i, a) => (
+                    <React.Fragment key={t.id}>
+                      <div className="m-tap" onClick={() => nav.push('txDetail', { id: t.id })}
+                        style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
+                        <div style={{ width:36, height:36, borderRadius:10, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                          <I name={CATEGORIES[t.cat]?.icon || 'arrow-dn-right'} size={16} color={M.sage}/>
+                        </div>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontSize:14, fontWeight:500 }}>{t.merchant}</div>
+                          <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{CATEGORIES[t.cat]?.name || 'Income'}</div>
+                        </div>
+                        <div className="m-num" style={{ fontSize:14, fontWeight:600, color:M.sage }}>+{fmtEur(t.amount)}</div>
+                      </div>
+                      {i < a.length - 1 && <Divider inset={48}/>}
+                    </React.Fragment>
+                  ))}
                 </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 500 }}>{t.merchant}</div>
-                  <div style={{ fontSize: 11, color: M.ink3, marginTop: 1 }}>{CATEGORIES[t.cat]?.name || 'Income'} · {fmtDate(t.date)}</div>
-                </div>
-                <div className="m-num" style={{ fontSize: 14, fontWeight: 600, color: M.sage }}>+{fmtEur(t.amount)}</div>
               </div>
-              {i < a.length - 1 && <Divider inset={48}/>}
-            </React.Fragment>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -8237,7 +8474,7 @@ function ScreenDebts() {
   const [strategy, setStrategy] = React.useState('avalanche');
   const [showAdd, setShowAdd] = React.useState(false);
   const [manageDebt, setManageDebt] = React.useState(null);
-  const [debts, setDebts] = React.useState(DEBTS);
+  const [debts, setDebts] = useProfileDebts();
   const totalDebt = debts.reduce((s, d) => s + d.balance, 0);
   const monthlyMin = debts.reduce((s, d) => s + d.minPayment, 0);
 
