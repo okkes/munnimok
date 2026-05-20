@@ -14,7 +14,6 @@
       #root { height: 100dvh; align-items: stretch; justify-content: stretch; }
     }
   </style>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css" crossorigin="anonymous"/>
   <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
   <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
   <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
@@ -466,8 +465,14 @@ function I({ name, size = 20, color = 'currentColor', stroke = 1.6 }) {
   }
 }
 
+const MDI_PATHS = {};
 function IcoMDI({ name, size = 20, color }) {
-  return <i className={'mdi mdi-' + name} style={{ fontSize: size, color: color || 'currentColor', lineHeight: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, width: size, height: size }}/>;
+  const d = MDI_PATHS[name] || MDI_PATHS['help-circle-outline'] || '';
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" style={{ flexShrink:0, display:'block' }}>
+      <path d={d} fill={color || 'currentColor'}/>
+    </svg>
+  );
 }
 function CatIcon({ cat, size = 20, color }) {
   if (!cat) return <IcoMDI name="help-circle-outline" size={size} color={color}/>;
@@ -3929,6 +3934,7 @@ function ScreenProfile() {
   const initial = name.charAt(0).toUpperCase();
 
   const activeProfile = profiles.find(p => p.active) || profiles[0];
+  const isDemo = activeProfile?.id === 'p_demo' || activeProfile?.isDemo;
   const connectedBanks = connectedAccounts.filter(a => a.type === 'checking').length;
 
   return (
@@ -3958,17 +3964,19 @@ function ScreenProfile() {
             </div>
           </button>
           <div style={{ flex: 1, minWidth: 0 }}>
-            {editing ? (
+            {editing && !isDemo ? (
               <input value={draft.name} onChange={e => setDraft(d => ({...d, name: e.target.value}))}
                 style={{ width:'100%', fontSize:16, fontWeight:600, border:`1px solid ${M.sage}`, borderRadius:8, padding:'6px 10px', fontFamily:M.fontUI, background:M.paper2, outline:'none', marginBottom:6 }}/>
             ) : (
-              <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:2 }}>
+              <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:2, flexWrap:'wrap' }}>
                 <div style={{ fontSize: 17, fontWeight: 600 }}>{name}</div>
+                {isDemo && <span style={{ fontSize:9, fontWeight:700, padding:'2px 6px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase', letterSpacing:'0.05em' }}>Demo</span>}
               </div>
             )}
             <div style={{ fontSize: 12, color: M.ink3 }}>{email}</div>
+            {isDemo && <div style={{ fontSize:11, color:M.ochre, marginTop:3 }}>Demo account · read-only profile</div>}
           </div>
-          {editing ? (
+          {!isDemo && (editing ? (
             <button className="m-tap" onClick={save} style={{ width:36, height:36, borderRadius:999, background:M.sage, border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
               <I name="check" size={16} color="#fff" stroke={2.5}/>
             </button>
@@ -3976,7 +3984,7 @@ function ScreenProfile() {
             <button className="m-tap" onClick={startEdit} style={{ width:36, height:36, borderRadius:999, background:M.paper2, border:`1px solid ${M.line}`, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
               <I name="edit" size={16} color={M.ink3}/>
             </button>
-          )}
+          ))}
         </div>
 
         {/* Manage */}
@@ -4956,7 +4964,7 @@ function NewCatForm({ onSave, isSub = false }) {
   );
 }
 
-function EditCatSheet({ entry, txCount, onSave, onDelete, isPrebuilt = false }) {
+function EditCatSheet({ entry, txCount = 0, onSave, onDelete, isPrebuilt = false }) {
   const [nameDraft, setNameDraft] = React.useState(entry.name);
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
   const canDelete = onDelete !== null;
@@ -4993,10 +5001,13 @@ function EditCatSheet({ entry, txCount, onSave, onDelete, isPrebuilt = false }) 
         Save
       </button>
       {canDelete && (
-        <button onClick={() => setShowDeleteConfirm(true)}
-          style={{ width:'100%', padding:'14px 0', background:'transparent', color:M.clay, border:`1.5px solid ${M.clay}`, borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
-          Delete category
-        </button>
+        <>
+          {txCount > 0 && <div style={{ fontSize:12, color:M.ochre, marginBottom:8, textAlign:'center' }}>{txCount} transaction{txCount!==1?'s':''} will be set to uncategorized</div>}
+          <button onClick={() => setShowDeleteConfirm(true)}
+            style={{ width:'100%', padding:'14px 0', background:'transparent', color:M.clay, border:`1.5px solid ${M.clay}`, borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+            Delete category
+          </button>
+        </>
       )}
     </div>
   );
@@ -5044,7 +5055,16 @@ function ScreenManageCategories() {
   };
 
   const deleteCustomParent = (parentId) => {
-    setCustomCats(prev => prev.filter(c => c.id !== parentId && c.parent !== parentId));
+    const subsToDelete = new Set(customCats.filter(c => c.parent === parentId).map(c => c.id));
+    subsToDelete.add(parentId);
+    setCustomCats(prev => prev.filter(c => !subsToDelete.has(c.id) && c.parent !== parentId));
+    setTxs(prev => prev.map(t => {
+      if (subsToDelete.has(t.cat) || t.cat === parentId) {
+        const fallback = (t.amount >= 0) ? 'incomeUncategorized' : 'expenseUncategorized';
+        return { ...t, cat: fallback, cats: [{ catId: fallback, amount: Math.abs(t.amount) }] };
+      }
+      return t;
+    }));
   };
 
   const canDeleteParent = (parentId) => {
@@ -5054,6 +5074,7 @@ function ScreenManageCategories() {
 
   const startDrag = (e, catId, parentId, label, icon, color) => {
     e.preventDefault();
+    e.stopPropagation();
     setDragState({ catId, parentId, x: e.clientX, y: e.clientY, ghostLabel: label, ghostIcon: icon, ghostColor: color });
     setCollapsedParents(() => {
       const next = {};
@@ -5076,9 +5097,12 @@ function ScreenManageCategories() {
   const endDrag = () => {
     if (!dragState || !dropTarget) { setDragState(null); setDropTarget(null); setCollapsedParents({}); return; }
     const { catId } = dragState;
+    let destParentId = null;
     if (dropTarget.type === 'parent') {
+      destParentId = dropTarget.parentId;
       setCustomCats(prev => prev.map(c => c.id === catId ? { ...c, parent: dropTarget.parentId } : c));
     } else if (dropTarget.type === 'reorder' && dropTarget.catId !== catId) {
+      destParentId = dropTarget.parentId;
       setCustomCats(prev => {
         const subs = prev.filter(c => !c.isParent && c.parent === dropTarget.parentId);
         const others = prev.filter(c => c.isParent || c.parent !== dropTarget.parentId);
@@ -5094,81 +5118,102 @@ function ScreenManageCategories() {
     setDragState(null);
     setDropTarget(null);
     setCollapsedParents({});
+    // Scroll to and flash the destination parent
+    if (destParentId && destParentId !== dragState.parentId) {
+      setTimeout(() => {
+        const el = parentRefs.current[destParentId];
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        setFlashCatId(catId);
+        setTimeout(() => setFlashCatId(null), 1000);
+      }, 50);
+    }
   };
+
+  const [flashCatId, setFlashCatId] = React.useState(null);
+  const parentRefs = React.useRef({});
 
   const renderParentCard = (parentKey, parentCat, isCustom) => {
     const premadeSubs = isCustom ? [] : getPremadeSubs(parentKey);
     const customSubsHere = isCustom ? getCustomSubs(parentKey) : getCustomSubsOfPremade(parentKey);
-    const allSubs = isCustom ? customSubsHere : [...premadeSubs, ...customSubsHere];
+    const rawSubs = isCustom ? customSubsHere : [...premadeSubs, ...customSubsHere];
+    // 'other' always last
+    const otherSub = rawSubs.find(s => (Array.isArray(s) ? false : s.id === `${parentKey}_other`));
+    const nonOther = rawSubs.filter(s => !(Array.isArray(s) ? false : s.id === `${parentKey}_other`));
+    const allSubs = otherSub ? [...nonOther, otherSub] : nonOther;
     const subCount = allSubs.length;
     const isCollapsed = !!collapsedParents[parentKey];
     const isDropTarget = dropTarget?.type === 'parent' && dropTarget.parentId === parentKey;
 
     return (
-      <div key={parentKey} className="m-card"
+      <div key={parentKey} ref={el => parentRefs.current[parentKey] = el}
+        data-parentkey={parentKey}
+        className="m-card"
         style={{ marginBottom:12, border:`1.5px solid ${isDropTarget ? (parentCat.color || M.sage) : M.line}`, borderRadius:14, overflow:'hidden', background: isDropTarget ? (parentCat.color ? parentCat.color + '11' : M.sageSoft) : 'transparent', transition:'border-color 0.15s, background 0.15s' }}
         onPointerEnter={dragState ? () => setDropTarget({ type:'parent', parentId: parentKey }) : undefined}
       >
         {/* Parent header */}
-        <div
-          className="m-tap"
-          style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 16px', background:M.paper, cursor:'pointer' }}
-          onClick={() => setEditSheet({ catId: parentKey, parentId: null, isCustom, isParent: true, name: parentCat.name, icon: parentCat.icon || 'box', color: parentCat.color })}
-        >
+        <div style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 16px', background:M.paper }}>
           <div style={{ width:38, height:38, borderRadius:10, background:parentCat.color||M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
             <IcoMDI name={parentCat.icon||'help-circle-outline'} size={18} color={isCustom?'#fff':M.ink2}/>
           </div>
-          <div style={{ flex:1 }}>
+          <div className={isCustom ? 'm-tap' : ''} style={{ flex:1, cursor: isCustom ? 'pointer' : 'default' }}
+            onClick={isCustom ? () => setEditSheet({ catId: parentKey, parentId: null, isCustom:true, isParent: true, name: parentCat.name, icon: parentCat.icon || 'help-circle-outline', color: parentCat.color }) : undefined}
+          >
             <div style={{ fontSize:15, fontWeight:600 }}>{parentCat.name}</div>
           </div>
-          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-            <span style={{ fontSize:12, color:M.ink3 }}>{subCount} subs</span>
-            <button className="m-tap" onClick={(e) => { e.stopPropagation(); setNewSubSheet(parentKey); }}
-              style={{ background:M.sageSoft, border:'none', borderRadius:8, padding:'4px 10px', color:M.sage, fontSize:12, fontWeight:500, cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', gap:4 }}>
-              <I name="plus" size={11} color={M.sage}/> Sub
-            </button>
-            <div style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'none', transition:'transform 0.2s ease', display:'flex' }}
-              onClick={(e) => { e.stopPropagation(); setCollapsedParents(prev => ({ ...prev, [parentKey]: !prev[parentKey] })); }}>
+          <span style={{ fontSize:12, color:M.ink3 }}>{subCount} subs</span>
+          <button className="m-tap" onClick={() => setCollapsedParents(prev => ({ ...prev, [parentKey]: !prev[parentKey] }))}
+            style={{ background:'none', border:'none', cursor:'pointer', padding:4, display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <div style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)', transition:'transform 0.2s ease', display:'flex' }}>
               <I name="caretR" size={14} color={M.ink4}/>
             </div>
-          </div>
+          </button>
         </div>
         {/* Sub-categories */}
-        <div style={{ overflow:'hidden', maxHeight: isCollapsed ? 0 : 2000, transition:'max-height 0.3s ease' }}>
+        <div style={{ overflow:'hidden', maxHeight: isCollapsed ? 0 : 9999, transition:'max-height 0.35s ease' }}>
           {allSubs.map((sub) => {
             const subKey = Array.isArray(sub) ? sub[0] : sub.id;
             const subCat = Array.isArray(sub) ? sub[1] : sub;
             const isCustomSub = !Array.isArray(sub);
             const isOther = isCustomSub && sub.id === `${parentKey}_other`;
-            const subBg = !isCustomSub
-              ? (parentCat.color ? parentCat.color + '33' : M.paper2)
-              : (parentCat.color ? parentCat.color + '33' : subCat.color || M.paper2);
-            const subIconColor = !isCustomSub ? M.ink2 : (parentCat.color || '#fff');
+            // 'other' uses parent color same as other custom subs
+            const subBg = parentCat.color ? parentCat.color + '33' : M.paper2;
+            const subIconColor = parentCat.color || M.ink2;
+            const isFlashing = flashCatId === subKey;
 
             return (
               <div key={subKey}
                 className={isCustomSub && !isOther ? 'm-tap' : ''}
-                style={{ display:'flex', alignItems:'center', gap:10, padding:'11px 16px', borderTop:`1px solid ${M.line2}`, background: dropTarget?.catId === subKey ? M.sageSoft : 'transparent', transition:'background 0.1s', cursor: isCustomSub && !isOther ? 'pointer' : 'default' }}
-                onClick={isCustomSub && !isOther ? () => setEditSheet({ catId: subKey, parentId: parentKey, isCustom: true, isParent: false, name: subCat.name, icon: subCat.icon || 'box' }) : (!isCustomSub ? () => setEditSheet({ catId: subKey, parentId: parentKey, isCustom: false, isParent: false, name: subCat.name, icon: subCat.icon }) : undefined)}
-                onPointerEnter={(dragState && dragState.parentId === parentKey && !isOther) ? () => setDropTarget({ type:'reorder', catId: subKey, parentId: parentKey }) : undefined}
+                style={{ display:'flex', alignItems:'center', gap:10, padding:'11px 16px', borderTop:`1px solid ${M.line2}`,
+                  background: isFlashing ? (parentCat.color || M.sage) + '22' : dropTarget?.catId === subKey ? M.sageSoft : 'transparent',
+                  transition:'background 0.3s',
+                  cursor: (isCustomSub && !isOther) ? 'grab' : 'default',
+                  touchAction: (isCustomSub && !isOther) ? 'none' : 'auto',
+                }}
+                onClick={isCustomSub && !isOther ? () => setEditSheet({ catId: subKey, parentId: parentKey, isCustom: true, isParent: false, name: subCat.name, icon: subCat.icon || 'help-circle-outline' }) : undefined}
+                onPointerDown={(isCustomSub && !isOther) ? (e) => startDrag(e, subKey, parentKey, subCat.name, subCat.icon, parentCat.color || M.paper2) : undefined}
+                onPointerEnter={(dragState && !isOther) ? () => setDropTarget({ type:'reorder', catId: subKey, parentId: parentKey }) : undefined}
               >
-                {(isCustomSub && !isOther) && (
-                  <div
-                    style={{ padding:'4px 2px', cursor:'grab', touchAction:'none', flexShrink:0 }}
-                    onPointerDown={(e) => startDrag(e, subKey, parentKey, subCat.name, subCat.icon, parentCat.color || M.paper2)}
-                  >
-                    <I name="menu" size={15} color={M.ink4}/>
-                  </div>
-                )}
-                <div style={{ width:28, height:28, borderRadius:8, background: isOther ? M.paper2 : subBg, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                  <IcoMDI name={subCat.icon||'help-circle-outline'} size={13} color={isOther ? M.ink3 : subIconColor}/>
+                <div style={{ width:28, height:28, borderRadius:8, background: isOther ? (parentCat.color ? parentCat.color+'33' : M.paper2) : subBg, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <IcoMDI name={subCat.icon||'help-circle-outline'} size={13} color={isOther ? (parentCat.color || M.ink3) : subIconColor}/>
                 </div>
                 <div style={{ flex:1 }}>
                   <div style={{ fontSize:13, fontWeight:isOther?400:500, color:isOther?M.ink3:M.ink, fontStyle:isOther?'italic':'normal' }}>{subCat.name}</div>
                 </div>
+                {(isCustomSub && !isOther) && (
+                  <div style={{ opacity:0.35, flexShrink:0 }}>
+                    <I name="menu" size={13} color={M.ink3}/>
+                  </div>
+                )}
               </div>
             );
           })}
+          {/* +Sub button at bottom, after 'other' */}
+          <button className="m-tap" onClick={() => setNewSubSheet(parentKey)}
+            style={{ width:'100%', padding:'10px 16px', borderTop:`1px solid ${M.line2}`, background:'transparent', border:'none', borderTopStyle:'solid', borderTopWidth:1, borderTopColor:M.line2, display:'flex', alignItems:'center', gap:8, cursor:'pointer', fontFamily:M.fontUI, color:M.sage }}>
+            <I name="plus" size={13} color={M.sage}/>
+            <span style={{ fontSize:13, fontWeight:500 }}>Add sub-category</span>
+          </button>
         </div>
       </div>
     );
@@ -5261,8 +5306,9 @@ function ScreenManageCategories() {
       {dragState && (
         <div style={{
           position:'fixed',
-          left: dragState.x - 80,
-          top: dragState.y - 20,
+          left: dragState.x - 60,
+          top: dragState.y - 22,
+          transform: 'translateY(-50%)',
           zIndex: 9999,
           pointerEvents: 'none',
           display:'flex', alignItems:'center', gap:8,
@@ -5275,7 +5321,7 @@ function ScreenManageCategories() {
           minWidth: 120,
         }}>
           <div style={{ width:28, height:28, borderRadius:8, background: dragState.ghostColor || M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-            <I name={dragState.ghostIcon || 'box'} size={13} color="#fff"/>
+            <IcoMDI name={dragState.ghostIcon || 'help-circle-outline'} size={13} color="#fff"/>
           </div>
           <div style={{ fontSize:13, fontWeight:600 }}>{dragState.ghostLabel}</div>
         </div>
@@ -7602,8 +7648,7 @@ function useLocalStorage(key, defaultValue) {
   return [state, set];
 }
 
-const STORAGE_KEYS = ['munni_txs','munni_recur','munni_topics','munni_pOffset','munni_customCats','munni_dark','munni_profile_name','munni_profile_email','munni_integrations','munni_bank_accounts','munni_selected_bank','munni_profiles','munni_disabled_save_accounts','munni_home_cards'];
-function clearAllStorage() { STORAGE_KEYS.forEach(k => localStorage.removeItem(k)); }
+function clearAllStorage() { localStorage.clear(); }
 
 // ── Profile-bound data hooks ────────────────────────────────────
 const DEFAULT_PROFILE_IDS = ['p1','p2','p3','p_demo'];
@@ -10270,11 +10315,10 @@ function ScreenLoginGate({ onLogin }) {
     localStorage.setItem('munni_opened_before', 'true');
     if (email) localStorage.setItem('munni_profile_email', email);
     if (displayName) localStorage.setItem('munni_profile_name', displayName);
-    if (activateDemo) {
-      const profiles = JSON.parse(localStorage.getItem('munni_profiles') || JSON.stringify(DEFAULT_PROFILES));
-      const updated = profiles.map(p => ({ ...p, active: p.id === 'p_demo' }));
-      localStorage.setItem('munni_profiles', JSON.stringify(updated));
-    }
+    const profiles = JSON.parse(localStorage.getItem('munni_profiles') || JSON.stringify(DEFAULT_PROFILES));
+    const targetId = activateDemo ? 'p_demo' : 'p1';
+    const updated = profiles.map(p => ({ ...p, active: p.id === targetId }));
+    localStorage.setItem('munni_profiles', JSON.stringify(updated));
     onLogin();
   };
 
