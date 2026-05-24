@@ -751,10 +751,11 @@ function fmtSyncTime(isoStr) {
   return `${day} ${mon} ${d.getFullYear()}, ${hm}`;
 }
 
+const DEMO_ACCOUNT_IDS = ['main', 'save', 'inv'];
 const ACCOUNTS = [
-  { id: 'main', name: 'Main · ING',     iban: 'NL47…4231', balance: 5240.18, type: 'checking', color: '#4A6A4F' },
-  { id: 'save', name: 'Savings · ING',  iban: 'NL47…7782', balance: 3120.50, type: 'savings',  color: '#A8782B' },
-  { id: 'inv',  name: 'Brokerage · DEGIRO', iban: 'NL47…1015', balance: 365.00, type: 'invest', color: '#5E4A78' },
+  { id: 'main', name: 'Main · ING',     iban: 'NL47…4231', balance: 5240.18, type: 'checking', color: '#4A6A4F', isDemo: true },
+  { id: 'save', name: 'Savings · ING',  iban: 'NL47…7782', balance: 3120.50, type: 'savings',  color: '#A8782B', isDemo: true },
+  { id: 'inv',  name: 'Brokerage · DEGIRO', iban: 'NL47…1015', balance: 365.00, type: 'invest', color: '#5E4A78', isDemo: true },
 ];
 
 
@@ -1392,6 +1393,35 @@ const TRANSLATIONS = {
     // Settings extra
     'settings.profiles':'Profiles','settings.customizeHome':'Customize home',
     'settings.periods':'Period settings','settings.deleteData':'Delete all data',
+    // Profile detail
+    'screen.profile':'Profile',
+    'profile.changePhoto':'Change photo','profile.choosePhoto':'Choose photo',
+    'profile.tapRename':'tap to rename','profile.active':'Active profile',
+    'profile.mainAccounts':'Main accounts','profile.mainAccountsSub':'Transactions will sync to this profile',
+    'profile.noChecking':'No checking accounts connected',
+    'profile.savingAccounts':'Saving & investment accounts','profile.noSaving':'No saving accounts connected',
+    'profile.manageAccounts':'Manage accounts',
+    'profile.deleteProfile':'Delete profile',
+    'profile.cannotDeleteActive':'Cannot delete the active profile — switch first',
+    'profile.cannotDeleteOnly':'Cannot delete the only profile',
+    'profile.deleteConfirmTitle':'Delete profile?',
+    'profile.deleteConfirmDesc':'This profile will be permanently removed. Transactions will remain.',
+    // Profiles list
+    'profiles.aboutTitle':'About Profiles',
+    'profiles.aboutDesc':'Profiles let you track separate finances in one app — perfect for personal vs. business, or managing finances for different household members. Each profile has its own accounts, budgets, goals, and financial data.',
+    // New profile sheet
+    'profile.newProfile':'New profile','profile.profileName':'Profile name',
+    'profile.namePlaceholder':'e.g. Business, Partner, Side hustle…','profile.profileType':'Profile type',
+    'profile.typeReal':'Real','profile.typeRealSub':'Connect your actual bank accounts',
+    'profile.typeDemo':'Demo','profile.typeDemoSub':'Uses sample data for testing',
+    'profile.createProfile':'Create profile','profile.duplicateName':'A profile with this name already exists',
+    // Picture picker
+    'profile.picTitle':'Profile picture','profile.chooseLibrary':'Choose from library','profile.removePic':'Remove picture',
+    // Accounts
+    'accounts.demoSection':'Demo accounts','accounts.demoDesc':'Sample data · read-only',
+    'accounts.yourSection':'Your accounts','accounts.bankSection':'Bank accounts','accounts.savingSection':'Saving & investment',
+    'accounts.noBank':'No bank accounts connected','accounts.noSaving':'No saving accounts added',
+    'accounts.connectBank':'Connect bank','accounts.addManual':'Add manual account',
     'settings.darkMode':'Dark mode',
     'settings.darkModeOn':'On — tap to switch to light','settings.darkModeOff':'Off — tap to switch to dark',
     'settings.resetDemo':'Reset demo data','settings.resetDemoSub':'Restore all transactions & settings',
@@ -1532,6 +1562,30 @@ const TRANSLATIONS = {
     // Settings extra
     'settings.profiles':'Profielen','settings.customizeHome':'Startscherm aanpassen',
     'settings.periods':'Periode-instellingen','settings.deleteData':'Alle gegevens verwijderen',
+    'screen.profile':'Profiel',
+    'profile.changePhoto':'Foto wijzigen','profile.choosePhoto':'Foto kiezen',
+    'profile.tapRename':'tik om te hernoemen','profile.active':'Actief profiel',
+    'profile.mainAccounts':'Hoofdrekeningen','profile.mainAccountsSub':'Transacties synchroniseren naar dit profiel',
+    'profile.noChecking':'Geen betaalrekeningen verbonden',
+    'profile.savingAccounts':'Spaar- en beleggingsrekeningen','profile.noSaving':'Geen spaarrekeningen verbonden',
+    'profile.manageAccounts':'Rekeningen beheren',
+    'profile.deleteProfile':'Profiel verwijderen',
+    'profile.cannotDeleteActive':'Kan het actieve profiel niet verwijderen — schakel eerst over',
+    'profile.cannotDeleteOnly':'Kan het enige profiel niet verwijderen',
+    'profile.deleteConfirmTitle':'Profiel verwijderen?',
+    'profile.deleteConfirmDesc':'Dit profiel wordt permanent verwijderd. Transacties blijven behouden.',
+    'profiles.aboutTitle':'Over Profielen',
+    'profiles.aboutDesc':'Profielen laten je afzonderlijke financiën bijhouden in één app — perfect voor persoonlijk vs. zakelijk, of voor het beheren van financiën voor verschillende huishoudleden. Elk profiel heeft zijn eigen rekeningen, budgetten, doelen en financiële gegevens.',
+    'profile.newProfile':'Nieuw profiel','profile.profileName':'Profielnaam',
+    'profile.namePlaceholder':'bijv. Zakelijk, Partner, Bijbaan…','profile.profileType':'Profieltype',
+    'profile.typeReal':'Echt','profile.typeRealSub':'Verbind je echte bankrekeningen',
+    'profile.typeDemo':'Demo','profile.typeDemoSub':'Gebruikt voorbeeldgegevens voor testen',
+    'profile.createProfile':'Profiel aanmaken','profile.duplicateName':'Een profiel met deze naam bestaat al',
+    'profile.picTitle':'Profielfoto','profile.chooseLibrary':'Kies uit bibliotheek','profile.removePic':'Foto verwijderen',
+    'accounts.demoSection':'Demo-rekeningen','accounts.demoDesc':'Voorbeeldgegevens · alleen-lezen',
+    'accounts.yourSection':'Jouw rekeningen','accounts.bankSection':'Bankrekeningen','accounts.savingSection':'Spaar & beleggingen',
+    'accounts.noBank':'Geen bankrekeningen verbonden','accounts.noSaving':'Geen spaarrekeningen toegevoegd',
+    'accounts.connectBank':'Bank verbinden','accounts.addManual':'Handmatige rekening toevoegen',
     'settings.darkMode':'Donkere modus',
     'settings.darkModeOn':'Aan — tik om naar licht te schakelen','settings.darkModeOff':'Uit — tik om naar donker te schakelen',
     'settings.resetDemo':'Demogegevens herstellen','settings.resetDemoSub':'Alle transacties en instellingen herstellen',
@@ -1672,6 +1726,30 @@ const TRANSLATIONS = {
     // Settings extra
     'settings.profiles':'Profiller','settings.customizeHome':'Ana ekranı özelleştir',
     'settings.periods':'Dönem ayarları','settings.deleteData':'Tüm verileri sil',
+    'screen.profile':'Profil',
+    'profile.changePhoto':'Fotoğrafı değiştir','profile.choosePhoto':'Fotoğraf seç',
+    'profile.tapRename':'yeniden adlandırmak için dokun','profile.active':'Aktif profil',
+    'profile.mainAccounts':'Ana hesaplar','profile.mainAccountsSub':'İşlemler bu profile senkronize edilir',
+    'profile.noChecking':'Bağlı çek hesabı yok',
+    'profile.savingAccounts':'Tasarruf ve yatırım hesapları','profile.noSaving':'Bağlı tasarruf hesabı yok',
+    'profile.manageAccounts':'Hesapları yönet',
+    'profile.deleteProfile':'Profili sil',
+    'profile.cannotDeleteActive':'Aktif profil silinemez — önce değiştirin',
+    'profile.cannotDeleteOnly':'Tek profil silinemez',
+    'profile.deleteConfirmTitle':'Profil silinsin mi?',
+    'profile.deleteConfirmDesc':'Bu profil kalıcı olarak kaldırılacak. İşlemler kalacak.',
+    'profiles.aboutTitle':'Profiller Hakkında',
+    'profiles.aboutDesc':'Profiller, ayrı finansmanları tek bir uygulamada takip etmenizi sağlar — kişisel ve iş, ya da farklı hane üyelerinin finansmanını yönetmek için mükemmel. Her profilin kendi hesapları, bütçeleri, hedefleri ve finansal verileri vardır.',
+    'profile.newProfile':'Yeni profil','profile.profileName':'Profil adı',
+    'profile.namePlaceholder':'örn. İş, Ortak, Ek İş…','profile.profileType':'Profil türü',
+    'profile.typeReal':'Gerçek','profile.typeRealSub':'Gerçek banka hesaplarını bağla',
+    'profile.typeDemo':'Demo','profile.typeDemoSub':'Test için örnek veriler kullanır',
+    'profile.createProfile':'Profil oluştur','profile.duplicateName':'Bu isimde bir profil zaten mevcut',
+    'profile.picTitle':'Profil fotoğrafı','profile.chooseLibrary':'Kütüphaneden seç','profile.removePic':'Fotoğrafı kaldır',
+    'accounts.demoSection':'Demo hesapları','accounts.demoDesc':'Örnek veriler · salt okunur',
+    'accounts.yourSection':'Hesaplarınız','accounts.bankSection':'Banka hesapları','accounts.savingSection':'Tasarruf & yatırım',
+    'accounts.noBank':'Bağlı banka hesabı yok','accounts.noSaving':'Tasarruf hesabı eklenmedi',
+    'accounts.connectBank':'Banka bağla','accounts.addManual':'Manuel hesap ekle',
     'settings.darkMode':'Karanlık mod',
     'settings.darkModeOn':'Açık — açık moda geçmek için dokunun','settings.darkModeOff':'Kapalı — karanlık moda geçmek için dokunun',
     'settings.resetDemo':'Demo verilerini sıfırla','settings.resetDemoSub':'Tüm işlemleri ve ayarları geri yükle',
@@ -3992,7 +4070,7 @@ const DEFAULT_PROFILES = [
   { id:'p1', name:'Personal',  icon:'user',  active:true,  accountIds:['main','save','inv'], picture: null },
   { id:'p2', name:'Family',    icon:'house', active:false, accountIds:['main'],              picture: null },
   { id:'p3', name:'Freelance', icon:'bag',   active:false, accountIds:['main'],              picture: null },
-  { id:'p_demo', name:'Demo',  icon:'user',  active:false, accountIds:['main','save'],       picture: 'av7' },
+  { id:'p_demo', name:'Demo',  icon:'user',  active:false, accountIds:['main','save'],       picture: 'av7', isDemo: true },
 ];
 
 const STOCK_AVATARS = [
@@ -4084,7 +4162,7 @@ function ScreenProfile() {
       <div className="m-body-scroll">
         {/* Identity card */}
         <div className="m-card" style={{ padding: 18, marginBottom: 16, border: `1px solid ${M.line}`, display: 'flex', alignItems: 'center', gap: 14 }}>
-          <button className="m-tap" onClick={() => setShowPicturePicker(true)} style={{ position:'relative', background:'none', border:'none', cursor:'pointer', padding:0, flexShrink:0 }}>
+          <button className="m-tap" onClick={() => !isDemo && setShowPicturePicker(true)} style={{ position:'relative', background:'none', border:'none', cursor: isDemo ? 'default' : 'pointer', padding:0, flexShrink:0 }}>
             {userPicture ? (
               userPicture.startsWith('av') ? (
                 (() => { const av = STOCK_AVATARS.find(a => a.id === userPicture); return av ? <div style={{ width:56, height:56, borderRadius:999, background:av.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:26 }}>{av.emoji}</div> : null; })()
@@ -4094,9 +4172,9 @@ function ScreenProfile() {
             ) : (
               <div style={{ width:56, height:56, borderRadius:999, background:`linear-gradient(135deg, ${M.sage} 0%, #3D5A42 100%)`, display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', fontWeight:600, fontSize:22, fontFamily:M.fontDisp }}>{initial}</div>
             )}
-            <div style={{ position:'absolute', bottom:0, right:0, width:20, height:20, borderRadius:'50%', background:M.sage, display:'flex', alignItems:'center', justifyContent:'center', border:'2px solid #fff' }}>
+            {!isDemo && <div style={{ position:'absolute', bottom:0, right:0, width:20, height:20, borderRadius:'50%', background:M.sage, display:'flex', alignItems:'center', justifyContent:'center', border:'2px solid #fff' }}>
               <I name="cam" size={10} color="#fff"/>
-            </div>
+            </div>}
           </button>
           <div style={{ flex: 1, minWidth: 0 }}>
             {editing && !isDemo ? (
@@ -4198,7 +4276,7 @@ function ScreenProfile() {
       {showPicturePicker && (
         <Sheet onClose={() => setShowPicturePicker(false)}>
           <div style={{ padding:'0 16px 8px' }}>
-            <div style={{ fontSize:17, fontWeight:700, marginBottom:16 }}>Profile picture</div>
+            <div style={{ fontSize:17, fontWeight:700, marginBottom:16 }}>{t('profile.picTitle')}</div>
             <div style={{ display:'grid', gridTemplateColumns:'repeat(5, 1fr)', gap:10, marginBottom:20 }}>
               {STOCK_AVATARS.map(av => (
                 <button key={av.id} className="m-tap" onClick={() => { setUserPicture(av.id); setShowPicturePicker(false); }}
@@ -4211,13 +4289,13 @@ function ScreenProfile() {
               <div style={{ width:40, height:40, borderRadius:10, background:M.paper2, border:`1px solid ${M.line}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                 <I name="cam" size={18} color={M.ink2}/>
               </div>
-              <div style={{ fontSize:15, fontWeight:500 }}>Choose from library</div>
+              <div style={{ fontSize:15, fontWeight:500 }}>{t('profile.chooseLibrary')}</div>
               <input type="file" accept="image/*" onChange={handleUserFileChange} style={{ display:'none' }}/>
             </label>
             {userPicture && (
               <button className="m-tap" onClick={() => { setUserPicture(null); setShowPicturePicker(false); }}
                 style={{ width:'100%', padding:'12px 0', background:M.paper2, color:M.ink3, border:`1px solid ${M.line}`, borderRadius:12, fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
-                Remove picture
+                {t('profile.removePic')}
               </button>
             )}
           </div>
@@ -4235,31 +4313,40 @@ function ScreenProfiles() {
   const [showNewProfile, setShowNewProfile] = React.useState(false);
   const [newProfileName, setNewProfileName] = React.useState('');
   const [newProfileIsDemo, setNewProfileIsDemo] = React.useState(false);
+  const [newProfileError, setNewProfileError] = React.useState('');
+
+  const activeProfile = profiles.find(p => p.active) || profiles[0];
+  const isUserDemo = activeProfile?.id === 'p_demo' || activeProfile?.isDemo;
 
   const activateProfile = (id) => setProfiles(ps => ps.map(p => ({ ...p, active: p.id === id })));
 
   const createProfile = () => {
-    if (!newProfileName.trim()) return;
-    const DEMO_ACCOUNT_IDS = ['demo_main1', 'demo_main2'];
+    const trimmed = newProfileName.trim();
+    if (!trimmed) return;
+    if (profiles.some(p => p.name.toLowerCase() === trimmed.toLowerCase())) {
+      setNewProfileError(t('profile.duplicateName')); return;
+    }
+    const randomAv = STOCK_AVATARS[Math.floor(Math.random() * STOCK_AVATARS.length)];
     const newP = {
       id: `p_${Date.now()}`,
-      name: newProfileName.trim(),
+      name: trimmed,
       icon: 'card',
       active: false,
-      accountIds: newProfileIsDemo ? DEMO_ACCOUNT_IDS : [],
-      picture: null,
+      accountIds: [],
+      picture: randomAv.id,
       isDemo: newProfileIsDemo,
     };
     setProfiles(ps => [...ps, newP]);
     setShowNewProfile(false);
     setNewProfileName('');
     setNewProfileIsDemo(false);
+    setNewProfileError('');
     nav.push('profileDetail', { id: newP.id });
   };
 
   const profileAccountSub = (p) => {
-    const ids = p.accountIds || [];
-    if (ids.length === 0) return 'No accounts';
+    const ids = (p.accountIds || []).filter(id => connectedAccounts.some(a => a.id === id));
+    if (ids.length === 0) return t('accounts.noBank').replace(' connected','');
     return `${ids.length} account${ids.length > 1 ? 's' : ''}`;
   };
 
@@ -4303,43 +4390,45 @@ function ScreenProfiles() {
         </div>
         <div style={{ borderRadius:12, overflow:'hidden', border:`1px solid ${M.line}`, marginBottom:16 }}>
           <div style={{ padding:'14px 16px', background:M.sageSoft }}>
-            <div style={{ fontSize:13, fontWeight:600, color:M.sage, marginBottom:4 }}>About Profiles</div>
-            <div style={{ fontSize:12, color:M.ink2, lineHeight:1.6 }}>
-              Profiles let you track separate finances in one app — perfect for personal vs. business, or managing finances for different household members. Each profile has its own accounts, budgets, goals, and financial data.
-            </div>
+            <div style={{ fontSize:13, fontWeight:600, color:M.sage, marginBottom:4 }}>{t('profiles.aboutTitle')}</div>
+            <div style={{ fontSize:12, color:M.ink2, lineHeight:1.6 }}>{t('profiles.aboutDesc')}</div>
           </div>
         </div>
       </div>
 
       {showNewProfile && (
-        <Sheet onClose={() => setShowNewProfile(false)}>
+        <Sheet onClose={() => { setShowNewProfile(false); setNewProfileName(''); setNewProfileIsDemo(false); setNewProfileError(''); }}>
           <div style={{ padding:'4px 16px 8px' }}>
-            <div style={{ fontSize:17, fontWeight:700, marginBottom:16 }}>New profile</div>
-            <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>Profile name</div>
+            <div style={{ fontSize:17, fontWeight:700, marginBottom:16 }}>{t('profile.newProfile')}</div>
+            <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>{t('profile.profileName')}</div>
             <input
-              autoFocus
               value={newProfileName}
-              onChange={e => setNewProfileName(e.target.value)}
-              placeholder="e.g. Business, Partner, Side hustle…"
-              style={{ width:'100%', padding:'12px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box', marginBottom:20 }}
+              onChange={e => { setNewProfileName(e.target.value); setNewProfileError(''); }}
+              onKeyDown={e => e.key === 'Enter' && createProfile()}
+              placeholder={t('profile.namePlaceholder')}
+              style={{ width:'100%', padding:'12px 14px', borderRadius:10, border:`1px solid ${newProfileError ? M.clay : M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box', marginBottom: newProfileError ? 6 : 20 }}
             />
-            <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>Profile type</div>
+            {newProfileError && <div style={{ fontSize:12, color:M.clay, marginBottom:14 }}>{newProfileError}</div>}
+            <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>{t('profile.profileType')}</div>
             <div style={{ display:'flex', gap:8, marginBottom:20 }}>
-              {[{v:false,l:'Real',sub:'Connect your actual bank accounts'},{v:true,l:'Demo',sub:'Uses sample data for testing'}].map(opt => (
-                <button key={String(opt.v)} className="m-tap" onClick={() => setNewProfileIsDemo(opt.v)}
-                  style={{ flex:1, padding:'12px 8px', borderRadius:12, border:`2px solid ${newProfileIsDemo===opt.v ? M.sage : M.line}`, background: newProfileIsDemo===opt.v ? M.sageSoft : M.paper2, textAlign:'center', cursor:'pointer', fontFamily:M.fontUI, boxSizing:'border-box' }}>
-                  <div style={{ fontSize:13, fontWeight:600, color:newProfileIsDemo===opt.v?M.sage:M.ink }}>{opt.l}</div>
-                  <div style={{ fontSize:10, color:M.ink3, marginTop:2 }}>{opt.sub}</div>
-                </button>
-              ))}
+              {[{v:false,lk:'profile.typeReal',sk:'profile.typeRealSub'},{v:true,lk:'profile.typeDemo',sk:'profile.typeDemoSub'}].map(opt => {
+                const disabled = opt.v === false && isUserDemo;
+                return (
+                  <button key={String(opt.v)} className="m-tap" onClick={() => !disabled && setNewProfileIsDemo(opt.v)}
+                    style={{ flex:1, padding:'12px 8px', borderRadius:12, border:`2px solid ${newProfileIsDemo===opt.v ? M.sage : M.line}`, background: disabled ? M.line2 : newProfileIsDemo===opt.v ? M.sageSoft : M.paper2, textAlign:'center', cursor: disabled ? 'not-allowed' : 'pointer', fontFamily:M.fontUI, boxSizing:'border-box', opacity: disabled ? 0.5 : 1 }}>
+                    <div style={{ fontSize:13, fontWeight:600, color:newProfileIsDemo===opt.v?M.sage:M.ink }}>{t(opt.lk)}</div>
+                    <div style={{ fontSize:10, color:M.ink3, marginTop:2 }}>{t(opt.sk)}</div>
+                  </button>
+                );
+              })}
             </div>
             <button onClick={createProfile}
               style={{ width:'100%', padding:'14px 0', background:newProfileName.trim() ? M.sage : M.line, color:newProfileName.trim() ? '#fff' : M.ink4, border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:newProfileName.trim()?'pointer':'default', fontFamily:M.fontUI, marginBottom:10 }}>
-              Create profile
+              {t('profile.createProfile')}
             </button>
-            <button onClick={() => setShowNewProfile(false)}
+            <button onClick={() => { setShowNewProfile(false); setNewProfileName(''); setNewProfileIsDemo(false); setNewProfileError(''); }}
               style={{ width:'100%', padding:'14px 0', background:M.paper2, color:M.ink, border:`1px solid ${M.line}`, borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
-              Cancel
+              {t('action.cancel')}
             </button>
           </div>
         </Sheet>
@@ -4350,6 +4439,7 @@ function ScreenProfiles() {
 
 function ScreenProfileDetail({ params }) {
   const nav = useNav();
+  const { t } = useLang();
   const { profiles, setProfiles } = useProfiles();
   const [connectedAccounts] = useLocalStorage('munni_bank_accounts', () => ACCOUNTS.slice());
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
@@ -4433,7 +4523,7 @@ function ScreenProfileDetail({ params }) {
   return (
     <div className="m-screen">
       <StatusBar/>
-      <AppBar title="Profile"
+      <AppBar title={t('screen.profile')}
         leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
       />
       <div className="m-body-scroll">
@@ -4442,7 +4532,7 @@ function ScreenProfileDetail({ params }) {
           <ProfileAvatar profile={profile} size={72}/>
           <button className="m-tap" onClick={() => setShowPhotoSheet(true)}
             style={{ fontSize:13, fontWeight:600, color:M.sage, background:'transparent', border:'none', cursor:'pointer', fontFamily:M.fontUI, padding:'4px 12px' }}>
-            Change photo
+            {t('profile.changePhoto')}
           </button>
           <div style={{ width:'100%' }}>
             {editingName ? (
@@ -4457,56 +4547,51 @@ function ScreenProfileDetail({ params }) {
             ) : (
               <div className="m-tap" onClick={startEditName} style={{ textAlign:'center' }}>
                 <div style={{ fontSize:16, fontWeight:600, borderBottom:`1.5px dashed ${M.line2}`, display:'inline', paddingBottom:1 }}>{profile.name}</div>
-                <div style={{ fontSize:10, color:M.ink4, marginTop:4 }}>tap to rename</div>
+                <div style={{ fontSize:10, color:M.ink4, marginTop:4 }}>{t('profile.tapRename')}</div>
               </div>
             )}
             {isActive && (
-              <div style={{ fontSize:11, color:M.sage, fontWeight:600, marginTop:3, textAlign:'center' }}>Active profile</div>
+              <div style={{ fontSize:11, color:M.sage, fontWeight:600, marginTop:3, textAlign:'center' }}>{t('profile.active')}</div>
             )}
           </div>
         </div>
 
         {/* Main accounts */}
-        <div className="m-cap" style={{ marginBottom:4, paddingLeft:4 }}>Main accounts</div>
-        <div style={{ fontSize:11, color:M.ink3, marginBottom:8, paddingLeft:4 }}>Transactions will sync to this profile</div>
+        <div className="m-cap" style={{ marginBottom:4, paddingLeft:4 }}>{t('profile.mainAccounts')}</div>
+        <div style={{ fontSize:11, color:M.ink3, marginBottom:8, paddingLeft:4 }}>{t('profile.mainAccountsSub')}</div>
         <div className="m-card" style={{ padding:'4px 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
           {mainAccounts.length === 0 && (
-            <div style={{ padding:'16px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>No checking accounts connected</div>
+            <div style={{ padding:'16px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>{t('profile.noChecking')}</div>
           )}
           {mainAccounts.map((a, i, arr) => renderAccountRow(a, i, arr))}
         </div>
 
         {/* Saving & investment accounts */}
-        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Saving &amp; investment accounts</div>
+        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('profile.savingAccounts')}</div>
         <div className="m-card" style={{ padding:'4px 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
           {savingAccounts.length === 0 && (
-            <div style={{ padding:'16px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>No saving accounts connected</div>
+            <div style={{ padding:'16px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>{t('profile.noSaving')}</div>
           )}
           {savingAccounts.map((a, i, arr) => renderAccountRow(a, i, arr))}
         </div>
 
-        <div className="m-tap m-card" onClick={() => nav.push('accountsAll')}
-          style={{ padding:'14px 16px', marginBottom:14, border:`1px solid ${M.line}`, display:'flex', alignItems:'center', gap:12 }}>
-          <div style={{ width:36, height:36, borderRadius:10, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-            <I name="plus" size={16} color={M.sage}/>
-          </div>
-          <div style={{ flex:1 }}>
-            <div style={{ fontSize:14, fontWeight:600, color:M.sage }}>Connect a bank or savings account</div>
-            <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>Add checking or savings accounts to this profile</div>
-          </div>
-          <I name="caretR" size={14} color={M.ink4}/>
-        </div>
+        <button className="m-tap" onClick={() => nav.push('accountsAll')}
+          style={{ width:'100%', marginBottom:14, padding:'10px 14px', background:'transparent', border:`1px solid ${M.line}`, borderRadius:12, display:'flex', alignItems:'center', gap:8, cursor:'pointer', fontFamily:M.fontUI }}>
+          <I name="card" size={14} color={M.ink3}/>
+          <div style={{ fontSize:13, color:M.ink3, fontWeight:500 }}>{t('profile.manageAccounts')}</div>
+          <I name="caretR" size={12} color={M.ink4} style={{ marginLeft:'auto' }}/>
+        </button>
 
         {/* Delete */}
         <button
           disabled={isOnly || isActive}
           onClick={() => setShowDeleteConfirm(true)}
           style={{ width:'100%', padding:'14px 0', background: (isOnly||isActive) ? M.line : M.claySoft, color:(isOnly||isActive) ? M.ink4 : M.clay, border:'none', borderRadius:12, fontSize:15, fontWeight:600, cursor:(isOnly||isActive)?'not-allowed':'pointer', fontFamily:M.fontUI, marginBottom:8 }}>
-          Delete profile
+          {t('profile.deleteProfile')}
         </button>
         {(isOnly || isActive) && (
           <div style={{ textAlign:'center', fontSize:12, color:M.ink4 }}>
-            {isActive ? 'Cannot delete the active profile — switch first' : 'Cannot delete the only profile'}
+            {isActive ? t('profile.cannotDeleteActive') : t('profile.cannotDeleteOnly')}
           </div>
         )}
         <div style={{ height:16 }}/>
@@ -4515,7 +4600,7 @@ function ScreenProfileDetail({ params }) {
       {showPhotoSheet && (
         <Sheet onClose={() => setShowPhotoSheet(false)}>
           <div style={{ padding:'4px 16px 8px' }}>
-            <div style={{ fontSize:17, fontWeight:700, marginBottom:16 }}>Choose photo</div>
+            <div style={{ fontSize:17, fontWeight:700, marginBottom:16 }}>{t('profile.choosePhoto')}</div>
             <div style={{ display:'flex', gap:10, flexWrap:'wrap', marginBottom:20 }}>
               {STOCK_AVATARS.map(av => (
                 <button key={av.id} className="m-tap" onClick={() => setPicture(av.id)}
@@ -4528,7 +4613,7 @@ function ScreenProfileDetail({ params }) {
               <div style={{ width:40, height:40, borderRadius:10, background:M.paper2, border:`1px solid ${M.line}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                 <I name="box" size={18} color={M.ink2}/>
               </div>
-              <div style={{ fontSize:15, fontWeight:500 }}>Choose from library</div>
+              <div style={{ fontSize:15, fontWeight:500 }}>{t('profile.chooseLibrary')}</div>
               <input type="file" accept="image/*" onChange={handleFileChange} style={{ display:'none' }}/>
             </label>
           </div>
@@ -4538,17 +4623,17 @@ function ScreenProfileDetail({ params }) {
       {showDeleteConfirm && (
         <Sheet onClose={() => setShowDeleteConfirm(false)}>
           <div style={{ padding:'4px 16px 8px' }}>
-            <div style={{ fontSize:17, fontWeight:700, marginBottom:8 }}>Delete "{profile.name}"?</div>
+            <div style={{ fontSize:17, fontWeight:700, marginBottom:8 }}>{t('profile.deleteConfirmTitle')}</div>
             <div style={{ fontSize:14, color:M.ink3, lineHeight:1.5, marginBottom:20 }}>
-              This profile will be permanently removed. Transactions will remain.
+              {t('profile.deleteConfirmDesc')}
             </div>
             <button onClick={deleteProfile}
               style={{ width:'100%', padding:'14px 0', background:M.clay, color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>
-              Delete profile
+              {t('profile.deleteProfile')}
             </button>
             <button onClick={() => setShowDeleteConfirm(false)}
               style={{ width:'100%', padding:'14px 0', background:M.paper2, color:M.ink, border:`1px solid ${M.line}`, borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
-              Cancel
+              {t('action.cancel')}
             </button>
           </div>
         </Sheet>
@@ -5540,7 +5625,7 @@ function ScreenNotifications() {
               <div style={{ padding:'8px 12px', background:M.ochreSoft, fontSize:12, color:M.ochre, fontWeight:500 }}>
                 {newCount} transaction{newCount > 1 ? 's' : ''} synced
               </div>
-              <button className="m-tap" onClick={() => nav.push('reviewSwipe')} style={{
+              <button className="m-tap" onClick={() => { setNewCount(0); nav.push('reviewSwipe'); }} style={{
                 width:'100%', padding:'9px 12px', background:'#fff', border:'none', borderTop:`1px solid ${M.line2}`,
                 display:'flex', alignItems:'center', gap:8, fontSize:12, fontWeight:600, color:M.ochre, cursor:'pointer',
               }}>
@@ -6342,6 +6427,10 @@ function ScreenAccountsAll() {
   const savingAccounts = connectedAccounts.filter(a => a.type === 'savings' || a.type === 'invest');
   const filteredBanks = DUTCH_BANKS.filter(b => !bankSearch || b.name.toLowerCase().includes(bankSearch.toLowerCase()));
   const activeProfile = profiles.find(p => p.active) || profiles[0];
+  const isDemoProfile = activeProfile?.id === 'p_demo' || activeProfile?.isDemo;
+  const demoAccounts = connectedAccounts.filter(a => DEMO_ACCOUNT_IDS.includes(a.id));
+  const realBankAccounts = bankAccounts.filter(a => !DEMO_ACCOUNT_IDS.includes(a.id));
+  const realSavingAccounts = savingAccounts.filter(a => !DEMO_ACCOUNT_IDS.includes(a.id));
 
   const startBankConnect = (bank) => {
     setPsd2Bank(bank);
@@ -6521,6 +6610,28 @@ function ScreenAccountsAll() {
     );
   }
 
+  const renderAccountRow = (a, opts = {}) => (
+    <div className={opts.readonly ? '' : 'm-tap'} onClick={opts.readonly ? undefined : opts.onPress}
+      style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
+      <div style={{ width:38, height:38, borderRadius:10, background: a.color || M.ochreSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+        <I name={a.type==='invest'?'rocket':a.type==='savings'?'piggy':'card'} size={18} color={a.isDemo ? M.ink3 : '#fff'}/>
+      </div>
+      <div style={{ flex:1, minWidth:0 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+          <div style={{ fontSize:14, fontWeight:600 }}>{a.name}</div>
+          {a.isDemo && <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase' }}>Demo</span>}
+          {a.bankId && !a.isDemo && <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>Bank</span>}
+          {a.manual && <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase' }}>Manual</span>}
+        </div>
+        <div style={{ fontSize:11, color:M.ink3, marginTop:2, fontFamily:M.fontMono }}>{a.iban}</div>
+      </div>
+      <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+        <div className="m-num" style={{ fontSize:15, fontWeight:600 }}>{fmtEur(a.balance || 0)}</div>
+        {!opts.readonly && <I name="caretR" size={14} color={M.ink4}/>}
+      </div>
+    </div>
+  );
+
   return (
     <div className="m-screen">
       <StatusBar/>
@@ -6529,92 +6640,81 @@ function ScreenAccountsAll() {
         trailing={null}
       />
       <div className="m-body-scroll">
-        {/* Bank accounts section */}
-        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Bank accounts</div>
-        <div className="m-card" style={{ padding:'4px 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
-          {bankAccounts.map((a, i) => (
-            <React.Fragment key={a.id}>
-              {i > 0 && <Divider inset={50}/>}
-              <div className="m-tap" onClick={() => setShowDeleteConfirm(a)}
-                style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
-                <div style={{ width:38, height:38, borderRadius:10, background:a.color, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                  <I name="card" size={18} color="#fff"/>
-                </div>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                    <div style={{ fontSize:14, fontWeight:600 }}>{a.name}</div>
-                    <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>Bank</span>
-                  </div>
-                  <div style={{ fontSize:11, color:M.ink3, marginTop:2, fontFamily:M.fontMono }}>{a.iban}</div>
-                </div>
-                <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-                  <div className="m-num" style={{ fontSize:15, fontWeight:600 }}>{fmtEur(a.balance)}</div>
-                  <I name="caretR" size={14} color={M.ink4}/>
-                </div>
-              </div>
-            </React.Fragment>
-          ))}
-          <Divider inset={0}/>
-          <div className="m-tap" onClick={() => setShowAdd(true)} style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0', color:M.sage }}>
-            <div style={{ width:38, height:38, borderRadius:10, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-              <I name="plus" size={16} color={M.sage}/>
+
+        {isDemoProfile ? (
+          /* ── Demo profile: show demo accounts as read-only ── */
+          <>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8, paddingLeft:4 }}>
+              <div className="m-cap">{t('accounts.demoSection')}</div>
+              <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase' }}>read-only</span>
             </div>
-            <div style={{ flex:1, fontSize:14, fontWeight:600 }}>Connect a bank</div>
-            <I name="caretR" size={14} color={M.ink4}/>
-          </div>
-        </div>
-
-        <div style={{ padding:'12px 14px', borderRadius:12, background:M.sageSoft, display:'flex', gap:10, alignItems:'flex-start', marginBottom:14 }}>
-          <I name="lock" size={16} color={M.sage}/>
-          <div style={{ fontSize:12, color:M.ink2, lineHeight:1.45 }}>
-            Bank accounts connect via PSD2 Open Banking. munni has read-only access — we can never move money.
-          </div>
-        </div>
-
-        {/* Saving accounts section */}
-        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Saving accounts</div>
-        <div className="m-card" style={{ padding:'4px 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
-          {savingAccounts.map((a, i) => (
-            <React.Fragment key={a.id}>
-              {i > 0 && <Divider inset={50}/>}
-              <div className="m-tap" onClick={() => { setShowRenameSheet(a); setRenameDraft(a.name); }}
-                style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
-                <div style={{ width:38, height:38, borderRadius:10, background: a.color || M.ochreSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                  <I name={a.type==='invest'?'rocket':'piggy'} size={18} color={a.manual ? M.ochre : '#fff'}/>
-                </div>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                    <div style={{ fontSize:14, fontWeight:600 }}>{a.name}</div>
-                    {a.manual
-                      ? <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase' }}>Manual</span>
-                      : <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>Bank</span>
-                    }
-                  </div>
-                  <div style={{ fontSize:11, color:M.ink3, marginTop:2, fontFamily:M.fontMono }}>{a.iban}</div>
-                </div>
-                <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-                  <div className="m-num" style={{ fontSize:15, fontWeight:600 }}>{fmtEur(a.balance || 0)}</div>
-                  <I name="caretR" size={14} color={M.ink4}/>
-                </div>
-              </div>
-            </React.Fragment>
-          ))}
-          <Divider inset={0}/>
-          <div className="m-tap" onClick={() => setShowCreateSaving(true)} style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0', color:M.sage }}>
-            <div style={{ width:38, height:38, borderRadius:10, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-              <I name="plus" size={16} color={M.sage}/>
+            <div className="m-card" style={{ padding:'4px 16px', marginBottom:12, border:`1px solid ${M.line}` }}>
+              {demoAccounts.map((a, i) => (
+                <React.Fragment key={a.id}>
+                  {i > 0 && <Divider inset={50}/>}
+                  {renderAccountRow(a, { readonly: true })}
+                </React.Fragment>
+              ))}
             </div>
-            <div style={{ flex:1, fontSize:14, fontWeight:600 }}>Create saving account</div>
-            <I name="caretR" size={14} color={M.ink4}/>
-          </div>
-        </div>
+            <div style={{ padding:'12px 14px', borderRadius:12, background:M.ochreSoft, display:'flex', gap:10, alignItems:'flex-start', marginBottom:8 }}>
+              <I name="help" size={16} color={M.ochre}/>
+              <div style={{ fontSize:12, color:M.ink2, lineHeight:1.5 }}>{t('accounts.demoDesc')}</div>
+            </div>
+          </>
+        ) : (
+          /* ── Real profile: show real accounts only ── */
+          <>
+            <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('accounts.bankSection')}</div>
+            <div className="m-card" style={{ padding:'4px 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
+              {realBankAccounts.length === 0 && (
+                <div style={{ padding:'16px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>{t('accounts.noBank')}</div>
+              )}
+              {realBankAccounts.map((a, i) => (
+                <React.Fragment key={a.id}>
+                  {i > 0 && <Divider inset={50}/>}
+                  {renderAccountRow(a, { onPress: () => setShowDeleteConfirm(a) })}
+                </React.Fragment>
+              ))}
+              <Divider inset={0}/>
+              <div className="m-tap" onClick={() => setShowAdd(true)} style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0', color:M.sage }}>
+                <div style={{ width:38, height:38, borderRadius:10, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <I name="plus" size={16} color={M.sage}/>
+                </div>
+                <div style={{ flex:1, fontSize:14, fontWeight:600 }}>{t('accounts.connectBank')}</div>
+                <I name="caretR" size={14} color={M.ink4}/>
+              </div>
+            </div>
+            <div style={{ padding:'12px 14px', borderRadius:12, background:M.sageSoft, display:'flex', gap:10, alignItems:'flex-start', marginBottom:14 }}>
+              <I name="lock" size={16} color={M.sage}/>
+              <div style={{ fontSize:12, color:M.ink2, lineHeight:1.45 }}>Bank accounts connect via PSD2 Open Banking. munni has read-only access — we can never move money.</div>
+            </div>
 
-        <div style={{ padding:'12px 14px', borderRadius:12, background:M.ochreSoft, display:'flex', gap:10, alignItems:'flex-start', marginBottom:8 }}>
-          <I name="help" size={16} color={M.ochre}/>
-          <div style={{ fontSize:12, color:M.ink2, lineHeight:1.5 }}>
-            Banks often don't expose saving accounts via Open Banking (PSD2). Create saving accounts manually here to track deposits and withdrawals yourself.
-          </div>
-        </div>
+            <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('accounts.savingSection')}</div>
+            <div className="m-card" style={{ padding:'4px 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
+              {realSavingAccounts.length === 0 && (
+                <div style={{ padding:'16px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>{t('accounts.noSaving')}</div>
+              )}
+              {realSavingAccounts.map((a, i) => (
+                <React.Fragment key={a.id}>
+                  {i > 0 && <Divider inset={50}/>}
+                  {renderAccountRow(a, { onPress: () => { setShowRenameSheet(a); setRenameDraft(a.name); } })}
+                </React.Fragment>
+              ))}
+              <Divider inset={0}/>
+              <div className="m-tap" onClick={() => setShowCreateSaving(true)} style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0', color:M.sage }}>
+                <div style={{ width:38, height:38, borderRadius:10, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <I name="plus" size={16} color={M.sage}/>
+                </div>
+                <div style={{ flex:1, fontSize:14, fontWeight:600 }}>{t('accounts.addManual')}</div>
+                <I name="caretR" size={14} color={M.ink4}/>
+              </div>
+            </div>
+            <div style={{ padding:'12px 14px', borderRadius:12, background:M.ochreSoft, display:'flex', gap:10, alignItems:'flex-start', marginBottom:8 }}>
+              <I name="help" size={16} color={M.ochre}/>
+              <div style={{ fontSize:12, color:M.ink2, lineHeight:1.5 }}>Banks often don't expose saving accounts via Open Banking (PSD2). Create saving accounts manually here to track deposits and withdrawals yourself.</div>
+            </div>
+          </>
+        )}
         <div style={{ height:8 }}/>
       </div>
 
