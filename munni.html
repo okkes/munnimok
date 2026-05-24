@@ -1381,7 +1381,7 @@ const TRANSLATIONS = {
     'lang.availableNow':'Available now',
     // Home screen
     'home.totalBalance':'Total balance','home.income':'Income','home.spent':'Spent',
-    'home.invested':'Invested','home.savings':'Savings','home.allocate':'Allocate',
+    'home.invested':'Invested','home.savings':'Savings','home.allocate':'Allocate','invest.cardTitle':'Investments',
     'home.everyEuroPlanned':'Every euro planned ✓',
     'home.unallocated':'Unallocated — tap to plan',
     'home.switchProfile':'Switch profile','home.manageProfiles':'Manage profiles',
@@ -1521,7 +1521,7 @@ const TRANSLATIONS = {
     'lang.availableNow':'Nu beschikbaar',
     // Home screen
     'home.totalBalance':'Totaal saldo','home.income':'Inkomsten','home.spent':'Uitgegeven',
-    'home.invested':'Geïnvesteerd','home.savings':'Spaargeld','home.allocate':'Verdelen',
+    'home.invested':'Geïnvesteerd','home.savings':'Spaargeld','home.allocate':'Verdelen','invest.cardTitle':'Beleggingen',
     'home.everyEuroPlanned':'Elke euro gepland ✓',
     'home.unallocated':'Niet verdeeld — tik om te plannen',
     'home.switchProfile':'Profiel wisselen','home.manageProfiles':'Profielen beheren',
@@ -1661,7 +1661,7 @@ const TRANSLATIONS = {
     'lang.availableNow':'Şu an mevcut',
     // Home screen
     'home.totalBalance':'Toplam bakiye','home.income':'Gelir','home.spent':'Harcandı',
-    'home.invested':'Yatırıldı','home.savings':'Tasarruf','home.allocate':'Dağıt',
+    'home.invested':'Yatırıldı','home.savings':'Tasarruf','home.allocate':'Dağıt','invest.cardTitle':'Yatırımlar',
     'home.everyEuroPlanned':'Her euro planlandı ✓',
     'home.unallocated':'Dağıtılmamış — planlamak için dokunun',
     'home.switchProfile':'Profil değiştir','home.manageProfiles':'Profilleri yönet',
@@ -2233,7 +2233,7 @@ function ScreenHome() {
         return (
           <div key="period" className="m-card m-fade" style={{ padding:'16px 16px 14px', marginBottom:14, border:`1px solid ${M.line}` }}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
-              <div className="m-cap">{t('home.period')}</div>
+              <div className="m-h3">{t('home.period')}</div>
               <div style={{ display:'flex', alignItems:'center', gap:4 }}>
                 <button className="m-iconbtn m-tap" onClick={() => setPidx(i => Math.max(0, i-1))}
                   style={{ width:28, height:28, opacity:pidx===0?0.3:1 }}><I name="arrowL" size={14}/></button>
@@ -2391,7 +2391,7 @@ function ScreenHome() {
                       {i > 0 && <Divider inset={36}/>}
                       <div className="m-tap" onClick={() => nav.push('recurringDetail', { id: r.id })} style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 0', cursor:'pointer' }}>
                         <div style={{ width:28, height:28, borderRadius:8, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                          <I name={r.icon} size={14} color={M.ink2}/>
+                          <IcoMDI name={r.icon} size={14} color={M.ink2}/>
                         </div>
                         <div style={{ flex:1, minWidth:0 }}>
                           <div style={{ fontSize:13, fontWeight:500, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{r.name}</div>
@@ -2426,7 +2426,7 @@ function ScreenHome() {
               <I name="rocket" size={18} color={M.violet}/>
             </div>
             <div style={{ flex:1 }}>
-              <div style={{ fontSize:14, fontWeight:600 }}>Investments</div>
+              <div className="m-h3">{t('invest.cardTitle')}</div>
               <div className="m-num" style={{ fontSize:15, fontWeight:600, marginTop:2 }}>
                 {fmtEurInt(PORTFOLIO.total)}
                 <span style={{ fontSize:13, color:M.sage, marginLeft:8, fontFamily:M.fontUI, fontWeight:700, background:M.sageSoft, padding:'1px 7px', borderRadius:999 }}>+{PORTFOLIO.pnlPct.toFixed(1)}%</span>
@@ -2444,7 +2444,7 @@ function ScreenHome() {
               <I name="trending-up" size={18} color={M.sage}/>
             </div>
             <div style={{ flex:1 }}>
-              <div style={{ fontSize:14, fontWeight:600 }}>Insights</div>
+              <div className="m-h3">{t('tab.insights')}</div>
               <div style={{ fontSize:12, color:M.ink3, marginTop:2 }}>AI spending analysis</div>
             </div>
             <I name="caretR" size={14} color={M.ink4}/>
@@ -4034,7 +4034,18 @@ function ScreenProfile() {
   const [editing, setEditing] = React.useState(false);
   const [name, setName] = useLocalStorage('munni_profile_name', '');
   const [email] = useLocalStorage('munni_profile_email', '');
-  const [userPicture, setUserPicture] = useLocalStorage('munni_user_picture', null);
+  const pictureKey = React.useMemo(() => {
+    const method = localStorage.getItem('munni_last_login_method') || '';
+    if (method === 'google') return 'munni_user_picture_google';
+    if (method === 'apple') return 'munni_user_picture_apple';
+    if (method === 'bank') return 'munni_user_picture_bank';
+    try {
+      const e = JSON.parse(localStorage.getItem('munni_profile_email') || '""');
+      if (e && !['google@munni.app','apple@munni.app','bank@munni.app',''].includes(e)) return `munni_user_picture_${e}`;
+    } catch {}
+    return 'munni_user_picture';
+  }, []);
+  const [userPicture, setUserPicture] = useLocalStorage(pictureKey, null);
   const { profiles } = useProfiles();
   const [connectedAccounts] = useLocalStorage('munni_bank_accounts', () => ACCOUNTS.slice());
   const [draft, setDraft] = React.useState({ name });
@@ -10500,7 +10511,12 @@ function ScreenLoginGate({ onLogin }) {
   //       'signup-bank'|'terms'|'privacy'|'language'
   const [mode, setMode] = React.useState('login');
   const { t } = useLang();
-  const [emailInput, setEmailInput] = React.useState(localStorage.getItem('munni_profile_email') || '');
+  const [emailInput, setEmailInput] = React.useState(() => {
+    try {
+      const v = JSON.parse(localStorage.getItem('munni_profile_email') || '""');
+      return (v && !['google@munni.app','apple@munni.app','bank@munni.app'].includes(v)) ? v : '';
+    } catch { return ''; }
+  });
   const [signupEmailInput, setSignupEmailInput] = React.useState('');
   const [signupName, setSignupName] = React.useState('');
   const [verifyDigits, setVerifyDigits] = React.useState(['','','','','','']);
