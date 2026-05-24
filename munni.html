@@ -4041,6 +4041,14 @@ function ScreenProfile() {
   const [showReset, setShowReset] = React.useState(false);
   const [showPicturePicker, setShowPicturePicker] = React.useState(false);
 
+  const handleUserFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => { setUserPicture(ev.target.result); setShowPicturePicker(false); };
+    reader.readAsDataURL(file);
+  };
+
   const { logout: logoutFn } = useAppCtx();
   const startEdit = () => { setDraft({ name }); setEditing(true); };
   const save = () => { setName(draft.name); setEditing(false); };
@@ -4188,6 +4196,13 @@ function ScreenProfile() {
                 </button>
               ))}
             </div>
+            <label style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0', cursor:'pointer', borderBottom:`1px solid ${M.line2}`, marginBottom:12 }}>
+              <div style={{ width:40, height:40, borderRadius:10, background:M.paper2, border:`1px solid ${M.line}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <I name="cam" size={18} color={M.ink2}/>
+              </div>
+              <div style={{ fontSize:15, fontWeight:500 }}>Choose from library</div>
+              <input type="file" accept="image/*" onChange={handleUserFileChange} style={{ display:'none' }}/>
+            </label>
             {userPicture && (
               <button className="m-tap" onClick={() => { setUserPicture(null); setShowPicturePicker(false); }}
                 style={{ width:'100%', padding:'12px 0', background:M.paper2, color:M.ink3, border:`1px solid ${M.line}`, borderRadius:12, fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
@@ -10504,8 +10519,8 @@ function ScreenLoginGate({ onLogin }) {
     localStorage.setItem('munni_signup_methods', JSON.stringify(methods));
     localStorage.setItem('munni_last_login_method', method);
     localStorage.setItem('munni_opened_before', 'true');
-    localStorage.setItem('munni_profile_email', email || '');
-    if (displayName) localStorage.setItem('munni_profile_name', displayName);
+    localStorage.setItem('munni_profile_email', JSON.stringify(email || ''));
+    if (displayName) localStorage.setItem('munni_profile_name', JSON.stringify(displayName));
     const profiles = JSON.parse(localStorage.getItem('munni_profiles') || JSON.stringify(DEFAULT_PROFILES));
     const targetId = activateDemo ? 'p_demo' : 'p1';
     const updated = profiles.map(p => ({ ...p, active: p.id === targetId }));
@@ -10522,7 +10537,7 @@ function ScreenLoginGate({ onLogin }) {
       const methods = getSignupMethods();
       if (isSignup) {
         if (methods.includes('google')) { setSignupError(t('login.errGoogleExists')); return; }
-        doLogin('google', 'google@munni.app', 'Google User');
+        doLogin('google', 'google@munni.app', 'Google van der Berg');
       } else {
         if (!methods.includes('google')) { setNoAccountMethod('google'); setMode('no-account'); return; }
         doLogin('google', '', null);
@@ -10539,7 +10554,7 @@ function ScreenLoginGate({ onLogin }) {
       const methods = getSignupMethods();
       if (isSignup) {
         if (methods.includes('apple')) { setSignupError(t('login.errAppleExists')); return; }
-        doLogin('apple', 'apple@munni.app', 'Apple User');
+        doLogin('apple', 'apple@munni.app', 'Apple van der Berg');
       } else {
         if (!methods.includes('apple')) { setNoAccountMethod('apple'); setMode('no-account'); return; }
         doLogin('apple', '', null);
@@ -10803,7 +10818,7 @@ function ScreenLoginGate({ onLogin }) {
           <div className="m-h2" style={{ marginBottom:4 }}>Connect your bank</div>
           <div style={{ fontSize:14, color:M.ink2, marginBottom:24, lineHeight:1.5 }}>Read-only via Open Banking. ING, Rabobank, ABN AMRO, N26 and 200+ more.</div>
           {['ING','Rabobank','ABN AMRO','N26','bunq','ASN Bank'].map((bank) => (
-            <div key={bank} className="m-tap" onClick={() => doLogin('bank', 'bank@munni.app', 'Bank User')} style={{ display:'flex', alignItems:'center', gap:14, padding:'14px 0', borderBottom:`1px solid ${M.line2}` }}>
+            <div key={bank} className="m-tap" onClick={() => doLogin('bank', 'bank@munni.app', 'Bank van der Berg')} style={{ display:'flex', alignItems:'center', gap:14, padding:'14px 0', borderBottom:`1px solid ${M.line2}` }}>
               <div style={{ width:38, height:38, borderRadius:10, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                 <I name="card" size={17} color={M.ink3}/>
               </div>
@@ -10863,8 +10878,8 @@ function ScreenLoginGate({ onLogin }) {
           const profiles = JSON.parse(localStorage.getItem('munni_profiles') || JSON.stringify(DEFAULT_PROFILES));
           const updated = profiles.map(p => ({ ...p, active: p.id === 'p_demo' }));
           localStorage.setItem('munni_profiles', JSON.stringify(updated));
-          localStorage.setItem('munni_profile_email', 'demo@munni.app');
-          localStorage.setItem('munni_profile_name', 'Demo van der Berg');
+          localStorage.setItem('munni_profile_email', JSON.stringify('demo@munni.app'));
+          localStorage.setItem('munni_profile_name', JSON.stringify('Demo van der Berg'));
           onLogin();
         }}
           style={{ background: 'transparent', border: 'none', fontSize: 12, color: M.ink4, cursor: 'pointer', marginTop: 8, fontFamily: M.fontUI, textAlign: 'center' }}>
@@ -10876,7 +10891,7 @@ function ScreenLoginGate({ onLogin }) {
           <button onClick={() => setMode('terms')} style={{ background:'none', border:'none', color:M.sage, fontWeight:500, cursor:'pointer', fontFamily:M.fontUI, fontSize:11, textDecoration:'underline' }}>{t('login.termsLinkText')}</button>
           {' '}{t('login.termsAnd')}{' '}
           <button onClick={() => setMode('privacy')} style={{ background:'none', border:'none', color:M.sage, fontWeight:500, cursor:'pointer', fontFamily:M.fontUI, fontSize:11, textDecoration:'underline' }}>{t('login.termsPrivacy')}</button>
-          {t('login.termsSuffix') ? <>{' '}{t('login.termsSuffix')}</> : null}
+          {(()=>{ const s=t('login.termsSuffix'); return (s && s!=='login.termsSuffix') ? <>{' '}{s}</> : null; })()}
         </div>
         <div style={{ textAlign:'center', marginTop:14 }}>
           <button className="m-tap" onClick={() => setMode('language')}
