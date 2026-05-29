@@ -20,7 +20,25 @@
       "Bash(git commit -m ' *)",
       "PowerShell(Select-String -Path \"c:\\\\Users\\\\odoke\\\\Downloads\\\\munni \\(Copy\\)\\\\munni.html\" -Pattern \"ScreenManageCategories|NewCatForm|handleDropOnPremadeParent|deleteCustomSub|canDeleteParent|munni_customCats\" | Select-Object -First 10 | ForEach-Object { \"$\\($_.LineNumber\\): $\\($_.Line.Trim\\(\\)\\)\" })",
       "Bash(awk '/const ASN_TRANSACTIONS/,/^];/' \"/c/Users/odoke/Downloads/munni \\(Copy\\)/munni.html\")",
-      "PowerShell(Select-String -Path \"c:\\\\Users\\\\odoke\\\\Downloads\\\\munni \\(Copy\\)\\\\munni.html\" -Pattern \"ProfileAvatar|STOCK_AVATARS|ASN_TRANSACTIONS|munni_topics_\" | Select-Object -First 8 | ForEach-Object { \"$\\($_.LineNumber\\): $\\($_.Line.Trim\\(\\)\\)\" })"
+      "PowerShell(Select-String -Path \"c:\\\\Users\\\\odoke\\\\Downloads\\\\munni \\(Copy\\)\\\\munni.html\" -Pattern \"ProfileAvatar|STOCK_AVATARS|ASN_TRANSACTIONS|munni_topics_\" | Select-Object -First 8 | ForEach-Object { \"$\\($_.LineNumber\\): $\\($_.Line.Trim\\(\\)\\)\" })",
+      "Bash(sed -n '7807,8138p')",
+      "Read(//tmp/**)",
+      "Bash(python3 -)",
+      "Bash(node -e ' *)",
+      "Bash(git checkout *)",
+      "Bash(node patch.js)",
+      "Bash(node patch2.js)",
+      "Bash(node patch3.js)",
+      "Bash(del patch.js patch2.js patch3.js)",
+      "Bash(node patch_mega.js)",
+      "Bash(node patch_icons.js)",
+      "Bash(node patch_mdi_svg.js)",
+      "Bash(node patch_cats2.js)",
+      "Bash(node patch_login_i18n.js)",
+      "Bash(node -e \"const c=require\\('fs'\\).readFileSync\\('munni.html','utf8'\\); const checks=['IcoGoogle','IcoApple','no-account','noAccountMethod','login.welcomeFirst','login.termsIntro','lang.availableNow','twemoji','emailDisplay','login.signingIn']; checks.forEach\\(k=>console.log\\(k,':', c.includes\\(k\\)?'✓':'MISSING'\\)\\);\")",
+      "Bash(git commit -m 'Fix apostrophe syntax error in login.noAccountSub translation string *)",
+      "Bash(node patch_login2.js)",
+      "Bash(findstr /n \"settings.profiles\\\\|settings.account\\\\|settings.notifications\" munni.html)"
     ]
   }
 }
