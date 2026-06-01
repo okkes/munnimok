@@ -281,7 +281,7 @@ const STOCK_AVATARS = [
   { id:'av8', emoji:'👨‍🎨', bg:'#F7DC6F' },
 ];
 
-function ProfileAvatar({ profile, size = 36 }) {
+export function ProfileAvatar({ profile, size = 36 }) {
   const borderRadius = Math.round(size * 0.28);
   if (profile?.picture) {
     if (profile.picture.startsWith('av')) {

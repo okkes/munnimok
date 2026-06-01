@@ -5,7 +5,7 @@ import { useLang, useNav, Sheet, TabBar } from '../i18n.jsx';
 import { useLocalStorage } from '../hooks.jsx';
 import { Sparkline, StackedBar } from '../components.jsx';
 import { useProfiles, useTxCtx, useRecurCtx, useAlloc, useConnectedAccounts, useProfileBudgets, useProfileGoals, useProfileDebts } from '../providers.jsx';
-import { HOME_CARDS_DEFAULT } from './Profile.jsx';
+import { HOME_CARDS_DEFAULT, ProfileAvatar } from './Profile.jsx';
 
 
 function CustomGraphCard({ card, txs }) {
