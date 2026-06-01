@@ -6,6 +6,7 @@ import { useLocalStorage } from '../hooks.jsx';
 import { Sparkline, StackedBar } from '../components.jsx';
 import { useProfiles, useTxCtx, useRecurCtx, useAlloc, useConnectedAccounts, useProfileBudgets, useProfileGoals, useProfileDebts } from '../providers.jsx';
 import { HOME_CARDS_DEFAULT, ProfileAvatar } from './Profile.jsx';
+import { budgetColor, budgetSoft } from './Budgets.jsx';
 
 
 function CustomGraphCard({ card, txs }) {

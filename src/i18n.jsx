@@ -592,7 +592,7 @@ export const TRANSLATIONS = {
   },
 };
 
-const OTHER_LANGUAGES = [
+export const OTHER_LANGUAGES = [
   { code:'de', name:'Deutsch', native:'Deutsch' },
   { code:'fr', name:'French', native:'Français' },
   { code:'es', name:'Spanish', native:'Español' },

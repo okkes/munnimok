@@ -2,7 +2,7 @@ import React from 'react';
 import { CATEGORIES, fmtEur, fmtDate, ACCOUNTS, RECURRING, RECURRING_SUGGESTIONS, getUserId, INTEGRATIONS, ALL_RECEIPTS, getUserSyncKey, fmtSyncTime, addDevLog, DEMO_ACCOUNT_IDS, generateBankTxs, generateAsnTxs } from '../data.jsx';
 import { M, I, IcoMDI, Divider, StatusBar, AppBar } from '../theme.jsx';
 import { useDark } from '../nav.jsx';
-import { LangCtx, useLang, NavCtx, useNav, Sheet } from '../i18n.jsx';
+import { LangCtx, useLang, NavCtx, useNav, Sheet, OTHER_LANGUAGES } from '../i18n.jsx';
 import { useLocalStorage, clearAllStorage } from '../hooks.jsx';
 import { BarChart, StackedBar, TxRow } from '../components.jsx';
 import { useCatCtx, ProfilesProvider, useProfiles, TxCtx, useTxCtx, AllocProvider, useConnectedAccounts, Stat } from '../providers.jsx';

@@ -37,7 +37,7 @@ export function ScreenBudgets() {
   );
 }
 
-const budgetColor = (ratio) => {
+export const budgetColor = (ratio) => {
   const left = 1 - ratio;
   if (ratio > 1)    return '#8B1A1A';
   if (left <= 0.10) return M.clay;
@@ -45,7 +45,7 @@ const budgetColor = (ratio) => {
   if (left <= 0.50) return M.ochre;
   return M.sage;
 };
-const budgetSoft = (ratio) => {
+export const budgetSoft = (ratio) => {
   const left = 1 - ratio;
   if (ratio > 1)    return '#F5D5D5';
   if (left <= 0.10) return M.claySoft;
