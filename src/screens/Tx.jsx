@@ -548,7 +548,7 @@ export function ScreenTxDetail({ params }) {
   );
 }
 
-function DetailRow({ label, value, icon, mono, placeholder, caretR }) {
+export function DetailRow({ label, value, icon, mono, placeholder, caretR }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 0' }}>
       <div style={{ fontSize: 12, color: M.ink3, width: 96 }}>{label}</div>

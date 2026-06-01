@@ -3,7 +3,7 @@ import { CATEGORIES, _catExt, catPath, catNameT, _GROUP_KEYS, fmtEur, fmtDate } 
 import { M, I, IcoMDI, Divider, StatusBar, AppBar } from '../theme.jsx';
 import { useLang, useNav, Sheet } from '../i18n.jsx';
 import { useTxCtx } from '../providers.jsx';
-import { HighlightText } from './Tx.jsx';
+import { HighlightText, DetailRow } from './Tx.jsx';
 
 
 export function ScreenReviewSwipe() {
