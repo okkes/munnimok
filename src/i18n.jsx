@@ -1,0 +1,778 @@
+import React from 'react';
+import { M, I } from './theme.jsx';
+import { useLocalStorage } from './hooks.jsx';
+
+export const TRANSLATIONS = {
+  en: {
+    // Tabs
+    'tab.home':'Home','tab.transactions':'Transactions','tab.recurring':'Recurring',
+    'tab.events':'Events','tab.insights':'Insights','tab.settings':'Settings',
+    // Screen titles
+    'screen.settings':'Settings','screen.profiles':'Profiles','screen.categories':'Categories',
+    'screen.accounts':'Accounts','screen.periods':'Period settings','screen.customize':'Customize home',
+    'screen.goals':'Goals','screen.budgets':'Budgets','screen.debts':'Debts',
+    'screen.savings':'Savings','screen.insights':'Insights','screen.notifications':'Notifications',
+    'screen.recurring':'Recurring','screen.language':'Language',
+    // Actions
+    'action.save':'Save','action.cancel':'Cancel','action.delete':'Delete','action.add':'Add',
+    'action.create':'Create','action.edit':'Edit','action.confirm':'Confirm','action.done':'Done',
+    'action.back':'Back','action.seeAll':'See all','action.reset':'Reset','action.all':'All',
+    // Settings menu
+    'settings.manage':'Manage','settings.account':'Account',
+    'settings.notifications':'Notifications','settings.appearance':'Appearance',
+    'settings.tutorial':'Tutorial','settings.help':'Help & support','settings.signOut':'Sign out',
+    'settings.userId':'User ID','settings.copyId':'Copy','settings.copied':'Copied!',
+    'settings.friends':'Friends','settings.friendsSub':'Invite friends to share finance overviews',
+    'settings.language':'Language','settings.languageSub':'English, Dutch, Turkish supported',
+    // Periods
+    'period.income':'Income','period.spent':'Spent','period.invested':'Invested',
+    'period.savings':'Savings','period.allocate':'Allocate',
+    // Category names
+    'cat.housing':'Housing','cat.transport':'Transportation','cat.consumption':'Consumption',
+    'cat.personalCare':'Personal Care','cat.entertainment':'Entertainment','cat.sport':'Sport',
+    'cat.shopping':'Shopping','cat.holiday':'Holiday','cat.education':'Education',
+    'cat.healthcare':'Healthcare','cat.pet':'Pet','cat.extra':'Extra',
+    'cat.income':'Income','cat.saving':'Saving','cat.expense':'Expense',
+    // Category subs
+    'cat.groceries':'Grocery','cat.restaurants':'Dining Out','cat.coffee':'Coffee',
+    'cat.housing.rent':'Rent & Mortgage','cat.housing.utility':'Utility',
+    'cat.transport.public':'Public Transport','cat.transport.car':'Car Payment',
+    'cat.healthcare.doctor':'Doctor Visit','cat.healthcare.prescription':'Prescription',
+    // All category ids (for full translation support)
+    'cat.incomeUncategorized':'Uncategorized','cat.reimburse':'Reimbursement',
+    'cat.salary':'Salary','cat.freelance':'Freelance Work','cat.rental':'Rental Income',
+    'cat.investIncome':'Investment Income','cat.incomeOther':'Other Income',
+    'cat.savingWithdraw':'Withdrawal','cat.savingDeposit':'Deposit',
+    'cat.expenseReimburse':'Reimbursement','cat.expenseUncategorized':'Uncategorized',
+    'cat.housingRent':'Rent & Mortgage','cat.housingUtility':'Utility',
+    'cat.housingMaintenance':'Maintenance','cat.housingStorage':'Storage Area','cat.housingOther':'Other',
+    'cat.transportCar':'Car Payment','cat.transportFuel':'Gas & Fuel','cat.transportPublic':'Public Transport','cat.transportOther':'Other',
+    'cat.breakfast':'Breakfast & Brunch','cat.takeout':'Takeout & Delivery',
+    'cat.sweets':'Sweets & Treats','cat.alcohol':'Alcohol & Tobacco','cat.consumptionOther':'Other',
+    'cat.haircut':'Haircut','cat.toiletry':'Toiletry','cat.beautyProduct':'Health & Beauty','cat.personalCareOther':'Other',
+    'cat.movie':'Movie','cat.concerts':'Concerts & Shows','cat.sportingEvent':'Sporting Event',
+    'cat.gambling':'Gambling','cat.hobby':'Hobby','cat.videoGame':'Video Game',
+    'cat.dating':'Dating','cat.subs':'Streaming Service','cat.entertainmentOther':'Other',
+    'cat.gym':'Gym Membership','cat.sportsEquipment':'Sports Equipment','cat.sportOther':'Other',
+    'cat.clothing':'Clothing','cat.electronics':'Electronic','cat.homeGoods':'Home Goods',
+    'cat.gift':'Gift','cat.intimateUtility':'Intimate Utility','cat.festivity':'Festivity',
+    'cat.houseGarden':'House & Garden','cat.homeAutomation':'Home Automation',
+    'cat.childCare':'Child Care','cat.shoppingOther':'Other',
+    'cat.flight':'Flight','cat.hotel':'Hotel & Airbnb','cat.carRental':'Car Rental',
+    'cat.activity':'Activity','cat.holidayOther':'Other',
+    'cat.tuition':'Tuition','cat.course':'Course','cat.book':'Book',
+    'cat.schoolSupply':'School Supply','cat.certificate':'Certificate',
+    'cat.newspaper':'Newspaper','cat.educationOther':'Other',
+    'cat.doctorVisit':'Doctor Visit','cat.dental':'Dental Work',
+    'cat.prescription':'Prescription','cat.healthInsurance':'Health Insurance',
+    'cat.healthUtility':'Health Utility','cat.mentalCare':'Mental Care','cat.healthcareOther':'Other',
+    'cat.petFood':'Pet Food','cat.petSupply':'Pet Supply','cat.petInsurance':'Pet Insurance','cat.petOther':'Other',
+    'cat.birthday':'Birthday','cat.funeralInsurance':'Funeral Insurance',
+    'cat.charity':'Charity','cat.taxes':'Taxes','cat.fee':'Fee',
+    'cat.workExpense':'Work Expense','cat.familyCare':'Family Care',
+    'cat.lendMoney':'Lend Money','cat.cashWithdraw':'Cash Withdraw',
+    'cat.fines':'Fines','cat.secret':'Secret','cat.invest':'Investment','cat.extraOther':'Other',
+    // Common UI
+    'home.balance':'Total balance','home.period':'Overview',
+    'review.title':'Transaction Review','review.confirm':'Confirm',
+    'upcoming.title':'Upcoming','upcoming.seeAll':'See all',
+    'goals.title':'Goals','budgets.title':'Budgets','debts.title':'Debts',
+    'lang.en':'English','lang.nl':'Dutch','lang.tr':'Turkish',
+    'lang.available':'Available','lang.comingSoon':'Coming soon',
+    'lang.title':'Language','lang.subtitle':'Choose your preferred language',
+    'lang.otherLanguages':'Other languages',
+    'lang.searchPlaceholder':'Search languages…',
+    // Login / onboarding
+    'login.welcome':'Welcome back','login.subtitle':'Sign in to continue',
+    'login.google':'Continue with Google','login.apple':'Continue with Apple',
+    'login.email':'Email address','login.continue':'Continue',
+    'login.noAccount':"Don't have an account?",'login.createAccount':'Create account →',
+    'login.createDemoAccount':'Create demo account',
+    'login.demoUser':'Continue as demo user','login.changeLanguage':'Change language',
+    'login.terms':'By continuing you agree to our Terms & Privacy Policy',
+    'login.or':'or','login.signIn':'Sign in',
+    'login.welcomeFirst':'Welcome',
+    'login.termsIntro':'By continuing you agree to our',
+    'login.termsLinkText':'Terms of Service','login.termsAnd':'and',
+    'login.termsPrivacy':'Privacy Policy','login.termsSuffix':'',
+    'login.signingIn':'Signing in with',
+    'login.noAccountTitle':'No account found',
+    'login.noAccountSub':"We couldn't find an account linked to your account.",
+    'login.noAccountDesc':'Go back and try a different sign-in method, or continue to create a new account.',
+    'login.noAccountBack':'Back to login','login.noAccountContinue':'Create account',
+    'login.noAccountCustom':'Sign up with email instead',
+    'login.createAccountTitle':'Create account','login.createAccountSub':'Choose how to sign up',
+    'login.signUpEmail':'Sign up with email',
+    'login.createAccountEmailSub':'Sign up with your email address',
+    'login.fullName':'Full name','login.namePlaceholder':'Your name',
+    'login.emailPlaceholder':'sample@munni.app',
+    'login.sendCode':'Send verification code',
+    'login.checkEmail':'Check your email',
+    'login.codeSentTo':'We sent a 6-digit code to',
+    'login.autoFilling':'Auto-filling code…',
+    'login.signInTitle':'Sign in','login.signInSub':'Enter your email address',
+    'login.emailNotFound':'No account found. Create one instead?',
+    'login.errGoogleExists':'A Google account is already registered. Sign in instead.',
+    'login.errAppleExists':'An Apple account is already registered. Sign in instead.',
+    'login.errEmailExists':'This email is already registered. Sign in instead.',
+    'login.errInvalidEmail':'Please enter a valid email address.',
+    'login.errNameRequired':'Name must be at least 2 characters.',
+    'login.signedInGoogle':'Signed in with Google',
+    'login.signedInApple':'Signed in with Apple',
+    'login.connectedEmail':'Connected account',
+    'lang.availableNow':'Available now',
+    // Home screen
+    'home.totalBalance':'Total balance','home.income':'Income','home.spent':'Spent',
+    'home.invested':'Invested','home.savings':'Savings','home.allocate':'Allocate','invest.cardTitle':'Investments',
+    'home.everyEuroPlanned':'Every euro planned ✓',
+    'home.unallocated':'Unallocated — tap to plan',
+    'home.switchProfile':'Switch profile','home.manageProfiles':'Manage profiles',
+    'home.notSynced':'Not synced yet','home.lastSync':'Last sync',
+    'word.account':'account','word.accounts':'accounts','word.noAccounts':'No accounts',
+    // Notifications
+    'notif.bankSync':'Bank sync','notif.bankSyncSub':'Pull latest transactions from your bank',
+    'notif.lastSynced':'Last synced','notif.syncNow':'Sync now','notif.syncing':'Syncing…',
+    'notif.txSynced':'{n} transaction synced','notif.txsSynced':'{n} transactions synced',
+    'notif.reviewNow':'Review now','notif.recentTitle':'Recent notifications',
+    'notif.devLogs':'Developer logs','notif.clearLogs':'Clear logs',
+    'notif.filterErrors':'Errors','notif.filterWarnings':'Warnings','notif.filterInfo':'Info','notif.noLogs':'No log entries',
+    'notif.n12synced':'12 transactions synced','notif.n12syncedSub':'2 hours ago · all categorised',
+    'notif.n3review':'3 transactions need review','notif.n3reviewSub':'2 hours ago · tap to review',
+    'notif.salary':'Salary received','notif.salarySub':'Yesterday · +€2,480.00',
+    // Review
+    'review.noTxs':'All caught up',
+    'review.noTxsSub':"No transactions need review. We'll notify you when new ones arrive.",
+    'review.applyAll':'Accept all','review.confirmGroup':'Confirm',
+    // Settings extra
+    'settings.profiles':'Profiles','settings.customizeHome':'Customize home',
+    'settings.periods':'Period settings','settings.deleteData':'Delete all data',
+    // Profile detail
+    'screen.profile':'Profile',
+    'profile.changePhoto':'Change photo','profile.choosePhoto':'Choose photo',
+    'profile.tapRename':'tap to rename','profile.active':'Active profile',
+    'profile.mainAccounts':'Main accounts','profile.mainAccountsSub':'Transactions will sync to this profile',
+    'profile.noChecking':'No checking accounts connected',
+    'profile.savingAccounts':'Saving & investment accounts','profile.noSaving':'No saving accounts connected',
+    'profile.manageAccounts':'Manage accounts',
+    'profile.deleteProfile':'Delete profile',
+    'profile.cannotDeleteActive':'Cannot delete the active profile — switch first',
+    'profile.cannotDeleteOnly':'Cannot delete the only profile',
+    'friends.myId':'Your ID','friends.myIdDesc':'Share this ID so others can add you',
+    'friends.invite':'Add a friend','friends.invitePlaceholder':"Enter friend's ID…",
+    'friends.send':'Send invite','friends.sent':'Invite sent!','friends.pending':'Pending invites',
+    'friends.noFriends':'No friends yet — share your ID to connect',
+    'friends.remove':'Remove','friends.accept':'Accept','friends.decline':'Decline','friends.block':'Block',
+    'friends.inviteNotif':'Friend invite from','friends.alreadyFriends':'Already friends',
+    'friends.inviteSelf':"Can't invite yourself",'friends.cancelInvite':'Cancel invite',
+    'friends.friendsLabel':'Friends','friends.profileInviteFrom':'Profile invite','friends.profileInviteJoin':'Join profile',
+    'profile.members':'Members','profile.addMember':'Invite a friend','profile.noMembers':'Only you have access','profile.demoNoInvite':'Demo profiles cannot have members',
+    'profile.permReader':'Reader','profile.permContributor':'Contributor','profile.permOwner':'Owner',
+    'profile.kick':'Remove member','profile.kickWarn':'Their connected bank accounts will be removed from this profile.',
+    'profile.memberPerm':'Permission','profile.sharedAcct':'Shared via',
+    'accounts.sharedWith':'Shared with me','accounts.iSharing':'I am sharing',
+    'profile.deleteConfirmTitle':'Delete profile?',
+    'profile.deleteConfirmDesc':'This profile will be permanently removed. Transactions will remain.',
+    'profile.deleteDataAlso':'The following data will also be permanently deleted:',
+    // Profiles list
+    'profiles.aboutTitle':'About Profiles',
+    'profiles.aboutDesc':'Profiles let you track separate finances in one app — perfect for personal vs. business, or managing finances for different household members. Each profile has its own accounts, budgets, goals, and financial data.',
+    // New profile sheet
+    'profile.newProfile':'New profile','profile.profileName':'Profile name',
+    'profile.namePlaceholder':'e.g. Business, Partner, Side hustle…','profile.profileType':'Profile type',
+    'profile.typeReal':'Real','profile.typeRealSub':'Connect your actual bank accounts',
+    'profile.typeDemo':'Demo','profile.typeDemoSub':'Uses sample data for testing',
+    'profile.createProfile':'Create profile','profile.duplicateName':'A profile with this name already exists',
+    // Picture picker
+    'profile.picTitle':'Profile picture','profile.chooseLibrary':'Choose from library','profile.removePic':'Remove picture',
+    // Accounts
+    'accounts.demoSection':'Demo accounts','accounts.demoDesc':'Sample data · read-only',
+    'accounts.yourSection':'Your accounts','accounts.bankSection':'Bank accounts','accounts.savingSection':'Saving & investment',
+    'accounts.noBank':'No bank accounts connected','accounts.noSaving':'No saving accounts added',
+    'accounts.connectBank':'Connect bank','accounts.addManual':'Add manual account',
+    'settings.darkMode':'Dark mode',
+    'settings.darkModeOn':'On — tap to switch to light','settings.darkModeOff':'Off — tap to switch to dark',
+    'settings.resetDemo':'Reset demo data','settings.resetDemoSub':'Restore all transactions & settings',
+    'settings.resetConfirmTitle':'Reset demo data?',
+    'settings.resetConfirmBody':'This will restore all transactions, categories, and settings to the original demo state. All your changes will be lost.',
+    'settings.resetEverything':'Reset everything',
+    // Budgets
+    'budgets.spent':'spent','budgets.of':'of','budgets.newBudget':'New budget',
+    // Goals
+    'goals.totalSaved':'Total saved','goals.active':'Active','goals.achieved':'Achieved',
+    'goals.saved':'saved',
+    // Debts
+    'debts.totalOutstanding':'Total outstanding','debts.payoffStrategy':'Payoff strategy',
+    'debts.activeDebts':'Active debts','debts.manage':'Manage','debts.addDebt':'Add debt',
+    // Common
+    'common.thisMonth':'This month','common.thisPeriod':'This period',
+    'common.noData':'No data','common.tapToEdit':'tap to edit',
+    'common.back':'Back','common.cancel':'Cancel',
+  },
+  nl: {
+    'tab.home':'Thuis','tab.transactions':'Transacties','tab.recurring':'Terugkerend',
+    'tab.events':'Evenementen','tab.insights':'Inzichten','tab.settings':'Instellingen',
+    'screen.settings':'Instellingen','screen.profiles':'Profielen','screen.categories':'Categorieën',
+    'screen.accounts':'Rekeningen','screen.periods':'Periode-instellingen','screen.customize':'Startscherm aanpassen',
+    'screen.goals':'Doelen','screen.budgets':'Budgetten','screen.debts':'Schulden',
+    'screen.savings':'Spaargeld','screen.insights':'Inzichten','screen.notifications':'Meldingen',
+    'screen.recurring':'Terugkerend','screen.language':'Taal',
+    'action.save':'Opslaan','action.cancel':'Annuleren','action.delete':'Verwijderen',
+    'action.add':'Toevoegen','action.create':'Aanmaken','action.edit':'Bewerken',
+    'action.confirm':'Bevestigen','action.done':'Klaar','action.back':'Terug',
+    'action.seeAll':'Alles zien','action.reset':'Reset','action.all':'Alle',
+    'settings.manage':'Beheren','settings.account':'Account',
+    'settings.notifications':'Meldingen','settings.appearance':'Weergave',
+    'settings.tutorial':'Rondleiding','settings.help':'Help & ondersteuning',
+    'settings.signOut':'Uitloggen','settings.language':'Taal',
+    'settings.userId':'Gebruikers-ID','settings.copyId':'Kopiëren','settings.copied':'Gekopieerd!',
+    'settings.friends':'Vrienden','settings.friendsSub':'Nodig vrienden uit om financiën te delen',
+    'settings.languageSub':'Engels, Nederlands, Turks beschikbaar',
+    'period.income':'Inkomsten','period.spent':'Uitgaven','period.invested':'Geïnvesteerd',
+    'period.savings':'Spaargeld','period.allocate':'Verdelen',
+    'cat.housing':'Wonen','cat.transport':'Vervoer','cat.consumption':'Consumptie',
+    'cat.personalCare':'Persoonlijke verzorging','cat.entertainment':'Entertainment',
+    'cat.sport':'Sport','cat.shopping':'Winkelen','cat.holiday':'Vakantie',
+    'cat.education':'Onderwijs','cat.healthcare':'Gezondheidszorg','cat.pet':'Huisdier',
+    'cat.extra':'Extra','cat.income':'Inkomsten','cat.saving':'Sparen','cat.expense':'Uitgave',
+    'cat.groceries':'Boodschappen','cat.restaurants':'Uit eten','cat.coffee':'Koffie',
+    'cat.housing.rent':'Huur & hypotheek','cat.housing.utility':'Nutsvoorzieningen',
+    'cat.transport.public':'Openbaar vervoer','cat.transport.car':'Auto',
+    'cat.healthcare.doctor':'Doktersbezoek','cat.healthcare.prescription':'Recept',
+    'cat.incomeUncategorized':'Niet gecategoriseerd','cat.reimburse':'Vergoeding',
+    'cat.salary':'Salaris','cat.freelance':'Freelancewerk','cat.rental':'Huurinkomsten',
+    'cat.investIncome':'Investeringsinkomsten','cat.incomeOther':'Overige inkomsten',
+    'cat.savingWithdraw':'Opname','cat.savingDeposit':'Storting',
+    'cat.expenseReimburse':'Vergoeding','cat.expenseUncategorized':'Niet gecategoriseerd',
+    'cat.housingRent':'Huur & hypotheek','cat.housingUtility':'Nutsvoorzieningen',
+    'cat.housingMaintenance':'Onderhoud','cat.housingStorage':'Opslagruimte','cat.housingOther':'Overig',
+    'cat.transportCar':'Auto','cat.transportFuel':'Brandstof','cat.transportPublic':'Openbaar vervoer','cat.transportOther':'Overig',
+    'cat.breakfast':'Ontbijt & Brunch','cat.takeout':'Afhaal & Bezorging',
+    'cat.sweets':'Snoep & Snacks','cat.alcohol':'Alcohol & Tabak','cat.consumptionOther':'Overig',
+    'cat.haircut':'Kapper','cat.toiletry':'Toiletartikelen','cat.beautyProduct':'Gezondheid & Schoonheid','cat.personalCareOther':'Overig',
+    'cat.movie':'Film','cat.concerts':'Concerten & Shows','cat.sportingEvent':'Sportevenement',
+    'cat.gambling':'Gokken','cat.hobby':'Hobby','cat.videoGame':'Videospel',
+    'cat.dating':'Dating','cat.subs':'Streamingdienst','cat.entertainmentOther':'Overig',
+    'cat.gym':'Sportschool','cat.sportsEquipment':'Sportuitrusting','cat.sportOther':'Overig',
+    'cat.clothing':'Kleding','cat.electronics':'Elektronica','cat.homeGoods':'Huishoudartikelen',
+    'cat.gift':'Cadeau','cat.intimateUtility':'Persoonlijk gebruik','cat.festivity':'Feestelijkheid',
+    'cat.houseGarden':'Huis & Tuin','cat.homeAutomation':'Domotica',
+    'cat.childCare':'Kinderopvang','cat.shoppingOther':'Overig',
+    'cat.flight':'Vliegtuig','cat.hotel':'Hotel & Airbnb','cat.carRental':'Huurauto',
+    'cat.activity':'Activiteit','cat.holidayOther':'Overig',
+    'cat.tuition':'Collegegeld','cat.course':'Cursus','cat.book':'Boek',
+    'cat.schoolSupply':'Schoolbenodigdheden','cat.certificate':'Certificaat',
+    'cat.newspaper':'Krant','cat.educationOther':'Overig',
+    'cat.doctorVisit':'Doktersbezoek','cat.dental':'Tandheelkunde',
+    'cat.prescription':'Recept','cat.healthInsurance':'Zorgverzekering',
+    'cat.healthUtility':'Gezondheidsmiddelen','cat.mentalCare':'Geestelijke gezondheidszorg','cat.healthcareOther':'Overig',
+    'cat.petFood':'Diervoeding','cat.petSupply':'Dierbenodigdheden','cat.petInsurance':'Dierenverzekering','cat.petOther':'Overig',
+    'cat.birthday':'Verjaardag','cat.funeralInsurance':'Uitvaartverzekering',
+    'cat.charity':'Goed doel','cat.taxes':'Belastingen','cat.fee':'Kosten',
+    'cat.workExpense':'Zakelijke kosten','cat.familyCare':'Gezinszorg',
+    'cat.lendMoney':'Uitlenen','cat.cashWithdraw':'Geldopname',
+    'cat.fines':'Boetes','cat.secret':'Geheim','cat.invest':'Investering','cat.extraOther':'Overig',
+    'home.balance':'Totaal saldo','home.period':'Overzicht',
+    'review.title':'Transacties beoordelen','review.confirm':'Bevestigen',
+    'upcoming.title':'Aankomend','upcoming.seeAll':'Alles zien',
+    'goals.title':'Doelen','budgets.title':'Budgetten','debts.title':'Schulden',
+    'lang.en':'Engels','lang.nl':'Nederlands','lang.tr':'Turks',
+    'lang.available':'Beschikbaar','lang.comingSoon':'Binnenkort',
+    'lang.title':'Taal','lang.subtitle':'Kies je voorkeurstaal',
+    'lang.otherLanguages':'Andere talen','lang.searchPlaceholder':'Talen zoeken…',
+    // Login / onboarding
+    'login.welcome':'Welkom terug','login.subtitle':'Meld je aan om door te gaan',
+    'login.google':'Doorgaan met Google','login.apple':'Doorgaan met Apple',
+    'login.email':'E-mailadres','login.continue':'Doorgaan',
+    'login.noAccount':'Nog geen account?','login.createAccount':'Account aanmaken →',
+    'login.createDemoAccount':'Demo account aanmaken',
+    'login.demoUser':'Doorgaan als demo gebruiker','login.changeLanguage':'Taal wijzigen',
+    'login.terms':'Door door te gaan ga je akkoord met onze Voorwaarden & Privacybeleid',
+    'login.or':'of','login.signIn':'Aanmelden',
+    'login.welcomeFirst':'Welkom',
+    'login.termsIntro':'Door door te gaan ga je akkoord met onze',
+    'login.termsLinkText':'Gebruiksvoorwaarden','login.termsAnd':'en',
+    'login.termsPrivacy':'Privacybeleid','login.termsSuffix':'',
+    'login.signingIn':'Aanmelden bij',
+    'login.noAccountTitle':'Geen account gevonden',
+    'login.noAccountSub':'Er is geen account gevonden dat is gekoppeld aan jouw account.',
+    'login.noAccountDesc':'Ga terug en probeer een andere methode, of ga door om een nieuw account aan te maken.',
+    'login.noAccountBack':'Terug naar inloggen','login.noAccountContinue':'Account aanmaken',
+    'login.noAccountCustom':'Aanmelden met e-mail',
+    'login.createAccountTitle':'Account aanmaken','login.createAccountSub':'Kies hoe je wilt aanmelden',
+    'login.signUpEmail':'Aanmelden met e-mail',
+    'login.createAccountEmailSub':'Aanmelden met je e-mailadres',
+    'login.fullName':'Volledige naam','login.namePlaceholder':'Je naam',
+    'login.emailPlaceholder':'voorbeeld@munni.app',
+    'login.sendCode':'Verificatiecode versturen',
+    'login.checkEmail':'Controleer je e-mail',
+    'login.codeSentTo':'We hebben een 6-cijferige code gestuurd naar',
+    'login.autoFilling':'Code wordt ingevuld…',
+    'login.signInTitle':'Aanmelden','login.signInSub':'Voer je e-mailadres in',
+    'login.emailNotFound':'Geen account gevonden. Wil je er een aanmaken?',
+    'login.errGoogleExists':'Er is al een Google account geregistreerd. Log in.',
+    'login.errAppleExists':'Er is al een Apple account geregistreerd. Log in.',
+    'login.errEmailExists':'Dit e-mailadres is al geregistreerd. Log in.',
+    'login.errInvalidEmail':'Voer een geldig e-mailadres in.',
+    'login.errNameRequired':'Naam moet minimaal 2 tekens bevatten.',
+    'login.signedInGoogle':'Aangemeld via Google',
+    'login.signedInApple':'Aangemeld via Apple',
+    'login.connectedEmail':'Gekoppeld account',
+    'lang.availableNow':'Nu beschikbaar',
+    // Home screen
+    'home.totalBalance':'Totaal saldo','home.income':'Inkomsten','home.spent':'Uitgegeven',
+    'home.invested':'Geïnvesteerd','home.savings':'Spaargeld','home.allocate':'Verdelen','invest.cardTitle':'Beleggingen',
+    'home.everyEuroPlanned':'Elke euro gepland ✓',
+    'home.unallocated':'Niet verdeeld — tik om te plannen',
+    'home.switchProfile':'Profiel wisselen','home.manageProfiles':'Profielen beheren',
+    'home.notSynced':'Nog niet gesynchroniseerd','home.lastSync':'Laatste sync',
+    'word.account':'rekening','word.accounts':'rekeningen','word.noAccounts':'Geen rekeningen',
+    'notif.bankSync':'Banksync','notif.bankSyncSub':'Haal de nieuwste transacties op van je bank',
+    'notif.lastSynced':'Laatste sync','notif.syncNow':'Nu synchroniseren','notif.syncing':'Synchroniseren…',
+    'notif.txSynced':'{n} transactie gesynchroniseerd','notif.txsSynced':'{n} transacties gesynchroniseerd',
+    'notif.reviewNow':'Nu beoordelen','notif.recentTitle':'Recente meldingen',
+    'notif.devLogs':'Ontwikkelaarslogs','notif.clearLogs':'Logs wissen',
+    'notif.filterErrors':'Fouten','notif.filterWarnings':'Waarschuwingen','notif.filterInfo':'Info','notif.noLogs':'Geen logitems',
+    'notif.n12synced':'12 transacties gesynchroniseerd','notif.n12syncedSub':'2 uur geleden · allemaal gecategoriseerd',
+    'notif.n3review':'3 transacties vereisen beoordeling','notif.n3reviewSub':'2 uur geleden · tik om te beoordelen',
+    'notif.salary':'Salaris ontvangen','notif.salarySub':'Gisteren · +€2.480,00',
+    // Review
+    'review.noTxs':'Alles bijgewerkt',
+    'review.noTxsSub':'Geen transacties hoeven te worden bekeken. We laten je weten wanneer er nieuwe aankomen.',
+    'review.applyAll':'Alles accepteren','review.confirmGroup':'Bevestigen',
+    // Settings extra
+    'settings.profiles':'Profielen','settings.customizeHome':'Startscherm aanpassen',
+    'settings.periods':'Periode-instellingen','settings.deleteData':'Alle gegevens verwijderen',
+    'screen.profile':'Profiel',
+    'profile.changePhoto':'Foto wijzigen','profile.choosePhoto':'Foto kiezen',
+    'profile.tapRename':'tik om te hernoemen','profile.active':'Actief profiel',
+    'profile.mainAccounts':'Hoofdrekeningen','profile.mainAccountsSub':'Transacties synchroniseren naar dit profiel',
+    'profile.noChecking':'Geen betaalrekeningen verbonden',
+    'profile.savingAccounts':'Spaar- en beleggingsrekeningen','profile.noSaving':'Geen spaarrekeningen verbonden',
+    'profile.manageAccounts':'Rekeningen beheren',
+    'profile.deleteProfile':'Profiel verwijderen',
+    'profile.cannotDeleteActive':'Kan het actieve profiel niet verwijderen — schakel eerst over',
+    'profile.cannotDeleteOnly':'Kan het enige profiel niet verwijderen',
+    'friends.myId':'Jouw ID','friends.myIdDesc':'Deel dit ID zodat anderen je kunnen toevoegen',
+    'friends.invite':'Vriend toevoegen','friends.invitePlaceholder':'Voer vriends-ID in…',
+    'friends.send':'Stuur uitnodiging','friends.sent':'Uitnodiging verstuurd!','friends.pending':'Openstaande uitnodigingen',
+    'friends.noFriends':'Nog geen vrienden — deel je ID om te verbinden',
+    'friends.remove':'Verwijderen','friends.accept':'Accepteren','friends.decline':'Weigeren','friends.block':'Blokkeren',
+    'friends.inviteNotif':'Vriendverzoek van','friends.alreadyFriends':'Al bevriend',
+    'friends.inviteSelf':'Je kunt jezelf niet uitnodigen','friends.cancelInvite':'Uitnodiging annuleren',
+    'friends.friendsLabel':'Vrienden','friends.profileInviteFrom':'Profieluitnodiging','friends.profileInviteJoin':'Profiel toevoegen',
+    'profile.members':'Leden','profile.addMember':'Vriend uitnodigen','profile.noMembers':'Alleen jij hebt toegang','profile.demoNoInvite':'Demo-profielen kunnen geen leden hebben',
+    'profile.permReader':'Lezer','profile.permContributor':'Bijdrager','profile.permOwner':'Eigenaar',
+    'profile.kick':'Lid verwijderen','profile.kickWarn':'Hun bankrekeningen worden verwijderd uit dit profiel.',
+    'profile.memberPerm':'Toegangsniveau','profile.sharedAcct':'Gedeeld via',
+    'accounts.sharedWith':'Gedeeld met mij','accounts.iSharing':'Ik deel',
+    'profile.deleteConfirmTitle':'Profiel verwijderen?',
+    'profile.deleteConfirmDesc':'Dit profiel wordt permanent verwijderd. Transacties blijven behouden.',
+    'profile.deleteDataAlso':'De volgende gegevens worden ook permanent verwijderd:',
+    'profiles.aboutTitle':'Over Profielen',
+    'profiles.aboutDesc':'Profielen laten je afzonderlijke financiën bijhouden in één app — perfect voor persoonlijk vs. zakelijk, of voor het beheren van financiën voor verschillende huishoudleden. Elk profiel heeft zijn eigen rekeningen, budgetten, doelen en financiële gegevens.',
+    'profile.newProfile':'Nieuw profiel','profile.profileName':'Profielnaam',
+    'profile.namePlaceholder':'bijv. Zakelijk, Partner, Bijbaan…','profile.profileType':'Profieltype',
+    'profile.typeReal':'Echt','profile.typeRealSub':'Verbind je echte bankrekeningen',
+    'profile.typeDemo':'Demo','profile.typeDemoSub':'Gebruikt voorbeeldgegevens voor testen',
+    'profile.createProfile':'Profiel aanmaken','profile.duplicateName':'Een profiel met deze naam bestaat al',
+    'profile.picTitle':'Profielfoto','profile.chooseLibrary':'Kies uit bibliotheek','profile.removePic':'Foto verwijderen',
+    'accounts.demoSection':'Demo-rekeningen','accounts.demoDesc':'Voorbeeldgegevens · alleen-lezen',
+    'accounts.yourSection':'Jouw rekeningen','accounts.bankSection':'Bankrekeningen','accounts.savingSection':'Spaar & beleggingen',
+    'accounts.noBank':'Geen bankrekeningen verbonden','accounts.noSaving':'Geen spaarrekeningen toegevoegd',
+    'accounts.connectBank':'Bank verbinden','accounts.addManual':'Handmatige rekening toevoegen',
+    'settings.darkMode':'Donkere modus',
+    'settings.darkModeOn':'Aan — tik om naar licht te schakelen','settings.darkModeOff':'Uit — tik om naar donker te schakelen',
+    'settings.resetDemo':'Demogegevens herstellen','settings.resetDemoSub':'Alle transacties en instellingen herstellen',
+    'settings.resetConfirmTitle':'Demogegevens herstellen?',
+    'settings.resetConfirmBody':'Dit herstelt alle transacties, categorieën en instellingen naar de originele demostatus. Al je wijzigingen gaan verloren.',
+    'settings.resetEverything':'Alles herstellen',
+    // Budgets
+    'budgets.spent':'uitgegeven','budgets.of':'van','budgets.newBudget':'Nieuw budget',
+    // Goals
+    'goals.totalSaved':'Totaal gespaard','goals.active':'Actief','goals.achieved':'Bereikt',
+    'goals.saved':'gespaard',
+    // Debts
+    'debts.totalOutstanding':'Totaal openstaand','debts.payoffStrategy':'Aflossingstrategie',
+    'debts.activeDebts':'Actieve schulden','debts.manage':'Beheren','debts.addDebt':'Schuld toevoegen',
+    // Common
+    'common.thisMonth':'Deze maand','common.thisPeriod':'Deze periode',
+    'common.noData':'Geen gegevens','common.tapToEdit':'tik om te bewerken',
+    'common.back':'Terug','common.cancel':'Annuleren',
+  },
+  tr: {
+    'tab.home':'Ana sayfa','tab.transactions':'İşlemler','tab.recurring':'Düzenli ödemeler',
+    'tab.events':'Etkinlikler','tab.insights':'İçgörüler','tab.settings':'Ayarlar',
+    'screen.settings':'Ayarlar','screen.profiles':'Profiller','screen.categories':'Kategoriler',
+    'screen.accounts':'Hesaplar','screen.periods':'Dönem ayarları','screen.customize':'Ana ekranı özelleştir',
+    'screen.goals':'Hedefler','screen.budgets':'Bütçeler','screen.debts':'Borçlar',
+    'screen.savings':'Tasarruf','screen.insights':'İçgörüler','screen.notifications':'Bildirimler',
+    'screen.recurring':'Düzenli ödemeler','screen.language':'Dil',
+    'action.save':'Kaydet','action.cancel':'İptal','action.delete':'Sil',
+    'action.add':'Ekle','action.create':'Oluştur','action.edit':'Düzenle',
+    'action.confirm':'Onayla','action.done':'Tamam','action.back':'Geri',
+    'action.seeAll':'Tümünü gör','action.reset':'Sıfırla','action.all':'Tümü',
+    'settings.manage':'Yönet','settings.account':'Hesap',
+    'settings.notifications':'Bildirimler','settings.appearance':'Görünüm',
+    'settings.tutorial':'Tur','settings.help':'Yardım ve destek',
+    'settings.signOut':'Çıkış yap','settings.language':'Dil',
+    'settings.userId':'Kullanıcı Kimliği','settings.copyId':'Kopyala','settings.copied':'Kopyalandı!',
+    'settings.friends':'Arkadaşlar','settings.friendsSub':'Arkadaşları finans özetini paylaşmaya davet et',
+    'settings.languageSub':'İngilizce, Hollandaca, Türkçe destekleniyor',
+    'period.income':'Gelir','period.spent':'Harcama','period.invested':'Yatırılan',
+    'period.savings':'Tasarruf','period.allocate':'Dağıt',
+    'cat.housing':'Konut','cat.transport':'Ulaşım','cat.consumption':'Tüketim',
+    'cat.personalCare':'Kişisel bakım','cat.entertainment':'Eğlence',
+    'cat.sport':'Spor','cat.shopping':'Alışveriş','cat.holiday':'Tatil',
+    'cat.education':'Eğitim','cat.healthcare':'Sağlık','cat.pet':'Evcil hayvan',
+    'cat.extra':'Ekstra','cat.income':'Gelir','cat.saving':'Tasarruf','cat.expense':'Gider',
+    'cat.groceries':'Market','cat.restaurants':'Dışarıda yemek','cat.coffee':'Kahve',
+    'cat.housing.rent':'Kira & ipotek','cat.housing.utility':'Faturalar',
+    'cat.transport.public':'Toplu taşıma','cat.transport.car':'Araç ödemesi',
+    'cat.healthcare.doctor':'Doktor ziyareti','cat.healthcare.prescription':'Reçete',
+    'cat.incomeUncategorized':'Kategorisiz','cat.reimburse':'Geri ödeme',
+    'cat.salary':'Maaş','cat.freelance':'Serbest çalışma','cat.rental':'Kira geliri',
+    'cat.investIncome':'Yatırım geliri','cat.incomeOther':'Diğer gelirler',
+    'cat.savingWithdraw':'Para çekme','cat.savingDeposit':'Para yatırma',
+    'cat.expenseReimburse':'Geri ödeme','cat.expenseUncategorized':'Kategorisiz',
+    'cat.housingRent':'Kira & ipotek','cat.housingUtility':'Faturalar',
+    'cat.housingMaintenance':'Bakım','cat.housingStorage':'Depolama alanı','cat.housingOther':'Diğer',
+    'cat.transportCar':'Araç ödemesi','cat.transportFuel':'Yakıt','cat.transportPublic':'Toplu taşıma','cat.transportOther':'Diğer',
+    'cat.breakfast':'Kahvaltı & Brunch','cat.takeout':'Paket & Teslimat',
+    'cat.sweets':'Tatlı & İkramlar','cat.alcohol':'Alkol & Tütün','cat.consumptionOther':'Diğer',
+    'cat.haircut':'Kuaför','cat.toiletry':'Kişisel bakım ürünleri','cat.beautyProduct':'Güzellik & Sağlık','cat.personalCareOther':'Diğer',
+    'cat.movie':'Film','cat.concerts':'Konser & Gösteriler','cat.sportingEvent':'Spor etkinliği',
+    'cat.gambling':'Kumar','cat.hobby':'Hobi','cat.videoGame':'Video oyunu',
+    'cat.dating':'Çıkmak','cat.subs':'Yayın hizmeti','cat.entertainmentOther':'Diğer',
+    'cat.gym':'Spor salonu','cat.sportsEquipment':'Spor ekipmanı','cat.sportOther':'Diğer',
+    'cat.clothing':'Giyim','cat.electronics':'Elektronik','cat.homeGoods':'Ev eşyaları',
+    'cat.gift':'Hediye','cat.intimateUtility':'Kişisel kullanım','cat.festivity':'Kutlama',
+    'cat.houseGarden':'Ev & Bahçe','cat.homeAutomation':'Ev otomasyonu',
+    'cat.childCare':'Çocuk bakımı','cat.shoppingOther':'Diğer',
+    'cat.flight':'Uçuş','cat.hotel':'Otel & Airbnb','cat.carRental':'Araç kiralama',
+    'cat.activity':'Aktivite','cat.holidayOther':'Diğer',
+    'cat.tuition':'Öğrenim ücreti','cat.course':'Kurs','cat.book':'Kitap',
+    'cat.schoolSupply':'Okul malzemesi','cat.certificate':'Sertifika',
+    'cat.newspaper':'Gazete','cat.educationOther':'Diğer',
+    'cat.doctorVisit':'Doktor ziyareti','cat.dental':'Diş bakımı',
+    'cat.prescription':'Reçete','cat.healthInsurance':'Sağlık sigortası',
+    'cat.healthUtility':'Sağlık malzemeleri','cat.mentalCare':'Ruh sağlığı','cat.healthcareOther':'Diğer',
+    'cat.petFood':'Evcil hayvan yemi','cat.petSupply':'Evcil hayvan malzemeleri','cat.petInsurance':'Evcil hayvan sigortası','cat.petOther':'Diğer',
+    'cat.birthday':'Doğum günü','cat.funeralInsurance':'Cenaze sigortası',
+    'cat.charity':'Hayır kurumu','cat.taxes':'Vergiler','cat.fee':'Ücret',
+    'cat.workExpense':'İş gideri','cat.familyCare':'Aile bakımı',
+    'cat.lendMoney':'Borç verme','cat.cashWithdraw':'Nakit çekme',
+    'cat.fines':'Para cezaları','cat.secret':'Gizli','cat.invest':'Yatırım','cat.extraOther':'Diğer',
+    'home.balance':'Toplam bakiye','home.period':'Özet',
+    'review.title':'İşlem inceleme','review.confirm':'Onayla',
+    'upcoming.title':'Yaklaşan','upcoming.seeAll':'Tümünü gör',
+    'goals.title':'Hedefler','budgets.title':'Bütçeler','debts.title':'Borçlar',
+    'lang.en':'İngilizce','lang.nl':'Hollandaca','lang.tr':'Türkçe',
+    'lang.available':'Mevcut','lang.comingSoon':'Yakında',
+    'lang.title':'Dil','lang.subtitle':'Tercih ettiğiniz dili seçin',
+    'lang.otherLanguages':'Diğer diller','lang.searchPlaceholder':'Dil ara…',
+    // Login / onboarding
+    'login.welcome':'Tekrar hoş geldiniz','login.subtitle':'Devam etmek için giriş yap',
+    'login.google':'Google ile devam et','login.apple':'Apple ile devam et',
+    'login.email':'E-posta adresi','login.continue':'Devam et',
+    'login.noAccount':'Hesabınız yok mu?','login.createAccount':'Hesap oluştur →',
+    'login.createDemoAccount':'Demo hesabı oluştur',
+    'login.demoUser':'Demo kullanıcı olarak devam et','login.changeLanguage':'Dili değiştir',
+    'login.terms':'Devam ederek Şartlarımızı ve Gizlilik Politikamızı kabul etmiş olursunuz',
+    'login.or':'veya','login.signIn':'Giriş yap',
+    'login.welcomeFirst':'Hoş geldiniz',
+    'login.termsIntro':'Devam ederek',
+    'login.termsLinkText':'Kullanım Şartlarını','login.termsAnd':'ve',
+    'login.termsPrivacy':'Gizlilik Politikasını','login.termsSuffix':'kabul etmiş olursunuz',
+    'login.signingIn':'Giriş yapılıyor:',
+    'login.noAccountTitle':'Hesap bulunamadı',
+    'login.noAccountSub':'Hesabınıza bağlı bir hesap bulunamadı.',
+    'login.noAccountDesc':'Geri dönüp farklı bir yöntem deneyebilir veya yeni hesap oluşturmak için devam edebilirsiniz.',
+    'login.noAccountBack':'Girişe geri dön','login.noAccountContinue':'Hesap oluştur',
+    'login.noAccountCustom':'E-posta ile kayıt ol',
+    'login.createAccountTitle':'Hesap oluştur','login.createAccountSub':'Nasıl kayıt olmak istediğinizi seçin',
+    'login.signUpEmail':'E-posta ile kayıt ol',
+    'login.createAccountEmailSub':'E-posta adresinizle kayıt olun',
+    'login.fullName':'Ad Soyad','login.namePlaceholder':'Adınız',
+    'login.emailPlaceholder':'ornek@munni.app',
+    'login.sendCode':'Doğrulama kodu gönder',
+    'login.checkEmail':'E-postanızı kontrol edin',
+    'login.codeSentTo':'Şu adrese 6 haneli bir kod gönderdik:',
+    'login.autoFilling':'Kod otomatik dolduruluyor…',
+    'login.signInTitle':'Giriş yap','login.signInSub':'E-posta adresinizi girin',
+    'login.emailNotFound':'Bu e-posta için hesap bulunamadı. Hesap oluşturmak ister misiniz?',
+    'login.errGoogleExists':'Bir Google hesabı zaten kayıtlı. Giriş yapın.',
+    'login.errAppleExists':'Bir Apple hesabı zaten kayıtlı. Giriş yapın.',
+    'login.errEmailExists':'Bu e-posta adresi zaten kayıtlı. Giriş yapın.',
+    'login.errInvalidEmail':'Lütfen geçerli bir e-posta adresi girin.',
+    'login.errNameRequired':'Ad en az 2 karakter olmalıdır.',
+    'login.signedInGoogle':'Google ile giriş yapıldı',
+    'login.signedInApple':'Apple ile giriş yapıldı',
+    'login.connectedEmail':'Bağlı hesap',
+    'lang.availableNow':'Şu an mevcut',
+    // Home screen
+    'home.totalBalance':'Toplam bakiye','home.income':'Gelir','home.spent':'Harcandı',
+    'home.invested':'Yatırıldı','home.savings':'Tasarruf','home.allocate':'Dağıt','invest.cardTitle':'Yatırımlar',
+    'home.everyEuroPlanned':'Her euro planlandı ✓',
+    'home.unallocated':'Dağıtılmamış — planlamak için dokunun',
+    'home.switchProfile':'Profil değiştir','home.manageProfiles':'Profilleri yönet',
+    'home.notSynced':'Henüz senkronize edilmedi','home.lastSync':'Son senkronizasyon',
+    'word.account':'hesap','word.accounts':'hesap','word.noAccounts':'Hesap yok',
+    'notif.bankSync':'Banka senkronizasyonu','notif.bankSyncSub':'Bankandan en son işlemleri çek',
+    'notif.lastSynced':'Son senkronizasyon','notif.syncNow':'Şimdi senkronize et','notif.syncing':'Senkronize ediliyor…',
+    'notif.txSynced':'{n} işlem senkronize edildi','notif.txsSynced':'{n} işlem senkronize edildi',
+    'notif.reviewNow':'Şimdi incele','notif.recentTitle':'Son bildirimler',
+    'notif.devLogs':'Geliştirici günlükleri','notif.clearLogs':'Günlükleri temizle',
+    'notif.filterErrors':'Hatalar','notif.filterWarnings':'Uyarılar','notif.filterInfo':'Bilgi','notif.noLogs':'Günlük girişi yok',
+    'notif.n12synced':'12 işlem senkronize edildi','notif.n12syncedSub':'2 saat önce · tümü kategorize edildi',
+    'notif.n3review':'3 işlem inceleme gerektiriyor','notif.n3reviewSub':'2 saat önce · incelemek için dokun',
+    'notif.salary':'Maaş alındı','notif.salarySub':'Dün · +€2.480,00',
+    // Review
+    'review.noTxs':'Hepsi tamam',
+    'review.noTxsSub':'Hiçbir işlem inceleme gerektirmiyor. Yenileri geldiğinde sizi bilgilendireceğiz.',
+    'review.applyAll':'Tümünü kabul et','review.confirmGroup':'Onayla',
+    // Settings extra
+    'settings.profiles':'Profiller','settings.customizeHome':'Ana ekranı özelleştir',
+    'settings.periods':'Dönem ayarları','settings.deleteData':'Tüm verileri sil',
+    'screen.profile':'Profil',
+    'profile.changePhoto':'Fotoğrafı değiştir','profile.choosePhoto':'Fotoğraf seç',
+    'profile.tapRename':'yeniden adlandırmak için dokun','profile.active':'Aktif profil',
+    'profile.mainAccounts':'Ana hesaplar','profile.mainAccountsSub':'İşlemler bu profile senkronize edilir',
+    'profile.noChecking':'Bağlı çek hesabı yok',
+    'profile.savingAccounts':'Tasarruf ve yatırım hesapları','profile.noSaving':'Bağlı tasarruf hesabı yok',
+    'profile.manageAccounts':'Hesapları yönet',
+    'profile.deleteProfile':'Profili sil',
+    'profile.cannotDeleteActive':'Aktif profil silinemez — önce değiştirin',
+    'profile.cannotDeleteOnly':'Tek profil silinemez',
+    'friends.myId':'Kimliğiniz','friends.myIdDesc':'Başkalarının sizi eklemesi için bu kimliği paylaşın',
+    'friends.invite':'Arkadaş ekle','friends.invitePlaceholder':'Arkadaş kimliği girin…',
+    'friends.send':'Davet gönder','friends.sent':'Davet gönderildi!','friends.pending':'Bekleyen davetler',
+    'friends.noFriends':'Henüz arkadaş yok — bağlanmak için kimliğinizi paylaşın',
+    'friends.remove':'Kaldır','friends.accept':'Kabul et','friends.decline':'Reddet','friends.block':'Engelle',
+    'friends.inviteNotif':'Arkadaşlık isteği:','friends.alreadyFriends':'Zaten arkadaşsınız',
+    'friends.inviteSelf':'Kendinizi davet edemezsiniz','friends.cancelInvite':'Daveti iptal et',
+    'friends.friendsLabel':'Arkadaşlar','friends.profileInviteFrom':'Profil daveti','friends.profileInviteJoin':'Profile katıl',
+    'profile.members':'Üyeler','profile.addMember':'Arkadaş davet et','profile.noMembers':'Yalnızca siz erişebilirsiniz','profile.demoNoInvite':'Demo profillerin üyesi olamaz',
+    'profile.permReader':'Okuyucu','profile.permContributor':'Katkıcı','profile.permOwner':'Sahip',
+    'profile.kick':'Üyeyi kaldır','profile.kickWarn':'Bağlı banka hesapları bu profilden kaldırılacak.',
+    'profile.memberPerm':'İzin düzeyi','profile.sharedAcct':'Şu profil aracılığıyla paylaşıldı',
+    'accounts.sharedWith':'Benimle paylaşılan','accounts.iSharing':'Paylaştığım',
+    'profile.deleteConfirmTitle':'Profil silinsin mi?',
+    'profile.deleteConfirmDesc':'Bu profil kalıcı olarak kaldırılacak. İşlemler kalacak.',
+    'profile.deleteDataAlso':'Aşağıdaki veriler de kalıcı olarak silinecek:',
+    'profiles.aboutTitle':'Profiller Hakkında',
+    'profiles.aboutDesc':'Profiller, ayrı finansmanları tek bir uygulamada takip etmenizi sağlar — kişisel ve iş, ya da farklı hane üyelerinin finansmanını yönetmek için mükemmel. Her profilin kendi hesapları, bütçeleri, hedefleri ve finansal verileri vardır.',
+    'profile.newProfile':'Yeni profil','profile.profileName':'Profil adı',
+    'profile.namePlaceholder':'örn. İş, Ortak, Ek İş…','profile.profileType':'Profil türü',
+    'profile.typeReal':'Gerçek','profile.typeRealSub':'Gerçek banka hesaplarını bağla',
+    'profile.typeDemo':'Demo','profile.typeDemoSub':'Test için örnek veriler kullanır',
+    'profile.createProfile':'Profil oluştur','profile.duplicateName':'Bu isimde bir profil zaten mevcut',
+    'profile.picTitle':'Profil fotoğrafı','profile.chooseLibrary':'Kütüphaneden seç','profile.removePic':'Fotoğrafı kaldır',
+    'accounts.demoSection':'Demo hesapları','accounts.demoDesc':'Örnek veriler · salt okunur',
+    'accounts.yourSection':'Hesaplarınız','accounts.bankSection':'Banka hesapları','accounts.savingSection':'Tasarruf & yatırım',
+    'accounts.noBank':'Bağlı banka hesabı yok','accounts.noSaving':'Tasarruf hesabı eklenmedi',
+    'accounts.connectBank':'Banka bağla','accounts.addManual':'Manuel hesap ekle',
+    'settings.darkMode':'Karanlık mod',
+    'settings.darkModeOn':'Açık — açık moda geçmek için dokunun','settings.darkModeOff':'Kapalı — karanlık moda geçmek için dokunun',
+    'settings.resetDemo':'Demo verilerini sıfırla','settings.resetDemoSub':'Tüm işlemleri ve ayarları geri yükle',
+    'settings.resetConfirmTitle':'Demo verileri sıfırlansın mı?',
+    'settings.resetConfirmBody':'Bu işlem tüm işlemleri, kategorileri ve ayarları orijinal demo durumuna geri yükler. Tüm değişiklikleriniz kaybolacak.',
+    'settings.resetEverything':'Her şeyi sıfırla',
+    // Budgets
+    'budgets.spent':'harcandı','budgets.of':'/','budgets.newBudget':'Yeni bütçe',
+    // Goals
+    'goals.totalSaved':'Toplam biriktirildi','goals.active':'Aktif','goals.achieved':'Ulaşıldı',
+    'goals.saved':'biriktirildi',
+    // Debts
+    'debts.totalOutstanding':'Toplam kalan','debts.payoffStrategy':'Ödeme stratejisi',
+    'debts.activeDebts':'Aktif borçlar','debts.manage':'Yönet','debts.addDebt':'Borç ekle',
+    // Common
+    'common.thisMonth':'Bu ay','common.thisPeriod':'Bu dönem',
+    'common.noData':'Veri yok','common.tapToEdit':'düzenlemek için dokunun',
+    'common.back':'Geri','common.cancel':'İptal',
+  },
+};
+
+const OTHER_LANGUAGES = [
+  { code:'de', name:'Deutsch', native:'Deutsch' },
+  { code:'fr', name:'French', native:'Français' },
+  { code:'es', name:'Spanish', native:'Español' },
+  { code:'it', name:'Italian', native:'Italiano' },
+  { code:'pt', name:'Portuguese', native:'Português' },
+  { code:'pl', name:'Polish', native:'Polski' },
+  { code:'ru', name:'Russian', native:'Русский' },
+  { code:'ar', name:'Arabic', native:'العربية' },
+  { code:'zh', name:'Chinese', native:'中文' },
+  { code:'ja', name:'Japanese', native:'日本語' },
+];
+
+export const LangCtx = React.createContext({ lang:'en', setLang:()=>{}, t: k => k });
+export const useLang = () => React.useContext(LangCtx);
+
+export function LangProvider({ children }) {
+  const [lang, setLang] = useLocalStorage('munni_lang', 'en');
+  const t = React.useCallback((key) => TRANSLATIONS[lang]?.[key] || TRANSLATIONS.en[key] || key, [lang]);
+  return <LangCtx.Provider value={{ lang, setLang, t }}>{children}</LangCtx.Provider>;
+}
+
+export const NavCtx = React.createContext(null);
+
+export function NavProvider({ children, initial = 'home' }) {
+  const [tab, setTab] = React.useState(initial);
+  const [stacks, setStacks] = React.useState({ home: [], tx: [], recurring: [], events: [], insights: [], profile: [] });
+  const stacksRef = React.useRef(stacks);
+  const tabRef = React.useRef(tab);
+  stacksRef.current = stacks;
+  tabRef.current = tab;
+
+  // Sync History API on mount
+  React.useEffect(() => {
+    window.history.replaceState({ tab: initial, depth: 0 }, '');
+    const onPop = (e) => {
+      const state = e.state;
+      if (!state || state.munniScreen || state.munniLoginMode) return;
+      const curStack = stacksRef.current[tabRef.current];
+      if (state.depth < curStack.length) {
+        setStacks(s => ({ ...s, [tabRef.current]: s[tabRef.current].slice(0, state.depth) }));
+      } else if (state.tab !== tabRef.current) {
+        setTab(state.tab);
+        setStacks(s => ({ ...s, [state.tab]: s[state.tab].slice(0, state.depth) }));
+      }
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+
+  const push = (screen, params = {}) => {
+    setStacks(s => {
+      const next = [...s[tabRef.current], { screen, params }];
+      window.history.pushState({ tab: tabRef.current, depth: next.length }, '');
+      return { ...s, [tabRef.current]: next };
+    });
+  };
+  const pop = () => {
+    setStacks(s => {
+      const next = s[tabRef.current].slice(0, -1);
+      window.history.pushState({ tab: tabRef.current, depth: next.length }, '');
+      return { ...s, [tabRef.current]: next };
+    });
+  };
+  const popAll = () => {
+    setStacks(s => {
+      window.history.pushState({ tab: tabRef.current, depth: 0 }, '');
+      return { ...s, [tabRef.current]: [] };
+    });
+  };
+  const switchTab = (t) => {
+    window.history.pushState({ tab: t, depth: stacksRef.current[t].length }, '');
+    setTab(t);
+  };
+  const replace = (screen, params = {}) => {
+    setStacks(s => {
+      const next = [...s[tabRef.current].slice(0, -1), { screen, params }];
+      window.history.replaceState({ tab: tabRef.current, depth: next.length }, '');
+      return { ...s, [tabRef.current]: next };
+    });
+  };
+
+  const value = { tab, stack: stacks[tab], push, pop, popAll, switchTab, replace };
+  return <NavCtx.Provider value={value}>{children}</NavCtx.Provider>;
+}
+
+export const useNav = () => React.useContext(NavCtx);
+
+export function TabBar({ active, onChange }) {
+  const mobile = React.useMemo(() => window.matchMedia('(max-width: 430px)').matches, []);
+  const { t } = useLang();
+  const tabs = [
+    { id: 'home',      icon: 'home',         label: t('tab.home') },
+    { id: 'tx',        icon: 'list',         label: t('tab.transactions') },
+    { id: 'recurring', icon: 'receipt',      label: t('tab.recurring') },
+    { id: 'events',    icon: 'star',         label: t('tab.events') },
+    { id: 'insights',  icon: 'trending-up',  label: t('tab.insights') },
+    { id: 'profile',   icon: 'sliders',      label: t('tab.settings') },
+  ];
+  return (
+    <div style={{
+      flexShrink: 0,
+      borderTop: `1px solid ${M.line}`,
+      background: 'rgba(247, 244, 238, 0.92)',
+      backdropFilter: 'blur(20px)',
+      WebkitBackdropFilter: 'blur(20px)',
+      paddingBottom: mobile ? 'env(safe-area-inset-bottom, 8px)' : 18,
+      paddingTop: 8,
+      display: 'flex',
+    }}>
+      {tabs.map(t => {
+        const a = t.id === active;
+        return (
+          <button key={t.id}
+            onClick={() => onChange(t.id)}
+            className="m-tap"
+            style={{
+              flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
+              justifyContent: 'center', gap: 3, padding: '6px 0',
+              background: 'transparent', border: 'none', cursor: 'pointer',
+              color: a ? M.ink : M.ink4, fontFamily: M.fontUI,
+            }}>
+            <I name={t.icon} size={22} stroke={a ? 1.9 : 1.5}/>
+            <div style={{ fontSize: 10, fontWeight: a ? 600 : 500, letterSpacing: 0.02 }}>{t.label}</div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function StackScreen({ children, depth = 0 }) {
+  return (
+    <div key={depth} style={{
+      position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+      animation: depth > 0 ? 'mSlideIn 0.28s cubic-bezier(.2,.7,.2,1) both' : undefined,
+      background: M.paper,
+    }}>
+      {children}
+    </div>
+  );
+}
+
+if (typeof document !== 'undefined' && !document.getElementById('m-nav-styles')) {
+  const s = document.createElement('style');
+  s.id = 'm-nav-styles';
+  s.textContent = `
+    @keyframes mSlideIn { from { transform: translateX(100%); } to { transform: none; } }
+    @keyframes mSheetUp { from { transform: translateY(100%); } to { transform: none; } }
+    @keyframes pulse { 0%,100% { opacity:0.3; transform:scale(0.8); } 50% { opacity:1; transform:scale(1); } }
+    @keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+    @keyframes barRise { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+    .m-bar-animate { transform-origin: bottom; animation: barRise 0.4s cubic-bezier(0.34,1.56,0.64,1) both; }
+  `;
+  document.head.appendChild(s);
+}
+
+export function Sheet({ children, onClose, open, title }) {
+  if (open !== undefined && !open) return null;
+  return (
+    <div style={{
+      position: 'absolute', inset: 0, background: 'rgba(27,26,23,0.45)', zIndex: 50,
+      display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
+    }} onClick={onClose}>
+      <div style={{
+        background: M.paper, borderTopLeftRadius: 24, borderTopRightRadius: 24,
+        animation: 'mSheetUp 0.32s cubic-bezier(.2,.7,.2,1)',
+        maxHeight: '88%', display: 'flex', flexDirection: 'column',
+      }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '8px 0 4px' }}>
+          <div style={{ width: 36, height: 4, borderRadius: 999, background: M.line }}/>
+        </div>
+        {title && (
+          <div style={{ fontSize: 17, fontWeight: 700, padding: '4px 16px 12px', fontFamily: M.fontUI }}>
+            {title}
+          </div>
+        )}
+        {title ? (
+          <div style={{ padding: '0 16px 16px', overflowY: 'auto' }}>{children}</div>
+        ) : children}
+      </div>
+    </div>
+  );
+}
