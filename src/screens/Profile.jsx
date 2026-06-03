@@ -545,8 +545,10 @@ export function ScreenProfiles() {
 
   const profileAccountSub = (p) => {
     const ids = (p.accountIds || []).filter(id => connectedAccounts.some(a => a.id === id));
-    if (ids.length === 0) return t('word.noAccounts');
-    return `${ids.length} ${ids.length === 1 ? t('word.account') : t('word.accounts')}`;
+    const acctPart = ids.length === 0 ? t('word.noAccounts') : `${ids.length} ${ids.length === 1 ? t('word.account') : t('word.accounts')}`;
+    const memberCount = (p.members || []).length;
+    if (memberCount > 0) return `${acctPart} · ${memberCount} ${memberCount === 1 ? t('word.member') : t('word.members')}`;
+    return acctPart;
   };
 
   return (
@@ -572,6 +574,7 @@ export function ScreenProfiles() {
                       {p.name}
                       {p.isDemo && <span style={{ fontSize:8, fontWeight:700, padding:'1px 5px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase' }}>Demo</span>}
                       {p.isShared && <span style={{ fontSize:8, fontWeight:700, padding:'1px 5px', borderRadius:999, background:M.violetSoft||'#EEE8FF', color:M.violet||'#7B61FF', textTransform:'uppercase' }}>Shared</span>}
+                      {!p.isShared && (p.members||[]).length > 0 && <span style={{ fontSize:8, fontWeight:700, padding:'1px 5px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>Shared</span>}
                     </div>
                     <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{p.isShared ? `${t('profile.sharedBy')} ${p.ownerDisplay || p.ownerId || ''}` : sub}</div>
                   </div>
@@ -704,7 +707,7 @@ export function ScreenProfileDetail({ params }) {
   const isMemberOfShared = !!profile.isShared;
   const otherMembers = members.filter(m => m.userId !== myId);
   const myMembership = members.find(m => m.userId === myId);
-  const myPerm = myMembership?.permission || (isMemberOfShared ? 'contributor' : 'owner');
+  const myPerm = sharedData?.memberPerms?.[myId] || myMembership?.permission || (isMemberOfShared ? 'contributor' : 'owner');
   const canEdit = myPerm !== 'reader';
   const pendingInvitesForProfile = invitations.filter(i => i.fromId === myId && i.type === 'profile' && i.profileId === profile.id && i.status === 'pending');
   const PERM_COLOR = { reader: M.ink3, contributor: M.sage, owner: M.ochre };
@@ -2429,6 +2432,7 @@ export function ScreenAccounts() {
   const [selectedBank, setSelectedBank] = useLocalStorage('munni_selected_bank', null);
   const [psd2Step, setPsd2Step] = React.useState(null); // null | 'login' | 'consent' | 'connecting' | 'done'
   const [psd2Bank, setPsd2Bank] = React.useState(null);
+  const [customIban, setCustomIban] = React.useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(null);
 
   const filteredBanks = DUTCH_BANKS.filter(b =>
@@ -2436,6 +2440,11 @@ export function ScreenAccounts() {
   );
 
   const startBankConnect = (bank) => {
+    const bic4 = (bank.bic || bank.id).toUpperCase().slice(0, 4);
+    const randDigits = String(Math.floor(1000000000 + Math.random() * 9000000000));
+    const checkNum = 10 + ((bank.name.charCodeAt(0) || 0) % 89);
+    const defaultIban = `NL${checkNum} ${bic4} ${randDigits.slice(0,4)} ${randDigits.slice(4,8)} ${randDigits.slice(8)}`;
+    setCustomIban(defaultIban);
     setPsd2Bank(bank);
     setSelectedBank(bank.id);
     setPsd2Step('login');
@@ -2447,13 +2456,14 @@ export function ScreenAccounts() {
     else if (psd2Step === 'consent') {
       setPsd2Step('connecting');
       const bank = psd2Bank;
+      const savedIban = customIban;
       setTimeout(() => {
         const bankColors = { ing:'#ff6200', abn:'#00a63c', rabo:'#da1913', sns:'#e20082', asn:'#7ab800', triodos:'#00ac42', bunq:'#00ccff', knab:'#0057b8', regio:'#e4003a', revolut:'#191c1f', n26:'#1e1e1e', wise:'#9fe870' };
         const newAcct = {
           id: `bank_${Date.now()}`,
           name: bank.name,
           type: 'checking',
-          iban: `NL${20 + (bank.name.length % 78)} ${bank.id.toUpperCase().slice(0,4)} ${Math.floor(1000000000 + (bank.name.charCodeAt(0) * 17 + Date.now()) % 9000000000)}`,
+          iban: savedIban.trim() || `NL${20 + (bank.name.length % 78)} ${bank.id.toUpperCase().slice(0,4)} ${Math.floor(1000000000 + (bank.name.charCodeAt(0) * 17 + Date.now()) % 9000000000)}`,
           color: bankColors[bank.id] || M.slate,
           bankId: bank.id,
         };
@@ -2497,6 +2507,10 @@ export function ScreenAccounts() {
               <div>
                 <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>Password</div>
                 <input type="password" defaultValue="••••••••" style={{ width:'100%', padding:'12px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box' }}/>
+              </div>
+              <div>
+                <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>{t('accounts.ibanLabel')}</div>
+                <input value={customIban} onChange={e => setCustomIban(e.target.value)} placeholder={t('accounts.ibanPlaceholder')} style={{ width:'100%', padding:'12px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontMono, background:M.paper2, outline:'none', boxSizing:'border-box' }}/>
               </div>
               <div style={{ padding:'12px 14px', borderRadius:10, background:M.sageSoft, display:'flex', gap:10, alignItems:'flex-start' }}>
                 <I name="lock" size={16} color={M.sage}/>
@@ -2648,13 +2662,12 @@ export function ScreenAccounts() {
                 <div style={{ padding:'20px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>No banks found</div>
               )}
               {filteredBanks.map((bank, i) => {
-                const isConnected = connectedAccounts.some(a => a.name.toLowerCase().includes(bank.name.toLowerCase()));
-                const isSelected = selectedBank === bank.id;
+                const connCount = connectedAccounts.filter(a => a.bankId === bank.id || a.name.toLowerCase().includes(bank.name.toLowerCase())).length;
                 return (
                   <React.Fragment key={bank.id}>
                     {i > 0 && <Divider inset={48}/>}
-                    <div className="m-tap" onClick={() => !isConnected && startBankConnect(bank)}
-                      style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0', opacity: isConnected ? 0.5 : 1 }}>
+                    <div className="m-tap" onClick={() => startBankConnect(bank)}
+                      style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
                       <div style={{ width:36, height:36, borderRadius:10, background:bank.color+'22', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:18 }}>
                         {bank.logo}
                       </div>
@@ -2664,10 +2677,12 @@ export function ScreenAccounts() {
                         </div>
                         <div style={{ fontSize:11, color:M.ink3, marginTop:1, fontFamily:M.fontMono }}>{bank.bic}</div>
                       </div>
-                      {isConnected
-                        ? <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>Connected</span>
-                        : <I name="caretR" size={14} color={M.ink4}/>
-                      }
+                      {connCount > 0 ? (
+                        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                          <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>{connCount}×</span>
+                          <I name="caretR" size={14} color={M.ink4}/>
+                        </div>
+                      ) : <I name="caretR" size={14} color={M.ink4}/>}
                     </div>
                   </React.Fragment>
                 );
@@ -3096,16 +3111,19 @@ export function AccountsSharingOverview() {
             {sharedWithMe.map((item, i) => (
               <React.Fragment key={item.id}>
                 {i > 0 && <Divider inset={48}/>}
-                <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
+                <div className="m-tap" onClick={() => nav.push('profileDetail', { id: item.profileId })} style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
                   <div style={{ width:36, height:36, borderRadius:10, background: item.color || M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                     <I name={item.type==='savings'?'piggy':item.type==='invest'?'rocket':'card'} size={16} color="#fff"/>
                   </div>
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ fontSize:14, fontWeight:500 }}>{item.name}</div>
                     {item.iban && <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono, marginTop:1 }}>{item.iban}</div>}
-                    <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>From <strong>{item.fromName}</strong> · {item.profileName}</div>
+                    <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>From <strong>{item.fromName}</strong> · <span style={{ color:M.sage, fontWeight:600 }}>{item.profileName}</span></div>
                   </div>
-                  <span style={{ fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>{item.permission}</span>
+                  <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                    <span style={{ fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>{item.permission}</span>
+                    <I name="caretR" size={14} color={M.ink4}/>
+                  </div>
                 </div>
               </React.Fragment>
             ))}
@@ -3161,6 +3179,7 @@ export function ScreenAccountsAll() {
   const [renameDraft, setRenameDraft] = React.useState('');
   const [showAddTxSheet, setShowAddTxSheet] = React.useState(null);
   const [txDraft, setTxDraft] = React.useState({ amount:'', desc:'', date: new Date().toISOString().slice(0,10), dir:'deposit' });
+  const [customIban, setCustomIban] = React.useState('');
 
   const bankAccounts = connectedAccounts.filter(a => a.type === 'checking');
   const savingAccounts = connectedAccounts.filter(a => a.type === 'savings' || a.type === 'invest');
@@ -3171,6 +3190,11 @@ export function ScreenAccountsAll() {
   const realSavingAccounts = savingAccounts.filter(a => !DEMO_ACCOUNT_IDS.includes(a.id));
 
   const startBankConnect = (bank) => {
+    const bic4 = (bank.bic || bank.id).toUpperCase().slice(0, 4);
+    const randDigits = String(Math.floor(1000000000 + Math.random() * 9000000000));
+    const checkNum = 10 + ((bank.name.charCodeAt(0) || 0) % 89);
+    const defaultIban = `NL${checkNum} ${bic4} ${randDigits.slice(0,4)} ${randDigits.slice(4,8)} ${randDigits.slice(8)}`;
+    setCustomIban(defaultIban);
     setPsd2Bank(bank);
     setSelectedBank(bank.id);
     setPsd2Step('login');
@@ -3182,13 +3206,14 @@ export function ScreenAccountsAll() {
     else if (psd2Step === 'consent') {
       setPsd2Step('connecting');
       const bank = psd2Bank;
+      const savedIban = customIban;
       setTimeout(() => {
         const bankColors = { ing:'#ff6200', abn:'#00a63c', rabo:'#da1913', sns:'#e20082', asn:'#7ab800', triodos:'#00ac42', bunq:'#00ccff', knab:'#0057b8', regio:'#e4003a', revolut:'#191c1f', n26:'#1e1e1e', wise:'#9fe870' };
         const newAcct = {
           id: `bank_${Date.now()}`,
           name: bank.name,
           type: 'checking',
-          iban: `NL${20 + (bank.name.length % 78)} ${bank.id.toUpperCase().slice(0,4)} ${Math.floor(1000000000 + (bank.name.charCodeAt(0) * 17 + Date.now()) % 9000000000)}`,
+          iban: savedIban.trim() || `NL${20 + (bank.name.length % 78)} ${bank.id.toUpperCase().slice(0,4)} ${Math.floor(1000000000 + (bank.name.charCodeAt(0) * 17 + Date.now()) % 9000000000)}`,
           color: bankColors[bank.id] || M.slate,
           bankId: bank.id,
         };
@@ -3281,6 +3306,10 @@ export function ScreenAccountsAll() {
               <div>
                 <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>Password</div>
                 <input type="password" defaultValue="••••••••" style={{ width:'100%', padding:'12px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box' }}/>
+              </div>
+              <div>
+                <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>{t('accounts.ibanLabel')}</div>
+                <input value={customIban} onChange={e => setCustomIban(e.target.value)} placeholder={t('accounts.ibanPlaceholder')} style={{ width:'100%', padding:'12px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontMono, background:M.paper2, outline:'none', boxSizing:'border-box' }}/>
               </div>
               <div style={{ padding:'12px 14px', borderRadius:10, background:M.sageSoft, display:'flex', gap:10, alignItems:'flex-start' }}>
                 <I name="lock" size={16} color={M.sage}/>
@@ -3470,19 +3499,23 @@ export function ScreenAccountsAll() {
             <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}`, maxHeight:340, overflowY:'auto' }}>
               {filteredBanks.length === 0 && <div style={{ padding:'20px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>No banks found</div>}
               {filteredBanks.map((bank, i) => {
-                const isConnected = connectedAccounts.some(a => a.name.toLowerCase().includes(bank.name.toLowerCase()));
+                const connCount = connectedAccounts.filter(a => a.bankId === bank.id || a.name.toLowerCase().includes(bank.name.toLowerCase())).length;
                 return (
                   <React.Fragment key={bank.id}>
                     {i > 0 && <Divider inset={48}/>}
-                    <div className="m-tap" onClick={() => !isConnected && startBankConnect(bank)}
-                      style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0', opacity: isConnected ? 0.5 : 1 }}>
+                    <div className="m-tap" onClick={() => startBankConnect(bank)}
+                      style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
                       <div style={{ width:36, height:36, borderRadius:10, background:bank.color+'22', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:18 }}>{bank.logo}</div>
                       <div style={{ flex:1, minWidth:0 }}>
                         <div style={{ fontSize:14, fontWeight:500 }}><HighlightText text={bank.name} query={bankSearch}/></div>
                         <div style={{ fontSize:11, color:M.ink3, marginTop:1, fontFamily:M.fontMono }}>{bank.bic}</div>
                       </div>
-                      {isConnected ? <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>Connected</span>
-                        : <I name="caretR" size={14} color={M.ink4}/>}
+                      {connCount > 0 ? (
+                        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                          <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>{connCount}×</span>
+                          <I name="caretR" size={14} color={M.ink4}/>
+                        </div>
+                      ) : <I name="caretR" size={14} color={M.ink4}/>}
                     </div>
                   </React.Fragment>
                 );

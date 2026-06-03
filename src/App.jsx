@@ -215,6 +215,14 @@ export function ProfileMembersSheet({ profile, onClose }) {
 
   const changePerm = (userId, perm) => {
     updateProfile(p => ({ ...p, members: (p.members||[]).map(m=>m.userId===userId?{...m,permission:perm}:m) }));
+    // Write to shared data so the member's tab picks it up via storage event
+    try {
+      const sdKey = `munni_shared_data_${profile.id}`;
+      const sd = JSON.parse(localStorage.getItem(sdKey) || '{"accounts":[],"txs":[]}');
+      const memberPerms = { ...(sd.memberPerms || {}), [userId]: perm };
+      localStorage.setItem(sdKey, JSON.stringify({ ...sd, memberPerms }));
+      window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sdKey } }));
+    } catch {}
     setPermEdit(null);
   };
 
