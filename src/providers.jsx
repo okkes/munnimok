@@ -2,7 +2,7 @@ import React from 'react';
 import { CATEGORIES, _catExt, catPath, fmtEur, RECURRING, ALLOCATE_TOPICS, getDefaultTxs, computeProfileKey, getDefaultProfiles, getDefaultAccounts, computeUserDataKey, BUDGETS, GOALS, DEBTS } from './data.jsx';
 import { M, I, IcoMDI, Divider, StatusBar, AppBar } from './theme.jsx';
 import { useLang, useNav, Sheet } from './i18n.jsx';
-import { useLocalStorage } from './hooks.jsx';
+import { useLocalStorage, useSessionStorage } from './hooks.jsx';
 import { BarChart, StackedBar, TxRow } from './components.jsx';
 import { Toggle } from './screens/Events.jsx';
 import { CategoryPicker } from './screens/Review.jsx';
@@ -26,8 +26,8 @@ export const ProfilesCtx = React.createContext(null);
 
 export function ProfilesProvider({ children }) {
   // Reactive: re-compute key whenever login method changes
-  const [loginMethod] = useLocalStorage('munni_last_login_method', '');
-  const [email] = useLocalStorage('munni_profile_email', '');
+  const [loginMethod] = useSessionStorage('munni_last_login_method', '');
+  const [email] = useSessionStorage('munni_profile_email', '');
   const { lang } = useLang();
   const safeEmail = React.useMemo(() => { try { return JSON.parse(email || '""') || ''; } catch { return ''; } }, [email]);
   const profileKey = computeProfileKey(loginMethod, safeEmail);
@@ -40,11 +40,11 @@ export const useProfiles = () => React.useContext(ProfilesCtx);
 
 export const TxCtx = React.createContext(null);
 export function TxProvider({ children }) {
-  const [loginMethod] = useLocalStorage('munni_last_login_method', '');
-  const [rawEmail] = useLocalStorage('munni_profile_email', '');
+  const [loginMethod] = useSessionStorage('munni_last_login_method', '');
+  const [rawEmail] = useSessionStorage('munni_profile_email', '');
   const safeEmail = React.useMemo(() => { try { return JSON.parse(rawEmail||'""')||''; } catch { return rawEmail||''; } }, [rawEmail]);
   const txKey = computeUserDataKey(loginMethod, safeEmail, 'munni_txs');
-  const [ownTxs, setOwnTxs] = useLocalStorage(txKey, getDefaultTxs(loginMethod || localStorage.getItem('munni_last_login_method') || ''));
+  const [ownTxs, setOwnTxs] = useLocalStorage(txKey, getDefaultTxs(loginMethod || sessionStorage.getItem('munni_last_login_method') || ''));
   const { profiles } = useProfiles();
 
   const activeProfile = profiles.find(p => p.active) || profiles[0];
@@ -87,8 +87,8 @@ export const AllocCtx = React.createContext(null);
 export const useAlloc = () => React.useContext(AllocCtx);
 
 export function useConnectedAccounts() {
-  const [loginMethod] = useLocalStorage('munni_last_login_method', '');
-  const [rawEmail] = useLocalStorage('munni_profile_email', '');
+  const [loginMethod] = useSessionStorage('munni_last_login_method', '');
+  const [rawEmail] = useSessionStorage('munni_profile_email', '');
   const safeEmail = React.useMemo(() => { try { return JSON.parse(rawEmail||'""')||''; } catch { return rawEmail||''; } }, [rawEmail]);
   const acctKey = computeUserDataKey(loginMethod, safeEmail, 'munni_bank_accounts');
   const defaultAccts = React.useMemo(() => getDefaultAccounts(loginMethod), [loginMethod]);

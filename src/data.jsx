@@ -179,23 +179,23 @@ export function fmtSyncTime(isoStr) {
 }
 
 export function getUserSyncKey() {
-  const m = localStorage.getItem('munni_last_login_method') || 'default';
+  const m = sessionStorage.getItem('munni_last_login_method') || 'default';
   return `munni_last_synced_${m}`;
 }
 
 function getUserAccountsKey() {
-  const m = localStorage.getItem('munni_last_login_method') || 'default';
+  const m = sessionStorage.getItem('munni_last_login_method') || 'default';
   return `munni_bank_accounts_${m}`;
 }
 
 export function getUserId() {
-  const m = localStorage.getItem('munni_last_login_method') || '';
+  const m = sessionStorage.getItem('munni_last_login_method') || '';
   if (m === 'google') return 'ggl-0001';
   if (m === 'apple') return 'apl-0001';
   if (m === 'bank') return 'dmo-0001';
   // Email user: generate/retrieve random ID
   try {
-    const email = JSON.parse(localStorage.getItem('munni_profile_email') || '""') || '';
+    const email = JSON.parse(sessionStorage.getItem('munni_profile_email') || '""') || '';
     if (email && !['google@munni.app','apple@munni.app','bank@munni.app',''].includes(email)) {
       const regKey = 'munni_user_ids';
       const reg = JSON.parse(localStorage.getItem(regKey) || '{}');

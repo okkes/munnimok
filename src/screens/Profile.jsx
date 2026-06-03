@@ -3,7 +3,7 @@ import { CATEGORIES, fmtEur, fmtDate, ACCOUNTS, RECURRING, RECURRING_SUGGESTIONS
 import { M, I, IcoMDI, Divider, StatusBar, AppBar } from '../theme.jsx';
 import { useDark } from '../nav.jsx';
 import { LangCtx, useLang, NavCtx, useNav, Sheet, OTHER_LANGUAGES, TabBar } from '../i18n.jsx';
-import { useLocalStorage, clearAllStorage } from '../hooks.jsx';
+import { useLocalStorage, useSessionStorage, clearAllStorage } from '../hooks.jsx';
 import { BarChart, StackedBar, TxRow } from '../components.jsx';
 import { useCatCtx, ProfilesProvider, useProfiles, TxCtx, useTxCtx, AllocProvider, useConnectedAccounts, Stat } from '../providers.jsx';
 import { HighlightText, ScreenExpenses, DetailRow } from './Tx.jsx';
@@ -307,22 +307,18 @@ export function ScreenProfile() {
   const nav = useNav();
   const { t } = useLang();
   const [editing, setEditing] = React.useState(false);
-  const [loginMethod] = useLocalStorage('munni_last_login_method', '');
-  const [email] = useLocalStorage('munni_profile_email', '');
+  const [loginMethod] = useSessionStorage('munni_last_login_method', '');
+  const [email] = useSessionStorage('munni_profile_email', '');
   const _safeEmail = React.useMemo(() => { try { return JSON.parse(email||'""')||''; } catch { return email||''; } }, [email]);
   const _nameKey = computeUserDataKey(loginMethod, _safeEmail, 'munni_profile_name');
   const [name, setName] = useLocalStorage(_nameKey, '');
   const pictureKey = React.useMemo(() => {
-    const method = localStorage.getItem('munni_last_login_method') || '';
-    if (method === 'google') return 'munni_user_picture_google';
-    if (method === 'apple') return 'munni_user_picture_apple';
-    if (method === 'bank') return 'munni_user_picture_bank';
-    try {
-      const e = JSON.parse(localStorage.getItem('munni_profile_email') || '""');
-      if (e && !['google@munni.app','apple@munni.app','bank@munni.app',''].includes(e)) return `munni_user_picture_${e}`;
-    } catch {}
+    if (loginMethod === 'google') return 'munni_user_picture_google';
+    if (loginMethod === 'apple') return 'munni_user_picture_apple';
+    if (loginMethod === 'bank') return 'munni_user_picture_bank';
+    if (_safeEmail && !['google@munni.app','apple@munni.app','bank@munni.app',''].includes(_safeEmail)) return `munni_user_picture_${_safeEmail}`;
     return 'munni_user_picture';
-  }, []);
+  }, [loginMethod, _safeEmail]);
   const [userPicture, setUserPicture] = useLocalStorage(pictureKey, null);
   const { profiles } = useProfiles();
   const activeProfile = profiles.find(p => p.active) || profiles[0];
@@ -345,9 +341,9 @@ export function ScreenProfile() {
   const cancel = () => setEditing(false);
   const initial = (name || '?').charAt(0).toUpperCase();
 
-  const isDemo = localStorage.getItem('munni_last_login_method') === 'bank';
+  const isDemo = loginMethod === 'bank';
   const connectedBanks = connectedAccounts.filter(a => a.type === 'checking').length;
-  const _lastMethod = localStorage.getItem('munni_last_login_method') || '';
+  const _lastMethod = loginMethod;
   const emailDisplay = isDemo ? 'demo@munni.app' : (email && !['google@munni.app','apple@munni.app','bank@munni.app',''].includes(email)) ? email : _lastMethod === 'google' ? t('login.signedInGoogle') : _lastMethod === 'apple' ? t('login.signedInApple') : (email || '');
 
   return (
@@ -517,7 +513,7 @@ export function ScreenProfiles() {
   const [newProfileIsDemo, setNewProfileIsDemo] = React.useState(false);
   const [newProfileError, setNewProfileError] = React.useState('');
 
-  const isUserDemo = localStorage.getItem('munni_last_login_method') === 'bank';
+  const isUserDemo = sessionStorage.getItem('munni_last_login_method') === 'bank';
 
   const activateProfile = (id) => setProfiles(ps => ps.map(p => ({ ...p, active: p.id === id })));
 
@@ -2203,7 +2199,7 @@ export function ScreenNotifications() {
         const amt = -(Math.round((pool.min + Math.random() * (pool.max - pool.min)) * 100) / 100);
         const id = `tsync_${Date.now()}_${i}`;
         const dateStr = now.toISOString().slice(0, 10);
-        const loginMethod = localStorage.getItem('munni_last_login_method') || '';
+        const loginMethod = sessionStorage.getItem('munni_last_login_method') || '';
         const accountId = loginMethod === 'bank' ? 'demo_main' : 'main';
         return { id, date: dateStr, time: `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`, merchant: pool.merchant, desc: pool.desc, cat: pool.cat, amount: amt, account: accountId, needsReview: true, ...(pool.confidence ? { confidence: pool.confidence } : {}) };
       });
@@ -3169,7 +3165,7 @@ export function ScreenAccountsAll() {
   const bankAccounts = connectedAccounts.filter(a => a.type === 'checking');
   const savingAccounts = connectedAccounts.filter(a => a.type === 'savings' || a.type === 'invest');
   const filteredBanks = DUTCH_BANKS.filter(b => !bankSearch || b.name.toLowerCase().includes(bankSearch.toLowerCase()));
-  const isDemoUser = localStorage.getItem('munni_last_login_method') === 'bank';
+  const isDemoUser = sessionStorage.getItem('munni_last_login_method') === 'bank';
   const demoAccounts = connectedAccounts.filter(a => DEMO_ACCOUNT_IDS.includes(a.id));
   const realBankAccounts = bankAccounts.filter(a => !DEMO_ACCOUNT_IDS.includes(a.id));
   const realSavingAccounts = savingAccounts.filter(a => !DEMO_ACCOUNT_IDS.includes(a.id));

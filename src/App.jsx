@@ -4,7 +4,7 @@ import { IOSDevice } from './IOSFrame.jsx';
 import { M, I, IcoGoogle, IcoApple, Divider, StatusBar, AppBar } from './theme.jsx';
 import { DarkCtx } from './nav.jsx';
 import { useLang, LangProvider, NavProvider, useNav, Sheet } from './i18n.jsx';
-import { useLocalStorage } from './hooks.jsx';
+import { useLocalStorage, useSessionStorage } from './hooks.jsx';
 import { CatProvider, ProfilesProvider, useProfiles, TxProvider, RecurProvider, AllocProvider, useConnectedAccounts, ScreenAllocate, ScreenAllocateTopic, ScreenAllocateAddTopic } from './providers.jsx';
 import { ScreenStub } from './screens/Stub.jsx';
 import { ScreenHome } from './screens/Home.jsx';
@@ -23,8 +23,8 @@ export function ScreenFriends() {
   const nav = useNav();
   const { t } = useLang();
   const myId = React.useMemo(() => getUserId(), []);
-  const [_loginMethod] = useLocalStorage('munni_last_login_method', '');
-  const [_rawEmail] = useLocalStorage('munni_profile_email', '');
+  const [_loginMethod] = useSessionStorage('munni_last_login_method', '');
+  const [_rawEmail] = useSessionStorage('munni_profile_email', '');
   const _safeEmail = React.useMemo(() => { try { return JSON.parse(_rawEmail||'""')||''; } catch { return _rawEmail||''; } }, [_rawEmail]);
   const _nameKey = computeUserDataKey(_loginMethod, _safeEmail, 'munni_profile_name');
   const [myName] = useLocalStorage(_nameKey, myId);
@@ -534,7 +534,7 @@ function ScreenLoginGate({ onLogin }) {
   const { t, lang } = useLang();
   const [emailInput, setEmailInput] = React.useState(() => {
     try {
-      const v = JSON.parse(localStorage.getItem('munni_profile_email') || '""');
+      const v = JSON.parse(sessionStorage.getItem('munni_profile_email') || '""');
       return (v && !['google@munni.app','apple@munni.app','bank@munni.app'].includes(v)) ? v : '';
     } catch { return ''; }
   });
@@ -565,11 +565,11 @@ function ScreenLoginGate({ onLogin }) {
   const doLogin = (method, email, displayName, activateDemo = false, signupLang = 'en') => {
     const methods = [...new Set([...getSignupMethods(), method])];
     localStorage.setItem('munni_signup_methods', JSON.stringify(methods));
-    localStorage.setItem('munni_last_login_method', method);
-    window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: 'munni_last_login_method' } }));
+    sessionStorage.setItem('munni_last_login_method', method);
+    window.dispatchEvent(new CustomEvent('munni-ss', { detail: { key: 'munni_last_login_method' } }));
     localStorage.setItem('munni_opened_before', 'true');
-    localStorage.setItem('munni_profile_email', JSON.stringify(email || ''));
-    window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: 'munni_profile_email' } }));
+    sessionStorage.setItem('munni_profile_email', JSON.stringify(email || ''));
+    window.dispatchEvent(new CustomEvent('munni-ss', { detail: { key: 'munni_profile_email' } }));
     const userId = getUserId();
     const name = displayName || (method === 'google' ? 'Google van der Berg' : method === 'apple' ? 'Apple van der Berg' : method === 'bank' ? 'Demo User' : email || userId);
     const nameKey = computeUserDataKey(method, email, 'munni_profile_name');
@@ -583,6 +583,7 @@ function ScreenLoginGate({ onLogin }) {
       window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: profileKey } }));
     }
     registerUserInGlobalRegistry(userId, name);
+    sessionStorage.setItem('munni_session_active', 'true');
     onLogin();
   };
 
@@ -958,11 +959,11 @@ export const useAppCtx = () => React.useContext(AppCtx);
 
 export function App() {
   const [dark, setDark] = useLocalStorage('munni_dark', false);
-  const [loggedIn, setLoggedIn] = React.useState(false);
+  const [loggedIn, setLoggedIn] = React.useState(() => sessionStorage.getItem('munni_session_active') === 'true');
   const isMobile = React.useMemo(() => window.matchMedia('(max-width: 430px)').matches, []);
 
   const appContent = (
-    <AppCtx.Provider value={{ logout: () => setLoggedIn(false) }}>
+    <AppCtx.Provider value={{ logout: () => { sessionStorage.removeItem('munni_session_active'); setLoggedIn(false); } }}>
     <div className="m m-app" style={{ width:'100%', height:'100%', background: M.paper, filter: dark ? 'invert(0.93) hue-rotate(180deg)' : 'none', transition:'filter 0.3s' }}>
       {loggedIn ? (
         <CatProvider>
