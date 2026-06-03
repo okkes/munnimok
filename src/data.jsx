@@ -632,10 +632,10 @@ export function getDefaultProfileName(lang) {
 }
 
 export function getDefaultProfiles(method, lang = 'en') {
-  if (method === 'google') return [{ id:'p_google', name:'Private', icon:'user', active:true, accountIds:['main','save','inv'], picture:null, isDemo:false }];
-  if (method === 'apple')  return [{ id:'p_apple',  name:'Family',  icon:'house',active:true, accountIds:['abn_main'],           picture:null, isDemo:false }];
+  if (method === 'google') return [{ id:'p_google', name:'Private', icon:'user', active:true, accountIds:['main','save','inv'], picture:'av3', isDemo:false }];
+  if (method === 'apple')  return [{ id:'p_apple',  name:'Family',  icon:'house',active:true, accountIds:['abn_main'],           picture:'av4', isDemo:false }];
   if (method === 'bank')   return [{ id:'p_demo',   name:'Demo',    icon:'user', active:true, accountIds:['demo_main','demo_save'], picture:'av7', isDemo:true }];
-  return [{ id:'p_email', name:getDefaultProfileName(lang), icon:'user', active:true, accountIds:[], picture:null, isDemo:false }];
+  return [{ id:'p_email', name:getDefaultProfileName(lang), icon:'user', active:true, accountIds:[], picture:'av1', isDemo:false }];
 }
 
 export function initPerUserData(method, email, lang = 'en') {
@@ -942,9 +942,12 @@ const PERIOD = {
 export function computePeriodHistory(day) {
   const result = [];
   const today = new Date();
+  // If today hasn't reached the period start day yet, the current period
+  // began in the previous month — shift the window back by 1.
+  const offset = today.getDate() < day ? 1 : 0;
   for (let i = 5; i >= 0; i--) {
-    const startDate = new Date(today.getFullYear(), today.getMonth() - i, day);
-    const endDate = new Date(today.getFullYear(), today.getMonth() - i + 1, day - 1);
+    const startDate = new Date(today.getFullYear(), today.getMonth() - offset - i, day);
+    const endDate = new Date(today.getFullYear(), today.getMonth() - offset - i + 1, day - 1);
     const fmtShort = d => d.toLocaleDateString('en-GB', { day:'numeric', month:'short' });
     result.push({
       label: `${fmtShort(startDate)} – ${fmtShort(endDate)}`,
