@@ -1,5 +1,5 @@
 import React from 'react';
-import { CATEGORIES, _catExt, fmtEur, fmtEurInt, fmtDate, PORTFOLIO, computePeriodHistory, PERIOD_HISTORY, getUserSyncKey, fmtSyncTime, getUserId } from '../data.jsx';
+import { CATEGORIES, _catExt, fmtEur, fmtEurInt, fmtDate, PORTFOLIO, computePeriodHistory, getUserSyncKey, fmtSyncTime, getUserId } from '../data.jsx';
 import { M, I, IcoMDI, Divider, StatusBar } from '../theme.jsx';
 import { useLang, useNav, Sheet, TabBar } from '../i18n.jsx';
 import { useLocalStorage } from '../hooks.jsx';
@@ -79,11 +79,15 @@ export function ScreenHome() {
   const [goals] = useProfileGoals();
   const [debts] = useProfileDebts();
 
+  const [periodDay] = useLocalStorage('munni_period_day', 20);
+  const periodHistory = React.useMemo(() => computePeriodHistory(periodDay), [periodDay]);
+
   const reviewCount = txs.filter(t => t.needsReview).length;
   const budgetTop = [...budgets].sort((a, b) => (b.spent/b.total) - (a.spent/a.total)).slice(0, 3);
-  const [pidx, setPidx] = React.useState(PERIOD_HISTORY.length - 1);
-  const pd = PERIOD_HISTORY[pidx];
-  const isCurrent = pidx === PERIOD_HISTORY.length - 1;
+  const [pidx, setPidx] = React.useState(periodHistory.length - 1);
+  React.useEffect(() => { setPidx(periodHistory.length - 1); }, [periodDay]);
+  const pd = periodHistory[pidx] || periodHistory[periodHistory.length - 1];
+  const isCurrent = pidx === periodHistory.length - 1;
   const currentUnallocated = alloc ? alloc.unallocated : pd.unallocated;
 
   const activeProfile = profiles.find(p => p.active) || profiles[0];
@@ -154,7 +158,7 @@ export function ScreenHome() {
                 <button className="m-iconbtn m-tap" onClick={() => setPidx(i => Math.max(0, i-1))}
                   style={{ width:28, height:28, opacity:pidx===0?0.3:1 }}><I name="arrowL" size={14}/></button>
                 <div style={{ fontSize:12, fontWeight:600, color:M.ink2, width:130, textAlign:'center' }}>{pd.label}</div>
-                <button className="m-iconbtn m-tap" onClick={() => setPidx(i => Math.min(PERIOD_HISTORY.length-1, i+1))}
+                <button className="m-iconbtn m-tap" onClick={() => setPidx(i => Math.min(periodHistory.length-1, i+1))}
                   style={{ width:28, height:28, opacity:isCurrent?0.3:1 }}><I name="arrowR" size={14}/></button>
               </div>
             </div>
