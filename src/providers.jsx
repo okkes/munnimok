@@ -28,9 +28,11 @@ export function ProfilesProvider({ children }) {
   // Reactive: re-compute key whenever login method changes
   const [loginMethod] = useLocalStorage('munni_last_login_method', '');
   const [email] = useLocalStorage('munni_profile_email', '');
+  const { lang } = useLang();
   const safeEmail = React.useMemo(() => { try { return JSON.parse(email || '""') || ''; } catch { return ''; } }, [email]);
   const profileKey = computeProfileKey(loginMethod, safeEmail);
-  const defaultProfiles = React.useMemo(() => getDefaultProfiles(loginMethod), [loginMethod]);
+  // Pass lang so the fallback (no stored data) uses the correct localised name
+  const defaultProfiles = React.useMemo(() => getDefaultProfiles(loginMethod, lang), [loginMethod, lang]);
   const [profiles, setProfiles] = useLocalStorage(profileKey, defaultProfiles);
   return <ProfilesCtx.Provider value={{ profiles, setProfiles }}>{children}</ProfilesCtx.Provider>;
 }

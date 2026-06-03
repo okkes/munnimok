@@ -640,22 +640,28 @@ export function getDefaultProfiles(method, lang = 'en') {
 
 export function initPerUserData(method, email, lang = 'en') {
   if (!method) return;
+
+  // Accounts + txs: once per login method (schema version gate)
   const vKey = `munni_schema_v_${method}`;
-  if (localStorage.getItem(vKey) === SCHEMA_VERSION) return;
+  if (localStorage.getItem(vKey) !== SCHEMA_VERSION) {
+    const acctKey = `munni_bank_accounts_${method}`;
+    localStorage.setItem(acctKey, JSON.stringify(getDefaultAccounts(method)));
+    window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: acctKey } }));
 
-  const acctKey = `munni_bank_accounts_${method}`;
-  localStorage.setItem(acctKey, JSON.stringify(getDefaultAccounts(method)));
-  window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: acctKey } }));
+    const txKey = `munni_txs_${method}`;
+    localStorage.setItem(txKey, JSON.stringify(getDefaultTxs(method)));
+    window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: txKey } }));
 
-  const txKey = `munni_txs_${method}`;
-  localStorage.setItem(txKey, JSON.stringify(getDefaultTxs(method)));
-  window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: txKey } }));
+    localStorage.setItem(vKey, SCHEMA_VERSION);
+  }
 
+  // Profiles: once per user (profile key). Uses signup lang so each new
+  // user gets the localised default name; never overwrites existing data.
   const profileKey = computeProfileKey(method, email || '');
-  localStorage.setItem(profileKey, JSON.stringify(getDefaultProfiles(method, lang)));
-  window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: profileKey } }));
-
-  localStorage.setItem(vKey, SCHEMA_VERSION);
+  if (!localStorage.getItem(profileKey)) {
+    localStorage.setItem(profileKey, JSON.stringify(getDefaultProfiles(method, lang)));
+    window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: profileKey } }));
+  }
 }
 
 // Generate 30–60 realistic transactions for a newly connected bank account (past 90 days)
