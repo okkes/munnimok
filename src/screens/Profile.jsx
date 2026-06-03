@@ -806,7 +806,11 @@ export function ScreenProfileDetail({ params }) {
     nav.pop();
   };
 
-  const attachedAccountObjects = accountIds.map(id => availableAccounts.find(a => a.id === id)).filter(Boolean);
+  // For shared profiles (invited members), the source of truth is sharedData.accounts from the owner.
+  // profile.accountIds is a stale snapshot from invite time and may be missing accounts added later.
+  const attachedAccountObjects = isMemberOfShared
+    ? sharedAccts
+    : accountIds.map(id => availableAccounts.find(a => a.id === id)).filter(Boolean);
   const attachedMain = attachedAccountObjects.filter(a => a.type === 'checking');
   const attachedSaving = attachedAccountObjects.filter(a => a.type !== 'checking');
 
@@ -1026,7 +1030,8 @@ export function ScreenProfileDetail({ params }) {
             <div style={{ fontSize:17, fontWeight:700, marginBottom:16 }}>{t('profile.attachAccount')}</div>
             {(() => {
               const isChecking = showAttachSheet === 'checking';
-              const candidates = availableAccounts.filter(a => (isChecking ? a.type === 'checking' : a.type !== 'checking') && !accountIds.includes(a.id));
+              const attachedIds = new Set(attachedAccountObjects.map(a => a.id));
+              const candidates = availableAccounts.filter(a => (isChecking ? a.type === 'checking' : a.type !== 'checking') && !attachedIds.has(a.id));
               if (candidates.length === 0) {
                 return (
                   <>

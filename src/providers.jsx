@@ -48,12 +48,17 @@ export function TxProvider({ children }) {
   const { profiles } = useProfiles();
 
   const activeProfile = profiles.find(p => p.active) || profiles[0];
-  const activeAccountIds = activeProfile?.accountIds || [];
 
   // Merge in shared profile data so invited members see the owner's accounts/txs
   const isSharedOrHasMembers = !!(activeProfile?.isShared || (activeProfile?.members||[]).length > 0);
   const sharedDataKey = isSharedOrHasMembers ? `munni_shared_data_${activeProfile.id}` : 'munni_shared_data_none';
   const [sharedData] = useLocalStorage(sharedDataKey, { accounts: [], txs: [] });
+
+  // For shared profiles (invited members), profile.accountIds is a stale invite-time snapshot.
+  // Use the live sharedData.accounts IDs instead so newly attached accounts are always visible.
+  const activeAccountIds = (activeProfile?.isShared && (sharedData?.accounts?.length ?? 0) > 0)
+    ? (sharedData.accounts || []).map(a => a.id)
+    : (activeProfile?.accountIds || []);
 
   const allTxs = React.useMemo(() => {
     const sharedTxs = sharedData?.txs || [];
