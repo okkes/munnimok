@@ -17,15 +17,14 @@ export function useLocalStorage(key, defaultValue) {
     return () => { window.removeEventListener('munni-ls', handler); window.removeEventListener('storage', storageHandler); };
   }, [key, read]);
   const set = React.useCallback(val => {
-    setState(prev => {
-      const next = typeof val === 'function' ? val(prev) : val;
-      try {
-        localStorage.setItem(key, JSON.stringify(next));
-        window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key } }));
-      } catch {}
-      return next;
-    });
-  }, [key]);
+    const current = read();
+    const next = typeof val === 'function' ? val(current) : val;
+    try {
+      localStorage.setItem(key, JSON.stringify(next));
+      window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key } }));
+    } catch {}
+    setState(next);
+  }, [key, read]);
   return [state, set];
 }
 
