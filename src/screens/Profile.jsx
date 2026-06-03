@@ -656,13 +656,35 @@ export function ScreenProfileDetail({ params }) {
   const [showMembersSheet, setShowMembersSheet] = React.useState(false);
 
   const myId = React.useMemo(() => getUserId(), []);
-  const [invitations] = useLocalStorage('munni_global_invitations', []);
+  const [invitations, setInvitations] = useLocalStorage('munni_global_invitations', []);
   const [userRegistry] = useLocalStorage('munni_global_users', {});
 
   // All hooks before early return
   const profile = profiles.find(p => p.id === params?.id);
   const profileId = profile?.id || 'none';
   const [sharedData, setSharedData] = useLocalStorage(`munni_shared_data_${profileId}`, { accounts: [], txs: [] });
+
+  // Process accepted profile invites for the owner so members appear as soon as they visit the profile detail,
+  // not only when they open the members sheet (which was the previous requirement)
+  React.useEffect(() => {
+    if (!profile || profile.isShared) return;
+    const accepted = invitations.filter(inv =>
+      inv.fromId === myId && inv.type === 'profile' && inv.profileId === profile.id && inv.status === 'accepted'
+      && !(profile.members || []).some(m => m.userId === inv.toId)
+    );
+    if (accepted.length === 0) return;
+    setProfiles(ps => ps.map(p => {
+      if (p.id !== profile.id) return p;
+      const newMembers = accepted.map(inv => ({
+        userId: inv.toId,
+        displayName: userRegistry[inv.toId]?.displayName || inv.toId,
+        permission: inv.permission || 'contributor',
+        accountIds: [],
+      }));
+      return { ...p, members: [...(p.members || []), ...newMembers] };
+    }));
+    setInvitations(arr => arr.map(i => accepted.some(a => a.id === i.id) ? { ...i, status: 'joined' } : i));
+  }, [invitations, profileId]);
 
   // Sync owner's attached accounts to sharedData when the profile has members
   // (covers accounts attached before first member joined, where toggleAccount skipped the write)
@@ -823,7 +845,13 @@ export function ScreenProfileDetail({ params }) {
       <div className="m-body-scroll">
         {/* Avatar + name */}
         <div className="m-card" style={{ padding:'18px 16px', marginBottom:16, border:`1px solid ${M.line}`, display:'flex', flexDirection:'column', alignItems:'center', gap:10 }}>
-          <ProfileAvatar profile={profile} size={72}/>
+          <button className="m-tap" onClick={() => setShowPhotoSheet(true)}
+            style={{ position:'relative', background:'none', border:'none', cursor:'pointer', padding:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <ProfileAvatar profile={profile} size={72}/>
+            <div style={{ position:'absolute', bottom:0, right:0, width:22, height:22, borderRadius:999, background:M.sage, display:'flex', alignItems:'center', justifyContent:'center', border:'2px solid #fff' }}>
+              <I name="cam" size={11} color="#fff"/>
+            </div>
+          </button>
           <button className="m-tap" onClick={() => setShowPhotoSheet(true)}
             style={{ fontSize:13, fontWeight:600, color:M.sage, background:'transparent', border:'none', cursor:'pointer', fontFamily:M.fontUI, padding:'4px 12px' }}>
             {t('profile.changePhoto')}
