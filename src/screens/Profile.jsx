@@ -2858,8 +2858,7 @@ export function ScreenAccountsAll() {
   const bankAccounts = connectedAccounts.filter(a => a.type === 'checking');
   const savingAccounts = connectedAccounts.filter(a => a.type === 'savings' || a.type === 'invest');
   const filteredBanks = DUTCH_BANKS.filter(b => !bankSearch || b.name.toLowerCase().includes(bankSearch.toLowerCase()));
-  const activeProfile = profiles.find(p => p.active) || profiles[0];
-  const isDemoProfile = activeProfile?.id === 'p_demo' || activeProfile?.isDemo;
+  const isDemoUser = localStorage.getItem('munni_last_login_method') === 'bank';
   const demoAccounts = connectedAccounts.filter(a => DEMO_ACCOUNT_IDS.includes(a.id));
   const realBankAccounts = bankAccounts.filter(a => !DEMO_ACCOUNT_IDS.includes(a.id));
   const realSavingAccounts = savingAccounts.filter(a => !DEMO_ACCOUNT_IDS.includes(a.id));
@@ -3073,8 +3072,8 @@ export function ScreenAccountsAll() {
       />
       <div className="m-body-scroll">
 
-        {isDemoProfile ? (
-          /* ── Demo profile: show demo accounts as read-only ── */
+        {isDemoUser ? (
+          /* ── Demo user (1-click bank login): show demo accounts read-only ── */
           <>
             <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8, paddingLeft:4 }}>
               <div className="m-cap">{t('accounts.demoSection')}</div>
