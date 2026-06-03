@@ -168,6 +168,21 @@ export function ProfileMembersSheet({ profile, onClose }) {
       return { ...p, members: [...(p.members||[]), ...newMembers] };
     }));
     setInvitations(arr => arr.map(i => accepted.some(a=>a.id===i.id) ? { ...i, status:'joined' } : i));
+    // Sync owner's currently attached accounts to sharedData so new members can see them
+    const ownerAccts = connectedAccounts.filter(a => !a.isDemo && (profile.accountIds||[]).includes(a.id));
+    if (ownerAccts.length > 0) {
+      const sdKey = `munni_shared_data_${profile.id}`;
+      try {
+        const current = JSON.parse(localStorage.getItem(sdKey) || '{"accounts":[],"txs":[]}');
+        const currentIds = new Set((current.accounts||[]).map(a => a.id));
+        const toAdd = ownerAccts.filter(a => !currentIds.has(a.id));
+        if (toAdd.length > 0) {
+          const updated = { accounts: [...(current.accounts||[]), ...toAdd.map(a => ({ ...a, attachedBy: myId }))], txs: current.txs || [] };
+          localStorage.setItem(sdKey, JSON.stringify(updated));
+          window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sdKey } }));
+        }
+      } catch {}
+    }
   }, [invitations]);
   const myPerm = members.find(m=>m.userId===myId)?.permission || 'owner';
   const canManage = myPerm === 'owner';
@@ -214,7 +229,7 @@ export function ProfileMembersSheet({ profile, onClose }) {
       <div style={{ padding:'4px 16px 0' }}>
         <div style={{ fontSize:17, fontWeight:700, marginBottom:16 }}>{t('profile.members')}</div>
       </div>
-      <div style={{ padding:'0 16px', maxHeight:400, overflowY:'auto' }}>
+      <div style={{ padding:'0 16px', maxHeight:'55vh', overflowY:'auto' }}>
         {/* Members list */}
         {members.length === 0 && <div style={{ color:M.ink4, fontSize:13, textAlign:'center', padding:'16px 0', marginBottom:8 }}>{t('profile.noMembers')}</div>}
         {members.map((m,i)=>{
@@ -286,7 +301,7 @@ export function ProfileMembersSheet({ profile, onClose }) {
             <I name="lock" size={14} color={M.ink4}/>{t('profile.demoNoInvite')}
           </div>
         )}
-        <div style={{ height:16 }}/>
+        <div style={{ height:28 }}/>
       </div>
       {/* Perm edit sheet */}
       {permEdit && (

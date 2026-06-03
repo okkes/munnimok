@@ -664,6 +664,22 @@ export function ScreenProfileDetail({ params }) {
   const profileId = profile?.id || 'none';
   const [sharedData, setSharedData] = useLocalStorage(`munni_shared_data_${profileId}`, { accounts: [], txs: [] });
 
+  // Sync owner's attached accounts to sharedData when the profile has members
+  // (covers accounts attached before first member joined, where toggleAccount skipped the write)
+  React.useEffect(() => {
+    if (!profile || profile.isShared || (profile.members || []).length === 0) return;
+    const acctIds = profile.accountIds || [];
+    const owned = connectedAccounts.filter(a => !a.isDemo && acctIds.includes(a.id));
+    if (owned.length === 0) return;
+    try {
+      const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${profile.id}`) || '{"accounts":[],"txs":[]}');
+      const existing = new Set((sd.accounts || []).map(a => a.id));
+      const toAdd = owned.filter(a => !existing.has(a.id));
+      if (toAdd.length === 0) return;
+      setSharedData(prev => ({ ...prev, accounts: [...(prev.accounts || []), ...toAdd.map(a => ({ ...a, attachedBy: myId }))] }));
+    } catch {}
+  }, [profile?.members?.length, JSON.stringify(profile?.accountIds), profileId]);
+
   if (!profile) return null;
 
   const members = profile.members || [];
@@ -874,13 +890,6 @@ export function ScreenProfileDetail({ params }) {
           )}
         </div>
 
-        <button className="m-tap" onClick={() => nav.push('accountsAll')}
-          style={{ width:'100%', marginBottom:14, padding:'10px 14px', background:'transparent', border:`1px solid ${M.line}`, borderRadius:12, display:'flex', alignItems:'center', gap:8, cursor:'pointer', fontFamily:M.fontUI }}>
-          <I name="card" size={14} color={M.ink3}/>
-          <div style={{ fontSize:13, color:M.ink3, fontWeight:500 }}>{t('profile.manageAccounts')}</div>
-          <I name="caretR" size={12} color={M.ink4} style={{ marginLeft:'auto' }}/>
-        </button>
-
         {/* Members */}
         <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('profile.members')}</div>
         {profile.isDemo ? (
@@ -991,12 +1000,10 @@ export function ScreenProfileDetail({ params }) {
                     <div style={{ textAlign:'center', color:M.ink3, fontSize:13, padding:'16px 0', marginBottom:12 }}>
                       {isChecking ? t('profile.noCheckingToAttach') : t('profile.noSavingToAttach')}
                     </div>
-                    <div className="m-tap" onClick={() => { setShowAttachSheet(null); nav.push('accountsAll'); }}
-                      style={{ display:'flex', alignItems:'center', gap:8, padding:'14px 16px', background:M.paper2, borderRadius:12, border:`1px solid ${M.line}` }}>
-                      <I name="card" size={14} color={M.ink3}/>
-                      <div style={{ fontSize:13, color:M.ink2, fontWeight:500, flex:1 }}>{t('profile.manageAccounts')}</div>
-                      <I name="caretR" size={12} color={M.ink4}/>
-                    </div>
+                    <button className="m-tap" onClick={() => { setShowAttachSheet(null); nav.push('accountsAll'); }}
+                      style={{ width:'100%', padding:'12px 0 4px', display:'flex', alignItems:'center', justifyContent:'center', gap:4, background:'transparent', border:'none', cursor:'pointer', fontFamily:M.fontUI }}>
+                      <span style={{ fontSize:14, fontWeight:600, color:M.sage }}>{t('profile.manageAccounts')} →</span>
+                    </button>
                   </>
                 );
               }
@@ -1020,13 +1027,10 @@ export function ScreenProfileDetail({ params }) {
                       </React.Fragment>
                     ))}
                   </div>
-                  <Divider inset={0}/>
-                  <div className="m-tap" onClick={() => { setShowAttachSheet(null); nav.push('accountsAll'); }}
-                    style={{ display:'flex', alignItems:'center', gap:8, padding:'14px 0', marginTop:4 }}>
-                    <I name="card" size={14} color={M.ink3}/>
-                    <div style={{ fontSize:13, color:M.ink3, fontWeight:500, flex:1 }}>{t('profile.manageAccounts')}</div>
-                    <I name="caretR" size={12} color={M.ink4}/>
-                  </div>
+                  <button className="m-tap" onClick={() => { setShowAttachSheet(null); nav.push('accountsAll'); }}
+                    style={{ width:'100%', padding:'16px 0 4px', display:'flex', alignItems:'center', justifyContent:'center', gap:4, background:'transparent', border:'none', cursor:'pointer', fontFamily:M.fontUI }}>
+                    <span style={{ fontSize:14, fontWeight:600, color:M.sage }}>{t('profile.manageAccounts')} →</span>
+                  </button>
                 </>
               );
             })()}
