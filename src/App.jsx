@@ -1,5 +1,5 @@
 import React from 'react';
-import { getUserId, computeProfileKey, getDefaultProfiles, initPerUserData, registerUserInGlobalRegistry } from './data.jsx';
+import { getUserId, computeProfileKey, getDefaultProfiles, initPerUserData, registerUserInGlobalRegistry, computeUserDataKey } from './data.jsx';
 import { IOSDevice } from './IOSFrame.jsx';
 import { M, I, IcoGoogle, IcoApple, Divider, StatusBar, AppBar } from './theme.jsx';
 import { DarkCtx } from './nav.jsx';
@@ -23,7 +23,11 @@ export function ScreenFriends() {
   const nav = useNav();
   const { t } = useLang();
   const myId = React.useMemo(() => getUserId(), []);
-  const myName = React.useMemo(() => { try { return JSON.parse(localStorage.getItem('munni_profile_name') || '""') || myId; } catch { return myId; } }, [myId]);
+  const [_loginMethod] = useLocalStorage('munni_last_login_method', '');
+  const [_rawEmail] = useLocalStorage('munni_profile_email', '');
+  const _safeEmail = React.useMemo(() => { try { return JSON.parse(_rawEmail||'""')||''; } catch { return _rawEmail||''; } }, [_rawEmail]);
+  const _nameKey = computeUserDataKey(_loginMethod, _safeEmail, 'munni_profile_name');
+  const [myName] = useLocalStorage(_nameKey, myId);
   const [inviteInput, setInviteInput] = React.useState('');
   const [inviteError, setInviteError] = React.useState('');
   const [inviteSent, setInviteSent] = React.useState(false);
@@ -138,6 +142,7 @@ export function ScreenFriends() {
 
 export function ProfileMembersSheet({ profile, onClose }) {
   const { t } = useLang();
+  const nav = useNav();
   const myId = React.useMemo(() => getUserId(), []);
   const { profiles, setProfiles } = useProfiles();
   const [connectedAccounts, setConnectedAccounts] = useConnectedAccounts();
@@ -251,7 +256,13 @@ export function ProfileMembersSheet({ profile, onClose }) {
           <>
             <div style={{ fontSize:11, fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:M.ink4, marginTop:16, marginBottom:8 }}>{t('profile.addMember')}</div>
             {uninvitedFriends.length === 0 ? (
-              <div style={{ fontSize:12, color:M.ink4, padding:'8px 0 4px', lineHeight:1.5 }}>{t('friends.noFriendsToInvite')}</div>
+              <div style={{ fontSize:12, color:M.ink4, padding:'8px 0 4px', lineHeight:1.5 }}>
+                {t('friends.noFriendsToInvite')}{' '}
+                <button className="m-tap" onClick={() => { onClose(); nav.push('friends'); }}
+                  style={{ fontSize:12, color:M.sage, fontWeight:600, background:'none', border:'none', padding:0, cursor:'pointer', fontFamily:M.fontUI, textDecoration:'underline' }}>
+                  {t('friends.invite')} →
+                </button>
+              </div>
             ) : uninvitedFriends.map((fid,i)=>{
               const info = userRegistry[fid]||{};
               return (
@@ -544,10 +555,11 @@ function ScreenLoginGate({ onLogin }) {
     localStorage.setItem('munni_opened_before', 'true');
     localStorage.setItem('munni_profile_email', JSON.stringify(email || ''));
     window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: 'munni_profile_email' } }));
-    if (displayName) {
-      localStorage.setItem('munni_profile_name', JSON.stringify(displayName));
-      window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: 'munni_profile_name' } }));
-    }
+    const userId = getUserId();
+    const name = displayName || (method === 'google' ? 'Google van der Berg' : method === 'apple' ? 'Apple van der Berg' : method === 'bank' ? 'Demo User' : email || userId);
+    const nameKey = computeUserDataKey(method, email, 'munni_profile_name');
+    localStorage.setItem(nameKey, JSON.stringify(name));
+    window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: nameKey } }));
     initPerUserData(method, email, signupLang);
     if (activateDemo) {
       // Always reset demo profiles to clean Demo default so demo user is never stale
@@ -555,8 +567,6 @@ function ScreenLoginGate({ onLogin }) {
       localStorage.setItem(profileKey, JSON.stringify(getDefaultProfiles('bank')));
       window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: profileKey } }));
     }
-    const userId = getUserId();
-    const name = displayName || (method === 'google' ? 'Google van der Berg' : method === 'apple' ? 'Apple van der Berg' : method === 'bank' ? 'Demo User' : email || userId);
     registerUserInGlobalRegistry(userId, name);
     onLogin();
   };

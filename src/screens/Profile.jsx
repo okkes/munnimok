@@ -1,5 +1,5 @@
 import React from 'react';
-import { CATEGORIES, fmtEur, fmtDate, ACCOUNTS, RECURRING, RECURRING_SUGGESTIONS, getUserId, INTEGRATIONS, ALL_RECEIPTS, getUserSyncKey, fmtSyncTime, addDevLog, DEMO_ACCOUNT_IDS, DEMO_ACCOUNTS, computePeriodHistory, generateBankTxs, generateAsnTxs } from '../data.jsx';
+import { CATEGORIES, fmtEur, fmtDate, ACCOUNTS, RECURRING, RECURRING_SUGGESTIONS, getUserId, INTEGRATIONS, ALL_RECEIPTS, getUserSyncKey, fmtSyncTime, addDevLog, DEMO_ACCOUNT_IDS, DEMO_ACCOUNTS, computePeriodHistory, generateBankTxs, generateAsnTxs, computeUserDataKey } from '../data.jsx';
 import { M, I, IcoMDI, Divider, StatusBar, AppBar } from '../theme.jsx';
 import { useDark } from '../nav.jsx';
 import { LangCtx, useLang, NavCtx, useNav, Sheet, OTHER_LANGUAGES, TabBar } from '../i18n.jsx';
@@ -307,8 +307,11 @@ export function ScreenProfile() {
   const nav = useNav();
   const { t } = useLang();
   const [editing, setEditing] = React.useState(false);
-  const [name, setName] = useLocalStorage('munni_profile_name', '');
+  const [loginMethod] = useLocalStorage('munni_last_login_method', '');
   const [email] = useLocalStorage('munni_profile_email', '');
+  const _safeEmail = React.useMemo(() => { try { return JSON.parse(email||'""')||''; } catch { return email||''; } }, [email]);
+  const _nameKey = computeUserDataKey(loginMethod, _safeEmail, 'munni_profile_name');
+  const [name, setName] = useLocalStorage(_nameKey, '');
   const pictureKey = React.useMemo(() => {
     const method = localStorage.getItem('munni_last_login_method') || '';
     if (method === 'google') return 'munni_user_picture_google';
@@ -646,6 +649,7 @@ export function ScreenProfileDetail({ params }) {
   const { allTxs: ownTxs } = useTxCtx();
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
   const [showLeaveConfirm, setShowLeaveConfirm] = React.useState(false);
+  const [showAttachSheet, setShowAttachSheet] = React.useState(null);
   const [editingName, setEditingName] = React.useState(false);
   const [nameDraft, setNameDraft] = React.useState('');
   const [showPhotoSheet, setShowPhotoSheet] = React.useState(false);
@@ -665,6 +669,9 @@ export function ScreenProfileDetail({ params }) {
   const members = profile.members || [];
   const isMemberOfShared = !!profile.isShared;
   const otherMembers = members.filter(m => m.userId !== myId);
+  const myMembership = members.find(m => m.userId === myId);
+  const myPerm = myMembership?.permission || (isMemberOfShared ? 'contributor' : 'owner');
+  const canEdit = myPerm !== 'reader';
   const pendingInvitesForProfile = invitations.filter(i => i.fromId === myId && i.type === 'profile' && i.profileId === profile.id && i.status === 'pending');
   const PERM_COLOR = { reader: M.ink3, contributor: M.sage, owner: M.ochre };
   const PERM_LABEL = { reader: t('profile.permReader'), contributor: t('profile.permContributor'), owner: t('profile.permOwner') };
@@ -756,18 +763,18 @@ export function ScreenProfileDetail({ params }) {
     nav.pop();
   };
 
-  const mainAccounts = availableAccounts.filter(a => a.type === 'checking');
-  const savingAccounts = availableAccounts.filter(a => a.type !== 'checking');
+  const attachedAccountObjects = accountIds.map(id => availableAccounts.find(a => a.id === id)).filter(Boolean);
+  const attachedMain = attachedAccountObjects.filter(a => a.type === 'checking');
+  const attachedSaving = attachedAccountObjects.filter(a => a.type !== 'checking');
 
-  const renderAccountRow = (a, i, arr) => {
-    const included = accountIds.includes(a.id);
+  const renderAttachedRow = (a, i) => {
     const sharedAcctData = sharedAccts.find(s => s.id === a.id);
     const isSharedAcct = !!sharedAcctData && !ownConnectedIds.has(a.id);
+    const canRemove = canEdit && !isSharedAcct;
     return (
       <React.Fragment key={a.id}>
         {i > 0 && <Divider inset={50}/>}
-        <div className={isSharedAcct ? '' : 'm-tap'} onClick={isSharedAcct ? undefined : () => toggleAccount(a.id)}
-          style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0', opacity: isSharedAcct ? 0.8 : 1 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
           <div style={{ width:36, height:36, borderRadius:10, background: a.color || M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
             <I name={a.type==='savings'?'piggy':a.type==='invest'?'rocket':'card'} size={16} color="#fff"/>
           </div>
@@ -775,16 +782,16 @@ export function ScreenProfileDetail({ params }) {
             <div style={{ fontSize:14, fontWeight:500 }}>{a.name}</div>
             <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:2 }}>
               <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono }}>{a.iban}</div>
-              {a.manual && <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase' }}>Manual</span>}
               {a.bankId && <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>Bank</span>}
               {isSharedAcct && <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:999, background:M.violetSoft||'#EEE8FF', color:M.violet||'#7B61FF', textTransform:'uppercase' }}>{t('profile.sharedReadOnly')}</span>}
             </div>
           </div>
-          {isSharedAcct
-            ? <I name="lock" size={14} color={M.ink4}/>
-            : included
-              ? <div style={{ width:22, height:22, borderRadius:999, background:M.sage, display:'flex', alignItems:'center', justifyContent:'center' }}><I name="check" size={12} color="#fff" stroke={2.5}/></div>
-              : <div style={{ width:22, height:22, borderRadius:999, border:`2px solid ${M.line2}` }}/>
+          {canRemove
+            ? <button className="m-tap" onClick={() => toggleAccount(a.id)}
+                style={{ width:24, height:24, background:M.claySoft, border:'none', borderRadius:999, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0 }}>
+                <I name="x" size={11} color={M.clay}/>
+              </button>
+            : <I name="lock" size={14} color={M.ink4}/>
           }
         </div>
       </React.Fragment>
@@ -824,26 +831,47 @@ export function ScreenProfileDetail({ params }) {
             {isActive && (
               <div style={{ fontSize:11, color:M.sage, fontWeight:600, marginTop:3, textAlign:'center' }}>{t('profile.active')}</div>
             )}
+            {isMemberOfShared && (
+              <div style={{ fontSize:11, color:PERM_COLOR[myPerm]||M.ink3, fontWeight:600, marginTop:3, textAlign:'center' }}>
+                {t('profile.yourRole')}: {PERM_LABEL[myPerm]||myPerm}
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Main accounts */}
+        {/* Attached main accounts */}
         <div className="m-cap" style={{ marginBottom:4, paddingLeft:4 }}>{t('profile.mainAccounts')}</div>
         <div style={{ fontSize:11, color:M.ink3, marginBottom:8, paddingLeft:4 }}>{t('profile.mainAccountsSub')}</div>
         <div className="m-card" style={{ padding:'4px 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
-          {mainAccounts.length === 0 && (
-            <div style={{ padding:'16px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>{t('profile.noChecking')}</div>
+          {attachedMain.length === 0 && <div style={{ padding:'16px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>{t('profile.noChecking')}</div>}
+          {attachedMain.map((a, i) => renderAttachedRow(a, i))}
+          {canEdit && !profile.isDemo && (
+            <>
+              {attachedMain.length > 0 && <Divider inset={0}/>}
+              <div className="m-tap" onClick={() => setShowAttachSheet('checking')}
+                style={{ display:'flex', alignItems:'center', gap:8, padding:'12px 0' }}>
+                <I name="plus" size={16} color={M.sage}/>
+                <div style={{ fontSize:13, color:M.sage, fontWeight:600 }}>{t('profile.attachAccount')}</div>
+              </div>
+            </>
           )}
-          {mainAccounts.map((a, i, arr) => renderAccountRow(a, i, arr))}
         </div>
 
-        {/* Saving & investment accounts */}
+        {/* Attached saving & investment accounts */}
         <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('profile.savingAccounts')}</div>
         <div className="m-card" style={{ padding:'4px 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
-          {savingAccounts.length === 0 && (
-            <div style={{ padding:'16px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>{t('profile.noSaving')}</div>
+          {attachedSaving.length === 0 && <div style={{ padding:'16px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>{t('profile.noSaving')}</div>}
+          {attachedSaving.map((a, i) => renderAttachedRow(a, i))}
+          {canEdit && !profile.isDemo && (
+            <>
+              {attachedSaving.length > 0 && <Divider inset={0}/>}
+              <div className="m-tap" onClick={() => setShowAttachSheet('saving')}
+                style={{ display:'flex', alignItems:'center', gap:8, padding:'12px 0' }}>
+                <I name="plus" size={16} color={M.sage}/>
+                <div style={{ fontSize:13, color:M.sage, fontWeight:600 }}>{t('profile.attachAccount')}</div>
+              </div>
+            </>
           )}
-          {savingAccounts.map((a, i, arr) => renderAccountRow(a, i, arr))}
         </div>
 
         <button className="m-tap" onClick={() => nav.push('accountsAll')}
@@ -887,11 +915,11 @@ export function ScreenProfileDetail({ params }) {
                 </React.Fragment>
               );
             })}
-            {pendingInvitesForProfile.map((inv) => {
+            {pendingInvitesForProfile.map((inv, i) => {
               const info = userRegistry[inv.toId] || {};
               return (
                 <React.Fragment key={inv.id}>
-                  <Divider inset={44}/>
+                  {(members.length > 0 || i > 0) && <Divider inset={44}/>}
                   <div style={{ display:'flex', alignItems:'center', gap:10, padding:'11px 0' }}>
                     <div style={{ width:32, height:32, borderRadius:999, background:M.ochreSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:13, fontWeight:700, color:M.ochre }}>
                       {(info.displayName||inv.toId).charAt(0).toUpperCase()}
@@ -909,7 +937,7 @@ export function ScreenProfileDetail({ params }) {
                 {(members.length > 0 || pendingInvitesForProfile.length > 0) && <Divider inset={0}/>}
                 <div className="m-tap" onClick={() => setShowMembersSheet(true)} style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 0' }}>
                   <div style={{ width:32, height:32, borderRadius:10, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                    <I name="users" size={15} color={M.sage}/>
+                    <I name="user" size={15} color={M.sage}/>
                   </div>
                   <div style={{ flex:1 }}>
                     <div style={{ fontSize:13, fontWeight:600, color:M.sage }}>{members.length > 0 ? t('profile.manageMembers') : t('profile.addMember')}</div>
@@ -949,6 +977,62 @@ export function ScreenProfileDetail({ params }) {
         )}
         <div style={{ height:16 }}/>
       </div>
+
+      {showAttachSheet && (
+        <Sheet onClose={() => setShowAttachSheet(null)}>
+          <div style={{ padding:'4px 16px 8px' }}>
+            <div style={{ fontSize:17, fontWeight:700, marginBottom:16 }}>{t('profile.attachAccount')}</div>
+            {(() => {
+              const isChecking = showAttachSheet === 'checking';
+              const candidates = availableAccounts.filter(a => (isChecking ? a.type === 'checking' : a.type !== 'checking') && !accountIds.includes(a.id));
+              if (candidates.length === 0) {
+                return (
+                  <>
+                    <div style={{ textAlign:'center', color:M.ink3, fontSize:13, padding:'16px 0', marginBottom:12 }}>
+                      {isChecking ? t('profile.noCheckingToAttach') : t('profile.noSavingToAttach')}
+                    </div>
+                    <div className="m-tap" onClick={() => { setShowAttachSheet(null); nav.push('accountsAll'); }}
+                      style={{ display:'flex', alignItems:'center', gap:8, padding:'14px 16px', background:M.paper2, borderRadius:12, border:`1px solid ${M.line}` }}>
+                      <I name="card" size={14} color={M.ink3}/>
+                      <div style={{ fontSize:13, color:M.ink2, fontWeight:500, flex:1 }}>{t('profile.manageAccounts')}</div>
+                      <I name="caretR" size={12} color={M.ink4}/>
+                    </div>
+                  </>
+                );
+              }
+              return (
+                <>
+                  <div style={{ padding:'4px 0', marginBottom:8 }}>
+                    {candidates.map((a, i) => (
+                      <React.Fragment key={a.id}>
+                        {i > 0 && <Divider inset={50}/>}
+                        <div className="m-tap" onClick={() => { toggleAccount(a.id); setShowAttachSheet(null); }}
+                          style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
+                          <div style={{ width:36, height:36, borderRadius:10, background: a.color || M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                            <I name={a.type==='savings'?'piggy':a.type==='invest'?'rocket':'card'} size={16} color="#fff"/>
+                          </div>
+                          <div style={{ flex:1, minWidth:0 }}>
+                            <div style={{ fontSize:14, fontWeight:500 }}>{a.name}</div>
+                            <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono, marginTop:2 }}>{a.iban}</div>
+                          </div>
+                          <I name="plus" size={16} color={M.sage}/>
+                        </div>
+                      </React.Fragment>
+                    ))}
+                  </div>
+                  <Divider inset={0}/>
+                  <div className="m-tap" onClick={() => { setShowAttachSheet(null); nav.push('accountsAll'); }}
+                    style={{ display:'flex', alignItems:'center', gap:8, padding:'14px 0', marginTop:4 }}>
+                    <I name="card" size={14} color={M.ink3}/>
+                    <div style={{ fontSize:13, color:M.ink3, fontWeight:500, flex:1 }}>{t('profile.manageAccounts')}</div>
+                    <I name="caretR" size={12} color={M.ink4}/>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        </Sheet>
+      )}
 
       {showPhotoSheet && (
         <Sheet onClose={() => setShowPhotoSheet(false)}>
@@ -2933,33 +3017,45 @@ export const HOME_CARDS_DEFAULT = [
 
 export function AccountsSharingOverview() {
   const { t } = useLang();
+  const nav = useNav();
   const myId = React.useMemo(() => getUserId(), []);
   const { profiles } = useProfiles();
   const [connectedAccounts] = useConnectedAccounts();
 
-  // Accounts others have shared with me: look for profile members arrays across all profiles where I am a non-owner member
+  // Accounts shared with me: read from munni_shared_data_{profileId} for each isShared profile
   const sharedWithMe = React.useMemo(() => {
     const results = [];
-    // Check all profiles in localStorage that have a members array (from any user)
-    // For now, scan current user's profiles only; cross-user sharing is tracked via munni_global_invitations
-    const invs = (() => { try { return JSON.parse(localStorage.getItem('munni_global_invitations') || '[]'); } catch { return []; } })();
-    invs.filter(inv => inv.toId === myId && inv.type === 'profile' && inv.status === 'accepted').forEach(inv => {
-      results.push({ id: inv.id, name: inv.accountName || '—', fromName: inv.fromName || inv.fromId, profileName: inv.profileName || '—', permission: inv.permission || 'reader' });
-    });
-    return results;
-  }, [myId]);
-
-  // Accounts I am sharing: profiles I own that have other members
-  const iSharing = React.useMemo(() => {
-    const results = [];
-    profiles.forEach(p => {
-      const members = (p.members || []).filter(m => m.userId !== myId);
-      if (members.length > 0) {
-        results.push({ profile: p, members });
-      }
+    profiles.filter(p => p.isShared).forEach(p => {
+      try {
+        const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{"accounts":[]}');
+        (sd.accounts || []).forEach(a => {
+          if ((p.accountIds || []).includes(a.id)) {
+            results.push({
+              id: `${p.id}_${a.id}`, name: a.name || '—', iban: a.iban || '',
+              color: a.color, type: a.type, fromName: p.ownerDisplay || p.ownerId || '?',
+              profileName: p.name, profileId: p.id,
+              permission: (p.members || []).find(m => m.userId === myId)?.permission || 'contributor',
+            });
+          }
+        });
+      } catch {}
     });
     return results;
   }, [profiles, myId]);
+
+  // Accounts I own that are shared via profiles with other members
+  const iSharing = React.useMemo(() => {
+    const results = [];
+    profiles.filter(p => !p.isShared).forEach(p => {
+      const otherMembers = (p.members || []).filter(m => m.userId !== myId);
+      if (otherMembers.length === 0) return;
+      const ownAccounts = connectedAccounts.filter(a => (p.accountIds || []).includes(a.id));
+      ownAccounts.forEach(a => {
+        results.push({ account: a, profile: p, memberCount: otherMembers.length });
+      });
+    });
+    return results;
+  }, [profiles, myId, connectedAccounts]);
 
   if (sharedWithMe.length === 0 && iSharing.length === 0) return null;
 
@@ -2973,11 +3069,12 @@ export function AccountsSharingOverview() {
               <React.Fragment key={item.id}>
                 {i > 0 && <Divider inset={48}/>}
                 <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
-                  <div style={{ width:36, height:36, borderRadius:10, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                    <I name="card" size={16} color={M.sage}/>
+                  <div style={{ width:36, height:36, borderRadius:10, background: item.color || M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                    <I name={item.type==='savings'?'piggy':item.type==='invest'?'rocket':'card'} size={16} color="#fff"/>
                   </div>
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ fontSize:14, fontWeight:500 }}>{item.name}</div>
+                    {item.iban && <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono, marginTop:1 }}>{item.iban}</div>}
                     <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>From <strong>{item.fromName}</strong> · {item.profileName}</div>
                   </div>
                   <span style={{ fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>{item.permission}</span>
@@ -2992,18 +3089,21 @@ export function AccountsSharingOverview() {
         <>
           <div className="m-cap" style={{ marginBottom:8, paddingLeft:4, marginTop:8 }}>{t('accounts.iSharing')}</div>
           <div className="m-card" style={{ padding:'4px 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
-            {iSharing.map(({ profile, members }, i) => (
-              <React.Fragment key={profile.id}>
+            {iSharing.map(({ account, profile, memberCount }, i) => (
+              <React.Fragment key={`${account.id}-${profile.id}`}>
                 {i > 0 && <Divider inset={48}/>}
-                <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
-                  <div style={{ width:36, height:36, borderRadius:10, background:M.ochreSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                    <I name="users" size={16} color={M.ochre}/>
+                <div className="m-tap" onClick={() => nav.push('profileDetail', { id: profile.id })}
+                  style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
+                  <div style={{ width:36, height:36, borderRadius:10, background: account.color || M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                    <I name={account.type==='savings'?'piggy':account.type==='invest'?'rocket':'card'} size={16} color="#fff"/>
                   </div>
                   <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:14, fontWeight:500 }}>{profile.name}</div>
-                    <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{members.map(m => m.displayName || m.userId).join(', ')}</div>
+                    <div style={{ fontSize:14, fontWeight:500 }}>{account.name}</div>
+                    <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>
+                      {t('accounts.sharedVia')} <strong>{profile.name}</strong> · {memberCount} member{memberCount>1?'s':''}
+                    </div>
                   </div>
-                  <span style={{ fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase' }}>{members.length} member{members.length>1?'s':''}</span>
+                  <I name="caretR" size={14} color={M.ink4}/>
                 </div>
               </React.Fragment>
             ))}
