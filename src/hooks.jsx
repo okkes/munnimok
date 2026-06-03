@@ -4,7 +4,8 @@ export function useLocalStorage(key, defaultValue) {
   const read = React.useCallback(() => {
     try {
       const s = localStorage.getItem(key);
-      return s !== null ? JSON.parse(s) : (typeof defaultValue === 'function' ? defaultValue() : defaultValue);
+      if (s === null) return typeof defaultValue === 'function' ? defaultValue() : defaultValue;
+      try { return JSON.parse(s); } catch { return s; }
     } catch { return typeof defaultValue === 'function' ? defaultValue() : defaultValue; }
   }, [key]);
   const [state, setState] = React.useState(read);
