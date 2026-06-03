@@ -1910,7 +1910,10 @@ export function ScreenNotifications() {
         const pool = MERCHANTS_POOL[Math.floor(Math.random() * MERCHANTS_POOL.length)];
         const amt = -(Math.round((pool.min + Math.random() * (pool.max - pool.min)) * 100) / 100);
         const id = `tsync_${Date.now()}_${i}`;
-        return { id, date: D(1), time: `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`, merchant: pool.merchant, desc: pool.desc, cat: pool.cat, amount: amt, account: 'main', needsReview: true, ...(pool.confidence ? { confidence: pool.confidence } : {}) };
+        const dateStr = now.toISOString().slice(0, 10);
+        const loginMethod = localStorage.getItem('munni_last_login_method') || '';
+        const accountId = loginMethod === 'bank' ? 'demo_main' : 'main';
+        return { id, date: dateStr, time: `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`, merchant: pool.merchant, desc: pool.desc, cat: pool.cat, amount: amt, account: accountId, needsReview: true, ...(pool.confidence ? { confidence: pool.confidence } : {}) };
       });
       addTxs(newTxs);
       setNewCount(count);
