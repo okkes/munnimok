@@ -63,8 +63,9 @@ export function TxProvider({ children }) {
   const allTxs = React.useMemo(() => {
     const sharedTxs = sharedData?.txs || [];
     if (!sharedTxs.length) return ownTxs;
-    const ownIds = new Set(ownTxs.map(t => t.id));
-    return [...ownTxs, ...sharedTxs.filter(t => !ownIds.has(t.id))];
+    // sharedData.txs takes priority so cross-user edits are visible in both tabs
+    const sharedIds = new Set(sharedTxs.map(t => t.id));
+    return [...ownTxs.filter(t => !sharedIds.has(t.id)), ...sharedTxs];
   }, [ownTxs, sharedData]);
 
   // Only show transactions whose account is in the active profile; empty profile = no transactions
@@ -72,7 +73,19 @@ export function TxProvider({ children }) {
     ? allTxs.filter(t => t.account && activeAccountIds.includes(t.account))
     : [];
 
-  const updateTx = (id, changes) => setOwnTxs(ts => ts.map(t => t.id === id ? {...t, ...changes} : t));
+  const updateTx = (id, changes) => {
+    setOwnTxs(ts => ts.map(t => t.id === id ? {...t, ...changes} : t));
+    // Also sync to sharedData.txs so the other tab picks it up via storage event
+    if (isSharedOrHasMembers && sharedDataKey !== 'munni_shared_data_none') {
+      try {
+        const sd = JSON.parse(localStorage.getItem(sharedDataKey) || '{"accounts":[],"txs":[]}');
+        if ((sd.txs || []).some(t => t.id === id)) {
+          localStorage.setItem(sharedDataKey, JSON.stringify({ ...sd, txs: (sd.txs || []).map(t => t.id === id ? {...t, ...changes} : t) }));
+          window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sharedDataKey } }));
+        }
+      } catch {}
+    }
+  };
   const addTxs = (newTxs) => setOwnTxs(ts => [...newTxs, ...ts]);
   const setTxs = setOwnTxs;
   return <TxCtx.Provider value={{ txs, allTxs, updateTx, addTxs, setTxs }}>{children}</TxCtx.Provider>;

@@ -4,7 +4,7 @@ import { M, I, IcoMDI, Divider, StatusBar, AppBar } from '../theme.jsx';
 import { useLang, useNav, Sheet, TabBar } from '../i18n.jsx';
 import { useLocalStorage } from '../hooks.jsx';
 import { BarChart, StackedBar, TxRow } from '../components.jsx';
-import { useTxCtx, useRecurCtx, useConnectedAccounts } from '../providers.jsx';
+import { useTxCtx, useRecurCtx, useConnectedAccounts, useProfiles } from '../providers.jsx';
 import { CategoryPicker } from './Review.jsx';
 import { ordinal } from './Profile.jsx';
 
@@ -138,6 +138,10 @@ export function ScreenTxDetail({ params }) {
   const { txs, updateTx } = useTxCtx();
   const { recurList, addRecur } = useRecurCtx();
   const [connectedAccounts] = useConnectedAccounts();
+  const { profiles } = useProfiles();
+  const _activeProfile = profiles.find(p => p.active) || profiles[0];
+  const _sharedKey = (_activeProfile?.isShared || (_activeProfile?.members||[]).length > 0) ? `munni_shared_data_${_activeProfile?.id}` : 'munni_shared_data_none';
+  const [_sharedData] = useLocalStorage(_sharedKey, { accounts: [] });
 
   const [showLinkRecurring, setShowLinkRecurring] = React.useState(false);
   const [showCatPicker, setShowCatPicker] = React.useState(false);
@@ -162,7 +166,7 @@ export function ScreenTxDetail({ params }) {
   const net = tx.amount + reimburseAmt;
   const netOriginalTx = originalTx ? originalTx.amount + tx.amount : 0;
 
-  const account = connectedAccounts.find(a => a.id === tx.account) || ACCOUNTS.find(a => a.id === tx.account);
+  const account = connectedAccounts.find(a => a.id === tx.account) || (_sharedData?.accounts || []).find(a => a.id === tx.account) || ACCOUNTS.find(a => a.id === tx.account);
 
   const linkedRecurId = tx.recurId || null;
   const linkedRecurring = recurList.find(r => r.id === linkedRecurId || r.txIds?.includes(tx.id));

@@ -99,8 +99,14 @@ export function ScreenHome() {
   const myId = React.useMemo(() => getUserId(), []);
   const pendingInvites = invitations.filter(inv => inv.toId === myId && inv.status === 'pending').length;
   const totalBadge = notifUnread + pendingInvites;
-  const activeAccountIds = activeProfile?.accountIds || [];
-  const totalBalance = connectedAccounts
+  const isSharedActive = !!(activeProfile?.isShared || (activeProfile?.members||[]).length > 0);
+  const activeSharedDataKey = isSharedActive ? `munni_shared_data_${activeProfile?.id}` : 'munni_shared_data_none';
+  const [activeSharedData] = useLocalStorage(activeSharedDataKey, { accounts: [], txs: [] });
+  const activeAccountIds = (activeProfile?.isShared && (activeSharedData?.accounts?.length ?? 0) > 0)
+    ? (activeSharedData.accounts || []).map(a => a.id)
+    : (activeProfile?.accountIds || []);
+  const allAccountsForBalance = [...connectedAccounts, ...(activeSharedData?.accounts || []).filter(sa => !connectedAccounts.some(ca => ca.id === sa.id))];
+  const totalBalance = allAccountsForBalance
     .filter(a => a.type === 'checking' && activeAccountIds.includes(a.id))
     .reduce((s, a) => s + (a.balance || 0), 0);
 
@@ -446,11 +452,13 @@ export function ScreenHome() {
             <div style={{ fontSize:17, fontWeight:700, marginBottom:16 }}>{t('home.switchProfile')}</div>
             <div className="m-card" style={{ border:`1px solid ${M.line}`, padding:'4px 16px', marginBottom:16, maxHeight:280, overflowY:'auto' }}>
               {profiles.map((p, i) => {
-                const acctIds = p.accountIds || [];
+                const sharedAccts = p.isShared ? (() => { try { return JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{"accounts":[]}').accounts || []; } catch { return []; } })() : null;
+                const acctIds = p.isShared ? (sharedAccts || []).map(a => a.id) : (p.accountIds || []);
                 const acctCount = acctIds.length;
                 const acctLabel = acctCount === 0 ? t('word.noAccounts') : `${acctCount} ${acctCount === 1 ? t('word.account') : t('word.accounts')}`;
                 const reviewN = allTxs.filter(tx => tx.needsReview && acctIds.includes(tx.account)).length;
                 const hasAction = reviewN > 0;
+                const isOwnerShared = !p.isShared && (p.members||[]).length > 0;
                 return (
                   <React.Fragment key={p.id}>
                     {i > 0 && <Divider inset={48}/>}
@@ -463,9 +471,13 @@ export function ScreenHome() {
                         )}
                       </div>
                       <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontSize:14, fontWeight:600 }}>{p.name}</div>
+                        <div style={{ fontSize:14, fontWeight:600, display:'flex', alignItems:'center', gap:5 }}>
+                          {p.name}
+                          {p.isShared && <span style={{ fontSize:8, fontWeight:700, padding:'1px 5px', borderRadius:999, background:M.violetSoft||'#EEE8FF', color:M.violet||'#7B61FF', textTransform:'uppercase' }}>Shared</span>}
+                          {isOwnerShared && <span style={{ fontSize:8, fontWeight:700, padding:'1px 5px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>Shared</span>}
+                        </div>
                         <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>
-                          {acctLabel}
+                          {p.isShared ? `${t('profile.sharedBy')} ${p.ownerDisplay || ''}` : acctLabel}
                           {hasAction && <span style={{ marginLeft:6, color:M.ochre, fontWeight:600 }}>· {reviewN} {t('review.title')}</span>}
                         </div>
                       </div>
