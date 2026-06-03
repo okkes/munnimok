@@ -1,5 +1,5 @@
 import React from 'react';
-import { CATEGORIES, _catExt, catPath, fmtEur, RECURRING, ALLOCATE_TOPICS, getDefaultTxs, computeProfileKey, getDefaultProfiles, getDefaultAccounts, BUDGETS, GOALS, DEBTS } from './data.jsx';
+import { CATEGORIES, _catExt, catPath, fmtEur, RECURRING, ALLOCATE_TOPICS, getDefaultTxs, computeProfileKey, getDefaultProfiles, getDefaultAccounts, DEMO_ACCOUNTS, BUDGETS, GOALS, DEBTS } from './data.jsx';
 import { M, I, IcoMDI, Divider, StatusBar, AppBar } from './theme.jsx';
 import { useLang, useNav, Sheet } from './i18n.jsx';
 import { useLocalStorage } from './hooks.jsx';
@@ -74,7 +74,14 @@ export function useConnectedAccounts() {
   const [loginMethod] = useLocalStorage('munni_last_login_method', '');
   const acctKey = `munni_bank_accounts_${loginMethod || 'default'}`;
   const defaultAccts = React.useMemo(() => getDefaultAccounts(loginMethod), [loginMethod]);
-  return useLocalStorage(acctKey, defaultAccts);
+  const [stored, setStored] = useLocalStorage(acctKey, defaultAccts);
+  // Non-bank users always get demo accounts merged in so demo profiles can find them
+  const accounts = React.useMemo(() => {
+    if (loginMethod === 'bank') return stored;
+    if (stored.some(a => a.id === 'demo_main')) return stored;
+    return [...stored, ...DEMO_ACCOUNTS.map(a => ({ ...a }))];
+  }, [stored, loginMethod]);
+  return [accounts, setStored];
 }
 
 export const DEFAULT_PROFILE_IDS = ['p_google','p_apple','p_demo','p_email'];
