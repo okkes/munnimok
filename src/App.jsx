@@ -145,7 +145,6 @@ export function ProfileMembersSheet({ profile, onClose }) {
   const nav = useNav();
   const myId = React.useMemo(() => getUserId(), []);
   const { profiles, setProfiles } = useProfiles();
-  const [connectedAccounts, setConnectedAccounts] = useConnectedAccounts();
   const [friendships] = useLocalStorage('munni_global_friendships', []);
   const [invitations, setInvitations] = useLocalStorage('munni_global_invitations', []);
   const [userRegistry] = useLocalStorage('munni_global_users', {});
@@ -155,35 +154,6 @@ export function ProfileMembersSheet({ profile, onClose }) {
   const myFriendIds = friendships.filter(f=>f.users&&f.users.includes(myId)).map(f=>f.users.find(u=>u!==myId));
   const members = profile.members || [];
 
-  // Auto-add members whose profile invites were accepted
-  React.useEffect(() => {
-    const accepted = invitations.filter(inv =>
-      inv.fromId === myId && inv.type === 'profile' && inv.profileId === profile.id && inv.status === 'accepted'
-      && !(profile.members||[]).some(m => m.userId === inv.toId)
-    );
-    if (accepted.length === 0) return;
-    setProfiles(ps => ps.map(p => {
-      if (p.id !== profile.id) return p;
-      const newMembers = accepted.map(inv => ({ userId: inv.toId, displayName: userRegistry[inv.toId]?.displayName || inv.toId, permission: inv.permission || 'contributor', accountIds: [] }));
-      return { ...p, members: [...(p.members||[]), ...newMembers] };
-    }));
-    setInvitations(arr => arr.map(i => accepted.some(a=>a.id===i.id) ? { ...i, status:'joined' } : i));
-    // Sync owner's currently attached accounts to sharedData so new members can see them
-    const ownerAccts = connectedAccounts.filter(a => !a.isDemo && (profile.accountIds||[]).includes(a.id));
-    if (ownerAccts.length > 0) {
-      const sdKey = `munni_shared_data_${profile.id}`;
-      try {
-        const current = JSON.parse(localStorage.getItem(sdKey) || '{"accounts":[],"txs":[]}');
-        const currentIds = new Set((current.accounts||[]).map(a => a.id));
-        const toAdd = ownerAccts.filter(a => !currentIds.has(a.id));
-        if (toAdd.length > 0) {
-          const updated = { accounts: [...(current.accounts||[]), ...toAdd.map(a => ({ ...a, attachedBy: myId }))], txs: current.txs || [] };
-          localStorage.setItem(sdKey, JSON.stringify(updated));
-          window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sdKey } }));
-        }
-      } catch {}
-    }
-  }, [invitations]);
   const myPerm = members.find(m=>m.userId===myId)?.permission || 'owner';
   const canManage = myPerm === 'owner';
   const pendingMemberInvites = invitations.filter(i=>i.fromId===myId&&i.type==='profile'&&i.profileId===profile.id&&i.status==='pending');

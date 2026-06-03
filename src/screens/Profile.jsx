@@ -685,7 +685,7 @@ export function ScreenProfileDetail({ params }) {
     setInvitations(arr => arr.map(i => accepted.some(a => a.id === i.id) ? { ...i, status: 'joined' } : i));
   }, [invitations, profileId]);
 
-  // Sync owner's attached accounts to sharedData when the profile has members
+  // Sync owner's attached accounts + their txs to sharedData when the profile has members
   // (covers accounts attached before first member joined, where toggleAccount skipped the write)
   React.useEffect(() => {
     if (!profile || profile.isShared || (profile.members || []).length === 0) return;
@@ -694,10 +694,16 @@ export function ScreenProfileDetail({ params }) {
     if (owned.length === 0) return;
     try {
       const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${profile.id}`) || '{"accounts":[],"txs":[]}');
-      const existing = new Set((sd.accounts || []).map(a => a.id));
-      const toAdd = owned.filter(a => !existing.has(a.id));
-      if (toAdd.length === 0) return;
-      setSharedData(prev => ({ ...prev, accounts: [...(prev.accounts || []), ...toAdd.map(a => ({ ...a, attachedBy: myId }))] }));
+      const existingAcctIds = new Set((sd.accounts || []).map(a => a.id));
+      const toAddAccts = owned.filter(a => !existingAcctIds.has(a.id));
+      const existingTxIds = new Set((sd.txs || []).map(t => t.id));
+      const toAddTxs = (ownTxs || []).filter(t => acctIds.includes(t.account) && !existingTxIds.has(t.id));
+      if (toAddAccts.length === 0 && toAddTxs.length === 0) return;
+      setSharedData(prev => ({
+        ...prev,
+        accounts: toAddAccts.length > 0 ? [...(prev.accounts || []), ...toAddAccts.map(a => ({ ...a, attachedBy: myId }))] : (prev.accounts || []),
+        txs: toAddTxs.length > 0 ? [...(prev.txs || []), ...toAddTxs] : (prev.txs || []),
+      }));
     } catch {}
   }, [profile?.members?.length, JSON.stringify(profile?.accountIds), profileId]);
 
@@ -820,7 +826,7 @@ export function ScreenProfileDetail({ params }) {
             <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:2 }}>
               <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono }}>{a.iban}</div>
               {a.bankId && <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>Bank</span>}
-              {isSharedAcct && <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:999, background:M.violetSoft||'#EEE8FF', color:M.violet||'#7B61FF', textTransform:'uppercase' }}>{t('profile.sharedReadOnly')}</span>}
+              {isSharedAcct && <span style={{ fontSize:9, fontWeight:600, padding:'1px 6px', borderRadius:999, background:M.violetSoft||'#EEE8FF', color:M.violet||'#7B61FF' }}>Shared</span>}
             </div>
           </div>
           {canRemove
@@ -2662,7 +2668,7 @@ export function ScreenAccounts() {
                 <div style={{ padding:'20px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>No banks found</div>
               )}
               {filteredBanks.map((bank, i) => {
-                const connCount = connectedAccounts.filter(a => a.bankId === bank.id || a.name.toLowerCase().includes(bank.name.toLowerCase())).length;
+                const connCount = connectedAccounts.filter(a => a.bankId === bank.id).length;
                 return (
                   <React.Fragment key={bank.id}>
                     {i > 0 && <Divider inset={48}/>}
@@ -3499,7 +3505,7 @@ export function ScreenAccountsAll() {
             <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}`, maxHeight:340, overflowY:'auto' }}>
               {filteredBanks.length === 0 && <div style={{ padding:'20px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>No banks found</div>}
               {filteredBanks.map((bank, i) => {
-                const connCount = connectedAccounts.filter(a => a.bankId === bank.id || a.name.toLowerCase().includes(bank.name.toLowerCase())).length;
+                const connCount = connectedAccounts.filter(a => a.bankId === bank.id).length;
                 return (
                   <React.Fragment key={bank.id}>
                     {i > 0 && <Divider inset={48}/>}
