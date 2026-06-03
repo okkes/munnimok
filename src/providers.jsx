@@ -1,5 +1,5 @@
 import React from 'react';
-import { CATEGORIES, _catExt, catPath, fmtEur, RECURRING, ALLOCATE_TOPICS, getDefaultTxs, computeProfileKey, getDefaultProfiles, getDefaultAccounts, BUDGETS, GOALS, DEBTS } from './data.jsx';
+import { CATEGORIES, _catExt, catPath, fmtEur, RECURRING, ALLOCATE_TOPICS, getDefaultTxs, computeProfileKey, getDefaultProfiles, getDefaultAccounts, computeUserDataKey, BUDGETS, GOALS, DEBTS } from './data.jsx';
 import { M, I, IcoMDI, Divider, StatusBar, AppBar } from './theme.jsx';
 import { useLang, useNav, Sheet } from './i18n.jsx';
 import { useLocalStorage } from './hooks.jsx';
@@ -41,7 +41,9 @@ export const useProfiles = () => React.useContext(ProfilesCtx);
 export const TxCtx = React.createContext(null);
 export function TxProvider({ children }) {
   const [loginMethod] = useLocalStorage('munni_last_login_method', '');
-  const txKey = `munni_txs_${loginMethod || 'default'}`;
+  const [rawEmail] = useLocalStorage('munni_profile_email', '');
+  const safeEmail = React.useMemo(() => { try { return JSON.parse(rawEmail||'""')||''; } catch { return rawEmail||''; } }, [rawEmail]);
+  const txKey = computeUserDataKey(loginMethod, safeEmail, 'munni_txs');
   const [allTxs, setAllTxs] = useLocalStorage(txKey, getDefaultTxs(loginMethod || localStorage.getItem('munni_last_login_method') || ''));
   const { profiles } = useProfiles();
 
@@ -74,7 +76,9 @@ export const useAlloc = () => React.useContext(AllocCtx);
 
 export function useConnectedAccounts() {
   const [loginMethod] = useLocalStorage('munni_last_login_method', '');
-  const acctKey = `munni_bank_accounts_${loginMethod || 'default'}`;
+  const [rawEmail] = useLocalStorage('munni_profile_email', '');
+  const safeEmail = React.useMemo(() => { try { return JSON.parse(rawEmail||'""')||''; } catch { return rawEmail||''; } }, [rawEmail]);
+  const acctKey = computeUserDataKey(loginMethod, safeEmail, 'munni_bank_accounts');
   const defaultAccts = React.useMemo(() => getDefaultAccounts(loginMethod), [loginMethod]);
   return useLocalStorage(acctKey, defaultAccts);
 }

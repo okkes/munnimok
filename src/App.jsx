@@ -144,7 +144,6 @@ export function ProfileMembersSheet({ profile, onClose }) {
   const [friendships] = useLocalStorage('munni_global_friendships', []);
   const [invitations, setInvitations] = useLocalStorage('munni_global_invitations', []);
   const [userRegistry] = useLocalStorage('munni_global_users', {});
-  const [inviteSheet, setInviteSheet] = React.useState(false);
   const [kickConfirm, setKickConfirm] = React.useState(null);
   const [permEdit, setPermEdit] = React.useState(null);
 
@@ -172,10 +171,14 @@ export function ProfileMembersSheet({ profile, onClose }) {
   const updateProfile = (updater) => setProfiles(ps => ps.map(p => p.id===profile.id ? updater(p) : p));
 
   const inviteFriend = (friendId) => {
-    const info = userRegistry[friendId] || {};
-    const inv = { id:`inv_${Date.now()}`, fromId:myId, fromName:'', toId:friendId, type:'profile', profileId:profile.id, profileName:profile.name, permission:'contributor', status:'pending', sentAt:Date.now() };
+    const inv = {
+      id:`inv_${Date.now()}`, fromId:myId, toId:friendId, type:'profile',
+      profileId:profile.id, profileName:profile.name, profileIcon:profile.icon,
+      profilePicture:profile.picture, profileIsDemo:profile.isDemo || false,
+      profileAccountIds:profile.accountIds || [],
+      permission:'contributor', status:'pending', sentAt:Date.now(),
+    };
     setInvitations(arr=>[...arr, inv]);
-    setInviteSheet(false);
   };
 
   const kickMember = (userId) => {
@@ -243,18 +246,34 @@ export function ProfileMembersSheet({ profile, onClose }) {
             </div>
           );
         })}
-        {/* Invite button */}
-        {profile.isDemo ? (
+        {/* Invite friends inline */}
+        {!profile.isDemo && canManage && (
+          <>
+            <div style={{ fontSize:11, fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:M.ink4, marginTop:16, marginBottom:8 }}>{t('profile.addMember')}</div>
+            {uninvitedFriends.length === 0 ? (
+              <div style={{ fontSize:12, color:M.ink4, padding:'8px 0 4px', lineHeight:1.5 }}>{t('friends.noFriendsToInvite')}</div>
+            ) : uninvitedFriends.map((fid,i)=>{
+              const info = userRegistry[fid]||{};
+              return (
+                <div key={fid} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 0', borderTop:`1px solid ${M.line2}` }}>
+                  <div style={{ width:34, height:34, borderRadius:999, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:700, color:M.sage, flexShrink:0 }}>{(info.displayName||fid).charAt(0).toUpperCase()}</div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:13, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{info.displayName||fid}</div>
+                    <div style={{ fontSize:10, color:M.ink4, fontFamily:M.fontMono, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{fid}</div>
+                  </div>
+                  <button className="m-tap" onClick={()=>inviteFriend(fid)}
+                    style={{ padding:'6px 14px', borderRadius:8, background:M.sage, color:'#fff', border:'none', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, flexShrink:0 }}>
+                    {t('profile.invite')}
+                  </button>
+                </div>
+              );
+            })}
+          </>
+        )}
+        {profile.isDemo && (
           <div style={{ display:'flex', alignItems:'center', gap:8, padding:'12px 0', color:M.ink4, fontSize:12 }}>
-            <I name="lock" size={14} color={M.ink4}/>
-            {t('profile.demoNoInvite')}
+            <I name="lock" size={14} color={M.ink4}/>{t('profile.demoNoInvite')}
           </div>
-        ) : canManage && (
-          <button className="m-tap" onClick={()=>setInviteSheet(true)}
-            disabled={uninvitedFriends.length === 0}
-            style={{ width:'100%', padding:'12px 0', display:'flex', alignItems:'center', justifyContent:'center', gap:6, color:uninvitedFriends.length>0?M.sage:M.ink4, fontSize:14, fontWeight:600, background:'none', border:'none', cursor:uninvitedFriends.length>0?'pointer':'default', fontFamily:M.fontUI, marginTop:4 }}>
-            <I name="plus" size={16} color={uninvitedFriends.length>0?M.sage:M.ink4}/> {t('profile.addMember')}
-          </button>
         )}
         <div style={{ height:16 }}/>
       </div>
@@ -280,24 +299,6 @@ export function ProfileMembersSheet({ profile, onClose }) {
             <div style={{ fontSize:14, color:M.ink3, marginBottom:20, lineHeight:1.5 }}>{t('profile.kickWarn')}</div>
             <button onClick={()=>kickMember(kickConfirm)} style={{ width:'100%', padding:'14px 0', background:M.clay, color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>{t('profile.kick')}</button>
             <button onClick={()=>setKickConfirm(null)} style={{ width:'100%', padding:'14px 0', background:M.paper2, color:M.ink, border:`1px solid ${M.line}`, borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>{t('action.cancel')}</button>
-          </div>
-        </Sheet>
-      )}
-      {/* Invite friend sheet */}
-      {inviteSheet && (
-        <Sheet onClose={()=>setInviteSheet(false)}>
-          <div style={{ padding:'4px 16px 8px' }}>
-            <div style={{ fontSize:16, fontWeight:700, marginBottom:12 }}>{t('profile.addMember')}</div>
-            {uninvitedFriends.map((fid,i)=>{
-              const info = userRegistry[fid]||{};
-              return (
-                <div key={fid} className="m-tap" onClick={()=>inviteFriend(fid)} style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0', borderBottom:i<uninvitedFriends.length-1?`1px solid ${M.line2}`:'none' }}>
-                  <div style={{ width:36, height:36, borderRadius:999, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', fontSize:15, fontWeight:700, color:M.sage }}>{(info.displayName||fid).charAt(0).toUpperCase()}</div>
-                  <div style={{ flex:1 }}><div style={{ fontSize:14, fontWeight:600 }}>{info.displayName||fid}</div><div style={{ fontSize:11, color:M.ink4, fontFamily:M.fontMono }}>{fid}</div></div>
-                  <I name="plus" size={16} color={M.sage}/>
-                </div>
-              );
-            })}
           </div>
         </Sheet>
       )}
@@ -524,7 +525,7 @@ function ScreenLoginGate({ onLogin }) {
   const getSignupMethods = () => { try { return JSON.parse(localStorage.getItem('munni_signup_methods') || '[]'); } catch { return []; } };
   const getSignupEmails = () => { try { return JSON.parse(localStorage.getItem('munni_signup_emails') || '[]'); } catch { return []; } };
 
-  const MODE_BACK = { signup:'login', 'signup-email':'signup', 'signup-email-verify':'signup-email', 'email-verify':'login', 'no-account':'login', 'signup-bank':'login', 'email-input':'login' };
+  const MODE_BACK = { signup:'login', 'signup-email':'signup', 'signup-email-verify':'signup-email', 'email-verify':'login', 'no-account':'login', 'signup-bank':'login', 'email-input':'login', language:'login' };
   const modeRef = React.useRef(mode);
   modeRef.current = mode;
   React.useEffect(() => {

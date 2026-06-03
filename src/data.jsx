@@ -638,17 +638,26 @@ export function getDefaultProfiles(method, lang = 'en') {
   return [{ id:'p_email', name:getDefaultProfileName(lang), icon:'user', active:true, accountIds:[], picture:'av1', isDemo:false }];
 }
 
+// Returns a per-user storage key. Email users get a key scoped to their address.
+export function computeUserDataKey(method, email, base) {
+  if (method === 'email' && email) {
+    const safe = email.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    return `${base}_email_${safe}`;
+  }
+  return `${base}_${method || 'default'}`;
+}
+
 export function initPerUserData(method, email, lang = 'en') {
   if (!method) return;
 
-  // Accounts + txs: once per login method (schema version gate)
-  const vKey = `munni_schema_v_${method}`;
+  // Accounts + txs: once per user (schema version gate is per-user for email)
+  const vKey = computeUserDataKey(method, email, 'munni_schema_v');
   if (localStorage.getItem(vKey) !== SCHEMA_VERSION) {
-    const acctKey = `munni_bank_accounts_${method}`;
+    const acctKey = computeUserDataKey(method, email, 'munni_bank_accounts');
     localStorage.setItem(acctKey, JSON.stringify(getDefaultAccounts(method)));
     window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: acctKey } }));
 
-    const txKey = `munni_txs_${method}`;
+    const txKey = computeUserDataKey(method, email, 'munni_txs');
     localStorage.setItem(txKey, JSON.stringify(getDefaultTxs(method)));
     window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: txKey } }));
 

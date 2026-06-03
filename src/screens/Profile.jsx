@@ -521,7 +521,7 @@ export function ScreenProfiles() {
   const createProfile = () => {
     const trimmed = newProfileName.trim();
     if (!trimmed) return;
-    if (profiles.some(p => p.name.toLowerCase() === trimmed.toLowerCase())) {
+    if (profiles.filter(p => !p.isShared).some(p => p.name.toLowerCase() === trimmed.toLowerCase())) {
       setNewProfileError(t('profile.duplicateName'));
       addDevLog('warn', `Profile creation blocked: duplicate name "${trimmed}"`, 'ScreenProfiles:createProfile');
       return;
@@ -572,8 +572,9 @@ export function ScreenProfiles() {
                     <div style={{ fontSize:14, fontWeight:600, display:'flex', alignItems:'center', gap:6 }}>
                       {p.name}
                       {p.isDemo && <span style={{ fontSize:8, fontWeight:700, padding:'1px 5px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase' }}>Demo</span>}
+                      {p.isShared && <span style={{ fontSize:8, fontWeight:700, padding:'1px 5px', borderRadius:999, background:M.violetSoft||'#EEE8FF', color:M.violet||'#7B61FF', textTransform:'uppercase' }}>Shared</span>}
                     </div>
-                    <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{sub}</div>
+                    <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{p.isShared ? `${t('profile.sharedBy')} ${p.ownerDisplay || p.ownerId || ''}` : sub}</div>
                   </div>
                   {p.active && (
                     <div style={{ width:20, height:20, borderRadius:999, background:M.sage, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
@@ -1812,6 +1813,7 @@ export function InviteCards() {
   const [invitations, setInvitations] = useLocalStorage('munni_global_invitations', []);
   const [friendships, setFriendships] = useLocalStorage('munni_global_friendships', []);
   const [userRegistry] = useLocalStorage('munni_global_users', {});
+  const { profiles, setProfiles } = useProfiles();
 
   const pendingFriend = invitations.filter(inv => inv.toId === myId && inv.type === 'friend' && inv.status === 'pending');
   const pendingProfile = invitations.filter(inv => inv.toId === myId && inv.type === 'profile' && inv.status === 'pending');
@@ -1831,26 +1833,51 @@ export function InviteCards() {
 
   const respondProfile = (inv, action) => {
     setInvitations(list => list.map(i => i.id === inv.id ? { ...i, status: action, respondedAt: Date.now() } : i));
+    if (action === 'accepted') {
+      // Add a shared copy of the profile to the accepter's profile list
+      setProfiles(ps => {
+        if (ps.some(p => p.id === inv.profileId)) return ps;
+        const ownerDisplay = userRegistry[inv.fromId]?.displayName || inv.fromId;
+        return [...ps, {
+          id: inv.profileId,
+          name: inv.profileName || 'Shared',
+          icon: inv.profileIcon || 'users',
+          active: false,
+          accountIds: inv.profileAccountIds || [],
+          picture: inv.profilePicture || null,
+          isDemo: inv.profileIsDemo || false,
+          isShared: true,
+          ownerId: inv.fromId,
+          ownerDisplay,
+          members: [{ userId: inv.fromId, displayName: ownerDisplay, permission: 'owner', accountIds: [] }],
+        }];
+      });
+    }
   };
 
-  const renderRow = (inv, onAccept, onDecline, sub) => {
+  const renderRow = (inv, onAccept, onDecline, isProfile) => {
     const name = userRegistry[inv.fromId]?.displayName || inv.fromId;
+    const sub = isProfile
+      ? `${t('friends.profileInviteFrom')}: ${inv.profileName || '—'}`
+      : inv.fromId;
     return (
-      <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
-        <div style={{ width:36, height:36, borderRadius:999, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-          <I name="users" size={16} color={M.sage}/>
+      <div style={{ padding:'12px 0' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:8 }}>
+          <div style={{ width:36, height:36, borderRadius:999, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+            <I name={isProfile?'users':'user'} size={16} color={M.sage}/>
+          </div>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontSize:14, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{name}</div>
+            <div style={{ fontSize:11, color:M.ink3, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{sub}</div>
+          </div>
         </div>
-        <div style={{ flex:1, minWidth:0 }}>
-          <div style={{ fontSize:14, fontWeight:600 }}>{name}</div>
-          <div style={{ fontSize:11, color:M.ink3 }}>{sub}</div>
-        </div>
-        <div style={{ display:'flex', gap:6 }}>
+        <div style={{ display:'flex', gap:8, paddingLeft:48 }}>
           <button className="m-tap" onClick={onAccept}
-            style={{ padding:'6px 12px', borderRadius:8, background:M.sage, color:'#fff', border:'none', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+            style={{ flex:1, padding:'8px 0', borderRadius:8, background:M.sage, color:'#fff', border:'none', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
             {t('friends.accept')}
           </button>
           <button className="m-tap" onClick={onDecline}
-            style={{ padding:'6px 10px', borderRadius:8, background:M.paper2, color:M.ink3, border:`1px solid ${M.line}`, fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+            style={{ flex:1, padding:'8px 0', borderRadius:8, background:M.paper2, color:M.ink3, border:`1px solid ${M.line}`, fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
             {t('friends.decline')}
           </button>
         </div>
@@ -1868,9 +1895,8 @@ export function InviteCards() {
           <React.Fragment key={inv.id}>
             {i > 0 && <Divider inset={48}/>}
             {inv.type === 'friend'
-              ? renderRow(inv, () => respondFriend(inv, 'accepted'), () => respondFriend(inv, 'declined'), inv.fromId)
-              : renderRow(inv, () => respondProfile(inv, 'accepted'), () => respondProfile(inv, 'declined'),
-                  `${t('friends.profileInviteFrom')}: ${inv.profileName || '—'}`)}
+              ? renderRow(inv, () => respondFriend(inv, 'accepted'), () => respondFriend(inv, 'declined'), false)
+              : renderRow(inv, () => respondProfile(inv, 'accepted'), () => respondProfile(inv, 'declined'), true)}
           </React.Fragment>
         ))}
       </div>

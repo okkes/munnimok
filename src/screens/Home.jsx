@@ -1,5 +1,5 @@
 import React from 'react';
-import { CATEGORIES, _catExt, fmtEur, fmtEurInt, fmtDate, PORTFOLIO, computePeriodHistory, PERIOD_HISTORY, getUserSyncKey, fmtSyncTime } from '../data.jsx';
+import { CATEGORIES, _catExt, fmtEur, fmtEurInt, fmtDate, PORTFOLIO, computePeriodHistory, PERIOD_HISTORY, getUserSyncKey, fmtSyncTime, getUserId } from '../data.jsx';
 import { M, I, IcoMDI, Divider, StatusBar } from '../theme.jsx';
 import { useLang, useNav, Sheet, TabBar } from '../i18n.jsx';
 import { useLocalStorage } from '../hooks.jsx';
@@ -91,6 +91,10 @@ export function ScreenHome() {
   const syncKey = React.useMemo(() => getUserSyncKey(), []);
   const [lastSyncedStr] = useLocalStorage(syncKey, null);
   const [notifUnread] = useLocalStorage('munni_notif_unread', 0);
+  const [invitations] = useLocalStorage('munni_global_invitations', []);
+  const myId = React.useMemo(() => getUserId(), []);
+  const pendingInvites = invitations.filter(inv => inv.toId === myId && inv.status === 'pending').length;
+  const totalBadge = notifUnread + pendingInvites;
   const activeAccountIds = activeProfile?.accountIds || [];
   const totalBalance = connectedAccounts
     .filter(a => a.type === 'checking' && activeAccountIds.includes(a.id))
@@ -413,9 +417,9 @@ export function ScreenHome() {
         </div>
         <div style={{ position:'relative' }}>
           <button className="m-iconbtn filled m-tap" onClick={() => nav.push('notifications')}><I name="bell" size={18}/></button>
-          {notifUnread > 0 && (
+          {totalBadge > 0 && (
             <div style={{ position:'absolute', top:-3, right:-3, minWidth:16, height:16, borderRadius:999, background:M.clay, display:'flex', alignItems:'center', justifyContent:'center', pointerEvents:'none' }}>
-              <span style={{ fontSize:9, fontWeight:700, color:'#fff', lineHeight:1, padding:'0 3px' }}>{notifUnread > 9 ? '9+' : notifUnread}</span>
+              <span style={{ fontSize:9, fontWeight:700, color:'#fff', lineHeight:1, padding:'0 3px' }}>{totalBadge > 9 ? '9+' : totalBadge}</span>
             </div>
           )}
         </div>
