@@ -1,5 +1,5 @@
 import React from 'react';
-import { CATEGORIES, fmtEur, fmtDate, ACCOUNTS, RECURRING, RECURRING_SUGGESTIONS, getUserId, INTEGRATIONS, ALL_RECEIPTS, getUserSyncKey, fmtSyncTime, addDevLog, DEMO_ACCOUNT_IDS, generateBankTxs, generateAsnTxs } from '../data.jsx';
+import { CATEGORIES, fmtEur, fmtDate, ACCOUNTS, RECURRING, RECURRING_SUGGESTIONS, getUserId, INTEGRATIONS, ALL_RECEIPTS, getUserSyncKey, fmtSyncTime, addDevLog, DEMO_ACCOUNT_IDS, DEMO_ACCOUNTS, generateBankTxs, generateAsnTxs } from '../data.jsx';
 import { M, I, IcoMDI, Divider, StatusBar, AppBar } from '../theme.jsx';
 import { useDark } from '../nav.jsx';
 import { LangCtx, useLang, NavCtx, useNav, Sheet, OTHER_LANGUAGES, TabBar } from '../i18n.jsx';
@@ -652,9 +652,9 @@ export function ScreenProfileDetail({ params }) {
   if (!profile) return null;
 
   const accountIds = profile.accountIds || [];
-  // Filter accounts by profile type: demo profiles only see demo accounts, real profiles only see real accounts
+  // Demo profiles always show the fixed demo accounts; real profiles show the user's real accounts
   const availableAccounts = profile.isDemo
-    ? connectedAccounts.filter(a => a.isDemo)
+    ? DEMO_ACCOUNTS
     : connectedAccounts.filter(a => !a.isDemo);
   const isActive = profile.active;
   const isOnly = profiles.length === 1;
