@@ -539,19 +539,21 @@ function ScreenLoginGate({ onLogin }) {
     const methods = [...new Set([...getSignupMethods(), method])];
     localStorage.setItem('munni_signup_methods', JSON.stringify(methods));
     localStorage.setItem('munni_last_login_method', method);
+    window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: 'munni_last_login_method' } }));
     localStorage.setItem('munni_opened_before', 'true');
     localStorage.setItem('munni_profile_email', JSON.stringify(email || ''));
-    if (displayName) localStorage.setItem('munni_profile_name', JSON.stringify(displayName));
+    window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: 'munni_profile_email' } }));
+    if (displayName) {
+      localStorage.setItem('munni_profile_name', JSON.stringify(displayName));
+      window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: 'munni_profile_name' } }));
+    }
     initPerUserData(method, email);
     if (activateDemo) {
-      // For demo login, ensure the demo profile is active
+      // Always reset demo profiles to clean Demo default, ignoring any stale localStorage
       const profileKey = computeProfileKey(method, email || '');
-      try {
-        const ps = JSON.parse(localStorage.getItem(profileKey) || '[]');
-        const updated = ps.map(p => ({ ...p, active: p.id === 'p_demo' }));
-        localStorage.setItem(profileKey, JSON.stringify(updated));
-        window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: profileKey } }));
-      } catch {}
+      const demoProfiles = [{ id:'p_demo', name:'Demo', icon:'user', active:true, accountIds:['main','save'], picture:'av7', isDemo:true }];
+      localStorage.setItem(profileKey, JSON.stringify(demoProfiles));
+      window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: profileKey } }));
     }
     const userId = getUserId();
     const name = displayName || (method === 'google' ? 'Google van der Berg' : method === 'apple' ? 'Apple van der Berg' : method === 'bank' ? 'Demo User' : email || userId);

@@ -531,12 +531,12 @@ export function ScreenProfiles() {
       id: `p_${Date.now()}`,
       name: trimmed,
       icon: 'card',
-      active: false,
+      active: true,
       accountIds: [],
       picture: randomAv.id,
       isDemo: newProfileIsDemo,
     };
-    setProfiles(ps => [...ps, newP]);
+    setProfiles(ps => [...ps.map(p => ({ ...p, active: false })), newP]);
     setShowNewProfile(false);
     setNewProfileName('');
     setNewProfileIsDemo(false);
