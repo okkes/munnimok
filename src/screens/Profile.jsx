@@ -643,20 +643,38 @@ export function ScreenProfileDetail({ params }) {
   const { t } = useLang();
   const { profiles, setProfiles } = useProfiles();
   const [connectedAccounts] = useConnectedAccounts();
+  const { allTxs: ownTxs } = useTxCtx();
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
+  const [showLeaveConfirm, setShowLeaveConfirm] = React.useState(false);
   const [editingName, setEditingName] = React.useState(false);
   const [nameDraft, setNameDraft] = React.useState('');
   const [showPhotoSheet, setShowPhotoSheet] = React.useState(false);
   const [showMembersSheet, setShowMembersSheet] = React.useState(false);
 
+  const myId = React.useMemo(() => getUserId(), []);
+  const [invitations] = useLocalStorage('munni_global_invitations', []);
+  const [userRegistry] = useLocalStorage('munni_global_users', {});
+
+  // All hooks before early return
   const profile = profiles.find(p => p.id === params?.id);
+  const profileId = profile?.id || 'none';
+  const [sharedData, setSharedData] = useLocalStorage(`munni_shared_data_${profileId}`, { accounts: [], txs: [] });
+
   if (!profile) return null;
 
+  const members = profile.members || [];
+  const isMemberOfShared = !!profile.isShared;
+  const otherMembers = members.filter(m => m.userId !== myId);
+  const pendingInvitesForProfile = invitations.filter(i => i.fromId === myId && i.type === 'profile' && i.profileId === profile.id && i.status === 'pending');
+  const PERM_COLOR = { reader: M.ink3, contributor: M.sage, owner: M.ochre };
+  const PERM_LABEL = { reader: t('profile.permReader'), contributor: t('profile.permContributor'), owner: t('profile.permOwner') };
+
+  const sharedAccts = sharedData?.accounts || [];
   const accountIds = profile.accountIds || [];
-  // Demo profiles always show the fixed demo accounts; real profiles show the user's real accounts
-  const availableAccounts = profile.isDemo
-    ? DEMO_ACCOUNTS
-    : connectedAccounts.filter(a => !a.isDemo);
+  const ownConnected = connectedAccounts.filter(a => !a.isDemo);
+  const ownConnectedIds = new Set(ownConnected.map(a => a.id));
+  const extraShared = sharedAccts.filter(a => !ownConnectedIds.has(a.id));
+  const availableAccounts = profile.isDemo ? DEMO_ACCOUNTS : [...ownConnected, ...extraShared];
   const isActive = profile.active;
   const isOnly = profiles.length === 1;
 
@@ -680,12 +698,33 @@ export function ScreenProfileDetail({ params }) {
   };
 
   const toggleAccount = (accountId) => {
+    const isAttaching = !(profile.accountIds || []).includes(accountId);
     setProfiles(ps => ps.map(p => {
       if (p.id !== profile.id) return p;
       const ids = p.accountIds || [];
       const newIds = ids.includes(accountId) ? ids.filter(x => x !== accountId) : [...ids, accountId];
       return { ...p, accountIds: newIds };
     }));
+    if (members.length > 0 || isMemberOfShared) {
+      const account = availableAccounts.find(a => a.id === accountId);
+      if (isAttaching && account) {
+        setSharedData(sd => {
+          const existing = sd.accounts || [];
+          if (existing.some(a => a.id === accountId)) return sd;
+          const { attachedBy: _ab, ...cleanAcct } = account;
+          const newAcct = { ...cleanAcct, attachedBy: myId };
+          const acctTxs = (ownTxs || []).filter(t => t.account === accountId);
+          const existingTxIds = new Set((sd.txs || []).map(t => t.id));
+          const newTxs = acctTxs.filter(t => !existingTxIds.has(t.id));
+          return { accounts: [...existing, newAcct], txs: [...(sd.txs || []), ...newTxs] };
+        });
+      } else if (!isAttaching) {
+        setSharedData(sd => ({
+          accounts: (sd.accounts || []).filter(a => a.id !== accountId),
+          txs: (sd.txs || []).filter(t => t.account !== accountId),
+        }));
+      }
+    }
   };
 
   const deleteProfile = () => {
@@ -697,16 +736,38 @@ export function ScreenProfileDetail({ params }) {
     nav.pop();
   };
 
+  const leaveProfile = () => {
+    setProfiles(ps => {
+      const remaining = ps.filter(p => p.id !== profile.id);
+      if (!remaining.find(p => p.active) && remaining.length > 0) remaining[0] = { ...remaining[0], active: true };
+      return remaining;
+    });
+    nav.pop();
+  };
+
+  const transferAndLeave = () => {
+    if (otherMembers.length === 0) return;
+    setProfiles(ps => ps.map(p => {
+      if (p.id !== profile.id) return p;
+      const remaining = (p.members || []).filter(m => m.userId !== myId);
+      if (remaining.length > 0) remaining[0] = { ...remaining[0], permission: 'owner' };
+      return { ...p, members: remaining };
+    }));
+    nav.pop();
+  };
+
   const mainAccounts = availableAccounts.filter(a => a.type === 'checking');
   const savingAccounts = availableAccounts.filter(a => a.type !== 'checking');
 
   const renderAccountRow = (a, i, arr) => {
     const included = accountIds.includes(a.id);
+    const sharedAcctData = sharedAccts.find(s => s.id === a.id);
+    const isSharedAcct = !!sharedAcctData && !ownConnectedIds.has(a.id);
     return (
       <React.Fragment key={a.id}>
         {i > 0 && <Divider inset={50}/>}
-        <div className="m-tap" onClick={() => toggleAccount(a.id)}
-          style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
+        <div className={isSharedAcct ? '' : 'm-tap'} onClick={isSharedAcct ? undefined : () => toggleAccount(a.id)}
+          style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0', opacity: isSharedAcct ? 0.8 : 1 }}>
           <div style={{ width:36, height:36, borderRadius:10, background: a.color || M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
             <I name={a.type==='savings'?'piggy':a.type==='invest'?'rocket':'card'} size={16} color="#fff"/>
           </div>
@@ -716,11 +777,15 @@ export function ScreenProfileDetail({ params }) {
               <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono }}>{a.iban}</div>
               {a.manual && <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase' }}>Manual</span>}
               {a.bankId && <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>Bank</span>}
+              {isSharedAcct && <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:999, background:M.violetSoft||'#EEE8FF', color:M.violet||'#7B61FF', textTransform:'uppercase' }}>{t('profile.sharedReadOnly')}</span>}
             </div>
           </div>
-          {included
-            ? <div style={{ width:22, height:22, borderRadius:999, background:M.sage, display:'flex', alignItems:'center', justifyContent:'center' }}><I name="check" size={12} color="#fff" stroke={2.5}/></div>
-            : <div style={{ width:22, height:22, borderRadius:999, border:`2px solid ${M.line2}` }}/>}
+          {isSharedAcct
+            ? <I name="lock" size={14} color={M.ink4}/>
+            : included
+              ? <div style={{ width:22, height:22, borderRadius:999, background:M.sage, display:'flex', alignItems:'center', justifyContent:'center' }}><I name="check" size={12} color="#fff" stroke={2.5}/></div>
+              : <div style={{ width:22, height:22, borderRadius:999, border:`2px solid ${M.line2}` }}/>
+          }
         </div>
       </React.Fragment>
     );
@@ -790,33 +855,97 @@ export function ScreenProfileDetail({ params }) {
 
         {/* Members */}
         <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('profile.members')}</div>
-        <div className={profile.isDemo ? 'm-card' : 'm-card m-tap'} onClick={profile.isDemo ? undefined : () => setShowMembersSheet(true)}
-          style={{ padding:'12px 16px', marginBottom:14, border:`1px solid ${M.line}`, display:'flex', alignItems:'center', gap:12, opacity: profile.isDemo ? 0.5 : 1 }}>
-          <div style={{ width:36, height:36, borderRadius:10, background:profile.isDemo?M.paper2:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-            <I name={profile.isDemo?'lock':'users'} size={16} color={profile.isDemo?M.ink4:M.sage}/>
+        {profile.isDemo ? (
+          <div className="m-card" style={{ padding:'12px 16px', marginBottom:14, border:`1px solid ${M.line}`, display:'flex', alignItems:'center', gap:12, opacity:0.5 }}>
+            <div style={{ width:36, height:36, borderRadius:10, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+              <I name="lock" size={16} color={M.ink4}/>
+            </div>
+            <div style={{ flex:1 }}><div style={{ fontSize:14, fontWeight:600 }}>{t('profile.demoNoInvite')}</div></div>
           </div>
-          <div style={{ flex:1 }}>
-            <div style={{ fontSize:14, fontWeight:600 }}>{profile.isDemo ? t('profile.demoNoInvite') : t('profile.addMember')}</div>
-            {!profile.isDemo && (
-              <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>
-                {(profile.members || []).length === 0 ? t('profile.noMembers') : `${(profile.members || []).length} member${(profile.members||[]).length>1?'s':''}`}
-              </div>
+        ) : (
+          <div className="m-card" style={{ padding:'4px 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
+            {members.length === 0 && pendingInvitesForProfile.length === 0 && (
+              <div style={{ padding:'14px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>{t('profile.noMembers')}</div>
+            )}
+            {members.map((m, i) => {
+              const info = userRegistry[m.userId] || {};
+              const isMe = m.userId === myId;
+              return (
+                <React.Fragment key={m.userId}>
+                  {i > 0 && <Divider inset={44}/>}
+                  <div style={{ display:'flex', alignItems:'center', gap:10, padding:'11px 0' }}>
+                    <div style={{ width:32, height:32, borderRadius:999, background:isMe?M.sageSoft:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:13, fontWeight:700, color:isMe?M.sage:M.ink2 }}>
+                      {(info.displayName||m.userId).charAt(0).toUpperCase()}
+                    </div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:14, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{info.displayName||m.userId}{isMe?' (you)':''}</div>
+                    </div>
+                    <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:m.permission==='owner'?M.ochreSoft:m.permission==='contributor'?M.sageSoft:M.paper2, color:PERM_COLOR[m.permission]||M.ink3, textTransform:'uppercase', flexShrink:0 }}>
+                      {PERM_LABEL[m.permission]||m.permission}
+                    </span>
+                  </div>
+                </React.Fragment>
+              );
+            })}
+            {pendingInvitesForProfile.map((inv) => {
+              const info = userRegistry[inv.toId] || {};
+              return (
+                <React.Fragment key={inv.id}>
+                  <Divider inset={44}/>
+                  <div style={{ display:'flex', alignItems:'center', gap:10, padding:'11px 0' }}>
+                    <div style={{ width:32, height:32, borderRadius:999, background:M.ochreSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:13, fontWeight:700, color:M.ochre }}>
+                      {(info.displayName||inv.toId).charAt(0).toUpperCase()}
+                    </div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:14, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{info.displayName||inv.toId}</div>
+                    </div>
+                    <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase', flexShrink:0 }}>{t('friends.pending')}</span>
+                  </div>
+                </React.Fragment>
+              );
+            })}
+            {!isMemberOfShared && (
+              <>
+                {(members.length > 0 || pendingInvitesForProfile.length > 0) && <Divider inset={0}/>}
+                <div className="m-tap" onClick={() => setShowMembersSheet(true)} style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 0' }}>
+                  <div style={{ width:32, height:32, borderRadius:10, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                    <I name="users" size={15} color={M.sage}/>
+                  </div>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontSize:13, fontWeight:600, color:M.sage }}>{members.length > 0 ? t('profile.manageMembers') : t('profile.addMember')}</div>
+                  </div>
+                  <I name="caretR" size={14} color={M.ink4}/>
+                </div>
+              </>
             )}
           </div>
-          {!profile.isDemo && <I name="caretR" size={14} color={M.ink4}/>}
-        </div>
+        )}
 
-        {/* Delete */}
-        <button
-          disabled={isOnly || isActive}
-          onClick={() => setShowDeleteConfirm(true)}
-          style={{ width:'100%', padding:'14px 0', background: (isOnly||isActive) ? M.line : M.claySoft, color:(isOnly||isActive) ? M.ink4 : M.clay, border:'none', borderRadius:12, fontSize:15, fontWeight:600, cursor:(isOnly||isActive)?'not-allowed':'pointer', fontFamily:M.fontUI, marginBottom:8 }}>
-          {t('profile.deleteProfile')}
-        </button>
-        {(isOnly || isActive) && (
-          <div style={{ textAlign:'center', fontSize:12, color:M.ink4 }}>
-            {isActive ? t('profile.cannotDeleteActive') : t('profile.cannotDeleteOnly')}
-          </div>
+        {isMemberOfShared ? (
+          <button onClick={() => setShowLeaveConfirm(true)}
+            style={{ width:'100%', padding:'14px 0', background:M.claySoft, color:M.clay, border:'none', borderRadius:12, fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:8 }}>
+            {t('profile.leaveProfile')}
+          </button>
+        ) : otherMembers.length > 0 ? (
+          <>
+            <button onClick={() => setShowLeaveConfirm(true)}
+              style={{ width:'100%', padding:'14px 0', background:M.claySoft, color:M.clay, border:'none', borderRadius:12, fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:8 }}>
+              {t('profile.transferLeave')}
+            </button>
+            <button disabled={isOnly||isActive} onClick={() => setShowDeleteConfirm(true)}
+              style={{ width:'100%', padding:'14px 0', background:(isOnly||isActive)?M.line:M.claySoft, color:(isOnly||isActive)?M.ink4:M.clay, border:'none', borderRadius:12, fontSize:15, fontWeight:600, cursor:(isOnly||isActive)?'not-allowed':'pointer', fontFamily:M.fontUI, marginBottom:8 }}>
+              {t('profile.deleteProfile')}
+            </button>
+            {(isOnly||isActive) && <div style={{ textAlign:'center', fontSize:12, color:M.ink4 }}>{isActive ? t('profile.cannotDeleteActive') : t('profile.cannotDeleteOnly')}</div>}
+          </>
+        ) : (
+          <>
+            <button disabled={isOnly||isActive} onClick={() => setShowDeleteConfirm(true)}
+              style={{ width:'100%', padding:'14px 0', background:(isOnly||isActive)?M.line:M.claySoft, color:(isOnly||isActive)?M.ink4:M.clay, border:'none', borderRadius:12, fontSize:15, fontWeight:600, cursor:(isOnly||isActive)?'not-allowed':'pointer', fontFamily:M.fontUI, marginBottom:8 }}>
+              {t('profile.deleteProfile')}
+            </button>
+            {(isOnly||isActive) && <div style={{ textAlign:'center', fontSize:12, color:M.ink4 }}>{isActive ? t('profile.cannotDeleteActive') : t('profile.cannotDeleteOnly')}</div>}
+          </>
         )}
         <div style={{ height:16 }}/>
       </div>
@@ -882,6 +1011,27 @@ export function ScreenProfileDetail({ params }) {
               {t('profile.deleteProfile')}
             </button>
             <button onClick={() => setShowDeleteConfirm(false)}
+              style={{ width:'100%', padding:'14px 0', background:M.paper2, color:M.ink, border:`1px solid ${M.line}`, borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+              {t('action.cancel')}
+            </button>
+          </div>
+        </Sheet>
+      )}
+
+      {showLeaveConfirm && (
+        <Sheet onClose={() => setShowLeaveConfirm(false)}>
+          <div style={{ padding:'4px 16px 8px' }}>
+            <div style={{ fontSize:17, fontWeight:700, marginBottom:8 }}>
+              {isMemberOfShared ? t('profile.leaveConfirmTitle') : t('profile.transferLeaveConfirmTitle')}
+            </div>
+            <div style={{ fontSize:14, color:M.ink3, lineHeight:1.5, marginBottom:20 }}>
+              {isMemberOfShared ? t('profile.leaveConfirmDesc') : t('profile.transferLeaveConfirmDesc')}
+            </div>
+            <button onClick={isMemberOfShared ? leaveProfile : transferAndLeave}
+              style={{ width:'100%', padding:'14px 0', background:M.clay, color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>
+              {isMemberOfShared ? t('profile.leaveProfile') : t('profile.transferLeave')}
+            </button>
+            <button onClick={() => setShowLeaveConfirm(false)}
               style={{ width:'100%', padding:'14px 0', background:M.paper2, color:M.ink, border:`1px solid ${M.line}`, borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
               {t('action.cancel')}
             </button>

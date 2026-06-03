@@ -44,20 +44,32 @@ export function TxProvider({ children }) {
   const [rawEmail] = useLocalStorage('munni_profile_email', '');
   const safeEmail = React.useMemo(() => { try { return JSON.parse(rawEmail||'""')||''; } catch { return rawEmail||''; } }, [rawEmail]);
   const txKey = computeUserDataKey(loginMethod, safeEmail, 'munni_txs');
-  const [allTxs, setAllTxs] = useLocalStorage(txKey, getDefaultTxs(loginMethod || localStorage.getItem('munni_last_login_method') || ''));
+  const [ownTxs, setOwnTxs] = useLocalStorage(txKey, getDefaultTxs(loginMethod || localStorage.getItem('munni_last_login_method') || ''));
   const { profiles } = useProfiles();
 
   const activeProfile = profiles.find(p => p.active) || profiles[0];
   const activeAccountIds = activeProfile?.accountIds || [];
+
+  // Merge in shared profile data so invited members see the owner's accounts/txs
+  const isSharedOrHasMembers = !!(activeProfile?.isShared || (activeProfile?.members||[]).length > 0);
+  const sharedDataKey = isSharedOrHasMembers ? `munni_shared_data_${activeProfile.id}` : 'munni_shared_data_none';
+  const [sharedData] = useLocalStorage(sharedDataKey, { accounts: [], txs: [] });
+
+  const allTxs = React.useMemo(() => {
+    const sharedTxs = sharedData?.txs || [];
+    if (!sharedTxs.length) return ownTxs;
+    const ownIds = new Set(ownTxs.map(t => t.id));
+    return [...ownTxs, ...sharedTxs.filter(t => !ownIds.has(t.id))];
+  }, [ownTxs, sharedData]);
 
   // Only show transactions whose account is in the active profile; empty profile = no transactions
   const txs = activeAccountIds.length > 0
     ? allTxs.filter(t => t.account && activeAccountIds.includes(t.account))
     : [];
 
-  const updateTx = (id, changes) => setAllTxs(ts => ts.map(t => t.id === id ? {...t, ...changes} : t));
-  const addTxs = (newTxs) => setAllTxs(ts => [...newTxs, ...ts]);
-  const setTxs = setAllTxs;
+  const updateTx = (id, changes) => setOwnTxs(ts => ts.map(t => t.id === id ? {...t, ...changes} : t));
+  const addTxs = (newTxs) => setOwnTxs(ts => [...newTxs, ...ts]);
+  const setTxs = setOwnTxs;
   return <TxCtx.Provider value={{ txs, allTxs, updateTx, addTxs, setTxs }}>{children}</TxCtx.Provider>;
 }
 export const useTxCtx = () => React.useContext(TxCtx);
