@@ -77,7 +77,7 @@ export function useConnectedAccounts() {
   return useLocalStorage(acctKey, defaultAccts);
 }
 
-export const DEFAULT_PROFILE_IDS = ['p1','p2','p3','p_demo'];
+export const DEFAULT_PROFILE_IDS = ['p_google','p_apple','p_demo','p_email'];
 export function useProfileBudgets() {
   const { profiles } = useProfiles();
   const activeProfileId = (profiles.find(p => p.active) || profiles[0])?.id || 'default';

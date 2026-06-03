@@ -1,5 +1,5 @@
 import React from 'react';
-import { getUserId, computeProfileKey, initPerUserData, registerUserInGlobalRegistry } from './data.jsx';
+import { getUserId, computeProfileKey, getDefaultProfiles, initPerUserData, registerUserInGlobalRegistry } from './data.jsx';
 import { IOSDevice } from './IOSFrame.jsx';
 import { M, I, IcoGoogle, IcoApple, Divider, StatusBar, AppBar } from './theme.jsx';
 import { DarkCtx } from './nav.jsx';
@@ -504,7 +504,7 @@ function ScreenLoginGate({ onLogin }) {
   //       'signup'|'signup-google'|'signup-apple'|'signup-email'|'signup-email-verify'
   //       'signup-bank'|'terms'|'privacy'|'language'
   const [mode, setMode] = React.useState('login');
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const [emailInput, setEmailInput] = React.useState(() => {
     try {
       const v = JSON.parse(localStorage.getItem('munni_profile_email') || '""');
@@ -535,7 +535,7 @@ function ScreenLoginGate({ onLogin }) {
     return () => window.removeEventListener('popstate', handlePop);
   }, [mode]);
 
-  const doLogin = (method, email, displayName, activateDemo = false) => {
+  const doLogin = (method, email, displayName, activateDemo = false, signupLang = 'en') => {
     const methods = [...new Set([...getSignupMethods(), method])];
     localStorage.setItem('munni_signup_methods', JSON.stringify(methods));
     localStorage.setItem('munni_last_login_method', method);
@@ -547,12 +547,11 @@ function ScreenLoginGate({ onLogin }) {
       localStorage.setItem('munni_profile_name', JSON.stringify(displayName));
       window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: 'munni_profile_name' } }));
     }
-    initPerUserData(method, email);
+    initPerUserData(method, email, signupLang);
     if (activateDemo) {
-      // Always reset demo profiles to clean Demo default, ignoring any stale localStorage
+      // Always reset demo profiles to clean Demo default so demo user is never stale
       const profileKey = computeProfileKey(method, email || '');
-      const demoProfiles = [{ id:'p_demo', name:'Demo', icon:'user', active:true, accountIds:['main','save'], picture:'av7', isDemo:true }];
-      localStorage.setItem(profileKey, JSON.stringify(demoProfiles));
+      localStorage.setItem(profileKey, JSON.stringify(getDefaultProfiles('bank')));
       window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: profileKey } }));
     }
     const userId = getUserId();
@@ -645,7 +644,7 @@ function ScreenLoginGate({ onLogin }) {
           setTimeout(() => {
             const updatedEmails = [...emails, email];
             localStorage.setItem('munni_signup_emails', JSON.stringify(updatedEmails));
-            doLogin('email', email, signupName.trim());
+            doLogin('email', email, signupName.trim(), false, lang);
           }, 800);
           return;
         }

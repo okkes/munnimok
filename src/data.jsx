@@ -238,17 +238,17 @@ export function addDevLog(level, msg, src) {
   } catch {}
 }
 
-export const DEMO_ACCOUNT_IDS = ['main', 'save', 'inv'];
-// Real accounts for google user (same IDs, no isDemo flag → filter demo profiles from picking them)
+export const DEMO_ACCOUNT_IDS = ['demo_main', 'demo_save'];
+// Real accounts for google user
 export const REAL_ACCOUNTS = [
   { id: 'main', name: 'Main · ING',        iban: 'NL47 INGB 0004 0000 4231', balance: 5240.18, type: 'checking', color: '#ff6200' },
   { id: 'save', name: 'Savings · ING',     iban: 'NL47 INGB 0007 7000 7782', balance: 3120.50, type: 'savings',  color: '#A8782B' },
   { id: 'inv',  name: 'Brokerage · DEGIRO',iban: 'NL47 DEGR 0001 0000 1015', balance: 365.00,  type: 'invest',  color: '#5E4A78' },
 ];
-// Demo accounts for demo user / demo profiles
+// Demo accounts — separate IDs, clearly labelled demo, only usable by demo profiles
 export const DEMO_ACCOUNTS = [
-  { id: 'main', name: 'Demo · ING',       iban: 'NL47 DEMO 0000 0001', balance: 5240.18, type: 'checking', color: '#4A6A4F', isDemo: true },
-  { id: 'save', name: 'Demo Savings',     iban: 'NL47 DEMO 0000 0002', balance: 3120.50, type: 'savings',  color: '#A8782B', isDemo: true },
+  { id: 'demo_main', name: 'Demo Checking · ING', iban: 'NL00 DEMO 0000 0001 00', balance: 3420.55, type: 'checking', color: '#4A6A4F', isDemo: true },
+  { id: 'demo_save', name: 'Demo Savings · ING',  iban: 'NL00 DEMO 0000 0002 00', balance: 8150.00, type: 'savings',  color: '#A8782B', isDemo: true },
 ];
 export const APPLE_ACCOUNTS = [
   { id: 'abn_main', name: 'Betaalrekening · ABN AMRO', iban: 'NL47 ABNA 0428 7312 8940', balance: 3820.45, type: 'checking', color: '#009B77' },
@@ -495,15 +495,125 @@ export const ABN_TRANSACTIONS = [
   { id:'ab30', date:D(30), time:'10:00', merchant:'Vodafone',           desc:'VODAFONE NL ABONNEMENT',       cat:'subs',           amount: -35.00,  account:'abn_main', recurring:true },
 ];
 
+// 100 demo transactions spread over 6 months on demo_main / demo_save
+export const DEMO_TXS = [
+  // === Month 1 (Dec 2025) ===
+  { id:'dm1',  date:D(175), time:'08:00', merchant:'Demo Corp BV',     desc:'DEMO CORP BV SALARIS DEC',  cat:'salary',       amount: 2200.00, account:'demo_main' },
+  { id:'dm2',  date:D(173), time:'00:00', merchant:'Demo Verhuur',     desc:'DEMO VERHUUR HUUR DEC',     cat:'housingRent',  amount: -850.00, account:'demo_main', recurring:true },
+  { id:'dm3',  date:D(170), time:'07:00', merchant:'Eneco',            desc:'ENECO ENERGIE DEC',         cat:'housingUtility',amount:-72.00,  account:'demo_main', recurring:true },
+  { id:'dm4',  date:D(168), time:'09:00', merchant:'Spotify',          desc:'SPOTIFY SUBSCR DEC',        cat:'subs',         amount: -9.99,   account:'demo_main', recurring:true },
+  { id:'dm5',  date:D(166), time:'09:00', merchant:'Netflix',          desc:'NETFLIX SUBSCR DEC',        cat:'subs',         amount: -13.99,  account:'demo_main', recurring:true },
+  { id:'dm6',  date:D(178), time:'14:30', merchant:'Albert Heijn',     desc:'AH DEMO 0001',              cat:'groceries',    amount: -52.40,  account:'demo_main' },
+  { id:'dm7',  date:D(171), time:'11:20', merchant:'Jumbo',            desc:'JUMBO DEMO 0042',           cat:'groceries',    amount: -38.80,  account:'demo_main' },
+  { id:'dm8',  date:D(164), time:'15:00', merchant:'Albert Heijn',     desc:'AH DEMO 0001',              cat:'groceries',    amount: -61.30,  account:'demo_main' },
+  { id:'dm9',  date:D(176), time:'09:15', merchant:'Koffie ☕',        desc:'DEMO COFFEE BAR',           cat:'coffee',       amount: -4.50,   account:'demo_main' },
+  { id:'dm10', date:D(169), time:'08:30', merchant:'Koffie ☕',        desc:'DEMO COFFEE BAR',           cat:'coffee',       amount: -4.50,   account:'demo_main' },
+  { id:'dm11', date:D(172), time:'19:30', merchant:'Demo Restaurant',  desc:'DEMO RESTAURANT AMS',       cat:'restaurants',  amount: -38.50,  account:'demo_main' },
+  { id:'dm12', date:D(165), time:'09:00', merchant:'Savings transfer', desc:'DEMO SPAAROVERBOEKING',     cat:'savingDeposit',amount:-200.00,  account:'demo_main', savingAccount:'demo_save' },
+  // === Month 2 (Jan 2026) ===
+  { id:'dm13', date:D(145), time:'08:00', merchant:'Demo Corp BV',     desc:'DEMO CORP BV SALARIS JAN',  cat:'salary',       amount: 2200.00, account:'demo_main' },
+  { id:'dm14', date:D(143), time:'00:00', merchant:'Demo Verhuur',     desc:'DEMO VERHUUR HUUR JAN',     cat:'housingRent',  amount: -850.00, account:'demo_main', recurring:true },
+  { id:'dm15', date:D(140), time:'07:00', merchant:'Eneco',            desc:'ENECO ENERGIE JAN',         cat:'housingUtility',amount:-72.00,  account:'demo_main', recurring:true },
+  { id:'dm16', date:D(138), time:'09:00', merchant:'Spotify',          desc:'SPOTIFY SUBSCR JAN',        cat:'subs',         amount: -9.99,   account:'demo_main', recurring:true },
+  { id:'dm17', date:D(136), time:'09:00', merchant:'Netflix',          desc:'NETFLIX SUBSCR JAN',        cat:'subs',         amount: -13.99,  account:'demo_main', recurring:true },
+  { id:'dm18', date:D(148), time:'16:00', merchant:'Albert Heijn',     desc:'AH DEMO 0001',              cat:'groceries',    amount: -45.20,  account:'demo_main' },
+  { id:'dm19', date:D(141), time:'12:30', merchant:'Jumbo',            desc:'JUMBO DEMO 0042',           cat:'groceries',    amount: -55.60,  account:'demo_main' },
+  { id:'dm20', date:D(134), time:'17:00', merchant:'Albert Heijn',     desc:'AH DEMO 0001',              cat:'groceries',    amount: -42.80,  account:'demo_main' },
+  { id:'dm21', date:D(127), time:'10:00', merchant:'Lidl',             desc:'LIDL DEMO',                 cat:'groceries',    amount: -31.40,  account:'demo_main' },
+  { id:'dm22', date:D(146), time:'09:00', merchant:'Koffie ☕',        desc:'DEMO COFFEE BAR',           cat:'coffee',       amount: -4.50,   account:'demo_main' },
+  { id:'dm23', date:D(139), time:'08:30', merchant:'Koffie ☕',        desc:'DEMO COFFEE BAR',           cat:'coffee',       amount: -3.80,   account:'demo_main' },
+  { id:'dm24', date:D(144), time:'20:00', merchant:'Demo Restaurant',  desc:'DEMO RESTAURANT AMS',       cat:'restaurants',  amount: -28.00,  account:'demo_main' },
+  { id:'dm25', date:D(147), time:'14:00', merchant:'NS · Sprinter',    desc:'NS DEMO REIZIGERS',         cat:'transportPublic',amount:-18.40, account:'demo_main' },
+  { id:'dm26', date:D(135), time:'09:00', merchant:'Savings transfer', desc:'DEMO SPAAROVERBOEKING',     cat:'savingDeposit',amount:-150.00,  account:'demo_main', savingAccount:'demo_save' },
+  // === Month 3 (Feb 2026) ===
+  { id:'dm27', date:D(115), time:'08:00', merchant:'Demo Corp BV',     desc:'DEMO CORP BV SALARIS FEB',  cat:'salary',       amount: 2200.00, account:'demo_main' },
+  { id:'dm28', date:D(113), time:'00:00', merchant:'Demo Verhuur',     desc:'DEMO VERHUUR HUUR FEB',     cat:'housingRent',  amount: -850.00, account:'demo_main', recurring:true },
+  { id:'dm29', date:D(110), time:'07:00', merchant:'Eneco',            desc:'ENECO ENERGIE FEB',         cat:'housingUtility',amount:-68.00,  account:'demo_main', recurring:true },
+  { id:'dm30', date:D(108), time:'09:00', merchant:'Spotify',          desc:'SPOTIFY SUBSCR FEB',        cat:'subs',         amount: -9.99,   account:'demo_main', recurring:true },
+  { id:'dm31', date:D(106), time:'09:00', merchant:'Netflix',          desc:'NETFLIX SUBSCR FEB',        cat:'subs',         amount: -13.99,  account:'demo_main', recurring:true },
+  { id:'dm32', date:D(118), time:'13:00', merchant:'Albert Heijn',     desc:'AH DEMO 0001',              cat:'groceries',    amount: -58.90,  account:'demo_main' },
+  { id:'dm33', date:D(111), time:'11:00', merchant:'Jumbo',            desc:'JUMBO DEMO 0042',           cat:'groceries',    amount: -44.50,  account:'demo_main' },
+  { id:'dm34', date:D(104), time:'16:30', merchant:'Albert Heijn',     desc:'AH DEMO 0001',              cat:'groceries',    amount: -67.20,  account:'demo_main' },
+  { id:'dm35', date:D(116), time:'08:45', merchant:'Koffie ☕',        desc:'DEMO COFFEE BAR',           cat:'coffee',       amount: -4.50,   account:'demo_main' },
+  { id:'dm36', date:D(109), time:'09:15', merchant:'Koffie ☕',        desc:'DEMO COFFEE BAR',           cat:'coffee',       amount: -3.80,   account:'demo_main' },
+  { id:'dm37', date:D(114), time:'21:00', merchant:'Demo Restaurant',  desc:'DEMO RESTAURANT AMS',       cat:'restaurants',  amount: -45.00,  account:'demo_main' },
+  { id:'dm38', date:D(117), time:'15:00', merchant:'NS · Sprinter',    desc:'NS DEMO REIZIGERS',         cat:'transportPublic',amount:-22.40, account:'demo_main' },
+  { id:'dm39', date:D(107), time:'14:00', merchant:'Etos',             desc:'ETOS DEMO',                 cat:'healthcare',   amount: -18.50,  account:'demo_main' },
+  { id:'dm40', date:D(105), time:'09:00', merchant:'Savings transfer', desc:'DEMO SPAAROVERBOEKING',     cat:'savingDeposit',amount:-200.00,  account:'demo_main', savingAccount:'demo_save' },
+  // === Month 4 (Mar 2026) ===
+  { id:'dm41', date:D(85),  time:'08:00', merchant:'Demo Corp BV',     desc:'DEMO CORP BV SALARIS MAR',  cat:'salary',       amount: 2200.00, account:'demo_main' },
+  { id:'dm42', date:D(83),  time:'00:00', merchant:'Demo Verhuur',     desc:'DEMO VERHUUR HUUR MAR',     cat:'housingRent',  amount: -850.00, account:'demo_main', recurring:true },
+  { id:'dm43', date:D(80),  time:'07:00', merchant:'Eneco',            desc:'ENECO ENERGIE MAR',         cat:'housingUtility',amount:-65.00,  account:'demo_main', recurring:true },
+  { id:'dm44', date:D(78),  time:'09:00', merchant:'Spotify',          desc:'SPOTIFY SUBSCR MAR',        cat:'subs',         amount: -9.99,   account:'demo_main', recurring:true },
+  { id:'dm45', date:D(76),  time:'09:00', merchant:'Netflix',          desc:'NETFLIX SUBSCR MAR',        cat:'subs',         amount: -13.99,  account:'demo_main', recurring:true },
+  { id:'dm46', date:D(88),  time:'14:00', merchant:'Albert Heijn',     desc:'AH DEMO 0001',              cat:'groceries',    amount: -49.30,  account:'demo_main' },
+  { id:'dm47', date:D(81),  time:'12:00', merchant:'Jumbo',            desc:'JUMBO DEMO 0042',           cat:'groceries',    amount: -58.70,  account:'demo_main' },
+  { id:'dm48', date:D(74),  time:'17:00', merchant:'Albert Heijn',     desc:'AH DEMO 0001',              cat:'groceries',    amount: -53.40,  account:'demo_main' },
+  { id:'dm49', date:D(68),  time:'10:00', merchant:'Lidl',             desc:'LIDL DEMO',                 cat:'groceries',    amount: -29.80,  account:'demo_main' },
+  { id:'dm50', date:D(86),  time:'09:00', merchant:'Koffie ☕',        desc:'DEMO COFFEE BAR',           cat:'coffee',       amount: -4.50,   account:'demo_main' },
+  { id:'dm51', date:D(79),  time:'08:30', merchant:'Koffie ☕',        desc:'DEMO COFFEE BAR',           cat:'coffee',       amount: -3.80,   account:'demo_main' },
+  { id:'dm52', date:D(72),  time:'09:00', merchant:'Koffie ☕',        desc:'DEMO COFFEE BAR',           cat:'coffee',       amount: -4.50,   account:'demo_main' },
+  { id:'dm53', date:D(84),  time:'19:30', merchant:'Demo Restaurant',  desc:'DEMO RESTAURANT AMS',       cat:'restaurants',  amount: -32.50,  account:'demo_main' },
+  { id:'dm54', date:D(70),  time:'21:00', merchant:'Demo Restaurant',  desc:'DEMO PIZZA PLACE',          cat:'restaurants',  amount: -28.50,  account:'demo_main' },
+  { id:'dm55', date:D(87),  time:'15:30', merchant:'NS · Sprinter',    desc:'NS DEMO REIZIGERS',         cat:'transportPublic',amount:-15.80, account:'demo_main' },
+  { id:'dm56', date:D(75),  time:'13:00', merchant:'GVB',              desc:'GVB DEMO OV',               cat:'transportPublic',amount:-3.60,  account:'demo_main' },
+  { id:'dm57', date:D(77),  time:'11:00', merchant:'Kruidvat',         desc:'KRUIDVAT DEMO',             cat:'healthcare',   amount: -12.80,  account:'demo_main' },
+  { id:'dm58', date:D(67),  time:'09:00', merchant:'Savings transfer', desc:'DEMO SPAAROVERBOEKING',     cat:'savingDeposit',amount:-250.00,  account:'demo_main', savingAccount:'demo_save' },
+  // === Month 5 (Apr 2026) ===
+  { id:'dm59', date:D(55),  time:'08:00', merchant:'Demo Corp BV',     desc:'DEMO CORP BV SALARIS APR',  cat:'salary',       amount: 2200.00, account:'demo_main' },
+  { id:'dm60', date:D(53),  time:'00:00', merchant:'Demo Verhuur',     desc:'DEMO VERHUUR HUUR APR',     cat:'housingRent',  amount: -850.00, account:'demo_main', recurring:true },
+  { id:'dm61', date:D(50),  time:'07:00', merchant:'Eneco',            desc:'ENECO ENERGIE APR',         cat:'housingUtility',amount:-58.00,  account:'demo_main', recurring:true },
+  { id:'dm62', date:D(48),  time:'09:00', merchant:'Spotify',          desc:'SPOTIFY SUBSCR APR',        cat:'subs',         amount: -9.99,   account:'demo_main', recurring:true },
+  { id:'dm63', date:D(46),  time:'09:00', merchant:'Netflix',          desc:'NETFLIX SUBSCR APR',        cat:'subs',         amount: -13.99,  account:'demo_main', recurring:true },
+  { id:'dm64', date:D(58),  time:'13:00', merchant:'Albert Heijn',     desc:'AH DEMO 0001',              cat:'groceries',    amount: -63.20,  account:'demo_main' },
+  { id:'dm65', date:D(51),  time:'11:30', merchant:'Jumbo',            desc:'JUMBO DEMO 0042',           cat:'groceries',    amount: -41.80,  account:'demo_main' },
+  { id:'dm66', date:D(44),  time:'17:00', merchant:'Albert Heijn',     desc:'AH DEMO 0001',              cat:'groceries',    amount: -55.30,  account:'demo_main' },
+  { id:'dm67', date:D(37),  time:'10:00', merchant:'Lidl',             desc:'LIDL DEMO',                 cat:'groceries',    amount: -34.60,  account:'demo_main' },
+  { id:'dm68', date:D(56),  time:'09:00', merchant:'Koffie ☕',        desc:'DEMO COFFEE BAR',           cat:'coffee',       amount: -4.50,   account:'demo_main' },
+  { id:'dm69', date:D(49),  time:'08:30', merchant:'Koffie ☕',        desc:'DEMO COFFEE BAR',           cat:'coffee',       amount: -3.80,   account:'demo_main' },
+  { id:'dm70', date:D(42),  time:'09:00', merchant:'Koffie ☕',        desc:'DEMO COFFEE BAR',           cat:'coffee',       amount: -4.50,   account:'demo_main' },
+  { id:'dm71', date:D(54),  time:'20:00', merchant:'Demo Restaurant',  desc:'DEMO RESTAURANT AMS',       cat:'restaurants',  amount: -52.00,  account:'demo_main' },
+  { id:'dm72', date:D(40),  time:'19:00', merchant:'Demo Restaurant',  desc:'DEMO PIZZA PLACE',          cat:'restaurants',  amount: -24.90,  account:'demo_main' },
+  { id:'dm73', date:D(57),  time:'14:00', merchant:'NS · Sprinter',    desc:'NS DEMO REIZIGERS',         cat:'transportPublic',amount:-24.60, account:'demo_main' },
+  { id:'dm74', date:D(43),  time:'16:00', merchant:'NS · Sprinter',    desc:'NS DEMO REIZIGERS',         cat:'transportPublic',amount:-18.80, account:'demo_main' },
+  { id:'dm75', date:D(47),  time:'14:00', merchant:'Etos',             desc:'ETOS DEMO',                 cat:'healthcare',   amount: -22.40,  account:'demo_main' },
+  { id:'dm76', date:D(38),  time:'09:00', merchant:'Savings transfer', desc:'DEMO SPAAROVERBOEKING',     cat:'savingDeposit',amount:-300.00,  account:'demo_main', savingAccount:'demo_save' },
+  { id:'dm77', date:D(45),  time:'12:00', merchant:'Bol.com',          desc:'BOL.COM DEMO ORDER',        cat:'hobby',        amount: -34.99,  account:'demo_main', confidence:65, needsReview:true },
+  // === Month 6 (May–Jun 2026) ===
+  { id:'dm78', date:D(25),  time:'08:00', merchant:'Demo Corp BV',     desc:'DEMO CORP BV SALARIS MEI',  cat:'salary',       amount: 2200.00, account:'demo_main' },
+  { id:'dm79', date:D(23),  time:'00:00', merchant:'Demo Verhuur',     desc:'DEMO VERHUUR HUUR MEI',     cat:'housingRent',  amount: -850.00, account:'demo_main', recurring:true },
+  { id:'dm80', date:D(20),  time:'07:00', merchant:'Eneco',            desc:'ENECO ENERGIE MEI',         cat:'housingUtility',amount:-55.00,  account:'demo_main', recurring:true },
+  { id:'dm81', date:D(18),  time:'09:00', merchant:'Spotify',          desc:'SPOTIFY SUBSCR MEI',        cat:'subs',         amount: -9.99,   account:'demo_main', recurring:true },
+  { id:'dm82', date:D(16),  time:'09:00', merchant:'Netflix',          desc:'NETFLIX SUBSCR MEI',        cat:'subs',         amount: -13.99,  account:'demo_main', recurring:true },
+  { id:'dm83', date:D(28),  time:'13:00', merchant:'Albert Heijn',     desc:'AH DEMO 0001',              cat:'groceries',    amount: -47.60,  account:'demo_main' },
+  { id:'dm84', date:D(21),  time:'11:00', merchant:'Jumbo',            desc:'JUMBO DEMO 0042',           cat:'groceries',    amount: -62.30,  account:'demo_main' },
+  { id:'dm85', date:D(14),  time:'16:30', merchant:'Albert Heijn',     desc:'AH DEMO 0001',              cat:'groceries',    amount: -38.90,  account:'demo_main' },
+  { id:'dm86', date:D(7),   time:'10:00', merchant:'Lidl',             desc:'LIDL DEMO',                 cat:'groceries',    amount: -27.40,  account:'demo_main' },
+  { id:'dm87', date:D(26),  time:'09:00', merchant:'Koffie ☕',        desc:'DEMO COFFEE BAR',           cat:'coffee',       amount: -4.50,   account:'demo_main' },
+  { id:'dm88', date:D(19),  time:'08:30', merchant:'Koffie ☕',        desc:'DEMO COFFEE BAR',           cat:'coffee',       amount: -3.80,   account:'demo_main' },
+  { id:'dm89', date:D(12),  time:'09:00', merchant:'Koffie ☕',        desc:'DEMO COFFEE BAR',           cat:'coffee',       amount: -4.50,   account:'demo_main' },
+  { id:'dm90', date:D(5),   time:'08:30', merchant:'Koffie ☕',        desc:'DEMO COFFEE BAR',           cat:'coffee',       amount: -3.80,   account:'demo_main' },
+  { id:'dm91', date:D(24),  time:'20:00', merchant:'Demo Restaurant',  desc:'DEMO RESTAURANT AMS',       cat:'restaurants',  amount: -41.50,  account:'demo_main' },
+  { id:'dm92', date:D(10),  time:'19:30', merchant:'Demo Restaurant',  desc:'DEMO SUSHI PLACE',          cat:'restaurants',  amount: -29.00,  account:'demo_main' },
+  { id:'dm93', date:D(3),   time:'20:30', merchant:'Demo Restaurant',  desc:'DEMO RESTAURANT AMS',       cat:'restaurants',  amount: -34.00,  account:'demo_main' },
+  { id:'dm94', date:D(27),  time:'14:30', merchant:'NS · Sprinter',    desc:'NS DEMO REIZIGERS',         cat:'transportPublic',amount:-28.20, account:'demo_main' },
+  { id:'dm95', date:D(13),  time:'15:00', merchant:'NS · Sprinter',    desc:'NS DEMO REIZIGERS',         cat:'transportPublic',amount:-14.40, account:'demo_main' },
+  { id:'dm96', date:D(22),  time:'11:00', merchant:'Kruidvat',         desc:'KRUIDVAT DEMO',             cat:'healthcare',   amount: -16.90,  account:'demo_main' },
+  { id:'dm97', date:D(15),  time:'09:00', merchant:'Etos',             desc:'ETOS DEMO',                 cat:'healthcare',   amount: -24.50,  account:'demo_main' },
+  { id:'dm98', date:D(8),   time:'09:00', merchant:'Savings transfer', desc:'DEMO SPAAROVERBOEKING',     cat:'savingDeposit',amount:-200.00,  account:'demo_main', savingAccount:'demo_save' },
+  { id:'dm99', date:D(11),  time:'12:00', merchant:'H&M Nederland',    desc:'HM DEMO NETHERLANDS',       cat:'clothing',     amount: -49.99,  account:'demo_main', confidence:70, needsReview:true },
+  { id:'dm100',date:D(2),   time:'14:00', merchant:'Amazon.nl',        desc:'AMZN DEMO MKTPLC',          cat:'hobby',        amount: -28.99,  account:'demo_main', confidence:60, needsReview:true },
+];
+
 export function getDefaultTxs(method) {
   if (method === 'google') return [...TRANSACTIONS, ...GEN_TXS];
   if (method === 'apple')  return [...ABN_TRANSACTIONS];
-  if (method === 'bank')   return [...TRANSACTIONS, ...GEN_TXS];
+  if (method === 'bank')   return [...DEMO_TXS];
   return [];
 }
 
 // Schema version — bump when per-user data defaults change
-export const SCHEMA_VERSION = '4';
+export const SCHEMA_VERSION = '5';
 
 export function computeProfileKey(method, email) {
   if (method === 'google') return 'munni_profiles_google';
@@ -514,14 +624,21 @@ export function computeProfileKey(method, email) {
   return 'munni_profiles';
 }
 
-export function getDefaultProfiles(method) {
-  if (method === 'google') return [{ id:'p1', name:'Personal', icon:'user', active:true, accountIds:['main','save','inv'], picture:null }];
-  if (method === 'apple') return [{ id:'p2', name:'Family', icon:'house', active:true, accountIds:['abn_main'], picture:null }];
-  if (method === 'bank') return [{ id:'p_demo', name:'Demo', icon:'user', active:true, accountIds:['main','save'], picture:'av7', isDemo:true }];
-  return [{ id:'p3', name:'Freelance', icon:'bag', active:true, accountIds:[], picture:null }];
+// Returns the localized name for the default profile when a user signs up with email.
+// The name is determined once at signup and stored in the profile — it never changes after that.
+export function getDefaultProfileName(lang) {
+  const names = { nl: 'Standaard', tr: 'Varsayılan', en: 'Default' };
+  return names[lang] || 'Default';
 }
 
-export function initPerUserData(method, email) {
+export function getDefaultProfiles(method, lang = 'en') {
+  if (method === 'google') return [{ id:'p_google', name:'Private', icon:'user', active:true, accountIds:['main','save','inv'], picture:null, isDemo:false }];
+  if (method === 'apple')  return [{ id:'p_apple',  name:'Family',  icon:'house',active:true, accountIds:['abn_main'],           picture:null, isDemo:false }];
+  if (method === 'bank')   return [{ id:'p_demo',   name:'Demo',    icon:'user', active:true, accountIds:['demo_main','demo_save'], picture:'av7', isDemo:true }];
+  return [{ id:'p_email', name:getDefaultProfileName(lang), icon:'user', active:true, accountIds:[], picture:null, isDemo:false }];
+}
+
+export function initPerUserData(method, email, lang = 'en') {
   if (!method) return;
   const vKey = `munni_schema_v_${method}`;
   if (localStorage.getItem(vKey) === SCHEMA_VERSION) return;
@@ -534,9 +651,8 @@ export function initPerUserData(method, email) {
   localStorage.setItem(txKey, JSON.stringify(getDefaultTxs(method)));
   window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: txKey } }));
 
-  // Profiles need computeProfileKey / getDefaultProfiles (defined later — both are hoisted function declarations)
   const profileKey = computeProfileKey(method, email || '');
-  localStorage.setItem(profileKey, JSON.stringify(getDefaultProfiles(method)));
+  localStorage.setItem(profileKey, JSON.stringify(getDefaultProfiles(method, lang)));
   window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: profileKey } }));
 
   localStorage.setItem(vKey, SCHEMA_VERSION);
