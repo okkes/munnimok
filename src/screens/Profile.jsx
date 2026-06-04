@@ -3112,6 +3112,7 @@ export function AccountsSharingOverview() {
             profileName: p.name, profileId: p.id,
             permission: (p.members || []).find(m => m.userId === myId)?.permission || 'contributor',
           });
+        });
       } catch {}
     });
     return results;
