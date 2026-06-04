@@ -1,5 +1,5 @@
 import React from 'react';
-import { CATEGORIES, fmtEur, fmtDate, ACCOUNTS, RECURRING, RECURRING_SUGGESTIONS, getUserId, INTEGRATIONS, ALL_RECEIPTS, getUserSyncKey, fmtSyncTime, addDevLog, DEMO_ACCOUNT_IDS, DEMO_ACCOUNTS, computePeriodHistory, generateBankTxs, generateAsnTxs, computeUserDataKey } from '../data.jsx';
+import { CATEGORIES, fmtEur, fmtDate, ACCOUNTS, RECURRING, RECURRING_SUGGESTIONS, getUserId, INTEGRATIONS, ALL_RECEIPTS, getUserSyncKey, fmtSyncTime, addDevLog, DEMO_ACCOUNT_IDS, DEMO_ACCOUNTS, computePeriodHistory, generateBankTxs, generateAsnTxs, computeUserDataKey, registerUserInGlobalRegistry } from '../data.jsx';
 import { M, I, IcoMDI, Divider, StatusBar, AppBar } from '../theme.jsx';
 import { useDark } from '../nav.jsx';
 import { LangCtx, useLang, NavCtx, useNav, Sheet, OTHER_LANGUAGES, TabBar } from '../i18n.jsx';
@@ -320,6 +320,8 @@ export function ScreenProfile() {
     return 'munni_user_picture';
   }, [loginMethod, _safeEmail]);
   const [userPicture, setUserPicture] = useLocalStorage(pictureKey, null);
+  const _myId = React.useMemo(() => getUserId(), []);
+  React.useEffect(() => { registerUserInGlobalRegistry(_myId, name, userPicture); }, [_myId, name, userPicture]);
   const { profiles } = useProfiles();
   const activeProfile = profiles.find(p => p.active) || profiles[0];
   const [connectedAccounts] = useConnectedAccounts();
