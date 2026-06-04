@@ -445,7 +445,7 @@ export function ScreenProfile() {
               <div style={{ fontSize:14, fontWeight:600, color:M.clay }}>{t('settings.resetDemo')}</div>
               <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{t('settings.resetDemoSub')}</div>
             </div>
-            <I name="chevron-right" size={16} color={M.ink4}/>
+            <I name="caretR" size={16} color={M.ink4}/>
           </div>
         </div>
 

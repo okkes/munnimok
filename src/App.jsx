@@ -5,7 +5,7 @@ import { M, I, IcoGoogle, IcoApple, Divider, StatusBar, AppBar } from './theme.j
 import { DarkCtx } from './nav.jsx';
 import { useLang, LangProvider, NavProvider, useNav, Sheet } from './i18n.jsx';
 import { useLocalStorage, useSessionStorage } from './hooks.jsx';
-import { CatProvider, ProfilesProvider, useProfiles, TxProvider, RecurProvider, AllocProvider, useConnectedAccounts, ScreenAllocate, ScreenAllocateTopic, ScreenAllocateAddTopic } from './providers.jsx';
+import { CatProvider, ProfilesProvider, useProfiles, TxProvider, RecurProvider, AllocProvider, useConnectedAccounts, ScreenAllocate, ScreenAllocateTopic, ScreenAllocateAddTopic, ResetSignalListener } from './providers.jsx';
 import { ScreenStub } from './screens/Stub.jsx';
 import { ScreenHome } from './screens/Home.jsx';
 import { ScreenTransactions, ScreenTxDetail, ScreenExpenses, ScreenCategoryDrill } from './screens/Tx.jsx';
@@ -1138,6 +1138,7 @@ export function App() {
 
   const appContent = (
     <AppCtx.Provider value={{ logout: () => { sessionStorage.removeItem('munni_session_active'); setLoggedIn(false); } }}>
+    <ResetSignalListener/>
     <div className="m m-app" style={{ width:'100%', height:'100%', background: M.paper, filter: dark ? 'invert(0.93) hue-rotate(180deg)' : 'none', transition:'filter 0.3s' }}>
       {loggedIn ? (
         <CatProvider>

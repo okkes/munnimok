@@ -22,6 +22,21 @@ export function CatProvider({ children }) {
 }
 export const useCatCtx = () => React.useContext(CatCtx);
 
+// Listen for demo reset from any tab — wipe session and reload to login
+export function ResetSignalListener() {
+  React.useEffect(() => {
+    const onStorage = (e) => {
+      if (e.key === 'munni_reset_signal') {
+        sessionStorage.clear();
+        window.location.reload();
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+  return null;
+}
+
 export const ProfilesCtx = React.createContext(null);
 
 export function ProfilesProvider({ children }) {

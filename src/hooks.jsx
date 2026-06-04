@@ -29,7 +29,12 @@ export function useLocalStorage(key, defaultValue) {
   return [state, set];
 }
 
-export function clearAllStorage() { localStorage.clear(); }
+export function clearAllStorage() {
+  // Write reset signal BEFORE clearing — other tabs receive the storage event and reload
+  localStorage.setItem('munni_reset_signal', String(Date.now()));
+  localStorage.clear();
+  sessionStorage.clear();
+}
 
 export function useSessionStorage(key, defaultValue) {
   const read = React.useCallback(() => {
