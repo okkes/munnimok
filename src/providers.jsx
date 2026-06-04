@@ -36,27 +36,36 @@ export function ProfilesProvider({ children }) {
   const [profiles, setProfiles] = useLocalStorage(profileKey, defaultProfiles);
   const myId = React.useMemo(() => getUserId(), []);
 
-  // Global expelled detection: runs regardless of which screen is open
+  // Global shared-profile signal detection: expelled (kicked) and left (voluntary leave)
   React.useEffect(() => {
-    const checkExpelled = () => {
+    const checkSharedSignals = () => {
       setProfiles(ps => {
-        const expelled = ps.filter(p => {
-          if (!p.isShared) return false;
+        let changed = false;
+        const updated = ps.map(p => {
           try {
             const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{}');
-            return !!sd.expelled?.[myId];
-          } catch { return false; }
+            // Expelled: remove this isShared profile from my list
+            if (p.isShared && sd.expelled?.[myId]) { changed = true; return null; }
+            // Member left: remove them from the owner's members list
+            if (!p.isShared && (p.members || []).length > 0) {
+              const leftIds = Object.keys(sd.left || {});
+              if (leftIds.length > 0) {
+                const newMembers = (p.members || []).filter(m => !leftIds.includes(m.userId));
+                if (newMembers.length < (p.members || []).length) { changed = true; return { ...p, members: newMembers }; }
+              }
+            }
+          } catch {}
+          return p;
         });
-        if (expelled.length === 0) return ps;
-        const expelledIds = new Set(expelled.map(p => p.id));
-        const remaining = ps.filter(p => !expelledIds.has(p.id));
+        if (!changed) return ps;
+        const remaining = updated.filter(Boolean);
         if (!remaining.find(p => p.active) && remaining.length > 0) remaining[0] = { ...remaining[0], active: true };
         return remaining;
       });
     };
-    checkExpelled();
-    const onStorage = (e) => { if (e.key?.startsWith('munni_shared_data_')) checkExpelled(); };
-    const onCustom = (e) => { if (e.detail?.key?.startsWith('munni_shared_data_')) checkExpelled(); };
+    checkSharedSignals();
+    const onStorage = (e) => { if (e.key?.startsWith('munni_shared_data_')) checkSharedSignals(); };
+    const onCustom = (e) => { if (e.detail?.key?.startsWith('munni_shared_data_')) checkSharedSignals(); };
     window.addEventListener('storage', onStorage);
     window.addEventListener('munni-ls', onCustom);
     return () => { window.removeEventListener('storage', onStorage); window.removeEventListener('munni-ls', onCustom); };

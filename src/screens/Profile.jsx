@@ -834,23 +834,23 @@ export function ScreenProfileDetail({ params }) {
     nav.pop();
   };
 
-  const cleanupMySharedAccounts = () => {
+  const cleanupMySharedAccounts = (signalLeft = false) => {
     try {
       const sdKey = `munni_shared_data_${profile.id}`;
       const sd = JSON.parse(localStorage.getItem(sdKey) || '{}');
       const myAcctIds = new Set((sd.accounts || []).filter(a => a.attachedBy === myId).map(a => a.id));
-      if (myAcctIds.size === 0) return;
       localStorage.setItem(sdKey, JSON.stringify({
         ...sd,
         accounts: (sd.accounts || []).filter(a => a.attachedBy !== myId),
         txs: (sd.txs || []).filter(t => !myAcctIds.has(t.account)),
+        ...(signalLeft ? { left: { ...(sd.left || {}), [myId]: Date.now() } } : {}),
       }));
       window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sdKey } }));
     } catch {}
   };
 
   const leaveProfile = () => {
-    cleanupMySharedAccounts();
+    cleanupMySharedAccounts(true);
     setProfiles(ps => {
       const remaining = ps.filter(p => p.id !== profile.id);
       if (!remaining.find(p => p.active) && remaining.length > 0) remaining[0] = { ...remaining[0], active: true };
@@ -861,7 +861,7 @@ export function ScreenProfileDetail({ params }) {
 
   const transferAndLeave = () => {
     if (otherMembers.length === 0) return;
-    cleanupMySharedAccounts();
+    cleanupMySharedAccounts(true);
     setProfiles(ps => ps.map(p => {
       if (p.id !== profile.id) return p;
       const remaining = (p.members || []).filter(m => m.userId !== myId);
