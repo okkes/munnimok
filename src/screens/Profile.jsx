@@ -3342,14 +3342,14 @@ export function AccountsSharingOverview() {
                     <I name={item.type==='savings'?'piggy':item.type==='invest'?'rocket':'card'} size={16} color="#fff"/>
                   </div>
                   <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:14, fontWeight:500 }}>{item.name}</div>
-                    {item.iban && <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono, marginTop:1 }}>{item.iban}</div>}
-                    <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>From <strong>{item.fromName}</strong> · <span style={{ color:M.sage, fontWeight:600 }}>{item.profileName}</span></div>
+                    <div style={{ fontSize:14, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.name}</div>
+                    {item.iban && <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono, marginTop:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.iban}</div>}
+                    <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:3, flexWrap:'wrap' }}>
+                      <span style={{ fontSize:11, color:M.ink3 }}>From <strong>{item.fromName}</strong> · <span style={{ color:M.sage, fontWeight:600 }}>{item.profileName}</span></span>
+                      <span style={{ fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase', flexShrink:0 }}>{item.permission}</span>
+                    </div>
                   </div>
-                  <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                    <span style={{ fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>{item.permission}</span>
-                    <I name="caretR" size={14} color={M.ink4}/>
-                  </div>
+                  <I name="caretR" size={14} color={M.ink4} style={{ flexShrink:0 }}/>
                 </div>
               </React.Fragment>
             ))}
@@ -3370,19 +3370,21 @@ export function AccountsSharingOverview() {
                     <I name={account.type==='savings'?'piggy':account.type==='invest'?'rocket':'card'} size={16} color="#fff"/>
                   </div>
                   <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:14, fontWeight:500 }}>{account.name}</div>
-                    {account.iban && <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono, marginTop:1 }}>{account.iban}</div>}
-                    <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>
-                      {contributorName
-                        ? <>From <strong>{contributorName}</strong> · <span style={{ color:M.sage, fontWeight:600 }}>{profile.name}</span></>
-                        : <>{t('accounts.sharedVia')} <strong>{profile.name}</strong> · {memberCount} member{memberCount>1?'s':''}</>
-                      }
+                    <div style={{ fontSize:14, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{account.name}</div>
+                    {account.iban && <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono, marginTop:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{account.iban}</div>}
+                    <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:3, flexWrap:'wrap' }}>
+                      <span style={{ fontSize:11, color:M.ink3 }}>
+                        {contributorName
+                          ? <>From <strong>{contributorName}</strong> · <span style={{ color:M.sage, fontWeight:600 }}>{profile.name}</span></>
+                          : <>{t('accounts.sharedVia')} <strong>{profile.name}</strong> · {memberCount} member{memberCount>1?'s':''}</>
+                        }
+                      </span>
+                      {contributorName && (
+                        <span style={{ fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:999, background:M.paper2, color:M.ink3, textTransform:'uppercase', flexShrink:0 }}>read only</span>
+                      )}
                     </div>
                   </div>
-                  <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                    {contributorName && <span style={{ fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:999, background:M.paper2, color:M.ink3, textTransform:'uppercase' }}>read only</span>}
-                    <I name="caretR" size={14} color={M.ink4}/>
-                  </div>
+                  <I name="caretR" size={14} color={M.ink4}/>
                 </div>
               </React.Fragment>
             ))}
