@@ -761,7 +761,8 @@ export function ScreenProfileDetail({ params }) {
   // Process accepted profile invites for the owner so members appear as soon as they visit the profile detail,
   // not only when they open the members sheet (which was the previous requirement)
   React.useEffect(() => {
-    if (!profile || profile.isShared) return;
+    // Also runs for transferred owners (isShared + memberPerms says owner)
+    if (!profile || (profile.isShared && sharedData?.memberPerms?.[myId] !== 'owner')) return;
     const accepted = invitations.filter(inv =>
       inv.fromId === myId && inv.type === 'profile' && inv.profileId === profile.id && inv.status === 'accepted'
       && !(profile.members || []).some(m => m.userId === inv.toId)
@@ -778,7 +779,7 @@ export function ScreenProfileDetail({ params }) {
       return { ...p, members: [...(p.members || []), ...newMembers] };
     }));
     setInvitations(arr => arr.map(i => accepted.some(a => a.id === i.id) ? { ...i, status: 'joined' } : i));
-  }, [invitations, profileId]);
+  }, [invitations, profileId, sharedData?.memberPerms?.[myId]]);
 
   // Auto-leave if expelled by another owner-permission member
   React.useEffect(() => {
@@ -1103,68 +1104,75 @@ export function ScreenProfileDetail({ params }) {
           </div>
         ) : (
           <div className="m-card" style={{ padding:'4px 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
-            {members.length === 0 && pendingInvitesForProfile.length === 0 && !isMemberOfShared && (
-              <div style={{ padding:'14px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>{t('profile.noMembers')}</div>
-            )}
-            {members.map((m, i) => {
-              const info = userRegistry[m.userId] || {};
-              const isMe = m.userId === myId;
-              return (
-                <React.Fragment key={m.userId}>
-                  {i > 0 && <Divider inset={44}/>}
-                  <div style={{ display:'flex', alignItems:'center', gap:10, padding:'11px 0' }}>
-                    <div style={{ width:32, height:32, borderRadius:999, background:isMe?M.sageSoft:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:13, fontWeight:700, color:isMe?M.sage:M.ink2 }}>
-                      {(info.displayName||m.userId).charAt(0).toUpperCase()}
-                    </div>
-                    <div style={{ flex:1, minWidth:0 }}>
-                      <div style={{ fontSize:14, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{info.displayName||m.userId}{isMe?' (you)':''}</div>
-                    </div>
-                    <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:m.permission==='owner'?M.ochreSoft:m.permission==='contributor'?M.sageSoft:M.paper2, color:PERM_COLOR[m.permission]||M.ink3, textTransform:'uppercase', flexShrink:0 }}>
-                      {PERM_LABEL[m.permission]||m.permission}
-                    </span>
-                  </div>
-                </React.Fragment>
-              );
-            })}
-            {isMemberOfShared && (() => {
-              const myInfo = userRegistry[myId] || {};
-              const myDisplayName = myInfo.displayName || myId;
+            {(() => {
+              // For isMemberOfShared views, the current user is rendered separately below — exclude self from this list
+              const displayMembers = isMemberOfShared ? members.filter(m => m.userId !== myId) : members;
               return (
                 <>
-                  {members.length > 0 && <Divider inset={44}/>}
-                  <div style={{ display:'flex', alignItems:'center', gap:10, padding:'11px 0' }}>
-                    <div style={{ width:32, height:32, borderRadius:999, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:13, fontWeight:700, color:M.sage }}>
-                      {myDisplayName.charAt(0).toUpperCase()}
-                    </div>
-                    <div style={{ flex:1, minWidth:0 }}>
-                      <div style={{ fontSize:14, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                        {myDisplayName} <span style={{ color:M.ink4, fontWeight:400 }}>({t('word.you')})</span>
-                      </div>
-                    </div>
-                    <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:myPerm==='owner'?M.ochreSoft:myPerm==='contributor'?M.sageSoft:M.paper2, color:PERM_COLOR[myPerm]||M.ink3, textTransform:'uppercase', flexShrink:0 }}>
-                      {PERM_LABEL[myPerm]||myPerm}
-                    </span>
-                  </div>
+                  {displayMembers.length === 0 && pendingInvitesForProfile.length === 0 && !isMemberOfShared && (
+                    <div style={{ padding:'14px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>{t('profile.noMembers')}</div>
+                  )}
+                  {displayMembers.map((m, i) => {
+                    const info = userRegistry[m.userId] || {};
+                    return (
+                      <React.Fragment key={m.userId}>
+                        {i > 0 && <Divider inset={44}/>}
+                        <div style={{ display:'flex', alignItems:'center', gap:10, padding:'11px 0' }}>
+                          <div style={{ width:32, height:32, borderRadius:999, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:13, fontWeight:700, color:M.ink2 }}>
+                            {(info.displayName||m.userId).charAt(0).toUpperCase()}
+                          </div>
+                          <div style={{ flex:1, minWidth:0 }}>
+                            <div style={{ fontSize:14, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{info.displayName||m.userId}</div>
+                          </div>
+                          <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:m.permission==='owner'?M.ochreSoft:m.permission==='contributor'?M.sageSoft:M.paper2, color:PERM_COLOR[m.permission]||M.ink3, textTransform:'uppercase', flexShrink:0 }}>
+                            {PERM_LABEL[m.permission]||m.permission}
+                          </span>
+                        </div>
+                      </React.Fragment>
+                    );
+                  })}
+                  {isMemberOfShared && (() => {
+                    const myInfo = userRegistry[myId] || {};
+                    const myDisplayName = myInfo.displayName || myId;
+                    return (
+                      <>
+                        {displayMembers.length > 0 && <Divider inset={44}/>}
+                        <div style={{ display:'flex', alignItems:'center', gap:10, padding:'11px 0' }}>
+                          <div style={{ width:32, height:32, borderRadius:999, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:13, fontWeight:700, color:M.sage }}>
+                            {myDisplayName.charAt(0).toUpperCase()}
+                          </div>
+                          <div style={{ flex:1, minWidth:0 }}>
+                            <div style={{ fontSize:14, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                              {myDisplayName} <span style={{ color:M.ink4, fontWeight:400 }}>({t('word.you')})</span>
+                            </div>
+                          </div>
+                          <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:myPerm==='owner'?M.ochreSoft:myPerm==='contributor'?M.sageSoft:M.paper2, color:PERM_COLOR[myPerm]||M.ink3, textTransform:'uppercase', flexShrink:0 }}>
+                            {PERM_LABEL[myPerm]||myPerm}
+                          </span>
+                        </div>
+                      </>
+                    );
+                  })()}
+                  {pendingInvitesForProfile.map((inv, i) => {
+                    const info = userRegistry[inv.toId] || {};
+                    return (
+                      <React.Fragment key={inv.id}>
+                        {(displayMembers.length > 0 || isMemberOfShared || i > 0) && <Divider inset={44}/>}
+                        <div style={{ display:'flex', alignItems:'center', gap:10, padding:'11px 0' }}>
+                          <div style={{ width:32, height:32, borderRadius:999, background:M.ochreSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:13, fontWeight:700, color:M.ochre }}>
+                            {(info.displayName||inv.toId).charAt(0).toUpperCase()}
+                          </div>
+                          <div style={{ flex:1, minWidth:0 }}>
+                            <div style={{ fontSize:14, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{info.displayName||inv.toId}</div>
+                          </div>
+                          <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase', flexShrink:0 }}>{t('friends.pending')}</span>
+                        </div>
+                      </React.Fragment>
+                    );
+                  })}
                 </>
               );
             })()}
-            {pendingInvitesForProfile.map((inv, i) => {
-              const info = userRegistry[inv.toId] || {};
-              return (
-                <React.Fragment key={inv.id}>
-                  {(members.length > 0 || i > 0) && <Divider inset={44}/>}
-                  <div style={{ display:'flex', alignItems:'center', gap:10, padding:'11px 0' }}>
-                    <div style={{ width:32, height:32, borderRadius:999, background:M.ochreSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:13, fontWeight:700, color:M.ochre }}>
-                      {(info.displayName||inv.toId).charAt(0).toUpperCase()}
-                    </div>
-                    <div style={{ flex:1, minWidth:0 }}>
-                      <div style={{ fontSize:14, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{info.displayName||inv.toId}</div>
-                    </div>
-                    <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase', flexShrink:0 }}>{t('friends.pending')}</span>
-                  </div>
-                </React.Fragment>
-              );
-            })}
             {myPerm === 'owner' && (
               <>
                 {(members.length > 0 || pendingInvitesForProfile.length > 0 || isMemberOfShared) && <Divider inset={0}/>}

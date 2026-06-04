@@ -447,7 +447,7 @@ export function ProfileMembersSheet({ profile, onClose }) {
       profileId:profile.id, profileName:profile.name, profileIcon:profile.icon,
       profilePicture:profile.picture, profileIsDemo:profile.isDemo || false,
       profileAccountIds:profile.accountIds || [],
-      originalOwnerId: profile.ownerId || myId,
+      originalOwnerId: sharedData?.meta?.newOwnerId || profile.ownerId || myId,
       permission:'contributor', status:'pending', sentAt:Date.now(),
     };
     setInvitations(arr=>[...arr, inv]);
