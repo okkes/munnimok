@@ -876,6 +876,7 @@ export function ScreenProfileDetail({ params }) {
       localStorage.setItem(sdKey, JSON.stringify({
         ...sd,
         meta: { ...(sd.meta || {}), newOwnerId: newOwner.userId },
+        memberPerms: { ...(sd.memberPerms || {}), [newOwner.userId]: 'owner' },
       }));
       window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sdKey } }));
     } catch {}
