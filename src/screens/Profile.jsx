@@ -1,5 +1,5 @@
 import React from 'react';
-import { CATEGORIES, fmtEur, fmtDate, ACCOUNTS, RECURRING, RECURRING_SUGGESTIONS, getUserId, INTEGRATIONS, ALL_RECEIPTS, getUserSyncKey, fmtSyncTime, addDevLog, DEMO_ACCOUNT_IDS, DEMO_ACCOUNTS, computePeriodHistory, generateBankTxs, generateAsnTxs, computeUserDataKey, registerUserInGlobalRegistry } from '../data.jsx';
+import { CATEGORIES, fmtEur, fmtDate, ACCOUNTS, RECURRING, RECURRING_SUGGESTIONS, getUserId, INTEGRATIONS, ALL_RECEIPTS, getUserSyncKey, fmtSyncTime, addDevLog, DEMO_ACCOUNT_IDS, DEMO_ACCOUNTS, computePeriodHistory, generateBankTxs, generateAsnTxs, computeUserDataKey, registerUserInGlobalRegistry, getDefaultProfileName } from '../data.jsx';
 import { M, I, IcoMDI, Divider, StatusBar, AppBar } from '../theme.jsx';
 import { useDark } from '../nav.jsx';
 import { LangCtx, useLang, NavCtx, useNav, Sheet, OTHER_LANGUAGES, TabBar } from '../i18n.jsx';
@@ -654,7 +654,7 @@ export function ScreenProfiles() {
 
 export function ScreenProfileDetail({ params }) {
   const nav = useNav();
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const { profiles, setProfiles } = useProfiles();
   const [connectedAccounts] = useConnectedAccounts();
   const { allTxs: ownTxs } = useTxCtx();
@@ -851,11 +851,17 @@ export function ScreenProfileDetail({ params }) {
     } catch {}
   };
 
+  const makeDefaultProfile = () => ({
+    id: `p_${Date.now()}`, name: getDefaultProfileName(lang), icon: 'user',
+    active: true, accountIds: [], picture: 'av1', isDemo: false,
+  });
+
   const leaveProfile = () => {
     cleanupMySharedAccounts(true);
     setProfiles(ps => {
       const remaining = ps.filter(p => p.id !== profile.id);
-      if (!remaining.find(p => p.active) && remaining.length > 0) remaining[0] = { ...remaining[0], active: true };
+      if (remaining.length === 0) return [makeDefaultProfile()];
+      if (!remaining.find(p => p.active)) remaining[0] = { ...remaining[0], active: true };
       return remaining;
     });
     nav.pop();
@@ -874,12 +880,12 @@ export function ScreenProfileDetail({ params }) {
       window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sdKey } }));
     } catch {}
     cleanupMySharedAccounts(true);
-    setProfiles(ps => ps.map(p => {
-      if (p.id !== profile.id) return p;
-      const remaining = (p.members || []).filter(m => m.userId !== myId);
-      if (remaining.length > 0) remaining[0] = { ...remaining[0], permission: 'owner' };
-      return { ...p, members: remaining };
-    }));
+    setProfiles(ps => {
+      const remaining = ps.filter(p => p.id !== profile.id);
+      if (remaining.length === 0) return [makeDefaultProfile()];
+      if (!remaining.find(p => p.active)) remaining[0] = { ...remaining[0], active: true };
+      return remaining;
+    });
     nav.pop();
   };
 
