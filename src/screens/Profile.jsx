@@ -1054,11 +1054,6 @@ export function ScreenProfileDetail({ params }) {
             {isActive && (
               <div style={{ fontSize:11, color:M.sage, fontWeight:600, marginTop:3, textAlign:'center' }}>{t('profile.active')}</div>
             )}
-            {isMemberOfShared && (
-              <div style={{ fontSize:11, color:PERM_COLOR[myPerm]||M.ink3, fontWeight:600, marginTop:3, textAlign:'center' }}>
-                {t('profile.yourRole')}: {PERM_LABEL[myPerm]||myPerm}
-              </div>
-            )}
           </div>
         </div>
 
@@ -1108,7 +1103,7 @@ export function ScreenProfileDetail({ params }) {
           </div>
         ) : (
           <div className="m-card" style={{ padding:'4px 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
-            {members.length === 0 && pendingInvitesForProfile.length === 0 && (
+            {members.length === 0 && pendingInvitesForProfile.length === 0 && !isMemberOfShared && (
               <div style={{ padding:'14px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>{t('profile.noMembers')}</div>
             )}
             {members.map((m, i) => {
@@ -1131,6 +1126,28 @@ export function ScreenProfileDetail({ params }) {
                 </React.Fragment>
               );
             })}
+            {isMemberOfShared && (() => {
+              const myInfo = userRegistry[myId] || {};
+              const myDisplayName = myInfo.displayName || myId;
+              return (
+                <>
+                  {members.length > 0 && <Divider inset={44}/>}
+                  <div style={{ display:'flex', alignItems:'center', gap:10, padding:'11px 0' }}>
+                    <div style={{ width:32, height:32, borderRadius:999, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:13, fontWeight:700, color:M.sage }}>
+                      {myDisplayName.charAt(0).toUpperCase()}
+                    </div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:14, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                        {myDisplayName} <span style={{ color:M.ink4, fontWeight:400 }}>({t('word.you')})</span>
+                      </div>
+                    </div>
+                    <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:myPerm==='owner'?M.ochreSoft:myPerm==='contributor'?M.sageSoft:M.paper2, color:PERM_COLOR[myPerm]||M.ink3, textTransform:'uppercase', flexShrink:0 }}>
+                      {PERM_LABEL[myPerm]||myPerm}
+                    </span>
+                  </div>
+                </>
+              );
+            })()}
             {pendingInvitesForProfile.map((inv, i) => {
               const info = userRegistry[inv.toId] || {};
               return (
