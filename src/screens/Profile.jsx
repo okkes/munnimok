@@ -3168,6 +3168,7 @@ export function AccountsSharingOverview() {
       try {
         const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{"accounts":[]}');
         (sd.accounts || []).forEach(a => {
+          if (a.attachedBy === myId) return; // own account — not "shared with me"
           results.push({
             id: `${p.id}_${a.id}`, name: a.name || '—', iban: a.iban || '',
             color: a.color, type: a.type, fromName: p.ownerDisplay || p.ownerId || '?',
