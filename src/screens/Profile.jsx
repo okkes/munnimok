@@ -863,6 +863,16 @@ export function ScreenProfileDetail({ params }) {
 
   const transferAndLeave = () => {
     if (otherMembers.length === 0) return;
+    const newOwner = otherMembers[0];
+    try {
+      const sdKey = `munni_shared_data_${profile.id}`;
+      const sd = JSON.parse(localStorage.getItem(sdKey) || '{}');
+      localStorage.setItem(sdKey, JSON.stringify({
+        ...sd,
+        meta: { ...(sd.meta || {}), newOwnerId: newOwner.userId },
+      }));
+      window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sdKey } }));
+    } catch {}
     cleanupMySharedAccounts(true);
     setProfiles(ps => ps.map(p => {
       if (p.id !== profile.id) return p;

@@ -54,6 +54,20 @@ export function ProfilesProvider({ children }) {
                 if (newMembers.length < (p.members || []).length) { changed = true; return { ...p, members: newMembers }; }
               }
             }
+            // isShared member view: remove members who have left, detect owner transfer
+            if (p.isShared && (p.members || []).length > 0) {
+              const leftIds = Object.keys(sd.left || {});
+              const newMembers = (p.members || []).filter(m => !leftIds.includes(m.userId));
+              const membersTrimmed = newMembers.length < (p.members || []).length;
+              const newOwnerId = sd.meta?.newOwnerId;
+              const ownerChanged = newOwnerId && newOwnerId !== p.ownerId;
+              if (membersTrimmed || ownerChanged) {
+                changed = true;
+                let result = { ...p, members: newMembers };
+                if (ownerChanged) result = { ...result, ownerId: newOwnerId };
+                return result;
+              }
+            }
             // Name/picture sync: apply changes written by the other side
             const isSharedVariant = p.isShared || (p.members || []).length > 0;
             if (isSharedVariant && sd.meta) {
