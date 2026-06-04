@@ -104,6 +104,8 @@ export function ScreenFriends() {
 
   const cancelInvite = (invId) => setInvitations(arr => arr.filter(i => i.id !== invId));
 
+  const [declineInvSheet, setDeclineInvSheet] = React.useState(null); // { inv, senderName }
+
   const acceptFriendInvite = (inv) => {
     setInvitations(list => list.map(i => i.id === inv.id ? { ...i, status: 'accepted' } : i));
     setFriendships(list => {
@@ -112,8 +114,20 @@ export function ScreenFriends() {
     });
   };
 
-  const declineFriendInvite = (inv) => {
+  const justDeclineFriendInvite = (inv) => {
     setInvitations(list => list.map(i => i.id === inv.id ? { ...i, status: 'declined' } : i));
+    setDeclineInvSheet(null);
+  };
+
+  const declineAndBlockFriendInvite = (inv) => {
+    setInvitations(list => list.filter(i => i.id !== inv.id));
+    const senderInfo = userRegistry[inv.fromId] || {};
+    setBlocks(prev => {
+      const existing = prev[myId] || [];
+      if (existing.some(b => b.userId === inv.fromId)) return prev;
+      return { ...prev, [myId]: [...existing, { userId: inv.fromId, displayName: senderInfo.displayName || inv.fromId, picture: senderInfo.picture || null, blockedAt: Date.now() }] };
+    });
+    setDeclineInvSheet(null);
   };
 
   // Kick a friend from all shared profiles where I am the owner,
@@ -237,7 +251,7 @@ export function ScreenFriends() {
                           style={{ flex:2, padding:'9px 0', borderRadius:8, background:M.sage, color:'#fff', border:'none', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
                           {t('friends.accept')}
                         </button>
-                        <button className="m-tap" onClick={()=>declineFriendInvite(inv)}
+                        <button className="m-tap" onClick={()=>setDeclineInvSheet({ inv, senderName: info.displayName || inv.fromId })}
                           style={{ flex:1, padding:'9px 0', borderRadius:8, background:M.paper2, color:M.ink3, border:`1px solid ${M.line}`, fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
                           {t('friends.decline')}
                         </button>
@@ -351,6 +365,34 @@ export function ScreenFriends() {
               <div style={{ flex:1, textAlign:'left' }}>
                 <div style={{ fontSize:15, fontWeight:500, color:M.clay, fontFamily:M.fontUI }}>{t('friends.blockAction')}</div>
                 <div style={{ fontSize:11, color:M.ink4 }}>{friendSheet.info?.displayName || friendSheet.fid}</div>
+              </div>
+            </button>
+            <div style={{ height:8 }}/>
+          </div>
+        </Sheet>
+      )}
+
+      {/* Decline friend request sheet */}
+      {declineInvSheet && (
+        <Sheet onClose={() => setDeclineInvSheet(null)}>
+          <div style={{ padding:'4px 16px 8px' }}>
+            <div style={{ fontSize:15, fontWeight:700, padding:'12px 0 4px' }}>{declineInvSheet.senderName}</div>
+            <div style={{ fontSize:12, color:M.ink4, marginBottom:16 }}>{t('friends.inviteNotif')} {declineInvSheet.senderName}</div>
+            <button className="m-tap" onClick={() => justDeclineFriendInvite(declineInvSheet.inv)}
+              style={{ width:'100%', display:'flex', alignItems:'center', gap:14, padding:'14px 0', background:'none', border:'none', cursor:'pointer', borderTop:`1px solid ${M.line2}` }}>
+              <div style={{ width:36, height:36, borderRadius:10, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                <I name="x" size={16} color={M.ink3}/>
+              </div>
+              <span style={{ fontSize:15, fontWeight:500, color:M.ink, fontFamily:M.fontUI }}>{t('friends.justDecline')}</span>
+            </button>
+            <button className="m-tap" onClick={() => declineAndBlockFriendInvite(declineInvSheet.inv)}
+              style={{ width:'100%', display:'flex', alignItems:'center', gap:14, padding:'14px 0', background:'none', border:'none', cursor:'pointer', borderTop:`1px solid ${M.line2}` }}>
+              <div style={{ width:36, height:36, borderRadius:10, background:'#FFF0F0', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                <I name="ban" size={16} color={M.clay}/>
+              </div>
+              <div style={{ flex:1, textAlign:'left' }}>
+                <div style={{ fontSize:15, fontWeight:500, color:M.clay, fontFamily:M.fontUI }}>{t('friends.declineAndBlock')}</div>
+                <div style={{ fontSize:11, color:M.ink4 }}>{declineInvSheet.senderName}</div>
               </div>
             </button>
             <div style={{ height:8 }}/>
