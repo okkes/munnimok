@@ -97,6 +97,8 @@ export function I({ name, size = 20, color = 'currentColor', stroke = 1.6 }) {
     case 'arrowDn': return w(<path d="M5 9l7 7 7-7" {...p}/>);
     case 'arrowUp': return w(<path d="M19 15l-7-7-7 7" {...p}/>);
     case 'caretR': return w(<path d="M10 6l6 6-6 6" {...p}/>);
+    case 'caretD': return w(<path d="M6 10l6 6 6-6" {...p}/>);
+    case 'caretU': return w(<path d="M18 14l-6-6-6 6" {...p}/>);
     case 'edit': return w(<><path d="M4 20h4l10-10-4-4L4 16v4z" {...p}/><path d="M14 6l4 4" {...p}/></>);
     case 'search': return w(<><circle cx="11" cy="11" r="6.5" {...p}/><path d="M20.5 20.5l-4-4" {...p}/></>);
     case 'filter': return w(<path d="M5 6h14M7 12h10M10 18h4" {...p}/>);
@@ -142,6 +144,7 @@ export function I({ name, size = 20, color = 'currentColor', stroke = 1.6 }) {
     case 'heart': return w(<path d="M12 21s-7-5-7-11a4 4 0 017-2.6A4 4 0 0119 10c0 6-7 11-7 11z" {...p}/>);
     case 'alert': return w(<><path d="M12 4L3 20h18z" {...p}/><path d="M12 10v5M12 17.5v.5" {...p}/></>);
     case 'swap':  return w(<path d="M4 8h13l-3-3M20 16H7l3 3" {...p}/>);
+    case 'ban':   return w(<><circle cx="12" cy="12" r="9" {...p}/><path d="M5.6 5.6l12.8 12.8" {...p}/></>);
     default: return w(<rect x="4" y="4" width="16" height="16" rx="3" {...p}/>);
   }
 }

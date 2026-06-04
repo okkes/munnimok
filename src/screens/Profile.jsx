@@ -2298,14 +2298,14 @@ export function InviteCards() {
             <button className="m-tap" onClick={() => { declineSheet.onJustDecline(); setDeclineSheet(null); }}
               style={{ width:'100%', display:'flex', alignItems:'center', gap:14, padding:'14px 0', background:'none', border:'none', cursor:'pointer', borderTop:`1px solid ${M.line2}` }}>
               <div style={{ width:36, height:36, borderRadius:10, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center' }}>
-                <I name="close" size={16} color={M.ink3}/>
+                <I name="x" size={16} color={M.ink3}/>
               </div>
               <span style={{ fontSize:15, fontWeight:500, color:M.ink, fontFamily:M.fontUI }}>{t('friends.justDecline')}</span>
             </button>
             <button className="m-tap" onClick={() => declineAndBlock(declineSheet.inv)}
               style={{ width:'100%', display:'flex', alignItems:'center', gap:14, padding:'14px 0', background:'none', border:'none', cursor:'pointer', borderTop:`1px solid ${M.line2}` }}>
               <div style={{ width:36, height:36, borderRadius:10, background:'#FFF0F0', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                <I name="close" size={16} color={M.clay}/>
+                <I name="ban" size={16} color={M.clay}/>
               </div>
               <div style={{ flex:1, textAlign:'left' }}>
                 <div style={{ fontSize:15, fontWeight:500, color:M.clay, fontFamily:M.fontUI }}>{t('friends.declineAndBlock')}</div>
