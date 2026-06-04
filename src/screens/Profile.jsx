@@ -517,8 +517,10 @@ export function ScreenProfiles() {
   const myId = React.useMemo(() => getUserId(), []);
   const [invitations, setInvitations] = useLocalStorage('munni_global_invitations', []);
   const [userRegistry] = useLocalStorage('munni_global_users', {});
+  const [_blocks] = useLocalStorage('munni_global_blocks', {});
 
-  const pendingProfileInvites = invitations.filter(i => i.type === 'profile' && i.toId === myId && i.status === 'pending');
+  const myBlockedSenderIds = new Set((_blocks[myId] || []).map(b => b.userId));
+  const pendingProfileInvites = invitations.filter(i => i.type === 'profile' && i.toId === myId && i.status === 'pending' && !myBlockedSenderIds.has(i.fromId));
 
   const acceptProfileInvite = (inv) => {
     setInvitations(list => list.map(i => i.id === inv.id ? { ...i, status: 'accepted', respondedAt: Date.now() } : i));
@@ -2261,8 +2263,9 @@ export function InviteCards() {
   const { profiles, setProfiles } = useProfiles();
   const [declineSheet, setDeclineSheet] = React.useState(null); // { inv, isProfile, onJustDecline }
 
-  const pendingFriend = invitations.filter(inv => inv.toId === myId && inv.type === 'friend' && inv.status === 'pending');
-  const pendingProfile = invitations.filter(inv => inv.toId === myId && inv.type === 'profile' && inv.status === 'pending');
+  const myBlockedSenderIds = new Set((blocks[myId] || []).map(b => b.userId));
+  const pendingFriend = invitations.filter(inv => inv.toId === myId && inv.type === 'friend' && inv.status === 'pending' && !myBlockedSenderIds.has(inv.fromId));
+  const pendingProfile = invitations.filter(inv => inv.toId === myId && inv.type === 'profile' && inv.status === 'pending' && !myBlockedSenderIds.has(inv.fromId));
   const allPending = [...pendingFriend, ...pendingProfile];
 
   // Slide-in animation for invites that arrive while the screen is already open
