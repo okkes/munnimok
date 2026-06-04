@@ -3160,6 +3160,7 @@ export function AccountsSharingOverview() {
   const myId = React.useMemo(() => getUserId(), []);
   const { profiles } = useProfiles();
   const [connectedAccounts] = useConnectedAccounts();
+  const [userRegistry] = useLocalStorage('munni_global_users', {});
 
   // Accounts shared with me: read from munni_shared_data_{profileId} for each isShared profile
   const sharedWithMe = React.useMemo(() => {
@@ -3181,19 +3182,36 @@ export function AccountsSharingOverview() {
     return results;
   }, [profiles, myId]);
 
-  // Accounts I own that are shared via profiles with other members
+  // Accounts being shared: own accounts shared with members, member contributions (read-only for owner), and guest's own contributions
   const iSharing = React.useMemo(() => {
     const results = [];
+    // Owner's own accounts + member-contributed accounts visible in the profile
     profiles.filter(p => !p.isShared).forEach(p => {
       const otherMembers = (p.members || []).filter(m => m.userId !== myId);
       if (otherMembers.length === 0) return;
-      const ownAccounts = connectedAccounts.filter(a => (p.accountIds || []).includes(a.id));
-      ownAccounts.forEach(a => {
+      connectedAccounts.filter(a => (p.accountIds || []).includes(a.id)).forEach(a => {
         results.push({ account: a, profile: p, memberCount: otherMembers.length });
       });
+      // Member-contributed accounts shown read-only to the owner
+      try {
+        const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{"accounts":[]}');
+        (sd.accounts || []).filter(a => !connectedAccounts.some(ca => ca.id === a.id)).forEach(a => {
+          results.push({ account: a, profile: p, memberCount: otherMembers.length,
+            contributorName: userRegistry[a.attachedBy]?.displayName || a.attachedBy || '?' });
+        });
+      } catch {}
+    });
+    // Guest's own accounts contributed to shared profiles
+    profiles.filter(p => p.isShared).forEach(p => {
+      try {
+        const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{"accounts":[]}');
+        (sd.accounts || []).filter(a => a.attachedBy === myId).forEach(a => {
+          results.push({ account: a, profile: p, memberCount: (p.members || []).length });
+        });
+      } catch {}
     });
     return results;
-  }, [profiles, myId, connectedAccounts]);
+  }, [profiles, myId, connectedAccounts, userRegistry]);
 
   if (sharedWithMe.length === 0 && iSharing.length === 0) return null;
 
@@ -3230,7 +3248,7 @@ export function AccountsSharingOverview() {
         <>
           <div className="m-cap" style={{ marginBottom:8, paddingLeft:4, marginTop:8 }}>{t('accounts.iSharing')}</div>
           <div className="m-card" style={{ padding:'4px 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
-            {iSharing.map(({ account, profile, memberCount }, i) => (
+            {iSharing.map(({ account, profile, memberCount, contributorName }, i) => (
               <React.Fragment key={`${account.id}-${profile.id}`}>
                 {i > 0 && <Divider inset={48}/>}
                 <div className="m-tap" onClick={() => nav.push('profileDetail', { id: profile.id })}
@@ -3240,11 +3258,18 @@ export function AccountsSharingOverview() {
                   </div>
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ fontSize:14, fontWeight:500 }}>{account.name}</div>
+                    {account.iban && <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono, marginTop:1 }}>{account.iban}</div>}
                     <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>
-                      {t('accounts.sharedVia')} <strong>{profile.name}</strong> · {memberCount} member{memberCount>1?'s':''}
+                      {contributorName
+                        ? <>From <strong>{contributorName}</strong> · <span style={{ color:M.sage, fontWeight:600 }}>{profile.name}</span></>
+                        : <>{t('accounts.sharedVia')} <strong>{profile.name}</strong> · {memberCount} member{memberCount>1?'s':''}</>
+                      }
                     </div>
                   </div>
-                  <I name="caretR" size={14} color={M.ink4}/>
+                  <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                    {contributorName && <span style={{ fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:999, background:M.paper2, color:M.ink3, textTransform:'uppercase' }}>read only</span>}
+                    <I name="caretR" size={14} color={M.ink4}/>
+                  </div>
                 </div>
               </React.Fragment>
             ))}
