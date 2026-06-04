@@ -77,11 +77,26 @@ export function ScreenFriends() {
     if (sentInvites.some(i => i.toId === toId)) { setInviteError(t('friends.sent')); return; }
     // Silently succeed if blocked by recipient — don't reveal block status
     const isBlocked = (blocks[toId] || []).some(b => b.userId === myId);
-    if (!isBlocked) {
+    if (isBlocked) {
+      setInviteInput(''); setInviteError(''); setInviteSent(true);
+      setTimeout(() => setInviteSent(false), 2500);
+      return;
+    }
+    // If the other person already sent me a pending invite, auto-accept both sides
+    const theirPendingInvite = invitations.find(i => i.fromId === toId && i.toId === myId && i.type === 'friend' && i.status === 'pending');
+    if (theirPendingInvite) {
+      setInvitations(arr => arr.map(i => i.id === theirPendingInvite.id ? { ...i, status: 'accepted' } : i));
+      setFriendships(arr => {
+        if (arr.some(f => f.users.includes(myId) && f.users.includes(toId))) return arr;
+        return [...arr, { id:`fr_${Date.now()}`, users:[myId, toId], since:Date.now() }];
+      });
+    } else {
       const inv = { id:`inv_${Date.now()}`, fromId:myId, fromName:myName, toId, type:'friend', status:'pending', sentAt:Date.now() };
       setInvitations(arr => [...arr, inv]);
     }
-    setInviteInput(''); setInviteError(''); setInviteSent(true);
+    setInviteInput('');
+    setInviteError('');
+    setInviteSent(true);
     setTimeout(() => setInviteSent(false), 2500);
   };
 

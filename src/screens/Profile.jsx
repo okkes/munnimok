@@ -2272,7 +2272,7 @@ export function InviteCards() {
             <div style={{ fontSize:14, fontWeight:600 }}>{name}</div>
             <div style={{ fontSize:11, color:M.ink4, fontFamily:M.fontMono, marginTop:2 }}>{inv.fromId}</div>
           </div>
-          <div style={{ fontSize:10, fontWeight:700, padding:'3px 8px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase', letterSpacing:'0.04em', flexShrink:0 }}>Friend</div>
+          <div style={{ fontSize:10, fontWeight:700, padding:'3px 8px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase', letterSpacing:'0.04em', flexShrink:0 }}>{t('friends.friendBadge')}</div>
         </div>
         <div style={{ display:'flex', gap:8 }}>
           <button className="m-tap" onClick={onAccept}
@@ -2308,7 +2308,7 @@ export function InviteCards() {
             </div>
           </div>
           <div style={{ flex:1, minWidth:0 }}>
-            <div style={{ fontSize:10, fontWeight:700, color:M.sage, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:2 }}>Profile invite</div>
+            <div style={{ fontSize:10, fontWeight:700, color:M.sage, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:2 }}>{t('friends.profileInviteFrom')}</div>
             <div style={{ fontSize:15, fontWeight:700, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{inv.profileName || 'Shared profile'}</div>
             <div style={{ fontSize:11, color:M.ink3, marginTop:2 }}>From <strong>{senderName}</strong></div>
           </div>

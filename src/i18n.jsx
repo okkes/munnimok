@@ -1,6 +1,6 @@
 import React from 'react';
 import { M, I } from './theme.jsx';
-import { useLocalStorage } from './hooks.jsx';
+import { useLocalStorage, useSessionStorage } from './hooks.jsx';
 
 export const TRANSLATIONS = {
   en: {
@@ -176,6 +176,7 @@ export const TRANSLATIONS = {
     'friends.justDecline':'Just decline','friends.declineAndBlock':'Decline & Block',
     'friends.blockedUsers':'Blocked','friends.noBlocked':'No blocked users',
     'friends.unblock':'Unblock','friends.removeFriend':'Remove friend','friends.blockAction':'Block',
+    'friends.friendBadge':'Friend',
     'profile.members':'Members','profile.addMember':'Invite a friend','profile.invite':'Invite','profile.sharedBy':'Shared by','profile.noMembers':'Only you have access','profile.demoNoInvite':'Demo profiles cannot have members',
     'profile.permReader':'Reader','profile.permContributor':'Contributor','profile.permOwner':'Owner',
     'profile.kick':'Remove member','profile.kickWarn':'Their connected bank accounts will be removed from this profile.',
@@ -382,6 +383,7 @@ export const TRANSLATIONS = {
     'friends.justDecline':'Alleen weigeren','friends.declineAndBlock':'Weigeren & Blokkeren',
     'friends.blockedUsers':'Geblokkeerd','friends.noBlocked':'Geen geblokkeerde gebruikers',
     'friends.unblock':'Deblokkeren','friends.removeFriend':'Vriend verwijderen','friends.blockAction':'Blokkeren',
+    'friends.friendBadge':'Vriend',
     'profile.members':'Leden','profile.addMember':'Vriend uitnodigen','profile.invite':'Uitnodigen','profile.sharedBy':'Gedeeld door','profile.noMembers':'Alleen jij hebt toegang','profile.demoNoInvite':'Demo-profielen kunnen geen leden hebben',
     'profile.permReader':'Lezer','profile.permContributor':'Bijdrager','profile.permOwner':'Eigenaar',
     'profile.kick':'Lid verwijderen','profile.kickWarn':'Hun bankrekeningen worden verwijderd uit dit profiel.',
@@ -584,6 +586,7 @@ export const TRANSLATIONS = {
     'friends.justDecline':'Sadece reddet','friends.declineAndBlock':'Reddet & Engelle',
     'friends.blockedUsers':'Engellenenler','friends.noBlocked':'Engellenmiş kullanıcı yok',
     'friends.unblock':'Engeli kaldır','friends.removeFriend':'Arkadaşı kaldır','friends.blockAction':'Engelle',
+    'friends.friendBadge':'Arkadaş',
     'profile.members':'Üyeler','profile.addMember':'Arkadaş davet et','profile.invite':'Davet et','profile.sharedBy':'Paylaşan:','profile.noMembers':'Yalnızca siz erişebilirsiniz','profile.demoNoInvite':'Demo profillerin üyesi olamaz',
     'profile.permReader':'Okuyucu','profile.permContributor':'Katkıcı','profile.permOwner':'Sahip',
     'profile.kick':'Üyeyi kaldır','profile.kickWarn':'Bağlı banka hesapları bu profilden kaldırılacak.',
@@ -642,7 +645,17 @@ export const LangCtx = React.createContext({ lang:'en', setLang:()=>{}, t: k => 
 export const useLang = () => React.useContext(LangCtx);
 
 export function LangProvider({ children }) {
-  const [lang, setLang] = useLocalStorage('munni_lang', 'en');
+  // Per-tab language: sessionStorage keeps tabs independent.
+  // Seed from localStorage so the user's last-chosen language carries over on new tabs.
+  const lsDefault = React.useMemo(() => {
+    try { const v = localStorage.getItem('munni_lang'); return v ? JSON.parse(v) : 'en'; } catch { return 'en'; }
+  }, []);
+  const [lang, setSessionLang] = useSessionStorage('munni_lang_tab', lsDefault);
+  const setLang = React.useCallback((v) => {
+    setSessionLang(v);
+    // Also persist to localStorage as seed for future new tabs
+    try { localStorage.setItem('munni_lang', JSON.stringify(v)); } catch {}
+  }, [setSessionLang]);
   const t = React.useCallback((key) => TRANSLATIONS[lang]?.[key] || TRANSLATIONS.en[key] || key, [lang]);
   return <LangCtx.Provider value={{ lang, setLang, t }}>{children}</LangCtx.Provider>;
 }
