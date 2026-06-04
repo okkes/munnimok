@@ -2209,24 +2209,47 @@ export function InviteCards() {
   const respondProfile = (inv, action) => {
     setInvitations(list => list.map(i => i.id === inv.id ? { ...i, status: action, respondedAt: Date.now() } : i));
     if (action === 'accepted') {
+      // Clear any stale left/expelled signals for me in this profile's sharedData so
+      // the owner's checkSharedSignals doesn't remove me immediately after rejoining
+      try {
+        const sdKey = `munni_shared_data_${inv.profileId}`;
+        const sd = JSON.parse(localStorage.getItem(sdKey) || '{}');
+        const hadStale = sd.left?.[myId] || sd.expelled?.[myId];
+        if (hadStale) {
+          const { [myId]: _l, ...remainingLeft } = sd.left || {};
+          const { [myId]: _e, ...remainingExpelled } = sd.expelled || {};
+          // Also pick up the latest name/picture from meta in case owner renamed since last invite
+          localStorage.setItem(sdKey, JSON.stringify({ ...sd, left: remainingLeft, expelled: remainingExpelled }));
+          window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sdKey } }));
+        }
+        // Read fresh meta so the rejoined profile starts with the current name/picture
+        const freshSd = JSON.parse(localStorage.getItem(sdKey) || '{}');
+        var freshName = freshSd.meta?.name;
+        var freshPic = freshSd.meta?.picture;
+      } catch {}
       // Add a shared copy of the profile to the accepter's profile list
       setProfiles(ps => {
-        if (ps.some(p => p.id === inv.profileId)) return ps;
+        const existing = ps.find(p => p.id === inv.profileId);
         const originalOwnerId = inv.originalOwnerId || inv.fromId;
         const ownerDisplay = userRegistry[originalOwnerId]?.displayName || originalOwnerId;
-        return [...ps, {
+        const profileData = {
           id: inv.profileId,
-          name: inv.profileName || 'Shared',
+          name: freshName || inv.profileName || 'Shared',
           icon: inv.profileIcon || 'users',
           active: false,
           accountIds: inv.profileAccountIds || [],
-          picture: inv.profilePicture || null,
+          picture: freshPic !== undefined ? freshPic : (inv.profilePicture || null),
           isDemo: inv.profileIsDemo || false,
           isShared: true,
           ownerId: originalOwnerId,
           ownerDisplay,
           members: [{ userId: originalOwnerId, displayName: ownerDisplay, permission: 'owner', accountIds: [] }],
-        }];
+        };
+        if (existing) {
+          // Rejoin: update the existing entry rather than skipping
+          return ps.map(p => p.id === inv.profileId ? { ...p, ...profileData } : p);
+        }
+        return [...ps, profileData];
       });
     }
   };

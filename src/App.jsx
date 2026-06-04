@@ -282,6 +282,18 @@ export function ProfileMembersSheet({ profile, onClose }) {
       permission:'contributor', status:'pending', sentAt:Date.now(),
     };
     setInvitations(arr=>[...arr, inv]);
+    // Clear any stale left/expelled signal for this friend so checkSharedSignals
+    // doesn't remove them from members as soon as they rejoin
+    try {
+      const sdKey = `munni_shared_data_${profile.id}`;
+      const sd = JSON.parse(localStorage.getItem(sdKey) || '{}');
+      if (sd.left?.[friendId] || sd.expelled?.[friendId]) {
+        const { [friendId]: _l, ...remainingLeft } = sd.left || {};
+        const { [friendId]: _e, ...remainingExpelled } = sd.expelled || {};
+        localStorage.setItem(sdKey, JSON.stringify({ ...sd, left: remainingLeft, expelled: remainingExpelled }));
+        window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sdKey } }));
+      }
+    } catch {}
   };
 
   const kickMember = (userId) => {
