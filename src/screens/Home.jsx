@@ -102,7 +102,7 @@ export function ScreenHome() {
   const isSharedActive = !!(activeProfile?.isShared || (activeProfile?.members||[]).length > 0);
   const activeSharedDataKey = isSharedActive ? `munni_shared_data_${activeProfile?.id}` : 'munni_shared_data_none';
   const [activeSharedData] = useLocalStorage(activeSharedDataKey, { accounts: [], txs: [] });
-  const activeAccountIds = (activeProfile?.isShared && (activeSharedData?.accounts?.length ?? 0) > 0)
+  const activeAccountIds = (isSharedActive && (activeSharedData?.accounts?.length ?? 0) > 0)
     ? (activeSharedData.accounts || []).map(a => a.id)
     : (activeProfile?.accountIds || []);
   const allAccountsForBalance = [...connectedAccounts, ...(activeSharedData?.accounts || []).filter(sa => !connectedAccounts.some(ca => ca.id === sa.id))];

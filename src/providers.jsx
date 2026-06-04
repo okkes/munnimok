@@ -56,7 +56,7 @@ export function TxProvider({ children }) {
 
   // For shared profiles (invited members), profile.accountIds is a stale invite-time snapshot.
   // Use the live sharedData.accounts IDs instead so newly attached accounts are always visible.
-  const activeAccountIds = (activeProfile?.isShared && (sharedData?.accounts?.length ?? 0) > 0)
+  const activeAccountIds = (isSharedOrHasMembers && (sharedData?.accounts?.length ?? 0) > 0)
     ? (sharedData.accounts || []).map(a => a.id)
     : (activeProfile?.accountIds || []);
 

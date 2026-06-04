@@ -728,14 +728,36 @@ export function ScreenProfileDetail({ params }) {
   const isActive = profile.active;
   const isOnly = profiles.length === 1;
 
+  const isProfileShared = isMemberOfShared || members.length > 0;
+
+  // Sync sharedData.meta ↔ local profile copy so both tabs see name/picture changes live
+  React.useEffect(() => {
+    const metaName = sharedData?.meta?.name;
+    const metaPic = sharedData?.meta?.picture;
+    if (!profile || (!metaName && metaPic === undefined)) return;
+    const nameChanged = metaName && metaName !== profile.name;
+    const picChanged = metaPic !== undefined && metaPic !== profile.picture;
+    if (!nameChanged && !picChanged) return;
+    setProfiles(ps => ps.map(p => p.id === profile.id ? {
+      ...p,
+      ...(nameChanged ? { name: metaName } : {}),
+      ...(picChanged ? { picture: metaPic } : {}),
+    } : p));
+  }, [sharedData?.meta?.name, sharedData?.meta?.picture, profileId]);
+
   const startEditName = () => { setNameDraft(profile.name); setEditingName(true); };
   const saveName = () => {
-    if (nameDraft.trim()) setProfiles(ps => ps.map(p => p.id === profile.id ? { ...p, name: nameDraft.trim() } : p));
+    const trimmed = nameDraft.trim();
+    if (trimmed) {
+      setProfiles(ps => ps.map(p => p.id === profile.id ? { ...p, name: trimmed } : p));
+      if (isProfileShared) setSharedData(prev => ({ ...prev, meta: { ...(prev.meta || {}), name: trimmed } }));
+    }
     setEditingName(false);
   };
 
   const setPicture = (chosen) => {
     setProfiles(ps => ps.map(p => p.id === profile.id ? { ...p, picture: chosen } : p));
+    if (isProfileShared) setSharedData(prev => ({ ...prev, meta: { ...(prev.meta || {}), picture: chosen } }));
     setShowPhotoSheet(false);
   };
 
@@ -808,9 +830,10 @@ export function ScreenProfileDetail({ params }) {
 
   // For shared profiles (invited members), the source of truth is sharedData.accounts from the owner.
   // profile.accountIds is a stale snapshot from invite time and may be missing accounts added later.
+  const memberAttachedAccts = sharedAccts.filter(a => !accountIds.includes(a.id));
   const attachedAccountObjects = isMemberOfShared
     ? sharedAccts
-    : accountIds.map(id => availableAccounts.find(a => a.id === id)).filter(Boolean);
+    : [...accountIds.map(id => availableAccounts.find(a => a.id === id)).filter(Boolean), ...memberAttachedAccts];
   const attachedMain = attachedAccountObjects.filter(a => a.type === 'checking');
   const attachedSaving = attachedAccountObjects.filter(a => a.type !== 'checking');
 
@@ -3083,15 +3106,12 @@ export function AccountsSharingOverview() {
       try {
         const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{"accounts":[]}');
         (sd.accounts || []).forEach(a => {
-          if ((p.accountIds || []).includes(a.id)) {
-            results.push({
-              id: `${p.id}_${a.id}`, name: a.name || '—', iban: a.iban || '',
-              color: a.color, type: a.type, fromName: p.ownerDisplay || p.ownerId || '?',
-              profileName: p.name, profileId: p.id,
-              permission: (p.members || []).find(m => m.userId === myId)?.permission || 'contributor',
-            });
-          }
-        });
+          results.push({
+            id: `${p.id}_${a.id}`, name: a.name || '—', iban: a.iban || '',
+            color: a.color, type: a.type, fromName: p.ownerDisplay || p.ownerId || '?',
+            profileName: p.name, profileId: p.id,
+            permission: (p.members || []).find(m => m.userId === myId)?.permission || 'contributor',
+          });
       } catch {}
     });
     return results;
