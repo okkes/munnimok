@@ -151,10 +151,13 @@ export function ProfileMembersSheet({ profile, onClose }) {
   const [kickConfirm, setKickConfirm] = React.useState(null);
   const [permEdit, setPermEdit] = React.useState(null);
 
+  const [sharedData] = useLocalStorage(`munni_shared_data_${profile.id}`, { accounts: [], txs: [] });
+
   const myFriendIds = friendships.filter(f=>f.users&&f.users.includes(myId)).map(f=>f.users.find(u=>u!==myId));
   const members = profile.members || [];
 
-  const myPerm = members.find(m=>m.userId===myId)?.permission || 'owner';
+  // For invited members, sharedData.memberPerms holds the authoritative permission (set by changePerm)
+  const myPerm = sharedData?.memberPerms?.[myId] || members.find(m=>m.userId===myId)?.permission || (profile.isShared ? 'contributor' : 'owner');
   const canManage = myPerm === 'owner';
   const pendingMemberInvites = invitations.filter(i=>i.fromId===myId&&i.type==='profile'&&i.profileId===profile.id&&i.status==='pending');
 
@@ -166,13 +169,13 @@ export function ProfileMembersSheet({ profile, onClose }) {
       profileId:profile.id, profileName:profile.name, profileIcon:profile.icon,
       profilePicture:profile.picture, profileIsDemo:profile.isDemo || false,
       profileAccountIds:profile.accountIds || [],
+      originalOwnerId: profile.ownerId || myId,
       permission:'contributor', status:'pending', sentAt:Date.now(),
     };
     setInvitations(arr=>[...arr, inv]);
   };
 
   const kickMember = (userId) => {
-    // Remove their connected bank accounts from this profile
     const member = members.find(m=>m.userId===userId);
     const memberAccountIds = (member?.accountIds||[]);
     updateProfile(p => ({
@@ -180,6 +183,13 @@ export function ProfileMembersSheet({ profile, onClose }) {
       accountIds: (p.accountIds||[]).filter(id=>!memberAccountIds.includes(id)),
       members: (p.members||[]).filter(m=>m.userId!==userId),
     }));
+    // Signal expelled user so their tab auto-removes the profile
+    try {
+      const sdKey = `munni_shared_data_${profile.id}`;
+      const sd = JSON.parse(localStorage.getItem(sdKey) || '{}');
+      localStorage.setItem(sdKey, JSON.stringify({ ...sd, expelled: { ...(sd.expelled||{}), [userId]: Date.now() } }));
+      window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sdKey } }));
+    } catch {}
     setKickConfirm(null);
   };
 

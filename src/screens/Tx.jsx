@@ -1,5 +1,5 @@
 import React from 'react';
-import { CATEGORIES, _catExt, catPath, fmtEur, fmtDate, ACCOUNTS, TRANSACTIONS, computePeriodHistory, dayLabel } from '../data.jsx';
+import { CATEGORIES, _catExt, catPath, fmtEur, fmtDate, ACCOUNTS, TRANSACTIONS, computePeriodHistory, dayLabel, getUserId } from '../data.jsx';
 import { M, I, IcoMDI, Divider, StatusBar, AppBar } from '../theme.jsx';
 import { useLang, useNav, Sheet, TabBar } from '../i18n.jsx';
 import { useLocalStorage } from '../hooks.jsx';
@@ -142,6 +142,8 @@ export function ScreenTxDetail({ params }) {
   const _activeProfile = profiles.find(p => p.active) || profiles[0];
   const _sharedKey = (_activeProfile?.isShared || (_activeProfile?.members||[]).length > 0) ? `munni_shared_data_${_activeProfile?.id}` : 'munni_shared_data_none';
   const [_sharedData] = useLocalStorage(_sharedKey, { accounts: [] });
+  const [_userRegistry] = useLocalStorage('munni_global_users', {});
+  const _myId = React.useMemo(() => getUserId(), []);
 
   const [showLinkRecurring, setShowLinkRecurring] = React.useState(false);
   const [showCatPicker, setShowCatPicker] = React.useState(false);
@@ -167,6 +169,31 @@ export function ScreenTxDetail({ params }) {
   const netOriginalTx = originalTx ? originalTx.amount + tx.amount : 0;
 
   const account = connectedAccounts.find(a => a.id === tx.account) || (_sharedData?.accounts || []).find(a => a.id === tx.account) || ACCOUNTS.find(a => a.id === tx.account);
+
+  // Editing lock: acquire lock on mount, release on unmount (for shared profiles only)
+  React.useEffect(() => {
+    if (_sharedKey === 'munni_shared_data_none') return;
+    try {
+      const sd = JSON.parse(localStorage.getItem(_sharedKey) || '{}');
+      localStorage.setItem(_sharedKey, JSON.stringify({ ...sd, editing: { txId: tx.id, userId: _myId, since: Date.now() } }));
+      window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: _sharedKey } }));
+    } catch {}
+    return () => {
+      try {
+        const sd = JSON.parse(localStorage.getItem(_sharedKey) || '{}');
+        if (sd.editing?.userId === _myId && sd.editing?.txId === tx.id) {
+          const { editing: _e, ...rest } = sd;
+          localStorage.setItem(_sharedKey, JSON.stringify(rest));
+          window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: _sharedKey } }));
+        }
+      } catch {}
+    };
+  }, [tx.id, _sharedKey]);
+
+  const _editingLock = _sharedData?.editing;
+  const isLockedByOther = !!_editingLock && _editingLock.txId === tx.id && _editingLock.userId !== _myId
+    && (Date.now() - (_editingLock.since || 0)) < 300000;
+  const _lockedByName = _userRegistry[_editingLock?.userId]?.displayName || _editingLock?.userId || 'Someone';
 
   const linkedRecurId = tx.recurId || null;
   const linkedRecurring = recurList.find(r => r.id === linkedRecurId || r.txIds?.includes(tx.id));
@@ -206,6 +233,13 @@ export function ScreenTxDetail({ params }) {
         trailing={null}
       />
       <div className="m-body-scroll">
+        {isLockedByOther && (
+          <div style={{ margin:'0 0 10px', padding:'10px 14px', borderRadius:12, background:M.ochreSoft, border:`1px solid ${M.ochre}`, display:'flex', alignItems:'center', gap:8 }}>
+            <I name="lock" size={14} color={M.ochre}/>
+            <span style={{ fontSize:13, color:M.ochre, fontWeight:500 }}>{_lockedByName} is editing this transaction — view only</span>
+          </div>
+        )}
+        <div style={{ pointerEvents: isLockedByOther ? 'none' : 'auto', opacity: isLockedByOther ? 0.65 : 1 }}>
         {/* Hero */}
         <div style={{ textAlign: 'center', padding: '8px 0 28px' }}>
           <div style={{
@@ -523,7 +557,8 @@ export function ScreenTxDetail({ params }) {
             {positive ? 'Link reimbursed expense' : 'Link a reimbursement'}
           </button>
         )}
-      </div>
+      </div>{/* end lock wrapper */}
+    </div>{/* end m-body-scroll */}
 
       {showCatPicker && (
         <CategoryPicker

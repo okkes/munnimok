@@ -685,6 +685,17 @@ export function ScreenProfileDetail({ params }) {
     setInvitations(arr => arr.map(i => accepted.some(a => a.id === i.id) ? { ...i, status: 'joined' } : i));
   }, [invitations, profileId]);
 
+  // Auto-leave if expelled by another owner-permission member
+  React.useEffect(() => {
+    if (!sharedData?.expelled?.[myId]) return;
+    setProfiles(ps => {
+      const remaining = ps.filter(p => p.id !== profileId);
+      if (!remaining.find(p => p.active) && remaining.length > 0) remaining[0] = { ...remaining[0], active: true };
+      return remaining;
+    });
+    nav.pop();
+  }, [sharedData?.expelled?.[myId], profileId]);
+
   // Sync owner's attached accounts + their txs to sharedData when the profile has members
   // (covers accounts attached before first member joined, where toggleAccount skipped the write)
   React.useEffect(() => {
@@ -770,16 +781,21 @@ export function ScreenProfileDetail({ params }) {
   };
 
   const toggleAccount = (accountId) => {
-    const isAttaching = !(profile.accountIds || []).includes(accountId);
-    setProfiles(ps => ps.map(p => {
-      if (p.id !== profile.id) return p;
-      const ids = p.accountIds || [];
-      const newIds = ids.includes(accountId) ? ids.filter(x => x !== accountId) : [...ids, accountId];
-      return { ...p, accountIds: newIds };
-    }));
+    const isInOwnIds = (profile.accountIds || []).includes(accountId);
+    const isInSharedAccts = sharedAccts.some(a => a.id === accountId);
+    const isCurrentlyAttached = isInOwnIds || isInSharedAccts;
+    // Only update profile.accountIds for the user's own account contributions (not member-shared ones)
+    if (!isInSharedAccts || isInOwnIds) {
+      setProfiles(ps => ps.map(p => {
+        if (p.id !== profile.id) return p;
+        const ids = p.accountIds || [];
+        const newIds = isCurrentlyAttached ? ids.filter(x => x !== accountId) : [...ids, accountId];
+        return { ...p, accountIds: newIds };
+      }));
+    }
     if (members.length > 0 || isMemberOfShared) {
       const account = availableAccounts.find(a => a.id === accountId);
-      if (isAttaching && account) {
+      if (!isCurrentlyAttached && account) {
         setSharedData(sd => {
           const existing = sd.accounts || [];
           if (existing.some(a => a.id === accountId)) return sd;
@@ -790,7 +806,7 @@ export function ScreenProfileDetail({ params }) {
           const newTxs = acctTxs.filter(t => !existingTxIds.has(t.id));
           return { accounts: [...existing, newAcct], txs: [...(sd.txs || []), ...newTxs] };
         });
-      } else if (!isAttaching) {
+      } else if (isCurrentlyAttached) {
         setSharedData(sd => ({
           accounts: (sd.accounts || []).filter(a => a.id !== accountId),
           txs: (sd.txs || []).filter(t => t.account !== accountId),
@@ -840,7 +856,9 @@ export function ScreenProfileDetail({ params }) {
   const renderAttachedRow = (a, i) => {
     const sharedAcctData = sharedAccts.find(s => s.id === a.id);
     const isSharedAcct = !!sharedAcctData && !ownConnectedIds.has(a.id);
-    const canRemove = canEdit && !isSharedAcct;
+    const isOwnAcct = ownConnectedIds.has(a.id);
+    // Owner-perm users can detach any account; contributors can only detach their own
+    const canDetach = myPerm === 'owner' || (canEdit && isOwnAcct);
     return (
       <React.Fragment key={a.id}>
         {i > 0 && <Divider inset={50}/>}
@@ -856,7 +874,7 @@ export function ScreenProfileDetail({ params }) {
               {isSharedAcct && <span style={{ fontSize:9, fontWeight:600, padding:'1px 6px', borderRadius:999, background:M.violetSoft||'#EEE8FF', color:M.violet||'#7B61FF' }}>Shared</span>}
             </div>
           </div>
-          {canRemove
+          {canDetach
             ? <button className="m-tap" onClick={() => toggleAccount(a.id)}
                 style={{ width:24, height:24, background:M.claySoft, border:'none', borderRadius:999, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0 }}>
                 <I name="x" size={11} color={M.clay}/>
@@ -2136,7 +2154,8 @@ export function InviteCards() {
       // Add a shared copy of the profile to the accepter's profile list
       setProfiles(ps => {
         if (ps.some(p => p.id === inv.profileId)) return ps;
-        const ownerDisplay = userRegistry[inv.fromId]?.displayName || inv.fromId;
+        const originalOwnerId = inv.originalOwnerId || inv.fromId;
+        const ownerDisplay = userRegistry[originalOwnerId]?.displayName || originalOwnerId;
         return [...ps, {
           id: inv.profileId,
           name: inv.profileName || 'Shared',
@@ -2146,9 +2165,9 @@ export function InviteCards() {
           picture: inv.profilePicture || null,
           isDemo: inv.profileIsDemo || false,
           isShared: true,
-          ownerId: inv.fromId,
+          ownerId: originalOwnerId,
           ownerDisplay,
-          members: [{ userId: inv.fromId, displayName: ownerDisplay, permission: 'owner', accountIds: [] }],
+          members: [{ userId: originalOwnerId, displayName: ownerDisplay, permission: 'owner', accountIds: [] }],
         }];
       });
     }
