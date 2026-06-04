@@ -1,5 +1,5 @@
 import React from 'react';
-import { CATEGORIES, _catExt, catPath, fmtEur, RECURRING, ALLOCATE_TOPICS, getDefaultTxs, computeProfileKey, getDefaultProfiles, getDefaultAccounts, computeUserDataKey, BUDGETS, GOALS, DEBTS } from './data.jsx';
+import { CATEGORIES, _catExt, catPath, fmtEur, RECURRING, ALLOCATE_TOPICS, getDefaultTxs, computeProfileKey, getDefaultProfiles, getDefaultAccounts, computeUserDataKey, BUDGETS, GOALS, DEBTS, getUserId } from './data.jsx';
 import { M, I, IcoMDI, Divider, StatusBar, AppBar } from './theme.jsx';
 import { useLang, useNav, Sheet } from './i18n.jsx';
 import { useLocalStorage, useSessionStorage } from './hooks.jsx';
@@ -34,6 +34,34 @@ export function ProfilesProvider({ children }) {
   // Pass lang so the fallback (no stored data) uses the correct localised name
   const defaultProfiles = React.useMemo(() => getDefaultProfiles(loginMethod, lang), [loginMethod, lang]);
   const [profiles, setProfiles] = useLocalStorage(profileKey, defaultProfiles);
+  const myId = React.useMemo(() => getUserId(), []);
+
+  // Global expelled detection: runs regardless of which screen is open
+  React.useEffect(() => {
+    const checkExpelled = () => {
+      setProfiles(ps => {
+        const expelled = ps.filter(p => {
+          if (!p.isShared) return false;
+          try {
+            const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{}');
+            return !!sd.expelled?.[myId];
+          } catch { return false; }
+        });
+        if (expelled.length === 0) return ps;
+        const expelledIds = new Set(expelled.map(p => p.id));
+        const remaining = ps.filter(p => !expelledIds.has(p.id));
+        if (!remaining.find(p => p.active) && remaining.length > 0) remaining[0] = { ...remaining[0], active: true };
+        return remaining;
+      });
+    };
+    checkExpelled();
+    const onStorage = (e) => { if (e.key?.startsWith('munni_shared_data_')) checkExpelled(); };
+    const onCustom = (e) => { if (e.detail?.key?.startsWith('munni_shared_data_')) checkExpelled(); };
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('munni-ls', onCustom);
+    return () => { window.removeEventListener('storage', onStorage); window.removeEventListener('munni-ls', onCustom); };
+  }, [myId]);
+
   return <ProfilesCtx.Provider value={{ profiles, setProfiles }}>{children}</ProfilesCtx.Provider>;
 }
 export const useProfiles = () => React.useContext(ProfilesCtx);
