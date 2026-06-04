@@ -544,8 +544,18 @@ export function ScreenProfiles() {
   };
 
   const profileAccountSub = (p) => {
-    const ids = (p.accountIds || []).filter(id => connectedAccounts.some(a => a.id === id));
-    const acctPart = ids.length === 0 ? t('word.noAccounts') : `${ids.length} ${ids.length === 1 ? t('word.account') : t('word.accounts')}`;
+    const isSharedVariant = p.isShared || (p.members || []).length > 0;
+    let count;
+    if (isSharedVariant) {
+      try {
+        const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{"accounts":[]}');
+        count = (sd.accounts || []).length;
+      } catch { count = 0; }
+      if (count === 0) count = (p.accountIds || []).filter(id => connectedAccounts.some(a => a.id === id)).length;
+    } else {
+      count = (p.accountIds || []).filter(id => connectedAccounts.some(a => a.id === id)).length;
+    }
+    const acctPart = count === 0 ? t('word.noAccounts') : `${count} ${count === 1 ? t('word.account') : t('word.accounts')}`;
     const memberCount = (p.members || []).length;
     if (memberCount > 0) return `${acctPart} · ${memberCount} ${memberCount === 1 ? t('word.member') : t('word.members')}`;
     return acctPart;

@@ -176,18 +176,21 @@ export function ProfileMembersSheet({ profile, onClose }) {
   };
 
   const kickMember = (userId) => {
-    const member = members.find(m=>m.userId===userId);
-    const memberAccountIds = (member?.accountIds||[]);
     updateProfile(p => ({
       ...p,
-      accountIds: (p.accountIds||[]).filter(id=>!memberAccountIds.includes(id)),
       members: (p.members||[]).filter(m=>m.userId!==userId),
     }));
-    // Signal expelled user so their tab auto-removes the profile
+    // Remove kicked member's accounts + txs from sharedData, then signal expelled
     try {
       const sdKey = `munni_shared_data_${profile.id}`;
       const sd = JSON.parse(localStorage.getItem(sdKey) || '{}');
-      localStorage.setItem(sdKey, JSON.stringify({ ...sd, expelled: { ...(sd.expelled||{}), [userId]: Date.now() } }));
+      const kickedAcctIds = new Set((sd.accounts || []).filter(a => a.attachedBy === userId).map(a => a.id));
+      localStorage.setItem(sdKey, JSON.stringify({
+        ...sd,
+        accounts: (sd.accounts || []).filter(a => a.attachedBy !== userId),
+        txs: (sd.txs || []).filter(t => !kickedAcctIds.has(t.account)),
+        expelled: { ...(sd.expelled||{}), [userId]: Date.now() },
+      }));
       window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sdKey } }));
     } catch {}
     setKickConfirm(null);
