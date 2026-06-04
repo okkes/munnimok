@@ -209,10 +209,11 @@ export function getUserId() {
   return 'usr-0000';
 }
 
-export function registerUserInGlobalRegistry(userId, displayName) {
+export function registerUserInGlobalRegistry(userId, displayName, picture) {
   try {
     const reg = JSON.parse(localStorage.getItem('munni_global_users') || '{}');
-    reg[userId] = { displayName: displayName || userId, updatedAt: Date.now() };
+    const prev = reg[userId] || {};
+    reg[userId] = { ...prev, displayName: displayName || userId, updatedAt: Date.now(), ...(picture !== undefined ? { picture } : {}) };
     localStorage.setItem('munni_global_users', JSON.stringify(reg));
     window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: 'munni_global_users' } }));
   } catch {}

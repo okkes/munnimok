@@ -2220,11 +2220,18 @@ export function InviteCards() {
     const sub = isProfile
       ? `${t('friends.profileInviteFrom')}: ${inv.profileName || '—'}`
       : inv.fromId;
+    const pic = userRegistry[inv.fromId]?.picture;
+    const av = pic?.startsWith('av') ? STOCK_AVATARS.find(a => a.id === pic) : null;
     return (
       <div style={{ padding:'12px 0' }}>
         <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:8 }}>
-          <div style={{ width:36, height:36, borderRadius:999, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-            <I name={isProfile?'users':'user'} size={16} color={M.sage}/>
+          <div style={{ width:36, height:36, borderRadius:999, background: av ? av.bg : M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, overflow:'hidden' }}>
+            {pic?.startsWith('data:')
+              ? <img src={pic} style={{ width:36, height:36, objectFit:'cover' }}/>
+              : av
+                ? <span style={{ fontSize:18 }}>{av.emoji}</span>
+                : <I name={isProfile?'users':'user'} size={16} color={M.sage}/>
+            }
           </div>
           <div style={{ flex:1, minWidth:0 }}>
             <div style={{ fontSize:14, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{name}</div>

@@ -28,6 +28,8 @@ export function ScreenFriends() {
   const _safeEmail = React.useMemo(() => { try { return JSON.parse(_rawEmail||'""')||''; } catch { return _rawEmail||''; } }, [_rawEmail]);
   const _nameKey = computeUserDataKey(_loginMethod, _safeEmail, 'munni_profile_name');
   const [myName] = useLocalStorage(_nameKey, myId);
+  const _pictureKey = computeUserDataKey(_loginMethod, _safeEmail, 'munni_user_picture');
+  const [myPicture] = useLocalStorage(_pictureKey, null);
   const [inviteInput, setInviteInput] = React.useState('');
   const [inviteError, setInviteError] = React.useState('');
   const [inviteSent, setInviteSent] = React.useState(false);
@@ -37,7 +39,7 @@ export function ScreenFriends() {
   const [userRegistry] = useLocalStorage('munni_global_users', {});
   const [permSheet, setPermSheet] = React.useState(null);
 
-  React.useEffect(() => { registerUserInGlobalRegistry(myId, myName); }, [myId, myName]);
+  React.useEffect(() => { registerUserInGlobalRegistry(myId, myName, myPicture); }, [myId, myName, myPicture]);
 
   const myFriendships = friendships.filter(f => f.users.includes(myId));
   const myFriendIds = myFriendships.map(f => f.users.find(u => u !== myId));
