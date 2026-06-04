@@ -1165,9 +1165,9 @@ export function ScreenProfileDetail({ params }) {
                 </React.Fragment>
               );
             })}
-            {!isMemberOfShared && (
+            {myPerm === 'owner' && (
               <>
-                {(members.length > 0 || pendingInvitesForProfile.length > 0) && <Divider inset={0}/>}
+                {(members.length > 0 || pendingInvitesForProfile.length > 0 || isMemberOfShared) && <Divider inset={0}/>}
                 <div className="m-tap" onClick={() => setShowMembersSheet(true)} style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 0' }}>
                   <div style={{ width:32, height:32, borderRadius:10, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                     <I name="user" size={15} color={M.sage}/>
@@ -1182,7 +1182,7 @@ export function ScreenProfileDetail({ params }) {
           </div>
         )}
 
-        {isMemberOfShared ? (
+        {(isMemberOfShared && myPerm !== 'owner') ? (
           <button onClick={() => setShowLeaveConfirm(true)}
             style={{ width:'100%', padding:'14px 0', background:M.claySoft, color:M.clay, border:'none', borderRadius:12, fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:8 }}>
             {t('profile.leaveProfile')}
@@ -1193,12 +1193,21 @@ export function ScreenProfileDetail({ params }) {
               style={{ width:'100%', padding:'14px 0', background:M.claySoft, color:M.clay, border:'none', borderRadius:12, fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:8 }}>
               {t('profile.transferLeave')}
             </button>
-            <button disabled={isOnly||isActive} onClick={() => setShowDeleteConfirm(true)}
-              style={{ width:'100%', padding:'14px 0', background:(isOnly||isActive)?M.line:M.claySoft, color:(isOnly||isActive)?M.ink4:M.clay, border:'none', borderRadius:12, fontSize:15, fontWeight:600, cursor:(isOnly||isActive)?'not-allowed':'pointer', fontFamily:M.fontUI, marginBottom:8 }}>
-              {t('profile.deleteProfile')}
-            </button>
-            {(isOnly||isActive) && <div style={{ textAlign:'center', fontSize:12, color:M.ink4 }}>{isActive ? t('profile.cannotDeleteActive') : t('profile.cannotDeleteOnly')}</div>}
+            {!isMemberOfShared && (
+              <>
+                <button disabled={isOnly||isActive} onClick={() => setShowDeleteConfirm(true)}
+                  style={{ width:'100%', padding:'14px 0', background:(isOnly||isActive)?M.line:M.claySoft, color:(isOnly||isActive)?M.ink4:M.clay, border:'none', borderRadius:12, fontSize:15, fontWeight:600, cursor:(isOnly||isActive)?'not-allowed':'pointer', fontFamily:M.fontUI, marginBottom:8 }}>
+                  {t('profile.deleteProfile')}
+                </button>
+                {(isOnly||isActive) && <div style={{ textAlign:'center', fontSize:12, color:M.ink4 }}>{isActive ? t('profile.cannotDeleteActive') : t('profile.cannotDeleteOnly')}</div>}
+              </>
+            )}
           </>
+        ) : isMemberOfShared ? (
+          <button onClick={() => setShowLeaveConfirm(true)}
+            style={{ width:'100%', padding:'14px 0', background:M.claySoft, color:M.clay, border:'none', borderRadius:12, fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:8 }}>
+            {t('profile.leaveProfile')}
+          </button>
         ) : (
           <>
             <button disabled={isOnly||isActive} onClick={() => setShowDeleteConfirm(true)}
@@ -1334,16 +1343,23 @@ export function ScreenProfileDetail({ params }) {
       {showLeaveConfirm && (
         <Sheet onClose={() => setShowLeaveConfirm(false)}>
           <div style={{ padding:'4px 16px 8px' }}>
-            <div style={{ fontSize:17, fontWeight:700, marginBottom:8 }}>
-              {isMemberOfShared ? t('profile.leaveConfirmTitle') : t('profile.transferLeaveConfirmTitle')}
-            </div>
-            <div style={{ fontSize:14, color:M.ink3, lineHeight:1.5, marginBottom:20 }}>
-              {isMemberOfShared ? t('profile.leaveConfirmDesc') : t('profile.transferLeaveConfirmDesc')}
-            </div>
-            <button onClick={isMemberOfShared ? leaveProfile : transferAndLeave}
-              style={{ width:'100%', padding:'14px 0', background:M.clay, color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>
-              {isMemberOfShared ? t('profile.leaveProfile') : t('profile.transferLeave')}
-            </button>
+            {(() => {
+              const isOwnerTransfer = myPerm === 'owner' && otherMembers.length > 0;
+              return (
+                <>
+                  <div style={{ fontSize:17, fontWeight:700, marginBottom:8 }}>
+                    {isOwnerTransfer ? t('profile.transferLeaveConfirmTitle') : t('profile.leaveConfirmTitle')}
+                  </div>
+                  <div style={{ fontSize:14, color:M.ink3, lineHeight:1.5, marginBottom:20 }}>
+                    {isOwnerTransfer ? t('profile.transferLeaveConfirmDesc') : t('profile.leaveConfirmDesc')}
+                  </div>
+                  <button onClick={isOwnerTransfer ? transferAndLeave : leaveProfile}
+                    style={{ width:'100%', padding:'14px 0', background:M.clay, color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>
+                    {isOwnerTransfer ? t('profile.transferLeave') : t('profile.leaveProfile')}
+                  </button>
+                </>
+              );
+            })()}
             <button onClick={() => setShowLeaveConfirm(false)}
               style={{ width:'100%', padding:'14px 0', background:M.paper2, color:M.ink, border:`1px solid ${M.line}`, borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
               {t('action.cancel')}
