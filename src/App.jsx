@@ -19,6 +19,26 @@ import { ScreenIncome, ScreenInvested, ScreenInsights, ScreenDebts, ScreenLogin,
 
 
 
+function UserAvatar({ info, fid, size = 36 }) {
+  const pic = info?.picture;
+  const av = pic?.startsWith('av') ? [
+    {id:'av1',emoji:'🧑',bg:'#FF6B6B'},{id:'av2',emoji:'👩',bg:'#4ECDC4'},{id:'av3',emoji:'👨',bg:'#45B7D1'},
+    {id:'av4',emoji:'🧔',bg:'#96CEB4'},{id:'av5',emoji:'👱',bg:'#FFEAA7'},{id:'av6',emoji:'👴',bg:'#DDA0DD'},
+    {id:'av7',emoji:'🧕',bg:'#9B8EF5'},{id:'av8',emoji:'🦸',bg:'#F5A623'},{id:'av9',emoji:'🧙',bg:'#50C878'},
+    {id:'av10',emoji:'🐱',bg:'#FF9AA2'},
+  ].find(a => a.id === pic) : null;
+  const br = Math.round(size * 0.5);
+  return (
+    <div style={{ width:size, height:size, borderRadius:br, background: av ? av.bg : M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, overflow:'hidden' }}>
+      {pic?.startsWith('data:')
+        ? <img src={pic} style={{ width:size, height:size, objectFit:'cover' }}/>
+        : av ? <span style={{ fontSize: Math.round(size * 0.5) }}>{av.emoji}</span>
+        : <span style={{ fontSize: Math.round(size * 0.42), fontWeight:700, color:M.sage }}>{(info?.displayName || fid || '?').charAt(0).toUpperCase()}</span>
+      }
+    </div>
+  );
+}
+
 export function ScreenFriends() {
   const nav = useNav();
   const { t } = useLang();
@@ -37,10 +57,13 @@ export function ScreenFriends() {
   const [invitations, setInvitations] = useLocalStorage('munni_global_invitations', []);
   const [friendships, setFriendships] = useLocalStorage('munni_global_friendships', []);
   const [userRegistry] = useLocalStorage('munni_global_users', {});
-  const [permSheet, setPermSheet] = React.useState(null);
+  const [blocks, setBlocks] = useLocalStorage('munni_global_blocks', {});
+  const [friendSheet, setFriendSheet] = React.useState(null); // { fid, info }
+  const [showBlocked, setShowBlocked] = React.useState(false);
 
   React.useEffect(() => { registerUserInGlobalRegistry(myId, myName, myPicture); }, [myId, myName, myPicture]);
 
+  const myBlocks = blocks[myId] || [];
   const myFriendships = friendships.filter(f => f.users.includes(myId));
   const myFriendIds = myFriendships.map(f => f.users.find(u => u !== myId));
   const sentInvites = invitations.filter(i => i.fromId === myId && i.type === 'friend' && i.status === 'pending');
@@ -51,19 +74,38 @@ export function ScreenFriends() {
     if (toId === myId) { setInviteError(t('friends.inviteSelf')); return; }
     if (myFriendIds.includes(toId)) { setInviteError(t('friends.alreadyFriends')); return; }
     if (sentInvites.some(i => i.toId === toId)) { setInviteError(t('friends.sent')); return; }
-    const inv = { id:`inv_${Date.now()}`, fromId:myId, fromName:myName, toId, type:'friend', status:'pending', sentAt:Date.now() };
-    setInvitations(arr => [...arr, inv]);
+    // Silently succeed if blocked by recipient — don't reveal block status
+    const isBlocked = (blocks[toId] || []).some(b => b.userId === myId);
+    if (!isBlocked) {
+      const inv = { id:`inv_${Date.now()}`, fromId:myId, fromName:myName, toId, type:'friend', status:'pending', sentAt:Date.now() };
+      setInvitations(arr => [...arr, inv]);
+    }
     setInviteInput(''); setInviteError(''); setInviteSent(true);
     setTimeout(() => setInviteSent(false), 2500);
   };
+
   const cancelInvite = (invId) => setInvitations(arr => arr.filter(i => i.id !== invId));
+
   const removeFriend = (friendId) => {
     setFriendships(arr => arr.filter(f => !(f.users.includes(myId) && f.users.includes(friendId))));
     setInvitations(arr => arr.filter(i => !((i.fromId===myId&&i.toId===friendId)||(i.fromId===friendId&&i.toId===myId))));
   };
-  const copyId = () => { navigator.clipboard?.writeText(myId).catch(()=>{}); setCopied(true); setTimeout(()=>setCopied(false),1800); };
 
-  const PERM_COLORS = { Reader:M.ink3, Contributor:M.sage, Owner:M.ochre };
+  const blockUser = (targetId, info) => {
+    removeFriend(targetId);
+    setBlocks(prev => {
+      const existing = prev[myId] || [];
+      if (existing.some(b => b.userId === targetId)) return prev;
+      return { ...prev, [myId]: [...existing, { userId: targetId, displayName: info?.displayName || targetId, picture: info?.picture || null, blockedAt: Date.now() }] };
+    });
+    setFriendSheet(null);
+  };
+
+  const unblockUser = (targetId) => {
+    setBlocks(prev => ({ ...prev, [myId]: (prev[myId] || []).filter(b => b.userId !== targetId) }));
+  };
+
+  const copyId = () => { navigator.clipboard?.writeText(myId).catch(()=>{}); setCopied(true); setTimeout(()=>setCopied(false),1800); };
 
   return (
     <div className="m-screen">
@@ -102,7 +144,7 @@ export function ScreenFriends() {
               <React.Fragment key={inv.id}>
                 {i>0&&<Divider inset={40}/>}
                 <div style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 0' }}>
-                  <div style={{ width:32, height:32, borderRadius:999, background:M.ochreSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:14, fontWeight:700, color:M.ochre }}>{inv.toId.charAt(0).toUpperCase()}</div>
+                  <div style={{ width:32, height:32, borderRadius:999, background:M.ochreSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:13, fontWeight:700, color:M.ochre }}>{inv.toId.charAt(0).toUpperCase()}</div>
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ fontSize:13, fontWeight:600, fontFamily:M.fontMono }}>{inv.toId}</div>
                     <div style={{ fontSize:11, color:M.ochre }}>{t('friends.pending')}</div>
@@ -125,19 +167,84 @@ export function ScreenFriends() {
                 <React.Fragment key={fid}>
                   {i>0&&<Divider inset={48}/>}
                   <div style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
-                    <div style={{ width:36, height:36, borderRadius:999, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:15, fontWeight:700, color:M.sage }}>{(info.displayName||fid).charAt(0).toUpperCase()}</div>
+                    <UserAvatar info={info} fid={fid} size={36}/>
                     <div style={{ flex:1, minWidth:0 }}>
                       <div style={{ fontSize:14, fontWeight:600 }}>{info.displayName||fid}</div>
                       <div style={{ fontSize:11, color:M.ink4, fontFamily:M.fontMono }}>{fid}</div>
                     </div>
-                    <button className="m-tap" onClick={()=>removeFriend(fid)} style={{ fontSize:11, padding:'5px 11px', borderRadius:8, background:M.claySoft, border:'none', color:M.clay, cursor:'pointer', fontFamily:M.fontUI, fontWeight:600 }}>{t('friends.remove')}</button>
+                    <button className="m-tap" onClick={()=>setFriendSheet({ fid, info })}
+                      style={{ width:32, height:32, borderRadius:999, background:M.paper2, border:`1px solid ${M.line}`, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0 }}>
+                      <I name="more" size={16} color={M.ink3}/>
+                    </button>
                   </div>
                 </React.Fragment>
               );
             })}
           </div>
         )}
+
+        {/* Blocked users section */}
+        <button className="m-tap" onClick={()=>setShowBlocked(v=>!v)}
+          style={{ display:'flex', alignItems:'center', gap:8, width:'100%', background:'none', border:'none', cursor:'pointer', padding:'4px 4px 8px', marginBottom:4 }}>
+          <span style={{ fontSize:11, fontWeight:700, color:M.ink3, textTransform:'uppercase', letterSpacing:'0.06em', flex:1, textAlign:'left' }}>{t('friends.blockedUsers')}{myBlocks.length > 0 ? ` (${myBlocks.length})` : ''}</span>
+          <I name={showBlocked?'caretD':'caretR'} size={12} color={M.ink4}/>
+        </button>
+        {showBlocked && (
+          myBlocks.length === 0
+            ? <div style={{ textAlign:'center', color:M.ink4, fontSize:13, padding:'16px 0 24px' }}>{t('friends.noBlocked')}</div>
+            : <div className="m-card" style={{ padding:'4px 16px', marginBottom:24, border:`1px solid ${M.line}` }}>
+                {myBlocks.map((b,i)=>(
+                  <React.Fragment key={b.userId}>
+                    {i>0&&<Divider inset={48}/>}
+                    <div style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
+                      <UserAvatar info={b} fid={b.userId} size={36}/>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:14, fontWeight:600, color:M.ink3 }}>{b.displayName||b.userId}</div>
+                        <div style={{ fontSize:11, color:M.ink4, fontFamily:M.fontMono }}>{b.userId}</div>
+                      </div>
+                      <button className="m-tap" onClick={()=>unblockUser(b.userId)}
+                        style={{ fontSize:11, padding:'5px 11px', borderRadius:8, background:M.paper2, border:`1px solid ${M.line}`, color:M.ink3, cursor:'pointer', fontFamily:M.fontUI, fontWeight:600 }}>
+                        {t('friends.unblock')}
+                      </button>
+                    </div>
+                  </React.Fragment>
+                ))}
+              </div>
+        )}
       </div>
+
+      {/* Friend options sheet */}
+      {friendSheet && (
+        <Sheet onClose={()=>setFriendSheet(null)}>
+          <div style={{ padding:'4px 16px 8px' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0 16px' }}>
+              <UserAvatar info={friendSheet.info} fid={friendSheet.fid} size={44}/>
+              <div>
+                <div style={{ fontSize:16, fontWeight:700 }}>{friendSheet.info?.displayName || friendSheet.fid}</div>
+                <div style={{ fontSize:11, color:M.ink4, fontFamily:M.fontMono }}>{friendSheet.fid}</div>
+              </div>
+            </div>
+            <button className="m-tap" onClick={()=>{ removeFriend(friendSheet.fid); setFriendSheet(null); }}
+              style={{ width:'100%', display:'flex', alignItems:'center', gap:14, padding:'14px 0', background:'none', border:'none', cursor:'pointer', borderTop:`1px solid ${M.line2}` }}>
+              <div style={{ width:36, height:36, borderRadius:10, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                <I name="user" size={16} color={M.ink3}/>
+              </div>
+              <span style={{ fontSize:15, fontWeight:500, color:M.ink, fontFamily:M.fontUI }}>{t('friends.removeFriend')}</span>
+            </button>
+            <button className="m-tap" onClick={()=>blockUser(friendSheet.fid, friendSheet.info)}
+              style={{ width:'100%', display:'flex', alignItems:'center', gap:14, padding:'14px 0', background:'none', border:'none', cursor:'pointer', borderTop:`1px solid ${M.line2}` }}>
+              <div style={{ width:36, height:36, borderRadius:10, background:'#FFF0F0', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                <I name="close" size={16} color={M.clay}/>
+              </div>
+              <div style={{ flex:1, textAlign:'left' }}>
+                <div style={{ fontSize:15, fontWeight:500, color:M.clay, fontFamily:M.fontUI }}>{t('friends.blockAction')}</div>
+                <div style={{ fontSize:11, color:M.ink4 }}>{friendSheet.info?.displayName || friendSheet.fid}</div>
+              </div>
+            </button>
+            <div style={{ height:8 }}/>
+          </div>
+        </Sheet>
+      )}
     </div>
   );
 }

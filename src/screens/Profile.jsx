@@ -2159,7 +2159,9 @@ export function InviteCards() {
   const [invitations, setInvitations] = useLocalStorage('munni_global_invitations', []);
   const [friendships, setFriendships] = useLocalStorage('munni_global_friendships', []);
   const [userRegistry] = useLocalStorage('munni_global_users', {});
+  const [blocks, setBlocks] = useLocalStorage('munni_global_blocks', {});
   const { profiles, setProfiles } = useProfiles();
+  const [declineSheet, setDeclineSheet] = React.useState(null); // { inv, isProfile, onJustDecline }
 
   const pendingFriend = invitations.filter(inv => inv.toId === myId && inv.type === 'friend' && inv.status === 'pending');
   const pendingProfile = invitations.filter(inv => inv.toId === myId && inv.type === 'profile' && inv.status === 'pending');
@@ -2192,6 +2194,18 @@ export function InviteCards() {
     }
   };
 
+  const declineAndBlock = (inv) => {
+    // Remove invite entirely so sender sees nothing (not even "declined")
+    setInvitations(list => list.filter(i => i.id !== inv.id));
+    const senderInfo = userRegistry[inv.fromId] || {};
+    setBlocks(prev => {
+      const existing = prev[myId] || [];
+      if (existing.some(b => b.userId === inv.fromId)) return prev;
+      return { ...prev, [myId]: [...existing, { userId: inv.fromId, displayName: senderInfo.displayName || inv.fromId, picture: senderInfo.picture || null, blockedAt: Date.now() }] };
+    });
+    setDeclineSheet(null);
+  };
+
   const respondProfile = (inv, action) => {
     setInvitations(list => list.map(i => i.id === inv.id ? { ...i, status: action, respondedAt: Date.now() } : i));
     if (action === 'accepted') {
@@ -2217,7 +2231,8 @@ export function InviteCards() {
     }
   };
 
-  const renderRow = (inv, onAccept, onDecline, isProfile) => {
+  const renderRow = (inv, onAccept, onDeclineAction, isProfile) => {
+    const onDecline = () => setDeclineSheet({ inv, isProfile, onJustDecline: onDeclineAction });
     const name = userRegistry[inv.fromId]?.displayName || inv.fromId;
     const sub = isProfile
       ? `${t('friends.profileInviteFrom')}: ${inv.profileName || '—'}`
@@ -2254,6 +2269,9 @@ export function InviteCards() {
     );
   };
 
+  const dsInv = declineSheet?.inv;
+  const dsName = dsInv ? (userRegistry[dsInv.fromId]?.displayName || dsInv.fromId) : '';
+
   return (
     <>
       <style>{`@keyframes slideInNotif{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}`}</style>
@@ -2270,6 +2288,34 @@ export function InviteCards() {
           </React.Fragment>
         ))}
       </div>
+
+      {/* Decline options sheet */}
+      {declineSheet && (
+        <Sheet onClose={() => setDeclineSheet(null)}>
+          <div style={{ padding:'4px 16px 8px' }}>
+            <div style={{ fontSize:15, fontWeight:700, padding:'12px 0 4px', color:M.ink }}>{dsName}</div>
+            <div style={{ fontSize:12, color:M.ink4, marginBottom:16 }}>{declineSheet.isProfile ? t('friends.profileInviteFrom') : t('friends.inviteNotif')} {dsName}</div>
+            <button className="m-tap" onClick={() => { declineSheet.onJustDecline(); setDeclineSheet(null); }}
+              style={{ width:'100%', display:'flex', alignItems:'center', gap:14, padding:'14px 0', background:'none', border:'none', cursor:'pointer', borderTop:`1px solid ${M.line2}` }}>
+              <div style={{ width:36, height:36, borderRadius:10, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                <I name="close" size={16} color={M.ink3}/>
+              </div>
+              <span style={{ fontSize:15, fontWeight:500, color:M.ink, fontFamily:M.fontUI }}>{t('friends.justDecline')}</span>
+            </button>
+            <button className="m-tap" onClick={() => declineAndBlock(declineSheet.inv)}
+              style={{ width:'100%', display:'flex', alignItems:'center', gap:14, padding:'14px 0', background:'none', border:'none', cursor:'pointer', borderTop:`1px solid ${M.line2}` }}>
+              <div style={{ width:36, height:36, borderRadius:10, background:'#FFF0F0', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                <I name="close" size={16} color={M.clay}/>
+              </div>
+              <div style={{ flex:1, textAlign:'left' }}>
+                <div style={{ fontSize:15, fontWeight:500, color:M.clay, fontFamily:M.fontUI }}>{t('friends.declineAndBlock')}</div>
+                <div style={{ fontSize:11, color:M.ink4 }}>{dsName} {t('friends.blockAction').toLowerCase()}</div>
+              </div>
+            </button>
+            <div style={{ height:8 }}/>
+          </div>
+        </Sheet>
+      )}
     </>
   );
 }

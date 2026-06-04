@@ -54,6 +54,18 @@ export function ProfilesProvider({ children }) {
                 if (newMembers.length < (p.members || []).length) { changed = true; return { ...p, members: newMembers }; }
               }
             }
+            // Name/picture sync: apply changes written by the other side
+            const isSharedVariant = p.isShared || (p.members || []).length > 0;
+            if (isSharedVariant && sd.meta) {
+              const metaName = sd.meta.name;
+              const metaPic = sd.meta.picture;
+              const nameChanged = metaName && metaName !== p.name;
+              const picChanged = metaPic !== undefined && metaPic !== p.picture;
+              if (nameChanged || picChanged) {
+                changed = true;
+                return { ...p, ...(nameChanged ? { name: metaName } : {}), ...(picChanged ? { picture: metaPic } : {}) };
+              }
+            }
           } catch {}
           return p;
         });
