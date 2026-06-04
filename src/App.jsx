@@ -65,9 +65,11 @@ export function ScreenFriends() {
   React.useEffect(() => { registerUserInGlobalRegistry(myId, myName, myPicture); }, [myId, myName, myPicture]);
 
   const myBlocks = blocks[myId] || [];
+  const myBlockedIds = new Set(myBlocks.map(b => b.userId));
   const myFriendships = friendships.filter(f => f.users.includes(myId));
-  const myFriendIds = myFriendships.map(f => f.users.find(u => u !== myId));
+  const myFriendIds = myFriendships.map(f => f.users.find(u => u !== myId)).filter(fid => !myBlockedIds.has(fid));
   const sentInvites = invitations.filter(i => i.fromId === myId && i.type === 'friend' && i.status === 'pending');
+  const receivedInvites = invitations.filter(i => i.toId === myId && i.type === 'friend' && i.status === 'pending');
 
   const sendInvite = () => {
     const toId = inviteInput.trim().toLowerCase();
@@ -101,6 +103,18 @@ export function ScreenFriends() {
   };
 
   const cancelInvite = (invId) => setInvitations(arr => arr.filter(i => i.id !== invId));
+
+  const acceptFriendInvite = (inv) => {
+    setInvitations(list => list.map(i => i.id === inv.id ? { ...i, status: 'accepted' } : i));
+    setFriendships(list => {
+      if (list.some(f => f.users.includes(inv.fromId) && f.users.includes(myId))) return list;
+      return [...list, { id: `fr_${Date.now()}`, users: [inv.fromId, myId], since: Date.now() }];
+    });
+  };
+
+  const declineFriendInvite = (inv) => {
+    setInvitations(list => list.map(i => i.id === inv.id ? { ...i, status: 'declined' } : i));
+  };
 
   // Kick a friend from all shared profiles where I am the owner,
   // and leave all shared profiles where they are the owner.
@@ -155,6 +169,8 @@ export function ScreenFriends() {
 
   const blockUser = (targetId, info) => {
     cleanupSharedProfilesForFriend(targetId);
+    setFriendships(arr => arr.filter(f => !(f.users.includes(myId) && f.users.includes(targetId))));
+    setInvitations(arr => arr.filter(i => !((i.fromId===myId&&i.toId===targetId)||(i.fromId===targetId&&i.toId===myId))));
     setBlocks(prev => {
       const existing = prev[myId] || [];
       if (existing.some(b => b.userId === targetId)) return prev;
@@ -199,6 +215,40 @@ export function ScreenFriends() {
           {inviteSent && <div style={{ fontSize:12, color:M.sage, marginTop:8, fontWeight:500 }}>{t('friends.sent')}</div>}
         </div>
 
+        {receivedInvites.length > 0 && (
+          <>
+            <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('friends.friendRequests')} ({receivedInvites.length})</div>
+            <div className="m-card" style={{ padding:'4px 16px', marginBottom:16, border:`1px solid ${M.sage}` }}>
+              {receivedInvites.map((inv,i)=>{
+                const info = userRegistry[inv.fromId] || {};
+                return (
+                  <React.Fragment key={inv.id}>
+                    {i>0&&<Divider inset={48}/>}
+                    <div style={{ padding:'13px 0' }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:10 }}>
+                        <UserAvatar info={info} fid={inv.fromId} size={36}/>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontSize:14, fontWeight:600 }}>{info.displayName || inv.fromId}</div>
+                          <div style={{ fontSize:11, color:M.ink4, fontFamily:M.fontMono }}>{inv.fromId}</div>
+                        </div>
+                      </div>
+                      <div style={{ display:'flex', gap:8 }}>
+                        <button className="m-tap" onClick={()=>acceptFriendInvite(inv)}
+                          style={{ flex:2, padding:'9px 0', borderRadius:8, background:M.sage, color:'#fff', border:'none', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+                          {t('friends.accept')}
+                        </button>
+                        <button className="m-tap" onClick={()=>declineFriendInvite(inv)}
+                          style={{ flex:1, padding:'9px 0', borderRadius:8, background:M.paper2, color:M.ink3, border:`1px solid ${M.line}`, fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+                          {t('friends.decline')}
+                        </button>
+                      </div>
+                    </div>
+                  </React.Fragment>
+                );
+              })}
+            </div>
+          </>
+        )}
         {sentInvites.length > 0 && (<>
           <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('friends.pending')}</div>
           <div className="m-card" style={{ padding:'4px 16px', marginBottom:16, border:`1px solid ${M.line}` }}>

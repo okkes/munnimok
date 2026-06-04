@@ -514,6 +514,49 @@ export function ScreenProfiles() {
   const [newProfileName, setNewProfileName] = React.useState('');
   const [newProfileIsDemo, setNewProfileIsDemo] = React.useState(false);
   const [newProfileError, setNewProfileError] = React.useState('');
+  const myId = React.useMemo(() => getUserId(), []);
+  const [invitations, setInvitations] = useLocalStorage('munni_global_invitations', []);
+  const [userRegistry] = useLocalStorage('munni_global_users', {});
+
+  const pendingProfileInvites = invitations.filter(i => i.type === 'profile' && i.toId === myId && i.status === 'pending');
+
+  const acceptProfileInvite = (inv) => {
+    setInvitations(list => list.map(i => i.id === inv.id ? { ...i, status: 'accepted', respondedAt: Date.now() } : i));
+    let freshName, freshPic;
+    try {
+      const sdKey = `munni_shared_data_${inv.profileId}`;
+      const sd = JSON.parse(localStorage.getItem(sdKey) || '{}');
+      if (sd.left?.[myId] || sd.expelled?.[myId]) {
+        const { [myId]: _l, ...remainingLeft } = sd.left || {};
+        const { [myId]: _e, ...remainingExpelled } = sd.expelled || {};
+        localStorage.setItem(sdKey, JSON.stringify({ ...sd, left: remainingLeft, expelled: remainingExpelled }));
+        window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sdKey } }));
+      }
+      const freshSd = JSON.parse(localStorage.getItem(sdKey) || '{}');
+      freshName = freshSd.meta?.name;
+      freshPic = freshSd.meta?.picture;
+    } catch {}
+    setProfiles(ps => {
+      const existing = ps.find(p => p.id === inv.profileId);
+      const originalOwnerId = inv.originalOwnerId || inv.fromId;
+      const ownerDisplay = userRegistry[originalOwnerId]?.displayName || originalOwnerId;
+      const profileData = {
+        id: inv.profileId, name: freshName || inv.profileName || 'Shared',
+        icon: inv.profileIcon || 'users', active: false,
+        accountIds: inv.profileAccountIds || [],
+        picture: freshPic !== undefined ? freshPic : (inv.profilePicture || null),
+        isDemo: inv.profileIsDemo || false, isShared: true,
+        ownerId: originalOwnerId, ownerDisplay,
+        members: [{ userId: originalOwnerId, displayName: ownerDisplay, permission: 'owner', accountIds: [] }],
+      };
+      if (existing) return ps.map(p => p.id === inv.profileId ? { ...p, ...profileData } : p);
+      return [...ps, profileData];
+    });
+  };
+
+  const declineProfileInvite = (inv) => {
+    setInvitations(list => list.map(i => i.id === inv.id ? { ...i, status: 'declined', respondedAt: Date.now() } : i));
+  };
 
   const isUserDemo = sessionStorage.getItem('munni_last_login_method') === 'bank';
 
@@ -571,6 +614,44 @@ export function ScreenProfiles() {
         trailing={<button className="m-iconbtn m-tap" onClick={() => setShowNewProfile(true)}><I name="plus" size={20}/></button>}
       />
       <div className="m-body-scroll">
+        {pendingProfileInvites.length > 0 && (
+          <>
+            <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('profiles.pendingInvites')}</div>
+            <div className="m-card" style={{ padding:'4px 16px', marginBottom:16, border:`1px solid ${M.violet||'#7B61FF'}` }}>
+              {pendingProfileInvites.map((inv, i) => {
+                const senderName = userRegistry[inv.fromId]?.displayName || inv.fromDisplay || inv.fromId;
+                const fakeProfile = { picture: inv.profilePicture, name: inv.profileName || '?', icon: inv.profileIcon || 'users' };
+                return (
+                  <React.Fragment key={inv.id}>
+                    {i > 0 && <Divider inset={0}/>}
+                    <div style={{ padding:'13px 0' }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:10 }}>
+                        <ProfileAvatar profile={fakeProfile} size={36}/>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontSize:14, fontWeight:600, display:'flex', alignItems:'center', gap:6 }}>
+                            <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{inv.profileName || '—'}</span>
+                            <span style={{ fontSize:8, fontWeight:700, padding:'2px 6px', borderRadius:999, background:M.violetSoft||'#EEE8FF', color:M.violet||'#7B61FF', textTransform:'uppercase', flexShrink:0 }}>Invite</span>
+                          </div>
+                          <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{t('profile.sharedBy')} <strong>{senderName}</strong></div>
+                        </div>
+                      </div>
+                      <div style={{ display:'flex', gap:8 }}>
+                        <button className="m-tap" onClick={() => acceptProfileInvite(inv)}
+                          style={{ flex:2, padding:'9px 0', borderRadius:8, background:M.sage, color:'#fff', border:'none', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+                          {t('friends.profileInviteJoin')}
+                        </button>
+                        <button className="m-tap" onClick={() => declineProfileInvite(inv)}
+                          style={{ flex:1, padding:'9px 0', borderRadius:8, background:M.paper2, color:M.ink3, border:`1px solid ${M.line}`, fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+                          {t('friends.decline')}
+                        </button>
+                      </div>
+                    </div>
+                  </React.Fragment>
+                );
+              })}
+            </div>
+          </>
+        )}
         <div className="m-card" style={{ padding:'4px 16px', marginBottom:16, border:`1px solid ${M.line}` }}>
           {profiles.map((p, i) => {
             const sub = profileAccountSub(p);
