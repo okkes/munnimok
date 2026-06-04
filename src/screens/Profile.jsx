@@ -2254,37 +2254,72 @@ export function InviteCards() {
     }
   };
 
-  const renderRow = (inv, onAccept, onDeclineAction, isProfile) => {
-    const onDecline = () => setDeclineSheet({ inv, isProfile, onJustDecline: onDeclineAction });
+  const renderFriendInvite = (inv, onAccept, onDeclineAction) => {
     const name = userRegistry[inv.fromId]?.displayName || inv.fromId;
-    const sub = isProfile
-      ? `${t('friends.profileInviteFrom')}: ${inv.profileName || '—'}`
-      : inv.fromId;
     const pic = userRegistry[inv.fromId]?.picture;
     const av = pic?.startsWith('av') ? STOCK_AVATARS.find(a => a.id === pic) : null;
     return (
-      <div style={{ padding:'12px 0' }}>
-        <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:8 }}>
-          <div style={{ width:36, height:36, borderRadius:999, background: av ? av.bg : M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, overflow:'hidden' }}>
+      <div style={{ padding:'14px 0' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:12 }}>
+          <div style={{ width:44, height:44, borderRadius:999, background: av ? av.bg : M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, overflow:'hidden' }}>
             {pic?.startsWith('data:')
-              ? <img src={pic} style={{ width:36, height:36, objectFit:'cover' }}/>
-              : av
-                ? <span style={{ fontSize:18 }}>{av.emoji}</span>
-                : <I name={isProfile?'users':'user'} size={16} color={M.sage}/>
+              ? <img src={pic} style={{ width:44, height:44, objectFit:'cover' }}/>
+              : av ? <span style={{ fontSize:22 }}>{av.emoji}</span>
+              : <I name="user" size={20} color={M.sage}/>
             }
           </div>
           <div style={{ flex:1, minWidth:0 }}>
-            <div style={{ fontSize:14, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{name}</div>
-            <div style={{ fontSize:11, color:M.ink3, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{sub}</div>
+            <div style={{ fontSize:14, fontWeight:600 }}>{name}</div>
+            <div style={{ fontSize:11, color:M.ink4, fontFamily:M.fontMono, marginTop:2 }}>{inv.fromId}</div>
           </div>
+          <div style={{ fontSize:10, fontWeight:700, padding:'3px 8px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase', letterSpacing:'0.04em', flexShrink:0 }}>Friend</div>
         </div>
-        <div style={{ display:'flex', gap:8, paddingLeft:48 }}>
+        <div style={{ display:'flex', gap:8 }}>
           <button className="m-tap" onClick={onAccept}
-            style={{ flex:1, padding:'8px 0', borderRadius:8, background:M.sage, color:'#fff', border:'none', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+            style={{ flex:1, padding:'9px 0', borderRadius:8, background:M.sage, color:'#fff', border:'none', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
             {t('friends.accept')}
           </button>
-          <button className="m-tap" onClick={onDecline}
-            style={{ flex:1, padding:'8px 0', borderRadius:8, background:M.paper2, color:M.ink3, border:`1px solid ${M.line}`, fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+          <button className="m-tap" onClick={() => setDeclineSheet({ inv, isProfile: false, onJustDecline: onDeclineAction })}
+            style={{ flex:1, padding:'9px 0', borderRadius:8, background:M.paper2, color:M.ink3, border:`1px solid ${M.line}`, fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+            {t('friends.decline')}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  const renderProfileInvite = (inv, onAccept, onDeclineAction) => {
+    const senderName = userRegistry[inv.fromId]?.displayName || inv.fromId;
+    const senderPic = userRegistry[inv.fromId]?.picture;
+    const senderAv = senderPic?.startsWith('av') ? STOCK_AVATARS.find(a => a.id === senderPic) : null;
+    const fakeProfile = { name: inv.profileName, picture: inv.profilePicture || null };
+    return (
+      <div style={{ padding:'14px 0' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:14, marginBottom:12 }}>
+          <div style={{ position:'relative', flexShrink:0 }}>
+            <ProfileAvatar profile={fakeProfile} size={48}/>
+            {/* Sender badge */}
+            <div style={{ position:'absolute', bottom:-4, right:-4, width:22, height:22, borderRadius:999, background: senderAv ? senderAv.bg : M.sageSoft, border:`2px solid ${M.paper}`, display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden' }}>
+              {senderPic?.startsWith('data:')
+                ? <img src={senderPic} style={{ width:18, height:18, objectFit:'cover' }}/>
+                : senderAv ? <span style={{ fontSize:10 }}>{senderAv.emoji}</span>
+                : <I name="user" size={10} color={M.sage}/>
+              }
+            </div>
+          </div>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontSize:10, fontWeight:700, color:M.sage, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:2 }}>Profile invite</div>
+            <div style={{ fontSize:15, fontWeight:700, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{inv.profileName || 'Shared profile'}</div>
+            <div style={{ fontSize:11, color:M.ink3, marginTop:2 }}>From <strong>{senderName}</strong></div>
+          </div>
+        </div>
+        <div style={{ display:'flex', gap:8 }}>
+          <button className="m-tap" onClick={onAccept}
+            style={{ flex:2, padding:'9px 0', borderRadius:8, background:M.sage, color:'#fff', border:'none', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+            {t('friends.profileInviteJoin')}
+          </button>
+          <button className="m-tap" onClick={onDeclineAction}
+            style={{ flex:1, padding:'9px 0', borderRadius:8, background:M.paper2, color:M.ink3, border:`1px solid ${M.line}`, fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
             {t('friends.decline')}
           </button>
         </div>
@@ -2302,11 +2337,11 @@ export function InviteCards() {
       <div className="m-card" style={{ padding:'4px 16px', marginBottom:16, border:`1px solid ${M.line}` }}>
         {allPending.map((inv, i) => (
           <React.Fragment key={inv.id}>
-            {i > 0 && <Divider inset={48}/>}
+            {i > 0 && <Divider inset={0}/>}
             <div style={{ animation: animatingIds.has(inv.id) ? 'slideInNotif 0.38s cubic-bezier(0.16,1,0.3,1)' : 'none' }}>
               {inv.type === 'friend'
-                ? renderRow(inv, () => respondFriend(inv, 'accepted'), () => respondFriend(inv, 'declined'), false)
-                : renderRow(inv, () => respondProfile(inv, 'accepted'), () => respondProfile(inv, 'declined'), true)}
+                ? renderFriendInvite(inv, () => respondFriend(inv, 'accepted'), () => respondFriend(inv, 'declined'))
+                : renderProfileInvite(inv, () => respondProfile(inv, 'accepted'), () => respondProfile(inv, 'declined'))}
             </div>
           </React.Fragment>
         ))}
