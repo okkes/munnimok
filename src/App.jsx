@@ -50,6 +50,7 @@ export function ScreenFriends() {
   const [myName] = useLocalStorage(_nameKey, myId);
   const _pictureKey = computeUserDataKey(_loginMethod, _safeEmail, 'munni_user_picture');
   const [myPicture] = useLocalStorage(_pictureKey, null);
+  const { profiles, setProfiles } = useProfiles();
   const [inviteInput, setInviteInput] = React.useState('');
   const [inviteError, setInviteError] = React.useState('');
   const [inviteSent, setInviteSent] = React.useState(false);
@@ -86,13 +87,59 @@ export function ScreenFriends() {
 
   const cancelInvite = (invId) => setInvitations(arr => arr.filter(i => i.id !== invId));
 
+  // Kick a friend from all shared profiles where I am the owner,
+  // and leave all shared profiles where they are the owner.
+  const cleanupSharedProfilesForFriend = (friendId) => {
+    setProfiles(ps => {
+      const updated = ps.map(p => {
+        // I'm the owner: kick this friend from my profile
+        if (!p.isShared && (p.members || []).some(m => m.userId === friendId)) {
+          try {
+            const sdKey = `munni_shared_data_${p.id}`;
+            const sd = JSON.parse(localStorage.getItem(sdKey) || '{}');
+            const kickedAcctIds = new Set((sd.accounts || []).filter(a => a.attachedBy === friendId).map(a => a.id));
+            localStorage.setItem(sdKey, JSON.stringify({
+              ...sd,
+              accounts: (sd.accounts || []).filter(a => a.attachedBy !== friendId),
+              txs: (sd.txs || []).filter(t => !kickedAcctIds.has(t.account)),
+              expelled: { ...(sd.expelled || {}), [friendId]: Date.now() },
+            }));
+            window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sdKey } }));
+          } catch {}
+          return { ...p, members: (p.members || []).filter(m => m.userId !== friendId) };
+        }
+        return p;
+      });
+      // I'm a member: leave any shared profiles where this friend is the owner
+      const toLeave = updated.filter(p => p.isShared && p.ownerId === friendId);
+      toLeave.forEach(p => {
+        try {
+          const sdKey = `munni_shared_data_${p.id}`;
+          const sd = JSON.parse(localStorage.getItem(sdKey) || '{}');
+          const myAcctIds = new Set((sd.accounts || []).filter(a => a.attachedBy === myId).map(a => a.id));
+          localStorage.setItem(sdKey, JSON.stringify({
+            ...sd,
+            accounts: (sd.accounts || []).filter(a => a.attachedBy !== myId),
+            txs: (sd.txs || []).filter(t => !myAcctIds.has(t.account)),
+            left: { ...(sd.left || {}), [myId]: Date.now() },
+          }));
+          window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sdKey } }));
+        } catch {}
+      });
+      const remaining = updated.filter(p => !(p.isShared && p.ownerId === friendId));
+      if (!remaining.find(p => p.active) && remaining.length > 0) remaining[0] = { ...remaining[0], active: true };
+      return remaining;
+    });
+  };
+
   const removeFriend = (friendId) => {
+    cleanupSharedProfilesForFriend(friendId);
     setFriendships(arr => arr.filter(f => !(f.users.includes(myId) && f.users.includes(friendId))));
     setInvitations(arr => arr.filter(i => !((i.fromId===myId&&i.toId===friendId)||(i.fromId===friendId&&i.toId===myId))));
   };
 
   const blockUser = (targetId, info) => {
-    removeFriend(targetId);
+    cleanupSharedProfilesForFriend(targetId);
     setBlocks(prev => {
       const existing = prev[myId] || [];
       if (existing.some(b => b.userId === targetId)) return prev;
