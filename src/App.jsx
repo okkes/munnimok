@@ -193,6 +193,23 @@ export function ScreenFriends() {
 
   const unblockUser = (targetId) => {
     setBlocks(prev => ({ ...prev, [myId]: (prev[myId] || []).filter(b => b.userId !== targetId) }));
+    const theirPendingInvite = invitations.find(i =>
+      i.fromId === targetId && i.toId === myId && i.type === 'friend' && i.status === 'pending'
+    );
+    if (theirPendingInvite) {
+      // They still have a pending invite we hid while blocked — auto-accept to reconnect
+      setInvitations(list => list.map(i => i.id === theirPendingInvite.id ? { ...i, status: 'accepted' } : i));
+      setFriendships(list => {
+        if (list.some(f => f.users.includes(myId) && f.users.includes(targetId))) return list;
+        return [...list, { id: `fr_${Date.now()}`, users: [myId, targetId], since: Date.now() }];
+      });
+    } else {
+      // No pending invite from them — send a fresh request so they know we want to reconnect
+      const alreadySent = invitations.some(i => i.fromId === myId && i.toId === targetId && i.type === 'friend' && i.status === 'pending');
+      if (!alreadySent && !myFriendIds.includes(targetId)) {
+        setInvitations(list => [...list, { id: `inv_${Date.now()}`, fromId: myId, fromName: myName, toId: targetId, type: 'friend', status: 'pending', sentAt: Date.now() }]);
+      }
+    }
   };
 
   const copyId = () => { navigator.clipboard?.writeText(myId).catch(()=>{}); setCopied(true); setTimeout(()=>setCopied(false),1800); };
