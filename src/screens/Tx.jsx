@@ -170,13 +170,18 @@ export function ScreenTxDetail({ params }) {
 
   const account = connectedAccounts.find(a => a.id === tx.account) || (_sharedData?.accounts || []).find(a => a.id === tx.account) || ACCOUNTS.find(a => a.id === tx.account);
 
-  // Editing lock: acquire lock on mount, release on unmount (for shared profiles only)
+  // Editing lock: first opener wins; subsequent openers are read-only
   React.useEffect(() => {
     if (_sharedKey === 'munni_shared_data_none') return;
     try {
       const sd = JSON.parse(localStorage.getItem(_sharedKey) || '{}');
-      localStorage.setItem(_sharedKey, JSON.stringify({ ...sd, editing: { txId: tx.id, userId: _myId, since: Date.now() } }));
-      window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: _sharedKey } }));
+      const existing = sd.editing;
+      const alreadyLockedByOther = existing?.txId === tx.id && existing.userId !== _myId
+        && (Date.now() - (existing.since || 0)) < 300000;
+      if (!alreadyLockedByOther) {
+        localStorage.setItem(_sharedKey, JSON.stringify({ ...sd, editing: { txId: tx.id, userId: _myId, since: Date.now() } }));
+        window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: _sharedKey } }));
+      }
     } catch {}
     return () => {
       try {

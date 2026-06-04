@@ -2144,6 +2144,21 @@ export function InviteCards() {
 
   const pendingFriend = invitations.filter(inv => inv.toId === myId && inv.type === 'friend' && inv.status === 'pending');
   const pendingProfile = invitations.filter(inv => inv.toId === myId && inv.type === 'profile' && inv.status === 'pending');
+  const allPending = [...pendingFriend, ...pendingProfile];
+
+  // Slide-in animation for invites that arrive while the screen is already open
+  const seenIdsRef = React.useRef(null);
+  const [animatingIds, setAnimatingIds] = React.useState(new Set());
+  React.useEffect(() => {
+    const currentIds = new Set(allPending.map(i => i.id));
+    if (seenIdsRef.current === null) { seenIdsRef.current = currentIds; return; }
+    const newIds = allPending.filter(i => !seenIdsRef.current.has(i.id)).map(i => i.id);
+    seenIdsRef.current = currentIds;
+    if (newIds.length === 0) return;
+    setAnimatingIds(prev => new Set([...prev, ...newIds]));
+    const timer = setTimeout(() => setAnimatingIds(prev => { const n = new Set(prev); newIds.forEach(id => n.delete(id)); return n; }), 500);
+    return () => clearTimeout(timer);
+  }, [allPending.map(i => i.id).join(',')]);
 
   if (pendingFriend.length === 0 && pendingProfile.length === 0) return null;
 
@@ -2213,18 +2228,19 @@ export function InviteCards() {
     );
   };
 
-  const allPending = [...pendingFriend, ...pendingProfile];
-
   return (
     <>
+      <style>{`@keyframes slideInNotif{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}`}</style>
       <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('friends.pending')}</div>
       <div className="m-card" style={{ padding:'4px 16px', marginBottom:16, border:`1px solid ${M.line}` }}>
         {allPending.map((inv, i) => (
           <React.Fragment key={inv.id}>
             {i > 0 && <Divider inset={48}/>}
-            {inv.type === 'friend'
-              ? renderRow(inv, () => respondFriend(inv, 'accepted'), () => respondFriend(inv, 'declined'), false)
-              : renderRow(inv, () => respondProfile(inv, 'accepted'), () => respondProfile(inv, 'declined'), true)}
+            <div style={{ animation: animatingIds.has(inv.id) ? 'slideInNotif 0.38s cubic-bezier(0.16,1,0.3,1)' : 'none' }}>
+              {inv.type === 'friend'
+                ? renderRow(inv, () => respondFriend(inv, 'accepted'), () => respondFriend(inv, 'declined'), false)
+                : renderRow(inv, () => respondProfile(inv, 'accepted'), () => respondProfile(inv, 'declined'), true)}
+            </div>
           </React.Fragment>
         ))}
       </div>
