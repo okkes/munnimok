@@ -1109,9 +1109,32 @@ export function ScreenProfileDetail({ params }) {
               const displayMembers = isMemberOfShared ? members.filter(m => m.userId !== myId) : members;
               return (
                 <>
-                  {displayMembers.length === 0 && pendingInvitesForProfile.length === 0 && !isMemberOfShared && (
+                  {displayMembers.length === 0 && pendingInvitesForProfile.length === 0 && !isMemberOfShared && !isProfileShared && (
                     <div style={{ padding:'14px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>{t('profile.noMembers')}</div>
                   )}
+                  {/* Owner self-row: visible when the original owner has members */}
+                  {!isMemberOfShared && isProfileShared && (() => {
+                    const myInfo = userRegistry[myId] || {};
+                    const myDisplayName = myInfo.displayName || myId;
+                    return (
+                      <>
+                        <div style={{ display:'flex', alignItems:'center', gap:10, padding:'11px 0' }}>
+                          <div style={{ width:32, height:32, borderRadius:999, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:13, fontWeight:700, color:M.sage }}>
+                            {myDisplayName.charAt(0).toUpperCase()}
+                          </div>
+                          <div style={{ flex:1, minWidth:0 }}>
+                            <div style={{ fontSize:14, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                              {myDisplayName} <span style={{ color:M.ink4, fontWeight:400 }}>({t('word.you')})</span>
+                            </div>
+                          </div>
+                          <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase', flexShrink:0 }}>
+                            {PERM_LABEL['owner']}
+                          </span>
+                        </div>
+                        {displayMembers.length > 0 && <Divider inset={44}/>}
+                      </>
+                    );
+                  })()}
                   {displayMembers.map((m, i) => {
                     const info = userRegistry[m.userId] || {};
                     return (
