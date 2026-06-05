@@ -88,7 +88,7 @@ export function ProfilesProvider({ children }) {
             if (isSharedVariant && sd.meta) {
               const metaName = sd.meta.name;
               const metaPic = sd.meta.picture;
-              const nameChanged = metaName && metaName !== p.name;
+              const nameChanged = !p.localName && metaName && metaName !== p.name;
               const picChanged = metaPic !== undefined && metaPic !== p.picture;
               if (nameChanged || picChanged) {
                 changed = true;

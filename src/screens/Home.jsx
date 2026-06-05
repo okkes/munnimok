@@ -472,12 +472,12 @@ export function ScreenHome() {
                       </div>
                       <div style={{ flex:1, minWidth:0 }}>
                         <div style={{ fontSize:14, fontWeight:600, display:'flex', alignItems:'center', gap:5 }}>
-                          {p.name}
-                          {p.isShared && <span style={{ fontSize:8, fontWeight:700, padding:'1px 5px', borderRadius:999, background:M.violetSoft||'#EEE8FF', color:M.violet||'#7B61FF', textTransform:'uppercase' }}>Shared</span>}
+                          {p.localName || p.name}
+                          {p.isShared && (p.members||[]).some(m => m.userId !== myId) && <span style={{ fontSize:8, fontWeight:700, padding:'1px 5px', borderRadius:999, background:M.violetSoft||'#EEE8FF', color:M.violet||'#7B61FF', textTransform:'uppercase' }}>Shared</span>}
                           {isOwnerShared && <span style={{ fontSize:8, fontWeight:700, padding:'1px 5px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>Shared</span>}
                         </div>
                         <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>
-                          {p.isShared ? `${t('profile.sharedBy')} ${p.ownerDisplay || ''}` : acctLabel}
+                          {p.isShared ? `${t('profile.by')} ${(p.ownerDisplay || '').split(' ')[0]}` : acctLabel}
                           {hasAction && <span style={{ marginLeft:6, color:M.ochre, fontWeight:600 }}>· {reviewN} {t('review.title')}</span>}
                         </div>
                       </div>

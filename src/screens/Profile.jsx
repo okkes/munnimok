@@ -514,6 +514,7 @@ export function ScreenProfiles() {
   const [newProfileName, setNewProfileName] = React.useState('');
   const [newProfileIsDemo, setNewProfileIsDemo] = React.useState(false);
   const [newProfileError, setNewProfileError] = React.useState('');
+  const [renameInviteSheet, setRenameInviteSheet] = React.useState(null);
   const myId = React.useMemo(() => getUserId(), []);
   const [invitations, setInvitations] = useLocalStorage('munni_global_invitations', []);
   const [userRegistry] = useLocalStorage('munni_global_users', {});
@@ -522,7 +523,7 @@ export function ScreenProfiles() {
   const myBlockedSenderIds = new Set((_blocks[myId] || []).map(b => b.userId));
   const pendingProfileInvites = invitations.filter(i => i.type === 'profile' && i.toId === myId && i.status === 'pending' && !myBlockedSenderIds.has(i.fromId));
 
-  const acceptProfileInvite = (inv) => {
+  const acceptProfileInvite = (inv, customName = null) => {
     setInvitations(list => list.map(i => i.id === inv.id ? { ...i, status: 'accepted', respondedAt: Date.now() } : i));
     let freshName, freshPic;
     try {
@@ -542,8 +543,11 @@ export function ScreenProfiles() {
       const existing = ps.find(p => p.id === inv.profileId);
       const originalOwnerId = inv.originalOwnerId || inv.fromId;
       const ownerDisplay = userRegistry[originalOwnerId]?.displayName || originalOwnerId;
+      const ownerName = freshName || inv.profileName || 'Shared';
+      const trimmedCustom = customName?.trim();
       const profileData = {
-        id: inv.profileId, name: freshName || inv.profileName || 'Shared',
+        id: inv.profileId, name: ownerName,
+        ...(trimmedCustom && trimmedCustom !== ownerName ? { localName: trimmedCustom } : {}),
         icon: inv.profileIcon || 'users', active: false,
         accountIds: inv.profileAccountIds || [],
         picture: freshPic !== undefined ? freshPic : (inv.profilePicture || null),
@@ -638,7 +642,7 @@ export function ScreenProfiles() {
                         </div>
                       </div>
                       <div style={{ display:'flex', gap:8 }}>
-                        <button className="m-tap" onClick={() => acceptProfileInvite(inv)}
+                        <button className="m-tap" onClick={() => setRenameInviteSheet({ inv, name: inv.profileName || '' })}
                           style={{ flex:2, padding:'9px 0', borderRadius:8, background:M.sage, color:'#fff', border:'none', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
                           {t('friends.profileInviteJoin')}
                         </button>
@@ -668,10 +672,10 @@ export function ScreenProfiles() {
                     <div style={{ fontSize:14, fontWeight:600, display:'flex', alignItems:'center', gap:6 }}>
                       {p.name}
                       {p.isDemo && <span style={{ fontSize:8, fontWeight:700, padding:'1px 5px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase' }}>Demo</span>}
-                      {p.isShared && <span style={{ fontSize:8, fontWeight:700, padding:'1px 5px', borderRadius:999, background:M.violetSoft||'#EEE8FF', color:M.violet||'#7B61FF', textTransform:'uppercase' }}>Shared</span>}
+                      {p.isShared && (p.members||[]).some(m => m.userId !== myId) && <span style={{ fontSize:8, fontWeight:700, padding:'1px 5px', borderRadius:999, background:M.violetSoft||'#EEE8FF', color:M.violet||'#7B61FF', textTransform:'uppercase' }}>Shared</span>}
                       {!p.isShared && (p.members||[]).length > 0 && <span style={{ fontSize:8, fontWeight:700, padding:'1px 5px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>Shared</span>}
                     </div>
-                    <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{p.isShared ? `${t('profile.sharedBy')} ${p.ownerDisplay || p.ownerId || ''}` : sub}</div>
+                    <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{p.isShared ? `${t('profile.by')} ${(p.ownerDisplay || p.ownerId || '').split(' ')[0]}` : sub}</div>
                   </div>
                   {p.active && (
                     <div style={{ width:20, height:20, borderRadius:999, background:M.sage, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
@@ -693,6 +697,38 @@ export function ScreenProfiles() {
           </div>
         </div>
       </div>
+
+      {renameInviteSheet && (
+        <Sheet onClose={() => setRenameInviteSheet(null)}>
+          <div style={{ padding:'4px 16px 20px' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:16 }}>
+              <ProfileAvatar profile={{ name: renameInviteSheet.inv.profileName, picture: renameInviteSheet.inv.profilePicture || null }} size={44}/>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:16, fontWeight:700, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{renameInviteSheet.inv.profileName || 'Shared profile'}</div>
+                <div style={{ fontSize:11, color:M.ink3, marginTop:2 }}>
+                  {t('profile.by')} <strong>{userRegistry[renameInviteSheet.inv.fromId]?.displayName || renameInviteSheet.inv.fromId}</strong>
+                </div>
+              </div>
+            </div>
+            <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>{t('profile.nameThisProfile')}</div>
+            <input autoFocus
+              value={renameInviteSheet.name}
+              onChange={e => setRenameInviteSheet(prev => ({ ...prev, name: e.target.value }))}
+              onKeyDown={e => e.key === 'Enter' && (acceptProfileInvite(renameInviteSheet.inv, renameInviteSheet.name), setRenameInviteSheet(null))}
+              style={{ width:'100%', padding:'12px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box', marginBottom:6 }}
+            />
+            <div style={{ fontSize:11, color:M.ink4, marginBottom:20 }}>{t('profile.nameThisProfileHint')}</div>
+            <button onClick={() => { acceptProfileInvite(renameInviteSheet.inv, renameInviteSheet.name); setRenameInviteSheet(null); }}
+              style={{ width:'100%', padding:'14px 0', background:M.sage, color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>
+              {t('friends.profileInviteJoin')}
+            </button>
+            <button onClick={() => setRenameInviteSheet(null)}
+              style={{ width:'100%', padding:'14px 0', background:M.paper2, color:M.ink, border:`1px solid ${M.line}`, borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+              {t('action.cancel')}
+            </button>
+          </div>
+        </Sheet>
+      )}
 
       {showNewProfile && (
         <Sheet onClose={() => { setShowNewProfile(false); setNewProfileName(''); setNewProfileIsDemo(false); setNewProfileError(''); }}>
@@ -843,7 +879,7 @@ export function ScreenProfileDetail({ params }) {
     const metaName = sharedData?.meta?.name;
     const metaPic = sharedData?.meta?.picture;
     if (!profile || (!metaName && metaPic === undefined)) return;
-    const nameChanged = metaName && metaName !== profile.name;
+    const nameChanged = !profile.localName && metaName && metaName !== profile.name;
     const picChanged = metaPic !== undefined && metaPic !== profile.picture;
     if (!nameChanged && !picChanged) return;
     setProfiles(ps => ps.map(p => p.id === profile.id ? {
@@ -853,12 +889,18 @@ export function ScreenProfileDetail({ params }) {
     } : p));
   }, [sharedData?.meta?.name, sharedData?.meta?.picture, profileId]);
 
-  const startEditName = () => { setNameDraft(profile.name); setEditingName(true); };
+  const startEditName = () => { setNameDraft(profile.localName || profile.name); setEditingName(true); };
   const saveName = () => {
     const trimmed = nameDraft.trim();
     if (trimmed) {
-      setProfiles(ps => ps.map(p => p.id === profile.id ? { ...p, name: trimmed } : p));
-      if (isProfileShared) setSharedData(prev => ({ ...prev, meta: { ...(prev.meta || {}), name: trimmed } }));
+      if (isMemberOfShared) {
+        setProfiles(ps => ps.map(p => p.id === profile.id
+          ? { ...p, localName: trimmed !== p.name ? trimmed : null }
+          : p));
+      } else {
+        setProfiles(ps => ps.map(p => p.id === profile.id ? { ...p, name: trimmed } : p));
+        if (isProfileShared) setSharedData(prev => ({ ...prev, meta: { ...(prev.meta || {}), name: trimmed } }));
+      }
     }
     setEditingName(false);
   };
@@ -1054,8 +1096,8 @@ export function ScreenProfileDetail({ params }) {
               />
             ) : (
               <div className="m-tap" onClick={startEditName} style={{ textAlign:'center' }}>
-                <div style={{ fontSize:16, fontWeight:600, borderBottom:`1.5px dashed ${M.line2}`, display:'inline', paddingBottom:1 }}>{profile.name}</div>
-                <div style={{ fontSize:10, color:M.ink4, marginTop:4 }}>{t('profile.tapRename')}</div>
+                <div style={{ fontSize:16, fontWeight:600, borderBottom:`1.5px dashed ${M.line2}`, display:'inline', paddingBottom:1 }}>{profile.localName || profile.name}</div>
+                <div style={{ fontSize:10, color:M.ink4, marginTop:4 }}>{isMemberOfShared ? t('profile.tapRenameLocal') : t('profile.tapRename')}</div>
               </div>
             )}
             {isActive && (
@@ -2339,6 +2381,7 @@ export function InviteCards() {
   const [blocks, setBlocks] = useLocalStorage('munni_global_blocks', {});
   const { profiles, setProfiles } = useProfiles();
   const [declineSheet, setDeclineSheet] = React.useState(null); // { inv, isProfile, onJustDecline }
+  const [renameInviteSheet, setRenameInviteSheet] = React.useState(null);
 
   const myBlockedSenderIds = new Set((blocks[myId] || []).map(b => b.userId));
   const pendingFriend = invitations.filter(inv => inv.toId === myId && inv.type === 'friend' && inv.status === 'pending' && !myBlockedSenderIds.has(inv.fromId));
@@ -2384,7 +2427,7 @@ export function InviteCards() {
     setDeclineSheet(null);
   };
 
-  const respondProfile = (inv, action) => {
+  const respondProfile = (inv, action, customName = null) => {
     setInvitations(list => list.map(i => i.id === inv.id ? { ...i, status: action, respondedAt: Date.now() } : i));
     if (action === 'accepted') {
       // Clear any stale left/expelled signals for me in this profile's sharedData so
@@ -2410,9 +2453,12 @@ export function InviteCards() {
         const existing = ps.find(p => p.id === inv.profileId);
         const originalOwnerId = inv.originalOwnerId || inv.fromId;
         const ownerDisplay = userRegistry[originalOwnerId]?.displayName || originalOwnerId;
+        const ownerName = freshName || inv.profileName || 'Shared';
+        const trimmedCustom = customName?.trim();
         const profileData = {
           id: inv.profileId,
-          name: freshName || inv.profileName || 'Shared',
+          name: ownerName,
+          ...(trimmedCustom && trimmedCustom !== ownerName ? { localName: trimmedCustom } : {}),
           icon: inv.profileIcon || 'users',
           active: false,
           accountIds: inv.profileAccountIds || [],
@@ -2519,11 +2565,44 @@ export function InviteCards() {
             <div style={{ animation: animatingIds.has(inv.id) ? 'slideInNotif 0.38s cubic-bezier(0.16,1,0.3,1)' : 'none' }}>
               {inv.type === 'friend'
                 ? renderFriendInvite(inv, () => respondFriend(inv, 'accepted'), () => respondFriend(inv, 'declined'))
-                : renderProfileInvite(inv, () => respondProfile(inv, 'accepted'), () => respondProfile(inv, 'declined'))}
+                : renderProfileInvite(inv, () => setRenameInviteSheet({ inv, name: inv.profileName || '' }), () => respondProfile(inv, 'declined'))}
             </div>
           </React.Fragment>
         ))}
       </div>
+
+      {/* Rename-on-join sheet */}
+      {renameInviteSheet && (
+        <Sheet onClose={() => setRenameInviteSheet(null)}>
+          <div style={{ padding:'4px 16px 20px' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:16 }}>
+              <ProfileAvatar profile={{ name: renameInviteSheet.inv.profileName, picture: renameInviteSheet.inv.profilePicture || null }} size={44}/>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:16, fontWeight:700, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{renameInviteSheet.inv.profileName || 'Shared profile'}</div>
+                <div style={{ fontSize:11, color:M.ink3, marginTop:2 }}>
+                  {t('profile.by')} <strong>{userRegistry[renameInviteSheet.inv.fromId]?.displayName || renameInviteSheet.inv.fromId}</strong>
+                </div>
+              </div>
+            </div>
+            <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>{t('profile.nameThisProfile')}</div>
+            <input autoFocus
+              value={renameInviteSheet.name}
+              onChange={e => setRenameInviteSheet(prev => ({ ...prev, name: e.target.value }))}
+              onKeyDown={e => e.key === 'Enter' && (respondProfile(renameInviteSheet.inv, 'accepted', renameInviteSheet.name), setRenameInviteSheet(null))}
+              style={{ width:'100%', padding:'12px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box', marginBottom:6 }}
+            />
+            <div style={{ fontSize:11, color:M.ink4, marginBottom:20 }}>{t('profile.nameThisProfileHint')}</div>
+            <button onClick={() => { respondProfile(renameInviteSheet.inv, 'accepted', renameInviteSheet.name); setRenameInviteSheet(null); }}
+              style={{ width:'100%', padding:'14px 0', background:M.sage, color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>
+              {t('friends.profileInviteJoin')}
+            </button>
+            <button onClick={() => setRenameInviteSheet(null)}
+              style={{ width:'100%', padding:'14px 0', background:M.paper2, color:M.ink, border:`1px solid ${M.line}`, borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+              {t('action.cancel')}
+            </button>
+          </div>
+        </Sheet>
+      )}
 
       {/* Decline options sheet */}
       {declineSheet && (
