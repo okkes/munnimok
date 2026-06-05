@@ -37,6 +37,8 @@ if (typeof document !== 'undefined' && !document.getElementById('m-styles')) {
   const s = document.createElement('style');
   s.id = 'm-styles';
   s.textContent = `
+    * { scrollbar-width: none; -ms-overflow-style: none; }
+    *::-webkit-scrollbar { display: none; }
     .m, .m * { box-sizing: border-box; }
     .m-app { font-family: ${M.fontUI}; color: ${M.ink}; background: ${M.paper}; -webkit-font-smoothing: antialiased; }
     .m-num { font-family: ${M.fontDisp}; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
