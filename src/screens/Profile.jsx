@@ -988,8 +988,7 @@ export function ScreenProfileDetail({ params }) {
     const sharedAcctData = sharedAccts.find(s => s.id === a.id);
     const isSharedAcct = !!sharedAcctData && !ownConnectedIds.has(a.id);
     const isOwnAcct = ownConnectedIds.has(a.id);
-    // Owner-perm users can detach any account; contributors can only detach their own
-    const canDetach = myPerm === 'owner' || (canEdit && isOwnAcct);
+    const canDetach = myPerm === 'owner' || isOwnAcct;
     return (
       <React.Fragment key={a.id}>
         {i > 0 && <Divider inset={50}/>}
@@ -1004,6 +1003,12 @@ export function ScreenProfileDetail({ params }) {
               {a.bankId && <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>Bank</span>}
               {isSharedAcct && <span style={{ fontSize:9, fontWeight:600, padding:'1px 6px', borderRadius:999, background:M.violetSoft||'#EEE8FF', color:M.violet||'#7B61FF' }}>Shared</span>}
             </div>
+            {isProfileShared && sharedAcctData?.attachedBy && (() => {
+              const attacher = userRegistry[sharedAcctData.attachedBy] || {};
+              const attacherName = attacher.displayName || sharedAcctData.attachedBy;
+              const isMe = sharedAcctData.attachedBy === myId;
+              return <div style={{ fontSize:11, color:M.ink4, marginTop:1 }}>{t('profile.addedBy')} {isMe ? t('word.you') : attacherName}</div>;
+            })()}
           </div>
           {canDetach
             ? <button className="m-tap" onClick={() => toggleAccount(a.id)}
@@ -1139,6 +1144,7 @@ export function ScreenProfileDetail({ params }) {
                   {displayMembers.map((m, i) => {
                     const info = userRegistry[m.userId] || {};
                     const tappable = myPerm === 'owner';
+                    const livePerm = sharedData?.memberPerms?.[m.userId] || m.permission;
                     return (
                       <React.Fragment key={m.userId}>
                         {i > 0 && <Divider inset={44}/>}
@@ -1150,8 +1156,8 @@ export function ScreenProfileDetail({ params }) {
                           <div style={{ flex:1, minWidth:0 }}>
                             <div style={{ fontSize:14, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{info.displayName||m.userId}</div>
                           </div>
-                          <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:m.permission==='owner'?M.ochreSoft:m.permission==='contributor'?M.sageSoft:M.paper2, color:PERM_COLOR[m.permission]||M.ink3, textTransform:'uppercase', flexShrink:0 }}>
-                            {PERM_LABEL[m.permission]||m.permission}
+                          <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:livePerm==='owner'?M.ochreSoft:livePerm==='contributor'?M.sageSoft:M.paper2, color:PERM_COLOR[livePerm]||M.ink3, textTransform:'uppercase', flexShrink:0 }}>
+                            {PERM_LABEL[livePerm]||livePerm}
                           </span>
                           {tappable && <I name="caretR" size={13} color={M.ink4}/>}
                         </div>

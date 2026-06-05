@@ -545,6 +545,8 @@ export function MemberActionSheet({ profile, memberId, onClose }) {
   const [userRegistry] = useLocalStorage('munni_global_users', {});
   const [sharedData] = useLocalStorage(`munni_shared_data_${profile.id}`, { accounts: [], txs: [] });
   const [kickConfirm, setKickConfirm] = React.useState(false);
+  const [pendingPerm, setPendingPerm] = React.useState(null);
+  const [removeAccts, setRemoveAccts] = React.useState(new Set());
 
   const members = profile.members || [];
   const member = members.find(m => m.userId === memberId);
@@ -559,14 +561,27 @@ export function MemberActionSheet({ profile, memberId, onClose }) {
 
   const updateProfile = (updater) => setProfiles(ps => ps.map(p => p.id===profile.id ? updater(p) : p));
 
-  const changePerm = (perm) => {
+  const applyPerm = (perm, acctIdsToRemove = new Set()) => {
     updateProfile(p => ({ ...p, members: (p.members||[]).map(m => m.userId===memberId ? {...m, permission:perm} : m) }));
     try {
       const sdKey = `munni_shared_data_${profile.id}`;
       const sd = JSON.parse(localStorage.getItem(sdKey) || '{}');
-      localStorage.setItem(sdKey, JSON.stringify({ ...sd, memberPerms: { ...(sd.memberPerms||{}), [memberId]: perm } }));
+      const newAccounts = acctIdsToRemove.size > 0 ? (sd.accounts||[]).filter(a => !acctIdsToRemove.has(a.id)) : (sd.accounts||[]);
+      const newTxs = acctIdsToRemove.size > 0 ? (sd.txs||[]).filter(tx => !acctIdsToRemove.has(tx.account)) : (sd.txs||[]);
+      localStorage.setItem(sdKey, JSON.stringify({ ...sd, memberPerms: { ...(sd.memberPerms||{}), [memberId]: perm }, accounts: newAccounts, txs: newTxs }));
       window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sdKey } }));
     } catch {}
+  };
+
+  const changePerm = (perm) => {
+    const isDowngrade = perm === 'reader' && currentPerm !== 'reader';
+    const memberAccts = (sharedData?.accounts || []).filter(a => a.attachedBy === memberId);
+    if (isDowngrade && memberAccts.length > 0) {
+      setRemoveAccts(new Set(memberAccts.map(a => a.id)));
+      setPendingPerm(perm);
+      return;
+    }
+    applyPerm(perm);
   };
 
   const doKick = () => {
@@ -585,6 +600,54 @@ export function MemberActionSheet({ profile, memberId, onClose }) {
     } catch {}
     onClose();
   };
+
+  if (pendingPerm) {
+    const memberAccts = (sharedData?.accounts || []).filter(a => a.attachedBy === memberId);
+    return (
+      <Sheet onClose={() => setPendingPerm(null)}>
+        <div style={{ padding:'4px 16px 20px' }}>
+          <div style={{ fontSize:17, fontWeight:700, marginBottom:8 }}>{t('profile.downgradeTitle')}</div>
+          <div style={{ fontSize:14, color:M.ink3, marginBottom:16, lineHeight:1.5 }}>
+            {t('profile.downgradeDesc').replace('{name}', info.displayName||memberId)}
+          </div>
+          <div style={{ background:M.paper2, borderRadius:12, marginBottom:16 }}>
+            {memberAccts.map((a, i) => {
+              const selected = removeAccts.has(a.id);
+              return (
+                <React.Fragment key={a.id}>
+                  {i > 0 && <div style={{ height:1, background:M.line, marginLeft:60 }}/>}
+                  <div className="m-tap" onClick={() => setRemoveAccts(prev => {
+                    const next = new Set(prev);
+                    if (next.has(a.id)) next.delete(a.id); else next.add(a.id);
+                    return next;
+                  })} style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 12px', cursor:'pointer' }}>
+                    <div style={{ width:36, height:36, borderRadius:10, background: a.color || M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                      <I name={a.type==='savings'?'piggy':a.type==='invest'?'rocket':'card'} size={16} color="#fff"/>
+                    </div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:14, fontWeight:500 }}>{a.name}</div>
+                      <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono }}>{a.iban}</div>
+                    </div>
+                    <div style={{ width:22, height:22, borderRadius:6, border:`2px solid ${selected ? M.clay : M.line}`, background: selected ? M.clay : 'transparent', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, transition:'all .15s' }}>
+                      {selected && <I name="check" size={12} color="#fff"/>}
+                    </div>
+                  </div>
+                </React.Fragment>
+              );
+            })}
+          </div>
+          <button onClick={() => { applyPerm(pendingPerm, removeAccts); setPendingPerm(null); onClose(); }}
+            style={{ width:'100%', padding:'14px 0', background:M.sage, color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>
+            {t('profile.downgradeConfirm')}
+          </button>
+          <button onClick={() => { applyPerm(pendingPerm, new Set()); setPendingPerm(null); onClose(); }}
+            style={{ width:'100%', padding:'14px 0', background:M.paper2, color:M.ink, border:`1px solid ${M.line}`, borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+            {t('profile.downgradeSkip')}
+          </button>
+        </div>
+      </Sheet>
+    );
+  }
 
   if (kickConfirm) {
     return (
