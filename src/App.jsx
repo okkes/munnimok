@@ -418,28 +418,20 @@ export function ScreenFriends() {
   );
 }
 
+// "Add member" sheet — shows friends to invite + pending invites + manage friends footer
 export function ProfileMembersSheet({ profile, onClose }) {
   const { t } = useLang();
   const nav = useNav();
   const myId = React.useMemo(() => getUserId(), []);
-  const { profiles, setProfiles } = useProfiles();
   const [friendships] = useLocalStorage('munni_global_friendships', []);
   const [invitations, setInvitations] = useLocalStorage('munni_global_invitations', []);
   const [userRegistry] = useLocalStorage('munni_global_users', {});
-  const [kickConfirm, setKickConfirm] = React.useState(null);
-  const [permEdit, setPermEdit] = React.useState(null);
-
   const [sharedData] = useLocalStorage(`munni_shared_data_${profile.id}`, { accounts: [], txs: [] });
 
   const myFriendIds = friendships.filter(f=>f.users&&f.users.includes(myId)).map(f=>f.users.find(u=>u!==myId));
   const members = profile.members || [];
-
-  // For invited members, sharedData.memberPerms holds the authoritative permission (set by changePerm)
-  const myPerm = sharedData?.memberPerms?.[myId] || members.find(m=>m.userId===myId)?.permission || (profile.isShared ? 'contributor' : 'owner');
-  const canManage = myPerm === 'owner';
   const pendingMemberInvites = invitations.filter(i=>i.fromId===myId&&i.type==='profile'&&i.profileId===profile.id&&i.status==='pending');
-
-  const updateProfile = (updater) => setProfiles(ps => ps.map(p => p.id===profile.id ? updater(p) : p));
+  const uninvitedFriends = myFriendIds.filter(fid => !members.some(m=>m.userId===fid) && !pendingMemberInvites.some(i=>i.toId===fid));
 
   const inviteFriend = (friendId) => {
     const inv = {
@@ -451,8 +443,6 @@ export function ProfileMembersSheet({ profile, onClose }) {
       permission:'contributor', status:'pending', sentAt:Date.now(),
     };
     setInvitations(arr=>[...arr, inv]);
-    // Clear any stale left/expelled signal for this friend so checkSharedSignals
-    // doesn't remove them from members as soon as they rejoin
     try {
       const sdKey = `munni_shared_data_${profile.id}`;
       const sd = JSON.parse(localStorage.getItem(sdKey) || '{}');
@@ -465,150 +455,187 @@ export function ProfileMembersSheet({ profile, onClose }) {
     } catch {}
   };
 
-  const kickMember = (userId) => {
-    updateProfile(p => ({
-      ...p,
-      members: (p.members||[]).filter(m=>m.userId!==userId),
-    }));
-    // Remove kicked member's accounts + txs from sharedData, then signal expelled
-    try {
-      const sdKey = `munni_shared_data_${profile.id}`;
-      const sd = JSON.parse(localStorage.getItem(sdKey) || '{}');
-      const kickedAcctIds = new Set((sd.accounts || []).filter(a => a.attachedBy === userId).map(a => a.id));
-      localStorage.setItem(sdKey, JSON.stringify({
-        ...sd,
-        accounts: (sd.accounts || []).filter(a => a.attachedBy !== userId),
-        txs: (sd.txs || []).filter(t => !kickedAcctIds.has(t.account)),
-        expelled: { ...(sd.expelled||{}), [userId]: Date.now() },
-      }));
-      window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sdKey } }));
-    } catch {}
-    setKickConfirm(null);
-  };
-
-  const changePerm = (userId, perm) => {
-    updateProfile(p => ({ ...p, members: (p.members||[]).map(m=>m.userId===userId?{...m,permission:perm}:m) }));
-    // Write to shared data so the member's tab picks it up via storage event
-    try {
-      const sdKey = `munni_shared_data_${profile.id}`;
-      const sd = JSON.parse(localStorage.getItem(sdKey) || '{"accounts":[],"txs":[]}');
-      const memberPerms = { ...(sd.memberPerms || {}), [userId]: perm };
-      localStorage.setItem(sdKey, JSON.stringify({ ...sd, memberPerms }));
-      window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sdKey } }));
-    } catch {}
-    setPermEdit(null);
-  };
-
-  const PERMS = ['reader','contributor','owner'];
-  const PERM_LABEL = { reader:t('profile.permReader'), contributor:t('profile.permContributor'), owner:t('profile.permOwner') };
-  const PERM_COLOR = { reader:M.ink3, contributor:M.sage, owner:M.ochre };
-
-  const uninvitedFriends = myFriendIds.filter(fid => !members.some(m=>m.userId===fid) && !pendingMemberInvites.some(i=>i.toId===fid));
-
   return (
     <Sheet onClose={onClose}>
       <div style={{ padding:'4px 16px 0' }}>
-        <div style={{ fontSize:17, fontWeight:700, marginBottom:16 }}>{t('profile.members')}</div>
+        <div style={{ fontSize:17, fontWeight:700, marginBottom:4 }}>{t('profile.addMember')}</div>
+        <div style={{ fontSize:13, color:M.ink3, marginBottom:14 }}>{t('profile.members')}</div>
       </div>
-      <div style={{ padding:'0 16px', maxHeight:'55vh', overflowY:'auto' }}>
-        {/* Members list */}
-        {members.length === 0 && <div style={{ color:M.ink4, fontSize:13, textAlign:'center', padding:'16px 0', marginBottom:8 }}>{t('profile.noMembers')}</div>}
-        {members.map((m,i)=>{
-          const info = userRegistry[m.userId]||{};
-          const isMe = m.userId===myId;
-          return (
-            <div key={m.userId} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 0', borderBottom:`1px solid ${M.line2}` }}>
-              <div style={{ width:34, height:34, borderRadius:999, background:isMe?M.sageSoft:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:14, fontWeight:700, color:isMe?M.sage:M.ink2 }}>
-                {(info.displayName||m.userId).charAt(0).toUpperCase()}
-              </div>
-              <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontSize:13, fontWeight:600 }}>{info.displayName||m.userId}{isMe?' (you)':''}</div>
-                <button onClick={()=>canManage&&!isMe&&setPermEdit(m.userId)} style={{ fontSize:11, color:PERM_COLOR[m.permission]||M.ink3, fontWeight:600, background:'none', border:'none', padding:0, cursor:canManage&&!isMe?'pointer':'default', fontFamily:M.fontUI }}>
-                  {PERM_LABEL[m.permission]||m.permission}
-                </button>
-              </div>
-              {canManage && !isMe && (
-                <button className="m-tap" onClick={()=>setKickConfirm(m.userId)} style={{ fontSize:11, padding:'4px 10px', borderRadius:8, background:M.claySoft, border:'none', color:M.clay, cursor:'pointer', fontFamily:M.fontUI }}>✕</button>
-              )}
-            </div>
-          );
-        })}
-        {/* Pending invites */}
-        {pendingMemberInvites.map(inv=>{
-          const info = userRegistry[inv.toId]||{};
-          return (
-            <div key={inv.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 0', borderBottom:`1px solid ${M.line2}` }}>
-              <div style={{ width:34, height:34, borderRadius:999, background:M.ochreSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:14, fontWeight:700, color:M.ochre }}>{(info.displayName||inv.toId).charAt(0).toUpperCase()}</div>
-              <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontSize:13, fontWeight:600 }}>{info.displayName||inv.toId}</div>
-                <div style={{ fontSize:11, color:M.ochre }}>{t('friends.pending')}</div>
-              </div>
-              <button className="m-tap" onClick={()=>setInvitations(arr=>arr.filter(i=>i.id!==inv.id))} style={{ fontSize:11, padding:'4px 10px', borderRadius:8, background:M.paper2, border:`1px solid ${M.line}`, color:M.ink3, cursor:'pointer', fontFamily:M.fontUI }}>✕</button>
-            </div>
-          );
-        })}
-        {/* Invite friends inline */}
-        {!profile.isDemo && canManage && (
+      <div style={{ padding:'0 16px', maxHeight:'60vh', overflowY:'auto' }}>
+        {profile.isDemo ? (
+          <div style={{ display:'flex', alignItems:'center', gap:10, padding:'14px 0', color:M.ink4, fontSize:13 }}>
+            <I name="lock" size={15} color={M.ink4}/>{t('profile.demoNoInvite')}
+          </div>
+        ) : (
           <>
-            <div style={{ fontSize:11, fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:M.ink4, marginTop:16, marginBottom:8 }}>{t('profile.addMember')}</div>
-            {uninvitedFriends.length === 0 ? (
-              <div style={{ fontSize:12, color:M.ink4, padding:'8px 0 4px', lineHeight:1.5 }}>
-                {t('friends.noFriendsToInvite')}{' '}
-                <button className="m-tap" onClick={() => { onClose(); nav.push('friends'); }}
-                  style={{ fontSize:12, color:M.sage, fontWeight:600, background:'none', border:'none', padding:0, cursor:'pointer', fontFamily:M.fontUI, textDecoration:'underline' }}>
-                  {t('friends.invite')} →
-                </button>
+            {/* Pending invites */}
+            {pendingMemberInvites.length > 0 && (
+              <>
+                <div className="m-cap" style={{ marginBottom:8, marginTop:4 }}>{t('friends.pending')}</div>
+                {pendingMemberInvites.map(inv => {
+                  const info = userRegistry[inv.toId] || {};
+                  return (
+                    <div key={inv.id} style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 0', borderBottom:`1px solid ${M.line2}` }}>
+                      <div style={{ width:36, height:36, borderRadius:999, background:M.ochreSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:14, fontWeight:700, color:M.ochre }}>
+                        {(info.displayName||inv.toId).charAt(0).toUpperCase()}
+                      </div>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:13, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{info.displayName||inv.toId}</div>
+                        <div style={{ fontSize:11, color:M.ochre, fontWeight:500 }}>{t('friends.pending')}</div>
+                      </div>
+                      <button className="m-tap" onClick={() => setInvitations(arr => arr.filter(i => i.id !== inv.id))}
+                        style={{ width:28, height:28, borderRadius:999, background:M.paper2, border:`1px solid ${M.line}`, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0 }}>
+                        <I name="x" size={13} color={M.ink3}/>
+                      </button>
+                    </div>
+                  );
+                })}
+                <div style={{ height:8 }}/>
+              </>
+            )}
+            {/* Friends to invite */}
+            {uninvitedFriends.length > 0 && (
+              <>
+                <div className="m-cap" style={{ marginBottom:8, marginTop: pendingMemberInvites.length > 0 ? 8 : 4 }}>{t('friends.friendsLabel')}</div>
+                {uninvitedFriends.map(fid => {
+                  const info = userRegistry[fid] || {};
+                  return (
+                    <div key={fid} style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 0', borderBottom:`1px solid ${M.line2}` }}>
+                      <div style={{ width:36, height:36, borderRadius:999, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:700, color:M.sage, flexShrink:0 }}>
+                        {(info.displayName||fid).charAt(0).toUpperCase()}
+                      </div>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:13, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{info.displayName||fid}</div>
+                        <div style={{ fontSize:10, color:M.ink4, fontFamily:M.fontMono, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{fid}</div>
+                      </div>
+                      <button className="m-tap" onClick={() => inviteFriend(fid)}
+                        style={{ padding:'7px 16px', borderRadius:999, background:M.sage, color:'#fff', border:'none', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, flexShrink:0 }}>
+                        + {t('profile.invite')}
+                      </button>
+                    </div>
+                  );
+                })}
+              </>
+            )}
+            {/* Empty state */}
+            {uninvitedFriends.length === 0 && pendingMemberInvites.length === 0 && (
+              <div style={{ fontSize:13, color:M.ink4, padding:'12px 0 4px', lineHeight:1.6, textAlign:'center' }}>
+                {t('friends.noFriendsToInvite')}
               </div>
-            ) : uninvitedFriends.map((fid,i)=>{
-              const info = userRegistry[fid]||{};
-              return (
-                <div key={fid} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 0', borderTop:`1px solid ${M.line2}` }}>
-                  <div style={{ width:34, height:34, borderRadius:999, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:700, color:M.sage, flexShrink:0 }}>{(info.displayName||fid).charAt(0).toUpperCase()}</div>
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:13, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{info.displayName||fid}</div>
-                    <div style={{ fontSize:10, color:M.ink4, fontFamily:M.fontMono, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{fid}</div>
-                  </div>
-                  <button className="m-tap" onClick={()=>inviteFriend(fid)}
-                    style={{ padding:'6px 14px', borderRadius:8, background:M.sage, color:'#fff', border:'none', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, flexShrink:0 }}>
-                    {t('profile.invite')}
-                  </button>
-                </div>
-              );
-            })}
+            )}
           </>
         )}
-        {profile.isDemo && (
-          <div style={{ display:'flex', alignItems:'center', gap:8, padding:'12px 0', color:M.ink4, fontSize:12 }}>
-            <I name="lock" size={14} color={M.ink4}/>{t('profile.demoNoInvite')}
-          </div>
-        )}
-        <div style={{ height:28 }}/>
+        {/* Manage friends footer */}
+        <div style={{ marginTop:20, paddingTop:14, borderTop:`1px solid ${M.line2}`, marginBottom:8 }}>
+          <button className="m-tap" onClick={() => { onClose(); nav.push('friends'); }}
+            style={{ width:'100%', padding:'13px 0', borderRadius:12, background:M.paper2, border:`1px solid ${M.line}`, fontSize:14, fontWeight:600, color:M.ink2, cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
+            {t('profile.manageFriends')}
+            <I name="caretR" size={14} color={M.ink3}/>
+          </button>
+        </div>
       </div>
-      {/* Perm edit sheet */}
-      {permEdit && (
-        <Sheet onClose={()=>setPermEdit(null)}>
-          <div style={{ padding:'4px 16px 8px' }}>
-            <div style={{ fontSize:16, fontWeight:700, marginBottom:16 }}>{t('profile.memberPerm')}</div>
-            {PERMS.map(p=>(
-              <button key={p} className="m-tap" onClick={()=>changePerm(permEdit,p)} style={{ width:'100%', padding:'13px 16px', marginBottom:8, borderRadius:12, border:`2px solid ${members.find(m=>m.userId===permEdit)?.permission===p?M.sage:M.line}`, background:members.find(m=>m.userId===permEdit)?.permission===p?M.sageSoft:M.paper, display:'flex', flexDirection:'column', alignItems:'flex-start', cursor:'pointer', fontFamily:M.fontUI }}>
-                <span style={{ fontWeight:700, color:PERM_COLOR[p] }}>{PERM_LABEL[p]}</span>
-                <span style={{ fontSize:11, color:M.ink3, marginTop:2 }}>{ p==='reader'?'View transactions, budgets, goals':p==='contributor'?'Also add & edit data':'Full access + manage members' }</span>
+    </Sheet>
+  );
+}
+
+// Member action sheet — change role or remove a member
+export function MemberActionSheet({ profile, memberId, onClose }) {
+  const { t } = useLang();
+  const { setProfiles } = useProfiles();
+  const [userRegistry] = useLocalStorage('munni_global_users', {});
+  const [sharedData] = useLocalStorage(`munni_shared_data_${profile.id}`, { accounts: [], txs: [] });
+  const [kickConfirm, setKickConfirm] = React.useState(false);
+
+  const members = profile.members || [];
+  const member = members.find(m => m.userId === memberId);
+  const info = userRegistry[memberId] || {};
+  const currentPerm = sharedData?.memberPerms?.[memberId] || member?.permission || 'contributor';
+
+  const PERMS = ['reader', 'contributor', 'owner'];
+  const PERM_LABEL = { reader:t('profile.permReader'), contributor:t('profile.permContributor'), owner:t('profile.permOwner') };
+  const PERM_DESC = { reader:'View transactions, budgets, goals', contributor:'Also add & edit data', owner:'Full access + manage members' };
+  const PERM_BG = { reader:M.slateSoft, contributor:M.sageSoft, owner:M.ochreSoft };
+  const PERM_COLOR = { reader:M.slate, contributor:M.sage, owner:M.ochre };
+
+  const updateProfile = (updater) => setProfiles(ps => ps.map(p => p.id===profile.id ? updater(p) : p));
+
+  const changePerm = (perm) => {
+    updateProfile(p => ({ ...p, members: (p.members||[]).map(m => m.userId===memberId ? {...m, permission:perm} : m) }));
+    try {
+      const sdKey = `munni_shared_data_${profile.id}`;
+      const sd = JSON.parse(localStorage.getItem(sdKey) || '{}');
+      localStorage.setItem(sdKey, JSON.stringify({ ...sd, memberPerms: { ...(sd.memberPerms||{}), [memberId]: perm } }));
+      window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sdKey } }));
+    } catch {}
+  };
+
+  const doKick = () => {
+    updateProfile(p => ({ ...p, members: (p.members||[]).filter(m => m.userId !== memberId) }));
+    try {
+      const sdKey = `munni_shared_data_${profile.id}`;
+      const sd = JSON.parse(localStorage.getItem(sdKey) || '{}');
+      const kickedAcctIds = new Set((sd.accounts||[]).filter(a => a.attachedBy===memberId).map(a => a.id));
+      localStorage.setItem(sdKey, JSON.stringify({
+        ...sd,
+        accounts: (sd.accounts||[]).filter(a => a.attachedBy!==memberId),
+        txs: (sd.txs||[]).filter(t => !kickedAcctIds.has(t.account)),
+        expelled: { ...(sd.expelled||{}), [memberId]: Date.now() },
+      }));
+      window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sdKey } }));
+    } catch {}
+    onClose();
+  };
+
+  if (kickConfirm) {
+    return (
+      <Sheet onClose={() => setKickConfirm(false)}>
+        <div style={{ padding:'4px 16px 8px' }}>
+          <div style={{ fontSize:17, fontWeight:700, marginBottom:8 }}>{t('profile.kick')}?</div>
+          <div style={{ fontSize:14, color:M.ink3, marginBottom:20, lineHeight:1.5 }}>{t('profile.kickWarn')}</div>
+          <button onClick={doKick} style={{ width:'100%', padding:'14px 0', background:M.clay, color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>{t('profile.kick')}</button>
+          <button onClick={() => setKickConfirm(false)} style={{ width:'100%', padding:'14px 0', background:M.paper2, color:M.ink, border:`1px solid ${M.line}`, borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>{t('action.cancel')}</button>
+        </div>
+      </Sheet>
+    );
+  }
+
+  return (
+    <Sheet onClose={onClose}>
+      <div style={{ padding:'4px 16px 20px' }}>
+        {/* Member header */}
+        <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:20 }}>
+          <div style={{ width:44, height:44, borderRadius:999, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:17, fontWeight:700, color:M.ink2 }}>
+            {(info.displayName||memberId).charAt(0).toUpperCase()}
+          </div>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontSize:16, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{info.displayName||memberId}</div>
+            <div style={{ fontSize:11, color:M.ink4, fontFamily:M.fontMono, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{memberId}</div>
+          </div>
+        </div>
+        {/* Role picker */}
+        <div className="m-cap" style={{ marginBottom:10 }}>{t('profile.memberPerm')}</div>
+        <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:20 }}>
+          {PERMS.map(perm => {
+            const active = currentPerm === perm;
+            return (
+              <button key={perm} className="m-tap" onClick={() => changePerm(perm)}
+                style={{ width:'100%', padding:'12px 14px', borderRadius:12, border:`2px solid ${active ? PERM_COLOR[perm] : M.line}`, background: active ? PERM_BG[perm] : M.paper, display:'flex', alignItems:'center', gap:12, cursor:'pointer', fontFamily:M.fontUI, textAlign:'left' }}>
+                <div style={{ width:8, height:8, borderRadius:'50%', background: active ? PERM_COLOR[perm] : M.line, flexShrink:0, marginTop:1 }}/>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:13, fontWeight:700, color: active ? PERM_COLOR[perm] : M.ink2 }}>{PERM_LABEL[perm]}</div>
+                  <div style={{ fontSize:11, color:M.ink4, marginTop:1 }}>{PERM_DESC[perm]}</div>
+                </div>
+                {active && <I name="check" size={15} color={PERM_COLOR[perm]}/>}
               </button>
-            ))}
-          </div>
-        </Sheet>
-      )}
-      {/* Kick confirm sheet */}
-      {kickConfirm && (
-        <Sheet onClose={()=>setKickConfirm(null)}>
-          <div style={{ padding:'4px 16px 8px' }}>
-            <div style={{ fontSize:17, fontWeight:700, marginBottom:8 }}>{t('profile.kick')}?</div>
-            <div style={{ fontSize:14, color:M.ink3, marginBottom:20, lineHeight:1.5 }}>{t('profile.kickWarn')}</div>
-            <button onClick={()=>kickMember(kickConfirm)} style={{ width:'100%', padding:'14px 0', background:M.clay, color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>{t('profile.kick')}</button>
-            <button onClick={()=>setKickConfirm(null)} style={{ width:'100%', padding:'14px 0', background:M.paper2, color:M.ink, border:`1px solid ${M.line}`, borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>{t('action.cancel')}</button>
-          </div>
-        </Sheet>
-      )}
+            );
+          })}
+        </div>
+        {/* Remove button */}
+        <button className="m-tap" onClick={() => setKickConfirm(true)}
+          style={{ width:'100%', padding:'13px 0', background:M.claySoft, color:M.clay, border:'none', borderRadius:12, fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+          {t('profile.kick')}
+        </button>
+      </div>
     </Sheet>
   );
 }

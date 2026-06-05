@@ -10,7 +10,7 @@ import { HighlightText, ScreenExpenses, DetailRow } from './Tx.jsx';
 import { Toggle, FormRow } from './Events.jsx';
 import { useAppCtx } from '../App.jsx';
 import { CategoryPicker } from './Review.jsx';
-import { ProfileMembersSheet } from '../App.jsx';
+import { ProfileMembersSheet, MemberActionSheet } from '../App.jsx';
 
 
 export function ScreenIntegrations({ params }) {
@@ -748,6 +748,7 @@ export function ScreenProfileDetail({ params }) {
   const [nameDraft, setNameDraft] = React.useState('');
   const [showPhotoSheet, setShowPhotoSheet] = React.useState(false);
   const [showMembersSheet, setShowMembersSheet] = React.useState(false);
+  const [memberActionSheet, setMemberActionSheet] = React.useState(null); // userId or null
 
   const myId = React.useMemo(() => getUserId(), []);
   const [invitations, setInvitations] = useLocalStorage('munni_global_invitations', []);
@@ -1137,10 +1138,12 @@ export function ScreenProfileDetail({ params }) {
                   })()}
                   {displayMembers.map((m, i) => {
                     const info = userRegistry[m.userId] || {};
+                    const tappable = myPerm === 'owner';
                     return (
                       <React.Fragment key={m.userId}>
                         {i > 0 && <Divider inset={44}/>}
-                        <div style={{ display:'flex', alignItems:'center', gap:10, padding:'11px 0' }}>
+                        <div className={tappable ? 'm-tap' : ''} onClick={tappable ? () => setMemberActionSheet(m.userId) : undefined}
+                          style={{ display:'flex', alignItems:'center', gap:10, padding:'11px 0', cursor: tappable ? 'pointer' : 'default' }}>
                           <div style={{ width:32, height:32, borderRadius:999, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:13, fontWeight:700, color:M.ink2 }}>
                             {(info.displayName||m.userId).charAt(0).toUpperCase()}
                           </div>
@@ -1150,6 +1153,7 @@ export function ScreenProfileDetail({ params }) {
                           <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:m.permission==='owner'?M.ochreSoft:m.permission==='contributor'?M.sageSoft:M.paper2, color:PERM_COLOR[m.permission]||M.ink3, textTransform:'uppercase', flexShrink:0 }}>
                             {PERM_LABEL[m.permission]||m.permission}
                           </span>
+                          {tappable && <I name="caretR" size={13} color={M.ink4}/>}
                         </div>
                       </React.Fragment>
                     );
@@ -1204,7 +1208,7 @@ export function ScreenProfileDetail({ params }) {
                     <I name="user" size={15} color={M.sage}/>
                   </div>
                   <div style={{ flex:1 }}>
-                    <div style={{ fontSize:13, fontWeight:600, color:M.sage }}>{members.length > 0 ? t('profile.manageMembers') : t('profile.addMember')}</div>
+                    <div style={{ fontSize:13, fontWeight:600, color:M.sage }}>{t('profile.addMember')}</div>
                   </div>
                   <I name="caretR" size={14} color={M.ink4}/>
                 </div>
@@ -1328,6 +1332,9 @@ export function ScreenProfileDetail({ params }) {
 
       {showMembersSheet && (
         <ProfileMembersSheet profile={profile} onClose={() => setShowMembersSheet(false)}/>
+      )}
+      {memberActionSheet && (
+        <MemberActionSheet profile={profile} memberId={memberActionSheet} onClose={() => setMemberActionSheet(null)}/>
       )}
 
       {showDeleteConfirm && (
