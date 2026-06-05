@@ -1204,11 +1204,11 @@ export function ScreenProfileDetail({ params }) {
               <>
                 {(members.length > 0 || pendingInvitesForProfile.length > 0 || isMemberOfShared) && <Divider inset={0}/>}
                 <div className="m-tap" onClick={() => setShowMembersSheet(true)} style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 0' }}>
-                  <div style={{ width:32, height:32, borderRadius:10, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                    <I name="user" size={15} color={M.sage}/>
+                  <div style={{ width:32, height:32, borderRadius:999, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:18, fontWeight:400, color:M.sage, lineHeight:1 }}>
+                    +
                   </div>
                   <div style={{ flex:1 }}>
-                    <div style={{ fontSize:13, fontWeight:600, color:M.sage }}>{t('profile.addMember')}</div>
+                    <div style={{ fontSize:14, fontWeight:500, color:M.sage }}>{t('profile.addMember')}</div>
                   </div>
                   <I name="caretR" size={14} color={M.ink4}/>
                 </div>
