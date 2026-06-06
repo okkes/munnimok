@@ -8,8 +8,7 @@ import { useLang } from '../../shared/i18n.jsx';
 import { useNav, Sheet, TabBar } from '../../app/nav.jsx';
 import { useLocalStorage } from '../../shared/hooks.jsx';
 import { BarChart, BarChartScrollable } from '../../shared/components/Charts.jsx';
-import { useTxCtx, useProfileDebts, Stat } from '../../app/providers.jsx';
-import { useAppCtx } from '../../app/providers.jsx';
+import { useTxCtx, useProfileDebts, useAppCtx, Stat } from '../../app/providers.jsx';
 
 export function ScreenIncome() {
   const nav = useNav();

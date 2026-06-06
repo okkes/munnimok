@@ -5,7 +5,7 @@ import { M, I, Divider, StatusBar, AppBar } from '../../app/theme.jsx';
 import { useLang } from '../../shared/i18n.jsx';
 import { useNav, TabBar } from '../../app/nav.jsx';
 import { BarChart, StackedBar } from '../../shared/components/Charts.jsx';
-import { Stat } from '../../app/providers.jsx';
+import { useTxCtx, useRecurCtx, Stat } from '../../app/providers.jsx';
 import { DetailRow } from '../transactions/Tx.jsx';
 import { Toggle, FormRow } from '../events/Events.jsx';
 
