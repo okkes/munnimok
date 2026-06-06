@@ -670,7 +670,7 @@ export function ScreenProfiles() {
                   </div>
                   <div className="m-tap" onClick={() => activateProfile(p.id)} style={{ flex:1, minWidth:0 }}>
                     <div style={{ fontSize:14, fontWeight:600, display:'flex', alignItems:'center', gap:6 }}>
-                      {p.name}
+                      {p.localName || p.name}
                       {p.isDemo && <span style={{ fontSize:8, fontWeight:700, padding:'1px 5px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase' }}>Demo</span>}
                       {p.isShared && (p.members||[]).some(m => m.userId !== myId) && <span style={{ fontSize:8, fontWeight:700, padding:'1px 5px', borderRadius:999, background:M.violetSoft||'#EEE8FF', color:M.violet||'#7B61FF', textTransform:'uppercase' }}>Shared</span>}
                       {!p.isShared && (p.members||[]).length > 0 && <span style={{ fontSize:8, fontWeight:700, padding:'1px 5px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>Shared</span>}
@@ -856,6 +856,7 @@ export function ScreenProfileDetail({ params }) {
   const members = profile.members || [];
   const isMemberOfShared = !!profile.isShared;
   const otherMembers = members.filter(m => m.userId !== myId);
+  const hasOtherOwner = otherMembers.some(m => (sharedData?.memberPerms?.[m.userId] || m.permission) === 'owner');
   const myMembership = members.find(m => m.userId === myId);
   const myPerm = sharedData?.memberPerms?.[myId] || myMembership?.permission || (isMemberOfShared ? 'contributor' : 'owner');
   const canEdit = myPerm !== 'reader';
@@ -1100,6 +1101,11 @@ export function ScreenProfileDetail({ params }) {
                 <div style={{ fontSize:10, color:M.ink4, marginTop:4 }}>{isMemberOfShared ? t('profile.tapRenameLocal') : t('profile.tapRename')}</div>
               </div>
             )}
+            {isMemberOfShared && profile.ownerDisplay && (
+              <div style={{ fontSize:12, color:M.ink3, marginTop:4, textAlign:'center' }}>
+                {t('profile.by')} <span style={{ fontWeight:600 }}>{(profile.ownerDisplay || '').split(' ')[0]}</span>
+              </div>
+            )}
             {isActive && (
               <div style={{ fontSize:11, color:M.sage, fontWeight:600, marginTop:3, textAlign:'center' }}>{t('profile.active')}</div>
             )}
@@ -1175,8 +1181,8 @@ export function ScreenProfileDetail({ params }) {
                               {myDisplayName} <span style={{ color:M.ink4, fontWeight:400 }}>({t('word.you')})</span>
                             </div>
                           </div>
-                          <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase', flexShrink:0 }}>
-                            {PERM_LABEL['owner']}
+                          <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:myPerm==='owner'?M.ochreSoft:myPerm==='contributor'?M.sageSoft:M.paper2, color:PERM_COLOR[myPerm]||M.ink3, textTransform:'uppercase', flexShrink:0 }}>
+                            {PERM_LABEL[myPerm]||myPerm}
                           </span>
                         </div>
                         {displayMembers.length > 0 && <Divider inset={44}/>}
@@ -1274,7 +1280,7 @@ export function ScreenProfileDetail({ params }) {
           <>
             <button onClick={() => setShowLeaveConfirm(true)}
               style={{ width:'100%', padding:'14px 0', background:M.claySoft, color:M.clay, border:'none', borderRadius:12, fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:8 }}>
-              {t('profile.transferLeave')}
+              {hasOtherOwner ? t('profile.leaveProfile') : t('profile.transferLeave')}
             </button>
             {!isMemberOfShared && (
               <>
@@ -1430,7 +1436,7 @@ export function ScreenProfileDetail({ params }) {
         <Sheet onClose={() => setShowLeaveConfirm(false)}>
           <div style={{ padding:'4px 16px 8px' }}>
             {(() => {
-              const isOwnerTransfer = myPerm === 'owner' && otherMembers.length > 0;
+              const isOwnerTransfer = myPerm === 'owner' && otherMembers.length > 0 && !hasOtherOwner;
               return (
                 <>
                   <div style={{ fontSize:17, fontWeight:700, marginBottom:8 }}>
