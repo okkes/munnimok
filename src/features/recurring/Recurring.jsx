@@ -5,6 +5,7 @@ import { M, I, Divider, StatusBar, AppBar } from '../../app/theme.jsx';
 import { useLang } from '../../shared/i18n.jsx';
 import { useNav, TabBar } from '../../app/nav.jsx';
 import { BarChart, StackedBar } from '../../shared/components/Charts.jsx';
+import { TxRow } from '../../shared/components/TxRow.jsx';
 import { useTxCtx, useRecurCtx, Stat } from '../../app/providers.jsx';
 import { DetailRow } from '../transactions/Tx.jsx';
 import { Toggle, FormRow } from '../events/Events.jsx';
@@ -32,8 +33,8 @@ function RecurringRow({ r, onClick }) {
           {r.luxury && <span style={{ fontSize:9, fontWeight:700, padding:'2px 6px', borderRadius:999, background:M.violetSoft, color:M.violet, textTransform:'uppercase', letterSpacing:'0.05em' }}>luxury</span>}
         </div>
         <div style={{ fontSize:11, color:M.ink3 }}>
-          {isPaid ? 'Paid this period' : `Due ${ordinal(r.day)} Â· next ${r.next}`}
-          {r.until ? ` Â· ends ${r.until}` : ''}
+          {isPaid ? 'Paid this period' : `Due ${ordinal(r.day)} · next ${r.next}`}
+          {r.until ? ` · ends ${r.until}` : ''}
         </div>
       </div>
       <div className="m-num" style={{ fontSize:14, fontWeight:600 }}>{fmtEur(r.amount)}</div>
@@ -98,7 +99,7 @@ function RecurringContent({ showTabBar = false }) {
           {luxTotal > 0 && (
             <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:12 }}>
               <span style={{ fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:999, background:M.violetSoft, color:M.violet, textTransform:'uppercase', letterSpacing:'0.05em' }}>luxury</span>
-              <div style={{ fontSize:11, color:M.ink3 }}>{fmtEur(luxTotal)}/period Â· {fmtEur(luxTotal*12)}/year</div>
+              <div style={{ fontSize:11, color:M.ink3 }}>{fmtEur(luxTotal)}/period · {fmtEur(luxTotal*12)}/year</div>
             </div>
           )}
         </div>
@@ -106,7 +107,7 @@ function RecurringContent({ showTabBar = false }) {
         {RECURRING_SUGGESTIONS.length > 0 && (
           <>
             <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8, paddingLeft:4 }}>
-              <div className="m-cap">Detected by AI Â· {RECURRING_SUGGESTIONS.length}</div>
+              <div className="m-cap">Detected by AI · {RECURRING_SUGGESTIONS.length}</div>
               <span style={{ fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase', letterSpacing:'0.05em' }}>new</span>
             </div>
             <div className="m-card" style={{ padding:'4px 16px', marginBottom:16, background:M.sageSoft, border:`1px solid ${M.sage}` }}>
@@ -118,7 +119,7 @@ function RecurringContent({ showTabBar = false }) {
                     </div>
                     <div style={{ flex:1, minWidth:0 }}>
                       <div style={{ fontSize:14, fontWeight:500, marginBottom:2 }}>{s.name}</div>
-                      <div style={{ fontSize:11, color:M.ink3 }}>{s.pattern} Â· {s.confidence}% confidence</div>
+                      <div style={{ fontSize:11, color:M.ink3 }}>{s.pattern} · {s.confidence}% confidence</div>
                     </div>
                     <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:6 }}>
                       <div className="m-num" style={{ fontSize:14, fontWeight:600 }}>{fmtEur(s.amount)}</div>
@@ -140,7 +141,7 @@ function RecurringContent({ showTabBar = false }) {
         )}
 
         {fixed.length > 0 && <>
-          <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Fixed costs Â· {fixed.length}</div>
+          <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Fixed costs · {fixed.length}</div>
           <div className="m-card" style={{ padding:'4px 16px', marginBottom:16, border:`1px solid ${M.line}` }}>
             {fixed.map((r, i, a) => (
               <React.Fragment key={r.id}>
@@ -152,7 +153,7 @@ function RecurringContent({ showTabBar = false }) {
         </>}
 
         {subs.length > 0 && <>
-          <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Subscriptions Â· {subs.length}</div>
+          <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Subscriptions · {subs.length}</div>
           <div className="m-card" style={{ padding:'4px 16px', marginBottom:16, border:`1px solid ${M.line}` }}>
             {subs.map((r, i, a) => (
               <React.Fragment key={r.id}>
@@ -234,7 +235,7 @@ export function ScreenRecurringDetail({ params }) {
         </div>
 
         <div className="m-card" style={{ padding:16, marginBottom:14, border:`1px solid ${M.line}` }}>
-          <div className="m-cap" style={{ marginBottom:10 }}>History Â· 6 periods</div>
+          <div className="m-cap" style={{ marginBottom:10 }}>History · 6 periods</div>
           <BarChart data={history} labels={['Sepâ€“Oct','Octâ€“Nov','Novâ€“Dec','Decâ€“Jan','Janâ€“Feb','Febâ€“Mar']} showValues height={84} accent={M.sage}/>
         </div>
 
@@ -252,7 +253,7 @@ export function ScreenRecurringDetail({ params }) {
         )}
 
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8, paddingLeft:4 }}>
-          <div className="m-cap">Linked transactions Â· {txs.length}</div>
+          <div className="m-cap">Linked transactions · {txs.length}</div>
           <button className="m-tap" onClick={() => setShowAddTx(true)}
             style={{ display:'flex', alignItems:'center', gap:4, background:'transparent', border:'none', color:M.ink3, fontSize:12, fontWeight:600, fontFamily:M.fontUI, cursor:'pointer', padding:'4px 0' }}>
             <I name="plus" size={12} color={M.ink3}/> Add
@@ -448,7 +449,7 @@ export function ScreenRecurringDeals({ params }) {
             </div>
             <div style={{ flex:1 }}>
               <div style={{ fontSize:15, fontWeight:600 }}>{r.name}</div>
-              <div style={{ fontSize:11, color:M.ink3, marginTop:2 }}>{r.type === 'subs' ? 'Subscription' : 'Fixed cost'} Â· billed monthly</div>
+              <div style={{ fontSize:11, color:M.ink3, marginTop:2 }}>{r.type === 'subs' ? 'Subscription' : 'Fixed cost'} · billed monthly</div>
             </div>
             <div className="m-num" style={{ fontSize:17, fontWeight:700 }}>{fmtEur(r.amount)}</div>
           </div>
@@ -456,13 +457,13 @@ export function ScreenRecurringDeals({ params }) {
             <div style={{ marginTop:12, padding:'10px 12px', borderRadius:10, background:M.sageSoft, display:'flex', alignItems:'center', gap:10 }}>
               <I name="tag" size={14} color={M.sage}/>
               <div style={{ fontSize:12, color:M.ink2, lineHeight:1.4 }}>
-                Best alternative: <span style={{ fontWeight:700, color:M.sage }}>{fmtEur(best.saving)}/month</span> saved Â· {fmtEur(best.saving * 12)}/year
+                Best alternative: <span style={{ fontWeight:700, color:M.sage }}>{fmtEur(best.saving)}/month</span> saved · {fmtEur(best.saving * 12)}/year
               </div>
             </div>
           )}
         </div>
 
-        <div className="m-cap" style={{ marginBottom:10, paddingLeft:4 }}>Alternatives Â· {deals.length}</div>
+        <div className="m-cap" style={{ marginBottom:10, paddingLeft:4 }}>Alternatives · {deals.length}</div>
         <div style={{ display:'flex', flexDirection:'column', gap:10, marginBottom:16 }}>
           {deals.map(d => {
             const bColor = d.badgeColor === M.ink3 ? M.ink3 : d.badgeColor;

@@ -50,7 +50,7 @@ export function ScreenIntegrations({ params }) {
                     <div style={{ width:40, height:40, borderRadius:12, background:intg.color+'22', display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, flexShrink:0 }}>{intg.icon}</div>
                     <div style={{ flex:1 }}>
                       <div style={{ fontSize:14, fontWeight:600 }}>{intg.store}</div>
-                      <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{intg.category} Â· {intg.txCount} transactions synced</div>
+                      <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{intg.category} · {intg.txCount} transactions synced</div>
                       <div style={{ fontSize:10, color:M.ink4, marginTop:1 }}>Last sync {intg.lastSync}</div>
                     </div>
                     <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:6 }}>
@@ -219,7 +219,7 @@ export function ScreenIntegrationReceipts({ params }) {
       <div className="m-body-scroll">
         {sourceTx && (
           <div style={{ margin:'0 0 16px', padding:'12px 14px', borderRadius:12, background:M.ochreSoft, fontSize:13, color:M.ochre, lineHeight:1.5 }}>
-            Matching receipts for <strong>{sourceTx.merchant}</strong> Â· {fmtEur(Math.abs(sourceTx.amount))}
+            Matching receipts for <strong>{sourceTx.merchant}</strong> · {fmtEur(Math.abs(sourceTx.amount))}
           </div>
         )}
         {receipts.length === 0 ? (
@@ -233,7 +233,7 @@ export function ScreenIntegrationReceipts({ params }) {
                 <div style={{ width:36, height:36, borderRadius:10, background:intg.color+'22', display:'flex', alignItems:'center', justifyContent:'center', fontSize:18, flexShrink:0 }}>{intg.icon}</div>
                 <div style={{ flex:1 }}>
                   <div style={{ fontSize:13, fontWeight:600 }}>{r.store}</div>
-                  <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{fmtDate(r.date, 'long')} Â· {r.items.length} items</div>
+                  <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{fmtDate(r.date, 'long')} · {r.items.length} items</div>
                 </div>
                 <div className="m-num" style={{ fontSize:15, fontWeight:700, color:isMatch?M.sage:M.ink }}>{fmtEur(r.total)}</div>
                 {isMatch && <div style={{ fontSize:10, fontWeight:700, letterSpacing:'0.04em', textTransform:'uppercase', color:M.sage, background:M.sage+'22', padding:'2px 8px', borderRadius:999 }}>Match</div>}
@@ -379,7 +379,7 @@ export function ScreenAccounts() {
               <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
                 {[
                   { icon:'card', label:'Account information', sub:'IBAN, name, balance' },
-                  { icon:'receipt', label:'Transaction history', sub:'Last 13 months Â· read-only' },
+                  { icon:'receipt', label:'Transaction history', sub:'Last 13 months · read-only' },
                 ].map((item, i) => (
                   <React.Fragment key={i}>
                     {i > 0 && <Divider inset={48}/>}
@@ -482,7 +482,7 @@ export function ScreenAccounts() {
         <div style={{ padding:'12px 16px', borderRadius:14, background:M.sageSoft, display:'flex', gap:12, alignItems:'flex-start' }}>
           <I name="lock" size={18} color={M.sage}/>
           <div style={{ flex:1 }}>
-            <div style={{ fontSize:13, fontWeight:600, color:M.sage }}>Read-only Â· PSD2 Open Banking</div>
+            <div style={{ fontSize:13, fontWeight:600, color:M.sage }}>Read-only · PSD2 Open Banking</div>
             <div style={{ fontSize:12, color:M.ink2, marginTop:4, lineHeight:1.45 }}>
               munni reads transactions via Open Banking. We can never move money on your behalf.
             </div>
@@ -769,7 +769,7 @@ export function ScreenSavingsDetail({ params }) {
         </div>
 
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8, paddingLeft:4 }}>
-          <div className="m-cap">Manual transactions Â· {txs.length}</div>
+          <div className="m-cap">Manual transactions · {txs.length}</div>
         </div>
         <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}`, marginBottom:14 }}>
           {txs.length === 0 ? (
@@ -784,7 +784,7 @@ export function ScreenSavingsDetail({ params }) {
                 </div>
                 <div style={{ flex:1 }}>
                   <div style={{ fontSize:14, fontWeight:500 }}>{t.desc}</div>
-                  <div style={{ fontSize:11, color:M.ink3, marginTop:2 }}>{fmtDate(t.date)} Â· manual entry</div>
+                  <div style={{ fontSize:11, color:M.ink3, marginTop:2 }}>{fmtDate(t.date)} · manual entry</div>
                 </div>
                 <div className="m-num" style={{ fontSize:15, fontWeight:600, color:M.sage }}>+{fmtEur(t.amount)}</div>
                 <button className="m-tap" onClick={() => setTxs(ts => ts.filter(x => x.id !== t.id))} style={{ background:'transparent', border:'none', cursor:'pointer', padding:4, flexShrink:0 }}>
@@ -864,7 +864,7 @@ export function ScreenSavingAccounts() {
                       <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono }}>{a.iban}</div>
                       {isDisabled && <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:999, background:M.line2, color:M.ink3, textTransform:'uppercase' }}>Read-only</span>}
                     </div>
-                    <div style={{ fontSize:11, color:M.ink3, marginTop:2 }}>{acctTxs.length} transfer{acctTxs.length !== 1 ? 's' : ''} Â· {fmtEur(total)} saved</div>
+                    <div style={{ fontSize:11, color:M.ink3, marginTop:2 }}>{acctTxs.length} transfer{acctTxs.length !== 1 ? 's' : ''} · {fmtEur(total)} saved</div>
                   </div>
                   <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:6 }}>
                     <div className="m-num" style={{ fontSize:15, fontWeight:600 }}>{fmtEur(a.balance)}</div>
@@ -984,7 +984,7 @@ export function AccountsSharingOverview() {
                     <div style={{ fontSize:14, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.name}</div>
                     {item.iban && <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono, marginTop:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.iban}</div>}
                     <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:3, flexWrap:'wrap' }}>
-                      <span style={{ fontSize:11, color:M.ink3 }}>From <strong>{item.fromName}</strong> Â· <span style={{ color:M.sage, fontWeight:600 }}>{item.profileName}</span></span>
+                      <span style={{ fontSize:11, color:M.ink3 }}>From <strong>{item.fromName}</strong> · <span style={{ color:M.sage, fontWeight:600 }}>{item.profileName}</span></span>
                       <span style={{ fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase', flexShrink:0 }}>{item.permission}</span>
                     </div>
                   </div>
@@ -1014,8 +1014,8 @@ export function AccountsSharingOverview() {
                     <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:3, flexWrap:'wrap' }}>
                       <span style={{ fontSize:11, color:M.ink3 }}>
                         {contributorName
-                          ? <>From <strong>{contributorName}</strong> Â· <span style={{ color:M.sage, fontWeight:600 }}>{profile.name}</span></>
-                          : <>{t('accounts.sharedVia')} <strong>{profile.name}</strong> Â· {memberCount} member{memberCount>1?'s':''}</>
+                          ? <>From <strong>{contributorName}</strong> · <span style={{ color:M.sage, fontWeight:600 }}>{profile.name}</span></>
+                          : <>{t('accounts.sharedVia')} <strong>{profile.name}</strong> · {memberCount} member{memberCount>1?'s':''}</>
                         }
                       </span>
                       {contributorName && (
@@ -1204,7 +1204,7 @@ export function ScreenAccountsAll() {
               <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
                 {[
                   { icon:'card', label:'Account information', sub:'IBAN, name, balance' },
-                  { icon:'receipt', label:'Transaction history', sub:'Last 13 months Â· read-only' },
+                  { icon:'receipt', label:'Transaction history', sub:'Last 13 months · read-only' },
                 ].map((item, i) => (
                   <React.Fragment key={i}>
                     {i > 0 && <Divider inset={48}/>}

@@ -118,7 +118,7 @@ export function ScreenProfile() {
               </div>
             )}
             <div style={{ fontSize: 12, color: M.ink3 }}>{emailDisplay}</div>
-            {isDemo && <div style={{ fontSize:11, color:M.ochre, marginTop:3 }}>Demo account Â· read-only profile</div>}
+            {isDemo && <div style={{ fontSize:11, color:M.ochre, marginTop:3 }}>Demo account · read-only profile</div>}
           </div>
           {!isDemo && (editing ? (
             <button className="m-tap" onClick={save} style={{ width:36, height:36, borderRadius:999, background:M.sage, border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
@@ -134,7 +134,7 @@ export function ScreenProfile() {
         {/* Manage */}
         <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>{t('settings.manage')}</div>
         <div className="m-card" style={{ padding: '4px 16px', marginBottom: 16, border: `1px solid ${M.line}` }}>
-          <ProfileLink icon="user"    label={t('settings.profiles')}       sub={`${profiles.length} profile${profiles.length!==1?'s':''} Â· ${activeProfile?.name}`} onClick={() => nav.push('profiles')}/>
+          <ProfileLink icon="user"    label={t('settings.profiles')}       sub={`${profiles.length} profile${profiles.length!==1?'s':''} · ${activeProfile?.name}`} onClick={() => nav.push('profiles')}/>
           <Divider inset={48}/>
           <ProfileLink icon="users"   label={t('settings.friends')}        sub={t('settings.friendsSub')}               onClick={() => nav.push('friends')}/>
           <Divider inset={48}/>
@@ -144,7 +144,7 @@ export function ScreenProfile() {
           <Divider inset={48}/>
           <ProfileLink icon="link"    label="Integrations"                 sub="4 stores connected"                 onClick={() => nav.push('integrations')}/>
           <Divider inset={48}/>
-          <ProfileLink icon="cal"     label={t('settings.periods')}        sub={(() => { const [pd] = useLocalStorage ? [null] : [null]; const pday = parseInt(localStorage.getItem('munni_period_day')||'20'); const ptype = localStorage.getItem('munni_period_type')||'monthly'; if(ptype==='weekly') return 'Weekly Â· '+['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][pday]||'Mon'; if(ptype==='biweekly') return 'Bi-weekly Â· '+['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][pday]||'Mon'; return 'Monthly Â· '+pday+(pday===1||pday===21?'st':pday===2||pday===22?'nd':pday===3||pday===23?'rd':'th'); })()} onClick={() => nav.push('periods')}/>
+          <ProfileLink icon="cal"     label={t('settings.periods')}        sub={(() => { const [pd] = useLocalStorage ? [null] : [null]; const pday = parseInt(localStorage.getItem('munni_period_day')||'20'); const ptype = localStorage.getItem('munni_period_type')||'monthly'; if(ptype==='weekly') return 'Weekly · '+['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][pday]||'Mon'; if(ptype==='biweekly') return 'Bi-weekly · '+['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][pday]||'Mon'; return 'Monthly · '+pday+(pday===1||pday===21?'st':pday===2||pday===22?'nd':pday===3||pday===23?'rd':'th'); })()} onClick={() => nav.push('periods')}/>
           <Divider inset={48}/>
           <ProfileLink icon="sliders" label={t('settings.customizeHome')}  sub="Reorder and show/hide cards"        onClick={() => nav.push('customizeHome')}/>
         </div>
@@ -182,7 +182,7 @@ export function ScreenProfile() {
           </div>
         </div>
 
-        <div style={{ textAlign: 'center', fontSize: 11, color: M.ink4, padding: '12px 0 24px' }}>munni Â· v1.0.0 Â· build 248</div>
+        <div style={{ textAlign: 'center', fontSize: 11, color: M.ink4, padding: '12px 0 24px' }}>munni · v1.0.0 · build 248</div>
       </div>
 
       <TabBar active="profile" onChange={(t) => nav.switchTab(t)}/>
@@ -341,7 +341,7 @@ export function ScreenProfiles() {
     }
     const acctPart = count === 0 ? t('word.noAccounts') : `${count} ${count === 1 ? t('word.account') : t('word.accounts')}`;
     const memberCount = (p.members || []).length;
-    if (memberCount > 0) return `${acctPart} Â· ${memberCount} ${memberCount === 1 ? t('word.member') : t('word.members')}`;
+    if (memberCount > 0) return `${acctPart} · ${memberCount} ${memberCount === 1 ? t('word.member') : t('word.members')}`;
     return acctPart;
   };
 
@@ -1156,7 +1156,7 @@ export function ScreenProfileDetail({ params }) {
               return (
                 <div style={{ padding:'10px 12px', marginBottom:12, borderRadius:10, background:M.claySoft, border:`1px solid ${M.clay}33` }}>
                   <div style={{ fontSize:12, color:M.clay, fontWeight:600, marginBottom:4 }}>{t('profile.deleteDataAlso')}</div>
-                  <div style={{ fontSize:12, color:M.ink2 }}>{items.join(' Â· ')}</div>
+                  <div style={{ fontSize:12, color:M.ink2 }}>{items.join(' · ')}</div>
                 </div>
               );
             })()}

@@ -353,7 +353,7 @@ export function ScreenTutorial() {
             <div style={{ padding:'14px 20px 10px', fontSize:17, fontWeight:700, position:'relative', zIndex:1 }}>Home</div>
             <div style={{ padding:'0 20px', position:'relative', zIndex:1 }}>
               <div style={{ padding:'12px 16px', borderRadius:14, background:M.card, border:`1px solid ${M.line}`, marginBottom:10, opacity:0.25 }}>
-                <div style={{ fontSize:12, color:M.ink3 }}>Feb 2026 Â· Period overview</div>
+                <div style={{ fontSize:12, color:M.ink3 }}>Feb 2026 · Period overview</div>
               </div>
               <Spotlight color={M.sage} onClick={next}>
                 <div style={{ borderRadius:14, background:M.sage, padding:'14px 18px', display:'flex', alignItems:'center', gap:12 }}>
@@ -369,14 +369,14 @@ export function ScreenTutorial() {
         {step === 2 && (
           <>
             <Overlay/>
-            <div style={{ padding:'14px 20px 8px', fontSize:17, fontWeight:700, position:'relative', zIndex:1 }}>Review Â· 1/7</div>
+            <div style={{ padding:'14px 20px 8px', fontSize:17, fontWeight:700, position:'relative', zIndex:1 }}>Review · 1/7</div>
             <div style={{ padding:'0 20px', position:'relative', zIndex:1 }}>
               <div className="m-card" style={{ padding:18, border:`1px solid ${M.line}`, background:'#fff', marginBottom:10, opacity:0.35 }}>
                 <div style={{ textAlign:'center' }}>
                   <div className="m-num" style={{ fontSize:26, fontWeight:600 }}>âˆ’â‚¬34.99</div>
                   <div style={{ fontSize:14, fontWeight:600, marginTop:6 }}>Amazon.nl</div>
                   <div style={{ marginTop:10, padding:'8px 10px', borderRadius:10, background:M.paper2 }}>
-                    <div style={{ display:'flex', gap:8, alignItems:'center' }}><div style={{ width:22, height:22, borderRadius:7, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center' }}><I name="box" size={11} color={M.sage}/></div><div style={{ fontSize:12 }}>Hobby Â· â‚¬34.99</div></div>
+                    <div style={{ display:'flex', gap:8, alignItems:'center' }}><div style={{ width:22, height:22, borderRadius:7, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center' }}><I name="box" size={11} color={M.sage}/></div><div style={{ fontSize:12 }}>Hobby · â‚¬34.99</div></div>
                   </div>
                 </div>
               </div>
@@ -398,7 +398,7 @@ export function ScreenTutorial() {
             <div style={{ padding:'14px 20px 10px', fontSize:17, fontWeight:700, position:'relative', zIndex:1 }}>Home</div>
             <div style={{ padding:'0 20px', position:'relative', zIndex:1 }}>
               <div style={{ padding:'12px 16px', borderRadius:14, background:M.card, border:`1px solid ${M.line}`, marginBottom:10, opacity:0.25 }}>
-                <div style={{ fontSize:12, color:M.ink3 }}>Period balance Â· +â‚¬320</div>
+                <div style={{ fontSize:12, color:M.ink3 }}>Period balance · +â‚¬320</div>
               </div>
               <Spotlight color={M.violet} onClick={next}>
                 <div style={{ borderRadius:14, background:M.card, border:`1px solid ${M.line}`, padding:'14px 18px', display:'flex', alignItems:'center', gap:12 }}>
@@ -417,7 +417,7 @@ export function ScreenTutorial() {
             <div style={{ padding:'14px 20px 10px', fontSize:17, fontWeight:700, position:'relative', zIndex:1 }}>Profile</div>
             <div style={{ padding:'0 20px', position:'relative', zIndex:1 }}>
               <div style={{ padding:'12px 16px', borderRadius:14, background:M.card, border:`1px solid ${M.line}`, marginBottom:10, opacity:0.25 }}>
-                <div style={{ fontSize:12, color:M.ink3 }}>Manage Â· Categories</div>
+                <div style={{ fontSize:12, color:M.ink3 }}>Manage · Categories</div>
               </div>
               <Spotlight color={M.ochre} onClick={next}>
                 <div style={{ borderRadius:14, background:M.card, border:`1px solid ${M.line}`, padding:'13px 16px', display:'flex', alignItems:'center', gap:12 }}>
@@ -796,7 +796,7 @@ export function ScreenManageCategories() {
         {/* CUSTOM section */}
         {customParents.length > 0 && (
           <>
-            <div className="m-cap" style={{ marginBottom:8 }}>CUSTOM Â· {customParents.length}</div>
+            <div className="m-cap" style={{ marginBottom:8 }}>CUSTOM · {customParents.length}</div>
             {customParents.map(p => renderParentCard(p.id, p, true))}
           </>
         )}
@@ -1170,7 +1170,7 @@ export function ScreenNotifications() {
   const MERCHANTS_POOL = [
     { merchant:'Albert Heijn',       desc:'AH 5821',        cat:'groceries',       min:8,  max:85,  needsReview:true },
     { merchant:'Koffie â˜•',          desc:'TOKI ESPRESSO',  cat:'coffee',          min:3,  max:6,   needsReview:true },
-    { merchant:'NS Â· Sprinter',      desc:'NS REIZIGERS',   cat:'transportPublic', min:4,  max:28,  needsReview:true },
+    { merchant:'NS · Sprinter',      desc:'NS REIZIGERS',   cat:'transportPublic', min:4,  max:28,  needsReview:true },
     { merchant:'Etos',               desc:'ETOS 0341',      cat:'healthcare',      min:5,  max:35,  confidence:60, needsReview:true },
     { merchant:'Vapiano',            desc:'VAPIANO 1234',   cat:'restaurants',     min:12, max:38,  needsReview:true },
     { merchant:'Coolblue',           desc:'COOLBLUE ORDER', cat:'electronics',     min:29, max:199, confidence:55, needsReview:true },
@@ -1527,7 +1527,7 @@ export function ScreenCustomizeHome() {
         </div>
 
         {/* Custom graph cards */}
-        <div className="m-cap" style={{ marginBottom:8, marginTop:16, paddingLeft:4 }}>Custom cards Â· {customGraphCards.length}</div>
+        <div className="m-cap" style={{ marginBottom:8, marginTop:16, paddingLeft:4 }}>Custom cards · {customGraphCards.length}</div>
         {customGraphCards.length > 0 && (
           <div className="m-card" style={{ padding:'4px 16px', marginBottom:10, border:`1px solid ${M.line}` }}>
             {customGraphCards.map((cg, i) => (
@@ -1540,7 +1540,7 @@ export function ScreenCustomizeHome() {
                   <div style={{ flex:1 }}>
                     <div style={{ fontSize:14, fontWeight:500 }}>{cg.name}</div>
                     <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>
-                      {cg.metric === 'expenses' ? 'Expenses' : 'Income'} Â· {cg.excludeCategories?.length > 0 ? `${cg.excludeCategories.length} excluded` : 'all categories'}
+                      {cg.metric === 'expenses' ? 'Expenses' : 'Income'} · {cg.excludeCategories?.length > 0 ? `${cg.excludeCategories.length} excluded` : 'all categories'}
                     </div>
                   </div>
                   <button className="m-tap" onClick={() => setCustomGraphCards(prev => prev.filter(x => x.id !== cg.id))}
