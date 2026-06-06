@@ -691,6 +691,7 @@ export function ScreenProfileDetail({ params }) {
           ...sd,
           accounts: (sd.accounts || []).filter(a => a.id !== accountId),
           txs: (sd.txs || []).filter(t => t.account !== accountId),
+          detached: { ...(sd.detached || {}), [accountId]: Date.now() },
         }));
       }
     }

@@ -85,10 +85,15 @@ export function ProfilesProvider({ children }) {
               const membersTrimmed = trimmedMembers.length < (p.members || []).length;
               const existingIds = new Set(trimmedMembers.map(m => m.userId));
               const sdNewIds = Object.keys(sd.memberPerms || {}).filter(id => id !== myId && !existingIds.has(id) && !expelledIdsSet.has(id) && !leftIdsSet.has(id));
-              if (membersTrimmed || sdNewIds.length > 0) {
+              const detachedIds = new Set(Object.keys(sd.detached || {}));
+              const detachedToRemove = (p.accountIds || []).filter(id => detachedIds.has(id));
+              if (membersTrimmed || sdNewIds.length > 0 || detachedToRemove.length > 0) {
                 changed = true;
                 const added = sdNewIds.map(userId => ({ userId, permission: sd.memberPerms[userId], joinedAt: Date.now() }));
-                return { ...p, members: [...trimmedMembers, ...added] };
+                const newAccountIds = detachedToRemove.length > 0
+                  ? (p.accountIds || []).filter(id => !detachedIds.has(id))
+                  : (p.accountIds || []);
+                return { ...p, members: [...trimmedMembers, ...added], accountIds: newAccountIds };
               }
             }
             // isShared member view: remove left members, detect owner transfer, add new members from sharedData.memberPerms
@@ -101,11 +106,14 @@ export function ProfilesProvider({ children }) {
               const ownerChanged = newOwnerId && newOwnerId !== p.ownerId;
               const existingIds = new Set(baseMembers.map(m => m.userId));
               const sdNewIds = Object.keys(sd.memberPerms || {}).filter(id => id !== myId && !existingIds.has(id) && !expelledIdsSet.has(id) && !leftIdsSet.has(id));
-              if (membersTrimmed || ownerChanged || sdNewIds.length > 0) {
+              const detachedIds = new Set(Object.keys(sd.detached || {}));
+              const detachedToRemove = (p.accountIds || []).filter(id => detachedIds.has(id));
+              if (membersTrimmed || ownerChanged || sdNewIds.length > 0 || detachedToRemove.length > 0) {
                 changed = true;
                 const added = sdNewIds.map(userId => ({ userId, permission: sd.memberPerms[userId], joinedAt: Date.now() }));
                 let result = { ...p, members: [...baseMembers, ...added] };
                 if (ownerChanged) result = { ...result, ownerId: newOwnerId };
+                if (detachedToRemove.length > 0) result = { ...result, accountIds: (p.accountIds || []).filter(id => !detachedIds.has(id)) };
                 return result;
               }
             }
