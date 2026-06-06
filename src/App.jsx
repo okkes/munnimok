@@ -1,4 +1,5 @@
 ﻿import React from 'react';
+import { T } from './testIds.js';
 import { getUserId, computeProfileKey, getDefaultProfiles, initPerUserData, registerUserInGlobalRegistry, computeUserDataKey } from './data.jsx';
 import { IOSDevice } from './IOSFrame.jsx';
 import { M, I, IcoGoogle, IcoApple, Divider, StatusBar, AppBar } from './theme.jsx';
@@ -594,20 +595,21 @@ function ScreenLoginGate({ onLogin }) {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <button className="m-btn outline m-tap" style={{ height: 52, justifyContent: 'flex-start', paddingLeft: 20, gap: 12 }} onClick={() => handleGoogle(false)}>
+          <button data-testid={T.loginGoogleBtn} className="m-btn outline m-tap" style={{ height: 52, justifyContent: 'flex-start', paddingLeft: 20, gap: 12 }} onClick={() => handleGoogle(false)}>
             <IcoGoogle size={20}/> {t('login.google')}
           </button>
-          <button className="m-btn outline m-tap" style={{ height: 52, justifyContent: 'flex-start', paddingLeft: 20, gap: 12 }} onClick={() => handleApple(false)}>
+          <button data-testid={T.loginAppleBtn} className="m-btn outline m-tap" style={{ height: 52, justifyContent: 'flex-start', paddingLeft: 20, gap: 12 }} onClick={() => handleApple(false)}>
             <IcoApple size={20} color={M.ink}/> {t('login.apple')}
           </button>
           <Divr/>
           <input
+            data-testid={T.loginEmailInput}
             value={emailInput} onChange={e => { setEmailInput(e.target.value); setLoginError(null); }}
             type="email" placeholder={t('login.emailPlaceholder')}
             style={{ width:'100%', boxSizing:'border-box', padding:'14px 16px', borderRadius:12, border:`1.5px solid ${loginError?M.clay:M.line}`, fontSize:15, fontFamily:M.fontUI, background:M.paper2, outline:'none', color:M.ink }}
           />
           {loginError && <div style={{ fontSize:12, color:M.clay, lineHeight:1.4 }}>{loginError} <button onClick={() => { setLoginError(null); setSignupEmailInput(emailInput); setMode('signup-email'); }} style={{ background:'none', border:'none', color:M.sage, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, fontSize:12 }}>{t('login.createAccount')}</button></div>}
-          <button className="m-btn sage m-tap" style={{ height:52, width:'100%', opacity:emailInput.trim()?1:0.5 }} onClick={handleEmailContinue} disabled={!emailInput.trim()}>
+          <button data-testid={T.loginEmailSubmit} className="m-btn sage m-tap" style={{ height:52, width:'100%', opacity:emailInput.trim()?1:0.5 }} onClick={handleEmailContinue} disabled={!emailInput.trim()}>
             {t('login.continue')}
           </button>
         </div>
@@ -622,7 +624,7 @@ function ScreenLoginGate({ onLogin }) {
           </button>
         </div>
 
-        <button className="m-tap" onClick={() => doLogin('bank', 'bank@munni.app', 'Demo van der Berg', true)}
+        <button data-testid={T.loginDemoBtn} className="m-tap" onClick={() => doLogin('bank', 'bank@munni.app', 'Demo van der Berg', true)}
           style={{ background: 'transparent', border: 'none', fontSize: 12, color: M.ink4, cursor: 'pointer', marginTop: 8, fontFamily: M.fontUI, textAlign: 'center' }}>
           {t('login.demoUser')}
         </button>

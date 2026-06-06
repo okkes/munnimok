@@ -160,7 +160,7 @@ export function TxRow({ tx, onClick, showCat = true, showDate = false, dense = f
   const displayAmount = hasReimbursement ? tx.amount + reimburseTx.amount : tx.amount;
   const displayPositive = displayAmount > 0;
   return (
-    <div onClick={onClick} className={onClick ? 'm-tap' : ''} style={{
+    <div data-testid="tx-row" onClick={onClick} className={onClick ? 'm-tap' : ''} style={{
       display: 'flex', alignItems: 'center', gap: 12,
       padding: dense ? '10px 0' : '12px 0',
     }}>

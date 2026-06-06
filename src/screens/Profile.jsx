@@ -6,6 +6,7 @@ import { useLang } from '../i18n.jsx';
 import { useLocalStorage, useSessionStorage, clearAllStorage } from '../hooks.jsx';
 import { useAppCtx, useProfiles, useTxCtx, useConnectedAccounts, Stat } from '../providers.jsx';
 import { STOCK_AVATARS, PERM_COLOR, PERM_BG, permLabel } from '../constants.js';
+import { buildEffectivePerm } from '../sharedProfile.js';
 import { ProfileMembersSheet, MemberActionSheet } from './Friends.jsx';
 
 
@@ -346,7 +347,7 @@ export function ScreenProfiles() {
       <StatusBar/>
       <AppBar title={t('screen.profiles')}
         leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
-        trailing={<button className="m-iconbtn m-tap" onClick={() => setShowNewProfile(true)}><I name="plus" size={20}/></button>}
+        trailing={<button data-testid="profile-new-btn" className="m-iconbtn m-tap" onClick={() => setShowNewProfile(true)}><I name="plus" size={20}/></button>}
       />
       <div className="m-body-scroll">
         {pendingProfileInvites.length > 0 && (
@@ -593,7 +594,7 @@ export function ScreenProfileDetail({ params }) {
   const otherMembers = members.filter(m => m.userId !== myId);
   const hasOtherOwner = otherMembers.some(m => (sharedData?.memberPerms?.[m.userId] || m.permission) === 'owner');
   const myMembership = members.find(m => m.userId === myId);
-  const myPerm = sharedData?.memberPerms?.[myId] || myMembership?.permission || (isMemberOfShared ? 'contributor' : 'owner');
+  const myPerm = buildEffectivePerm(sharedData, myId, myMembership?.permission, !isMemberOfShared);
   const canEdit = myPerm !== 'reader';
   const pendingInvitesForProfile = invitations.filter(i => i.fromId === myId && i.type === 'profile' && i.profileId === profile.id && i.status === 'pending');
   const sharedAccts = sharedData?.accounts || [];
@@ -929,11 +930,11 @@ export function ScreenProfileDetail({ params }) {
                   {displayMembers.map((m, i) => {
                     const info = userRegistry[m.userId] || {};
                     const tappable = myPerm === 'owner';
-                    const livePerm = sharedData?.memberPerms?.[m.userId] || m.permission;
+                    const livePerm = buildEffectivePerm(sharedData, m.userId, m.permission);
                     return (
                       <React.Fragment key={m.userId}>
                         {i > 0 && <Divider inset={44}/>}
-                        <div className={tappable ? 'm-tap' : ''} onClick={tappable ? () => setMemberActionSheet(m.userId) : undefined}
+                        <div data-testid="member-row" className={tappable ? 'm-tap' : ''} onClick={tappable ? () => setMemberActionSheet(m.userId) : undefined}
                           style={{ display:'flex', alignItems:'center', gap:10, padding:'11px 0', cursor: tappable ? 'pointer' : 'default' }}>
                           <div style={{ width:32, height:32, borderRadius:999, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:13, fontWeight:700, color:M.ink2 }}>
                             {(info.displayName||m.userId).charAt(0).toUpperCase()}

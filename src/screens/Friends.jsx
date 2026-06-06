@@ -6,6 +6,7 @@ import { useNav, Sheet } from '../nav.jsx';
 import { useLocalStorage, useSessionStorage } from '../hooks.jsx';
 import { useProfiles } from '../providers.jsx';
 import { STOCK_AVATARS, PERM_LEVELS, PERM_COLOR, PERM_BG, permLabel } from '../constants.js';
+import { applyPermChange, kickMember, buildEffectivePerm, getMemberAccounts } from '../sharedProfile.js';
 
 
 export function UserAvatar({ info, fid, size = 36 }) {
@@ -528,19 +529,12 @@ export function MemberActionSheet({ profile, memberId, onClose }) {
 
   const applyPerm = (perm, acctIdsToRemove = new Set()) => {
     updateProfile(p => ({ ...p, members: (p.members||[]).map(m => m.userId===memberId ? {...m, permission:perm} : m) }));
-    try {
-      const sdKey = `munni_shared_data_${profile.id}`;
-      const sd = JSON.parse(localStorage.getItem(sdKey) || '{}');
-      const newAccounts = acctIdsToRemove.size > 0 ? (sd.accounts||[]).filter(a => !acctIdsToRemove.has(a.id)) : (sd.accounts||[]);
-      const newTxs = acctIdsToRemove.size > 0 ? (sd.txs||[]).filter(tx => !acctIdsToRemove.has(tx.account)) : (sd.txs||[]);
-      localStorage.setItem(sdKey, JSON.stringify({ ...sd, memberPerms: { ...(sd.memberPerms||{}), [memberId]: perm }, accounts: newAccounts, txs: newTxs }));
-      window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sdKey } }));
-    } catch {}
+    applyPermChange(profile.id, memberId, perm, acctIdsToRemove);
   };
 
   const changePerm = (perm) => {
     const isDowngrade = perm === 'reader' && currentPerm !== 'reader';
-    const memberAccts = (sharedData?.accounts || []).filter(a => a.attachedBy === memberId);
+    const memberAccts = getMemberAccounts(sharedData, memberId);
     if (isDowngrade && memberAccts.length > 0) {
       setRemoveAccts(new Set());
       setPendingPerm(perm);
@@ -551,23 +545,12 @@ export function MemberActionSheet({ profile, memberId, onClose }) {
 
   const doKick = () => {
     updateProfile(p => ({ ...p, members: (p.members||[]).filter(m => m.userId !== memberId) }));
-    try {
-      const sdKey = `munni_shared_data_${profile.id}`;
-      const sd = JSON.parse(localStorage.getItem(sdKey) || '{}');
-      const kickedAcctIds = new Set((sd.accounts||[]).filter(a => a.attachedBy===memberId).map(a => a.id));
-      localStorage.setItem(sdKey, JSON.stringify({
-        ...sd,
-        accounts: (sd.accounts||[]).filter(a => a.attachedBy!==memberId),
-        txs: (sd.txs||[]).filter(t => !kickedAcctIds.has(t.account)),
-        expelled: { ...(sd.expelled||{}), [memberId]: Date.now() },
-      }));
-      window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sdKey } }));
-    } catch {}
+    kickMember(profile.id, memberId);
     onClose();
   };
 
   if (pendingPerm) {
-    const memberAccts = (sharedData?.accounts || []).filter(a => a.attachedBy === memberId);
+    const memberAccts = getMemberAccounts(sharedData, memberId);
     return (
       <Sheet onClose={() => setPendingPerm(null)}>
         <div style={{ padding:'4px 16px 20px' }}>
@@ -629,7 +612,7 @@ export function MemberActionSheet({ profile, memberId, onClose }) {
 
   return (
     <Sheet onClose={onClose}>
-      <div style={{ padding:'4px 16px 20px' }}>
+      <div data-testid="member-action-sheet" style={{ padding:'4px 16px 20px' }}>
         <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:20 }}>
           <div style={{ width:44, height:44, borderRadius:999, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:17, fontWeight:700, color:M.ink2 }}>
             {(info.displayName||memberId).charAt(0).toUpperCase()}
@@ -644,7 +627,7 @@ export function MemberActionSheet({ profile, memberId, onClose }) {
           {PERM_LEVELS.map(perm => {
             const active = currentPerm === perm;
             return (
-              <button key={perm} className="m-tap" onClick={() => changePerm(perm)}
+              <button key={perm} data-testid={`member-perm-${perm}`} className="m-tap" onClick={() => changePerm(perm)}
                 style={{ width:'100%', padding:'12px 14px', borderRadius:12, border:`2px solid ${active ? PERM_COLOR[perm] : M.line}`, background: active ? PERM_BG[perm] : M.paper, display:'flex', alignItems:'center', gap:12, cursor:'pointer', fontFamily:M.fontUI, textAlign:'left' }}>
                 <div style={{ width:8, height:8, borderRadius:'50%', background: active ? PERM_COLOR[perm] : M.line, flexShrink:0, marginTop:1 }}/>
                 <div style={{ flex:1 }}>
@@ -656,7 +639,7 @@ export function MemberActionSheet({ profile, memberId, onClose }) {
             );
           })}
         </div>
-        <button className="m-tap" onClick={() => setKickConfirm(true)}
+        <button data-testid="member-kick-btn" className="m-tap" onClick={() => setKickConfirm(true)}
           style={{ width:'100%', padding:'13px 0', background:M.claySoft, color:M.clay, border:'none', borderRadius:12, fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
           {t('profile.kick')}
         </button>

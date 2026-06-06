@@ -98,6 +98,7 @@ export function TabBar({ active, onChange }) {
         const active_ = tab.id === active;
         return (
           <button key={tab.id}
+            data-testid={`tab-${tab.id}`}
             onClick={() => onChange(tab.id)}
             className="m-tap"
             style={{
@@ -144,7 +145,7 @@ if (typeof document !== 'undefined' && !document.getElementById('m-nav-styles'))
 export function Sheet({ children, onClose, open, title }) {
   if (open !== undefined && !open) return null;
   return (
-    <div style={{
+    <div data-testid="sheet-close" style={{
       position: 'absolute', inset: 0, background: 'rgba(27,26,23,0.45)', zIndex: 50,
       display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
     }} onClick={onClose}>
