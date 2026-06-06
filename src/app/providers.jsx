@@ -3,7 +3,7 @@ import { CATEGORIES, _catExt, catPath } from '../shared/data/categories.js';
 import { fmtEur } from '../shared/utils/format.js';
 import { getUserId, computeUserDataKey } from '../shared/utils/user.js';
 import { computeProfileKey, getDefaultProfiles } from '../features/profile/data.js';
-import { getDefaultAccounts, getDefaultTxs, DEMO_ACCOUNTS } from '../features/accounts/data.js';
+import { getDefaultAccounts, getDefaultTxs } from '../features/accounts/data.js';
 import { RECURRING } from '../features/recurring/data.js';
 import { ALLOCATE_TOPICS } from '../features/events/data.js';
 import { BUDGETS } from '../features/budgets/data.js';
@@ -36,7 +36,7 @@ export function CatProvider({ children }) {
 }
 export const useCatCtx = () => React.useContext(CatCtx);
 
-// Listen for demo reset from any tab â€” wipe session and reload to login
+// Listen for demo reset from any tab — wipe session and reload to login
 export function ResetSignalListener() {
   React.useEffect(() => {
     const onStorage = (e) => {
@@ -235,7 +235,7 @@ export function useProfileDebts() {
 }
 
 const ALLOC_PERIODS = [
-  { label:'20 Sep â€“ 19 Oct', income:2380, setaside:890, topics:[
+  { label:'20 Sep – 19 Oct', income:2380, setaside:890, topics:[
     { id:'at_rent', name:'Rent', icon:'house', allocated:740, actual:738, estimate:740, cats:['housingRent'], group:'recurring' },
     { id:'at_energy', name:'Energy', icon:'flame', allocated:65, actual:72, estimate:65, cats:['housingUtility'], group:'recurring' },
     { id:'at_subs', name:'Subscriptions', icon:'film', allocated:25, actual:23.98, estimate:25, cats:['subs'], group:'recurring' },
@@ -244,7 +244,7 @@ const ALLOC_PERIODS = [
     { id:'at_health', name:'Health', icon:'health', allocated:40, actual:45, estimate:35, cats:['healthcare','doctorVisit','prescription'], group:'var' },
     { id:'at_hobby', name:'Hobby', icon:'bag', allocated:110, actual:120, estimate:130, cats:['hobby','videoGame','sportsEquipment'], group:'var' },
   ]},
-  { label:'20 Oct â€“ 19 Nov', income:2380, setaside:890, topics:[
+  { label:'20 Oct – 19 Nov', income:2380, setaside:890, topics:[
     { id:'at_rent', name:'Rent', icon:'house', allocated:740, actual:740, estimate:740, cats:['housingRent'], group:'recurring' },
     { id:'at_energy', name:'Energy', icon:'flame', allocated:65, actual:58, estimate:65, cats:['housingUtility'], group:'recurring' },
     { id:'at_subs', name:'Subscriptions', icon:'film', allocated:25, actual:23.98, estimate:25, cats:['subs'], group:'recurring' },
@@ -253,7 +253,7 @@ const ALLOC_PERIODS = [
     { id:'at_health', name:'Health', icon:'health', allocated:40, actual:30, estimate:35, cats:['healthcare','doctorVisit','prescription'], group:'var' },
     { id:'at_hobby', name:'Hobby', icon:'bag', allocated:110, actual:0, estimate:130, cats:['hobby','videoGame','sportsEquipment'], group:'var' },
   ]},
-  { label:'20 Nov â€“ 19 Dec', income:2480, setaside:940, topics:[
+  { label:'20 Nov – 19 Dec', income:2480, setaside:940, topics:[
     { id:'at_rent', name:'Rent', icon:'house', allocated:740, actual:740, estimate:740, cats:['housingRent'], group:'recurring' },
     { id:'at_energy', name:'Energy', icon:'flame', allocated:65, actual:80, estimate:70, cats:['housingUtility'], group:'recurring' },
     { id:'at_subs', name:'Subscriptions', icon:'film', allocated:25, actual:37.97, estimate:40, cats:['subs'], group:'recurring' },
@@ -262,7 +262,7 @@ const ALLOC_PERIODS = [
     { id:'at_health', name:'Health', icon:'health', allocated:40, actual:22, estimate:35, cats:['healthcare','doctorVisit','prescription'], group:'var' },
     { id:'at_hobby', name:'Hobby', icon:'bag', allocated:110, actual:80, estimate:130, cats:['hobby','videoGame','sportsEquipment'], group:'var' },
   ]},
-  { label:'20 Dec â€“ 19 Jan', income:2480, setaside:940, topics:[
+  { label:'20 Dec – 19 Jan', income:2480, setaside:940, topics:[
     { id:'at_rent', name:'Rent', icon:'house', allocated:740, actual:740, estimate:740, cats:['housingRent'], group:'recurring' },
     { id:'at_energy', name:'Energy', icon:'flame', allocated:65, actual:65, estimate:65, cats:['housingUtility'], group:'recurring' },
     { id:'at_subs', name:'Subscriptions', icon:'film', allocated:30, actual:23.98, estimate:30, cats:['subs'], group:'recurring' },
@@ -349,7 +349,7 @@ export function ScreenAllocate() {
 
   const isCurrent = pOffset === 0;
   const periodIdx = ALLOC_PERIODS.length + pOffset;
-  const periodLabel = isCurrent ? '20 Jan â€“ 19 Feb' : (ALLOC_PERIODS[periodIdx]?.label || '');
+  const periodLabel = isCurrent ? '20 Jan – 19 Feb' : (ALLOC_PERIODS[periodIdx]?.label || '');
   const displayTopics = isCurrent ? topics : (ALLOC_PERIODS[periodIdx]?.topics || []);
   const displayIncome = isCurrent ? ALLOC_INCOME : (ALLOC_PERIODS[periodIdx]?.income || ALLOC_INCOME);
   const displaySetaside = isCurrent ? ALLOC_SETASIDE : (ALLOC_PERIODS[periodIdx]?.setaside || ALLOC_SETASIDE);
@@ -393,7 +393,7 @@ export function ScreenAllocate() {
             <div style={{ textAlign:'right' }}>
               <div className="m-cap">Unallocated</div>
               <div className="m-num" style={{ fontSize:20, fontWeight:700, color:displayUnallocated===0?M.sage:M.ochre, marginTop:2 }}>{fmtEur(displayUnallocated)}</div>
-              {displayUnallocated===0 && <div style={{ fontSize:10, fontWeight:600, color:M.sage, marginTop:3 }}>Every euro planned âœ“</div>}
+              {displayUnallocated===0 && <div style={{ fontSize:10, fontWeight:600, color:M.sage, marginTop:3 }}>Every euro planned ✓</div>}
             </div>
           </div>
           <StackedBar segments={[
@@ -408,7 +408,7 @@ export function ScreenAllocate() {
           </button>
         )}
 
-        {/* Recurring section â€” collapsible */}
+        {/* Recurring section — collapsible */}
         <div className="m-card" style={{ padding:'0 16px', marginBottom:16, border:`1px solid ${recurringOver?M.claySoft:M.line}` }}>
           <div className="m-tap" onClick={() => setRecurringExpanded(e => !e)} style={{ padding:'12px 0', display:'flex', alignItems:'center', gap:12 }}>
             <div style={{ width:36, height:36, borderRadius:10, background:recurringOver?M.claySoft:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
@@ -416,7 +416,7 @@ export function ScreenAllocate() {
             </div>
             <div style={{ flex:1, minWidth:0 }}>
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
-                <div style={{ fontSize:14, fontWeight:500 }}>Recurring Â· {recurring.length} items</div>
+                <div style={{ fontSize:14, fontWeight:500 }}>Recurring · {recurring.length} items</div>
                 <div style={{ display:'flex', alignItems:'center', gap:6 }}>
                   {recurringOver && <span style={{ fontSize:9, fontWeight:700, padding:'2px 6px', borderRadius:999, background:M.claySoft, color:M.clay, textTransform:'uppercase' }}>over</span>}
                   <div className="m-num" style={{ fontSize:14, fontWeight:600, color:recurringOver?M.clay:M.ink }}>{fmtEur(recurringActual,{decimals:0})}</div>
@@ -447,7 +447,7 @@ export function ScreenAllocate() {
 
         {/* Variable topics section */}
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8, paddingLeft:4 }}>
-          <div className="m-cap">Topics Â· {varTopics.length}</div>
+          <div className="m-cap">Topics · {varTopics.length}</div>
           {isCurrent && (
             <button className="m-tap" onClick={() => nav.push('allocateAddTopic')}
               style={{ display:'flex', alignItems:'center', gap:4, background:'transparent', border:'none', color:M.ink3, fontSize:12, fontWeight:600, fontFamily:M.fontUI, cursor:'pointer', padding:'4px 0' }}>
@@ -536,13 +536,13 @@ export function ScreenAllocateTopic({ params }) {
         </div>
 
         <div className="m-card" style={{ padding:16, marginBottom:14, border:`1px solid ${M.line}` }}>
-          <div className="m-cap" style={{ marginBottom:10 }}>History Â· 6 periods</div>
-          <BarChart data={history} labels={['Sepâ€“Oct','Octâ€“Nov','Novâ€“Dec','Decâ€“Jan','Janâ€“Feb','Febâ€“Mar']} showValues height={84} accent={over?M.clay:M.sage}/>
+          <div className="m-cap" style={{ marginBottom:10 }}>History · 6 periods</div>
+          <BarChart data={history} labels={['Sep–Oct','Oct–Nov','Nov–Dec','Dec–Jan','Jan–Feb','Feb–Mar']} showValues height={84} accent={over?M.clay:M.sage}/>
         </div>
 
         {/* Category CRUD */}
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8, paddingLeft:4 }}>
-          <div className="m-cap">Categories Â· {topic.cats.length}</div>
+          <div className="m-cap">Categories · {topic.cats.length}</div>
           {availableCats.length > 0 && (
             <button className="m-tap" onClick={() => setShowCatPicker(true)}
               style={{ display:'flex', alignItems:'center', gap:4, background:'transparent', border:'none', color:M.ink3, fontSize:12, fontWeight:600, fontFamily:M.fontUI, cursor:'pointer', padding:'4px 0' }}>
@@ -577,7 +577,7 @@ export function ScreenAllocateTopic({ params }) {
           })}
         </div>
 
-        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Transactions Â· {topicTxs.length}</div>
+        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Transactions · {topicTxs.length}</div>
         <div className="m-card" style={{ padding:'0 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
           {topicTxs.length === 0 && (
             <div style={{ padding:'20px 0', textAlign:'center', color:M.ink4, fontSize:13 }}>No transactions this period</div>
@@ -673,7 +673,7 @@ export function AllocateMoveSheet({ topic, onClose }) {
 
         <div className="m-cap" style={{ marginBottom:6 }}>Amount</div>
         <div className="m-input" style={{ marginBottom:16 }}>
-          <span style={{ color:M.ink3, marginRight:4 }}>â‚¬</span>
+          <span style={{ color:M.ink3, marginRight:4 }}>€</span>
           <span style={{ color:amount?M.ink:M.ink4 }}>{amount || '0,00'}</span>
         </div>
 
@@ -682,11 +682,11 @@ export function AllocateMoveSheet({ topic, onClose }) {
             <div className="m-cap" style={{ marginBottom:8 }}>Preview</div>
             <div style={{ display:'flex', justifyContent:'space-between', fontSize:13, marginBottom:6 }}>
               <span>{fromTopic.name}</span>
-              <span className="m-num">{fmtEur(fromTopic.allocated, {decimals:0})} â†’ <span style={{ color:M.clay }}>{fmtEur(fromTopic.allocated-amt, {decimals:0})}</span></span>
+              <span className="m-num">{fmtEur(fromTopic.allocated, {decimals:0})} → <span style={{ color:M.clay }}>{fmtEur(fromTopic.allocated-amt, {decimals:0})}</span></span>
             </div>
             <div style={{ display:'flex', justifyContent:'space-between', fontSize:13 }}>
               <span>{topic.name}</span>
-              <span className="m-num">{fmtEur(topic.allocated, {decimals:0})} â†’ <span style={{ color:M.sage }}>{fmtEur(topic.allocated+amt, {decimals:0})}</span></span>
+              <span className="m-num">{fmtEur(topic.allocated, {decimals:0})} → <span style={{ color:M.sage }}>{fmtEur(topic.allocated+amt, {decimals:0})}</span></span>
             </div>
           </div>
         )}
@@ -764,7 +764,7 @@ export function ScreenAllocateAddTopic() {
         />
 
         {/* 3. Categories */}
-        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Categories Â· {selCats.length}</div>
+        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Categories · {selCats.length}</div>
         <div className="m-card" style={{ padding:'0 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
           {selCats.length === 0 && (
             <div style={{ padding:'14px 0', fontSize:13, color:M.ink4, textAlign:'center' }}>Add categories to estimate spending</div>
@@ -779,9 +779,9 @@ export function ScreenAllocateAddTopic() {
                   </div>
                   <div style={{ flex:1 }}>
                     <div style={{ fontSize:13, fontWeight:500 }}>{catPath(cat)}</div>
-                    <div style={{ fontSize:11, color:M.ink4, marginTop:1 }}>avg estimate Â· <span className="m-num">{fmtEur(c.amount)}</span></div>
+                    <div style={{ fontSize:11, color:M.ink4, marginTop:1 }}>avg estimate · <span className="m-num">{fmtEur(c.amount)}</span></div>
                   </div>
-                  <button onClick={() => setSelCats(s => s.filter(x => x.catId !== c.catId))} style={{ background:'none', border:'none', color:M.clay, padding:'0 4px', fontSize:18, lineHeight:1, cursor:'pointer', fontFamily:M.fontUI }}>Ã—</button>
+                  <button onClick={() => setSelCats(s => s.filter(x => x.catId !== c.catId))} style={{ background:'none', border:'none', color:M.clay, padding:'0 4px', fontSize:18, lineHeight:1, cursor:'pointer', fontFamily:M.fontUI }}>×</button>
                 </div>
                 {i < selCats.length - 1 && <Divider/>}
               </React.Fragment>
@@ -805,7 +805,7 @@ export function ScreenAllocateAddTopic() {
                 {estimate > 0 && !estimateUserEdited ? 'Based on avg category history' : estimateUserEdited ? 'Custom estimate' : 'Add categories to auto-calculate'}
               </div>
               <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                <span style={{ fontSize:13, color:M.ink3 }}>â‚¬</span>
+                <span style={{ fontSize:13, color:M.ink3 }}>€</span>
                 <input
                   type="number"
                   inputMode="decimal"
@@ -826,7 +826,7 @@ export function ScreenAllocateAddTopic() {
           </div>
         </div>
 
-        {/* 5. Allocated â€” auto-fund checkbox */}
+        {/* 5. Allocated — auto-fund checkbox */}
         <div className="m-cap" style={{ marginBottom:6, paddingLeft:4 }}>Auto-fund</div>
         <div className="m-card" style={{ padding:'14px 16px', marginBottom:20, border:`1px solid ${M.line}` }}>
           <div style={{ display:'flex', alignItems:'center', gap:12 }}>
@@ -890,4 +890,3 @@ export function ScreenAllocateAddTopic() {
     </div>
   );
 }
-

@@ -1,6 +1,5 @@
-﻿// Shared category definitions and path helpers
-export const CATEGORIES = {
-  // â”€â”€ Income â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+﻿export const CATEGORIES = {
+  // ── Income ──────────────────────────────────────────────────
   income:                 { id:'income',                 name:'Income',             icon:'cash-plus', group:'Income',      isParent:true, positive:true },
   incomeUncategorized:    { id:'incomeUncategorized',    name:'Uncategorized',      icon:'help-circle-outline',            group:'Income',      parent:'income', positive:true },
   reimburse:              { id:'reimburse',              name:'Reimbursement',      icon:'cash-refund',           group:'Income',      parent:'income', positive:true },
@@ -9,28 +8,28 @@ export const CATEGORIES = {
   rental:                 { id:'rental',                 name:'Rental Income',      icon:'store-clock-outline',          group:'Income',      parent:'income', positive:true },
   investIncome:           { id:'investIncome',           name:'Investment Income',  icon:'chart-timeline-variant',         group:'Income',      parent:'income', positive:true },
   incomeOther:            { id:'incomeOther',            name:'Other Income',       icon:'cash-plus', group:'Income',      parent:'income', positive:true },
-  // â”€â”€ Saving â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Saving ──────────────────────────────────────────────────
   saving:                 { id:'saving',                 name:'Saving',             icon:'piggy-bank-outline',          group:'Saving',      isParent:true },
   savingWithdraw:         { id:'savingWithdraw',         name:'Withdrawal',         icon:'bank-remove',           group:'Saving',      parent:'saving' },
   savingDeposit:          { id:'savingDeposit',          name:'Deposit',            icon:'bank-plus',          group:'Saving',      parent:'saving' },
-  // â”€â”€ Expense (default) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Expense (default) ───────────────────────────────────────
   expense:                { id:'expense',                name:'Expense',            icon:'cash-remove', group:'Expense',     isParent:true },
   expenseReimburse:       { id:'expenseReimburse',       name:'Reimbursement',      icon:'cash-refund',           group:'Expense',     parent:'expense' },
   expenseUncategorized:   { id:'expenseUncategorized',   name:'Uncategorized',      icon:'help-circle-outline',            group:'Expense',     parent:'expense' },
-  // â”€â”€ Housing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Housing ─────────────────────────────────────────────────
   housing:                { id:'housing',                name:'Housing',            icon:'home-outline',          group:'Housing',     isParent:true, color:'#E67E22' },
   housingRent:            { id:'housingRent',            name:'Rent & Mortgage',    icon:'home-import-outline',          group:'Housing',     parent:'housing' },
   housingUtility:         { id:'housingUtility',         name:'Utility',            icon:'home-lightning-bolt-outline',          group:'Housing',     parent:'housing' },
   housingMaintenance:     { id:'housingMaintenance',     name:'Maintenance',        icon:'wrench-outline',            group:'Housing',     parent:'housing' },
   housingStorage:         { id:'housingStorage',         name:'Storage Area',       icon:'warehouse',            group:'Housing',     parent:'housing' },
   housingOther:           { id:'housingOther',           name:'Other',              icon:'home-outline',          group:'Housing',     parent:'housing' },
-  // â”€â”€ Transportation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Transportation ──────────────────────────────────────────
   transport:              { id:'transport',              name:'Transportation',     icon:'bus-side',            group:'Transportation', isParent:true, color:'#3498DB' },
   transportCar:           { id:'transportCar',           name:'Car Payment',        icon:'car-outline',            group:'Transportation', parent:'transport' },
   transportFuel:          { id:'transportFuel',          name:'Gas & Fuel',         icon:'gas-station-outline',          group:'Transportation', parent:'transport' },
   transportPublic:        { id:'transportPublic',        name:'Public Transport',   icon:'train-car',            group:'Transportation', parent:'transport' },
   transportOther:         { id:'transportOther',         name:'Other',              icon:'bus-side',            group:'Transportation', parent:'transport' },
-  // â”€â”€ Consumption â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Consumption ─────────────────────────────────────────────
   consumption:            { id:'consumption',            name:'Consumption',        icon:'food-outline',           group:'Consumption', isParent:true, color:'#27AE60' },
   groceries:              { id:'groceries',              name:'Grocery',            icon:'cart-variant',           group:'Consumption', parent:'consumption' },
   breakfast:              { id:'breakfast',              name:'Breakfast & Brunch', icon:'bread-slice-outline',           group:'Consumption', parent:'consumption' },
@@ -40,13 +39,13 @@ export const CATEGORIES = {
   alcohol:                { id:'alcohol',                name:'Alcohol & Tobacco',  icon:'smoking',            group:'Consumption', parent:'consumption' },
   coffee:                 { id:'coffee',                 name:'Coffee',             icon:'coffee-outline',          group:'Consumption', parent:'consumption' },
   consumptionOther:       { id:'consumptionOther',       name:'Other',              icon:'food-outline',           group:'Consumption', parent:'consumption' },
-  // â”€â”€ Personal Care â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Personal Care ───────────────────────────────────────────
   personalCare:           { id:'personalCare',           name:'Personal Care',      icon:'mirror',           group:'Personal Care', isParent:true, color:'#9B59B6' },
   haircut:                { id:'haircut',                name:'Haircut',            icon:'content-cut',           group:'Personal Care', parent:'personalCare' },
   toiletry:               { id:'toiletry',               name:'Toiletry',           icon:'toothbrush',         group:'Personal Care', parent:'personalCare' },
   beautyProduct:          { id:'beautyProduct',          name:'Health & Beauty',    icon:'hair-dryer-outline',         group:'Personal Care', parent:'personalCare' },
   personalCareOther:      { id:'personalCareOther',      name:'Other',              icon:'mirror',           group:'Personal Care', parent:'personalCare' },
-  // â”€â”€ Entertainment â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Entertainment ───────────────────────────────────────────
   entertainment:          { id:'entertainment',          name:'Entertainment',      icon:'drama-masks',           group:'Entertainment', isParent:true, color:'#E74C3C' },
   movie:                  { id:'movie',                  name:'Movie',              icon:'popcorn',           group:'Entertainment', parent:'entertainment' },
   concerts:               { id:'concerts',               name:'Concerts & Shows',   icon:'curtains',           group:'Entertainment', parent:'entertainment' },
@@ -57,12 +56,12 @@ export const CATEGORIES = {
   dating:                 { id:'dating',                 name:'Dating',             icon:'heart-multiple-outline',           group:'Entertainment', parent:'entertainment' },
   subs:                   { id:'subs',                   name:'Streaming Service',  icon:'television-play',           group:'Entertainment', parent:'entertainment' },
   entertainmentOther:     { id:'entertainmentOther',     name:'Other',              icon:'drama-masks',           group:'Entertainment', parent:'entertainment' },
-  // â”€â”€ Sport â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Sport ───────────────────────────────────────────────────
   sport:                  { id:'sport',                  name:'Sport',              icon:'tennis',            group:'Sport',       isParent:true, color:'#1ABC9C' },
   gym:                    { id:'gym',                    name:'Gym Membership',     icon:'dumbbell',            group:'Sport',       parent:'sport' },
   sportsEquipment:        { id:'sportsEquipment',        name:'Sports Equipment',   icon:'biathlon',            group:'Sport',       parent:'sport' },
   sportOther:             { id:'sportOther',             name:'Other',              icon:'tennis',            group:'Sport',       parent:'sport' },
-  // â”€â”€ Shopping â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Shopping ────────────────────────────────────────────────
   shopping:               { id:'shopping',               name:'Shopping',           icon:'shopping-outline',           group:'Shopping',    isParent:true, color:'#F39C12' },
   clothing:               { id:'clothing',               name:'Clothing',           icon:'tshirt-crew-outline',           group:'Shopping',    parent:'shopping' },
   electronics:            { id:'electronics',            name:'Electronic',         icon:'cellphone-link',            group:'Shopping',    parent:'shopping' },
@@ -74,14 +73,14 @@ export const CATEGORIES = {
   homeAutomation:         { id:'homeAutomation',         name:'Home Automation',    icon:'robot-outline',            group:'Shopping',    parent:'shopping' },
   childCare:              { id:'childCare',              name:'Child Care',         icon:'baby-face-outline',           group:'Shopping',    parent:'shopping' },
   shoppingOther:          { id:'shoppingOther',          name:'Other',              icon:'shopping-outline',           group:'Shopping',    parent:'shopping' },
-  // â”€â”€ Holiday â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Holiday ─────────────────────────────────────────────────
   holiday:                { id:'holiday',                name:'Holiday',            icon:'island',          group:'Holiday',     isParent:true, color:'#16A085' },
   flight:                 { id:'flight',                 name:'Flight',             icon:'airplane-takeoff',          group:'Holiday',     parent:'holiday' },
   hotel:                  { id:'hotel',                  name:'Hotel & Airbnb',     icon:'bed-outline',          group:'Holiday',     parent:'holiday' },
   carRental:              { id:'carRental',              name:'Car Rental',         icon:'car-key',            group:'Holiday',     parent:'holiday' },
   activity:               { id:'activity',               name:'Activity',           icon:'map-marker-outline',           group:'Holiday',     parent:'holiday' },
   holidayOther:           { id:'holidayOther',           name:'Other',              icon:'island',          group:'Holiday',     parent:'holiday' },
-  // â”€â”€ Education â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Education ───────────────────────────────────────────────
   education:              { id:'education',              name:'Education',          icon:'school-outline',            group:'Education',   isParent:true, color:'#2980B9' },
   tuition:                { id:'tuition',                name:'Tuition',            icon:'account-cash-outline',         group:'Education',   parent:'education' },
   course:                 { id:'course',                 name:'Course',             icon:'human-male-board',           group:'Education',   parent:'education' },
@@ -90,7 +89,7 @@ export const CATEGORIES = {
   certificate:            { id:'certificate',            name:'Certificate',        icon:'certificate-outline',            group:'Education',   parent:'education' },
   newspaper:              { id:'newspaper',              name:'Newspaper',          icon:'newspaper-variant-outline',            group:'Education',   parent:'education' },
   educationOther:         { id:'educationOther',         name:'Other',              icon:'school-outline',            group:'Education',   parent:'education' },
-  // â”€â”€ Healthcare â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Healthcare ──────────────────────────────────────────────
   healthcare:             { id:'healthcare',             name:'Healthcare',         icon:'hospital-box-outline',         group:'Healthcare',  isParent:true, color:'#E91E63' },
   doctorVisit:            { id:'doctorVisit',            name:'Doctor Visit',       icon:'stethoscope',         group:'Healthcare',  parent:'healthcare' },
   dental:                 { id:'dental',                 name:'Dental Work',        icon:'tooth-outline',         group:'Healthcare',  parent:'healthcare' },
@@ -99,13 +98,13 @@ export const CATEGORIES = {
   healthUtility:          { id:'healthUtility',          name:'Health Utility',     icon:'face-mask-outline',         group:'Healthcare',  parent:'healthcare' },
   mentalCare:             { id:'mentalCare',             name:'Mental Care',        icon:'meditation',         group:'Healthcare',  parent:'healthcare' },
   healthcareOther:        { id:'healthcareOther',        name:'Other',              icon:'hospital-box-outline',         group:'Healthcare',  parent:'healthcare' },
-  // â”€â”€ Pet â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Pet ─────────────────────────────────────────────────────
   pet:                    { id:'pet',                    name:'Pet',                icon:'fishbowl-outline',            group:'Pet',         isParent:true, color:'#795548' },
   petFood:                { id:'petFood',                name:'Pet Food',           icon:'food-drumstick-outline',           group:'Pet',         parent:'pet' },
   petSupply:              { id:'petSupply',              name:'Pet Supply',         icon:'paw-outline',            group:'Pet',         parent:'pet' },
   petInsurance:           { id:'petInsurance',           name:'Pet Insurance',      icon:'shield-bug-outline',           group:'Pet',         parent:'pet' },
   petOther:               { id:'petOther',               name:'Other',              icon:'fishbowl-outline',            group:'Pet',         parent:'pet' },
-  // â”€â”€ Extra â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Extra ───────────────────────────────────────────────────
   extra:                  { id:'extra',                  name:'Extra',              icon:'archive-plus-outline',            group:'Extra',       isParent:true, color:'#607D8B' },
   birthday:               { id:'birthday',               name:'Birthday',           icon:'cake-variant-outline',           group:'Extra',       parent:'extra' },
   funeralInsurance:       { id:'funeralInsurance',       name:'Funeral Insurance',  icon:'shield-cross-outline',           group:'Extra',       parent:'extra' },
@@ -125,11 +124,11 @@ export const CATEGORIES = {
 export let _catExt = {};
 
 export function catPath(cat) {
-  if (!cat) return 'â€”';
+  if (!cat) return '—';
   const par = cat.parent && (CATEGORIES[cat.parent] || _catExt[cat.parent]);
-  if (par) return `${par.name} â†’ ${cat.name}`;
+  if (par) return `${par.name} → ${cat.name}`;
   if (cat.isParent) return cat.name;
-  return `${cat.group} â†’ ${cat.name}`;
+  return `${cat.group} → ${cat.name}`;
 }
 
 export const _GROUP_KEYS = {
@@ -146,12 +145,12 @@ export function catNameT(catId, t) {
   return (CATEGORIES[catId] || _catExt[catId] || {}).name || catId;
 }
 export function catPathT(cat, t) {
-  if (!cat) return 'â€”';
+  if (!cat) return '—';
   const nm = catNameT(cat.id, t);
   const par = cat.parent && (CATEGORIES[cat.parent] || _catExt[cat.parent]);
-  if (par) return `${catNameT(par.id, t)} â†’ ${nm}`;
+  if (par) return `${catNameT(par.id, t)} → ${nm}`;
   if (cat.isParent) return nm;
   const gTr = t(_GROUP_KEYS[cat.group] || ('cat.'+cat.group));
   const g = (gTr && gTr !== (_GROUP_KEYS[cat.group] || ('cat.'+cat.group))) ? gTr : cat.group;
-  return `${g} â†’ ${nm}`;
-}
+  return `${g} → ${nm}`;
+}

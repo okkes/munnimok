@@ -280,7 +280,7 @@ export function ScreenHome() {
                 <div style={{ width:`${Math.round(paidOff/total*100)}%`, height:'100%', background:M.sage }}/>
               </div>
               <div style={{ marginTop:6, fontSize:11, color:M.ink3 }}>
-                {debts.length} active debt{debts.length!==1?'s':''} Â· started at {fmtEur(total)}
+                {debts.length} active debt{debts.length!==1?'s':''} · started at {fmtEur(total)}
               </div>
             </div>
           );
@@ -401,7 +401,7 @@ export function ScreenHome() {
           </div>
         );
       case 'customGraph':
-        // Custom graph cards are rendered separately below â€” skip here
+        // Custom graph cards are rendered separately below — skip here
         return null;
       default: return null;
     }
@@ -427,7 +427,7 @@ export function ScreenHome() {
           </div>
           <div style={{ display:'flex', alignItems:'center', gap:5, marginTop:3 }}>
             <div style={{ width:5, height:5, borderRadius:999, background:M.sage, flexShrink:0 }}/>
-            <div style={{ fontSize:11, color:M.ink3 }}>{lastSyncedStr ? `${t('home.lastSync')} Â· ${fmtSyncTime(lastSyncedStr)}` : t('home.notSynced')}</div>
+            <div style={{ fontSize:11, color:M.ink3 }}>{lastSyncedStr ? `${t('home.lastSync')} · ${fmtSyncTime(lastSyncedStr)}` : t('home.notSynced')}</div>
           </div>
         </div>
         <div style={{ position:'relative' }}>
@@ -483,7 +483,7 @@ export function ScreenHome() {
                         </div>
                         <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>
                           {p.isShared ? `${t('profile.by')} ${(p.ownerDisplay || '').split(' ')[0]}` : acctLabel}
-                          {hasAction && <span style={{ marginLeft:6, color:M.ochre, fontWeight:600 }}>Â· {reviewN} {t('review.title')}</span>}
+                          {hasAction && <span style={{ marginLeft:6, color:M.ochre, fontWeight:600 }}>· {reviewN} {t('review.title')}</span>}
                         </div>
                       </div>
                       {p.active ? (
@@ -582,7 +582,7 @@ function BudgetMini({ b, onClick }) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
           <div style={{ fontSize: 13, fontWeight: 500 }}>{b.name}</div>
           <div className="m-num" style={{ fontSize: 12, fontWeight: 600, color: over ? M.clay : M.ink2 }}>
-            {over ? `âˆ’${fmtEurInt(Math.abs(left))}` : `${fmtEurInt(left)} left`}
+            {over ? `−${fmtEurInt(Math.abs(left))}` : `${fmtEurInt(left)} left`}
           </div>
         </div>
         <div style={{ height: 5, marginTop: 6, borderRadius: 999, background: M.line2, overflow: 'hidden', display: 'flex' }}>
@@ -608,12 +608,11 @@ function GoalCard({ g, onClick }) {
         <div style={{ fontSize: 12, fontWeight: 600 }}>{g.name}</div>
       </div>
       <div className="m-num" style={{ fontSize: 18, fontWeight: 600 }}>{fmtEurInt(g.current)}</div>
-      <div style={{ fontSize: 11, color: M.ink3, marginTop: 1 }}>of {fmtEurInt(g.target)} Â· by {g.by}</div>
+      <div style={{ fontSize: 11, color: M.ink3, marginTop: 1 }}>of {fmtEurInt(g.target)} · by {g.by}</div>
       <div style={{ height: 4, marginTop: 10, borderRadius: 999, background: M.line, overflow: 'hidden' }}>
         <div style={{ width: `${pct}%`, height: '100%', background: g.color }}/>
       </div>
-      <div style={{ fontSize: 10, color: M.ink3, marginTop: 6, fontWeight: 500 }}>{pct.toFixed(0)}% Â· +{fmtEurInt(g.monthly)}/mo</div>
+      <div style={{ fontSize: 10, color: M.ink3, marginTop: 6, fontWeight: 500 }}>{pct.toFixed(0)}% · +{fmtEurInt(g.monthly)}/mo</div>
     </div>
   );
 }
-

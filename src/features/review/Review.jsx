@@ -45,7 +45,7 @@ export function ScreenReviewSwipe() {
   const txAbs = tx ? Math.abs(tx.amount) : 0;
   const unallocated = Math.max(0, txAbs - allocatedSum);
 
-  // Conditional bulk: single cat â†’ same merchant; multi-cat â†’ same merchant + same amount
+  // Conditional bulk: single cat → same merchant; multi-cat → same merchant + same amount
   const singleCat = txCats.length === 1;
   const queueSimilar = tx ? queue.filter(t => {
     if (t.id === tx.id) return false;
@@ -97,7 +97,7 @@ export function ScreenReviewSwipe() {
           <div className="m-h2" style={{ marginTop:8 }}>{hasSkipped ? 'Review paused' : 'All caught up'}</div>
           <div style={{ fontSize:14, color:M.ink3, lineHeight:1.5, maxWidth:260 }}>
             {hasSkipped
-              ? `${skipped.size} transaction${skipped.size > 1 ? 's' : ''} skipped â€” they'll be waiting here next time you review.`
+              ? `${skipped.size} transaction${skipped.size > 1 ? 's' : ''} skipped — they'll be waiting here next time you review.`
               : "Nice work. We'll let you know when new transactions need a quick review."}
           </div>
           <button className="m-btn m-tap" style={{ marginTop:16 }} onClick={() => nav.pop()}>Done</button>
@@ -109,7 +109,7 @@ export function ScreenReviewSwipe() {
   return (
     <div className="m-screen" style={{ background: M.paper2 }}>
       <StatusBar/>
-      <AppBar title={`Review Â· ${reviewed.size + skipped.size + 1} / ${initialCount}`}
+      <AppBar title={`Review · ${reviewed.size + skipped.size + 1} / ${initialCount}`}
         leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="x" size={20}/></button>}
       />
 
@@ -134,10 +134,10 @@ export function ScreenReviewSwipe() {
         }}>
           <div style={{ textAlign:'center', marginBottom:20 }}>
             <div className="m-num" style={{ fontSize:34, fontWeight:600, color: tx.amount > 0 ? M.sage : M.ink, letterSpacing:'-0.02em' }}>
-              {tx.amount > 0 ? '+' : 'âˆ’'}{fmtEur(Math.abs(tx.amount))}
+              {tx.amount > 0 ? '+' : '−'}{fmtEur(Math.abs(tx.amount))}
             </div>
             <div style={{ fontSize:17, fontWeight:600, marginTop:10 }}>{tx.merchant}</div>
-            <div style={{ fontSize:12, color:M.ink3, marginTop:4 }}>{fmtDate(tx.date, 'long')} Â· {tx.time}</div>
+            <div style={{ fontSize:12, color:M.ink3, marginTop:4 }}>{fmtDate(tx.date, 'long')} · {tx.time}</div>
             <div style={{ fontSize:10, color:M.ink4, fontFamily:M.fontMono, marginTop:6 }}>{tx.desc}</div>
           </div>
 
@@ -147,10 +147,10 @@ export function ScreenReviewSwipe() {
                 <div style={{ width:12, height:12, borderRadius:999, background:M.violet, display:'flex', alignItems:'center', justifyContent:'center' }}>
                   <div style={{ width:4, height:4, borderRadius:999, background:'#fff' }}/>
                 </div>
-                <div style={{ fontSize:10, fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:M.violet }}>Categories Â· {tx.confidence}% AI</div>
+                <div style={{ fontSize:10, fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:M.violet }}>Categories · {tx.confidence}% AI</div>
               </div>
               {unallocated > 0 && (
-                <span style={{ fontSize:10, fontWeight:600, color:M.ochre }}>âˆ’{fmtEur(unallocated)} unallocated</span>
+                <span style={{ fontSize:10, fontWeight:600, color:M.ochre }}>−{fmtEur(unallocated)} unallocated</span>
               )}
             </div>
 
@@ -191,7 +191,7 @@ export function ScreenReviewSwipe() {
             <div style={{ marginTop:14, borderRadius:12, background:M.violetSoft||'#EEE8FF', border:`1px solid ${M.violet}22`, overflow:'hidden' }}>
               <div style={{ padding:'10px 14px 8px', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
                 <div style={{ fontSize:11, fontWeight:700, letterSpacing:'0.05em', textTransform:'uppercase', color:M.violet }}>
-                  {singleCat ? `Same merchant in queue` : `Same merchant & amount`} Â· {queueSimilar.length}
+                  {singleCat ? `Same merchant in queue` : `Same merchant & amount`} · {queueSimilar.length}
                 </div>
                 <button className="m-tap" onClick={() => {
                   const allIds = queueSimilar.map(t => t.id);
@@ -218,7 +218,7 @@ export function ScreenReviewSwipe() {
                       {bulkSelected.has(st.id) && <I name="check" size={10} color="#fff" stroke={3}/>}
                     </div>
                     <div className="m-tap" onClick={() => setBulkSelected(s => { const n = new Set(s); n.has(st.id) ? n.delete(st.id) : n.add(st.id); return n; })} style={{ flex:1, minWidth:0, cursor:'pointer' }}>
-                      <div style={{ fontSize:12, fontWeight:600, color:M.ink }}>{fmtDate(st.date)} Â· {fmtEur(Math.abs(st.amount))}</div>
+                      <div style={{ fontSize:12, fontWeight:600, color:M.ink }}>{fmtDate(st.date)} · {fmtEur(Math.abs(st.amount))}</div>
                       <div style={{ fontSize:11, color:M.violet+'BB', marginTop:1 }}>{st.desc}</div>
                     </div>
                     <button className="m-tap" onClick={e => { e.stopPropagation(); setPreviewTx(st); }}
@@ -257,7 +257,7 @@ export function ScreenReviewSwipe() {
           cursor: txCats.length > 0 ? 'pointer' : 'default',
         }}>
           <I name="check" size={20} color={txCats.length > 0 ? '#fff' : M.ink4} stroke={2.5}/>
-          {totalToConfirm > 1 ? `Confirm Â· ${totalToConfirm} txs` : 'Confirm'}
+          {totalToConfirm > 1 ? `Confirm · ${totalToConfirm} txs` : 'Confirm'}
         </button>
       </div>
 
@@ -303,9 +303,9 @@ export function ScreenReviewSwipe() {
               </div>
               <div style={{ flex:1 }}>
                 <div style={{ fontSize:15, fontWeight:600 }}>{previewTx.merchant}</div>
-                <div style={{ fontSize:12, color:M.ink3 }}>{fmtDate(previewTx.date, 'long')} Â· {previewTx.time}</div>
+                <div style={{ fontSize:12, color:M.ink3 }}>{fmtDate(previewTx.date, 'long')} · {previewTx.time}</div>
               </div>
-              <div className="m-num" style={{ fontSize:16, fontWeight:700, color:M.ink }}>âˆ’{fmtEur(Math.abs(previewTx.amount))}</div>
+              <div className="m-num" style={{ fontSize:16, fontWeight:700, color:M.ink }}>−{fmtEur(Math.abs(previewTx.amount))}</div>
             </div>
             <div className="m-card" style={{ padding:'4px 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
               <DetailRow label="Category" value={catPath(CATEGORIES[previewTx.cat] || {})} icon={CATEGORIES[previewTx.cat]?.icon}/>
@@ -331,18 +331,18 @@ export function AmountNumpad({ amtStr, onPress, onConfirm, maxAmount, confirmLab
     <div style={{ display:'flex', flexDirection:'column', flex:1 }}>
       <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'8px 0' }}>
         <div className="m-num" style={{ fontSize:52, fontWeight:600, letterSpacing:'-0.03em', color: capped ? M.clay : M.ink }}>
-          â‚¬{amtStr}
+          €{amtStr}
         </div>
         {capped && <div style={{ fontSize:12, color:M.clay, marginTop:6, fontWeight:500 }}>Max {fmtEur(maxAmount)}</div>}
       </div>
       <div style={{ padding:'0 20px 28px', flexShrink:0 }}>
-        {[['1','2','3'],['4','5','6'],['7','8','9'],[',','0','âŒ«']].map((row, ri) => (
+        {[['1','2','3'],['4','5','6'],['7','8','9'],[',','0','⌫']].map((row, ri) => (
           <div key={ri} style={{ display:'flex', gap:8, marginBottom:8 }}>
             {row.map(k => (
               <button key={k} onClick={() => onPress(k)} style={{
                 flex:1, height:54, borderRadius:14, border:`1px solid ${M.line}`,
-                background: k === 'âŒ«' ? M.paper2 : '#fff',
-                fontSize: k === 'âŒ«' ? 20 : 24, fontWeight:500, color:M.ink,
+                background: k === '⌫' ? M.paper2 : '#fff',
+                fontSize: k === '⌫' ? 20 : 24, fontWeight:500, color:M.ink,
                 cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center',
               }}>{k}</button>
             ))}
@@ -364,14 +364,14 @@ export function useNumpadStr(initial) {
   );
   const [fresh, setFresh] = React.useState(initial > 0);
   const press = (k) => {
-    if (fresh && k !== 'âŒ«') {
+    if (fresh && k !== '⌫') {
       setFresh(false);
       if (k === ',') { setStr('0,'); return; }
       setStr(k === '0' ? '0' : k);
       return;
     }
     setStr(s => {
-      if (k === 'âŒ«') { setFresh(false); return s.length > 1 ? s.slice(0, -1) : '0'; }
+      if (k === '⌫') { setFresh(false); return s.length > 1 ? s.slice(0, -1) : '0'; }
       if (k === ',') return s.includes(',') ? s : (s === '0' ? '0,' : s + ',');
       if (s === '0') return k;
       const dec = s.split(',')[1];
@@ -387,7 +387,7 @@ export function useNumpadStr(initial) {
   return [str, press, resetStr];
 }
 
-// Standalone amount-edit sheet â€” used to edit an existing category's amount
+// Standalone amount-edit sheet — used to edit an existing category's amount
 function AmountEditSheet({ cat, initialAmount, maxAmount, onConfirm, onClose }) {
   const [str, press] = useNumpadStr(initialAmount);
   return (
@@ -459,11 +459,11 @@ export function CategoryPicker({ selected, onClose, onPick, filterPositive = fal
                 <input
                   value={searchQ}
                   onChange={e => setSearchQ(e.target.value)}
-                  placeholder="Search categoriesâ€¦"
+                  placeholder="Search categories…"
                   autoFocus={false}
                   style={{ flex:1, border:'none', background:'transparent', fontSize:13, color:M.ink, outline:'none', fontFamily:M.fontUI }}
                 />
-                {searchQ ? <button onClick={() => setSearchQ('')} style={{ background:'none', border:'none', color:M.ink3, cursor:'pointer', fontFamily:M.fontUI, fontSize:16, lineHeight:1 }}>Ã—</button> : null}
+                {searchQ ? <button onClick={() => setSearchQ('')} style={{ background:'none', border:'none', color:M.ink3, cursor:'pointer', fontFamily:M.fontUI, fontSize:16, lineHeight:1 }}>×</button> : null}
               </div>
             </div>
             <div style={{ flex:1, overflowY:'auto', padding:'0 20px 20px' }}>
@@ -528,7 +528,7 @@ export function CategoryPicker({ selected, onClose, onPick, filterPositive = fal
               onPress={press}
               maxAmount={maxAmount}
               onConfirm={(val) => onPick(pickedId, val)}
-              confirmLabel={`Add Â· ${catPath(pickedCat)}`}
+              confirmLabel={`Add · ${catPath(pickedCat)}`}
             />
           </>
         )}
@@ -587,7 +587,7 @@ export function ScreenLinkReimburse({ params }) {
             </div>
             <div style={{ flex:1 }}>
               <div style={{ fontSize:14, fontWeight:500 }}>{selected.merchant}</div>
-              <div style={{ fontSize:11, color:M.ink3, marginTop:2 }}>{fmtDate(selected.date)} Â· total {fmtEur(Math.abs(selected.amount))}</div>
+              <div style={{ fontSize:11, color:M.ink3, marginTop:2 }}>{fmtDate(selected.date)} · total {fmtEur(Math.abs(selected.amount))}</div>
             </div>
           </div>
           <div style={{ fontSize:12, color:M.ink3, marginBottom:4, paddingLeft:4 }}>How much of this transaction is reimbursed?</div>
@@ -601,7 +601,7 @@ export function ScreenLinkReimburse({ params }) {
             updateTx(selected.id, { linkedTo: txId, amount: isPositive ? -v : v });
             nav.pop();
           }}
-          confirmLabel={ok ? `Link Â· ${fmtEur(val)} reimbursed` : 'Enter amount'}
+          confirmLabel={ok ? `Link · ${fmtEur(val)} reimbursed` : 'Enter amount'}
         />
       </div>
     );
@@ -617,7 +617,7 @@ export function ScreenLinkReimburse({ params }) {
         {sourceTx && (
           <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 16px', borderRadius:12, background:M.paper2, marginBottom:12 }}>
             <I name="link" size={14} color={M.ink3}/>
-            <span style={{ fontSize:12, color:M.ink3 }}>Linking to: <strong style={{ color:M.ink }}>{sourceTx.merchant}</strong> Â· {fmtEur(Math.abs(sourceTx.amount))}</span>
+            <span style={{ fontSize:12, color:M.ink3 }}>Linking to: <strong style={{ color:M.ink }}>{sourceTx.merchant}</strong> · {fmtEur(Math.abs(sourceTx.amount))}</span>
           </div>
         )}
 
@@ -626,10 +626,10 @@ export function ScreenLinkReimburse({ params }) {
           <input
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Search transactionsâ€¦"
+            placeholder="Search transactions…"
             style={{ flex:1, border:'none', background:'transparent', fontSize:13, color:M.ink, outline:'none', fontFamily:M.fontUI }}
           />
-          {query ? <button onClick={() => setQuery('')} style={{ background:'none', border:'none', color:M.ink3, cursor:'pointer', fontFamily:M.fontUI, fontSize:16, lineHeight:1 }}>Ã—</button> : null}
+          {query ? <button onClick={() => setQuery('')} style={{ background:'none', border:'none', color:M.ink3, cursor:'pointer', fontFamily:M.fontUI, fontSize:16, lineHeight:1 }}>×</button> : null}
         </div>
 
         {sorted.length === 0 ? (
@@ -651,10 +651,10 @@ export function ScreenLinkReimburse({ params }) {
                       <div style={{ fontSize:14, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
                         <HighlightText text={t.merchant} query={query}/>
                       </div>
-                      <div style={{ fontSize:11, color:M.ink3, marginTop:2 }}>{fmtDate(t.date)} Â· {catPath(tCat)}</div>
+                      <div style={{ fontSize:11, color:M.ink3, marginTop:2 }}>{fmtDate(t.date)} · {catPath(tCat)}</div>
                     </div>
                     <div className="m-num" style={{ fontSize:14, fontWeight:600, color:txPositive ? M.sage : M.ink, flexShrink:0 }}>
-                      {txPositive ? '+' : 'âˆ’'}{fmtEur(Math.abs(t.amount))}
+                      {txPositive ? '+' : '−'}{fmtEur(Math.abs(t.amount))}
                     </div>
                   </div>
                   {i < a.length - 1 && <Divider inset={48}/>}
@@ -667,4 +667,3 @@ export function ScreenLinkReimburse({ params }) {
     </div>
   );
 }
-

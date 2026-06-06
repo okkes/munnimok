@@ -65,7 +65,7 @@ function BudgetCard({ b, onClick }) {
   const color = budgetColor(ratio);
   const soft  = budgetSoft(ratio);
   const left  = b.total - b.spent;
-  const status = { color, soft, label: over ? `${fmtEur(Math.abs(left)).replace('âˆ’','')} over` : `${fmtEur(left)} left` };
+  const status = { color, soft, label: over ? `${fmtEur(Math.abs(left)).replace('−','')} over` : `${fmtEur(left)} left` };
   const remaining = Math.max(0, b.total - b.spent);
   const pct = Math.min(100, ratio * 100);
 
@@ -80,7 +80,7 @@ function BudgetCard({ b, onClick }) {
             <div style={{ fontSize: 15, fontWeight: 600 }}>{b.name}</div>
             <div className="m-num" style={{ fontSize: 14, fontWeight: 600, color: status.color }}>{status.label}</div>
           </div>
-          <div style={{ fontSize: 11, color: M.ink3, marginTop: 2 }}>{b.period} Â· resets {b.renew}</div>
+          <div style={{ fontSize: 11, color: M.ink3, marginTop: 2 }}>{b.period} · resets {b.renew}</div>
         </div>
       </div>
       <div style={{ marginTop: 12, height: 6, borderRadius: 999, background: M.line2, overflow: 'hidden', position: 'relative' }}>
@@ -94,7 +94,7 @@ function BudgetCard({ b, onClick }) {
       {b.stack && (
         <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 8, background: M.paper2, fontSize: 11, color: M.ink2, display: 'flex', alignItems: 'center', gap: 8 }}>
           <I name="box" size={13} color={M.ink3}/>
-          Carry-over: <span className="m-num" style={{ fontWeight: 600 }}>{fmtEur(b.stackCur)}</span> Â· max <span className="m-num">{fmtEur(b.stackMax)}</span>
+          Carry-over: <span className="m-num" style={{ fontWeight: 600 }}>{fmtEur(b.stackCur)}</span> · max <span className="m-num">{fmtEur(b.stackMax)}</span>
         </div>
       )}
     </div>
@@ -116,7 +116,7 @@ export function ScreenBudgetDetail({ params }) {
   const soft  = budgetSoft(ratio);
   const left  = b.total - b.spent;
 
-  const periodLabels = ['20 Oct â€“ 2 Nov', '3 Nov â€“ 9 Nov', '10 Nov â€“ 16 Nov', '17 Nov â€“ 23 Nov', '24 Nov â€“ 30 Nov', '31 Nov â€“ 6 Dec'];
+  const periodLabels = ['20 Oct – 2 Nov', '3 Nov – 9 Nov', '10 Nov – 16 Nov', '17 Nov – 23 Nov', '24 Nov – 30 Nov', '31 Nov – 6 Dec'];
   const periodLabel  = periodLabels[Math.max(0, periodLabels.length - 1 + pOffset)];
   const isCurrent    = pOffset === 0;
 
@@ -200,7 +200,7 @@ export function ScreenBudgetDetail({ params }) {
           </button>
         )}
 
-        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Transactions Â· {txs.length}</div>
+        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Transactions · {txs.length}</div>
         <div className="m-card" style={{ padding:'0 16px', marginBottom:18, border:`1px solid ${M.line}` }}>
           {txs.map((t, i, a) => (
             <React.Fragment key={t.id}>
@@ -246,12 +246,12 @@ export function ScreenBudgetCreate() {
         <div className="m-card" style={{ padding: 4, marginBottom: 14, border: `1px solid ${M.line}` }}>
           <FormRow label="Name" value="Restaurants" placeholder="e.g. Eating out"/>
           <Divider inset={16}/>
-          <FormRow label="Amount" value="â‚¬120,00" icon="wallet"/>
+          <FormRow label="Amount" value="€120,00" icon="wallet"/>
           <Divider inset={16}/>
           <FormRow label="Period" value="Weekly" caretR/>
         </div>
 
-        <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Categories Â· 2 selected</div>
+        <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Categories · 2 selected</div>
         <div className="m-card" style={{ padding: '4px 16px', marginBottom: 14, border: `1px solid ${M.line}` }}>
           {[
             { id: 'restaurants', name: 'Restaurants', selected: true },
@@ -288,13 +288,13 @@ export function ScreenBudgetCreate() {
           </div>
           {stack && (
             <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${M.line2}` }}>
-              <FormRow label="Max" value="â‚¬480,00"/>
+              <FormRow label="Max" value="€480,00"/>
               <div style={{ marginTop: 12, display: 'flex', gap: 4, alignItems: 'flex-end', height: 60 }}>
                 {[40, 60, 80, 100, 80, 100].map((h, i) => (
                   <div key={i} style={{ flex: 1, height: h * 0.6, background: i === 5 ? M.sage : M.sageSoft, borderRadius: 3 }}/>
                 ))}
               </div>
-              <div style={{ fontSize: 11, color: M.ink3, marginTop: 6 }}>Last 6 weeks Â· accumulated carry</div>
+              <div style={{ fontSize: 11, color: M.ink3, marginTop: 6 }}>Last 6 weeks · accumulated carry</div>
             </div>
           )}
         </div>
@@ -304,4 +304,3 @@ export function ScreenBudgetCreate() {
     </div>
   );
 }
-

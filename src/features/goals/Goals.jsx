@@ -28,7 +28,7 @@ export function ScreenGoals() {
         <div className="m-card" style={{ padding: 18, marginBottom: 16, border: `1px solid ${M.line}` }}>
           <div className="m-cap">{t('goals.totalSaved')}</div>
           <div className="m-num" style={{ fontSize: 28, fontWeight: 600, fontFamily: M.fontDisp, marginTop: 4 }}>{fmtEur(total)}</div>
-          <div style={{ fontSize: 12, color: M.ink3, marginTop: 2 }}>across {goals.length} goals Â· linked to ING Savings</div>
+          <div style={{ fontSize: 12, color: M.ink3, marginTop: 2 }}>across {goals.length} goals · linked to ING Savings</div>
           <div style={{ marginTop: 14 }}>
             <StackedBar segments={goals.map(g => ({ value: g.current, color: g.color }))} height={8}/>
           </div>
@@ -45,7 +45,7 @@ export function ScreenGoals() {
         {active.length > 0 && (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, paddingLeft: 4 }}>
-              <div className="m-cap">{t('goals.active')} Â· {active.length}</div>
+              <div className="m-cap">{t('goals.active')} · {active.length}</div>
               <button className="m-tap" style={{ background: 'transparent', border: 'none', fontSize: 12, color: M.sage, fontWeight: 600, cursor: 'pointer', fontFamily: M.fontUI }}>Auto-allocate</button>
             </div>
             <div className="m-card" style={{ padding: '4px 16px', marginBottom: 16, border: `1px solid ${M.line}` }}>
@@ -61,7 +61,7 @@ export function ScreenGoals() {
 
         {achieved.length > 0 && (
           <>
-            <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>{t('goals.achieved')} Â· {achieved.length}</div>
+            <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>{t('goals.achieved')} · {achieved.length}</div>
             <div className="m-card" style={{ padding: '4px 16px', marginBottom: 16, border: `1px solid ${M.line}` }}>
               {achieved.map((g, i, a) => (
                 <React.Fragment key={g.id}>
@@ -98,13 +98,13 @@ function GoalListRow({ g, onClick }) {
           <div className="m-num" style={{ fontSize: 13, fontWeight: 600 }}>{fmtEur(g.current)}</div>
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
-          <div style={{ fontSize: 11, color: M.ink3 }}>of {fmtEur(g.target)} Â· by {g.by}</div>
-          <div style={{ fontSize: 11, color: M.ink3 }}>{fmtEur(g.monthly)}/mo Â· {monthsLeft}mo left</div>
+          <div style={{ fontSize: 11, color: M.ink3 }}>of {fmtEur(g.target)} · by {g.by}</div>
+          <div style={{ fontSize: 11, color: M.ink3 }}>{fmtEur(g.monthly)}/mo · {monthsLeft}mo left</div>
         </div>
         <div style={{ height: 5, borderRadius: 999, background: M.line2, overflow: 'hidden' }}>
           <div style={{ width: `${pct}%`, height: '100%', background: g.color }}/>
         </div>
-        <div style={{ marginTop: 3, fontSize: 10, color: M.ink4 }}>{pct.toFixed(0)}% Â· {fmtEur(remaining)} to go</div>
+        <div style={{ marginTop: 3, fontSize: 10, color: M.ink4 }}>{pct.toFixed(0)}% · {fmtEur(remaining)} to go</div>
       </div>
       <I name="caretR" size={14} color={M.ink4} style={{ marginTop: 6 }}/>
     </div>
@@ -125,7 +125,7 @@ function GoalCardLarge({ g, onClick }) {
             <div style={{ fontSize: 15, fontWeight: 600 }}>{g.name}</div>
             <div className="m-num" style={{ fontSize: 12, color: M.ink3, fontWeight: 600 }}>{pct.toFixed(0)}%</div>
           </div>
-          <div style={{ fontSize: 11, color: M.ink3, marginTop: 2 }}>by {g.by} Â· {fmtEur(g.monthly)}/mo</div>
+          <div style={{ fontSize: 11, color: M.ink3, marginTop: 2 }}>by {g.by} · {fmtEur(g.monthly)}/mo</div>
         </div>
       </div>
       <div style={{ marginTop: 12, height: 6, borderRadius: 999, background: M.line2, overflow: 'hidden' }}>
@@ -192,4 +192,3 @@ export function ScreenGoalDetail({ params }) {
     </div>
   );
 }
-

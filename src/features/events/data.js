@@ -10,6 +10,6 @@
 
 export const EVENTS = [
   { id: 'e1', name: 'Lisbon trip 2025',     start: '2025-09-12', end: '2025-09-19', total: 1186.30, txCount: 28, status: 'closed',   icon: 'globe', photo: 'https://images.unsplash.com/photo-1555881400-74d7acaacd8b?w=600&h=260&fit=crop' },
-  { id: 'e2', name: 'Anna Â· Birthday',      start: '2026-01-30', end: '2026-02-02', total: 312.40,  txCount: 9,  status: 'closed',   icon: 'star',  photo: 'https://images.unsplash.com/photo-1527529482837-4698179dc6ce?w=600&h=260&fit=crop' },
+  { id: 'e2', name: 'Anna · Birthday',      start: '2026-01-30', end: '2026-02-02', total: 312.40,  txCount: 9,  status: 'closed',   icon: 'star',  photo: 'https://images.unsplash.com/photo-1527529482837-4698179dc6ce?w=600&h=260&fit=crop' },
   { id: 'e3', name: 'Berlin weekend',       start: '2026-02-21', end: '2026-02-23', total: 0,       txCount: 0,  status: 'upcoming', icon: 'globe', photo: 'https://images.unsplash.com/photo-1560930950-5cc20e80e392?w=600&h=260&fit=crop' },
-];
+];

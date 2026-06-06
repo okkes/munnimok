@@ -25,19 +25,20 @@ export const PORTFOLIO = {
 };
 
 export const ASSETS = [
-  { id:'a1', type:'real_estate', name:'Apartment Â· Amsterdam', icon:'house', value:320000, mortgageLeft:218000, equity:102000, curve:[290000,295000,302000,310000,315000,320000], changeYr:3.2 },
-  { id:'a2', type:'vehicle',     name:'Car Â· Volkswagen Golf', icon:'car',   value:14200,  loanLeft:4800,   equity:9400,  curve:[22000,20000,18500,17000,15800,14200], changeYr:-10.0 },
+  { id:'a1', type:'real_estate', name:'Apartment · Amsterdam', icon:'house', value:320000, mortgageLeft:218000, equity:102000, curve:[290000,295000,302000,310000,315000,320000], changeYr:3.2 },
+  { id:'a2', type:'vehicle',     name:'Car · Volkswagen Golf', icon:'car',   value:14200,  loanLeft:4800,   equity:9400,  curve:[22000,20000,18500,17000,15800,14200], changeYr:-10.0 },
   { id:'a3', type:'pension',     name:'ABP Pension',           icon:'piggy', value:28400,  loanLeft:0,      equity:28400, curve:[22000,23500,24800,26000,27200,28400], changeYr:5.8 },
 ];
 
 export const DEBTS = [
-  { id:'d1', name:'Mortgage Â· Stadgenoot',   icon:'house',  balance:218000, original:240000, rate:3.2, minPayment:820,  nextDate:'01 Mar', type:'mortgage', color:'#4A6A4F' },
-  { id:'d2', name:'Car loan Â· ABN AMRO',     icon:'car',    balance:4800,   original:12000,  rate:5.8, minPayment:250,  nextDate:'15 Mar', type:'loan',     color:'#A8782B' },
-  { id:'d3', name:'Credit card Â· ING',       icon:'card',   balance:480,    original:480,    rate:14.5, minPayment:25,  nextDate:'25 Mar', type:'credit',   color:'#B5503A' },
-  { id:'d4', name:'Study loan Â· DUO',        icon:'bag',    balance:12400,  original:28000,  rate:0.0,  minPayment:180, nextDate:'01 Mar', type:'student',  color:'#5E4A78' },
+  { id:'d1', name:'Mortgage · Stadgenoot',   icon:'house',  balance:218000, original:240000, rate:3.2, minPayment:820,  nextDate:'01 Mar', type:'mortgage', color:'#4A6A4F' },
+  { id:'d2', name:'Car loan · ABN AMRO',     icon:'car',    balance:4800,   original:12000,  rate:5.8, minPayment:250,  nextDate:'15 Mar', type:'loan',     color:'#A8782B' },
+  { id:'d3', name:'Credit card · ING',       icon:'card',   balance:480,    original:480,    rate:14.5, minPayment:25,  nextDate:'25 Mar', type:'credit',   color:'#B5503A' },
+  { id:'d4', name:'Study loan · DUO',        icon:'bag',    balance:12400,  original:28000,  rate:0.0,  minPayment:180, nextDate:'01 Mar', type:'student',  color:'#5E4A78' },
 ];
 export const DEBTS_PAID_OFF = [
-  { id:'dp1', name:'Personal loan Â· Rabobank', icon:'card',  paidAmount:3200, paidDate:'2026-01-15', type:'loan',    color:'#A8782B' },
-  { id:'dp2', name:'Credit card Â· ABN AMRO',   icon:'card',  paidAmount:650,  paidDate:'2026-02-03', type:'credit',  color:'#B5503A' },
+  { id:'dp1', name:'Personal loan · Rabobank', icon:'card',  paidAmount:3200, paidDate:'2026-01-15', type:'loan',    color:'#A8782B' },
+  { id:'dp2', name:'Credit card · ABN AMRO',   icon:'card',  paidAmount:650,  paidDate:'2026-02-03', type:'credit',  color:'#B5503A' },
 ];
 export const DEBT_HISTORY = [240000+12000+1200+28000, 240000+11000+1100+27800, 238000+9500+900+27600, 237000+8500+800+27400, 236000+7500+700+27200, 235680];
+

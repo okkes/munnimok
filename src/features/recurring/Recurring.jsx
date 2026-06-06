@@ -504,4 +504,3 @@ export function ScreenRecurringDeals({ params }) {
     </div>
   );
 }
-

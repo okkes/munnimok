@@ -1,4 +1,4 @@
-export const T = {
+﻿export const T = {
   // Auth
   loginEmailBtn:        'login-email-btn',
   loginGoogleBtn:       'login-google-btn',

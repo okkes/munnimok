@@ -292,4 +292,3 @@ export function IOSKeyboard({ dark = false }) {
     </div>
   );
 }
-

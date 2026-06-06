@@ -26,7 +26,7 @@ export function ScreenInvestment() {
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 6, padding: '4px 10px', borderRadius: 999, background: change >= 0 ? M.sageSoft : M.claySoft }}>
             <I name={change >= 0 ? 'arrow-up-right' : 'arrow-dn-right'} size={12} color={change >= 0 ? M.sage : M.clay}/>
             <span className="m-num" style={{ fontSize: 12, fontWeight: 600, color: change >= 0 ? M.sage : M.clay }}>
-              {fmtEur(change)} Â· {changePct.toFixed(1)}%
+              {fmtEur(change)} · {changePct.toFixed(1)}%
             </span>
           </div>
         </div>
@@ -53,7 +53,7 @@ export function ScreenInvestment() {
           </div>
         </div>
 
-        <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Holdings Â· {PORTFOLIO.positions.length}</div>
+        <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Holdings · {PORTFOLIO.positions.length}</div>
         <div className="m-card" style={{ padding: '4px 16px', marginBottom: 18, border: `1px solid ${M.line}` }}>
           {PORTFOLIO.positions.map((h, i, a) => (
             <React.Fragment key={h.ticker}>
@@ -124,7 +124,7 @@ export function ScreenInvestment() {
 export function ScreenInvestmentConnect() {
   const nav = useNav();
   const brokers = [
-    { id: 'degiro',     name: 'DEGIRO',         sub: 'NL Â· most popular', supported: true },
+    { id: 'degiro',     name: 'DEGIRO',         sub: 'NL · most popular', supported: true },
     { id: 'trade-rep',  name: 'Trade Republic', sub: 'EU broker',         supported: true },
     { id: 'ibkr',       name: 'Interactive Brokers', sub: 'Global',       supported: true },
     { id: 'bux',        name: 'BUX Zero',       sub: 'NL',                 supported: true },
@@ -177,4 +177,3 @@ export function ScreenInvestmentConnect() {
     </div>
   );
 }
-

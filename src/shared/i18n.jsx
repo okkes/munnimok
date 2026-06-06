@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { useLocalStorage, useSessionStorage } from './hooks.jsx';
 
 export const TRANSLATIONS = {

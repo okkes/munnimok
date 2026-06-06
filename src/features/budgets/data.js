@@ -7,4 +7,4 @@
   { id:'b6', name:'Health',       icon:'health', spent:36.70,  total:40,  period:'Monthly',  periodDays:30, renew:'every month',   cats:['healthcare','doctorVisit','prescription','dental'], stack:false },
   { id:'b7', name:'Subscriptions',icon:'film',   spent:23.98,  total:32,  period:'Monthly',  periodDays:30, renew:'every month',   cats:['subs'], stack:false },
   { id:'b8', name:'Nightlife',    icon:'star',   spent:87.50,  total:60,  period:'Monthly',  periodDays:30, renew:'every month',   cats:['restaurants'], stack:false },
-];
+];

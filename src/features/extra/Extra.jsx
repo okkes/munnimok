@@ -11,7 +11,6 @@ import { BarChart, BarChartScrollable } from '../../shared/components/Charts.jsx
 import { useTxCtx, useProfileDebts, Stat } from '../../app/providers.jsx';
 import { useAppCtx } from '../../app/providers.jsx';
 
-
 export function ScreenIncome() {
   const nav = useNav();
   const { t } = useLang();
@@ -73,7 +72,7 @@ export function ScreenIncome() {
         </div>
 
         <div className="m-card" style={{ padding:'12px 16px 8px', marginBottom:14, border:`1px solid ${M.line}` }}>
-          <div className="m-cap" style={{ marginBottom:8 }}>Period history Â· tap to navigate</div>
+          <div className="m-cap" style={{ marginBottom:8 }}>Period history · tap to navigate</div>
           <BarChartScrollable
             data={barData}
             labels={periodHistory.map(p => new Date(p.start).toLocaleString('en-GB',{month:'short'}))}
@@ -140,7 +139,7 @@ export function ScreenInvested() {
       <div className="m-body-scroll">
         <div style={{ textAlign: 'center', padding: '8px 0 18px' }}>
           <div className="m-num" style={{ fontSize: 38, fontWeight: 600, letterSpacing: '-0.025em', color: M.violet }}>{fmtEur(total)}</div>
-          <div style={{ fontSize: 12, color: M.ink3, marginTop: 4, fontWeight: 500 }}>20 Jan â€“ 19 Feb</div>
+          <div style={{ fontSize: 12, color: M.ink3, marginTop: 4, fontWeight: 500 }}>20 Jan – 19 Feb</div>
         </div>
 
         <div className="m-tap m-card m-fade" onClick={() => nav.push('investment')} style={{
@@ -152,7 +151,7 @@ export function ScreenInvested() {
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 13, fontWeight: 600 }}>View full portfolio</div>
-            <div style={{ fontSize: 11, color: M.ink3, marginTop: 1 }}>{fmtEur(PORTFOLIO.total)} total Â· +{PORTFOLIO.pnlPct.toFixed(1)}%</div>
+            <div style={{ fontSize: 11, color: M.ink3, marginTop: 1 }}>{fmtEur(PORTFOLIO.total)} total · +{PORTFOLIO.pnlPct.toFixed(1)}%</div>
           </div>
           <I name="caretR" size={14} color={M.ink4}/>
         </div>
@@ -164,12 +163,12 @@ export function ScreenInvested() {
           </div>
           <div style={{ overflowX: 'auto', marginLeft: -16, paddingLeft: 16, paddingRight: 16, marginRight: -16 }}>
             <div style={{ minWidth: 280 }}>
-              <BarChart data={monthlyHistory} labels={['Sepâ€“Oct','Octâ€“Nov','Novâ€“Dec','Decâ€“Jan','Janâ€“Feb','Febâ€“Mar']} showValues height={80} accent={M.violet}/>
+              <BarChart data={monthlyHistory} labels={['Sep–Oct','Oct–Nov','Nov–Dec','Dec–Jan','Jan–Feb','Feb–Mar']} showValues height={80} accent={M.violet}/>
             </div>
           </div>
         </div>
 
-        <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Transactions Â· {investTx.length}</div>
+        <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Transactions · {investTx.length}</div>
         <div className="m-card" style={{ padding: '4px 16px', border: `1px solid ${M.line}` }}>
           {investTx.length > 0 ? investTx.map((t, i, a) => (
             <React.Fragment key={t.id}>
@@ -210,8 +209,8 @@ export function ScreenInsights() {
       id:'projection',
       icon:'trending-up', iconBg:M.sageSoft, iconColor:M.sage,
       title:'5-year projection',
-      sub:'Keep this up and you\'ll save â‚¬38k',
-      detail:`At your current savings rate of ${savingsRate}%, investing â‚¬300/month with 7% average returns would grow your portfolio from ${fmtEurInt(PORTFOLIO.total)} to approx. â‚¬38 000 by 2031. That's assuming no income change.`,
+      sub:'Keep this up and you\'ll save €38k',
+      detail:`At your current savings rate of ${savingsRate}%, investing €300/month with 7% average returns would grow your portfolio from ${fmtEurInt(PORTFOLIO.total)} to approx. €38 000 by 2031. That's assuming no income change.`,
       chart: [12480, 14200, 16100, 18200, 20500, 23100, 26000, 29200, 32800, 36800, 41500],
       chartColor: M.sage,
     },
@@ -220,7 +219,7 @@ export function ScreenInsights() {
       icon:'flame', iconBg:M.ochreSoft, iconColor:M.ochre,
       title:'Coffee habit',
       sub:`${fmtEurInt(coffeeMonthly)}/month on coffee runs`,
-      detail:`You spend an average of ${fmtEurInt(coffeeMonthly)}/month on coffee â€” ${fmtEurInt(coffeeMonthly * 12)}/year. Cutting to 3Ã—/week instead of daily would save you ${fmtEurInt(coffeeMonthly * 0.57 * 12)}/year, which invested at 7% over 5 years = ${fmtEurInt(coffeeMonthly * 0.57 * 12 * 6.15)}.`,
+      detail:`You spend an average of ${fmtEurInt(coffeeMonthly)}/month on coffee — ${fmtEurInt(coffeeMonthly * 12)}/year. Cutting to 3×/week instead of daily would save you ${fmtEurInt(coffeeMonthly * 0.57 * 12)}/year, which invested at 7% over 5 years = ${fmtEurInt(coffeeMonthly * 0.57 * 12 * 6.15)}.`,
       chart: SPEND_HISTORY.coffee,
       chartColor: M.ochre,
     },
@@ -228,8 +227,8 @@ export function ScreenInsights() {
       id:'weekend',
       icon:'star', iconBg:M.violetSoft, iconColor:M.violet,
       title:'Weekend spending',
-      sub:'You spend 2.4Ã— more on weekends',
-      detail:'Your weekend transactions (Friâ€“Sun) average â‚¬127 vs â‚¬53 on weekdays. Most of it is restaurants and bars. This is totally normal â€” but if you want to cut back, restaurants on Sunday evening are your single biggest weekend category.',
+      sub:'You spend 2.4× more on weekends',
+      detail:'Your weekend transactions (Fri–Sun) average €127 vs €53 on weekdays. Most of it is restaurants and bars. This is totally normal — but if you want to cut back, restaurants on Sunday evening are your single biggest weekend category.',
       chart:[53,53,53,53,127,127,127,53,53,53,53,127,127,127],
       chartColor: M.violet,
     },
@@ -237,7 +236,7 @@ export function ScreenInsights() {
       id:'luxury',
       icon:'film', iconBg:M.slateSoft, iconColor:M.slate,
       title:'Luxury subscriptions',
-      sub:`â‚¬${luxurySubs.toFixed(2)}/month on luxury subs`,
+      sub:`€${luxurySubs.toFixed(2)}/month on luxury subs`,
       detail:`You have ${RECURRING.filter(r => r.type === 'subs' && r.luxury && r.active).length} luxury subscriptions totalling ${fmtEurInt(luxurySubs)}/month (${fmtEurInt(luxurySubs * 12)}/year). Netflix + Spotify alone = ${fmtEurInt(13.99 + 9.99)}/month. Have you used all of them this month?`,
       chart: [18, 20, 24, 24, 24, luxurySubs],
       chartColor: M.slate,
@@ -247,7 +246,7 @@ export function ScreenInsights() {
       icon:'goal', iconBg:M.sageSoft, iconColor:M.sage,
       title:'You\'re on track',
       sub:'Savings rate improved 4 months in a row',
-      detail:`Your savings rate has improved from 14% to ${savingsRate}% over the past 6 periods. Your emergency fund is 40% funded, and your Lisbon trip goal is on pace to hit by June. Keep going â€” consistency matters more than perfection.`,
+      detail:`Your savings rate has improved from 14% to ${savingsRate}% over the past 6 periods. Your emergency fund is 40% funded, and your Lisbon trip goal is on pace to hit by June. Keep going — consistency matters more than perfection.`,
       chart:[14,16,18,21,24,parseInt(savingsRate)],
       chartColor: M.sage,
     },
@@ -259,7 +258,7 @@ export function ScreenInsights() {
       <AppBar title={t('screen.insights')} large leading={null}/>
       <div className="m-body-scroll">
         <div style={{ fontSize:13, color:M.ink3, marginBottom:16, lineHeight:1.5 }}>
-          Based on your last 6 periods Â· updated daily
+          Based on your last 6 periods · updated daily
         </div>
 
         <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
@@ -308,8 +307,8 @@ export function ScreenDebts() {
     : [...debts].sort((a, b) => a.balance - b.balance);
 
   const strategies = [
-    { id:'avalanche', label:'Avalanche', sub:'Highest interest first â€” saves most money' },
-    { id:'snowball',  label:'Snowball',  sub:'Smallest balance first â€” builds momentum' },
+    { id:'avalanche', label:'Avalanche', sub:'Highest interest first — saves most money' },
+    { id:'snowball',  label:'Snowball',  sub:'Smallest balance first — builds momentum' },
   ];
   const debtTypeIcon = { mortgage:'house', loan:'car', credit:'card', student:'bag' };
 
@@ -347,7 +346,7 @@ export function ScreenDebts() {
             <span>Sep</span><span>Oct</span><span>Nov</span><span>Dec</span><span>Jan</span><span>Feb</span>
           </div>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:8 }}>
-            <div style={{ fontSize:11, color:M.sage, fontWeight:600 }}>â†“ {fmtEurInt(DEBT_HISTORY[0] - DEBT_HISTORY[DEBT_HISTORY.length-1])} paid down in 6 months</div>
+            <div style={{ fontSize:11, color:M.sage, fontWeight:600 }}>↓ {fmtEurInt(DEBT_HISTORY[0] - DEBT_HISTORY[DEBT_HISTORY.length-1])} paid down in 6 months</div>
             <div className="m-num" style={{ fontSize:12, fontWeight:700, color:M.clay }}>{fmtEurInt(DEBT_HISTORY[DEBT_HISTORY.length-1])}</div>
           </div>
         </div>
@@ -367,7 +366,7 @@ export function ScreenDebts() {
           {strategies.find(s => s.id === strategy)?.sub}
         </div>
 
-        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('debts.activeDebts')} Â· {debts.length}</div>
+        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('debts.activeDebts')} · {debts.length}</div>
         <div style={{ display:'flex', flexDirection:'column', gap:10, marginBottom:16 }}>
           {sorted.map((d, rank) => {
             const progress = 1 - d.balance / d.original;
@@ -384,7 +383,7 @@ export function ScreenDebts() {
                       {isPriority && <span style={{ fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:999, background:d.color+'22', color:d.color, textTransform:'uppercase', letterSpacing:'0.05em' }}>Pay first</span>}
                     </div>
                     <div style={{ fontSize:11, color:M.ink3 }}>
-                      {d.rate > 0 ? `${d.rate}% interest Â· ` : 'Interest-free Â· '}{fmtEurInt(d.minPayment)}/month min
+                      {d.rate > 0 ? `${d.rate}% interest · ` : 'Interest-free · '}{fmtEurInt(d.minPayment)}/month min
                     </div>
                   </div>
                   <div style={{ textAlign:'right' }}>
@@ -412,7 +411,7 @@ export function ScreenDebts() {
         {/* Paid off this year */}
         {DEBTS_PAID_OFF.length > 0 && (
           <>
-            <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Paid off this year ðŸŽ‰</div>
+            <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Paid off this year 🎉</div>
             <div style={{ padding:'14px 16px', borderRadius:16, background:M.sageSoft, border:`1px solid ${M.sage}22`, marginBottom:16 }}>
               <div style={{ fontSize:13, fontWeight:600, color:M.sage, marginBottom:12 }}>
                 You cleared {DEBTS_PAID_OFF.length} debt{DEBTS_PAID_OFF.length > 1 ? 's' : ''} this year. That's real progress.
@@ -425,7 +424,7 @@ export function ScreenDebts() {
                     </div>
                     <div style={{ flex:1 }}>
                       <div style={{ fontSize:13, fontWeight:600, color:M.ink }}>{d.name}</div>
-                      <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>Paid off {fmtDate(d.paidDate, 'long')} Â· {fmtEurInt(d.paidAmount)}</div>
+                      <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>Paid off {fmtDate(d.paidDate, 'long')} · {fmtEurInt(d.paidAmount)}</div>
                     </div>
                   </div>
                   {i < DEBTS_PAID_OFF.length - 1 && <div style={{ height:1, background:M.sage+'22', margin:'0 0 0 48px' }}/>}
@@ -472,7 +471,7 @@ export function ScreenDebts() {
                 <I name={debtTypeIcon[manageDebt.type]||'card'} size={18} color={manageDebt.color}/>
               </div>
               <div>
-                <div className="m-h2" style={{ marginBottom:0 }}>{manageDebt.name.split('Â·')[0].trim()}</div>
+                <div className="m-h2" style={{ marginBottom:0 }}>{manageDebt.name.split('·')[0].trim()}</div>
                 <div style={{ fontSize:12, color:M.ink3 }}>{fmtEurInt(manageDebt.balance)} remaining</div>
               </div>
             </div>
@@ -567,7 +566,7 @@ export function ScreenCustomGraphCreate() {
               value={name}
               onChange={e => setName(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && name.trim() && setStep(1)}
-              placeholder="e.g. Variable spending, Subscriptionsâ€¦"
+              placeholder="e.g. Variable spending, Subscriptions…"
               style={{ width:'100%', padding:'14px 16px', borderRadius:12, border:`1.5px solid ${M.sage}`, fontSize:16, fontFamily:M.fontUI, background:M.paper, outline:'none', boxSizing:'border-box', marginBottom:20 }}
             />
             <div style={{ display:'flex', flexWrap:'wrap', gap:8, marginBottom:20 }}>
@@ -652,4 +651,4 @@ export function ScreenCustomGraphCreate() {
     </div>
   );
 }
-
+

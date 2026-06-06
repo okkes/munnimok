@@ -60,7 +60,7 @@ function EventCard({ ev, onClick }) {
         <div style={{ position: 'absolute', bottom: 14, left: 16, right: 16 }}>
           <div style={{ color: '#fff', fontSize: 18, fontWeight: 700, fontFamily: M.fontDisp, textShadow: '0 1px 6px rgba(0,0,0,0.5)' }}>{ev.name}</div>
           <div style={{ color: 'rgba(255,255,255,0.82)', fontSize: 12, marginTop: 3, textShadow: '0 1px 4px rgba(0,0,0,0.5)' }}>
-            {fmtDate(ev.start)} â€“ {fmtDate(ev.end)}
+            {fmtDate(ev.start)} – {fmtDate(ev.end)}
           </div>
         </div>
         <div style={{ position: 'absolute', top: 12, right: 12, padding: '4px 10px', borderRadius: 999, background: status.bg, color: status.color, fontSize: 10, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', backdropFilter: 'blur(4px)' }}>{status.label}</div>
@@ -101,9 +101,9 @@ export function ScreenEventDetail({ params }) {
           </div>
         </div>
         <div style={{ position: 'absolute', left: 20, right: 20, bottom: 18 }}>
-          <div style={{ display: 'inline-block', padding: '4px 10px', borderRadius: 999, background: 'rgba(255,255,255,0.18)', color: '#fff', fontSize: 10, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 8 }}>Closed Â· 7 days</div>
+          <div style={{ display: 'inline-block', padding: '4px 10px', borderRadius: 999, background: 'rgba(255,255,255,0.18)', color: '#fff', fontSize: 10, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 8 }}>Closed · 7 days</div>
           <div style={{ fontFamily: M.fontDisp, fontSize: 26, fontWeight: 600, color: '#fff', letterSpacing: '-0.02em' }}>{ev.name}</div>
-          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.75)', marginTop: 2 }}>{fmtDate(ev.start)} â€“ {fmtDate(ev.end)}</div>
+          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.75)', marginTop: 2 }}>{fmtDate(ev.start)} – {fmtDate(ev.end)}</div>
         </div>
       </div>
 
@@ -111,7 +111,7 @@ export function ScreenEventDetail({ params }) {
         <div className="m-card" style={{ padding: 18, marginBottom: 14, border: `1px solid ${M.line}` }}>
           <div className="m-cap">Total spent</div>
           <div className="m-num" style={{ fontSize: 32, fontWeight: 600, fontFamily: M.fontDisp, marginTop: 4 }}>{fmtEur(ev.total)}</div>
-          <div style={{ fontSize: 12, color: M.ink3, marginTop: 2 }}>{ev.txCount} transactions Â· â‚¬{(ev.total/7).toFixed(0)}/day avg</div>
+          <div style={{ fontSize: 12, color: M.ink3, marginTop: 2 }}>{ev.txCount} transactions · €{(ev.total/7).toFixed(0)}/day avg</div>
           <div style={{ marginTop: 14 }}>
             <StackedBar segments={breakdown.map(b => ({ value: b.amount, color: b.color }))} height={8}/>
           </div>
@@ -134,7 +134,7 @@ export function ScreenEventDetail({ params }) {
           ))}
         </div>
 
-        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Transactions Â· {ev.txCount}</div>
+        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Transactions · {ev.txCount}</div>
         <div className="m-card" style={{ padding:'0 16px', border:`1px solid ${M.line}`, marginBottom:14 }}>
           {evTx.map((t, i, a) => (
             <React.Fragment key={t.id}>
@@ -143,7 +143,7 @@ export function ScreenEventDetail({ params }) {
             </React.Fragment>
           ))}
         </div>
-        <LinkTransactionsCard txs={TRANSACTIONS.slice(6, 14)} label="from this date range â€” select to add"/>
+        <LinkTransactionsCard txs={TRANSACTIONS.slice(6, 14)} label="from this date range — select to add"/>
       </div>
     </div>
   );
@@ -256,4 +256,3 @@ export function Toggle({ on }) {
     </div>
   );
 }
-

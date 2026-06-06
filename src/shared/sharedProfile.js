@@ -1,4 +1,4 @@
-const SD_KEY = (profileId) => `munni_shared_data_${profileId}`;
+﻿const SD_KEY = (profileId) => `munni_shared_data_${profileId}`;
 
 export function readSharedData(profileId) {
   try { return JSON.parse(localStorage.getItem(SD_KEY(profileId)) || '{}'); } catch { return {}; }

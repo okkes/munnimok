@@ -62,7 +62,7 @@ export function ScreenTransactions() {
             ref={searchRef}
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Search transactionsâ€¦"
+            placeholder="Search transactions…"
             style={{ flex:1, border:'none', outline:'none', fontSize:15, fontFamily:M.fontUI, background:'transparent', color:M.ink }}
           />
           <button className="m-tap" onClick={() => { setSearchOpen(false); setQuery(''); }}
@@ -234,7 +234,7 @@ export function ScreenTxDetail({ params }) {
         {isLockedByOther && (
           <div style={{ margin:'0 0 10px', padding:'10px 14px', borderRadius:12, background:M.ochreSoft, border:`1px solid ${M.ochre}`, display:'flex', alignItems:'center', gap:8 }}>
             <I name="lock" size={14} color={M.ochre}/>
-            <span style={{ fontSize:13, color:M.ochre, fontWeight:500 }}>{_lockedByName} is editing this transaction â€” view only</span>
+            <span style={{ fontSize:13, color:M.ochre, fontWeight:500 }}>{_lockedByName} is editing this transaction — view only</span>
           </div>
         )}
         <div style={{ pointerEvents: isLockedByOther ? 'none' : 'auto', opacity: isLockedByOther ? 0.65 : 1 }}>
@@ -248,13 +248,13 @@ export function ScreenTxDetail({ params }) {
             <IcoMDI name={primaryCat.icon || 'help-circle-outline'} size={28} color={M.ink2}/>
           </div>
           <div className="m-num" style={{ fontSize: 38, fontWeight: 600, color: heroAmount > 0 ? M.sage : (heroAmount === 0 ? M.ink3 : M.ink), letterSpacing: '-0.025em' }}>
-            {heroAmount > 0 ? '+' : heroAmount < 0 ? 'âˆ’' : ''}{fmtEur(Math.abs(heroAmount))}
+            {heroAmount > 0 ? '+' : heroAmount < 0 ? '−' : ''}{fmtEur(Math.abs(heroAmount))}
           </div>
           <div className="m-h2" style={{ marginTop: 14 }}>{tx.merchant}</div>
-          <div style={{ fontSize: 13, color: M.ink3, marginTop: 4 }}>{fmtDate(tx.date, 'long')} Â· {tx.time}</div>
+          <div style={{ fontSize: 13, color: M.ink3, marginTop: 4 }}>{fmtDate(tx.date, 'long')} · {tx.time}</div>
         </div>
 
-        {/* Categories â€” own card */}
+        {/* Categories — own card */}
         <div className="m-card" style={{ padding: '12px 16px', marginBottom: 14, border: `1px solid ${M.line}`, position:'relative' }}>
           <div className="m-cap" style={{ marginBottom: 8 }}>Categories</div>
           {txCats.map((c, i) => {
@@ -268,11 +268,11 @@ export function ScreenTxDetail({ params }) {
                   </div>
                   <div style={{ flex:1 }}>
                     <div style={{ fontSize:13, fontWeight:500, fontStyle: isUncategorized ? 'italic' : 'normal', color: isUncategorized ? M.ink3 : M.ink }}>{catPath(cat) || c.catId}</div>
-                    {isUncategorized && <div style={{ fontSize:10, color:M.ink4, marginTop:1 }}>Auto-set Â· add a category above to replace</div>}
+                    {isUncategorized && <div style={{ fontSize:10, color:M.ink4, marginTop:1 }}>Auto-set · add a category above to replace</div>}
                   </div>
                   <div className="m-num" style={{ fontSize:13, color: isUncategorized ? M.ink4 : M.ink2 }}>{fmtEur(c.amount)}</div>
                   {!isUncategorized && (
-                    <button onClick={() => removeCategory(i)} style={{ background:'none', border:'none', color:M.clay, padding:'0 4px', fontSize:18, lineHeight:1, cursor:'pointer', fontFamily:M.fontUI }}>Ã—</button>
+                    <button onClick={() => removeCategory(i)} style={{ background:'none', border:'none', color:M.clay, padding:'0 4px', fontSize:18, lineHeight:1, cursor:'pointer', fontFamily:M.fontUI }}>×</button>
                   )}
                 </div>
                 {i < txCats.length - 1 && <Divider/>}
@@ -313,7 +313,7 @@ export function ScreenTxDetail({ params }) {
 
         {/* General info card */}
         <div className="m-card" style={{ padding: '4px 16px', marginBottom: 14, border: `1px solid ${M.line}` }}>
-          <DetailRow label="Account" value={account?.name || 'â€”'}/>
+          <DetailRow label="Account" value={account?.name || '—'}/>
           <Divider inset={0}/>
           {(() => {
             const savAcct = tx.savingAccount ? ACCOUNTS.find(a => a.id === tx.savingAccount) : null;
@@ -321,7 +321,7 @@ export function ScreenTxDetail({ params }) {
               <div className="m-tap" onClick={() => setShowSavingPicker(true)} style={{ display:'flex', alignItems:'center', gap:10, padding:'13px 0' }}>
                 <div style={{ fontSize:12, color:M.ink3, width:96 }}>Saving account</div>
                 <div style={{ flex:1, fontSize:13, color:savAcct ? M.ink : M.ink4 }}>
-                  {savAcct ? savAcct.name : 'None â€” tap to attach'}
+                  {savAcct ? savAcct.name : 'None — tap to attach'}
                 </div>
                 <I name="caretR" size={14} color={M.ink4}/>
               </div>
@@ -330,7 +330,7 @@ export function ScreenTxDetail({ params }) {
           {showOriginal && (
             <>
               <Divider inset={0}/>
-              <DetailRow label="Original" value={`${tx.amount > 0 ? '+' : 'âˆ’'}${fmtEur(Math.abs(tx.amount))}`}/>
+              <DetailRow label="Original" value={`${tx.amount > 0 ? '+' : '−'}${fmtEur(Math.abs(tx.amount))}`}/>
             </>
           )}
           <Divider inset={0}/>
@@ -344,11 +344,11 @@ export function ScreenTxDetail({ params }) {
                       <I name={linkedRecurring.icon} size={14} color={M.ink3}/>
                       <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{linkedRecurring.name}</span>
                     </>
-                  ) : 'Link to recurringâ€¦'}
+                  ) : 'Link to recurring…'}
                 </div>
                 {linkedRecurring ? (
                   <button className="m-tap" onClick={e => { e.stopPropagation(); updateTx(tx.id, { recurId: null }); }}
-                    style={{ background:'none', border:'none', color:M.clay, fontSize:16, lineHeight:1, cursor:'pointer', fontFamily:M.fontUI, padding:'0 4px' }}>Ã—</button>
+                    style={{ background:'none', border:'none', color:M.clay, fontSize:16, lineHeight:1, cursor:'pointer', fontFamily:M.fontUI, padding:'0 4px' }}>×</button>
                 ) : (
                   <I name="caretR" size={14} color={M.ink4}/>
                 )}
@@ -366,7 +366,7 @@ export function ScreenTxDetail({ params }) {
                 onChange={e => setNoteText(e.target.value.slice(0, NOTE_MAX))}
                 onBlur={() => saveNote(noteText)}
                 rows={noteText ? Math.min(5, Math.ceil(noteText.length / 40) + 1) : 2}
-                placeholder="Add a noteâ€¦"
+                placeholder="Add a note…"
                 style={{ flex:1, border:`1px solid ${M.line}`, borderRadius:8, padding:'6px 8px', fontSize:13, fontFamily:M.fontUI, resize:'none', outline:'none', background:M.paper2, color:M.ink, lineHeight:1.5 }}
               />
               <div style={{ fontSize:10, color:M.ink4, alignSelf:'flex-end', paddingBottom:2, minWidth:30, textAlign:'right' }}>{noteText.length}/{NOTE_MAX}</div>
@@ -388,7 +388,7 @@ export function ScreenTxDetail({ params }) {
                       </div>
                       <div style={{ flex:1 }}>
                         <div style={{ fontSize:14, fontWeight:500 }}>{r.name}</div>
-                        <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{fmtEur(r.amount)}/mo Â· {ordinal(r.day)} of month</div>
+                        <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{fmtEur(r.amount)}/mo · {ordinal(r.day)} of month</div>
                       </div>
                       {linkedRecurring?.id === r.id && <I name="check" size={16} color={M.sage}/>}
                     </div>
@@ -461,14 +461,14 @@ export function ScreenTxDetail({ params }) {
             <div style={{ display:'flex', gap:12, alignItems:'center' }}>
               <div style={{ width: 40, height: 52, borderRadius: 6, background: M.paper2, border: `1px solid ${M.line}`, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow:'hidden' }}>
                 {tx.receiptPhoto ? (
-                  <div style={{ width:'100%', height:'100%', background:'linear-gradient(135deg,#f5f5f5 0%,#eee 100%)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16 }}>ðŸ§¾</div>
+                  <div style={{ width:'100%', height:'100%', background:'linear-gradient(135deg,#f5f5f5 0%,#eee 100%)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16 }}>🧾</div>
                 ) : (
                   <I name="receipt" size={20} color={M.ink2}/>
                 )}
               </div>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 500 }}>{tx.receiptStore ? `${tx.receiptStore} Â· receipt` : `${tx.merchant} Â· receipt`}</div>
-                <div style={{ fontSize: 11, color: M.ink3, marginTop: 2 }}>{tx.receiptStore ? `${tx.receiptItems?.length || 0} items` : 'Photo captured'} Â· {fmtEur(tx.receiptTotal || Math.abs(tx.amount))}</div>
+                <div style={{ fontSize: 13, fontWeight: 500 }}>{tx.receiptStore ? `${tx.receiptStore} · receipt` : `${tx.merchant} · receipt`}</div>
+                <div style={{ fontSize: 11, color: M.ink3, marginTop: 2 }}>{tx.receiptStore ? `${tx.receiptItems?.length || 0} items` : 'Photo captured'} · {fmtEur(tx.receiptTotal || Math.abs(tx.amount))}</div>
                 <div style={{ display:'flex', gap:6, marginTop:6 }}>
                   <button className="m-tap" style={{ fontSize:11, fontWeight:600, color:M.ink3, background:M.paper2, border:`1px solid ${M.line}`, borderRadius:6, padding:'4px 8px', cursor:'pointer', fontFamily:M.fontUI }}>
                     Edit
@@ -489,7 +489,7 @@ export function ScreenTxDetail({ params }) {
                 <div style={{ fontSize: 12, color: M.ink3, marginBottom: 6 }}>No receipt yet</div>
                 <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
                   <button className="m-tap" onClick={() => updateTx(tx.id, { hasReceipt: true, receiptPhoto: true, receiptItems: [{ name: 'Captured item', qty: 1, price: Math.abs(tx.amount) }], receiptTotal: Math.abs(tx.amount) })} style={{ fontSize:11, fontWeight:600, color:M.sage, background:M.sageSoft, border:'none', borderRadius:6, padding:'4px 8px', cursor:'pointer', fontFamily:M.fontUI }}>
-                    ðŸ“· Take photo
+                    📷 Take photo
                   </button>
                   <button className="m-tap" onClick={() => nav.push('integrations', { sourceTxId: tx.id })} style={{ fontSize:11, fontWeight:600, color:M.ink2, background:M.paper2, border:`1px solid ${M.line}`, borderRadius:6, padding:'4px 8px', cursor:'pointer', fontFamily:M.fontUI }}>
                     Get from connected store
@@ -512,10 +512,10 @@ export function ScreenTxDetail({ params }) {
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 13, fontWeight: 500 }}>{originalTx.merchant}</div>
-                  <div style={{ fontSize: 11, color: M.ink3, marginTop: 1 }}>{fmtDate(originalTx.date)} Â· original {fmtEur(Math.abs(originalTx.amount))}</div>
+                  <div style={{ fontSize: 11, color: M.ink3, marginTop: 1 }}>{fmtDate(originalTx.date)} · original {fmtEur(Math.abs(originalTx.amount))}</div>
                 </div>
                 <div className="m-num" style={{ fontWeight: 600, color: M.clay }}>
-                  {netOriginalTx < 0 ? 'âˆ’' : ''}{fmtEur(Math.abs(netOriginalTx))}
+                  {netOriginalTx < 0 ? '−' : ''}{fmtEur(Math.abs(netOriginalTx))}
                 </div>
                 <I name="caretR" size={14} color={M.ink4}/>
               </div>
@@ -526,7 +526,7 @@ export function ScreenTxDetail({ params }) {
         {/* Reimbursed by (this expense has a reimbursement) */}
         {linkedTx && (
           <>
-            <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Reimbursed by Â· 1</div>
+            <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Reimbursed by · 1</div>
             <div className="m-card" style={{ padding: '4px 16px', marginBottom: 14, border: `1px solid ${M.line}` }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0' }}>
                 <div className="m-tap" style={{ display:'flex', alignItems:'center', gap:12, flex:1, minWidth:0 }}
@@ -536,13 +536,13 @@ export function ScreenTxDetail({ params }) {
                   </div>
                   <div style={{ flex: 1, minWidth:0 }}>
                     <div style={{ fontSize: 13, fontWeight: 500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{linkedTx.merchant}</div>
-                    <div style={{ fontSize: 11, color: M.ink3, marginTop: 1 }}>{fmtDate(linkedTx.date)} Â· reimbursed</div>
+                    <div style={{ fontSize: 11, color: M.ink3, marginTop: 1 }}>{fmtDate(linkedTx.date)} · reimbursed</div>
                   </div>
                   <div className="m-num" style={{ fontWeight: 600, color: M.sage }}>+{fmtEur(linkedTx.amount)}</div>
                   <I name="caretR" size={14} color={M.ink4}/>
                 </div>
                 <button className="m-tap" onClick={() => updateTx(linkedTx.id, { linkedTo: undefined })}
-                  style={{ background:'none', border:'none', color:M.clay, fontSize:18, lineHeight:1, cursor:'pointer', fontFamily:M.fontUI, padding:'0 0 0 8px', flexShrink:0 }}>Ã—</button>
+                  style={{ background:'none', border:'none', color:M.clay, fontSize:18, lineHeight:1, cursor:'pointer', fontFamily:M.fontUI, padding:'0 0 0 8px', flexShrink:0 }}>×</button>
               </div>
             </div>
           </>
@@ -613,7 +613,7 @@ export function ScreenExpenses() {
   const barLabels = periodHistory.map(p => {
     const s = new Date(p.start); const e = new Date(p.end);
     const sm = s.toLocaleString('en-GB',{month:'short'}); const em = e.toLocaleString('en-GB',{month:'short'});
-    return sm === em ? sm : sm+'â€“'+em;
+    return sm === em ? sm : sm+'–'+em;
   });
 
   const selPeriod = periodHistory[pidx] || periodHistory[periodHistory.length - 1];
@@ -713,7 +713,7 @@ export function ScreenExpenses() {
                 <div style={{ overflow:'hidden', maxHeight: isOpen && subs.length > 0 ? 1000 : 0, transition:'max-height 0.3s ease', background: M.paper2 }}>
                   {subs.length > 0 && (
                     <div>
-                      {/* All â€” shows every transaction under this parent */}
+                      {/* All — shows every transaction under this parent */}
                       <Divider inset={0}/>
                       <div className="m-tap" onClick={() => nav.push('categoryDrill', { id: c.id, periodStart: activeStart, periodEnd: activeEnd, periodLabel: periodLabel })}
                         style={{ padding: '11px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -818,7 +818,7 @@ export function ScreenCategoryDrill({ params }) {
       <div className="m-body-scroll">
         <div className="m-card" style={{ padding: 18, marginBottom: 14, border: `1px solid ${M.line}` }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-            <div className="m-cap">Spent Â· {periodBars[selectedBar]?.label || 'this period'}</div>
+            <div className="m-cap">Spent · {periodBars[selectedBar]?.label || 'this period'}</div>
           </div>
           <div className="m-num" style={{ fontSize: 30, fontWeight: 600, marginTop: 4 }}>{fmtEur(total)}</div>
           {/* Interactive bar chart */}
@@ -840,7 +840,7 @@ export function ScreenCategoryDrill({ params }) {
         </div>
 
         <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>
-          Transactions Â· {visibleTxs.length}
+          Transactions · {visibleTxs.length}
         </div>
         {dayKeys.length === 0 ? (
           <div className="m-card" style={{ padding:'24px 0', textAlign:'center', border:`1px solid ${M.line}`, color:M.ink3, fontSize:13 }}>No transactions</div>
@@ -861,4 +861,3 @@ export function ScreenCategoryDrill({ params }) {
     </div>
   );
 }
-

@@ -3,13 +3,11 @@ import { M, I, Divider, StatusBar, AppBar } from '../../app/theme.jsx';
 import { useNav } from '../../app/nav.jsx';
 import { useAppCtx } from '../../app/providers.jsx';
 
-
 export function ScreenLogin() {
   const { logout: logoutFn } = useAppCtx();
   React.useEffect(() => { logoutFn(); }, []);
   return null;
 }
-
 
 export function ScreenSignupGate() {
   const nav = useNav();
@@ -81,7 +79,7 @@ export function ScreenSignupProd() {
         <div className="m-input" style={{ marginBottom: 16 }}>Netherlands</div>
         <div className="m-cap" style={{ marginBottom: 6, paddingLeft: 4 }}>Search your bank</div>
         <div className="m-input empty" style={{ gap: 8, marginBottom: 12 }}>
-          <I name="search" size={16}/> Search 200+ banksâ€¦
+          <I name="search" size={16}/> Search 200+ banks…
         </div>
         <div className="m-card" style={{ padding: '0 16px', border: `1px solid ${M.line}` }}>
           {['ING', 'Rabobank', 'ABN AMRO', 'N26', 'Bunq'].map((b, i, a) => (
@@ -115,7 +113,7 @@ export function ScreenSignupDemo() {
         <div className="m-cap" style={{ marginBottom: 6, paddingLeft: 4 }}>API base URL</div>
         <div className="m-input" style={{ fontFamily: M.fontMono, fontSize: 13, marginBottom: 14 }}>https://api.munni.local</div>
         <div className="m-cap" style={{ marginBottom: 6, paddingLeft: 4 }}>API token (optional)</div>
-        <div className="m-input empty" style={{ marginBottom: 14 }}>paste tokenâ€¦</div>
+        <div className="m-input empty" style={{ marginBottom: 14 }}>paste token…</div>
         <button className="m-btn outline sm m-tap" style={{ marginBottom: 24 }}>
           <I name="check" size={14}/> Test connection
         </button>
@@ -127,4 +125,4 @@ export function ScreenSignupDemo() {
       </div>
     </div>
   );
-}
+}

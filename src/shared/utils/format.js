@@ -5,9 +5,9 @@
   const lang = localStorage.getItem('munni_lang') || 'en';
   const now = Date.now();
   const diff = Math.floor((now - d.getTime()) / 1000);
-  const JUST_NOW = { en:'just now', nl:'zojuist', tr:'az Ã¶nce' };
-  const MIN_AGO  = { en:(n)=>`${n} min ago`, nl:(n)=>`${n} min geleden`, tr:(n)=>`${n} dk Ã¶nce` };
-  const YEST     = { en:'yesterday', nl:'gisteren', tr:'dÃ¼n' };
+  const JUST_NOW = { en:'just now', nl:'zojuist', tr:'az önce' };
+  const MIN_AGO  = { en:(n)=>`${n} min ago`, nl:(n)=>`${n} min geleden`, tr:(n)=>`${n} dk önce` };
+  const YEST     = { en:'yesterday', nl:'gisteren', tr:'dün' };
   if (diff < 60) return JUST_NOW[lang] || JUST_NOW.en;
   if (diff < 3600) return (MIN_AGO[lang] || MIN_AGO.en)(Math.floor(diff / 60));
   const hm = d.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
@@ -22,10 +22,10 @@
 }
 
 export const fmtEur = (n, opts = {}) => {
-  const sign = n < 0 ? 'âˆ’' : (opts.signed && n > 0 ? '+' : '');
+  const sign = n < 0 ? '−' : (opts.signed && n > 0 ? '+' : '');
   const abs = Math.abs(n);
   const s = abs.toLocaleString('nl-NL', { minimumFractionDigits: opts.decimals ?? 2, maximumFractionDigits: opts.decimals ?? 2 });
-  return `${sign}â‚¬${s.replace('.', ',').replace(/,(\d{2})$/, ',$1')}`;
+  return `${sign}€${s.replace('.', ',').replace(/,(\d{2})$/, ',$1')}`;
 };
 export const fmtEurInt = n => fmtEur(n, { decimals: 0 });
 export const fmtDate = (iso, fmt = 'short') => {
@@ -59,14 +59,14 @@ export function computePeriodHistory(day) {
   const result = [];
   const today = new Date();
   // If today hasn't reached the period start day yet, the current period
-  // began in the previous month â€” shift the window back by 1.
+  // began in the previous month — shift the window back by 1.
   const offset = today.getDate() < day ? 1 : 0;
   for (let i = 5; i >= 0; i--) {
     const startDate = new Date(today.getFullYear(), today.getMonth() - offset - i, day);
     const endDate = new Date(today.getFullYear(), today.getMonth() - offset - i + 1, day - 1);
     const fmtShort = d => d.toLocaleDateString('en-GB', { day:'numeric', month:'short' });
     result.push({
-      label: `${fmtShort(startDate)} â€“ ${fmtShort(endDate)}`,
+      label: `${fmtShort(startDate)} – ${fmtShort(endDate)}`,
       start: startDate.toISOString().slice(0,10),
       end: endDate.toISOString().slice(0,10),
       income: 2480, expense: 1220, invest: 300, unallocated: 620
@@ -74,4 +74,4 @@ export function computePeriodHistory(day) {
   }
   return result;
 }
-export const PERIOD_HISTORY = computePeriodHistory(20);
+export const PERIOD_HISTORY = computePeriodHistory(20);

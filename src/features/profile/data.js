@@ -1,5 +1,6 @@
 ﻿import { computeUserDataKey } from '../../shared/utils/user.js';
 import { getDefaultAccounts, getDefaultTxs } from '../accounts/data.js';
+// Schema version — bump when per-user data defaults change
 export const SCHEMA_VERSION = '5';
 
 export function computeProfileKey(method, email) {
@@ -11,8 +12,10 @@ export function computeProfileKey(method, email) {
   return 'munni_profiles';
 }
 
+// Returns the localized name for the default profile when a user signs up with email.
+// The name is determined once at signup and stored in the profile — it never changes after that.
 export function getDefaultProfileName(lang) {
-  const names = { nl: 'Standaard', tr: 'VarsayÄ±lan', en: 'Default' };
+  const names = { nl: 'Standaard', tr: 'Varsayılan', en: 'Default' };
   return names[lang] || 'Default';
 }
 
@@ -22,7 +25,6 @@ export function getDefaultProfiles(method, lang = 'en') {
   if (method === 'bank')   return [{ id:'p_demo',   name:'Demo',    icon:'user', active:true, accountIds:['demo_main','demo_save'], picture:'av7', isDemo:true }];
   return [{ id:'p_email', name:getDefaultProfileName(lang), icon:'user', active:true, accountIds:[], picture:'av1', isDemo:false }];
 }
-
 export function initPerUserData(method, email, lang = 'en') {
   if (!method) return;
 
@@ -47,4 +49,4 @@ export function initPerUserData(method, email, lang = 'en') {
     localStorage.setItem(profileKey, JSON.stringify(getDefaultProfiles(method, lang)));
     window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: profileKey } }));
   }
-}
+}

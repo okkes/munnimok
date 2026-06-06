@@ -267,7 +267,7 @@ export function ScreenFriends() {
                     <div style={{ fontSize:13, fontWeight:600, fontFamily:M.fontMono }}>{inv.toId}</div>
                     <div style={{ fontSize:11, color:M.ochre }}>{t('friends.pending')}</div>
                   </div>
-                  <button className="m-tap" onClick={()=>cancelInvite(inv.id)} style={{ fontSize:11, padding:'4px 10px', borderRadius:8, background:M.paper2, border:`1px solid ${M.line}`, color:M.ink3, cursor:'pointer', fontFamily:M.fontUI }}>âœ•</button>
+                  <button className="m-tap" onClick={()=>cancelInvite(inv.id)} style={{ fontSize:11, padding:'4px 10px', borderRadius:8, background:M.paper2, border:`1px solid ${M.line}`, color:M.ink3, cursor:'pointer', fontFamily:M.fontUI }}>✕</button>
                 </div>
               </React.Fragment>
             ))}
@@ -647,4 +647,3 @@ export function MemberActionSheet({ profile, memberId, onClose }) {
     </Sheet>
   );
 }
-

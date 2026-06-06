@@ -1,5 +1,6 @@
 ﻿import React from 'react';
 import { M } from '../../app/theme.jsx';
+
 export function Sparkline({ data, width = 60, height = 20, color = M.ink, fill, strokeWidth = 1.5 }) {
   if (!data || data.length === 0) return null;
   const min = Math.min(...data), max = Math.max(...data);
@@ -40,7 +41,7 @@ export function BarChart({ data, labels, width = 280, height = 96, highlightLast
               style={{ transformOrigin: `${x + barW/2}px ${valueH + barAreaH}px`, animation: `barRise 0.4s cubic-bezier(0.34,1.56,0.64,1) ${i * 0.04}s both` }}/>
             {showValues && v > 0 && (
               <text x={x + barW / 2} y={valueH - 2} fontSize="8" fill={isSel || (selected < 0 && isLast) ? accent : color} textAnchor="middle" fontFamily="-apple-system,system-ui" fontWeight="600" opacity={opacity < 0.5 ? 0.5 : 1}>
-                {v >= 1000 ? `â‚¬${(v/1000).toFixed(1)}k` : `â‚¬${Math.round(v)}`}
+                {v >= 1000 ? `€${(v/1000).toFixed(1)}k` : `€${Math.round(v)}`}
               </text>
             )}
             {labels && <text x={x + barW / 2} y={height - 2} fontSize="8" fill={M.ink4} textAnchor="middle" fontFamily="-apple-system,system-ui" fontWeight="500">{labels[i]}</text>}
@@ -138,4 +139,4 @@ export function LineChart({ data, width = 320, height = 120, color = M.sage, fil
       ))}
     </svg>
   );
-}
+}

@@ -1,26 +1,25 @@
-import React from 'react';
+﻿import React from 'react';
 import { CATEGORIES, _catExt, catPath } from '../data/categories.js';
 import { fmtEur, fmtDate } from '../utils/format.js';
 import { M, I, IcoMDI } from '../../app/theme.jsx';
 import { useTxCtx } from '../../app/providers.jsx';
 
-
 export function HighlightText({ text, query }) {
-  if (!query || !text) return <>{text}</>;
+  if (!query) return <span>{text}</span>;
   const idx = text.toLowerCase().indexOf(query.toLowerCase());
-  if (idx < 0) return <>{text}</>;
+  if (idx === -1) return <span>{text}</span>;
   return (
-    <>
+    <span>
       {text.slice(0, idx)}
-      <mark style={{ background: M.ochreSoft, color: M.ochre, borderRadius: 2, padding: '0 1px' }}>
-        {text.slice(idx, idx + query.length)}
-      </mark>
+      <mark style={{ background: M.ochreSoft, color: M.ochre, borderRadius: 3, padding: '0 2px' }}>{text.slice(idx, idx + query.length)}</mark>
       {text.slice(idx + query.length)}
-    </>
+    </span>
   );
 }
 
+
 export function TxRow({ tx, onClick, showCat = true, showDate = false, dense = false, highlight = '' }) {
+  // Fix undefined categories for saving transactions
   let effectiveCat = tx.cat;
   if (tx.savingAccount && (!effectiveCat || effectiveCat === 'savings' || (!CATEGORIES[effectiveCat] && !_catExt[effectiveCat]))) {
     effectiveCat = tx.amount < 0 ? 'savingDeposit' : 'savingWithdraw';
