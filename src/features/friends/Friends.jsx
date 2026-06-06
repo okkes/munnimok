@@ -585,12 +585,8 @@ export function MemberActionSheet({ profile, memberId, onClose }) {
             })}
           </div>
           <button onClick={() => { applyPerm(pendingPerm, removeAccts); setPendingPerm(null); onClose(); }}
-            style={{ width:'100%', padding:'14px 0', background:M.sage, color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>
+            style={{ width:'100%', padding:'14px 0', background:M.sage, color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
             {t('profile.downgradeConfirm')}
-          </button>
-          <button onClick={() => { applyPerm(pendingPerm, new Set()); setPendingPerm(null); onClose(); }}
-            style={{ width:'100%', padding:'14px 0', background:M.paper2, color:M.ink, border:`1px solid ${M.line}`, borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
-            {t('profile.downgradeSkip')}
           </button>
         </div>
       </Sheet>
