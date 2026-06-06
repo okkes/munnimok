@@ -9,6 +9,8 @@ import { BarChart } from '../../shared/components/Charts.jsx';
 import { useAppCtx, useTxCtx, useProfiles, Stat } from '../../app/providers.jsx';
 import { Toggle, FormRow } from '../events/Events.jsx';
 import { HOME_CARDS_DEFAULT } from '../accounts/Accounts.jsx';
+import { ProfileAvatar } from '../profile/Profile.jsx';
+import { CategoryPicker } from '../review/Review.jsx';
 import { DUTCH_BANKS } from '../accounts/data.js';
 import { getUserId, getUserSyncKey } from '../../shared/utils/user.js';
 
