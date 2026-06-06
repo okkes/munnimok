@@ -1,11 +1,13 @@
 import React from 'react';
 import { CATEGORIES, _catExt, fmtEur, fmtEurInt, fmtDate, PORTFOLIO, computePeriodHistory, getUserSyncKey, fmtSyncTime, getUserId } from '../data.jsx';
 import { M, I, IcoMDI, Divider, StatusBar } from '../theme.jsx';
-import { useLang, useNav, Sheet, TabBar } from '../i18n.jsx';
+import { useLang } from '../i18n.jsx';
+import { useNav, Sheet, TabBar } from '../nav.jsx';
 import { useLocalStorage } from '../hooks.jsx';
 import { Sparkline, StackedBar } from '../components.jsx';
 import { useProfiles, useTxCtx, useRecurCtx, useAlloc, useConnectedAccounts, useProfileBudgets, useProfileGoals, useProfileDebts } from '../providers.jsx';
-import { HOME_CARDS_DEFAULT, ProfileAvatar } from './Profile.jsx';
+import { ProfileAvatar } from './Profile.jsx';
+import { HOME_CARDS_DEFAULT } from './Accounts.jsx';
 import { budgetColor, budgetSoft } from './Budgets.jsx';
 
 

@@ -1,12 +1,13 @@
 import React from 'react';
 import { CATEGORIES, _catExt, catPath, fmtEur, fmtDate, ACCOUNTS, TRANSACTIONS, computePeriodHistory, dayLabel, getUserId } from '../data.jsx';
 import { M, I, IcoMDI, Divider, StatusBar, AppBar } from '../theme.jsx';
-import { useLang, useNav, Sheet, TabBar } from '../i18n.jsx';
+import { useLang } from '../i18n.jsx';
+import { useNav, Sheet, TabBar } from '../nav.jsx';
 import { useLocalStorage } from '../hooks.jsx';
 import { BarChart, StackedBar, TxRow } from '../components.jsx';
 import { useTxCtx, useRecurCtx, useConnectedAccounts, useProfiles } from '../providers.jsx';
 import { CategoryPicker } from './Review.jsx';
-import { ordinal } from './Profile.jsx';
+import { ordinal } from './Recurring.jsx';
 
 
 export function HighlightText({ text, query }) {

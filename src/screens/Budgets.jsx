@@ -1,7 +1,8 @@
 import React from 'react';
 import { CATEGORIES, fmtEur } from '../data.jsx';
 import { M, I, IcoMDI, Divider, StatusBar, AppBar } from '../theme.jsx';
-import { useLang, useNav } from '../i18n.jsx';
+import { useLang } from '../i18n.jsx';
+import { useNav } from '../nav.jsx';
 import { Donut, TxRow } from '../components.jsx';
 import { useTxCtx, useProfileBudgets } from '../providers.jsx';
 import { Toggle, FormRow } from './Events.jsx';

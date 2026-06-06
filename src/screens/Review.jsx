@@ -1,7 +1,8 @@
 import React from 'react';
 import { CATEGORIES, _catExt, catPath, catNameT, _GROUP_KEYS, fmtEur, fmtDate } from '../data.jsx';
 import { M, I, IcoMDI, Divider, StatusBar, AppBar } from '../theme.jsx';
-import { useLang, useNav, Sheet } from '../i18n.jsx';
+import { useLang } from '../i18n.jsx';
+import { useNav, Sheet } from '../nav.jsx';
 import { useTxCtx } from '../providers.jsx';
 import { HighlightText, DetailRow } from './Tx.jsx';
 

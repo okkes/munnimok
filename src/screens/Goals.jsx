@@ -1,7 +1,8 @@
 import React from 'react';
 import { fmtEur } from '../data.jsx';
 import { M, I, Divider, StatusBar, AppBar } from '../theme.jsx';
-import { useLang, useNav } from '../i18n.jsx';
+import { useLang } from '../i18n.jsx';
+import { useNav } from '../nav.jsx';
 import { StackedBar } from '../components.jsx';
 import { useProfileGoals } from '../providers.jsx';
 import { FormRow } from './Events.jsx';

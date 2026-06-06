@@ -1,7 +1,7 @@
 import React from 'react';
 import { fmtEur, fmtDate, TRANSACTIONS, EVENTS } from '../data.jsx';
 import { M, I, Divider, StatusBar, AppBar } from '../theme.jsx';
-import { useNav, TabBar } from '../i18n.jsx';
+import { useNav, TabBar } from '../nav.jsx';
 import { StackedBar, TxRow } from '../components.jsx';
 
 

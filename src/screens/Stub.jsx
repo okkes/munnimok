@@ -1,6 +1,6 @@
 import React from 'react';
 import { M, I, StatusBar, AppBar } from '../theme.jsx';
-import { useNav } from '../i18n.jsx';
+import { useNav } from '../nav.jsx';
 
 
 export function ScreenStub({ title }) {

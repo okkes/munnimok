@@ -1,11 +1,12 @@
 import React from 'react';
 import { CATEGORIES, fmtEur, fmtEurInt, fmtDate, RECURRING, PORTFOLIO, DEBTS_PAID_OFF, computePeriodHistory, dayLabel, SPEND_HISTORY, DEBT_HISTORY, PERIOD_HISTORY } from '../data.jsx';
 import { M, I, IcoMDI, Divider, StatusBar, AppBar } from '../theme.jsx';
-import { useLang, useNav, Sheet, TabBar } from '../i18n.jsx';
+import { useLang } from '../i18n.jsx';
+import { useNav, Sheet, TabBar } from '../nav.jsx';
 import { useLocalStorage } from '../hooks.jsx';
 import { BarChart, BarChartScrollable } from '../components.jsx';
 import { useTxCtx, useProfileDebts, Stat } from '../providers.jsx';
-import { useAppCtx } from '../App.jsx';
+import { useAppCtx } from '../providers.jsx';
 
 
 export function ScreenIncome() {

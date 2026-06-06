@@ -1,7 +1,7 @@
 import React from 'react';
 import { fmtEur, fmtEurInt, PORTFOLIO, ASSETS } from '../data.jsx';
 import { M, I, Divider, StatusBar, AppBar } from '../theme.jsx';
-import { useNav } from '../i18n.jsx';
+import { useNav } from '../nav.jsx';
 import { Sparkline, LineChart } from '../components.jsx';
 import { Stat } from '../providers.jsx';
 
