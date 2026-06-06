@@ -89,7 +89,7 @@ export function ScreenIntegrations({ params }) {
         </div>
 
         <div style={{ padding:'8px 4px 24px', fontSize:12, color:M.ink3, lineHeight:1.6 }}>
-          Connecting a store lets munni retrieve receipt details not included in your bank statements â€” line items, product names, and totals.
+          Connecting a store lets munni retrieve receipt details not included in your bank statements — line items, product names, and totals.
         </div>
       </div>
     </div>
@@ -363,7 +363,7 @@ export function ScreenAccounts() {
               <div style={{ padding:'12px 14px', borderRadius:10, background:M.sageSoft, display:'flex', gap:10, alignItems:'flex-start' }}>
                 <I name="lock" size={16} color={M.sage}/>
                 <div style={{ fontSize:12, color:M.ink2, lineHeight:1.45 }}>
-                  munni uses <strong>PSD2 Open Banking</strong>. Your credentials are sent directly to {psd2Bank?.name} â€” we never store them.
+                  munni uses <strong>PSD2 Open Banking</strong>. Your credentials are sent directly to {psd2Bank?.name} — we never store them.
                 </div>
               </div>
               <button className="m-btn sage m-tap" onClick={advancePsd2} style={{ marginTop:'auto' }}>Continue to {psd2Bank?.name}</button>
@@ -885,7 +885,7 @@ export function ScreenSavingAccounts() {
         <div style={{ padding:'12px 14px', borderRadius:12, background:M.sageSoft, display:'flex', gap:10, alignItems:'flex-start', marginBottom:8 }}>
           <I name="lock" size={16} color={M.sage}/>
           <div style={{ fontSize:12, color:M.ink2, lineHeight:1.5 }}>
-            Saving accounts are the source of truth for all profiles. <strong>Disabling</strong> a saving account makes it read-only â€” no new transactions will be tracked to it.
+            Saving accounts are the source of truth for all profiles. <strong>Disabling</strong> a saving account makes it read-only — no new transactions will be tracked to it.
           </div>
         </div>
         <div style={{ height:8 }}/>
@@ -921,9 +921,9 @@ export function AccountsSharingOverview() {
       try {
         const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{"accounts":[]}');
         (sd.accounts || []).forEach(a => {
-          if (a.attachedBy === myId) return; // own account â€” not "shared with me"
+          if (a.attachedBy === myId) return; // own account — not "shared with me"
           results.push({
-            id: `${p.id}_${a.id}`, name: a.name || 'â€”', iban: a.iban || '',
+            id: `${p.id}_${a.id}`, name: a.name || '—', iban: a.iban || '',
             color: a.color, type: a.type, fromName: p.ownerDisplay || p.ownerId || '?',
             profileName: p.name, profileId: p.id,
             permission: (p.members || []).find(m => m.userId === myId)?.permission || 'contributor',
@@ -1188,7 +1188,7 @@ export function ScreenAccountsAll() {
               <div style={{ padding:'12px 14px', borderRadius:10, background:M.sageSoft, display:'flex', gap:10, alignItems:'flex-start' }}>
                 <I name="lock" size={16} color={M.sage}/>
                 <div style={{ fontSize:12, color:M.ink2, lineHeight:1.45 }}>
-                  munni uses <strong>PSD2 Open Banking</strong>. Your credentials are sent directly to {psd2Bank?.name} â€” we never store them.
+                  munni uses <strong>PSD2 Open Banking</strong>. Your credentials are sent directly to {psd2Bank?.name} — we never store them.
                 </div>
               </div>
               <button className="m-btn sage m-tap" onClick={advancePsd2} style={{ marginTop:'auto' }}>Continue to {psd2Bank?.name}</button>
@@ -1327,7 +1327,7 @@ export function ScreenAccountsAll() {
             </div>
             <div style={{ padding:'12px 14px', borderRadius:12, background:M.sageSoft, display:'flex', gap:10, alignItems:'flex-start', marginBottom:14 }}>
               <I name="lock" size={16} color={M.sage}/>
-              <div style={{ fontSize:12, color:M.ink2, lineHeight:1.45 }}>Bank accounts connect via PSD2 Open Banking. munni has read-only access â€” we can never move money.</div>
+              <div style={{ fontSize:12, color:M.ink2, lineHeight:1.45 }}>Bank accounts connect via PSD2 Open Banking. munni has read-only access — we can never move money.</div>
             </div>
 
             <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('accounts.savingSection')}</div>

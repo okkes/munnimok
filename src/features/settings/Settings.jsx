@@ -18,7 +18,7 @@ export function ScreenLanguagePicker({ fromOnboarding = false, onBack }) {
   const mainLangs = [
     { code:'en', name:'English', native:'English', twemoji:'1f1ec-1f1e7' },
     { code:'nl', name:'Dutch', native:'Nederlands', twemoji:'1f1f3-1f1f1' },
-    { code:'tr', name:'Turkish', native:'TÃ¼rkÃ§e', twemoji:'1f1f9-1f1f7' },
+    { code:'tr', name:'Turkish', native:'Türkçe', twemoji:'1f1f9-1f1f7' },
   ];
 
   const filteredOther = OTHER_LANGUAGES.filter(l =>
@@ -174,7 +174,7 @@ export function ScreenPeriods() {
       />
       <div className="m-body-scroll">
         <div style={{ padding:'12px 16px', borderRadius:12, background:M.sageSoft, marginBottom:18, fontSize:13, color:M.sage, lineHeight:1.6 }}>
-          <strong>What is a period?</strong> munni organises your finances in periods. A period starts on your chosen day â€” ideally when your salary arrives â€” so income and expenses always line up.
+          <strong>What is a period?</strong> munni organises your finances in periods. A period starts on your chosen day — ideally when your salary arrives — so income and expenses always line up.
         </div>
 
         <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Period type</div>
@@ -310,12 +310,12 @@ export function ScreenTutorial() {
   const [step, setStep] = React.useState(0);
 
   const STEPS = [
-    { expr:'happy',       speech:"Hi! I'm Munni â€” your finance assistant. I'll show you the key features. It only takes a minute!", noTarget:true },
+    { expr:'happy',       speech:"Hi! I'm Munni — your finance assistant. I'll show you the key features. It only takes a minute!", noTarget:true },
     { expr:'excited',     speech:"New bank transactions need your review! Tap the Review card to check and categorize them.", targetHint:'Review transactions' },
     { expr:'focused',     speech:"Once you're happy with the category, tap Confirm. You can bulk-apply to similar transactions too!", targetHint:'Confirm' },
     { expr:'excited',     speech:"The Allocate section shows your spending plan. Set budgets per topic and track your progress!", targetHint:'Allocate' },
-    { expr:'focused',     speech:"Set your period start day to match when your salary lands â€” keeps income and expenses in sync.", targetHint:'Manage Periods' },
-    { expr:'celebrating', speech:"You're all set! Explore munni and remember â€” I'm always here if you need help. ðŸ’š", noTarget:true, isLast:true },
+    { expr:'focused',     speech:"Set your period start day to match when your salary lands — keeps income and expenses in sync.", targetHint:'Manage Periods' },
+    { expr:'celebrating', speech:"You're all set! Explore munni and remember — I'm always here if you need help. ðŸ’š", noTarget:true, isLast:true },
   ];
   const cur = STEPS[step];
   const next = () => setStep(s => Math.min(s + 1, STEPS.length - 1));
@@ -334,7 +334,7 @@ export function ScreenTutorial() {
       <style>{`@keyframes munniPulse{0%,100%{opacity:.8;transform:scale(1)}50%{opacity:.3;transform:scale(1.05)}}`}</style>
       <StatusBar/>
 
-      {/* Mock screen area â€” fills flex space */}
+      {/* Mock screen area — fills flex space */}
       <div style={{ flex:1, position:'relative', overflow:'hidden' }}>
 
         {step === 0 && (
@@ -343,7 +343,7 @@ export function ScreenTutorial() {
               <I name="wallet" size={30} color={M.sage}/>
             </div>
             <div style={{ fontSize:22, fontWeight:700, color:M.ink, lineHeight:1.3 }}>Welcome to munni</div>
-            <div style={{ fontSize:13, color:M.ink3, lineHeight:1.7, maxWidth:250 }}>Your smart personal finance companion â€” built around the way you actually get paid.</div>
+            <div style={{ fontSize:13, color:M.ink3, lineHeight:1.7, maxWidth:250 }}>Your smart personal finance companion — built around the way you actually get paid.</div>
           </div>
         )}
 
@@ -434,7 +434,7 @@ export function ScreenTutorial() {
           <div style={{ height:'100%', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'0 36px', textAlign:'center', gap:8 }}>
             <div style={{ fontSize:52, lineHeight:1 }}>ðŸŽ‰</div>
             <div style={{ fontSize:22, fontWeight:700, color:M.ink, marginTop:4 }}>You're all set!</div>
-            <div style={{ fontSize:13, color:M.ink3, lineHeight:1.7, maxWidth:250 }}>Explore munni â€” and come back to this tutorial anytime from your Profile.</div>
+            <div style={{ fontSize:13, color:M.ink3, lineHeight:1.7, maxWidth:250 }}>Explore munni — and come back to this tutorial anytime from your Profile.</div>
           </div>
         )}
       </div>
@@ -1265,7 +1265,7 @@ export function ScreenNotifications() {
           ))}
         </div>
 
-        {/* Error log â€” Show Logs button */}
+        {/* Error log — Show Logs button */}
         <LogPanel/>
       </div>
     </div>
@@ -1275,15 +1275,15 @@ export function ScreenNotifications() {
 const DEFAULT_DEV_LOGS = [
   { id:'l1',  level:'error', msg:'localStorage key munni_topics_p_demo parse error: Unexpected token', ts:'Today 09:18',     src:'useLocalStorage:14' },
   { id:'l2',  level:'warn',  msg:'CategoryPicker: unknown catId "custom_xyz" in profile p_demo',        ts:'Today 11:42',     src:'CategoryPicker:87' },
-  { id:'l3',  level:'warn',  msg:'TxCtx: transaction t_sync_1747 has no matching account â€” skipped',   ts:'Yesterday 18:30', src:'TxCtx:52' },
+  { id:'l3',  level:'warn',  msg:'TxCtx: transaction t_sync_1747 has no matching account — skipped',   ts:'Yesterday 18:30', src:'TxCtx:52' },
   { id:'l4',  level:'info',  msg:'PeriodCtx: period_day changed 1â†’18, rebuilding period history',       ts:'Yesterday 15:02', src:'PeriodCtx:34' },
   { id:'l5',  level:'info',  msg:'AllocProvider: loaded 3 topics for profile p1',                       ts:'Yesterday 14:55', src:'AllocProvider:21' },
-  { id:'l6',  level:'error', msg:'ScreenExpenses: failed to parse munni_budgets_p2 â€” defaulting to []', ts:'Yesterday 12:11', src:'ScreenExpenses:203' },
+  { id:'l6',  level:'error', msg:'ScreenExpenses: failed to parse munni_budgets_p2 — defaulting to []', ts:'Yesterday 12:11', src:'ScreenExpenses:203' },
   { id:'l7',  level:'warn',  msg:'SyncHandler: duplicate transaction id tsync_1748 skipped',            ts:'Yesterday 10:05', src:'SyncHandler:88' },
   { id:'l8',  level:'info',  msg:'ProfilesProvider: loaded key munni_profiles_google (1 profiles)',     ts:'Yesterday 09:30', src:'ProfilesProvider:12' },
-  { id:'l9',  level:'warn',  msg:'ReviewSwipe: previewTx cat "other" has no icon â€” using fallback',     ts:'2 days ago 16:44', src:'ReviewSwipe:61' },
+  { id:'l9',  level:'warn',  msg:'ReviewSwipe: previewTx cat "other" has no icon — using fallback',     ts:'2 days ago 16:44', src:'ReviewSwipe:61' },
   { id:'l10', level:'info',  msg:'TxCtx: 142 transactions loaded for account main',                     ts:'2 days ago 08:00', src:'TxCtx:29' },
-  { id:'l11', level:'error', msg:'GoalsCtx: munni_goals_p3 corrupt â€” resetting to defaults',            ts:'3 days ago 20:15', src:'GoalsCtx:17' },
+  { id:'l11', level:'error', msg:'GoalsCtx: munni_goals_p3 corrupt — resetting to defaults',            ts:'3 days ago 20:15', src:'GoalsCtx:17' },
   { id:'l12', level:'info',  msg:'LangCtx: language changed to nl',                                     ts:'3 days ago 11:22', src:'LangCtx:8' },
 ];
 

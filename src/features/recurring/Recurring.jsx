@@ -227,16 +227,16 @@ export function ScreenRecurringDetail({ params }) {
           <Divider inset={0}/>
           <DetailRow label="Billing day" value={`${ordinal(r.day)} of each month`}/>
           <Divider inset={0}/>
-          <DetailRow label="Active since" value={r.since || 'â€”'}/>
+          <DetailRow label="Active since" value={r.since || '—'}/>
           <Divider inset={0}/>
-          <DetailRow label="Duration" value={r.until ? `Until ${r.until}` : 'Ongoing â€” no end date'}/>
+          <DetailRow label="Duration" value={r.until ? `Until ${r.until}` : 'Ongoing — no end date'}/>
           <Divider inset={0}/>
-          <DetailRow label="Next payment" value={r.next || 'â€”'}/>
+          <DetailRow label="Next payment" value={r.next || '—'}/>
         </div>
 
         <div className="m-card" style={{ padding:16, marginBottom:14, border:`1px solid ${M.line}` }}>
           <div className="m-cap" style={{ marginBottom:10 }}>History · 6 periods</div>
-          <BarChart data={history} labels={['Sepâ€“Oct','Octâ€“Nov','Novâ€“Dec','Decâ€“Jan','Janâ€“Feb','Febâ€“Mar']} showValues height={84} accent={M.sage}/>
+          <BarChart data={history} labels={['Sep–Oct','Oct–Nov','Nov–Dec','Dec–Jan','Jan–Feb','Feb–Mar']} showValues height={84} accent={M.sage}/>
         </div>
 
         {(r.type === 'subs' || r.type === 'fixed') && (
@@ -343,7 +343,7 @@ export function ScreenRecurringCreate() {
           ))}
         </div>
         <div style={{ fontSize:11, color:M.ink3, marginBottom:18, paddingLeft:4 }}>
-          {type === 'fixed' ? 'Rent, utilities, insurance â€” predictable monthly outflows.' : 'Streaming, apps, memberships â€” cancellable anytime.'}
+          {type === 'fixed' ? 'Rent, utilities, insurance — predictable monthly outflows.' : 'Streaming, apps, memberships — cancellable anytime.'}
         </div>
 
         <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Icon</div>
@@ -372,14 +372,14 @@ export function ScreenRecurringCreate() {
         <div className="m-card" style={{ padding:16, marginBottom:14, border:`1px solid ${M.line}` }}>
           <div className="m-tap" onClick={() => setEndless(!endless)} style={{ display:'flex', alignItems:'center', gap:12, cursor:'pointer' }}>
             <div style={{ flex:1 }}>
-              <div style={{ fontSize:14, fontWeight:500 }}>Ongoing â€” no end date</div>
+              <div style={{ fontSize:14, fontWeight:500 }}>Ongoing — no end date</div>
               <div style={{ fontSize:11, color:M.ink3, marginTop:2 }}>Runs indefinitely until you cancel it</div>
             </div>
             <Toggle on={endless}/>
           </div>
           {!endless && (
             <div style={{ marginTop:14, paddingTop:14, borderTop:`1px solid ${M.line2}` }}>
-              <FormRow label="End date" value="â€”" caretR/>
+              <FormRow label="End date" value="—" caretR/>
             </div>
           )}
         </div>
@@ -411,7 +411,7 @@ export function ScreenRecurringDeals({ params }) {
 
   const DEALS_MAP = {
     r3: [
-      { id:'d1', name:'Spotify Family', price:-15.99, saving:null, desc:'Up to 6 accounts â€” â‚¬2.67/person', badge:'Best for groups', badgeColor:M.sage },
+      { id:'d1', name:'Spotify Family', price:-15.99, saving:null, desc:'Up to 6 accounts — â‚¬2.67/person', badge:'Best for groups', badgeColor:M.sage },
       { id:'d2', name:'YouTube Music', price:-9.99, saving:0, desc:'Similar library + YouTube integration', badge:'Same price', badgeColor:M.ink3 },
       { id:'d3', name:'Deezer Premium', price:-10.99, saving:-1.00, desc:'High-fidelity FLAC audio', badge:'â‚¬1 more/mo', badgeColor:M.clay },
       { id:'d4', name:'Deezer Free', price:0, saving:9.99, desc:'Ad-supported, 64 Mbit quality', badge:'Free option', badgeColor:M.sage },

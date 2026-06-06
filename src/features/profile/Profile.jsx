@@ -368,7 +368,7 @@ export function ScreenProfiles() {
                         <ProfileAvatar profile={fakeProfile} size={36}/>
                         <div style={{ flex:1, minWidth:0 }}>
                           <div style={{ fontSize:14, fontWeight:600, display:'flex', alignItems:'center', gap:6 }}>
-                            <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{inv.profileName || 'â€”'}</span>
+                            <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{inv.profileName || '—'}</span>
                             <span style={{ fontSize:8, fontWeight:700, padding:'2px 6px', borderRadius:999, background:M.violetSoft||'#EEE8FF', color:M.violet||'#7B61FF', textTransform:'uppercase', flexShrink:0 }}>Invite</span>
                           </div>
                           <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{t('profile.sharedBy')} <strong>{senderName}</strong></div>
@@ -900,7 +900,7 @@ export function ScreenProfileDetail({ params }) {
         ) : (
           <div className="m-card" style={{ padding:'4px 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
             {(() => {
-              // For isMemberOfShared views, the current user is rendered separately below â€” exclude self from this list
+              // For isMemberOfShared views, the current user is rendered separately below — exclude self from this list
               const displayMembers = isMemberOfShared ? members.filter(m => m.userId !== myId) : members;
               return (
                 <>
