@@ -283,17 +283,18 @@ const STOCK_AVATARS = [
 
 export function ProfileAvatar({ profile, size = 36 }) {
   const borderRadius = Math.round(size * 0.28);
-  if (profile?.picture) {
-    if (profile.picture.startsWith('av')) {
-      const av = STOCK_AVATARS.find(a => a.id === profile.picture);
+  const displayPicture = profile?.localPicture || profile?.picture;
+  if (displayPicture) {
+    if (displayPicture.startsWith('av')) {
+      const av = STOCK_AVATARS.find(a => a.id === displayPicture);
       if (av) return (
         <div style={{ width:size, height:size, borderRadius, background:av.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:size*0.5, flexShrink:0 }}>
           {av.emoji}
         </div>
       );
     }
-    if (profile.picture.startsWith('data:')) {
-      return <img src={profile.picture} style={{ width:size, height:size, borderRadius, objectFit:'cover', flexShrink:0 }}/>;
+    if (displayPicture.startsWith('data:')) {
+      return <img src={displayPicture} style={{ width:size, height:size, borderRadius, objectFit:'cover', flexShrink:0 }}/>;
     }
   }
   return (
@@ -815,6 +816,12 @@ export function ScreenProfileDetail({ params }) {
       }));
       return { ...p, members: [...(p.members || []), ...newMembers] };
     }));
+    // Write new member permissions to sharedData so all other members can sync their lists
+    setSharedData(sd => {
+      const updated = { ...(sd.memberPerms || {}) };
+      accepted.forEach(inv => { if (!updated[inv.toId]) updated[inv.toId] = inv.permission || 'contributor'; });
+      return { ...sd, memberPerms: updated };
+    });
     setInvitations(arr => arr.map(i => accepted.some(a => a.id === i.id) ? { ...i, status: 'joined' } : i));
   }, [invitations, profileId, sharedData?.memberPerms?.[myId]]);
 
@@ -881,7 +888,7 @@ export function ScreenProfileDetail({ params }) {
     const metaPic = sharedData?.meta?.picture;
     if (!profile || (!metaName && metaPic === undefined)) return;
     const nameChanged = !profile.localName && metaName && metaName !== profile.name;
-    const picChanged = metaPic !== undefined && metaPic !== profile.picture;
+    const picChanged = !profile.localPicture && metaPic !== undefined && metaPic !== profile.picture;
     if (!nameChanged && !picChanged) return;
     setProfiles(ps => ps.map(p => p.id === profile.id ? {
       ...p,
@@ -907,8 +914,12 @@ export function ScreenProfileDetail({ params }) {
   };
 
   const setPicture = (chosen) => {
-    setProfiles(ps => ps.map(p => p.id === profile.id ? { ...p, picture: chosen } : p));
-    if (isProfileShared) setSharedData(prev => ({ ...prev, meta: { ...(prev.meta || {}), picture: chosen } }));
+    if (isMemberOfShared) {
+      setProfiles(ps => ps.map(p => p.id === profile.id ? { ...p, localPicture: chosen !== p.picture ? chosen : null } : p));
+    } else {
+      setProfiles(ps => ps.map(p => p.id === profile.id ? { ...p, picture: chosen } : p));
+      if (isProfileShared) setSharedData(prev => ({ ...prev, meta: { ...(prev.meta || {}), picture: chosen } }));
+    }
     setShowPhotoSheet(false);
   };
 
@@ -944,10 +955,11 @@ export function ScreenProfileDetail({ params }) {
           const acctTxs = (ownTxs || []).filter(t => t.account === accountId);
           const existingTxIds = new Set((sd.txs || []).map(t => t.id));
           const newTxs = acctTxs.filter(t => !existingTxIds.has(t.id));
-          return { accounts: [...existing, newAcct], txs: [...(sd.txs || []), ...newTxs] };
+          return { ...sd, accounts: [...existing, newAcct], txs: [...(sd.txs || []), ...newTxs] };
         });
       } else if (isCurrentlyAttached) {
         setSharedData(sd => ({
+          ...sd,
           accounts: (sd.accounts || []).filter(a => a.id !== accountId),
           txs: (sd.txs || []).filter(t => t.account !== accountId),
         }));
@@ -1172,7 +1184,7 @@ export function ScreenProfileDetail({ params }) {
                     const myDisplayName = myInfo.displayName || myId;
                     return (
                       <>
-                        <div style={{ display:'flex', alignItems:'center', gap:10, padding:'11px 0' }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:10, padding:'11px 0', opacity:0.5, pointerEvents:'none' }}>
                           <div style={{ width:32, height:32, borderRadius:999, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:13, fontWeight:700, color:M.sage }}>
                             {myDisplayName.charAt(0).toUpperCase()}
                           </div>
@@ -1218,7 +1230,7 @@ export function ScreenProfileDetail({ params }) {
                     return (
                       <>
                         {displayMembers.length > 0 && <Divider inset={44}/>}
-                        <div style={{ display:'flex', alignItems:'center', gap:10, padding:'11px 0' }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:10, padding:'11px 0', opacity:0.5, pointerEvents:'none' }}>
                           <div style={{ width:32, height:32, borderRadius:999, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:13, fontWeight:700, color:M.sage }}>
                             {myDisplayName.charAt(0).toUpperCase()}
                           </div>

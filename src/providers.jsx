@@ -61,24 +61,36 @@ export function ProfilesProvider({ children }) {
             const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{}');
             // Expelled: remove this isShared profile from my list
             if (p.isShared && sd.expelled?.[myId]) { changed = true; return null; }
-            // Member left: remove them from the owner's members list
+            // Owner profile: remove left members + add members joined via other owners (sharedData.memberPerms)
             if (!p.isShared && (p.members || []).length > 0) {
-              const leftIds = Object.keys(sd.left || {});
-              if (leftIds.length > 0) {
-                const newMembers = (p.members || []).filter(m => !leftIds.includes(m.userId));
-                if (newMembers.length < (p.members || []).length) { changed = true; return { ...p, members: newMembers }; }
+              const leftIdsSet = new Set(Object.keys(sd.left || {}));
+              const expelledIdsSet = new Set(Object.keys(sd.expelled || {}));
+              const trimmedMembers = leftIdsSet.size > 0
+                ? (p.members || []).filter(m => !leftIdsSet.has(m.userId))
+                : (p.members || []);
+              const membersTrimmed = trimmedMembers.length < (p.members || []).length;
+              const existingIds = new Set(trimmedMembers.map(m => m.userId));
+              const sdNewIds = Object.keys(sd.memberPerms || {}).filter(id => id !== myId && !existingIds.has(id) && !expelledIdsSet.has(id) && !leftIdsSet.has(id));
+              if (membersTrimmed || sdNewIds.length > 0) {
+                changed = true;
+                const added = sdNewIds.map(userId => ({ userId, permission: sd.memberPerms[userId], joinedAt: Date.now() }));
+                return { ...p, members: [...trimmedMembers, ...added] };
               }
             }
-            // isShared member view: remove members who have left, detect owner transfer
-            if (p.isShared && (p.members || []).length > 0) {
-              const leftIds = Object.keys(sd.left || {});
-              const newMembers = (p.members || []).filter(m => !leftIds.includes(m.userId));
-              const membersTrimmed = newMembers.length < (p.members || []).length;
+            // isShared member view: remove left members, detect owner transfer, add new members from sharedData.memberPerms
+            if (p.isShared) {
+              const leftIdsSet = new Set(Object.keys(sd.left || {}));
+              const expelledIdsSet = new Set(Object.keys(sd.expelled || {}));
+              const baseMembers = (p.members || []).filter(m => !leftIdsSet.has(m.userId));
+              const membersTrimmed = baseMembers.length < (p.members || []).length;
               const newOwnerId = sd.meta?.newOwnerId;
               const ownerChanged = newOwnerId && newOwnerId !== p.ownerId;
-              if (membersTrimmed || ownerChanged) {
+              const existingIds = new Set(baseMembers.map(m => m.userId));
+              const sdNewIds = Object.keys(sd.memberPerms || {}).filter(id => id !== myId && !existingIds.has(id) && !expelledIdsSet.has(id) && !leftIdsSet.has(id));
+              if (membersTrimmed || ownerChanged || sdNewIds.length > 0) {
                 changed = true;
-                let result = { ...p, members: newMembers };
+                const added = sdNewIds.map(userId => ({ userId, permission: sd.memberPerms[userId], joinedAt: Date.now() }));
+                let result = { ...p, members: [...baseMembers, ...added] };
                 if (ownerChanged) result = { ...result, ownerId: newOwnerId };
                 return result;
               }
@@ -89,7 +101,7 @@ export function ProfilesProvider({ children }) {
               const metaName = sd.meta.name;
               const metaPic = sd.meta.picture;
               const nameChanged = !p.localName && metaName && metaName !== p.name;
-              const picChanged = metaPic !== undefined && metaPic !== p.picture;
+              const picChanged = !p.localPicture && metaPic !== undefined && metaPic !== p.picture;
               if (nameChanged || picChanged) {
                 changed = true;
                 return { ...p, ...(nameChanged ? { name: metaName } : {}), ...(picChanged ? { picture: metaPic } : {}) };

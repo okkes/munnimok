@@ -577,7 +577,7 @@ export function MemberActionSheet({ profile, memberId, onClose }) {
     const isDowngrade = perm === 'reader' && currentPerm !== 'reader';
     const memberAccts = (sharedData?.accounts || []).filter(a => a.attachedBy === memberId);
     if (isDowngrade && memberAccts.length > 0) {
-      setRemoveAccts(new Set(memberAccts.map(a => a.id)));
+      setRemoveAccts(new Set());
       setPendingPerm(perm);
       return;
     }
