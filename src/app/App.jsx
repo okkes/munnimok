@@ -20,7 +20,6 @@ import { ScreenBudgets, ScreenBudgetDetail, ScreenBudgetCreate } from '../featur
 import { ScreenInvestment, ScreenInvestmentConnect } from '../features/investments/Investment.jsx';
 import { ScreenGoals, ScreenGoalDetail } from '../features/goals/Goals.jsx';
 import { ScreenReviewSwipe, ScreenLinkReimburse } from '../features/review/Review.jsx';
-import { ScreenLogin, ScreenSignupGate, ScreenSignupProd, ScreenSignupDemo } from '../features/auth/Auth.jsx';
 import { ScreenIncome, ScreenInvested, ScreenInsights, ScreenDebts, ScreenCustomGraphCreate } from '../features/extra/Extra.jsx';
 import { ScreenFriends } from '../features/friends/Friends.jsx';
 
@@ -67,10 +66,6 @@ export const SCREEN_REGISTRY = {
   income:         () => <ScreenIncome/>,
   invested:       () => <ScreenInvested/>,
   debts:          () => <ScreenDebts/>,
-  login:          () => <ScreenLogin/>,
-  signupGate:     () => <ScreenSignupGate/>,
-  signupProd:     () => <ScreenSignupProd/>,
-  signupDemo:     () => <ScreenSignupDemo/>,
   language:       () => <ScreenLanguagePicker/>,
   customGraphCreate: () => <ScreenCustomGraphCreate/>,
   friends:           () => <ScreenFriends/>,
@@ -219,6 +214,11 @@ function ScreenTerms({ onBack, showPrivacy = false }) {
   );
 }
 
+const VERIFY_DIGITS_LOGIN  = ['4','2','7','1','8','3'];
+const VERIFY_DIGITS_SIGNUP = ['7','3','9','2','5','1'];
+const RESERVED_EMAILS = ['google@munni.app','apple@munni.app','bank@munni.app'];
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 function ScreenLoginGate({ onLogin }) {
   // mode: 'login'|'email-input'|'email-verify'|'google-loading'|'apple-loading'
   //       'signup'|'signup-google'|'signup-apple'|'signup-email'|'signup-email-verify'
@@ -239,12 +239,13 @@ function ScreenLoginGate({ onLogin }) {
   const [loginError, setLoginError] = React.useState(null);
   const [signupError, setSignupError] = React.useState(null);
   const [noAccountMethod, setNoAccountMethod] = React.useState(null);
+  const loadingTimerRef = React.useRef(null);
 
   const hasOpenedBefore = localStorage.getItem('munni_opened_before') === 'true';
   const getSignupMethods = () => { try { return JSON.parse(localStorage.getItem('munni_signup_methods') || '[]'); } catch { return []; } };
   const getSignupEmails = () => { try { return JSON.parse(localStorage.getItem('munni_signup_emails') || '[]'); } catch { return []; } };
 
-  const MODE_BACK = { signup:'login', 'signup-email':'signup', 'signup-email-verify':'signup-email', 'email-verify':'login', 'no-account':'login', 'signup-bank':'login', 'email-input':'login', language:'login' };
+  const MODE_BACK = { signup:'login', 'signup-email':'signup', 'signup-email-verify':'signup-email', 'email-verify':'login', 'no-account':'login', 'email-input':'login', language:'login' };
   const modeRef = React.useRef(mode);
   modeRef.current = mode;
   React.useEffect(() => {
@@ -254,6 +255,14 @@ function ScreenLoginGate({ onLogin }) {
     window.addEventListener('popstate', handlePop);
     return () => window.removeEventListener('popstate', handlePop);
   }, [mode]);
+
+  React.useEffect(() => {
+    if (!loadingMethod) return;
+    window.history.pushState({ munniLoginMode: 'loading' }, '');
+    const handlePop = () => { clearTimeout(loadingTimerRef.current); setLoadingMethod(null); };
+    window.addEventListener('popstate', handlePop);
+    return () => window.removeEventListener('popstate', handlePop);
+  }, [loadingMethod]);
 
   const doLogin = (method, email, displayName, activateDemo = false, signupLang = 'en') => {
     const methods = [...new Set([...getSignupMethods(), method])];
@@ -284,7 +293,7 @@ function ScreenLoginGate({ onLogin }) {
   const handleGoogle = (isSignup = false) => {
     setLoginError(null); setSignupError(null);
     setLoadingMethod('google');
-    setTimeout(() => {
+    loadingTimerRef.current = setTimeout(() => {
       setLoadingMethod(null);
       const methods = getSignupMethods();
       if (isSignup) {
@@ -301,7 +310,7 @@ function ScreenLoginGate({ onLogin }) {
   const handleApple = (isSignup = false) => {
     setLoginError(null); setSignupError(null);
     setLoadingMethod('apple');
-    setTimeout(() => {
+    loadingTimerRef.current = setTimeout(() => {
       setLoadingMethod(null);
       const methods = getSignupMethods();
       if (isSignup) {
@@ -328,7 +337,7 @@ function ScreenLoginGate({ onLogin }) {
     setAutoFilling(false);
     setTimeout(() => {
       setAutoFilling(true);
-      const digits = ['4','2','7','1','8','3'];
+      const digits = VERIFY_DIGITS_LOGIN;
       const fill = (idx) => {
         if (idx >= 6) {
           setVerifyDigits([...digits]);
@@ -347,9 +356,10 @@ function ScreenLoginGate({ onLogin }) {
     setSignupError(null);
     const trimmedName = signupName.trim();
     if (!trimmedName || trimmedName.length < 2) { setSignupError(t('login.errNameRequired')); return; }
-    if (trimmedName.length > 50) { setSignupError('Name is too long (max 50 characters).'); return; }
+    if (trimmedName.length > 50) { setSignupError(t('login.errNameTooLong')); return; }
     const email = signupEmailInput.trim().toLowerCase();
-    if (!email.includes('@')) { setSignupError(t('login.errInvalidEmail')); return; }
+    if (!EMAIL_RE.test(email)) { setSignupError(t('login.errInvalidEmail')); return; }
+    if (RESERVED_EMAILS.includes(email)) { setSignupError(t('login.errEmailReserved')); return; }
     const emails = getSignupEmails();
     if (emails.includes(email)) { setSignupError(t('login.errEmailExists')); return; }
     setMode('signup-email-verify');
@@ -357,7 +367,7 @@ function ScreenLoginGate({ onLogin }) {
     setAutoFilling(false);
     setTimeout(() => {
       setAutoFilling(true);
-      const digits = ['7','3','9','2','5','1'];
+      const digits = VERIFY_DIGITS_SIGNUP;
       const fill = (idx) => {
         if (idx >= 6) {
           setVerifyDigits([...digits]);
@@ -389,16 +399,16 @@ function ScreenLoginGate({ onLogin }) {
   if (loadingMethod) {
     const isGoogle = loadingMethod === 'google';
     return (
-      <div className="m-screen m-fade" style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:24, padding:40, background: isGoogle ? M.paper : '#111' }}>
-        <div style={{ width:80, height:80, borderRadius:24, background: isGoogle ? '#fff' : '#1C1C1E', display:'flex', alignItems:'center', justifyContent:'center', boxShadow: isGoogle ? '0 4px 24px rgba(66,133,244,0.18)' : '0 4px 24px rgba(0,0,0,0.5)' }}>
-          {isGoogle ? <IcoGoogle size={44}/> : <IcoApple size={40} color="#fff"/>}
+      <div key="loading" className="m-screen m-fade" style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:24, padding:40, background: M.paper }}>
+        <div style={{ width:80, height:80, borderRadius:24, background: isGoogle ? M.sageSoft : M.paper2, display:'flex', alignItems:'center', justifyContent:'center', boxShadow: isGoogle ? '0 4px 24px rgba(66,133,244,0.18)' : '0 4px 20px rgba(0,0,0,0.08)' }}>
+          {isGoogle ? <IcoGoogle size={44}/> : <IcoApple size={40} color={M.ink}/>}
         </div>
         <div style={{ textAlign:'center' }}>
-          <div style={{ fontSize:18, fontWeight:600, color: isGoogle ? M.ink : '#fff', marginBottom:6 }}>{t('login.signingIn')} {isGoogle ? 'Google' : 'Apple'}…</div>
-          <div style={{ fontSize:13, color: isGoogle ? M.ink3 : 'rgba(255,255,255,0.5)' }}>{t('login.subtitle')}</div>
+          <div style={{ fontSize:18, fontWeight:600, color: M.ink, marginBottom:6 }}>{t('login.signingIn')} {isGoogle ? 'Google' : 'Apple'}…</div>
+          <div style={{ fontSize:13, color: M.ink3 }}>{t('login.subtitle')}</div>
         </div>
         <div style={{ display:'flex', gap:7, marginTop:4 }}>
-          {[0,1,2].map(i => <div key={i} style={{ width:8, height:8, borderRadius:'50%', background: isGoogle ? '#4285F4' : '#fff', animation:`mFadeIn 0.6s ${i*0.2}s infinite alternate` }}/>)}
+          {[0,1,2].map(i => <div key={i} style={{ width:8, height:8, borderRadius:'50%', background: isGoogle ? '#4285F4' : M.ink2, animation:`mFadeIn 0.6s ${i*0.2}s infinite alternate` }}/>)}
         </div>
       </div>
     );
@@ -408,7 +418,7 @@ function ScreenLoginGate({ onLogin }) {
   if (mode === 'no-account') {
     const isGoogle = noAccountMethod === 'google';
     return (
-      <div className="m-screen m-fade">
+      <div key="no-account" className="m-screen m-fade">
         <StatusBar/>
         <div style={{ padding:'16px 20px 0', flexShrink:0 }}>
           <button className="m-tap" onClick={() => { setMode('login'); setNoAccountMethod(null); }} style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:6, color:M.ink3, fontFamily:M.fontUI, fontSize:13 }}>
@@ -443,7 +453,7 @@ function ScreenLoginGate({ onLogin }) {
   if (mode === 'email-verify' || mode === 'signup-email-verify') {
     const emailForDisplay = mode === 'email-verify' ? emailInput : signupEmailInput;
     return (
-      <div className="m-screen">
+      <div key={mode} className="m-screen m-fade">
         <StatusBar/>
         <div style={{ padding:'16px 20px 0', flexShrink:0 }}>
           <button className="m-tap" onClick={() => setMode(mode === 'email-verify' ? 'login' : 'signup-email')} style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:6, color:M.ink3, fontFamily:M.fontUI, fontSize:13 }}>
@@ -472,7 +482,7 @@ function ScreenLoginGate({ onLogin }) {
   // Email input
   if (mode === 'email-input') {
     return (
-      <div className="m-screen">
+      <div key="email-input" className="m-screen m-fade">
         <StatusBar/>
         <div style={{ padding:'16px 20px 0', flexShrink:0 }}>
           <button className="m-tap" onClick={() => setMode('login')} style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:6, color:M.ink3, fontFamily:M.fontUI, fontSize:13 }}>
@@ -498,7 +508,7 @@ function ScreenLoginGate({ onLogin }) {
   // Signup email
   if (mode === 'signup-email') {
     return (
-      <div className="m-screen">
+      <div key="signup-email" className="m-screen m-fade">
         <StatusBar/>
         <div style={{ padding:'16px 20px 0', flexShrink:0 }}>
           <button className="m-tap" onClick={() => setMode('signup')} style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:6, color:M.ink3, fontFamily:M.fontUI, fontSize:13 }}>
@@ -527,7 +537,7 @@ function ScreenLoginGate({ onLogin }) {
   // Signup screen
   if (mode === 'signup') {
     return (
-      <div className="m-screen">
+      <div key="signup" className="m-screen m-fade">
         <StatusBar/>
         <div style={{ padding:'16px 20px 0', flexShrink:0 }}>
           <button className="m-tap" onClick={() => setMode('login')} style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:6, color:M.ink3, fontFamily:M.fontUI, fontSize:13 }}>
@@ -556,36 +566,9 @@ function ScreenLoginGate({ onLogin }) {
     );
   }
 
-  // Signup bank
-  if (mode === 'signup-bank') {
-    return (
-      <div className="m-screen">
-        <StatusBar/>
-        <div style={{ padding:'16px 20px 0', flexShrink:0 }}>
-          <button className="m-tap" onClick={() => setMode('login')} style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:6, color:M.ink3, fontFamily:M.fontUI, fontSize:13 }}>
-            <I name="arrowL" size={16} color={M.ink3}/> {t('action.back')}
-          </button>
-        </div>
-        <div style={{ flex:1, display:'flex', flexDirection:'column', padding:'20px 24px 32px', overflowY:'auto' }}>
-          <div className="m-h2" style={{ marginBottom:4 }}>Connect your bank</div>
-          <div style={{ fontSize:14, color:M.ink2, marginBottom:24, lineHeight:1.5 }}>Read-only via Open Banking. ING, Rabobank, ABN AMRO, N26 and 200+ more.</div>
-          {['ING','Rabobank','ABN AMRO','N26','bunq','ASN Bank'].map((bank) => (
-            <div key={bank} className="m-tap" onClick={() => doLogin('bank', 'bank@munni.app', 'Bank van der Berg')} style={{ display:'flex', alignItems:'center', gap:14, padding:'14px 0', borderBottom:`1px solid ${M.line2}` }}>
-              <div style={{ width:38, height:38, borderRadius:10, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                <I name="card" size={17} color={M.ink3}/>
-              </div>
-              <div style={{ flex:1, fontSize:14, fontWeight:500 }}>{bank}</div>
-              <I name="caretR" size={14} color={M.ink4}/>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
   // Main login screen
   return (
-    <div className="m-screen">
+    <div key="login" className="m-screen m-fade">
       <StatusBar/>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '28px 24px 32px', overflowY:'auto' }}>
         <div style={{ marginBottom: 32 }}>
