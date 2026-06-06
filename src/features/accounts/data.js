@@ -573,4 +573,19 @@ export function computePeriodHistory(day) {
   }
   return result;
 }
-export const PERIOD_HISTORY = computePeriodHistory(20);
+export const PERIOD_HISTORY = computePeriodHistory(20);
+
+export const DUTCH_BANKS = [
+  { id:'abn',     name:'ABN AMRO',     country:'NL', bic:'ABNANL2A', color:'#009B77', logo:'🏦' },
+  { id:'ing',     name:'ING',          country:'NL', bic:'INGBNL2A', color:'#FF6200', logo:'🏦' },
+  { id:'rabo',    name:'Rabobank',     country:'NL', bic:'RABONL2U', color:'#004A97', logo:'🏛' },
+  { id:'sns',     name:'SNS Bank',     country:'NL', bic:'SNSBNL2A', color:'#E30613', logo:'🏦' },
+  { id:'asn',     name:'ASN Bank',     country:'NL', bic:'ASNBNL21', color:'#00A651', logo:'🌿' },
+  { id:'triodos', name:'Triodos Bank', country:'NL', bic:'TRIONL2U', color:'#00A651', logo:'♻️' },
+  { id:'bunq',    name:'Bunq',         country:'NL', bic:'BUNQNL2A', color:'#00D4A1', logo:'💚' },
+  { id:'knab',    name:'Knab',         country:'NL', bic:'KNABNL2H', color:'#E40046', logo:'💡' },
+  { id:'regio',   name:'RegioBank',    country:'NL', bic:'RBRBNL21', color:'#0070BA', logo:'🏦' },
+  { id:'revolut', name:'Revolut',      country:'EU', bic:'REVOLT21', color:'#191C20', logo:'🔷' },
+  { id:'n26',     name:'N26',          country:'EU', bic:'NTSBDEB1', color:'#000000', logo:'⬛' },
+  { id:'wise',    name:'Wise',         country:'EU', bic:'TRWIBEB1', color:'#9FE870', logo:'🌍' },
+];

@@ -1,5 +1,5 @@
 ﻿import React from 'react';
-import { ACCOUNTS, DEMO_ACCOUNT_IDS, DEMO_ACCOUNTS, INTEGRATIONS, ALL_RECEIPTS, generateBankTxs, generateAsnTxs } from './data.js';
+import { ACCOUNTS, DEMO_ACCOUNT_IDS, DEMO_ACCOUNTS, INTEGRATIONS, ALL_RECEIPTS, generateBankTxs, generateAsnTxs, DUTCH_BANKS } from './data.js';
 import { fmtEur, fmtDate, computePeriodHistory, fmtSyncTime } from '../../shared/utils/format.js';
 import { getUserId, getUserSyncKey, addDevLog } from '../../shared/utils/user.js';
 import { M, I, IcoMDI, Divider, StatusBar, AppBar } from '../../app/theme.jsx';
