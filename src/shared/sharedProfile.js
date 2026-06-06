@@ -35,8 +35,10 @@ export function kickMember(profileId, memberId) {
 }
 
 export function buildEffectivePerm(sharedData, userId, membershipPerm, isOwner = false) {
+  const sdPerm = sharedData?.memberPerms?.[userId];
+  if (sdPerm) return sdPerm;
   if (isOwner) return 'owner';
-  return sharedData?.memberPerms?.[userId] || membershipPerm || 'contributor';
+  return membershipPerm || 'contributor';
 }
 
 export function getMemberAccounts(sharedData, memberId) {
