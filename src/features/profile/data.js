@@ -1,4 +1,4 @@
-﻿import { computeUserDataKey } from '../../shared/utils/user.js';
+﻿import { computeUserDataKey, getUserId } from '../../shared/utils/user.js';
 import { getDefaultAccounts, getDefaultTxs } from '../accounts/data.js';
 // Schema version — bump when per-user data defaults change
 export const SCHEMA_VERSION = '5';
@@ -20,10 +20,11 @@ export function getDefaultProfileName(lang) {
 }
 
 export function getDefaultProfiles(method, lang = 'en') {
-  if (method === 'google') return [{ id:'p_google', name:'Private', icon:'user', active:true, accountIds:['main','save','inv'], picture:'av3', isDemo:false }];
-  if (method === 'apple')  return [{ id:'p_apple',  name:'Family',  icon:'house',active:true, accountIds:['abn_main'],           picture:'av4', isDemo:false }];
-  if (method === 'bank')   return [{ id:'p_demo',   name:'Demo',    icon:'user', active:true, accountIds:['demo_main','demo_save'], picture:'av7', isDemo:true }];
-  return [{ id:'p_email', name:getDefaultProfileName(lang), icon:'user', active:true, accountIds:[], picture:'av1', isDemo:false }];
+  const creatorId = getUserId();
+  if (method === 'google') return [{ id:'p_google', name:'Private', icon:'user', active:true, accountIds:['main','save','inv'], picture:'av3', isDemo:false, creatorId }];
+  if (method === 'apple')  return [{ id:'p_apple',  name:'Family',  icon:'house',active:true, accountIds:['abn_main'],           picture:'av4', isDemo:false, creatorId }];
+  if (method === 'bank')   return [{ id:'p_demo',   name:'Demo',    icon:'user', active:true, accountIds:['demo_main','demo_save'], picture:'av7', isDemo:true,  creatorId }];
+  return [{ id:'p_email', name:getDefaultProfileName(lang), icon:'user', active:true, accountIds:[], picture:'av1', isDemo:false, creatorId }];
 }
 export function initPerUserData(method, email, lang = 'en') {
   if (!method) return;

@@ -66,4 +66,12 @@ export function computeUserDataKey(method, email, base) {
   }
   return `${base}_${method || 'default'}`;
 }
+
+export function formatCreatorLabel(creatorId, storedDisplayName, userRegistry) {
+  if (!creatorId) return storedDisplayName || '';
+  const entry = userRegistry?.[creatorId];
+  if (entry?.deleted) return 'Unknown (deleted)';
+  const liveName = entry?.displayName || storedDisplayName || creatorId;
+  return `${liveName} (${creatorId})`;
+}
 

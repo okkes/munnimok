@@ -1,8 +1,8 @@
 ﻿import React from 'react';
 import { fmtEur } from '../../shared/utils/format.js';
-import { getUserId, addDevLog, computeUserDataKey, registerUserInGlobalRegistry } from '../../shared/utils/user.js';
+import { getUserId, addDevLog, computeUserDataKey, registerUserInGlobalRegistry, formatCreatorLabel } from '../../shared/utils/user.js';
 import { DEMO_ACCOUNTS } from '../accounts/data.js';
-import { getDefaultProfileName } from './data.js';
+import { getDefaultProfileName, computeProfileKey } from './data.js';
 import { M, I, IcoMDI, Divider, StatusBar, AppBar } from '../../app/theme.jsx';
 import { useNav, Sheet, TabBar } from '../../app/nav.jsx';
 import { useLang } from '../../shared/i18n.jsx';
@@ -60,6 +60,7 @@ export function ScreenProfile() {
   const [connectedAccounts] = useConnectedAccounts();
   const [draft, setDraft] = React.useState({ name });
   const [showReset, setShowReset] = React.useState(false);
+  const [showDeleteAccount, setShowDeleteAccount] = React.useState(false);
   const [showPicturePicker, setShowPicturePicker] = React.useState(false);
 
   const handleUserFileChange = (e) => {
@@ -165,6 +166,8 @@ export function ScreenProfile() {
           <ProfileLink icon="help"    label={t('settings.help')}/>
           <Divider inset={48}/>
           <ProfileLink icon="logout"  label={t('settings.signOut')}        danger onClick={logoutFn}/>
+          <Divider inset={48}/>
+          <ProfileLink icon="trash"   label={t('settings.deleteAccount')}  sub={t('settings.deleteAccountSub')} danger onClick={() => setShowDeleteAccount(true)}/>
         </div>
 
         {/* Demo */}
@@ -199,6 +202,57 @@ export function ScreenProfile() {
               {t('settings.resetEverything')}
             </button>
             <button onClick={() => setShowReset(false)}
+              style={{ width:'100%', padding:'14px 0', background:M.paper2, color:M.ink, border:`1px solid ${M.line}`, borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+              {t('action.cancel')}
+            </button>
+          </div>
+        </Sheet>
+      )}
+
+      {showDeleteAccount && (
+        <Sheet onClose={() => setShowDeleteAccount(false)}>
+          <div style={{ padding:'0 16px 8px' }}>
+            <div style={{ fontSize:17, fontWeight:700, marginBottom:8 }}>{t('settings.deleteAccountTitle')}</div>
+            <div style={{ fontSize:14, color:M.ink3, lineHeight:1.5, marginBottom:20 }}>
+              {t('settings.deleteAccountBody')}
+            </div>
+            <button onClick={() => {
+              const userId = _myId;
+              // Mark deleted in global registry so others see "Unknown (deleted)"
+              try {
+                const reg = JSON.parse(localStorage.getItem('munni_global_users') || '{}');
+                reg[userId] = { ...(reg[userId] || {}), deleted: true, deletedAt: Date.now() };
+                localStorage.setItem('munni_global_users', JSON.stringify(reg));
+                window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: 'munni_global_users' } }));
+              } catch {}
+              // Delete per-profile data
+              try {
+                const profileKey = computeProfileKey(loginMethod, _safeEmail);
+                const storedProfiles = JSON.parse(localStorage.getItem(profileKey) || '[]');
+                storedProfiles.forEach(p => {
+                  localStorage.removeItem(`munni_budgets_${p.id}`);
+                  localStorage.removeItem(`munni_goals_${p.id}`);
+                  localStorage.removeItem(`munni_debts_${p.id}`);
+                });
+                localStorage.removeItem(profileKey);
+              } catch {}
+              // Delete user-keyed data
+              [
+                computeUserDataKey(loginMethod, _safeEmail, 'munni_txs'),
+                computeUserDataKey(loginMethod, _safeEmail, 'munni_bank_accounts'),
+                computeUserDataKey(loginMethod, _safeEmail, 'munni_profile_name'),
+                computeUserDataKey(loginMethod, _safeEmail, 'munni_schema_v'),
+              ].forEach(k => localStorage.removeItem(k));
+              // Clear session
+              sessionStorage.removeItem('munni_last_login_method');
+              sessionStorage.removeItem('munni_profile_email');
+              sessionStorage.removeItem('munni_session_active');
+              window.location.reload();
+            }}
+              style={{ width:'100%', padding:'14px 0', background:M.clay, color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>
+              {t('settings.deleteAccountConfirm')}
+            </button>
+            <button onClick={() => setShowDeleteAccount(false)}
               style={{ width:'100%', padding:'14px 0', background:M.paper2, color:M.ink, border:`1px solid ${M.line}`, borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
               {t('action.cancel')}
             </button>
@@ -275,7 +329,8 @@ export function ScreenProfiles() {
     setProfiles(ps => {
       const existing = ps.find(p => p.id === inv.profileId);
       const originalOwnerId = inv.originalOwnerId || inv.fromId;
-      const ownerDisplay = userRegistry[originalOwnerId]?.displayName || originalOwnerId;
+      const creatorId = inv.originalCreatorId || originalOwnerId;
+      const ownerDisplay = userRegistry[creatorId]?.displayName || userRegistry[originalOwnerId]?.displayName || originalOwnerId;
       const ownerName = freshName || inv.profileName || 'Shared';
       const trimmedCustom = customName?.trim();
       const profileData = {
@@ -285,7 +340,7 @@ export function ScreenProfiles() {
         accountIds: inv.profileAccountIds || [],
         picture: freshPic !== undefined ? freshPic : (inv.profilePicture || null),
         isDemo: inv.profileIsDemo || false, isShared: true,
-        ownerId: originalOwnerId, ownerDisplay,
+        creatorId, ownerId: originalOwnerId, ownerDisplay,
         members: [{ userId: originalOwnerId, displayName: ownerDisplay, permission: 'owner', accountIds: [] }],
       };
       if (existing) return ps.map(p => p.id === inv.profileId ? { ...p, ...profileData } : p);
@@ -408,7 +463,7 @@ export function ScreenProfiles() {
                       {p.isShared && (p.members||[]).some(m => m.userId !== myId) && <span style={{ fontSize:8, fontWeight:700, padding:'1px 5px', borderRadius:999, background:M.violetSoft||'#EEE8FF', color:M.violet||'#7B61FF', textTransform:'uppercase' }}>Shared</span>}
                       {!p.isShared && (p.members||[]).length > 0 && <span style={{ fontSize:8, fontWeight:700, padding:'1px 5px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>Shared</span>}
                     </div>
-                    <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{p.isShared ? `${t('profile.by')} ${(p.ownerDisplay || p.ownerId || '').split(' ')[0]}` : sub}</div>
+                    <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{p.isShared ? `${t('profile.by')} ${formatCreatorLabel(p.creatorId || p.ownerId, p.ownerDisplay, userRegistry)}` : sub}</div>
                   </div>
                   {p.active && (
                     <div style={{ width:20, height:20, borderRadius:999, background:M.sage, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
@@ -723,7 +778,7 @@ export function ScreenProfileDetail({ params }) {
 
   const makeDefaultProfile = () => ({
     id: `p_${Date.now()}`, name: getDefaultProfileName(lang), icon: 'user',
-    active: true, accountIds: [], picture: 'av1', isDemo: false,
+    active: true, accountIds: [], picture: 'av1', isDemo: false, creatorId: myId,
   });
 
   const leaveProfile = () => {
@@ -843,9 +898,9 @@ export function ScreenProfileDetail({ params }) {
                 <div style={{ fontSize:10, color:M.ink4, marginTop:4 }}>{isMemberOfShared ? t('profile.tapRenameLocal') : t('profile.tapRename')}</div>
               </div>
             )}
-            {isMemberOfShared && profile.ownerDisplay && (
+            {isMemberOfShared && (profile.creatorId || profile.ownerId) && (
               <div style={{ fontSize:12, color:M.ink3, marginTop:4, textAlign:'center' }}>
-                {t('profile.by')} <span style={{ fontWeight:600 }}>{(profile.ownerDisplay || '').split(' ')[0]}</span>
+                {t('profile.by')} <span style={{ fontWeight:600 }}>{formatCreatorLabel(profile.creatorId || profile.ownerId, profile.ownerDisplay, userRegistry)}</span>
               </div>
             )}
             {isActive && (
