@@ -8,7 +8,7 @@ import { useNav, Sheet } from '../../app/nav.jsx';
 import { useLocalStorage } from '../../shared/hooks.jsx';
 import { BarChart, StackedBar } from '../../shared/components/Charts.jsx';
 import { TxRow } from '../../shared/components/TxRow.jsx';
-import { useProfiles, useConnectedAccounts, Stat } from '../../app/providers.jsx';
+import { useTxCtx, useProfiles, useConnectedAccounts, Stat } from '../../app/providers.jsx';
 import { STOCK_AVATARS } from '../../shared/constants.js';
 
 export function ScreenIntegrations({ params }) {
@@ -103,7 +103,7 @@ export function ScreenIntegrationLogin({ params }) {
   const sourceTxId = params?.sourceTxId;
   const [step, setStep] = React.useState('login'); // 'login' | 'connecting' | 'done'
   const [email, setEmail] = React.useState(intg?.id === 'int_ah' ? 'demo@ahbonus.nl' : '');
-  const [password, setPassword] = React.useState(intg?.id === 'int_ah' ? 'â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢' : '');
+  const [password, setPassword] = React.useState(intg?.id === 'int_ah' ? '••••••••' : '');
 
   const doLogin = () => {
     setStep('connecting');
@@ -145,7 +145,7 @@ export function ScreenIntegrationLogin({ params }) {
         <AppBar title={intg?.store || 'Store'} leading={null}/>
         <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:32, textAlign:'center', gap:16 }}>
           <div style={{ width:72, height:72, borderRadius:20, background:intg?.color+'22'||M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', fontSize:32 }}>{intg?.icon}</div>
-          <div style={{ fontSize:15, fontWeight:600, marginTop:8 }}>Connectingâ€¦</div>
+          <div style={{ fontSize:15, fontWeight:600, marginTop:8 }}>Connecting…</div>
           <div style={{ fontSize:13, color:M.ink3 }}>Retrieving your receipts</div>
           <div style={{ display:'flex', gap:6, marginTop:8 }}>
             {[0,1,2].map(i => (
@@ -240,7 +240,7 @@ export function ScreenIntegrationReceipts({ params }) {
               </div>
               {r.items.slice(0, 3).map((item, i) => (
                 <div key={i} style={{ display:'flex', justifyContent:'space-between', fontSize:11, color:M.ink3, padding:'2px 0', paddingLeft:48 }}>
-                  <span>{item.qty > 1 ? `${item.qty}Ã— ` : ''}{item.name}</span>
+                  <span>{item.qty > 1 ? `${item.qty}× ` : ''}{item.name}</span>
                   <span className="m-num">{fmtEur(item.price * item.qty)}</span>
                 </div>
               ))}
@@ -354,7 +354,7 @@ export function ScreenAccounts() {
               </div>
               <div>
                 <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>Password</div>
-                <input type="password" defaultValue="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" style={{ width:'100%', padding:'12px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box' }}/>
+                <input type="password" defaultValue="••••••••" style={{ width:'100%', padding:'12px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box' }}/>
               </div>
               <div>
                 <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>{t('accounts.ibanLabel')}</div>
@@ -409,7 +409,7 @@ export function ScreenAccounts() {
               <div style={{ display:'flex', gap:8 }}>
                 {[0,1,2].map(i => <div key={i} style={{ width:8, height:8, borderRadius:999, background:M.sage, animation:`pulse 1.2s ease-in-out ${i*0.4}s infinite` }}/>)}
               </div>
-              <div style={{ fontSize:15, fontWeight:600 }}>Connecting to {psd2Bank?.name}â€¦</div>
+              <div style={{ fontSize:15, fontWeight:600 }}>Connecting to {psd2Bank?.name}…</div>
               <div style={{ fontSize:12, color:M.ink3 }}>Fetching your accounts and transactions</div>
             </div>
           )}
@@ -501,7 +501,7 @@ export function ScreenAccounts() {
                 autoFocus
                 value={bankSearch}
                 onChange={e => setBankSearch(e.target.value)}
-                placeholder="Search banksâ€¦"
+                placeholder="Search banks…"
                 style={{ width:'100%', padding:'10px 12px 10px 36px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box' }}
               />
             </div>
@@ -527,7 +527,7 @@ export function ScreenAccounts() {
                       </div>
                       {connCount > 0 ? (
                         <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                          <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>{connCount}Ã—</span>
+                          <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>{connCount}×</span>
                           <I name="caretR" size={14} color={M.ink4}/>
                         </div>
                       ) : <I name="caretR" size={14} color={M.ink4}/>}
@@ -635,7 +635,7 @@ export function ScreenSavings() {
         {savingAccounts.length === 0 ? (
           <div style={{ textAlign:'center', padding:'40px 16px', color:M.ink3, fontSize:14, lineHeight:1.6 }}>
             No saving accounts linked.<br/>
-            <span style={{ fontSize:12 }}>Create one under Settings â€º Accounts.</span>
+            <span style={{ fontSize:12 }}>Create one under Settings › Accounts.</span>
           </div>
         ) : savingAccounts.map((acct) => {
           const acctTxs = savingsTxs.filter(t => t.savingAccount === acct.id);
@@ -1179,7 +1179,7 @@ export function ScreenAccountsAll() {
               </div>
               <div>
                 <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>Password</div>
-                <input type="password" defaultValue="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" style={{ width:'100%', padding:'12px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box' }}/>
+                <input type="password" defaultValue="••••••••" style={{ width:'100%', padding:'12px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box' }}/>
               </div>
               <div>
                 <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>{t('accounts.ibanLabel')}</div>
@@ -1232,7 +1232,7 @@ export function ScreenAccountsAll() {
               <div style={{ display:'flex', gap:8 }}>
                 {[0,1,2].map(i => <div key={i} style={{ width:8, height:8, borderRadius:999, background:M.sage, animation:`pulse 1.2s ease-in-out ${i*0.4}s infinite` }}/>)}
               </div>
-              <div style={{ fontSize:15, fontWeight:600 }}>Connecting to {psd2Bank?.name}â€¦</div>
+              <div style={{ fontSize:15, fontWeight:600 }}>Connecting to {psd2Bank?.name}…</div>
               <div style={{ fontSize:12, color:M.ink3 }}>Fetching your accounts and transactions</div>
             </div>
           )}
@@ -1367,7 +1367,7 @@ export function ScreenAccountsAll() {
             <div className="m-h2" style={{ marginBottom:12 }}>Connect a bank</div>
             <div style={{ position:'relative', marginBottom:12 }}>
               <I name="search" size={16} color={M.ink4} style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', pointerEvents:'none' }}/>
-              <input autoFocus value={bankSearch} onChange={e => setBankSearch(e.target.value)} placeholder="Search banksâ€¦"
+              <input autoFocus value={bankSearch} onChange={e => setBankSearch(e.target.value)} placeholder="Search banks…"
                 style={{ width:'100%', padding:'10px 12px 10px 36px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box' }}/>
             </div>
             <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}`, maxHeight:340, overflowY:'auto' }}>
@@ -1386,7 +1386,7 @@ export function ScreenAccountsAll() {
                       </div>
                       {connCount > 0 ? (
                         <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                          <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>{connCount}Ã—</span>
+                          <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>{connCount}×</span>
                           <I name="caretR" size={14} color={M.ink4}/>
                         </div>
                       ) : <I name="caretR" size={14} color={M.ink4}/>}
@@ -1406,7 +1406,7 @@ export function ScreenAccountsAll() {
             <div style={{ fontSize:17, fontWeight:700, marginBottom:16 }}>Create saving account</div>
             <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>Account name</div>
             <input autoFocus value={savingDraft.name} onChange={e => setSavingDraft(d => ({ ...d, name: e.target.value }))}
-              placeholder="e.g. Emergency fund, Holidayâ€¦"
+              placeholder="e.g. Emergency fund, Holiday…"
               style={{ width:'100%', padding:'12px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box', marginBottom:12 }}/>
             <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>Starting balance (optional)</div>
             <input type="number" value={savingDraft.balance} onChange={e => setSavingDraft(d => ({ ...d, balance: e.target.value }))}

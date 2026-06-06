@@ -134,11 +134,11 @@ function ScreenTerms({ onBack, showPrivacy = false }) {
       nl: {
         title: 'Privacybeleid', updated: 'Laatst bijgewerkt: januari 2026',
         sections: [
-          ['Gegevens die we verzamelen', 'munni verzamelt alleen de gegevens die nodig zijn voor financiÃ«le trackingdiensten: banktransactiegegevens via PSD2 Open Banking (alleen-lezen), rekeningbalansen en gebruikersvoorkeuren. We verzamelen nooit wachtwoorden of betaalkaartgegevens.'],
-          ['Hoe we uw gegevens gebruiken', 'Uw financiÃ«le gegevens worden uitsluitend gebruikt voor het leveren van de munni-service. We verkopen, verhuren of delen uw persoonlijke gegevens niet met derden voor marketingdoeleinden.'],
+          ['Gegevens die we verzamelen', 'munni verzamelt alleen de gegevens die nodig zijn voor financiële trackingdiensten: banktransactiegegevens via PSD2 Open Banking (alleen-lezen), rekeningbalansen en gebruikersvoorkeuren. We verzamelen nooit wachtwoorden of betaalkaartgegevens.'],
+          ['Hoe we uw gegevens gebruiken', 'Uw financiële gegevens worden uitsluitend gebruikt voor het leveren van de munni-service. We verkopen, verhuren of delen uw persoonlijke gegevens niet met derden voor marketingdoeleinden.'],
           ['Gegevensopslag', 'Gegevens worden veilig opgeslagen met end-to-end-encryptie. Bankreferenties worden nooit op onze servers opgeslagen â€” ze worden via PSD2 rechtstreeks naar uw bank verzonden.'],
           ['Uw rechten', 'U heeft het recht om uw gegevens op elk moment in te zien, te corrigeren of te verwijderen. Neem contact op met privacy@munni.app om deze rechten uit te oefenen.'],
-          ['Cookies', 'We gebruiken alleen essentiÃ«le cookies voor verificatie en sessiebeheer. We gebruiken geen tracking- of advertentiecookies.'],
+          ['Cookies', 'We gebruiken alleen essentiële cookies voor verificatie en sessiebeheer. We gebruiken geen tracking- of advertentiecookies.'],
           ['Contact', 'Voor privacyvragen: privacy@munni.app'],
         ],
       },
@@ -172,10 +172,10 @@ function ScreenTerms({ onBack, showPrivacy = false }) {
         title: 'Gebruiksvoorwaarden', updated: 'Laatst bijgewerkt: januari 2026',
         sections: [
           ['Acceptatie', 'Door munni te gebruiken, gaat u akkoord met deze Gebruiksvoorwaarden. Als u niet akkoord gaat, gebruik de service dan niet.'],
-          ['Servicebeschrijving', 'munni is een persoonlijke financiÃ«n-applicatie die via PSD2 Open Banking verbinding maakt met uw bankrekeningen voor alleen-lezen transactietracking, budgettering en financiÃ«le inzichten.'],
-          ['Alleen-lezen toegang', 'munni heeft alleen-lezen toegang tot uw bankrekeningen. Wij kunnen nooit betalingen, overboekingen of andere financiÃ«le transacties namens u initiÃ«ren.'],
+          ['Servicebeschrijving', 'munni is een persoonlijke financiën-applicatie die via PSD2 Open Banking verbinding maakt met uw bankrekeningen voor alleen-lezen transactietracking, budgettering en financiële inzichten.'],
+          ['Alleen-lezen toegang', 'munni heeft alleen-lezen toegang tot uw bankrekeningen. Wij kunnen nooit betalingen, overboekingen of andere financiële transacties namens u initiëren.'],
           ['Gebruikersverantwoordelijkheden', 'U bent verantwoordelijk voor de beveiliging van uw accountgegevens en voor alle activiteiten die plaatsvinden onder uw account.'],
-          ['Nauwkeurigheid van gegevens', 'Hoewel we streven naar nauwkeurige financiÃ«le gegevens, is munni niet aansprakelijk voor fouten in gegevens van derde bancaire instellingen.'],
+          ['Nauwkeurigheid van gegevens', 'Hoewel we streven naar nauwkeurige financiële gegevens, is munni niet aansprakelijk voor fouten in gegevens van derde bancaire instellingen.'],
           ['Beperking van aansprakelijkheid', 'munni wordt geleverd zoals het is en wij geven geen garanties met betrekking tot de nauwkeurigheid of volledigheid van de service.'],
           ['Wijzigingen in de voorwaarden', 'We kunnen deze voorwaarden van tijd tot tijd bijwerken. Voortgezet gebruik van munni na wijzigingen houdt acceptatie van de nieuwe voorwaarden in.'],
           ['Contact', 'Voor vragen: legal@munni.app'],
@@ -394,7 +394,7 @@ function ScreenLoginGate({ onLogin }) {
           {isGoogle ? <IcoGoogle size={44}/> : <IcoApple size={40} color="#fff"/>}
         </div>
         <div style={{ textAlign:'center' }}>
-          <div style={{ fontSize:18, fontWeight:600, color: isGoogle ? M.ink : '#fff', marginBottom:6 }}>{t('login.signingIn')} {isGoogle ? 'Google' : 'Apple'}â€¦</div>
+          <div style={{ fontSize:18, fontWeight:600, color: isGoogle ? M.ink : '#fff', marginBottom:6 }}>{t('login.signingIn')} {isGoogle ? 'Google' : 'Apple'}…</div>
           <div style={{ fontSize:13, color: isGoogle ? M.ink3 : 'rgba(255,255,255,0.5)' }}>{t('login.subtitle')}</div>
         </div>
         <div style={{ display:'flex', gap:7, marginTop:4 }}>
