@@ -164,7 +164,7 @@ export function ScreenProfile() {
           </div>
         </div>
 
-        <div style={{ textAlign: 'center', fontSize: 11, color: M.ink4, padding: '12px 0 24px' }}>munni · v1.0.0 · build 248</div>
+        <div style={{ textAlign: 'center', fontSize: 11, color: M.ink4, padding: '12px 0 24px' }}>munni · v1.0.0 · build {__BUILD_NUMBER__}</div>
       </div>
 
       <TabBar active="profile" onChange={(t) => nav.switchTab(t)}/>
