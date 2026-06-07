@@ -23,6 +23,8 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
   const [picture,        setPicture]       = React.useState(signup.picture || null);
   const [bankPsd2Step,   setBankPsd2Step]  = React.useState(null); // null | 'consent' | 'connecting' | 'done'
   const [showApiInfo,    setShowApiInfo]   = React.useState(false);
+  const [onboardingStep, setOnboardingStep] = React.useState(1); // 1 = profile, 2 = bank
+  const stepRef = React.useRef(1);
   const [showPicker,     setShowPicker]    = React.useState(false);
   const [errors,         setErrors]        = React.useState({});
   const fileInputRef = React.useRef(null);
@@ -50,9 +52,13 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
       if (subScreenRef.current === 'credentials') {
         subScreenRef.current = 'search';
         setBankSubScreen('search');
+        setBankPsd2Step(null);
       } else if (subScreenRef.current === 'search') {
         subScreenRef.current = null;
         setBankSubScreen(null);
+      } else if (stepRef.current === 2) {
+        stepRef.current = 1;
+        setOnboardingStep(1);
       } else {
         onBack();
       }
@@ -155,6 +161,21 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
       picture,
       selectedBanks: connectedBanks.map(b => b.id),
     });
+  };
+
+  const handleContinue = () => {
+    const errs = validate();
+    if (Object.keys(errs).length > 0) { setErrors(errs); return; }
+    stepRef.current = 2;
+    setOnboardingStep(2);
+    window.history.pushState({ munniLoginMode: 'signup-bank' }, '');
+  };
+
+  const backFromStep2 = () => {
+    skipPopsRef.current = 1;
+    stepRef.current = 1;
+    setOnboardingStep(1);
+    window.history.go(-1);
   };
 
   const handleFileChange = (e) => {
@@ -437,7 +458,71 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
     );
   }
 
-  // ── Main onboarding screen ──────────────────────────────────────────
+  // ── Step 2: bank connect ────────────────────────────────────────────
+  if (onboardingStep === 2) {
+    return (
+      <div key="signup-bank" className="m-screen m-fade" style={{ position:'relative' }}>
+        <StatusBar/>
+        <div style={{ padding:'16px 20px 0', flexShrink:0 }}>
+          <button className="m-tap" onClick={backFromStep2} style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:6, color:M.ink3, fontFamily:M.fontUI, fontSize:13 }}>
+            <I name="arrowL" size={16} color={M.ink3}/> {t('action.back')}
+          </button>
+        </div>
+        <div style={{ flex:1, overflowY:'auto', padding:'20px 24px 40px' }}>
+          <div className="m-logo" style={{ fontSize:20, marginBottom:14 }}>munni<span className="dot">.</span></div>
+          <div className="m-h2" style={{ marginBottom:4 }}>{t('onboarding.bankStepTitle')}</div>
+          <div style={{ fontSize:13, color:M.ink3, marginBottom:24, lineHeight:1.5 }}>{t('onboarding.bankStepSub')}</div>
+
+          <div style={{ padding:'10px 12px', borderRadius:10, background:M.sageSoft, marginBottom:16, display:'flex', gap:10, alignItems:'flex-start' }}>
+            <I name="lock" size={14} color={M.sage}/>
+            <div style={{ fontSize:11, color:M.sageDk, lineHeight:1.5 }}>{t('onboarding.bankPSD2Note')}</div>
+          </div>
+
+          {connectedBanks.length > 0 && (
+            <div style={{ marginBottom:12 }}>
+              <div style={{ fontSize:11, fontWeight:600, color:M.ink3, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:8 }}>{t('onboarding.connected')}</div>
+              <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
+                {connectedBanks.map((entry, i) => {
+                  const bank = DUTCH_BANKS.find(b => b.id === entry.id);
+                  if (!bank) return null;
+                  const sameBeforeCount = connectedBanks.slice(0, i).filter(b => b.id === entry.id).length;
+                  const label = sameBeforeCount > 0 ? `${bank.name} (${sameBeforeCount + 1})` : bank.name;
+                  return (
+                    <React.Fragment key={entry.uid}>
+                      {i > 0 && <Divider inset={48}/>}
+                      <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
+                        <div style={{ width:36, height:36, borderRadius:10, background:`${bank.color}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:18 }}>{bank.logo}</div>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontSize:14, fontWeight:500, color:M.ink }}>{label}</div>
+                          <div style={{ fontSize:11, color:M.ink3, marginTop:1, fontFamily:M.fontMono }}>{bank.bic}</div>
+                        </div>
+                        <button className="m-tap" onClick={() => removeBank(entry.uid)}
+                          style={{ background:'none', border:'none', cursor:'pointer', padding:4, display:'flex', alignItems:'center' }}>
+                          <I name="x" size={14} color={M.ink4}/>
+                        </button>
+                      </div>
+                    </React.Fragment>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <button className="m-tap" onClick={openBankSearch}
+            style={{ width:'100%', padding:'13px 16px', borderRadius:12, border:`1.5px dashed ${M.line2}`, background:'transparent', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8, fontFamily:M.fontUI, boxSizing:'border-box', marginBottom:24 }}>
+            <I name="plus" size={16} color={M.tint}/>
+            <span style={{ fontSize:15, fontWeight:500, color:M.tint }}>{t('onboarding.addBank')}</span>
+          </button>
+
+          <button className="m-btn sage m-tap" style={{ height:54, width:'100%', fontSize:16, fontWeight:700 }} onClick={handleComplete}>
+            {t('onboarding.complete')}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Step 1: profile details ─────────────────────────────────────────
   return (
     <div key="signup-onboarding" className="m-screen m-fade" style={{ position:'relative' }}>
       <StatusBar/>
@@ -491,7 +576,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
         </div>
 
         {/* Email */}
-        <div style={{ marginBottom:24 }}>
+        <div style={{ marginBottom:14 }}>
           <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{t('login.email')}</div>
           {isSSO ? (
             <div style={{ padding:'12px 14px', borderRadius:12, background:M.paper2, border:`1.5px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, color:M.ink3, display:'flex', alignItems:'center', gap:8 }}>
@@ -514,7 +599,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
         </div>
 
         {/* API endpoint */}
-        <div style={{ marginBottom:14 }}>
+        <div style={{ marginBottom:24 }}>
           <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:5 }}>
             <div style={{ fontSize:12, color:M.ink3 }}>{t('onboarding.apiUrl')}</div>
             <button className="m-tap" onClick={() => setShowApiInfo(true)}
@@ -530,67 +615,9 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
           />
         </div>
 
-        {/* Bank accounts */}
-        <div style={{ marginBottom:24 }}>
-          <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
-            <div style={{ fontSize:13, fontWeight:600, color:M.ink }}>{t('onboarding.bankAccounts')}</div>
-            {!isSSO && <span style={{ fontSize:11, color:M.ink4 }}>(optional)</span>}
-          </div>
-
-          <div style={{ padding:'10px 12px', borderRadius:10, background:M.sageSoft, marginBottom:12, display:'flex', gap:10, alignItems:'flex-start' }}>
-            <I name="lock" size={14} color={M.sage}/>
-            <div style={{ fontSize:11, color:M.sageDk, lineHeight:1.5 }}>{t('onboarding.bankPSD2Note')}</div>
-          </div>
-
-          {/* Connected account rows */}
-          {connectedBanks.length > 0 && (
-            <div style={{ marginBottom:12 }}>
-              <div style={{ fontSize:11, fontWeight:600, color:M.ink3, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:8 }}>{t('onboarding.connected')}</div>
-              <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
-                {connectedBanks.map((entry, i) => {
-                  const bank = DUTCH_BANKS.find(b => b.id === entry.id);
-                  if (!bank) return null;
-                  const sameBeforeCount = connectedBanks.slice(0, i).filter(b => b.id === entry.id).length;
-                  const label = sameBeforeCount > 0 ? `${bank.name} (${sameBeforeCount + 1})` : bank.name;
-                  return (
-                    <React.Fragment key={entry.uid}>
-                      {i > 0 && <Divider inset={48}/>}
-                      <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
-                        <div style={{ width:36, height:36, borderRadius:10, background:`${bank.color}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:18 }}>{bank.logo}</div>
-                        <div style={{ flex:1, minWidth:0 }}>
-                          <div style={{ fontSize:14, fontWeight:500, color:M.ink }}>{label}</div>
-                          <div style={{ fontSize:11, color:M.ink3, marginTop:1, fontFamily:M.fontMono }}>{bank.bic}</div>
-                        </div>
-                        <button className="m-tap" onClick={() => removeBank(entry.uid)}
-                          style={{ background:'none', border:'none', cursor:'pointer', padding:4, display:'flex', alignItems:'center' }}>
-                          <I name="x" size={14} color={M.ink4}/>
-                        </button>
-                      </div>
-                    </React.Fragment>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Add bank button */}
-          <button className="m-tap" onClick={openBankSearch}
-            style={{ width:'100%', padding:'13px 16px', borderRadius:12, border:`1.5px dashed ${M.line2}`, background:'transparent', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8, fontFamily:M.fontUI, boxSizing:'border-box' }}>
-            <I name="plus" size={16} color={M.tint}/>
-            <span style={{ fontSize:15, fontWeight:500, color:M.tint }}>{t('onboarding.addBank')}</span>
-          </button>
-
-        </div>
-
-        {connectedBanks.length > 0 ? (
-          <button className="m-btn sage m-tap" style={{ height:54, width:'100%', fontSize:16, fontWeight:700, marginBottom:8 }} onClick={handleComplete}>
-            {t('onboarding.complete')}
-          </button>
-        ) : (
-          <button className="m-btn sage m-tap" style={{ height:54, width:'100%', fontSize:16, fontWeight:700, marginBottom:8 }} onClick={openBankSearch}>
-            {t('onboarding.connectBankCta')}
-          </button>
-        )}
+        <button className="m-btn sage m-tap" style={{ height:54, width:'100%', fontSize:16, fontWeight:700 }} onClick={handleContinue}>
+          {t('login.continue')}
+        </button>
       </div>
 
       {/* API info overlay */}
