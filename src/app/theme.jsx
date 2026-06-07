@@ -147,6 +147,7 @@ export function I({ name, size = 20, color = 'currentColor', stroke = 1.6 }) {
     case 'alert': return w(<><path d="M12 4L3 20h18z" {...p}/><path d="M12 10v5M12 17.5v.5" {...p}/></>);
     case 'swap':  return w(<path d="M4 8h13l-3-3M20 16H7l3 3" {...p}/>);
     case 'ban':    return w(<><circle cx="12" cy="12" r="9" {...p}/><path d="M5.6 5.6l12.8 12.8" {...p}/></>);
+    case 'users':  return w(<><circle cx="9" cy="8" r="3.5" {...p}/><path d="M2 20c1-3.5 3.8-5.5 7-5.5s6 2 7 5.5" {...p}/><path d="M17 5a3.5 3.5 0 010 7M22 20c-1-3-3-4.5-5-5" {...p}/></>);
     case 'trash':  return w(<><path d="M5 8h14M10 8V5h4v3M8 8l.8 12h6.4L16 8" {...p}/></>);
     case 'refresh': return w(<><path d="M4 12a8 8 0 0114-5.3L20 5v5h-5" {...p}/><path d="M20 12a8 8 0 01-14 5.3L4 19v-5h5" {...p}/></>);
     case 'map':    return w(<><path d="M3 7l6-2 6 2 6-2v12l-6 2-6-2-6 2V7z" {...p}/><path d="M9 5v14M15 7v14" {...p}/></>);
