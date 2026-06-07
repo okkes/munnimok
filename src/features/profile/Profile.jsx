@@ -221,7 +221,26 @@ export function ScreenProfile() {
                 computeUserDataKey(loginMethod, _safeEmail, 'munni_bank_accounts'),
                 computeUserDataKey(loginMethod, _safeEmail, 'munni_profile_name'),
                 computeUserDataKey(loginMethod, _safeEmail, 'munni_schema_v'),
+                computeUserDataKey(loginMethod, _safeEmail, 'munni_profile_firstname'),
+                computeUserDataKey(loginMethod, _safeEmail, 'munni_profile_lastname'),
+                computeUserDataKey(loginMethod, _safeEmail, 'munni_profile_picture'),
               ].forEach(k => localStorage.removeItem(k));
+              // Remove method from signup registry so re-signup works
+              try {
+                const methods = JSON.parse(localStorage.getItem('munni_signup_methods') || '[]');
+                localStorage.setItem('munni_signup_methods', JSON.stringify(methods.filter(m => m !== loginMethod)));
+              } catch {}
+              // For email method: remove from signup emails list
+              if (loginMethod === 'email') {
+                try {
+                  const emails = JSON.parse(localStorage.getItem('munni_signup_emails') || '[]');
+                  localStorage.setItem('munni_signup_emails', JSON.stringify(emails.filter(e => e !== _safeEmail)));
+                } catch {}
+              }
+              // For SSO: remove display email
+              if (loginMethod === 'google' || loginMethod === 'apple') {
+                localStorage.removeItem(`munni_display_email_${loginMethod}`);
+              }
               // Clear session
               sessionStorage.removeItem('munni_last_login_method');
               sessionStorage.removeItem('munni_profile_email');

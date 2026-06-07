@@ -15,7 +15,9 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
   const [firstName,     setFirstName]     = React.useState(signup.firstName || '');
   const [lastName,      setLastName]      = React.useState(signup.lastName  || '');
   const [email,         setEmail]         = React.useState(signup.displayEmail || '');
-  const [selectedBanks, setSelectedBanks] = React.useState(() => new Set(signup.banks || []));
+  const [connectedBanks, setConnectedBanks] = React.useState(
+    () => (signup.banks || []).map((id, i) => ({ id, uid: `init_${i}` }))
+  );
   const [bankSearch,    setBankSearch]    = React.useState('');
   const [apiUrl,        setApiUrl]        = React.useState(signup.apiUrl || '');
   const [showAdvanced,  setShowAdvanced]  = React.useState(false);
@@ -45,12 +47,11 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
     return () => window.removeEventListener('popstate', handlePop);
   }, []);
 
-  const toggleBank = (bankId) => {
-    setSelectedBanks(prev => {
-      const next = new Set(prev);
-      if (next.has(bankId)) next.delete(bankId); else next.add(bankId);
-      return next;
-    });
+  const addBank = (bankId) => {
+    setConnectedBanks(prev => [...prev, { id: bankId, uid: `${Date.now()}_${Math.random()}` }]);
+  };
+  const removeBank = (uid) => {
+    setConnectedBanks(prev => prev.filter(b => b.uid !== uid));
   };
 
   const validate = () => {
@@ -76,7 +77,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
       email:     isSSO ? signup.displayEmail : email.trim().toLowerCase(),
       apiUrl:    apiUrl.trim(),
       picture,
-      selectedBanks: [...selectedBanks],
+      selectedBanks: connectedBanks.map(b => b.id),
     });
   };
 
@@ -202,23 +203,31 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
             <div style={{ fontSize:11, color:M.sageDk, lineHeight:1.5 }}>{t('onboarding.bankPSD2Note')}</div>
           </div>
 
-          {/* Connected chips */}
-          {selectedBanks.size > 0 && (
+          {/* Connected banks — account rows (same style as Accounts screen) */}
+          {connectedBanks.length > 0 && (
             <div style={{ marginBottom:12 }}>
               <div style={{ fontSize:11, fontWeight:600, color:M.ink3, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:8 }}>{t('onboarding.connected')}</div>
-              <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
-                {[...selectedBanks].map(bankId => {
-                  const bank = DUTCH_BANKS.find(b => b.id === bankId);
+              <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
+                {connectedBanks.map((entry, i) => {
+                  const bank = DUTCH_BANKS.find(b => b.id === entry.id);
                   if (!bank) return null;
+                  const sameBeforeCount = connectedBanks.slice(0, i).filter(b => b.id === entry.id).length;
+                  const label = sameBeforeCount > 0 ? `${bank.name} (${sameBeforeCount + 1})` : bank.name;
                   return (
-                    <div key={bankId} style={{ display:'flex', alignItems:'center', gap:6, padding:'5px 8px 5px 6px', borderRadius:999, background:M.sageSoft, border:`1.5px solid ${M.sage}` }}>
-                      <div style={{ width:20, height:20, borderRadius:5, background:`${bank.color}22`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:11 }}>{bank.logo}</div>
-                      <span style={{ fontSize:12, fontWeight:600, color:M.sageDk }}>{bank.name}</span>
-                      <button className="m-tap" onClick={() => toggleBank(bankId)}
-                        style={{ background:'none', border:'none', cursor:'pointer', padding:0, display:'flex', alignItems:'center', marginLeft:1 }}>
-                        <I name="x" size={12} color={M.sage}/>
-                      </button>
-                    </div>
+                    <React.Fragment key={entry.uid}>
+                      {i > 0 && <Divider inset={48}/>}
+                      <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
+                        <div style={{ width:36, height:36, borderRadius:10, background:`${bank.color}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:18 }}>{bank.logo}</div>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontSize:14, fontWeight:500, color:M.ink }}>{label}</div>
+                          <div style={{ fontSize:11, color:M.ink3, marginTop:1, fontFamily:M.fontMono }}>{bank.bic}</div>
+                        </div>
+                        <button className="m-tap" onClick={() => removeBank(entry.uid)}
+                          style={{ background:'none', border:'none', cursor:'pointer', padding:4, display:'flex', alignItems:'center' }}>
+                          <I name="x" size={14} color={M.ink4}/>
+                        </button>
+                      </div>
+                    </React.Fragment>
                   );
                 })}
               </div>
@@ -241,20 +250,20 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
             {filteredBanks.length === 0
               ? <div style={{ padding:'20px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>{t('onboarding.noResults')}</div>
               : filteredBanks.map((bank, i) => {
-                  const isSel = selectedBanks.has(bank.id);
+                  const connCount = connectedBanks.filter(b => b.id === bank.id).length;
                   return (
                     <React.Fragment key={bank.id}>
                       {i > 0 && <Divider inset={48}/>}
-                      <div className="m-tap" onClick={() => toggleBank(bank.id)}
+                      <div className="m-tap" onClick={() => addBank(bank.id)}
                         style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
                         <div style={{ width:36, height:36, borderRadius:10, background:`${bank.color}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:18 }}>{bank.logo}</div>
                         <div style={{ flex:1, minWidth:0 }}>
                           <div style={{ fontSize:14, fontWeight:500, color:M.ink }}>{bank.name}</div>
                           <div style={{ fontSize:11, color:M.ink3, marginTop:1, fontFamily:M.fontMono }}>{bank.bic}</div>
                         </div>
-                        {isSel ? (
+                        {connCount > 0 ? (
                           <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                            <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>{t('onboarding.connected')}</span>
+                            <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:M.sageSoft, color:M.sage }}>{connCount}×</span>
                             <I name="caretR" size={14} color={M.sage}/>
                           </div>
                         ) : (
