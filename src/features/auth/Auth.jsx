@@ -1,5 +1,5 @@
 import React from 'react';
-import { M, I, IcoGoogle, IcoApple, StatusBar } from '../../app/theme.jsx';
+import { M, I, IcoGoogle, IcoApple, StatusBar, Divider } from '../../app/theme.jsx';
 import { useLang } from '../../shared/i18n.jsx';
 import { DUTCH_BANKS } from '../accounts/data.js';
 import { STOCK_AVATARS } from '../../shared/constants.js';
@@ -32,21 +32,11 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
     reader.readAsDataURL(file);
   };
 
-  const COUNTRY_LABELS = { NL: '🇳🇱 Netherlands', EU: '🌍 International' };
-  const COUNTRY_ORDER  = ['NL', 'EU'];
-
   const filteredBanks = React.useMemo(() => {
     const q = bankSearch.toLowerCase().trim();
     if (!q) return DUTCH_BANKS;
     return DUTCH_BANKS.filter(b => b.name.toLowerCase().includes(q) || b.bic.toLowerCase().includes(q));
   }, [bankSearch]);
-
-  const groupedBanks = React.useMemo(() => {
-    if (bankSearch.trim()) return [{ country: null, label: null, banks: filteredBanks }];
-    return COUNTRY_ORDER
-      .map(c => ({ country: c, label: COUNTRY_LABELS[c], banks: DUTCH_BANKS.filter(b => b.country === c) }))
-      .filter(g => g.banks.length > 0);
-  }, [bankSearch, filteredBanks]);
 
   React.useEffect(() => {
     window.history.pushState({ munniLoginMode: 'signup-onboarding' }, '');
@@ -235,45 +225,46 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
             </div>
           )}
 
-          {/* Search */}
-          <div style={{ position:'relative', marginBottom:8 }}>
-            <I name="search" size={15} color={M.ink4} style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', pointerEvents:'none' }}/>
+          {/* Search — matches Accounts "Connect a bank" sheet */}
+          <div style={{ position:'relative', marginBottom:12 }}>
+            <I name="search" size={16} color={M.ink4} style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', pointerEvents:'none' }}/>
             <input
               value={bankSearch}
               onChange={e => setBankSearch(e.target.value)}
               placeholder={t('onboarding.searchBank')}
-              style={{ width:'100%', boxSizing:'border-box', padding:'10px 14px 10px 36px', borderRadius:10, border:`1.5px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', color:M.ink }}
+              style={{ width:'100%', padding:'10px 12px 10px 36px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box' }}
             />
           </div>
 
-          {/* Grouped scrollable list */}
-          <div style={{ maxHeight:300, overflowY:'auto', borderRadius:12, border:`1px solid ${M.line}` }}>
-            {filteredBanks.length === 0 ? (
-              <div style={{ padding:'20px 16px', textAlign:'center', fontSize:13, color:M.ink4 }}>{t('onboarding.noResults')}</div>
-            ) : groupedBanks.map(({ country, label, banks }) => (
-              <div key={country || 'all'}>
-                {label && (
-                  <div style={{ padding:'10px 14px 4px', fontSize:10, fontWeight:700, color:M.ink4, textTransform:'uppercase', letterSpacing:'0.07em', background:M.paper }}>{label}</div>
-                )}
-                {banks.map((bank, bi) => {
+          {/* Bank list — same style as Accounts connect bank sheet */}
+          <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}`, maxHeight:340, overflowY:'auto' }}>
+            {filteredBanks.length === 0
+              ? <div style={{ padding:'20px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>{t('onboarding.noResults')}</div>
+              : filteredBanks.map((bank, i) => {
                   const isSel = selectedBanks.has(bank.id);
-                  const isLast = bi === banks.length - 1;
                   return (
-                    <button key={bank.id} className="m-tap" onClick={() => toggleBank(bank.id)}
-                      style={{ display:'flex', alignItems:'center', gap:12, padding:'11px 14px', background:isSel ? M.sageSoft : M.paper, border:'none', borderBottom: isLast && !label ? 'none' : `1px solid ${M.line2}`, cursor:'pointer', textAlign:'left', width:'100%' }}>
-                      <div style={{ width:34, height:34, borderRadius:9, background:`${bank.color}22`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:16, flexShrink:0 }}>{bank.logo}</div>
-                      <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontSize:13, fontWeight:500, color:M.ink }}>{bank.name}</div>
-                        <div style={{ fontSize:11, color:M.ink4, fontFamily:M.fontMono }}>{bank.bic}</div>
+                    <React.Fragment key={bank.id}>
+                      {i > 0 && <Divider inset={48}/>}
+                      <div className="m-tap" onClick={() => toggleBank(bank.id)}
+                        style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
+                        <div style={{ width:36, height:36, borderRadius:10, background:`${bank.color}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:18 }}>{bank.logo}</div>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontSize:14, fontWeight:500, color:M.ink }}>{bank.name}</div>
+                          <div style={{ fontSize:11, color:M.ink3, marginTop:1, fontFamily:M.fontMono }}>{bank.bic}</div>
+                        </div>
+                        {isSel ? (
+                          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                            <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>{t('onboarding.connected')}</span>
+                            <I name="caretR" size={14} color={M.sage}/>
+                          </div>
+                        ) : (
+                          <I name="caretR" size={14} color={M.ink4}/>
+                        )}
                       </div>
-                      <div style={{ width:20, height:20, borderRadius:'50%', border:`1.5px solid ${isSel ? M.sage : M.line}`, background:isSel ? M.sage : 'transparent', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                        {isSel && <I name="check" size={11} color="#fff" stroke={2.5}/>}
-                      </div>
-                    </button>
+                    </React.Fragment>
                   );
-                })}
-              </div>
-            ))}
+                })
+            }
           </div>
 
           {!isSSO && (
