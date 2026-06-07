@@ -12,7 +12,7 @@ import { ScreenStub } from '../features/extra/Stub.jsx';
 import { ScreenHome } from '../features/home/Home.jsx';
 import { ScreenTransactions, ScreenTxDetail, ScreenExpenses, ScreenCategoryDrill } from '../features/transactions/Tx.jsx';
 import { ScreenEvents, ScreenEventDetail, ScreenEventCreate } from '../features/events/Events.jsx';
-import { ScreenProfile, ScreenProfiles, ScreenProfileDetail } from '../features/profile/Profile.jsx';
+import { ScreenProfile, ScreenProfiles, ScreenProfileDetail, ScreenUserInfo } from '../features/profile/Profile.jsx';
 import { ScreenLanguagePicker, ScreenSettings, ScreenPeriods, ScreenTutorial, ScreenNotifications, ScreenManageCategories, ScreenCustomizeHome } from '../features/settings/Settings.jsx';
 import { ScreenAccounts, ScreenSavings, ScreenSavingsDetail, ScreenSavingAccounts, ScreenAccountsAll, ScreenIntegrations, ScreenIntegrationLogin, ScreenIntegrationReceipts } from '../features/accounts/Accounts.jsx';
 import { ScreenRecurringTab, ScreenRecurringDetail, ScreenRecurringCreate, ScreenRecurringDeals } from '../features/recurring/Recurring.jsx';
@@ -70,6 +70,7 @@ export const SCREEN_REGISTRY = {
   language:       () => <ScreenLanguagePicker/>,
   customGraphCreate: () => <ScreenCustomGraphCreate/>,
   friends:           () => <ScreenFriends/>,
+  userInfo:          () => <ScreenUserInfo/>,
 };
 
 function TabRoot() {
@@ -398,6 +399,10 @@ function ScreenLoginGate({ onLogin }) {
       const { method, canonicalEmail, backMode } = pendingSignup;
       const isSSO = method === 'google' || method === 'apple';
       const finalEmail = isSSO ? canonicalEmail : data.email;
+      // Store SSO display email (munni-demo@gmail.com etc.) for ScreenUserInfo
+      if (isSSO && data.email) {
+        localStorage.setItem(`munni_display_email_${method}`, JSON.stringify(data.email));
+      }
       // For email method: register email
       if (method === 'email') {
         const emails = getSignupEmails();

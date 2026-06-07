@@ -16,11 +16,37 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
   const [lastName,      setLastName]      = React.useState(signup.lastName  || '');
   const [email,         setEmail]         = React.useState(signup.displayEmail || '');
   const [selectedBanks, setSelectedBanks] = React.useState(() => new Set(signup.banks || []));
+  const [bankSearch,    setBankSearch]    = React.useState('');
   const [apiUrl,        setApiUrl]        = React.useState(signup.apiUrl || '');
   const [showAdvanced,  setShowAdvanced]  = React.useState(false);
   const [picture,       setPicture]       = React.useState(signup.picture || null);
   const [showPicker,    setShowPicker]    = React.useState(false);
   const [errors,        setErrors]        = React.useState({});
+  const fileInputRef = React.useRef(null);
+
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => { setPicture(ev.target.result); setShowPicker(false); };
+    reader.readAsDataURL(file);
+  };
+
+  const COUNTRY_LABELS = { NL: '🇳🇱 Netherlands', EU: '🌍 International' };
+  const COUNTRY_ORDER  = ['NL', 'EU'];
+
+  const filteredBanks = React.useMemo(() => {
+    const q = bankSearch.toLowerCase().trim();
+    if (!q) return DUTCH_BANKS;
+    return DUTCH_BANKS.filter(b => b.name.toLowerCase().includes(q) || b.bic.toLowerCase().includes(q));
+  }, [bankSearch]);
+
+  const groupedBanks = React.useMemo(() => {
+    if (bankSearch.trim()) return [{ country: null, label: null, banks: filteredBanks }];
+    return COUNTRY_ORDER
+      .map(c => ({ country: c, label: COUNTRY_LABELS[c], banks: DUTCH_BANKS.filter(b => b.country === c) }))
+      .filter(g => g.banks.length > 0);
+  }, [bankSearch, filteredBanks]);
 
   React.useEffect(() => {
     window.history.pushState({ munniLoginMode: 'signup-onboarding' }, '');
@@ -178,34 +204,78 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
           <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
             <div style={{ fontSize:13, fontWeight:600, color:M.ink }}>{t('onboarding.bankAccounts')}</div>
             {!isSSO && <span style={{ fontSize:11, color:M.ink4 }}>(optional)</span>}
-            {isSSO && selectedBanks.size > 0 && (
-              <span style={{ fontSize:10, fontWeight:700, padding:'2px 7px', borderRadius:999, background:M.sageSoft, color:M.sage }}>
-                {t('onboarding.connected')}
-              </span>
-            )}
           </div>
+
+          {/* PSD2 note */}
           <div style={{ padding:'10px 12px', borderRadius:10, background:M.sageSoft, marginBottom:12, display:'flex', gap:10, alignItems:'flex-start' }}>
             <I name="lock" size={14} color={M.sage}/>
             <div style={{ fontSize:11, color:M.sageDk, lineHeight:1.5 }}>{t('onboarding.bankPSD2Note')}</div>
           </div>
-          <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-            {DUTCH_BANKS.map(bank => {
-              const isSel = selectedBanks.has(bank.id);
-              return (
-                <button key={bank.id} className="m-tap" onClick={() => toggleBank(bank.id)}
-                  style={{ display:'flex', alignItems:'center', gap:12, padding:'11px 14px', borderRadius:12, background:isSel ? M.sageSoft : M.paper2, border:`1.5px solid ${isSel ? M.sage : M.line}`, cursor:'pointer', textAlign:'left', width:'100%' }}>
-                  <div style={{ width:34, height:34, borderRadius:9, background:`${bank.color}22`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:16, flexShrink:0 }}>{bank.logo}</div>
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:13, fontWeight:500, color:M.ink }}>{bank.name}</div>
-                    <div style={{ fontSize:11, color:M.ink4, fontFamily:M.fontMono }}>{bank.bic}</div>
-                  </div>
-                  <div style={{ width:20, height:20, borderRadius:'50%', border:`1.5px solid ${isSel ? M.sage : M.line}`, background:isSel ? M.sage : 'transparent', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                    {isSel && <I name="check" size={11} color="#fff" stroke={2.5}/>}
-                  </div>
-                </button>
-              );
-            })}
+
+          {/* Connected chips */}
+          {selectedBanks.size > 0 && (
+            <div style={{ marginBottom:12 }}>
+              <div style={{ fontSize:11, fontWeight:600, color:M.ink3, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:8 }}>{t('onboarding.connected')}</div>
+              <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
+                {[...selectedBanks].map(bankId => {
+                  const bank = DUTCH_BANKS.find(b => b.id === bankId);
+                  if (!bank) return null;
+                  return (
+                    <div key={bankId} style={{ display:'flex', alignItems:'center', gap:6, padding:'5px 8px 5px 6px', borderRadius:999, background:M.sageSoft, border:`1.5px solid ${M.sage}` }}>
+                      <div style={{ width:20, height:20, borderRadius:5, background:`${bank.color}22`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:11 }}>{bank.logo}</div>
+                      <span style={{ fontSize:12, fontWeight:600, color:M.sageDk }}>{bank.name}</span>
+                      <button className="m-tap" onClick={() => toggleBank(bankId)}
+                        style={{ background:'none', border:'none', cursor:'pointer', padding:0, display:'flex', alignItems:'center', marginLeft:1 }}>
+                        <I name="x" size={12} color={M.sage}/>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Search */}
+          <div style={{ position:'relative', marginBottom:8 }}>
+            <I name="search" size={15} color={M.ink4} style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', pointerEvents:'none' }}/>
+            <input
+              value={bankSearch}
+              onChange={e => setBankSearch(e.target.value)}
+              placeholder={t('onboarding.searchBank')}
+              style={{ width:'100%', boxSizing:'border-box', padding:'10px 14px 10px 36px', borderRadius:10, border:`1.5px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', color:M.ink }}
+            />
           </div>
+
+          {/* Grouped scrollable list */}
+          <div style={{ maxHeight:300, overflowY:'auto', borderRadius:12, border:`1px solid ${M.line}` }}>
+            {filteredBanks.length === 0 ? (
+              <div style={{ padding:'20px 16px', textAlign:'center', fontSize:13, color:M.ink4 }}>{t('onboarding.noResults')}</div>
+            ) : groupedBanks.map(({ country, label, banks }) => (
+              <div key={country || 'all'}>
+                {label && (
+                  <div style={{ padding:'10px 14px 4px', fontSize:10, fontWeight:700, color:M.ink4, textTransform:'uppercase', letterSpacing:'0.07em', background:M.paper }}>{label}</div>
+                )}
+                {banks.map((bank, bi) => {
+                  const isSel = selectedBanks.has(bank.id);
+                  const isLast = bi === banks.length - 1;
+                  return (
+                    <button key={bank.id} className="m-tap" onClick={() => toggleBank(bank.id)}
+                      style={{ display:'flex', alignItems:'center', gap:12, padding:'11px 14px', background:isSel ? M.sageSoft : M.paper, border:'none', borderBottom: isLast && !label ? 'none' : `1px solid ${M.line2}`, cursor:'pointer', textAlign:'left', width:'100%' }}>
+                      <div style={{ width:34, height:34, borderRadius:9, background:`${bank.color}22`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:16, flexShrink:0 }}>{bank.logo}</div>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:13, fontWeight:500, color:M.ink }}>{bank.name}</div>
+                        <div style={{ fontSize:11, color:M.ink4, fontFamily:M.fontMono }}>{bank.bic}</div>
+                      </div>
+                      <div style={{ width:20, height:20, borderRadius:'50%', border:`1.5px solid ${isSel ? M.sage : M.line}`, background:isSel ? M.sage : 'transparent', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                        {isSel && <I name="check" size={11} color="#fff" stroke={2.5}/>}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+
           {!isSSO && (
             <button className="m-tap" onClick={handleComplete}
               style={{ background:'none', border:'none', fontSize:13, color:M.ink3, cursor:'pointer', fontFamily:M.fontUI, padding:'10px 0 0', textDecoration:'underline', display:'block' }}>
@@ -251,6 +321,13 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
           <div style={{ background:M.paper, borderRadius:'20px 20px 0 0', padding:'16px 20px 32px' }} onClick={e => e.stopPropagation()}>
             <div style={{ width:36, height:4, borderRadius:2, background:M.line2, margin:'0 auto 16px' }}/>
             <div style={{ fontSize:14, fontWeight:600, color:M.ink, marginBottom:16 }}>{t('profile.picTitle')}</div>
+            <label style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0', cursor:'pointer', borderBottom:`1px solid ${M.line2}`, marginBottom:14 }}>
+              <div style={{ width:40, height:40, borderRadius:10, background:M.paper2, border:`1px solid ${M.line}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <I name="cam" size={18} color={M.ink2}/>
+              </div>
+              <div style={{ fontSize:15, fontWeight:500, color:M.ink }}>{t('profile.chooseLibrary')}</div>
+              <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileChange} style={{ display:'none' }}/>
+            </label>
             <div style={{ display:'grid', gridTemplateColumns:'repeat(5, 1fr)', gap:10 }}>
               {STOCK_AVATARS.map(av => (
                 <button key={av.id} className="m-tap" onClick={() => { setPicture(av.id); setShowPicker(false); }}

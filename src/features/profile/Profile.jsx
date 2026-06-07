@@ -3,7 +3,7 @@ import { fmtEur } from '../../shared/utils/format.js';
 import { getUserId, addDevLog, computeUserDataKey, registerUserInGlobalRegistry, formatCreatorLabel } from '../../shared/utils/user.js';
 import { DEMO_ACCOUNTS } from '../accounts/data.js';
 import { getDefaultProfileName, computeProfileKey } from './data.js';
-import { M, I, IcoMDI, Divider, StatusBar, AppBar } from '../../app/theme.jsx';
+import { M, I, IcoMDI, IcoGoogle, IcoApple, Divider, StatusBar, AppBar } from '../../app/theme.jsx';
 import { useNav, Sheet, TabBar } from '../../app/nav.jsx';
 import { useLang } from '../../shared/i18n.jsx';
 import { useLocalStorage, useSessionStorage, clearAllStorage } from '../../shared/hooks.jsx';
@@ -39,7 +39,6 @@ export function ProfileAvatar({ profile, size = 36 }) {
 export function ScreenProfile() {
   const nav = useNav();
   const { t } = useLang();
-  const [editing, setEditing] = React.useState(false);
   const [loginMethod] = useSessionStorage('munni_last_login_method', '');
   const [email] = useSessionStorage('munni_profile_email', '');
   const _safeEmail = React.useMemo(() => { try { return JSON.parse(email||'""')||''; } catch { return email||''; } }, [email]);
@@ -74,30 +73,9 @@ export function ScreenProfile() {
   const { profiles } = useProfiles();
   const activeProfile = profiles.find(p => p.active) || profiles[0];
   const [connectedAccounts] = useConnectedAccounts();
-  const [draft, setDraft] = React.useState({ firstName, lastName });
   const [showReset, setShowReset] = React.useState(false);
   const [showDeleteAccount, setShowDeleteAccount] = React.useState(false);
-  const [showPicturePicker, setShowPicturePicker] = React.useState(false);
-
-  const handleUserFileChange = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => { setUserPicture(ev.target.result); setShowPicturePicker(false); };
-    reader.readAsDataURL(file);
-  };
-
   const { logout: logoutFn } = useAppCtx();
-  const startEdit = () => { setDraft({ firstName, lastName }); setEditing(true); };
-  const save = () => {
-    const fn = draft.firstName.trim();
-    const ln = draft.lastName.trim();
-    setFirstName(fn);
-    setLastName(ln);
-    setName([fn, ln].filter(Boolean).join(' '));
-    setEditing(false);
-  };
-  const cancel = () => setEditing(false);
   const initial = (firstName || name || '?').charAt(0).toUpperCase();
 
   const isDemo = loginMethod === 'bank';
@@ -108,58 +86,28 @@ export function ScreenProfile() {
   return (
     <div className="m-screen">
       <StatusBar/>
-      <AppBar title={t('screen.settings')} large
-        trailing={editing
-          ? <button className="m-tap" onClick={cancel} style={{ background:'transparent', border:'none', fontSize:14, fontWeight:600, color:M.ink3, cursor:'pointer', fontFamily:M.fontUI }}>{t('action.cancel')}</button>
-          : null
-        }
-      />
+      <AppBar title={t('screen.settings')} large/>
       <div className="m-body-scroll">
-        {/* Identity card */}
-        <div className="m-card" style={{ padding: 18, marginBottom: 16, border: `1px solid ${M.line}`, display: 'flex', alignItems: 'center', gap: 14 }}>
-          <button className="m-tap" onClick={() => !isDemo && setShowPicturePicker(true)} style={{ position:'relative', background:'none', border:'none', cursor: isDemo ? 'default' : 'pointer', padding:0, flexShrink:0 }}>
+        {/* Identity card — tappable → ScreenUserInfo */}
+        <button className="m-tap" onClick={() => nav.push('userInfo')} style={{ display:'flex', alignItems:'center', gap:14, padding:18, marginBottom:16, background:M.paper, borderRadius:16, border:`1px solid ${M.line}`, width:'100%', textAlign:'left', cursor:'pointer' }}>
+          <div style={{ position:'relative', flexShrink:0 }}>
             {userPicture ? (
-              userPicture.startsWith('av') ? (
-                (() => { const av = STOCK_AVATARS.find(a => a.id === userPicture); return av ? <div style={{ width:56, height:56, borderRadius:999, background:av.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:26 }}>{av.emoji}</div> : null; })()
-              ) : (
-                <img src={userPicture} style={{ width:56, height:56, borderRadius:999, objectFit:'cover' }}/>
-              )
+              userPicture.startsWith('av')
+                ? (() => { const av = STOCK_AVATARS.find(a => a.id === userPicture); return av ? <div style={{ width:52, height:52, borderRadius:999, background:av.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:24 }}>{av.emoji}</div> : null; })()
+                : <img src={userPicture} style={{ width:52, height:52, borderRadius:999, objectFit:'cover' }} alt=""/>
             ) : (
-              <div style={{ width:56, height:56, borderRadius:999, background:`linear-gradient(135deg, ${M.sage} 0%, #3D5A42 100%)`, display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', fontWeight:600, fontSize:22, fontFamily:M.fontDisp }}>{initial}</div>
+              <div style={{ width:52, height:52, borderRadius:999, background:`linear-gradient(135deg, ${M.sage} 0%, #3D5A42 100%)`, display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', fontWeight:600, fontSize:20, fontFamily:M.fontDisp }}>{initial}</div>
             )}
-            {!isDemo && <div style={{ position:'absolute', bottom:0, right:0, width:20, height:20, borderRadius:'50%', background:M.sage, display:'flex', alignItems:'center', justifyContent:'center', border:'2px solid #fff' }}>
-              <I name="cam" size={10} color="#fff"/>
-            </div>}
-          </button>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            {editing && !isDemo ? (
-              <div style={{ display:'flex', gap:6, marginBottom:6 }}>
-                <input value={draft.firstName} onChange={e => setDraft(d => ({...d, firstName: e.target.value}))}
-                  placeholder={t('settings.firstName')}
-                  style={{ flex:1, fontSize:15, fontWeight:500, border:`1px solid ${M.sage}`, borderRadius:8, padding:'6px 10px', fontFamily:M.fontUI, background:M.paper2, outline:'none', color:M.ink, minWidth:0 }}/>
-                <input value={draft.lastName} onChange={e => setDraft(d => ({...d, lastName: e.target.value}))}
-                  placeholder={t('settings.lastName')}
-                  style={{ flex:1, fontSize:15, fontWeight:500, border:`1px solid ${M.sage}`, borderRadius:8, padding:'6px 10px', fontFamily:M.fontUI, background:M.paper2, outline:'none', color:M.ink, minWidth:0 }}/>
-              </div>
-            ) : (
-              <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:2, flexWrap:'wrap' }}>
-                <div style={{ fontSize: 17, fontWeight: 600 }}>{fullName}</div>
-                {isDemo && <span style={{ fontSize:9, fontWeight:700, padding:'2px 6px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase', letterSpacing:'0.05em' }}>Demo</span>}
-              </div>
-            )}
-            <div style={{ fontSize: 12, color: M.ink3, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{emailDisplay}</div>
-            {isDemo && <div style={{ fontSize:11, color:M.ochre, marginTop:3 }}>Demo account · read-only profile</div>}
           </div>
-          {!isDemo && (editing ? (
-            <button className="m-tap" onClick={save} style={{ width:36, height:36, borderRadius:999, background:M.sage, border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-              <I name="check" size={16} color="#fff" stroke={2.5}/>
-            </button>
-          ) : (
-            <button className="m-tap" onClick={startEdit} style={{ width:36, height:36, borderRadius:999, background:M.paper2, border:`1px solid ${M.line}`, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-              <I name="edit" size={16} color={M.ink3}/>
-            </button>
-          ))}
-        </div>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:2 }}>
+              <div style={{ fontSize:17, fontWeight:600, color:M.ink }}>{fullName}</div>
+              {isDemo && <span style={{ fontSize:9, fontWeight:700, padding:'2px 6px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase', letterSpacing:'0.05em' }}>Demo</span>}
+            </div>
+            <div style={{ fontSize:12, color:M.ink3, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{emailDisplay}</div>
+          </div>
+          <I name="arrowR" size={16} color={M.ink4}/>
+        </button>
 
         {/* Manage */}
         <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>{t('settings.manage')}</div>
@@ -314,28 +262,181 @@ export function ScreenProfile() {
           </div>
         </Sheet>
       )}
+    </div>
+  );
+}
+
+export function ScreenUserInfo() {
+  const nav = useNav();
+  const { t } = useLang();
+  const [loginMethod] = useSessionStorage('munni_last_login_method', '');
+  const [email] = useSessionStorage('munni_profile_email', '');
+  const _safeEmail = React.useMemo(() => { try { return JSON.parse(email||'""')||''; } catch { return email||''; } }, [email]);
+  const _nameKey      = computeUserDataKey(loginMethod, _safeEmail, 'munni_profile_name');
+  const _firstNameKey = computeUserDataKey(loginMethod, _safeEmail, 'munni_profile_firstname');
+  const _lastNameKey  = computeUserDataKey(loginMethod, _safeEmail, 'munni_profile_lastname');
+  const [name,      setName]      = useLocalStorage(_nameKey,      '');
+  const [firstName, setFirstName] = useLocalStorage(_firstNameKey, '');
+  const [lastName,  setLastName]  = useLocalStorage(_lastNameKey,  '');
+  const pictureKey = React.useMemo(() => {
+    if (loginMethod === 'google') return 'munni_user_picture_google';
+    if (loginMethod === 'apple')  return 'munni_user_picture_apple';
+    if (loginMethod === 'bank')   return 'munni_user_picture_bank';
+    if (_safeEmail && !['google@munni.app','apple@munni.app','bank@munni.app',''].includes(_safeEmail)) return `munni_user_picture_${_safeEmail}`;
+    return 'munni_user_picture';
+  }, [loginMethod, _safeEmail]);
+  const [userPicture, setUserPicture] = useLocalStorage(pictureKey, null);
+  const _myId = React.useMemo(() => getUserId(), []);
+
+  const isDemo   = loginMethod === 'bank';
+  const isGoogle = loginMethod === 'google';
+  const isApple  = loginMethod === 'apple';
+
+  const [draftFirst, setDraftFirst] = React.useState(firstName);
+  const [draftLast,  setDraftLast]  = React.useState(lastName);
+  React.useEffect(() => { setDraftFirst(firstName); }, [firstName]);
+  React.useEffect(() => { setDraftLast(lastName);   }, [lastName]);
+
+  const [showPicturePicker, setShowPicturePicker] = React.useState(false);
+  const [copied, setCopied] = React.useState(false);
+
+  const emailDisplay = React.useMemo(() => {
+    if (isDemo) return 'demo@munni.app';
+    if (isGoogle) { try { return JSON.parse(localStorage.getItem('munni_display_email_google')||'""') || _safeEmail || ''; } catch { return _safeEmail || ''; } }
+    if (isApple)  { try { return JSON.parse(localStorage.getItem('munni_display_email_apple') ||'""') || _safeEmail || ''; } catch { return _safeEmail || ''; } }
+    return (_safeEmail && !['google@munni.app','apple@munni.app','bank@munni.app',''].includes(_safeEmail)) ? _safeEmail : '';
+  }, [isDemo, isGoogle, isApple, _safeEmail]);
+
+  const fullName = [firstName, lastName].filter(Boolean).join(' ') || name;
+  const initial  = (firstName || name || '?')[0].toUpperCase();
+
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => { setUserPicture(ev.target.result); setShowPicturePicker(false); };
+    reader.readAsDataURL(file);
+  };
+
+  const save = () => {
+    const fn = draftFirst.trim();
+    const ln = draftLast.trim();
+    setFirstName(fn); setLastName(ln);
+    setName([fn, ln].filter(Boolean).join(' '));
+    nav.pop();
+  };
+
+  const renderAvatar = (size) => {
+    if (userPicture?.startsWith('av')) {
+      const av = STOCK_AVATARS.find(a => a.id === userPicture);
+      if (av) return <div style={{ width:size, height:size, borderRadius:999, background:av.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:size*0.45 }}>{av.emoji}</div>;
+    }
+    if (userPicture?.startsWith('data:')) return <img src={userPicture} style={{ width:size, height:size, borderRadius:999, objectFit:'cover' }} alt=""/>;
+    return <div style={{ width:size, height:size, borderRadius:999, background:`linear-gradient(135deg, ${M.sage} 0%, #3D5A42 100%)`, display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', fontWeight:600, fontSize:size*0.38, fontFamily:M.fontDisp }}>{initial}</div>;
+  };
+
+  return (
+    <div className="m-screen">
+      <StatusBar/>
+      <AppBar title={t('settings.profileInfo')}
+        trailing={!isDemo
+          ? <button className="m-tap" onClick={save} style={{ background:'transparent', border:'none', fontSize:15, fontWeight:700, color:M.sage, cursor:'pointer', fontFamily:M.fontUI }}>{t('action.save')}</button>
+          : null}
+      />
+      <div className="m-body-scroll">
+
+        {/* Avatar section */}
+        <div style={{ display:'flex', flexDirection:'column', alignItems:'center', paddingTop:28, paddingBottom:28 }}>
+          <button className="m-tap" onClick={() => !isDemo && setShowPicturePicker(true)}
+            style={{ position:'relative', background:'none', border:'none', cursor:isDemo?'default':'pointer', padding:0, marginBottom:12 }}>
+            {renderAvatar(88)}
+            {!isDemo && (
+              <div style={{ position:'absolute', bottom:2, right:2, width:26, height:26, borderRadius:'50%', background:M.sage, display:'flex', alignItems:'center', justifyContent:'center', border:'3px solid #fff' }}>
+                <I name="cam" size={13} color="#fff"/>
+              </div>
+            )}
+          </button>
+          {!isDemo && (
+            <button className="m-tap" onClick={() => setShowPicturePicker(true)}
+              style={{ background:'none', border:'none', color:M.sage, fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+              {t('profile.changePhoto')}
+            </button>
+          )}
+        </div>
+
+        {/* Name section */}
+        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('settings.nameSection')}</div>
+        <div className="m-card" style={{ padding:'0 16px', marginBottom:16, border:`1px solid ${M.line}` }}>
+          <div style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
+            <div style={{ width:70, fontSize:12, color:M.ink3, flexShrink:0 }}>{t('settings.firstName')}</div>
+            <input value={draftFirst} onChange={e => setDraftFirst(e.target.value)} disabled={isDemo}
+              style={{ flex:1, fontSize:16, fontFamily:M.fontUI, border:'none', background:'transparent', outline:'none', color:isDemo?M.ink3:M.ink }}/>
+          </div>
+          <Divider/>
+          <div style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
+            <div style={{ width:70, fontSize:12, color:M.ink3, flexShrink:0 }}>{t('settings.lastName')}</div>
+            <input value={draftLast} onChange={e => setDraftLast(e.target.value)} disabled={isDemo}
+              style={{ flex:1, fontSize:16, fontFamily:M.fontUI, border:'none', background:'transparent', outline:'none', color:isDemo?M.ink3:M.ink }}/>
+          </div>
+        </div>
+
+        {/* Account info */}
+        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('settings.account')}</div>
+        <div className="m-card" style={{ padding:'0 16px', marginBottom:16, border:`1px solid ${M.line}` }}>
+          <div style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
+            <div style={{ width:20, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+              {isGoogle ? <IcoGoogle size={16}/> : isApple ? <IcoApple size={16} color={M.ink}/> : <I name="user" size={16} color={M.ink3}/>}
+            </div>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ fontSize:11, color:M.ink3, marginBottom:2 }}>{t('login.email')}</div>
+              <div style={{ fontSize:14, color:M.ink, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{emailDisplay || '—'}</div>
+            </div>
+            <I name="lock" size={13} color={M.ink4}/>
+          </div>
+          <Divider/>
+          <div style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
+            <div style={{ width:20, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+              <I name="user" size={16} color={M.ink3}/>
+            </div>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ fontSize:11, color:M.ink3, marginBottom:2 }}>{t('settings.userId')}</div>
+              <div style={{ fontSize:13, color:M.ink2, fontFamily:M.fontMono, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{_myId}</div>
+            </div>
+            <button className="m-tap" onClick={() => { navigator.clipboard?.writeText(_myId); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+              style={{ background:copied?M.sageSoft:M.paper2, border:`1px solid ${copied?M.sage:M.line}`, borderRadius:8, padding:'4px 10px', fontSize:11, fontWeight:600, color:copied?M.sage:M.ink3, cursor:'pointer', fontFamily:M.fontUI, flexShrink:0 }}>
+              {copied ? t('settings.copied') : t('settings.copyId')}
+            </button>
+          </div>
+        </div>
+
+        <div style={{ textAlign:'center', fontSize:11, color:M.ink4, paddingBottom:32 }}>
+          {isGoogle ? t('login.signedInGoogle') : isApple ? t('login.signedInApple') : isDemo ? 'Demo account' : t('login.connectedEmail')}
+        </div>
+      </div>
+
+      {/* Picture picker */}
       {showPicturePicker && (
         <Sheet onClose={() => setShowPicturePicker(false)}>
-          <div style={{ padding:'0 16px 8px' }}>
+          <div style={{ padding:'0 16px 16px' }}>
             <div style={{ fontSize:17, fontWeight:700, marginBottom:16 }}>{t('profile.picTitle')}</div>
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(5, 1fr)', gap:10, marginBottom:20 }}>
-              {STOCK_AVATARS.map(av => (
-                <button key={av.id} className="m-tap" onClick={() => { setUserPicture(av.id); setShowPicturePicker(false); }}
-                  style={{ background: userPicture === av.id ? M.sage : M.paper2, border: userPicture === av.id ? `2px solid ${M.sage}` : `2px solid ${M.line}`, borderRadius:14, padding:8, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                  <div style={{ width:40, height:40, borderRadius:999, background:av.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:22 }}>{av.emoji}</div>
-                </button>
-              ))}
-            </div>
-            <label style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0', cursor:'pointer', borderBottom:`1px solid ${M.line2}`, marginBottom:12 }}>
+            <label style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0', cursor:'pointer', borderBottom:`1px solid ${M.line2}`, marginBottom:14 }}>
               <div style={{ width:40, height:40, borderRadius:10, background:M.paper2, border:`1px solid ${M.line}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                 <I name="cam" size={18} color={M.ink2}/>
               </div>
               <div style={{ fontSize:15, fontWeight:500 }}>{t('profile.chooseLibrary')}</div>
-              <input type="file" accept="image/*" onChange={handleUserFileChange} style={{ display:'none' }}/>
+              <input type="file" accept="image/*" onChange={handleFileChange} style={{ display:'none' }}/>
             </label>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(5, 1fr)', gap:10, marginBottom:16 }}>
+              {STOCK_AVATARS.map(av => (
+                <button key={av.id} className="m-tap" onClick={() => { setUserPicture(av.id); setShowPicturePicker(false); }}
+                  style={{ width:'100%', aspectRatio:'1', borderRadius:14, background:av.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:26, border:`2px solid ${userPicture === av.id ? M.sage : 'transparent'}`, cursor:'pointer' }}>
+                  {av.emoji}
+                </button>
+              ))}
+            </div>
             {userPicture && (
               <button className="m-tap" onClick={() => { setUserPicture(null); setShowPicturePicker(false); }}
-                style={{ width:'100%', padding:'12px 0', background:M.paper2, color:M.ink3, border:`1px solid ${M.line}`, borderRadius:12, fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+                style={{ width:'100%', padding:'12px 0', background:M.paper2, color:M.clay, border:`1px solid ${M.line}`, borderRadius:12, fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
                 {t('profile.removePic')}
               </button>
             )}
