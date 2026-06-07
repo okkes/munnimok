@@ -22,6 +22,7 @@ import { ScreenGoals, ScreenGoalDetail } from '../features/goals/Goals.jsx';
 import { ScreenReviewSwipe, ScreenLinkReimburse } from '../features/review/Review.jsx';
 import { ScreenIncome, ScreenInvested, ScreenInsights, ScreenDebts, ScreenCustomGraphCreate } from '../features/extra/Extra.jsx';
 import { ScreenFriends } from '../features/friends/Friends.jsx';
+import { ScreenSignupOnboarding } from '../features/auth/Auth.jsx';
 
 
 export const SCREEN_REGISTRY = {
@@ -239,6 +240,7 @@ function ScreenLoginGate({ onLogin }) {
   const [loginError, setLoginError] = React.useState(null);
   const [signupError, setSignupError] = React.useState(null);
   const [noAccountMethod, setNoAccountMethod] = React.useState(null);
+  const [pendingSignup, setPendingSignup] = React.useState(null);
   const loadingTimerRef = React.useRef(null);
 
   const hasOpenedBefore = localStorage.getItem('munni_opened_before') === 'true';
@@ -298,7 +300,8 @@ function ScreenLoginGate({ onLogin }) {
       const methods = getSignupMethods();
       if (isSignup) {
         if (methods.includes('google')) { setSignupError(t('login.errGoogleExists')); return; }
-        doLogin('google', 'google@munni.app', 'Google van der Berg');
+        setPendingSignup({ method:'google', displayEmail:'munni-demo@gmail.com', canonicalEmail:'google@munni.app', firstName:'Google', lastName:'van der Berg', banks:['ing'], apiUrl:'apollousa.okkes.synology.me:443', picture:'av3', backMode:'signup' });
+        setMode('signup-onboarding');
       } else {
         if (!methods.includes('google')) { setNoAccountMethod('google'); setMode('no-account'); return; }
         doLogin('google', '', null);
@@ -315,7 +318,8 @@ function ScreenLoginGate({ onLogin }) {
       const methods = getSignupMethods();
       if (isSignup) {
         if (methods.includes('apple')) { setSignupError(t('login.errAppleExists')); return; }
-        doLogin('apple', 'apple@munni.app', 'Apple van der Berg');
+        setPendingSignup({ method:'apple', displayEmail:'munni-demo@hotmail.com', canonicalEmail:'apple@munni.app', firstName:'Apple', lastName:'van der Mac', banks:['abn'], apiUrl:'apollousa.okkes.synology.me:443', picture:'av4', backMode:'signup' });
+        setMode('signup-onboarding');
       } else {
         if (!methods.includes('apple')) { setNoAccountMethod('apple'); setMode('no-account'); return; }
         doLogin('apple', '', null);
@@ -372,9 +376,9 @@ function ScreenLoginGate({ onLogin }) {
         if (idx >= 6) {
           setVerifyDigits([...digits]);
           setTimeout(() => {
-            const updatedEmails = [...emails, email];
-            localStorage.setItem('munni_signup_emails', JSON.stringify(updatedEmails));
-            doLogin('email', email, signupName.trim(), false, lang);
+            const parts = signupName.trim().split(' ');
+            setPendingSignup({ method:'email', displayEmail:email, canonicalEmail:email, firstName:parts[0]||'', lastName:parts.slice(1).join(' ')||'', banks:[], apiUrl:'apollousa-demo.okkes.synology.me:443', picture:null, backMode:'signup-email' });
+            setMode('signup-onboarding');
           }, 800);
           return;
         }
@@ -388,6 +392,48 @@ function ScreenLoginGate({ onLogin }) {
   if (mode === 'language') return <ScreenLanguagePicker fromOnboarding={true} onBack={() => setMode('login')}/>;
   if (mode === 'terms') return <ScreenTerms onBack={() => setMode('login')} showPrivacy={false}/>;
   if (mode === 'privacy') return <ScreenTerms onBack={() => setMode('login')} showPrivacy={true}/>;
+  if (mode === 'signup-onboarding' && pendingSignup) {
+    const handleOnboardingComplete = (data) => {
+      const { firstName, lastName, apiUrl: newApiUrl, picture: newPicture } = data;
+      const { method, canonicalEmail, backMode } = pendingSignup;
+      const isSSO = method === 'google' || method === 'apple';
+      const finalEmail = isSSO ? canonicalEmail : data.email;
+      // For email method: register email
+      if (method === 'email') {
+        const emails = getSignupEmails();
+        if (!emails.includes(finalEmail)) {
+          localStorage.setItem('munni_signup_emails', JSON.stringify([...emails, finalEmail]));
+        }
+      }
+      // Store first/last name separately
+      const fnKey = computeUserDataKey(method, finalEmail, 'munni_profile_firstname');
+      const lnKey = computeUserDataKey(method, finalEmail, 'munni_profile_lastname');
+      localStorage.setItem(fnKey, JSON.stringify(firstName));
+      localStorage.setItem(lnKey, JSON.stringify(lastName));
+      // Store API URL
+      if (newApiUrl && newApiUrl.trim()) {
+        localStorage.setItem('munni_api_url', JSON.stringify(newApiUrl.trim()));
+      }
+      // Store picture
+      if (newPicture) {
+        const pKey = method === 'google' ? 'munni_user_picture_google'
+          : method === 'apple' ? 'munni_user_picture_apple'
+          : `munni_user_picture_${finalEmail}`;
+        localStorage.setItem(pKey, JSON.stringify(newPicture));
+        window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: pKey } }));
+      }
+      const displayName = [firstName, lastName].filter(Boolean).join(' ');
+      setPendingSignup(null);
+      doLogin(method, finalEmail, displayName, false, lang);
+    };
+    return (
+      <ScreenSignupOnboarding
+        signup={pendingSignup}
+        onComplete={handleOnboardingComplete}
+        onBack={() => { setPendingSignup(null); setMode(pendingSignup.backMode || 'signup'); }}
+      />
+    );
+  }
 
   const Divr = () => (
     <div style={{ display:'flex', alignItems:'center', gap:12, margin:'4px 0' }}>

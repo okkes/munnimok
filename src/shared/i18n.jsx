@@ -121,6 +121,14 @@ export const TRANSLATIONS = {
     'login.signedInGoogle':'Signed in with Google',
     'login.signedInApple':'Signed in with Apple',
     'login.connectedEmail':'Connected account',
+    // Onboarding
+    'onboarding.title':'Set up your profile','onboarding.subtitleGoogle':'Google sign-up almost done — tell us a bit more.','onboarding.subtitleApple':'Apple sign-up almost done — tell us a bit more.','onboarding.subtitleEmail':'Almost there — just a few more details.',
+    'onboarding.firstName':'First name','onboarding.lastName':'Last name','onboarding.firstNamePlaceholder':'e.g. Jan','onboarding.lastNamePlaceholder':'e.g. de Vries',
+    'onboarding.bankAccounts':'Bank accounts','onboarding.bankPSD2Note':'Bank connections are read-only (PSD2/AIS). munni never initiates payments.','onboarding.skipBank':'Skip bank for now','onboarding.connected':'Connected',
+    'onboarding.advanced':'Advanced','onboarding.apiUrl':'API endpoint','onboarding.apiUrlPlaceholder':'e.g. api.munni.app:443','onboarding.complete':'Get started',
+    'onboarding.errFirstNameRequired':'First name is required.','onboarding.errLastNameRequired':'Last name is required.',
+    'settings.firstName':'First name','settings.lastName':'Last name',
+    'settings.apiUrl':'API endpoint','settings.apiUrlSub':'Custom server URL for bank data sync','settings.apiUrlDefault':'Default (munni cloud)',
     'lang.availableNow':'Available now',
     // Home screen
     'home.totalBalance':'Total balance','home.income':'Income','home.spent':'Spent',
@@ -339,6 +347,14 @@ export const TRANSLATIONS = {
     'login.signedInGoogle':'Aangemeld via Google',
     'login.signedInApple':'Aangemeld via Apple',
     'login.connectedEmail':'Gekoppeld account',
+    // Onboarding
+    'onboarding.title':'Profiel instellen','onboarding.subtitleGoogle':'Bijna klaar met Google — vertel ons iets meer.','onboarding.subtitleApple':'Bijna klaar met Apple — vertel ons iets meer.','onboarding.subtitleEmail':'Bijna klaar — nog een paar details.',
+    'onboarding.firstName':'Voornaam','onboarding.lastName':'Achternaam','onboarding.firstNamePlaceholder':'bijv. Jan','onboarding.lastNamePlaceholder':'bijv. de Vries',
+    'onboarding.bankAccounts':'Bankrekeningen','onboarding.bankPSD2Note':'Bankverbindingen zijn alleen-lezen (PSD2/AIS). munni initieert nooit betalingen.','onboarding.skipBank':'Bank overslaan','onboarding.connected':'Verbonden',
+    'onboarding.advanced':'Geavanceerd','onboarding.apiUrl':'API-eindpunt','onboarding.apiUrlPlaceholder':'bijv. api.munni.app:443','onboarding.complete':'Aan de slag',
+    'onboarding.errFirstNameRequired':'Voornaam is verplicht.','onboarding.errLastNameRequired':'Achternaam is verplicht.',
+    'settings.firstName':'Voornaam','settings.lastName':'Achternaam',
+    'settings.apiUrl':'API-eindpunt','settings.apiUrlSub':'Aangepaste server-URL voor banksynchronisatie','settings.apiUrlDefault':'Standaard (munni cloud)',
     'lang.availableNow':'Nu beschikbaar',
     // Home screen
     'home.totalBalance':'Totaal saldo','home.income':'Inkomsten','home.spent':'Uitgegeven',
@@ -551,6 +567,14 @@ export const TRANSLATIONS = {
     'login.signedInGoogle':'Google ile giriş yapıldı',
     'login.signedInApple':'Apple ile giriş yapıldı',
     'login.connectedEmail':'Bağlı hesap',
+    // Onboarding
+    'onboarding.title':'Profilinizi kurun','onboarding.subtitleGoogle':'Google kaydı neredeyse tamam — biraz daha bilgi verin.','onboarding.subtitleApple':'Apple kaydı neredeyse tamam — biraz daha bilgi verin.','onboarding.subtitleEmail':'Neredeyse bitti — birkaç ayrıntı daha.',
+    'onboarding.firstName':'Ad','onboarding.lastName':'Soyad','onboarding.firstNamePlaceholder':'örn. Jan','onboarding.lastNamePlaceholder':'örn. de Vries',
+    'onboarding.bankAccounts':'Banka hesapları','onboarding.bankPSD2Note':'Banka bağlantıları salt okunurdur (PSD2/AIS). munni hiçbir zaman ödeme başlatmaz.','onboarding.skipBank':'Bankayı atla','onboarding.connected':'Bağlandı',
+    'onboarding.advanced':'Gelişmiş','onboarding.apiUrl':'API uç noktası','onboarding.apiUrlPlaceholder':'örn. api.munni.app:443','onboarding.complete':'Başla',
+    'onboarding.errFirstNameRequired':'Ad zorunludur.','onboarding.errLastNameRequired':'Soyad zorunludur.',
+    'settings.firstName':'Ad','settings.lastName':'Soyad',
+    "settings.apiUrl":'API uç noktası',"settings.apiUrlSub":'Banka veri senkronizasyonu için özel sunucu URL\'si',"settings.apiUrlDefault":'Varsayılan (munni cloud)',
     'lang.availableNow':'Şu an mevcut',
     // Home screen
     'home.totalBalance':'Toplam bakiye','home.income':'Gelir','home.spent':'Harcandı',

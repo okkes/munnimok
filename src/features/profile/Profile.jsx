@@ -45,6 +45,22 @@ export function ScreenProfile() {
   const _safeEmail = React.useMemo(() => { try { return JSON.parse(email||'""')||''; } catch { return email||''; } }, [email]);
   const _nameKey = computeUserDataKey(loginMethod, _safeEmail, 'munni_profile_name');
   const [name, setName] = useLocalStorage(_nameKey, '');
+  const _firstNameKey = computeUserDataKey(loginMethod, _safeEmail, 'munni_profile_firstname');
+  const _lastNameKey  = computeUserDataKey(loginMethod, _safeEmail, 'munni_profile_lastname');
+  const [firstName, setFirstName] = useLocalStorage(_firstNameKey, '');
+  const [lastName,  setLastName]  = useLocalStorage(_lastNameKey,  '');
+  const [apiUrl, setApiUrl] = useLocalStorage('munni_api_url', '');
+  const [showApiSheet, setShowApiSheet] = React.useState(false);
+  const [apiDraft, setApiDraft] = React.useState('');
+  // Auto-split existing single-name into first/last on first load
+  React.useEffect(() => {
+    if (name && !firstName && !lastName) {
+      const parts = name.trim().split(' ');
+      setFirstName(parts[0] || '');
+      setLastName(parts.slice(1).join(' ') || '');
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const fullName = [firstName, lastName].filter(Boolean).join(' ') || name;
   const pictureKey = React.useMemo(() => {
     if (loginMethod === 'google') return 'munni_user_picture_google';
     if (loginMethod === 'apple') return 'munni_user_picture_apple';
@@ -54,11 +70,11 @@ export function ScreenProfile() {
   }, [loginMethod, _safeEmail]);
   const [userPicture, setUserPicture] = useLocalStorage(pictureKey, null);
   const _myId = React.useMemo(() => getUserId(), []);
-  React.useEffect(() => { registerUserInGlobalRegistry(_myId, name, userPicture); }, [_myId, name, userPicture]);
+  React.useEffect(() => { registerUserInGlobalRegistry(_myId, fullName, userPicture); }, [_myId, fullName, userPicture]);
   const { profiles } = useProfiles();
   const activeProfile = profiles.find(p => p.active) || profiles[0];
   const [connectedAccounts] = useConnectedAccounts();
-  const [draft, setDraft] = React.useState({ name });
+  const [draft, setDraft] = React.useState({ firstName, lastName });
   const [showReset, setShowReset] = React.useState(false);
   const [showDeleteAccount, setShowDeleteAccount] = React.useState(false);
   const [showPicturePicker, setShowPicturePicker] = React.useState(false);
@@ -72,10 +88,17 @@ export function ScreenProfile() {
   };
 
   const { logout: logoutFn } = useAppCtx();
-  const startEdit = () => { setDraft({ name }); setEditing(true); };
-  const save = () => { setName(draft.name); setEditing(false); };
+  const startEdit = () => { setDraft({ firstName, lastName }); setEditing(true); };
+  const save = () => {
+    const fn = draft.firstName.trim();
+    const ln = draft.lastName.trim();
+    setFirstName(fn);
+    setLastName(ln);
+    setName([fn, ln].filter(Boolean).join(' '));
+    setEditing(false);
+  };
   const cancel = () => setEditing(false);
-  const initial = (name || '?').charAt(0).toUpperCase();
+  const initial = (firstName || name || '?').charAt(0).toUpperCase();
 
   const isDemo = loginMethod === 'bank';
   const connectedBanks = connectedAccounts.filter(a => a.type === 'checking').length;
@@ -110,11 +133,17 @@ export function ScreenProfile() {
           </button>
           <div style={{ flex: 1, minWidth: 0 }}>
             {editing && !isDemo ? (
-              <input value={draft.name} onChange={e => setDraft(d => ({...d, name: e.target.value}))}
-                style={{ width:'100%', fontSize:16, fontWeight:600, border:`1px solid ${M.sage}`, borderRadius:8, padding:'6px 10px', fontFamily:M.fontUI, background:M.paper2, outline:'none', marginBottom:6 }}/>
+              <div style={{ display:'flex', gap:6, marginBottom:6 }}>
+                <input value={draft.firstName} onChange={e => setDraft(d => ({...d, firstName: e.target.value}))}
+                  placeholder={t('settings.firstName')}
+                  style={{ flex:1, fontSize:15, fontWeight:500, border:`1px solid ${M.sage}`, borderRadius:8, padding:'6px 10px', fontFamily:M.fontUI, background:M.paper2, outline:'none', color:M.ink, minWidth:0 }}/>
+                <input value={draft.lastName} onChange={e => setDraft(d => ({...d, lastName: e.target.value}))}
+                  placeholder={t('settings.lastName')}
+                  style={{ flex:1, fontSize:15, fontWeight:500, border:`1px solid ${M.sage}`, borderRadius:8, padding:'6px 10px', fontFamily:M.fontUI, background:M.paper2, outline:'none', color:M.ink, minWidth:0 }}/>
+              </div>
             ) : (
               <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:2, flexWrap:'wrap' }}>
-                <div style={{ fontSize: 17, fontWeight: 600 }}>{name}</div>
+                <div style={{ fontSize: 17, fontWeight: 600 }}>{fullName}</div>
                 {isDemo && <span style={{ fontSize:9, fontWeight:700, padding:'2px 6px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase', letterSpacing:'0.05em' }}>Demo</span>}
               </div>
             )}
@@ -160,6 +189,8 @@ export function ScreenProfile() {
           <ProfileLink icon="sun"     label={t('settings.appearance')}     sub="Dark mode, fonts & display"          onClick={() => nav.push('settings')}/>
           <Divider inset={48}/>
           <ProfileLink icon="globe" label={t('settings.language')} sub={t('settings.languageSub')} onClick={() => nav.push('language')}/>
+          <Divider inset={48}/>
+          <ProfileLink icon="server" label={t('settings.apiUrl')} sub={apiUrl || t('settings.apiUrlDefault')} onClick={() => { setApiDraft(apiUrl); setShowApiSheet(true); }}/>
           <Divider inset={48}/>
           <ProfileLink icon="map"     label={t('settings.tutorial')}       sub="Walkthrough of key features"        onClick={() => nav.push('tutorial')}/>
           <Divider inset={48}/>
@@ -260,6 +291,29 @@ export function ScreenProfile() {
         </Sheet>
       )}
 
+      {showApiSheet && (
+        <Sheet onClose={() => setShowApiSheet(false)}>
+          <div style={{ padding:'0 16px 24px' }}>
+            <div style={{ fontSize:17, fontWeight:700, marginBottom:6 }}>{t('settings.apiUrl')}</div>
+            <div style={{ fontSize:13, color:M.ink3, marginBottom:16 }}>{t('settings.apiUrlSub')}</div>
+            <input
+              value={apiDraft}
+              onChange={e => setApiDraft(e.target.value)}
+              placeholder={t('onboarding.apiUrlPlaceholder')}
+              style={{ width:'100%', boxSizing:'border-box', padding:'13px 16px', borderRadius:12, border:`1.5px solid ${M.line}`, fontSize:14, fontFamily:M.fontMono, background:M.paper2, outline:'none', color:M.ink, marginBottom:16 }}
+            />
+            <button className="m-btn sage m-tap" style={{ width:'100%', height:50 }} onClick={() => { setApiUrl(apiDraft); setShowApiSheet(false); }}>
+              {t('action.save')}
+            </button>
+            {apiUrl && (
+              <button className="m-tap" onClick={() => { setApiUrl(''); setApiDraft(''); setShowApiSheet(false); }}
+                style={{ width:'100%', marginTop:10, background:'none', border:'none', fontSize:13, color:M.ink3, cursor:'pointer', fontFamily:M.fontUI, textDecoration:'underline', padding:'8px 0' }}>
+                {t('settings.apiUrlDefault')}
+              </button>
+            )}
+          </div>
+        </Sheet>
+      )}
       {showPicturePicker && (
         <Sheet onClose={() => setShowPicturePicker(false)}>
           <div style={{ padding:'0 16px 8px' }}>

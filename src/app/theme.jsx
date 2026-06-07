@@ -151,6 +151,7 @@ export function I({ name, size = 20, color = 'currentColor', stroke = 1.6 }) {
     case 'trash':  return w(<><path d="M5 8h14M10 8V5h4v3M8 8l.8 12h6.4L16 8" {...p}/></>);
     case 'refresh': return w(<><path d="M4 12a8 8 0 0114-5.3L20 5v5h-5" {...p}/><path d="M20 12a8 8 0 01-14 5.3L4 19v-5h5" {...p}/></>);
     case 'map':    return w(<><path d="M3 7l6-2 6 2 6-2v12l-6 2-6-2-6 2V7z" {...p}/><path d="M9 5v14M15 7v14" {...p}/></>);
+    case 'server': return w(<><rect x="3" y="4" width="18" height="7" rx="2" {...p}/><rect x="3" y="13" width="18" height="7" rx="2" {...p}/><circle cx="7.5" cy="7.5" r="1" fill="currentColor" stroke="none"/><circle cx="7.5" cy="16.5" r="1" fill="currentColor" stroke="none"/></>);
     default: return w(<rect x="4" y="4" width="16" height="16" rx="3" {...p}/>);
   }
 }
