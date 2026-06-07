@@ -118,7 +118,7 @@ export function ScreenProfile() {
                 {isDemo && <span style={{ fontSize:9, fontWeight:700, padding:'2px 6px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase', letterSpacing:'0.05em' }}>Demo</span>}
               </div>
             )}
-            <div style={{ fontSize: 12, color: M.ink3 }}>{emailDisplay}</div>
+            <div style={{ fontSize: 12, color: M.ink3, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{emailDisplay}</div>
             {isDemo && <div style={{ fontSize:11, color:M.ochre, marginTop:3 }}>Demo account · read-only profile</div>}
           </div>
           {!isDemo && (editing ? (
