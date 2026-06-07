@@ -1,7 +1,7 @@
 import React from 'react';
 import { M, I, IcoGoogle, IcoApple, StatusBar, Divider } from '../../app/theme.jsx';
 import { useLang } from '../../shared/i18n.jsx';
-import { DUTCH_BANKS } from '../accounts/data.js';
+import { DUTCH_BANKS, generateBankIban } from '../accounts/data.js';
 import { STOCK_AVATARS } from '../../shared/constants.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -71,7 +71,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
     subScreenRef.current = 'credentials';
     setBankSubScreen('credentials');
     setPendingBank(bank);
-    setBankCreds({ username:'', password:'', accountNumber:'' });
+    setBankCreds({ username:'demo.user@munni.app', password:'••••••••', accountNumber: generateBankIban(bank) });
     setCredsError('');
     window.history.pushState({ munniLoginMode: 'bank-credentials' }, '');
   };

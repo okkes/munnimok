@@ -554,6 +554,13 @@ const PERIOD = {
   prevIncome: 2380.00,
 };
 
+export function generateBankIban(bank) {
+  const bic4 = (bank.bic || bank.id).toUpperCase().slice(0, 4);
+  const randDigits = String(Math.floor(1000000000 + Math.random() * 9000000000));
+  const checkNum = 10 + ((bank.name.charCodeAt(0) || 0) % 89);
+  return `NL${checkNum} ${bic4} ${randDigits.slice(0,4)} ${randDigits.slice(4,8)} ${randDigits.slice(8)}`;
+}
+
 export function computePeriodHistory(day) {
   const result = [];
   const today = new Date();

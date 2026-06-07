@@ -1,5 +1,5 @@
 ﻿import React from 'react';
-import { ACCOUNTS, DEMO_ACCOUNT_IDS, DEMO_ACCOUNTS, INTEGRATIONS, ALL_RECEIPTS, generateBankTxs, generateAsnTxs, DUTCH_BANKS } from './data.js';
+import { ACCOUNTS, DEMO_ACCOUNT_IDS, DEMO_ACCOUNTS, INTEGRATIONS, ALL_RECEIPTS, generateBankTxs, generateAsnTxs, DUTCH_BANKS, generateBankIban } from './data.js';
 import { fmtEur, fmtDate, computePeriodHistory, fmtSyncTime } from '../../shared/utils/format.js';
 import { getUserId, getUserSyncKey, addDevLog } from '../../shared/utils/user.js';
 import { M, I, IcoMDI, Divider, StatusBar, AppBar } from '../../app/theme.jsx';
@@ -16,6 +16,174 @@ function HighlightText({ text, query }) {
   const idx = text.toLowerCase().indexOf(query.toLowerCase());
   if (idx === -1) return <>{text}</>;
   return <>{text.slice(0, idx)}<mark style={{ background: M.sageSoft, color: M.sage, borderRadius: 2, padding: '0 1px' }}>{text.slice(idx, idx + query.length)}</mark>{text.slice(idx + query.length)}</>;
+}
+
+// ── Shared bank-connect screens (used by ScreenAccounts, ScreenAccountsAll, and Auth onboarding) ──
+
+function BankSearchFullScreen({ banks, bankSearch, setBankSearch, connectedAccounts, onSelect, onBack }) {
+  const filteredBanks = React.useMemo(() => {
+    const q = bankSearch.toLowerCase().trim();
+    if (!q) return banks;
+    return banks.filter(b => b.name.toLowerCase().includes(q) || b.bic.toLowerCase().includes(q));
+  }, [banks, bankSearch]);
+
+  return (
+    <div className="m-screen m-fade" style={{ display:'flex', flexDirection:'column' }}>
+      <StatusBar/>
+      <div style={{ display:'flex', alignItems:'center', padding:'12px 20px', flexShrink:0, borderBottom:`1px solid ${M.line2}` }}>
+        <button className="m-tap" onClick={onBack}
+          style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:4, color:M.tint, fontFamily:M.fontUI, fontSize:15, padding:'4px 0', minWidth:60 }}>
+          <I name="arrowL" size={16} color={M.tint}/>Back
+        </button>
+        <div style={{ flex:1, textAlign:'center', fontWeight:600, fontSize:16, color:M.ink, fontFamily:M.fontUI }}>Select a bank</div>
+        <div style={{ minWidth:60 }}/>
+      </div>
+      <div style={{ padding:'12px 20px 8px', flexShrink:0 }}>
+        <div style={{ position:'relative' }}>
+          <I name="search" size={16} color={M.ink4} style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', pointerEvents:'none' }}/>
+          <input autoFocus value={bankSearch} onChange={e => setBankSearch(e.target.value)} placeholder="Search bank…"
+            style={{ width:'100%', padding:'10px 12px 10px 36px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box', color:M.ink }}/>
+        </div>
+      </div>
+      <div style={{ flex:1, overflowY:'auto', padding:'0 20px 24px' }}>
+        <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
+          {filteredBanks.length === 0
+            ? <div style={{ padding:'24px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>No banks match your search</div>
+            : filteredBanks.map((bank, i) => {
+                const connCount = (connectedAccounts || []).filter(a => a.bankId === bank.id).length;
+                return (
+                  <React.Fragment key={bank.id}>
+                    {i > 0 && <Divider inset={48}/>}
+                    <div className="m-tap" onClick={() => onSelect(bank)}
+                      style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
+                      <div style={{ width:36, height:36, borderRadius:10, background:`${bank.color}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:18 }}>{bank.logo}</div>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:14, fontWeight:500, color:M.ink }}>{bank.name}</div>
+                        <div style={{ fontSize:11, color:M.ink3, marginTop:1, fontFamily:M.fontMono }}>{bank.bic}</div>
+                      </div>
+                      {connCount > 0 ? (
+                        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                          <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:M.sageSoft, color:M.sage }}>{connCount}×</span>
+                          <I name="caretR" size={14} color={M.sage}/>
+                        </div>
+                      ) : <I name="caretR" size={14} color={M.ink4}/>}
+                    </div>
+                  </React.Fragment>
+                );
+              })
+          }
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BankConnectPsd2Screen({ psd2Step, psd2Bank, customIban, setCustomIban, advancePsd2, onClose }) {
+  return (
+    <div className="m-screen m-fade" style={{ display:'flex', flexDirection:'column' }}>
+      <StatusBar/>
+      <div style={{ display:'flex', alignItems:'center', padding:'12px 20px', flexShrink:0, borderBottom:`1px solid ${M.line2}` }}>
+        {psd2Step !== 'connecting' ? (
+          <button className="m-tap" onClick={onClose}
+            style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:4, color:M.tint, fontFamily:M.fontUI, fontSize:15, padding:'4px 0', minWidth:60 }}>
+            <I name="x" size={18} color={M.tint}/>
+          </button>
+        ) : <div style={{ minWidth:60 }}/>}
+        <div style={{ flex:1, textAlign:'center', fontWeight:600, fontSize:16, color:M.ink, fontFamily:M.fontUI }}>
+          {psd2Step === 'login' ? psd2Bank?.name : psd2Step === 'consent' ? 'Allow access?' : psd2Step === 'done' ? 'Connected' : psd2Bank?.name}
+        </div>
+        <div style={{ minWidth:60 }}/>
+      </div>
+      <div style={{ flex:1, display:'flex', flexDirection:'column', padding:'24px 24px 32px', gap:20, overflowY:'auto' }}>
+        {psd2Step === 'login' && (
+          <>
+            <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:10, marginBottom:4 }}>
+              <div style={{ width:64, height:64, borderRadius:18, background:`${psd2Bank?.color}22`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:32 }}>{psd2Bank?.logo}</div>
+              <div style={{ textAlign:'center' }}>
+                <div style={{ fontSize:15, fontWeight:600, color:M.ink }}>Enter your bank login credentials</div>
+                <div style={{ fontSize:12, color:M.ink3, marginTop:2, fontFamily:M.fontMono }}>{psd2Bank?.bic}</div>
+              </div>
+            </div>
+            <div className="m-card" style={{ padding:'0 16px', border:`1px solid ${M.line}` }}>
+              <div style={{ padding:'14px 0' }}>
+                <div style={{ fontSize:11, color:M.ink3, marginBottom:6 }}>Login name</div>
+                <input defaultValue="demo.user@munni.app" style={{ width:'100%', boxSizing:'border-box', padding:'10px 12px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', color:M.ink }}/>
+              </div>
+              <Divider/>
+              <div style={{ padding:'14px 0' }}>
+                <div style={{ fontSize:11, color:M.ink3, marginBottom:6 }}>Password</div>
+                <input type="password" defaultValue="••••••••" style={{ width:'100%', boxSizing:'border-box', padding:'10px 12px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', color:M.ink }}/>
+              </div>
+              <Divider/>
+              <div style={{ padding:'14px 0' }}>
+                <div style={{ fontSize:11, color:M.ink3, marginBottom:6 }}>Account number (IBAN)</div>
+                <input value={customIban} onChange={e => setCustomIban(e.target.value)}
+                  style={{ width:'100%', boxSizing:'border-box', padding:'10px 12px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontMono, background:M.paper2, outline:'none', color:M.ink }}/>
+              </div>
+            </div>
+            <div style={{ padding:'10px 12px', borderRadius:10, background:M.sageSoft, display:'flex', gap:10, alignItems:'flex-start' }}>
+              <I name="lock" size={14} color={M.sage}/>
+              <div style={{ fontSize:11, color:M.sageDk, lineHeight:1.5 }}>
+                munni uses <strong>PSD2 Open Banking</strong>. Your credentials are sent directly to {psd2Bank?.name} — we never store them.
+              </div>
+            </div>
+            <button className="m-btn sage m-tap" onClick={advancePsd2} style={{ marginTop:'auto' }}>Continue to {psd2Bank?.name}</button>
+          </>
+        )}
+        {psd2Step === 'consent' && (
+          <>
+            <div style={{ textAlign:'center', marginBottom:8 }}>
+              <div style={{ width:64, height:64, borderRadius:18, background:`${psd2Bank?.color}22`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:32, margin:'0 auto 12px' }}>{psd2Bank?.logo}</div>
+              <div style={{ fontSize:13, color:M.ink3 }}>munni requests read-only access to:</div>
+            </div>
+            <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
+              {[
+                { icon:'card', label:'Account information', sub:'IBAN, name, balance' },
+                { icon:'receipt', label:'Transaction history', sub:'Last 13 months · read-only' },
+              ].map((item, i) => (
+                <React.Fragment key={i}>
+                  {i > 0 && <Divider inset={48}/>}
+                  <div style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
+                    <div style={{ width:36, height:36, borderRadius:10, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                      <I name={item.icon} size={16} color={M.sage}/>
+                    </div>
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontSize:14, fontWeight:500 }}>{item.label}</div>
+                      <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{item.sub}</div>
+                    </div>
+                    <I name="check" size={16} color={M.sage}/>
+                  </div>
+                </React.Fragment>
+              ))}
+            </div>
+            <div style={{ fontSize:12, color:M.ink3, textAlign:'center', lineHeight:1.5 }}>munni can <strong>never initiate payments</strong>. You can revoke access at any time.</div>
+            <button className="m-btn sage m-tap" onClick={advancePsd2} style={{ marginTop:'auto' }}>Authorise access</button>
+            <button className="m-btn outline m-tap" onClick={onClose}>Cancel</button>
+          </>
+        )}
+        {psd2Step === 'connecting' && (
+          <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:16, textAlign:'center' }}>
+            <div style={{ width:64, height:64, borderRadius:18, background:`${psd2Bank?.color}22`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:32 }}>{psd2Bank?.logo}</div>
+            <div style={{ display:'flex', gap:8 }}>
+              {[0,1,2].map(i => <div key={i} style={{ width:8, height:8, borderRadius:999, background:M.sage, animation:`pulse 1.2s ease-in-out ${i*0.4}s infinite` }}/>)}
+            </div>
+            <div style={{ fontSize:15, fontWeight:600 }}>Connecting to {psd2Bank?.name}…</div>
+            <div style={{ fontSize:12, color:M.ink3 }}>Fetching your accounts and transactions</div>
+          </div>
+        )}
+        {psd2Step === 'done' && (
+          <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:16, textAlign:'center' }}>
+            <div style={{ width:80, height:80, borderRadius:24, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center' }}>
+              <I name="check" size={36} color={M.sage} stroke={2.5}/>
+            </div>
+            <div className="m-h2">Connected!</div>
+            <div style={{ fontSize:13, color:M.ink3, lineHeight:1.5, maxWidth:260 }}>{psd2Bank?.name} is now connected. Transactions will sync automatically.</div>
+            <button className="m-btn sage m-tap" onClick={advancePsd2} style={{ marginTop:8 }}>Done</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export function ScreenIntegrations({ params }) {
@@ -282,10 +450,9 @@ export function ScreenAccounts() {
   const { addTxs } = useTxCtx();
   const [connectedAccounts, setConnectedAccounts] = useConnectedAccounts();
   const { profiles, setProfiles } = useProfiles();
-  const [showAdd, setShowAdd] = React.useState(false);
   const [bankSearch, setBankSearch] = React.useState('');
   const [selectedBank, setSelectedBank] = useLocalStorage('munni_selected_bank', null);
-  const [psd2Step, setPsd2Step] = React.useState(null); // null | 'login' | 'consent' | 'connecting' | 'done'
+  const [psd2Step, setPsd2Step] = React.useState(null); // null | 'search' | 'login' | 'consent' | 'connecting' | 'done'
   const [psd2Bank, setPsd2Bank] = React.useState(null);
   const [customIban, setCustomIban] = React.useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(null);
@@ -295,15 +462,10 @@ export function ScreenAccounts() {
   );
 
   const startBankConnect = (bank) => {
-    const bic4 = (bank.bic || bank.id).toUpperCase().slice(0, 4);
-    const randDigits = String(Math.floor(1000000000 + Math.random() * 9000000000));
-    const checkNum = 10 + ((bank.name.charCodeAt(0) || 0) % 89);
-    const defaultIban = `NL${checkNum} ${bic4} ${randDigits.slice(0,4)} ${randDigits.slice(4,8)} ${randDigits.slice(8)}`;
-    setCustomIban(defaultIban);
+    setCustomIban(generateBankIban(bank));
     setPsd2Bank(bank);
     setSelectedBank(bank.id);
     setPsd2Step('login');
-    setShowAdd(false);
   };
 
   const advancePsd2 = () => {
@@ -340,101 +502,12 @@ export function ScreenAccounts() {
     setShowDeleteConfirm(null);
   };
 
+  if (psd2Step === 'search') {
+    return <BankSearchFullScreen banks={DUTCH_BANKS} bankSearch={bankSearch} setBankSearch={setBankSearch} connectedAccounts={connectedAccounts} onSelect={startBankConnect} onBack={() => setPsd2Step(null)}/>;
+  }
+
   if (psd2Step) {
-    return (
-      <div className="m-screen">
-        <StatusBar/>
-        <AppBar title={psd2Bank?.name || 'Connect bank'}
-          leading={psd2Step !== 'connecting' ? <button className="m-iconbtn m-tap" onClick={() => setPsd2Step(null)}><I name="x" size={20}/></button> : null}
-        />
-        <div style={{ flex:1, display:'flex', flexDirection:'column', padding:'24px 24px 32px', gap:20, overflowY:'auto' }}>
-          {psd2Step === 'login' && (
-            <>
-              <div style={{ textAlign:'center', marginBottom:8 }}>
-                <div style={{ fontSize:36, marginBottom:8 }}>{psd2Bank?.logo}</div>
-                <div style={{ fontSize:17, fontWeight:700 }}>{psd2Bank?.name}</div>
-                <div style={{ fontSize:12, color:M.ink3, marginTop:4 }}>Sign in with your {psd2Bank?.name} credentials to continue</div>
-              </div>
-              <div>
-                <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>Username / Customer number</div>
-                <input defaultValue="demo.user@munni.app" style={{ width:'100%', padding:'12px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box' }}/>
-              </div>
-              <div>
-                <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>Password</div>
-                <input type="password" defaultValue="••••••••" style={{ width:'100%', padding:'12px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box' }}/>
-              </div>
-              <div>
-                <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>{t('accounts.ibanLabel')}</div>
-                <input value={customIban} onChange={e => setCustomIban(e.target.value)} placeholder={t('accounts.ibanPlaceholder')} style={{ width:'100%', padding:'12px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontMono, background:M.paper2, outline:'none', boxSizing:'border-box' }}/>
-              </div>
-              <div style={{ padding:'12px 14px', borderRadius:10, background:M.sageSoft, display:'flex', gap:10, alignItems:'flex-start' }}>
-                <I name="lock" size={16} color={M.sage}/>
-                <div style={{ fontSize:12, color:M.ink2, lineHeight:1.45 }}>
-                  munni uses <strong>PSD2 Open Banking</strong>. Your credentials are sent directly to {psd2Bank?.name} — we never store them.
-                </div>
-              </div>
-              <button className="m-btn sage m-tap" onClick={advancePsd2} style={{ marginTop:'auto' }}>Continue to {psd2Bank?.name}</button>
-            </>
-          )}
-          {psd2Step === 'consent' && (
-            <>
-              <div style={{ textAlign:'center', marginBottom:8 }}>
-                <div style={{ fontSize:36, marginBottom:8 }}>{psd2Bank?.logo}</div>
-                <div style={{ fontSize:17, fontWeight:700 }}>Allow access?</div>
-                <div style={{ fontSize:12, color:M.ink3, marginTop:4 }}>munni requests read-only access to:</div>
-              </div>
-              <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
-                {[
-                  { icon:'card', label:'Account information', sub:'IBAN, name, balance' },
-                  { icon:'receipt', label:'Transaction history', sub:'Last 13 months · read-only' },
-                ].map((item, i) => (
-                  <React.Fragment key={i}>
-                    {i > 0 && <Divider inset={48}/>}
-                    <div style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
-                      <div style={{ width:36, height:36, borderRadius:10, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center' }}>
-                        <I name={item.icon} size={16} color={M.sage}/>
-                      </div>
-                      <div style={{ flex:1 }}>
-                        <div style={{ fontSize:14, fontWeight:500 }}>{item.label}</div>
-                        <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{item.sub}</div>
-                      </div>
-                      <I name="check" size={16} color={M.sage}/>
-                    </div>
-                  </React.Fragment>
-                ))}
-              </div>
-              <div style={{ fontSize:12, color:M.ink3, textAlign:'center', lineHeight:1.5 }}>
-                munni can <strong>never initiate payments</strong>. You can revoke access at any time.
-              </div>
-              <button className="m-btn sage m-tap" onClick={advancePsd2} style={{ marginTop:'auto' }}>Authorise access</button>
-              <button className="m-btn outline m-tap" onClick={() => setPsd2Step(null)}>Cancel</button>
-            </>
-          )}
-          {psd2Step === 'connecting' && (
-            <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:16, textAlign:'center' }}>
-              <div style={{ fontSize:36 }}>{psd2Bank?.logo}</div>
-              <div style={{ display:'flex', gap:8 }}>
-                {[0,1,2].map(i => <div key={i} style={{ width:8, height:8, borderRadius:999, background:M.sage, animation:`pulse 1.2s ease-in-out ${i*0.4}s infinite` }}/>)}
-              </div>
-              <div style={{ fontSize:15, fontWeight:600 }}>Connecting to {psd2Bank?.name}…</div>
-              <div style={{ fontSize:12, color:M.ink3 }}>Fetching your accounts and transactions</div>
-            </div>
-          )}
-          {psd2Step === 'done' && (
-            <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:16, textAlign:'center' }}>
-              <div style={{ width:80, height:80, borderRadius:24, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center' }}>
-                <I name="check" size={36} color={M.sage} stroke={2.5}/>
-              </div>
-              <div className="m-h2">Connected!</div>
-              <div style={{ fontSize:13, color:M.ink3, lineHeight:1.5, maxWidth:260 }}>
-                {psd2Bank?.name} is now connected. Transactions will sync automatically.
-              </div>
-              <button className="m-btn sage m-tap" onClick={advancePsd2} style={{ marginTop:8 }}>Done</button>
-            </div>
-          )}
-        </div>
-      </div>
-    );
+    return <BankConnectPsd2Screen psd2Step={psd2Step} psd2Bank={psd2Bank} customIban={customIban} setCustomIban={setCustomIban} advancePsd2={advancePsd2} onClose={() => setPsd2Step(null)}/>;
   }
 
   return (
@@ -442,7 +515,7 @@ export function ScreenAccounts() {
       <StatusBar/>
       <AppBar title="Bank accounts"
         leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
-        trailing={<button className="m-iconbtn m-tap" onClick={() => setShowAdd(true)}><I name="plus" size={20}/></button>}
+        trailing={<button className="m-iconbtn m-tap" onClick={() => { setBankSearch(''); setPsd2Step('search'); }}><I name="plus" size={20}/></button>}
       />
       <div className="m-body-scroll">
         <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Connected accounts</div>
@@ -477,7 +550,7 @@ export function ScreenAccounts() {
             );
           })}
           <Divider inset={0}/>
-          <div className="m-tap" onClick={() => setShowAdd(true)} style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
+          <div className="m-tap" onClick={() => { setBankSearch(''); setPsd2Step('search'); }} style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
             <div style={{ width:38, height:38, borderRadius:10, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
               <I name="plus" size={16} color={M.sage}/>
             </div>
@@ -497,55 +570,6 @@ export function ScreenAccounts() {
         </div>
         <div style={{ height:8 }}/>
       </div>
-
-      {showAdd && (
-        <Sheet onClose={() => setShowAdd(false)}>
-          <div style={{ padding:'4px 20px 32px' }}>
-            <div className="m-h2" style={{ marginBottom:12 }}>Connect a bank</div>
-            <div style={{ position:'relative', marginBottom:12 }}>
-              <I name="search" size={16} color={M.ink4} style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', pointerEvents:'none' }}/>
-              <input
-                autoFocus
-                value={bankSearch}
-                onChange={e => setBankSearch(e.target.value)}
-                placeholder="Search banks…"
-                style={{ width:'100%', padding:'10px 12px 10px 36px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box' }}
-              />
-            </div>
-            <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}`, maxHeight:340, overflowY:'auto' }}>
-              {filteredBanks.length === 0 && (
-                <div style={{ padding:'20px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>No banks found</div>
-              )}
-              {filteredBanks.map((bank, i) => {
-                const connCount = connectedAccounts.filter(a => a.bankId === bank.id).length;
-                return (
-                  <React.Fragment key={bank.id}>
-                    {i > 0 && <Divider inset={48}/>}
-                    <div className="m-tap" onClick={() => startBankConnect(bank)}
-                      style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
-                      <div style={{ width:36, height:36, borderRadius:10, background:bank.color+'22', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:18 }}>
-                        {bank.logo}
-                      </div>
-                      <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontSize:14, fontWeight:500 }}>
-                          <HighlightText text={bank.name} query={bankSearch}/>
-                        </div>
-                        <div style={{ fontSize:11, color:M.ink3, marginTop:1, fontFamily:M.fontMono }}>{bank.bic}</div>
-                      </div>
-                      {connCount > 0 ? (
-                        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                          <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>{connCount}×</span>
-                          <I name="caretR" size={14} color={M.ink4}/>
-                        </div>
-                      ) : <I name="caretR" size={14} color={M.ink4}/>}
-                    </div>
-                  </React.Fragment>
-                );
-              })}
-            </div>
-          </div>
-        </Sheet>
-      )}
 
       {showDeleteConfirm && (
         <Sheet onClose={() => setShowDeleteConfirm(null)}>
@@ -1047,7 +1071,6 @@ export function ScreenAccountsAll() {
   const { addTxs } = useTxCtx();
   const [connectedAccounts, setConnectedAccounts] = useConnectedAccounts();
   const { profiles, setProfiles } = useProfiles();
-  const [showAdd, setShowAdd] = React.useState(false);
   const [showAddChoice, setShowAddChoice] = React.useState(false);
   const [bankSearch, setBankSearch] = React.useState('');
   const [selectedBank, setSelectedBank] = useLocalStorage('munni_selected_bank', null);
@@ -1071,15 +1094,10 @@ export function ScreenAccountsAll() {
   const realSavingAccounts = savingAccounts.filter(a => !DEMO_ACCOUNT_IDS.includes(a.id));
 
   const startBankConnect = (bank) => {
-    const bic4 = (bank.bic || bank.id).toUpperCase().slice(0, 4);
-    const randDigits = String(Math.floor(1000000000 + Math.random() * 9000000000));
-    const checkNum = 10 + ((bank.name.charCodeAt(0) || 0) % 89);
-    const defaultIban = `NL${checkNum} ${bic4} ${randDigits.slice(0,4)} ${randDigits.slice(4,8)} ${randDigits.slice(8)}`;
-    setCustomIban(defaultIban);
+    setCustomIban(generateBankIban(bank));
     setPsd2Bank(bank);
     setSelectedBank(bank.id);
     setPsd2Step('login');
-    setShowAdd(false);
   };
 
   const advancePsd2 = () => {
@@ -1165,97 +1183,12 @@ export function ScreenAccountsAll() {
     setTxDraft({ amount:'', desc:'', date: new Date().toISOString().slice(0,10), dir:'deposit' });
   };
 
+  if (psd2Step === 'search') {
+    return <BankSearchFullScreen banks={DUTCH_BANKS} bankSearch={bankSearch} setBankSearch={setBankSearch} connectedAccounts={connectedAccounts} onSelect={startBankConnect} onBack={() => setPsd2Step(null)}/>;
+  }
+
   if (psd2Step) {
-    return (
-      <div className="m-screen">
-        <StatusBar/>
-        <AppBar title={psd2Bank?.name || 'Connect bank'}
-          leading={psd2Step !== 'connecting' ? <button className="m-iconbtn m-tap" onClick={() => setPsd2Step(null)}><I name="x" size={20}/></button> : null}
-        />
-        <div style={{ flex:1, display:'flex', flexDirection:'column', padding:'24px 24px 32px', gap:20, overflowY:'auto' }}>
-          {psd2Step === 'login' && (
-            <>
-              <div style={{ textAlign:'center', marginBottom:8 }}>
-                <div style={{ fontSize:36, marginBottom:8 }}>{psd2Bank?.logo}</div>
-                <div style={{ fontSize:17, fontWeight:700 }}>{psd2Bank?.name}</div>
-                <div style={{ fontSize:12, color:M.ink3, marginTop:4 }}>Sign in with your {psd2Bank?.name} credentials to continue</div>
-              </div>
-              <div>
-                <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>Username / Customer number</div>
-                <input defaultValue="demo.user@munni.app" style={{ width:'100%', padding:'12px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box' }}/>
-              </div>
-              <div>
-                <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>Password</div>
-                <input type="password" defaultValue="••••••••" style={{ width:'100%', padding:'12px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box' }}/>
-              </div>
-              <div>
-                <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>{t('accounts.ibanLabel')}</div>
-                <input value={customIban} onChange={e => setCustomIban(e.target.value)} placeholder={t('accounts.ibanPlaceholder')} style={{ width:'100%', padding:'12px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontMono, background:M.paper2, outline:'none', boxSizing:'border-box' }}/>
-              </div>
-              <div style={{ padding:'12px 14px', borderRadius:10, background:M.sageSoft, display:'flex', gap:10, alignItems:'flex-start' }}>
-                <I name="lock" size={16} color={M.sage}/>
-                <div style={{ fontSize:12, color:M.ink2, lineHeight:1.45 }}>
-                  munni uses <strong>PSD2 Open Banking</strong>. Your credentials are sent directly to {psd2Bank?.name} — we never store them.
-                </div>
-              </div>
-              <button className="m-btn sage m-tap" onClick={advancePsd2} style={{ marginTop:'auto' }}>Continue to {psd2Bank?.name}</button>
-            </>
-          )}
-          {psd2Step === 'consent' && (
-            <>
-              <div style={{ textAlign:'center', marginBottom:8 }}>
-                <div style={{ fontSize:36, marginBottom:8 }}>{psd2Bank?.logo}</div>
-                <div style={{ fontSize:17, fontWeight:700 }}>Allow access?</div>
-                <div style={{ fontSize:12, color:M.ink3, marginTop:4 }}>munni requests read-only access to:</div>
-              </div>
-              <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
-                {[
-                  { icon:'card', label:'Account information', sub:'IBAN, name, balance' },
-                  { icon:'receipt', label:'Transaction history', sub:'Last 13 months · read-only' },
-                ].map((item, i) => (
-                  <React.Fragment key={i}>
-                    {i > 0 && <Divider inset={48}/>}
-                    <div style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
-                      <div style={{ width:36, height:36, borderRadius:10, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center' }}>
-                        <I name={item.icon} size={16} color={M.sage}/>
-                      </div>
-                      <div style={{ flex:1 }}>
-                        <div style={{ fontSize:14, fontWeight:500 }}>{item.label}</div>
-                        <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{item.sub}</div>
-                      </div>
-                      <I name="check" size={16} color={M.sage}/>
-                    </div>
-                  </React.Fragment>
-                ))}
-              </div>
-              <div style={{ fontSize:12, color:M.ink3, textAlign:'center', lineHeight:1.5 }}>munni can <strong>never initiate payments</strong>. You can revoke access at any time.</div>
-              <button className="m-btn sage m-tap" onClick={advancePsd2} style={{ marginTop:'auto' }}>Authorise access</button>
-              <button className="m-btn outline m-tap" onClick={() => setPsd2Step(null)}>Cancel</button>
-            </>
-          )}
-          {psd2Step === 'connecting' && (
-            <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:16, textAlign:'center' }}>
-              <div style={{ fontSize:36 }}>{psd2Bank?.logo}</div>
-              <div style={{ display:'flex', gap:8 }}>
-                {[0,1,2].map(i => <div key={i} style={{ width:8, height:8, borderRadius:999, background:M.sage, animation:`pulse 1.2s ease-in-out ${i*0.4}s infinite` }}/>)}
-              </div>
-              <div style={{ fontSize:15, fontWeight:600 }}>Connecting to {psd2Bank?.name}…</div>
-              <div style={{ fontSize:12, color:M.ink3 }}>Fetching your accounts and transactions</div>
-            </div>
-          )}
-          {psd2Step === 'done' && (
-            <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:16, textAlign:'center' }}>
-              <div style={{ width:80, height:80, borderRadius:24, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center' }}>
-                <I name="check" size={36} color={M.sage} stroke={2.5}/>
-              </div>
-              <div className="m-h2">Connected!</div>
-              <div style={{ fontSize:13, color:M.ink3, lineHeight:1.5, maxWidth:260 }}>{psd2Bank?.name} is now connected. Transactions will sync automatically.</div>
-              <button className="m-btn sage m-tap" onClick={advancePsd2} style={{ marginTop:8 }}>Done</button>
-            </div>
-          )}
-        </div>
-      </div>
-    );
+    return <BankConnectPsd2Screen psd2Step={psd2Step} psd2Bank={psd2Bank} customIban={customIban} setCustomIban={setCustomIban} advancePsd2={advancePsd2} onClose={() => setPsd2Step(null)}/>;
   }
 
   const renderAccountRow = (a, opts = {}) => (
@@ -1324,7 +1257,7 @@ export function ScreenAccountsAll() {
                 </React.Fragment>
               ))}
               <Divider inset={0}/>
-              <div className="m-tap" onClick={() => setShowAdd(true)} style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0', color:M.sage }}>
+              <div className="m-tap" onClick={() => { setBankSearch(''); setPsd2Step('search'); }} style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0', color:M.sage }}>
                 <div style={{ width:38, height:38, borderRadius:10, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                   <I name="plus" size={16} color={M.sage}/>
                 </div>
@@ -1368,44 +1301,6 @@ export function ScreenAccountsAll() {
       </div>
 
       {/* Connect bank sheet */}
-      {showAdd && (
-        <Sheet onClose={() => setShowAdd(false)}>
-          <div style={{ padding:'4px 20px 32px' }}>
-            <div className="m-h2" style={{ marginBottom:12 }}>Connect a bank</div>
-            <div style={{ position:'relative', marginBottom:12 }}>
-              <I name="search" size={16} color={M.ink4} style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', pointerEvents:'none' }}/>
-              <input autoFocus value={bankSearch} onChange={e => setBankSearch(e.target.value)} placeholder="Search banks…"
-                style={{ width:'100%', padding:'10px 12px 10px 36px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box' }}/>
-            </div>
-            <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}`, maxHeight:340, overflowY:'auto' }}>
-              {filteredBanks.length === 0 && <div style={{ padding:'20px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>No banks found</div>}
-              {filteredBanks.map((bank, i) => {
-                const connCount = connectedAccounts.filter(a => a.bankId === bank.id).length;
-                return (
-                  <React.Fragment key={bank.id}>
-                    {i > 0 && <Divider inset={48}/>}
-                    <div className="m-tap" onClick={() => startBankConnect(bank)}
-                      style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
-                      <div style={{ width:36, height:36, borderRadius:10, background:bank.color+'22', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:18 }}>{bank.logo}</div>
-                      <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontSize:14, fontWeight:500 }}><HighlightText text={bank.name} query={bankSearch}/></div>
-                        <div style={{ fontSize:11, color:M.ink3, marginTop:1, fontFamily:M.fontMono }}>{bank.bic}</div>
-                      </div>
-                      {connCount > 0 ? (
-                        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                          <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>{connCount}×</span>
-                          <I name="caretR" size={14} color={M.ink4}/>
-                        </div>
-                      ) : <I name="caretR" size={14} color={M.ink4}/>}
-                    </div>
-                  </React.Fragment>
-                );
-              })}
-            </div>
-          </div>
-        </Sheet>
-      )}
-
       {/* Create saving account sheet */}
       {showCreateSaving && (
         <Sheet onClose={() => setShowCreateSaving(false)}>
@@ -1532,7 +1427,7 @@ export function ScreenAccountsAll() {
         <Sheet onClose={() => setShowAddChoice(false)}>
           <div style={{ padding:'4px 16px 8px' }}>
             <div style={{ fontSize:17, fontWeight:700, marginBottom:16 }}>Add account</div>
-            <div className="m-tap" onClick={() => { setShowAddChoice(false); setShowAdd(true); }}
+            <div className="m-tap" onClick={() => { setShowAddChoice(false); setBankSearch(''); setPsd2Step('search'); }}
               style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0', borderBottom:`1px solid ${M.line2}` }}>
               <div style={{ width:40, height:40, borderRadius:12, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                 <I name="card" size={18} color={M.sage}/>
