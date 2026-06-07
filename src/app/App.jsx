@@ -234,7 +234,6 @@ function ScreenLoginGate({ onLogin }) {
     } catch { return ''; }
   });
   const [signupEmailInput, setSignupEmailInput] = React.useState('');
-  const [signupName, setSignupName] = React.useState('');
   const [verifyDigits, setVerifyDigits] = React.useState(['','','','','','']);
   const [autoFilling, setAutoFilling] = React.useState(false);
   const [loadingMethod, setLoadingMethod] = React.useState(null);
@@ -359,9 +358,6 @@ function ScreenLoginGate({ onLogin }) {
   // Signup email
   const handleSignupEmail = () => {
     setSignupError(null);
-    const trimmedName = signupName.trim();
-    if (!trimmedName || trimmedName.length < 2) { setSignupError(t('login.errNameRequired')); return; }
-    if (trimmedName.length > 50) { setSignupError(t('login.errNameTooLong')); return; }
     const email = signupEmailInput.trim().toLowerCase();
     if (!EMAIL_RE.test(email)) { setSignupError(t('login.errInvalidEmail')); return; }
     if (RESERVED_EMAILS.includes(email)) { setSignupError(t('login.errEmailReserved')); return; }
@@ -377,8 +373,7 @@ function ScreenLoginGate({ onLogin }) {
         if (idx >= 6) {
           setVerifyDigits([...digits]);
           setTimeout(() => {
-            const parts = signupName.trim().split(' ');
-            setPendingSignup({ method:'email', displayEmail:email, canonicalEmail:email, firstName:parts[0]||'', lastName:parts.slice(1).join(' ')||'', banks:[], apiUrl:'apollousa-demo.okkes.synology.me:443', picture:null, backMode:'signup-email' });
+            setPendingSignup({ method:'email', displayEmail:email, canonicalEmail:email, firstName:'', lastName:'', banks:[], apiUrl:'apollousa-demo.okkes.synology.me:443', picture:null, backMode:'signup-email' });
             setMode('signup-onboarding');
           }, 800);
           return;
@@ -570,12 +565,9 @@ function ScreenLoginGate({ onLogin }) {
           <div className="m-logo" style={{ fontSize:22, marginBottom:20 }}>munni<span className="dot">.</span></div>
           <div className="m-h2" style={{ marginBottom:6 }}>{t('login.createAccountTitle')}</div>
           <div style={{ fontSize:13, color:M.ink3, marginBottom:24 }}>{t('login.createAccountEmailSub')}</div>
-          <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>{t('login.fullName')}</div>
-          <input value={signupName} onChange={e => { setSignupName(e.target.value); setSignupError(null); }} placeholder={t('login.namePlaceholder')}
-            style={{ width:'100%', boxSizing:'border-box', padding:'13px 16px', borderRadius:12, border:`1.5px solid ${signupError && (!signupName.trim() || signupName.trim().length < 2 || signupName.trim().length > 50) ? M.clay : M.line}`, fontSize:15, fontFamily:M.fontUI, background:M.paper2, outline:'none', marginBottom:12, color:M.ink }}/>
           <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>{t('login.email')}</div>
           <input value={signupEmailInput} onChange={e => { setSignupEmailInput(e.target.value); setSignupError(null); }} type="email" placeholder={t('login.emailPlaceholder')}
-            style={{ width:'100%', boxSizing:'border-box', padding:'13px 16px', borderRadius:12, border:`1.5px solid ${signupError && signupName.trim().length >= 2 && signupName.trim().length <= 50 ? M.clay : M.line}`, fontSize:15, fontFamily:M.fontUI, background:M.paper2, outline:'none', marginBottom:signupError?8:20, color:M.ink }}/>
+            style={{ width:'100%', boxSizing:'border-box', padding:'13px 16px', borderRadius:12, border:`1.5px solid ${signupError ? M.clay : M.line}`, fontSize:15, fontFamily:M.fontUI, background:M.paper2, outline:'none', marginBottom:signupError?8:20, color:M.ink }}/>
           {signupError && <div style={{ fontSize:12, color:M.clay, marginBottom:12, lineHeight:1.4 }}>{signupError}</div>}
           <button className="m-btn sage m-tap" style={{ height:52, width:'100%', opacity:signupEmailInput.trim() ? 1 : 0.5 }} onClick={handleSignupEmail} disabled={!signupEmailInput.trim()}>
             {t('login.sendCode')}

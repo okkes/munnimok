@@ -39,10 +39,10 @@ function BankSearchFullScreen({ banks, bankSearch, setBankSearch, connectedAccou
         <div style={{ minWidth:60 }}/>
       </div>
       <div style={{ padding:'12px 20px 8px', flexShrink:0 }}>
-        <div style={{ position:'relative' }}>
-          <I name="search" size={16} color={M.ink4} style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', pointerEvents:'none' }}/>
+        <div style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 12px', borderRadius:10, border:`1px solid ${M.line}`, background:M.paper2, boxSizing:'border-box' }}>
+          <I name="search" size={16} color={M.ink4}/>
           <input autoFocus value={bankSearch} onChange={e => setBankSearch(e.target.value)} placeholder="Search bank…"
-            style={{ width:'100%', padding:'10px 12px 10px 36px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box', color:M.ink }}/>
+            style={{ flex:1, border:'none', background:'transparent', fontSize:14, fontFamily:M.fontUI, outline:'none', color:M.ink, padding:0 }}/>
         </div>
       </div>
       <div style={{ flex:1, overflowY:'auto', padding:'0 20px 24px' }}>

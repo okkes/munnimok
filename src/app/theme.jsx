@@ -74,6 +74,7 @@ if (typeof document !== 'undefined' && !document.getElementById('m-styles')) {
     .m-iconbtn { width:36px; height:36px; border-radius:999px; background:transparent; border:none; display:flex; align-items:center; justify-content:center; cursor:pointer; color:${M.ink}; }
     .m-iconbtn.filled { background:${M.card}; border:1px solid ${M.line}; }
     @keyframes mFadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+    @keyframes pulse { 0%, 100% { opacity: 0.35; transform: scale(0.75); } 50% { opacity: 1; transform: scale(1); } }
     .m-fade { animation: mFadeIn 0.28s ease-out both; }
     .m-logo { font-family: ${M.fontDisp}; font-weight: 600; letter-spacing: -0.04em; }
     .m-logo .dot { color: ${M.sage}; }
@@ -110,6 +111,7 @@ export function I({ name, size = 20, color = 'currentColor', stroke = 1.6 }) {
     case 'bell': return w(<><path d="M6 16V11a6 6 0 1112 0v5l1.5 2H4.5z" {...p}/><path d="M10 20a2 2 0 004 0" {...p}/></>);
     case 'lock': return w(<><rect x="5" y="11" width="14" height="9" rx="2.5" {...p}/><path d="M8 11V8a4 4 0 018 0v3" {...p}/></>);
     case 'help': return w(<><circle cx="12" cy="12" r="9" {...p}/><path d="M9.5 9.5a2.5 2.5 0 015 0c0 1.5-2.5 2-2.5 4M12 17.5v.5" {...p}/></>);
+    case 'info': return w(<><circle cx="12" cy="12" r="9" {...p}/><path d="M12 8v.5M12 11v5" {...p}/></>);
     case 'menu': return w(<path d="M4 7h16M4 12h16M4 17h16" {...p}/>);
     case 'more': return w(<><circle cx="6" cy="12" r="1.4" {...f}/><circle cx="12" cy="12" r="1.4" {...f}/><circle cx="18" cy="12" r="1.4" {...f}/></>);
     case 'piggy': return w(<><path d="M5 13a6 6 0 0112 0v3a2 2 0 01-2 2h-1l-.5 2h-2l-.5-2h-2l-.5 2h-2L6 18a2 2 0 01-1-2z" {...p}/><circle cx="14" cy="12" r="0.7" {...f}/></>);

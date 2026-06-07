@@ -20,8 +20,9 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
     () => (signup.banks || []).map((id, i) => ({ id, uid: `init_${i}` }))
   );
   const [apiUrl,         setApiUrl]        = React.useState(signup.apiUrl || '');
-  const [showAdvanced,   setShowAdvanced]  = React.useState(false);
   const [picture,        setPicture]       = React.useState(signup.picture || null);
+  const [bankPsd2Step,   setBankPsd2Step]  = React.useState(null); // null | 'consent' | 'connecting' | 'done'
+  const [showApiInfo,    setShowApiInfo]   = React.useState(false);
   const [showPicker,     setShowPicker]    = React.useState(false);
   const [errors,         setErrors]        = React.useState({});
   const fileInputRef = React.useRef(null);
@@ -70,6 +71,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
   const openBankCredentials = (bank) => {
     subScreenRef.current = 'credentials';
     setBankSubScreen('credentials');
+    setBankPsd2Step(null);
     setPendingBank(bank);
     setBankCreds({ username:'demo.user@munni.app', password:'••••••••', accountNumber: generateBankIban(bank) });
     setCredsError('');
@@ -80,6 +82,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
     skipPopsRef.current = 1;
     subScreenRef.current = null;
     setBankSubScreen(null);
+    setBankPsd2Step(null);
     window.history.go(-1);
   };
 
@@ -87,6 +90,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
     skipPopsRef.current = 1;
     subScreenRef.current = 'search';
     setBankSubScreen('search');
+    setBankPsd2Step(null);
     window.history.go(-1);
   };
 
@@ -99,10 +103,29 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
 
   const handleBankConnect = () => {
     if (!bankCreds.username.trim()) { setCredsError(t('onboarding.errLoginRequired')); return; }
+    setBankPsd2Step('consent');
+  };
+
+  const handlePsd2Authorise = () => {
+    setBankPsd2Step('connecting');
+    setTimeout(() => setBankPsd2Step('done'), 1800);
+  };
+
+  const handlePsd2Done = () => {
     addBank(pendingBank.id);
     skipPopsRef.current = 1;
     subScreenRef.current = null;
     setBankSubScreen(null);
+    setBankPsd2Step(null);
+    setPendingBank(null);
+    window.history.go(-2);
+  };
+
+  const handlePsd2Cancel = () => {
+    skipPopsRef.current = 1;
+    subScreenRef.current = null;
+    setBankSubScreen(null);
+    setBankPsd2Step(null);
     setPendingBank(null);
     window.history.go(-2);
   };
@@ -190,19 +213,19 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
         </div>
 
         <div style={{ padding:'12px 20px 8px', flexShrink:0 }}>
-          <div style={{ position:'relative' }}>
-            <I name="search" size={16} color={M.ink4} style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', pointerEvents:'none' }}/>
+          <div style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 12px', borderRadius:10, border:`1px solid ${M.line}`, background:M.paper2, boxSizing:'border-box' }}>
+            <I name="search" size={16} color={M.ink4}/>
             <input
               autoFocus
               value={bankSearch}
               onChange={e => setBankSearch(e.target.value)}
               placeholder={t('onboarding.searchBank')}
-              style={{ width:'100%', padding:'10px 12px 10px 36px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box', color:M.ink }}
+              style={{ flex:1, border:'none', background:'transparent', fontSize:14, fontFamily:M.fontUI, outline:'none', color:M.ink, padding:0 }}
             />
           </div>
         </div>
 
-        <div style={{ flex:1, overflowY:'auto', padding:'0 20px 24px' }}>
+        <div style={{ flex:1, overflowY:'auto', padding:'0 20px 16px' }}>
           <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
             {filteredBanks.length === 0
               ? <div style={{ padding:'24px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>{t('onboarding.noResults')}</div>
@@ -232,6 +255,14 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
                 })
             }
           </div>
+          {!isSSO && (
+            <div style={{ textAlign:'center', paddingTop:16 }}>
+              <button className="m-tap" onClick={handleComplete}
+                style={{ background:'none', border:'none', fontSize:13, color:M.ink3, cursor:'pointer', fontFamily:M.fontUI, textDecoration:'underline', padding:'8px 16px' }}>
+                {t('onboarding.skip')} →
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -240,6 +271,98 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
   // ── Bank credentials sub-screen ─────────────────────────────────────
   if (bankSubScreen === 'credentials' && pendingBank) {
     const bank = pendingBank;
+
+    // Consent step
+    if (bankPsd2Step === 'consent') {
+      return (
+        <div key="bank-consent" className="m-screen m-fade" style={{ display:'flex', flexDirection:'column' }}>
+          <StatusBar/>
+          <div style={{ display:'flex', alignItems:'center', padding:'12px 20px', flexShrink:0, borderBottom:`1px solid ${M.line2}` }}>
+            <button className="m-tap" onClick={handlePsd2Cancel}
+              style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:4, color:M.tint, fontFamily:M.fontUI, fontSize:15, padding:'4px 0', minWidth:60 }}>
+              <I name="x" size={18} color={M.tint}/>
+            </button>
+            <div style={{ flex:1, textAlign:'center', fontWeight:600, fontSize:16, color:M.ink, fontFamily:M.fontUI }}>{t('onboarding.consent.title')}</div>
+            <div style={{ minWidth:60 }}/>
+          </div>
+          <div style={{ flex:1, display:'flex', flexDirection:'column', padding:'24px 24px 32px', gap:20, overflowY:'auto' }}>
+            <div style={{ textAlign:'center' }}>
+              <div style={{ width:64, height:64, borderRadius:18, background:`${bank.color}22`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:32, margin:'0 auto 12px' }}>{bank.logo}</div>
+              <div style={{ fontSize:13, color:M.ink3 }}>{t('onboarding.consent.subtitle')}</div>
+            </div>
+            <div className="m-card" style={{ padding:'0 16px', border:`1px solid ${M.line}` }}>
+              {[
+                { icon:'card', title:t('onboarding.consent.accountInfo'), sub:t('onboarding.consent.accountInfoSub') },
+                { icon:'list', title:t('onboarding.consent.txHistory'), sub:t('onboarding.consent.txHistorySub') },
+              ].map((item, i) => (
+                <React.Fragment key={i}>
+                  {i > 0 && <Divider/>}
+                  <div style={{ display:'flex', alignItems:'center', gap:14, padding:'14px 0' }}>
+                    <div style={{ width:36, height:36, borderRadius:10, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                      <I name={item.icon} size={18} color={M.sage}/>
+                    </div>
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontSize:14, fontWeight:500, color:M.ink }}>{item.title}</div>
+                      <div style={{ fontSize:11, color:M.ink3, marginTop:2 }}>{item.sub}</div>
+                    </div>
+                    <I name="check" size={16} color={M.sage}/>
+                  </div>
+                </React.Fragment>
+              ))}
+            </div>
+            <div style={{ fontSize:12, color:M.ink3, textAlign:'center', lineHeight:1.5 }}>{t('onboarding.consent.footer')}</div>
+            <button className="m-btn sage m-tap" onClick={handlePsd2Authorise} style={{ marginTop:'auto' }}>{t('onboarding.consent.authorise')}</button>
+            <button className="m-btn outline m-tap" onClick={handlePsd2Cancel}>{t('action.cancel')}</button>
+          </div>
+        </div>
+      );
+    }
+
+    // Connecting step
+    if (bankPsd2Step === 'connecting') {
+      return (
+        <div key="bank-connecting" className="m-screen" style={{ display:'flex', flexDirection:'column' }}>
+          <StatusBar/>
+          <div style={{ display:'flex', alignItems:'center', padding:'12px 20px', flexShrink:0, borderBottom:`1px solid ${M.line2}` }}>
+            <div style={{ minWidth:60 }}/>
+            <div style={{ flex:1, textAlign:'center', fontWeight:600, fontSize:16, color:M.ink, fontFamily:M.fontUI }}>{bank.name}</div>
+            <div style={{ minWidth:60 }}/>
+          </div>
+          <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:16, textAlign:'center', padding:'24px' }}>
+            <div style={{ width:64, height:64, borderRadius:18, background:`${bank.color}22`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:32 }}>{bank.logo}</div>
+            <div style={{ display:'flex', gap:8 }}>
+              {[0,1,2].map(i => <div key={i} style={{ width:8, height:8, borderRadius:999, background:M.sage, animation:`pulse 1.2s ease-in-out ${i*0.4}s infinite` }}/>)}
+            </div>
+            <div style={{ fontSize:15, fontWeight:600, color:M.ink }}>{t('onboarding.connecting.title').replace('{bank}', bank.name)}</div>
+            <div style={{ fontSize:12, color:M.ink3 }}>{t('onboarding.connecting.subtitle')}</div>
+          </div>
+        </div>
+      );
+    }
+
+    // Done step
+    if (bankPsd2Step === 'done') {
+      return (
+        <div key="bank-done" className="m-screen m-fade" style={{ display:'flex', flexDirection:'column' }}>
+          <StatusBar/>
+          <div style={{ display:'flex', alignItems:'center', padding:'12px 20px', flexShrink:0, borderBottom:`1px solid ${M.line2}` }}>
+            <div style={{ minWidth:60 }}/>
+            <div style={{ flex:1, textAlign:'center', fontWeight:600, fontSize:16, color:M.ink, fontFamily:M.fontUI }}>Connected</div>
+            <div style={{ minWidth:60 }}/>
+          </div>
+          <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:16, textAlign:'center', padding:'24px' }}>
+            <div style={{ width:80, height:80, borderRadius:24, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center' }}>
+              <I name="check" size={36} color={M.sage} stroke={2.5}/>
+            </div>
+            <div className="m-h2">{t('onboarding.done.title')}</div>
+            <div style={{ fontSize:13, color:M.ink3, lineHeight:1.5, maxWidth:260 }}>{t('onboarding.done.subtitle').replace('{bank}', bank.name)}</div>
+            <button className="m-btn sage m-tap" onClick={handlePsd2Done} style={{ marginTop:8 }}>{t('action.done')}</button>
+          </div>
+        </div>
+      );
+    }
+
+    // Login / credentials step (default)
     return (
       <div key="bank-credentials" className="m-screen m-fade" style={{ display:'flex', flexDirection:'column' }}>
         <StatusBar/>
@@ -390,6 +513,23 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
           )}
         </div>
 
+        {/* API endpoint */}
+        <div style={{ marginBottom:14 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:5 }}>
+            <div style={{ fontSize:12, color:M.ink3 }}>{t('onboarding.apiUrl')}</div>
+            <button className="m-tap" onClick={() => setShowApiInfo(true)}
+              style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', padding:'0 2px' }}>
+              <I name="info" size={14} color={M.tint}/>
+            </button>
+          </div>
+          <input
+            value={apiUrl}
+            onChange={e => setApiUrl(e.target.value)}
+            placeholder={t('onboarding.apiUrlPlaceholder')}
+            style={{ width:'100%', boxSizing:'border-box', padding:'12px 14px', borderRadius:12, border:`1.5px solid ${M.line}`, fontSize:13, fontFamily:M.fontMono, background:M.paper2, outline:'none', color:M.ink }}
+          />
+        </div>
+
         {/* Bank accounts */}
         <div style={{ marginBottom:24 }}>
           <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
@@ -440,40 +580,33 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
             <span style={{ fontSize:15, fontWeight:500, color:M.tint }}>{t('onboarding.addBank')}</span>
           </button>
 
-          {!isSSO && (
-            <button className="m-tap" onClick={handleComplete}
-              style={{ background:'none', border:'none', fontSize:13, color:M.ink3, cursor:'pointer', fontFamily:M.fontUI, padding:'10px 0 0', textDecoration:'underline', display:'block' }}>
-              {t('onboarding.skipBank')} →
-            </button>
-          )}
         </div>
 
-        {/* Advanced */}
-        <div style={{ marginBottom:28, borderRadius:12, border:`1px solid ${M.line}`, overflow:'hidden' }}>
-          <button className="m-tap" onClick={() => setShowAdvanced(v => !v)}
-            style={{ width:'100%', display:'flex', alignItems:'center', gap:10, padding:'13px 16px', background:M.paper2, border:'none', cursor:'pointer', textAlign:'left' }}>
-            <I name="sliders" size={15} color={M.ink3}/>
-            <div style={{ flex:1, fontSize:13, fontWeight:500, color:M.ink2 }}>{t('onboarding.advanced')}</div>
-            <I name={showAdvanced ? 'caretU' : 'caretD'} size={13} color={M.ink4}/>
+        {connectedBanks.length > 0 ? (
+          <button className="m-btn sage m-tap" style={{ height:54, width:'100%', fontSize:16, fontWeight:700, marginBottom:8 }} onClick={handleComplete}>
+            {t('onboarding.complete')}
           </button>
-          {showAdvanced && (
-            <div style={{ padding:'4px 16px 16px', background:M.paper }}>
-              <div style={{ height:1, background:M.line, marginBottom:14 }}/>
-              <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>{t('onboarding.apiUrl')}</div>
-              <input
-                value={apiUrl}
-                onChange={e => setApiUrl(e.target.value)}
-                placeholder={t('onboarding.apiUrlPlaceholder')}
-                style={{ width:'100%', boxSizing:'border-box', padding:'11px 14px', borderRadius:10, border:`1.5px solid ${M.line}`, fontSize:13, fontFamily:M.fontMono, background:M.paper2, outline:'none', color:M.ink }}
-              />
-            </div>
-          )}
-        </div>
-
-        <button className="m-btn sage m-tap" style={{ height:54, width:'100%', fontSize:16, fontWeight:700 }} onClick={handleComplete}>
-          {t('onboarding.complete')}
-        </button>
+        ) : (
+          <button className="m-btn sage m-tap" style={{ height:54, width:'100%', fontSize:16, fontWeight:700, marginBottom:8 }} onClick={openBankSearch}>
+            {t('onboarding.connectBankCta')}
+          </button>
+        )}
       </div>
+
+      {/* API info overlay */}
+      {showApiInfo && (
+        <div style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', flexDirection:'column', justifyContent:'flex-end', zIndex:100 }}
+          onClick={() => setShowApiInfo(false)}>
+          <div style={{ background:M.paper, borderRadius:'20px 20px 0 0', padding:'20px 24px 36px' }} onClick={e => e.stopPropagation()}>
+            <div style={{ width:36, height:4, borderRadius:2, background:M.line2, margin:'0 auto 16px' }}/>
+            <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
+              <I name="info" size={18} color={M.tint}/>
+              <div style={{ fontSize:15, fontWeight:600, color:M.ink }}>{t('onboarding.apiUrl')}</div>
+            </div>
+            <div style={{ fontSize:14, color:M.ink2, lineHeight:1.6 }}>{t('onboarding.apiInfo')}</div>
+          </div>
+        </div>
+      )}
 
       {/* Avatar picker overlay */}
       {showPicker && (
