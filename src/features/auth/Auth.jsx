@@ -12,27 +12,28 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
   const isApple  = signup.method === 'apple';
   const isSSO    = isGoogle || isApple;
 
-  const [firstName,     setFirstName]     = React.useState(signup.firstName || '');
-  const [lastName,      setLastName]      = React.useState(signup.lastName  || '');
-  const [email,         setEmail]         = React.useState(signup.displayEmail || '');
+  // Main form state
+  const [firstName,      setFirstName]     = React.useState(signup.firstName || '');
+  const [lastName,       setLastName]      = React.useState(signup.lastName  || '');
+  const [email,          setEmail]         = React.useState(signup.displayEmail || '');
   const [connectedBanks, setConnectedBanks] = React.useState(
     () => (signup.banks || []).map((id, i) => ({ id, uid: `init_${i}` }))
   );
-  const [bankSearch,    setBankSearch]    = React.useState('');
-  const [apiUrl,        setApiUrl]        = React.useState(signup.apiUrl || '');
-  const [showAdvanced,  setShowAdvanced]  = React.useState(false);
-  const [picture,       setPicture]       = React.useState(signup.picture || null);
-  const [showPicker,    setShowPicker]    = React.useState(false);
-  const [errors,        setErrors]        = React.useState({});
+  const [apiUrl,         setApiUrl]        = React.useState(signup.apiUrl || '');
+  const [showAdvanced,   setShowAdvanced]  = React.useState(false);
+  const [picture,        setPicture]       = React.useState(signup.picture || null);
+  const [showPicker,     setShowPicker]    = React.useState(false);
+  const [errors,         setErrors]        = React.useState({});
   const fileInputRef = React.useRef(null);
 
-  const handleFileChange = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => { setPicture(ev.target.result); setShowPicker(false); };
-    reader.readAsDataURL(file);
-  };
+  // Bank sub-screen state
+  const [bankSubScreen, setBankSubScreen] = React.useState(null); // null | 'search' | 'credentials'
+  const [pendingBank,   setPendingBank]   = React.useState(null);
+  const [bankSearch,    setBankSearch]    = React.useState('');
+  const [bankCreds,     setBankCreds]     = React.useState({ username:'', password:'', accountNumber:'' });
+  const [credsError,    setCredsError]    = React.useState('');
+  const subScreenRef = React.useRef(null);
+  const skipPopsRef  = React.useRef(0);
 
   const filteredBanks = React.useMemo(() => {
     const q = bankSearch.toLowerCase().trim();
@@ -40,18 +41,70 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
     return DUTCH_BANKS.filter(b => b.name.toLowerCase().includes(q) || b.bic.toLowerCase().includes(q));
   }, [bankSearch]);
 
+  // Popstate: handles main back + bank sub-screen back
   React.useEffect(() => {
     window.history.pushState({ munniLoginMode: 'signup-onboarding' }, '');
-    const handlePop = () => onBack();
+    const handlePop = () => {
+      if (skipPopsRef.current > 0) { skipPopsRef.current = 0; return; }
+      if (subScreenRef.current === 'credentials') {
+        subScreenRef.current = 'search';
+        setBankSubScreen('search');
+      } else if (subScreenRef.current === 'search') {
+        subScreenRef.current = null;
+        setBankSubScreen(null);
+      } else {
+        onBack();
+      }
+    };
     window.addEventListener('popstate', handlePop);
     return () => window.removeEventListener('popstate', handlePop);
   }, []);
+
+  const openBankSearch = () => {
+    subScreenRef.current = 'search';
+    setBankSubScreen('search');
+    setBankSearch('');
+    window.history.pushState({ munniLoginMode: 'bank-search' }, '');
+  };
+
+  const openBankCredentials = (bank) => {
+    subScreenRef.current = 'credentials';
+    setBankSubScreen('credentials');
+    setPendingBank(bank);
+    setBankCreds({ username:'', password:'', accountNumber:'' });
+    setCredsError('');
+    window.history.pushState({ munniLoginMode: 'bank-credentials' }, '');
+  };
+
+  const backFromSearch = () => {
+    skipPopsRef.current = 1;
+    subScreenRef.current = null;
+    setBankSubScreen(null);
+    window.history.go(-1);
+  };
+
+  const backFromCredentials = () => {
+    skipPopsRef.current = 1;
+    subScreenRef.current = 'search';
+    setBankSubScreen('search');
+    window.history.go(-1);
+  };
 
   const addBank = (bankId) => {
     setConnectedBanks(prev => [...prev, { id: bankId, uid: `${Date.now()}_${Math.random()}` }]);
   };
   const removeBank = (uid) => {
     setConnectedBanks(prev => prev.filter(b => b.uid !== uid));
+  };
+
+  const handleBankConnect = () => {
+    if (!bankCreds.username.trim()) { setCredsError(t('onboarding.errLoginRequired')); return; }
+    addBank(pendingBank.id);
+    skipPopsRef.current = 1;
+    subScreenRef.current = null;
+    setBankSubScreen(null);
+    setPendingBank(null);
+    window.history.go(-2);
   };
 
   const validate = () => {
@@ -79,6 +132,14 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
       picture,
       selectedBanks: connectedBanks.map(b => b.id),
     });
+  };
+
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => { setPicture(ev.target.result); setShowPicker(false); };
+    reader.readAsDataURL(file);
   };
 
   const avatarInitial = (firstName || 'G')[0].toUpperCase();
@@ -112,28 +173,167 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
     );
   };
 
+  // ── Bank search sub-screen ──────────────────────────────────────────
+  if (bankSubScreen === 'search') {
+    return (
+      <div key="bank-search" className="m-screen m-fade" style={{ display:'flex', flexDirection:'column' }}>
+        <StatusBar/>
+        <div style={{ display:'flex', alignItems:'center', padding:'12px 20px', flexShrink:0, borderBottom:`1px solid ${M.line2}` }}>
+          <button className="m-tap" onClick={backFromSearch}
+            style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:4, color:M.tint, fontFamily:M.fontUI, fontSize:15, padding:'4px 0', minWidth:60 }}>
+            <I name="arrowL" size={16} color={M.tint}/>{t('action.back')}
+          </button>
+          <div style={{ flex:1, textAlign:'center', fontWeight:600, fontSize:16, color:M.ink, fontFamily:M.fontUI }}>
+            {t('onboarding.selectBankTitle')}
+          </div>
+          <div style={{ minWidth:60 }}/>
+        </div>
+
+        <div style={{ padding:'12px 20px 8px', flexShrink:0 }}>
+          <div style={{ position:'relative' }}>
+            <I name="search" size={16} color={M.ink4} style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', pointerEvents:'none' }}/>
+            <input
+              autoFocus
+              value={bankSearch}
+              onChange={e => setBankSearch(e.target.value)}
+              placeholder={t('onboarding.searchBank')}
+              style={{ width:'100%', padding:'10px 12px 10px 36px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box', color:M.ink }}
+            />
+          </div>
+        </div>
+
+        <div style={{ flex:1, overflowY:'auto', padding:'0 20px 24px' }}>
+          <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
+            {filteredBanks.length === 0
+              ? <div style={{ padding:'24px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>{t('onboarding.noResults')}</div>
+              : filteredBanks.map((bank, i) => {
+                  const connCount = connectedBanks.filter(b => b.id === bank.id).length;
+                  return (
+                    <React.Fragment key={bank.id}>
+                      {i > 0 && <Divider inset={48}/>}
+                      <div className="m-tap" onClick={() => openBankCredentials(bank)}
+                        style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
+                        <div style={{ width:36, height:36, borderRadius:10, background:`${bank.color}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:18 }}>{bank.logo}</div>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontSize:14, fontWeight:500, color:M.ink }}>{bank.name}</div>
+                          <div style={{ fontSize:11, color:M.ink3, marginTop:1, fontFamily:M.fontMono }}>{bank.bic}</div>
+                        </div>
+                        {connCount > 0 ? (
+                          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                            <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:M.sageSoft, color:M.sage }}>{connCount}×</span>
+                            <I name="caretR" size={14} color={M.sage}/>
+                          </div>
+                        ) : (
+                          <I name="caretR" size={14} color={M.ink4}/>
+                        )}
+                      </div>
+                    </React.Fragment>
+                  );
+                })
+            }
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Bank credentials sub-screen ─────────────────────────────────────
+  if (bankSubScreen === 'credentials' && pendingBank) {
+    const bank = pendingBank;
+    return (
+      <div key="bank-credentials" className="m-screen m-fade" style={{ display:'flex', flexDirection:'column' }}>
+        <StatusBar/>
+        <div style={{ display:'flex', alignItems:'center', padding:'12px 20px', flexShrink:0, borderBottom:`1px solid ${M.line2}` }}>
+          <button className="m-tap" onClick={backFromCredentials}
+            style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:4, color:M.tint, fontFamily:M.fontUI, fontSize:15, padding:'4px 0', minWidth:60 }}>
+            <I name="arrowL" size={16} color={M.tint}/>{t('action.back')}
+          </button>
+          <div style={{ flex:1, textAlign:'center', fontWeight:600, fontSize:16, color:M.ink, fontFamily:M.fontUI }}>
+            {bank.name}
+          </div>
+          <div style={{ minWidth:60 }}/>
+        </div>
+
+        <div style={{ flex:1, overflowY:'auto', padding:'24px 24px 40px' }}>
+          {/* Bank identity */}
+          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:10, marginBottom:24 }}>
+            <div style={{ width:64, height:64, borderRadius:18, background:`${bank.color}22`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:32 }}>{bank.logo}</div>
+            <div style={{ textAlign:'center' }}>
+              <div style={{ fontSize:15, fontWeight:600, color:M.ink }}>{t('onboarding.connectSubtitle')}</div>
+              <div style={{ fontSize:12, color:M.ink3, marginTop:2, fontFamily:M.fontMono }}>{bank.bic}</div>
+            </div>
+          </div>
+
+          {/* PSD2 note */}
+          <div style={{ padding:'10px 12px', borderRadius:10, background:M.sageSoft, marginBottom:20, display:'flex', gap:10, alignItems:'flex-start' }}>
+            <I name="lock" size={14} color={M.sage}/>
+            <div style={{ fontSize:11, color:M.sageDk, lineHeight:1.5 }}>{t('onboarding.bankPSD2Note')}</div>
+          </div>
+
+          {/* Credentials form */}
+          <div className="m-card" style={{ padding:'0 16px', border:`1px solid ${M.line}`, marginBottom:20 }}>
+            <div style={{ padding:'14px 0' }}>
+              <div style={{ fontSize:11, color:M.ink3, marginBottom:6 }}>{t('onboarding.loginName')}</div>
+              <input
+                value={bankCreds.username}
+                onChange={e => { setBankCreds(p => ({...p, username:e.target.value})); setCredsError(''); }}
+                placeholder={t('onboarding.loginNamePlaceholder')}
+                style={{ width:'100%', boxSizing:'border-box', padding:'10px 12px', borderRadius:10, border:`1.5px solid ${credsError && !bankCreds.username.trim() ? M.clay : M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', color:M.ink }}
+              />
+            </div>
+            <Divider/>
+            <div style={{ padding:'14px 0' }}>
+              <div style={{ fontSize:11, color:M.ink3, marginBottom:6 }}>{t('onboarding.bankPassword')}</div>
+              <input
+                type="password"
+                value={bankCreds.password}
+                onChange={e => setBankCreds(p => ({...p, password:e.target.value}))}
+                placeholder={t('onboarding.bankPasswordPlaceholder')}
+                style={{ width:'100%', boxSizing:'border-box', padding:'10px 12px', borderRadius:10, border:`1.5px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', color:M.ink }}
+              />
+            </div>
+            <Divider/>
+            <div style={{ padding:'14px 0' }}>
+              <div style={{ fontSize:11, color:M.ink3, marginBottom:6 }}>{t('onboarding.accountNumberLabel')}</div>
+              <input
+                value={bankCreds.accountNumber}
+                onChange={e => setBankCreds(p => ({...p, accountNumber:e.target.value}))}
+                placeholder={t('onboarding.accountNumberPlaceholder')}
+                style={{ width:'100%', boxSizing:'border-box', padding:'10px 12px', borderRadius:10, border:`1.5px solid ${M.line}`, fontSize:14, fontFamily:M.fontMono, background:M.paper2, outline:'none', color:M.ink }}
+              />
+            </div>
+          </div>
+
+          {credsError && <div style={{ fontSize:12, color:M.clay, marginBottom:12, textAlign:'center' }}>{credsError}</div>}
+
+          <button className="m-btn sage m-tap" style={{ height:54, width:'100%', fontSize:16, fontWeight:700 }} onClick={handleBankConnect}>
+            {t('onboarding.connectBtn')}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Main onboarding screen ──────────────────────────────────────────
   return (
     <div key="signup-onboarding" className="m-screen m-fade" style={{ position:'relative' }}>
       <StatusBar/>
 
-      {/* Back button */}
       <div style={{ padding:'16px 20px 0', flexShrink:0 }}>
         <button className="m-tap" onClick={onBack} style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:6, color:M.ink3, fontFamily:M.fontUI, fontSize:13 }}>
           <I name="arrowL" size={16} color={M.ink3}/> {t('action.back')}
         </button>
       </div>
 
-      {/* Scrollable content */}
       <div style={{ flex:1, overflowY:'auto', padding:'20px 24px 40px' }}>
 
-        {/* Logo + title */}
         <div className="m-logo" style={{ fontSize:20, marginBottom:14 }}>munni<span className="dot">.</span></div>
         <div className="m-h2" style={{ marginBottom:4 }}>{t('onboarding.title')}</div>
         <div style={{ fontSize:13, color:M.ink3, marginBottom:24, lineHeight:1.5 }}>
           {isGoogle ? t('onboarding.subtitleGoogle') : isApple ? t('onboarding.subtitleApple') : t('onboarding.subtitleEmail')}
         </div>
 
-        {/* Avatar picker button */}
+        {/* Avatar */}
         <div style={{ display:'flex', justifyContent:'center', marginBottom:24 }}>
           <button className="m-tap" onClick={() => setShowPicker(true)} style={{ position:'relative', background:'none', border:'none', cursor:'pointer', padding:0 }}>
             {renderAvatar()}
@@ -143,7 +343,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
           </button>
         </div>
 
-        {/* First / Last name */}
+        {/* Name */}
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:14 }}>
           <div>
             <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{t('onboarding.firstName')}</div>
@@ -197,13 +397,12 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
             {!isSSO && <span style={{ fontSize:11, color:M.ink4 }}>(optional)</span>}
           </div>
 
-          {/* PSD2 note */}
           <div style={{ padding:'10px 12px', borderRadius:10, background:M.sageSoft, marginBottom:12, display:'flex', gap:10, alignItems:'flex-start' }}>
             <I name="lock" size={14} color={M.sage}/>
             <div style={{ fontSize:11, color:M.sageDk, lineHeight:1.5 }}>{t('onboarding.bankPSD2Note')}</div>
           </div>
 
-          {/* Connected banks — account rows (same style as Accounts screen) */}
+          {/* Connected account rows */}
           {connectedBanks.length > 0 && (
             <div style={{ marginBottom:12 }}>
               <div style={{ fontSize:11, fontWeight:600, color:M.ink3, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:8 }}>{t('onboarding.connected')}</div>
@@ -234,47 +433,12 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
             </div>
           )}
 
-          {/* Search — matches Accounts "Connect a bank" sheet */}
-          <div style={{ position:'relative', marginBottom:12 }}>
-            <I name="search" size={16} color={M.ink4} style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', pointerEvents:'none' }}/>
-            <input
-              value={bankSearch}
-              onChange={e => setBankSearch(e.target.value)}
-              placeholder={t('onboarding.searchBank')}
-              style={{ width:'100%', padding:'10px 12px 10px 36px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box' }}
-            />
-          </div>
-
-          {/* Bank list — same style as Accounts connect bank sheet */}
-          <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}`, maxHeight:340, overflowY:'auto' }}>
-            {filteredBanks.length === 0
-              ? <div style={{ padding:'20px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>{t('onboarding.noResults')}</div>
-              : filteredBanks.map((bank, i) => {
-                  const connCount = connectedBanks.filter(b => b.id === bank.id).length;
-                  return (
-                    <React.Fragment key={bank.id}>
-                      {i > 0 && <Divider inset={48}/>}
-                      <div className="m-tap" onClick={() => addBank(bank.id)}
-                        style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
-                        <div style={{ width:36, height:36, borderRadius:10, background:`${bank.color}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:18 }}>{bank.logo}</div>
-                        <div style={{ flex:1, minWidth:0 }}>
-                          <div style={{ fontSize:14, fontWeight:500, color:M.ink }}>{bank.name}</div>
-                          <div style={{ fontSize:11, color:M.ink3, marginTop:1, fontFamily:M.fontMono }}>{bank.bic}</div>
-                        </div>
-                        {connCount > 0 ? (
-                          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                            <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:M.sageSoft, color:M.sage }}>{connCount}×</span>
-                            <I name="caretR" size={14} color={M.sage}/>
-                          </div>
-                        ) : (
-                          <I name="caretR" size={14} color={M.ink4}/>
-                        )}
-                      </div>
-                    </React.Fragment>
-                  );
-                })
-            }
-          </div>
+          {/* Add bank button */}
+          <button className="m-tap" onClick={openBankSearch}
+            style={{ width:'100%', padding:'13px 16px', borderRadius:12, border:`1.5px dashed ${M.line2}`, background:'transparent', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8, fontFamily:M.fontUI, boxSizing:'border-box' }}>
+            <I name="plus" size={16} color={M.tint}/>
+            <span style={{ fontSize:15, fontWeight:500, color:M.tint }}>{t('onboarding.addBank')}</span>
+          </button>
 
           {!isSSO && (
             <button className="m-tap" onClick={handleComplete}
@@ -284,7 +448,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
           )}
         </div>
 
-        {/* Advanced section */}
+        {/* Advanced */}
         <div style={{ marginBottom:28, borderRadius:12, border:`1px solid ${M.line}`, overflow:'hidden' }}>
           <button className="m-tap" onClick={() => setShowAdvanced(v => !v)}
             style={{ width:'100%', display:'flex', alignItems:'center', gap:10, padding:'13px 16px', background:M.paper2, border:'none', cursor:'pointer', textAlign:'left' }}>
@@ -306,7 +470,6 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
           )}
         </div>
 
-        {/* CTA */}
         <button className="m-btn sage m-tap" style={{ height:54, width:'100%', fontSize:16, fontWeight:700 }} onClick={handleComplete}>
           {t('onboarding.complete')}
         </button>
@@ -314,10 +477,8 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
 
       {/* Avatar picker overlay */}
       {showPicker && (
-        <div
-          style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', flexDirection:'column', justifyContent:'flex-end', zIndex:100 }}
-          onClick={() => setShowPicker(false)}
-        >
+        <div style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', flexDirection:'column', justifyContent:'flex-end', zIndex:100 }}
+          onClick={() => setShowPicker(false)}>
           <div style={{ background:M.paper, borderRadius:'20px 20px 0 0', padding:'16px 20px 32px' }} onClick={e => e.stopPropagation()}>
             <div style={{ width:36, height:4, borderRadius:2, background:M.line2, margin:'0 auto 16px' }}/>
             <div style={{ fontSize:14, fontWeight:600, color:M.ink, marginBottom:16 }}>{t('profile.picTitle')}</div>
