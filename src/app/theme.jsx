@@ -146,7 +146,10 @@ export function I({ name, size = 20, color = 'currentColor', stroke = 1.6 }) {
     case 'heart': return w(<path d="M12 21s-7-5-7-11a4 4 0 017-2.6A4 4 0 0119 10c0 6-7 11-7 11z" {...p}/>);
     case 'alert': return w(<><path d="M12 4L3 20h18z" {...p}/><path d="M12 10v5M12 17.5v.5" {...p}/></>);
     case 'swap':  return w(<path d="M4 8h13l-3-3M20 16H7l3 3" {...p}/>);
-    case 'ban':   return w(<><circle cx="12" cy="12" r="9" {...p}/><path d="M5.6 5.6l12.8 12.8" {...p}/></>);
+    case 'ban':    return w(<><circle cx="12" cy="12" r="9" {...p}/><path d="M5.6 5.6l12.8 12.8" {...p}/></>);
+    case 'trash':  return w(<><path d="M5 8h14M10 8V5h4v3M8 8l.8 12h6.4L16 8" {...p}/></>);
+    case 'refresh': return w(<><path d="M4 12a8 8 0 0114-5.3L20 5v5h-5" {...p}/><path d="M20 12a8 8 0 01-14 5.3L4 19v-5h5" {...p}/></>);
+    case 'map':    return w(<><path d="M3 7l6-2 6 2 6-2v12l-6 2-6-2-6 2V7z" {...p}/><path d="M9 5v14M15 7v14" {...p}/></>);
     default: return w(<rect x="4" y="4" width="16" height="16" rx="3" {...p}/>);
   }
 }
