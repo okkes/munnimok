@@ -227,6 +227,9 @@ export function ScreenUserInfo() {
 
   // Delete account (moved from ScreenProfile)
   const [showDeleteAccount, setShowDeleteAccount] = React.useState(false);
+  const [deleteAccountStep, setDeleteAccountStep] = React.useState('feedback'); // 'feedback' | 'confirm'
+  const [deleteReasons, setDeleteReasons] = React.useState([]);
+  const [deleteFeedbackText, setDeleteFeedbackText] = React.useState('');
 
   // Email change (for email-login users)
   const [showChangeEmail, setShowChangeEmail] = React.useState(false);
@@ -234,7 +237,7 @@ export function ScreenUserInfo() {
   const [newEmailDraft, setNewEmailDraft] = React.useState('');
   const [changeEmailError, setChangeEmailError] = React.useState('');
   const [verifyCodeInput, setVerifyCodeInput] = React.useState('');
-  const [overrideEmail, setOverrideEmail] = React.useState(null);
+  const [overrideEmail, setOverrideEmail] = useLocalStorage('munni_email_override', null);
 
   const emailDisplay = React.useMemo(() => {
     if (isDemo) return 'demo@munni.app';
@@ -280,7 +283,7 @@ export function ScreenUserInfo() {
           ? <button className="m-tap" onClick={save} style={{ background:'transparent', border:'none', fontSize:15, fontWeight:700, color:M.sage, cursor:'pointer', fontFamily:M.fontUI }}>{t('action.save')}</button>
           : null}
       />
-      <div className="m-body-scroll">
+      <div className="m-body-scroll" style={(showApiSheet||showDeleteAccount||showChangeEmail||showPicturePicker) ? { overflowY:'hidden' } : undefined}>
 
         {/* Avatar section */}
         <div style={{ display:'flex', flexDirection:'column', alignItems:'center', paddingTop:28, paddingBottom:28 }}>
@@ -331,7 +334,7 @@ export function ScreenUserInfo() {
                 </div>
                 <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ fontSize:11, color:M.ink3, marginBottom:2 }}>{t('login.email')}</div>
-                  <div style={{ fontSize:14, color:M.ink, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{overrideEmail || emailDisplay || '—'}</div>
+                  <div style={{ fontSize:14, color:M.ink, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{overrideEmail?.to || emailDisplay || '—'}</div>
                 </div>
                 {canChangeEmail ? <I name="caretR" size={14} color={M.ink4}/> : <I name="lock" size={13} color={M.ink4}/>}
               </div>
@@ -434,12 +437,12 @@ export function ScreenUserInfo() {
               <div style={{ fontSize:13, color:M.ink3, marginBottom:20 }}>{t('settings.changeEmailStep1Sub')}</div>
               <input className="m-input" value={newEmailDraft} onChange={e => { setNewEmailDraft(e.target.value); setChangeEmailError(''); }}
                 placeholder={t('login.email')} type="email" autoFocus
-                style={{ width:'100%', marginBottom:8, boxSizing:'border-box' }}/>
+                style={{ width:'100%', marginBottom:8, boxSizing:'border-box', height:48 }}/>
               {changeEmailError && <div style={{ fontSize:12, color:M.clay, marginBottom:8 }}>{changeEmailError}</div>}
-              <button className="m-tap m-btn-primary" onClick={() => {
+              <button className="m-btn sage m-tap" onClick={() => {
                 if (!newEmailDraft.trim() || !newEmailDraft.includes('@')) { setChangeEmailError(t('login.errInvalidEmail')); return; }
                 setChangeEmailStep('verify');
-              }} style={{ width:'100%', marginTop:4 }}>{t('login.continue')}</button>
+              }} style={{ width:'100%', marginTop:8 }}>{t('login.continue')}</button>
             </>)}
             {changeEmailStep === 'verify' && (<>
               <div style={{ fontSize:17, fontWeight:700, marginBottom:4 }}>{t('settings.changeEmailVerify')}</div>
@@ -447,13 +450,14 @@ export function ScreenUserInfo() {
               <div style={{ fontSize:12, color:M.sage, marginBottom:20, fontWeight:600 }}>Demo code: 123456</div>
               <input className="m-input" value={verifyCodeInput} onChange={e => { setVerifyCodeInput(e.target.value); setChangeEmailError(''); }}
                 placeholder="000000" type="text" inputMode="numeric" maxLength={6} autoFocus
-                style={{ width:'100%', marginBottom:8, letterSpacing:4, textAlign:'center', fontSize:20, fontWeight:700, boxSizing:'border-box' }}/>
+                style={{ width:'100%', marginBottom:8, letterSpacing:4, textAlign:'center', fontSize:20, fontWeight:700, boxSizing:'border-box', height:48 }}/>
               {changeEmailError && <div style={{ fontSize:12, color:M.clay, marginBottom:8 }}>{changeEmailError}</div>}
-              <button className="m-tap m-btn-primary" onClick={() => {
+              <button className="m-btn sage m-tap" onClick={() => {
                 if (verifyCodeInput !== '123456') { setChangeEmailError(t('login.errInvalidCode')); return; }
-                setOverrideEmail(newEmailDraft);
+                const oldEmail = emailDisplay || _safeEmail;
+                setOverrideEmail({ from: oldEmail, to: newEmailDraft });
                 setChangeEmailStep('done');
-              }} style={{ width:'100%', marginTop:4 }}>{t('action.confirm')}</button>
+              }} style={{ width:'100%', marginTop:8 }}>{t('action.confirm')}</button>
             </>)}
             {changeEmailStep === 'done' && (<>
               <div style={{ display:'flex', flexDirection:'column', alignItems:'center', padding:'24px 0 8px', gap:12 }}>
@@ -463,7 +467,7 @@ export function ScreenUserInfo() {
                 <div style={{ fontSize:17, fontWeight:700, textAlign:'center' }}>{t('settings.changeEmailSaved')}</div>
                 <div style={{ fontSize:13, color:M.ink3, textAlign:'center' }}>{newEmailDraft}</div>
               </div>
-              <button className="m-tap m-btn-primary" onClick={() => setShowChangeEmail(false)}
+              <button className="m-btn sage m-tap" onClick={() => setShowChangeEmail(false)}
                 style={{ width:'100%', marginTop:16 }}>{t('action.done')}</button>
             </>)}
           </div>
@@ -475,14 +479,14 @@ export function ScreenUserInfo() {
         <Sheet onClose={() => setShowApiSheet(false)}>
           <div style={{ padding:'0 16px 24px' }}>
             <div style={{ fontSize:17, fontWeight:700, marginBottom:4 }}>{t('settings.apiUrl')}</div>
-            <div style={{ fontSize:13, color:M.ink3, marginBottom:20 }}>{t('settings.apiUrlSub')}</div>
+            <div style={{ fontSize:13, color:M.ink3, marginBottom:16 }}>{t('settings.apiUrlSub')}</div>
             <input className="m-input" value={apiDraft} onChange={e => setApiDraft(e.target.value)}
               placeholder={t('settings.apiUrlDefault')} type="url" autoFocus
-              style={{ width:'100%', marginBottom:16, boxSizing:'border-box' }}/>
+              style={{ width:'100%', marginBottom:16, boxSizing:'border-box', height:48 }}/>
             <div style={{ display:'flex', gap:10 }}>
-              <button className="m-tap" onClick={() => { setApiDraft(''); setApiUrl(''); setShowApiSheet(false); }}
-                style={{ flex:1, padding:'13px 0', background:M.paper2, border:`1px solid ${M.line}`, borderRadius:13, fontSize:14, fontWeight:600, color:M.ink2, cursor:'pointer', fontFamily:M.fontUI }}>{t('action.reset')}</button>
-              <button className="m-tap m-btn-primary" onClick={() => { setApiUrl(apiDraft.trim()); setShowApiSheet(false); }}
+              <button className="m-btn outline m-tap" onClick={() => { setApiDraft(''); setApiUrl(''); setShowApiSheet(false); }}
+                style={{ flex:1 }}>{t('action.reset')}</button>
+              <button className="m-btn sage m-tap" onClick={() => { setApiUrl(apiDraft.trim()); setShowApiSheet(false); }}
                 style={{ flex:2 }}>{t('action.save')}</button>
             </div>
           </div>
@@ -491,24 +495,51 @@ export function ScreenUserInfo() {
 
       {/* Delete account sheet */}
       {showDeleteAccount && (
-        <Sheet onClose={() => setShowDeleteAccount(false)}>
+        <Sheet onClose={() => { setShowDeleteAccount(false); setDeleteAccountStep('feedback'); setDeleteReasons([]); setDeleteFeedbackText(''); }}>
           <div style={{ padding:'0 16px 24px' }}>
-            <div style={{ width:48, height:48, borderRadius:'50%', background:M.claySoft, display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 16px' }}>
-              <I name="trash" size={22} color={M.clay}/>
-            </div>
-            <div style={{ fontSize:17, fontWeight:700, textAlign:'center', marginBottom:8 }}>{t('settings.deleteAccount')}</div>
-            <div style={{ fontSize:13, color:M.ink3, textAlign:'center', marginBottom:24 }}>{t('settings.deleteAccountBody')}</div>
-            <button className="m-tap" onClick={() => {
-              const allKeys = Object.keys(localStorage).filter(k => k.startsWith('munni_'));
-              allKeys.forEach(k => localStorage.removeItem(k));
-              window.location.reload();
-            }} style={{ width:'100%', padding:'14px 0', background:M.clay, border:'none', borderRadius:13, fontSize:15, fontWeight:700, color:'#fff', cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>
-              {t('settings.deleteAccountConfirm')}
-            </button>
-            <button className="m-tap" onClick={() => setShowDeleteAccount(false)}
-              style={{ width:'100%', padding:'13px 0', background:M.paper2, border:`1px solid ${M.line}`, borderRadius:13, fontSize:14, fontWeight:600, color:M.ink2, cursor:'pointer', fontFamily:M.fontUI }}>
-              {t('action.cancel')}
-            </button>
+            {deleteAccountStep === 'feedback' ? (<>
+              <div style={{ fontSize:17, fontWeight:700, marginBottom:4 }}>{t('settings.deleteAccountFeedbackTitle')}</div>
+              <div style={{ fontSize:13, color:M.ink3, marginBottom:16 }}>{t('settings.deleteAccountFeedbackSub')}</div>
+              {[
+                'settings.deleteReasonPrivacy',
+                'settings.deleteReasonSwitching',
+                'settings.deleteReasonNotUseful',
+                'settings.deleteReasonMissingFeature',
+                'settings.deleteReasonOther',
+              ].map(key => (
+                <div key={key} className="m-tap" onClick={() => setDeleteReasons(prev => prev.includes(key) ? prev.filter(r => r !== key) : [...prev, key])}
+                  style={{ display:'flex', alignItems:'center', gap:12, padding:'11px 0', borderBottom:`1px solid ${M.line2}` }}>
+                  <div style={{ width:20, height:20, borderRadius:6, border:`2px solid ${deleteReasons.includes(key) ? M.sage : M.line}`, background:deleteReasons.includes(key) ? M.sage : 'transparent', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, transition:'all 0.12s' }}>
+                    {deleteReasons.includes(key) && <I name="check" size={10} color="#fff" stroke={3}/>}
+                  </div>
+                  <div style={{ fontSize:14, color:M.ink }}>{t(key)}</div>
+                </div>
+              ))}
+              <textarea value={deleteFeedbackText} onChange={e => setDeleteFeedbackText(e.target.value)}
+                placeholder={t('settings.deleteAccountFeedbackPlaceholder')}
+                rows={3} style={{ width:'100%', boxSizing:'border-box', marginTop:12, padding:'10px 12px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:13, fontFamily:M.fontUI, background:M.paper2, color:M.ink, outline:'none', resize:'none', lineHeight:1.5 }}/>
+              <button className="m-btn m-tap" onClick={() => setDeleteAccountStep('confirm')}
+                style={{ width:'100%', marginTop:16, background:M.clay, color:'#fff' }}>{t('settings.deleteAccountFeedbackContinue')}</button>
+              <button className="m-btn outline m-tap" onClick={() => { setShowDeleteAccount(false); setDeleteAccountStep('feedback'); }}
+                style={{ width:'100%', marginTop:10 }}>{t('action.cancel')}</button>
+            </>) : (<>
+              <div style={{ width:48, height:48, borderRadius:'50%', background:M.claySoft, display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 16px' }}>
+                <I name="trash" size={22} color={M.clay}/>
+              </div>
+              <div style={{ fontSize:17, fontWeight:700, textAlign:'center', marginBottom:8 }}>{t('settings.deleteAccount')}</div>
+              <div style={{ fontSize:13, color:M.ink3, textAlign:'center', marginBottom:24 }}>{t('settings.deleteAccountBody')}</div>
+              <button className="m-tap" onClick={() => {
+                const allLsKeys = Object.keys(localStorage).filter(k => k.startsWith('munni_'));
+                allLsKeys.forEach(k => localStorage.removeItem(k));
+                const allSsKeys = Object.keys(sessionStorage).filter(k => k.startsWith('munni_'));
+                allSsKeys.forEach(k => sessionStorage.removeItem(k));
+                window.location.reload();
+              }} style={{ width:'100%', padding:'14px 0', background:M.clay, border:'none', borderRadius:13, fontSize:15, fontWeight:700, color:'#fff', cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>
+                {t('settings.deleteAccountConfirm')}
+              </button>
+              <button className="m-btn outline m-tap" onClick={() => setDeleteAccountStep('feedback')}
+                style={{ width:'100%' }}>{t('action.back')}</button>
+            </>)}
           </div>
         </Sheet>
       )}
@@ -1365,7 +1396,7 @@ export function ScreenProfileDetail({ params }) {
                     </div>
                     <button className="m-tap" onClick={() => { setShowAttachSheet(null); nav.push('accountsAll'); }}
                       style={{ width:'100%', padding:'12px 0 4px', display:'flex', alignItems:'center', justifyContent:'center', gap:4, background:'transparent', border:'none', cursor:'pointer', fontFamily:M.fontUI }}>
-                      <span style={{ fontSize:14, fontWeight:600, color:M.sage }}>{t('profile.manageAccounts')} â†’</span>
+                      <span style={{ fontSize:14, fontWeight:600, color:M.sage }}>{t('profile.manageAccounts')} {'→'}</span>
                     </button>
                   </>
                 );
@@ -1392,7 +1423,7 @@ export function ScreenProfileDetail({ params }) {
                   </div>
                   <button className="m-tap" onClick={() => { setShowAttachSheet(null); nav.push('accountsAll'); }}
                     style={{ width:'100%', padding:'16px 0 4px', display:'flex', alignItems:'center', justifyContent:'center', gap:4, background:'transparent', border:'none', cursor:'pointer', fontFamily:M.fontUI }}>
-                    <span style={{ fontSize:14, fontWeight:600, color:M.sage }}>{t('profile.manageAccounts')} â†’</span>
+                    <span style={{ fontSize:14, fontWeight:600, color:M.sage }}>{t('profile.manageAccounts')} {'→'}</span>
                   </button>
                 </>
               );

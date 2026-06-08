@@ -1,6 +1,7 @@
 ﻿import React from 'react';
 import { T } from '../shared/testIds.js';
 import { getUserId, registerUserInGlobalRegistry, computeUserDataKey } from '../shared/utils/user.js';
+import { DUTCH_BANKS } from '../features/accounts/data.js';
 import { computeProfileKey, getDefaultProfiles, initPerUserData } from '../features/profile/data.js';
 import { IOSDevice } from './IOSFrame.jsx';
 import { M, I, IcoGoogle, IcoApple, Divider, StatusBar, AppBar } from './theme.jsx';
@@ -328,12 +329,28 @@ function ScreenLoginGate({ onLogin }) {
     }, 1400);
   };
 
-  // Email continue â†’ go to verify
+  // Email continue - go to verify
   const handleEmailContinue = () => {
     setLoginError(null);
     const methods = getSignupMethods();
     const emails = getSignupEmails();
-    if (!methods.includes('email') || !emails.includes(emailInput.toLowerCase().trim())) {
+    const input = emailInput.toLowerCase().trim();
+
+    // Check email override (changed email)
+    let resolvedEmail = input;
+    try {
+      const override = JSON.parse(localStorage.getItem("munni_email_override") || "null");
+      if (override && typeof override === 'object') {
+        if (override.to && override.to.toLowerCase() === input) {
+          resolvedEmail = override.from ? override.from.toLowerCase() : input;
+        } else if (override.from && override.from.toLowerCase() === input) {
+          setLoginError(t('login.emailChangedUseNew').replace('{email}', override.to || ''));
+          return;
+        }
+      }
+    } catch {}
+
+    if (!methods.includes('email') || !emails.includes(resolvedEmail)) {
       setLoginError(t('login.emailNotFound'));
       return;
     }
@@ -346,7 +363,7 @@ function ScreenLoginGate({ onLogin }) {
       const fill = (idx) => {
         if (idx >= 6) {
           setVerifyDigits([...digits]);
-          setTimeout(() => doLogin('email', emailInput.trim().toLowerCase(), null), 800);
+          setTimeout(() => doLogin('email', resolvedEmail, null), 800);
           return;
         }
         setVerifyDigits(prev => { const n=[...prev]; n[idx]=digits[idx]; return n; });
@@ -422,6 +439,23 @@ function ScreenLoginGate({ onLogin }) {
           : `munni_user_picture_${finalEmail}`;
         localStorage.setItem(pKey, JSON.stringify(newPicture));
         window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: pKey } }));
+      }
+      // Save connected banks as bank accounts so they appear in Settings > Accounts
+      if (data.connectedBanks && data.connectedBanks.length > 0) {
+        const acctKey = computeUserDataKey(method, finalEmail, 'munni_bank_accounts');
+        const bankAccounts = data.connectedBanks.map((b, i) => {
+          const bank = DUTCH_BANKS.find(bk => bk.id === b.id);
+          return {
+            id: `acct_${b.id}_${i}`,
+            name: `${bank ? bank.name : b.id}`,
+            iban: b.iban || '',
+            balance: 0,
+            type: 'checking',
+            color: bank?.color || '#4A6A4F',
+          };
+        });
+        localStorage.setItem(acctKey, JSON.stringify(bankAccounts));
+        window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: acctKey } }));
       }
       const displayName = [firstName, lastName].filter(Boolean).join(' ');
       setPendingSignup(null);
@@ -569,7 +603,15 @@ function ScreenLoginGate({ onLogin }) {
           <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>{t('login.email')}</div>
           <input value={signupEmailInput} onChange={e => { setSignupEmailInput(e.target.value); setSignupError(null); }} type="email" placeholder={t('login.emailPlaceholder')}
             style={{ width:'100%', boxSizing:'border-box', padding:'13px 16px', borderRadius:12, border:`1.5px solid ${signupError ? M.clay : M.line}`, fontSize:15, fontFamily:M.fontUI, background:M.paper2, outline:'none', marginBottom:signupError?8:20, color:M.ink }}/>
-          {signupError && <div style={{ fontSize:12, color:M.clay, marginBottom:12, lineHeight:1.4 }}>{signupError}</div>}
+          {signupError && (
+            <div style={{ fontSize:12, color:M.clay, marginBottom:12, lineHeight:1.4 }}>
+              {signupError}
+              {signupError === t('login.errEmailExists') && (
+                <button onClick={() => { setSignupError(null); setEmailInput(signupEmailInput); setMode('email-input'); }}
+                  style={{ background:'none', border:'none', color:M.sage, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, fontSize:12, marginLeft:4 }}>{t('login.signInInstead')}</button>
+              )}
+            </div>
+          )}
           <button className="m-btn sage m-tap" style={{ height:52, width:'100%', opacity:signupEmailInput.trim() ? 1 : 0.5 }} onClick={handleSignupEmail} disabled={!signupEmailInput.trim()}>
             {t('login.sendCode')}
           </button>
@@ -593,18 +635,35 @@ function ScreenLoginGate({ onLogin }) {
           <div className="m-h2" style={{ marginBottom:4 }}>{t('login.createAccountTitle')}</div>
           <div style={{ fontSize:13, color:M.ink3, marginBottom:24 }}>{t('login.createAccountSub')}</div>
           {signupError && <div style={{ padding:'10px 14px', borderRadius:10, background:M.claySoft, marginBottom:14, fontSize:13, color:M.clay, lineHeight:1.4 }}>{signupError}</div>}
-          <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-            <button className="m-btn outline m-tap" style={{ height:52, justifyContent:'flex-start', paddingLeft:20, gap:12 }} onClick={() => handleGoogle(true)}>
-              <IcoGoogle size={20}/> {t('login.google')}
-            </button>
-            <button className="m-btn outline m-tap" style={{ height:52, justifyContent:'flex-start', paddingLeft:20, gap:12 }} onClick={() => handleApple(true)}>
-              <IcoApple size={20} color={M.ink}/> {t('login.apple')}
-            </button>
-            <Divr/>
-            <button className="m-btn outline m-tap" style={{ height:52, justifyContent:'flex-start', paddingLeft:20, gap:10 }} onClick={() => { setSignupEmailInput(''); setSignupError(null); setMode('signup-email'); }}>
-              <I name="edit" size={18}/> {t('login.signUpEmail')}
-            </button>
-          </div>
+          {(() => {
+            const methods = getSignupMethods();
+            const googleTaken = methods.includes('google');
+            const appleTaken = methods.includes('apple');
+            return (
+              <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+                <div>
+                  <button className={`m-btn outline m-tap${googleTaken?' disabled':''}`} disabled={googleTaken}
+                    style={{ height:52, justifyContent:'flex-start', paddingLeft:20, gap:12, width:'100%', opacity:googleTaken?0.45:1, cursor:googleTaken?'not-allowed':'pointer' }}
+                    onClick={() => !googleTaken && handleGoogle(true)}>
+                    <IcoGoogle size={20}/> {t('login.google')}
+                  </button>
+                  {googleTaken && <div style={{ fontSize:11, color:M.ink3, marginTop:4, paddingLeft:2, lineHeight:1.4 }}>{t('login.ssoAlreadyUsed')}</div>}
+                </div>
+                <div>
+                  <button className={`m-btn outline m-tap${appleTaken?' disabled':''}`} disabled={appleTaken}
+                    style={{ height:52, justifyContent:'flex-start', paddingLeft:20, gap:12, width:'100%', opacity:appleTaken?0.45:1, cursor:appleTaken?'not-allowed':'pointer' }}
+                    onClick={() => !appleTaken && handleApple(true)}>
+                    <IcoApple size={20} color={M.ink}/> {t('login.apple')}
+                  </button>
+                  {appleTaken && <div style={{ fontSize:11, color:M.ink3, marginTop:4, paddingLeft:2, lineHeight:1.4 }}>{t('login.ssoAlreadyUsed')}</div>}
+                </div>
+                <Divr/>
+                <button className="m-btn outline m-tap" style={{ height:52, justifyContent:'flex-start', paddingLeft:20, gap:10 }} onClick={() => { setSignupEmailInput(''); setSignupError(null); setMode('signup-email'); }}>
+                  <I name="edit" size={18}/> {t('login.signUpEmail')}
+                </button>
+              </div>
+            );
+          })()}
         </div>
       </div>
     );

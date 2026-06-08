@@ -1,7 +1,18 @@
 import React from 'react';
 import { M, I, IcoGoogle, IcoApple, StatusBar, Divider } from '../../app/theme.jsx';
 import { useLang } from '../../shared/i18n.jsx';
-import { DUTCH_BANKS, generateBankIban } from '../accounts/data.js';
+import { DUTCH_BANKS, generateBankIban, DUTCH_BANKS as _DB } from '../accounts/data.js';
+
+function seededIban(bank, seed) {
+  let h = 0;
+  const s = String(seed);
+  for (let i = 0; i < s.length; i++) { h = (Math.imul(h, 31) + s.charCodeAt(i)) | 0; }
+  h = Math.abs(h);
+  const bic4 = (bank.bic || bank.id).toUpperCase().slice(0, 4);
+  const n = String(1000000000 + (h % 9000000000));
+  const check = 10 + (h % 89);
+  return `NL${check} ${bic4} ${n.slice(0,4)} ${n.slice(4,8)} ${n.slice(8,10)}`;
+}
 import { STOCK_AVATARS } from '../../shared/constants.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -168,7 +179,10 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
       email:     isSSO ? signup.displayEmail : email.trim().toLowerCase(),
       apiUrl:    apiUrl.trim(),
       picture,
-      selectedBanks: connectedBanks.map(b => b.id),
+      connectedBanks: connectedBanks.map(b => {
+        const bank = DUTCH_BANKS.find(bk => bk.id === b.id);
+        return { ...b, iban: b.iban || (bank ? seededIban(bank, b.uid) : '') };
+      }),
     });
   };
 
@@ -480,17 +494,17 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
         <div style={{ flex:1, overflowY:'auto', padding:'20px 24px 40px' }}>
           <div className="m-logo" style={{ fontSize:20, marginBottom:14 }}>munni<span className="dot">.</span></div>
           <div className="m-h2" style={{ marginBottom:4 }}>{t('onboarding.bankStepTitle')}</div>
-          <div style={{ fontSize:13, color:M.ink3, marginBottom:24, lineHeight:1.5 }}>{t('onboarding.bankStepSub')}</div>
+          <div style={{ fontSize:13, color:M.ink3, marginBottom:20, lineHeight:1.5 }}>{t('onboarding.bankStepSub')}</div>
 
-          <div style={{ padding:'10px 12px', borderRadius:10, background:M.sageSoft, marginBottom:16, display:'flex', gap:10, alignItems:'flex-start' }}>
-            <I name="lock" size={14} color={M.sage}/>
-            <div style={{ fontSize:11, color:M.sageDk, lineHeight:1.5 }}>{t('onboarding.bankPSD2Note')}</div>
-          </div>
-
-          {connectedBanks.length > 0 && (
+          {/* Primary CTA: add bank */}
+          {connectedBanks.length === 0 ? (
+            <button className="m-btn sage m-tap" style={{ width:'100%', height:54, fontSize:15, marginBottom:12 }} onClick={openBankSearch}>
+              <I name="plus" size={18} color="#fff"/>
+              {t('onboarding.addBank')}
+            </button>
+          ) : (
             <div style={{ marginBottom:12 }}>
-              <div style={{ fontSize:11, fontWeight:600, color:M.ink3, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:8 }}>{t('onboarding.connected')}</div>
-              <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
+              <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}`, marginBottom:10 }}>
                 {connectedBanks.map((entry, i) => {
                   const bank = DUTCH_BANKS.find(b => b.id === entry.id);
                   if (!bank) return null;
@@ -503,7 +517,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
                         <div style={{ width:36, height:36, borderRadius:10, background:`${bank.color}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:18 }}>{bank.logo}</div>
                         <div style={{ flex:1, minWidth:0 }}>
                           <div style={{ fontSize:14, fontWeight:500, color:M.ink }}>{label}</div>
-                          <div style={{ fontSize:11, color:M.ink3, marginTop:1, fontFamily:M.fontMono }}>{entry.iban || bank.bic}</div>
+                          <div style={{ fontSize:11, color:M.ink3, marginTop:1, fontFamily:M.fontMono }}>{entry.iban || seededIban(bank, entry.uid)}</div>
                         </div>
                         <button className="m-tap" onClick={() => removeBank(entry.uid)}
                           style={{ background:'none', border:'none', cursor:'pointer', padding:4, display:'flex', alignItems:'center' }}>
@@ -514,18 +528,30 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
                   );
                 })}
               </div>
+              <button className="m-tap" onClick={openBankSearch}
+                style={{ width:'100%', padding:'11px 16px', borderRadius:12, border:`1.5px dashed ${M.line2}`, background:'transparent', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8, fontFamily:M.fontUI, boxSizing:'border-box' }}>
+                <I name="plus" size={15} color={M.tint}/>
+                <span style={{ fontSize:14, fontWeight:500, color:M.tint }}>{t('onboarding.addAnotherBank')}</span>
+              </button>
             </div>
           )}
 
-          <button className="m-tap" onClick={openBankSearch}
-            style={{ width:'100%', padding:'13px 16px', borderRadius:12, border:`1.5px dashed ${M.line2}`, background:'transparent', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8, fontFamily:M.fontUI, boxSizing:'border-box', marginBottom:24 }}>
-            <I name="plus" size={16} color={M.tint}/>
-            <span style={{ fontSize:15, fontWeight:500, color:M.tint }}>{t('onboarding.addBank')}</span>
-          </button>
+          <div style={{ padding:'10px 12px', borderRadius:10, background:M.sageSoft, marginBottom:connectedBanks.length === 0 ? 16 : 24, display:'flex', gap:10, alignItems:'flex-start' }}>
+            <I name="lock" size={14} color={M.sage}/>
+            <div style={{ fontSize:11, color:M.sageDk, lineHeight:1.5 }}>{t('onboarding.bankPSD2Note')}</div>
+          </div>
 
-          <button className="m-btn sage m-tap" style={{ height:54, width:'100%', fontSize:16, fontWeight:700 }} onClick={handleComplete}>
-            {t('onboarding.complete')}
-          </button>
+          {connectedBanks.length > 0 && (
+            <button className="m-btn sage m-tap" style={{ height:54, width:'100%', fontSize:16, fontWeight:700, marginBottom:12 }} onClick={handleComplete}>
+              {t('onboarding.complete')}
+            </button>
+          )}
+          <div style={{ textAlign:'center' }}>
+            <button className="m-tap" onClick={handleComplete}
+              style={{ background:'none', border:'none', fontSize:13, color:M.ink4, cursor:'pointer', fontFamily:M.fontUI, padding:'10px 0' }}>
+              {t('onboarding.bankSkip')}
+            </button>
+          </div>
         </div>
       </div>
     );

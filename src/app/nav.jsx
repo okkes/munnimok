@@ -136,6 +136,7 @@ if (typeof document !== 'undefined' && !document.getElementById('m-nav-styles'))
     @keyframes mSheetUp { from { transform: translateY(100%); } to { transform: none; } }
     @keyframes pulse { 0%,100% { opacity:0.3; transform:scale(0.8); } 50% { opacity:1; transform:scale(1); } }
     @keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+    @keyframes backdropFade { from { opacity:0; } to { opacity:1; } }
     @keyframes barRise { from { transform: scaleY(0); } to { transform: scaleY(1); } }
     .m-bar-animate { transform-origin: bottom; animation: barRise 0.4s cubic-bezier(0.34,1.56,0.64,1) both; }
   `;
@@ -148,6 +149,7 @@ export function Sheet({ children, onClose, open, title }) {
     <div data-testid="sheet-close" style={{
       position: 'absolute', inset: 0, background: 'rgba(27,26,23,0.45)', zIndex: 50,
       display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
+      animation: 'backdropFade 0.22s ease',
     }} onClick={onClose}>
       <div style={{
         background: M.paper, borderTopLeftRadius: 24, borderTopRightRadius: 24,

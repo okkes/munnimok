@@ -15,6 +15,13 @@ import { CategoryPicker } from '../review/Review.jsx';
 import { DUTCH_BANKS } from '../accounts/data.js';
 import { getUserId, getUserSyncKey } from '../../shared/utils/user.js';
 
+function LangHighlight({ text, query }) {
+  if (!query) return <>{text}</>;
+  const idx = text.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return <>{text}</>;
+  return <>{text.slice(0, idx)}<mark style={{ background: '#d4edda', color: '#2d6a35', borderRadius: 2, padding: '0 1px', fontWeight: 700 }}>{text.slice(idx, idx + query.length)}</mark>{text.slice(idx + query.length)}</>;
+}
+
 export function ScreenLanguagePicker({ fromOnboarding = false, onBack }) {
   const navCtx = React.useContext(NavCtx);
   const { lang, setLang, t } = useLang();
@@ -96,8 +103,8 @@ export function ScreenLanguagePicker({ fromOnboarding = false, onBack }) {
               <div style={{ display:'flex', alignItems:'center', gap:14, padding:'12px 0', opacity:0.6 }}>
                 <div style={{ width:40, textAlign:'center', fontSize:11, color:M.ink4, fontWeight:600, flexShrink:0, fontFamily:M.fontMono }}>{l.code.toUpperCase()}</div>
                 <div style={{ flex:1 }}>
-                  <div style={{ fontSize:14, fontWeight:500 }}>{l.native}</div>
-                  <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{l.name}</div>
+                  <div style={{ fontSize:14, fontWeight:500 }}><LangHighlight text={l.native} query={search}/></div>
+                  <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}><LangHighlight text={l.name} query={search}/></div>
                 </div>
                 <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:M.line2, color:M.ink3, textTransform:'uppercase' }}>
                   {t('lang.comingSoon')}
