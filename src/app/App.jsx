@@ -343,9 +343,6 @@ function ScreenLoginGate({ onLogin }) {
       if (override && typeof override === 'object') {
         if (override.to && override.to.toLowerCase() === input) {
           resolvedEmail = override.from ? override.from.toLowerCase() : input;
-        } else if (override.from && override.from.toLowerCase() === input) {
-          setLoginError(t('login.emailChangedUseNew').replace('{email}', override.to || ''));
-          return;
         }
       }
     } catch {}

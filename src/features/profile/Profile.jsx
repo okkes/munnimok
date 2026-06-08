@@ -77,7 +77,9 @@ export function ScreenProfile() {
   const isDemo = loginMethod === 'bank';
   const connectedBanks = connectedAccounts.filter(a => a.type === 'checking').length;
   const _lastMethod = loginMethod;
-  const emailDisplay = isDemo ? 'demo@munni.app' : (email && !['google@munni.app','apple@munni.app','bank@munni.app',''].includes(email)) ? email : _lastMethod === 'google' ? t('login.signedInGoogle') : _lastMethod === 'apple' ? t('login.signedInApple') : (email || '');
+  const [_overrideEmail] = useLocalStorage('munni_email_override', null);
+  const _resolvedEmail = _overrideEmail?.to || email;
+  const emailDisplay = isDemo ? 'demo@munni.app' : (_resolvedEmail && !['google@munni.app','apple@munni.app','bank@munni.app',''].includes(_resolvedEmail)) ? _resolvedEmail : _lastMethod === 'google' ? t('login.signedInGoogle') : _lastMethod === 'apple' ? t('login.signedInApple') : (_resolvedEmail || '');
 
   return (
     <div className="m-screen">
