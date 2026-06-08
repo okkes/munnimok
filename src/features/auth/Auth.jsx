@@ -622,10 +622,10 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
 
       {/* API info overlay */}
       {showApiInfo && (
-        <div style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', flexDirection:'column', justifyContent:'flex-end', zIndex:100 }}
+        <div style={{ position:'absolute', inset:0, background:'rgba(27,26,23,0.45)', display:'flex', flexDirection:'column', justifyContent:'flex-end', zIndex:100, animation:'fadeIn 0.22s ease' }}
           onClick={() => setShowApiInfo(false)}>
-          <div style={{ background:M.paper, borderRadius:'20px 20px 0 0', padding:'20px 24px 36px' }} onClick={e => e.stopPropagation()}>
-            <div style={{ width:36, height:4, borderRadius:2, background:M.line2, margin:'0 auto 16px' }}/>
+          <div style={{ background:M.paper, borderTopLeftRadius:24, borderTopRightRadius:24, padding:'8px 24px 40px', animation:'mSheetUp 0.32s cubic-bezier(.2,.7,.2,1)' }} onClick={e => e.stopPropagation()}>
+            <div style={{ width:36, height:4, borderRadius:999, background:M.line, margin:'0 auto 20px' }}/>
             <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
               <I name="info" size={18} color={M.tint}/>
               <div style={{ fontSize:15, fontWeight:600, color:M.ink }}>{t('onboarding.apiUrl')}</div>
