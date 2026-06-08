@@ -1,4 +1,5 @@
 ﻿import React from 'react';
+import { STOCK_AVATARS } from '../../shared/constants.js';
 import { CATEGORIES } from '../../shared/data/categories.js';
 import { computePeriodHistory, fmtEur, fmtDate } from '../../shared/utils/format.js';
 import { M, I, IcoMDI, Divider, StatusBar, AppBar } from '../../app/theme.jsx';
