@@ -457,11 +457,14 @@ export function ScreenHome() {
             <div style={{ fontSize:17, fontWeight:700, marginBottom:16 }}>{t('home.switchProfile')}</div>
             <div className="m-card" style={{ border:`1px solid ${M.line}`, padding:'4px 16px', marginBottom:16, maxHeight:280, overflowY:'auto' }}>
               {profiles.map((p, i) => {
-                const sharedAccts = p.isShared ? (() => { try { return JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{"accounts":[]}').accounts || []; } catch { return []; } })() : null;
+                const sharedRaw = p.isShared ? (() => { try { return JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{}'); } catch { return {}; } })() : null;
+                const sharedAccts = sharedRaw ? (sharedRaw.accounts || []) : null;
                 const acctIds = p.isShared ? (sharedAccts || []).map(a => a.id) : (p.accountIds || []);
                 const acctCount = acctIds.length;
                 const acctLabel = acctCount === 0 ? t('word.noAccounts') : `${acctCount} ${acctCount === 1 ? t('word.account') : t('word.accounts')}`;
-                const reviewN = allTxs.filter(tx => tx.needsReview && acctIds.includes(tx.account)).length;
+                const reviewN = p.isShared
+                  ? (sharedRaw?.txs || []).filter(tx => tx.needsReview && acctIds.includes(tx.account)).length
+                  : allTxs.filter(tx => tx.needsReview && acctIds.includes(tx.account)).length;
                 const hasAction = reviewN > 0;
                 const isOwnerShared = !p.isShared && (p.members||[]).length > 0;
                 return (
