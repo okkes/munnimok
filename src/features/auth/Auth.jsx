@@ -57,6 +57,8 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
   const [credsError,    setCredsError]    = React.useState('');
   const subScreenRef = React.useRef(null);
   const skipPopsRef  = React.useRef(0);
+  const connectedBanksRef = React.useRef(connectedBanks);
+  React.useEffect(() => { connectedBanksRef.current = connectedBanks; }, [connectedBanks]);
 
   const filteredBanks = React.useMemo(() => {
     const q = bankSearch.toLowerCase().trim();
@@ -77,6 +79,10 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
         subScreenRef.current = null;
         setBankSubScreen(null);
       } else if (stepRef.current === 2) {
+        if (connectedBanksRef.current.length > 0) {
+          window.history.pushState({ munniLoginMode: 'signup-bank' }, '');
+          return;
+        }
         stepRef.current = 1;
         setOnboardingStep(1);
       } else {
@@ -486,10 +492,12 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
     return (
       <div key="signup-bank" className="m-screen m-fade" style={{ position:'relative' }}>
         <StatusBar/>
-        <div style={{ padding:'16px 20px 0', flexShrink:0 }}>
-          <button className="m-tap" onClick={backFromStep2} style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:6, color:M.ink3, fontFamily:M.fontUI, fontSize:13 }}>
-            <I name="arrowL" size={16} color={M.ink3}/> {t('action.back')}
-          </button>
+        <div style={{ padding:'16px 20px 0', flexShrink:0, minHeight:40 }}>
+          {connectedBanks.length === 0 && (
+            <button className="m-tap" onClick={backFromStep2} style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:6, color:M.ink3, fontFamily:M.fontUI, fontSize:13 }}>
+              <I name="arrowL" size={16} color={M.ink3}/> {t('action.back')}
+            </button>
+          )}
         </div>
         <div style={{ flex:1, overflowY:'auto', padding:'20px 24px 40px' }}>
           <div className="m-logo" style={{ fontSize:20, marginBottom:14 }}>munni<span className="dot">.</span></div>
@@ -546,12 +554,14 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
               {t('onboarding.complete')}
             </button>
           )}
-          <div style={{ textAlign:'center' }}>
-            <button className="m-tap" onClick={handleComplete}
-              style={{ background:'none', border:'none', fontSize:13, color:M.ink4, cursor:'pointer', fontFamily:M.fontUI, padding:'10px 0' }}>
-              {t('onboarding.bankSkip')}
-            </button>
-          </div>
+          {connectedBanks.length === 0 && (
+            <div style={{ textAlign:'center' }}>
+              <button className="m-tap" onClick={handleComplete}
+                style={{ background:'none', border:'none', fontSize:13, color:M.ink4, cursor:'pointer', fontFamily:M.fontUI, padding:'10px 0' }}>
+                {t('onboarding.bankSkip')}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );
