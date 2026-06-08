@@ -58,8 +58,8 @@ function BankSearchFullScreen({ banks, bankSearch, setBankSearch, connectedAccou
                       style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
                       <div style={{ width:36, height:36, borderRadius:10, background:`${bank.color}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:18 }}>{bank.logo}</div>
                       <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontSize:14, fontWeight:500, color:M.ink }}>{bank.name}</div>
-                        <div style={{ fontSize:11, color:M.ink3, marginTop:1, fontFamily:M.fontMono }}>{bank.bic}</div>
+                        <div style={{ fontSize:14, fontWeight:500, color:M.ink }}><HighlightText text={bank.name} query={bankSearch.trim()}/></div>
+                        <div style={{ fontSize:11, color:M.ink3, marginTop:1, fontFamily:M.fontMono }}><HighlightText text={bank.bic} query={bankSearch.trim()}/></div>
                       </div>
                       {connCount > 0 ? (
                         <div style={{ display:'flex', alignItems:'center', gap:6 }}>

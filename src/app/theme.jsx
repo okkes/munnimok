@@ -112,6 +112,7 @@ export function I({ name, size = 20, color = 'currentColor', stroke = 1.6 }) {
     case 'lock': return w(<><rect x="5" y="11" width="14" height="9" rx="2.5" {...p}/><path d="M8 11V8a4 4 0 018 0v3" {...p}/></>);
     case 'help': return w(<><circle cx="12" cy="12" r="9" {...p}/><path d="M9.5 9.5a2.5 2.5 0 015 0c0 1.5-2.5 2-2.5 4M12 17.5v.5" {...p}/></>);
     case 'info': return w(<><circle cx="12" cy="12" r="9" {...p}/><path d="M12 8v.5M12 11v5" {...p}/></>);
+    case 'download': return w(<><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" {...p}/><path d="M7 10l5 5 5-5" {...p}/><path d="M12 15V3" {...p}/></>);
     case 'menu': return w(<path d="M4 7h16M4 12h16M4 17h16" {...p}/>);
     case 'more': return w(<><circle cx="6" cy="12" r="1.4" {...f}/><circle cx="12" cy="12" r="1.4" {...f}/><circle cx="18" cy="12" r="1.4" {...f}/></>);
     case 'piggy': return w(<><path d="M5 13a6 6 0 0112 0v3a2 2 0 01-2 2h-1l-.5 2h-2l-.5-2h-2l-.5 2h-2L6 18a2 2 0 01-1-2z" {...p}/><circle cx="14" cy="12" r="0.7" {...f}/></>);

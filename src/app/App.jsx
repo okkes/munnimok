@@ -12,7 +12,7 @@ import { ScreenStub } from '../features/extra/Stub.jsx';
 import { ScreenHome } from '../features/home/Home.jsx';
 import { ScreenTransactions, ScreenTxDetail, ScreenExpenses, ScreenCategoryDrill } from '../features/transactions/Tx.jsx';
 import { ScreenEvents, ScreenEventDetail, ScreenEventCreate } from '../features/events/Events.jsx';
-import { ScreenProfile, ScreenProfiles, ScreenProfileDetail, ScreenUserInfo } from '../features/profile/Profile.jsx';
+import { ScreenProfile, ScreenProfiles, ScreenProfileDetail, ScreenUserInfo, ScreenExportData } from '../features/profile/Profile.jsx';
 import { ScreenLanguagePicker, ScreenSettings, ScreenPeriods, ScreenTutorial, ScreenNotifications, ScreenManageCategories, ScreenCustomizeHome } from '../features/settings/Settings.jsx';
 import { ScreenAccounts, ScreenSavings, ScreenSavingsDetail, ScreenSavingAccounts, ScreenAccountsAll, ScreenIntegrations, ScreenIntegrationLogin, ScreenIntegrationReceipts } from '../features/accounts/Accounts.jsx';
 import { ScreenRecurringTab, ScreenRecurringDetail, ScreenRecurringCreate, ScreenRecurringDeals } from '../features/recurring/Recurring.jsx';
@@ -71,6 +71,7 @@ export const SCREEN_REGISTRY = {
   customGraphCreate: () => <ScreenCustomGraphCreate/>,
   friends:           () => <ScreenFriends/>,
   userInfo:          () => <ScreenUserInfo/>,
+  exportData:        () => <ScreenExportData/>,
 };
 
 function TabRoot() {
@@ -642,9 +643,9 @@ function ScreenLoginGate({ onLogin }) {
           </button>
         </div>
 
-        <div style={{ flex: 1, minHeight: 20 }}/>
+        <div style={{ flex: 1, minHeight: 16 }}/>
 
-        <div style={{ textAlign: 'center', marginBottom:10 }}>
+        <div style={{ textAlign: 'center', marginBottom: 12 }}>
           <div style={{ fontSize: 12, color: M.ink4, marginBottom: 8 }}>{t('login.noAccount')}</div>
           <button className="m-tap" onClick={() => { setLoginError(null); setMode('signup'); }}
             style={{ background: 'transparent', border: 'none', fontSize: 13, fontWeight: 600, color: M.sage, cursor: 'pointer', fontFamily: M.fontUI }}>
@@ -652,24 +653,25 @@ function ScreenLoginGate({ onLogin }) {
           </button>
         </div>
 
-        <button data-testid={T.loginDemoBtn} className="m-tap" onClick={() => doLogin('bank', 'bank@munni.app', 'Demo van der Berg', true)}
-          style={{ background: 'transparent', border: 'none', fontSize: 12, color: M.ink4, cursor: 'pointer', marginTop: 8, fontFamily: M.fontUI, textAlign: 'center' }}>
-          {t('login.demoUser')}
-        </button>
-
-        <div style={{ fontSize: 11, color: M.ink4, textAlign: 'center', marginTop: 14, lineHeight: 1.6 }}>
+        <div style={{ fontSize: 11, color: M.ink4, textAlign: 'center', marginBottom: 12, lineHeight: 1.6 }}>
           {t('login.termsIntro')}{' '}
           <button onClick={() => setMode('terms')} style={{ background:'none', border:'none', color:M.sage, fontWeight:500, cursor:'pointer', fontFamily:M.fontUI, fontSize:11, textDecoration:'underline' }}>{t('login.termsLinkText')}</button>
           {' '}{t('login.termsAnd')}{' '}
           <button onClick={() => setMode('privacy')} style={{ background:'none', border:'none', color:M.sage, fontWeight:500, cursor:'pointer', fontFamily:M.fontUI, fontSize:11, textDecoration:'underline' }}>{t('login.termsPrivacy')}</button>
           {(()=>{ const s=t('login.termsSuffix'); return (s && s!=='login.termsSuffix') ? <>{' '}{s}</> : null; })()}
         </div>
-        <div style={{ textAlign:'center', marginTop:14 }}>
+        <div style={{ textAlign:'center', marginBottom: 16 }}>
           <button className="m-tap" onClick={() => setMode('language')}
             style={{ background:'transparent', border:'none', fontSize:13, color:M.ink3, cursor:'pointer', fontFamily:M.fontUI, textDecoration:'underline' }}>
             🌐 {t('login.changeLanguage')}
           </button>
         </div>
+
+        <div style={{ borderTop: `1px solid ${M.line2}`, margin: '0 0 12px' }}/>
+        <button data-testid={T.loginDemoBtn} className="m-tap" onClick={() => doLogin('bank', 'bank@munni.app', 'Demo van der Berg', true)}
+          style={{ background: 'transparent', border: 'none', fontSize: 11, color: M.ink4, cursor: 'pointer', fontFamily: M.fontUI, textAlign: 'center', width: '100%', padding: '4px 0 2px' }}>
+          {t('login.demoUser')}
+        </button>
       </div>
     </div>
   );

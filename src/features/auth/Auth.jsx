@@ -6,6 +6,15 @@ import { STOCK_AVATARS } from '../../shared/constants.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+function highlightMatch(text, query) {
+  if (!query) return text;
+  const idx = text.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return text;
+  return (
+    <>{text.slice(0, idx)}<span style={{ background:M.sageSoft, color:M.sage, borderRadius:3, padding:'0 2px', fontWeight:700 }}>{text.slice(idx, idx + query.length)}</span>{text.slice(idx + query.length)}</>
+  );
+}
+
 export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
   const { t } = useLang();
   const isGoogle = signup.method === 'google';
@@ -100,8 +109,8 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
     window.history.go(-1);
   };
 
-  const addBank = (bankId) => {
-    setConnectedBanks(prev => [...prev, { id: bankId, uid: `${Date.now()}_${Math.random()}` }]);
+  const addBank = (bankId, iban) => {
+    setConnectedBanks(prev => [...prev, { id: bankId, uid: `${Date.now()}_${Math.random()}`, iban: iban || '' }]);
   };
   const removeBank = (uid) => {
     setConnectedBanks(prev => prev.filter(b => b.uid !== uid));
@@ -118,7 +127,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
   };
 
   const handlePsd2Done = () => {
-    addBank(pendingBank.id);
+    addBank(pendingBank.id, bankCreds.accountNumber);
     skipPopsRef.current = 1;
     subScreenRef.current = null;
     setBankSubScreen(null);
@@ -186,7 +195,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
     reader.readAsDataURL(file);
   };
 
-  const avatarInitial = (firstName || 'G')[0].toUpperCase();
+  const avatarInitial = firstName ? firstName[0].toUpperCase() : null;
 
   const renderAvatar = () => {
     if (picture && picture.startsWith('av')) {
@@ -212,7 +221,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
     );
     return (
       <div style={{ width:72, height:72, borderRadius:999, background:`linear-gradient(135deg, ${M.sage} 0%, #3D5A42 100%)`, display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', fontWeight:600, fontSize:28, fontFamily:M.fontDisp }}>
-        {avatarInitial}
+        {avatarInitial ? avatarInitial : <I name="user" size={32} color="#fff"/>}
       </div>
     );
   };
@@ -259,8 +268,8 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
                         style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
                         <div style={{ width:36, height:36, borderRadius:10, background:`${bank.color}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:18 }}>{bank.logo}</div>
                         <div style={{ flex:1, minWidth:0 }}>
-                          <div style={{ fontSize:14, fontWeight:500, color:M.ink }}>{bank.name}</div>
-                          <div style={{ fontSize:11, color:M.ink3, marginTop:1, fontFamily:M.fontMono }}>{bank.bic}</div>
+                          <div style={{ fontSize:14, fontWeight:500, color:M.ink }}>{highlightMatch(bank.name, bankSearch.trim())}</div>
+                          <div style={{ fontSize:11, color:M.ink3, marginTop:1, fontFamily:M.fontMono }}>{highlightMatch(bank.bic, bankSearch.trim())}</div>
                         </div>
                         {connCount > 0 ? (
                           <div style={{ display:'flex', alignItems:'center', gap:6 }}>
@@ -494,7 +503,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
                         <div style={{ width:36, height:36, borderRadius:10, background:`${bank.color}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:18 }}>{bank.logo}</div>
                         <div style={{ flex:1, minWidth:0 }}>
                           <div style={{ fontSize:14, fontWeight:500, color:M.ink }}>{label}</div>
-                          <div style={{ fontSize:11, color:M.ink3, marginTop:1, fontFamily:M.fontMono }}>{bank.bic}</div>
+                          <div style={{ fontSize:11, color:M.ink3, marginTop:1, fontFamily:M.fontMono }}>{entry.iban || bank.bic}</div>
                         </div>
                         <button className="m-tap" onClick={() => removeBank(entry.uid)}
                           style={{ background:'none', border:'none', cursor:'pointer', padding:4, display:'flex', alignItems:'center' }}>
@@ -585,16 +594,11 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
               <I name="lock" size={13} color={M.ink4}/>
             </div>
           ) : (
-            <>
-              <input
-                value={email}
-                onChange={e => { setEmail(e.target.value); setErrors(p => ({...p, email:undefined})); }}
-                type="email"
-                placeholder={t('login.emailPlaceholder')}
-                style={{ width:'100%', boxSizing:'border-box', padding:'12px 14px', borderRadius:12, border:`1.5px solid ${errors.email ? M.clay : M.line}`, fontSize:15, fontFamily:M.fontUI, background:M.paper2, outline:'none', color:M.ink }}
-              />
-              {errors.email && <div style={{ fontSize:11, color:M.clay, marginTop:4 }}>{errors.email}</div>}
-            </>
+            <div style={{ padding:'12px 14px', borderRadius:12, background:M.paper2, border:`1.5px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, color:M.ink3, display:'flex', alignItems:'center', gap:8 }}>
+              <I name="user" size={13} color={M.ink3}/>
+              <span style={{ flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{email}</span>
+              <I name="lock" size={13} color={M.ink4}/>
+            </div>
           )}
         </div>
 
