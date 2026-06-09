@@ -144,7 +144,28 @@ if (typeof document !== 'undefined' && !document.getElementById('m-nav-styles'))
 }
 
 export function Sheet({ children, onClose, open, title }) {
+  const [dragY, setDragY] = React.useState(0);
+  const startYRef = React.useRef(null);
+  const didMountRef = React.useRef(false);
+  React.useEffect(() => { didMountRef.current = true; }, []);
+
   if (open !== undefined && !open) return null;
+
+  const onHandleTouchStart = (e) => {
+    startYRef.current = e.touches[0].clientY;
+  };
+  const onHandleTouchMove = (e) => {
+    if (startYRef.current === null) return;
+    const dy = e.touches[0].clientY - startYRef.current;
+    if (dy > 0) setDragY(dy);
+  };
+  const onHandleTouchEnd = () => {
+    const y = dragY;
+    setDragY(0);
+    startYRef.current = null;
+    if (y > 80) onClose?.();
+  };
+
   return (
     <div data-testid="sheet-close" style={{
       position: 'absolute', inset: 0, background: 'rgba(27,26,23,0.45)', zIndex: 50,
@@ -153,10 +174,16 @@ export function Sheet({ children, onClose, open, title }) {
     }} onClick={onClose}>
       <div style={{
         background: M.paper, borderTopLeftRadius: 24, borderTopRightRadius: 24,
-        animation: 'mSheetUp 0.32s cubic-bezier(.2,.7,.2,1)',
         maxHeight: '88%', display: 'flex', flexDirection: 'column',
+        animation: !didMountRef.current ? 'mSheetUp 0.32s cubic-bezier(.2,.7,.2,1)' : 'none',
+        transform: dragY > 0 ? `translateY(${dragY}px)` : undefined,
+        transition: (dragY === 0 && didMountRef.current) ? 'transform 0.25s cubic-bezier(.2,.7,.2,1)' : 'none',
       }} onClick={e => e.stopPropagation()}>
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '8px 0 4px' }}>
+        <div
+          onTouchStart={onHandleTouchStart}
+          onTouchMove={onHandleTouchMove}
+          onTouchEnd={onHandleTouchEnd}
+          style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 4px', touchAction: 'none', cursor: 'grab' }}>
           <div style={{ width: 36, height: 4, borderRadius: 999, background: M.line }}/>
         </div>
         {title && (

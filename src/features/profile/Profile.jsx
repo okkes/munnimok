@@ -12,6 +12,8 @@ import { STOCK_AVATARS, PERM_COLOR, PERM_BG, permLabel } from '../../shared/cons
 import { buildEffectivePerm } from '../../shared/sharedProfile.js';
 import { ProfileMembersSheet, MemberActionSheet } from '../friends/Friends.jsx';
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
 
 export function ProfileAvatar({ profile, size = 36 }) {
   const borderRadius = Math.round(size * 0.28);
@@ -222,6 +224,10 @@ export function ScreenUserInfo() {
   const [showPicturePicker, setShowPicturePicker] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
 
+  // Scroll lock: save and restore scroll position when sheets open to prevent jump
+  const bodyScrollRef = React.useRef(null);
+  const savedScrollRef = React.useRef(0);
+
   // API endpoint (moved from ScreenProfile)
   const [apiUrl, setApiUrl] = useLocalStorage('munni_api_url', '');
   const [showApiSheet, setShowApiSheet] = React.useState(false);
@@ -250,6 +256,20 @@ export function ScreenUserInfo() {
 
   const fullName = [firstName, lastName].filter(Boolean).join(' ') || name;
   const initial  = (firstName || name || '?')[0].toUpperCase();
+
+  const anySheetOpen = showApiSheet || showDeleteAccount || showChangeEmail || showPicturePicker;
+  React.useEffect(() => {
+    const el = bodyScrollRef.current;
+    if (!el) return;
+    if (anySheetOpen) {
+      savedScrollRef.current = el.scrollTop;
+      el.style.overflowY = 'hidden';
+      el.scrollTop = savedScrollRef.current;
+    } else {
+      el.style.overflowY = '';
+      el.scrollTop = savedScrollRef.current;
+    }
+  }, [anySheetOpen]);
 
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
@@ -285,7 +305,7 @@ export function ScreenUserInfo() {
           ? <button className="m-tap" onClick={save} style={{ background:'transparent', border:'none', fontSize:15, fontWeight:700, color:M.sage, cursor:'pointer', fontFamily:M.fontUI }}>{t('action.save')}</button>
           : null}
       />
-      <div className="m-body-scroll" style={(showApiSheet||showDeleteAccount||showChangeEmail||showPicturePicker) ? { overflowY:'hidden' } : undefined}>
+      <div className="m-body-scroll" ref={bodyScrollRef}>
 
         {/* Avatar section */}
         <div style={{ display:'flex', flexDirection:'column', alignItems:'center', paddingTop:28, paddingBottom:28 }}>
@@ -442,7 +462,7 @@ export function ScreenUserInfo() {
                 style={{ width:'100%', marginBottom:8, boxSizing:'border-box', height:48 }}/>
               {changeEmailError && <div style={{ fontSize:12, color:M.clay, marginBottom:8 }}>{changeEmailError}</div>}
               <button className="m-btn sage m-tap" onClick={() => {
-                if (!newEmailDraft.trim() || !newEmailDraft.includes('@')) { setChangeEmailError(t('login.errInvalidEmail')); return; }
+                if (!EMAIL_RE.test(newEmailDraft.trim().toLowerCase())) { setChangeEmailError(t('login.errInvalidEmail')); return; }
                 setChangeEmailStep('verify');
               }} style={{ width:'100%', marginTop:8 }}>{t('login.continue')}</button>
             </>)}
@@ -846,6 +866,7 @@ export function ScreenProfileDetail({ params }) {
   const [showAttachSheet, setShowAttachSheet] = React.useState(null);
   const [editingName, setEditingName] = React.useState(false);
   const [nameDraft, setNameDraft] = React.useState('');
+  const [nameError, setNameError] = React.useState('');
   const [showPhotoSheet, setShowPhotoSheet] = React.useState(false);
   const [showMembersSheet, setShowMembersSheet] = React.useState(false);
   const [memberActionSheet, setMemberActionSheet] = React.useState(null); // userId or null
@@ -957,18 +978,24 @@ export function ScreenProfileDetail({ params }) {
     } : p));
   }, [sharedData?.meta?.name, sharedData?.meta?.picture, profileId]);
 
-  const startEditName = () => { setNameDraft(profile.localName || profile.name); setEditingName(true); };
+  const startEditName = () => { setNameDraft(profile.localName || profile.name); setNameError(''); setEditingName(true); };
   const saveName = () => {
     const trimmed = nameDraft.trim();
-    if (trimmed) {
-      if (isMemberOfShared) {
-        setProfiles(ps => ps.map(p => p.id === profile.id
-          ? { ...p, localName: trimmed !== p.name ? trimmed : null }
-          : p));
-      } else {
-        setProfiles(ps => ps.map(p => p.id === profile.id ? { ...p, name: trimmed } : p));
-        if (isProfileShared) setSharedData(prev => ({ ...prev, meta: { ...(prev.meta || {}), name: trimmed } }));
-      }
+    if (!trimmed) { setEditingName(false); return; }
+    if (!isMemberOfShared) {
+      const isDuplicate = profiles
+        .filter(p => !p.isShared && p.id !== profile.id)
+        .some(p => p.name.toLowerCase() === trimmed.toLowerCase());
+      if (isDuplicate) { setNameError(t('profile.duplicateName')); return; }
+    }
+    setNameError('');
+    if (isMemberOfShared) {
+      setProfiles(ps => ps.map(p => p.id === profile.id
+        ? { ...p, localName: trimmed !== p.name ? trimmed : null }
+        : p));
+    } else {
+      setProfiles(ps => ps.map(p => p.id === profile.id ? { ...p, name: trimmed } : p));
+      if (isProfileShared) setSharedData(prev => ({ ...prev, meta: { ...(prev.meta || {}), name: trimmed } }));
     }
     setEditingName(false);
   };
@@ -1160,14 +1187,17 @@ export function ScreenProfileDetail({ params }) {
           </button>
           <div style={{ width:'100%' }}>
             {editingName ? (
-              <input
-                autoFocus
-                value={nameDraft}
-                onChange={e => setNameDraft(e.target.value)}
-                onBlur={saveName}
-                onKeyDown={e => e.key==='Enter' && saveName()}
-                style={{ width:'100%', fontSize:16, fontWeight:600, border:`1px solid ${M.sage}`, borderRadius:8, padding:'6px 10px', fontFamily:M.fontUI, background:M.paper2, outline:'none', textAlign:'center', boxSizing:'border-box' }}
-              />
+              <>
+                <input
+                  autoFocus
+                  value={nameDraft}
+                  onChange={e => { setNameDraft(e.target.value); setNameError(''); }}
+                  onBlur={saveName}
+                  onKeyDown={e => e.key==='Enter' && saveName()}
+                  style={{ width:'100%', fontSize:16, fontWeight:600, border:`1px solid ${nameError ? M.clay : M.sage}`, borderRadius:8, padding:'6px 10px', fontFamily:M.fontUI, background:M.paper2, outline:'none', textAlign:'center', boxSizing:'border-box' }}
+                />
+                {nameError && <div style={{ fontSize:11, color:M.clay, marginTop:4, textAlign:'center' }}>{nameError}</div>}
+              </>
             ) : (
               <div className="m-tap" onClick={startEditName} style={{ textAlign:'center' }}>
                 <div style={{ fontSize:16, fontWeight:600, borderBottom:`1.5px dashed ${M.line2}`, display:'inline', paddingBottom:1 }}>{profile.localName || profile.name}</div>
@@ -1350,21 +1380,10 @@ export function ScreenProfileDetail({ params }) {
             {t('profile.leaveProfile')}
           </button>
         ) : otherMembers.length > 0 ? (
-          <>
-            <button onClick={() => setShowLeaveConfirm(true)}
-              style={{ width:'100%', padding:'14px 0', background:M.claySoft, color:M.clay, border:'none', borderRadius:12, fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:8 }}>
-              {hasOtherOwner ? t('profile.leaveProfile') : t('profile.transferLeave')}
-            </button>
-            {!isMemberOfShared && (
-              <>
-                <button disabled={isOnly||isActive} onClick={() => setShowDeleteConfirm(true)}
-                  style={{ width:'100%', padding:'14px 0', background:(isOnly||isActive)?M.line:M.claySoft, color:(isOnly||isActive)?M.ink4:M.clay, border:'none', borderRadius:12, fontSize:15, fontWeight:600, cursor:(isOnly||isActive)?'not-allowed':'pointer', fontFamily:M.fontUI, marginBottom:8 }}>
-                  {t('profile.deleteProfile')}
-                </button>
-                {(isOnly||isActive) && <div style={{ textAlign:'center', fontSize:12, color:M.ink4 }}>{isActive ? t('profile.cannotDeleteActive') : t('profile.cannotDeleteOnly')}</div>}
-              </>
-            )}
-          </>
+          <button onClick={() => setShowLeaveConfirm(true)}
+            style={{ width:'100%', padding:'14px 0', background:M.claySoft, color:M.clay, border:'none', borderRadius:12, fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:8 }}>
+            {hasOtherOwner ? t('profile.leaveProfile') : t('profile.transferLeave')}
+          </button>
         ) : isMemberOfShared ? (
           <button onClick={() => setShowLeaveConfirm(true)}
             style={{ width:'100%', padding:'14px 0', background:M.claySoft, color:M.clay, border:'none', borderRadius:12, fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:8 }}>
