@@ -8,7 +8,7 @@ import { useNav, Sheet, TabBar } from '../../app/nav.jsx';
 import { useLang } from '../../shared/i18n.jsx';
 import { useLocalStorage, useSessionStorage, clearAllStorage } from '../../shared/hooks.jsx';
 import { useAppCtx, useProfiles, useTxCtx, useConnectedAccounts, Stat } from '../../app/providers.jsx';
-import { STOCK_AVATARS, PERM_COLOR, PERM_BG, permLabel, DEFAULT_API_URL } from '../../shared/constants.js';
+import { STOCK_AVATARS, PERM_COLOR, PERM_BG, permLabel, DEFAULT_API_URL, DEMO_API_URL, PROFILE_NAME_RE } from '../../shared/constants.js';
 import { buildEffectivePerm } from '../../shared/sharedProfile.js';
 import { ProfileMembersSheet, MemberActionSheet } from '../friends/Friends.jsx';
 
@@ -509,7 +509,7 @@ export function ScreenUserInfo() {
               placeholder={t('settings.apiUrlDefault')} type="url"
               style={{ width:'100%', marginBottom:16, boxSizing:'border-box', height:48 }}/>
             <div style={{ display:'flex', gap:10 }}>
-              <button className="m-btn outline m-tap" onClick={() => { setApiUrl(DEFAULT_API_URL); setApiDraft(DEFAULT_API_URL); setShowApiSheet(false); }}
+              <button className="m-btn outline m-tap" onClick={() => { const url = loginMethod === 'bank' ? DEMO_API_URL : DEFAULT_API_URL; setApiUrl(url); setApiDraft(url); setShowApiSheet(false); }}
                 style={{ flex:1 }}>{t('action.reset')}</button>
               <button className="m-btn sage m-tap" onClick={() => { setApiUrl(apiDraft.trim()); setShowApiSheet(false); }}
                 style={{ flex:2 }}>{t('action.save')}</button>
@@ -658,6 +658,8 @@ export function ScreenProfiles() {
   const createProfile = () => {
     const trimmed = newProfileName.trim();
     if (!trimmed) return;
+    if (trimmed.length > 30) { setNewProfileError(t('profile.nameTooLong')); return; }
+    if (!PROFILE_NAME_RE.test(trimmed)) { setNewProfileError(t('profile.nameInvalidChars')); return; }
     if (profiles.filter(p => !p.isShared).some(p => p.name.toLowerCase() === trimmed.toLowerCase())) {
       setNewProfileError(t('profile.duplicateName'));
       addDevLog('warn', `Profile creation blocked: duplicate name "${trimmed}"`, 'ScreenProfiles:createProfile');
@@ -985,6 +987,8 @@ export function ScreenProfileDetail({ params }) {
   const saveName = () => {
     const trimmed = nameDraft.trim();
     if (!trimmed) { setEditingName(false); return; }
+    if (trimmed.length > 30) { setNameError(t('profile.nameTooLong')); return; }
+    if (!PROFILE_NAME_RE.test(trimmed)) { setNameError(t('profile.nameInvalidChars')); return; }
     if (!isMemberOfShared) {
       const isDuplicate = profiles
         .filter(p => !p.isShared && p.id !== profile.id)

@@ -2,7 +2,7 @@
 import { T } from '../shared/testIds.js';
 import { getUserId, registerUserInGlobalRegistry, computeUserDataKey } from '../shared/utils/user.js';
 import { DUTCH_BANKS } from '../features/accounts/data.js';
-import { DEFAULT_API_URL } from '../shared/constants.js';
+import { DEFAULT_API_URL, DEMO_API_URL } from '../shared/constants.js';
 import { computeProfileKey, getDefaultProfiles, initPerUserData } from '../features/profile/data.js';
 import { IOSDevice } from './IOSFrame.jsx';
 import { M, I, IcoGoogle, IcoApple, Divider, StatusBar, AppBar } from './theme.jsx';
@@ -284,10 +284,11 @@ function ScreenLoginGate({ onLogin }) {
     window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: nameKey } }));
     initPerUserData(method, email, signupLang);
     if (activateDemo) {
-      // Always reset demo profiles to clean Demo default so demo user is never stale
       const profileKey = computeProfileKey(method, email || '');
       localStorage.setItem(profileKey, JSON.stringify(getDefaultProfiles('bank')));
       window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: profileKey } }));
+      localStorage.setItem('munni_api_url', JSON.stringify(DEMO_API_URL));
+      window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: 'munni_api_url' } }));
     }
     registerUserInGlobalRegistry(userId, name);
     sessionStorage.setItem('munni_session_active', 'true');
@@ -303,7 +304,7 @@ function ScreenLoginGate({ onLogin }) {
       const methods = getSignupMethods();
       if (isSignup) {
         if (methods.includes('google')) { setSignupError(t('login.errGoogleExists')); return; }
-        setPendingSignup({ method:'google', displayEmail:'munni-demo@gmail.com', canonicalEmail:'google@munni.app', firstName:'Google', lastName:'van der Berg', banks:['ing'], apiUrl:'apollousa.okkes.synology.me:443', picture:'av3', backMode:'signup' });
+        setPendingSignup({ method:'google', displayEmail:'munni-demo@gmail.com', canonicalEmail:'google@munni.app', firstName:'Google', lastName:'van der Berg', banks:['ing'], apiUrl:DEFAULT_API_URL, picture:'av3', backMode:'signup' });
         setMode('signup-onboarding');
       } else {
         if (!methods.includes('google')) { setNoAccountMethod('google'); setMode('no-account'); return; }
@@ -321,7 +322,7 @@ function ScreenLoginGate({ onLogin }) {
       const methods = getSignupMethods();
       if (isSignup) {
         if (methods.includes('apple')) { setSignupError(t('login.errAppleExists')); return; }
-        setPendingSignup({ method:'apple', displayEmail:'munni-demo@hotmail.com', canonicalEmail:'apple@munni.app', firstName:'Apple', lastName:'van der Mac', banks:['abn'], apiUrl:'apollousa.okkes.synology.me:443', picture:'av4', backMode:'signup' });
+        setPendingSignup({ method:'apple', displayEmail:'munni-demo@hotmail.com', canonicalEmail:'apple@munni.app', firstName:'Apple', lastName:'van der Mac', banks:['abn'], apiUrl:DEFAULT_API_URL, picture:'av4', backMode:'signup' });
         setMode('signup-onboarding');
       } else {
         if (!methods.includes('apple')) { setNoAccountMethod('apple'); setMode('no-account'); return; }

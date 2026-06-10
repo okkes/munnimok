@@ -1,6 +1,10 @@
 ﻿import { M } from '../app/theme.jsx';
 
-export const DEFAULT_API_URL = 'apollousa-demo.okkes.synology.me:443';
+export const DEFAULT_API_URL = 'apollousa.okkes.synology.me:443';
+export const DEMO_API_URL    = 'apollousa-demo.okkes.synology.me:443';
+
+export const PROFILE_NAME_MAX = 30;
+export const PROFILE_NAME_RE  = /^[\p{L}0-9 '.\-]{1,30}$/u;
 
 export const STORAGE_KEYS = {
   lang:              'munni_lang',

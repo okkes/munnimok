@@ -232,7 +232,7 @@ export const TRANSLATIONS = {
     'profile.namePlaceholder':'e.g. Business, Partner, Side hustle…','profile.profileType':'Profile type',
     'profile.typeReal':'Real','profile.typeRealSub':'Connect your actual bank accounts',
     'profile.typeDemo':'Demo','profile.typeDemoSub':'Uses sample data for testing',
-    'profile.createProfile':'Create profile','profile.duplicateName':'A profile with this name already exists',
+    'profile.createProfile':'Create profile','profile.duplicateName':'A profile with this name already exists','profile.nameTooLong':'Name cannot exceed 30 characters','profile.nameInvalidChars':'Only letters, numbers, spaces, hyphens, and apostrophes are allowed',
     // Picture picker
     'profile.picTitle':'Profile picture','profile.chooseLibrary':'Choose from library','profile.removePic':'Remove picture',
     // Accounts
@@ -485,7 +485,7 @@ export const TRANSLATIONS = {
     'profile.namePlaceholder':'bijv. Zakelijk, Partner, Bijbaan…','profile.profileType':'Profieltype',
     'profile.typeReal':'Echt','profile.typeRealSub':'Verbind je echte bankrekeningen',
     'profile.typeDemo':'Demo','profile.typeDemoSub':'Gebruikt voorbeeldgegevens voor testen',
-    'profile.createProfile':'Profiel aanmaken','profile.duplicateName':'Een profiel met deze naam bestaat al',
+    'profile.createProfile':'Profiel aanmaken','profile.duplicateName':'Een profiel met deze naam bestaat al','profile.nameTooLong':'Naam mag niet langer zijn dan 30 tekens','profile.nameInvalidChars':'Alleen letters, cijfers, spaties, koppeltekens en apostrofs zijn toegestaan',
     'profile.picTitle':'Profielfoto','profile.chooseLibrary':'Kies uit bibliotheek','profile.removePic':'Foto verwijderen',
     'accounts.demoSection':'Demo-rekeningen','accounts.demoDesc':'Voorbeeldgegevens · alleen-lezen',
     'accounts.yourSection':'Jouw rekeningen','accounts.bankSection':'Bankrekeningen','accounts.savingSection':'Spaar & beleggingen',
@@ -736,7 +736,7 @@ export const TRANSLATIONS = {
     'profile.namePlaceholder':'örn. İş, Ortak, Ek İş…','profile.profileType':'Profil türü',
     'profile.typeReal':'Gerçek','profile.typeRealSub':'Gerçek banka hesaplarını bağla',
     'profile.typeDemo':'Demo','profile.typeDemoSub':'Test için örnek veriler kullanır',
-    'profile.createProfile':'Profil oluştur','profile.duplicateName':'Bu isimde bir profil zaten mevcut',
+    'profile.createProfile':'Profil oluştur','profile.duplicateName':'Bu isimde bir profil zaten mevcut','profile.nameTooLong':'Ad 30 karakteri geçemez','profile.nameInvalidChars':'Yalnızca harf, rakam, boşluk, tire ve kesme işaretine izin verilir',
     'profile.picTitle':'Profil fotoğrafı','profile.chooseLibrary':'Kütüphaneden seç','profile.removePic':'Fotoğrafı kaldır',
     'accounts.demoSection':'Demo hesapları','accounts.demoDesc':'Örnek veriler · salt okunur',
     'accounts.yourSection':'Hesaplarınız','accounts.bankSection':'Banka hesapları','accounts.savingSection':'Tasarruf & yatırım',
