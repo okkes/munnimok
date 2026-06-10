@@ -10,9 +10,15 @@
   loginError:           'login-error',
   loginSsoLoading:      'login-sso-loading',
   loginNoAccount:       'login-no-account',
+  loginTermsLink:       'login-terms-link',
+  loginPrivacyLink:     'login-privacy-link',
+  loginLangBtn:         'login-lang-btn',
+  termsScreen:          'terms-screen',
 
   // Auth — signup flow
   signupPickEmail:      'signup-pick-email',
+  signupPickGoogle:     'signup-pick-google',
+  signupPickApple:      'signup-pick-apple',
   signupSendCode:       'signup-send-code',
   signupEmailError:     'signup-email-error',
   signupSignInInstead:  'signup-sign-in-instead',
@@ -22,6 +28,49 @@
 
   // Auth — verify screen
   verifyAutoFilling:    'verify-autofilling',
+
+  // Auth — onboarding step 1
+  onboardStep1:         'onboard-step1',
+  onboardFirstName:     'onboard-firstname',
+  onboardLastName:      'onboard-lastname',
+  onboardFirstNameErr:  'onboard-firstname-error',
+  onboardLastNameErr:   'onboard-lastname-error',
+  onboardContinue:      'onboard-continue',
+  onboardAvatarBtn:     'onboard-avatar-btn',
+  onboardAvatarPicker:  'onboard-avatar-picker',
+  onboardApiInfoBtn:    'onboard-api-info-btn',
+  onboardApiInfoSheet:  'onboard-api-info-sheet',
+
+  // Auth — onboarding step 2
+  onboardStep2:         'onboard-step2',
+  onboardAddBank:       'onboard-add-bank',
+  onboardAddAnotherBank:'onboard-add-another-bank',
+  onboardBankSkip:      'onboard-bank-skip',
+  onboardComplete:      'onboard-complete',
+  onboardBankRow:       'onboard-bank-row',
+
+  // Auth — bank search sub-screen
+  bankSearchScreen:     'bank-search-screen',
+  bankSearchInput:      'bank-search-input',
+  bankSearchNoResults:  'bank-search-no-results',
+  bankListRow:          'bank-list-row',
+
+  // Auth — bank credentials sub-screen
+  bankCredsScreen:      'bank-creds-screen',
+  bankCredsUsername:    'bank-creds-username',
+  bankCredsConnect:     'bank-creds-connect',
+  bankCredsError:       'bank-creds-error',
+
+  // Auth — PSD2 consent
+  bankConsentScreen:    'bank-consent-screen',
+  bankConsentAuthorise: 'bank-consent-authorise',
+
+  // Auth — bank connecting
+  bankConnectingScreen: 'bank-connecting-screen',
+
+  // Auth — bank done
+  bankDoneScreen:       'bank-done-screen',
+  bankDoneBtn:          'bank-done-btn',
 
   // Nav / TabBar (ids match `tab-${tab.id}` from TabBar component)
   tabHome:              'tab-home',

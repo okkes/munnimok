@@ -202,7 +202,7 @@ function ScreenTerms({ onBack, showPrivacy = false }) {
   const data = CONTENT[key][lang] || CONTENT[key].en;
 
   return (
-    <div className="m-screen">
+    <div data-testid={T.termsScreen} className="m-screen">
       <StatusBar/>
       <AppBar title={data.title}
         leading={<button className="m-iconbtn m-tap" onClick={onBack}><I name="arrowL" size={20}/></button>}
@@ -657,7 +657,7 @@ function ScreenLoginGate({ onLogin }) {
             return (
               <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
                 <div>
-                  <button className={`m-btn outline m-tap${googleTaken?' disabled':''}`} disabled={googleTaken}
+                  <button data-testid={T.signupPickGoogle} className={`m-btn outline m-tap${googleTaken?' disabled':''}`} disabled={googleTaken}
                     style={{ height:52, justifyContent:'flex-start', paddingLeft:20, gap:12, width:'100%', opacity:googleTaken?0.45:1, cursor:googleTaken?'not-allowed':'pointer' }}
                     onClick={() => !googleTaken && handleGoogle(true)}>
                     <IcoGoogle size={20}/> {t('login.google')}
@@ -665,7 +665,7 @@ function ScreenLoginGate({ onLogin }) {
                   {googleTaken && <div style={{ fontSize:11, color:M.ink3, marginTop:4, paddingLeft:2, lineHeight:1.4 }}>{t('login.ssoAlreadyUsed')}</div>}
                 </div>
                 <div>
-                  <button className={`m-btn outline m-tap${appleTaken?' disabled':''}`} disabled={appleTaken}
+                  <button data-testid={T.signupPickApple} className={`m-btn outline m-tap${appleTaken?' disabled':''}`} disabled={appleTaken}
                     style={{ height:52, justifyContent:'flex-start', paddingLeft:20, gap:12, width:'100%', opacity:appleTaken?0.45:1, cursor:appleTaken?'not-allowed':'pointer' }}
                     onClick={() => !appleTaken && handleApple(true)}>
                     <IcoApple size={20} color={M.ink}/> {t('login.apple')}
@@ -729,13 +729,13 @@ function ScreenLoginGate({ onLogin }) {
 
         <div style={{ fontSize: 11, color: M.ink4, textAlign: 'center', marginBottom: 12, lineHeight: 1.6 }}>
           {t('login.termsIntro')}{' '}
-          <button onClick={() => setMode('terms')} style={{ background:'none', border:'none', color:M.sage, fontWeight:500, cursor:'pointer', fontFamily:M.fontUI, fontSize:11, textDecoration:'underline' }}>{t('login.termsLinkText')}</button>
+          <button data-testid={T.loginTermsLink} onClick={() => setMode('terms')} style={{ background:'none', border:'none', color:M.sage, fontWeight:500, cursor:'pointer', fontFamily:M.fontUI, fontSize:11, textDecoration:'underline' }}>{t('login.termsLinkText')}</button>
           {' '}{t('login.termsAnd')}{' '}
-          <button onClick={() => setMode('privacy')} style={{ background:'none', border:'none', color:M.sage, fontWeight:500, cursor:'pointer', fontFamily:M.fontUI, fontSize:11, textDecoration:'underline' }}>{t('login.termsPrivacy')}</button>
+          <button data-testid={T.loginPrivacyLink} onClick={() => setMode('privacy')} style={{ background:'none', border:'none', color:M.sage, fontWeight:500, cursor:'pointer', fontFamily:M.fontUI, fontSize:11, textDecoration:'underline' }}>{t('login.termsPrivacy')}</button>
           {(()=>{ const s=t('login.termsSuffix'); return (s && s!=='login.termsSuffix') ? <>{' '}{s}</> : null; })()}
         </div>
         <div style={{ textAlign:'center', marginBottom: 16 }}>
-          <button className="m-tap" onClick={() => setMode('language')}
+          <button data-testid={T.loginLangBtn} className="m-tap" onClick={() => setMode('language')}
             style={{ background:'transparent', border:'none', fontSize:13, color:M.ink3, cursor:'pointer', fontFamily:M.fontUI, textDecoration:'underline' }}>
             🌐 {t('login.changeLanguage')}
           </button>

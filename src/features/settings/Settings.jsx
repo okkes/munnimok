@@ -1,4 +1,5 @@
 ﻿import React from 'react';
+import { T } from '../../shared/testIds.js';
 import { STOCK_AVATARS } from '../../shared/constants.js';
 import { CATEGORIES } from '../../shared/data/categories.js';
 import { computePeriodHistory, fmtEur, fmtDate } from '../../shared/utils/format.js';
@@ -66,7 +67,7 @@ export function ScreenLanguagePicker({ fromOnboarding = false, onBack }) {
           {mainLangs.map((l, i) => (
             <React.Fragment key={l.code}>
               {i > 0 && <Divider inset={52}/>}
-              <div className="m-tap" onClick={() => selectLang(l.code)}
+              <div data-testid={`lang-option-${l.code}`} className="m-tap" onClick={() => selectLang(l.code)}
                 style={{ display:'flex', alignItems:'center', gap:14, padding:'14px 0' }}>
                 <img src={`https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/${l.twemoji}.svg`} width={36} height={36} style={{ borderRadius:3, flexShrink:0 }} alt={l.name}/>
                 <div style={{ flex:1 }}>
