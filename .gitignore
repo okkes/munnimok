@@ -4,4 +4,5 @@ dist/
 tests/screenshots/
 tests/gallery/
 tests/results/
+tests/videos/
 playwright-report/

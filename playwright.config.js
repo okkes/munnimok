@@ -1,14 +1,12 @@
 import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
-  testDir: 'tests',
+  testDir: 'tests/specs',
   testMatch: ['**/*.gallery.spec.js'],
   workers: 1,
+  outputDir: 'tests/results',
   use: {
     baseURL: 'http://localhost:5173',
-    viewport: { width: 393, height: 852 },
-    deviceScaleFactor: 2,
-    locale: 'en-US',
   },
   webServer: {
     command: 'npm run dev',

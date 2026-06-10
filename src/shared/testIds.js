@@ -1,11 +1,27 @@
 ﻿export const T = {
-  // Auth
+  // Auth — login screen
   loginEmailBtn:        'login-email-btn',
   loginGoogleBtn:       'login-google-btn',
   loginAppleBtn:        'login-apple-btn',
   loginDemoBtn:         'login-demo-btn',
   loginEmailInput:      'login-email-input',
   loginEmailSubmit:     'login-email-submit',
+  loginCreateAccount:   'login-create-account',
+  loginError:           'login-error',
+  loginSsoLoading:      'login-sso-loading',
+  loginNoAccount:       'login-no-account',
+
+  // Auth — signup flow
+  signupPickEmail:      'signup-pick-email',
+  signupSendCode:       'signup-send-code',
+  signupEmailError:     'signup-email-error',
+  signupSignInInstead:  'signup-sign-in-instead',
+
+  // Auth — email-input screen
+  emailInputContinue:   'email-input-continue',
+
+  // Auth — verify screen
+  verifyAutoFilling:    'verify-autofilling',
 
   // Nav / TabBar (ids match `tab-${tab.id}` from TabBar component)
   tabHome:              'tab-home',

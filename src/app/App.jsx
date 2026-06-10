@@ -479,7 +479,7 @@ function ScreenLoginGate({ onLogin }) {
   if (loadingMethod) {
     const isGoogle = loadingMethod === 'google';
     return (
-      <div key="loading" className="m-screen m-fade" style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:24, padding:40, background: M.paper }}>
+      <div key="loading" data-testid={T.loginSsoLoading} className="m-screen m-fade" style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:24, padding:40, background: M.paper }}>
         <div style={{ width:80, height:80, borderRadius:24, background: isGoogle ? M.sageSoft : M.paper2, display:'flex', alignItems:'center', justifyContent:'center', boxShadow: isGoogle ? '0 4px 24px rgba(66,133,244,0.18)' : '0 4px 20px rgba(0,0,0,0.08)' }}>
           {isGoogle ? <IcoGoogle size={44}/> : <IcoApple size={40} color={M.ink}/>}
         </div>
@@ -498,7 +498,7 @@ function ScreenLoginGate({ onLogin }) {
   if (mode === 'no-account') {
     const isGoogle = noAccountMethod === 'google';
     return (
-      <div key="no-account" className="m-screen m-fade" style={{ position: 'relative' }}><DevPanel screenKey="no-account"/>
+      <div key="no-account" data-testid={T.loginNoAccount} className="m-screen m-fade" style={{ position: 'relative' }}><DevPanel screenKey="no-account"/>
         <StatusBar/>
         <div style={{ padding:'16px 20px 0', flexShrink:0 }}>
           <button className="m-tap" onClick={() => { setMode('login'); setNoAccountMethod(null); }} style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:6, color:M.ink3, fontFamily:M.fontUI, fontSize:13 }}>
@@ -553,7 +553,7 @@ function ScreenLoginGate({ onLogin }) {
               </div>
             ))}
           </div>
-          {autoFilling && <div style={{ textAlign:'center', fontSize:12, color:M.sage }}>{t('login.autoFilling')}</div>}
+          {autoFilling && <div data-testid={T.verifyAutoFilling} style={{ textAlign:'center', fontSize:12, color:M.sage }}>{t('login.autoFilling')}</div>}
         </div>
       </div>
     );
@@ -578,8 +578,8 @@ function ScreenLoginGate({ onLogin }) {
             type="email" placeholder={t('login.emailPlaceholder')}
             style={{ width:'100%', boxSizing:'border-box', padding:'14px 16px', borderRadius:12, border:`1.5px solid ${loginError?M.clay:M.line}`, fontSize:15, fontFamily:M.fontUI, background:M.paper2, outline:'none', marginBottom:loginError?8:16, color:M.ink }}
           />
-          {loginError && <div style={{ fontSize:12, color:M.clay, marginBottom:12, lineHeight:1.4 }}>{loginError} <button onClick={() => { setLoginError(null); setSignupEmailInput(emailInput); setMode('signup-email'); }} style={{ background:'none', border:'none', color:M.sage, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, fontSize:12 }}>{t('login.createAccount')}</button></div>}
-          <button className="m-btn sage m-tap" style={{ height:52, width:'100%' }} onClick={handleEmailContinue}>{t('login.continue')}</button>
+          {loginError && <div data-testid={T.loginError} style={{ fontSize:12, color:M.clay, marginBottom:12, lineHeight:1.4 }}>{loginError} <button onClick={() => { setLoginError(null); setSignupEmailInput(emailInput); setMode('signup-email'); }} style={{ background:'none', border:'none', color:M.sage, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, fontSize:12 }}>{t('login.createAccount')}</button></div>}
+          <button data-testid={T.emailInputContinue} className="m-btn sage m-tap" style={{ height:52, width:'100%' }} onClick={handleEmailContinue}>{t('login.continue')}</button>
         </div>
       </div>
     );
@@ -603,15 +603,15 @@ function ScreenLoginGate({ onLogin }) {
           <input value={signupEmailInput} onChange={e => { setSignupEmailInput(e.target.value); setSignupError(null); }} type="email" placeholder={t('login.emailPlaceholder')}
             style={{ width:'100%', boxSizing:'border-box', padding:'13px 16px', borderRadius:12, border:`1.5px solid ${signupError ? M.clay : M.line}`, fontSize:15, fontFamily:M.fontUI, background:M.paper2, outline:'none', marginBottom:signupError?8:20, color:M.ink }}/>
           {signupError && (
-            <div style={{ fontSize:12, color:M.clay, marginBottom:12, lineHeight:1.4 }}>
+            <div data-testid={T.signupEmailError} style={{ fontSize:12, color:M.clay, marginBottom:12, lineHeight:1.4 }}>
               {signupError}
               {signupError === t('login.errEmailExists') && (
-                <button onClick={() => { setSignupError(null); setEmailInput(signupEmailInput); setMode('email-input'); }}
+                <button data-testid={T.signupSignInInstead} onClick={() => { setSignupError(null); setEmailInput(signupEmailInput); setMode('email-input'); }}
                   style={{ background:'none', border:'none', color:M.sage, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, fontSize:12, marginLeft:4 }}>{t('login.signInInstead')}</button>
               )}
             </div>
           )}
-          <button className="m-btn sage m-tap" style={{ height:52, width:'100%', opacity:signupEmailInput.trim() ? 1 : 0.5 }} onClick={handleSignupEmail} disabled={!signupEmailInput.trim()}>
+          <button data-testid={T.signupSendCode} className="m-btn sage m-tap" style={{ height:52, width:'100%', opacity:signupEmailInput.trim() ? 1 : 0.5 }} onClick={handleSignupEmail} disabled={!signupEmailInput.trim()}>
             {t('login.sendCode')}
           </button>
         </div>
@@ -657,7 +657,7 @@ function ScreenLoginGate({ onLogin }) {
                   {appleTaken && <div style={{ fontSize:11, color:M.ink3, marginTop:4, paddingLeft:2, lineHeight:1.4 }}>{t('login.ssoAlreadyUsed')}</div>}
                 </div>
                 <Divr/>
-                <button className="m-btn outline m-tap" style={{ height:52, justifyContent:'flex-start', paddingLeft:20, gap:10 }} onClick={() => { setSignupEmailInput(''); setSignupError(null); setMode('signup-email'); }}>
+                <button data-testid={T.signupPickEmail} className="m-btn outline m-tap" style={{ height:52, justifyContent:'flex-start', paddingLeft:20, gap:10 }} onClick={() => { setSignupEmailInput(''); setSignupError(null); setMode('signup-email'); }}>
                   <I name="edit" size={18}/> {t('login.signUpEmail')}
                 </button>
               </div>
@@ -695,7 +695,7 @@ function ScreenLoginGate({ onLogin }) {
             type="email" placeholder={t('login.emailPlaceholder')}
             style={{ width:'100%', boxSizing:'border-box', padding:'14px 16px', borderRadius:12, border:`1.5px solid ${loginError?M.clay:M.line}`, fontSize:15, fontFamily:M.fontUI, background:M.paper2, outline:'none', color:M.ink }}
           />
-          {loginError && <div style={{ fontSize:12, color:M.clay, lineHeight:1.4 }}>{loginError} <button onClick={() => { setLoginError(null); setSignupEmailInput(emailInput); setMode('signup-email'); }} style={{ background:'none', border:'none', color:M.sage, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, fontSize:12 }}>{t('login.createAccount')}</button></div>}
+          {loginError && <div data-testid={T.loginError} style={{ fontSize:12, color:M.clay, lineHeight:1.4 }}>{loginError} <button onClick={() => { setLoginError(null); setSignupEmailInput(emailInput); setMode('signup-email'); }} style={{ background:'none', border:'none', color:M.sage, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, fontSize:12 }}>{t('login.createAccount')}</button></div>}
           <button data-testid={T.loginEmailSubmit} className="m-btn sage m-tap" style={{ height:52, width:'100%', opacity:emailInput.trim()?1:0.5 }} onClick={handleEmailContinue} disabled={!emailInput.trim()}>
             {t('login.continue')}
           </button>
@@ -705,7 +705,7 @@ function ScreenLoginGate({ onLogin }) {
 
         <div style={{ textAlign: 'center', marginBottom: 12 }}>
           <div style={{ fontSize: 12, color: M.ink4, marginBottom: 8 }}>{t('login.noAccount')}</div>
-          <button className="m-tap" onClick={() => { setLoginError(null); setMode('signup'); }}
+          <button data-testid={T.loginCreateAccount} className="m-tap" onClick={() => { setLoginError(null); setMode('signup'); }}
             style={{ background: 'transparent', border: 'none', fontSize: 13, fontWeight: 600, color: M.sage, cursor: 'pointer', fontFamily: M.fontUI }}>
             {t('login.createAccount')}
           </button>
