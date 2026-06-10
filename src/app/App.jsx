@@ -7,6 +7,7 @@ import { computeProfileKey, getDefaultProfiles, initPerUserData } from '../featu
 import { IOSDevice } from './IOSFrame.jsx';
 import { M, I, IcoGoogle, IcoApple, Divider, StatusBar, AppBar } from './theme.jsx';
 import { DarkCtx, NavProvider, useNav, Sheet } from './nav.jsx';
+import { DevModeProvider, DevPanel } from './DevMode.jsx';
 import { useLang, LangProvider } from '../shared/i18n.jsx';
 import { useLocalStorage, useSessionStorage } from '../shared/hooks.jsx';
 import { AppCtx, CatProvider, ProfilesProvider, useProfiles, TxProvider, RecurProvider, AllocProvider, useConnectedAccounts, ScreenAllocate, ScreenAllocateTopic, ScreenAllocateAddTopic, ResetSignalListener } from './providers.jsx';
@@ -497,7 +498,7 @@ function ScreenLoginGate({ onLogin }) {
   if (mode === 'no-account') {
     const isGoogle = noAccountMethod === 'google';
     return (
-      <div key="no-account" className="m-screen m-fade">
+      <div key="no-account" className="m-screen m-fade" style={{ position: 'relative' }}><DevPanel screenKey="no-account"/>
         <StatusBar/>
         <div style={{ padding:'16px 20px 0', flexShrink:0 }}>
           <button className="m-tap" onClick={() => { setMode('login'); setNoAccountMethod(null); }} style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:6, color:M.ink3, fontFamily:M.fontUI, fontSize:13 }}>
@@ -532,7 +533,7 @@ function ScreenLoginGate({ onLogin }) {
   if (mode === 'email-verify' || mode === 'signup-email-verify') {
     const emailForDisplay = mode === 'email-verify' ? emailInput : signupEmailInput;
     return (
-      <div key={mode} className="m-screen m-fade">
+      <div key={mode} className="m-screen m-fade" style={{ position: 'relative' }}><DevPanel screenKey={mode}/>
         <StatusBar/>
         <div style={{ padding:'16px 20px 0', flexShrink:0 }}>
           <button className="m-tap" onClick={() => setMode(mode === 'email-verify' ? 'login' : 'signup-email')} style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:6, color:M.ink3, fontFamily:M.fontUI, fontSize:13 }}>
@@ -561,7 +562,7 @@ function ScreenLoginGate({ onLogin }) {
   // Email input
   if (mode === 'email-input') {
     return (
-      <div key="email-input" className="m-screen m-fade">
+      <div key="email-input" className="m-screen m-fade" style={{ position: 'relative' }}><DevPanel screenKey="email-input"/>
         <StatusBar/>
         <div style={{ padding:'16px 20px 0', flexShrink:0 }}>
           <button className="m-tap" onClick={() => setMode('login')} style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:6, color:M.ink3, fontFamily:M.fontUI, fontSize:13 }}>
@@ -587,7 +588,7 @@ function ScreenLoginGate({ onLogin }) {
   // Signup email
   if (mode === 'signup-email') {
     return (
-      <div key="signup-email" className="m-screen m-fade">
+      <div key="signup-email" className="m-screen m-fade" style={{ position: 'relative' }}><DevPanel screenKey="signup-email"/>
         <StatusBar/>
         <div style={{ padding:'16px 20px 0', flexShrink:0 }}>
           <button className="m-tap" onClick={() => setMode('signup')} style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:6, color:M.ink3, fontFamily:M.fontUI, fontSize:13 }}>
@@ -621,7 +622,7 @@ function ScreenLoginGate({ onLogin }) {
   // Signup screen
   if (mode === 'signup') {
     return (
-      <div key="signup" className="m-screen m-fade">
+      <div key="signup" className="m-screen m-fade" style={{ position: 'relative' }}><DevPanel screenKey="signup"/>
         <StatusBar/>
         <div style={{ padding:'16px 20px 0', flexShrink:0 }}>
           <button className="m-tap" onClick={() => setMode('login')} style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:6, color:M.ink3, fontFamily:M.fontUI, fontSize:13 }}>
@@ -669,7 +670,7 @@ function ScreenLoginGate({ onLogin }) {
 
   // Main login screen
   return (
-    <div key="login" className="m-screen m-fade">
+    <div key="login" className="m-screen m-fade" style={{ position: 'relative' }}><DevPanel screenKey="login"/>
       <StatusBar/>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '28px 24px 32px', overflowY:'auto' }}>
         <div style={{ marginBottom: 32 }}>
@@ -764,10 +765,12 @@ export function App() {
   );
 
   return (
-    <DarkCtx.Provider value={{ dark, setDark }}>
-      <LangProvider>
-        {isMobile ? appContent : <IOSDevice>{appContent}</IOSDevice>}
-      </LangProvider>
-    </DarkCtx.Provider>
+    <DevModeProvider>
+      <DarkCtx.Provider value={{ dark, setDark }}>
+        <LangProvider>
+          {isMobile ? appContent : <IOSDevice>{appContent}</IOSDevice>}
+        </LangProvider>
+      </DarkCtx.Provider>
+    </DevModeProvider>
   );
 }
