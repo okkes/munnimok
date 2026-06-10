@@ -7,8 +7,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SHOTS = path.join(__dirname, 'screenshots');
 if (!fs.existsSync(SHOTS)) fs.mkdirSync(SHOTS, { recursive: true });
 
-const shot = (page, name) =>
-  page.screenshot({ path: path.join(SHOTS, `${name}.png`), fullPage: false });
+// Wait for the m-fade animation (280ms) to complete before screenshotting.
+// Without this, click-triggered screen transitions are caught at ~opacity 0.
+const shot = async (page, name) => {
+  await page.waitForTimeout(350);
+  return page.screenshot({ path: path.join(SHOTS, `${name}.png`), fullPage: false });
+};
 
 // ---------------------------------------------------------------------------
 // Base setup: clear storage, set English
