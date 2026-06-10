@@ -136,6 +136,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
 
   const handleBankConnect = () => {
     if (!bankCreds.username.trim()) { setCredsError(t('onboarding.errLoginRequired')); return; }
+    if (!bankCreds.password.trim()) { setCredsError(t('onboarding.errPasswordRequired')); return; }
     setBankPsd2Step('consent');
   };
 
@@ -465,7 +466,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
                 value={bankCreds.password}
                 onChange={e => setBankCreds(p => ({...p, password:e.target.value}))}
                 placeholder={t('onboarding.bankPasswordPlaceholder')}
-                style={{ width:'100%', boxSizing:'border-box', padding:'10px 12px', borderRadius:10, border:`1.5px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', color:M.ink }}
+                style={{ width:'100%', boxSizing:'border-box', padding:'10px 12px', borderRadius:10, border:`1.5px solid ${credsError && !bankCreds.password.trim() ? M.clay : M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', color:M.ink }}
               />
             </div>
             <Divider/>
