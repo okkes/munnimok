@@ -51,10 +51,15 @@ jobs:
 
       # On push: detect which spec files changed; run only those.
       # On schedule / manual dispatch: run all tests.
+      # Also force full run if screenshots cache is empty (bootstrap / cache evicted).
       - name: Detect changed test specs
         id: tests
         run: |
-          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          HAS_SHOTS=$(ls tests/screenshots/*.png 2>/dev/null | wc -l)
+          if [ "$HAS_SHOTS" = "0" ]; then
+            echo "run_all=true" >> $GITHUB_OUTPUT
+            echo "specs=" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "run_all=true" >> $GITHUB_OUTPUT
             echo "specs=" >> $GITHUB_OUTPUT
           elif [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
