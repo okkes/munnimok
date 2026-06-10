@@ -26,7 +26,11 @@ function LangHighlight({ text, query }) {
 export function ScreenLanguagePicker({ fromOnboarding = false, onBack }) {
   const navCtx = React.useContext(NavCtx);
   const { lang, setLang, t } = useLang();
+  const { dark } = useDark();
   const [search, setSearch] = React.useState('');
+  // Counter-invert flag images: the app's dark mode is a CSS invert filter on the
+  // root div, which incorrectly inverts real photographs and flag images.
+  const flagStyle = dark ? { borderRadius:3, flexShrink:0, filter:'invert(1) hue-rotate(180deg)' } : { borderRadius:3, flexShrink:0 };
 
   const mainLangs = [
     { code:'en', name:'English', native:'English', twemoji:'1f1ec-1f1e7' },
@@ -69,7 +73,7 @@ export function ScreenLanguagePicker({ fromOnboarding = false, onBack }) {
               {i > 0 && <Divider inset={52}/>}
               <div data-testid={`lang-option-${l.code}`} className="m-tap" onClick={() => selectLang(l.code)}
                 style={{ display:'flex', alignItems:'center', gap:14, padding:'14px 0' }}>
-                <img src={`https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/${l.twemoji}.svg`} width={36} height={36} style={{ borderRadius:3, flexShrink:0 }} alt={l.name}/>
+                <img src={`https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/${l.twemoji}.svg`} width={36} height={36} style={flagStyle} alt={l.name}/>
                 <div style={{ flex:1 }}>
                   <div style={{ fontSize:15, fontWeight:600 }}>{l.native}</div>
                   <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{l.name}</div>
