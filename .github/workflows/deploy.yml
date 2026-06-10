@@ -3,6 +3,8 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main, master]
+  schedule:
+    - cron: '0 6 * * *'  # daily 6 AM UTC — full test suite + gallery refresh
   workflow_dispatch:
 
 permissions:
@@ -38,19 +40,56 @@ jobs:
       # Build the app
       - run: npm run build
 
-      # Run Playwright tests (screenshots + videos → tests/screenshots/ and tests/videos/)
-      - name: Run Playwright gallery tests
+      # Restore screenshots from cache so partial runs keep the full gallery intact
+      - name: Restore screenshots cache
+        uses: actions/cache@v4
+        with:
+          path: tests/screenshots
+          key: screenshots-${{ github.run_id }}
+          restore-keys: screenshots-
+          save-always: true
+
+      # On push: detect which spec files changed; run only those.
+      # On schedule / manual dispatch: run all tests.
+      - name: Detect changed test specs
+        id: tests
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "run_all=true" >> $GITHUB_OUTPUT
+            echo "specs=" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
+            echo "run_all=true" >> $GITHUB_OUTPUT
+            echo "specs=" >> $GITHUB_OUTPUT
+          else
+            CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} -- 'tests/specs/*.spec.js' | tr '\n' ' ')
+            echo "run_all=false" >> $GITHUB_OUTPUT
+            echo "specs=${CHANGED}" >> $GITHUB_OUTPUT
+          fi
+
+      # Full run: schedule / manual / first push to branch
+      - name: Run all Playwright tests
+        if: steps.tests.outputs.run_all == 'true'
         run: npx playwright test
-        continue-on-error: false  # fail the build if tests fail
+
+      # Partial run: only spec files changed in this push
+      - name: Run changed Playwright tests
+        if: steps.tests.outputs.run_all != 'true' && steps.tests.outputs.specs != ''
+        run: npx playwright test ${{ steps.tests.outputs.specs }}
 
       # Generate gallery HTML using --deploy flag (paths relative to gallery/ folder)
-      - run: node tests/generate-gallery.mjs --deploy
+      - name: Generate gallery HTML
+        run: |
+          if ls tests/screenshots/*.png 1>/dev/null 2>&1; then
+            node tests/generate-gallery.mjs --deploy
+          fi
 
       # Copy gallery assets into dist/gallery/ so Pages serves them at /gallery/
       - name: Copy gallery to dist
         run: |
           mkdir -p dist/gallery/screenshots dist/gallery/videos
-          cp tests/gallery/index.html dist/gallery/
+          if [ -f tests/gallery/index.html ]; then
+            cp tests/gallery/index.html dist/gallery/
+          fi
           if ls tests/screenshots/*.png 1>/dev/null 2>&1; then
             cp tests/screenshots/*.png dist/gallery/screenshots/
           fi
@@ -65,6 +104,9 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    # deploy-pages@v4 has a Node 24 OIDC auth bug — keep this job on Node 20 until fixed
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: false
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
