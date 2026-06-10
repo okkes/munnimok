@@ -1,5 +1,7 @@
 ﻿import { M } from '../app/theme.jsx';
 
+export const DEFAULT_API_URL = 'apollousa-demo.okkes.synology.me:443';
+
 export const STORAGE_KEYS = {
   lang:              'munni_lang',
   langTab:           'munni_lang_tab',

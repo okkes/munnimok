@@ -2,6 +2,7 @@
 import { T } from '../shared/testIds.js';
 import { getUserId, registerUserInGlobalRegistry, computeUserDataKey } from '../shared/utils/user.js';
 import { DUTCH_BANKS } from '../features/accounts/data.js';
+import { DEFAULT_API_URL } from '../shared/constants.js';
 import { computeProfileKey, getDefaultProfiles, initPerUserData } from '../features/profile/data.js';
 import { IOSDevice } from './IOSFrame.jsx';
 import { M, I, IcoGoogle, IcoApple, Divider, StatusBar, AppBar } from './theme.jsx';
@@ -388,7 +389,7 @@ function ScreenLoginGate({ onLogin }) {
         if (idx >= 6) {
           setVerifyDigits([...digits]);
           setTimeout(() => {
-            setPendingSignup({ method:'email', displayEmail:email, canonicalEmail:email, firstName:'', lastName:'', banks:[], apiUrl:'apollousa-demo.okkes.synology.me:443', picture:null, backMode:'signup-email' });
+            setPendingSignup({ method:'email', displayEmail:email, canonicalEmail:email, firstName:'', lastName:'', banks:[], apiUrl:DEFAULT_API_URL, picture:null, backMode:'signup-email' });
             setMode('signup-onboarding');
           }, 800);
           return;
@@ -425,12 +426,8 @@ function ScreenLoginGate({ onLogin }) {
       const lnKey = computeUserDataKey(method, finalEmail, 'munni_profile_lastname');
       localStorage.setItem(fnKey, JSON.stringify(firstName));
       localStorage.setItem(lnKey, JSON.stringify(lastName));
-      // Store API URL (and remember the signup-time URL as the reset target)
       if (newApiUrl && newApiUrl.trim()) {
         localStorage.setItem('munni_api_url', JSON.stringify(newApiUrl.trim()));
-        if (!localStorage.getItem('munni_api_url_initial')) {
-          localStorage.setItem('munni_api_url_initial', JSON.stringify(newApiUrl.trim()));
-        }
       }
       // Store picture
       if (newPicture) {
