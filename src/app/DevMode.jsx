@@ -195,6 +195,69 @@ const ANNOTATIONS = {
     storage: [],
   },
 
+  'language': {
+    screen: 'Language picker',
+    sub: 'Accessible from login screen and Settings. Selecting a supported language takes effect immediately.',
+    states: [
+      { tag: 'search active',   note: 'Typing in the search box filters the "Other languages" list by name or BIC code' },
+      { tag: 'lang selected',   note: 'Current language shows green checkmark; tapping another supported lang switches immediately' },
+    ],
+    flows: [
+      { from: 'Supported lang row', to: 'Language switches; screen closes', cond: 'EN / NL / TR only' },
+      { from: 'Coming-soon row',    to: 'No action — row is non-interactive' },
+      { from: 'Back',               to: 'Previous screen (login or Settings)' },
+    ],
+    rules: [
+      'Available languages: EN, NL, TR — each renders with flag image (Twemoji SVG)',
+      'Selection persisted in LS key "munni_lang" (JSON string)',
+      'Flag images get CSS counter-invert in dark mode to undo the root invert filter',
+      'Search matches language name AND native name (case-insensitive)',
+    ],
+    edge: [
+      'Switching language from this screen re-renders entire app immediately via LangProvider context',
+      '"Coming soon" rows must never be tappable — no handler attached',
+    ],
+    storage: [
+      'munni_lang (LS) — persists selected language code ("en" | "nl" | "tr")',
+    ],
+  },
+
+  'terms': {
+    screen: 'Terms of Service',
+    sub: 'Static legal content. Same component as Privacy Policy (showPrivacy=false).',
+    states: [],
+    flows: [
+      { from: 'Back', to: 'Login screen' },
+    ],
+    rules: [
+      'Content is translated: EN / NL / TR sections all present in CONTENT map',
+      '7 sections: Acceptance, Service description, Read-only access, User responsibilities, Data accuracy, Limitation of liability, Changes to terms',
+      'Shared component with Privacy Policy — switched via showPrivacy prop',
+    ],
+    edge: [
+      'Native: replace static content with server-fetched legal markdown; version-stamp shown to user',
+    ],
+    storage: [],
+  },
+
+  'privacy': {
+    screen: 'Privacy Policy',
+    sub: 'Static legal content. Same component as Terms of Service (showPrivacy=true).',
+    states: [],
+    flows: [
+      { from: 'Back', to: 'Login screen' },
+    ],
+    rules: [
+      'Content is translated: EN / NL / TR',
+      '6 sections: Data we collect, How we use your data, Data storage, Your rights, Cookies, Contact',
+      'Shared component with Terms of Service — switched via showPrivacy prop',
+    ],
+    edge: [
+      'Native: GDPR requires a versioned privacy policy with explicit user acceptance; current prototype does not track consent version',
+    ],
+    storage: [],
+  },
+
   'no-account': {
     screen: 'No account found',
     sub: 'Shown when user taps Google/Apple on login screen but has no account with that method.',

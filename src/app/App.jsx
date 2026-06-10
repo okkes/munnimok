@@ -202,7 +202,8 @@ function ScreenTerms({ onBack, showPrivacy = false }) {
   const data = CONTENT[key][lang] || CONTENT[key].en;
 
   return (
-    <div data-testid={T.termsScreen} className="m-screen">
+    <div data-testid={T.termsScreen} className="m-screen" style={{ position: 'relative' }}>
+      <DevPanel screenKey={key}/>
       <StatusBar/>
       <AppBar title={data.title}
         leading={<button className="m-iconbtn m-tap" onClick={onBack}><I name="arrowL" size={20}/></button>}

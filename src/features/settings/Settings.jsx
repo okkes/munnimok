@@ -4,6 +4,7 @@ import { STOCK_AVATARS } from '../../shared/constants.js';
 import { CATEGORIES } from '../../shared/data/categories.js';
 import { computePeriodHistory, fmtEur, fmtDate } from '../../shared/utils/format.js';
 import { M, I, IcoMDI, Divider, StatusBar, AppBar } from '../../app/theme.jsx';
+import { DevPanel } from '../../app/DevMode.jsx';
 import { useLang, OTHER_LANGUAGES, LangCtx } from '../../shared/i18n.jsx';
 import { NavCtx, useNav, useDark, Sheet } from '../../app/nav.jsx';
 import { useLocalStorage } from '../../shared/hooks.jsx';
@@ -55,7 +56,8 @@ export function ScreenLanguagePicker({ fromOnboarding = false, onBack }) {
   };
 
   return (
-    <div className="m-screen">
+    <div className="m-screen" style={{ position: 'relative' }}>
+      <DevPanel screenKey="language"/>
       <StatusBar/>
       <AppBar title={t('lang.title')}
         leading={<button className="m-iconbtn m-tap" onClick={goBack}><I name="arrowL" size={20}/></button>}
