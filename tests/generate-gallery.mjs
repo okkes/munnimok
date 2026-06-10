@@ -13,6 +13,11 @@ const VIDEOS_DIR = path.join(__dirname, 'videos');
 const GALLERY_DIR = path.join(__dirname, 'gallery');
 const META_DIR   = path.join(__dirname, 'meta');
 
+// --deploy flag: use paths relative to the gallery HTML file (for GitHub Pages where
+// screenshots live next to index.html). Locally, screenshots live one level up.
+const DEPLOY = process.argv.includes('--deploy');
+const BASE = DEPLOY ? '.' : '..';
+
 const VARIANTS = [
   { id: 'en-light-mobile',  lang: 'en', dark: false, viewport: 'mobile',  vpLabel: '393×852' },
   { id: 'en-light-desktop', lang: 'en', dark: false, viewport: 'desktop', vpLabel: '1280×900' },
@@ -66,12 +71,12 @@ function stepPlayer(key, V, stepLabels) {
   for (let i = 1; i < stepLabels.length; i++) {
     const name = `${key}--${V.id}--s${i}`;
     if (shots.has(name)) {
-      steps.push({ img: `../screenshots/${name}.png`, label: stepLabels[i - 1] });
+      steps.push({ img: `${BASE}/screenshots/${name}.png`, label: stepLabels[i - 1] });
     }
   }
   // Always add final screenshot as last step
   const finalName = `${key}--${V.id}`;
-  steps.push({ img: `../screenshots/${finalName}.png`, label: stepLabels[stepLabels.length - 1] });
+  steps.push({ img: `${BASE}/screenshots/${finalName}.png`, label: stepLabels[stepLabels.length - 1] });
 
   if (steps.length < 2) return null; // not enough steps to show a player
 
@@ -98,8 +103,8 @@ function card(key, meta, V, feature) {
   const theme  = V.dark ? 'dark' : 'light';
 
   const imgBlock = exists
-    ? `<a href="../screenshots/${name}.png" target="_blank" class="img-link">
-         <img src="../screenshots/${name}.png" style="width:100%;display:block;border-radius:8px 8px 0 0" loading="lazy"/>
+    ? `<a href="${BASE}/screenshots/${name}.png" target="_blank" class="img-link">
+         <img src="${BASE}/screenshots/${name}.png" style="width:100%;display:block;border-radius:8px 8px 0 0" loading="lazy"/>
        </a>`
     : `<div class="placeholder">not yet generated</div>`;
 
@@ -109,7 +114,7 @@ function card(key, meta, V, feature) {
   const videoBlock = hasVideo
     ? `<details class="vid-details">
          <summary>▶ Watch recording</summary>
-         <video src="../videos/${name}.webm" controls preload="none" style="width:100%;border-radius:0 0 4px 4px;display:block"></video>
+         <video src="${BASE}/videos/${name}.webm" controls preload="none" style="width:100%;border-radius:0 0 4px 4px;display:block"></video>
        </details>`
     : '';
 

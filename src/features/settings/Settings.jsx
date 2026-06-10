@@ -1166,6 +1166,20 @@ export function InviteCards() {
   );
 }
 
+function fmtSyncTime(isoStr) {
+  try {
+    const d = new Date(isoStr);
+    const now = new Date();
+    const diffMs = now - d;
+    const diffMin = Math.floor(diffMs / 60000);
+    if (diffMin < 1)  return 'just now';
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffH = Math.floor(diffMin / 60);
+    if (diffH < 24) return `${diffH}h ago`;
+    return d.toLocaleDateString(undefined, { month:'short', day:'numeric' });
+  } catch { return isoStr; }
+}
+
 export function ScreenNotifications() {
   const nav = useNav();
   const { t } = useLang();

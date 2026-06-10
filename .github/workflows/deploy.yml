@@ -21,12 +21,40 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
+
       - run: npm ci
+
+      # Install only the Chromium browser (faster than full install)
+      - run: npx playwright install --with-deps chromium
+
+      # Build the app
       - run: npm run build
+
+      # Run Playwright tests (screenshots + videos → tests/screenshots/ and tests/videos/)
+      - name: Run Playwright gallery tests
+        run: npx playwright test
+        continue-on-error: false  # fail the build if tests fail
+
+      # Generate gallery HTML using --deploy flag (paths relative to gallery/ folder)
+      - run: node tests/generate-gallery.mjs --deploy
+
+      # Copy gallery assets into dist/gallery/ so Pages serves them at /gallery/
+      - name: Copy gallery to dist
+        run: |
+          mkdir -p dist/gallery/screenshots dist/gallery/videos
+          cp tests/gallery/index.html dist/gallery/
+          if ls tests/screenshots/*.png 1>/dev/null 2>&1; then
+            cp tests/screenshots/*.png dist/gallery/screenshots/
+          fi
+          if ls tests/videos/*.webm 1>/dev/null 2>&1; then
+            cp tests/videos/*.webm dist/gallery/videos/
+          fi
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

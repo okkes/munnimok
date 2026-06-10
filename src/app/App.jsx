@@ -461,12 +461,14 @@ function ScreenLoginGate({ onLogin }) {
         // Attach the new account IDs to the active profile
         const profileKey = computeProfileKey(method, finalEmail);
         try {
-          const profiles = JSON.parse(localStorage.getItem(profileKey) || '[]');
+          const profiles = JSON.parse(localStorage.getItem(profileKey) || 'null')
+            || getDefaultProfiles(method, lang);
           const idx = Math.max(0, profiles.findIndex(p => p.active));
           if (profiles[idx]) {
             const merged = [...new Set([...(profiles[idx].accountIds || []), ...bankAccounts.map(a => a.id)])];
             profiles[idx] = { ...profiles[idx], accountIds: merged };
             localStorage.setItem(profileKey, JSON.stringify(profiles));
+            window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: profileKey } }));
           }
         } catch {}
       }

@@ -8,7 +8,11 @@
     "build": "vite build",
     "preview": "vite preview",
     "gallery": "playwright test && node tests/generate-gallery.mjs",
-    "gallery:html": "node tests/generate-gallery.mjs"
+    "gallery:html": "node tests/generate-gallery.mjs",
+    "test": "playwright test",
+    "test:login": "playwright test --grep @login",
+    "test:profile": "playwright test --grep @profile",
+    "test:accounts": "playwright test --grep @accounts"
   },
   "dependencies": {
     "react": "^18.3.1",
