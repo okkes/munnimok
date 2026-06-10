@@ -425,9 +425,12 @@ function ScreenLoginGate({ onLogin }) {
       const lnKey = computeUserDataKey(method, finalEmail, 'munni_profile_lastname');
       localStorage.setItem(fnKey, JSON.stringify(firstName));
       localStorage.setItem(lnKey, JSON.stringify(lastName));
-      // Store API URL
+      // Store API URL (and remember the signup-time URL as the reset target)
       if (newApiUrl && newApiUrl.trim()) {
         localStorage.setItem('munni_api_url', JSON.stringify(newApiUrl.trim()));
+        if (!localStorage.getItem('munni_api_url_initial')) {
+          localStorage.setItem('munni_api_url_initial', JSON.stringify(newApiUrl.trim()));
+        }
       }
       // Store picture
       if (newPicture) {

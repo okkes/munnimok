@@ -230,6 +230,7 @@ export function ScreenUserInfo() {
 
   // API endpoint (moved from ScreenProfile)
   const [apiUrl, setApiUrl] = useLocalStorage('munni_api_url', '');
+  const [initialApiUrl] = useLocalStorage('munni_api_url_initial', '');
   const [showApiSheet, setShowApiSheet] = React.useState(false);
   const [apiDraft, setApiDraft] = React.useState('');
 
@@ -509,7 +510,7 @@ export function ScreenUserInfo() {
               placeholder={t('settings.apiUrlDefault')} type="url"
               style={{ width:'100%', marginBottom:16, boxSizing:'border-box', height:48 }}/>
             <div style={{ display:'flex', gap:10 }}>
-              <button className="m-btn outline m-tap" onClick={() => { setApiDraft(apiUrl); setShowApiSheet(false); }}
+              <button className="m-btn outline m-tap" onClick={() => { setApiUrl(initialApiUrl); setApiDraft(initialApiUrl); setShowApiSheet(false); }}
                 style={{ flex:1 }}>{t('action.reset')}</button>
               <button className="m-btn sage m-tap" onClick={() => { setApiUrl(apiDraft.trim()); setShowApiSheet(false); }}
                 style={{ flex:2 }}>{t('action.save')}</button>
