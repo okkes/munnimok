@@ -324,6 +324,27 @@ for (const V of VARIANTS) {
     await teardown(page, ctx, k('37-bank-creds-error'));
   });
 
+  test(`47 bank-creds – empty password error [${V.id}]`, async ({ browser }) => {
+    const { page, ctx } = await createPage(browser, V);
+    await base(page, V);
+    await goToBankCreds(page, email('bpasserr'));
+    // username is pre-filled by goToBankCreds; clear only the password
+    await page.fill('[data-testid="bank-creds-username"]', 'demo.user@munni.app');
+    await page.evaluate(() => {
+      // clear password field — type=password value must be set via input event
+      const el = document.querySelector('input[type="password"]');
+      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      nativeInputValueSetter.call(el, '');
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await shot(page, k('47-bank-creds-password-error') + '--s1');
+    await page.click('[data-testid="bank-creds-connect"]');
+    await page.waitForSelector('[data-testid="bank-creds-error"]', { timeout: 2000 });
+    await expect(page.locator('[data-testid="bank-creds-error"]')).toBeVisible();
+    await shot(page, k('47-bank-creds-password-error'));
+    await teardown(page, ctx, k('47-bank-creds-password-error'));
+  });
+
   test(`38 bank-consent – PSD2 screen [${V.id}]`, async ({ browser }) => {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V);

@@ -202,6 +202,16 @@ export const GROUPS = [
         ],
       },
       {
+        key: '47-bank-creds-password-error',
+        title: 'Bank credentials — empty password',
+        desc: 'Username filled, password cleared, tap "Connect" → inline error "Enter your password". Password input border turns red; username border remains normal.',
+        tags: ['validation', 'error'],
+        steps: [
+          'Bank credentials — username filled, password cleared',
+          'Error: password is required',
+        ],
+      },
+      {
         key: '38-bank-psd2-consent',
         title: 'PSD2 consent screen',
         desc: '"Connect" pressed with valid credentials → PSD2 consent screen. Shows two permission rows: (1) Account info (read-only) and (2) Transaction history. "Authorise" and "Cancel" CTAs.',
