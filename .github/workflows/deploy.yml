@@ -42,12 +42,11 @@ jobs:
 
       # Restore screenshots from cache so partial runs keep the full gallery intact
       - name: Restore screenshots cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: tests/screenshots
           key: screenshots-${{ github.run_id }}
           restore-keys: screenshots-
-          save-always: true
 
       # On push: detect which spec files changed; run only those.
       # On schedule / manual dispatch: run all tests.
@@ -81,6 +80,14 @@ jobs:
         if: steps.tests.outputs.run_all != 'true' && steps.tests.outputs.specs != ''
         run: npx playwright test ${{ steps.tests.outputs.specs }}
 
+      # Save screenshots to cache (always, even if tests failed)
+      - name: Save screenshots cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: tests/screenshots
+          key: screenshots-${{ github.run_id }}
+
       # Generate gallery HTML using --deploy flag (paths relative to gallery/ folder)
       - name: Generate gallery HTML
         run: |
@@ -109,13 +116,10 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
-    # deploy-pages@v4 has a Node 24 OIDC auth bug — keep this job on Node 20 until fixed
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: false
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/configure-pages@v4
+      - uses: actions/configure-pages@v6
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
