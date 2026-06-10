@@ -263,11 +263,14 @@ export function ScreenUserInfo() {
     if (!el) return;
     if (anySheetOpen) {
       savedScrollRef.current = el.scrollTop;
-      el.style.overflowY = 'hidden';
-      el.scrollTop = savedScrollRef.current;
+      // Use pointer-events to block interaction without touching overflow/scrollTop
+      el.style.pointerEvents = 'none';
+      el.style.userSelect = 'none';
     } else {
-      el.style.overflowY = '';
-      el.scrollTop = savedScrollRef.current;
+      el.style.pointerEvents = '';
+      el.style.userSelect = '';
+      // Restore scroll position in case anything shifted it
+      requestAnimationFrame(() => { el.scrollTop = savedScrollRef.current; });
     }
   }, [anySheetOpen]);
 
@@ -503,10 +506,10 @@ export function ScreenUserInfo() {
             <div style={{ fontSize:17, fontWeight:700, marginBottom:4 }}>{t('settings.apiUrl')}</div>
             <div style={{ fontSize:13, color:M.ink3, marginBottom:16 }}>{t('settings.apiUrlSub')}</div>
             <input className="m-input" value={apiDraft} onChange={e => setApiDraft(e.target.value)}
-              placeholder={t('settings.apiUrlDefault')} type="url" autoFocus
+              placeholder={t('settings.apiUrlDefault')} type="url"
               style={{ width:'100%', marginBottom:16, boxSizing:'border-box', height:48 }}/>
             <div style={{ display:'flex', gap:10 }}>
-              <button className="m-btn outline m-tap" onClick={() => { setApiDraft(''); setApiUrl(''); setShowApiSheet(false); }}
+              <button className="m-btn outline m-tap" onClick={() => { setApiDraft(apiUrl); setShowApiSheet(false); }}
                 style={{ flex:1 }}>{t('action.reset')}</button>
               <button className="m-btn sage m-tap" onClick={() => { setApiUrl(apiDraft.trim()); setShowApiSheet(false); }}
                 style={{ flex:2 }}>{t('action.save')}</button>
@@ -1380,10 +1383,21 @@ export function ScreenProfileDetail({ params }) {
             {t('profile.leaveProfile')}
           </button>
         ) : otherMembers.length > 0 ? (
-          <button onClick={() => setShowLeaveConfirm(true)}
-            style={{ width:'100%', padding:'14px 0', background:M.claySoft, color:M.clay, border:'none', borderRadius:12, fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:8 }}>
-            {hasOtherOwner ? t('profile.leaveProfile') : t('profile.transferLeave')}
-          </button>
+          <>
+            <button onClick={() => setShowLeaveConfirm(true)}
+              style={{ width:'100%', padding:'14px 0', background:M.claySoft, color:M.clay, border:'none', borderRadius:12, fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:8 }}>
+              {hasOtherOwner ? t('profile.leaveProfile') : t('profile.transferLeave')}
+            </button>
+            {!hasOtherOwner && (
+              <>
+                <button disabled={isOnly||isActive} onClick={() => setShowDeleteConfirm(true)}
+                  style={{ width:'100%', padding:'14px 0', background:(isOnly||isActive)?M.line:M.claySoft, color:(isOnly||isActive)?M.ink4:M.clay, border:'none', borderRadius:12, fontSize:15, fontWeight:600, cursor:(isOnly||isActive)?'not-allowed':'pointer', fontFamily:M.fontUI, marginBottom:8 }}>
+                  {t('profile.deleteProfile')}
+                </button>
+                {(isOnly||isActive) && <div style={{ textAlign:'center', fontSize:12, color:M.ink4 }}>{isActive ? t('profile.cannotDeleteActive') : t('profile.cannotDeleteOnly')}</div>}
+              </>
+            )}
+          </>
         ) : isMemberOfShared ? (
           <button onClick={() => setShowLeaveConfirm(true)}
             style={{ width:'100%', padding:'14px 0', background:M.claySoft, color:M.clay, border:'none', borderRadius:12, fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:8 }}>

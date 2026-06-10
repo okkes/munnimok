@@ -147,7 +147,22 @@ export function Sheet({ children, onClose, open, title }) {
   const [dragY, setDragY] = React.useState(0);
   const startYRef = React.useRef(null);
   const didMountRef = React.useRef(false);
+  const [kbOffset, setKbOffset] = React.useState(0);
+
   React.useEffect(() => { didMountRef.current = true; }, []);
+
+  // Push sheet above keyboard on iOS using Visual Viewport API
+  React.useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () => {
+      const offset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      setKbOffset(offset);
+    };
+    vv.addEventListener('resize', update);
+    vv.addEventListener('scroll', update);
+    return () => { vv.removeEventListener('resize', update); vv.removeEventListener('scroll', update); };
+  }, []);
 
   if (open !== undefined && !open) return null;
 
@@ -171,6 +186,9 @@ export function Sheet({ children, onClose, open, title }) {
       position: 'absolute', inset: 0, background: 'rgba(27,26,23,0.45)', zIndex: 50,
       display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
       animation: 'backdropFade 0.22s ease',
+      paddingBottom: kbOffset,
+      boxSizing: 'border-box',
+      transition: 'padding-bottom 0.15s ease',
     }} onClick={onClose}>
       <div style={{
         background: M.paper, borderTopLeftRadius: 24, borderTopRightRadius: 24,
