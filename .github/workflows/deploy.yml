@@ -40,22 +40,25 @@ jobs:
       # Build the app
       - run: npm run build
 
-      # Restore screenshots from cache so partial runs keep the full gallery intact
-      - name: Restore screenshots cache
+      # Restore screenshots + videos from cache so partial runs keep the full gallery intact
+      - name: Restore gallery cache
         uses: actions/cache/restore@v4
         with:
-          path: tests/screenshots
-          key: screenshots-${{ github.run_id }}
-          restore-keys: screenshots-
+          path: |
+            tests/screenshots
+            tests/videos
+          key: gallery-${{ github.run_id }}
+          restore-keys: gallery-
 
       # On push: detect which spec files changed; run only those.
       # On schedule / manual dispatch: run all tests.
-      # Also force full run if screenshots cache is empty (bootstrap / cache evicted).
+      # Also force full run if screenshots or videos cache is empty (bootstrap / cache evicted).
       - name: Detect changed test specs
         id: tests
         run: |
           HAS_SHOTS=$(ls tests/screenshots/*.png 2>/dev/null | wc -l)
-          if [ "$HAS_SHOTS" = "0" ]; then
+          HAS_VIDS=$(ls tests/videos/*.webm 2>/dev/null | wc -l)
+          if [ "$HAS_SHOTS" = "0" ] || [ "$HAS_VIDS" = "0" ]; then
             echo "run_all=true" >> $GITHUB_OUTPUT
             echo "specs=" >> $GITHUB_OUTPUT
           elif [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -80,13 +83,15 @@ jobs:
         if: steps.tests.outputs.run_all != 'true' && steps.tests.outputs.specs != ''
         run: npx playwright test ${{ steps.tests.outputs.specs }}
 
-      # Save screenshots to cache (always, even if tests failed)
-      - name: Save screenshots cache
+      # Save screenshots + videos to cache (always, even if tests failed)
+      - name: Save gallery cache
         if: always()
         uses: actions/cache/save@v4
         with:
-          path: tests/screenshots
-          key: screenshots-${{ github.run_id }}
+          path: |
+            tests/screenshots
+            tests/videos
+          key: gallery-${{ github.run_id }}
 
       # Generate gallery HTML using --deploy flag (paths relative to gallery/ folder)
       - name: Generate gallery HTML
