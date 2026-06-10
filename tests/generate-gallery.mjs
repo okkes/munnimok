@@ -116,7 +116,7 @@ function card(key, meta, V, feature) {
   const tagsHtml = (meta.tags || []).map(tagPill).join('');
 
   return `
-    <div class="card"
+    <div class="card${player ? ' has-steps' : ''}"
          data-lang="${V.lang}"
          data-theme="${theme}"
          data-viewport="${V.viewport}"
@@ -125,6 +125,7 @@ function card(key, meta, V, feature) {
       ${videoBlock}
       <div class="card-body">
         <div class="card-title">${meta.title}</div>
+        ${player ? '<div class="step-badge">🎬 step replay</div>' : ''}
         <div class="card-desc">${meta.desc}</div>
         <div class="card-badges">${variantBadge(V)}</div>
         ${tagsHtml ? `<div class="card-tags">${tagsHtml}</div>` : ''}
@@ -180,87 +181,115 @@ for (const file of metaFiles) {
 // HTML
 // ---------------------------------------------------------------------------
 const html = `<!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>munni — Screenshot Gallery</title>
   <style>
+    :root {
+      --bg: #f8fafc; --bg1: #f1f5f9; --card-bg: #ffffff; --border: #e2e8f0; --border2: #cbd5e1;
+      --ink: #0f172a; --ink2: #334155; --ink3: #64748b; --ink4: #475569;
+      --code-bg: #e2e8f0; --filter-bg: #ffffff; --filter-border: #e2e8f0;
+      --filter-active-bg: #e2e8f0; --filter-active-border: #cbd5e1; --filter-active-ink: #0f172a;
+      --ph-bg: #e2e8f0; --step-border: #22c55e; --step-badge-color: #16a34a; --step-badge-bg: #dcfce7;
+      --step-dot-border: #cbd5e1; --step-dot-active: #22c55e; --sp-overlay: rgba(0,0,0,.45);
+      --sp-nav: #f1f5f9; --sp-counter: #64748b; --toggle-bg: #e2e8f0; --toggle-hover: #cbd5e1;
+    }
+    [data-theme="dark"] {
+      --bg: #020817; --bg1: #0a0f1e; --card-bg: #0f172a; --border: #1e293b; --border2: #334155;
+      --ink: #f1f5f9; --ink2: #94a3b8; --ink3: #64748b; --ink4: #475569;
+      --code-bg: #1e293b; --filter-bg: #0f172a; --filter-border: #1e293b;
+      --filter-active-bg: #1e293b; --filter-active-border: #334155; --filter-active-ink: #f1f5f9;
+      --ph-bg: #1e293b; --step-border: #4ade80; --step-badge-color: #4ade80; --step-badge-bg: #14532d44;
+      --step-dot-border: #334155; --step-dot-active: #4ade80; --sp-overlay: rgba(0,0,0,.65);
+      --sp-nav: #f1f5f9; --sp-counter: #94a3b8; --toggle-bg: #1e293b; --toggle-hover: #334155;
+    }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: #020817; color: #f1f5f9; font-family: -apple-system, system-ui, sans-serif; padding: 32px 24px 80px; }
+    body { background: var(--bg); color: var(--ink); font-family: -apple-system, system-ui, sans-serif; padding: 32px 24px 80px; }
 
     /* Header */
-    .site-title { font-size: 24px; font-weight: 800; margin-bottom: 4px; }
-    .site-meta { font-size: 12px; color: #475569; margin-bottom: 28px; }
-    code { background: #1e293b; padding: 1px 6px; border-radius: 4px; font-size: 11px; }
+    .site-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+    .site-title { font-size: 24px; font-weight: 800; }
+    .site-meta { font-size: 12px; color: var(--ink4); margin-bottom: 16px; }
+    code { background: var(--code-bg); padding: 1px 6px; border-radius: 4px; font-size: 11px; }
+    .theme-toggle { padding: 5px 14px; border-radius: 20px; border: 1.5px solid var(--border); background: var(--toggle-bg); color: var(--ink3); font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; white-space: nowrap; transition: background .15s; flex-shrink: 0; }
+    .theme-toggle:hover { background: var(--toggle-hover); color: var(--ink2); }
+    .step-hint { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--step-badge-color); background: var(--step-badge-bg); border: 1px solid var(--step-border); padding: 8px 14px; border-radius: 8px; margin-bottom: 20px; line-height: 1.5; }
 
     /* Filter bar */
-    .filter-bar { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 20px; padding: 16px 20px; background: #0f172a; border: 1px solid #1e293b; border-radius: 12px; }
+    .filter-bar { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 20px; padding: 16px 20px; background: var(--filter-bg); border: 1px solid var(--filter-border); border-radius: 12px; }
     .filter-group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-    .filter-label { font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: .5px; margin-right: 2px; }
-    .filter-btn { padding: 4px 11px; border-radius: 20px; border: 1.5px solid #1e293b; background: transparent; color: #64748b; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; transition: all 0.15s; }
-    .filter-btn:hover { border-color: #334155; color: #94a3b8; }
-    .filter-btn.active { background: #1e293b; border-color: #334155; color: #f1f5f9; }
+    .filter-label { font-size: 11px; font-weight: 700; color: var(--ink4); text-transform: uppercase; letter-spacing: .5px; margin-right: 2px; }
+    .filter-btn { padding: 4px 11px; border-radius: 20px; border: 1.5px solid var(--filter-border); background: transparent; color: var(--ink3); font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; transition: all 0.15s; }
+    .filter-btn:hover { border-color: var(--border2); color: var(--ink2); }
+    .filter-btn.active { background: var(--filter-active-bg); border-color: var(--filter-active-border); color: var(--filter-active-ink); }
 
     /* Count badge */
-    .count-bar { font-size: 12px; color: #475569; margin-bottom: 32px; }
-    .count-num { font-weight: 700; color: #94a3b8; }
+    .count-bar { font-size: 12px; color: var(--ink4); margin-bottom: 32px; }
+    .count-num { font-weight: 700; color: var(--ink2); }
 
     /* Feature + group headings */
     .feature-section { margin-bottom: 56px; }
-    .feature-heading { font-size: 18px; font-weight: 800; color: #f1f5f9; margin-bottom: 24px; padding-bottom: 10px; border-bottom: 1px solid #1e293b; }
+    .feature-heading { font-size: 18px; font-weight: 800; color: var(--ink); margin-bottom: 24px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
     .group-section { margin-bottom: 40px; }
-    .group-heading { font-size: 11px; font-weight: 800; letter-spacing: .7px; text-transform: uppercase; color: #475569; font-family: monospace; margin-bottom: 14px; }
+    .group-heading { font-size: 11px; font-weight: 800; letter-spacing: .7px; text-transform: uppercase; color: var(--ink4); font-family: monospace; margin-bottom: 14px; }
 
     /* Grid */
     .cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 16px; }
 
     /* Card */
-    .card { background: #0f172a; border: 1px solid #1e293b; border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; }
+    .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; }
     .card.hidden { display: none; }
+    .card.has-steps { border: 2px solid var(--step-border); }
     .img-link img { transition: opacity .15s; }
     .img-link:hover img { opacity: .88; }
-    .placeholder { aspect-ratio: 393 / 852; background: #1e293b; display: flex; align-items: center; justify-content: center; color: #475569; font-size: 11px; font-family: monospace; border-radius: 8px 8px 0 0; }
+    .placeholder { aspect-ratio: 393 / 852; background: var(--ph-bg); display: flex; align-items: center; justify-content: center; color: var(--ink4); font-size: 11px; font-family: monospace; border-radius: 8px 8px 0 0; }
 
     /* Video embed */
-    .vid-details { border-top: 1px solid #1e293b; }
-    .vid-details summary { padding: 7px 12px; font-size: 11px; color: #475569; cursor: pointer; user-select: none; }
-    .vid-details summary:hover { color: #94a3b8; }
+    .vid-details { border-top: 1px solid var(--border); }
+    .vid-details summary { padding: 7px 12px; font-size: 11px; color: var(--ink4); cursor: pointer; user-select: none; }
+    .vid-details summary:hover { color: var(--ink2); }
 
     /* Card body */
     .card-body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 5px; flex: 1; }
-    .card-title { font-size: 13px; font-weight: 700; color: #f1f5f9; }
-    .card-desc { font-size: 11px; color: #64748b; line-height: 1.55; flex: 1; }
+    .card-title { font-size: 13px; font-weight: 700; color: var(--ink); }
+    .step-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 700; color: var(--step-badge-color); background: var(--step-badge-bg); padding: 2px 8px; border-radius: 4px; letter-spacing: .3px; text-transform: uppercase; font-family: monospace; }
+    .card-desc { font-size: 11px; color: var(--ink3); line-height: 1.55; flex: 1; }
     .card-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
     .vbadge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; font-family: monospace; }
     .card-tags { display: flex; flex-wrap: wrap; gap: 4px; }
     .tag { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; font-family: monospace; }
-    .card-file { font-size: 9px; color: #334155; font-family: monospace; margin-top: 2px; }
+    .card-file { font-size: 9px; color: var(--ink2); font-family: monospace; margin-top: 2px; }
 
     /* Step player */
     .step-player { position: relative; }
     .sp-img-wrap { position: relative; }
     .sp-img { width: 100%; display: block; border-radius: 8px 8px 0 0; transition: opacity .18s ease; }
     .sp-img.fading { opacity: 0; }
-    .sp-overlay { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; background: rgba(0,0,0,.6); border-radius: 20px; padding: 4px 12px; backdrop-filter: blur(4px); }
-    .sp-nav { background: none; border: none; color: #f1f5f9; font-size: 18px; cursor: pointer; padding: 0 2px; line-height: 1; opacity: .8; }
+    .sp-overlay { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; background: var(--sp-overlay); border-radius: 20px; padding: 4px 12px; backdrop-filter: blur(4px); }
+    .sp-nav { background: none; border: none; color: var(--sp-nav); font-size: 18px; cursor: pointer; padding: 0 2px; line-height: 1; opacity: .85; }
     .sp-nav:hover { opacity: 1; }
-    .sp-counter { font-size: 11px; color: #94a3b8; font-family: monospace; white-space: nowrap; }
+    .sp-counter { font-size: 11px; color: var(--sp-counter); font-family: monospace; white-space: nowrap; }
     .sp-dots { display: flex; gap: 5px; justify-content: center; padding: 8px 0 4px; }
-    .sp-dot { width: 6px; height: 6px; border-radius: 50%; border: 1.5px solid #334155; background: transparent; cursor: pointer; padding: 0; }
-    .sp-dot.active { background: #4ade80; border-color: #4ade80; }
-    .sp-label { text-align: center; font-size: 11px; color: #64748b; padding: 0 12px 8px; font-style: italic; }
+    .sp-dot { width: 6px; height: 6px; border-radius: 50%; border: 1.5px solid var(--step-dot-border); background: transparent; cursor: pointer; padding: 0; }
+    .sp-dot.active { background: var(--step-dot-active); border-color: var(--step-dot-active); }
+    .sp-label { text-align: center; font-size: 11px; color: var(--ink3); padding: 0 12px 8px; font-style: italic; }
 
     @media (max-width: 600px) { body { padding: 16px 12px 48px; } .filter-bar { padding: 12px; } }
   </style>
 </head>
 <body>
-  <h1 class="site-title">munni <span style="font-size:14px;font-weight:500;color:#475569">screenshot gallery</span></h1>
+  <div class="site-header">
+    <h1 class="site-title">munni <span style="font-size:14px;font-weight:500;color:var(--ink4)">screenshot gallery</span></h1>
+    <button class="theme-toggle" id="theme-toggle">🌙 Dark mode</button>
+  </div>
   <div class="site-meta">
     <span class="count-num" id="gen-count">${generatedCards}</span>/<span class="count-num">${totalCards}</span> screenshots generated
     &nbsp;·&nbsp; Run <code>npm run gallery</code> to refresh
     &nbsp;·&nbsp; ${new Date().toLocaleString()}
   </div>
+  <div class="step-hint">🎬 <strong>Step replay demo:</strong>&nbsp; Filter <strong>EN · Light · Mobile</strong> → look for the green-outlined card in <em>Signup — Email Entry</em>. Click ‹ › or dots to step through; auto-plays on load.</div>
 
   <div class="filter-bar" id="filter-bar">
     <div class="filter-group">
@@ -335,6 +364,21 @@ const html = `<!DOCTYPE html>
     });
 
     applyFilters(); // run on load with default state
+
+    // ---------------------------------------------------------------------------
+    // Theme toggle
+    // ---------------------------------------------------------------------------
+    const root = document.documentElement;
+    const toggleBtn = document.getElementById('theme-toggle');
+    function applyTheme(t) {
+      root.setAttribute('data-theme', t);
+      localStorage.setItem('gallery-theme', t);
+      if (toggleBtn) toggleBtn.textContent = t === 'dark' ? '☀️ Light mode' : '🌙 Dark mode';
+    }
+    applyTheme(localStorage.getItem('gallery-theme') || 'light');
+    if (toggleBtn) toggleBtn.addEventListener('click', () => {
+      applyTheme((root.getAttribute('data-theme') || 'light') === 'dark' ? 'light' : 'dark');
+    });
 
     // ---------------------------------------------------------------------------
     // Step player

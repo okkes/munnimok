@@ -544,24 +544,25 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
             </div>
           )}
 
-          <div style={{ padding:'10px 12px', borderRadius:10, background:M.sageSoft, marginBottom:connectedBanks.length === 0 ? 16 : 24, display:'flex', gap:10, alignItems:'flex-start' }}>
-            <I name="lock" size={14} color={M.sage}/>
-            <div style={{ fontSize:11, color:M.sageDk, lineHeight:1.5 }}>{t('onboarding.bankPSD2Note')}</div>
-          </div>
-
           {connectedBanks.length > 0 && (
             <button className="m-btn sage m-tap" style={{ height:54, width:'100%', fontSize:16, fontWeight:700, marginBottom:12 }} onClick={handleComplete}>
               {t('onboarding.complete')}
             </button>
           )}
           {connectedBanks.length === 0 && (
-            <div style={{ textAlign:'center' }}>
+            <div style={{ textAlign:'center', marginBottom:4 }}>
               <button className="m-tap" onClick={handleComplete}
                 style={{ background:'none', border:'none', fontSize:13, color:M.ink4, cursor:'pointer', fontFamily:M.fontUI, padding:'10px 0' }}>
                 {t('onboarding.bankSkip')}
               </button>
             </div>
           )}
+
+          {/* PSD2 footnote — subtle, below CTA */}
+          <div style={{ display:'flex', gap:7, alignItems:'flex-start', marginTop:connectedBanks.length === 0 ? 8 : 10 }}>
+            <I name="lock" size={11} color={M.ink4}/>
+            <div style={{ fontSize:10, color:M.ink4, lineHeight:1.55 }}>{t('onboarding.bankPSD2Note')}</div>
+          </div>
         </div>
       </div>
     );

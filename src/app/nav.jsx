@@ -12,6 +12,7 @@ export const NavCtx = React.createContext(null);
 export function NavProvider({ children, initial = 'home' }) {
   const [tab, setTab] = React.useState(initial);
   const [stacks, setStacks] = React.useState({ home: [], tx: [], recurring: [], events: [], insights: [], profile: [] });
+  const [kickNotif, setKickNotif] = React.useState(null);
   const stacksRef = React.useRef(stacks);
   const tabRef = React.useRef(tab);
   stacksRef.current = stacks;
@@ -66,8 +67,31 @@ export function NavProvider({ children, initial = 'home' }) {
     });
   };
 
-  const value = { tab, stack: stacks[tab], push, pop, popAll, switchTab, replace };
-  return <NavCtx.Provider value={value}>{children}</NavCtx.Provider>;
+  const value = { tab, stack: stacks[tab], push, pop, popAll, switchTab, replace, kickNotif, setKickNotif };
+  return (
+    <NavCtx.Provider value={value}>
+      {children}
+      {kickNotif && (
+        <div style={{
+          position:'absolute', top:0, left:0, right:0, zIndex:9999,
+          display:'flex', justifyContent:'center', pointerEvents:'none',
+          padding:'10px 16px 0',
+        }}>
+          <div style={{
+            background:'rgba(15,23,42,0.92)', color:'#f1f5f9',
+            fontSize:13, fontFamily:M.fontUI, fontWeight:500,
+            padding:'10px 16px', borderRadius:12, maxWidth:320,
+            boxShadow:'0 4px 20px rgba(0,0,0,0.35)',
+            display:'flex', alignItems:'center', gap:10, pointerEvents:'all',
+            backdropFilter:'blur(8px)', WebkitBackdropFilter:'blur(8px)',
+          }}>
+            <I name="x" size={15} color="#f87171"/>
+            <span>{kickNotif}</span>
+          </div>
+        </div>
+      )}
+    </NavCtx.Provider>
+  );
 }
 
 export const useNav = () => React.useContext(NavCtx);

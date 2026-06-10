@@ -439,6 +439,9 @@ function ScreenLoginGate({ onLogin }) {
         localStorage.setItem(pKey, JSON.stringify(newPicture));
         window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: pKey } }));
       }
+      // Initialise per-user data FIRST so the schema-version is set before doLogin calls
+      // initPerUserData again — otherwise it would overwrite the bank accounts we save below.
+      initPerUserData(method, finalEmail, lang);
       // Save connected banks as bank accounts so they appear in Settings > Accounts
       if (data.connectedBanks && data.connectedBanks.length > 0) {
         const acctKey = computeUserDataKey(method, finalEmail, 'munni_bank_accounts');
@@ -455,6 +458,17 @@ function ScreenLoginGate({ onLogin }) {
         });
         localStorage.setItem(acctKey, JSON.stringify(bankAccounts));
         window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: acctKey } }));
+        // Attach the new account IDs to the active profile
+        const profileKey = computeProfileKey(method, finalEmail);
+        try {
+          const profiles = JSON.parse(localStorage.getItem(profileKey) || '[]');
+          const idx = Math.max(0, profiles.findIndex(p => p.active));
+          if (profiles[idx]) {
+            const merged = [...new Set([...(profiles[idx].accountIds || []), ...bankAccounts.map(a => a.id)])];
+            profiles[idx] = { ...profiles[idx], accountIds: merged };
+            localStorage.setItem(profileKey, JSON.stringify(profiles));
+          }
+        } catch {}
       }
       const displayName = [firstName, lastName].filter(Boolean).join(' ');
       setPendingSignup(null);

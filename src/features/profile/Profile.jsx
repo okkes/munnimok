@@ -917,12 +917,25 @@ export function ScreenProfileDetail({ params }) {
   // Auto-leave if expelled by another owner-permission member
   React.useEffect(() => {
     if (!sharedData?.expelled?.[myId]) return;
+    const expelledName = profile?.name;
     setProfiles(ps => {
       const remaining = ps.filter(p => p.id !== profileId);
-      if (!remaining.find(p => p.active) && remaining.length > 0) remaining[0] = { ...remaining[0], active: true };
+      if (remaining.length === 0) {
+        const method = sessionStorage.getItem('munni_last_login_method') || 'email';
+        const emailRaw = sessionStorage.getItem('munni_profile_email');
+        const email = (() => { try { return JSON.parse(emailRaw) || ''; } catch { return ''; } })();
+        const newProfile = { id: `p_${Date.now()}`, name: getDefaultProfileName(lang), icon: 'user', active: true, accountIds: [], isDemo: false, creatorId: myId };
+        try { localStorage.setItem(computeProfileKey(method, email), JSON.stringify([newProfile])); } catch {}
+        return [newProfile];
+      }
+      if (!remaining.find(p => p.active)) remaining[0] = { ...remaining[0], active: true };
       return remaining;
     });
-    nav.pop();
+    if (expelledName) {
+      nav.setKickNotif(t('profile.kickedFrom').replace('{name}', expelledName));
+      setTimeout(() => nav.setKickNotif(null), 4500);
+    }
+    nav.switchTab('home');
   }, [sharedData?.expelled?.[myId], profileId]);
 
   // Sync owner's attached accounts + their txs to sharedData when the profile has members
@@ -1228,7 +1241,7 @@ export function ScreenProfileDetail({ params }) {
         <div className="m-card" style={{ padding:'4px 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
           {attachedMain.length === 0 && <div style={{ padding:'16px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>{t('profile.noChecking')}</div>}
           {attachedMain.map((a, i) => renderAttachedRow(a, i))}
-          {canEdit && !profile.isDemo && (
+          {canEdit && (
             <>
               {attachedMain.length > 0 && <Divider inset={0}/>}
               <div className="m-tap" onClick={() => setShowAttachSheet('checking')}
@@ -1245,7 +1258,7 @@ export function ScreenProfileDetail({ params }) {
         <div className="m-card" style={{ padding:'4px 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
           {attachedSaving.length === 0 && <div style={{ padding:'16px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>{t('profile.noSaving')}</div>}
           {attachedSaving.map((a, i) => renderAttachedRow(a, i))}
-          {canEdit && !profile.isDemo && (
+          {canEdit && (
             <>
               {attachedSaving.length > 0 && <Divider inset={0}/>}
               <div className="m-tap" onClick={() => setShowAttachSheet('saving')}
