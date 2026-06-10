@@ -220,8 +220,6 @@ const html = `<!DOCTYPE html>
     code { background: var(--code-bg); padding: 1px 6px; border-radius: 4px; font-size: 11px; }
     .theme-toggle { padding: 5px 14px; border-radius: 20px; border: 1.5px solid var(--border); background: var(--toggle-bg); color: var(--ink3); font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; white-space: nowrap; transition: background .15s; flex-shrink: 0; }
     .theme-toggle:hover { background: var(--toggle-hover); color: var(--ink2); }
-    .step-hint { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--step-badge-color); background: var(--step-badge-bg); border: 1px solid var(--step-border); padding: 8px 14px; border-radius: 8px; margin-bottom: 20px; line-height: 1.5; }
-
     /* Filter bar */
     .filter-bar { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 20px; padding: 16px 20px; background: var(--filter-bg); border: 1px solid var(--filter-border); border-radius: 12px; }
     .filter-group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -294,7 +292,6 @@ const html = `<!DOCTYPE html>
     &nbsp;·&nbsp; Run <code>npm run gallery</code> to refresh
     &nbsp;·&nbsp; ${new Date().toLocaleString()}
   </div>
-  <div class="step-hint">🎬 <strong>Step replay demo:</strong>&nbsp; Filter <strong>EN · Light · Mobile</strong> → look for the green-outlined card in <em>Signup — Email Entry</em>. Click ‹ › or dots to step through; auto-plays on load.</div>
 
   <div class="filter-bar" id="filter-bar">
     <div class="filter-group">
@@ -413,14 +410,15 @@ const html = `<!DOCTYPE html>
         dots.forEach((d, i) => d.classList.toggle('active', i === current));
       }
 
-      player.querySelector('.sp-prev').addEventListener('click', () => { clearInterval(autoTimer); show(current - 1); });
-      player.querySelector('.sp-next').addEventListener('click', () => { clearInterval(autoTimer); show(current + 1); });
-      dots.forEach(d => d.addEventListener('click', () => { clearInterval(autoTimer); show(+d.dataset.i); }));
+      player.querySelector('.sp-prev').addEventListener('click', () => { clearInterval(autoTimer); autoTimer = null; show(current - 1); });
+      player.querySelector('.sp-next').addEventListener('click', () => { clearInterval(autoTimer); autoTimer = null; show(current + 1); });
+      dots.forEach(d => d.addEventListener('click', () => { clearInterval(autoTimer); autoTimer = null; show(+d.dataset.i); }));
 
-      function startAuto() { autoTimer = setInterval(() => show(current + 1), 1800); }
-      player.addEventListener('mouseenter', () => clearInterval(autoTimer));
-      player.addEventListener('mouseleave', startAuto);
-      startAuto();
+      // Auto-advances only while hovering (slower pace). Stops when mouse leaves or user navigates manually.
+      player.addEventListener('mouseenter', () => {
+        if (!autoTimer) autoTimer = setInterval(() => show(current + 1), 2500);
+      });
+      player.addEventListener('mouseleave', () => { clearInterval(autoTimer); autoTimer = null; });
       show(0, true);
     });
   </script>
