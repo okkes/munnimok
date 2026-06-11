@@ -1,4 +1,6 @@
 ﻿import React from 'react';
+import { T } from '../../shared/testIds.js';
+import { COUNTRIES } from '../../shared/data/countries.js';
 import { fmtEur } from '../../shared/utils/format.js';
 import { getUserId, addDevLog, computeUserDataKey, registerUserInGlobalRegistry, formatCreatorLabel } from '../../shared/utils/user.js';
 import { DEMO_ACCOUNTS } from '../accounts/data.js';
@@ -199,9 +201,11 @@ export function ScreenUserInfo() {
   const _nameKey      = computeUserDataKey(loginMethod, _safeEmail, 'munni_profile_name');
   const _firstNameKey = computeUserDataKey(loginMethod, _safeEmail, 'munni_profile_firstname');
   const _lastNameKey  = computeUserDataKey(loginMethod, _safeEmail, 'munni_profile_lastname');
+  const _countryKey   = computeUserDataKey(loginMethod, _safeEmail, 'munni_profile_country');
   const [name,      setName]      = useLocalStorage(_nameKey,      '');
   const [firstName, setFirstName] = useLocalStorage(_firstNameKey, '');
   const [lastName,  setLastName]  = useLocalStorage(_lastNameKey,  '');
+  const [country,   setCountry]   = useLocalStorage(_countryKey,   '');
   const pictureKey = React.useMemo(() => {
     if (loginMethod === 'google') return 'munni_user_picture_google';
     if (loginMethod === 'apple')  return 'munni_user_picture_apple';
@@ -216,10 +220,14 @@ export function ScreenUserInfo() {
   const isGoogle = loginMethod === 'google';
   const isApple  = loginMethod === 'apple';
 
-  const [draftFirst, setDraftFirst] = React.useState(firstName);
-  const [draftLast,  setDraftLast]  = React.useState(lastName);
-  React.useEffect(() => { setDraftFirst(firstName); }, [firstName]);
-  React.useEffect(() => { setDraftLast(lastName);   }, [lastName]);
+  const [draftFirst,   setDraftFirst]   = React.useState(firstName);
+  const [draftLast,    setDraftLast]    = React.useState(lastName);
+  const [draftCountry, setDraftCountry] = React.useState(country);
+  const [showCountry,  setShowCountry]  = React.useState(false);
+  const [countrySearch,setCountrySearch]= React.useState('');
+  React.useEffect(() => { setDraftFirst(firstName);   }, [firstName]);
+  React.useEffect(() => { setDraftLast(lastName);     }, [lastName]);
+  React.useEffect(() => { setDraftCountry(country);   }, [country]);
 
   const [showPicturePicker, setShowPicturePicker] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
@@ -257,7 +265,7 @@ export function ScreenUserInfo() {
   const fullName = [firstName, lastName].filter(Boolean).join(' ') || name;
   const initial  = (firstName || name || '?')[0].toUpperCase();
 
-  const anySheetOpen = showApiSheet || showDeleteAccount || showChangeEmail || showPicturePicker;
+  const anySheetOpen = showApiSheet || showDeleteAccount || showChangeEmail || showPicturePicker || showCountry;
   React.useEffect(() => {
     const el = bodyScrollRef.current;
     if (!el) return;
@@ -286,6 +294,7 @@ export function ScreenUserInfo() {
     const fn = draftFirst.trim();
     const ln = draftLast.trim();
     setFirstName(fn); setLastName(ln);
+    setCountry(draftCountry);
     setName([fn, ln].filter(Boolean).join(' '));
     nav.pop();
   };
@@ -344,6 +353,30 @@ export function ScreenUserInfo() {
               style={{ flex:1, fontSize:16, fontFamily:M.fontUI, border:'none', background:'transparent', outline:'none', color:isDemo?M.ink3:M.ink }}/>
           </div>
         </div>
+
+        {/* Country */}
+        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('profile.country')}</div>
+        <div className="m-card" style={{ padding:'0 16px', marginBottom:6, border:`1px solid ${M.line}` }}>
+          <div
+            data-testid={T.profileCountryBtn}
+            className={isDemo ? '' : 'm-tap'}
+            onClick={isDemo ? undefined : () => { setCountrySearch(''); setShowCountry(true); }}
+            style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0', cursor: isDemo ? 'default' : 'pointer' }}
+          >
+            <div style={{ width:20, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:16 }}>
+              {draftCountry ? COUNTRIES.find(c => c.code === draftCountry)?.emoji : <I name="globe" size={16} color={M.ink3}/>}
+            </div>
+            <div style={{ flex:1, minWidth:0 }}>
+              {draftCountry ? (
+                <div style={{ fontSize:15, color:M.ink }}>{COUNTRIES.find(c => c.code === draftCountry)?.name}</div>
+              ) : (
+                <div style={{ fontSize:15, color:M.ink4 }}>{t('profile.countryPlaceholder')}</div>
+              )}
+            </div>
+            {!isDemo && <I name="caretR" size={14} color={M.ink4}/>}
+          </div>
+        </div>
+        <div style={{ fontSize:11, color:M.ink4, paddingLeft:4, marginBottom:20, lineHeight:1.5 }}>{t('profile.countryNote')}</div>
 
         {/* Account info */}
         <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('settings.account')}</div>
@@ -422,6 +455,33 @@ export function ScreenUserInfo() {
           </div>
         )}
       </div>
+
+      {/* Country picker */}
+      {showCountry && (
+        <Sheet onClose={() => setShowCountry(false)}>
+          <div style={{ padding:'0 16px 8px' }}>
+            <div style={{ fontSize:17, fontWeight:700, marginBottom:12 }}>{t('profile.country')}</div>
+            <input
+              value={countrySearch}
+              onChange={e => setCountrySearch(e.target.value)}
+              placeholder="Search…"
+              autoFocus
+              style={{ width:'100%', boxSizing:'border-box', padding:'9px 14px', borderRadius:10, border:`1.5px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', color:M.ink, marginBottom:4 }}
+            />
+          </div>
+          <div data-testid={T.profileCountrySheet} style={{ overflowY:'auto', maxHeight:340, paddingBottom:16 }}>
+            {COUNTRIES.filter(c => !countrySearch || c.name.toLowerCase().includes(countrySearch.toLowerCase()) || c.native.toLowerCase().includes(countrySearch.toLowerCase())).map(c => (
+              <div key={c.code} className="m-tap"
+                onClick={() => { setDraftCountry(c.code); setShowCountry(false); }}
+                style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 20px', cursor:'pointer' }}>
+                <span style={{ fontSize:22, lineHeight:1, flexShrink:0 }}>{c.emoji}</span>
+                <span style={{ flex:1, fontSize:15, color:M.ink }}>{c.name}</span>
+                {draftCountry === c.code && <I name="check" size={16} color={M.sage}/>}
+              </div>
+            ))}
+          </div>
+        </Sheet>
+      )}
 
       {/* Picture picker */}
       {showPicturePicker && (

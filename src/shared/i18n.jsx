@@ -183,6 +183,7 @@ export const TRANSLATIONS = {
     'settings.periods':'Period settings','settings.deleteData':'Delete all data',
     // Profile detail
     'screen.profile':'Profile',
+    'profile.country':'Country','profile.countryPlaceholder':'Select your country (optional)','profile.countryNote':'munni uses your country to understand transaction currencies and give relevant financial advice for your region.',
     'profile.changePhoto':'Change photo','profile.choosePhoto':'Choose photo',
     'profile.tapRename':'tap to rename','profile.active':'Active profile',
     'profile.mainAccounts':'Main accounts','profile.mainAccountsSub':'Transactions will sync to this profile',
@@ -439,6 +440,7 @@ export const TRANSLATIONS = {
     'settings.profiles':'Profielen','settings.customizeHome':'Startscherm aanpassen',
     'settings.periods':'Periode-instellingen','settings.deleteData':'Alle gegevens verwijderen',
     'screen.profile':'Profiel',
+    'profile.country':'Land','profile.countryPlaceholder':'Selecteer je land (optioneel)','profile.countryNote':'munni gebruikt je land om transactievaluta te begrijpen en relevante financiële adviezen voor jouw regio te geven.',
     'profile.changePhoto':'Foto wijzigen','profile.choosePhoto':'Foto kiezen',
     'profile.tapRename':'tik om te hernoemen','profile.active':'Actief profiel',
     'profile.mainAccounts':'Hoofdrekeningen','profile.mainAccountsSub':'Transacties synchroniseren naar dit profiel',
@@ -691,6 +693,7 @@ export const TRANSLATIONS = {
     'settings.profiles':'Profiller','settings.customizeHome':'Ana ekranı özelleştir',
     'settings.periods':'Dönem ayarları','settings.deleteData':'Tüm verileri sil',
     'screen.profile':'Profil',
+    'profile.country':'Ülke','profile.countryPlaceholder':'Ülkenizi seçin (isteğe bağlı)','profile.countryNote':'munni, işlem para birimlerini anlamak ve bölgenize uygun finansal tavsiyeler sunmak için ülkenizi kullanır.',
     'profile.changePhoto':'Fotoğrafı değiştir','profile.choosePhoto':'Fotoğraf seç',
     'profile.tapRename':'yeniden adlandırmak için dokun','profile.active':'Aktif profil',
     'profile.mainAccounts':'Ana hesaplar','profile.mainAccountsSub':'İşlemler bu profile senkronize edilir',

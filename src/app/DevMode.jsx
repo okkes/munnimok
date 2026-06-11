@@ -1,14 +1,13 @@
 import React from 'react';
 
 // ---------------------------------------------------------------------------
-// Activation: append ?dev=1 to the URL. Persists for the browser session.
+// Activation: append ?dev=1 to the URL. Remove ?dev=1 (or set ?dev=0) to
+// deactivate immediately. Internal pushState calls use 2-arg form so they
+// never change the URL's query string — ?dev=1 stays present throughout
+// an in-app session without needing sessionStorage.
 // ---------------------------------------------------------------------------
-const isDevActive = () => {
-  if (new URLSearchParams(window.location.search).get('dev') === '1') {
-    sessionStorage.setItem('munni_dev_mode', '1');
-  }
-  return sessionStorage.getItem('munni_dev_mode') === '1';
-};
+const isDevActive = () =>
+  new URLSearchParams(window.location.search).get('dev') === '1';
 
 const DevCtx = React.createContext(false);
 export const useDevMode = () => React.useContext(DevCtx);
@@ -273,6 +272,444 @@ const ANNOTATIONS = {
       'User may have registered with email but not with Google/Apple — guide them back to email login',
     ],
     storage: [],
+  },
+
+  // ── Tab screens ──────────────────────────────────────────────────────────
+
+  'home': {
+    screen: 'Home',
+    sub: 'Main dashboard — balance overview, quick-add, and configurable home cards.',
+    states: [
+      { tag: 'no data',  note: 'Empty states shown per card when no transactions or banks connected' },
+      { tag: 'scrolled', note: 'Balance tile collapses on scroll (CSS sticky behaviour)' },
+    ],
+    flows: [
+      { from: 'Balance tile',    to: 'Accounts screen (stack)' },
+      { from: 'Quick-add (+)',   to: 'Add transaction sheet' },
+      { from: 'Card tap',        to: 'Varies by card type (Tx, Budgets, Goals…)' },
+      { from: 'Customise icon',  to: 'customizeHome screen' },
+    ],
+    rules: [
+      'Home cards order stored in LS key "munni_home_cards_{userId}"',
+      'Balance shown is sum of all accounts on the active profile',
+    ],
+    storage: [
+      'munni_home_cards_{userId} (LS) — ordered list of enabled card IDs',
+    ],
+  },
+
+  'tx': {
+    screen: 'Transactions',
+    sub: 'Full transaction list with search, filter, and add-transaction.',
+    states: [
+      { tag: 'empty',   note: 'No transactions — "Connect a bank to see your transactions" prompt' },
+      { tag: 'filtered',note: 'Active filter pill shown below search bar' },
+    ],
+    flows: [
+      { from: 'Tx row',        to: 'txDetail screen (stack)' },
+      { from: 'Search',        to: 'Filtered list inline' },
+      { from: 'Filter btn',    to: 'Filter sheet' },
+      { from: 'Add btn (+)',   to: 'Add transaction sheet' },
+    ],
+    storage: [
+      'munni_tx_{userId} (LS) — array of transaction objects',
+    ],
+  },
+
+  'recurring': {
+    screen: 'Recurring',
+    sub: 'Subscriptions and recurring expenses overview.',
+    flows: [
+      { from: 'Row tap',        to: 'recurringDetail screen (stack)' },
+      { from: 'Add (+)',        to: 'recurringCreate screen (stack)' },
+      { from: 'Deals tab',      to: 'recurringDeals screen (stack)' },
+    ],
+    storage: [
+      'munni_recurring_{userId} (LS) — array of recurring items',
+    ],
+  },
+
+  'events': {
+    screen: 'Events',
+    sub: 'Shared expense events — trips, dinners, group costs.',
+    flows: [
+      { from: 'Event row',  to: 'eventDetail screen (stack)' },
+      { from: 'Add (+)',    to: 'eventCreate screen (stack)' },
+    ],
+    storage: [
+      'munni_events_{userId} (LS) — array of event objects',
+    ],
+  },
+
+  'insights': {
+    screen: 'Insights',
+    sub: 'Spending charts and financial analysis.',
+    flows: [
+      { from: 'Category bar',     to: 'categoryDrill screen (stack)' },
+      { from: 'Custom graph btn', to: 'customGraphCreate screen (stack)' },
+      { from: 'Period selector',  to: 'periods screen (stack)' },
+    ],
+  },
+
+  'profile': {
+    screen: 'Profile',
+    sub: 'Profile switcher, accounts summary, and settings entry point.',
+    flows: [
+      { from: 'Identity card',  to: 'userInfo screen (stack)' },
+      { from: 'Settings row',   to: 'settings screen (stack)' },
+      { from: 'Members row',    to: 'Members sheet' },
+      { from: 'Profile row',    to: 'profileDetail screen (stack)' },
+      { from: 'Add profile',    to: 'profiles screen (stack)' },
+      { from: 'Logout',         to: 'Login screen (app reset)' },
+    ],
+    storage: [
+      'munni_profiles_{userId} (LS) — array of profile objects with active flag',
+    ],
+  },
+
+  // ── Registry screens ─────────────────────────────────────────────────────
+
+  'txDetail': {
+    screen: 'Transaction detail',
+    sub: 'Full detail sheet for a single transaction. Editable category, note, tags.',
+    flows: [
+      { from: 'Back',         to: 'Previous screen' },
+      { from: 'Reimburse',    to: 'linkReimburse screen (stack)' },
+      { from: 'Category row', to: 'Category picker sheet' },
+    ],
+    storage: [ 'munni_tx_{userId} (LS)' ],
+  },
+
+  'expenses': {
+    screen: 'Expenses breakdown',
+    sub: 'Spending by category for the selected period.',
+    flows: [
+      { from: 'Category row', to: 'categoryDrill screen (stack)' },
+    ],
+  },
+
+  'categoryDrill': {
+    screen: 'Category drill-down',
+    sub: 'All transactions within a single category.',
+    flows: [ { from: 'Tx row', to: 'txDetail screen (stack)' } ],
+  },
+
+  'linkReimburse': {
+    screen: 'Link reimbursement',
+    sub: 'Attach an incoming transaction as the reimbursement for an expense.',
+    flows: [ { from: 'Tx row', to: 'Links and closes sheet' } ],
+  },
+
+  'search':  { screen: 'Search',  sub: 'Stub — full-text transaction search (not yet implemented).' },
+  'sync':    { screen: 'Sync',    sub: 'Stub — manual sync trigger and last-sync status.' },
+
+  'notifications': {
+    screen: 'Notifications',
+    sub: 'In-app notification centre — budget alerts, sync errors, tips.',
+    storage: [ 'munni_notifications_{userId} (LS)' ],
+  },
+
+  'periods': {
+    screen: 'Period selector',
+    sub: 'Pick a custom date range or preset period for charts and summaries.',
+    flows: [ { from: 'Period row', to: 'Closes and updates period context' } ],
+  },
+
+  'tutorial': {
+    screen: 'Tutorial',
+    sub: 'Onboarding walkthrough shown after first login or from Settings.',
+  },
+
+  'manageCategories': {
+    screen: 'Manage categories',
+    sub: 'Reorder, rename, or hide transaction categories.',
+    storage: [ 'munni_categories_{userId} (LS)' ],
+  },
+
+  'budgets': {
+    screen: 'Budgets',
+    sub: 'Monthly budget list — progress bars, over/under indicators.',
+    flows: [
+      { from: 'Budget row',   to: 'budgetDetail screen (stack)' },
+      { from: 'Add (+)',      to: 'budgetCreate screen (stack)' },
+    ],
+    storage: [ 'munni_budgets_{userId} (LS)' ],
+  },
+
+  'budgetDetail': {
+    screen: 'Budget detail',
+    sub: 'Single budget — spending history, edit/delete actions.',
+    flows: [ { from: 'Back', to: 'budgets screen' } ],
+    storage: [ 'munni_budgets_{userId} (LS)' ],
+  },
+
+  'budgetCreate': {
+    screen: 'Budget create / edit',
+    sub: 'Form to create or edit a budget: category, limit, period.',
+    flows: [ { from: 'Save', to: 'budgets screen' } ],
+    storage: [ 'munni_budgets_{userId} (LS)' ],
+  },
+
+  'goals': {
+    screen: 'Goals',
+    sub: 'Savings goals list — progress toward target amounts.',
+    flows: [
+      { from: 'Goal row',  to: 'goalDetail screen (stack)' },
+      { from: 'Add (+)',   to: 'goalDetail screen in create mode' },
+    ],
+    storage: [ 'munni_goals_{userId} (LS)' ],
+  },
+
+  'goalDetail': {
+    screen: 'Goal detail',
+    sub: 'Single goal — contributions, timeline, edit/delete.',
+    storage: [ 'munni_goals_{userId} (LS)' ],
+  },
+
+  'reviewSwipe': {
+    screen: 'Review (swipe)',
+    sub: 'Tinder-style transaction review — swipe to categorise uncategorised transactions.',
+    flows: [
+      { from: 'Swipe right', to: 'Accepts suggested category' },
+      { from: 'Swipe left',  to: 'Opens category picker' },
+    ],
+    storage: [ 'munni_tx_{userId} (LS)' ],
+  },
+
+  'recurringDetail': {
+    screen: 'Recurring detail',
+    sub: 'Single recurring item — history, edit, cancel subscription.',
+    storage: [ 'munni_recurring_{userId} (LS)' ],
+  },
+
+  'recurringCreate': {
+    screen: 'Recurring create / edit',
+    sub: 'Form to create or edit a recurring item.',
+    storage: [ 'munni_recurring_{userId} (LS)' ],
+  },
+
+  'recurringDeals': {
+    screen: 'Recurring deals',
+    sub: 'Comparison of subscription prices with potential savings.',
+  },
+
+  'customizeHome': {
+    screen: 'Customise home',
+    sub: 'Drag-and-drop reorder and toggle visibility of home cards.',
+    storage: [ 'munni_home_cards_{userId} (LS)' ],
+  },
+
+  'allocate': {
+    screen: 'Allocate',
+    sub: 'Assign income to topics/buckets. Zero-based budgeting.',
+    flows: [
+      { from: 'Topic row',  to: 'allocateTopic screen (stack)' },
+      { from: 'Add topic',  to: 'allocateAddTopic screen (stack)' },
+    ],
+    storage: [ 'munni_allocate_{userId} (LS)' ],
+  },
+
+  'allocateTopic': {
+    screen: 'Allocate topic',
+    sub: 'Edit allocation amount for a single topic/bucket.',
+    storage: [ 'munni_allocate_{userId} (LS)' ],
+  },
+
+  'allocateAddTopic': {
+    screen: 'Add allocation topic',
+    sub: 'Create a new allocation bucket.',
+    storage: [ 'munni_allocate_{userId} (LS)' ],
+  },
+
+  'investment': {
+    screen: 'Investments',
+    sub: 'Portfolio overview — holdings, performance, allocation.',
+    flows: [ { from: 'Connect btn', to: 'investmentConnect screen (stack)' } ],
+    storage: [ 'munni_investments_{userId} (LS)' ],
+  },
+
+  'investmentConnect': {
+    screen: 'Connect investment account',
+    sub: 'Link a broker or investment platform via API key.',
+  },
+
+  'eventDetail': {
+    screen: 'Event detail',
+    sub: 'Single event — participants, expenses, settlement status.',
+    flows: [
+      { from: 'Add expense', to: 'Add expense sheet' },
+      { from: 'Settle',      to: 'Settlement flow' },
+    ],
+    storage: [ 'munni_events_{userId} (LS)' ],
+  },
+
+  'eventCreate': {
+    screen: 'Event create / edit',
+    sub: 'Form to create or edit a shared expense event.',
+    storage: [ 'munni_events_{userId} (LS)' ],
+  },
+
+  'accounts': {
+    screen: 'Accounts',
+    sub: 'Connected bank accounts — balances, add/remove.',
+    flows: [
+      { from: 'Account row',  to: 'Account detail sheet' },
+      { from: 'Add bank',     to: 'Bank search → credentials flow' },
+      { from: 'See all',      to: 'accountsAll screen (stack)' },
+    ],
+    storage: [
+      'munni_bank_accounts_{userId} (LS) — array of connected bank account objects',
+    ],
+  },
+
+  'accountsAll': {
+    screen: 'All accounts',
+    sub: 'Full list of all connected accounts across banks.',
+    storage: [ 'munni_bank_accounts_{userId} (LS)' ],
+  },
+
+  'profiles': {
+    screen: 'Profile manager',
+    sub: 'Create and switch between multiple spending profiles (e.g. personal + business).',
+    flows: [
+      { from: 'Profile row',  to: 'profileDetail screen (stack)' },
+      { from: 'Add profile',  to: 'Create profile sheet' },
+    ],
+    storage: [ 'munni_profiles_{userId} (LS)' ],
+  },
+
+  'profileDetail': {
+    screen: 'Profile detail',
+    sub: 'Edit profile name, colour, and member access.',
+    storage: [ 'munni_profiles_{userId} (LS)' ],
+  },
+
+  'integrations': {
+    screen: 'Integrations',
+    sub: 'Third-party app connections — receipts, accounting exports.',
+    flows: [
+      { from: 'Integration row',  to: 'integrationLogin screen (stack)' },
+      { from: 'Receipts row',     to: 'integrationReceipts screen (stack)' },
+    ],
+  },
+
+  'integrationLogin': {
+    screen: 'Integration login',
+    sub: 'Authenticate with a third-party integration.',
+  },
+
+  'integrationReceipts': {
+    screen: 'Integration receipts',
+    sub: 'Browse and attach scanned receipts from an integration.',
+  },
+
+  'savings': {
+    screen: 'Savings',
+    sub: 'Savings overview — pots, targets, interest tracking.',
+    flows: [
+      { from: 'Saving row',     to: 'savingsDetail screen (stack)' },
+      { from: 'Accounts btn',   to: 'savingAccounts screen (stack)' },
+    ],
+    storage: [ 'munni_savings_{userId} (LS)' ],
+  },
+
+  'savingsDetail': {
+    screen: 'Savings detail',
+    sub: 'Single savings pot — contributions, target, history.',
+    storage: [ 'munni_savings_{userId} (LS)' ],
+  },
+
+  'savingAccounts': {
+    screen: 'Saving accounts',
+    sub: 'Savings-type accounts list (separate from checking accounts).',
+    storage: [ 'munni_bank_accounts_{userId} (LS)' ],
+  },
+
+  'settings': {
+    screen: 'Settings',
+    sub: 'App-wide preferences — dark mode, language, notifications, app info.',
+    flows: [
+      { from: 'Language row',      to: 'language screen (stack)' },
+      { from: 'Notifications row', to: 'notifications screen (stack)' },
+      { from: 'Periods row',       to: 'periods screen (stack)' },
+      { from: 'Tutorial row',      to: 'tutorial screen (stack)' },
+      { from: 'Categories row',    to: 'manageCategories screen (stack)' },
+    ],
+    storage: [
+      'munni_dark (LS) — "true" | "false" — dark mode toggle',
+      'munni_lang (LS) — "en" | "nl" | "tr" — selected language',
+    ],
+  },
+
+  'income': {
+    screen: 'Income',
+    sub: 'Income summary — salary, freelance, passive income categorisation.',
+  },
+
+  'invested': {
+    screen: 'Invested',
+    sub: 'Net invested amount — cost basis vs. current value.',
+  },
+
+  'debts': {
+    screen: 'Debts',
+    sub: 'Debt tracker — loans, credit cards, payoff timelines.',
+    storage: [ 'munni_debts_{userId} (LS)' ],
+  },
+
+  'customGraphCreate': {
+    screen: 'Custom graph creator',
+    sub: 'Build a custom spending chart with user-selected metrics and date range.',
+  },
+
+  'friends': {
+    screen: 'Friends',
+    sub: 'Friend list — invite, search, manage connections for shared events.',
+    storage: [
+      'munni_global_friendships (LS) — shared friendship registry',
+      'munni_global_invitations (LS) — pending invite objects',
+    ],
+  },
+
+  'userInfo': {
+    screen: 'My profile',
+    sub: 'Edit personal info — name, photo, country, email, user ID.',
+    states: [
+      { tag: 'demo',    note: 'All edit fields disabled; no save button; shows "Demo account" label' },
+      { tag: 'google',  note: 'Email locked (Google SSO); change-email option hidden' },
+      { tag: 'apple',   note: 'Email locked (Apple SSO); change-email option hidden' },
+      { tag: 'email',   note: 'Email is tappable → opens change-email sheet' },
+    ],
+    flows: [
+      { from: 'Save',              to: 'Saves name + country; pops screen' },
+      { from: 'Email row',         to: 'Change email sheet', cond: 'email login only' },
+      { from: 'Photo btn',         to: 'Picture picker sheet' },
+      { from: 'Delete account',    to: 'Delete feedback → confirm → logout' },
+    ],
+    rules: [
+      'Country stored under munni_profile_country_{method}_{email} (LS)',
+      'Name stored under munni_profile_firstname/lastname_{method}_{email} (LS)',
+      'Photo stored under munni_user_picture_{method|email} (LS)',
+    ],
+    storage: [
+      'munni_profile_firstname_{userId} (LS)',
+      'munni_profile_lastname_{userId} (LS)',
+      'munni_profile_country_{userId} (LS)',
+      'munni_user_picture_{userId} (LS)',
+    ],
+  },
+
+  'exportData': {
+    screen: 'Export data',
+    sub: 'Download transactions as CSV or JSON for a selected period.',
+    flows: [
+      { from: 'Export CSV',   to: 'Downloads transactions.csv' },
+      { from: 'Export JSON',  to: 'Downloads transactions.json' },
+    ],
+    rules: [
+      'Export includes all transactions for the active profile',
+      'Date range picker affects export scope',
+    ],
   },
 };
 

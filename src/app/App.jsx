@@ -90,8 +90,10 @@ function TabRoot() {
 
 function Router() {
   const nav = useNav();
+  const topKey = nav.stack.length > 0 ? nav.stack[nav.stack.length - 1].screen : nav.tab;
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', background: M.paper, overflow: 'hidden' }}>
+      <DevPanel screenKey={topKey}/>
       <TabRoot/>
       {nav.stack.map((entry, i) => {
         const Comp = SCREEN_REGISTRY[entry.screen];
@@ -404,7 +406,12 @@ function ScreenLoginGate({ onLogin }) {
     }, 200);
   };
 
-  if (mode === 'language') return <ScreenLanguagePicker fromOnboarding={true} onBack={() => setMode('login')}/>;
+  if (mode === 'language') return (
+    <div style={{ position: 'relative', height: '100%', overflow: 'hidden' }}>
+      <DevPanel screenKey="language"/>
+      <ScreenLanguagePicker fromOnboarding={true} onBack={() => setMode('login')}/>
+    </div>
+  );
   if (mode === 'terms') return <ScreenTerms onBack={() => setMode('login')} showPrivacy={false}/>;
   if (mode === 'privacy') return <ScreenTerms onBack={() => setMode('login')} showPrivacy={true}/>;
   if (mode === 'signup-onboarding' && pendingSignup) {
@@ -424,11 +431,13 @@ function ScreenLoginGate({ onLogin }) {
           localStorage.setItem('munni_signup_emails', JSON.stringify([...emails, finalEmail]));
         }
       }
-      // Store first/last name separately
+      // Store first/last name + country
       const fnKey = computeUserDataKey(method, finalEmail, 'munni_profile_firstname');
       const lnKey = computeUserDataKey(method, finalEmail, 'munni_profile_lastname');
+      const ctKey = computeUserDataKey(method, finalEmail, 'munni_profile_country');
       localStorage.setItem(fnKey, JSON.stringify(firstName));
       localStorage.setItem(lnKey, JSON.stringify(lastName));
+      if (data.country) localStorage.setItem(ctKey, JSON.stringify(data.country));
       if (newApiUrl && newApiUrl.trim()) {
         localStorage.setItem('munni_api_url', JSON.stringify(newApiUrl.trim()));
       }

@@ -40,6 +40,8 @@
   onboardAvatarPicker:  'onboard-avatar-picker',
   onboardApiInfoBtn:    'onboard-api-info-btn',
   onboardApiInfoSheet:  'onboard-api-info-sheet',
+  onboardCountryBtn:    'onboard-country-btn',
+  onboardCountrySheet:  'onboard-country-sheet',
 
   // Auth — onboarding step 2
   onboardStep2:         'onboard-step2',
@@ -98,6 +100,8 @@
   eventDetailSheet:     'event-detail-sheet',
 
   // Profile
+  profileCountryBtn:    'profile-country-btn',
+  profileCountrySheet:  'profile-country-sheet',
   profileAvatarBtn:     'profile-avatar-btn',
   profileNameInput:     'profile-name-input',
   profileSaveBtn:       'profile-save-btn',

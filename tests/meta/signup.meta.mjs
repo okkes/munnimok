@@ -212,6 +212,17 @@ export const GROUPS = [
         ],
       },
       {
+        key: '48-country-picker',
+        title: 'Country picker — select country',
+        desc: 'Tap the Country field on onboarding step 1 → country picker sheet opens with search and list. Tap "Netherlands" → sheet closes, "Netherlands" flag + name appear in the field.',
+        tags: ['ui', 'state'],
+        steps: [
+          'Step 1 — country field shows placeholder',
+          'Country picker sheet open',
+          'Step 1 — Netherlands selected, flag shown',
+        ],
+      },
+      {
         key: '38-bank-psd2-consent',
         title: 'PSD2 consent screen',
         desc: '"Connect" pressed with valid credentials → PSD2 consent screen. Shows two permission rows: (1) Account info (read-only) and (2) Transaction history. "Authorise" and "Cancel" CTAs.',

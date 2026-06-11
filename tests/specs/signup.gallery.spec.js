@@ -345,6 +345,24 @@ for (const V of VARIANTS) {
     await teardown(page, ctx, k('47-bank-creds-password-error'));
   });
 
+  test(`48 country-picker – select country [${V.id}]`, async ({ browser }) => {
+    const { page, ctx } = await createPage(browser, V);
+    await base(page, V);
+    await goToStep1(page, email('country'));
+    await expect(page.locator('[data-testid="onboard-country-btn"]')).toBeVisible();
+    await shot(page, k('48-country-picker') + '--s1');
+    await page.click('[data-testid="onboard-country-btn"]');
+    await page.waitForSelector('[data-testid="onboard-country-sheet"]', { timeout: 3000 });
+    await expect(page.locator('[data-testid="onboard-country-sheet"]')).toBeVisible();
+    await shot(page, k('48-country-picker') + '--s2');
+    // Select Netherlands — first row in the list
+    const nlRow = page.locator('[data-testid="onboard-country-sheet"] button').filter({ hasText: 'Netherlands' }).first();
+    await nlRow.click();
+    await expect(page.locator('[data-testid="onboard-country-btn"]')).toContainText('Netherlands');
+    await shot(page, k('48-country-picker'));
+    await teardown(page, ctx, k('48-country-picker'));
+  });
+
   test(`38 bank-consent – PSD2 screen [${V.id}]`, async ({ browser }) => {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V);
