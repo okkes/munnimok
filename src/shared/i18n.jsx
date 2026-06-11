@@ -85,7 +85,7 @@ export const TRANSLATIONS = {
     'login.welcome':'Welcome back','login.subtitle':'Sign in to continue',
     'login.google':'Continue with Google','login.apple':'Continue with Apple',
     'login.email':'Email address','login.continue':'Continue',
-    'login.noAccount':"Don't have an account?",'login.createAccount':'Create account →',
+    'login.noAccount':"Don't have an account?",'login.createAccount':'Create account →','login.signUpBtn':'Sign up',
     'login.createDemoAccount':'Create demo account',
     'login.demoUser':'Continue as demo user','login.changeLanguage':'Change language',
     'login.terms':'By continuing you agree to our Terms & Privacy Policy',
@@ -157,7 +157,7 @@ export const TRANSLATIONS = {
     'offline.pricing':'Free for 7 days, then €10 / year — so we can keep improving munni for you.',
     'offline.infoCta':'Continue offline','offline.infoBack':'Back to login',
     'offline.selectTitle':"Who's using munni?",'offline.addProfile':'Add profile',
-    'offline.createTitle':'New offline profile','offline.createNameLabel':'Your name','offline.createNamePlaceholder':'e.g. Okkes',
+    'offline.createTitle':'New offline profile','offline.createNameLabel':'Your name','offline.createNamePlaceholder':'e.g. Jason',
     'offline.createCta':'Create profile','offline.errNameRequired':'Please enter a name.',
     'offline.badge':'Offline','offline.homeSub':'Data stored on this device only.',
     'offline.recoverBtn':'Recover from backup','offline.recoverSub':'Restore your data from a previous backup file',
@@ -317,7 +317,7 @@ export const TRANSLATIONS = {
     // Common
     'common.thisMonth':'This month','common.thisPeriod':'This period',
     'common.noData':'No data','common.tapToEdit':'tap to edit',
-    'common.back':'Back','common.cancel':'Cancel',
+    'common.back':'Back','common.cancel':'Cancel','common.or':'or',
   },
   nl: {
     'tab.home':'Thuis','tab.transactions':'Transacties','tab.recurring':'Terugkerend',
@@ -394,7 +394,7 @@ export const TRANSLATIONS = {
     'login.welcome':'Welkom terug','login.subtitle':'Meld je aan om door te gaan',
     'login.google':'Doorgaan met Google','login.apple':'Doorgaan met Apple',
     'login.email':'E-mailadres','login.continue':'Doorgaan',
-    'login.noAccount':'Nog geen account?','login.createAccount':'Account aanmaken →',
+    'login.noAccount':'Nog geen account?','login.createAccount':'Account aanmaken →','login.signUpBtn':'Registreren',
     'login.createDemoAccount':'Demo account aanmaken',
     'login.demoUser':'Doorgaan als demo gebruiker','login.changeLanguage':'Taal wijzigen',
     'login.terms':'Door door te gaan ga je akkoord met onze Voorwaarden & Privacybeleid',
@@ -465,7 +465,7 @@ export const TRANSLATIONS = {
     'offline.pricing':'Gratis voor 7 dagen, daarna €10 per jaar — zodat we munni voor jou kunnen blijven verbeteren.',
     'offline.infoCta':'Doorgaan offline','offline.infoBack':'Terug naar inloggen',
     'offline.selectTitle':'Wie gebruikt munni?','offline.addProfile':'Profiel toevoegen',
-    'offline.createTitle':'Nieuw offline profiel','offline.createNameLabel':'Jouw naam','offline.createNamePlaceholder':'bijv. Okkes',
+    'offline.createTitle':'Nieuw offline profiel','offline.createNameLabel':'Jouw naam','offline.createNamePlaceholder':'bijv. Jason',
     'offline.createCta':'Profiel aanmaken','offline.errNameRequired':'Voer een naam in.',
     'offline.badge':'Offline','offline.homeSub':'Gegevens alleen op dit apparaat opgeslagen.',
     'offline.recoverBtn':'Herstellen vanuit back-up','offline.recoverSub':'Herstel jouw gegevens vanuit een eerder opgeslagen back-upbestand',
@@ -619,7 +619,7 @@ export const TRANSLATIONS = {
     // Common
     'common.thisMonth':'Deze maand','common.thisPeriod':'Deze periode',
     'common.noData':'Geen gegevens','common.tapToEdit':'tik om te bewerken',
-    'common.back':'Terug','common.cancel':'Annuleren',
+    'common.back':'Terug','common.cancel':'Annuleren','common.or':'of',
   },
   tr: {
     'tab.home':'Ana sayfa','tab.transactions':'İşlemler','tab.recurring':'Düzenli ödemeler',
@@ -696,7 +696,7 @@ export const TRANSLATIONS = {
     'login.welcome':'Tekrar hoş geldiniz','login.subtitle':'Devam etmek için giriş yap',
     'login.google':'Google ile devam et','login.apple':'Apple ile devam et',
     'login.email':'E-posta adresi','login.continue':'Devam et',
-    'login.noAccount':'Hesabınız yok mu?','login.createAccount':'Hesap oluştur →',
+    'login.noAccount':'Hesabınız yok mu?','login.createAccount':'Hesap oluştur →','login.signUpBtn':'Kayıt ol',
     'login.createDemoAccount':'Demo hesabı oluştur',
     'login.demoUser':'Demo kullanıcı olarak devam et','login.changeLanguage':'Dili değiştir',
     'login.terms':'Devam ederek Şartlarımızı ve Gizlilik Politikamızı kabul etmiş olursunuz',
@@ -767,7 +767,7 @@ export const TRANSLATIONS = {
     'offline.pricing':'7 gün ücretsiz, ardından yılda €10 — munni\'yi sizin için geliştirmeye devam edebilmek için.',
     'offline.infoCta':'Çevrimdışı devam et','offline.infoBack':'Girişe geri dön',
     'offline.selectTitle':'munni\'yi kim kullanıyor?','offline.addProfile':'Profil ekle',
-    'offline.createTitle':'Yeni çevrimdışı profil','offline.createNameLabel':'Adınız','offline.createNamePlaceholder':'örn. Okkes',
+    'offline.createTitle':'Yeni çevrimdışı profil','offline.createNameLabel':'Adınız','offline.createNamePlaceholder':'örn. Jason',
     'offline.createCta':'Profil oluştur','offline.errNameRequired':'Lütfen bir ad girin.',
     'offline.badge':'Çevrimdışı','offline.homeSub':'Veriler yalnızca bu cihazda saklanıyor.',
     'offline.recoverBtn':'Yedekten geri yükle','offline.recoverSub':'Önceki bir yedek dosyasından verilerinizi geri yükleyin',
@@ -921,7 +921,7 @@ export const TRANSLATIONS = {
     // Common
     'common.thisMonth':'Bu ay','common.thisPeriod':'Bu dönem',
     'common.noData':'Veri yok','common.tapToEdit':'düzenlemek için dokunun',
-    'common.back':'Geri','common.cancel':'İptal',
+    'common.back':'Geri','common.cancel':'İptal','common.or':'veya',
   },
 };
 

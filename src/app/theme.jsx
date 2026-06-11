@@ -75,6 +75,7 @@ if (typeof document !== 'undefined' && !document.getElementById('m-styles')) {
     .m-iconbtn.filled { background:${M.card}; border:1px solid ${M.line}; }
     @keyframes mFadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
     @keyframes pulse { 0%, 100% { opacity: 0.35; transform: scale(0.75); } 50% { opacity: 1; transform: scale(1); } }
+    @keyframes munniSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
     .m-fade { animation: mFadeIn 0.28s ease-out both; }
     .m-logo { font-family: ${M.fontDisp}; font-weight: 600; letter-spacing: -0.04em; }
     .m-logo .dot { color: ${M.sage}; }
@@ -155,6 +156,10 @@ export function I({ name, size = 20, color = 'currentColor', stroke = 1.6 }) {
     case 'refresh': return w(<><path d="M4 12a8 8 0 0114-5.3L20 5v5h-5" {...p}/><path d="M20 12a8 8 0 01-14 5.3L4 19v-5h5" {...p}/></>);
     case 'map':    return w(<><path d="M3 7l6-2 6 2 6-2v12l-6 2-6-2-6 2V7z" {...p}/><path d="M9 5v14M15 7v14" {...p}/></>);
     case 'server': return w(<><rect x="3" y="4" width="18" height="7" rx="2" {...p}/><rect x="3" y="13" width="18" height="7" rx="2" {...p}/><circle cx="7.5" cy="7.5" r="1" fill="currentColor" stroke="none"/><circle cx="7.5" cy="16.5" r="1" fill="currentColor" stroke="none"/></>);
+    case 'upload': return w(<><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" {...p}/><path d="M17 8l-5-5-5 5" {...p}/><path d="M12 3v12" {...p}/></>);
+    case 'key':    return w(<><circle cx="8.5" cy="13.5" r="3.5" {...p}/><path d="M12 10l7 7M17 13l2-2" {...p}/></>);
+    case 'clock':  return w(<><circle cx="12" cy="12" r="9" {...p}/><path d="M12 7v5l3 3" {...p}/></>);
+    case 'eyeOff': return w(<><path d="M2 2l20 20" {...p}/><path d="M6.7 6.7C4.6 8 3 10 2 12s4 7 10 7c1.8 0 3.5-.4 5.1-1M10 4.3C10.6 4.1 11.3 4 12 4c6 0 10 7 10 7s-1 1.7-2.8 3.2" {...p}/><path d="M9 9a3 3 0 004.1 4.1" {...p}/></>);
     default: return w(<rect x="4" y="4" width="16" height="16" rx="3" {...p}/>);
   }
 }

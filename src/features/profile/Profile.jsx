@@ -489,10 +489,16 @@ export function ScreenUserInfo() {
                   <I name="key" size={15} color={M.ink2}/>
                 </div>
                 <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontSize:11, color:M.ink3, marginBottom:3 }}>{t('profile.offlineKeySection')}</div>
-                  <div style={{ fontSize:13, fontFamily:M.fontMono, color:M.ink, letterSpacing:'0.05em', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                    {showKeyValue ? (encKey || '—') : (encKey ? '•••• •••• •••• •••• •••• •••• •••• ••••' : '—')}
-                  </div>
+                  <div style={{ fontSize:11, color:M.ink3, marginBottom:4 }}>{t('profile.offlineKeySection')}</div>
+                  {encKey ? (
+                    <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:4 }}>
+                      {encKey.split('-').map((block, i) => (
+                        <span key={i} style={{ fontSize:11, fontFamily:M.fontMono, letterSpacing:'0.04em', background:M.paper2, border:`1px solid ${M.line}`, borderRadius:6, padding:'3px 0', textAlign:'center', color:M.ink, display:'block' }}>
+                          {showKeyValue ? block : '••••'}
+                        </span>
+                      ))}
+                    </div>
+                  ) : <span style={{ fontSize:13, color:M.ink4 }}>—</span>}
                 </div>
                 <button data-testid={T.offlineProfileKeyToggle} className="m-tap" onClick={() => setShowKeyValue(v => !v)}
                   style={{ background:'none', border:'none', cursor:'pointer', padding:'4px 6px', color:M.ink3 }}>
@@ -954,7 +960,9 @@ export function ScreenUserInfo() {
             {recoverStep === 'loading' && (
               <div style={{ display:'flex', flexDirection:'column', alignItems:'center', padding:'32px 0 16px', gap:14 }}>
                 <div style={{ width:56, height:56, borderRadius:'50%', background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center' }}>
-                  <I name="refresh" size={26} color={M.sage}/>
+                  <div style={{ animation:'munniSpin 1.4s linear infinite' }}>
+                    <I name="refresh" size={26} color={M.sage}/>
+                  </div>
                 </div>
                 <div style={{ fontSize:16, fontWeight:600, color:M.ink, textAlign:'center' }}>{t('offline.recoverLoading')}</div>
                 <div style={{ fontSize:13, color:M.ink3, textAlign:'center' }}>{t('offline.recoverLoadingSub')}</div>

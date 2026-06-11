@@ -932,7 +932,7 @@ function ScreenLoginGate({ onLogin }) {
 
           <div style={{ display:'flex', alignItems:'center', gap:8, margin:'20px 0 4px' }}>
             <div style={{ flex:1, height:1, background:M.line }}/>
-            <div style={{ fontSize:12, color:M.ink4 }}>or</div>
+            <div style={{ fontSize:12, color:M.ink4 }}>{t('common.or')}</div>
             <div style={{ flex:1, height:1, background:M.line }}/>
           </div>
 
@@ -1039,7 +1039,9 @@ function ScreenLoginGate({ onLogin }) {
           {offlineRecoverStep === 'loading' && (
             <div style={{ display:'flex', flexDirection:'column', alignItems:'center', paddingTop:32, gap:16 }}>
               <div style={{ width:72, height:72, borderRadius:'50%', background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center' }}>
-                <I name="refresh" size={32} color={M.sage}/>
+                <div style={{ animation:'munniSpin 1.4s linear infinite' }}>
+                  <I name="refresh" size={32} color={M.sage}/>
+                </div>
               </div>
               <div style={{ fontSize:17, fontWeight:600, color:M.ink, textAlign:'center' }}>{t('offline.recoverLoading')}</div>
               <div style={{ fontSize:13, color:M.ink3, textAlign:'center' }}>{t('offline.recoverLoadingSub')}</div>
@@ -1069,7 +1071,13 @@ function ScreenLoginGate({ onLogin }) {
       <StatusBar/>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '28px 24px 32px', overflowY:'auto' }}>
         <div style={{ marginBottom: 32 }}>
-          <div className="m-logo" style={{ fontSize: 28, marginBottom: 14 }}>munni<span className="dot">.</span></div>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: 14 }}>
+            <div className="m-logo" style={{ fontSize: 28 }}>munni<span className="dot">.</span></div>
+            <button data-testid={T.loginLangBtn} className="m-tap" onClick={() => setMode('language')}
+              style={{ background:M.paper2, border:`1px solid ${M.line}`, borderRadius:20, padding:'5px 12px', fontSize:12, color:M.ink3, cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', gap:4, flexShrink:0 }}>
+              🌐 {t('login.changeLanguage')}
+            </button>
+          </div>
           <div className="m-h2" style={{ marginBottom: 6 }}>
             {hasOpenedBefore ? t('login.welcome') : t('login.welcomeFirst')}
           </div>
@@ -1094,17 +1102,13 @@ function ScreenLoginGate({ onLogin }) {
           <button data-testid={T.loginEmailSubmit} className="m-btn sage m-tap" style={{ height:52, width:'100%', opacity:emailInput.trim()?1:0.5 }} onClick={handleEmailContinue} disabled={!emailInput.trim()}>
             {t('login.continue')}
           </button>
+          <button data-testid={T.loginCreateAccount} className="m-btn outline m-tap" style={{ height:52, width:'100%' }}
+            onClick={() => { setLoginError(null); setMode('signup'); }}>
+            {t('login.signUpBtn')}
+          </button>
         </div>
 
         <div style={{ flex: 1, minHeight: 16 }}/>
-
-        <div style={{ textAlign: 'center', marginBottom: 12 }}>
-          <div style={{ fontSize: 12, color: M.ink4, marginBottom: 8 }}>{t('login.noAccount')}</div>
-          <button data-testid={T.loginCreateAccount} className="m-tap" onClick={() => { setLoginError(null); setMode('signup'); }}
-            style={{ background: 'transparent', border: 'none', fontSize: 13, fontWeight: 600, color: M.sage, cursor: 'pointer', fontFamily: M.fontUI }}>
-            {t('login.createAccount')}
-          </button>
-        </div>
 
         <div style={{ textAlign:'center', marginBottom:12 }}>
           <button data-testid={T.loginOfflineBtn} className="m-tap" onClick={() => setMode('offline-info')}
@@ -1119,12 +1123,6 @@ function ScreenLoginGate({ onLogin }) {
           {' '}{t('login.termsAnd')}{' '}
           <button data-testid={T.loginPrivacyLink} onClick={() => setMode('privacy')} style={{ background:'none', border:'none', color:M.sage, fontWeight:500, cursor:'pointer', fontFamily:M.fontUI, fontSize:11, textDecoration:'underline' }}>{t('login.termsPrivacy')}</button>
           {(()=>{ const s=t('login.termsSuffix'); return (s && s!=='login.termsSuffix') ? <>{' '}{s}</> : null; })()}
-        </div>
-        <div style={{ textAlign:'center', marginBottom: 16 }}>
-          <button data-testid={T.loginLangBtn} className="m-tap" onClick={() => setMode('language')}
-            style={{ background:'transparent', border:'none', fontSize:13, color:M.ink3, cursor:'pointer', fontFamily:M.fontUI, textDecoration:'underline' }}>
-            🌐 {t('login.changeLanguage')}
-          </button>
         </div>
 
         <div style={{ borderTop: `1px solid ${M.line2}`, margin: '0 0 12px' }}/>
