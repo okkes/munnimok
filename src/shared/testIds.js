@@ -146,6 +146,18 @@
   goalRow:              'goal-row',
   goalAddBtn:           'goal-add-btn',
 
+  // Offline mode
+  loginOfflineBtn:      'login-offline-btn',
+  offlineInfoScreen:    'offline-info-screen',
+  offlineInfoCta:       'offline-info-cta',
+  offlineInfoBack:      'offline-info-back',
+  offlineSelectScreen:  'offline-select-screen',
+  offlineAddProfile:    'offline-add-profile',
+  offlineCreateScreen:  'offline-create-screen',
+  offlineCreateName:    'offline-create-name',
+  offlineCreateCta:     'offline-create-cta',
+  offlineHomeBanner:    'offline-home-banner',
+
   // Shared
   sheetClose:           'sheet-close',
   confirmBtn:           'confirm-btn',

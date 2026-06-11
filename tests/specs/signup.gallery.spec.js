@@ -533,4 +533,156 @@ for (const V of VARIANTS) {
     await shot(page, k('50-onboard-country-error'));
     await teardown(page, ctx, k('50-onboard-country-error'));
   });
+
+  // -------------------------------------------------------------------------
+  // Group E — Onboarding UX Fixes
+  // -------------------------------------------------------------------------
+
+  test(`51 onboard – step1 no back button [${V.id}]`, async ({ browser }) => {
+    const { page, ctx } = await createPage(browser, V);
+    await base(page, V);
+    await goToStep1(page, email('no-back'));
+    await shot(page, k('51-onboard-no-back-btn') + '--s1');
+    // Step 1 must not have a visible back/cancel button
+    const backBtns = page.locator('[data-testid="onboard-back"], [data-testid="back-btn"]');
+    await expect(backBtns).toHaveCount(0);
+    await shot(page, k('51-onboard-no-back-btn'));
+    await teardown(page, ctx, k('51-onboard-no-back-btn'));
+  });
+
+  test(`52 onboard – browser back from step1 is trapped [${V.id}]`, async ({ browser }) => {
+    const { page, ctx } = await createPage(browser, V);
+    await base(page, V);
+    await goToStep1(page, email('back-trap'));
+    await shot(page, k('52-onboard-back-trap') + '--s1');
+    // Pressing browser back should NOT navigate away from step 1
+    await page.goBack();
+    await page.waitForTimeout(400);
+    await expect(page.locator('[data-testid="onboard-step1"]')).toBeVisible();
+    await shot(page, k('52-onboard-back-trap'));
+    await teardown(page, ctx, k('52-onboard-back-trap'));
+  });
+
+  test(`53 onboard – page refresh shows login not onboarding [${V.id}]`, async ({ browser }) => {
+    const { page, ctx } = await createPage(browser, V);
+    await base(page, V);
+    await goToStep1(page, email('refresh'));
+    await expect(page.locator('[data-testid="onboard-step1"]')).toBeVisible();
+    await shot(page, k('53-onboard-refresh-login') + '--s1');
+    // Reload the page — should land on login, not signup screen
+    await page.reload();
+    await page.waitForSelector('[data-testid="login-google-btn"]', { timeout: 5000 });
+    await expect(page.locator('[data-testid="login-google-btn"]')).toBeVisible();
+    await expect(page.locator('[data-testid="onboard-step1"]')).toHaveCount(0);
+    await shot(page, k('53-onboard-refresh-login'));
+    await teardown(page, ctx, k('53-onboard-refresh-login'));
+  });
+
+  test(`54 onboard – step2 back retains connected bank [${V.id}]`, async ({ browser }) => {
+    const { page, ctx } = await createPage(browser, V);
+    await base(page, V);
+    await goToStep2WithBank(page, email('back-bank'));
+    await expect(page.locator('[data-testid="onboard-bank-row"]')).toBeVisible();
+    await shot(page, k('54-onboard-back-retains-bank') + '--s1');
+    // Go back to step 1
+    await page.goBack();
+    await page.waitForSelector('[data-testid="onboard-step1"]', { timeout: 3000 });
+    await shot(page, k('54-onboard-back-retains-bank') + '--s2');
+    // Continue forward to step 2 again
+    await page.fill('[data-testid="onboard-firstname"]', 'Alice');
+    await page.fill('[data-testid="onboard-lastname"]', 'Smith');
+    await page.click('[data-testid="onboard-country-btn"]');
+    await page.waitForSelector('[data-testid="onboard-country-sheet"]', { timeout: 3000 });
+    await page.locator('[data-testid="sheet-close"] button').filter({ hasText: 'Netherlands' }).first().click();
+    await page.click('[data-testid="onboard-continue"]');
+    await page.waitForSelector('[data-testid="onboard-step2"]', { timeout: 3000 });
+    // Bank row must still be there (retained in React state)
+    await expect(page.locator('[data-testid="onboard-bank-row"]')).toBeVisible();
+    await shot(page, k('54-onboard-back-retains-bank'));
+    await teardown(page, ctx, k('54-onboard-back-retains-bank'));
+  });
+
+  test(`55 country-placeholder – no optional text [${V.id}]`, async ({ browser }) => {
+    const { page, ctx } = await createPage(browser, V);
+    await base(page, V);
+    await goToStep1(page, email('country-ph'));
+    await shot(page, k('55-country-no-optional') + '--s1');
+    // Country button placeholder must not contain "(optional)" in any case
+    const btnText = await page.locator('[data-testid="onboard-country-btn"]').innerText();
+    expect(btnText.toLowerCase()).not.toContain('optional');
+    expect(btnText.toLowerCase()).not.toContain('optioneel');
+    expect(btnText.toLowerCase()).not.toContain('isteğe');
+    await shot(page, k('55-country-no-optional'));
+    await teardown(page, ctx, k('55-country-no-optional'));
+  });
+
+  test(`56 country-flags – img tags in picker [${V.id}]`, async ({ browser }) => {
+    const { page, ctx } = await createPage(browser, V);
+    await base(page, V);
+    await goToStep1(page, email('country-flags'));
+    await page.click('[data-testid="onboard-country-btn"]');
+    await page.waitForSelector('[data-testid="onboard-country-sheet"]', { timeout: 3000 });
+    await shot(page, k('56-country-flags') + '--s1');
+    // Each row in the picker must have an img tag (twemoji flag) not just a text badge
+    const flagImgs = page.locator('[data-testid="onboard-country-sheet"] img');
+    await expect(flagImgs.first()).toBeVisible();
+    const src = await flagImgs.first().getAttribute('src');
+    expect(src).toContain('twemoji');
+    await shot(page, k('56-country-flags'));
+    await teardown(page, ctx, k('56-country-flags'));
+  });
+
+  test(`57 name-fields – stacked not side-by-side [${V.id}]`, async ({ browser }) => {
+    const { page, ctx } = await createPage(browser, V);
+    await base(page, V);
+    await goToStep1(page, email('name-stack'));
+    await shot(page, k('57-name-fields-stacked') + '--s1');
+    const fnBox = await page.locator('[data-testid="onboard-firstname"]').boundingBox();
+    const lnBox = await page.locator('[data-testid="onboard-lastname"]').boundingBox();
+    // First name must be above last name (y of last name > y of first name)
+    expect(lnBox.y).toBeGreaterThan(fnBox.y + fnBox.height / 2);
+    // Both should span the full width (not half-width grid columns)
+    expect(fnBox.width).toBeGreaterThan(200);
+    expect(lnBox.width).toBeGreaterThan(200);
+    await shot(page, k('57-name-fields-stacked'));
+    await teardown(page, ctx, k('57-name-fields-stacked'));
+  });
+
+  test(`58 bank-search – no skip link at bottom [${V.id}]`, async ({ browser }) => {
+    const { page, ctx } = await createPage(browser, V);
+    await base(page, V);
+    await goToBankSearch(page, email('no-skip-link'));
+    await shot(page, k('58-no-skip-link') + '--s1');
+    // Scroll to bottom of bank search screen
+    await page.evaluate(() => {
+      const el = document.querySelector('[data-testid="bank-search-screen"]');
+      if (el) el.scrollTop = el.scrollHeight;
+    });
+    await page.waitForTimeout(200);
+    await shot(page, k('58-no-skip-link') + '--s2');
+    // There must be no element containing "Skip →" text
+    const skipLabels = page.locator('[data-testid="bank-search-screen"] *').filter({ hasText: /Skip\s*→/ });
+    await expect(skipLabels).toHaveCount(0);
+    await shot(page, k('58-no-skip-link'));
+    await teardown(page, ctx, k('58-no-skip-link'));
+  });
+
+  test(`59 onboard – unfinished signup resume [${V.id}]`, async ({ browser }) => {
+    const { page, ctx } = await createPage(browser, V);
+    // Seed munni_signup_in_progress as if user verified email but never finished profile
+    await base(page, V, () => {
+      localStorage.setItem('munni_signup_in_progress', JSON.stringify({
+        method: 'email', canonicalEmail: 'resume@example.com',
+        displayEmail: 'resume@example.com', backMode: 'signup-email',
+      }));
+    });
+    // Try to login with the unfinished email → should be redirected to complete signup
+    await page.fill('[data-testid="login-email-input"]', 'resume@example.com');
+    await shot(page, k('59-unfinished-resume') + '--s1');
+    await page.click('[data-testid="login-email-submit"]');
+    await page.waitForSelector('[data-testid="onboard-step1"]', { timeout: 5000 });
+    await expect(page.locator('[data-testid="onboard-step1"]')).toBeVisible();
+    await shot(page, k('59-unfinished-resume'));
+    await teardown(page, ctx, k('59-unfinished-resume'));
+  });
 }

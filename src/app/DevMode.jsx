@@ -46,6 +46,7 @@ const ANNOTATIONS = {
       { from: 'Email → Continue',   to: 'Email verify → Home',     cond: 'email ∈ munni_signup_emails' },
       { from: 'Email → Continue',   to: 'Error + "Create account"',cond: 'email not registered' },
       { from: '"Create account"',   to: 'mode = signup' },
+      { from: '"Offline mode"',     to: 'mode = offline-info' },
       { from: '"Use demo"',         to: 'Home (demo data)',        cond: 'always; resets demo profiles' },
     ],
     rules: [
@@ -54,12 +55,14 @@ const ANNOTATIONS = {
       'Verify code (login): always 427183 — hardcoded for prototype',
       'SSO delay: always 1 400 ms regardless of network',
       'hasOpenedBefore: LS key "munni_opened_before" === "true" controls heading copy',
+      'Unfinished email registration: if munni_signup_in_progress matches input email, redirects to complete onboarding instead of "not found" error',
     ],
     edge: [
       'Changed email: old address → "not found"; new address silently resolves to old canonical email for storage key lookup',
       'Google/Apple already registered → login goes directly to Home, no onboarding',
       '"Not found" error: pressing "Create account" pre-fills the typed email in signup',
       'Email field pre-filled from sessionStorage if previous session used email login',
+      'Page refresh always shows login screen — no auto-resume of in-progress signup',
     ],
     storage: [
       'munni_signup_methods (LS) — string[] of registered method IDs',
@@ -311,6 +314,70 @@ const ANNOTATIONS = {
       'User may have registered with email but not with Google/Apple — guide them back to email login',
     ],
     storage: [],
+  },
+
+  // ── Offline mode screens ─────────────────────────────────────────────────
+
+  'offline-info': {
+    screen: 'Offline mode — info',
+    sub: 'Explains offline mode data ownership, limitations, and pricing before the user commits.',
+    states: [
+      { tag: 'no profiles yet',  note: '"Continue offline" → offline-create' },
+      { tag: 'has profiles',     note: '"Continue offline" → offline-select' },
+    ],
+    flows: [
+      { from: '"Continue offline"', to: 'offline-select (if profiles exist) or offline-create' },
+      { from: '"Back to login"',    to: 'mode = login' },
+      { from: 'Back button',        to: 'mode = login' },
+    ],
+    rules: [
+      'Pricing: 7 days free, €10/yr — display only, no actual payment flow in prototype',
+      'Limitations rendered from limits array: no bank sync, no AI, no household, no external comms',
+    ],
+    edge: [],
+    storage: [],
+  },
+
+  'offline-select': {
+    screen: 'Offline mode — profile selector',
+    sub: 'Netflix-style grid of offline profiles; bottom tile opens profile creator.',
+    states: [
+      { tag: '1+ profiles',  note: 'Profile tiles shown + "Add profile" tile at end' },
+    ],
+    flows: [
+      { from: 'Profile tile',     to: 'Home (doOfflineLogin)' },
+      { from: '"Add profile"',    to: 'offline-create' },
+      { from: '"Back to login"',  to: 'mode = login' },
+    ],
+    rules: [
+      'Profiles read from munni_offline_profiles (LS)',
+      'Boot logic: if only offline profiles exist (no munni_signup_methods), app starts here instead of login',
+    ],
+    edge: [],
+    storage: ['munni_offline_profiles (LS) — [{id, name, picture, createdAt}]'],
+  },
+
+  'offline-create': {
+    screen: 'Offline mode — profile creator',
+    sub: 'Creates a new offline profile: avatar picker + name input.',
+    states: [
+      { tag: 'name error',  note: 'offlineNameError shown below input when submitting empty' },
+    ],
+    flows: [
+      { from: '"Create profile"',  to: 'Home (doOfflineLogin with new profile)' },
+      { from: 'Back',              to: 'offline-select' },
+      { from: 'Avatar tap',        to: 'Avatar picker sheet (STOCK_AVATARS grid)' },
+    ],
+    rules: [
+      'Profile ID: offline_${Date.now()} — used as per-user LS key suffix via computeUserDataKey',
+      'doOfflineLogin sets SS munni_last_login_method = "offline" and munni_profile_email = profile.id',
+    ],
+    edge: ['Back button goes to offline-select even if user arrived from offline-info directly'],
+    storage: [
+      'munni_offline_profiles (LS)',
+      'munni_profile_name_{offline}_{id} (LS, via computeUserDataKey)',
+      'munni_user_picture_{id} (LS)',
+    ],
   },
 
   // ── Tab screens ──────────────────────────────────────────────────────────

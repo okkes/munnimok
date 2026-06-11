@@ -2,7 +2,7 @@ import React from 'react';
 import { T } from '../../shared/testIds.js';
 import { COUNTRIES, countryName } from '../../shared/data/countries.js';
 import { M, I, IcoGoogle, IcoApple, StatusBar, Divider } from '../../app/theme.jsx';
-import { Sheet } from '../../app/nav.jsx';
+import { Sheet, useDark } from '../../app/nav.jsx';
 import { useLang } from '../../shared/i18n.jsx';
 import { DUTCH_BANKS, generateBankIban, DUTCH_BANKS as _DB } from '../accounts/data.js';
 
@@ -29,8 +29,18 @@ function highlightMatch(text, query) {
   );
 }
 
+const countryFlagUrl = (code) => {
+  const [a, b] = code.toUpperCase().split('');
+  const r = c => (0x1F1E6 + c.charCodeAt(0) - 65).toString(16);
+  return `https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/${r(a)}-${r(b)}.svg`;
+};
+
 export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
   const { t, lang } = useLang();
+  const { dark } = useDark();
+  const flagStyle = dark
+    ? { borderRadius:3, flexShrink:0, filter:'invert(1) hue-rotate(180deg)', display:'block' }
+    : { borderRadius:3, flexShrink:0, display:'block' };
   const isGoogle = signup.method === 'google';
   const isApple  = signup.method === 'apple';
   const isSSO    = isGoogle || isApple;
@@ -84,11 +94,6 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
     }
   }, [showCountry, showApiInfo, showPicker, showCountryInfo]);
 
-  // Persist pending signup so a page refresh resumes step 1 instead of showing login
-  React.useEffect(() => {
-    localStorage.setItem('munni_pending_onboarding', JSON.stringify(signup));
-    return () => localStorage.removeItem('munni_pending_onboarding');
-  }, []);
 
   const filteredBanks = React.useMemo(() => {
     const q = bankSearch.toLowerCase().trim();
@@ -676,7 +681,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
           >
             {country ? (
               <>
-                <div style={{ fontSize:9, fontWeight:800, color:M.ink3, letterSpacing:0.8, fontFamily:M.fontUI, flexShrink:0, background:M.paper2, border:`1px solid ${M.line}`, borderRadius:4, padding:'2px 5px', lineHeight:1.4 }}>{country}</div>
+                <img src={countryFlagUrl(country)} width={24} height={24} style={flagStyle} alt={country}/>
                 <span style={{ flex:1 }}>{countryName(COUNTRIES.find(c => c.code === country), lang)}</span>
               </>
             ) : (
@@ -742,7 +747,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
               <button key={c.code} className="m-tap"
                 onClick={() => { setCountry(c.code); setShowCountry(false); setErrors(prev => ({ ...prev, country: undefined })); }}
                 style={{ width:'100%', display:'flex', alignItems:'center', gap:12, padding:'12px 20px', background:'transparent', border:'none', cursor:'pointer', fontFamily:M.fontUI }}>
-                <div style={{ fontSize:9, fontWeight:800, color:M.ink3, letterSpacing:0.8, fontFamily:M.fontUI, width:32, flexShrink:0, textAlign:'center', background:M.paper2, border:`1px solid ${M.line}`, borderRadius:4, padding:'2px 4px', lineHeight:1.4 }}>{c.code}</div>
+                <img src={countryFlagUrl(c.code)} width={24} height={24} style={{ ...flagStyle, flexShrink:0 }} alt={c.code}/>
                 <span style={{ flex:1, textAlign:'left', fontSize:15, color:M.ink }}>{highlightMatch(countryName(c, lang), countrySearch.trim())}</span>
                 {country === c.code && <I name="check" size={16} color={M.sage}/>}
               </button>

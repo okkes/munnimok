@@ -246,13 +246,9 @@ function ScreenLoginGate({ onLogin }) {
   const [loginError, setLoginError] = React.useState(null);
   const [signupError, setSignupError] = React.useState(null);
   const [noAccountMethod, setNoAccountMethod] = React.useState(null);
-  const [pendingSignup, setPendingSignup] = React.useState(() => {
-    try { return JSON.parse(localStorage.getItem('munni_pending_onboarding') || 'null'); } catch { return null; }
-  });
+  const [pendingSignup, setPendingSignup] = React.useState(null);
   const [mode, setMode] = React.useState(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem('munni_pending_onboarding') || 'null');
-      if (saved) return 'signup-onboarding';
       const offProfiles = JSON.parse(localStorage.getItem('munni_offline_profiles') || '[]');
       const onlineMethods = JSON.parse(localStorage.getItem('munni_signup_methods') || '[]');
       if (offProfiles.length > 0 && onlineMethods.length === 0) return 'offline-select';
@@ -260,6 +256,11 @@ function ScreenLoginGate({ onLogin }) {
     return 'login';
   });
   const loadingTimerRef = React.useRef(null);
+
+  // Signup in-progress helpers (detect unfinished registration on next login/signup attempt)
+  const getSignupInProgress = () => { try { return JSON.parse(localStorage.getItem('munni_signup_in_progress') || 'null'); } catch { return null; } };
+  const saveSignupInProgress = (ps) => { try { localStorage.setItem('munni_signup_in_progress', JSON.stringify({ method:ps.method, canonicalEmail:ps.canonicalEmail, displayEmail:ps.displayEmail, backMode:ps.backMode })); } catch {} };
+  const clearSignupInProgress = () => localStorage.removeItem('munni_signup_in_progress');
 
   // Offline mode helpers
   const getOfflineProfiles = () => { try { return JSON.parse(localStorage.getItem('munni_offline_profiles') || '[]'); } catch { return []; } };
@@ -360,7 +361,8 @@ function ScreenLoginGate({ onLogin }) {
       const methods = getSignupMethods();
       if (isSignup) {
         if (methods.includes('google')) { setSignupError(t('login.errGoogleExists')); return; }
-        setPendingSignup({ method:'google', displayEmail:'munni-demo@gmail.com', canonicalEmail:'google@munni.app', firstName:'Google', lastName:'van der Berg', banks:['ing'], apiUrl:DEFAULT_API_URL, picture:'av3', backMode:'signup' });
+        const _gPs = { method:'google', displayEmail:'munni-demo@gmail.com', canonicalEmail:'google@munni.app', firstName:'Google', lastName:'van der Berg', banks:['ing'], apiUrl:DEFAULT_API_URL, picture:'av3', backMode:'signup' };
+        setPendingSignup(_gPs); saveSignupInProgress(_gPs);
         setMode('signup-onboarding');
       } else {
         if (!methods.includes('google')) { setNoAccountMethod('google'); setMode('no-account'); return; }
@@ -378,7 +380,8 @@ function ScreenLoginGate({ onLogin }) {
       const methods = getSignupMethods();
       if (isSignup) {
         if (methods.includes('apple')) { setSignupError(t('login.errAppleExists')); return; }
-        setPendingSignup({ method:'apple', displayEmail:'munni-demo@hotmail.com', canonicalEmail:'apple@munni.app', firstName:'Apple', lastName:'van der Mac', banks:['abn'], apiUrl:DEFAULT_API_URL, picture:'av4', backMode:'signup' });
+        const _aPs = { method:'apple', displayEmail:'munni-demo@hotmail.com', canonicalEmail:'apple@munni.app', firstName:'Apple', lastName:'van der Mac', banks:['abn'], apiUrl:DEFAULT_API_URL, picture:'av4', backMode:'signup' };
+        setPendingSignup(_aPs); saveSignupInProgress(_aPs);
         setMode('signup-onboarding');
       } else {
         if (!methods.includes('apple')) { setNoAccountMethod('apple'); setMode('no-account'); return; }
@@ -406,6 +409,15 @@ function ScreenLoginGate({ onLogin }) {
     } catch {}
 
     if (!methods.includes('email') || !emails.includes(resolvedEmail)) {
+      // If this email has an unfinished registration, redirect to complete it
+      const inProg = getSignupInProgress();
+      if (inProg && inProg.method === 'email' && inProg.canonicalEmail === resolvedEmail) {
+        const resumePs = { method:'email', displayEmail:resolvedEmail, canonicalEmail:resolvedEmail, firstName:'', lastName:'', banks:[], apiUrl:DEFAULT_API_URL, picture:null, backMode:'login' };
+        setPendingSignup(resumePs);
+        saveSignupInProgress(resumePs);
+        setMode('signup-onboarding');
+        return;
+      }
       setLoginError(t('login.emailNotFound'));
       return;
     }
@@ -436,6 +448,15 @@ function ScreenLoginGate({ onLogin }) {
     if (RESERVED_EMAILS.includes(email)) { setSignupError(t('login.errEmailReserved')); return; }
     const emails = getSignupEmails();
     if (emails.includes(email)) { setSignupError(t('login.errEmailExists')); return; }
+    // If this email has an unfinished registration, skip re-verification and resume
+    const inProg = getSignupInProgress();
+    if (inProg && inProg.method === 'email' && inProg.canonicalEmail === email) {
+      const resumePs = { method:'email', displayEmail:email, canonicalEmail:email, firstName:'', lastName:'', banks:[], apiUrl:DEFAULT_API_URL, picture:null, backMode:'signup-email' };
+      setPendingSignup(resumePs);
+      saveSignupInProgress(resumePs);
+      setMode('signup-onboarding');
+      return;
+    }
     setMode('signup-email-verify');
     setVerifyDigits(['','','','','','']);
     setAutoFilling(false);
@@ -446,7 +467,8 @@ function ScreenLoginGate({ onLogin }) {
         if (idx >= 6) {
           setVerifyDigits([...digits]);
           setTimeout(() => {
-            setPendingSignup({ method:'email', displayEmail:email, canonicalEmail:email, firstName:'', lastName:'', banks:[], apiUrl:DEFAULT_API_URL, picture:null, backMode:'signup-email' });
+            const _ePs = { method:'email', displayEmail:email, canonicalEmail:email, firstName:'', lastName:'', banks:[], apiUrl:DEFAULT_API_URL, picture:null, backMode:'signup-email' };
+            setPendingSignup(_ePs); saveSignupInProgress(_ePs);
             setMode('signup-onboarding');
           }, 800);
           return;
@@ -535,6 +557,7 @@ function ScreenLoginGate({ onLogin }) {
         } catch {}
       }
       const displayName = [firstName, lastName].filter(Boolean).join(' ');
+      clearSignupInProgress();
       setPendingSignup(null);
       doLogin(method, finalEmail, displayName, false, lang);
     };
@@ -758,7 +781,7 @@ function ScreenLoginGate({ onLogin }) {
       [t('offline.limit4'), t('offline.limit4Sub')],
     ];
     return (
-      <div key="offline-info" className="m-screen m-fade" style={{ position:'relative' }}><DevPanel screenKey="offline-info"/>
+      <div data-testid={T.offlineInfoScreen} key="offline-info" className="m-screen m-fade" style={{ position:'relative' }}><DevPanel screenKey="offline-info"/>
         <StatusBar/>
         <div style={{ padding:'16px 20px 0', flexShrink:0 }}>
           <button className="m-tap" onClick={() => setMode('login')} style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:6, color:M.ink3, fontFamily:M.fontUI, fontSize:13 }}>
@@ -804,11 +827,11 @@ function ScreenLoginGate({ onLogin }) {
             <div style={{ fontSize:12, color:M.ink2, lineHeight:1.6 }}>{t('offline.pricing')}</div>
           </div>
 
-          <button className="m-btn sage m-tap" style={{ height:54, width:'100%', fontSize:16, fontWeight:700, marginBottom:12 }}
+          <button data-testid={T.offlineInfoCta} className="m-btn sage m-tap" style={{ height:54, width:'100%', fontSize:16, fontWeight:700, marginBottom:12 }}
             onClick={() => { const ps = getOfflineProfiles(); setMode(ps.length > 0 ? 'offline-select' : 'offline-create'); }}>
             {t('offline.infoCta')}
           </button>
-          <button className="m-tap" onClick={() => setMode('login')}
+          <button data-testid={T.offlineInfoBack} className="m-tap" onClick={() => setMode('login')}
             style={{ width:'100%', textAlign:'center', background:'none', border:'none', fontSize:13, color:M.ink3, cursor:'pointer', fontFamily:M.fontUI, padding:'8px 0' }}>
             {t('offline.infoBack')}
           </button>
@@ -821,7 +844,7 @@ function ScreenLoginGate({ onLogin }) {
   if (mode === 'offline-select') {
     const offProfiles = getOfflineProfiles();
     return (
-      <div key="offline-select" className="m-screen m-fade" style={{ position:'relative' }}><DevPanel screenKey="offline-select"/>
+      <div data-testid={T.offlineSelectScreen} key="offline-select" className="m-screen m-fade" style={{ position:'relative' }}><DevPanel screenKey="offline-select"/>
         <StatusBar/>
         <div style={{ flex:1, overflowY:'auto', padding:'40px 24px 48px' }}>
           <div className="m-logo" style={{ fontSize:20, marginBottom:28, textAlign:'center' }}>munni<span className="dot">.</span></div>
@@ -839,7 +862,7 @@ function ScreenLoginGate({ onLogin }) {
                 </button>
               );
             })}
-            <button className="m-tap" onClick={() => { setOfflineName(''); setOfflineNameError(''); setOfflinePicture('av1'); setMode('offline-create'); }}
+            <button data-testid={T.offlineAddProfile} className="m-tap" onClick={() => { setOfflineName(''); setOfflineNameError(''); setOfflinePicture('av1'); setMode('offline-create'); }}
               style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:8, background:'none', border:'none', cursor:'pointer', fontFamily:M.fontUI, padding:0 }}>
               <div style={{ width:68, height:68, borderRadius:999, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', border:`2px dashed ${M.line}` }}>
                 <I name="plus" size={22} color={M.ink3}/>
@@ -861,7 +884,7 @@ function ScreenLoginGate({ onLogin }) {
   // ── Offline profile creator ─────────────────────────────────────────
   if (mode === 'offline-create') {
     return (
-      <div key="offline-create" className="m-screen m-fade" style={{ position:'relative' }}><DevPanel screenKey="offline-create"/>
+      <div data-testid={T.offlineCreateScreen} key="offline-create" className="m-screen m-fade" style={{ position:'relative' }}><DevPanel screenKey="offline-create"/>
         <StatusBar/>
         <div style={{ padding:'16px 20px 0', flexShrink:0 }}>
           <button className="m-tap" onClick={() => setMode('offline-select')} style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:6, color:M.ink3, fontFamily:M.fontUI, fontSize:13 }}>
@@ -888,6 +911,7 @@ function ScreenLoginGate({ onLogin }) {
           <div style={{ marginBottom:offlineNameError ? 6 : 20 }}>
             <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{t('offline.createNameLabel')}</div>
             <input
+              data-testid={T.offlineCreateName}
               value={offlineName}
               onChange={e => { setOfflineName(e.target.value); setOfflineNameError(''); }}
               placeholder={t('offline.createNamePlaceholder')}
@@ -896,7 +920,7 @@ function ScreenLoginGate({ onLogin }) {
             {offlineNameError && <div style={{ fontSize:11, color:M.clay, marginTop:4 }}>{offlineNameError}</div>}
           </div>
 
-          <button className="m-btn sage m-tap" style={{ height:54, width:'100%', fontSize:16, fontWeight:700 }} onClick={handleCreateOfflineProfile}>
+          <button data-testid={T.offlineCreateCta} className="m-btn sage m-tap" style={{ height:54, width:'100%', fontSize:16, fontWeight:700 }} onClick={handleCreateOfflineProfile}>
             {t('offline.createCta')}
           </button>
         </div>
@@ -966,7 +990,7 @@ function ScreenLoginGate({ onLogin }) {
         </div>
 
         <div style={{ textAlign:'center', marginBottom:12 }}>
-          <button className="m-tap" onClick={() => setMode('offline-info')}
+          <button data-testid={T.loginOfflineBtn} className="m-tap" onClick={() => setMode('offline-info')}
             style={{ background:'transparent', border:'none', fontSize:12, color:M.ink3, cursor:'pointer', fontFamily:M.fontUI, display:'inline-flex', alignItems:'center', gap:5 }}>
             <I name="lock" size={13} color={M.ink4}/> {t('offline.loginBtn')}
           </button>

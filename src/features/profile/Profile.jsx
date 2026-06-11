@@ -6,7 +6,7 @@ import { getUserId, addDevLog, computeUserDataKey, registerUserInGlobalRegistry,
 import { DEMO_ACCOUNTS } from '../accounts/data.js';
 import { getDefaultProfileName, computeProfileKey } from './data.js';
 import { M, I, IcoMDI, IcoGoogle, IcoApple, Divider, StatusBar, AppBar } from '../../app/theme.jsx';
-import { useNav, Sheet, TabBar } from '../../app/nav.jsx';
+import { useNav, Sheet, TabBar, useDark } from '../../app/nav.jsx';
 import { useLang } from '../../shared/i18n.jsx';
 import { useLocalStorage, useSessionStorage, clearAllStorage } from '../../shared/hooks.jsx';
 import { useAppCtx, useProfiles, useTxCtx, useConnectedAccounts, Stat } from '../../app/providers.jsx';
@@ -220,6 +220,16 @@ export function ScreenUserInfo() {
   const isGoogle = loginMethod === 'google';
   const isApple  = loginMethod === 'apple';
 
+  const { dark } = useDark();
+  const flagStyle = dark
+    ? { borderRadius:3, flexShrink:0, filter:'invert(1) hue-rotate(180deg)', display:'block' }
+    : { borderRadius:3, flexShrink:0, display:'block' };
+  const countryFlagUrl = (code) => {
+    const [a, b] = code.toUpperCase().split('');
+    const r = c => (0x1F1E6 + c.charCodeAt(0) - 65).toString(16);
+    return `https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/${r(a)}-${r(b)}.svg`;
+  };
+
   const [draftFirst,   setDraftFirst]   = React.useState(firstName);
   const [draftLast,    setDraftLast]    = React.useState(lastName);
   const [draftCountry, setDraftCountry] = React.useState(country);
@@ -383,7 +393,7 @@ export function ScreenUserInfo() {
             style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0', cursor: isDemo ? 'default' : 'pointer' }}
           >
             <div style={{ width:32, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-              {draftCountry ? <div style={{ fontSize:9, fontWeight:800, color:M.ink3, letterSpacing:0.8, fontFamily:M.fontUI, background:M.paper2, border:`1px solid ${M.line}`, borderRadius:4, padding:'2px 5px', lineHeight:1.4 }}>{draftCountry}</div> : <I name="globe" size={16} color={M.ink3}/>}
+              {draftCountry ? <img src={countryFlagUrl(draftCountry)} width={24} height={24} style={flagStyle} alt={draftCountry}/> : <I name="globe" size={16} color={M.ink3}/>}
             </div>
             <div style={{ flex:1, minWidth:0 }}>
               {draftCountry ? (
@@ -493,7 +503,7 @@ export function ScreenUserInfo() {
               <div key={c.code} className="m-tap"
                 onClick={() => { setDraftCountry(c.code); setShowCountry(false); setCountryError(''); }}
                 style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 20px', cursor:'pointer' }}>
-                <div style={{ fontSize:9, fontWeight:800, color:M.ink3, letterSpacing:0.8, fontFamily:M.fontUI, width:32, flexShrink:0, textAlign:'center', background:M.paper2, border:`1px solid ${M.line}`, borderRadius:4, padding:'2px 4px', lineHeight:1.4 }}>{c.code}</div>
+                <img src={countryFlagUrl(c.code)} width={24} height={24} style={{ ...flagStyle, flexShrink:0 }} alt={c.code}/>
                 <span style={{ flex:1, fontSize:15, color:M.ink }}>{highlightMatch(countryName(c, lang), countrySearch.trim())}</span>
                 {draftCountry === c.code && <I name="check" size={16} color={M.sage}/>}
               </div>
