@@ -3,7 +3,7 @@ import { defineConfig } from '@playwright/test';
 export default defineConfig({
   testDir: 'tests/specs',
   testMatch: ['**/*.gallery.spec.js'],
-  workers: 3,
+  workers: process.env.CI ? 3 : undefined, // CI: fixed 3; local: Playwright default (half CPU cores)
   outputDir: 'tests/results',
   use: {
     baseURL: 'http://localhost:5173',
