@@ -232,7 +232,7 @@ function ScreenLoginGate({ onLogin }) {
   // mode: 'login'|'email-input'|'email-verify'|'google-loading'|'apple-loading'
   //       'signup'|'signup-google'|'signup-apple'|'signup-email'|'signup-email-verify'
   //       'signup-bank'|'terms'|'privacy'|'language'
-  const { t, lang } = useLang();
+  const { t, lang, setLang } = useLang();
   const [emailInput, setEmailInput] = React.useState(() => {
     try {
       const v = JSON.parse(sessionStorage.getItem('munni_profile_email') || '""');
@@ -1085,11 +1085,18 @@ function ScreenLoginGate({ onLogin }) {
         <div style={{ marginBottom: 32 }}>
           <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: 14 }}>
             <div className="m-logo" style={{ fontSize: 28 }}>munni<span className="dot">.</span></div>
-            <button data-testid={T.loginLangBtn} className="m-tap" onClick={() => setMode('language')}
-              style={{ background:M.paper2, border:`1px solid ${M.line}`, borderRadius:20, padding:'5px 12px', fontSize:12, color:M.ink3, cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
-              <span style={{ background:M.sage, color:'#fff', borderRadius:4, padding:'1px 5px', fontSize:10, fontWeight:700, fontFamily:M.fontMono, letterSpacing:'0.05em', lineHeight:'14px' }}>{lang.toUpperCase()}</span>
-              {t('login.changeLanguage')}
-            </button>
+            <div style={{ display:'flex', alignItems:'center', gap:4, flexShrink:0 }}>
+              {['en','nl','tr'].map(l => (
+                <button key={l} className="m-tap" onClick={() => setLang(l)}
+                  style={{ background: lang===l ? M.sage : M.paper2, border:`1px solid ${lang===l ? M.sage : M.line}`, borderRadius:6, padding:'5px 9px', fontSize:11, fontWeight:700, color: lang===l ? '#fff' : M.ink3, cursor:'pointer', fontFamily:M.fontMono, letterSpacing:'0.05em', lineHeight:'14px' }}>
+                  {l.toUpperCase()}
+                </button>
+              ))}
+              <button data-testid={T.loginLangBtn} className="m-tap" onClick={() => setMode('language')}
+                style={{ background:M.paper2, border:`1px solid ${M.line}`, borderRadius:6, padding:'5px 9px', fontSize:11, color:M.ink3, cursor:'pointer', fontFamily:M.fontUI, lineHeight:'14px' }}>
+                {t('login.langMore')}
+              </button>
+            </div>
           </div>
           <div className="m-h2" style={{ marginBottom: 6 }}>
             {hasOpenedBefore ? t('login.welcome') : t('login.welcomeFirst')}
@@ -1098,12 +1105,14 @@ function ScreenLoginGate({ onLogin }) {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <button data-testid={T.loginGoogleBtn} className="m-btn outline m-tap" style={{ height: 52, justifyContent: 'flex-start', paddingLeft: 20, gap: 12 }} onClick={() => handleGoogle(false)}>
-            <IcoGoogle size={20}/> {t('login.google')}
-          </button>
-          <button data-testid={T.loginAppleBtn} className="m-btn outline m-tap" style={{ height: 52, justifyContent: 'flex-start', paddingLeft: 20, gap: 12 }} onClick={() => handleApple(false)}>
-            <IcoApple size={20} color={M.ink}/> {t('login.apple')}
-          </button>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+            <button data-testid={T.loginAppleBtn} className="m-btn outline m-tap" style={{ height:52, justifyContent:'center', gap:8 }} onClick={() => handleApple(false)}>
+              <IcoApple size={20} color={M.ink}/> Apple
+            </button>
+            <button data-testid={T.loginGoogleBtn} className="m-btn outline m-tap" style={{ height:52, justifyContent:'center', gap:8 }} onClick={() => handleGoogle(false)}>
+              <IcoGoogle size={20}/> Google
+            </button>
+          </div>
           <Divr/>
           <input
             data-testid={T.loginEmailInput}
@@ -1119,33 +1128,37 @@ function ScreenLoginGate({ onLogin }) {
             <div style={{ flex:1, height:1, background:M.line }}/>
           </div>
           <button data-testid={T.loginCreateAccount} className="m-tap" onClick={() => { setLoginError(null); setMode('signup'); }}
-            style={{ background:'transparent', border:'none', fontSize:13, color:M.ink3, cursor:'pointer', fontFamily:M.fontUI, textAlign:'center', width:'100%', padding:'6px 0 2px' }}>
-            {t('login.signUpBtn')}
+            style={{ background:'transparent', border:'none', fontSize:13, cursor:'pointer', fontFamily:M.fontUI, textAlign:'center', width:'100%', padding:'6px 0 2px' }}>
+            <span style={{ color:M.ink3 }}>{t('login.noAccount')}</span>
+            {' '}
+            <span style={{ color:M.tint, fontWeight:600 }}>{t('login.signUpBtn')}</span>
           </button>
         </div>
 
         <div style={{ flex: 1, minHeight: 16 }}/>
 
-        <div style={{ textAlign:'center', marginBottom:12 }}>
+        <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:16 }}>
           <button data-testid={T.loginOfflineBtn} className="m-tap" onClick={() => setMode('offline-info')}
-            style={{ background:'transparent', border:'none', fontSize:12, color:M.ink3, cursor:'pointer', fontFamily:M.fontUI, display:'inline-flex', alignItems:'center', gap:5 }}>
-            <I name="lock" size={13} color={M.ink4}/> {t('offline.loginBtn')}
+            style={{ background:M.paper2, border:`1px solid ${M.line}`, borderRadius:12, padding:'11px 14px', fontSize:13, color:M.ink2, cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', gap:10, width:'100%', boxSizing:'border-box' }}>
+            <I name="lock" size={15} color={M.ink3}/>
+            <span style={{ flex:1, textAlign:'left' }}>{t('offline.loginBtn')}</span>
+            <I name="caretR" size={13} color={M.ink4}/>
+          </button>
+          <button data-testid={T.loginDemoBtn} className="m-tap" onClick={() => doLogin('bank', 'bank@munni.app', 'Demo van der Berg', true)}
+            style={{ background:M.paper2, border:`1px solid ${M.line}`, borderRadius:12, padding:'11px 14px', fontSize:13, color:M.ink2, cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', gap:10, width:'100%', boxSizing:'border-box' }}>
+            <I name="eye" size={15} color={M.ink3}/>
+            <span style={{ flex:1, textAlign:'left' }}>{t('login.demoUser')}</span>
+            <I name="caretR" size={13} color={M.ink4}/>
           </button>
         </div>
 
-        <div style={{ fontSize: 11, color: M.ink4, textAlign: 'center', marginBottom: 12, lineHeight: 1.6 }}>
+        <div style={{ fontSize: 11, color: M.ink4, textAlign: 'center', marginTop: 8, lineHeight: 1.6 }}>
           {t('login.termsIntro')}{' '}
           <button data-testid={T.loginTermsLink} onClick={() => setMode('terms')} style={{ background:'none', border:'none', color:M.sage, fontWeight:500, cursor:'pointer', fontFamily:M.fontUI, fontSize:11, textDecoration:'underline' }}>{t('login.termsLinkText')}</button>
           {' '}{t('login.termsAnd')}{' '}
           <button data-testid={T.loginPrivacyLink} onClick={() => setMode('privacy')} style={{ background:'none', border:'none', color:M.sage, fontWeight:500, cursor:'pointer', fontFamily:M.fontUI, fontSize:11, textDecoration:'underline' }}>{t('login.termsPrivacy')}</button>
           {(()=>{ const s=t('login.termsSuffix'); return (s && s!=='login.termsSuffix') ? <>{' '}{s}</> : null; })()}
         </div>
-
-        <div style={{ borderTop: `1px solid ${M.line2}`, margin: '0 0 12px' }}/>
-        <button data-testid={T.loginDemoBtn} className="m-tap" onClick={() => doLogin('bank', 'bank@munni.app', 'Demo van der Berg', true)}
-          style={{ background: 'transparent', border: 'none', fontSize: 11, color: M.ink4, cursor: 'pointer', fontFamily: M.fontUI, textAlign: 'center', width: '100%', padding: '4px 0 2px' }}>
-          {t('login.demoUser')}
-        </button>
       </div>
     </div>
   );
