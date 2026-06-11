@@ -219,6 +219,7 @@ export function ScreenUserInfo() {
   const isDemo   = loginMethod === 'bank';
   const isGoogle = loginMethod === 'google';
   const isApple  = loginMethod === 'apple';
+  const isOffline = loginMethod === 'offline';
 
   const { dark } = useDark();
   const flagStyle = dark
@@ -240,6 +241,49 @@ export function ScreenUserInfo() {
   React.useEffect(() => { setDraftFirst(firstName);   }, [firstName]);
   React.useEffect(() => { setDraftLast(lastName);     }, [lastName]);
   React.useEffect(() => { setDraftCountry(country);   }, [country]);
+
+  // Offline-only state
+  const [draftName, setDraftName] = React.useState(name);
+  React.useEffect(() => { setDraftName(name); }, [name]);
+
+  const offlineEncKeyKey    = computeUserDataKey(loginMethod, _safeEmail, 'munni_offline_enc_key');
+  const offlineAutoBackupKey = computeUserDataKey(loginMethod, _safeEmail, 'munni_auto_backup');
+  const [encKey, setEncKey] = useLocalStorage(offlineEncKeyKey, null);
+  const [autoBackupSettings, setAutoBackupSettings] = useLocalStorage(offlineAutoBackupKey, null);
+
+  const [showKeyValue,    setShowKeyValue]    = React.useState(false);
+  const [showKeyInfo,     setShowKeyInfo]     = React.useState(false);
+  const [showRegenKey,    setShowRegenKey]    = React.useState(false);
+  const [showBackup,      setShowBackup]      = React.useState(false);
+  const [showRecover,     setShowRecover]     = React.useState(false);
+  const [recoverStep,     setRecoverStep]     = React.useState('file');
+  const [recoverFile,     setRecoverFile]     = React.useState(null);
+  const [recoverKeyDraft, setRecoverKeyDraft] = React.useState('');
+  const [recoverError,    setRecoverError]    = React.useState('');
+  const [showAutoBackup,  setShowAutoBackup]  = React.useState(false);
+  const [draftAutoFreq,   setDraftAutoFreq]   = React.useState(() => autoBackupSettings?.frequency || 'daily');
+  const [draftAutoLoc,    setDraftAutoLoc]    = React.useState(() => autoBackupSettings?.location  || 'device');
+
+  const generateEncKey = React.useCallback(() => {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+    return hex.match(/.{4}/g).join('-');
+  }, []);
+
+  React.useEffect(() => {
+    if (!isOffline || encKey) return;
+    setEncKey(generateEncKey());
+  }, [isOffline, encKey, generateEncKey, setEncKey]);
+
+  React.useEffect(() => {
+    if (!isOffline || !userPicture) return;
+    try {
+      const profiles = JSON.parse(localStorage.getItem('munni_offline_profiles') || '[]');
+      const updated = profiles.map(p => p.id === _safeEmail ? { ...p, picture: userPicture } : p);
+      localStorage.setItem('munni_offline_profiles', JSON.stringify(updated));
+    } catch {}
+  }, [isOffline, userPicture, _safeEmail]);
 
   const [showPicturePicker, setShowPicturePicker] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
@@ -277,7 +321,7 @@ export function ScreenUserInfo() {
   const fullName = [firstName, lastName].filter(Boolean).join(' ') || name;
   const initial  = (firstName || name || '?')[0].toUpperCase();
 
-  const anySheetOpen = showApiSheet || showDeleteAccount || showChangeEmail || showPicturePicker || showCountry || showCountryInfo;
+  const anySheetOpen = showApiSheet || showDeleteAccount || showChangeEmail || showPicturePicker || showCountry || showCountryInfo || showKeyInfo || showRegenKey || showBackup || showRecover || showAutoBackup;
   React.useEffect(() => {
     const el = bodyScrollRef.current;
     if (!el) return;
@@ -322,6 +366,42 @@ export function ScreenUserInfo() {
     nav.pop();
   };
 
+  const saveOffline = () => {
+    const n = draftName.trim();
+    if (!n) return;
+    setName(n);
+    try {
+      const profiles = JSON.parse(localStorage.getItem('munni_offline_profiles') || '[]');
+      const updated = profiles.map(p => p.id === _safeEmail ? { ...p, name: n } : p);
+      localStorage.setItem('munni_offline_profiles', JSON.stringify(updated));
+    } catch {}
+    nav.pop();
+  };
+
+  const doBackup = async () => {
+    const profileName = (name || 'offline-user').replace(/\s+/g, '-').toLowerCase();
+    const payload = JSON.stringify({ version: 1, app: 'munni', createdAt: new Date().toISOString(), profile: name || 'offline-user', encrypted: true, data: btoa('hello world') }, null, 2);
+    const blob = new Blob([payload], { type: 'application/octet-stream' });
+    const fileName = `munni-backup-${profileName}-${Date.now()}.mun`;
+    try {
+      if (window.showSaveFilePicker) {
+        const fh = await window.showSaveFilePicker({ suggestedName: fileName, types: [{ description: 'munni backup', accept: { 'application/octet-stream': ['.mun'] } }] });
+        const ws = await fh.createWritable(); await ws.write(blob); await ws.close();
+      } else {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob); a.download = fileName; a.click();
+        URL.revokeObjectURL(a.href);
+      }
+    } catch {}
+    setShowBackup(false);
+  };
+
+  const doRecover = () => {
+    if (!recoverKeyDraft.trim()) { setRecoverError(t('profile.recoverErrKey')); return; }
+    setRecoverStep('loading');
+    setTimeout(() => setRecoverStep('done'), 2200);
+  };
+
   const renderAvatar = (size) => {
     if (userPicture?.startsWith('av')) {
       const av = STOCK_AVATARS.find(a => a.id === userPicture);
@@ -336,8 +416,8 @@ export function ScreenUserInfo() {
       <StatusBar/>
       <AppBar title={t('settings.myProfile')}
         leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
-        trailing={!isDemo
-          ? <button className="m-tap" onClick={save} style={{ background:'transparent', border:'none', fontSize:15, fontWeight:700, color:M.sage, cursor:'pointer', fontFamily:M.fontUI }}>{t('action.save')}</button>
+        trailing={(!isDemo)
+          ? <button className="m-tap" onClick={isOffline ? saveOffline : save} style={{ background:'transparent', border:'none', fontSize:15, fontWeight:700, color:M.sage, cursor:'pointer', fontFamily:M.fontUI }}>{t('action.save')}</button>
           : null}
       />
       <div className="m-body-scroll" ref={bodyScrollRef}>
@@ -361,117 +441,232 @@ export function ScreenUserInfo() {
           )}
         </div>
 
-        {/* Name section */}
-        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('settings.nameSection')}</div>
-        <div className="m-card" style={{ padding:'0 16px', marginBottom:16, border:`1px solid ${M.line}` }}>
-          <div style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
-            <div style={{ width:70, fontSize:12, color:M.ink3, flexShrink:0 }}>{t('settings.firstName')}</div>
-            <input value={draftFirst} onChange={e => setDraftFirst(e.target.value)} disabled={isDemo}
-              style={{ flex:1, fontSize:16, fontFamily:M.fontUI, border:'none', background:'transparent', outline:'none', color:isDemo?M.ink3:M.ink }}/>
-          </div>
-          <Divider/>
-          <div style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
-            <div style={{ width:70, fontSize:12, color:M.ink3, flexShrink:0 }}>{t('settings.lastName')}</div>
-            <input value={draftLast} onChange={e => setDraftLast(e.target.value)} disabled={isDemo}
-              style={{ flex:1, fontSize:16, fontFamily:M.fontUI, border:'none', background:'transparent', outline:'none', color:isDemo?M.ink3:M.ink }}/>
-          </div>
-        </div>
-
-        {/* Country */}
-        <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:8, paddingLeft:4 }}>
-          <div className="m-cap" style={{ margin:0 }}>{t('profile.country')}</div>
-          <button className="m-tap" onClick={() => setShowCountryInfo(true)}
-            style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', padding:'0 2px' }}>
-            <I name="info" size={14} color={M.tint}/>
-          </button>
-        </div>
-        <div className="m-card" style={{ padding:'0 16px', marginBottom:countryError ? 6 : 20, border:`1px solid ${countryError ? M.clay : M.line}` }}>
-          <div
-            data-testid={T.profileCountryBtn}
-            className={isDemo ? '' : 'm-tap'}
-            onClick={isDemo ? undefined : () => { setCountrySearch(''); setShowCountry(true); }}
-            style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0', cursor: isDemo ? 'default' : 'pointer' }}
-          >
-            <div style={{ width:32, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-              {draftCountry ? <img src={countryFlagUrl(draftCountry)} width={24} height={24} style={flagStyle} alt={draftCountry}/> : <I name="globe" size={16} color={M.ink3}/>}
-            </div>
-            <div style={{ flex:1, minWidth:0 }}>
-              {draftCountry ? (
-                <div style={{ fontSize:15, color:M.ink }}>{countryName(COUNTRIES.find(c => c.code === draftCountry), lang)}</div>
-              ) : (
-                <div style={{ fontSize:15, color:M.ink4 }}>{t('profile.countryPlaceholder')}</div>
-              )}
-            </div>
-            {!isDemo && <I name="caretR" size={14} color={M.ink4}/>}
-          </div>
-        </div>
-        {countryError && <div data-testid={T.profileCountryErr} style={{ fontSize:11, color:M.clay, marginBottom:16, paddingLeft:4 }}>{countryError}</div>}
-
-        {/* Account info */}
-        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('settings.account')}</div>
-        <div className="m-card" style={{ padding:'0 16px', marginBottom:8, border:`1px solid ${M.line}` }}>
-          {(() => {
-            const canChangeEmail = !isGoogle && !isApple && !isDemo;
-            return (
-              <div className={canChangeEmail ? 'm-tap' : ''}
-                onClick={canChangeEmail ? () => { setNewEmailDraft(''); setChangeEmailStep('input'); setChangeEmailError(''); setVerifyCodeInput(''); setShowChangeEmail(true); } : undefined}
-                style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
-                <div style={{ width:20, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                  {isGoogle ? <IcoGoogle size={16}/> : isApple ? <IcoApple size={16} color={M.ink}/> : <I name="user" size={16} color={M.ink3}/>}
-                </div>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontSize:11, color:M.ink3, marginBottom:2 }}>{t('login.email')}</div>
-                  <div style={{ fontSize:14, color:M.ink, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{overrideEmail?.to || emailDisplay || '—'}</div>
-                </div>
-                {canChangeEmail ? <I name="caretR" size={14} color={M.ink4}/> : <I name="lock" size={13} color={M.ink4}/>}
-              </div>
-            );
-          })()}
-          <Divider/>
-          <div style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
-            <div style={{ width:20, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-              <I name="user" size={16} color={M.ink3}/>
-            </div>
-            <div style={{ flex:1, minWidth:0 }}>
-              <div style={{ fontSize:11, color:M.ink3, marginBottom:2 }}>{t('settings.userId')}</div>
-              <div style={{ fontSize:13, color:M.ink2, fontFamily:M.fontMono, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{_myId}</div>
-            </div>
-            <button className="m-tap" onClick={() => { navigator.clipboard?.writeText(_myId); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
-              style={{ background:copied?M.sageSoft:M.paper2, border:`1px solid ${copied?M.sage:M.line}`, borderRadius:8, padding:'4px 10px', fontSize:11, fontWeight:600, color:copied?M.sage:M.ink3, cursor:'pointer', fontFamily:M.fontUI, flexShrink:0 }}>
-              {copied ? t('settings.copied') : t('settings.copyId')}
-            </button>
-          </div>
-        </div>
-
-        <div style={{ textAlign:'center', fontSize:11, color:M.ink4, paddingBottom:20 }}>
-          {isGoogle ? t('login.signedInGoogle') : isApple ? t('login.signedInApple') : isDemo ? 'Demo account' : t('login.connectedEmail')}
-        </div>
-
-        {/* API endpoint */}
-        {!isDemo && (
+        {/* Name section — offline: single username; online: first + last */}
+        {isOffline ? (
           <>
-            <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('settings.apiUrl')}</div>
-            <div className="m-card" style={{ padding:'0 16px', marginBottom:24, border:`1px solid ${M.line}` }}>
-              <div className="m-tap" onClick={() => { setApiDraft(apiUrl); setShowApiSheet(true); }}
-                style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
-                <div style={{ width:32, height:32, borderRadius:9, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                  <I name="server" size={16} color={M.ink2}/>
-                </div>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontSize:14, fontWeight:500, color:M.ink }}>{t('settings.apiUrl')}</div>
-                  <div style={{ fontSize:11, color:M.ink3, marginTop:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{apiUrl || t('settings.apiUrlDefault')}</div>
-                </div>
-                <I name="caretR" size={14} color={M.ink4}/>
+            <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('settings.nameSection')}</div>
+            <div className="m-card" style={{ padding:'0 16px', marginBottom:16, border:`1px solid ${M.line}` }}>
+              <div style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
+                <div style={{ width:70, fontSize:12, color:M.ink3, flexShrink:0 }}>{t('profile.usernameLabel')}</div>
+                <input data-testid="offline-profile-username" value={draftName} onChange={e => setDraftName(e.target.value)}
+                  style={{ flex:1, fontSize:16, fontFamily:M.fontUI, border:'none', background:'transparent', outline:'none', color:M.ink }}/>
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('settings.nameSection')}</div>
+            <div className="m-card" style={{ padding:'0 16px', marginBottom:16, border:`1px solid ${M.line}` }}>
+              <div style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
+                <div style={{ width:70, fontSize:12, color:M.ink3, flexShrink:0 }}>{t('settings.firstName')}</div>
+                <input value={draftFirst} onChange={e => setDraftFirst(e.target.value)} disabled={isDemo}
+                  style={{ flex:1, fontSize:16, fontFamily:M.fontUI, border:'none', background:'transparent', outline:'none', color:isDemo?M.ink3:M.ink }}/>
+              </div>
+              <Divider/>
+              <div style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
+                <div style={{ width:70, fontSize:12, color:M.ink3, flexShrink:0 }}>{t('settings.lastName')}</div>
+                <input value={draftLast} onChange={e => setDraftLast(e.target.value)} disabled={isDemo}
+                  style={{ flex:1, fontSize:16, fontFamily:M.fontUI, border:'none', background:'transparent', outline:'none', color:isDemo?M.ink3:M.ink }}/>
               </div>
             </div>
           </>
         )}
 
-        {/* Delete account */}
-        {!isDemo && (
-          <div className="m-card" style={{ padding:'0 16px', marginBottom:24, border:`1px solid ${M.line}` }}>
-            <div className="m-tap" onClick={() => setShowDeleteAccount(true)}
-              style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
+        {isOffline ? (
+          /* ── Offline-only sections: key + data ── */
+          <>
+            {/* Encryption key */}
+            <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:8, paddingLeft:4 }}>
+              <div className="m-cap" style={{ margin:0 }}>{t('profile.offlineKeySection')}</div>
+              <button data-testid={T.offlineProfileKeyInfoBtn} className="m-tap" onClick={() => setShowKeyInfo(true)}
+                style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', padding:'0 2px' }}>
+                <I name="info" size={14} color={M.tint}/>
+              </button>
+            </div>
+            <div data-testid={T.offlineProfileKeySection} className="m-card" style={{ padding:'0 16px', marginBottom:20, border:`1px solid ${M.line}` }}>
+              <div style={{ display:'flex', alignItems:'center', gap:10, padding:'14px 0' }}>
+                <div style={{ width:32, height:32, borderRadius:9, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <I name="key" size={15} color={M.ink2}/>
+                </div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:11, color:M.ink3, marginBottom:3 }}>{t('profile.offlineKeySection')}</div>
+                  <div style={{ fontSize:13, fontFamily:M.fontMono, color:M.ink, letterSpacing:'0.05em', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                    {showKeyValue ? (encKey || '—') : (encKey ? '•••• •••• •••• •••• •••• •••• •••• ••••' : '—')}
+                  </div>
+                </div>
+                <button data-testid={T.offlineProfileKeyToggle} className="m-tap" onClick={() => setShowKeyValue(v => !v)}
+                  style={{ background:'none', border:'none', cursor:'pointer', padding:'4px 6px', color:M.ink3 }}>
+                  <I name={showKeyValue ? 'eyeOff' : 'eye'} size={18} color={M.ink3}/>
+                </button>
+              </div>
+              <Divider/>
+              <div data-testid={T.offlineProfileKeyRegen} className="m-tap" onClick={() => setShowRegenKey(true)}
+                style={{ display:'flex', alignItems:'center', gap:10, padding:'13px 0', cursor:'pointer' }}>
+                <div style={{ width:32, height:32, borderRadius:9, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <I name="refresh" size={15} color={M.ink2}/>
+                </div>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:14, fontWeight:500, color:M.ink }}>{t('profile.offlineKeyRegen')}</div>
+                </div>
+                <I name="caretR" size={14} color={M.ink4}/>
+              </div>
+            </div>
+
+            {/* Data section: Backup / Recover / Auto-backup */}
+            <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('profile.offlineDataSection')}</div>
+            <div className="m-card" style={{ padding:'0 16px', marginBottom:24, border:`1px solid ${M.line}` }}>
+              <div data-testid={T.offlineProfileBackupBtn} className="m-tap" onClick={() => setShowBackup(true)}
+                style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0', cursor:'pointer' }}>
+                <div style={{ width:32, height:32, borderRadius:9, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <I name="download" size={16} color={M.sage}/>
+                </div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:14, fontWeight:500, color:M.ink }}>{t('profile.offlineBackupBtn')}</div>
+                  <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{t('profile.offlineBackupSub')}</div>
+                </div>
+                <I name="caretR" size={14} color={M.ink4}/>
+              </div>
+              <Divider/>
+              <div data-testid={T.offlineProfileRecoverBtn} className="m-tap" onClick={() => { setRecoverStep('file'); setRecoverFile(null); setRecoverKeyDraft(''); setRecoverError(''); setShowRecover(true); }}
+                style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0', cursor:'pointer' }}>
+                <div style={{ width:32, height:32, borderRadius:9, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <I name="upload" size={16} color={M.ink2}/>
+                </div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:14, fontWeight:500, color:M.ink }}>{t('profile.offlineRecoverBtn')}</div>
+                  <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{t('profile.offlineRecoverSub')}</div>
+                </div>
+                <I name="caretR" size={14} color={M.ink4}/>
+              </div>
+              <Divider/>
+              <div data-testid={T.offlineProfileAutoBackupBtn} className="m-tap" onClick={() => { setDraftAutoFreq(autoBackupSettings?.frequency || 'daily'); setDraftAutoLoc(autoBackupSettings?.location || 'device'); setShowAutoBackup(true); }}
+                style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0', cursor:'pointer' }}>
+                <div style={{ width:32, height:32, borderRadius:9, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <I name="clock" size={16} color={M.ink2}/>
+                </div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:14, fontWeight:500, color:M.ink }}>{t('profile.offlineAutoBackupBtn')}</div>
+                  <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>
+                    {autoBackupSettings ? `${t(`profile.autoBackup${autoBackupSettings.frequency.charAt(0).toUpperCase()+autoBackupSettings.frequency.slice(1)}`)} · ${t(`profile.autoBackup${autoBackupSettings.location === 'device' ? 'Device' : autoBackupSettings.location === 'gdrive' ? 'GDrive' : autoBackupSettings.location === 'onedrive' ? 'OneDrive' : 'Dropbox'}`)}` : t('profile.offlineAutoBackupSub')}
+                  </div>
+                </div>
+                <I name="caretR" size={14} color={M.ink4}/>
+              </div>
+            </div>
+
+            {/* Delete account (reuse existing) */}
+            <div className="m-card" style={{ padding:'0 16px', marginBottom:24, border:`1px solid ${M.line}` }}>
+              <div className="m-tap" onClick={() => setShowDeleteAccount(true)}
+                style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
+                <div style={{ width:32, height:32, borderRadius:9, background:M.claySoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <I name="trash" size={16} color={M.clay}/>
+                </div>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:14, fontWeight:500, color:M.clay }}>{t('settings.deleteAccount')}</div>
+                  <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{t('settings.deleteAccountSub')}</div>
+                </div>
+                <I name="caretR" size={14} color={M.ink4}/>
+              </div>
+            </div>
+          </>
+        ) : (
+          /* ── Online / demo sections ── */
+          <>
+            {/* Country */}
+            <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:8, paddingLeft:4 }}>
+              <div className="m-cap" style={{ margin:0 }}>{t('profile.country')}</div>
+              <button className="m-tap" onClick={() => setShowCountryInfo(true)}
+                style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', padding:'0 2px' }}>
+                <I name="info" size={14} color={M.tint}/>
+              </button>
+            </div>
+            <div className="m-card" style={{ padding:'0 16px', marginBottom:countryError ? 6 : 20, border:`1px solid ${countryError ? M.clay : M.line}` }}>
+              <div
+                data-testid={T.profileCountryBtn}
+                className={isDemo ? '' : 'm-tap'}
+                onClick={isDemo ? undefined : () => { setCountrySearch(''); setShowCountry(true); }}
+                style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0', cursor: isDemo ? 'default' : 'pointer' }}
+              >
+                <div style={{ width:32, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  {draftCountry ? <img src={countryFlagUrl(draftCountry)} width={24} height={24} style={flagStyle} alt={draftCountry}/> : <I name="globe" size={16} color={M.ink3}/>}
+                </div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  {draftCountry ? (
+                    <div style={{ fontSize:15, color:M.ink }}>{countryName(COUNTRIES.find(c => c.code === draftCountry), lang)}</div>
+                  ) : (
+                    <div style={{ fontSize:15, color:M.ink4 }}>{t('profile.countryPlaceholder')}</div>
+                  )}
+                </div>
+                {!isDemo && <I name="caretR" size={14} color={M.ink4}/>}
+              </div>
+            </div>
+            {countryError && <div data-testid={T.profileCountryErr} style={{ fontSize:11, color:M.clay, marginBottom:16, paddingLeft:4 }}>{countryError}</div>}
+
+            {/* Account info */}
+            <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('settings.account')}</div>
+            <div className="m-card" style={{ padding:'0 16px', marginBottom:8, border:`1px solid ${M.line}` }}>
+              {(() => {
+                const canChangeEmail = !isGoogle && !isApple && !isDemo;
+                return (
+                  <div className={canChangeEmail ? 'm-tap' : ''}
+                    onClick={canChangeEmail ? () => { setNewEmailDraft(''); setChangeEmailStep('input'); setChangeEmailError(''); setVerifyCodeInput(''); setShowChangeEmail(true); } : undefined}
+                    style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
+                    <div style={{ width:20, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                      {isGoogle ? <IcoGoogle size={16}/> : isApple ? <IcoApple size={16} color={M.ink}/> : <I name="user" size={16} color={M.ink3}/>}
+                    </div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:11, color:M.ink3, marginBottom:2 }}>{t('login.email')}</div>
+                      <div style={{ fontSize:14, color:M.ink, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{overrideEmail?.to || emailDisplay || '—'}</div>
+                    </div>
+                    {canChangeEmail ? <I name="caretR" size={14} color={M.ink4}/> : <I name="lock" size={13} color={M.ink4}/>}
+                  </div>
+                );
+              })()}
+              <Divider/>
+              <div style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
+                <div style={{ width:20, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <I name="user" size={16} color={M.ink3}/>
+                </div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:11, color:M.ink3, marginBottom:2 }}>{t('settings.userId')}</div>
+                  <div style={{ fontSize:13, color:M.ink2, fontFamily:M.fontMono, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{_myId}</div>
+                </div>
+                <button className="m-tap" onClick={() => { navigator.clipboard?.writeText(_myId); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+                  style={{ background:copied?M.sageSoft:M.paper2, border:`1px solid ${copied?M.sage:M.line}`, borderRadius:8, padding:'4px 10px', fontSize:11, fontWeight:600, color:copied?M.sage:M.ink3, cursor:'pointer', fontFamily:M.fontUI, flexShrink:0 }}>
+                  {copied ? t('settings.copied') : t('settings.copyId')}
+                </button>
+              </div>
+            </div>
+
+            <div style={{ textAlign:'center', fontSize:11, color:M.ink4, paddingBottom:20 }}>
+              {isGoogle ? t('login.signedInGoogle') : isApple ? t('login.signedInApple') : isDemo ? 'Demo account' : t('login.connectedEmail')}
+            </div>
+
+            {/* API endpoint */}
+            {!isDemo && (
+              <>
+                <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('settings.apiUrl')}</div>
+                <div className="m-card" style={{ padding:'0 16px', marginBottom:24, border:`1px solid ${M.line}` }}>
+                  <div className="m-tap" onClick={() => { setApiDraft(apiUrl); setShowApiSheet(true); }}
+                    style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
+                    <div style={{ width:32, height:32, borderRadius:9, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                      <I name="server" size={16} color={M.ink2}/>
+                    </div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:14, fontWeight:500, color:M.ink }}>{t('settings.apiUrl')}</div>
+                      <div style={{ fontSize:11, color:M.ink3, marginTop:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{apiUrl || t('settings.apiUrlDefault')}</div>
+                    </div>
+                    <I name="caretR" size={14} color={M.ink4}/>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Delete account */}
+            {!isDemo && (
+              <div className="m-card" style={{ padding:'0 16px', marginBottom:24, border:`1px solid ${M.line}` }}>
+                <div className="m-tap" onClick={() => setShowDeleteAccount(true)}
+                  style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
               <div style={{ width:32, height:32, borderRadius:9, background:M.claySoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                 <I name="trash" size={16} color={M.clay}/>
               </div>
@@ -482,6 +677,8 @@ export function ScreenUserInfo() {
               <I name="caretR" size={14} color={M.ink4}/>
             </div>
           </div>
+        )}
+          </>
         )}
       </div>
 
@@ -667,6 +864,152 @@ export function ScreenUserInfo() {
               <button className="m-btn outline m-tap" onClick={() => setDeleteAccountStep('feedback')}
                 style={{ width:'100%' }}>{t('action.back')}</button>
             </>)}
+          </div>
+        </Sheet>
+      )}
+
+      {/* Key info sheet */}
+      {isOffline && showKeyInfo && (
+        <Sheet onClose={() => setShowKeyInfo(false)}>
+          <div data-testid={T.offlineProfileKeyInfoSheet} style={{ padding:'0 16px 24px' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:14 }}>
+              <div style={{ width:38, height:38, borderRadius:10, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <I name="key" size={18} color={M.sage}/>
+              </div>
+              <div style={{ fontSize:17, fontWeight:700, color:M.ink }}>{t('profile.offlineKeyInfoTitle')}</div>
+            </div>
+            <div style={{ fontSize:14, color:M.ink2, lineHeight:1.65 }}>{t('profile.offlineKeyInfoBody')}</div>
+          </div>
+        </Sheet>
+      )}
+
+      {/* Regenerate key warning sheet */}
+      {isOffline && showRegenKey && (
+        <Sheet onClose={() => setShowRegenKey(false)}>
+          <div data-testid={T.offlineProfileRegenSheet} style={{ padding:'0 16px 24px' }}>
+            <div style={{ width:48, height:48, borderRadius:'50%', background:'#FFF3CD', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 14px' }}>
+              <I name="alert" size={22} color="#B8860B"/>
+            </div>
+            <div style={{ fontSize:17, fontWeight:700, textAlign:'center', marginBottom:10, color:M.ink }}>{t('profile.offlineRegenTitle')}</div>
+            <div style={{ fontSize:14, color:M.ink2, lineHeight:1.6, marginBottom:24 }}>{t('profile.offlineRegenWarning')}</div>
+            <button data-testid={T.offlineProfileRegenConfirm} className="m-btn m-tap" onClick={() => { setEncKey(generateEncKey()); setShowKeyValue(false); setShowRegenKey(false); }}
+              style={{ width:'100%', marginBottom:10, background:M.clay, color:'#fff' }}>{t('profile.offlineRegenConfirm')}</button>
+            <button className="m-btn outline m-tap" onClick={() => setShowRegenKey(false)} style={{ width:'100%' }}>{t('action.cancel')}</button>
+          </div>
+        </Sheet>
+      )}
+
+      {/* Backup sheet */}
+      {isOffline && showBackup && (
+        <Sheet onClose={() => setShowBackup(false)}>
+          <div data-testid={T.offlineProfileBackupSheet} style={{ padding:'0 16px 24px' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:14 }}>
+              <div style={{ width:38, height:38, borderRadius:10, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <I name="download" size={18} color={M.sage}/>
+              </div>
+              <div style={{ fontSize:17, fontWeight:700, color:M.ink }}>{t('profile.backupTitle')}</div>
+            </div>
+            <div style={{ fontSize:14, color:M.ink2, lineHeight:1.6, marginBottom:16 }}>{t('profile.backupKeyNote')}</div>
+            <div style={{ background:M.paper2, borderRadius:10, padding:'10px 14px', marginBottom:20, border:`1px solid ${M.line}` }}>
+              <div style={{ fontSize:11, color:M.ink3, marginBottom:4 }}>{t('profile.offlineKeySection')}</div>
+              <div style={{ fontSize:13, fontFamily:M.fontMono, color:M.ink2, letterSpacing:'0.04em' }}>{encKey || '—'}</div>
+            </div>
+            <button data-testid={T.offlineProfileBackupConfirm} className="m-btn sage m-tap" onClick={doBackup} style={{ width:'100%', marginBottom:10 }}>{t('profile.backupConfirm')}</button>
+            <button className="m-btn outline m-tap" onClick={() => setShowBackup(false)} style={{ width:'100%' }}>{t('action.cancel')}</button>
+          </div>
+        </Sheet>
+      )}
+
+      {/* Recover sheet */}
+      {isOffline && showRecover && (
+        <Sheet onClose={() => { setShowRecover(false); setRecoverStep('file'); setRecoverFile(null); setRecoverKeyDraft(''); setRecoverError(''); }}>
+          <div data-testid={T.offlineProfileRecoverSheet} style={{ padding:'0 16px 24px' }}>
+            {recoverStep === 'file' && (<>
+              <div style={{ fontSize:17, fontWeight:700, marginBottom:4, color:M.ink }}>{t('profile.recoverTitle')}</div>
+              <div style={{ fontSize:13, color:M.ink3, marginBottom:20 }}>{t('profile.recoverSelectFileSub')}</div>
+              <label data-testid={T.offlineProfileRecoverFilePick} className="m-tap"
+                style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 16px', background:M.paper2, borderRadius:12, border:`1.5px dashed ${recoverFile ? M.sage : M.line}`, cursor:'pointer', marginBottom:20 }}>
+                <div style={{ width:36, height:36, borderRadius:9, background:recoverFile ? M.sageSoft : M.paper2, border:`1px solid ${recoverFile ? M.sage : M.line}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <I name="upload" size={16} color={recoverFile ? M.sage : M.ink3}/>
+                </div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  {recoverFile
+                    ? <><div style={{ fontSize:12, color:M.ink3, marginBottom:2 }}>{t('profile.recoverFileSelected')}</div><div style={{ fontSize:14, color:M.ink, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{recoverFile.name}</div></>
+                    : <div style={{ fontSize:14, color:M.ink3 }}>{t('profile.recoverSelectFile')}</div>}
+                </div>
+                <input type="file" accept=".mun" onChange={e => setRecoverFile(e.target.files?.[0] || null)} style={{ display:'none' }}/>
+              </label>
+              <button className="m-btn sage m-tap" onClick={() => { if (recoverFile) setRecoverStep('key'); }} style={{ width:'100%', opacity: recoverFile ? 1 : 0.5 }}>{t('login.continue')}</button>
+            </>)}
+            {recoverStep === 'key' && (<>
+              <div style={{ fontSize:17, fontWeight:700, marginBottom:4, color:M.ink }}>{t('profile.recoverTitle')}</div>
+              <div style={{ fontSize:13, color:M.ink3, marginBottom:16 }}>{t('profile.recoverKeyLabel')}</div>
+              <input data-testid={T.offlineProfileRecoverKeyInput} className="m-input" value={recoverKeyDraft}
+                onChange={e => { setRecoverKeyDraft(e.target.value); setRecoverError(''); }}
+                placeholder={t('profile.recoverKeyPlaceholder')} autoFocus
+                style={{ width:'100%', marginBottom:8, boxSizing:'border-box', height:48, fontFamily:M.fontMono, letterSpacing:'0.05em' }}/>
+              {recoverError && <div style={{ fontSize:12, color:M.clay, marginBottom:8 }}>{recoverError}</div>}
+              <button data-testid={T.offlineProfileRecoverStart} className="m-btn sage m-tap" onClick={doRecover} style={{ width:'100%', marginTop:8 }}>{t('profile.recoverBtn')}</button>
+            </>)}
+            {recoverStep === 'loading' && (
+              <div style={{ display:'flex', flexDirection:'column', alignItems:'center', padding:'32px 0 16px', gap:14 }}>
+                <div style={{ width:56, height:56, borderRadius:'50%', background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  <I name="refresh" size={26} color={M.sage}/>
+                </div>
+                <div style={{ fontSize:16, fontWeight:600, color:M.ink, textAlign:'center' }}>{t('offline.recoverLoading')}</div>
+                <div style={{ fontSize:13, color:M.ink3, textAlign:'center' }}>{t('offline.recoverLoadingSub')}</div>
+              </div>
+            )}
+            {recoverStep === 'done' && (
+              <div data-testid={T.offlineProfileRecoverSuccess} style={{ display:'flex', flexDirection:'column', alignItems:'center', padding:'24px 0 8px', gap:12 }}>
+                <div style={{ width:56, height:56, borderRadius:'50%', background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  <I name="check" size={28} color={M.sage}/>
+                </div>
+                <div style={{ fontSize:17, fontWeight:700, textAlign:'center', color:M.ink }}>{t('profile.recoverSuccess')}</div>
+                <div style={{ fontSize:13, color:M.ink3, textAlign:'center' }}>{t('profile.recoverSuccessSub')}</div>
+                <button className="m-btn sage m-tap" onClick={() => { setShowRecover(false); setRecoverStep('file'); }} style={{ width:'100%', marginTop:12 }}>{t('action.done')}</button>
+              </div>
+            )}
+          </div>
+        </Sheet>
+      )}
+
+      {/* Auto-backup sheet */}
+      {isOffline && showAutoBackup && (
+        <Sheet onClose={() => setShowAutoBackup(false)}>
+          <div data-testid={T.offlineProfileAutoBackupSheet} style={{ padding:'0 16px 24px' }}>
+            <div style={{ fontSize:17, fontWeight:700, marginBottom:20, color:M.ink }}>{t('profile.autoBackupTitle')}</div>
+
+            <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('profile.autoBackupFreq')}</div>
+            <div className="m-card" style={{ padding:'0 16px', marginBottom:20, border:`1px solid ${M.line}` }}>
+              {['daily','weekly','monthly'].map((freq, idx, arr) => (
+                <React.Fragment key={freq}>
+                  <div className="m-tap" onClick={() => setDraftAutoFreq(freq)}
+                    style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0', cursor:'pointer' }}>
+                    <div style={{ flex:1, fontSize:14, color:M.ink }}>{t(`profile.autoBackup${freq.charAt(0).toUpperCase()+freq.slice(1)}`)}</div>
+                    {draftAutoFreq === freq && <I name="check" size={16} color={M.sage}/>}
+                  </div>
+                  {idx < arr.length-1 && <Divider/>}
+                </React.Fragment>
+              ))}
+            </div>
+
+            <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('profile.autoBackupLoc')}</div>
+            <div className="m-card" style={{ padding:'0 16px', marginBottom:24, border:`1px solid ${M.line}` }}>
+              {[['device','Device'],['gdrive','GDrive'],['onedrive','OneDrive'],['dropbox','Dropbox']].map(([loc, tKey], idx, arr) => (
+                <React.Fragment key={loc}>
+                  <div className="m-tap" onClick={() => setDraftAutoLoc(loc)}
+                    style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0', cursor:'pointer' }}>
+                    <div style={{ flex:1, fontSize:14, color:M.ink }}>{t(`profile.autoBackup${tKey}`)}</div>
+                    {draftAutoLoc === loc && <I name="check" size={16} color={M.sage}/>}
+                  </div>
+                  {idx < arr.length-1 && <Divider/>}
+                </React.Fragment>
+              ))}
+            </div>
+
+            <button data-testid={T.offlineProfileAutoBackupSave} className="m-btn sage m-tap" onClick={() => { setAutoBackupSettings({ enabled:true, frequency:draftAutoFreq, location:draftAutoLoc }); setShowAutoBackup(false); }}
+              style={{ width:'100%' }}>{t('profile.autoBackupSave')}</button>
           </div>
         </Sheet>
       )}

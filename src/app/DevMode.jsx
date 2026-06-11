@@ -359,12 +359,13 @@ const ANNOTATIONS = {
 
   'offline-create': {
     screen: 'Offline mode — profile creator',
-    sub: 'Creates a new offline profile: avatar picker + name input.',
+    sub: 'Creates a new offline profile: avatar picker + name input. Also offers "Recover from backup" to reach offline-recover.',
     states: [
       { tag: 'name error',  note: 'offlineNameError shown below input when submitting empty' },
     ],
     flows: [
       { from: '"Create profile"',  to: 'Home (doOfflineLogin with new profile)' },
+      { from: '"Recover from backup"', to: 'offline-recover' },
       { from: 'Back',              to: 'offline-select' },
       { from: 'Avatar tap',        to: 'Avatar picker sheet (STOCK_AVATARS grid)' },
     ],
@@ -378,6 +379,27 @@ const ANNOTATIONS = {
       'munni_profile_name_{offline}_{id} (LS, via computeUserDataKey)',
       'munni_user_picture_{id} (LS)',
     ],
+  },
+
+  'offline-recover': {
+    screen: 'Offline mode — recover from backup',
+    sub: '3-step flow: select .mun file → enter encryption key → loading animation → success. On success creates a new offline profile and logs in.',
+    states: [
+      { tag: 'file',    note: 'Step 1: file picker label, continue disabled until file chosen' },
+      { tag: 'key',     note: 'Step 2: key text input, error shown below if empty on submit' },
+      { tag: 'loading', note: 'Step 3: animation (spinner icon + text), auto-advances after 2.4s' },
+      { tag: 'done',    note: 'Step 4: success checkmark + "Go to munni" button → doOfflineLogin' },
+    ],
+    flows: [
+      { from: '"Go to munni" (done step)', to: 'Home (doOfflineLogin with restored profile)' },
+      { from: 'Back',                      to: 'offline-create' },
+    ],
+    rules: [
+      'Restored profile uses id = offline_${Date.now()}, name = "Recovered Profile" (placeholder)',
+      'No real decryption: any non-empty key is accepted (demo placeholder)',
+    ],
+    edge: ['File input is hidden behind a styled label; .mun extension filter only'],
+    storage: ['munni_offline_profiles (LS) — restored profile appended'],
   },
 
   // ── Tab screens ──────────────────────────────────────────────────────────

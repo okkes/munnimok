@@ -146,7 +146,7 @@
   goalRow:              'goal-row',
   goalAddBtn:           'goal-add-btn',
 
-  // Offline mode
+  // Offline mode — login/select/create
   loginOfflineBtn:      'login-offline-btn',
   offlineInfoScreen:    'offline-info-screen',
   offlineInfoCta:       'offline-info-cta',
@@ -156,7 +156,36 @@
   offlineCreateScreen:  'offline-create-screen',
   offlineCreateName:    'offline-create-name',
   offlineCreateCta:     'offline-create-cta',
+  offlineCreateRecoverBtn: 'offline-create-recover-btn',
   offlineHomeBanner:    'offline-home-banner',
+
+  // Offline mode — recover flow (App.jsx, pre-login)
+  offlineRecoverScreen:     'offline-recover-screen',
+  offlineRecoverFilePick:   'offline-recover-file-pick',
+  offlineRecoverKeyInput:   'offline-recover-key-input',
+  offlineRecoverStart:      'offline-recover-start',
+  offlineRecoverSuccess:    'offline-recover-success',
+
+  // Offline profile — key management & backup (Profile.jsx)
+  offlineProfileKeySection:    'offline-profile-key-section',
+  offlineProfileKeyToggle:     'offline-profile-key-toggle',
+  offlineProfileKeyRegen:      'offline-profile-key-regen',
+  offlineProfileKeyInfoBtn:    'offline-profile-key-info-btn',
+  offlineProfileKeyInfoSheet:  'offline-profile-key-info-sheet',
+  offlineProfileRegenSheet:    'offline-profile-regen-sheet',
+  offlineProfileRegenConfirm:  'offline-profile-regen-confirm',
+  offlineProfileBackupBtn:     'offline-profile-backup-btn',
+  offlineProfileBackupSheet:   'offline-profile-backup-sheet',
+  offlineProfileBackupConfirm: 'offline-profile-backup-confirm',
+  offlineProfileRecoverBtn:    'offline-profile-recover-btn',
+  offlineProfileRecoverSheet:  'offline-profile-recover-sheet',
+  offlineProfileRecoverFilePick: 'offline-profile-recover-file-pick',
+  offlineProfileRecoverKeyInput: 'offline-profile-recover-key-input',
+  offlineProfileRecoverStart:    'offline-profile-recover-start',
+  offlineProfileRecoverSuccess:  'offline-profile-recover-success',
+  offlineProfileAutoBackupBtn:   'offline-profile-auto-backup-btn',
+  offlineProfileAutoBackupSheet: 'offline-profile-auto-backup-sheet',
+  offlineProfileAutoBackupSave:  'offline-profile-auto-backup-save',
 
   // Shared
   sheetClose:           'sheet-close',

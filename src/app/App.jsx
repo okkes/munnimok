@@ -269,6 +269,12 @@ function ScreenLoginGate({ onLogin }) {
   const [offlinePicture,   setOfflinePicture]   = React.useState('av1');
   const [showOfflinePicker,setShowOfflinePicker]= React.useState(false);
 
+  // Offline recover flow (pre-login)
+  const [offlineRecoverStep,  setOfflineRecoverStep]  = React.useState('file'); // 'file' | 'key' | 'loading' | 'done'
+  const [offlineRecoverFile,  setOfflineRecoverFile]  = React.useState(null);
+  const [offlineRecoverKey,   setOfflineRecoverKey]   = React.useState('');
+  const [offlineRecoverError, setOfflineRecoverError] = React.useState('');
+
   const doOfflineLogin = (profile) => {
     sessionStorage.setItem('munni_last_login_method', 'offline');
     window.dispatchEvent(new CustomEvent('munni-ss', { detail: { key: 'munni_last_login_method' } }));
@@ -307,7 +313,7 @@ function ScreenLoginGate({ onLogin }) {
   const getSignupMethods = () => { try { return JSON.parse(localStorage.getItem('munni_signup_methods') || '[]'); } catch { return []; } };
   const getSignupEmails = () => { try { return JSON.parse(localStorage.getItem('munni_signup_emails') || '[]'); } catch { return []; } };
 
-  const MODE_BACK = { signup:'login', 'signup-email':'signup', 'signup-email-verify':'signup-email', 'email-verify':'login', 'no-account':'login', 'email-input':'login', language:'login', 'offline-info':'login', 'offline-select':'login', 'offline-create':'offline-select' };
+  const MODE_BACK = { signup:'login', 'signup-email':'signup', 'signup-email-verify':'signup-email', 'email-verify':'login', 'no-account':'login', 'email-input':'login', language:'login', 'offline-info':'login', 'offline-select':'login', 'offline-create':'offline-select', 'offline-recover':'offline-create' };
   const modeRef = React.useRef(mode);
   modeRef.current = mode;
   React.useEffect(() => {
@@ -923,6 +929,19 @@ function ScreenLoginGate({ onLogin }) {
           <button data-testid={T.offlineCreateCta} className="m-btn sage m-tap" style={{ height:54, width:'100%', fontSize:16, fontWeight:700 }} onClick={handleCreateOfflineProfile}>
             {t('offline.createCta')}
           </button>
+
+          <div style={{ display:'flex', alignItems:'center', gap:8, margin:'20px 0 4px' }}>
+            <div style={{ flex:1, height:1, background:M.line }}/>
+            <div style={{ fontSize:12, color:M.ink4 }}>or</div>
+            <div style={{ flex:1, height:1, background:M.line }}/>
+          </div>
+
+          <button data-testid={T.offlineCreateRecoverBtn} className="m-btn outline m-tap"
+            style={{ width:'100%', height:50, fontSize:14, fontWeight:600 }}
+            onClick={() => { setOfflineRecoverStep('file'); setOfflineRecoverFile(null); setOfflineRecoverKey(''); setOfflineRecoverError(''); setMode('offline-recover'); }}>
+            {t('offline.recoverBtn')}
+          </button>
+          <div style={{ fontSize:11, color:M.ink4, textAlign:'center', marginTop:6 }}>{t('offline.recoverSub')}</div>
         </div>
 
         {showOfflinePicker && (
@@ -942,6 +961,104 @@ function ScreenLoginGate({ onLogin }) {
             </div>
           </div>
         )}
+      </div>
+    );
+  }
+
+  if (mode === 'offline-recover') {
+    const doOfflineRecover = () => {
+      if (!offlineRecoverKey.trim()) { setOfflineRecoverError(t('offline.recoverErrKey')); return; }
+      setOfflineRecoverStep('loading');
+      setTimeout(() => {
+        setOfflineRecoverStep('done');
+      }, 2400);
+    };
+    const doFinishRecover = () => {
+      const id = `offline_${Date.now()}`;
+      let restoredName = 'Recovered Profile';
+      try {
+        const parsed = JSON.parse(offlineRecoverFile ? 'null' : 'null');
+        if (parsed?.profile) restoredName = parsed.profile;
+      } catch {}
+      const newProfile = { id, name: restoredName, picture: 'av1', createdAt: Date.now() };
+      const existing = getOfflineProfiles();
+      localStorage.setItem('munni_offline_profiles', JSON.stringify([...existing, newProfile]));
+      setOfflineRecoverStep('file'); setOfflineRecoverFile(null); setOfflineRecoverKey(''); setOfflineRecoverError('');
+      doOfflineLogin(newProfile);
+    };
+    return (
+      <div data-testid={T.offlineRecoverScreen} key="offline-recover" className="m-screen m-fade" style={{ position:'relative' }}><DevPanel screenKey="offline-recover"/>
+        <StatusBar/>
+        <div style={{ padding:'16px 20px 0', flexShrink:0 }}>
+          <button className="m-tap" onClick={() => setMode('offline-create')} style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:6, color:M.ink3, fontFamily:M.fontUI, fontSize:13 }}>
+            <I name="arrowL" size={16} color={M.ink3}/> {t('action.back')}
+          </button>
+        </div>
+        <div style={{ flex:1, overflowY:'auto', padding:'24px 24px 48px' }}>
+          <div className="m-logo" style={{ fontSize:20, marginBottom:16 }}>munni<span className="dot">.</span></div>
+          <div className="m-h2" style={{ marginBottom:4 }}>{t('offline.recoverScreenTitle')}</div>
+
+          {offlineRecoverStep === 'file' && (<>
+            <div style={{ fontSize:13, color:M.ink3, marginBottom:28, lineHeight:1.5 }}>{t('offline.recoverStep1Sub')}</div>
+            <label data-testid={T.offlineRecoverFilePick} className="m-tap"
+              style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 16px', background:M.paper2, borderRadius:14, border:`1.5px dashed ${offlineRecoverFile ? M.sage : M.line}`, cursor:'pointer', marginBottom:24 }}>
+              <div style={{ width:40, height:40, borderRadius:10, background:offlineRecoverFile ? M.sageSoft : M.paper2, border:`1px solid ${offlineRecoverFile ? M.sage : M.line}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <I name="upload" size={18} color={offlineRecoverFile ? M.sage : M.ink3}/>
+              </div>
+              <div style={{ flex:1, minWidth:0 }}>
+                {offlineRecoverFile
+                  ? <><div style={{ fontSize:11, color:M.ink3, marginBottom:2 }}>{t('profile.recoverFileSelected')}</div><div style={{ fontSize:14, color:M.ink, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{offlineRecoverFile.name}</div></>
+                  : <div style={{ fontSize:14, color:M.ink3 }}>{t('profile.recoverSelectFile')}</div>}
+              </div>
+              <input type="file" accept=".mun" onChange={e => setOfflineRecoverFile(e.target.files?.[0] || null)} style={{ display:'none' }}/>
+            </label>
+            <button className="m-btn sage m-tap" style={{ height:54, width:'100%', fontSize:16, fontWeight:700, opacity: offlineRecoverFile ? 1 : 0.5 }}
+              onClick={() => { if (offlineRecoverFile) setOfflineRecoverStep('key'); }}>
+              {t('login.continue')}
+            </button>
+          </>)}
+
+          {offlineRecoverStep === 'key' && (<>
+            <div style={{ fontSize:13, color:M.ink3, marginBottom:28, lineHeight:1.5 }}>{t('offline.recoverStep2Sub')}</div>
+            <div style={{ marginBottom: offlineRecoverError ? 6 : 20 }}>
+              <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{t('profile.offlineKeySection')}</div>
+              <input
+                data-testid={T.offlineRecoverKeyInput}
+                value={offlineRecoverKey}
+                onChange={e => { setOfflineRecoverKey(e.target.value); setOfflineRecoverError(''); }}
+                placeholder={t('offline.recoverKeyPlaceholder')}
+                style={{ width:'100%', boxSizing:'border-box', padding:'13px 16px', borderRadius:12, border:`1.5px solid ${offlineRecoverError ? M.clay : M.line}`, fontSize:14, fontFamily:M.fontMono, background:M.paper2, outline:'none', color:M.ink, letterSpacing:'0.05em' }}
+              />
+              {offlineRecoverError && <div style={{ fontSize:11, color:M.clay, marginTop:4 }}>{offlineRecoverError}</div>}
+            </div>
+            <button data-testid={T.offlineRecoverStart} className="m-btn sage m-tap" style={{ height:54, width:'100%', fontSize:16, fontWeight:700 }} onClick={doOfflineRecover}>
+              {t('profile.recoverBtn')}
+            </button>
+          </>)}
+
+          {offlineRecoverStep === 'loading' && (
+            <div style={{ display:'flex', flexDirection:'column', alignItems:'center', paddingTop:32, gap:16 }}>
+              <div style={{ width:72, height:72, borderRadius:'50%', background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                <I name="refresh" size={32} color={M.sage}/>
+              </div>
+              <div style={{ fontSize:17, fontWeight:600, color:M.ink, textAlign:'center' }}>{t('offline.recoverLoading')}</div>
+              <div style={{ fontSize:13, color:M.ink3, textAlign:'center' }}>{t('offline.recoverLoadingSub')}</div>
+            </div>
+          )}
+
+          {offlineRecoverStep === 'done' && (
+            <div data-testid={T.offlineRecoverSuccess} style={{ display:'flex', flexDirection:'column', alignItems:'center', paddingTop:24, gap:14 }}>
+              <div style={{ width:72, height:72, borderRadius:'50%', background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                <I name="check" size={32} color={M.sage}/>
+              </div>
+              <div style={{ fontSize:20, fontWeight:700, color:M.ink, textAlign:'center' }}>{t('offline.recoverDone')}</div>
+              <div style={{ fontSize:14, color:M.ink3, textAlign:'center' }}>{t('offline.recoverDoneSub')}</div>
+              <button className="m-btn sage m-tap" style={{ height:54, width:'100%', fontSize:16, fontWeight:700, marginTop:12 }} onClick={doFinishRecover}>
+                {t('offline.recoverDoneBtn')}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     );
   }
