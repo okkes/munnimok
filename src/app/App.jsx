@@ -301,9 +301,13 @@ function ScreenLoginGate({ onLogin }) {
   const handleCreateOfflineProfile = () => {
     const name = offlineName.trim();
     if (!name) { setOfflineNameError(t('offline.errNameRequired')); return; }
+    const existing = getOfflineProfiles();
+    if (existing.some(p => p.name.trim().toLowerCase() === name.toLowerCase())) {
+      setOfflineNameError(t('offline.errDuplicateName'));
+      return;
+    }
     const id = `offline_${Date.now()}`;
     const newProfile = { id, name, picture: offlinePicture, createdAt: Date.now() };
-    const existing = getOfflineProfiles();
     localStorage.setItem('munni_offline_profiles', JSON.stringify([...existing, newProfile]));
     setOfflineName(''); setOfflineNameError(''); setOfflinePicture('av1');
     doOfflineLogin(newProfile);

@@ -859,10 +859,19 @@ export function ScreenUserInfo() {
               <div style={{ fontSize:17, fontWeight:700, textAlign:'center', marginBottom:8 }}>{t('settings.deleteAccount')}</div>
               <div style={{ fontSize:13, color:M.ink3, textAlign:'center', marginBottom:24 }}>{t('settings.deleteAccountBody')}</div>
               <button className="m-tap" onClick={() => {
-                const allLsKeys = Object.keys(localStorage).filter(k => k.startsWith('munni_'));
-                allLsKeys.forEach(k => localStorage.removeItem(k));
-                const allSsKeys = Object.keys(sessionStorage).filter(k => k.startsWith('munni_'));
-                allSsKeys.forEach(k => sessionStorage.removeItem(k));
+                if (isOffline && _safeEmail) {
+                  const profiles = JSON.parse(localStorage.getItem('munni_offline_profiles') || '[]');
+                  const updated = profiles.filter(p => p.id !== _safeEmail);
+                  if (updated.length > 0) {
+                    localStorage.setItem('munni_offline_profiles', JSON.stringify(updated));
+                  } else {
+                    localStorage.removeItem('munni_offline_profiles');
+                  }
+                  Object.keys(localStorage).filter(k => k.startsWith('munni_') && k.includes(_safeEmail)).forEach(k => localStorage.removeItem(k));
+                } else {
+                  Object.keys(localStorage).filter(k => k.startsWith('munni_')).forEach(k => localStorage.removeItem(k));
+                }
+                Object.keys(sessionStorage).filter(k => k.startsWith('munni_')).forEach(k => sessionStorage.removeItem(k));
                 window.location.reload();
               }} style={{ width:'100%', padding:'14px 0', background:M.clay, border:'none', borderRadius:13, fontSize:15, fontWeight:700, color:'#fff', cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>
                 {t('settings.deleteAccountConfirm')}
