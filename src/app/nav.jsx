@@ -172,8 +172,20 @@ export function Sheet({ children, onClose, open, title }) {
   const startYRef = React.useRef(null);
   const didMountRef = React.useRef(false);
   const [kbOffset, setKbOffset] = React.useState(0);
+  const panelRef = React.useRef(null);
+  const [lockedMinHeight, setLockedMinHeight] = React.useState(null);
 
   React.useEffect(() => { didMountRef.current = true; }, []);
+
+  // Lock height after open animation so content filtering never shrinks the sheet
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      if (panelRef.current) {
+        setLockedMinHeight(panelRef.current.getBoundingClientRect().height);
+      }
+    }, 380);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Push sheet above keyboard on iOS using Visual Viewport API
   React.useEffect(() => {
@@ -215,26 +227,30 @@ export function Sheet({ children, onClose, open, title }) {
       transition: 'padding-bottom 0.15s ease',
       touchAction: 'none',
     }} onClick={onClose}>
-      <div style={{
+      <div ref={panelRef} style={{
         background: M.paper, borderTopLeftRadius: 24, borderTopRightRadius: 24,
-        maxHeight: '88%', display: 'flex', flexDirection: 'column',
+        maxHeight: '88%', minHeight: lockedMinHeight || undefined,
+        display: 'flex', flexDirection: 'column',
         animation: !didMountRef.current ? 'mSheetUp 0.32s cubic-bezier(.2,.7,.2,1)' : 'none',
         transform: dragY > 0 ? `translateY(${dragY}px)` : undefined,
         transition: (dragY === 0 && didMountRef.current) ? 'transform 0.25s cubic-bezier(.2,.7,.2,1)' : 'none',
         touchAction: 'pan-y',
       }} onClick={e => e.stopPropagation()}>
+        {/* Draggable header: pill + title combined into one full-height touch target */}
         <div
           onTouchStart={onHandleTouchStart}
           onTouchMove={onHandleTouchMove}
           onTouchEnd={onHandleTouchEnd}
-          style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 4px', touchAction: 'none', cursor: 'grab' }}>
-          <div style={{ width: 36, height: 4, borderRadius: 999, background: M.line }}/>
-        </div>
-        {title && (
-          <div style={{ fontSize: 17, fontWeight: 700, padding: '4px 16px 12px', fontFamily: M.fontUI }}>
-            {title}
+          style={{ touchAction: 'none', cursor: 'grab', userSelect: 'none', flexShrink: 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'center', padding: title ? '12px 0 6px' : '14px 0 10px' }}>
+            <div style={{ width: 36, height: 4, borderRadius: 999, background: M.line }}/>
           </div>
-        )}
+          {title && (
+            <div style={{ fontSize: 17, fontWeight: 700, padding: '2px 16px 14px', fontFamily: M.fontUI }}>
+              {title}
+            </div>
+          )}
+        </div>
         {title ? (
           <div style={{ padding: '0 16px 16px', overflowY: 'auto' }}>{children}</div>
         ) : children}

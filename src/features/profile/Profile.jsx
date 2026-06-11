@@ -246,10 +246,12 @@ export function ScreenUserInfo() {
   const [draftName, setDraftName] = React.useState(name);
   React.useEffect(() => { setDraftName(name); }, [name]);
 
-  const offlineEncKeyKey    = computeUserDataKey(loginMethod, _safeEmail, 'munni_offline_enc_key');
+  const offlineEncKeyKey     = computeUserDataKey(loginMethod, _safeEmail, 'munni_offline_enc_key');
   const offlineAutoBackupKey = computeUserDataKey(loginMethod, _safeEmail, 'munni_auto_backup');
+  const offlineLastBackupKey = computeUserDataKey(loginMethod, _safeEmail, 'munni_last_backup_at');
   const [encKey, setEncKey] = useLocalStorage(offlineEncKeyKey, null);
   const [autoBackupSettings, setAutoBackupSettings] = useLocalStorage(offlineAutoBackupKey, null);
+  const [lastBackupAt, setLastBackupAt] = useLocalStorage(offlineLastBackupKey, null);
 
   const [showKeyValue,    setShowKeyValue]    = React.useState(false);
   const [showKeyInfo,     setShowKeyInfo]     = React.useState(false);
@@ -261,7 +263,7 @@ export function ScreenUserInfo() {
   const [recoverKeyDraft, setRecoverKeyDraft] = React.useState('');
   const [recoverError,    setRecoverError]    = React.useState('');
   const [showAutoBackup,  setShowAutoBackup]  = React.useState(false);
-  const [draftAutoFreq,   setDraftAutoFreq]   = React.useState(() => autoBackupSettings?.frequency || 'daily');
+  const [draftAutoFreq,   setDraftAutoFreq]   = React.useState(() => autoBackupSettings?.frequency || 'none');
   const [draftAutoLoc,    setDraftAutoLoc]    = React.useState(() => autoBackupSettings?.location  || 'device');
 
   const generateEncKey = React.useCallback(() => {
@@ -393,6 +395,7 @@ export function ScreenUserInfo() {
         URL.revokeObjectURL(a.href);
       }
     } catch {}
+    setLastBackupAt(Date.now());
     setShowBackup(false);
   };
 
@@ -484,26 +487,34 @@ export function ScreenUserInfo() {
               </button>
             </div>
             <div data-testid={T.offlineProfileKeySection} className="m-card" style={{ padding:'0 16px', marginBottom:20, border:`1px solid ${M.line}` }}>
-              <div style={{ display:'flex', alignItems:'center', gap:10, padding:'14px 0' }}>
-                <div style={{ width:32, height:32, borderRadius:9, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+              <div style={{ display:'flex', alignItems:'flex-start', gap:10, padding:'12px 0 10px' }}>
+                <div style={{ width:32, height:32, borderRadius:9, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, marginTop:2 }}>
                   <I name="key" size={15} color={M.ink2}/>
                 </div>
                 <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontSize:11, color:M.ink3, marginBottom:4 }}>{t('profile.offlineKeySection')}</div>
+                  <div style={{ fontSize:11, color:M.ink3, marginBottom:6 }}>{t('profile.offlineKeySection')}</div>
                   {encKey ? (
-                    <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:4 }}>
-                      {encKey.split('-').map((block, i) => (
-                        <span key={i} style={{ fontSize:11, fontFamily:M.fontMono, letterSpacing:'0.04em', background:M.paper2, border:`1px solid ${M.line}`, borderRadius:6, padding:'3px 0', textAlign:'center', color:M.ink, display:'block' }}>
-                          {showKeyValue ? block : '••••'}
-                        </span>
-                      ))}
+                    <div style={{ fontFamily:M.fontMono, fontSize:13, lineHeight:1.8, letterSpacing:'0.06em', background:M.paper2, border:`1px solid ${M.line}`, borderRadius:8, padding:'8px 10px', color: showKeyValue ? M.ink : M.ink3 }}>
+                      {(() => {
+                        const blocks = encKey.split('-');
+                        if (!showKeyValue) return <><div>•••• •••• •••• ••••</div><div>•••• •••• •••• ••••</div></>;
+                        return <><div>{blocks.slice(0,4).join(' ')}</div><div>{blocks.slice(4,8).join(' ')}</div></>;
+                      })()}
                     </div>
                   ) : <span style={{ fontSize:13, color:M.ink4 }}>—</span>}
                 </div>
-                <button data-testid={T.offlineProfileKeyToggle} className="m-tap" onClick={() => setShowKeyValue(v => !v)}
-                  style={{ background:'none', border:'none', cursor:'pointer', padding:'4px 6px', color:M.ink3 }}>
-                  <I name={showKeyValue ? 'eyeOff' : 'eye'} size={18} color={M.ink3}/>
-                </button>
+                <div style={{ display:'flex', flexDirection:'column', gap:2, flexShrink:0, paddingTop:2 }}>
+                  <button data-testid={T.offlineProfileKeyToggle} className="m-tap" onClick={() => setShowKeyValue(v => !v)}
+                    style={{ background:'none', border:'none', cursor:'pointer', padding:'4px', borderRadius:6 }}>
+                    <I name={showKeyValue ? 'eyeOff' : 'eye'} size={18} color={M.ink3}/>
+                  </button>
+                  {encKey && (
+                    <button className="m-tap" onClick={() => { navigator.clipboard?.writeText(encKey); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+                      style={{ background:copied?M.sageSoft:'none', border:'none', cursor:'pointer', padding:'4px', borderRadius:6 }}>
+                      <I name={copied ? 'check' : 'copy'} size={18} color={copied ? M.sage : M.ink3}/>
+                    </button>
+                  )}
+                </div>
               </div>
               <Divider/>
               <div data-testid={T.offlineProfileKeyRegen} className="m-tap" onClick={() => setShowRegenKey(true)}
@@ -545,7 +556,7 @@ export function ScreenUserInfo() {
                 <I name="caretR" size={14} color={M.ink4}/>
               </div>
               <Divider/>
-              <div data-testid={T.offlineProfileAutoBackupBtn} className="m-tap" onClick={() => { setDraftAutoFreq(autoBackupSettings?.frequency || 'daily'); setDraftAutoLoc(autoBackupSettings?.location || 'device'); setShowAutoBackup(true); }}
+              <div data-testid={T.offlineProfileAutoBackupBtn} className="m-tap" onClick={() => { setDraftAutoFreq(autoBackupSettings?.frequency || 'none'); setDraftAutoLoc(autoBackupSettings?.location || 'device'); setShowAutoBackup(true); }}
                 style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0', cursor:'pointer' }}>
                 <div style={{ width:32, height:32, borderRadius:9, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                   <I name="clock" size={16} color={M.ink2}/>
@@ -553,7 +564,19 @@ export function ScreenUserInfo() {
                 <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ fontSize:14, fontWeight:500, color:M.ink }}>{t('profile.offlineAutoBackupBtn')}</div>
                   <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>
-                    {autoBackupSettings ? `${t(`profile.autoBackup${autoBackupSettings.frequency.charAt(0).toUpperCase()+autoBackupSettings.frequency.slice(1)}`)} · ${t(`profile.autoBackup${autoBackupSettings.location === 'device' ? 'Device' : autoBackupSettings.location === 'gdrive' ? 'GDrive' : autoBackupSettings.location === 'onedrive' ? 'OneDrive' : 'Dropbox'}`)}` : t('profile.offlineAutoBackupSub')}
+                    {(() => {
+                      const freq = autoBackupSettings?.frequency;
+                      const loc = autoBackupSettings?.location;
+                      const freqLabel = freq ? t(`profile.autoBackup${freq.charAt(0).toUpperCase()+freq.slice(1)}`) : t('profile.autoBackupNone');
+                      const locPart = (freq && freq !== 'none' && loc) ? ` · ${t(`profile.autoBackup${loc === 'device' ? 'Device' : loc === 'gdrive' ? 'GDrive' : loc === 'onedrive' ? 'OneDrive' : 'Dropbox'}`)}` : '';
+                      const baseLine = autoBackupSettings ? `${freqLabel}${locPart}` : t('profile.offlineAutoBackupSub');
+                      if (lastBackupAt) {
+                        const d = new Date(lastBackupAt);
+                        const dateStr = d.toLocaleString(lang === 'nl' ? 'nl-NL' : lang === 'tr' ? 'tr-TR' : 'en-GB', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
+                        return `${baseLine} · ${t('profile.autoBackupLastAt').replace('{date}', dateStr)}`;
+                      }
+                      return baseLine;
+                    })()}
                   </div>
                 </div>
                 <I name="caretR" size={14} color={M.ink4}/>
@@ -999,7 +1022,7 @@ export function ScreenUserInfo() {
 
             <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('profile.autoBackupFreq')}</div>
             <div className="m-card" style={{ padding:'0 16px', marginBottom:20, border:`1px solid ${M.line}` }}>
-              {['daily','weekly','monthly'].map((freq, idx, arr) => (
+              {['none','daily','weekly','monthly'].map((freq, idx, arr) => (
                 <React.Fragment key={freq}>
                   <div className="m-tap" onClick={() => setDraftAutoFreq(freq)}
                     style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0', cursor:'pointer' }}>
@@ -1025,7 +1048,7 @@ export function ScreenUserInfo() {
               ))}
             </div>
 
-            <button data-testid={T.offlineProfileAutoBackupSave} className="m-btn sage m-tap" onClick={() => { setAutoBackupSettings({ enabled:true, frequency:draftAutoFreq, location:draftAutoLoc }); setShowAutoBackup(false); }}
+            <button data-testid={T.offlineProfileAutoBackupSave} className="m-btn sage m-tap" onClick={() => { setAutoBackupSettings({ enabled: draftAutoFreq !== 'none', frequency:draftAutoFreq, location:draftAutoLoc }); setShowAutoBackup(false); }}
               style={{ width:'100%' }}>{t('profile.autoBackupSave')}</button>
           </div>
         </Sheet>

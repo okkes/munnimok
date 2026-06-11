@@ -375,7 +375,11 @@ function ScreenLoginGate({ onLogin }) {
         setPendingSignup(_gPs); saveSignupInProgress(_gPs);
         setMode('signup-onboarding');
       } else {
-        if (!methods.includes('google')) { setNoAccountMethod('google'); setMode('no-account'); return; }
+        if (!methods.includes('google')) {
+          const inProg = getSignupInProgress();
+          if (inProg && inProg.method === 'google') { setPendingSignup(inProg); setMode('signup-onboarding'); return; }
+          setNoAccountMethod('google'); setMode('no-account'); return;
+        }
         doLogin('google', '', null);
       }
     }, 1400);
@@ -394,7 +398,11 @@ function ScreenLoginGate({ onLogin }) {
         setPendingSignup(_aPs); saveSignupInProgress(_aPs);
         setMode('signup-onboarding');
       } else {
-        if (!methods.includes('apple')) { setNoAccountMethod('apple'); setMode('no-account'); return; }
+        if (!methods.includes('apple')) {
+          const inProg = getSignupInProgress();
+          if (inProg && inProg.method === 'apple') { setPendingSignup(inProg); setMode('signup-onboarding'); return; }
+          setNoAccountMethod('apple'); setMode('no-account'); return;
+        }
         doLogin('apple', '', null);
       }
     }, 1400);
@@ -1078,8 +1086,9 @@ function ScreenLoginGate({ onLogin }) {
           <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: 14 }}>
             <div className="m-logo" style={{ fontSize: 28 }}>munni<span className="dot">.</span></div>
             <button data-testid={T.loginLangBtn} className="m-tap" onClick={() => setMode('language')}
-              style={{ background:M.paper2, border:`1px solid ${M.line}`, borderRadius:20, padding:'5px 12px', fontSize:12, color:M.ink3, cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', gap:4, flexShrink:0 }}>
-              🌐 {t('login.changeLanguage')}
+              style={{ background:M.paper2, border:`1px solid ${M.line}`, borderRadius:20, padding:'5px 12px', fontSize:12, color:M.ink3, cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
+              <span style={{ background:M.sage, color:'#fff', borderRadius:4, padding:'1px 5px', fontSize:10, fontWeight:700, fontFamily:M.fontMono, letterSpacing:'0.05em', lineHeight:'14px' }}>{lang.toUpperCase()}</span>
+              {t('login.changeLanguage')}
             </button>
           </div>
           <div className="m-h2" style={{ marginBottom: 6 }}>
@@ -1106,8 +1115,11 @@ function ScreenLoginGate({ onLogin }) {
           <button data-testid={T.loginEmailSubmit} className="m-btn sage m-tap" style={{ height:52, width:'100%', opacity:emailInput.trim()?1:0.5 }} onClick={handleEmailContinue} disabled={!emailInput.trim()}>
             {t('login.continue')}
           </button>
-          <button data-testid={T.loginCreateAccount} className="m-btn outline m-tap" style={{ height:52, width:'100%' }}
-            onClick={() => { setLoginError(null); setMode('signup'); }}>
+          <div style={{ display:'flex', alignItems:'center', gap:10, margin:'4px 0 0' }}>
+            <div style={{ flex:1, height:1, background:M.line }}/>
+          </div>
+          <button data-testid={T.loginCreateAccount} className="m-tap" onClick={() => { setLoginError(null); setMode('signup'); }}
+            style={{ background:'transparent', border:'none', fontSize:13, color:M.ink3, cursor:'pointer', fontFamily:M.fontUI, textAlign:'center', width:'100%', padding:'6px 0 2px' }}>
             {t('login.signUpBtn')}
           </button>
         </div>
