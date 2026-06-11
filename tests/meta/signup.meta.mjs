@@ -146,6 +146,28 @@ export const GROUPS = [
           'Step 2 — bank connect screen',
         ],
       },
+      {
+        key: '48-country-picker',
+        title: 'Country picker — select country',
+        desc: 'Tap the Country field on step 1 → country picker Sheet opens (swipe-to-dismiss). Tap "Netherlands" → sheet closes, Netherlands flag + name appear in the field.',
+        tags: ['ui', 'state'],
+        steps: [
+          'Step 1 — country field shows placeholder',
+          'Country picker sheet open',
+          'Step 1 — Netherlands selected, flag shown',
+        ],
+      },
+      {
+        key: '49-country-search',
+        title: 'Country picker — search with highlight',
+        desc: 'Type "Neth" in the country search box → list filters; "Neth" is highlighted in the result. Select Netherlands → field updated. Background does not scroll while sheet is open.',
+        tags: ['ui', 'state', 'search'],
+        steps: [
+          'Country picker open — search box',
+          '"Neth" typed — filtered list with highlight',
+          'Netherlands selected — field updated',
+        ],
+      },
     ],
   },
   {
@@ -209,28 +231,6 @@ export const GROUPS = [
         steps: [
           'Bank credentials — username filled, password cleared',
           'Error: password is required',
-        ],
-      },
-      {
-        key: '48-country-picker',
-        title: 'Country picker — select country',
-        desc: 'Tap the Country field on onboarding step 1 → country picker sheet opens with search and list. Tap "Netherlands" → sheet closes, "Netherlands" flag + name appear in the field.',
-        tags: ['ui', 'state'],
-        steps: [
-          'Step 1 — country field shows placeholder',
-          'Country picker sheet open',
-          'Step 1 — Netherlands selected, flag shown',
-        ],
-      },
-      {
-        key: '49-country-search',
-        title: 'Country picker — search with highlight',
-        desc: 'Type "Neth" in the country search box → list filters to matching countries; "Neth" is highlighted in the result row. Select Netherlands → sheet closes, selection retained. Background does not scroll while sheet is open.',
-        tags: ['ui', 'state', 'search'],
-        steps: [
-          'Country picker open — search box',
-          '"Neth" typed — filtered list with highlight',
-          'Netherlands selected — field updated',
         ],
       },
       {
