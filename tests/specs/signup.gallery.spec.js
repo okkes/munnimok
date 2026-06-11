@@ -518,14 +518,16 @@ for (const V of VARIANTS) {
     await shot(page, k('50-onboard-country-error') + '--s1');
     // Submit without selecting a country
     await page.click('[data-testid="onboard-continue"]');
-    await page.waitForSelector('[data-testid="onboard-country-error"]', { timeout: 2000 });
+    // Use 'attached' so a scroll-offset element still passes (Playwright 1.60 visibility check)
+    await page.locator('[data-testid="onboard-country-error"]').waitFor({ state: 'attached', timeout: 3000 });
+    await page.locator('[data-testid="onboard-country-error"]').scrollIntoViewIfNeeded();
     await expect(page.locator('[data-testid="onboard-country-error"]')).toBeVisible();
     await shot(page, k('50-onboard-country-error') + '--s2');
-    // Now select a country — error should clear
+    // Now select a country — error element should be removed from DOM
     await page.click('[data-testid="onboard-country-btn"]');
     await page.waitForSelector('[data-testid="onboard-country-sheet"]', { timeout: 3000 });
     await page.locator('[data-testid="sheet-close"] button').filter({ hasText: 'Netherlands' }).first().click();
-    await expect(page.locator('[data-testid="onboard-country-error"]')).not.toBeVisible();
+    await page.locator('[data-testid="onboard-country-error"]').waitFor({ state: 'detached', timeout: 2000 });
     await shot(page, k('50-onboard-country-error'));
     await teardown(page, ctx, k('50-onboard-country-error'));
   });
