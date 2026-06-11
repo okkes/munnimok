@@ -213,6 +213,7 @@ export function Sheet({ children, onClose, open, title }) {
       paddingBottom: kbOffset,
       boxSizing: 'border-box',
       transition: 'padding-bottom 0.15s ease',
+      touchAction: 'none',
     }} onClick={onClose}>
       <div style={{
         background: M.paper, borderTopLeftRadius: 24, borderTopRightRadius: 24,
@@ -220,6 +221,7 @@ export function Sheet({ children, onClose, open, title }) {
         animation: !didMountRef.current ? 'mSheetUp 0.32s cubic-bezier(.2,.7,.2,1)' : 'none',
         transform: dragY > 0 ? `translateY(${dragY}px)` : undefined,
         transition: (dragY === 0 && didMountRef.current) ? 'transform 0.25s cubic-bezier(.2,.7,.2,1)' : 'none',
+        touchAction: 'pan-y',
       }} onClick={e => e.stopPropagation()}>
         <div
           onTouchStart={onHandleTouchStart}
