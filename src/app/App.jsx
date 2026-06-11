@@ -2,7 +2,7 @@
 import { T } from '../shared/testIds.js';
 import { getUserId, registerUserInGlobalRegistry, computeUserDataKey } from '../shared/utils/user.js';
 import { DUTCH_BANKS } from '../features/accounts/data.js';
-import { DEFAULT_API_URL, DEMO_API_URL } from '../shared/constants.js';
+import { DEFAULT_API_URL, DEMO_API_URL, STOCK_AVATARS } from '../shared/constants.js';
 import { computeProfileKey, getDefaultProfiles, initPerUserData } from '../features/profile/data.js';
 import { IOSDevice } from './IOSFrame.jsx';
 import { M, I, IcoGoogle, IcoApple, Divider, StatusBar, AppBar } from './theme.jsx';
@@ -252,16 +252,61 @@ function ScreenLoginGate({ onLogin }) {
   const [mode, setMode] = React.useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('munni_pending_onboarding') || 'null');
-      return saved ? 'signup-onboarding' : 'login';
-    } catch { return 'login'; }
+      if (saved) return 'signup-onboarding';
+      const offProfiles = JSON.parse(localStorage.getItem('munni_offline_profiles') || '[]');
+      const onlineMethods = JSON.parse(localStorage.getItem('munni_signup_methods') || '[]');
+      if (offProfiles.length > 0 && onlineMethods.length === 0) return 'offline-select';
+    } catch {}
+    return 'login';
   });
   const loadingTimerRef = React.useRef(null);
+
+  // Offline mode helpers
+  const getOfflineProfiles = () => { try { return JSON.parse(localStorage.getItem('munni_offline_profiles') || '[]'); } catch { return []; } };
+  const [offlineName,      setOfflineName]      = React.useState('');
+  const [offlineNameError, setOfflineNameError] = React.useState('');
+  const [offlinePicture,   setOfflinePicture]   = React.useState('av1');
+  const [showOfflinePicker,setShowOfflinePicker]= React.useState(false);
+
+  const doOfflineLogin = (profile) => {
+    sessionStorage.setItem('munni_last_login_method', 'offline');
+    window.dispatchEvent(new CustomEvent('munni-ss', { detail: { key: 'munni_last_login_method' } }));
+    sessionStorage.setItem('munni_profile_email', JSON.stringify(profile.id));
+    window.dispatchEvent(new CustomEvent('munni-ss', { detail: { key: 'munni_profile_email' } }));
+    initPerUserData('offline', profile.id, lang);
+    const nameKey = computeUserDataKey('offline', profile.id, 'munni_profile_name');
+    if (!localStorage.getItem(nameKey)) {
+      localStorage.setItem(nameKey, JSON.stringify(profile.name));
+      window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: nameKey } }));
+    }
+    if (profile.picture) {
+      const picKey = `munni_user_picture_${profile.id}`;
+      if (!localStorage.getItem(picKey)) {
+        localStorage.setItem(picKey, JSON.stringify(profile.picture));
+        window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: picKey } }));
+      }
+    }
+    localStorage.setItem('munni_opened_before', 'true');
+    sessionStorage.setItem('munni_session_active', 'true');
+    onLogin();
+  };
+
+  const handleCreateOfflineProfile = () => {
+    const name = offlineName.trim();
+    if (!name) { setOfflineNameError(t('offline.errNameRequired')); return; }
+    const id = `offline_${Date.now()}`;
+    const newProfile = { id, name, picture: offlinePicture, createdAt: Date.now() };
+    const existing = getOfflineProfiles();
+    localStorage.setItem('munni_offline_profiles', JSON.stringify([...existing, newProfile]));
+    setOfflineName(''); setOfflineNameError(''); setOfflinePicture('av1');
+    doOfflineLogin(newProfile);
+  };
 
   const hasOpenedBefore = localStorage.getItem('munni_opened_before') === 'true';
   const getSignupMethods = () => { try { return JSON.parse(localStorage.getItem('munni_signup_methods') || '[]'); } catch { return []; } };
   const getSignupEmails = () => { try { return JSON.parse(localStorage.getItem('munni_signup_emails') || '[]'); } catch { return []; } };
 
-  const MODE_BACK = { signup:'login', 'signup-email':'signup', 'signup-email-verify':'signup-email', 'email-verify':'login', 'no-account':'login', 'email-input':'login', language:'login' };
+  const MODE_BACK = { signup:'login', 'signup-email':'signup', 'signup-email-verify':'signup-email', 'email-verify':'login', 'no-account':'login', 'email-input':'login', language:'login', 'offline-info':'login', 'offline-select':'login', 'offline-create':'offline-select' };
   const modeRef = React.useRef(mode);
   modeRef.current = mode;
   React.useEffect(() => {
@@ -704,6 +749,179 @@ function ScreenLoginGate({ onLogin }) {
     );
   }
 
+  // ── Offline info screen ────────────────────────────────────────────
+  if (mode === 'offline-info') {
+    const limits = [
+      [t('offline.limit1'), t('offline.limit1Sub')],
+      [t('offline.limit2'), t('offline.limit2Sub')],
+      [t('offline.limit3'), t('offline.limit3Sub')],
+      [t('offline.limit4'), t('offline.limit4Sub')],
+    ];
+    return (
+      <div key="offline-info" className="m-screen m-fade" style={{ position:'relative' }}><DevPanel screenKey="offline-info"/>
+        <StatusBar/>
+        <div style={{ padding:'16px 20px 0', flexShrink:0 }}>
+          <button className="m-tap" onClick={() => setMode('login')} style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:6, color:M.ink3, fontFamily:M.fontUI, fontSize:13 }}>
+            <I name="arrowL" size={16} color={M.ink3}/> {t('action.back')}
+          </button>
+        </div>
+        <div style={{ flex:1, overflowY:'auto', padding:'24px 24px 48px' }}>
+          <div className="m-logo" style={{ fontSize:20, marginBottom:20 }}>munni<span className="dot">.</span></div>
+          <div style={{ display:'flex', alignItems:'center', gap:14, marginBottom:24 }}>
+            <div style={{ width:44, height:44, borderRadius:14, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+              <I name="lock" size={20} color={M.sage}/>
+            </div>
+            <div>
+              <div className="m-h2" style={{ marginBottom:2 }}>{t('offline.infoTitle')}</div>
+              <div style={{ fontSize:13, color:M.ink3 }}>{t('offline.infoSubtitle')}</div>
+            </div>
+          </div>
+
+          <div style={{ marginBottom:20 }}>
+            <div style={{ display:'flex', gap:12, alignItems:'flex-start', padding:'12px 0', borderBottom:`1px solid ${M.line2}` }}>
+              <div style={{ width:20, height:20, borderRadius:999, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, marginTop:1 }}>
+                <I name="check" size={11} color={M.sage}/>
+              </div>
+              <div>
+                <div style={{ fontSize:14, fontWeight:600, color:M.ink }}>{t('offline.infoOwnership')}</div>
+                <div style={{ fontSize:12, color:M.ink3, marginTop:3, lineHeight:1.5 }}>{t('offline.infoOwnershipSub')}</div>
+              </div>
+            </div>
+            {limits.map(([title, sub], i) => (
+              <div key={i} style={{ display:'flex', gap:12, alignItems:'flex-start', padding:'12px 0', borderBottom:`1px solid ${M.line2}` }}>
+                <div style={{ width:20, height:20, borderRadius:999, background:M.claySoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, marginTop:1 }}>
+                  <div style={{ width:8, height:1.5, borderRadius:1, background:M.clay }}/>
+                </div>
+                <div>
+                  <div style={{ fontSize:14, fontWeight:600, color:M.ink2 }}>{title}</div>
+                  <div style={{ fontSize:12, color:M.ink3, marginTop:3, lineHeight:1.5 }}>{sub}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ padding:'12px 16px', borderRadius:12, background:M.ochreSoft, border:`1px solid ${M.ochreSoft}`, marginBottom:28 }}>
+            <div style={{ fontSize:12, color:M.ink2, lineHeight:1.6 }}>{t('offline.pricing')}</div>
+          </div>
+
+          <button className="m-btn sage m-tap" style={{ height:54, width:'100%', fontSize:16, fontWeight:700, marginBottom:12 }}
+            onClick={() => { const ps = getOfflineProfiles(); setMode(ps.length > 0 ? 'offline-select' : 'offline-create'); }}>
+            {t('offline.infoCta')}
+          </button>
+          <button className="m-tap" onClick={() => setMode('login')}
+            style={{ width:'100%', textAlign:'center', background:'none', border:'none', fontSize:13, color:M.ink3, cursor:'pointer', fontFamily:M.fontUI, padding:'8px 0' }}>
+            {t('offline.infoBack')}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Offline profile selector ────────────────────────────────────────
+  if (mode === 'offline-select') {
+    const offProfiles = getOfflineProfiles();
+    return (
+      <div key="offline-select" className="m-screen m-fade" style={{ position:'relative' }}><DevPanel screenKey="offline-select"/>
+        <StatusBar/>
+        <div style={{ flex:1, overflowY:'auto', padding:'40px 24px 48px' }}>
+          <div className="m-logo" style={{ fontSize:20, marginBottom:28, textAlign:'center' }}>munni<span className="dot">.</span></div>
+          <div className="m-h2" style={{ textAlign:'center', marginBottom:32 }}>{t('offline.selectTitle')}</div>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:20, marginBottom:32 }}>
+            {offProfiles.map(p => {
+              const av = STOCK_AVATARS.find(a => a.id === p.picture);
+              return (
+                <button key={p.id} className="m-tap" onClick={() => doOfflineLogin(p)}
+                  style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:8, background:'none', border:'none', cursor:'pointer', fontFamily:M.fontUI, padding:0 }}>
+                  <div style={{ width:68, height:68, borderRadius:999, background:av?.bg || M.paper2, display:'flex', alignItems:'center', justifyContent:'center', fontSize:30, border:`2px solid ${M.line}` }}>
+                    {av ? av.emoji : <span style={{ fontSize:22, fontWeight:700, color:M.sage }}>{p.name.charAt(0).toUpperCase()}</span>}
+                  </div>
+                  <div style={{ fontSize:13, fontWeight:600, color:M.ink, textAlign:'center', wordBreak:'break-word', width:'100%', lineHeight:1.3 }}>{p.name}</div>
+                </button>
+              );
+            })}
+            <button className="m-tap" onClick={() => { setOfflineName(''); setOfflineNameError(''); setOfflinePicture('av1'); setMode('offline-create'); }}
+              style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:8, background:'none', border:'none', cursor:'pointer', fontFamily:M.fontUI, padding:0 }}>
+              <div style={{ width:68, height:68, borderRadius:999, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', border:`2px dashed ${M.line}` }}>
+                <I name="plus" size={22} color={M.ink3}/>
+              </div>
+              <div style={{ fontSize:13, color:M.ink3, textAlign:'center' }}>{t('offline.addProfile')}</div>
+            </button>
+          </div>
+          <div style={{ textAlign:'center' }}>
+            <button className="m-tap" onClick={() => setMode('login')}
+              style={{ background:'none', border:'none', fontSize:13, color:M.ink3, cursor:'pointer', fontFamily:M.fontUI, textDecoration:'underline' }}>
+              {t('offline.infoBack')}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Offline profile creator ─────────────────────────────────────────
+  if (mode === 'offline-create') {
+    return (
+      <div key="offline-create" className="m-screen m-fade" style={{ position:'relative' }}><DevPanel screenKey="offline-create"/>
+        <StatusBar/>
+        <div style={{ padding:'16px 20px 0', flexShrink:0 }}>
+          <button className="m-tap" onClick={() => setMode('offline-select')} style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:6, color:M.ink3, fontFamily:M.fontUI, fontSize:13 }}>
+            <I name="arrowL" size={16} color={M.ink3}/> {t('action.back')}
+          </button>
+        </div>
+        <div style={{ flex:1, overflowY:'auto', padding:'24px 24px 48px' }}>
+          <div className="m-logo" style={{ fontSize:20, marginBottom:16 }}>munni<span className="dot">.</span></div>
+          <div className="m-h2" style={{ marginBottom:4 }}>{t('offline.createTitle')}</div>
+          <div style={{ fontSize:13, color:M.ink3, marginBottom:28, lineHeight:1.5 }}>{t('offline.infoSubtitle')}</div>
+
+          <div style={{ display:'flex', justifyContent:'center', marginBottom:24 }}>
+            <button className="m-tap" onClick={() => setShowOfflinePicker(true)}
+              style={{ position:'relative', background:'none', border:'none', cursor:'pointer', padding:0 }}>
+              {(() => { const av = STOCK_AVATARS.find(a => a.id === offlinePicture); return av ? (
+                <div style={{ width:80, height:80, borderRadius:999, background:av.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:36 }}>{av.emoji}</div>
+              ) : null; })()}
+              <div style={{ position:'absolute', bottom:2, right:2, width:24, height:24, borderRadius:999, background:M.sage, display:'flex', alignItems:'center', justifyContent:'center', border:'2px solid #fff' }}>
+                <I name="cam" size={11} color="#fff"/>
+              </div>
+            </button>
+          </div>
+
+          <div style={{ marginBottom:offlineNameError ? 6 : 20 }}>
+            <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{t('offline.createNameLabel')}</div>
+            <input
+              value={offlineName}
+              onChange={e => { setOfflineName(e.target.value); setOfflineNameError(''); }}
+              placeholder={t('offline.createNamePlaceholder')}
+              style={{ width:'100%', boxSizing:'border-box', padding:'13px 16px', borderRadius:12, border:`1.5px solid ${offlineNameError ? M.clay : M.line}`, fontSize:15, fontFamily:M.fontUI, background:M.paper2, outline:'none', color:M.ink }}
+            />
+            {offlineNameError && <div style={{ fontSize:11, color:M.clay, marginTop:4 }}>{offlineNameError}</div>}
+          </div>
+
+          <button className="m-btn sage m-tap" style={{ height:54, width:'100%', fontSize:16, fontWeight:700 }} onClick={handleCreateOfflineProfile}>
+            {t('offline.createCta')}
+          </button>
+        </div>
+
+        {showOfflinePicker && (
+          <div style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', flexDirection:'column', justifyContent:'flex-end', zIndex:100 }}
+            onClick={() => setShowOfflinePicker(false)}>
+            <div style={{ background:M.paper, borderRadius:'20px 20px 0 0', padding:'16px 20px 32px' }} onClick={e => e.stopPropagation()}>
+              <div style={{ width:36, height:4, borderRadius:2, background:M.line2, margin:'0 auto 16px' }}/>
+              <div style={{ fontSize:14, fontWeight:600, color:M.ink, marginBottom:16 }}>{t('profile.picTitle')}</div>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(5, 1fr)', gap:10 }}>
+                {STOCK_AVATARS.map(av => (
+                  <button key={av.id} className="m-tap" onClick={() => { setOfflinePicture(av.id); setShowOfflinePicker(false); }}
+                    style={{ width:'100%', aspectRatio:'1', borderRadius:14, background:av.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:28, border:`2px solid ${offlinePicture === av.id ? M.sage : 'transparent'}`, cursor:'pointer' }}>
+                    {av.emoji}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   // Main login screen
   return (
     <div key="login" className="m-screen m-fade" style={{ position: 'relative' }}><DevPanel screenKey="login"/>
@@ -744,6 +962,13 @@ function ScreenLoginGate({ onLogin }) {
           <button data-testid={T.loginCreateAccount} className="m-tap" onClick={() => { setLoginError(null); setMode('signup'); }}
             style={{ background: 'transparent', border: 'none', fontSize: 13, fontWeight: 600, color: M.sage, cursor: 'pointer', fontFamily: M.fontUI }}>
             {t('login.createAccount')}
+          </button>
+        </div>
+
+        <div style={{ textAlign:'center', marginBottom:12 }}>
+          <button className="m-tap" onClick={() => setMode('offline-info')}
+            style={{ background:'transparent', border:'none', fontSize:12, color:M.ink3, cursor:'pointer', fontFamily:M.fontUI, display:'inline-flex', alignItems:'center', gap:5 }}>
+            <I name="lock" size={13} color={M.ink4}/> {t('offline.loginBtn')}
           </button>
         </div>
 

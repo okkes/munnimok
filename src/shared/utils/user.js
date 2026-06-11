@@ -13,6 +13,13 @@ export function getUserId() {
   if (m === 'google') return 'ggl-0001';
   if (m === 'apple') return 'apl-0001';
   if (m === 'bank') return 'dmo-0001';
+  if (m === 'offline') {
+    try {
+      const pid = JSON.parse(sessionStorage.getItem('munni_profile_email') || '""') || '';
+      if (pid) return pid;
+    } catch {}
+    return 'off-0000';
+  }
   // Email user: generate/retrieve random ID
   try {
     const email = JSON.parse(sessionStorage.getItem('munni_profile_email') || '""') || '';
@@ -60,9 +67,9 @@ export function addDevLog(level, msg, src) {
 }
 
 export function computeUserDataKey(method, email, base) {
-  if (method === 'email' && email) {
+  if ((method === 'email' || method === 'offline') && email) {
     const safe = email.toLowerCase().replace(/[^a-z0-9]/g, '_');
-    return `${base}_email_${safe}`;
+    return `${base}_${method}_${safe}`;
   }
   return `${base}_${method || 'default'}`;
 }

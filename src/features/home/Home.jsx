@@ -440,6 +440,18 @@ export function ScreenHome() {
         </div>
       </div>
 
+      {sessionStorage.getItem('munni_last_login_method') === 'offline' && (
+        <div style={{ margin:'0 16px 12px', padding:'10px 14px', borderRadius:12, background:'#E8F4FD', border:'1.5px solid #B3D9F5', display:'flex', alignItems:'center', gap:10, flexShrink:0 }}>
+          <div style={{ width:30, height:30, borderRadius:8, background:'#C6E6FA', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+            <I name="lock" size={15} color="#2B8FCA"/>
+          </div>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontSize:12, fontWeight:700, color:'#1B6FA0', letterSpacing:'0.02em' }}>{t('offline.badge')}</div>
+            <div style={{ fontSize:11, color:'#4A8CB8', marginTop:1, lineHeight:1.4 }}>{t('offline.homeSub')}</div>
+          </div>
+        </div>
+      )}
+
       <div className="m-body-scroll">
         {orderedCardIds.map(id => renderCard(id))}
         {customGraphCards.map(cg => (
