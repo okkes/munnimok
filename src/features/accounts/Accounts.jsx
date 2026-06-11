@@ -1007,7 +1007,7 @@ export function AccountsSharingOverview() {
             {sharedWithMe.map((item, i) => (
               <React.Fragment key={item.id}>
                 {i > 0 && <Divider inset={48}/>}
-                <div className="m-tap" onClick={() => nav.push('profileDetail', { id: item.profileId })} style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
+                <div className="m-tap" onClick={() => nav.push('spaceDetail', { id: item.profileId })} style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
                   <div style={{ width:36, height:36, borderRadius:10, background: item.color || M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                     <I name={item.type==='savings'?'piggy':item.type==='invest'?'rocket':'card'} size={16} color="#fff"/>
                   </div>
@@ -1034,7 +1034,7 @@ export function AccountsSharingOverview() {
             {iSharing.map(({ account, profile, memberCount, contributorName }, i) => (
               <React.Fragment key={`${account.id}-${profile.id}`}>
                 {i > 0 && <Divider inset={48}/>}
-                <div className="m-tap" onClick={() => nav.push('profileDetail', { id: profile.id })}
+                <div className="m-tap" onClick={() => nav.push('spaceDetail', { id: profile.id })}
                   style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
                   <div style={{ width:36, height:36, borderRadius:10, background: account.color || M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                     <I name={account.type==='savings'?'piggy':account.type==='invest'?'rocket':'card'} size={16} color="#fff"/>

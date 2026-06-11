@@ -454,7 +454,7 @@ export function ScreenHome() {
       {showProfileSwitcher && (
         <Sheet onClose={() => setShowProfileSwitcher(false)}>
           <div style={{ padding:'4px 16px 8px' }}>
-            <div style={{ fontSize:17, fontWeight:700, marginBottom:16 }}>{t('home.switchProfile')}</div>
+            <div style={{ fontSize:17, fontWeight:700, marginBottom:16 }}>{t('home.switchSpace')}</div>
             <div className="m-card" style={{ border:`1px solid ${M.line}`, padding:'4px 16px', marginBottom:16, maxHeight:280, overflowY:'auto' }}>
               {profiles.map((p, i) => {
                 const sharedRaw = p.isShared ? (() => { try { return JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{}'); } catch { return {}; } })() : null;
@@ -485,7 +485,7 @@ export function ScreenHome() {
                           {isOwnerShared && <span style={{ fontSize:8, fontWeight:700, padding:'1px 5px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>Shared</span>}
                         </div>
                         <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>
-                          {p.isShared ? `${t('profile.by')} ${(p.ownerDisplay || '').split(' ')[0]}` : acctLabel}
+                          {p.isShared ? `${t('space.by')} ${(p.ownerDisplay || '').split(' ')[0]}` : acctLabel}
                           {hasAction && <span style={{ marginLeft:6, color:M.ochre, fontWeight:600 }}>· {reviewN} {t('review.title')}</span>}
                         </div>
                       </div>
@@ -501,9 +501,9 @@ export function ScreenHome() {
                 );
               })}
             </div>
-            <div className="m-tap" onClick={() => { setShowProfileSwitcher(false); nav.push('profiles'); }}
+            <div className="m-tap" onClick={() => { setShowProfileSwitcher(false); nav.push('spaces'); }}
               style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:6, padding:'12px 0', color:M.sage, fontSize:14, fontWeight:600 }}>
-              {t('home.manageProfiles')} <I name="caretR" size={14} color={M.sage}/>
+              {t('home.manageSpaces')} <I name="caretR" size={14} color={M.sage}/>
             </div>
           </div>
         </Sheet>

@@ -607,19 +607,19 @@ const ANNOTATIONS = {
     storage: [ 'munni_bank_accounts_{userId} (LS)' ],
   },
 
-  'profiles': {
-    screen: 'Profile manager',
-    sub: 'Create and switch between multiple spending profiles (e.g. personal + business).',
+  'spaces': {
+    screen: 'Space manager',
+    sub: 'Create and switch between multiple financial spaces (e.g. personal + business).',
     flows: [
-      { from: 'Profile row',  to: 'profileDetail screen (stack)' },
-      { from: 'Add profile',  to: 'Create profile sheet' },
+      { from: 'Space row',  to: 'spaceDetail screen (stack)' },
+      { from: 'Add space',  to: 'Create space sheet' },
     ],
     storage: [ 'munni_profiles_{userId} (LS)' ],
   },
 
-  'profileDetail': {
-    screen: 'Profile detail',
-    sub: 'Edit profile name, colour, and member access.',
+  'spaceDetail': {
+    screen: 'Space detail',
+    sub: 'Edit space name, colour, and member access.',
     storage: [ 'munni_profiles_{userId} (LS)' ],
   },
 

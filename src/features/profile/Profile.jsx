@@ -114,7 +114,7 @@ export function ScreenProfile() {
         {/* Manage */}
         <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>{t('settings.manage')}</div>
         <div className="m-card" style={{ padding: '4px 16px', marginBottom: 16, border: `1px solid ${M.line}` }}>
-          <ProfileLink icon="user"    label={t('settings.profiles')}       sub={`${profiles.length} profile${profiles.length!==1?'s':''} · ${activeProfile?.name}`} onClick={() => nav.push('profiles')}/>
+          <ProfileLink icon="user"    label={t('settings.spaces')}       sub={`${profiles.length} space${profiles.length!==1?'s':''} · ${activeProfile?.name}`} onClick={() => nav.push('spaces')}/>
           <Divider inset={48}/>
           <ProfileLink icon="users"   label={t('settings.friends')}        sub={t('settings.friendsSub')}               onClick={() => nav.push('friends')}/>
           <Divider inset={48}/>
@@ -680,7 +680,7 @@ export function ScreenExportData() {
   );
 }
 
-export function ScreenProfiles() {
+export function ScreenSpaces() {
   const nav = useNav();
   const { t } = useLang();
   const { profiles, setProfiles } = useProfiles();
@@ -747,11 +747,11 @@ export function ScreenProfiles() {
   const createProfile = () => {
     const trimmed = newProfileName.trim();
     if (!trimmed) return;
-    if (trimmed.length > 30) { setNewProfileError(t('profile.nameTooLong')); return; }
-    if (!PROFILE_NAME_RE.test(trimmed)) { setNewProfileError(t('profile.nameInvalidChars')); return; }
+    if (trimmed.length > 30) { setNewProfileError(t('space.nameTooLong')); return; }
+    if (!PROFILE_NAME_RE.test(trimmed)) { setNewProfileError(t('space.nameInvalidChars')); return; }
     if (profiles.filter(p => !p.isShared).some(p => p.name.toLowerCase() === trimmed.toLowerCase())) {
-      setNewProfileError(t('profile.duplicateName'));
-      addDevLog('warn', `Profile creation blocked: duplicate name "${trimmed}"`, 'ScreenProfiles:createProfile');
+      setNewProfileError(t('space.duplicateName'));
+      addDevLog('warn', `Space creation blocked: duplicate name "${trimmed}"`, 'ScreenSpaces:createSpace');
       return;
     }
     const randomAv = STOCK_AVATARS[Math.floor(Math.random() * STOCK_AVATARS.length)];
@@ -769,7 +769,7 @@ export function ScreenProfiles() {
     setNewProfileName('');
     setNewProfileIsDemo(false);
     setNewProfileError('');
-    nav.push('profileDetail', { id: newP.id });
+    nav.push('spaceDetail', { id: newP.id });
   };
 
   const profileAccountSub = (p) => {
@@ -793,14 +793,14 @@ export function ScreenProfiles() {
   return (
     <div className="m-screen">
       <StatusBar/>
-      <AppBar title={t('screen.profiles')}
+      <AppBar title={t('screen.spaces')}
         leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
         trailing={<button data-testid="profile-new-btn" className="m-iconbtn m-tap" onClick={() => setShowNewProfile(true)}><I name="plus" size={20}/></button>}
       />
       <div className="m-body-scroll">
         {pendingProfileInvites.length > 0 && (
           <>
-            <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('profiles.pendingInvites')}</div>
+            <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('spaces.pendingInvites')}</div>
             <div className="m-card" style={{ padding:'4px 16px', marginBottom:16, border:`1px solid ${M.violet||'#7B61FF'}` }}>
               {pendingProfileInvites.map((inv, i) => {
                 const senderName = userRegistry[inv.fromId]?.displayName || inv.fromDisplay || inv.fromId;
@@ -816,13 +816,13 @@ export function ScreenProfiles() {
                             <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{inv.profileName || '—'}</span>
                             <span style={{ fontSize:8, fontWeight:700, padding:'2px 6px', borderRadius:999, background:M.violetSoft||'#EEE8FF', color:M.violet||'#7B61FF', textTransform:'uppercase', flexShrink:0 }}>Invite</span>
                           </div>
-                          <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{t('profile.sharedBy')} <strong>{senderName}</strong></div>
+                          <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{t('space.sharedBy')} <strong>{senderName}</strong></div>
                         </div>
                       </div>
                       <div style={{ display:'flex', gap:8 }}>
                         <button className="m-tap" onClick={() => setRenameInviteSheet({ inv, name: inv.profileName || '' })}
                           style={{ flex:2, padding:'9px 0', borderRadius:8, background:M.sage, color:'#fff', border:'none', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
-                          {t('friends.profileInviteJoin')}
+                          {t('space.inviteJoin')}
                         </button>
                         <button className="m-tap" onClick={() => declineProfileInvite(inv)}
                           style={{ flex:1, padding:'9px 0', borderRadius:8, background:M.paper2, color:M.ink3, border:`1px solid ${M.line}`, fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
@@ -853,14 +853,14 @@ export function ScreenProfiles() {
                       {p.isShared && (p.members||[]).some(m => m.userId !== myId) && <span style={{ fontSize:8, fontWeight:700, padding:'1px 5px', borderRadius:999, background:M.violetSoft||'#EEE8FF', color:M.violet||'#7B61FF', textTransform:'uppercase' }}>Shared</span>}
                       {!p.isShared && (p.members||[]).length > 0 && <span style={{ fontSize:8, fontWeight:700, padding:'1px 5px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>Shared</span>}
                     </div>
-                    <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{p.isShared ? `${t('profile.by')} ${formatCreatorLabel(p.creatorId || p.ownerId, p.ownerDisplay, userRegistry)}` : sub}</div>
+                    <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{p.isShared ? `${t('space.by')} ${formatCreatorLabel(p.creatorId || p.ownerId, p.ownerDisplay, userRegistry)}` : sub}</div>
                   </div>
                   {p.active && (
                     <div style={{ width:20, height:20, borderRadius:999, background:M.sage, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                       <I name="check" size={11} color="#fff" stroke={2.5}/>
                     </div>
                   )}
-                  <button className="m-iconbtn m-tap" onClick={() => nav.push('profileDetail', { id: p.id })}>
+                  <button className="m-iconbtn m-tap" onClick={() => nav.push('spaceDetail', { id: p.id })}>
                     <I name="caretR" size={16} color={M.ink4}/>
                   </button>
                 </div>
@@ -870,8 +870,8 @@ export function ScreenProfiles() {
         </div>
         <div style={{ borderRadius:12, overflow:'hidden', border:`1px solid ${M.line}`, marginBottom:16 }}>
           <div style={{ padding:'14px 16px', background:M.sageSoft }}>
-            <div style={{ fontSize:13, fontWeight:600, color:M.sage, marginBottom:4 }}>{t('profiles.aboutTitle')}</div>
-            <div style={{ fontSize:12, color:M.ink2, lineHeight:1.6 }}>{t('profiles.aboutDesc')}</div>
+            <div style={{ fontSize:13, fontWeight:600, color:M.sage, marginBottom:4 }}>{t('spaces.aboutTitle')}</div>
+            <div style={{ fontSize:12, color:M.ink2, lineHeight:1.6 }}>{t('spaces.aboutDesc')}</div>
           </div>
         </div>
       </div>
@@ -884,21 +884,21 @@ export function ScreenProfiles() {
               <div style={{ flex:1, minWidth:0 }}>
                 <div style={{ fontSize:16, fontWeight:700, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{renameInviteSheet.inv.profileName || 'Shared profile'}</div>
                 <div style={{ fontSize:11, color:M.ink3, marginTop:2 }}>
-                  {t('profile.by')} <strong>{userRegistry[renameInviteSheet.inv.fromId]?.displayName || renameInviteSheet.inv.fromId}</strong>
+                  {t('space.by')} <strong>{userRegistry[renameInviteSheet.inv.fromId]?.displayName || renameInviteSheet.inv.fromId}</strong>
                 </div>
               </div>
             </div>
-            <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>{t('profile.nameThisProfile')}</div>
+            <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>{t('space.nameThisSpace')}</div>
             <input autoFocus
               value={renameInviteSheet.name}
               onChange={e => setRenameInviteSheet(prev => ({ ...prev, name: e.target.value }))}
               onKeyDown={e => e.key === 'Enter' && (acceptProfileInvite(renameInviteSheet.inv, renameInviteSheet.name), setRenameInviteSheet(null))}
               style={{ width:'100%', padding:'12px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box', marginBottom:6 }}
             />
-            <div style={{ fontSize:11, color:M.ink4, marginBottom:20 }}>{t('profile.nameThisProfileHint')}</div>
+            <div style={{ fontSize:11, color:M.ink4, marginBottom:20 }}>{t('space.nameThisSpaceHint')}</div>
             <button onClick={() => { acceptProfileInvite(renameInviteSheet.inv, renameInviteSheet.name); setRenameInviteSheet(null); }}
               style={{ width:'100%', padding:'14px 0', background:M.sage, color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>
-              {t('friends.profileInviteJoin')}
+              {t('space.inviteJoin')}
             </button>
             <button onClick={() => setRenameInviteSheet(null)}
               style={{ width:'100%', padding:'14px 0', background:M.paper2, color:M.ink, border:`1px solid ${M.line}`, borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
@@ -911,19 +911,19 @@ export function ScreenProfiles() {
       {showNewProfile && (
         <Sheet onClose={() => { setShowNewProfile(false); setNewProfileName(''); setNewProfileIsDemo(false); setNewProfileError(''); }}>
           <div style={{ padding:'4px 16px 8px' }}>
-            <div style={{ fontSize:17, fontWeight:700, marginBottom:16 }}>{t('profile.newProfile')}</div>
-            <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>{t('profile.profileName')}</div>
+            <div style={{ fontSize:17, fontWeight:700, marginBottom:16 }}>{t('space.new')}</div>
+            <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>{t('space.name')}</div>
             <input
               value={newProfileName}
               onChange={e => { setNewProfileName(e.target.value); setNewProfileError(''); }}
               onKeyDown={e => e.key === 'Enter' && createProfile()}
-              placeholder={t('profile.namePlaceholder')}
+              placeholder={t('space.namePlaceholder')}
               style={{ width:'100%', padding:'12px 14px', borderRadius:10, border:`1px solid ${newProfileError ? M.clay : M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box', marginBottom: newProfileError ? 6 : 20 }}
             />
             {newProfileError && <div style={{ fontSize:12, color:M.clay, marginBottom:14 }}>{newProfileError}</div>}
-            <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>{t('profile.profileType')}</div>
+            <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>{t('space.type')}</div>
             <div style={{ display:'flex', gap:8, marginBottom:20 }}>
-              {[{v:false,lk:'profile.typeReal',sk:'profile.typeRealSub'},{v:true,lk:'profile.typeDemo',sk:'profile.typeDemoSub'}].map(opt => {
+              {[{v:false,lk:'space.typeReal',sk:'space.typeRealSub'},{v:true,lk:'space.typeDemo',sk:'space.typeDemoSub'}].map(opt => {
                 const disabled = opt.v === false && isUserDemo;
                 return (
                   <button key={String(opt.v)} className="m-tap" onClick={() => !disabled && setNewProfileIsDemo(opt.v)}
@@ -936,7 +936,7 @@ export function ScreenProfiles() {
             </div>
             <button onClick={createProfile}
               style={{ width:'100%', padding:'14px 0', background:newProfileName.trim() ? M.sage : M.line, color:newProfileName.trim() ? '#fff' : M.ink4, border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:newProfileName.trim()?'pointer':'default', fontFamily:M.fontUI, marginBottom:10 }}>
-              {t('profile.createProfile')}
+              {t('space.create')}
             </button>
             <button onClick={() => { setShowNewProfile(false); setNewProfileName(''); setNewProfileIsDemo(false); setNewProfileError(''); }}
               style={{ width:'100%', padding:'14px 0', background:M.paper2, color:M.ink, border:`1px solid ${M.line}`, borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
@@ -949,7 +949,7 @@ export function ScreenProfiles() {
   );
 }
 
-export function ScreenProfileDetail({ params }) {
+export function ScreenSpaceDetail({ params }) {
   const nav = useNav();
   const { t, lang } = useLang();
   const { profiles, setProfiles } = useProfiles();
@@ -1021,7 +1021,7 @@ export function ScreenProfileDetail({ params }) {
       return remaining;
     });
     if (expelledName) {
-      nav.setKickNotif(t('profile.kickedFrom').replace('{name}', expelledName));
+      nav.setKickNotif(t('space.kickedFrom').replace('{name}', expelledName));
       setTimeout(() => nav.setKickNotif(null), 4500);
     }
     nav.switchTab('home');
@@ -1089,13 +1089,13 @@ export function ScreenProfileDetail({ params }) {
   const saveName = () => {
     const trimmed = nameDraft.trim();
     if (!trimmed) { setEditingName(false); return; }
-    if (trimmed.length > 30) { setNameError(t('profile.nameTooLong')); return; }
-    if (!PROFILE_NAME_RE.test(trimmed)) { setNameError(t('profile.nameInvalidChars')); return; }
+    if (trimmed.length > 30) { setNameError(t('space.nameTooLong')); return; }
+    if (!PROFILE_NAME_RE.test(trimmed)) { setNameError(t('space.nameInvalidChars')); return; }
     if (!isMemberOfShared) {
       const isDuplicate = profiles
         .filter(p => !p.isShared && p.id !== profile.id)
         .some(p => p.name.toLowerCase() === trimmed.toLowerCase());
-      if (isDuplicate) { setNameError(t('profile.duplicateName')); return; }
+      if (isDuplicate) { setNameError(t('space.duplicateName')); return; }
     }
     setNameError('');
     if (isMemberOfShared) {
@@ -1259,7 +1259,7 @@ export function ScreenProfileDetail({ params }) {
               const attacher = userRegistry[sharedAcctData.attachedBy] || {};
               const attacherName = attacher.displayName || sharedAcctData.attachedBy;
               const isMe = sharedAcctData.attachedBy === myId;
-              return <div style={{ fontSize:11, color:M.ink4, marginTop:1 }}>{t('profile.addedBy')} {isMe ? t('word.you') : attacherName}</div>;
+              return <div style={{ fontSize:11, color:M.ink4, marginTop:1 }}>{t('space.addedBy')} {isMe ? t('word.you') : attacherName}</div>;
             })()}
           </div>
           {canDetach
@@ -1310,25 +1310,25 @@ export function ScreenProfileDetail({ params }) {
             ) : (
               <div className="m-tap" onClick={startEditName} style={{ textAlign:'center' }}>
                 <div style={{ fontSize:16, fontWeight:600, borderBottom:`1.5px dashed ${M.line2}`, display:'inline', paddingBottom:1 }}>{profile.localName || profile.name}</div>
-                <div style={{ fontSize:10, color:M.ink4, marginTop:4 }}>{isMemberOfShared ? t('profile.tapRenameLocal') : t('profile.tapRename')}</div>
+                <div style={{ fontSize:10, color:M.ink4, marginTop:4 }}>{isMemberOfShared ? t('space.tapRenameLocal') : t('space.tapRename')}</div>
               </div>
             )}
             {isMemberOfShared && (profile.creatorId || profile.ownerId) && (
               <div style={{ fontSize:12, color:M.ink3, marginTop:4, textAlign:'center' }}>
-                {t('profile.by')} <span style={{ fontWeight:600 }}>{formatCreatorLabel(profile.creatorId || profile.ownerId, profile.ownerDisplay, userRegistry)}</span>
+                {t('space.by')} <span style={{ fontWeight:600 }}>{formatCreatorLabel(profile.creatorId || profile.ownerId, profile.ownerDisplay, userRegistry)}</span>
               </div>
             )}
             {isActive && (
-              <div style={{ fontSize:11, color:M.sage, fontWeight:600, marginTop:3, textAlign:'center' }}>{t('profile.active')}</div>
+              <div style={{ fontSize:11, color:M.sage, fontWeight:600, marginTop:3, textAlign:'center' }}>{t('space.active')}</div>
             )}
           </div>
         </div>
 
         {/* Attached main accounts */}
-        <div className="m-cap" style={{ marginBottom:4, paddingLeft:4 }}>{t('profile.mainAccounts')}</div>
-        <div style={{ fontSize:11, color:M.ink3, marginBottom:8, paddingLeft:4 }}>{t('profile.mainAccountsSub')}</div>
+        <div className="m-cap" style={{ marginBottom:4, paddingLeft:4 }}>{t('space.mainAccounts')}</div>
+        <div style={{ fontSize:11, color:M.ink3, marginBottom:8, paddingLeft:4 }}>{t('space.mainAccountsSub')}</div>
         <div className="m-card" style={{ padding:'4px 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
-          {attachedMain.length === 0 && <div style={{ padding:'16px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>{t('profile.noChecking')}</div>}
+          {attachedMain.length === 0 && <div style={{ padding:'16px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>{t('space.noChecking')}</div>}
           {attachedMain.map((a, i) => renderAttachedRow(a, i))}
           {canEdit && (
             <>
@@ -1336,16 +1336,16 @@ export function ScreenProfileDetail({ params }) {
               <div className="m-tap" onClick={() => setShowAttachSheet('checking')}
                 style={{ display:'flex', alignItems:'center', gap:8, padding:'12px 0' }}>
                 <I name="plus" size={16} color={M.sage}/>
-                <div style={{ fontSize:13, color:M.sage, fontWeight:600 }}>{t('profile.attachAccount')}</div>
+                <div style={{ fontSize:13, color:M.sage, fontWeight:600 }}>{t('space.attachAccount')}</div>
               </div>
             </>
           )}
         </div>
 
         {/* Attached saving & investment accounts */}
-        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('profile.savingAccounts')}</div>
+        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('space.savingAccounts')}</div>
         <div className="m-card" style={{ padding:'4px 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
-          {attachedSaving.length === 0 && <div style={{ padding:'16px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>{t('profile.noSaving')}</div>}
+          {attachedSaving.length === 0 && <div style={{ padding:'16px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>{t('space.noSaving')}</div>}
           {attachedSaving.map((a, i) => renderAttachedRow(a, i))}
           {canEdit && (
             <>
@@ -1353,20 +1353,20 @@ export function ScreenProfileDetail({ params }) {
               <div className="m-tap" onClick={() => setShowAttachSheet('saving')}
                 style={{ display:'flex', alignItems:'center', gap:8, padding:'12px 0' }}>
                 <I name="plus" size={16} color={M.sage}/>
-                <div style={{ fontSize:13, color:M.sage, fontWeight:600 }}>{t('profile.attachAccount')}</div>
+                <div style={{ fontSize:13, color:M.sage, fontWeight:600 }}>{t('space.attachAccount')}</div>
               </div>
             </>
           )}
         </div>
 
         {/* Members */}
-        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('profile.members')}</div>
+        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('space.members')}</div>
         {profile.isDemo ? (
           <div className="m-card" style={{ padding:'12px 16px', marginBottom:14, border:`1px solid ${M.line}`, display:'flex', alignItems:'center', gap:12, opacity:0.5 }}>
             <div style={{ width:36, height:36, borderRadius:10, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
               <I name="lock" size={16} color={M.ink4}/>
             </div>
-            <div style={{ flex:1 }}><div style={{ fontSize:14, fontWeight:600 }}>{t('profile.demoNoInvite')}</div></div>
+            <div style={{ flex:1 }}><div style={{ fontSize:14, fontWeight:600 }}>{t('space.demoNoInvite')}</div></div>
           </div>
         ) : (
           <div className="m-card" style={{ padding:'4px 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
@@ -1376,7 +1376,7 @@ export function ScreenProfileDetail({ params }) {
               return (
                 <>
                   {displayMembers.length === 0 && pendingInvitesForProfile.length === 0 && !isMemberOfShared && !isProfileShared && (
-                    <div style={{ padding:'14px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>{t('profile.noMembers')}</div>
+                    <div style={{ padding:'14px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>{t('space.noMembers')}</div>
                   )}
                   {/* Owner self-row: visible when the original owner has members */}
                   {!isMemberOfShared && isProfileShared && (() => {
@@ -1474,7 +1474,7 @@ export function ScreenProfileDetail({ params }) {
                     +
                   </div>
                   <div style={{ flex:1 }}>
-                    <div style={{ fontSize:14, fontWeight:500, color:M.sage }}>{t('profile.addMember')}</div>
+                    <div style={{ fontSize:14, fontWeight:500, color:M.sage }}>{t('space.addMember')}</div>
                   </div>
                   <I name="caretR" size={14} color={M.ink4}/>
                 </div>
@@ -1486,36 +1486,36 @@ export function ScreenProfileDetail({ params }) {
         {(isMemberOfShared && myPerm !== 'owner') ? (
           <button onClick={() => setShowLeaveConfirm(true)}
             style={{ width:'100%', padding:'14px 0', background:M.claySoft, color:M.clay, border:'none', borderRadius:12, fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:8 }}>
-            {t('profile.leaveProfile')}
+            {t('space.leave')}
           </button>
         ) : otherMembers.length > 0 ? (
           <>
             <button onClick={() => setShowLeaveConfirm(true)}
               style={{ width:'100%', padding:'14px 0', background:M.claySoft, color:M.clay, border:'none', borderRadius:12, fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:8 }}>
-              {hasOtherOwner ? t('profile.leaveProfile') : t('profile.transferLeave')}
+              {hasOtherOwner ? t('space.leave') : t('space.transferLeave')}
             </button>
             {!hasOtherOwner && (
               <>
                 <button disabled={isOnly||isActive} onClick={() => setShowDeleteConfirm(true)}
                   style={{ width:'100%', padding:'14px 0', background:(isOnly||isActive)?M.line:M.claySoft, color:(isOnly||isActive)?M.ink4:M.clay, border:'none', borderRadius:12, fontSize:15, fontWeight:600, cursor:(isOnly||isActive)?'not-allowed':'pointer', fontFamily:M.fontUI, marginBottom:8 }}>
-                  {t('profile.deleteProfile')}
+                  {t('space.delete')}
                 </button>
-                {(isOnly||isActive) && <div style={{ textAlign:'center', fontSize:12, color:M.ink4 }}>{isActive ? t('profile.cannotDeleteActive') : t('profile.cannotDeleteOnly')}</div>}
+                {(isOnly||isActive) && <div style={{ textAlign:'center', fontSize:12, color:M.ink4 }}>{isActive ? t('space.cannotDeleteActive') : t('space.cannotDeleteOnly')}</div>}
               </>
             )}
           </>
         ) : isMemberOfShared ? (
           <button onClick={() => setShowLeaveConfirm(true)}
             style={{ width:'100%', padding:'14px 0', background:M.claySoft, color:M.clay, border:'none', borderRadius:12, fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:8 }}>
-            {t('profile.leaveProfile')}
+            {t('space.leave')}
           </button>
         ) : (
           <>
             <button disabled={isOnly||isActive} onClick={() => setShowDeleteConfirm(true)}
               style={{ width:'100%', padding:'14px 0', background:(isOnly||isActive)?M.line:M.claySoft, color:(isOnly||isActive)?M.ink4:M.clay, border:'none', borderRadius:12, fontSize:15, fontWeight:600, cursor:(isOnly||isActive)?'not-allowed':'pointer', fontFamily:M.fontUI, marginBottom:8 }}>
-              {t('profile.deleteProfile')}
+              {t('space.delete')}
             </button>
-            {(isOnly||isActive) && <div style={{ textAlign:'center', fontSize:12, color:M.ink4 }}>{isActive ? t('profile.cannotDeleteActive') : t('profile.cannotDeleteOnly')}</div>}
+            {(isOnly||isActive) && <div style={{ textAlign:'center', fontSize:12, color:M.ink4 }}>{isActive ? t('space.cannotDeleteActive') : t('space.cannotDeleteOnly')}</div>}
           </>
         )}
         <div style={{ height:16 }}/>
@@ -1524,7 +1524,7 @@ export function ScreenProfileDetail({ params }) {
       {showAttachSheet && (
         <Sheet onClose={() => setShowAttachSheet(null)}>
           <div style={{ padding:'4px 16px 8px' }}>
-            <div style={{ fontSize:17, fontWeight:700, marginBottom:16 }}>{t('profile.attachAccount')}</div>
+            <div style={{ fontSize:17, fontWeight:700, marginBottom:16 }}>{t('space.attachAccount')}</div>
             {(() => {
               const isChecking = showAttachSheet === 'checking';
               const attachedIds = new Set(attachedAccountObjects.map(a => a.id));
@@ -1533,11 +1533,11 @@ export function ScreenProfileDetail({ params }) {
                 return (
                   <>
                     <div style={{ textAlign:'center', color:M.ink3, fontSize:13, padding:'16px 0', marginBottom:12 }}>
-                      {isChecking ? t('profile.noCheckingToAttach') : t('profile.noSavingToAttach')}
+                      {isChecking ? t('space.noCheckingToAttach') : t('space.noSavingToAttach')}
                     </div>
                     <button className="m-tap" onClick={() => { setShowAttachSheet(null); nav.push('accountsAll'); }}
                       style={{ width:'100%', padding:'12px 0 4px', display:'flex', alignItems:'center', justifyContent:'center', gap:4, background:'transparent', border:'none', cursor:'pointer', fontFamily:M.fontUI }}>
-                      <span style={{ fontSize:14, fontWeight:600, color:M.sage }}>{t('profile.manageAccounts')} {'→'}</span>
+                      <span style={{ fontSize:14, fontWeight:600, color:M.sage }}>{t('space.manageAccounts')} {'→'}</span>
                     </button>
                   </>
                 );
@@ -1564,7 +1564,7 @@ export function ScreenProfileDetail({ params }) {
                   </div>
                   <button className="m-tap" onClick={() => { setShowAttachSheet(null); nav.push('accountsAll'); }}
                     style={{ width:'100%', padding:'16px 0 4px', display:'flex', alignItems:'center', justifyContent:'center', gap:4, background:'transparent', border:'none', cursor:'pointer', fontFamily:M.fontUI }}>
-                    <span style={{ fontSize:14, fontWeight:600, color:M.sage }}>{t('profile.manageAccounts')} {'→'}</span>
+                    <span style={{ fontSize:14, fontWeight:600, color:M.sage }}>{t('space.manageAccounts')} {'→'}</span>
                   </button>
                 </>
               );
@@ -1606,9 +1606,9 @@ export function ScreenProfileDetail({ params }) {
       {showDeleteConfirm && (
         <Sheet onClose={() => setShowDeleteConfirm(false)}>
           <div style={{ padding:'4px 16px 8px' }}>
-            <div style={{ fontSize:17, fontWeight:700, marginBottom:8 }}>{t('profile.deleteConfirmTitle')}</div>
+            <div style={{ fontSize:17, fontWeight:700, marginBottom:8 }}>{t('space.deleteConfirmTitle')}</div>
             <div style={{ fontSize:14, color:M.ink3, lineHeight:1.5, marginBottom:12 }}>
-              {t('profile.deleteConfirmDesc')}
+              {t('space.deleteConfirmDesc')}
             </div>
             {(() => {
               const pid = profile.id;
@@ -1626,7 +1626,7 @@ export function ScreenProfileDetail({ params }) {
               if (!items.length) return null;
               return (
                 <div style={{ padding:'10px 12px', marginBottom:12, borderRadius:10, background:M.claySoft, border:`1px solid ${M.clay}33` }}>
-                  <div style={{ fontSize:12, color:M.clay, fontWeight:600, marginBottom:4 }}>{t('profile.deleteDataAlso')}</div>
+                  <div style={{ fontSize:12, color:M.clay, fontWeight:600, marginBottom:4 }}>{t('space.deleteDataAlso')}</div>
                   <div style={{ fontSize:12, color:M.ink2 }}>{items.join(' · ')}</div>
                 </div>
               );
@@ -1634,7 +1634,7 @@ export function ScreenProfileDetail({ params }) {
             <div style={{ marginBottom:20 }}/>
             <button onClick={deleteProfile}
               style={{ width:'100%', padding:'14px 0', background:M.clay, color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>
-              {t('profile.deleteProfile')}
+              {t('space.delete')}
             </button>
             <button onClick={() => setShowDeleteConfirm(false)}
               style={{ width:'100%', padding:'14px 0', background:M.paper2, color:M.ink, border:`1px solid ${M.line}`, borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
@@ -1652,14 +1652,14 @@ export function ScreenProfileDetail({ params }) {
               return (
                 <>
                   <div style={{ fontSize:17, fontWeight:700, marginBottom:8 }}>
-                    {isOwnerTransfer ? t('profile.transferLeaveConfirmTitle') : t('profile.leaveConfirmTitle')}
+                    {isOwnerTransfer ? t('space.transferLeaveConfirmTitle') : t('space.leaveConfirmTitle')}
                   </div>
                   <div style={{ fontSize:14, color:M.ink3, lineHeight:1.5, marginBottom:20 }}>
-                    {isOwnerTransfer ? t('profile.transferLeaveConfirmDesc') : t('profile.leaveConfirmDesc')}
+                    {isOwnerTransfer ? t('space.transferLeaveConfirmDesc') : t('space.leaveConfirmDesc')}
                   </div>
                   <button onClick={isOwnerTransfer ? transferAndLeave : leaveProfile}
                     style={{ width:'100%', padding:'14px 0', background:M.clay, color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>
-                    {isOwnerTransfer ? t('profile.transferLeave') : t('profile.leaveProfile')}
+                    {isOwnerTransfer ? t('space.transferLeave') : t('space.leave')}
                   </button>
                 </>
               );

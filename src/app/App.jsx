@@ -15,7 +15,7 @@ import { ScreenStub } from '../features/extra/Stub.jsx';
 import { ScreenHome } from '../features/home/Home.jsx';
 import { ScreenTransactions, ScreenTxDetail, ScreenExpenses, ScreenCategoryDrill } from '../features/transactions/Tx.jsx';
 import { ScreenEvents, ScreenEventDetail, ScreenEventCreate } from '../features/events/Events.jsx';
-import { ScreenProfile, ScreenProfiles, ScreenProfileDetail, ScreenUserInfo, ScreenExportData } from '../features/profile/Profile.jsx';
+import { ScreenProfile, ScreenSpaces, ScreenSpaceDetail, ScreenUserInfo, ScreenExportData } from '../features/profile/Profile.jsx';
 import { ScreenLanguagePicker, ScreenSettings, ScreenPeriods, ScreenTutorial, ScreenNotifications, ScreenManageCategories, ScreenCustomizeHome } from '../features/settings/Settings.jsx';
 import { ScreenAccounts, ScreenSavings, ScreenSavingsDetail, ScreenSavingAccounts, ScreenAccountsAll, ScreenIntegrations, ScreenIntegrationLogin, ScreenIntegrationReceipts } from '../features/accounts/Accounts.jsx';
 import { ScreenRecurringTab, ScreenRecurringDetail, ScreenRecurringCreate, ScreenRecurringDeals } from '../features/recurring/Recurring.jsx';
@@ -58,8 +58,8 @@ export const SCREEN_REGISTRY = {
   eventCreate:    () => <ScreenEventCreate/>,
   accounts:       () => <ScreenAccounts/>,
   accountsAll:    () => <ScreenAccountsAll/>,
-  profiles:       () => <ScreenProfiles/>,
-  profileDetail:  ({params}) => <ScreenProfileDetail params={params}/>,
+  spaces:       () => <ScreenSpaces/>,
+  spaceDetail:  ({params}) => <ScreenSpaceDetail params={params}/>,
   integrations:   ({params}) => <ScreenIntegrations params={params}/>,
   integrationLogin: ({params}) => <ScreenIntegrationLogin params={params}/>,
   integrationReceipts: ({params}) => <ScreenIntegrationReceipts params={params}/>,

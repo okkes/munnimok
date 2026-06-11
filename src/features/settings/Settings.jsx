@@ -1068,15 +1068,15 @@ export function InviteCards() {
             </div>
           </div>
           <div style={{ flex:1, minWidth:0 }}>
-            <div style={{ fontSize:10, fontWeight:700, color:M.sage, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:2 }}>{t('friends.profileInviteFrom')}</div>
-            <div style={{ fontSize:15, fontWeight:700, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{inv.profileName || 'Shared profile'}</div>
+            <div style={{ fontSize:10, fontWeight:700, color:M.sage, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:2 }}>{t('space.inviteFrom')}</div>
+            <div style={{ fontSize:15, fontWeight:700, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{inv.profileName || 'Shared space'}</div>
             <div style={{ fontSize:11, color:M.ink3, marginTop:2 }}>From <strong>{senderName}</strong></div>
           </div>
         </div>
         <div style={{ display:'flex', gap:8 }}>
           <button className="m-tap" onClick={onAccept}
             style={{ flex:2, padding:'9px 0', borderRadius:8, background:M.sage, color:'#fff', border:'none', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
-            {t('friends.profileInviteJoin')}
+            {t('space.inviteJoin')}
           </button>
           <button className="m-tap" onClick={onDeclineAction}
             style={{ flex:1, padding:'9px 0', borderRadius:8, background:M.paper2, color:M.ink3, border:`1px solid ${M.line}`, fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
@@ -1114,23 +1114,23 @@ export function InviteCards() {
             <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:16 }}>
               <ProfileAvatar profile={{ name: renameInviteSheet.inv.profileName, picture: renameInviteSheet.inv.profilePicture || null }} size={44}/>
               <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontSize:16, fontWeight:700, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{renameInviteSheet.inv.profileName || 'Shared profile'}</div>
+                <div style={{ fontSize:16, fontWeight:700, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{renameInviteSheet.inv.profileName || 'Shared space'}</div>
                 <div style={{ fontSize:11, color:M.ink3, marginTop:2 }}>
-                  {t('profile.by')} <strong>{userRegistry[renameInviteSheet.inv.fromId]?.displayName || renameInviteSheet.inv.fromId}</strong>
+                  {t('space.by')} <strong>{userRegistry[renameInviteSheet.inv.fromId]?.displayName || renameInviteSheet.inv.fromId}</strong>
                 </div>
               </div>
             </div>
-            <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>{t('profile.nameThisProfile')}</div>
+            <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>{t('space.nameThisSpace')}</div>
             <input autoFocus
               value={renameInviteSheet.name}
               onChange={e => setRenameInviteSheet(prev => ({ ...prev, name: e.target.value }))}
               onKeyDown={e => e.key === 'Enter' && (respondProfile(renameInviteSheet.inv, 'accepted', renameInviteSheet.name), setRenameInviteSheet(null))}
               style={{ width:'100%', padding:'12px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box', marginBottom:6 }}
             />
-            <div style={{ fontSize:11, color:M.ink4, marginBottom:20 }}>{t('profile.nameThisProfileHint')}</div>
+            <div style={{ fontSize:11, color:M.ink4, marginBottom:20 }}>{t('space.nameThisSpaceHint')}</div>
             <button onClick={() => { respondProfile(renameInviteSheet.inv, 'accepted', renameInviteSheet.name); setRenameInviteSheet(null); }}
               style={{ width:'100%', padding:'14px 0', background:M.sage, color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>
-              {t('friends.profileInviteJoin')}
+              {t('space.inviteJoin')}
             </button>
             <button onClick={() => setRenameInviteSheet(null)}
               style={{ width:'100%', padding:'14px 0', background:M.paper2, color:M.ink, border:`1px solid ${M.line}`, borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
@@ -1145,7 +1145,7 @@ export function InviteCards() {
         <Sheet onClose={() => setDeclineSheet(null)}>
           <div style={{ padding:'4px 16px 8px' }}>
             <div style={{ fontSize:15, fontWeight:700, padding:'12px 0 4px', color:M.ink }}>{dsName}</div>
-            <div style={{ fontSize:12, color:M.ink4, marginBottom:16 }}>{declineSheet.isProfile ? t('friends.profileInviteFrom') : t('friends.inviteNotif')} {dsName}</div>
+            <div style={{ fontSize:12, color:M.ink4, marginBottom:16 }}>{declineSheet.isProfile ? t('space.inviteFrom') : t('friends.inviteNotif')} {dsName}</div>
             <button className="m-tap" onClick={() => { declineSheet.onJustDecline(); setDeclineSheet(null); }}
               style={{ width:'100%', display:'flex', alignItems:'center', gap:14, padding:'14px 0', background:'none', border:'none', cursor:'pointer', borderTop:`1px solid ${M.line2}` }}>
               <div style={{ width:36, height:36, borderRadius:10, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center' }}>

@@ -433,13 +433,13 @@ export function ProfileMembersSheet({ profile, onClose }) {
   return (
     <Sheet onClose={onClose}>
       <div style={{ padding:'4px 16px 0' }}>
-        <div style={{ fontSize:17, fontWeight:700, marginBottom:4 }}>{t('profile.addMember')}</div>
-        <div style={{ fontSize:13, color:M.ink3, marginBottom:14 }}>{t('profile.members')}</div>
+        <div style={{ fontSize:17, fontWeight:700, marginBottom:4 }}>{t('space.addMember')}</div>
+        <div style={{ fontSize:13, color:M.ink3, marginBottom:14 }}>{t('space.members')}</div>
       </div>
       <div style={{ padding:'0 16px', maxHeight:'60vh', overflowY:'auto' }}>
         {profile.isDemo ? (
           <div style={{ display:'flex', alignItems:'center', gap:10, padding:'14px 0', color:M.ink4, fontSize:13 }}>
-            <I name="lock" size={15} color={M.ink4}/>{t('profile.demoNoInvite')}
+            <I name="lock" size={15} color={M.ink4}/>{t('space.demoNoInvite')}
           </div>
         ) : (
           <>
@@ -483,7 +483,7 @@ export function ProfileMembersSheet({ profile, onClose }) {
                       </div>
                       <button className="m-tap" onClick={() => inviteFriend(fid)}
                         style={{ padding:'7px 16px', borderRadius:999, background:M.sage, color:'#fff', border:'none', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, flexShrink:0 }}>
-                        + {t('profile.invite')}
+                        + {t('space.invite')}
                       </button>
                     </div>
                   );
@@ -500,7 +500,7 @@ export function ProfileMembersSheet({ profile, onClose }) {
         <div style={{ marginTop:20, paddingTop:14, borderTop:`1px solid ${M.line2}`, marginBottom:8 }}>
           <button className="m-tap" onClick={() => { onClose(); nav.push('friends'); }}
             style={{ width:'100%', padding:'13px 0', borderRadius:12, background:M.paper2, border:`1px solid ${M.line}`, fontSize:14, fontWeight:600, color:M.ink2, cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
-            {t('profile.manageFriends')}
+            {t('space.manageFriends')}
             <I name="caretR" size={14} color={M.ink3}/>
           </button>
         </div>
@@ -555,9 +555,9 @@ export function MemberActionSheet({ profile, memberId, onClose }) {
     return (
       <Sheet onClose={() => setPendingPerm(null)}>
         <div style={{ padding:'4px 16px 20px' }}>
-          <div style={{ fontSize:17, fontWeight:700, marginBottom:8 }}>{t('profile.downgradeTitle')}</div>
+          <div style={{ fontSize:17, fontWeight:700, marginBottom:8 }}>{t('space.downgradeTitle')}</div>
           <div style={{ fontSize:14, color:M.ink3, marginBottom:16, lineHeight:1.5 }}>
-            {t('profile.downgradeDesc').replace('{name}', info.displayName||memberId)}
+            {t('space.downgradeDesc').replace('{name}', info.displayName||memberId)}
           </div>
           <div style={{ background:M.paper2, borderRadius:12, marginBottom:16 }}>
             {memberAccts.map((a, i) => {
@@ -587,7 +587,7 @@ export function MemberActionSheet({ profile, memberId, onClose }) {
           </div>
           <button onClick={() => { applyPerm(pendingPerm, removeAccts); setPendingPerm(null); onClose(); }}
             style={{ width:'100%', padding:'14px 0', background:M.sage, color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
-            {t('profile.downgradeConfirm')}
+            {t('space.downgradeConfirm')}
           </button>
         </div>
       </Sheet>
@@ -598,9 +598,9 @@ export function MemberActionSheet({ profile, memberId, onClose }) {
     return (
       <Sheet onClose={() => setKickConfirm(false)}>
         <div style={{ padding:'4px 16px 8px' }}>
-          <div style={{ fontSize:17, fontWeight:700, marginBottom:8 }}>{t('profile.kick')}?</div>
-          <div style={{ fontSize:14, color:M.ink3, marginBottom:20, lineHeight:1.5 }}>{t('profile.kickWarn')}</div>
-          <button onClick={doKick} style={{ width:'100%', padding:'14px 0', background:M.clay, color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>{t('profile.kick')}</button>
+          <div style={{ fontSize:17, fontWeight:700, marginBottom:8 }}>{t('space.kick')}?</div>
+          <div style={{ fontSize:14, color:M.ink3, marginBottom:20, lineHeight:1.5 }}>{t('space.kickWarn')}</div>
+          <button onClick={doKick} style={{ width:'100%', padding:'14px 0', background:M.clay, color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>{t('space.kick')}</button>
           <button onClick={() => setKickConfirm(false)} style={{ width:'100%', padding:'14px 0', background:M.paper2, color:M.ink, border:`1px solid ${M.line}`, borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>{t('action.cancel')}</button>
         </div>
       </Sheet>
@@ -619,7 +619,7 @@ export function MemberActionSheet({ profile, memberId, onClose }) {
             <div style={{ fontSize:11, color:M.ink4, fontFamily:M.fontMono, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{memberId}</div>
           </div>
         </div>
-        <div className="m-cap" style={{ marginBottom:10 }}>{t('profile.memberPerm')}</div>
+        <div className="m-cap" style={{ marginBottom:10 }}>{t('space.memberPerm')}</div>
         <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:20 }}>
           {PERM_LEVELS.map(perm => {
             const active = currentPerm === perm;
@@ -638,7 +638,7 @@ export function MemberActionSheet({ profile, memberId, onClose }) {
         </div>
         <button data-testid="member-kick-btn" className="m-tap" onClick={() => setKickConfirm(true)}
           style={{ width:'100%', padding:'13px 0', background:M.claySoft, color:M.clay, border:'none', borderRadius:12, fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
-          {t('profile.kick')}
+          {t('space.kick')}
         </button>
       </div>
     </Sheet>
