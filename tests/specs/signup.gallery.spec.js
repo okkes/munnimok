@@ -623,8 +623,9 @@ for (const V of VARIANTS) {
     await page.click('[data-testid="onboard-country-btn"]');
     await page.waitForSelector('[data-testid="onboard-country-sheet"]', { timeout: 3000 });
     await shot(page, k('56-country-flags') + '--s1');
-    // Each row in the picker must have an img tag (twemoji flag) not just a text badge
-    const flagImgs = page.locator('[data-testid="onboard-country-sheet"] img');
+    // Each row in the picker must have an img tag (twemoji flag) not just a text badge.
+    // sheet-close is the backdrop wrapper that contains the full sheet panel including the list.
+    const flagImgs = page.locator('[data-testid="sheet-close"] img[src*="twemoji"]');
     await expect(flagImgs.first()).toBeVisible();
     const src = await flagImgs.first().getAttribute('src');
     expect(src).toContain('twemoji');

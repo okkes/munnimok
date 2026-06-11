@@ -149,7 +149,7 @@ for (const V of VARIANTS) {
 
   test(`68 offline-select – shows existing profiles [${V.id}]`, async ({ browser }) => {
     const { page, ctx } = await createPage(browser, V);
-    // Pre-seed two offline profiles so the selector screen shows
+    // Pre-seed two offline profiles and no online methods → app boots to offline-select directly
     await base(page, V, () => {
       const profiles = [
         { id: 'offline_1111', name: 'Alice', picture: 'av1', createdAt: 1111 },
@@ -157,11 +157,8 @@ for (const V of VARIANTS) {
       ];
       localStorage.setItem('munni_offline_profiles', JSON.stringify(profiles));
     });
-    // Info → CTA should go to offline-select (profiles exist)
-    await goToOfflineInfo(page);
-    await shot(page, k('68-offline-select') + '--s1');
-    await page.click('[data-testid="offline-info-cta"]');
-    await page.waitForSelector('[data-testid="offline-select-screen"]', { timeout: 3000 });
+    // App boots straight to offline-select (no login screen shown when only offline profiles exist)
+    await page.waitForSelector('[data-testid="offline-select-screen"]', { timeout: 5000 });
     await expect(page.locator('[data-testid="offline-select-screen"]')).toBeVisible();
     await expect(page.locator('[data-testid="offline-add-profile"]')).toBeVisible();
     await shot(page, k('68-offline-select'));
@@ -170,13 +167,12 @@ for (const V of VARIANTS) {
 
   test(`69 offline-select – login with existing profile [${V.id}]`, async ({ browser }) => {
     const { page, ctx } = await createPage(browser, V);
+    // Pre-seed one profile and no online methods → app boots to offline-select directly
     await base(page, V, () => {
       const profiles = [{ id: 'offline_3333', name: 'Eve', picture: 'av3', createdAt: 3333 }];
       localStorage.setItem('munni_offline_profiles', JSON.stringify(profiles));
     });
-    await goToOfflineInfo(page);
-    await page.click('[data-testid="offline-info-cta"]');
-    await page.waitForSelector('[data-testid="offline-select-screen"]', { timeout: 3000 });
+    await page.waitForSelector('[data-testid="offline-select-screen"]', { timeout: 5000 });
     await shot(page, k('69-offline-select-login') + '--s1');
     // Tap the profile tile (contains 'Eve')
     await page.locator('[data-testid="offline-select-screen"] button').filter({ hasText: 'Eve' }).first().click();
