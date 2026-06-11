@@ -14,6 +14,10 @@ async function goToUserInfo(page, emailStr) {
   await page.waitForSelector('[data-testid="onboard-firstname"]', { timeout: 5000 });
   await page.fill('[data-testid="onboard-firstname"]', 'Test');
   await page.fill('[data-testid="onboard-lastname"]', 'User');
+  // Country is required — select Netherlands
+  await page.click('[data-testid="onboard-country-btn"]');
+  await page.waitForSelector('[data-testid="onboard-country-sheet"]', { timeout: 3000 });
+  await page.locator('[data-testid="sheet-close"] button').filter({ hasText: 'Netherlands' }).first().click();
   await page.click('[data-testid="onboard-continue"]');
   // Step 2 — skip bank
   await page.waitForSelector('[data-testid="onboard-step2"]', { timeout: 3000 });

@@ -195,6 +195,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
     else if (fn.length > 50) errs.firstName = t('login.errNameTooLong');
     if (!ln) errs.lastName = t('onboarding.errLastNameRequired');
     else if (ln.length > 50) errs.lastName = t('login.errNameTooLong');
+    if (!country) errs.country = t('onboarding.errCountryRequired');
     if (!isSSO) {
       if (!EMAIL_RE.test(email.trim().toLowerCase())) errs.email = t('login.errInvalidEmail');
     }
@@ -682,7 +683,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
             data-testid={T.onboardCountryBtn}
             className="m-tap"
             onClick={() => { setCountrySearch(''); setShowCountry(true); }}
-            style={{ width:'100%', padding:'12px 14px', borderRadius:12, border:`1.5px solid ${M.line}`, fontSize:15, fontFamily:M.fontUI, background:M.paper2, outline:'none', color: country ? M.ink : M.ink4, cursor:'pointer', display:'flex', alignItems:'center', gap:8, textAlign:'left', boxSizing:'border-box' }}
+            style={{ width:'100%', padding:'12px 14px', borderRadius:12, border:`1.5px solid ${errors.country ? M.clay : M.line}`, fontSize:15, fontFamily:M.fontUI, background:M.paper2, outline:'none', color: country ? M.ink : M.ink4, cursor:'pointer', display:'flex', alignItems:'center', gap:8, textAlign:'left', boxSizing:'border-box' }}
           >
             {country ? (
               <>
@@ -694,6 +695,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
             )}
             <I name="caretR" size={14} color={M.ink4}/>
           </button>
+          {errors.country && <div data-testid={T.onboardCountryErr} style={{ fontSize:11, color:M.clay, marginTop:4 }}>{errors.country}</div>}
         </div>
 
         {/* API endpoint */}
@@ -749,7 +751,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
           <div style={{ overflowY:'auto', maxHeight:340, paddingBottom:16 }}>
             {COUNTRIES.filter(c => !countrySearch || countryName(c, lang).toLowerCase().includes(countrySearch.toLowerCase()) || c.native.toLowerCase().includes(countrySearch.toLowerCase())).map(c => (
               <button key={c.code} className="m-tap"
-                onClick={() => { setCountry(c.code); setShowCountry(false); }}
+                onClick={() => { setCountry(c.code); setShowCountry(false); setErrors(prev => ({ ...prev, country: undefined })); }}
                 style={{ width:'100%', display:'flex', alignItems:'center', gap:12, padding:'12px 20px', background:'transparent', border:'none', cursor:'pointer', fontFamily:M.fontUI }}>
                 <div style={{ fontSize:10, fontWeight:700, color:M.ink3, letterSpacing:0.5, fontFamily:M.fontUI, width:26, flexShrink:0, textAlign:'center' }}>{c.code}</div>
                 <span style={{ flex:1, textAlign:'left', fontSize:15, color:M.ink }}>{highlightMatch(countryName(c, lang), countrySearch.trim())}</span>

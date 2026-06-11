@@ -20,6 +20,10 @@ async function goToStep2(page, email) {
   await goToStep1(page, email);
   await page.fill('[data-testid="onboard-firstname"]', 'Alice');
   await page.fill('[data-testid="onboard-lastname"]', 'Smith');
+  // Country is required — select Netherlands
+  await page.click('[data-testid="onboard-country-btn"]');
+  await page.waitForSelector('[data-testid="onboard-country-sheet"]', { timeout: 3000 });
+  await page.locator('[data-testid="sheet-close"] button').filter({ hasText: 'Netherlands' }).first().click();
   await page.click('[data-testid="onboard-continue"]');
   await page.waitForSelector('[data-testid="onboard-step2"]', { timeout: 3000 });
 }
@@ -247,6 +251,9 @@ for (const V of VARIANTS) {
     await goToStep1(page, email('s1tos2'));
     await page.fill('[data-testid="onboard-firstname"]', 'Alice');
     await page.fill('[data-testid="onboard-lastname"]', 'Smith');
+    await page.click('[data-testid="onboard-country-btn"]');
+    await page.waitForSelector('[data-testid="onboard-country-sheet"]', { timeout: 3000 });
+    await page.locator('[data-testid="sheet-close"] button').filter({ hasText: 'Netherlands' }).first().click();
     await shot(page, k('32-onboard-step1-to-step2') + '--s1');
     await page.click('[data-testid="onboard-continue"]');
     await page.waitForSelector('[data-testid="onboard-step2"]', { timeout: 3000 });
@@ -500,5 +507,26 @@ for (const V of VARIANTS) {
     await expect(page.locator('[data-testid="bank-search-screen"]')).toBeVisible();
     await shot(page, k('46-back-creds-to-search'));
     await teardown(page, ctx, k('46-back-creds-to-search'));
+  });
+
+  test(`50 onboard – country missing error [${V.id}]`, async ({ browser }) => {
+    const { page, ctx } = await createPage(browser, V);
+    await base(page, V);
+    await goToStep1(page, email('no-country'));
+    await page.fill('[data-testid="onboard-firstname"]', 'Alice');
+    await page.fill('[data-testid="onboard-lastname"]', 'Smith');
+    await shot(page, k('50-onboard-country-error') + '--s1');
+    // Submit without selecting a country
+    await page.click('[data-testid="onboard-continue"]');
+    await page.waitForSelector('[data-testid="onboard-country-error"]', { timeout: 2000 });
+    await expect(page.locator('[data-testid="onboard-country-error"]')).toBeVisible();
+    await shot(page, k('50-onboard-country-error') + '--s2');
+    // Now select a country — error should clear
+    await page.click('[data-testid="onboard-country-btn"]');
+    await page.waitForSelector('[data-testid="onboard-country-sheet"]', { timeout: 3000 });
+    await page.locator('[data-testid="sheet-close"] button').filter({ hasText: 'Netherlands' }).first().click();
+    await expect(page.locator('[data-testid="onboard-country-error"]')).not.toBeVisible();
+    await shot(page, k('50-onboard-country-error'));
+    await teardown(page, ctx, k('50-onboard-country-error'));
   });
 }

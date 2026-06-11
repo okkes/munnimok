@@ -226,6 +226,7 @@ export function ScreenUserInfo() {
   const [showCountry,    setShowCountry]    = React.useState(false);
   const [countrySearch,  setCountrySearch]  = React.useState('');
   const [showCountryInfo,setShowCountryInfo]= React.useState(false);
+  const [countryError,   setCountryError]   = React.useState('');
   React.useEffect(() => { setDraftFirst(firstName);   }, [firstName]);
   React.useEffect(() => { setDraftLast(lastName);     }, [lastName]);
   React.useEffect(() => { setDraftCountry(country);   }, [country]);
@@ -273,6 +274,7 @@ export function ScreenUserInfo() {
     if (anySheetOpen) {
       savedScrollRef.current = el.scrollTop;
       el.style.overflowY = 'hidden';
+      el.scrollTop = savedScrollRef.current;
       el.style.pointerEvents = 'none';
       el.style.userSelect = 'none';
     } else {
@@ -301,6 +303,7 @@ export function ScreenUserInfo() {
   };
 
   const save = () => {
+    if (!draftCountry) { setCountryError(t('onboarding.errCountryRequired')); return; }
     const fn = draftFirst.trim();
     const ln = draftLast.trim();
     setFirstName(fn); setLastName(ln);
@@ -372,7 +375,7 @@ export function ScreenUserInfo() {
             <I name="info" size={14} color={M.tint}/>
           </button>
         </div>
-        <div className="m-card" style={{ padding:'0 16px', marginBottom:20, border:`1px solid ${M.line}` }}>
+        <div className="m-card" style={{ padding:'0 16px', marginBottom:countryError ? 6 : 20, border:`1px solid ${countryError ? M.clay : M.line}` }}>
           <div
             data-testid={T.profileCountryBtn}
             className={isDemo ? '' : 'm-tap'}
@@ -392,6 +395,7 @@ export function ScreenUserInfo() {
             {!isDemo && <I name="caretR" size={14} color={M.ink4}/>}
           </div>
         </div>
+        {countryError && <div data-testid={T.profileCountryErr} style={{ fontSize:11, color:M.clay, marginBottom:16, paddingLeft:4 }}>{countryError}</div>}
 
         {/* Account info */}
         <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('settings.account')}</div>
@@ -481,14 +485,13 @@ export function ScreenUserInfo() {
               value={countrySearch}
               onChange={e => setCountrySearch(e.target.value)}
               placeholder="Search…"
-              autoFocus
               style={{ width:'100%', boxSizing:'border-box', padding:'9px 14px', borderRadius:10, border:`1.5px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', color:M.ink, marginBottom:4 }}
             />
           </div>
           <div data-testid={T.profileCountrySheet} style={{ overflowY:'auto', maxHeight:340, paddingBottom:16 }}>
             {COUNTRIES.filter(c => !countrySearch || countryName(c, lang).toLowerCase().includes(countrySearch.toLowerCase()) || c.native.toLowerCase().includes(countrySearch.toLowerCase())).map(c => (
               <div key={c.code} className="m-tap"
-                onClick={() => { setDraftCountry(c.code); setShowCountry(false); }}
+                onClick={() => { setDraftCountry(c.code); setShowCountry(false); setCountryError(''); }}
                 style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 20px', cursor:'pointer' }}>
                 <div style={{ fontSize:10, fontWeight:700, color:M.ink3, letterSpacing:0.5, fontFamily:M.fontUI, width:26, flexShrink:0, textAlign:'center' }}>{c.code}</div>
                 <span style={{ flex:1, fontSize:15, color:M.ink }}>{highlightMatch(countryName(c, lang), countrySearch.trim())}</span>
@@ -1277,7 +1280,7 @@ export function ScreenSpaceDetail({ params }) {
   return (
     <div className="m-screen">
       <StatusBar/>
-      <AppBar title={t('screen.profile')}
+      <AppBar title={t('screen.space')}
         leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
       />
       <div className="m-body-scroll">
