@@ -1,6 +1,9 @@
-export default [
+export const FEATURE       = 'userinfo';
+export const FEATURE_LABEL = 'My Profile';
+
+export const GROUPS = [
   {
-    name: 'My Profile — Country Field',
+    name: 'Country Field',
     tests: [
       {
         key: '01-userinfo-country-picker',
