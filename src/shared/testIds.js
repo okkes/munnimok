@@ -42,6 +42,7 @@
   onboardApiInfoSheet:  'onboard-api-info-sheet',
   onboardCountryBtn:    'onboard-country-btn',
   onboardCountrySheet:  'onboard-country-sheet',
+  onboardCountryErr:    'onboard-country-error',
 
   // Auth — onboarding step 2
   onboardStep2:         'onboard-step2',
@@ -103,6 +104,7 @@
   profileCountryBtn:    'profile-country-btn',
   profileCountrySheet:  'profile-country-sheet',
   profileCountrySearch: 'profile-country-search',
+  profileCountryErr:    'profile-country-error',
   profileAvatarBtn:     'profile-avatar-btn',
   profileNameInput:     'profile-name-input',
   profileSaveBtn:       'profile-save-btn',
