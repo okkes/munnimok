@@ -380,7 +380,7 @@ export function ScreenUserInfo() {
             style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0', cursor: isDemo ? 'default' : 'pointer' }}
           >
             <div style={{ width:20, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:16 }}>
-              {draftCountry ? COUNTRIES.find(c => c.code === draftCountry)?.emoji : <I name="globe" size={16} color={M.ink3}/>}
+              {draftCountry ? <div style={{ fontSize:10, fontWeight:700, color:M.ink3, letterSpacing:0.5, fontFamily:M.fontUI }}>{draftCountry}</div> : <I name="globe" size={16} color={M.ink3}/>}
             </div>
             <div style={{ flex:1, minWidth:0 }}>
               {draftCountry ? (
@@ -490,7 +490,7 @@ export function ScreenUserInfo() {
               <div key={c.code} className="m-tap"
                 onClick={() => { setDraftCountry(c.code); setShowCountry(false); }}
                 style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 20px', cursor:'pointer' }}>
-                <span style={{ fontSize:22, lineHeight:1, flexShrink:0 }}>{c.emoji}</span>
+                <div style={{ fontSize:10, fontWeight:700, color:M.ink3, letterSpacing:0.5, fontFamily:M.fontUI, width:26, flexShrink:0, textAlign:'center' }}>{c.code}</div>
                 <span style={{ flex:1, fontSize:15, color:M.ink }}>{highlightMatch(countryName(c, lang), countrySearch.trim())}</span>
                 {draftCountry === c.code && <I name="check" size={16} color={M.sage}/>}
               </div>

@@ -686,7 +686,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
           >
             {country ? (
               <>
-                <span style={{ fontSize:18, lineHeight:1 }}>{COUNTRIES.find(c => c.code === country)?.emoji}</span>
+                <div style={{ fontSize:10, fontWeight:700, color:M.ink3, letterSpacing:0.5, fontFamily:M.fontUI, flexShrink:0 }}>{country}</div>
                 <span style={{ flex:1 }}>{countryName(COUNTRIES.find(c => c.code === country), lang)}</span>
               </>
             ) : (
@@ -751,7 +751,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
               <button key={c.code} className="m-tap"
                 onClick={() => { setCountry(c.code); setShowCountry(false); }}
                 style={{ width:'100%', display:'flex', alignItems:'center', gap:12, padding:'12px 20px', background:'transparent', border:'none', cursor:'pointer', fontFamily:M.fontUI }}>
-                <span style={{ fontSize:22, lineHeight:1, flexShrink:0 }}>{c.emoji}</span>
+                <div style={{ fontSize:10, fontWeight:700, color:M.ink3, letterSpacing:0.5, fontFamily:M.fontUI, width:26, flexShrink:0, textAlign:'center' }}>{c.code}</div>
                 <span style={{ flex:1, textAlign:'left', fontSize:15, color:M.ink }}>{highlightMatch(countryName(c, lang), countrySearch.trim())}</span>
                 {country === c.code && <I name="check" size={16} color={M.sage}/>}
               </button>
