@@ -6,6 +6,11 @@ on:
   schedule:
     - cron: '0 6 * * *'  # daily 6 AM UTC — full test suite + gallery refresh
   workflow_dispatch:
+    inputs:
+      run_all_tests:
+        description: 'Run all tests (ignore partial detection)'
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -61,16 +66,25 @@ jobs:
           if [ "$HAS_SHOTS" = "0" ] || [ "$HAS_VIDS" = "0" ]; then
             echo "run_all=true" >> $GITHUB_OUTPUT
             echo "specs=" >> $GITHUB_OUTPUT
-          elif [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          elif [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "run_all=true" >> $GITHUB_OUTPUT
+            echo "specs=" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.run_all_tests }}" != "false" ]; then
             echo "run_all=true" >> $GITHUB_OUTPUT
             echo "specs=" >> $GITHUB_OUTPUT
           elif [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
             echo "run_all=true" >> $GITHUB_OUTPUT
             echo "specs=" >> $GITHUB_OUTPUT
           else
-            CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} -- 'tests/specs/*.spec.js' | tr '\n' ' ')
-            echo "run_all=false" >> $GITHUB_OUTPUT
-            echo "specs=${CHANGED}" >> $GITHUB_OUTPUT
+            CHANGED_SPECS=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} -- 'tests/specs/*.spec.js' | tr '\n' ' ')
+            SRC_CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} -- 'src/' 'tests/helpers/' | wc -l)
+            if [ "$SRC_CHANGED" -gt "0" ]; then
+              echo "run_all=true" >> $GITHUB_OUTPUT
+              echo "specs=" >> $GITHUB_OUTPUT
+            else
+              echo "run_all=false" >> $GITHUB_OUTPUT
+              echo "specs=${CHANGED_SPECS}" >> $GITHUB_OUTPUT
+            fi
           fi
 
       # Full run: schedule / manual / first push to branch

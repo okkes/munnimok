@@ -382,8 +382,8 @@ export function ScreenUserInfo() {
             onClick={isDemo ? undefined : () => { setCountrySearch(''); setShowCountry(true); }}
             style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0', cursor: isDemo ? 'default' : 'pointer' }}
           >
-            <div style={{ width:20, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:16 }}>
-              {draftCountry ? <div style={{ fontSize:10, fontWeight:700, color:M.ink3, letterSpacing:0.5, fontFamily:M.fontUI }}>{draftCountry}</div> : <I name="globe" size={16} color={M.ink3}/>}
+            <div style={{ width:32, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+              {draftCountry ? <div style={{ fontSize:9, fontWeight:800, color:M.ink3, letterSpacing:0.8, fontFamily:M.fontUI, background:M.paper2, border:`1px solid ${M.line}`, borderRadius:4, padding:'2px 5px', lineHeight:1.4 }}>{draftCountry}</div> : <I name="globe" size={16} color={M.ink3}/>}
             </div>
             <div style={{ flex:1, minWidth:0 }}>
               {draftCountry ? (
@@ -493,7 +493,7 @@ export function ScreenUserInfo() {
               <div key={c.code} className="m-tap"
                 onClick={() => { setDraftCountry(c.code); setShowCountry(false); setCountryError(''); }}
                 style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 20px', cursor:'pointer' }}>
-                <div style={{ fontSize:10, fontWeight:700, color:M.ink3, letterSpacing:0.5, fontFamily:M.fontUI, width:26, flexShrink:0, textAlign:'center' }}>{c.code}</div>
+                <div style={{ fontSize:9, fontWeight:800, color:M.ink3, letterSpacing:0.8, fontFamily:M.fontUI, width:32, flexShrink:0, textAlign:'center', background:M.paper2, border:`1px solid ${M.line}`, borderRadius:4, padding:'2px 4px', lineHeight:1.4 }}>{c.code}</div>
                 <span style={{ flex:1, fontSize:15, color:M.ink }}>{highlightMatch(countryName(c, lang), countrySearch.trim())}</span>
                 {draftCountry === c.code && <I name="check" size={16} color={M.sage}/>}
               </div>

@@ -84,6 +84,12 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
     }
   }, [showCountry, showApiInfo, showPicker, showCountryInfo]);
 
+  // Persist pending signup so a page refresh resumes step 1 instead of showing login
+  React.useEffect(() => {
+    localStorage.setItem('munni_pending_onboarding', JSON.stringify(signup));
+    return () => localStorage.removeItem('munni_pending_onboarding');
+  }, []);
+
   const filteredBanks = React.useMemo(() => {
     const q = bankSearch.toLowerCase().trim();
     if (!q) return DUTCH_BANKS;
@@ -103,14 +109,11 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
         subScreenRef.current = null;
         setBankSubScreen(null);
       } else if (stepRef.current === 2) {
-        if (connectedBanksRef.current.length > 0) {
-          window.history.pushState({ munniLoginMode: 'signup-bank' }, '');
-          return;
-        }
         stepRef.current = 1;
         setOnboardingStep(1);
       } else {
-        onBack();
+        // Step 1 is a point-of-no-return — block browser back by re-pushing state
+        window.history.pushState({ munniLoginMode: 'signup-onboarding' }, '');
       }
     };
     window.addEventListener('popstate', handlePop);
@@ -333,14 +336,6 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
                 })
             }
           </div>
-          {!isSSO && (
-            <div style={{ textAlign:'center', paddingTop:16 }}>
-              <button data-testid={T.onboardBankSkip} className="m-tap" onClick={handleComplete}
-                style={{ background:'none', border:'none', fontSize:13, color:M.ink3, cursor:'pointer', fontFamily:M.fontUI, textDecoration:'underline', padding:'8px 16px' }}>
-                {t('onboarding.skip')} →
-              </button>
-            </div>
-          )}
         </div>
       </div>
     );
@@ -602,12 +597,6 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
     <div data-testid={T.onboardStep1} key="signup-onboarding" className="m-screen m-fade" style={{ position:'relative' }}>
       <StatusBar/>
 
-      <div style={{ padding:'16px 20px 0', flexShrink:0 }}>
-        <button className="m-tap" onClick={onBack} style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:6, color:M.ink3, fontFamily:M.fontUI, fontSize:13 }}>
-          <I name="arrowL" size={16} color={M.ink3}/> {t('action.back')}
-        </button>
-      </div>
-
       <div ref={step1ScrollRef} style={{ flex:1, overflowY:'auto', padding:'20px 24px 40px' }}>
 
         <div className="m-logo" style={{ fontSize:20, marginBottom:14 }}>munni<span className="dot">.</span></div>
@@ -627,7 +616,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
         </div>
 
         {/* Name */}
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:14 }}>
+        <div style={{ display:'flex', flexDirection:'column', gap:10, marginBottom:14 }}>
           <div>
             <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{t('onboarding.firstName')}</div>
             <input
@@ -687,7 +676,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
           >
             {country ? (
               <>
-                <div style={{ fontSize:10, fontWeight:700, color:M.ink3, letterSpacing:0.5, fontFamily:M.fontUI, flexShrink:0 }}>{country}</div>
+                <div style={{ fontSize:9, fontWeight:800, color:M.ink3, letterSpacing:0.8, fontFamily:M.fontUI, flexShrink:0, background:M.paper2, border:`1px solid ${M.line}`, borderRadius:4, padding:'2px 5px', lineHeight:1.4 }}>{country}</div>
                 <span style={{ flex:1 }}>{countryName(COUNTRIES.find(c => c.code === country), lang)}</span>
               </>
             ) : (
@@ -753,7 +742,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
               <button key={c.code} className="m-tap"
                 onClick={() => { setCountry(c.code); setShowCountry(false); setErrors(prev => ({ ...prev, country: undefined })); }}
                 style={{ width:'100%', display:'flex', alignItems:'center', gap:12, padding:'12px 20px', background:'transparent', border:'none', cursor:'pointer', fontFamily:M.fontUI }}>
-                <div style={{ fontSize:10, fontWeight:700, color:M.ink3, letterSpacing:0.5, fontFamily:M.fontUI, width:26, flexShrink:0, textAlign:'center' }}>{c.code}</div>
+                <div style={{ fontSize:9, fontWeight:800, color:M.ink3, letterSpacing:0.8, fontFamily:M.fontUI, width:32, flexShrink:0, textAlign:'center', background:M.paper2, border:`1px solid ${M.line}`, borderRadius:4, padding:'2px 4px', lineHeight:1.4 }}>{c.code}</div>
                 <span style={{ flex:1, textAlign:'left', fontSize:15, color:M.ink }}>{highlightMatch(countryName(c, lang), countrySearch.trim())}</span>
                 {country === c.code && <I name="check" size={16} color={M.sage}/>}
               </button>

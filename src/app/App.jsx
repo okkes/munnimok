@@ -232,7 +232,6 @@ function ScreenLoginGate({ onLogin }) {
   // mode: 'login'|'email-input'|'email-verify'|'google-loading'|'apple-loading'
   //       'signup'|'signup-google'|'signup-apple'|'signup-email'|'signup-email-verify'
   //       'signup-bank'|'terms'|'privacy'|'language'
-  const [mode, setMode] = React.useState('login');
   const { t, lang } = useLang();
   const [emailInput, setEmailInput] = React.useState(() => {
     try {
@@ -247,7 +246,15 @@ function ScreenLoginGate({ onLogin }) {
   const [loginError, setLoginError] = React.useState(null);
   const [signupError, setSignupError] = React.useState(null);
   const [noAccountMethod, setNoAccountMethod] = React.useState(null);
-  const [pendingSignup, setPendingSignup] = React.useState(null);
+  const [pendingSignup, setPendingSignup] = React.useState(() => {
+    try { return JSON.parse(localStorage.getItem('munni_pending_onboarding') || 'null'); } catch { return null; }
+  });
+  const [mode, setMode] = React.useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('munni_pending_onboarding') || 'null');
+      return saved ? 'signup-onboarding' : 'login';
+    } catch { return 'login'; }
+  });
   const loadingTimerRef = React.useRef(null);
 
   const hasOpenedBefore = localStorage.getItem('munni_opened_before') === 'true';
