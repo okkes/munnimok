@@ -246,6 +246,7 @@ function ScreenLoginGate({ onLogin }) {
   const [loginError, setLoginError] = React.useState(null);
   const [signupError, setSignupError] = React.useState(null);
   const [noAccountMethod, setNoAccountMethod] = React.useState(null);
+  const [showLangDropdown, setShowLangDropdown] = React.useState(false);
   const [pendingSignup, setPendingSignup] = React.useState(null);
   const [mode, setMode] = React.useState(() => {
     try {
@@ -1078,33 +1079,75 @@ function ScreenLoginGate({ onLogin }) {
   }
 
   // Main login screen
+  const langNames = { en: 'English', nl: 'Nederlands', tr: 'Türkçe' };
   return (
     <div key="login" className="m-screen m-fade" style={{ position: 'relative' }}><DevPanel screenKey="login"/>
-      <StatusBar/>
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '28px 24px 32px', overflowY:'auto' }}>
-        <div style={{ marginBottom: 32 }}>
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: 14 }}>
-            <div className="m-logo" style={{ fontSize: 28 }}>munni<span className="dot">.</span></div>
-            <div style={{ display:'flex', alignItems:'center', gap:4, flexShrink:0 }}>
-              {['en','nl','tr'].map(l => (
-                <button key={l} className="m-tap" onClick={() => setLang(l)}
-                  style={{ background: lang===l ? M.sage : M.paper2, border:`1px solid ${lang===l ? M.sage : M.line}`, borderRadius:6, padding:'5px 9px', fontSize:11, fontWeight:700, color: lang===l ? '#fff' : M.ink3, cursor:'pointer', fontFamily:M.fontMono, letterSpacing:'0.05em', lineHeight:'14px' }}>
-                  {l.toUpperCase()}
+      {showLangDropdown && <div style={{ position:'fixed', inset:0, zIndex:98 }} onClick={() => setShowLangDropdown(false)}/>}
+
+      {/* Hero: sage gradient with logo, language trigger, and SVG illustration */}
+      <div style={{ background:'linear-gradient(155deg, #4A6A4F 0%, #2F4A33 100%)', flexShrink:0, position:'relative' }}>
+        <StatusBar dark={true}/>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'4px 20px 0', position:'relative', zIndex:99 }}>
+          <div className="m-logo" style={{ fontSize:26, color:'#fff' }}>munni<span style={{ opacity:0.45 }}>.</span></div>
+          <div style={{ position:'relative' }}>
+            <button className="m-tap" onClick={() => setShowLangDropdown(v => !v)}
+              style={{ background:'rgba(255,255,255,0.14)', border:'1px solid rgba(255,255,255,0.26)', borderRadius:20, padding:'6px 12px 6px 10px', fontSize:12, color:'rgba(255,255,255,0.9)', cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', gap:6, WebkitBackdropFilter:'blur(4px)', backdropFilter:'blur(4px)' }}>
+              <I name="globe" size={13} color="rgba(255,255,255,0.75)"/>
+              <span>{langNames[lang] || 'English'}</span>
+              <span style={{ fontSize:8, opacity:0.6 }}>{showLangDropdown ? '▴' : '▾'}</span>
+            </button>
+            {showLangDropdown && (
+              <div style={{ position:'absolute', right:0, top:'calc(100% + 8px)', background:M.paper, borderRadius:14, boxShadow:'0 8px 32px rgba(0,0,0,0.18)', border:`1px solid ${M.line}`, minWidth:185, overflow:'hidden', zIndex:200 }}>
+                {[{ code:'en', label:'English' }, { code:'nl', label:'Nederlands' }, { code:'tr', label:'Türkçe' }].map((l, idx, arr) => (
+                  <button key={l.code} className="m-tap" onClick={() => { setLang(l.code); setShowLangDropdown(false); }}
+                    style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 16px', width:'100%', background:'none', border:'none', borderBottom: idx < arr.length-1 ? `1px solid ${M.line2}` : 'none', cursor:'pointer', fontFamily:M.fontUI, fontSize:14, color:M.ink, boxSizing:'border-box' }}>
+                    <span style={{ background: lang===l.code ? M.sageSoft : M.paper2, border:`1px solid ${lang===l.code ? M.sage : M.line}`, borderRadius:4, padding:'1px 5px', fontSize:10, fontWeight:700, fontFamily:M.fontMono, letterSpacing:'0.05em', color: lang===l.code ? M.sage : M.ink3, flexShrink:0 }}>{l.code.toUpperCase()}</span>
+                    <span style={{ flex:1, textAlign:'left' }}>{l.label}</span>
+                    {lang === l.code && <I name="check" size={14} color={M.sage}/>}
+                  </button>
+                ))}
+                <div style={{ height:1, background:M.line2 }}/>
+                <button data-testid={T.loginLangBtn} className="m-tap" onClick={() => { setShowLangDropdown(false); setMode('language'); }}
+                  style={{ display:'flex', alignItems:'center', justifyContent:'center', padding:'9px 16px', width:'100%', background:M.paper2, border:'none', cursor:'pointer', fontFamily:M.fontUI, fontSize:12, color:M.ink3, boxSizing:'border-box' }}>
+                  {t('login.langMore')}
                 </button>
-              ))}
-              <button data-testid={T.loginLangBtn} className="m-tap" onClick={() => setMode('language')}
-                style={{ background:M.paper2, border:`1px solid ${M.line}`, borderRadius:6, padding:'5px 9px', fontSize:11, color:M.ink3, cursor:'pointer', fontFamily:M.fontUI, lineHeight:'14px' }}>
-                {t('login.langMore')}
-              </button>
-            </div>
+              </div>
+            )}
           </div>
-          <div className="m-h2" style={{ marginBottom: 6 }}>
-            {hasOpenedBefore ? t('login.welcome') : t('login.welcomeFirst')}
-          </div>
-          <div style={{ fontSize: 14, color: M.ink3 }}>{t('login.subtitle')}</div>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <svg viewBox="0 0 320 128" style={{ width:'100%', display:'block' }} xmlns="http://www.w3.org/2000/svg">
+          <circle cx="290" cy="10" r="80" fill="white" fillOpacity="0.05"/>
+          <circle cx="10" cy="130" r="60" fill="white" fillOpacity="0.05"/>
+          <g transform="rotate(-6, 116, 76)">
+            <rect x="16" y="14" width="200" height="114" rx="16" fill="white" fillOpacity="0.11"/>
+            <rect x="16" y="14" width="200" height="114" rx="16" stroke="white" strokeOpacity="0.2" strokeWidth="1" fill="none"/>
+            <rect x="34" y="32" width="32" height="24" rx="5" fill="white" fillOpacity="0.26"/>
+            <line x1="50" y1="32" x2="50" y2="56" stroke="white" strokeOpacity="0.15" strokeWidth="1"/>
+            <line x1="34" y1="44" x2="66" y2="44" stroke="white" strokeOpacity="0.15" strokeWidth="1"/>
+            {[0,1,2,3].map(i => <circle key={`a${i}`} cx={34+i*9} cy={82} r={2.5} fill="white" fillOpacity="0.45"/>)}
+            {[0,1,2,3].map(i => <circle key={`b${i}`} cx={76+i*9} cy={82} r={2.5} fill="white" fillOpacity="0.45"/>)}
+            {[0,1,2,3].map(i => <circle key={`c${i}`} cx={118+i*9} cy={82} r={2.5} fill="white" fillOpacity="0.45"/>)}
+            <text x="164" y="87" fill="white" fillOpacity="0.65" fontSize="11" fontFamily="monospace">7291</text>
+            <text x="34" y="116" fill="white" fillOpacity="0.45" fontSize="10" fontFamily="system-ui" fontWeight="600">munni.</text>
+          </g>
+          <path d="M242 108 L256 88 L269 94 L282 64 L296 50 L309 38" stroke="white" strokeWidth="2" strokeOpacity="0.7" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M242 108 L256 88 L269 94 L282 64 L296 50 L309 38 L309 120 L242 120Z" fill="white" fillOpacity="0.07"/>
+          <circle cx="282" cy="64" r="3" fill="white" fillOpacity="0.8"/>
+          <circle cx="309" cy="38" r="4" fill="white" fillOpacity="0.95"/>
+          <rect x="290" y="22" width="38" height="18" rx="5" fill="white" fillOpacity="0.18"/>
+          <text x="309" y="35" fill="white" fillOpacity="0.9" fontSize="9" fontFamily="system-ui" fontWeight="700" textAnchor="middle">+8.2%</text>
+        </svg>
+      </div>
+
+      {/* Form area */}
+      <div style={{ flex:1, overflowY:'auto', padding:'22px 24px 20px', display:'flex', flexDirection:'column' }}>
+        <div style={{ marginBottom:20 }}>
+          <div className="m-h2" style={{ marginBottom:4 }}>{hasOpenedBefore ? t('login.welcome') : t('login.welcomeFirst')}</div>
+          <div style={{ fontSize:14, color:M.ink3 }}>{t('login.subtitle')}</div>
+        </div>
+
+        <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
             <button data-testid={T.loginAppleBtn} className="m-btn outline m-tap" style={{ height:52, justifyContent:'center', gap:8 }} onClick={() => handleApple(false)}>
               <IcoApple size={20} color={M.ink}/> Apple
@@ -1124,7 +1167,7 @@ function ScreenLoginGate({ onLogin }) {
           <button data-testid={T.loginEmailSubmit} className="m-btn sage m-tap" style={{ height:52, width:'100%', opacity:emailInput.trim()?1:0.5 }} onClick={handleEmailContinue} disabled={!emailInput.trim()}>
             {t('login.continue')}
           </button>
-          <div style={{ display:'flex', alignItems:'center', gap:10, margin:'4px 0 0' }}>
+          <div style={{ display:'flex', alignItems:'center', margin:'4px 0 0' }}>
             <div style={{ flex:1, height:1, background:M.line }}/>
           </div>
           <button data-testid={T.loginCreateAccount} className="m-tap" onClick={() => { setLoginError(null); setMode('signup'); }}
@@ -1135,9 +1178,9 @@ function ScreenLoginGate({ onLogin }) {
           </button>
         </div>
 
-        <div style={{ flex: 1, minHeight: 16 }}/>
+        <div style={{ flex:1, minHeight:12 }}/>
 
-        <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:16 }}>
+        <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:12 }}>
           <button data-testid={T.loginOfflineBtn} className="m-tap" onClick={() => setMode('offline-info')}
             style={{ background:M.paper2, border:`1px solid ${M.line}`, borderRadius:12, padding:'11px 14px', fontSize:13, color:M.ink2, cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', gap:10, width:'100%', boxSizing:'border-box' }}>
             <I name="lock" size={15} color={M.ink3}/>
@@ -1152,7 +1195,7 @@ function ScreenLoginGate({ onLogin }) {
           </button>
         </div>
 
-        <div style={{ fontSize: 11, color: M.ink4, textAlign: 'center', marginTop: 8, lineHeight: 1.6 }}>
+        <div style={{ fontSize:11, color:M.ink4, textAlign:'center', lineHeight:1.6 }}>
           {t('login.termsIntro')}{' '}
           <button data-testid={T.loginTermsLink} onClick={() => setMode('terms')} style={{ background:'none', border:'none', color:M.sage, fontWeight:500, cursor:'pointer', fontFamily:M.fontUI, fontSize:11, textDecoration:'underline' }}>{t('login.termsLinkText')}</button>
           {' '}{t('login.termsAnd')}{' '}
