@@ -518,6 +518,8 @@ for (const V of VARIANTS) {
     await shot(page, k('50-onboard-country-error') + '--s1');
     // Submit without selecting a country
     await page.click('[data-testid="onboard-continue"]');
+    // Diagnostic: capture state immediately after click so CI failure is inspectable in the gallery
+    await shot(page, k('50-onboard-country-error') + '--after-click');
     // Use 'attached' so a scroll-offset element still passes (Playwright 1.60 visibility check)
     await page.locator('[data-testid="onboard-country-error"]').waitFor({ state: 'attached', timeout: 3000 });
     await page.locator('[data-testid="onboard-country-error"]').scrollIntoViewIfNeeded();

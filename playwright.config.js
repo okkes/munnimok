@@ -8,6 +8,8 @@ export default defineConfig({
   outputDir: 'tests/results',
   use: {
     baseURL: 'http://localhost:5173',
+    screenshot: 'only-on-failure',
+    trace: 'on-first-retry',
   },
   webServer: {
     command: 'npm run dev',
