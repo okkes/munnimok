@@ -55,6 +55,8 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
   const [showPicker,     setShowPicker]    = React.useState(false);
   const [errors,         setErrors]        = React.useState({});
   const fileInputRef = React.useRef(null);
+  const step1ScrollRef  = React.useRef(null);
+  const step1SavedScroll = React.useRef(0);
 
   // Bank sub-screen state
   const [bankSubScreen, setBankSubScreen] = React.useState(null); // null | 'search' | 'credentials'
@@ -66,6 +68,21 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
   const skipPopsRef  = React.useRef(0);
   const connectedBanksRef = React.useRef(connectedBanks);
   React.useEffect(() => { connectedBanksRef.current = connectedBanks; }, [connectedBanks]);
+
+  // Scroll lock for step-1 overlays
+  React.useEffect(() => {
+    const el = step1ScrollRef.current;
+    if (!el) return;
+    const anyOpen = showCountry || showApiInfo || showPicker || showCountryInfo;
+    if (anyOpen) {
+      step1SavedScroll.current = el.scrollTop;
+      el.style.overflowY = 'hidden';
+      el.scrollTop = step1SavedScroll.current;
+    } else {
+      el.style.overflowY = '';
+      requestAnimationFrame(() => { el.scrollTop = step1SavedScroll.current; });
+    }
+  }, [showCountry, showApiInfo, showPicker, showCountryInfo]);
 
   const filteredBanks = React.useMemo(() => {
     const q = bankSearch.toLowerCase().trim();
@@ -590,7 +607,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
         </button>
       </div>
 
-      <div style={{ flex:1, overflowY: showCountry || showApiInfo || showPicker || showCountryInfo ? 'hidden' : 'auto', padding:'20px 24px 40px' }}>
+      <div ref={step1ScrollRef} style={{ flex:1, overflowY:'auto', padding:'20px 24px 40px' }}>
 
         <div className="m-logo" style={{ fontSize:20, marginBottom:14 }}>munni<span className="dot">.</span></div>
         <div className="m-h2" style={{ marginBottom:4 }}>{t('onboarding.title')}</div>
@@ -726,7 +743,6 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
               value={countrySearch}
               onChange={e => setCountrySearch(e.target.value)}
               placeholder="Search…"
-              autoFocus
               style={{ width:'100%', boxSizing:'border-box', padding:'9px 14px', borderRadius:10, border:`1.5px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', color:M.ink, marginBottom:4 }}
             />
           </div>
