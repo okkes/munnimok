@@ -148,6 +148,45 @@ const ANNOTATIONS = {
     storage: [],
   },
 
+  'signup-onboarding': {
+    screen: 'Signup — onboarding',
+    sub: 'Two-step onboarding after account creation: Step 1 = profile details (name, country, API URL, avatar); Step 2 = bank connection (PSD2 demo).',
+    states: [
+      { tag: 'step 1 — profile',     note: 'First/last name, email (read-only), country picker, API URL, avatar' },
+      { tag: 'step 2 — bank',        note: 'Connect one or more banks; each opens bank-search → credentials → consent → done sub-screens' },
+      { tag: 'bank search',          note: 'Full-screen search with DUTCH_BANKS list + highlight; back returns to step 2' },
+      { tag: 'bank credentials',     note: 'Demo username/password/IBAN pre-filled; PSD2 consent flow follows' },
+      { tag: 'PSD2 consent',         note: 'Shows read permissions (account info + tx history); Authorise → connecting → done' },
+      { tag: 'country picker',       note: 'Sheet with search; names shown in current app language (EN/NL/TR); matching text highlighted' },
+    ],
+    flows: [
+      { from: 'Continue (step 1)',   to: 'Step 2 — bank connect' },
+      { from: 'Complete (step 2)',   to: 'Login + redirect to home', cond: 'at least 1 bank connected' },
+      { from: 'Skip (step 2)',       to: 'Login + redirect to home', cond: 'no banks; email signup only' },
+      { from: 'Back (step 1)',       to: 'Previous login mode (signup / SSO)' },
+      { from: 'Back (step 2)',       to: 'Step 1', cond: 'no banks; otherwise stays on step 2' },
+      { from: 'Country ⓘ button',   to: 'Country info sheet (why munni uses country)' },
+      { from: 'API ⓘ button',       to: 'API info sheet' },
+    ],
+    rules: [
+      'Email field is read-only (lock icon) — passed in from previous step',
+      'Country persisted to munni_profile_country_{method}_{email} key in localStorage',
+      'Country names rendered in current app language via countryName(c, lang)',
+      'Bank IBAN pre-generated with seededIban() for demo realism',
+      'SSO (Google / Apple): skip bank step (complete immediately after step 1)',
+    ],
+    edge: [
+      'popstate chain: step2 → step1 → previous mode; bank sub-screens also push states',
+      'After completion, initPerUserData() must run BEFORE doLogin() to avoid schema overwrite',
+    ],
+    storage: [
+      'munni_profile_firstname / _lastname / _country (LS, per-user key via computeUserDataKey)',
+      'munni_api_url (LS)',
+      'munni_bank_accounts (LS, per-user key)',
+      'munni_user_picture_{method|email} (LS)',
+    ],
+  },
+
   'email-input': {
     screen: 'Login — email entry',
     sub: 'Standalone email-input step for returning email users.',

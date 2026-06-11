@@ -487,11 +487,14 @@ function ScreenLoginGate({ onLogin }) {
       doLogin(method, finalEmail, displayName, false, lang);
     };
     return (
-      <ScreenSignupOnboarding
-        signup={pendingSignup}
-        onComplete={handleOnboardingComplete}
-        onBack={() => { setPendingSignup(null); setMode(pendingSignup.backMode || 'signup'); }}
-      />
+      <div style={{ position:'relative', height:'100%', overflow:'hidden' }}>
+        <DevPanel screenKey="signup-onboarding"/>
+        <ScreenSignupOnboarding
+          signup={pendingSignup}
+          onComplete={handleOnboardingComplete}
+          onBack={() => { setPendingSignup(null); setMode(pendingSignup.backMode || 'signup'); }}
+        />
+      </div>
     );
   }
 

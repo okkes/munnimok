@@ -1,7 +1,8 @@
 import React from 'react';
 import { T } from '../../shared/testIds.js';
-import { COUNTRIES } from '../../shared/data/countries.js';
+import { COUNTRIES, countryName } from '../../shared/data/countries.js';
 import { M, I, IcoGoogle, IcoApple, StatusBar, Divider } from '../../app/theme.jsx';
+import { Sheet } from '../../app/nav.jsx';
 import { useLang } from '../../shared/i18n.jsx';
 import { DUTCH_BANKS, generateBankIban, DUTCH_BANKS as _DB } from '../accounts/data.js';
 
@@ -29,7 +30,7 @@ function highlightMatch(text, query) {
 }
 
 export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const isGoogle = signup.method === 'google';
   const isApple  = signup.method === 'apple';
   const isSSO    = isGoogle || isApple;
@@ -48,6 +49,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
   const [picture,        setPicture]       = React.useState(signup.picture || null);
   const [bankPsd2Step,   setBankPsd2Step]  = React.useState(null); // null | 'consent' | 'connecting' | 'done'
   const [showApiInfo,    setShowApiInfo]   = React.useState(false);
+  const [showCountryInfo,setShowCountryInfo]= React.useState(false);
   const [onboardingStep, setOnboardingStep] = React.useState(1); // 1 = profile, 2 = bank
   const stepRef = React.useRef(1);
   const [showPicker,     setShowPicker]    = React.useState(false);
@@ -588,7 +590,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
         </button>
       </div>
 
-      <div style={{ flex:1, overflowY:'auto', padding:'20px 24px 40px' }}>
+      <div style={{ flex:1, overflowY: showCountry || showApiInfo || showPicker || showCountryInfo ? 'hidden' : 'auto', padding:'20px 24px 40px' }}>
 
         <div className="m-logo" style={{ fontSize:20, marginBottom:14 }}>munni<span className="dot">.</span></div>
         <div className="m-h2" style={{ marginBottom:4 }}>{t('onboarding.title')}</div>
@@ -652,7 +654,13 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
 
         {/* Country */}
         <div style={{ marginBottom:14 }}>
-          <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{t('profile.country')}</div>
+          <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:5 }}>
+            <div style={{ fontSize:12, color:M.ink3 }}>{t('profile.country')}</div>
+            <button className="m-tap" onClick={() => setShowCountryInfo(true)}
+              style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', padding:'0 2px' }}>
+              <I name="info" size={14} color={M.tint}/>
+            </button>
+          </div>
           <button
             data-testid={T.onboardCountryBtn}
             className="m-tap"
@@ -662,14 +670,13 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
             {country ? (
               <>
                 <span style={{ fontSize:18, lineHeight:1 }}>{COUNTRIES.find(c => c.code === country)?.emoji}</span>
-                <span style={{ flex:1 }}>{COUNTRIES.find(c => c.code === country)?.name}</span>
+                <span style={{ flex:1 }}>{countryName(COUNTRIES.find(c => c.code === country), lang)}</span>
               </>
             ) : (
               <span style={{ flex:1 }}>{t('profile.countryPlaceholder')}</span>
             )}
             <I name="caretR" size={14} color={M.ink4}/>
           </button>
-          <div style={{ fontSize:11, color:M.ink4, marginTop:5, lineHeight:1.5 }}>{t('profile.countryNote')}</div>
         </div>
 
         {/* API endpoint */}
@@ -709,35 +716,45 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
         </div>
       )}
 
-      {/* Country picker overlay */}
+      {/* Country picker */}
       {showCountry && (
-        <div data-testid={T.onboardCountrySheet} style={{ position:'absolute', inset:0, background:'rgba(27,26,23,0.45)', display:'flex', flexDirection:'column', justifyContent:'flex-end', zIndex:100, animation:'fadeIn 0.22s ease' }}
-          onClick={() => setShowCountry(false)}>
-          <div style={{ background:M.paper, borderTopLeftRadius:24, borderTopRightRadius:24, display:'flex', flexDirection:'column', maxHeight:'72%', animation:'mSheetUp 0.32s cubic-bezier(.2,.7,.2,1)' }} onClick={e => e.stopPropagation()}>
-            <div style={{ padding:'12px 20px 8px', flexShrink:0 }}>
-              <div style={{ width:36, height:4, borderRadius:999, background:M.line, margin:'0 auto 14px' }}/>
-              <div style={{ fontSize:15, fontWeight:600, color:M.ink, marginBottom:10 }}>{t('profile.country')}</div>
-              <input
-                value={countrySearch}
-                onChange={e => setCountrySearch(e.target.value)}
-                placeholder="Search…"
-                autoFocus
-                style={{ width:'100%', boxSizing:'border-box', padding:'9px 14px', borderRadius:10, border:`1.5px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', color:M.ink, marginBottom:4 }}
-              />
-            </div>
-            <div style={{ overflowY:'auto', padding:'4px 0 32px' }}>
-              {COUNTRIES.filter(c => !countrySearch || c.name.toLowerCase().includes(countrySearch.toLowerCase()) || c.native.toLowerCase().includes(countrySearch.toLowerCase())).map(c => (
-                <button key={c.code} className="m-tap"
-                  onClick={() => { setCountry(c.code); setShowCountry(false); }}
-                  style={{ width:'100%', display:'flex', alignItems:'center', gap:12, padding:'12px 20px', background:'transparent', border:'none', cursor:'pointer', fontFamily:M.fontUI }}>
-                  <span style={{ fontSize:22, lineHeight:1, flexShrink:0 }}>{c.emoji}</span>
-                  <span style={{ flex:1, textAlign:'left', fontSize:15, color:M.ink }}>{c.name}</span>
-                  {country === c.code && <I name="check" size={16} color={M.sage}/>}
-                </button>
-              ))}
-            </div>
+        <Sheet onClose={() => setShowCountry(false)}>
+          <div style={{ padding:'0 16px 8px' }}>
+            <div style={{ fontSize:17, fontWeight:700, marginBottom:12 }}>{t('profile.country')}</div>
+            <input
+              data-testid={T.onboardCountrySheet}
+              value={countrySearch}
+              onChange={e => setCountrySearch(e.target.value)}
+              placeholder="Search…"
+              autoFocus
+              style={{ width:'100%', boxSizing:'border-box', padding:'9px 14px', borderRadius:10, border:`1.5px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', color:M.ink, marginBottom:4 }}
+            />
           </div>
-        </div>
+          <div style={{ overflowY:'auto', maxHeight:340, paddingBottom:16 }}>
+            {COUNTRIES.filter(c => !countrySearch || countryName(c, lang).toLowerCase().includes(countrySearch.toLowerCase()) || c.native.toLowerCase().includes(countrySearch.toLowerCase())).map(c => (
+              <button key={c.code} className="m-tap"
+                onClick={() => { setCountry(c.code); setShowCountry(false); }}
+                style={{ width:'100%', display:'flex', alignItems:'center', gap:12, padding:'12px 20px', background:'transparent', border:'none', cursor:'pointer', fontFamily:M.fontUI }}>
+                <span style={{ fontSize:22, lineHeight:1, flexShrink:0 }}>{c.emoji}</span>
+                <span style={{ flex:1, textAlign:'left', fontSize:15, color:M.ink }}>{highlightMatch(countryName(c, lang), countrySearch.trim())}</span>
+                {country === c.code && <I name="check" size={16} color={M.sage}/>}
+              </button>
+            ))}
+          </div>
+        </Sheet>
+      )}
+
+      {/* Country info sheet */}
+      {showCountryInfo && (
+        <Sheet onClose={() => setShowCountryInfo(false)}>
+          <div style={{ padding:'0 16px 16px' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
+              <I name="info" size={18} color={M.tint}/>
+              <div style={{ fontSize:15, fontWeight:600, color:M.ink }}>{t('profile.country')}</div>
+            </div>
+            <div style={{ fontSize:14, color:M.ink2, lineHeight:1.6 }}>{t('profile.countryInfo')}</div>
+          </div>
+        </Sheet>
       )}
 
       {/* Avatar picker overlay */}

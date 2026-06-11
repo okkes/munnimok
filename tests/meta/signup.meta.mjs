@@ -223,6 +223,17 @@ export const GROUPS = [
         ],
       },
       {
+        key: '49-country-search',
+        title: 'Country picker — search with highlight',
+        desc: 'Type "Neth" in the country search box → list filters to matching countries; "Neth" is highlighted in the result row. Select Netherlands → sheet closes, selection retained. Background does not scroll while sheet is open.',
+        tags: ['ui', 'state', 'search'],
+        steps: [
+          'Country picker open — search box',
+          '"Neth" typed — filtered list with highlight',
+          'Netherlands selected — field updated',
+        ],
+      },
+      {
         key: '38-bank-psd2-consent',
         title: 'PSD2 consent screen',
         desc: '"Connect" pressed with valid credentials → PSD2 consent screen. Shows two permission rows: (1) Account info (read-only) and (2) Transaction history. "Authorise" and "Cancel" CTAs.',

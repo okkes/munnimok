@@ -356,11 +356,31 @@ for (const V of VARIANTS) {
     await expect(page.locator('[data-testid="onboard-country-sheet"]')).toBeVisible();
     await shot(page, k('48-country-picker') + '--s2');
     // Select Netherlands — first row in the list
-    const nlRow = page.locator('[data-testid="onboard-country-sheet"] button').filter({ hasText: 'Netherlands' }).first();
+    const nlRow = page.locator('[data-testid="sheet-close"] button').filter({ hasText: 'Netherlands' }).first();
     await nlRow.click();
     await expect(page.locator('[data-testid="onboard-country-btn"]')).toContainText('Netherlands');
     await shot(page, k('48-country-picker'));
     await teardown(page, ctx, k('48-country-picker'));
+  });
+
+  test(`49 country-search – search with highlight [${V.id}]`, async ({ browser }) => {
+    const { page, ctx } = await createPage(browser, V);
+    await base(page, V);
+    await goToStep1(page, email('csearch'));
+    await page.click('[data-testid="onboard-country-btn"]');
+    await page.waitForSelector('[data-testid="onboard-country-sheet"]', { timeout: 3000 });
+    await shot(page, k('49-country-search') + '--s1');
+    // Type search query — list should filter and highlight matches
+    await page.fill('[data-testid="onboard-country-sheet"]', 'Neth');
+    await page.waitForTimeout(200);
+    await shot(page, k('49-country-search') + '--s2');
+    // Netherlands should be visible in the filtered list
+    const nlRow = page.locator('[data-testid="sheet-close"] button').filter({ hasText: 'Netherlands' }).first();
+    await expect(nlRow).toBeVisible();
+    await nlRow.click();
+    await expect(page.locator('[data-testid="onboard-country-btn"]')).toContainText('Netherlands');
+    await shot(page, k('49-country-search'));
+    await teardown(page, ctx, k('49-country-search'));
   });
 
   test(`38 bank-consent – PSD2 screen [${V.id}]`, async ({ browser }) => {

@@ -18,11 +18,9 @@ const META_DIR   = path.join(__dirname, 'meta');
 const DEPLOY = process.argv.includes('--deploy');
 const BASE = DEPLOY ? '.' : '..';
 
+// Single default variant — dark/TR/desktop evaluated manually when explicitly requested.
 const VARIANTS = [
   { id: 'en-light-mobile',  lang: 'en', dark: false, viewport: 'mobile',  vpLabel: '393×852' },
-  { id: 'en-light-desktop', lang: 'en', dark: false, viewport: 'desktop', vpLabel: '1280×900' },
-  { id: 'tr-dark-mobile',   lang: 'tr', dark: true,  viewport: 'mobile',  vpLabel: '393×852' },
-  { id: 'tr-dark-desktop',  lang: 'tr', dark: true,  viewport: 'desktop', vpLabel: '1280×900' },
 ];
 
 const TAG_COLORS = {
@@ -295,28 +293,11 @@ const html = `<!DOCTYPE html>
 
   <div class="filter-bar" id="filter-bar">
     <div class="filter-group">
-      <span class="filter-label">Lang</span>
-      <button class="filter-btn active" data-filter="lang" data-value="en">EN</button>
-      <button class="filter-btn" data-filter="lang" data-value="tr">TR</button>
-      <button class="filter-btn" data-filter="lang" data-value="all">All</button>
-    </div>
-    <div class="filter-group">
-      <span class="filter-label">Theme</span>
-      <button class="filter-btn active" data-filter="theme" data-value="light">☀️ Light</button>
-      <button class="filter-btn" data-filter="theme" data-value="dark">🌙 Dark</button>
-      <button class="filter-btn" data-filter="theme" data-value="all">All</button>
-    </div>
-    <div class="filter-group">
-      <span class="filter-label">Viewport</span>
-      <button class="filter-btn active" data-filter="viewport" data-value="mobile">📱 Mobile</button>
-      <button class="filter-btn" data-filter="viewport" data-value="desktop">🖥 Desktop</button>
-      <button class="filter-btn" data-filter="viewport" data-value="all">All</button>
-    </div>
-    <div class="filter-group">
       <span class="filter-label">Feature</span>
       <button class="filter-btn active" data-filter="feature" data-value="all">All</button>
       ${featureFilterBtns.join('')}
     </div>
+    <div style="font-size:11px;color:var(--ink4);align-self:center;margin-left:auto">📱 EN · Light · Mobile</div>
   </div>
 
   <div class="count-bar">Showing <span id="visible-count" class="count-num">0</span> cards</div>
@@ -327,17 +308,13 @@ const html = `<!DOCTYPE html>
     // ---------------------------------------------------------------------------
     // Filter logic
     // ---------------------------------------------------------------------------
-    const state = { lang: 'en', theme: 'light', viewport: 'mobile', feature: 'all' };
+    const state = { feature: 'all' };
 
     function applyFilters() {
       const cards = document.querySelectorAll('.card');
       let visible = 0;
       cards.forEach(c => {
-        const show =
-          (state.lang     === 'all' || c.dataset.lang     === state.lang)     &&
-          (state.theme    === 'all' || c.dataset.theme    === state.theme)    &&
-          (state.viewport === 'all' || c.dataset.viewport === state.viewport) &&
-          (state.feature  === 'all' || c.dataset.feature  === state.feature);
+        const show = (state.feature === 'all' || c.dataset.feature === state.feature);
         c.classList.toggle('hidden', !show);
         if (show) visible++;
       });

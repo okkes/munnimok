@@ -1,6 +1,6 @@
 ﻿import React from 'react';
 import { T } from '../../shared/testIds.js';
-import { COUNTRIES } from '../../shared/data/countries.js';
+import { COUNTRIES, countryName } from '../../shared/data/countries.js';
 import { fmtEur } from '../../shared/utils/format.js';
 import { getUserId, addDevLog, computeUserDataKey, registerUserInGlobalRegistry, formatCreatorLabel } from '../../shared/utils/user.js';
 import { DEMO_ACCOUNTS } from '../accounts/data.js';
@@ -91,7 +91,7 @@ export function ScreenProfile() {
       <AppBar title={t('screen.settings')} large/>
       <div className="m-body-scroll">
         {/* Identity card — tappable → ScreenUserInfo */}
-        <button className="m-tap" onClick={() => nav.push('userInfo')} style={{ display:'flex', alignItems:'center', gap:14, padding:18, marginBottom:16, background:M.paper, borderRadius:16, border:`1px solid ${M.line}`, width:'100%', textAlign:'left', cursor:'pointer' }}>
+        <button data-testid={T.profileSettingsBtn} className="m-tap" onClick={() => nav.push('userInfo')} style={{ display:'flex', alignItems:'center', gap:14, padding:18, marginBottom:16, background:M.paper, borderRadius:16, border:`1px solid ${M.line}`, width:'100%', textAlign:'left', cursor:'pointer' }}>
           <div style={{ position:'relative', flexShrink:0 }}>
             {userPicture ? (
               userPicture.startsWith('av')
@@ -194,7 +194,7 @@ export function ScreenProfile() {
 
 export function ScreenUserInfo() {
   const nav = useNav();
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const [loginMethod] = useSessionStorage('munni_last_login_method', '');
   const [email] = useSessionStorage('munni_profile_email', '');
   const _safeEmail = React.useMemo(() => { try { return JSON.parse(email||'""')||''; } catch { return email||''; } }, [email]);
@@ -223,8 +223,9 @@ export function ScreenUserInfo() {
   const [draftFirst,   setDraftFirst]   = React.useState(firstName);
   const [draftLast,    setDraftLast]    = React.useState(lastName);
   const [draftCountry, setDraftCountry] = React.useState(country);
-  const [showCountry,  setShowCountry]  = React.useState(false);
-  const [countrySearch,setCountrySearch]= React.useState('');
+  const [showCountry,    setShowCountry]    = React.useState(false);
+  const [countrySearch,  setCountrySearch]  = React.useState('');
+  const [showCountryInfo,setShowCountryInfo]= React.useState(false);
   React.useEffect(() => { setDraftFirst(firstName);   }, [firstName]);
   React.useEffect(() => { setDraftLast(lastName);     }, [lastName]);
   React.useEffect(() => { setDraftCountry(country);   }, [country]);
@@ -265,19 +266,19 @@ export function ScreenUserInfo() {
   const fullName = [firstName, lastName].filter(Boolean).join(' ') || name;
   const initial  = (firstName || name || '?')[0].toUpperCase();
 
-  const anySheetOpen = showApiSheet || showDeleteAccount || showChangeEmail || showPicturePicker || showCountry;
+  const anySheetOpen = showApiSheet || showDeleteAccount || showChangeEmail || showPicturePicker || showCountry || showCountryInfo;
   React.useEffect(() => {
     const el = bodyScrollRef.current;
     if (!el) return;
     if (anySheetOpen) {
       savedScrollRef.current = el.scrollTop;
-      // Use pointer-events to block interaction without touching overflow/scrollTop
+      el.style.overflowY = 'hidden';
       el.style.pointerEvents = 'none';
       el.style.userSelect = 'none';
     } else {
+      el.style.overflowY = '';
       el.style.pointerEvents = '';
       el.style.userSelect = '';
-      // Restore scroll position in case anything shifted it
       requestAnimationFrame(() => { el.scrollTop = savedScrollRef.current; });
     }
   }, [anySheetOpen]);
@@ -288,6 +289,15 @@ export function ScreenUserInfo() {
     const reader = new FileReader();
     reader.onload = (ev) => { setUserPicture(ev.target.result); setShowPicturePicker(false); };
     reader.readAsDataURL(file);
+  };
+
+  const highlightMatch = (text, query) => {
+    if (!query) return text;
+    const idx = text.toLowerCase().indexOf(query.toLowerCase());
+    if (idx === -1) return text;
+    return (
+      <>{text.slice(0, idx)}<span style={{ background:M.sageSoft, color:M.sage, borderRadius:3, padding:'0 2px', fontWeight:700 }}>{text.slice(idx, idx + query.length)}</span>{text.slice(idx + query.length)}</>
+    );
   };
 
   const save = () => {
@@ -355,8 +365,14 @@ export function ScreenUserInfo() {
         </div>
 
         {/* Country */}
-        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('profile.country')}</div>
-        <div className="m-card" style={{ padding:'0 16px', marginBottom:6, border:`1px solid ${M.line}` }}>
+        <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:8, paddingLeft:4 }}>
+          <div className="m-cap" style={{ margin:0 }}>{t('profile.country')}</div>
+          <button className="m-tap" onClick={() => setShowCountryInfo(true)}
+            style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', padding:'0 2px' }}>
+            <I name="info" size={14} color={M.tint}/>
+          </button>
+        </div>
+        <div className="m-card" style={{ padding:'0 16px', marginBottom:20, border:`1px solid ${M.line}` }}>
           <div
             data-testid={T.profileCountryBtn}
             className={isDemo ? '' : 'm-tap'}
@@ -368,7 +384,7 @@ export function ScreenUserInfo() {
             </div>
             <div style={{ flex:1, minWidth:0 }}>
               {draftCountry ? (
-                <div style={{ fontSize:15, color:M.ink }}>{COUNTRIES.find(c => c.code === draftCountry)?.name}</div>
+                <div style={{ fontSize:15, color:M.ink }}>{countryName(COUNTRIES.find(c => c.code === draftCountry), lang)}</div>
               ) : (
                 <div style={{ fontSize:15, color:M.ink4 }}>{t('profile.countryPlaceholder')}</div>
               )}
@@ -376,7 +392,6 @@ export function ScreenUserInfo() {
             {!isDemo && <I name="caretR" size={14} color={M.ink4}/>}
           </div>
         </div>
-        <div style={{ fontSize:11, color:M.ink4, paddingLeft:4, marginBottom:20, lineHeight:1.5 }}>{t('profile.countryNote')}</div>
 
         {/* Account info */}
         <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('settings.account')}</div>
@@ -462,6 +477,7 @@ export function ScreenUserInfo() {
           <div style={{ padding:'0 16px 8px' }}>
             <div style={{ fontSize:17, fontWeight:700, marginBottom:12 }}>{t('profile.country')}</div>
             <input
+              data-testid={T.profileCountrySearch}
               value={countrySearch}
               onChange={e => setCountrySearch(e.target.value)}
               placeholder="Search…"
@@ -470,15 +486,28 @@ export function ScreenUserInfo() {
             />
           </div>
           <div data-testid={T.profileCountrySheet} style={{ overflowY:'auto', maxHeight:340, paddingBottom:16 }}>
-            {COUNTRIES.filter(c => !countrySearch || c.name.toLowerCase().includes(countrySearch.toLowerCase()) || c.native.toLowerCase().includes(countrySearch.toLowerCase())).map(c => (
+            {COUNTRIES.filter(c => !countrySearch || countryName(c, lang).toLowerCase().includes(countrySearch.toLowerCase()) || c.native.toLowerCase().includes(countrySearch.toLowerCase())).map(c => (
               <div key={c.code} className="m-tap"
                 onClick={() => { setDraftCountry(c.code); setShowCountry(false); }}
                 style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 20px', cursor:'pointer' }}>
                 <span style={{ fontSize:22, lineHeight:1, flexShrink:0 }}>{c.emoji}</span>
-                <span style={{ flex:1, fontSize:15, color:M.ink }}>{c.name}</span>
+                <span style={{ flex:1, fontSize:15, color:M.ink }}>{highlightMatch(countryName(c, lang), countrySearch.trim())}</span>
                 {draftCountry === c.code && <I name="check" size={16} color={M.sage}/>}
               </div>
             ))}
+          </div>
+        </Sheet>
+      )}
+
+      {/* Country info sheet */}
+      {showCountryInfo && (
+        <Sheet onClose={() => setShowCountryInfo(false)}>
+          <div style={{ padding:'0 16px 16px' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
+              <I name="info" size={18} color={M.tint}/>
+              <div style={{ fontSize:15, fontWeight:600, color:M.ink }}>{t('profile.country')}</div>
+            </div>
+            <div style={{ fontSize:14, color:M.ink2, lineHeight:1.6 }}>{t('profile.countryInfo')}</div>
           </div>
         </Sheet>
       )}

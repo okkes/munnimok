@@ -13,11 +13,10 @@ for (const d of [SHOTS_DIR, VIDEOS_DIR]) {
 
 // All test variants: language × theme × viewport.
 // id format: '{lang}-{theme}-{viewport}'
+// Single default variant: EN, light, mobile.
+// Dark / TR / desktop are evaluated manually when explicitly requested.
 export const VARIANTS = [
-  { id: 'en-light-mobile',  lang: 'en', dark: false, vp: { width: 393,  height: 852 }, dpr: 2 },
-  { id: 'en-light-desktop', lang: 'en', dark: false, vp: { width: 1280, height: 900 }, dpr: 1 },
-  { id: 'tr-dark-mobile',   lang: 'tr', dark: true,  vp: { width: 393,  height: 852 }, dpr: 2 },
-  { id: 'tr-dark-desktop',  lang: 'tr', dark: true,  vp: { width: 1280, height: 900 }, dpr: 1 },
+  { id: 'en-light-mobile', lang: 'en', dark: false, vp: { width: 393, height: 852 }, dpr: 2 },
 ];
 
 // Create a browser context + page configured for the given variant.

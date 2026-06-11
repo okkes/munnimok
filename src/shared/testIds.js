@@ -102,6 +102,7 @@
   // Profile
   profileCountryBtn:    'profile-country-btn',
   profileCountrySheet:  'profile-country-sheet',
+  profileCountrySearch: 'profile-country-search',
   profileAvatarBtn:     'profile-avatar-btn',
   profileNameInput:     'profile-name-input',
   profileSaveBtn:       'profile-save-btn',
