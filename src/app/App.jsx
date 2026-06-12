@@ -1179,16 +1179,16 @@ function ScreenLoginGate({ onLogin }) {
 
           <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:8 }}>
             <button data-testid={T.loginOfflineBtn} className="m-tap" onClick={() => setMode('offline-info')}
-              style={{ background:'transparent', border:'1px solid rgba(8,55,43,0.14)', borderRadius:12, padding:'11px 14px', fontSize:13, color:M.ink2, cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', gap:10, width:'100%', boxSizing:'border-box' }}>
-              <I name="lock" size={15} color={M.ink3}/>
+              style={{ background:'rgba(8,55,43,0.05)', border:'1px solid rgba(8,55,43,0.10)', borderRadius:12, padding:'11px 14px', fontSize:13, color:M.brand, cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', gap:10, width:'100%', boxSizing:'border-box' }}>
+              <I name="lock" size={15} color={M.brand}/>
               <span style={{ flex:1, textAlign:'left' }}>{t('offline.loginBtn')}</span>
-              <I name="caretR" size={13} color={M.ink3}/>
+              <I name="caretR" size={13} color={M.brand}/>
             </button>
             <button data-testid={T.loginDemoBtn} className="m-tap" onClick={() => doLogin('bank', 'bank@munni.app', 'Demo van der Berg', true)}
-              style={{ background:'transparent', border:'1px solid rgba(8,55,43,0.14)', borderRadius:12, padding:'11px 14px', fontSize:13, color:M.ink2, cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', gap:10, width:'100%', boxSizing:'border-box' }}>
-              <I name="eye" size={15} color={M.ink3}/>
+              style={{ background:'rgba(8,55,43,0.05)', border:'1px solid rgba(8,55,43,0.10)', borderRadius:12, padding:'11px 14px', fontSize:13, color:M.brand, cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', gap:10, width:'100%', boxSizing:'border-box' }}>
+              <I name="eye" size={15} color={M.brand}/>
               <span style={{ flex:1, textAlign:'left' }}>{t('login.demoUser')}</span>
-              <I name="caretR" size={13} color={M.ink3}/>
+              <I name="caretR" size={13} color={M.brand}/>
             </button>
           </div>
 
