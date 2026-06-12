@@ -6,7 +6,7 @@ import { DEFAULT_API_URL, DEMO_API_URL, STOCK_AVATARS } from '../shared/constant
 import { computeProfileKey, getDefaultProfiles, initPerUserData } from '../features/profile/data.js';
 import { IOSDevice } from './IOSFrame.jsx';
 import { M, I, IcoGoogle, IcoApple, Divider, StatusBar, AppBar } from './theme.jsx';
-import { DarkCtx, NavProvider, useNav, Sheet } from './nav.jsx';
+import { DarkCtx, NavProvider, useNav, Sheet, useDark } from './nav.jsx';
 import { DevModeProvider, DevPanel } from './DevMode.jsx';
 import { useLang, LangProvider } from '../shared/i18n.jsx';
 import { useLocalStorage, useSessionStorage } from '../shared/hooks.jsx';
@@ -233,6 +233,7 @@ function ScreenLoginGate({ onLogin }) {
   //       'signup'|'signup-google'|'signup-apple'|'signup-email'|'signup-email-verify'
   //       'signup-bank'|'terms'|'privacy'|'language'
   const { t, lang, setLang } = useLang();
+  const { dark } = useDark();
   const [emailInput, setEmailInput] = React.useState(() => {
     try {
       const v = JSON.parse(sessionStorage.getItem('munni_profile_email') || '""');
@@ -1080,6 +1081,8 @@ function ScreenLoginGate({ onLogin }) {
 
   // Main login screen
   const langNames = { en: 'English', nl: 'Nederlands', tr: 'Türkçe' };
+  const langFlags = { en: '1f1ec-1f1e7', nl: '1f1f3-1f1f1', tr: '1f1f9-1f1f7' };
+  const flagStyle = dark ? { borderRadius:3, flexShrink:0, filter:'invert(1) hue-rotate(180deg)' } : { borderRadius:3, flexShrink:0 };
   return (
     <div key="login" className="m-screen m-fade" style={{ position: 'relative' }}><DevPanel screenKey="login"/>
       {showLangDropdown && <div style={{ position:'fixed', inset:0, zIndex:98 }} onClick={() => setShowLangDropdown(false)}/>}
@@ -1092,7 +1095,7 @@ function ScreenLoginGate({ onLogin }) {
           <div style={{ position:'relative' }}>
             <button className="m-tap" onClick={() => setShowLangDropdown(v => !v)}
               style={{ background:'rgba(255,255,255,0.14)', border:'1px solid rgba(255,255,255,0.26)', borderRadius:20, padding:'6px 12px 6px 10px', fontSize:12, color:'rgba(255,255,255,0.9)', cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', gap:6, WebkitBackdropFilter:'blur(4px)', backdropFilter:'blur(4px)' }}>
-              <I name="globe" size={13} color="rgba(255,255,255,0.75)"/>
+              <img src={`https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/${langFlags[lang]}.svg`} width={16} height={16} style={{ borderRadius:2, flexShrink:0 }} alt=""/>
               <span>{langNames[lang] || 'English'}</span>
               <span style={{ fontSize:8, opacity:0.6 }}>{showLangDropdown ? '▴' : '▾'}</span>
             </button>
@@ -1101,7 +1104,7 @@ function ScreenLoginGate({ onLogin }) {
                 {[{ code:'en', label:'English' }, { code:'nl', label:'Nederlands' }, { code:'tr', label:'Türkçe' }].map((l, idx, arr) => (
                   <button key={l.code} className="m-tap" onClick={() => { setLang(l.code); setShowLangDropdown(false); }}
                     style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 16px', width:'100%', background:'none', border:'none', borderBottom: idx < arr.length-1 ? `1px solid ${M.line2}` : 'none', cursor:'pointer', fontFamily:M.fontUI, fontSize:14, color:M.ink, boxSizing:'border-box' }}>
-                    <span style={{ background: lang===l.code ? M.sageSoft : M.paper2, border:`1px solid ${lang===l.code ? M.sage : M.line}`, borderRadius:4, padding:'1px 5px', fontSize:10, fontWeight:700, fontFamily:M.fontMono, letterSpacing:'0.05em', color: lang===l.code ? M.sage : M.ink3, flexShrink:0 }}>{l.code.toUpperCase()}</span>
+                    <img src={`https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/${langFlags[l.code]}.svg`} width={24} height={24} style={flagStyle} alt=""/>
                     <span style={{ flex:1, textAlign:'left' }}>{l.label}</span>
                     {lang === l.code && <I name="check" size={14} color={M.sage}/>}
                   </button>
