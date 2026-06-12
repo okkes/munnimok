@@ -1093,43 +1093,45 @@ function ScreenLoginGate({ onLogin }) {
       <div style={{ flex:1, overflowY:'auto', display:'flex', flexDirection:'column' }}>
         <StatusBar/>
 
-        {/* Logo + language trigger row */}
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'4px 20px 0', position:'relative', zIndex:99 }}>
-          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-            <img src={munniLogoUrl} style={{ width:44, height:44, objectFit:'contain', flexShrink:0 }} alt="munni"/>
-            <span className="m-logo" style={{ fontSize:22, fontWeight:700, color:M.brand, fontFamily:M.fontBrand, letterSpacing:'0.01em' }}>munni<span style={{ opacity:0.5 }}>.</span></span>
-          </div>
-          <div style={{ position:'relative' }}>
-            <button data-testid="login-lang-trigger" className="m-tap" onClick={() => setShowLangDropdown(v => !v)}
-              style={{ background:M.paper, border:`1px solid ${M.line}`, borderRadius:20, padding:'6px 12px 6px 10px', fontSize:12, color:M.ink2, cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', gap:6, boxShadow:'0 2px 12px rgba(0,0,0,0.12)' }}>
-              <img src={`https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/${langFlags[lang]}.svg`} width={16} height={16} style={{ borderRadius:2, flexShrink:0 }} alt=""/>
-              <span>{langNames[lang] || 'English'}</span>
-              {showLangDropdown ? <I name="caretU" size={11} color={M.brand}/> : <I name="caretD" size={11} color={M.brand}/>}
-            </button>
-            {showLangDropdown && (
-              <div style={{ position:'absolute', right:0, top:'calc(100% + 8px)', background:M.paper, borderRadius:14, boxShadow:'0 8px 32px rgba(0,0,0,0.18)', border:`1px solid ${M.line}`, minWidth:185, overflow:'hidden', zIndex:200 }}>
-                {[{ code:'en', label:'English' }, { code:'nl', label:'Nederlands' }, { code:'tr', label:'Türkçe' }].map((l, idx, arr) => (
-                  <button key={l.code} className="m-tap" onClick={() => { setLang(l.code); setShowLangDropdown(false); }}
-                    style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 16px', width:'100%', background:'none', border:'none', borderBottom: idx < arr.length-1 ? `1px solid ${M.line2}` : 'none', cursor:'pointer', fontFamily:M.fontUI, fontSize:14, color:M.ink, boxSizing:'border-box' }}>
-                    <img src={`https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/${langFlags[l.code]}.svg`} width={24} height={24} style={flagStyle} alt=""/>
-                    <span style={{ flex:1, textAlign:'left' }}>{l.label}</span>
-                    {lang === l.code && <I name="check" size={14} color={M.sage}/>}
-                  </button>
-                ))}
-                <div style={{ height:1, background:M.line2 }}/>
-                <button data-testid={T.loginLangBtn} className="m-tap" onClick={() => { setShowLangDropdown(false); setMode('language'); }}
-                  style={{ display:'flex', alignItems:'center', justifyContent:'center', padding:'9px 16px', width:'100%', background:M.paper2, border:'none', cursor:'pointer', fontFamily:M.fontUI, fontSize:12, color:M.ink3, boxSizing:'border-box' }}>
-                  {t('login.langMore')}
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
+        {/* Hero: image in normal flow so height is fully responsive; header + heading overlaid */}
+        <div style={{ position:'relative', flexShrink:0 }}>
+          <img src={assetBgUrl} alt="" aria-hidden="true" style={{ display:'block', width:'100%', height:'auto' }}/>
 
-        {/* Hero illustration */}
-        <div style={{ position:'relative', overflow:'hidden', flexShrink:0, height:270, backgroundImage:`url(${assetBgUrl})`, backgroundSize:'cover', backgroundPosition:'center bottom', backgroundRepeat:'no-repeat', backgroundColor:M.paper }}>
-          {/* Heading – upper-left */}
-          <div style={{ position:'absolute', top:20, left:0, padding:'0 22px', zIndex:4 }}>
+          {/* Logo + language trigger row – overlaid at top of image */}
+          <div style={{ position:'absolute', top:0, left:0, right:0, display:'flex', alignItems:'center', justifyContent:'space-between', padding:'4px 20px 0', zIndex:99 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+              <img src={munniLogoUrl} style={{ width:44, height:44, objectFit:'contain', flexShrink:0 }} alt="munni"/>
+              <span className="m-logo" style={{ fontSize:22, fontWeight:700, color:M.brand, fontFamily:M.fontBrand, letterSpacing:'0.01em' }}>munni<span style={{ opacity:0.5 }}>.</span></span>
+            </div>
+            <div style={{ position:'relative' }}>
+              <button data-testid="login-lang-trigger" className="m-tap" onClick={() => setShowLangDropdown(v => !v)}
+                style={{ background:M.paper, border:`1px solid ${M.line}`, borderRadius:20, padding:'6px 12px 6px 10px', fontSize:12, color:M.ink2, cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', gap:6, boxShadow:'0 2px 12px rgba(0,0,0,0.12)' }}>
+                <img src={`https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/${langFlags[lang]}.svg`} width={16} height={16} style={{ borderRadius:2, flexShrink:0 }} alt=""/>
+                <span>{langNames[lang] || 'English'}</span>
+                {showLangDropdown ? <I name="caretU" size={11} color={M.brand}/> : <I name="caretD" size={11} color={M.brand}/>}
+              </button>
+              {showLangDropdown && (
+                <div style={{ position:'absolute', right:0, top:'calc(100% + 8px)', background:M.paper, borderRadius:14, boxShadow:'0 8px 32px rgba(0,0,0,0.18)', border:`1px solid ${M.line}`, minWidth:185, overflow:'hidden', zIndex:200 }}>
+                  {[{ code:'en', label:'English' }, { code:'nl', label:'Nederlands' }, { code:'tr', label:'Türkçe' }].map((l, idx, arr) => (
+                    <button key={l.code} className="m-tap" onClick={() => { setLang(l.code); setShowLangDropdown(false); }}
+                      style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 16px', width:'100%', background:'none', border:'none', borderBottom: idx < arr.length-1 ? `1px solid ${M.line2}` : 'none', cursor:'pointer', fontFamily:M.fontUI, fontSize:14, color:M.ink, boxSizing:'border-box' }}>
+                      <img src={`https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/${langFlags[l.code]}.svg`} width={24} height={24} style={flagStyle} alt=""/>
+                      <span style={{ flex:1, textAlign:'left' }}>{l.label}</span>
+                      {lang === l.code && <I name="check" size={14} color={M.sage}/>}
+                    </button>
+                  ))}
+                  <div style={{ height:1, background:M.line2 }}/>
+                  <button data-testid={T.loginLangBtn} className="m-tap" onClick={() => { setShowLangDropdown(false); setMode('language'); }}
+                    style={{ display:'flex', alignItems:'center', justifyContent:'center', padding:'9px 16px', width:'100%', background:M.paper2, border:'none', cursor:'pointer', fontFamily:M.fontUI, fontSize:12, color:M.ink3, boxSizing:'border-box' }}>
+                    {t('login.langMore')}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Heading – upper-left, below the header row */}
+          <div style={{ position:'absolute', top:62, left:0, padding:'0 22px', zIndex:4 }}>
             <div style={{ maxWidth:175, fontSize:44, fontWeight:800, color:M.brand, lineHeight:1.06, letterSpacing:'-0.03em', fontFamily:M.fontDisp }}>
               {hasOpenedBefore ? t('login.welcome') : t('login.welcomeFirst')}
             </div>
