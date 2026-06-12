@@ -1164,7 +1164,7 @@ function ScreenLoginGate({ onLogin }) {
             />
           </div>
           {loginError && <div data-testid={T.loginError} style={{ fontSize:12, color:M.clay, lineHeight:1.4 }}>{loginError} <button onClick={() => { setLoginError(null); setSignupEmailInput(emailInput); setMode('signup-email'); }} style={{ background:'none', border:'none', color:M.sage, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, fontSize:12 }}>{t('login.createAccount')}</button></div>}
-          <button data-testid={T.loginEmailSubmit} className="m-btn m-tap" style={{ height:52, width:'100%', opacity:emailInput.trim()?1:0.5, background:M.brand, color:'#fff', border:'none', borderRadius:14, fontSize:15, fontWeight:600, fontFamily:M.fontUI, cursor:'pointer', position:'relative', overflow:'hidden' }} onClick={handleEmailContinue} disabled={!emailInput.trim()}>
+          <button data-testid={T.loginEmailSubmit} className="m-btn m-tap" style={{ height:52, width:'100%', opacity:emailInput.trim()?1:0.5, background:M.brand, color:'#fff', border:'none', borderRadius:14, fontSize:15, fontWeight:600, fontFamily:M.fontUI, cursor:'pointer', position:'relative', overflow:'hidden', boxShadow:'0 4px 16px rgba(8,55,43,0.30), 0 1px 4px rgba(8,55,43,0.15)' }} onClick={handleEmailContinue} disabled={!emailInput.trim()}>
             {t('login.continue')}
             <img src={leafOnlyUrl} alt="" aria-hidden="true" style={{ position:'absolute', right:-10, bottom:-8, width:72, height:72, objectFit:'contain', objectPosition:'right bottom', opacity:0.22, pointerEvents:'none' }}/>
           </button>
