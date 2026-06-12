@@ -1,5 +1,6 @@
 ﻿import React from 'react';
-import munniLogoUrl from '../../assets/logos/munni_dark_logo_3_hd.png';
+import munniLogoUrl from '../../assets/logos/asset-logo-dark.png';
+import assetBgUrl from '../../assets/asset-login-background.png';
 import { T } from '../shared/testIds.js';
 import { getUserId, registerUserInGlobalRegistry, computeUserDataKey } from '../shared/utils/user.js';
 import { DUTCH_BANKS } from '../features/accounts/data.js';
@@ -1094,17 +1095,15 @@ function ScreenLoginGate({ onLogin }) {
         {/* Logo + language trigger row */}
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'4px 20px 0', position:'relative', zIndex:99 }}>
           <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-            <div style={{ width:44, height:44, overflow:'hidden', flexShrink:0 }}>
-              <img src={munniLogoUrl} style={{ width:66, display:'block', marginLeft:-11 }} alt="munni"/>
-            </div>
-            <span className="m-logo" style={{ fontSize:22, fontWeight:700, color:M.sageDk, fontFamily:M.fontBrand, letterSpacing:'-0.01em' }}>munni<span style={{ opacity:0.4 }}>.</span></span>
+            <img src={munniLogoUrl} style={{ width:44, height:44, objectFit:'contain', flexShrink:0 }} alt="munni"/>
+            <span className="m-logo" style={{ fontSize:22, fontWeight:700, color:M.brand, fontFamily:M.fontBrand, letterSpacing:'0.01em' }}>munni<span style={{ opacity:0.5 }}>.</span></span>
           </div>
           <div style={{ position:'relative' }}>
             <button data-testid="login-lang-trigger" className="m-tap" onClick={() => setShowLangDropdown(v => !v)}
               style={{ background:M.paper, border:`1px solid ${M.line}`, borderRadius:20, padding:'6px 12px 6px 10px', fontSize:12, color:M.ink2, cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', gap:6, boxShadow:'0 2px 12px rgba(0,0,0,0.12)' }}>
               <img src={`https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/${langFlags[lang]}.svg`} width={16} height={16} style={{ borderRadius:2, flexShrink:0 }} alt=""/>
               <span>{langNames[lang] || 'English'}</span>
-              {showLangDropdown ? <I name="caretU" size={11} color={M.sageDk}/> : <I name="caretD" size={11} color={M.sageDk}/>}
+              {showLangDropdown ? <I name="caretU" size={11} color={M.brand}/> : <I name="caretD" size={11} color={M.brand}/>}
             </button>
             {showLangDropdown && (
               <div style={{ position:'absolute', right:0, top:'calc(100% + 8px)', background:M.paper, borderRadius:14, boxShadow:'0 8px 32px rgba(0,0,0,0.18)', border:`1px solid ${M.line}`, minWidth:185, overflow:'hidden', zIndex:200 }}>
@@ -1127,64 +1126,10 @@ function ScreenLoginGate({ onLogin }) {
         </div>
 
         {/* Hero illustration */}
-        <div style={{ position:'relative', overflow:'hidden', flexShrink:0, height:320 }}>
-          <svg viewBox="0 0 390 320" style={{ position:'absolute', top:0, left:0, width:'100%', height:'100%' }} xmlns="http://www.w3.org/2000/svg">
-            <defs>
-              <filter id="cs" x="-35%" y="-35%" width="170%" height="170%">
-                <feDropShadow dx="0" dy="6" stdDeviation="14" floodColor="#1B3525" floodOpacity="0.13"/>
-              </filter>
-            </defs>
-            {/* Organic base – full-width landscape starting from left edge */}
-            <path d="M 0 62 C 42 44 110 34 188 38 C 266 42 336 14 390 4 L 390 308 L 0 308 Z" fill="#DDE6DA" fillOpacity="0.42"/>
-            {/* Lighter inner highlight – where cards float */}
-            <ellipse cx="308" cy="112" rx="172" ry="104" fill="#EEF4EC" fillOpacity="0.55"/>
-            {/* Rolling hill 1 */}
-            <path d="M 0 222 C 68 200 155 194 230 202 C 306 210 358 192 390 182 L 390 308 L 0 308 Z" fill="#4A6A4F" fillOpacity="0.09"/>
-            {/* Rolling hill 2 */}
-            <path d="M 0 262 C 88 248 178 244 258 252 C 335 260 375 248 390 242 L 390 308 L 0 308 Z" fill="#2F4A33" fillOpacity="0.07"/>
-            {/* Card B – analytics (upper, behind, tilted) */}
-            <g filter="url(#cs)" transform="rotate(6, 275, 132)">
-              <rect x="219" y="88" width="112" height="92" rx="18" fill="white"/>
-              <circle cx="262" cy="128" r="21" stroke="#DDE6DA" strokeWidth="10" fill="none"/>
-              <path d="M 262 107 A 21 21 0 0 1 283 128" stroke="#4A6A4F" strokeWidth="10" fill="none" strokeLinecap="round"/>
-              <rect x="233" y="161" width="70" height="5" rx="2.5" fill="#EEF3EC"/>
-              <rect x="243" y="170" width="50" height="4" rx="2" fill="#F4F2EE"/>
-            </g>
-            {/* Card C – leaf badge (top-right) */}
-            <g filter="url(#cs)" transform="rotate(-5, 344, 102)">
-              <rect x="308" y="66" width="72" height="72" rx="17" fill="white"/>
-              <circle cx="344" cy="102" r="22" fill="#EEF4EC"/>
-              <path d="M 344 114 C 344 114 329 106 329 92 C 329 83 337 81 344 88" fill="#4A6A4F"/>
-              <path d="M 344 114 C 344 114 359 106 359 92 C 359 83 351 81 344 88" fill="#6BAD7E" fillOpacity="0.75"/>
-              <line x1="344" y1="114" x2="344" y2="124" stroke="#4A6A4F" strokeWidth="2.5" strokeLinecap="round"/>
-            </g>
-            {/* Card A – bar chart (front, centre-right) */}
-            <g filter="url(#cs)">
-              <rect x="222" y="148" width="138" height="114" rx="20" fill="white"/>
-              <rect x="240" y="161" width="52" height="6" rx="3" fill="#EEF3EC"/>
-              <rect x="240" y="171" width="36" height="4" rx="2" fill="#F4F2EE"/>
-              <rect x="240" y="230" width="22" height="28" rx="5" fill="#DDE6DA"/>
-              <rect x="266" y="218" width="22" height="40" rx="5" fill="#4A6A4F" fillOpacity="0.38"/>
-              <rect x="292" y="204" width="22" height="54" rx="5" fill="#4A6A4F" fillOpacity="0.65"/>
-              <rect x="318" y="188" width="22" height="70" rx="5" fill="#4A6A4F"/>
-            </g>
-            {/* Growth curve */}
-            <path d="M 28 294 C 55 270 95 246 148 220 C 184 203 212 191 248 178" stroke="#1B3525" strokeWidth="2.5" fill="none" strokeLinecap="round" opacity="0.42"/>
-            <circle cx="248" cy="178" r="5" fill="#1B3525" opacity="0.48"/>
-            {/* Sparkles */}
-            <path d="M 82 118 v10 M 77 123 h10" stroke="#4A6A4F" strokeWidth="2" strokeLinecap="round" opacity="0.22"/>
-            <path d="M 155 55 v7 M 151.5 58.5 h7" stroke="#4A6A4F" strokeWidth="1.5" strokeLinecap="round" opacity="0.20"/>
-            <path d="M 260 42 v7 M 256.5 45.5 h7" stroke="#4A6A4F" strokeWidth="1.5" strokeLinecap="round" opacity="0.20"/>
-            <path d="M 358 148 v6 M 355 151 h6" stroke="#4A6A4F" strokeWidth="1.2" strokeLinecap="round" opacity="0.18"/>
-            {/* Subtle orb */}
-            <circle cx="186" cy="162" r="3.5" fill="#4A6A4F" fillOpacity="0.16"/>
-            {/* Wave cap */}
-            <path d="M 0 280 Q 100 264 200 272 Q 304 280 390 262 L 390 320 L 0 320 Z" fill="#F7F4EF"/>
-          </svg>
-
+        <div style={{ position:'relative', overflow:'hidden', flexShrink:0, height:320, backgroundImage:`url(${assetBgUrl})`, backgroundSize:'contain', backgroundPosition:'right center', backgroundRepeat:'no-repeat', backgroundColor:M.paper }}>
           {/* Heading – lower-left, left column only */}
           <div style={{ position:'absolute', bottom:38, left:0, padding:'0 22px', zIndex:4 }}>
-            <div style={{ maxWidth:175, fontSize:44, fontWeight:800, color:M.sageDk, lineHeight:1.06, letterSpacing:'-0.03em', fontFamily:M.fontDisp }}>
+            <div style={{ maxWidth:175, fontSize:44, fontWeight:800, color:M.brand, lineHeight:1.06, letterSpacing:'-0.03em', fontFamily:M.fontDisp }}>
               {hasOpenedBefore ? t('login.welcome') : t('login.welcomeFirst')}
             </div>
             <div style={{ maxWidth:175, fontSize:12, color:M.ink3, marginTop:8, lineHeight:1.5 }}>
@@ -1196,10 +1141,10 @@ function ScreenLoginGate({ onLogin }) {
         {/* Form area */}
         <div style={{ padding:'18px 20px 20px', display:'flex', flexDirection:'column', gap:10 }}>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-            <button data-testid={T.loginAppleBtn} className="m-btn outline m-tap" style={{ height:52, justifyContent:'center', gap:6, fontSize:11, padding:'0 6px', background:'#FFFFFF' }} onClick={() => handleApple(false)}>
+            <button data-testid={T.loginAppleBtn} className="m-btn outline m-tap" style={{ height:52, justifyContent:'center', gap:6, fontSize:11, padding:'0 6px', background:'#FFFFFF', boxShadow:'0 2px 10px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.05)' }} onClick={() => handleApple(false)}>
               <IcoApple size={16} color={M.ink}/> {t('login.apple')}
             </button>
-            <button data-testid={T.loginGoogleBtn} className="m-btn outline m-tap" style={{ height:52, justifyContent:'center', gap:6, fontSize:11, padding:'0 6px', background:'#FFFFFF' }} onClick={() => handleGoogle(false)}>
+            <button data-testid={T.loginGoogleBtn} className="m-btn outline m-tap" style={{ height:52, justifyContent:'center', gap:6, fontSize:11, padding:'0 6px', background:'#FFFFFF', boxShadow:'0 2px 10px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.05)' }} onClick={() => handleGoogle(false)}>
               <IcoGoogle size={16}/> {t('login.google')}
             </button>
           </div>
@@ -1216,7 +1161,7 @@ function ScreenLoginGate({ onLogin }) {
             />
           </div>
           {loginError && <div data-testid={T.loginError} style={{ fontSize:12, color:M.clay, lineHeight:1.4 }}>{loginError} <button onClick={() => { setLoginError(null); setSignupEmailInput(emailInput); setMode('signup-email'); }} style={{ background:'none', border:'none', color:M.sage, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, fontSize:12 }}>{t('login.createAccount')}</button></div>}
-          <button data-testid={T.loginEmailSubmit} className="m-btn m-tap" style={{ height:52, width:'100%', opacity:emailInput.trim()?1:0.5, background:'#1B3525', color:'#fff', border:'none', borderRadius:14, fontSize:15, fontWeight:600, fontFamily:M.fontUI, cursor:'pointer', position:'relative', overflow:'hidden' }} onClick={handleEmailContinue} disabled={!emailInput.trim()}>
+          <button data-testid={T.loginEmailSubmit} className="m-btn m-tap" style={{ height:52, width:'100%', opacity:emailInput.trim()?1:0.5, background:M.brand, color:'#fff', border:'none', borderRadius:14, fontSize:15, fontWeight:600, fontFamily:M.fontUI, cursor:'pointer', position:'relative', overflow:'hidden' }} onClick={handleEmailContinue} disabled={!emailInput.trim()}>
             {t('login.continue')}
             <svg style={{ position:'absolute', right:0, bottom:0, pointerEvents:'none' }} width="80" height="52" viewBox="0 0 80 52">
               <path d="M 40 56 C 40 56 16 44 16 26 C 16 12 26 10 35 19" fill="white" fillOpacity="0.22"/>
@@ -1227,23 +1172,23 @@ function ScreenLoginGate({ onLogin }) {
             style={{ background:'transparent', border:'none', fontSize:13, cursor:'pointer', fontFamily:M.fontUI, textAlign:'center', width:'100%', padding:'4px 0 2px' }}>
             <span style={{ color:M.ink3 }}>{t('login.noAccount')}</span>
             {' '}
-            <span style={{ color:M.sage, fontWeight:600 }}>{t('login.signUpBtn')}</span>
+            <span style={{ color:M.brand, fontWeight:600 }}>{t('login.signUpBtn')}</span>
           </button>
 
           <div style={{ flex:1, minHeight:8 }}/>
 
           <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:8 }}>
             <button data-testid={T.loginOfflineBtn} className="m-tap" onClick={() => setMode('offline-info')}
-              style={{ background:'#EDF4EB', border:`1px solid ${M.sageSoft}`, borderRadius:12, padding:'11px 14px', fontSize:13, color:M.sageDk, cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', gap:10, width:'100%', boxSizing:'border-box' }}>
-              <I name="lock" size={15} color={M.sage}/>
+              style={{ background:'transparent', border:'1px solid rgba(8,55,43,0.14)', borderRadius:12, padding:'11px 14px', fontSize:13, color:M.ink2, cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', gap:10, width:'100%', boxSizing:'border-box' }}>
+              <I name="lock" size={15} color={M.ink3}/>
               <span style={{ flex:1, textAlign:'left' }}>{t('offline.loginBtn')}</span>
-              <I name="caretR" size={13} color={M.sage}/>
+              <I name="caretR" size={13} color={M.ink3}/>
             </button>
             <button data-testid={T.loginDemoBtn} className="m-tap" onClick={() => doLogin('bank', 'bank@munni.app', 'Demo van der Berg', true)}
-              style={{ background:'#EDF4EB', border:`1px solid ${M.sageSoft}`, borderRadius:12, padding:'11px 14px', fontSize:13, color:M.sageDk, cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', gap:10, width:'100%', boxSizing:'border-box' }}>
-              <I name="eye" size={15} color={M.sage}/>
+              style={{ background:'transparent', border:'1px solid rgba(8,55,43,0.14)', borderRadius:12, padding:'11px 14px', fontSize:13, color:M.ink2, cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', gap:10, width:'100%', boxSizing:'border-box' }}>
+              <I name="eye" size={15} color={M.ink3}/>
               <span style={{ flex:1, textAlign:'left' }}>{t('login.demoUser')}</span>
-              <I name="caretR" size={13} color={M.sage}/>
+              <I name="caretR" size={13} color={M.ink3}/>
             </button>
           </div>
 
