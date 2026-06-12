@@ -1,6 +1,7 @@
 ﻿import React from 'react';
 import munniLogoUrl from '../../assets/logos/asset-logo-dark.png';
 import assetBgUrl from '../../assets/assets-login-background-cropped.png';
+import leafOnlyUrl from '../../assets/logos/asset-logo-leaf-only.png';
 import { T } from '../shared/testIds.js';
 import { getUserId, registerUserInGlobalRegistry, computeUserDataKey } from '../shared/utils/user.js';
 import { DUTCH_BANKS } from '../features/accounts/data.js';
@@ -1126,7 +1127,7 @@ function ScreenLoginGate({ onLogin }) {
         </div>
 
         {/* Hero illustration */}
-        <div style={{ position:'relative', overflow:'hidden', flexShrink:0, height:320, backgroundImage:`url(${assetBgUrl})`, backgroundSize:'auto 100%', backgroundPosition:'right top', backgroundRepeat:'no-repeat', backgroundColor:M.paper }}>
+        <div style={{ position:'relative', overflow:'hidden', flexShrink:0, height:320, backgroundImage:`url(${assetBgUrl})`, backgroundSize:'cover', backgroundPosition:'center top', backgroundRepeat:'no-repeat', backgroundColor:M.paper }}>
           {/* Heading – upper-left */}
           <div style={{ position:'absolute', top:20, left:0, padding:'0 22px', zIndex:4 }}>
             <div style={{ maxWidth:175, fontSize:44, fontWeight:800, color:M.brand, lineHeight:1.06, letterSpacing:'-0.03em', fontFamily:M.fontDisp }}>
@@ -1163,10 +1164,7 @@ function ScreenLoginGate({ onLogin }) {
           {loginError && <div data-testid={T.loginError} style={{ fontSize:12, color:M.clay, lineHeight:1.4 }}>{loginError} <button onClick={() => { setLoginError(null); setSignupEmailInput(emailInput); setMode('signup-email'); }} style={{ background:'none', border:'none', color:M.sage, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, fontSize:12 }}>{t('login.createAccount')}</button></div>}
           <button data-testid={T.loginEmailSubmit} className="m-btn m-tap" style={{ height:52, width:'100%', opacity:emailInput.trim()?1:0.5, background:M.brand, color:'#fff', border:'none', borderRadius:14, fontSize:15, fontWeight:600, fontFamily:M.fontUI, cursor:'pointer', position:'relative', overflow:'hidden' }} onClick={handleEmailContinue} disabled={!emailInput.trim()}>
             {t('login.continue')}
-            <svg style={{ position:'absolute', right:0, bottom:0, pointerEvents:'none' }} width="80" height="52" viewBox="0 0 80 52">
-              <path d="M 40 56 C 40 56 16 44 16 26 C 16 12 26 10 35 19" fill="white" fillOpacity="0.22"/>
-              <path d="M 40 56 C 40 56 64 44 64 26 C 64 12 54 10 45 19" fill="white" fillOpacity="0.16"/>
-            </svg>
+            <img src={leafOnlyUrl} alt="" aria-hidden="true" style={{ position:'absolute', right:-10, bottom:-8, width:72, height:72, objectFit:'contain', objectPosition:'right bottom', opacity:0.22, pointerEvents:'none' }}/>
           </button>
           <button data-testid={T.loginCreateAccount} className="m-tap" onClick={() => { setLoginError(null); setMode('signup'); }}
             style={{ background:'transparent', border:'none', fontSize:13, cursor:'pointer', fontFamily:M.fontUI, textAlign:'center', width:'100%', padding:'4px 0 2px' }}>
