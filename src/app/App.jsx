@@ -1142,7 +1142,7 @@ function ScreenLoginGate({ onLogin }) {
         </div>
 
         {/* Form area */}
-        <div style={{ padding:'18px 20px 20px', display:'flex', flexDirection:'column', gap:10 }}>
+        <div style={{ padding:'18px 20px 20px', display:'flex', flexDirection:'column', gap:10, flex:1 }}>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
             <button data-testid={T.loginAppleBtn} className="m-btn outline m-tap" style={{ height:52, justifyContent:'center', gap:6, fontSize:11, padding:'0 6px', background:'#FFFFFF', boxShadow:'0 2px 10px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.05)' }} onClick={() => handleApple(false)}>
               <IcoApple size={16} color={M.ink}/> {t('login.apple')}
