@@ -1093,9 +1093,8 @@ function ScreenLoginGate({ onLogin }) {
       <div style={{ flex:1, overflowY:'auto', display:'flex', flexDirection:'column' }}>
         <StatusBar/>
 
-        {/* Hero: image in normal flow so height is fully responsive; header + heading overlaid */}
-        <div style={{ position:'relative', flexShrink:0 }}>
-          <img src={assetBgUrl} alt="" aria-hidden="true" style={{ display:'block', width:'100%', height:'auto' }}/>
+        {/* Hero: aspect-ratio drives height responsively; cover crops the blank bottom of the PNG */}
+        <div style={{ position:'relative', flexShrink:0, aspectRatio:'390/320', backgroundImage:`url(${assetBgUrl})`, backgroundSize:'cover', backgroundPosition:'center top', backgroundColor:M.paper }}>
 
           {/* Logo + language trigger row – overlaid at top of image */}
           <div style={{ position:'absolute', top:0, left:0, right:0, display:'flex', alignItems:'center', justifyContent:'space-between', padding:'4px 20px 0', zIndex:99 }}>
