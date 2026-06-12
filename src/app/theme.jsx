@@ -105,6 +105,7 @@ export function I({ name, size = 20, color = 'currentColor', stroke = 1.6 }) {
     case 'caretU': return w(<path d="M18 14l-6-6-6 6" {...p}/>);
     case 'edit': return w(<><path d="M4 20h4l10-10-4-4L4 16v4z" {...p}/><path d="M14 6l4 4" {...p}/></>);
     case 'search': return w(<><circle cx="11" cy="11" r="6.5" {...p}/><path d="M20.5 20.5l-4-4" {...p}/></>);
+    case 'mail': return w(<><rect x="3" y="5" width="18" height="14" rx="2" {...p}/><path d="M3 7l9 6 9-6" {...p}/></>);
     case 'filter': return w(<path d="M5 6h14M7 12h10M10 18h4" {...p}/>);
     case 'sliders': return w(<><path d="M4 7h10M16 7h4M4 17h4M10 17h10" {...p}/><circle cx="15" cy="7" r="2" {...p}/><circle cx="9" cy="17" r="2" {...p}/></>);
     case 'cal': return w(<><rect x="3.5" y="5" width="17" height="15.5" rx="2.5" {...p}/><path d="M3.5 9.5h17M8 3.5v3.5M16 3.5v3.5" {...p}/></>);

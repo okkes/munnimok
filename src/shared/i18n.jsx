@@ -82,7 +82,7 @@ export const TRANSLATIONS = {
     'lang.otherLanguages':'Other languages',
     'lang.searchPlaceholder':'Search languages…',
     // Login / onboarding
-    'login.welcome':'Welcome back','login.subtitle':'Sign in to continue',
+    'login.welcome':'Welcome back','login.subtitle':'Sign in to continue your financial journey.',
     'login.google':'Continue with Google','login.apple':'Continue with Apple',
     'login.email':'Email address','login.continue':'Continue',
     'login.noAccount':"Don't have an account?",'login.createAccount':'Create account →','login.signUpBtn':'Sign up',
@@ -392,7 +392,7 @@ export const TRANSLATIONS = {
     'lang.title':'Taal','lang.subtitle':'Kies je voorkeurstaal',
     'lang.otherLanguages':'Andere talen','lang.searchPlaceholder':'Talen zoeken…',
     // Login / onboarding
-    'login.welcome':'Welkom terug','login.subtitle':'Meld je aan om door te gaan',
+    'login.welcome':'Welkom terug','login.subtitle':'Meld je aan om door te gaan met je financiële reis.',
     'login.google':'Doorgaan met Google','login.apple':'Doorgaan met Apple',
     'login.email':'E-mailadres','login.continue':'Doorgaan',
     'login.noAccount':'Nog geen account?','login.createAccount':'Account aanmaken →','login.signUpBtn':'Registreren',
@@ -695,7 +695,7 @@ export const TRANSLATIONS = {
     'lang.title':'Dil','lang.subtitle':'Tercih ettiğiniz dili seçin',
     'lang.otherLanguages':'Diğer diller','lang.searchPlaceholder':'Dil ara…',
     // Login / onboarding
-    'login.welcome':'Tekrar hoş geldiniz','login.subtitle':'Devam etmek için giriş yap',
+    'login.welcome':'Tekrar hoş geldiniz','login.subtitle':'Finansal yolculuğuna devam etmek için giriş yap.',
     'login.google':'Google ile devam et','login.apple':'Apple ile devam et',
     'login.email':'E-posta adresi','login.continue':'Devam et',
     'login.noAccount':'Hesabınız yok mu?','login.createAccount':'Hesap oluştur →','login.signUpBtn':'Kayıt ol',

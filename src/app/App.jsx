@@ -1,4 +1,5 @@
 ﻿import React from 'react';
+import munniLogoUrl from '../../assets/logos/munni_dark_logo_3_hd.png';
 import { T } from '../shared/testIds.js';
 import { getUserId, registerUserInGlobalRegistry, computeUserDataKey } from '../shared/utils/user.js';
 import { DUTCH_BANKS } from '../features/accounts/data.js';
@@ -1084,20 +1085,24 @@ function ScreenLoginGate({ onLogin }) {
   const langFlags = { en: '1f1ec-1f1e7', nl: '1f1f3-1f1f1', tr: '1f1f9-1f1f7' };
   const flagStyle = dark ? { borderRadius:3, flexShrink:0, filter:'invert(1) hue-rotate(180deg)' } : { borderRadius:3, flexShrink:0 };
   return (
-    <div key="login" className="m-screen m-fade" style={{ position: 'relative' }}><DevPanel screenKey="login"/>
+    <div key="login" className="m-screen m-fade" style={{ position:'relative', background:M.paper }}><DevPanel screenKey="login"/>
       {showLangDropdown && <div style={{ position:'fixed', inset:0, zIndex:98 }} onClick={() => setShowLangDropdown(false)}/>}
 
-      {/* Hero: sage gradient with logo, language trigger, and SVG illustration */}
-      <div style={{ background:'linear-gradient(155deg, #4A6A4F 0%, #2F4A33 100%)', flexShrink:0, position:'relative' }}>
-        <StatusBar dark={true}/>
+      <div style={{ flex:1, overflowY:'auto', display:'flex', flexDirection:'column' }}>
+        <StatusBar/>
+
+        {/* Logo + language trigger row */}
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'4px 20px 0', position:'relative', zIndex:99 }}>
-          <div className="m-logo" style={{ fontSize:26, color:'#fff' }}>munni<span style={{ opacity:0.45 }}>.</span></div>
+          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+            <img src={munniLogoUrl} style={{ width:38, height:38, objectFit:'contain' }} alt="munni"/>
+            <span className="m-logo" style={{ fontSize:19, fontWeight:700, color:M.sageDk, fontFamily:M.fontUI, letterSpacing:'-0.01em' }}>munni<span style={{ opacity:0.35 }}>.</span></span>
+          </div>
           <div style={{ position:'relative' }}>
             <button data-testid="login-lang-trigger" className="m-tap" onClick={() => setShowLangDropdown(v => !v)}
-              style={{ background:'rgba(255,255,255,0.14)', border:'1px solid rgba(255,255,255,0.26)', borderRadius:20, padding:'6px 12px 6px 10px', fontSize:12, color:'rgba(255,255,255,0.9)', cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', gap:6, WebkitBackdropFilter:'blur(4px)', backdropFilter:'blur(4px)' }}>
+              style={{ background:M.paper, border:`1px solid ${M.line}`, borderRadius:20, padding:'6px 12px 6px 10px', fontSize:12, color:M.ink2, cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', gap:6, boxShadow:'0 1px 4px rgba(0,0,0,0.06)' }}>
               <img src={`https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/${langFlags[lang]}.svg`} width={16} height={16} style={{ borderRadius:2, flexShrink:0 }} alt=""/>
               <span>{langNames[lang] || 'English'}</span>
-              <span style={{ fontSize:8, opacity:0.6 }}>{showLangDropdown ? '▴' : '▾'}</span>
+              <span style={{ fontSize:8, opacity:0.5 }}>{showLangDropdown ? '▴' : '▾'}</span>
             </button>
             {showLangDropdown && (
               <div style={{ position:'absolute', right:0, top:'calc(100% + 8px)', background:M.paper, borderRadius:14, boxShadow:'0 8px 32px rgba(0,0,0,0.18)', border:`1px solid ${M.line}`, minWidth:185, overflow:'hidden', zIndex:200 }}>
@@ -1119,91 +1124,133 @@ function ScreenLoginGate({ onLogin }) {
           </div>
         </div>
 
-        <svg viewBox="0 0 320 128" style={{ width:'100%', display:'block' }} xmlns="http://www.w3.org/2000/svg">
-          <circle cx="290" cy="10" r="80" fill="white" fillOpacity="0.05"/>
-          <circle cx="10" cy="130" r="60" fill="white" fillOpacity="0.05"/>
-          <g transform="rotate(-6, 116, 76)">
-            <rect x="16" y="14" width="200" height="114" rx="16" fill="white" fillOpacity="0.11"/>
-            <rect x="16" y="14" width="200" height="114" rx="16" stroke="white" strokeOpacity="0.2" strokeWidth="1" fill="none"/>
-            <rect x="34" y="32" width="32" height="24" rx="5" fill="white" fillOpacity="0.26"/>
-            <line x1="50" y1="32" x2="50" y2="56" stroke="white" strokeOpacity="0.15" strokeWidth="1"/>
-            <line x1="34" y1="44" x2="66" y2="44" stroke="white" strokeOpacity="0.15" strokeWidth="1"/>
-            {[0,1,2,3].map(i => <circle key={`a${i}`} cx={34+i*9} cy={82} r={2.5} fill="white" fillOpacity="0.45"/>)}
-            {[0,1,2,3].map(i => <circle key={`b${i}`} cx={76+i*9} cy={82} r={2.5} fill="white" fillOpacity="0.45"/>)}
-            {[0,1,2,3].map(i => <circle key={`c${i}`} cx={118+i*9} cy={82} r={2.5} fill="white" fillOpacity="0.45"/>)}
-            <text x="164" y="87" fill="white" fillOpacity="0.65" fontSize="11" fontFamily="monospace">7291</text>
-            <text x="34" y="116" fill="white" fillOpacity="0.45" fontSize="10" fontFamily="system-ui" fontWeight="600">munni.</text>
-          </g>
-          <path d="M242 108 L256 88 L269 94 L282 64 L296 50 L309 38" stroke="white" strokeWidth="2" strokeOpacity="0.7" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-          <path d="M242 108 L256 88 L269 94 L282 64 L296 50 L309 38 L309 120 L242 120Z" fill="white" fillOpacity="0.07"/>
-          <circle cx="282" cy="64" r="3" fill="white" fillOpacity="0.8"/>
-          <circle cx="309" cy="38" r="4" fill="white" fillOpacity="0.95"/>
-          <rect x="290" y="22" width="38" height="18" rx="5" fill="white" fillOpacity="0.18"/>
-          <text x="309" y="35" fill="white" fillOpacity="0.9" fontSize="9" fontFamily="system-ui" fontWeight="700" textAnchor="middle">+8.2%</text>
-        </svg>
-      </div>
+        {/* Hero: heading left + illustration right */}
+        <div style={{ position:'relative', overflow:'hidden', flexShrink:0, height:220 }}>
+          {/* Full-bleed SVG illustration */}
+          <svg viewBox="0 0 390 220" style={{ position:'absolute', top:0, left:0, width:'100%', height:'100%' }} xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <filter id="cs" x="-30%" y="-30%" width="160%" height="160%">
+                <feDropShadow dx="0" dy="5" stdDeviation="10" floodColor="#2F4A33" floodOpacity="0.10"/>
+              </filter>
+            </defs>
+            {/* Wave blobs */}
+            <ellipse cx="300" cy="130" rx="210" ry="155" fill="#DDE6DA" fillOpacity="0.5"/>
+            <path d="M 110 55 C 175 20 265 45 325 68 C 370 85 392 115 390 148 C 375 168 335 182 268 186 C 188 192 108 172 68 150 C 28 128 25 92 110 55 Z" fill="#B5CAB1" fillOpacity="0.3"/>
+            <path d="M 0 192 C 55 168 115 178 175 168 C 235 158 295 162 390 172 L 390 220 L 0 220 Z" fill="#4A6A4F" fillOpacity="0.09"/>
+            {/* Card B – analytics (upper right, tilted) */}
+            <g filter="url(#cs)" transform="rotate(7, 292, 72)">
+              <rect x="248" y="28" width="88" height="72" rx="14" fill="white"/>
+              <circle cx="287" cy="57" r="17" stroke="#DDE6DA" strokeWidth="8" fill="none"/>
+              <path d="M 287 40 A 17 17 0 0 1 304 57" stroke="#4A6A4F" strokeWidth="8" fill="none" strokeLinecap="round"/>
+              <rect x="258" y="80" width="56" height="4" rx="2" fill="#EEF3EC"/>
+              <rect x="265" y="87" width="42" height="3" rx="1.5" fill="#F4F2EE"/>
+            </g>
+            {/* Card C – leaf badge (top-right corner, small) */}
+            <g filter="url(#cs)" transform="rotate(-5, 345, 38)">
+              <rect x="316" y="12" width="58" height="58" rx="14" fill="white"/>
+              <path d="M 345 26 C 352 26 360 32 360 42 C 360 52 352 60 345 60 C 338 60 330 52 330 42 C 330 32 338 26 345 26 Z" fill="#DDE6DA"/>
+              <path d="M 345 29 C 350 29 356 34 356 42 C 356 50 350 57 345 57 C 340 57 334 50 334 42 C 334 34 340 29 345 29 Z" fill="#4A6A4F" fillOpacity="0.75"/>
+              <path d="M 345 57 L 345 66" stroke="#4A6A4F" strokeWidth="2" strokeLinecap="round" opacity="0.5"/>
+              <path d="M 338 44 C 340 40 345 38 345 38 C 345 38 350 40 352 44" stroke="white" strokeWidth="1.5" fill="none" strokeLinecap="round" opacity="0.7"/>
+            </g>
+            {/* Card A – bar chart (center, front) */}
+            <g filter="url(#cs)">
+              <rect x="152" y="88" width="105" height="92" rx="16" fill="white"/>
+              <rect x="166" y="100" width="42" height="5" rx="2.5" fill="#EEF3EC"/>
+              <rect x="166" y="109" width="28" height="4" rx="2" fill="#F4F2EE"/>
+              <rect x="166" y="142" width="16" height="26" rx="3" fill="#DDE6DA"/>
+              <rect x="186" y="132" width="16" height="36" rx="3" fill="#4A6A4F" fillOpacity="0.38"/>
+              <rect x="206" y="120" width="16" height="48" rx="3" fill="#4A6A4F" fillOpacity="0.65"/>
+              <rect x="226" y="108" width="16" height="60" rx="3" fill="#4A6A4F"/>
+            </g>
+            {/* Growth curve */}
+            <path d="M 55 200 Q 95 162 145 138 Q 168 126 195 116" stroke="#2F4A33" strokeWidth="1.5" fill="none" strokeLinecap="round" opacity="0.38"/>
+            <circle cx="195" cy="116" r="3.5" fill="#2F4A33" opacity="0.45"/>
+            {/* Sparkles */}
+            <path d="M 105 74 v7 M 101.5 77.5 h7" stroke="#4A6A4F" strokeWidth="1.5" strokeLinecap="round" opacity="0.3"/>
+            <path d="M 210 38 v5 M 207.5 40.5 h5" stroke="#4A6A4F" strokeWidth="1.5" strokeLinecap="round" opacity="0.28"/>
+            <path d="M 170 72 v4 M 168 74 h4" stroke="#4A6A4F" strokeWidth="1" strokeLinecap="round" opacity="0.35"/>
+            {/* Orb */}
+            <circle cx="295" cy="178" r="9" fill="#B5CAB1" fillOpacity="0.45"/>
+            <circle cx="299" cy="174" r="3.5" fill="white" fillOpacity="0.55"/>
+          </svg>
 
-      {/* Form area */}
-      <div style={{ flex:1, overflowY:'auto', padding:'22px 24px 20px', display:'flex', flexDirection:'column' }}>
-        <div style={{ marginBottom:20 }}>
-          <div className="m-h2" style={{ marginBottom:4 }}>{hasOpenedBefore ? t('login.welcome') : t('login.welcomeFirst')}</div>
-          <div style={{ fontSize:14, color:M.ink3 }}>{t('login.subtitle')}</div>
+          {/* Heading overlaid bottom-left */}
+          <div style={{ position:'absolute', bottom:0, left:0, padding:'0 22px 18px', zIndex:4, width:'56%' }}>
+            <div style={{ fontSize:34, fontWeight:800, color:M.sageDk, lineHeight:1.05, letterSpacing:'-0.02em', fontFamily:M.fontUI }}>
+              {hasOpenedBefore ? t('login.welcome') : t('login.welcomeFirst')}
+            </div>
+            <div style={{ fontSize:12.5, color:M.ink3, marginTop:8, lineHeight:1.55 }}>
+              {t('login.subtitle')}
+            </div>
+          </div>
         </div>
 
-        <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+        {/* Form area */}
+        <div style={{ padding:'18px 20px 20px', display:'flex', flexDirection:'column', gap:10 }}>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-            <button data-testid={T.loginAppleBtn} className="m-btn outline m-tap" style={{ height:52, justifyContent:'center', gap:8 }} onClick={() => handleApple(false)}>
-              <IcoApple size={20} color={M.ink}/> Apple
+            <button data-testid={T.loginAppleBtn} className="m-btn outline m-tap" style={{ height:52, justifyContent:'center', gap:8, fontSize:13 }} onClick={() => handleApple(false)}>
+              <IcoApple size={18} color={M.ink}/> {t('login.apple')}
             </button>
-            <button data-testid={T.loginGoogleBtn} className="m-btn outline m-tap" style={{ height:52, justifyContent:'center', gap:8 }} onClick={() => handleGoogle(false)}>
-              <IcoGoogle size={20}/> Google
+            <button data-testid={T.loginGoogleBtn} className="m-btn outline m-tap" style={{ height:52, justifyContent:'center', gap:8, fontSize:13 }} onClick={() => handleGoogle(false)}>
+              <IcoGoogle size={18}/> {t('login.google')}
             </button>
           </div>
           <Divr/>
-          <input
-            data-testid={T.loginEmailInput}
-            value={emailInput} onChange={e => { setEmailInput(e.target.value); setLoginError(null); }}
-            type="email" placeholder={t('login.emailPlaceholder')}
-            style={{ width:'100%', boxSizing:'border-box', padding:'14px 16px', borderRadius:12, border:`1.5px solid ${loginError?M.clay:M.line}`, fontSize:15, fontFamily:M.fontUI, background:M.paper2, outline:'none', color:M.ink }}
-          />
+          <div style={{ position:'relative' }}>
+            <div style={{ position:'absolute', left:14, top:'50%', transform:'translateY(-50%)', pointerEvents:'none' }}>
+              <I name="mail" size={16} color={M.ink3}/>
+            </div>
+            <input
+              data-testid={T.loginEmailInput}
+              value={emailInput} onChange={e => { setEmailInput(e.target.value); setLoginError(null); }}
+              type="email" placeholder={t('login.emailPlaceholder')}
+              style={{ width:'100%', boxSizing:'border-box', padding:'14px 16px 14px 42px', borderRadius:12, border:`1.5px solid ${loginError?M.clay:M.line}`, fontSize:15, fontFamily:M.fontUI, background:M.paper2, outline:'none', color:M.ink }}
+            />
+          </div>
           {loginError && <div data-testid={T.loginError} style={{ fontSize:12, color:M.clay, lineHeight:1.4 }}>{loginError} <button onClick={() => { setLoginError(null); setSignupEmailInput(emailInput); setMode('signup-email'); }} style={{ background:'none', border:'none', color:M.sage, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, fontSize:12 }}>{t('login.createAccount')}</button></div>}
-          <button data-testid={T.loginEmailSubmit} className="m-btn sage m-tap" style={{ height:52, width:'100%', opacity:emailInput.trim()?1:0.5 }} onClick={handleEmailContinue} disabled={!emailInput.trim()}>
+          <button data-testid={T.loginEmailSubmit} className="m-btn m-tap" style={{ height:52, width:'100%', opacity:emailInput.trim()?1:0.5, background:M.sageDk, color:'#fff', border:'none', borderRadius:12, fontSize:15, fontWeight:600, fontFamily:M.fontUI, cursor:'pointer', overflow:'hidden', position:'relative' }} onClick={handleEmailContinue} disabled={!emailInput.trim()}>
             {t('login.continue')}
+            <svg style={{ position:'absolute', right:-4, bottom:-6, opacity:0.18, pointerEvents:'none' }} width="60" height="50" viewBox="0 0 60 50">
+              <path d="M 30 10 C 38 10 46 16 46 26 C 46 36 38 45 30 45 C 22 45 14 36 14 26 C 14 16 22 10 30 10 Z" fill="white"/>
+              <path d="M 30 14 C 36 14 42 19 42 26 C 42 33 36 42 30 42 C 24 42 18 33 18 26 C 18 19 24 14 30 14 Z" fill="white"/>
+              <path d="M 22 28 C 24 24 30 22 30 22 C 30 22 36 24 38 28" stroke="rgba(47,74,51,0.4)" strokeWidth="1.5" fill="none" strokeLinecap="round"/>
+            </svg>
           </button>
-          <div style={{ display:'flex', alignItems:'center', margin:'4px 0 0' }}>
+          <div style={{ display:'flex', alignItems:'center', margin:'2px 0 0' }}>
             <div style={{ flex:1, height:1, background:M.line }}/>
           </div>
           <button data-testid={T.loginCreateAccount} className="m-tap" onClick={() => { setLoginError(null); setMode('signup'); }}
-            style={{ background:'transparent', border:'none', fontSize:13, cursor:'pointer', fontFamily:M.fontUI, textAlign:'center', width:'100%', padding:'6px 0 2px' }}>
+            style={{ background:'transparent', border:'none', fontSize:13, cursor:'pointer', fontFamily:M.fontUI, textAlign:'center', width:'100%', padding:'4px 0 2px' }}>
             <span style={{ color:M.ink3 }}>{t('login.noAccount')}</span>
             {' '}
             <span style={{ color:M.tint, fontWeight:600 }}>{t('login.signUpBtn')}</span>
           </button>
-        </div>
 
-        <div style={{ flex:1, minHeight:12 }}/>
+          <div style={{ flex:1, minHeight:8 }}/>
 
-        <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:12 }}>
-          <button data-testid={T.loginOfflineBtn} className="m-tap" onClick={() => setMode('offline-info')}
-            style={{ background:M.paper2, border:`1px solid ${M.line}`, borderRadius:12, padding:'11px 14px', fontSize:13, color:M.ink2, cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', gap:10, width:'100%', boxSizing:'border-box' }}>
-            <I name="lock" size={15} color={M.ink3}/>
-            <span style={{ flex:1, textAlign:'left' }}>{t('offline.loginBtn')}</span>
-            <I name="caretR" size={13} color={M.ink4}/>
-          </button>
-          <button data-testid={T.loginDemoBtn} className="m-tap" onClick={() => doLogin('bank', 'bank@munni.app', 'Demo van der Berg', true)}
-            style={{ background:M.paper2, border:`1px solid ${M.line}`, borderRadius:12, padding:'11px 14px', fontSize:13, color:M.ink2, cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', gap:10, width:'100%', boxSizing:'border-box' }}>
-            <I name="eye" size={15} color={M.ink3}/>
-            <span style={{ flex:1, textAlign:'left' }}>{t('login.demoUser')}</span>
-            <I name="caretR" size={13} color={M.ink4}/>
-          </button>
-        </div>
+          <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:8 }}>
+            <button data-testid={T.loginOfflineBtn} className="m-tap" onClick={() => setMode('offline-info')}
+              style={{ background:M.paper2, border:`1px solid ${M.line}`, borderRadius:12, padding:'11px 14px', fontSize:13, color:M.ink2, cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', gap:10, width:'100%', boxSizing:'border-box' }}>
+              <I name="lock" size={15} color={M.ink3}/>
+              <span style={{ flex:1, textAlign:'left' }}>{t('offline.loginBtn')}</span>
+              <I name="caretR" size={13} color={M.ink4}/>
+            </button>
+            <button data-testid={T.loginDemoBtn} className="m-tap" onClick={() => doLogin('bank', 'bank@munni.app', 'Demo van der Berg', true)}
+              style={{ background:M.paper2, border:`1px solid ${M.line}`, borderRadius:12, padding:'11px 14px', fontSize:13, color:M.ink2, cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', gap:10, width:'100%', boxSizing:'border-box' }}>
+              <I name="eye" size={15} color={M.ink3}/>
+              <span style={{ flex:1, textAlign:'left' }}>{t('login.demoUser')}</span>
+              <I name="caretR" size={13} color={M.ink4}/>
+            </button>
+          </div>
 
-        <div style={{ fontSize:11, color:M.ink4, textAlign:'center', lineHeight:1.6 }}>
-          {t('login.termsIntro')}{' '}
-          <button data-testid={T.loginTermsLink} onClick={() => setMode('terms')} style={{ background:'none', border:'none', color:M.sage, fontWeight:500, cursor:'pointer', fontFamily:M.fontUI, fontSize:11, textDecoration:'underline' }}>{t('login.termsLinkText')}</button>
-          {' '}{t('login.termsAnd')}{' '}
-          <button data-testid={T.loginPrivacyLink} onClick={() => setMode('privacy')} style={{ background:'none', border:'none', color:M.sage, fontWeight:500, cursor:'pointer', fontFamily:M.fontUI, fontSize:11, textDecoration:'underline' }}>{t('login.termsPrivacy')}</button>
-          {(()=>{ const s=t('login.termsSuffix'); return (s && s!=='login.termsSuffix') ? <>{' '}{s}</> : null; })()}
+          <div style={{ fontSize:11, color:M.ink4, textAlign:'center', lineHeight:1.6 }}>
+            {t('login.termsIntro')}{' '}
+            <button data-testid={T.loginTermsLink} onClick={() => setMode('terms')} style={{ background:'none', border:'none', color:M.sage, fontWeight:500, cursor:'pointer', fontFamily:M.fontUI, fontSize:11, textDecoration:'underline' }}>{t('login.termsLinkText')}</button>
+            {' '}{t('login.termsAnd')}{' '}
+            <button data-testid={T.loginPrivacyLink} onClick={() => setMode('privacy')} style={{ background:'none', border:'none', color:M.sage, fontWeight:500, cursor:'pointer', fontFamily:M.fontUI, fontSize:11, textDecoration:'underline' }}>{t('login.termsPrivacy')}</button>
+            {(()=>{ const s=t('login.termsSuffix'); return (s && s!=='login.termsSuffix') ? <>{' '}{s}</> : null; })()}
+          </div>
         </div>
       </div>
     </div>
