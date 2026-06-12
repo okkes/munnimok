@@ -1127,7 +1127,7 @@ function ScreenLoginGate({ onLogin }) {
         </div>
 
         {/* Hero illustration */}
-        <div style={{ position:'relative', overflow:'hidden', flexShrink:0, height:320, backgroundImage:`url(${assetBgUrl})`, backgroundSize:'cover', backgroundPosition:'center top', backgroundRepeat:'no-repeat', backgroundColor:M.paper }}>
+        <div style={{ position:'relative', overflow:'hidden', flexShrink:0, height:320, backgroundImage:`url(${assetBgUrl})`, backgroundSize:'cover', backgroundPosition:'center bottom', backgroundRepeat:'no-repeat', backgroundColor:M.paper }}>
           {/* Heading – upper-left */}
           <div style={{ position:'absolute', top:20, left:0, padding:'0 22px', zIndex:4 }}>
             <div style={{ maxWidth:175, fontSize:44, fontWeight:800, color:M.brand, lineHeight:1.06, letterSpacing:'-0.03em', fontFamily:M.fontDisp }}>
