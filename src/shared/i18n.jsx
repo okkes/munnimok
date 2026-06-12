@@ -929,16 +929,16 @@ export const TRANSLATIONS = {
 };
 
 export const OTHER_LANGUAGES = [
-  { code:'de', name:'Deutsch', native:'Deutsch' },
-  { code:'fr', name:'French', native:'Français' },
-  { code:'es', name:'Spanish', native:'Español' },
-  { code:'it', name:'Italian', native:'Italiano' },
-  { code:'pt', name:'Portuguese', native:'Português' },
-  { code:'pl', name:'Polish', native:'Polski' },
-  { code:'ru', name:'Russian', native:'Русский' },
-  { code:'ar', name:'Arabic', native:'العربية' },
-  { code:'zh', name:'Chinese', native:'中文' },
-  { code:'ja', name:'Japanese', native:'日本語' },
+  { code:'de', name:'Deutsch',    native:'Deutsch',   twemoji:'1f1e9-1f1ea' },
+  { code:'fr', name:'French',     native:'Français',  twemoji:'1f1eb-1f1f7' },
+  { code:'es', name:'Spanish',    native:'Español',   twemoji:'1f1ea-1f1f8' },
+  { code:'it', name:'Italian',    native:'Italiano',  twemoji:'1f1ee-1f1f9' },
+  { code:'pt', name:'Portuguese', native:'Português', twemoji:'1f1f5-1f1f9' },
+  { code:'pl', name:'Polish',     native:'Polski',    twemoji:'1f1f5-1f1f1' },
+  { code:'ru', name:'Russian',    native:'Русский',   twemoji:'1f1f7-1f1fa' },
+  { code:'ar', name:'Arabic',     native:'العربية',   twemoji:'1f1f8-1f1e6' },
+  { code:'zh', name:'Chinese',    native:'中文',       twemoji:'1f1e8-1f1f3' },
+  { code:'ja', name:'Japanese',   native:'日本語',     twemoji:'1f1ef-1f1f5' },
 ];
 
 export const LangCtx = React.createContext({ lang:'en', setLang:()=>{}, t: k => k });

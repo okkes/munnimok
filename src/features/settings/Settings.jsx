@@ -106,7 +106,7 @@ export function ScreenLanguagePicker({ fromOnboarding = false, onBack }) {
             <React.Fragment key={l.code}>
               {i > 0 && <Divider inset={52}/>}
               <div style={{ display:'flex', alignItems:'center', gap:14, padding:'12px 0', opacity:0.6 }}>
-                <div style={{ width:40, textAlign:'center', fontSize:11, color:M.ink4, fontWeight:600, flexShrink:0, fontFamily:M.fontMono }}>{l.code.toUpperCase()}</div>
+                <img src={`https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/${l.twemoji}.svg`} width={36} height={36} style={flagStyle} alt=""/>
                 <div style={{ flex:1 }}>
                   <div style={{ fontSize:14, fontWeight:500 }}><LangHighlight text={l.native} query={search}/></div>
                   <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}><LangHighlight text={l.name} query={search}/></div>
