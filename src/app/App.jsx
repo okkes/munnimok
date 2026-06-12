@@ -1093,9 +1093,9 @@ function ScreenLoginGate({ onLogin }) {
       <div style={{ flex:1, overflowY:'auto', display:'flex', flexDirection:'column' }}>
         <StatusBar/>
 
-        {/* Hero: img in flow (responsive); negative marginBottom clips the blank cream at the bottom of the PNG */}
-        <div style={{ position:'relative', flexShrink:0, overflow:'hidden' }}>
-          <img src={assetBgUrl} alt="" aria-hidden="true" style={{ display:'block', width:'100%', height:'auto', marginBottom:'-13%' }}/>
+        {/* Hero: img in flow, height driven by PNG aspect ratio — no fixed pixels */}
+        <div style={{ position:'relative', flexShrink:0 }}>
+          <img src={assetBgUrl} alt="" aria-hidden="true" style={{ display:'block', width:'100%', height:'auto' }}/>
 
           {/* Logo + language trigger row – overlaid at top of image */}
           <div style={{ position:'absolute', top:0, left:0, right:0, display:'flex', alignItems:'center', justifyContent:'space-between', padding:'4px 20px 0', zIndex:99 }}>
