@@ -1189,12 +1189,12 @@ function ScreenLoginGate({ onLogin }) {
 
         {/* Form area */}
         <div style={{ padding:'18px 20px 20px', display:'flex', flexDirection:'column', gap:10 }}>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-            <button data-testid={T.loginAppleBtn} className="m-btn outline m-tap" style={{ height:52, justifyContent:'center', gap:7, fontSize:12, padding:'0 10px' }} onClick={() => handleApple(false)}>
-              <IcoApple size={18} color={M.ink}/> {t('login.apple')}
+          <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+            <button data-testid={T.loginAppleBtn} className="m-btn outline m-tap" style={{ height:52, justifyContent:'center', gap:8, fontSize:14, width:'100%' }} onClick={() => handleApple(false)}>
+              <IcoApple size={20} color={M.ink}/> {t('login.apple')}
             </button>
-            <button data-testid={T.loginGoogleBtn} className="m-btn outline m-tap" style={{ height:52, justifyContent:'center', gap:7, fontSize:12, padding:'0 10px' }} onClick={() => handleGoogle(false)}>
-              <IcoGoogle size={18}/> {t('login.google')}
+            <button data-testid={T.loginGoogleBtn} className="m-btn outline m-tap" style={{ height:52, justifyContent:'center', gap:8, fontSize:14, width:'100%' }} onClick={() => handleGoogle(false)}>
+              <IcoGoogle size={20}/> {t('login.google')}
             </button>
           </div>
           <Divr/>
