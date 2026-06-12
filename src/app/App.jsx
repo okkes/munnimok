@@ -1093,16 +1093,18 @@ function ScreenLoginGate({ onLogin }) {
 
         {/* Logo + language trigger row */}
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'4px 20px 0', position:'relative', zIndex:99 }}>
-          <div style={{ display:'flex', alignItems:'center', gap:11 }}>
-            <img src={munniLogoUrl} style={{ width:50, height:50, objectFit:'contain' }} alt="munni"/>
-            <span className="m-logo" style={{ fontSize:23, fontWeight:500, color:M.sageDk, fontFamily:M.fontUI, letterSpacing:'-0.02em' }}>munni<span style={{ opacity:0.35 }}>.</span></span>
+          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+            <div style={{ width:44, height:44, overflow:'hidden', flexShrink:0 }}>
+              <img src={munniLogoUrl} style={{ width:66, display:'block', marginLeft:-11 }} alt="munni"/>
+            </div>
+            <span className="m-logo" style={{ fontSize:22, fontWeight:700, color:M.sageDk, fontFamily:M.fontBrand, letterSpacing:'-0.01em' }}>munni<span style={{ opacity:0.4 }}>.</span></span>
           </div>
           <div style={{ position:'relative' }}>
             <button data-testid="login-lang-trigger" className="m-tap" onClick={() => setShowLangDropdown(v => !v)}
               style={{ background:M.paper, border:`1px solid ${M.line}`, borderRadius:20, padding:'6px 12px 6px 10px', fontSize:12, color:M.ink2, cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', gap:6, boxShadow:'0 2px 12px rgba(0,0,0,0.12)' }}>
               <img src={`https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/${langFlags[lang]}.svg`} width={16} height={16} style={{ borderRadius:2, flexShrink:0 }} alt=""/>
               <span>{langNames[lang] || 'English'}</span>
-              <span style={{ fontSize:8, opacity:0.5 }}>{showLangDropdown ? '▴' : '▾'}</span>
+              {showLangDropdown ? <I name="caretU" size={11} color={M.sageDk}/> : <I name="caretD" size={11} color={M.sageDk}/>}
             </button>
             {showLangDropdown && (
               <div style={{ position:'absolute', right:0, top:'calc(100% + 8px)', background:M.paper, borderRadius:14, boxShadow:'0 8px 32px rgba(0,0,0,0.18)', border:`1px solid ${M.line}`, minWidth:185, overflow:'hidden', zIndex:200 }}>
@@ -1125,18 +1127,21 @@ function ScreenLoginGate({ onLogin }) {
         </div>
 
         {/* Hero illustration */}
-        <div style={{ position:'relative', overflow:'hidden', flexShrink:0, height:290 }}>
-          <svg viewBox="0 0 390 290" style={{ position:'absolute', top:0, left:0, width:'100%', height:'100%' }} xmlns="http://www.w3.org/2000/svg">
+        <div style={{ position:'relative', overflow:'hidden', flexShrink:0, height:320 }}>
+          <svg viewBox="0 0 390 320" style={{ position:'absolute', top:0, left:0, width:'100%', height:'100%' }} xmlns="http://www.w3.org/2000/svg">
             <defs>
               <filter id="cs" x="-35%" y="-35%" width="170%" height="170%">
                 <feDropShadow dx="0" dy="6" stdDeviation="14" floodColor="#1B3525" floodOpacity="0.13"/>
               </filter>
             </defs>
-            {/* Organic blob – right side only */}
-            <path d="M 145 6 C 198 -8 296 8 360 44 C 398 66 394 112 390 160 C 386 207 358 246 298 265 C 238 282 178 276 148 250 C 120 226 122 188 120 155 C 118 120 116 70 145 6 Z" fill="#DDE6DA" fillOpacity="0.50"/>
-            {/* Inner hill layers */}
-            <path d="M 148 195 C 188 170 248 162 300 168 C 346 175 376 190 390 200 L 390 262 L 146 262 Z" fill="#4A6A4F" fillOpacity="0.07"/>
-            <path d="M 158 232 C 198 212 260 205 314 215 C 356 223 382 235 390 241 L 390 266 L 156 266 Z" fill="#2F4A33" fillOpacity="0.05"/>
+            {/* Organic base – full-width landscape starting from left edge */}
+            <path d="M 0 62 C 42 44 110 34 188 38 C 266 42 336 14 390 4 L 390 308 L 0 308 Z" fill="#DDE6DA" fillOpacity="0.42"/>
+            {/* Lighter inner highlight – where cards float */}
+            <ellipse cx="308" cy="112" rx="172" ry="104" fill="#EEF4EC" fillOpacity="0.55"/>
+            {/* Rolling hill 1 */}
+            <path d="M 0 222 C 68 200 155 194 230 202 C 306 210 358 192 390 182 L 390 308 L 0 308 Z" fill="#4A6A4F" fillOpacity="0.09"/>
+            {/* Rolling hill 2 */}
+            <path d="M 0 262 C 88 248 178 244 258 252 C 335 260 375 248 390 242 L 390 308 L 0 308 Z" fill="#2F4A33" fillOpacity="0.07"/>
             {/* Card B – analytics (upper, behind, tilted) */}
             <g filter="url(#cs)" transform="rotate(6, 275, 132)">
               <rect x="219" y="88" width="112" height="92" rx="18" fill="white"/>
@@ -1155,26 +1160,30 @@ function ScreenLoginGate({ onLogin }) {
             </g>
             {/* Card A – bar chart (front, centre-right) */}
             <g filter="url(#cs)">
-              <rect x="222" y="138" width="138" height="114" rx="20" fill="white"/>
-              <rect x="240" y="151" width="52" height="6" rx="3" fill="#EEF3EC"/>
-              <rect x="240" y="161" width="36" height="4" rx="2" fill="#F4F2EE"/>
-              <rect x="240" y="220" width="22" height="28" rx="5" fill="#DDE6DA"/>
-              <rect x="266" y="208" width="22" height="40" rx="5" fill="#4A6A4F" fillOpacity="0.38"/>
-              <rect x="292" y="194" width="22" height="54" rx="5" fill="#4A6A4F" fillOpacity="0.65"/>
-              <rect x="318" y="178" width="22" height="70" rx="5" fill="#4A6A4F"/>
+              <rect x="222" y="148" width="138" height="114" rx="20" fill="white"/>
+              <rect x="240" y="161" width="52" height="6" rx="3" fill="#EEF3EC"/>
+              <rect x="240" y="171" width="36" height="4" rx="2" fill="#F4F2EE"/>
+              <rect x="240" y="230" width="22" height="28" rx="5" fill="#DDE6DA"/>
+              <rect x="266" y="218" width="22" height="40" rx="5" fill="#4A6A4F" fillOpacity="0.38"/>
+              <rect x="292" y="204" width="22" height="54" rx="5" fill="#4A6A4F" fillOpacity="0.65"/>
+              <rect x="318" y="188" width="22" height="70" rx="5" fill="#4A6A4F"/>
             </g>
-            {/* Growth curve – left area */}
-            <path d="M 26 252 Q 70 216 128 190 Q 158 176 196 164" stroke="#1B3525" strokeWidth="2" fill="none" strokeLinecap="round" opacity="0.35"/>
-            <circle cx="196" cy="164" r="4.5" fill="#1B3525" opacity="0.45"/>
+            {/* Growth curve */}
+            <path d="M 28 294 C 55 270 95 246 148 220 C 184 203 212 191 248 178" stroke="#1B3525" strokeWidth="2.5" fill="none" strokeLinecap="round" opacity="0.42"/>
+            <circle cx="248" cy="178" r="5" fill="#1B3525" opacity="0.48"/>
             {/* Sparkles */}
-            <path d="M 108 110 v9 M 103.5 114.5 h9" stroke="#4A6A4F" strokeWidth="2" strokeLinecap="round" opacity="0.22"/>
-            <path d="M 256 48 v7 M 252.5 51.5 h7" stroke="#4A6A4F" strokeWidth="1.5" strokeLinecap="round" opacity="0.24"/>
+            <path d="M 82 118 v10 M 77 123 h10" stroke="#4A6A4F" strokeWidth="2" strokeLinecap="round" opacity="0.22"/>
+            <path d="M 155 55 v7 M 151.5 58.5 h7" stroke="#4A6A4F" strokeWidth="1.5" strokeLinecap="round" opacity="0.20"/>
+            <path d="M 260 42 v7 M 256.5 45.5 h7" stroke="#4A6A4F" strokeWidth="1.5" strokeLinecap="round" opacity="0.20"/>
+            <path d="M 358 148 v6 M 355 151 h6" stroke="#4A6A4F" strokeWidth="1.2" strokeLinecap="round" opacity="0.18"/>
+            {/* Subtle orb */}
+            <circle cx="186" cy="162" r="3.5" fill="#4A6A4F" fillOpacity="0.16"/>
             {/* Wave cap */}
-            <path d="M 0 264 Q 94 244 198 254 Q 298 264 390 246 L 390 290 L 0 290 Z" fill="#F7F4EF"/>
+            <path d="M 0 280 Q 100 264 200 272 Q 304 280 390 262 L 390 320 L 0 320 Z" fill="#F7F4EF"/>
           </svg>
 
-          {/* Heading – left side, does not overlap cards */}
-          <div style={{ position:'absolute', bottom:36, left:0, padding:'0 22px', zIndex:4 }}>
+          {/* Heading – lower-left, left column only */}
+          <div style={{ position:'absolute', bottom:38, left:0, padding:'0 22px', zIndex:4 }}>
             <div style={{ maxWidth:175, fontSize:44, fontWeight:800, color:M.sageDk, lineHeight:1.06, letterSpacing:'-0.03em', fontFamily:M.fontDisp }}>
               {hasOpenedBefore ? t('login.welcome') : t('login.welcomeFirst')}
             </div>
@@ -1187,10 +1196,10 @@ function ScreenLoginGate({ onLogin }) {
         {/* Form area */}
         <div style={{ padding:'18px 20px 20px', display:'flex', flexDirection:'column', gap:10 }}>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-            <button data-testid={T.loginAppleBtn} className="m-btn outline m-tap" style={{ height:52, justifyContent:'center', gap:6, fontSize:11, padding:'0 6px' }} onClick={() => handleApple(false)}>
+            <button data-testid={T.loginAppleBtn} className="m-btn outline m-tap" style={{ height:52, justifyContent:'center', gap:6, fontSize:11, padding:'0 6px', background:'#FFFFFF' }} onClick={() => handleApple(false)}>
               <IcoApple size={16} color={M.ink}/> {t('login.apple')}
             </button>
-            <button data-testid={T.loginGoogleBtn} className="m-btn outline m-tap" style={{ height:52, justifyContent:'center', gap:6, fontSize:11, padding:'0 6px' }} onClick={() => handleGoogle(false)}>
+            <button data-testid={T.loginGoogleBtn} className="m-btn outline m-tap" style={{ height:52, justifyContent:'center', gap:6, fontSize:11, padding:'0 6px', background:'#FFFFFF' }} onClick={() => handleGoogle(false)}>
               <IcoGoogle size={16}/> {t('login.google')}
             </button>
           </div>
@@ -1203,7 +1212,7 @@ function ScreenLoginGate({ onLogin }) {
               data-testid={T.loginEmailInput}
               value={emailInput} onChange={e => { setEmailInput(e.target.value); setLoginError(null); }}
               type="email" placeholder={t('login.emailPlaceholder')}
-              style={{ width:'100%', boxSizing:'border-box', padding:'14px 16px 14px 42px', borderRadius:12, border:`1.5px solid ${loginError?M.clay:M.line}`, fontSize:15, fontFamily:M.fontUI, background:M.paper2, outline:'none', color:M.ink }}
+              style={{ width:'100%', boxSizing:'border-box', padding:'14px 16px 14px 42px', borderRadius:12, border:`1.5px solid ${loginError?M.clay:M.line}`, fontSize:15, fontFamily:M.fontUI, background:'#FFFFFF', outline:'none', color:M.ink }}
             />
           </div>
           {loginError && <div data-testid={T.loginError} style={{ fontSize:12, color:M.clay, lineHeight:1.4 }}>{loginError} <button onClick={() => { setLoginError(null); setSignupEmailInput(emailInput); setMode('signup-email'); }} style={{ background:'none', border:'none', color:M.sage, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, fontSize:12 }}>{t('login.createAccount')}</button></div>}
@@ -1225,16 +1234,16 @@ function ScreenLoginGate({ onLogin }) {
 
           <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:8 }}>
             <button data-testid={T.loginOfflineBtn} className="m-tap" onClick={() => setMode('offline-info')}
-              style={{ background:'#EEF4EC', border:`1px solid ${M.line}`, borderRadius:12, padding:'11px 14px', fontSize:13, color:M.ink2, cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', gap:10, width:'100%', boxSizing:'border-box' }}>
-              <I name="lock" size={15} color={M.ink3}/>
+              style={{ background:'#EDF4EB', border:`1px solid ${M.sageSoft}`, borderRadius:12, padding:'11px 14px', fontSize:13, color:M.sageDk, cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', gap:10, width:'100%', boxSizing:'border-box' }}>
+              <I name="lock" size={15} color={M.sage}/>
               <span style={{ flex:1, textAlign:'left' }}>{t('offline.loginBtn')}</span>
-              <I name="caretR" size={13} color={M.ink4}/>
+              <I name="caretR" size={13} color={M.sage}/>
             </button>
             <button data-testid={T.loginDemoBtn} className="m-tap" onClick={() => doLogin('bank', 'bank@munni.app', 'Demo van der Berg', true)}
-              style={{ background:'#EEF4EC', border:`1px solid ${M.line}`, borderRadius:12, padding:'11px 14px', fontSize:13, color:M.ink2, cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', gap:10, width:'100%', boxSizing:'border-box' }}>
-              <I name="eye" size={15} color={M.ink3}/>
+              style={{ background:'#EDF4EB', border:`1px solid ${M.sageSoft}`, borderRadius:12, padding:'11px 14px', fontSize:13, color:M.sageDk, cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', gap:10, width:'100%', boxSizing:'border-box' }}>
+              <I name="eye" size={15} color={M.sage}/>
               <span style={{ flex:1, textAlign:'left' }}>{t('login.demoUser')}</span>
-              <I name="caretR" size={13} color={M.ink4}/>
+              <I name="caretR" size={13} color={M.sage}/>
             </button>
           </div>
 

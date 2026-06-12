@@ -26,12 +26,13 @@ export const M = {
   fontUI:    "'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif",
   fontDisp:  "'Source Serif 4', 'Source Serif Pro', Georgia, serif",
   fontMono:  "'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace",
+  fontBrand: "'Nunito', 'Inter', sans-serif",
 };
 
 if (typeof document !== 'undefined' && !document.getElementById('m-styles')) {
   const link = document.createElement('link');
   link.rel = 'stylesheet';
-  link.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600;8..60,700&family=JetBrains+Mono:wght@400;500&display=swap';
+  link.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Nunito:wght@400;500;600;700;800&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600;8..60,700&family=JetBrains+Mono:wght@400;500&display=swap';
   document.head.appendChild(link);
 
   const s = document.createElement('style');
