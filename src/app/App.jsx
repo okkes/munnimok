@@ -237,6 +237,7 @@ function ScreenLoginGate({ onLogin }) {
   //       'signup-bank'|'terms'|'privacy'|'language'
   const { t, lang, setLang } = useLang();
   const { dark } = useDark();
+  const compact = React.useMemo(() => window.innerHeight <= 700, []);
   const [emailInput, setEmailInput] = React.useState(() => {
     try {
       const v = JSON.parse(sessionStorage.getItem('munni_profile_email') || '""');
@@ -1093,8 +1094,8 @@ function ScreenLoginGate({ onLogin }) {
       <div style={{ flex:1, overflowY:'auto', display:'flex', flexDirection:'column' }}>
         <StatusBar/>
 
-        {/* Hero: clamp height to 46vh; image anchored to bottom so the top cream area clips on small screens */}
-        <div style={{ position:'relative', flexShrink:0, maxHeight:'min(400px, 46vh)', overflow:'hidden', display:'flex', alignItems:'flex-end' }}>
+        {/* Hero: clamp height; compact mode clips more aggressively on small phones */}
+        <div style={{ position:'relative', flexShrink:0, maxHeight: compact ? 'min(400px, 33vh)' : 'min(400px, 46vh)', overflow:'hidden', display:'flex', alignItems:'flex-end' }}>
           <img src={assetBgUrl} alt="" aria-hidden="true" style={{ display:'block', width:'100%', height:'auto', flexShrink:0 }}/>
 
           {/* Logo + language trigger row – overlaid at top of image */}
@@ -1142,12 +1143,12 @@ function ScreenLoginGate({ onLogin }) {
         </div>
 
         {/* Form area */}
-        <div style={{ padding:'18px 20px 20px', display:'flex', flexDirection:'column', gap:10, flex:1 }}>
+        <div style={{ padding: compact ? '10px 20px 12px' : '18px 20px 20px', display:'flex', flexDirection:'column', gap: compact ? 8 : 10, flex:1 }}>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-            <button data-testid={T.loginAppleBtn} className="m-btn outline m-tap" style={{ height:52, justifyContent:'center', gap:6, fontSize:11, padding:'0 6px', background:'#FFFFFF', boxShadow:'0 2px 10px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.05)' }} onClick={() => handleApple(false)}>
+            <button data-testid={T.loginAppleBtn} className="m-btn outline m-tap" style={{ height: compact?46:52, justifyContent:'center', gap:6, fontSize:11, padding:'0 6px', background:'#FFFFFF', boxShadow:'0 2px 10px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.05)' }} onClick={() => handleApple(false)}>
               <IcoApple size={16} color={M.ink}/> {t('login.apple')}
             </button>
-            <button data-testid={T.loginGoogleBtn} className="m-btn outline m-tap" style={{ height:52, justifyContent:'center', gap:6, fontSize:11, padding:'0 6px', background:'#FFFFFF', boxShadow:'0 2px 10px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.05)' }} onClick={() => handleGoogle(false)}>
+            <button data-testid={T.loginGoogleBtn} className="m-btn outline m-tap" style={{ height: compact?46:52, justifyContent:'center', gap:6, fontSize:11, padding:'0 6px', background:'#FFFFFF', boxShadow:'0 2px 10px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.05)' }} onClick={() => handleGoogle(false)}>
               <IcoGoogle size={16}/> {t('login.google')}
             </button>
           </div>
@@ -1164,7 +1165,7 @@ function ScreenLoginGate({ onLogin }) {
             />
           </div>
           {loginError && <div data-testid={T.loginError} style={{ fontSize:12, color:M.clay, lineHeight:1.4 }}>{loginError} <button onClick={() => { setLoginError(null); setSignupEmailInput(emailInput); setMode('signup-email'); }} style={{ background:'none', border:'none', color:M.sage, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, fontSize:12 }}>{t('login.createAccount')}</button></div>}
-          <button data-testid={T.loginEmailSubmit} className="m-btn m-tap" style={{ height:52, width:'100%', opacity:emailInput.trim()?1:0.5, background:M.brand, color:'#fff', border:'none', borderRadius:14, fontSize:15, fontWeight:600, fontFamily:M.fontUI, cursor:'pointer', position:'relative', overflow:'hidden', boxShadow:'0 4px 16px rgba(8,55,43,0.30), 0 1px 4px rgba(8,55,43,0.15)' }} onClick={handleEmailContinue} disabled={!emailInput.trim()}>
+          <button data-testid={T.loginEmailSubmit} className="m-btn m-tap" style={{ height: compact?46:52, width:'100%', opacity:emailInput.trim()?1:0.5, background:M.brand, color:'#fff', border:'none', borderRadius:14, fontSize:15, fontWeight:600, fontFamily:M.fontUI, cursor:'pointer', position:'relative', overflow:'hidden', boxShadow:'0 4px 16px rgba(8,55,43,0.30), 0 1px 4px rgba(8,55,43,0.15)' }} onClick={handleEmailContinue} disabled={!emailInput.trim()}>
             {t('login.continue')}
             <img src={leafOnlyUrl} alt="" aria-hidden="true" style={{ position:'absolute', right:-10, bottom:-8, width:72, height:72, objectFit:'contain', objectPosition:'right bottom', opacity:0.22, pointerEvents:'none' }}/>
           </button>
@@ -1175,7 +1176,7 @@ function ScreenLoginGate({ onLogin }) {
             <span style={{ color:M.brand, fontWeight:600 }}>{t('login.signUpBtn')}</span>
           </button>
 
-          <div style={{ flex:1, minHeight:8 }}/>
+          <div style={{ flex:1, minHeight: compact ? 0 : 8 }}/>
 
           <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:8 }}>
             <button data-testid={T.loginOfflineBtn} className="m-tap" onClick={() => setMode('offline-info')}
