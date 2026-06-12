@@ -237,7 +237,7 @@ function ScreenLoginGate({ onLogin }) {
   //       'signup-bank'|'terms'|'privacy'|'language'
   const { t, lang, setLang } = useLang();
   const { dark } = useDark();
-  const compact = React.useMemo(() => window.innerHeight <= 700, []);
+  const compact = React.useMemo(() => window.innerWidth <= 430 && window.innerHeight <= 820, []);
   const [emailInput, setEmailInput] = React.useState(() => {
     try {
       const v = JSON.parse(sessionStorage.getItem('munni_profile_email') || '""');
