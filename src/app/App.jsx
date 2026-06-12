@@ -1,6 +1,6 @@
 ﻿import React from 'react';
 import munniLogoUrl from '../../assets/logos/asset-logo-dark.png';
-import assetBgUrl from '../../assets/asset-login-background.png';
+import assetBgUrl from '../../assets/assets-login-background-cropped.png';
 import { T } from '../shared/testIds.js';
 import { getUserId, registerUserInGlobalRegistry, computeUserDataKey } from '../shared/utils/user.js';
 import { DUTCH_BANKS } from '../features/accounts/data.js';
@@ -1126,7 +1126,7 @@ function ScreenLoginGate({ onLogin }) {
         </div>
 
         {/* Hero illustration */}
-        <div style={{ position:'relative', overflow:'hidden', flexShrink:0, height:380, backgroundImage:`url(${assetBgUrl})`, backgroundSize:'cover', backgroundPosition:'right top', backgroundRepeat:'no-repeat', backgroundColor:M.paper }}>
+        <div style={{ position:'relative', overflow:'hidden', flexShrink:0, height:320, backgroundImage:`url(${assetBgUrl})`, backgroundSize:'auto 100%', backgroundPosition:'right top', backgroundRepeat:'no-repeat', backgroundColor:M.paper }}>
           {/* Heading – upper-left */}
           <div style={{ position:'absolute', top:20, left:0, padding:'0 22px', zIndex:4 }}>
             <div style={{ maxWidth:175, fontSize:44, fontWeight:800, color:M.brand, lineHeight:1.06, letterSpacing:'-0.03em', fontFamily:M.fontDisp }}>
