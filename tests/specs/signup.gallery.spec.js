@@ -79,6 +79,9 @@ for (const V of VARIANTS) {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V);
     await shot(page, k('20-lang-picker-open') + '--s1');
+    // Open dropdown first, then navigate to full language screen via More
+    await page.click('[data-testid="login-lang-trigger"]');
+    await page.waitForSelector('[data-testid="login-lang-btn"]', { timeout: 2000 });
     await page.click('[data-testid="login-lang-btn"]');
     await page.waitForSelector('[data-testid="lang-option-en"]', { timeout: 3000 });
     await expect(page.locator('[data-testid="lang-option-en"]')).toBeVisible();
@@ -92,13 +95,16 @@ for (const V of VARIANTS) {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V);
     await shot(page, k('21-lang-switch-nl') + '--s1');
+    // Open dropdown first, then navigate to full language screen via More
+    await page.click('[data-testid="login-lang-trigger"]');
+    await page.waitForSelector('[data-testid="login-lang-btn"]', { timeout: 2000 });
     await page.click('[data-testid="login-lang-btn"]');
     await page.waitForSelector('[data-testid="lang-option-nl"]', { timeout: 3000 });
     await shot(page, k('21-lang-switch-nl') + '--s2');
     await page.click('[data-testid="lang-option-nl"]');
     // After selection, picker closes and login screen shows in Dutch
     await page.waitForSelector('[data-testid="login-google-btn"]', { timeout: 3000 });
-    await expect(page.locator('[data-testid="login-lang-btn"]')).toBeVisible();
+    await expect(page.locator('[data-testid="login-lang-trigger"]')).toBeVisible();
     await shot(page, k('21-lang-switch-nl'));
     await teardown(page, ctx, k('21-lang-switch-nl'));
   });

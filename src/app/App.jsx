@@ -1093,7 +1093,7 @@ function ScreenLoginGate({ onLogin }) {
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'4px 20px 0', position:'relative', zIndex:99 }}>
           <div className="m-logo" style={{ fontSize:26, color:'#fff' }}>munni<span style={{ opacity:0.45 }}>.</span></div>
           <div style={{ position:'relative' }}>
-            <button className="m-tap" onClick={() => setShowLangDropdown(v => !v)}
+            <button data-testid="login-lang-trigger" className="m-tap" onClick={() => setShowLangDropdown(v => !v)}
               style={{ background:'rgba(255,255,255,0.14)', border:'1px solid rgba(255,255,255,0.26)', borderRadius:20, padding:'6px 12px 6px 10px', fontSize:12, color:'rgba(255,255,255,0.9)', cursor:'pointer', fontFamily:M.fontUI, display:'flex', alignItems:'center', gap:6, WebkitBackdropFilter:'blur(4px)', backdropFilter:'blur(4px)' }}>
               <img src={`https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/${langFlags[lang]}.svg`} width={16} height={16} style={{ borderRadius:2, flexShrink:0 }} alt=""/>
               <span>{langNames[lang] || 'English'}</span>
