@@ -1093,9 +1093,9 @@ function ScreenLoginGate({ onLogin }) {
       <div style={{ flex:1, overflowY:'auto', display:'flex', flexDirection:'column' }}>
         <StatusBar/>
 
-        {/* Hero: clamp height to 46vh so smaller phones don't scroll; overflow hides the bottom of the PNG */}
-        <div style={{ position:'relative', flexShrink:0, maxHeight:'min(400px, 46vh)', overflow:'hidden' }}>
-          <img src={assetBgUrl} alt="" aria-hidden="true" style={{ display:'block', width:'100%', height:'auto' }}/>
+        {/* Hero: clamp height to 46vh; image anchored to bottom so the top cream area clips on small screens */}
+        <div style={{ position:'relative', flexShrink:0, maxHeight:'min(400px, 46vh)', overflow:'hidden', display:'flex', alignItems:'flex-end' }}>
+          <img src={assetBgUrl} alt="" aria-hidden="true" style={{ display:'block', width:'100%', height:'auto', flexShrink:0 }}/>
 
           {/* Logo + language trigger row – overlaid at top of image */}
           <div style={{ position:'absolute', top:0, left:0, right:0, display:'flex', alignItems:'center', justifyContent:'space-between', padding:'4px 20px 0', zIndex:99 }}>
