@@ -1093,9 +1093,9 @@ function ScreenLoginGate({ onLogin }) {
 
         {/* Logo + language trigger row */}
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'4px 20px 0', position:'relative', zIndex:99 }}>
-          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-            <img src={munniLogoUrl} style={{ width:38, height:38, objectFit:'contain' }} alt="munni"/>
-            <span className="m-logo" style={{ fontSize:19, fontWeight:700, color:M.sageDk, fontFamily:M.fontUI, letterSpacing:'-0.01em' }}>munni<span style={{ opacity:0.35 }}>.</span></span>
+          <div style={{ display:'flex', alignItems:'center', gap:11 }}>
+            <img src={munniLogoUrl} style={{ width:50, height:50, objectFit:'contain' }} alt="munni"/>
+            <span className="m-logo" style={{ fontSize:23, fontWeight:700, color:M.sageDk, fontFamily:M.fontUI, letterSpacing:'-0.02em' }}>munni<span style={{ opacity:0.35 }}>.</span></span>
           </div>
           <div style={{ position:'relative' }}>
             <button data-testid="login-lang-trigger" className="m-tap" onClick={() => setShowLangDropdown(v => !v)}
@@ -1124,63 +1124,64 @@ function ScreenLoginGate({ onLogin }) {
           </div>
         </div>
 
-        {/* Hero: heading left + illustration right */}
-        <div style={{ position:'relative', overflow:'hidden', flexShrink:0, height:220 }}>
-          {/* Full-bleed SVG illustration */}
-          <svg viewBox="0 0 390 220" style={{ position:'absolute', top:0, left:0, width:'100%', height:'100%' }} xmlns="http://www.w3.org/2000/svg">
+        {/* Hero illustration */}
+        <div style={{ position:'relative', overflow:'hidden', flexShrink:0, height:300 }}>
+          <svg viewBox="0 0 390 300" style={{ position:'absolute', top:0, left:0, width:'100%', height:'100%' }} xmlns="http://www.w3.org/2000/svg">
             <defs>
-              <filter id="cs" x="-30%" y="-30%" width="160%" height="160%">
-                <feDropShadow dx="0" dy="5" stdDeviation="10" floodColor="#2F4A33" floodOpacity="0.10"/>
+              <filter id="cs" x="-35%" y="-35%" width="170%" height="170%">
+                <feDropShadow dx="0" dy="6" stdDeviation="14" floodColor="#1B3525" floodOpacity="0.13"/>
               </filter>
             </defs>
             {/* Wave blobs */}
-            <ellipse cx="300" cy="130" rx="210" ry="155" fill="#DDE6DA" fillOpacity="0.5"/>
-            <path d="M 110 55 C 175 20 265 45 325 68 C 370 85 392 115 390 148 C 375 168 335 182 268 186 C 188 192 108 172 68 150 C 28 128 25 92 110 55 Z" fill="#B5CAB1" fillOpacity="0.3"/>
-            <path d="M 0 192 C 55 168 115 178 175 168 C 235 158 295 162 390 172 L 390 220 L 0 220 Z" fill="#4A6A4F" fillOpacity="0.09"/>
-            {/* Card B – analytics (upper right, tilted) */}
-            <g filter="url(#cs)" transform="rotate(7, 292, 72)">
-              <rect x="248" y="28" width="88" height="72" rx="14" fill="white"/>
-              <circle cx="287" cy="57" r="17" stroke="#DDE6DA" strokeWidth="8" fill="none"/>
-              <path d="M 287 40 A 17 17 0 0 1 304 57" stroke="#4A6A4F" strokeWidth="8" fill="none" strokeLinecap="round"/>
-              <rect x="258" y="80" width="56" height="4" rx="2" fill="#EEF3EC"/>
-              <rect x="265" y="87" width="42" height="3" rx="1.5" fill="#F4F2EE"/>
+            <ellipse cx="305" cy="158" rx="230" ry="185" fill="#DDE6DA" fillOpacity="0.52"/>
+            <path d="M 105 52 C 178 14 278 42 346 70 C 388 90 395 128 390 165 C 370 190 322 208 250 214 C 160 222 72 198 32 172 C -8 146 10 92 105 52 Z" fill="#B5CAB1" fillOpacity="0.28"/>
+            <path d="M 0 246 C 65 220 135 234 200 222 C 268 210 328 218 390 230 L 390 272 L 0 272 Z" fill="#4A6A4F" fillOpacity="0.09"/>
+            {/* Card B – analytics (upper, behind, tilted) */}
+            <g filter="url(#cs)" transform="rotate(7, 258, 138)">
+              <rect x="172" y="96" width="114" height="96" rx="18" fill="white"/>
+              <circle cx="222" cy="136" r="22" stroke="#DDE6DA" strokeWidth="10" fill="none"/>
+              <path d="M 222 114 A 22 22 0 0 1 244 136" stroke="#4A6A4F" strokeWidth="10" fill="none" strokeLinecap="round"/>
+              <rect x="186" y="174" width="72" height="5" rx="2.5" fill="#EEF3EC"/>
+              <rect x="196" y="183" width="52" height="4" rx="2" fill="#F4F2EE"/>
             </g>
-            {/* Card C – leaf badge (top-right corner, small) */}
-            <g filter="url(#cs)" transform="rotate(-5, 345, 38)">
-              <rect x="316" y="12" width="58" height="58" rx="14" fill="white"/>
-              <path d="M 345 26 C 352 26 360 32 360 42 C 360 52 352 60 345 60 C 338 60 330 52 330 42 C 330 32 338 26 345 26 Z" fill="#DDE6DA"/>
-              <path d="M 345 29 C 350 29 356 34 356 42 C 356 50 350 57 345 57 C 340 57 334 50 334 42 C 334 34 340 29 345 29 Z" fill="#4A6A4F" fillOpacity="0.75"/>
-              <path d="M 345 57 L 345 66" stroke="#4A6A4F" strokeWidth="2" strokeLinecap="round" opacity="0.5"/>
-              <path d="M 338 44 C 340 40 345 38 345 38 C 345 38 350 40 352 44" stroke="white" strokeWidth="1.5" fill="none" strokeLinecap="round" opacity="0.7"/>
+            {/* Card C – leaf badge (top-right) */}
+            <g filter="url(#cs)" transform="rotate(-5, 342, 102)">
+              <rect x="306" y="66" width="76" height="76" rx="18" fill="white"/>
+              <circle cx="344" cy="104" r="24" fill="#EEF4EC"/>
+              <path d="M 344 116 C 344 116 328 107 328 93 C 328 83 336 81 344 89" fill="#4A6A4F"/>
+              <path d="M 344 116 C 344 116 360 107 360 93 C 360 83 352 81 344 89" fill="#6BAD7E" fillOpacity="0.75"/>
+              <line x1="344" y1="116" x2="344" y2="127" stroke="#4A6A4F" strokeWidth="2.5" strokeLinecap="round"/>
             </g>
-            {/* Card A – bar chart (center, front) */}
+            {/* Card A – bar chart (centre, front, largest) */}
             <g filter="url(#cs)">
-              <rect x="152" y="88" width="105" height="92" rx="16" fill="white"/>
-              <rect x="166" y="100" width="42" height="5" rx="2.5" fill="#EEF3EC"/>
-              <rect x="166" y="109" width="28" height="4" rx="2" fill="#F4F2EE"/>
-              <rect x="166" y="142" width="16" height="26" rx="3" fill="#DDE6DA"/>
-              <rect x="186" y="132" width="16" height="36" rx="3" fill="#4A6A4F" fillOpacity="0.38"/>
-              <rect x="206" y="120" width="16" height="48" rx="3" fill="#4A6A4F" fillOpacity="0.65"/>
-              <rect x="226" y="108" width="16" height="60" rx="3" fill="#4A6A4F"/>
+              <rect x="196" y="140" width="138" height="116" rx="20" fill="white"/>
+              <rect x="214" y="153" width="52" height="6" rx="3" fill="#EEF3EC"/>
+              <rect x="214" y="163" width="36" height="4" rx="2" fill="#F4F2EE"/>
+              <rect x="214" y="224" width="22" height="28" rx="5" fill="#DDE6DA"/>
+              <rect x="240" y="212" width="22" height="40" rx="5" fill="#4A6A4F" fillOpacity="0.38"/>
+              <rect x="266" y="198" width="22" height="54" rx="5" fill="#4A6A4F" fillOpacity="0.65"/>
+              <rect x="292" y="182" width="22" height="70" rx="5" fill="#4A6A4F"/>
             </g>
             {/* Growth curve */}
-            <path d="M 55 200 Q 95 162 145 138 Q 168 126 195 116" stroke="#2F4A33" strokeWidth="1.5" fill="none" strokeLinecap="round" opacity="0.38"/>
-            <circle cx="195" cy="116" r="3.5" fill="#2F4A33" opacity="0.45"/>
+            <path d="M 40 262 Q 90 218 150 188 Q 178 174 208 162" stroke="#1B3525" strokeWidth="2" fill="none" strokeLinecap="round" opacity="0.4"/>
+            <circle cx="208" cy="162" r="5" fill="#1B3525" opacity="0.5"/>
             {/* Sparkles */}
-            <path d="M 105 74 v7 M 101.5 77.5 h7" stroke="#4A6A4F" strokeWidth="1.5" strokeLinecap="round" opacity="0.3"/>
-            <path d="M 210 38 v5 M 207.5 40.5 h5" stroke="#4A6A4F" strokeWidth="1.5" strokeLinecap="round" opacity="0.28"/>
-            <path d="M 170 72 v4 M 168 74 h4" stroke="#4A6A4F" strokeWidth="1" strokeLinecap="round" opacity="0.35"/>
+            <path d="M 95 108 v10 M 90 113 h10" stroke="#4A6A4F" strokeWidth="2" strokeLinecap="round" opacity="0.28"/>
+            <path d="M 248 52 v7 M 244.5 55.5 h7" stroke="#4A6A4F" strokeWidth="1.5" strokeLinecap="round" opacity="0.26"/>
+            <path d="M 168 82 v6 M 165 85 h6" stroke="#4A6A4F" strokeWidth="1.2" strokeLinecap="round" opacity="0.3"/>
             {/* Orb */}
-            <circle cx="295" cy="178" r="9" fill="#B5CAB1" fillOpacity="0.45"/>
-            <circle cx="299" cy="174" r="3.5" fill="white" fillOpacity="0.55"/>
+            <circle cx="308" cy="232" r="12" fill="#B5CAB1" fillOpacity="0.42"/>
+            <circle cx="314" cy="226" r="4.5" fill="white" fillOpacity="0.55"/>
+            {/* Wave cap → blends into M.paper background */}
+            <path d="M 0 272 Q 95 252 198 262 Q 298 272 390 254 L 390 300 L 0 300 Z" fill="#F7F4EF"/>
           </svg>
 
-          {/* Heading overlaid bottom-left */}
-          <div style={{ position:'absolute', bottom:0, left:0, padding:'0 22px 18px', zIndex:4, width:'56%' }}>
-            <div style={{ fontSize:34, fontWeight:800, color:M.sageDk, lineHeight:1.05, letterSpacing:'-0.02em', fontFamily:M.fontUI }}>
+          {/* Heading overlaid lower-left */}
+          <div style={{ position:'absolute', bottom:44, left:0, padding:'0 22px', zIndex:4 }}>
+            <div style={{ fontSize:50, fontWeight:800, color:M.sageDk, lineHeight:1.02, letterSpacing:'-0.03em', fontFamily:M.fontUI }}>
               {hasOpenedBefore ? t('login.welcome') : t('login.welcomeFirst')}
             </div>
-            <div style={{ fontSize:12.5, color:M.ink3, marginTop:8, lineHeight:1.55 }}>
+            <div style={{ fontSize:13, color:M.ink3, marginTop:10, lineHeight:1.5 }}>
               {t('login.subtitle')}
             </div>
           </div>
@@ -1189,10 +1190,10 @@ function ScreenLoginGate({ onLogin }) {
         {/* Form area */}
         <div style={{ padding:'18px 20px 20px', display:'flex', flexDirection:'column', gap:10 }}>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-            <button data-testid={T.loginAppleBtn} className="m-btn outline m-tap" style={{ height:52, justifyContent:'center', gap:8, fontSize:13 }} onClick={() => handleApple(false)}>
+            <button data-testid={T.loginAppleBtn} className="m-btn outline m-tap" style={{ height:52, justifyContent:'center', gap:7, fontSize:12, padding:'0 10px' }} onClick={() => handleApple(false)}>
               <IcoApple size={18} color={M.ink}/> {t('login.apple')}
             </button>
-            <button data-testid={T.loginGoogleBtn} className="m-btn outline m-tap" style={{ height:52, justifyContent:'center', gap:8, fontSize:13 }} onClick={() => handleGoogle(false)}>
+            <button data-testid={T.loginGoogleBtn} className="m-btn outline m-tap" style={{ height:52, justifyContent:'center', gap:7, fontSize:12, padding:'0 10px' }} onClick={() => handleGoogle(false)}>
               <IcoGoogle size={18}/> {t('login.google')}
             </button>
           </div>
@@ -1209,12 +1210,11 @@ function ScreenLoginGate({ onLogin }) {
             />
           </div>
           {loginError && <div data-testid={T.loginError} style={{ fontSize:12, color:M.clay, lineHeight:1.4 }}>{loginError} <button onClick={() => { setLoginError(null); setSignupEmailInput(emailInput); setMode('signup-email'); }} style={{ background:'none', border:'none', color:M.sage, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, fontSize:12 }}>{t('login.createAccount')}</button></div>}
-          <button data-testid={T.loginEmailSubmit} className="m-btn m-tap" style={{ height:52, width:'100%', opacity:emailInput.trim()?1:0.5, background:M.sageDk, color:'#fff', border:'none', borderRadius:12, fontSize:15, fontWeight:600, fontFamily:M.fontUI, cursor:'pointer', overflow:'hidden', position:'relative' }} onClick={handleEmailContinue} disabled={!emailInput.trim()}>
+          <button data-testid={T.loginEmailSubmit} className="m-btn m-tap" style={{ height:52, width:'100%', opacity:emailInput.trim()?1:0.5, background:'#1B3525', color:'#fff', border:'none', borderRadius:14, fontSize:15, fontWeight:600, fontFamily:M.fontUI, cursor:'pointer', position:'relative', overflow:'hidden' }} onClick={handleEmailContinue} disabled={!emailInput.trim()}>
             {t('login.continue')}
-            <svg style={{ position:'absolute', right:-4, bottom:-6, opacity:0.18, pointerEvents:'none' }} width="60" height="50" viewBox="0 0 60 50">
-              <path d="M 30 10 C 38 10 46 16 46 26 C 46 36 38 45 30 45 C 22 45 14 36 14 26 C 14 16 22 10 30 10 Z" fill="white"/>
-              <path d="M 30 14 C 36 14 42 19 42 26 C 42 33 36 42 30 42 C 24 42 18 33 18 26 C 18 19 24 14 30 14 Z" fill="white"/>
-              <path d="M 22 28 C 24 24 30 22 30 22 C 30 22 36 24 38 28" stroke="rgba(47,74,51,0.4)" strokeWidth="1.5" fill="none" strokeLinecap="round"/>
+            <svg style={{ position:'absolute', right:0, bottom:0, pointerEvents:'none' }} width="80" height="52" viewBox="0 0 80 52">
+              <path d="M 40 56 C 40 56 16 44 16 26 C 16 12 26 10 35 19" fill="white" fillOpacity="0.22"/>
+              <path d="M 40 56 C 40 56 64 44 64 26 C 64 12 54 10 45 19" fill="white" fillOpacity="0.16"/>
             </svg>
           </button>
           <div style={{ display:'flex', alignItems:'center', margin:'2px 0 0' }}>
