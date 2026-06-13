@@ -53,20 +53,28 @@ if (!fs.existsSync(RESULTS_DIR)) {
 }
 
 const dirs = fs.readdirSync(RESULTS_DIR)
-  .filter(d => fs.statSync(path.join(RESULTS_DIR, d)).isDirectory());
+  .filter(d => {
+    if (!fs.statSync(path.join(RESULTS_DIR, d)).isDirectory()) return false;
+    // Skip retry sub-dirs — we show the original attempt; retries have the same error
+    if (/--retry\d+$/.test(d)) return false;
+    return true;
+  });
 
 const failures = [];
 
 for (const dir of dirs) {
-  const shotPath    = path.join(RESULTS_DIR, dir, 'test-failed-1.png');
   const contextPath = path.join(RESULTS_DIR, dir, 'error-context.md');
+  // error-context.md is the definitive indicator of failure (screenshots may not exist
+  // when the page never loaded, e.g. page.goto timeout)
+  if (!fs.existsSync(contextPath)) continue;
 
-  if (!fs.existsSync(shotPath)) continue;
+  const shotPath = path.join(RESULTS_DIR, dir, 'test-failed-1.png');
+  const shotExists = fs.existsSync(shotPath);
 
   const ctx = parseErrorContext(contextPath);
   failures.push({
     dir,
-    shotSrc: `${BASE}/results/${dir}/test-failed-1.png`,
+    shotSrc: shotExists ? `${BASE}/results/${dir}/test-failed-1.png` : null,
     specFile:  ctx?.specFile  || dir,
     testName:  ctx?.testName  || dir,
     location:  ctx?.location  || '',
@@ -95,13 +103,17 @@ function failureCard(f) {
   const firstLine = f.error.split('\n')[0].replace(/^Error:\s*/i, '').trim();
   const errorLines = f.error.split('\n').slice(0, 8).join('\n');
 
+  const mediaBlock = f.shotSrc
+    ? `<a href="${f.shotSrc}" target="_blank" class="img-link">
+         <img src="${f.shotSrc}" loading="lazy" style="width:100%;display:block;border-radius:8px 8px 0 0"
+              onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"/>
+         <div class="placeholder" style="display:none">screenshot missing</div>
+       </a>`
+    : `<div class="placeholder no-shot">page never loaded — no screenshot</div>`;
+
   return `
     <div class="card">
-      <a href="${f.shotSrc}" target="_blank" class="img-link">
-        <img src="${f.shotSrc}" loading="lazy" style="width:100%;display:block;border-radius:8px 8px 0 0"
-             onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"/>
-        <div class="placeholder" style="display:none">screenshot missing</div>
-      </a>
+      ${mediaBlock}
       <div class="card-body">
         <div class="test-name">${escHtml(f.testName)}</div>
         <div class="error-msg">${escHtml(firstLine)}</div>
@@ -172,7 +184,8 @@ const html = `<!DOCTYPE html>
     .card { background: var(--card-bg); border: 1.5px solid var(--border); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; }
     .img-link img { transition: opacity .15s; }
     .img-link:hover img { opacity: .88; }
-    .placeholder { aspect-ratio: 393 / 852; background: var(--ph-bg); display: flex; align-items: center; justify-content: center; color: var(--ink4); font-size: 11px; font-family: monospace; }
+    .placeholder { aspect-ratio: 393 / 852; background: var(--ph-bg); display: flex; align-items: center; justify-content: center; color: var(--ink4); font-size: 11px; font-family: monospace; text-align: center; padding: 16px; }
+    .no-shot { aspect-ratio: 3 / 1; color: #dc2626; font-size: 10px; background: var(--err-bg); border-bottom: 1px solid var(--err-border); }
 
     .card-body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
     .test-name { font-size: 12px; font-weight: 700; color: var(--ink); line-height: 1.45; }
