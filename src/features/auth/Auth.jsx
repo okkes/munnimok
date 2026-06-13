@@ -55,6 +55,23 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
   const [apiUrl,         setApiUrl]        = React.useState(signup.apiUrl || '');
   const [country,        setCountry]       = React.useState('');
   const [showCountry,    setShowCountry]   = React.useState(false);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    const detect = async () => {
+      try {
+        const r1 = await fetch('https://api.ipify.org?format=json');
+        const { ip } = await r1.json();
+        const r2 = await fetch(`https://api.country.is/${ip}`);
+        const { country: code } = await r2.json();
+        if (!cancelled && code && COUNTRIES.some(c => c.code === code)) {
+          setCountry(code);
+        }
+      } catch {}
+    };
+    detect();
+    return () => { cancelled = true; };
+  }, []);
   const [countrySearch,  setCountrySearch] = React.useState('');
   const [picture,        setPicture]       = React.useState(signup.picture || null);
   const [bankPsd2Step,   setBankPsd2Step]  = React.useState(null); // null | 'consent' | 'connecting' | 'done'

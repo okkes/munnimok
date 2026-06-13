@@ -169,6 +169,7 @@ if (typeof document !== 'undefined' && !document.getElementById('m-nav-styles'))
 
 export function Sheet({ children, onClose, open, title }) {
   const [dragY, setDragY] = React.useState(0);
+  const dragYRef = React.useRef(0);
   const startYRef = React.useRef(null);
   const didMountRef = React.useRef(false);
   const [kbOffset, setKbOffset] = React.useState(0);
@@ -208,13 +209,34 @@ export function Sheet({ children, onClose, open, title }) {
   const onHandleTouchMove = (e) => {
     if (startYRef.current === null) return;
     const dy = e.touches[0].clientY - startYRef.current;
-    if (dy > 0) setDragY(dy);
+    if (dy > 0) { dragYRef.current = dy; setDragY(dy); }
   };
   const onHandleTouchEnd = () => {
-    const y = dragY;
-    setDragY(0);
+    const y = dragYRef.current;
+    dragYRef.current = 0; setDragY(0);
     startYRef.current = null;
     if (y > 80) onClose?.();
+  };
+
+  const onHandleMouseDown = (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    startYRef.current = e.clientY;
+    const onMouseMove = (ev) => {
+      if (startYRef.current === null) return;
+      const dy = ev.clientY - startYRef.current;
+      if (dy > 0) { dragYRef.current = dy; setDragY(dy); }
+    };
+    const onMouseUp = () => {
+      const y = dragYRef.current;
+      dragYRef.current = 0; setDragY(0);
+      startYRef.current = null;
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      if (y > 80) onClose?.();
+    };
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
   };
 
   return (
@@ -241,6 +263,7 @@ export function Sheet({ children, onClose, open, title }) {
           onTouchStart={onHandleTouchStart}
           onTouchMove={onHandleTouchMove}
           onTouchEnd={onHandleTouchEnd}
+          onMouseDown={onHandleMouseDown}
           style={{ touchAction: 'none', cursor: 'grab', userSelect: 'none', flexShrink: 0 }}>
           <div style={{ display: 'flex', justifyContent: 'center', padding: title ? '12px 0 6px' : '14px 0 10px' }}>
             <div style={{ width: 36, height: 4, borderRadius: 999, background: M.line }}/>

@@ -1083,7 +1083,7 @@ export function ScreenSpaces() {
   const [connectedAccounts] = useConnectedAccounts();
   const [showNewProfile, setShowNewProfile] = React.useState(false);
   const [newProfileName, setNewProfileName] = React.useState('');
-  const [newProfileIsDemo, setNewProfileIsDemo] = React.useState(false);
+  const [newProfileIsDemo, setNewProfileIsDemo] = React.useState(() => sessionStorage.getItem('munni_last_login_method') === 'bank');
   const [newProfileError, setNewProfileError] = React.useState('');
   const [renameInviteSheet, setRenameInviteSheet] = React.useState(null);
   const myId = React.useMemo(() => getUserId(), []);
@@ -1163,7 +1163,7 @@ export function ScreenSpaces() {
     setProfiles(ps => [...ps.map(p => ({ ...p, active: false })), newP]);
     setShowNewProfile(false);
     setNewProfileName('');
-    setNewProfileIsDemo(false);
+    setNewProfileIsDemo(sessionStorage.getItem('munni_last_login_method') === 'bank');
     setNewProfileError('');
     nav.push('spaceDetail', { id: newP.id });
   };
@@ -1305,7 +1305,7 @@ export function ScreenSpaces() {
       )}
 
       {showNewProfile && (
-        <Sheet onClose={() => { setShowNewProfile(false); setNewProfileName(''); setNewProfileIsDemo(false); setNewProfileError(''); }}>
+        <Sheet onClose={() => { setShowNewProfile(false); setNewProfileName(''); setNewProfileIsDemo(sessionStorage.getItem('munni_last_login_method') === 'bank'); setNewProfileError(''); }}>
           <div data-testid="space-new-sheet" style={{ padding:'4px 16px 8px' }}>
             <div style={{ fontSize:17, fontWeight:700, marginBottom:16 }}>{t('space.new')}</div>
             <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>{t('space.name')}</div>
@@ -1335,7 +1335,7 @@ export function ScreenSpaces() {
               style={{ width:'100%', padding:'14px 0', background:newProfileName.trim() ? M.sage : M.line, color:newProfileName.trim() ? '#fff' : M.ink4, border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:newProfileName.trim()?'pointer':'default', fontFamily:M.fontUI, marginBottom:10 }}>
               {t('space.create')}
             </button>
-            <button onClick={() => { setShowNewProfile(false); setNewProfileName(''); setNewProfileIsDemo(false); setNewProfileError(''); }}
+            <button onClick={() => { setShowNewProfile(false); setNewProfileName(''); setNewProfileIsDemo(sessionStorage.getItem('munni_last_login_method') === 'bank'); setNewProfileError(''); }}
               style={{ width:'100%', padding:'14px 0', background:M.paper2, color:M.ink, border:`1px solid ${M.line}`, borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
               {t('action.cancel')}
             </button>
