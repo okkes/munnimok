@@ -5,7 +5,8 @@ import { getUserId, getUserSyncKey } from '../../shared/utils/user.js';
 import { PORTFOLIO } from '../investments/data.js';
 import { M, I, IcoMDI, Divider, StatusBar } from '../../app/theme.jsx';
 import { useLang } from '../../shared/i18n.jsx';
-import { useNav, Sheet, TabBar } from '../../app/nav.jsx';
+import { useNav, TabBar } from '../../app/nav.jsx';
+import { EVENTS } from '../events/data.js';
 import { useLocalStorage } from '../../shared/hooks.jsx';
 import { Sparkline, StackedBar } from '../../shared/components/Charts.jsx';
 import { useProfiles, useTxCtx, useRecurCtx, useAlloc, useConnectedAccounts, useProfileBudgets, useProfileGoals, useProfileDebts } from '../../app/providers.jsx';
@@ -78,7 +79,7 @@ export function ScreenHome() {
   const [homeCards] = useLocalStorage('munni_home_cards', HOME_CARDS_DEFAULT);
   const [upcomingDays] = useLocalStorage('munni_upcoming_days', 3);
   const [customGraphCards] = useLocalStorage('munni_custom_graphs', []);
-  const [showProfileSwitcher, setShowProfileSwitcher] = React.useState(false);
+  const [showNavDrawer, setShowNavDrawer] = React.useState(false);
 
   const [budgets] = useProfileBudgets();
   const [goals] = useProfileGoals();
@@ -129,7 +130,7 @@ export function ScreenHome() {
 
   const activateProfile = (id) => {
     setProfiles(ps => ps.map(p => ({ ...p, active: p.id === id })));
-    setShowProfileSwitcher(false);
+    setShowNavDrawer(false);
   };
 
   const isVisible = (id) => {
@@ -400,6 +401,38 @@ export function ScreenHome() {
             </div>
           </div>
         );
+      case 'events':
+        if (!isVisible('events')) return null;
+        return (
+          <div key="events" className="m-card m-fade" style={{ padding:16, marginBottom:14, border:`1px solid ${M.line}` }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
+              <div className="m-h3">{t('tab.events')}</div>
+              <div className="m-tap" onClick={() => nav.push('events')} style={{ display:'flex', alignItems:'center', gap:4, fontSize:12, color:M.ink3, fontWeight:500 }}>
+                {t('action.seeAll')} {EVENTS.length} <I name="caretR" size={12}/>
+              </div>
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+              {EVENTS.slice(0,3).map(ev => {
+                const statusColors = { active:M.sage, closed:M.ink4, planning:M.ochre, upcoming:M.slate };
+                const statusColor = statusColors[ev.status] || M.ink3;
+                return (
+                  <div key={ev.id} className="m-tap" onClick={() => nav.push('eventDetail', { id:ev.id })}
+                    style={{ display:'flex', alignItems:'center', gap:12 }}>
+                    <div style={{ width:36, height:36, borderRadius:10, background:'#3F4E63', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                      <I name="star" size={16} color="#fff"/>
+                    </div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:13, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{ev.name}</div>
+                      <div style={{ fontSize:11, color:statusColor, marginTop:1, textTransform:'capitalize' }}>{ev.status}</div>
+                    </div>
+                    <div className="m-num" style={{ fontSize:13, fontWeight:600 }}>{fmtEur(ev.total)}</div>
+                  </div>
+                );
+              })}
+              {EVENTS.length === 0 && <div style={{ fontSize:13, color:M.ink4, textAlign:'center', padding:'6px 0' }}>No events yet</div>}
+            </div>
+          </div>
+        );
       case 'customGraph':
         // Custom graph cards are rendered separately below — skip here
         return null;
@@ -413,13 +446,8 @@ export function ScreenHome() {
 
       {/* Header */}
       <div style={{ padding:'16px 20px 14px', display:'flex', alignItems:'center', gap:12, flexShrink:0 }}>
-        <div className="m-tap" onClick={() => setShowProfileSwitcher(true)} style={{ flexShrink:0 }}>
-          <div style={{ position:'relative' }}>
-            <ProfileAvatar profile={activeProfile} size={42}/>
-            {activeProfile?.isDemo && (
-              <div style={{ position:'absolute', bottom:-4, right:-2, fontSize:8, fontWeight:700, padding:'1px 5px', borderRadius:999, background:M.ochre, color:'#fff', textTransform:'uppercase', letterSpacing:'0.04em' }}>Demo</div>
-            )}
-          </div>
+        <div data-testid="home-space-avatar" className="m-tap" onClick={() => setShowNavDrawer(true)} style={{ flexShrink:0 }}>
+          <ProfileAvatar profile={activeProfile} size={42}/>
         </div>
         <div style={{ flex:1, minWidth:0 }}>
           <div className="m-num" style={{ fontSize:22, fontWeight:600, letterSpacing:'-0.02em', lineHeight:1 }}>
@@ -462,63 +490,82 @@ export function ScreenHome() {
 
       <TabBar active="home" onChange={(t) => nav.switchTab(t)}/>
 
-      {/* Profile switcher sheet */}
-      {showProfileSwitcher && (
-        <Sheet onClose={() => setShowProfileSwitcher(false)}>
-          <div style={{ padding:'4px 16px 8px' }}>
-            <div style={{ fontSize:17, fontWeight:700, marginBottom:16 }}>{t('home.switchSpace')}</div>
-            <div className="m-card" style={{ border:`1px solid ${M.line}`, padding:'4px 16px', marginBottom:16, maxHeight:280, overflowY:'auto' }}>
-              {profiles.map((p, i) => {
+      {/* Left nav drawer */}
+      {showNavDrawer && (
+        <div onClick={() => setShowNavDrawer(false)} style={{
+          position:'absolute', inset:0, background:'rgba(27,26,23,0.45)', zIndex:50,
+          animation:'backdropFade 0.22s ease',
+        }}>
+          <div data-testid="nav-drawer" onClick={e => e.stopPropagation()} style={{
+            position:'absolute', top:0, bottom:0, left:0, width:284,
+            background:M.paper, display:'flex', flexDirection:'column',
+            animation:'mSlideInLeft 0.28s cubic-bezier(.2,.7,.2,1) both',
+          }}>
+            {/* Drawer header */}
+            <div style={{ padding:'56px 20px 20px', flexShrink:0 }}>
+              <div style={{ fontSize:24, fontWeight:800, color:M.brand, fontFamily:M.fontDisp, letterSpacing:'-0.02em' }}>munni</div>
+            </div>
+
+            {/* Spaces list */}
+            <div style={{ flex:1, overflowY:'auto', padding:'0 12px' }}>
+              {profiles.map(p => {
                 const sharedRaw = p.isShared ? (() => { try { return JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{}'); } catch { return {}; } })() : null;
-                const sharedAccts = sharedRaw ? (sharedRaw.accounts || []) : null;
-                const acctIds = p.isShared ? (sharedAccts || []).map(a => a.id) : (p.accountIds || []);
+                const acctIds = p.isShared ? (sharedRaw?.accounts || []).map(a => a.id) : (p.accountIds || []);
                 const acctCount = acctIds.length;
                 const acctLabel = acctCount === 0 ? t('word.noAccounts') : `${acctCount} ${acctCount === 1 ? t('word.account') : t('word.accounts')}`;
                 const reviewN = p.isShared
                   ? (sharedRaw?.txs || []).filter(tx => tx.needsReview && acctIds.includes(tx.account)).length
                   : allTxs.filter(tx => tx.needsReview && acctIds.includes(tx.account)).length;
-                const hasAction = reviewN > 0;
-                const isOwnerShared = !p.isShared && (p.members||[]).length > 0;
                 return (
-                  <React.Fragment key={p.id}>
-                    {i > 0 && <Divider inset={48}/>}
-                    <div className="m-tap" onClick={() => activateProfile(p.id)}
-                      style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
-                      <div style={{ position:'relative', flexShrink:0 }}>
-                        <ProfileAvatar profile={p} size={36}/>
-                        {hasAction && (
-                          <div style={{ position:'absolute', top:-2, right:-2, width:10, height:10, borderRadius:999, background:M.ochre, border:`2px solid ${M.paper}` }}/>
-                        )}
-                      </div>
-                      <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontSize:14, fontWeight:600, display:'flex', alignItems:'center', gap:5 }}>
-                          {p.localName || p.name}
-                          {p.isShared && (p.members||[]).some(m => m.userId !== myId) && <span style={{ fontSize:8, fontWeight:700, padding:'1px 5px', borderRadius:999, background:M.violetSoft||'#EEE8FF', color:M.violet||'#7B61FF', textTransform:'uppercase' }}>Shared</span>}
-                          {isOwnerShared && <span style={{ fontSize:8, fontWeight:700, padding:'1px 5px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>Shared</span>}
-                        </div>
-                        <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>
-                          {p.isShared ? `${t('space.by')} ${(p.ownerDisplay || '').split(' ')[0]}` : acctLabel}
-                          {hasAction && <span style={{ marginLeft:6, color:M.ochre, fontWeight:600 }}>· {reviewN} {t('review.title')}</span>}
-                        </div>
-                      </div>
-                      {p.active ? (
-                        <div style={{ width:20, height:20, borderRadius:999, background:M.sage, display:'flex', alignItems:'center', justifyContent:'center' }}>
-                          <I name="check" size={11} color="#fff" stroke={2.5}/>
-                        </div>
-                      ) : (
-                        <div style={{ width:20, height:20, borderRadius:999, border:`2px solid ${M.line2}` }}/>
+                  <div key={p.id} className="m-tap" onClick={() => activateProfile(p.id)}
+                    style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 8px', borderRadius:12,
+                             background:p.active ? M.sageSoft : 'transparent', marginBottom:2 }}>
+                    <div style={{ position:'relative', flexShrink:0 }}>
+                      <ProfileAvatar profile={p} size={38}/>
+                      {reviewN > 0 && (
+                        <div style={{ position:'absolute', top:-2, right:-2, width:10, height:10, borderRadius:999, background:M.ochre, border:`2px solid ${M.paper}` }}/>
                       )}
                     </div>
-                  </React.Fragment>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:14, fontWeight:600, color:p.active ? M.sage : M.ink, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                        {p.localName || p.name}
+                      </div>
+                      <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>
+                        {p.isShared ? `${t('space.by')} ${(p.ownerDisplay || '').split(' ')[0]}` : acctLabel}
+                      </div>
+                    </div>
+                    {p.active && <I name="check" size={14} color={M.sage}/>}
+                  </div>
                 );
               })}
             </div>
-            <div className="m-tap" onClick={() => { setShowProfileSwitcher(false); nav.push('spaces'); }}
-              style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:6, padding:'12px 0', color:M.sage, fontSize:14, fontWeight:600 }}>
-              {t('home.manageSpaces')} <I name="caretR" size={14} color={M.sage}/>
+
+            {/* Manage spaces */}
+            <div style={{ padding:'8px 12px', flexShrink:0 }}>
+              <div className="m-tap" onClick={() => { setShowNavDrawer(false); nav.push('spaces'); }}
+                style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 8px', borderRadius:12 }}>
+                <div style={{ width:38, height:38, borderRadius:10, background:M.paper2, border:`1px solid ${M.line}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <I name="plus" size={16} color={M.ink2}/>
+                </div>
+                <div style={{ fontSize:14, fontWeight:500, color:M.ink2 }}>{t('home.manageSpaces')}</div>
+              </div>
+            </div>
+
+            {/* Divider */}
+            <div style={{ height:1, background:M.line, margin:'0 20px', flexShrink:0 }}/>
+
+            {/* Settings */}
+            <div style={{ padding:'8px 12px 32px', flexShrink:0 }}>
+              <div data-testid="nav-drawer-settings" className="m-tap" onClick={() => { setShowNavDrawer(false); nav.switchTab('profile'); }}
+                style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 8px', borderRadius:12 }}>
+                <div style={{ width:38, height:38, borderRadius:10, background:M.paper2, border:`1px solid ${M.line}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <I name="sliders" size={16} color={M.ink2}/>
+                </div>
+                <div style={{ fontSize:15, fontWeight:500, color:M.ink }}>{t('tab.settings')}</div>
+              </div>
             </div>
           </div>
-        </Sheet>
+        </div>
       )}
     </div>
   );

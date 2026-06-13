@@ -5,7 +5,8 @@ export const TRANSLATIONS = {
   en: {
     // Tabs
     'tab.home':'Home','tab.transactions':'Transactions','tab.recurring':'Recurring',
-    'tab.events':'Events','tab.insights':'Insights','tab.settings':'Settings',
+    'tab.events':'Events','tab.insights':'Insights','tab.settings':'Settings','tab.portfolio':'Portfolio',
+    'portfolio.comingSoon':'Coming soon',
     // Screen titles
     'screen.settings':'Settings','screen.spaces':'Spaces','screen.space':'Space','screen.categories':'Categories',
     'screen.accounts':'Accounts','screen.periods':'Period settings','screen.customize':'Customize home',
@@ -282,9 +283,7 @@ export const TRANSLATIONS = {
     'spaces.aboutDesc':'Spaces let you track separate finances in one app — perfect for personal vs. business, or managing finances for different household members. Each space has its own accounts, budgets, goals, and financial data.',
     // New space sheet
     'space.new':'New space','space.name':'Space name',
-    'space.namePlaceholder':'e.g. Business, Partner, Side hustle…','space.type':'Space type',
-    'space.typeReal':'Real','space.typeRealSub':'Connect your actual bank accounts',
-    'space.typeDemo':'Demo','space.typeDemoSub':'Uses sample data for testing',
+    'space.namePlaceholder':'e.g. Business, Partner, Side hustle…',
     'space.create':'Create space','space.duplicateName':'A space with this name already exists','space.nameTooLong':'Name cannot exceed 30 characters','space.nameInvalidChars':'Only letters, numbers, spaces, hyphens, and apostrophes are allowed',
     // Picture picker
     'profile.picTitle':'Profile picture','profile.chooseLibrary':'Choose from library','profile.removePic':'Remove picture',
@@ -322,7 +321,8 @@ export const TRANSLATIONS = {
   },
   nl: {
     'tab.home':'Thuis','tab.transactions':'Transacties','tab.recurring':'Terugkerend',
-    'tab.events':'Evenementen','tab.insights':'Inzichten','tab.settings':'Instellingen',
+    'tab.events':'Evenementen','tab.insights':'Inzichten','tab.settings':'Instellingen','tab.portfolio':'Portefeuille',
+    'portfolio.comingSoon':'Binnenkort beschikbaar',
     'screen.settings':'Instellingen','screen.spaces':'Ruimtes','screen.space':'Ruimte','screen.categories':'Categorieën',
     'screen.accounts':'Rekeningen','screen.periods':'Periode-instellingen','screen.customize':'Startscherm aanpassen',
     'screen.goals':'Doelen','screen.budgets':'Budgetten','screen.debts':'Schulden',
@@ -587,9 +587,7 @@ export const TRANSLATIONS = {
     'spaces.aboutTitle':'Over Ruimtes',
     'spaces.aboutDesc':'Ruimtes laten je afzonderlijke financiën bijhouden in één app — perfect voor persoonlijk vs. zakelijk, of voor het beheren van financiën voor verschillende huishoudleden. Elke ruimte heeft zijn eigen rekeningen, budgetten, doelen en financiële gegevens.',
     'space.new':'Nieuwe ruimte','space.name':'Ruimtenaam',
-    'space.namePlaceholder':'bijv. Zakelijk, Partner, Bijbaan…','space.type':'Ruimtetype',
-    'space.typeReal':'Echt','space.typeRealSub':'Verbind je echte bankrekeningen',
-    'space.typeDemo':'Demo','space.typeDemoSub':'Gebruikt voorbeeldgegevens voor testen',
+    'space.namePlaceholder':'bijv. Zakelijk, Partner, Bijbaan…',
     'space.create':'Ruimte aanmaken','space.duplicateName':'Een ruimte met deze naam bestaat al','space.nameTooLong':'Naam mag niet langer zijn dan 30 tekens','space.nameInvalidChars':'Alleen letters, cijfers, spaties, koppeltekens en apostrofs zijn toegestaan',
     'profile.picTitle':'Profielfoto','profile.chooseLibrary':'Kies uit bibliotheek','profile.removePic':'Foto verwijderen',
     'accounts.demoSection':'Demo-rekeningen','accounts.demoDesc':'Voorbeeldgegevens · alleen-lezen',
@@ -625,7 +623,8 @@ export const TRANSLATIONS = {
   },
   tr: {
     'tab.home':'Ana sayfa','tab.transactions':'İşlemler','tab.recurring':'Düzenli ödemeler',
-    'tab.events':'Etkinlikler','tab.insights':'İçgörüler','tab.settings':'Ayarlar',
+    'tab.events':'Etkinlikler','tab.insights':'İçgörüler','tab.settings':'Ayarlar','tab.portfolio':'Portföy',
+    'portfolio.comingSoon':'Yakında',
     'screen.settings':'Ayarlar','screen.spaces':'Alanlar','screen.space':'Alan','screen.categories':'Kategoriler',
     'screen.accounts':'Hesaplar','screen.periods':'Dönem ayarları','screen.customize':'Ana ekranı özelleştir',
     'screen.goals':'Hedefler','screen.budgets':'Bütçeler','screen.debts':'Borçlar',
@@ -890,9 +889,7 @@ export const TRANSLATIONS = {
     'spaces.aboutTitle':'Alanlar Hakkında',
     'spaces.aboutDesc':'Alanlar, ayrı finansmanları tek bir uygulamada takip etmenizi sağlar — kişisel ve iş, ya da farklı hane üyelerinin finansmanını yönetmek için mükemmel. Her alanın kendi hesapları, bütçeleri, hedefleri ve finansal verileri vardır.',
     'space.new':'Yeni alan','space.name':'Alan adı',
-    'space.namePlaceholder':'örn. İş, Ortak, Ek İş…','space.type':'Alan türü',
-    'space.typeReal':'Gerçek','space.typeRealSub':'Gerçek banka hesaplarını bağla',
-    'space.typeDemo':'Demo','space.typeDemoSub':'Test için örnek veriler kullanır',
+    'space.namePlaceholder':'örn. İş, Ortak, Ek İş…',
     'space.create':'Alan oluştur','space.duplicateName':'Bu isimde bir alan zaten mevcut','space.nameTooLong':'Ad 30 karakteri geçemez','space.nameInvalidChars':'Yalnızca harf, rakam, boşluk, tire ve kesme işaretine izin verilir',
     'profile.picTitle':'Profil fotoğrafı','profile.chooseLibrary':'Kütüphaneden seç','profile.removePic':'Fotoğrafı kaldır',
     'accounts.demoSection':'Demo hesapları','accounts.demoDesc':'Örnek veriler · salt okunur',

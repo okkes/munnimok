@@ -46,7 +46,9 @@ async function goToSpaces(page, profilesOverride = null) {
   await page.click('[data-testid="login-demo-btn"]');
   await page.waitForSelector('[data-testid="tab-home"]', { timeout: 5000 });
   if (profilesOverride) await setProfiles(page, profilesOverride);
-  await page.click('[data-testid="tab-profile"]');
+  await page.click('[data-testid="home-space-avatar"]');
+  await page.waitForSelector('[data-testid="nav-drawer"]', { timeout: 3000 });
+  await page.click('[data-testid="nav-drawer-settings"]');
   await page.waitForSelector('[data-testid="spaces-nav-link"]', { timeout: 3000 });
   await page.click('[data-testid="spaces-nav-link"]');
   await page.waitForSelector('[data-testid="spaces-screen"]', { timeout: 3000 });
@@ -69,13 +71,11 @@ for (const V of VARIANTS) {
   // Group A — Spaces list
   // -------------------------------------------------------------------------
 
-  test(`01 spaces-list – single demo space [${V.id}]`, async ({ browser }) => {
+  test(`01 spaces-list – single space [${V.id}]`, async ({ browser }) => {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V);
     await goToSpaces(page);
     await expect(page.locator('[data-testid="space-row"]').first()).toBeVisible();
-    // Default bank profile is isDemo:true → Demo badge visible
-    await expect(page.locator('[data-testid="space-row"]').first()).toContainText('Demo');
     await shot(page, k('01-spaces-list-single'));
     await teardown(page, ctx, k('01-spaces-list-single'));
   });
@@ -141,19 +141,6 @@ for (const V of VARIANTS) {
     await teardown(page, ctx, k('06-spaces-new-name-typed'));
   });
 
-  test(`07 spaces-new – demo type pre-selected, real disabled [${V.id}]`, async ({ browser }) => {
-    const { page, ctx } = await createPage(browser, V);
-    await base(page, V);
-    await goToSpaces(page);
-    await page.click('[data-testid="profile-new-btn"]');
-    await page.waitForSelector('[data-testid="space-new-sheet"]', { timeout: 3000 });
-    // Real button has opacity 0.5 for bank/demo login users
-    const realOpacity = await page.locator('[data-testid="space-new-type-real"]').evaluate(el => el.style.opacity);
-    expect(realOpacity).toBe('0.5');
-    await shot(page, k('07-spaces-new-demo-type'));
-    await teardown(page, ctx, k('07-spaces-new-demo-type'));
-  });
-
   test(`08 spaces-new – name too long shows error [${V.id}]`, async ({ browser }) => {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V);
@@ -195,21 +182,6 @@ for (const V of VARIANTS) {
     await expect(page.locator('[data-testid="space-new-error"]')).toBeVisible();
     await shot(page, k('10-spaces-new-duplicate'));
     await teardown(page, ctx, k('10-spaces-new-duplicate'));
-  });
-
-  test(`11 spaces-new – real type click has no effect for demo user [${V.id}]`, async ({ browser }) => {
-    const { page, ctx } = await createPage(browser, V);
-    await base(page, V);
-    await goToSpaces(page);
-    await page.click('[data-testid="profile-new-btn"]');
-    await page.waitForSelector('[data-testid="space-new-sheet"]', { timeout: 3000 });
-    // Click Real type — should be a no-op (disabled)
-    await page.locator('[data-testid="space-new-type-real"]').click({ force: true });
-    await page.waitForTimeout(150);
-    // Demo type should still be visually selected
-    await expect(page.locator('[data-testid="space-new-type-demo"]')).toBeVisible();
-    await shot(page, k('11-spaces-new-real-disabled'));
-    await teardown(page, ctx, k('11-spaces-new-real-disabled'));
   });
 
   // -------------------------------------------------------------------------

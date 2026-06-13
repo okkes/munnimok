@@ -79,9 +79,13 @@
   tabHome:              'tab-home',
   tabTransactions:      'tab-tx',
   tabRecurring:         'tab-recurring',
-  tabEvents:            'tab-events',
+  tabPortfolio:         'tab-portfolio',
   tabInsights:          'tab-insights',
-  tabProfile:           'tab-profile',
+
+  // Home — nav drawer
+  homeSpaceAvatar:      'home-space-avatar',
+  navDrawer:            'nav-drawer',
+  navDrawerSettings:    'nav-drawer-settings',
 
   // Home
   homeCard:             'home-card',
@@ -148,8 +152,6 @@
   spaceNewNameInput:    'space-new-name-input',
   spaceNewError:        'space-new-error',
   spaceNewCreateBtn:    'space-new-create-btn',
-  spaceNewTypeReal:     'space-new-type-real',
-  spaceNewTypeDemo:     'space-new-type-demo',
 
   // Spaces — rename-invite sheet
   spaceRenameInviteSheet: 'space-rename-invite-sheet',

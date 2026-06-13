@@ -32,6 +32,20 @@ export const STOCK_AVATARS = [
   { id:'av10', emoji:'🐱',    bg:'#FF9AA2' },
 ];
 
+// Landscape/nature icons for space avatars — distinct from user STOCK_AVATARS
+export const STOCK_SPACE_AVATARS = [
+  { id:'sp1',  emoji:'🌊', bg:'#4FC3F7' },
+  { id:'sp2',  emoji:'🌲', bg:'#66BB6A' },
+  { id:'sp3',  emoji:'🌙', bg:'#7986CB' },
+  { id:'sp4',  emoji:'🌞', bg:'#FFB300' },
+  { id:'sp5',  emoji:'🌸', bg:'#F06292' },
+  { id:'sp6',  emoji:'🏡', bg:'#FF7043' },
+  { id:'sp7',  emoji:'🌿', bg:'#26A69A' },
+  { id:'sp8',  emoji:'⭐', bg:'#FFA726' },
+  { id:'sp9',  emoji:'🎯', bg:'#EC407A' },
+  { id:'sp10', emoji:'🌈', bg:'#AB47BC' },
+];
+
 export const PERM_LEVELS = ['reader', 'contributor', 'owner'];
 
 export const PERM_COLOR = { reader: M.ink3, contributor: M.sage,     owner: M.ochre     };

@@ -3,7 +3,7 @@ import { fmtEur, fmtDate } from '../../shared/utils/format.js';
 import { ALLOCATE_TOPICS, EVENTS } from './data.js';
 import { TRANSACTIONS } from '../accounts/data.js';
 import { M, I, Divider, StatusBar, AppBar } from '../../app/theme.jsx';
-import { useNav, TabBar } from '../../app/nav.jsx';
+import { useNav } from '../../app/nav.jsx';
 import { StackedBar } from '../../shared/components/Charts.jsx';
 import { TxRow } from '../../shared/components/TxRow.jsx';
 
@@ -37,7 +37,6 @@ export function ScreenEvents() {
         </div>
       </div>
 
-      <TabBar active="events" onChange={(t) => nav.switchTab(t)}/>
     </div>
   );
 }

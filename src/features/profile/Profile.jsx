@@ -10,7 +10,7 @@ import { useNav, Sheet, TabBar, useDark } from '../../app/nav.jsx';
 import { useLang } from '../../shared/i18n.jsx';
 import { useLocalStorage, useSessionStorage, clearAllStorage } from '../../shared/hooks.jsx';
 import { useAppCtx, useProfiles, useTxCtx, useConnectedAccounts, Stat } from '../../app/providers.jsx';
-import { STOCK_AVATARS, PERM_COLOR, PERM_BG, permLabel, DEFAULT_API_URL, DEMO_API_URL, PROFILE_NAME_RE } from '../../shared/constants.js';
+import { STOCK_AVATARS, STOCK_SPACE_AVATARS, PERM_COLOR, PERM_BG, permLabel, DEFAULT_API_URL, DEMO_API_URL, PROFILE_NAME_RE } from '../../shared/constants.js';
 import { buildEffectivePerm } from '../../shared/sharedProfile.js';
 import { ProfileMembersSheet, MemberActionSheet } from '../friends/Friends.jsx';
 
@@ -23,6 +23,14 @@ export function ProfileAvatar({ profile, size = 36 }) {
   if (displayPicture) {
     if (displayPicture.startsWith('av')) {
       const av = STOCK_AVATARS.find(a => a.id === displayPicture);
+      if (av) return (
+        <div style={{ width:size, height:size, borderRadius, background:av.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:size*0.5, flexShrink:0 }}>
+          {av.emoji}
+        </div>
+      );
+    }
+    if (displayPicture.startsWith('sp')) {
+      const av = STOCK_SPACE_AVATARS.find(a => a.id === displayPicture);
       if (av) return (
         <div style={{ width:size, height:size, borderRadius, background:av.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:size*0.5, flexShrink:0 }}>
           {av.emoji}
@@ -1083,7 +1091,6 @@ export function ScreenSpaces() {
   const [connectedAccounts] = useConnectedAccounts();
   const [showNewProfile, setShowNewProfile] = React.useState(false);
   const [newProfileName, setNewProfileName] = React.useState('');
-  const [newProfileIsDemo, setNewProfileIsDemo] = React.useState(() => sessionStorage.getItem('munni_last_login_method') === 'bank');
   const [newProfileError, setNewProfileError] = React.useState('');
   const [renameInviteSheet, setRenameInviteSheet] = React.useState(null);
   const myId = React.useMemo(() => getUserId(), []);
@@ -1150,7 +1157,7 @@ export function ScreenSpaces() {
       addDevLog('warn', `Space creation blocked: duplicate name "${trimmed}"`, 'ScreenSpaces:createSpace');
       return;
     }
-    const randomAv = STOCK_AVATARS[Math.floor(Math.random() * STOCK_AVATARS.length)];
+    const randomAv = STOCK_SPACE_AVATARS[Math.floor(Math.random() * STOCK_SPACE_AVATARS.length)];
     const newP = {
       id: `p_${Date.now()}`,
       name: trimmed,
@@ -1158,12 +1165,11 @@ export function ScreenSpaces() {
       active: true,
       accountIds: [],
       picture: randomAv.id,
-      isDemo: newProfileIsDemo,
+      isDemo: isUserDemo,
     };
     setProfiles(ps => [...ps.map(p => ({ ...p, active: false })), newP]);
     setShowNewProfile(false);
     setNewProfileName('');
-    setNewProfileIsDemo(sessionStorage.getItem('munni_last_login_method') === 'bank');
     setNewProfileError('');
     nav.push('spaceDetail', { id: newP.id });
   };
@@ -1245,7 +1251,6 @@ export function ScreenSpaces() {
                   <div className="m-tap" onClick={() => activateProfile(p.id)} style={{ flex:1, minWidth:0 }}>
                     <div style={{ fontSize:14, fontWeight:600, display:'flex', alignItems:'center', gap:6 }}>
                       {p.localName || p.name}
-                      {p.isDemo && <span style={{ fontSize:8, fontWeight:700, padding:'1px 5px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase' }}>Demo</span>}
                       {p.isShared && (p.members||[]).some(m => m.userId !== myId) && <span style={{ fontSize:8, fontWeight:700, padding:'1px 5px', borderRadius:999, background:M.violetSoft||'#EEE8FF', color:M.violet||'#7B61FF', textTransform:'uppercase' }}>Shared</span>}
                       {!p.isShared && (p.members||[]).length > 0 && <span style={{ fontSize:8, fontWeight:700, padding:'1px 5px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>Shared</span>}
                     </div>
@@ -1305,7 +1310,7 @@ export function ScreenSpaces() {
       )}
 
       {showNewProfile && (
-        <Sheet onClose={() => { setShowNewProfile(false); setNewProfileName(''); setNewProfileIsDemo(sessionStorage.getItem('munni_last_login_method') === 'bank'); setNewProfileError(''); }}>
+        <Sheet onClose={() => { setShowNewProfile(false); setNewProfileName(''); setNewProfileError(''); }}>
           <div data-testid="space-new-sheet" style={{ padding:'4px 16px 8px' }}>
             <div style={{ fontSize:17, fontWeight:700, marginBottom:16 }}>{t('space.new')}</div>
             <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>{t('space.name')}</div>
@@ -1318,24 +1323,11 @@ export function ScreenSpaces() {
               style={{ width:'100%', padding:'12px 14px', borderRadius:10, border:`1px solid ${newProfileError ? M.clay : M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box', marginBottom: newProfileError ? 6 : 20 }}
             />
             {newProfileError && <div data-testid="space-new-error" style={{ fontSize:12, color:M.clay, marginBottom:14 }}>{newProfileError}</div>}
-            <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>{t('space.type')}</div>
-            <div style={{ display:'flex', gap:8, marginBottom:20 }}>
-              {[{v:false,lk:'space.typeReal',sk:'space.typeRealSub',tid:'space-new-type-real'},{v:true,lk:'space.typeDemo',sk:'space.typeDemoSub',tid:'space-new-type-demo'}].map(opt => {
-                const disabled = opt.v === false && isUserDemo;
-                return (
-                  <button data-testid={opt.tid} key={String(opt.v)} className="m-tap" onClick={() => !disabled && setNewProfileIsDemo(opt.v)}
-                    style={{ flex:1, padding:'12px 8px', borderRadius:12, border:`2px solid ${newProfileIsDemo===opt.v ? M.sage : M.line}`, background: disabled ? M.line2 : newProfileIsDemo===opt.v ? M.sageSoft : M.paper2, textAlign:'center', cursor: disabled ? 'not-allowed' : 'pointer', fontFamily:M.fontUI, boxSizing:'border-box', opacity: disabled ? 0.5 : 1 }}>
-                    <div style={{ fontSize:13, fontWeight:600, color:newProfileIsDemo===opt.v?M.sage:M.ink }}>{t(opt.lk)}</div>
-                    <div style={{ fontSize:10, color:M.ink3, marginTop:2 }}>{t(opt.sk)}</div>
-                  </button>
-                );
-              })}
-            </div>
             <button data-testid="space-new-create-btn" onClick={createProfile}
               style={{ width:'100%', padding:'14px 0', background:newProfileName.trim() ? M.sage : M.line, color:newProfileName.trim() ? '#fff' : M.ink4, border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:newProfileName.trim()?'pointer':'default', fontFamily:M.fontUI, marginBottom:10 }}>
               {t('space.create')}
             </button>
-            <button onClick={() => { setShowNewProfile(false); setNewProfileName(''); setNewProfileIsDemo(sessionStorage.getItem('munni_last_login_method') === 'bank'); setNewProfileError(''); }}
+            <button onClick={() => { setShowNewProfile(false); setNewProfileName(''); setNewProfileError(''); }}
               style={{ width:'100%', padding:'14px 0', background:M.paper2, color:M.ink, border:`1px solid ${M.line}`, borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
               {t('action.cancel')}
             </button>
@@ -1976,7 +1968,7 @@ export function ScreenSpaceDetail({ params }) {
           <div style={{ padding:'4px 16px 8px' }}>
             <div style={{ fontSize:17, fontWeight:700, marginBottom:16 }}>{t('profile.choosePhoto')}</div>
             <div style={{ display:'flex', gap:10, flexWrap:'wrap', marginBottom:20 }}>
-              {STOCK_AVATARS.map(av => (
+              {STOCK_SPACE_AVATARS.map(av => (
                 <button key={av.id} className="m-tap" onClick={() => setPicture(av.id)}
                   style={{ width:54, height:54, borderRadius:Math.round(54*0.28), background:av.bg, border: profile.picture===av.id ? `3px solid ${M.sage}` : '3px solid transparent', display:'flex', alignItems:'center', justifyContent:'center', fontSize:26, cursor:'pointer', boxSizing:'border-box' }}>
                   {av.emoji}

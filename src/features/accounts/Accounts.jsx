@@ -933,6 +933,7 @@ export const HOME_CARDS_DEFAULT = [
   { id:'debts',      label:'Debts',             sub:'Debt tracker',                                      visible:true,  pinned:false },
   { id:'upcoming',   label:'Upcoming',          sub:'Recurring payments due',                            visible:true,  pinned:false },
   { id:'investment', label:'Investments',       sub:'Portfolio overview',                                visible:true,  pinned:false },
+  { id:'events',     label:'Events',            sub:'Upcoming and active events',                        visible:true,  pinned:false },
   { id:'insights',   label:'Insights',          sub:'AI-powered spending insights',                      visible:false, pinned:false },
   { id:'quickActions',label:'Quick Actions',    sub:'Shortcuts to common tasks',                         visible:false, pinned:false },
 ];

@@ -35,8 +35,10 @@ async function goToSettings(page, emailStr, opts = {}) {
   await page.click('[data-testid="onboard-continue"]');
   await page.waitForSelector('[data-testid="onboard-step2"]', { timeout: 3000 });
   await page.click('[data-testid="onboard-bank-skip"]');
-  await page.waitForSelector('[data-testid="tab-profile"]', { timeout: 8000 });
-  await page.click('[data-testid="tab-profile"]');
+  await page.waitForSelector('[data-testid="tab-home"]', { timeout: 8000 });
+  await page.click('[data-testid="home-space-avatar"]');
+  await page.waitForSelector('[data-testid="nav-drawer"]', { timeout: 3000 });
+  await page.click('[data-testid="nav-drawer-settings"]');
   await page.waitForSelector('[data-testid="profile-settings-btn"]', { timeout: 3000 });
 }
 
@@ -51,7 +53,9 @@ async function goToUserInfo(page, emailStr, opts = {}) {
 async function goToSettingsDemo(page) {
   await page.click('[data-testid="login-demo-btn"]');
   await page.waitForSelector('[data-testid="tab-home"]', { timeout: 8000 });
-  await page.click('[data-testid="tab-profile"]');
+  await page.click('[data-testid="home-space-avatar"]');
+  await page.waitForSelector('[data-testid="nav-drawer"]', { timeout: 3000 });
+  await page.click('[data-testid="nav-drawer-settings"]');
   await page.waitForSelector('[data-testid="profile-settings-btn"]', { timeout: 3000 });
 }
 
@@ -76,7 +80,9 @@ async function goToUserInfoGoogle(page) {
   await page.waitForSelector('[data-testid="onboard-step2"]', { timeout: 3000 });
   await page.click('[data-testid="onboard-complete"]');
   await page.waitForSelector('[data-testid="tab-home"]', { timeout: 8000 });
-  await page.click('[data-testid="tab-profile"]');
+  await page.click('[data-testid="home-space-avatar"]');
+  await page.waitForSelector('[data-testid="nav-drawer"]', { timeout: 3000 });
+  await page.click('[data-testid="nav-drawer-settings"]');
   await page.waitForSelector('[data-testid="profile-settings-btn"]', { timeout: 3000 });
   await page.click('[data-testid="profile-settings-btn"]');
   await page.waitForSelector('[data-testid="profile-country-btn"]', { timeout: 3000 });

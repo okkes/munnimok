@@ -406,20 +406,26 @@ const ANNOTATIONS = {
 
   'home': {
     screen: 'Home',
-    sub: 'Main dashboard — balance overview, quick-add, and configurable home cards.',
+    sub: 'Main dashboard — balance overview, configurable home cards (incl. Events), and left nav drawer.',
     states: [
       { tag: 'no data',  note: 'Empty states shown per card when no transactions or banks connected' },
       { tag: 'scrolled', note: 'Balance tile collapses on scroll (CSS sticky behaviour)' },
     ],
     flows: [
-      { from: 'Balance tile',    to: 'Accounts screen (stack)' },
-      { from: 'Quick-add (+)',   to: 'Add transaction sheet' },
+      { from: 'Space avatar (home-space-avatar)', to: 'Left nav drawer — shows all spaces + Settings' },
+      { from: 'Nav drawer → space row', to: 'Activate that space, close drawer' },
+      { from: 'Nav drawer → Settings (nav-drawer-settings)', to: 'profile tab (ScreenProfile)' },
+      { from: 'Nav drawer → Manage spaces', to: 'spaces screen (stack)' },
+      { from: 'Events card → See all',    to: 'events screen (stack, ScreenEvents)' },
+      { from: 'Events card → event row',  to: 'eventDetail screen (stack)' },
       { from: 'Card tap',        to: 'Varies by card type (Tx, Budgets, Goals…)' },
       { from: 'Customise icon',  to: 'customizeHome screen' },
     ],
     rules: [
       'Home cards order stored in LS key "munni_home_cards_{userId}"',
       'Balance shown is sum of all accounts on the active profile',
+      'Settings tab is hidden from tab bar; reached only via the nav drawer',
+      'Events tab removed from tab bar; ScreenEvents pushed from home Events card',
     ],
     storage: [
       'munni_home_cards_{userId} (LS) — ordered list of enabled card IDs',
@@ -459,13 +465,26 @@ const ANNOTATIONS = {
 
   'events': {
     screen: 'Events',
-    sub: 'Shared expense events — trips, dinners, group costs.',
+    sub: 'Shared expense events — trips, dinners, group costs. Pushed from home Events card (no longer a tab root).',
     flows: [
       { from: 'Event row',  to: 'eventDetail screen (stack)' },
       { from: 'Add (+)',    to: 'eventCreate screen (stack)' },
+      { from: 'Back',       to: 'Home (pop stack)' },
+    ],
+    rules: [
+      'ScreenEvents is in SCREEN_REGISTRY (not a tab root); reached via nav.push("events") from home card',
     ],
     storage: [
       'munni_events_{userId} (LS) — array of event objects',
+    ],
+  },
+
+  'portfolio': {
+    screen: 'Portfolio',
+    sub: 'Coming soon tab — placeholder for future portfolio / investment tracking.',
+    flows: [],
+    rules: [
+      'Replaces Events at tab position 4 (after Recurring, before Insights)',
     ],
   },
 
@@ -480,8 +499,8 @@ const ANNOTATIONS = {
   },
 
   'profile': {
-    screen: 'Settings Tab (ScreenProfile)',
-    sub: 'Identity card + settings rows. Entry point for My Profile, Settings, Members, and sign-out.',
+    screen: 'Settings (ScreenProfile)',
+    sub: 'Identity card + settings rows. Reached via left nav drawer → Settings (not a visible tab button).',
     states: [
       { tag: 'email',  note: 'Identity card: avatar initials, full name, email. No Demo badge.' },
       { tag: 'google', note: 'Identity card: Google-prefixed name, munni-demo@gmail.com. No Demo badge.' },

@@ -11,7 +11,7 @@ export const NavCtx = React.createContext(null);
 
 export function NavProvider({ children, initial = 'home' }) {
   const [tab, setTab] = React.useState(initial);
-  const [stacks, setStacks] = React.useState({ home: [], tx: [], recurring: [], events: [], insights: [], profile: [] });
+  const [stacks, setStacks] = React.useState({ home: [], tx: [], recurring: [], portfolio: [], insights: [], profile: [] });
   const [kickNotif, setKickNotif] = React.useState(null);
   const stacksRef = React.useRef(stacks);
   const tabRef = React.useRef(tab);
@@ -103,9 +103,8 @@ export function TabBar({ active, onChange }) {
     { id: 'home',      icon: 'home',        label: t('tab.home') },
     { id: 'tx',        icon: 'list',        label: t('tab.transactions') },
     { id: 'recurring', icon: 'receipt',     label: t('tab.recurring') },
-    { id: 'events',    icon: 'star',        label: t('tab.events') },
+    { id: 'portfolio', icon: 'wallet',      label: t('tab.portfolio') },
     { id: 'insights',  icon: 'trending-up', label: t('tab.insights') },
-    { id: 'profile',   icon: 'sliders',     label: t('tab.settings') },
   ];
   return (
     <div style={{
@@ -157,6 +156,7 @@ if (typeof document !== 'undefined' && !document.getElementById('m-nav-styles'))
   s.id = 'm-nav-styles';
   s.textContent = `
     @keyframes mSlideIn { from { transform: translateX(100%); } to { transform: none; } }
+    @keyframes mSlideInLeft { from { transform: translateX(-100%); } to { transform: none; } }
     @keyframes mSheetUp { from { transform: translateY(100%); } to { transform: none; } }
     @keyframes pulse { 0%,100% { opacity:0.3; transform:scale(0.8); } 50% { opacity:1; transform:scale(1); } }
     @keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }

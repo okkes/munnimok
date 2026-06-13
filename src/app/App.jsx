@@ -29,6 +29,7 @@ import { ScreenReviewSwipe, ScreenLinkReimburse } from '../features/review/Revie
 import { ScreenIncome, ScreenInvested, ScreenInsights, ScreenDebts, ScreenCustomGraphCreate } from '../features/extra/Extra.jsx';
 import { ScreenFriends } from '../features/friends/Friends.jsx';
 import { ScreenSignupOnboarding } from '../features/auth/Auth.jsx';
+import { ScreenPortfolio } from '../features/portfolio/Portfolio.jsx';
 
 
 export const SCREEN_REGISTRY = {
@@ -57,6 +58,7 @@ export const SCREEN_REGISTRY = {
   allocateAddTopic:  () => <ScreenAllocateAddTopic/>,
   investment:     () => <ScreenInvestment/>,
   investmentConnect: () => <ScreenInvestmentConnect/>,
+  events:         () => <ScreenEvents/>,
   eventDetail:    ({params}) => <ScreenEventDetail params={params}/>,
   eventCreate:    () => <ScreenEventCreate/>,
   accounts:       () => <ScreenAccounts/>,
@@ -85,7 +87,7 @@ function TabRoot() {
   if (nav.tab === 'home')      return <ScreenHome/>;
   if (nav.tab === 'tx')        return <ScreenTransactions/>;
   if (nav.tab === 'recurring') return <ScreenRecurringTab/>;
-  if (nav.tab === 'events')    return <ScreenEvents/>;
+  if (nav.tab === 'portfolio') return <ScreenPortfolio/>;
   if (nav.tab === 'insights')  return <ScreenInsights/>;
   if (nav.tab === 'profile')   return <ScreenProfile/>;
   return null;
