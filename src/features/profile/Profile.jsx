@@ -114,7 +114,7 @@ export function ScreenProfile() {
         {/* Manage */}
         <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>{t('settings.manage')}</div>
         <div className="m-card" style={{ padding: '4px 16px', marginBottom: 16, border: `1px solid ${M.line}` }}>
-          <ProfileLink icon="user"    label={t('settings.spaces')}       sub={`${profiles.length} space${profiles.length!==1?'s':''} · ${activeProfile?.name}`} onClick={() => nav.push('spaces')}/>
+          <ProfileLink icon="user"    label={t('settings.spaces')}       sub={`${profiles.length} space${profiles.length!==1?'s':''} · ${activeProfile?.name}`} onClick={() => nav.push('spaces')} testId="spaces-nav-link"/>
           <Divider inset={48}/>
           <ProfileLink icon="users"   label={t('settings.friends')}        sub={t('settings.friendsSub')}               onClick={() => nav.push('friends')}/>
           <Divider inset={48}/>
@@ -1187,7 +1187,7 @@ export function ScreenSpaces() {
   };
 
   return (
-    <div className="m-screen">
+    <div data-testid="spaces-screen" className="m-screen">
       <StatusBar/>
       <AppBar title={t('screen.spaces')}
         leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
@@ -1197,14 +1197,14 @@ export function ScreenSpaces() {
         {pendingProfileInvites.length > 0 && (
           <>
             <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('spaces.pendingInvites')}</div>
-            <div className="m-card" style={{ padding:'4px 16px', marginBottom:16, border:`1px solid ${M.violet||'#7B61FF'}` }}>
+            <div data-testid="space-invite-section" className="m-card" style={{ padding:'4px 16px', marginBottom:16, border:`1px solid ${M.violet||'#7B61FF'}` }}>
               {pendingProfileInvites.map((inv, i) => {
                 const senderName = userRegistry[inv.fromId]?.displayName || inv.fromDisplay || inv.fromId;
                 const fakeProfile = { picture: inv.profilePicture, name: inv.profileName || '?', icon: inv.profileIcon || 'users' };
                 return (
                   <React.Fragment key={inv.id}>
                     {i > 0 && <Divider inset={0}/>}
-                    <div style={{ padding:'13px 0' }}>
+                    <div data-testid="space-invite-row" style={{ padding:'13px 0' }}>
                       <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:10 }}>
                         <ProfileAvatar profile={fakeProfile} size={36}/>
                         <div style={{ flex:1, minWidth:0 }}>
@@ -1238,7 +1238,7 @@ export function ScreenSpaces() {
             return (
               <React.Fragment key={p.id}>
                 {i > 0 && <Divider inset={48}/>}
-                <div style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
+                <div data-testid="space-row" style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
                   <div className="m-tap" onClick={() => activateProfile(p.id)} style={{ flexShrink:0 }}>
                     <ProfileAvatar profile={p} size={36}/>
                   </div>
@@ -1256,7 +1256,7 @@ export function ScreenSpaces() {
                       <I name="check" size={11} color="#fff" stroke={2.5}/>
                     </div>
                   )}
-                  <button className="m-iconbtn m-tap" onClick={() => nav.push('spaceDetail', { id: p.id })}>
+                  <button data-testid="space-row-detail-btn" className="m-iconbtn m-tap" onClick={() => nav.push('spaceDetail', { id: p.id })}>
                     <I name="caretR" size={16} color={M.ink4}/>
                   </button>
                 </div>
@@ -1274,7 +1274,7 @@ export function ScreenSpaces() {
 
       {renameInviteSheet && (
         <Sheet onClose={() => setRenameInviteSheet(null)}>
-          <div style={{ padding:'4px 16px 20px' }}>
+          <div data-testid="space-rename-invite-sheet" style={{ padding:'4px 16px 20px' }}>
             <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:16 }}>
               <ProfileAvatar profile={{ name: renameInviteSheet.inv.profileName, picture: renameInviteSheet.inv.profilePicture || null }} size={44}/>
               <div style={{ flex:1, minWidth:0 }}>
@@ -1306,23 +1306,24 @@ export function ScreenSpaces() {
 
       {showNewProfile && (
         <Sheet onClose={() => { setShowNewProfile(false); setNewProfileName(''); setNewProfileIsDemo(false); setNewProfileError(''); }}>
-          <div style={{ padding:'4px 16px 8px' }}>
+          <div data-testid="space-new-sheet" style={{ padding:'4px 16px 8px' }}>
             <div style={{ fontSize:17, fontWeight:700, marginBottom:16 }}>{t('space.new')}</div>
             <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>{t('space.name')}</div>
             <input
+              data-testid="space-new-name-input"
               value={newProfileName}
               onChange={e => { setNewProfileName(e.target.value); setNewProfileError(''); }}
               onKeyDown={e => e.key === 'Enter' && createProfile()}
               placeholder={t('space.namePlaceholder')}
               style={{ width:'100%', padding:'12px 14px', borderRadius:10, border:`1px solid ${newProfileError ? M.clay : M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box', marginBottom: newProfileError ? 6 : 20 }}
             />
-            {newProfileError && <div style={{ fontSize:12, color:M.clay, marginBottom:14 }}>{newProfileError}</div>}
+            {newProfileError && <div data-testid="space-new-error" style={{ fontSize:12, color:M.clay, marginBottom:14 }}>{newProfileError}</div>}
             <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>{t('space.type')}</div>
             <div style={{ display:'flex', gap:8, marginBottom:20 }}>
-              {[{v:false,lk:'space.typeReal',sk:'space.typeRealSub'},{v:true,lk:'space.typeDemo',sk:'space.typeDemoSub'}].map(opt => {
+              {[{v:false,lk:'space.typeReal',sk:'space.typeRealSub',tid:'space-new-type-real'},{v:true,lk:'space.typeDemo',sk:'space.typeDemoSub',tid:'space-new-type-demo'}].map(opt => {
                 const disabled = opt.v === false && isUserDemo;
                 return (
-                  <button key={String(opt.v)} className="m-tap" onClick={() => !disabled && setNewProfileIsDemo(opt.v)}
+                  <button data-testid={opt.tid} key={String(opt.v)} className="m-tap" onClick={() => !disabled && setNewProfileIsDemo(opt.v)}
                     style={{ flex:1, padding:'12px 8px', borderRadius:12, border:`2px solid ${newProfileIsDemo===opt.v ? M.sage : M.line}`, background: disabled ? M.line2 : newProfileIsDemo===opt.v ? M.sageSoft : M.paper2, textAlign:'center', cursor: disabled ? 'not-allowed' : 'pointer', fontFamily:M.fontUI, boxSizing:'border-box', opacity: disabled ? 0.5 : 1 }}>
                     <div style={{ fontSize:13, fontWeight:600, color:newProfileIsDemo===opt.v?M.sage:M.ink }}>{t(opt.lk)}</div>
                     <div style={{ fontSize:10, color:M.ink3, marginTop:2 }}>{t(opt.sk)}</div>
@@ -1330,7 +1331,7 @@ export function ScreenSpaces() {
                 );
               })}
             </div>
-            <button onClick={createProfile}
+            <button data-testid="space-new-create-btn" onClick={createProfile}
               style={{ width:'100%', padding:'14px 0', background:newProfileName.trim() ? M.sage : M.line, color:newProfileName.trim() ? '#fff' : M.ink4, border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:newProfileName.trim()?'pointer':'default', fontFamily:M.fontUI, marginBottom:10 }}>
               {t('space.create')}
             </button>
@@ -1671,7 +1672,7 @@ export function ScreenSpaceDetail({ params }) {
   };
 
   return (
-    <div className="m-screen">
+    <div data-testid="space-detail-screen" className="m-screen">
       <StatusBar/>
       <AppBar title={t('screen.space')}
         leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
@@ -1694,6 +1695,7 @@ export function ScreenSpaceDetail({ params }) {
             {editingName ? (
               <>
                 <input
+                  data-testid="space-detail-name-input"
                   autoFocus
                   value={nameDraft}
                   onChange={e => { setNameDraft(e.target.value); setNameError(''); }}
@@ -1701,10 +1703,10 @@ export function ScreenSpaceDetail({ params }) {
                   onKeyDown={e => e.key==='Enter' && saveName()}
                   style={{ width:'100%', fontSize:16, fontWeight:600, border:`1px solid ${nameError ? M.clay : M.sage}`, borderRadius:8, padding:'6px 10px', fontFamily:M.fontUI, background:M.paper2, outline:'none', textAlign:'center', boxSizing:'border-box' }}
                 />
-                {nameError && <div style={{ fontSize:11, color:M.clay, marginTop:4, textAlign:'center' }}>{nameError}</div>}
+                {nameError && <div data-testid="space-detail-name-error" style={{ fontSize:11, color:M.clay, marginTop:4, textAlign:'center' }}>{nameError}</div>}
               </>
             ) : (
-              <div className="m-tap" onClick={startEditName} style={{ textAlign:'center' }}>
+              <div data-testid="space-detail-name" className="m-tap" onClick={startEditName} style={{ textAlign:'center' }}>
                 <div style={{ fontSize:16, fontWeight:600, borderBottom:`1.5px dashed ${M.line2}`, display:'inline', paddingBottom:1 }}>{profile.localName || profile.name}</div>
                 <div style={{ fontSize:10, color:M.ink4, marginTop:4 }}>{isMemberOfShared ? t('space.tapRenameLocal') : t('space.tapRename')}</div>
               </div>
@@ -1880,19 +1882,19 @@ export function ScreenSpaceDetail({ params }) {
         )}
 
         {(isMemberOfShared && myPerm !== 'owner') ? (
-          <button onClick={() => setShowLeaveConfirm(true)}
+          <button data-testid="space-detail-leave-btn" onClick={() => setShowLeaveConfirm(true)}
             style={{ width:'100%', padding:'14px 0', background:M.claySoft, color:M.clay, border:'none', borderRadius:12, fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:8 }}>
             {t('space.leave')}
           </button>
         ) : otherMembers.length > 0 ? (
           <>
-            <button onClick={() => setShowLeaveConfirm(true)}
+            <button data-testid="space-detail-leave-btn" onClick={() => setShowLeaveConfirm(true)}
               style={{ width:'100%', padding:'14px 0', background:M.claySoft, color:M.clay, border:'none', borderRadius:12, fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:8 }}>
               {hasOtherOwner ? t('space.leave') : t('space.transferLeave')}
             </button>
             {!hasOtherOwner && (
               <>
-                <button disabled={isOnly||isActive} onClick={() => setShowDeleteConfirm(true)}
+                <button data-testid="space-detail-delete-btn" disabled={isOnly||isActive} onClick={() => setShowDeleteConfirm(true)}
                   style={{ width:'100%', padding:'14px 0', background:(isOnly||isActive)?M.line:M.claySoft, color:(isOnly||isActive)?M.ink4:M.clay, border:'none', borderRadius:12, fontSize:15, fontWeight:600, cursor:(isOnly||isActive)?'not-allowed':'pointer', fontFamily:M.fontUI, marginBottom:8 }}>
                   {t('space.delete')}
                 </button>
@@ -1901,13 +1903,13 @@ export function ScreenSpaceDetail({ params }) {
             )}
           </>
         ) : isMemberOfShared ? (
-          <button onClick={() => setShowLeaveConfirm(true)}
+          <button data-testid="space-detail-leave-btn" onClick={() => setShowLeaveConfirm(true)}
             style={{ width:'100%', padding:'14px 0', background:M.claySoft, color:M.clay, border:'none', borderRadius:12, fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:8 }}>
             {t('space.leave')}
           </button>
         ) : (
           <>
-            <button disabled={isOnly||isActive} onClick={() => setShowDeleteConfirm(true)}
+            <button data-testid="space-detail-delete-btn" disabled={isOnly||isActive} onClick={() => setShowDeleteConfirm(true)}
               style={{ width:'100%', padding:'14px 0', background:(isOnly||isActive)?M.line:M.claySoft, color:(isOnly||isActive)?M.ink4:M.clay, border:'none', borderRadius:12, fontSize:15, fontWeight:600, cursor:(isOnly||isActive)?'not-allowed':'pointer', fontFamily:M.fontUI, marginBottom:8 }}>
               {t('space.delete')}
             </button>
@@ -2001,7 +2003,7 @@ export function ScreenSpaceDetail({ params }) {
 
       {showDeleteConfirm && (
         <Sheet onClose={() => setShowDeleteConfirm(false)}>
-          <div style={{ padding:'4px 16px 8px' }}>
+          <div data-testid="space-delete-sheet" style={{ padding:'4px 16px 8px' }}>
             <div style={{ fontSize:17, fontWeight:700, marginBottom:8 }}>{t('space.deleteConfirmTitle')}</div>
             <div style={{ fontSize:14, color:M.ink3, lineHeight:1.5, marginBottom:12 }}>
               {t('space.deleteConfirmDesc')}
@@ -2042,7 +2044,7 @@ export function ScreenSpaceDetail({ params }) {
 
       {showLeaveConfirm && (
         <Sheet onClose={() => setShowLeaveConfirm(false)}>
-          <div style={{ padding:'4px 16px 8px' }}>
+          <div data-testid="space-leave-sheet" style={{ padding:'4px 16px 8px' }}>
             {(() => {
               const isOwnerTransfer = myPerm === 'owner' && otherMembers.length > 0 && !hasOtherOwner;
               return (
@@ -2090,9 +2092,9 @@ function ProfileRow({ active, label, sub, icon }) {
   );
 }
 
-function ProfileLink({ icon, label, sub, danger, onClick }) {
+function ProfileLink({ icon, label, sub, danger, onClick, testId }) {
   return (
-    <div className="m-tap" onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 0' }}>
+    <div data-testid={testId} className="m-tap" onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 0' }}>
       <div style={{ width: 32, height: 32, borderRadius: 9, background: M.paper2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <I name={icon} size={16} color={danger ? M.clay : M.ink2}/>
       </div>

@@ -113,6 +113,37 @@
   profileSettingsBtn:   'profile-settings-btn',
   profileLogoutBtn:     'profile-logout-btn',
 
+  // Spaces — nav
+  spacesNavLink:        'spaces-nav-link',
+
+  // Spaces — list screen
+  spacesScreen:         'spaces-screen',
+  spaceRow:             'space-row',
+  spaceRowDetailBtn:    'space-row-detail-btn',
+  spaceInviteSection:   'space-invite-section',
+  spaceInviteRow:       'space-invite-row',
+
+  // Spaces — new space sheet
+  spaceNewSheet:        'space-new-sheet',
+  spaceNewNameInput:    'space-new-name-input',
+  spaceNewError:        'space-new-error',
+  spaceNewCreateBtn:    'space-new-create-btn',
+  spaceNewTypeReal:     'space-new-type-real',
+  spaceNewTypeDemo:     'space-new-type-demo',
+
+  // Spaces — rename-invite sheet
+  spaceRenameInviteSheet: 'space-rename-invite-sheet',
+
+  // Space detail screen
+  spaceDetailScreen:    'space-detail-screen',
+  spaceDetailName:      'space-detail-name',
+  spaceDetailNameInput: 'space-detail-name-input',
+  spaceDetailNameError: 'space-detail-name-error',
+  spaceDetailDeleteBtn: 'space-detail-delete-btn',
+  spaceDetailLeaveBtn:  'space-detail-leave-btn',
+  spaceDeleteSheet:     'space-delete-sheet',
+  spaceLeaveSheet:      'space-leave-sheet',
+
   // Members
   memberRow:            'member-row',
   memberAddBtn:         'member-add-btn',
