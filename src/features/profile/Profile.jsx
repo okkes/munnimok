@@ -146,13 +146,13 @@ export function ScreenProfile() {
           <Divider inset={48}/>
           <ProfileLink icon="help"    label={t('settings.help')}/>
           <Divider inset={48}/>
-          <ProfileLink icon="logout"  label={t('settings.signOut')}        danger onClick={logoutFn}/>
+          <ProfileLink icon="logout"  label={t('settings.signOut')}        danger onClick={logoutFn} testId={T.profileSignOutRow}/>
         </div>
 
         {/* Demo */}
         <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Demo</div>
         <div className="m-card" style={{ padding: '4px 16px', marginBottom: 16, border: `1px solid ${M.line}` }}>
-          <div className="m-tap" onClick={() => setShowReset(true)} style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
+          <div data-testid={T.profileResetRow} className="m-tap" onClick={() => setShowReset(true)} style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
             <div style={{ width:32, height:32, borderRadius:9, background:M.claySoft, display:'flex', alignItems:'center', justifyContent:'center' }}>
               <I name="refresh" size={16} color={M.clay}/>
             </div>
@@ -171,7 +171,7 @@ export function ScreenProfile() {
 
       {showReset && (
         <Sheet onClose={() => setShowReset(false)}>
-          <div style={{ padding:'0 16px 8px' }}>
+          <div data-testid={T.profileResetSheet} style={{ padding:'0 16px 8px' }}>
             <div style={{ fontSize:17, fontWeight:700, marginBottom:8 }}>{t('settings.resetConfirmTitle')}</div>
             <div style={{ fontSize:14, color:M.ink3, lineHeight:1.5, marginBottom:20 }}>
               {t('settings.resetConfirmBody')}
@@ -420,14 +420,14 @@ export function ScreenUserInfo() {
       <AppBar title={t('settings.myProfile')}
         leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
         trailing={(!isDemo)
-          ? <button className="m-tap" onClick={isOffline ? saveOffline : save} style={{ background:'transparent', border:'none', fontSize:15, fontWeight:700, color:M.sage, cursor:'pointer', fontFamily:M.fontUI }}>{t('action.save')}</button>
+          ? <button data-testid={T.profileSaveBtn} className="m-tap" onClick={isOffline ? saveOffline : save} style={{ background:'transparent', border:'none', fontSize:15, fontWeight:700, color:M.sage, cursor:'pointer', fontFamily:M.fontUI }}>{t('action.save')}</button>
           : null}
       />
       <div className="m-body-scroll" ref={bodyScrollRef}>
 
         {/* Avatar section */}
         <div style={{ display:'flex', flexDirection:'column', alignItems:'center', paddingTop:28, paddingBottom:28 }}>
-          <button className="m-tap" onClick={() => !isDemo && setShowPicturePicker(true)}
+          <button data-testid={T.profileAvatarBtn} className="m-tap" onClick={() => !isDemo && setShowPicturePicker(true)}
             style={{ position:'relative', background:'none', border:'none', cursor:isDemo?'default':'pointer', padding:0, marginBottom:12 }}>
             {renderAvatar(88)}
             {!isDemo && (
@@ -437,7 +437,7 @@ export function ScreenUserInfo() {
             )}
           </button>
           {!isDemo && (
-            <button className="m-tap" onClick={() => setShowPicturePicker(true)}
+            <button data-testid={T.profileChangePhotoBtn} className="m-tap" onClick={() => setShowPicturePicker(true)}
               style={{ background:'none', border:'none', color:M.sage, fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
               {t('profile.changePhoto')}
             </button>
@@ -462,13 +462,13 @@ export function ScreenUserInfo() {
             <div className="m-card" style={{ padding:'0 16px', marginBottom:16, border:`1px solid ${M.line}` }}>
               <div style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
                 <div style={{ width:70, fontSize:12, color:M.ink3, flexShrink:0 }}>{t('settings.firstName')}</div>
-                <input value={draftFirst} onChange={e => setDraftFirst(e.target.value)} disabled={isDemo}
+                <input data-testid={T.profileFirstNameInput} value={draftFirst} onChange={e => setDraftFirst(e.target.value)} disabled={isDemo}
                   style={{ flex:1, fontSize:16, fontFamily:M.fontUI, border:'none', background:'transparent', outline:'none', color:isDemo?M.ink3:M.ink }}/>
               </div>
               <Divider/>
               <div style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
                 <div style={{ width:70, fontSize:12, color:M.ink3, flexShrink:0 }}>{t('settings.lastName')}</div>
-                <input value={draftLast} onChange={e => setDraftLast(e.target.value)} disabled={isDemo}
+                <input data-testid={T.profileLastNameInput} value={draftLast} onChange={e => setDraftLast(e.target.value)} disabled={isDemo}
                   style={{ flex:1, fontSize:16, fontFamily:M.fontUI, border:'none', background:'transparent', outline:'none', color:isDemo?M.ink3:M.ink }}/>
               </div>
             </div>
@@ -604,7 +604,7 @@ export function ScreenUserInfo() {
             {/* Country */}
             <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:8, paddingLeft:4 }}>
               <div className="m-cap" style={{ margin:0 }}>{t('profile.country')}</div>
-              <button className="m-tap" onClick={() => setShowCountryInfo(true)}
+              <button data-testid={T.profileCountryInfoBtn} className="m-tap" onClick={() => setShowCountryInfo(true)}
                 style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', padding:'0 2px' }}>
                 <I name="info" size={14} color={M.tint}/>
               </button>
@@ -637,7 +637,7 @@ export function ScreenUserInfo() {
               {(() => {
                 const canChangeEmail = !isGoogle && !isApple && !isDemo;
                 return (
-                  <div className={canChangeEmail ? 'm-tap' : ''}
+                  <div data-testid={T.profileChangeEmailRow} className={canChangeEmail ? 'm-tap' : ''}
                     onClick={canChangeEmail ? () => { setNewEmailDraft(''); setChangeEmailStep('input'); setChangeEmailError(''); setVerifyCodeInput(''); setShowChangeEmail(true); } : undefined}
                     style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
                     <div style={{ width:20, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
@@ -676,7 +676,7 @@ export function ScreenUserInfo() {
               <>
                 <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('settings.apiUrl')}</div>
                 <div className="m-card" style={{ padding:'0 16px', marginBottom:24, border:`1px solid ${M.line}` }}>
-                  <div className="m-tap" onClick={() => { setApiDraft(apiUrl); setShowApiSheet(true); }}
+                  <div data-testid={T.profileApiRow} className="m-tap" onClick={() => { setApiDraft(apiUrl); setShowApiSheet(true); }}
                     style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
                     <div style={{ width:32, height:32, borderRadius:9, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                       <I name="server" size={16} color={M.ink2}/>
@@ -694,7 +694,7 @@ export function ScreenUserInfo() {
             {/* Delete account */}
             {!isDemo && (
               <div className="m-card" style={{ padding:'0 16px', marginBottom:24, border:`1px solid ${M.line}` }}>
-                <div className="m-tap" onClick={() => setShowDeleteAccount(true)}
+                <div data-testid={T.profileDeleteRow} className="m-tap" onClick={() => setShowDeleteAccount(true)}
                   style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
               <div style={{ width:32, height:32, borderRadius:9, background:M.claySoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                 <I name="trash" size={16} color={M.clay}/>
@@ -741,7 +741,7 @@ export function ScreenUserInfo() {
       {/* Country info sheet */}
       {showCountryInfo && (
         <Sheet onClose={() => setShowCountryInfo(false)}>
-          <div style={{ padding:'0 16px 16px' }}>
+          <div data-testid={T.profileCountryInfoSheet} style={{ padding:'0 16px 16px' }}>
             <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
               <I name="info" size={18} color={M.tint}/>
               <div style={{ fontSize:15, fontWeight:600, color:M.ink }}>{t('profile.country')}</div>
@@ -754,7 +754,7 @@ export function ScreenUserInfo() {
       {/* Picture picker */}
       {showPicturePicker && (
         <Sheet onClose={() => setShowPicturePicker(false)}>
-          <div style={{ padding:'0 16px 16px' }}>
+          <div data-testid={T.profilePicSheet} style={{ padding:'0 16px 16px' }}>
             <div style={{ fontSize:17, fontWeight:700, marginBottom:16 }}>{t('profile.picTitle')}</div>
             <label style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0', cursor:'pointer', borderBottom:`1px solid ${M.line2}`, marginBottom:14 }}>
               <div style={{ width:40, height:40, borderRadius:10, background:M.paper2, border:`1px solid ${M.line}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
@@ -784,7 +784,7 @@ export function ScreenUserInfo() {
       {/* Change email sheet */}
       {showChangeEmail && (
         <Sheet onClose={() => setShowChangeEmail(false)}>
-          <div style={{ padding:'0 16px 24px' }}>
+          <div data-testid={T.profileChangeEmailSheet} style={{ padding:'0 16px 24px' }}>
             {changeEmailStep === 'input' && (<>
               <div style={{ fontSize:17, fontWeight:700, marginBottom:4 }}>{t('settings.changeEmail')}</div>
               <div style={{ fontSize:13, color:M.ink3, marginBottom:20 }}>{t('settings.changeEmailStep1Sub')}</div>
@@ -830,10 +830,10 @@ export function ScreenUserInfo() {
       {/* API endpoint sheet */}
       {showApiSheet && (
         <Sheet onClose={() => setShowApiSheet(false)}>
-          <div style={{ padding:'0 16px 24px' }}>
+          <div data-testid={T.profileApiSheet} style={{ padding:'0 16px 24px' }}>
             <div style={{ fontSize:17, fontWeight:700, marginBottom:4 }}>{t('settings.apiUrl')}</div>
             <div style={{ fontSize:13, color:M.ink3, marginBottom:16 }}>{t('settings.apiUrlSub')}</div>
-            <input className="m-input" value={apiDraft} onChange={e => setApiDraft(e.target.value)}
+            <input data-testid={T.profileApiDraftInput} className="m-input" value={apiDraft} onChange={e => setApiDraft(e.target.value)}
               placeholder={t('settings.apiUrlDefault')} type="url"
               style={{ width:'100%', marginBottom:16, boxSizing:'border-box', height:48 }}/>
             <div style={{ display:'flex', gap:10 }}>
@@ -849,7 +849,7 @@ export function ScreenUserInfo() {
       {/* Delete account sheet */}
       {showDeleteAccount && (
         <Sheet onClose={() => { setShowDeleteAccount(false); setDeleteAccountStep('feedback'); setDeleteReasons([]); setDeleteFeedbackText(''); }}>
-          <div style={{ padding:'0 16px 24px' }}>
+          <div data-testid={T.profileDeleteSheet} style={{ padding:'0 16px 24px' }}>
             {deleteAccountStep === 'feedback' ? (<>
               <div style={{ fontSize:17, fontWeight:700, marginBottom:4 }}>{t('settings.deleteAccountFeedbackTitle')}</div>
               <div style={{ fontSize:13, color:M.ink3, marginBottom:16 }}>{t('settings.deleteAccountFeedbackSub')}</div>

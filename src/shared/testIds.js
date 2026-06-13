@@ -100,17 +100,37 @@
   eventAddBtn:          'event-add-btn',
   eventDetailSheet:     'event-detail-sheet',
 
-  // Profile
-  profileCountryBtn:    'profile-country-btn',
-  profileCountrySheet:  'profile-country-sheet',
-  profileCountrySearch: 'profile-country-search',
-  profileCountryErr:    'profile-country-error',
-  profileAvatarBtn:     'profile-avatar-btn',
+  // Profile — ScreenProfile (Settings tab)
+  profileSettingsBtn:   'profile-settings-btn',
+  profileSignOutRow:    'profile-signout-row',
+  profileResetRow:      'profile-reset-row',
+  profileResetSheet:    'profile-reset-sheet',
+
+  // Profile — ScreenUserInfo (My Profile)
+  profileAvatarBtn:          'profile-avatar-btn',
+  profileChangePhotoBtn:     'profile-change-photo-btn',
+  profileFirstNameInput:     'profile-firstname-input',
+  profileLastNameInput:      'profile-lastname-input',
+  profileSaveBtn:            'profile-save-btn',
+  profileCountryBtn:         'profile-country-btn',
+  profileCountrySheet:       'profile-country-sheet',
+  profileCountrySearch:      'profile-country-search',
+  profileCountryErr:         'profile-country-error',
+  profileCountryInfoBtn:     'profile-country-info-btn',
+  profileCountryInfoSheet:   'profile-country-info-sheet',
+  profilePicSheet:           'profile-pic-sheet',
+  profileChangeEmailRow:     'profile-change-email-row',
+  profileChangeEmailSheet:   'profile-change-email-sheet',
+  profileApiRow:             'profile-api-row',
+  profileApiSheet:           'profile-api-sheet',
+  profileApiDraftInput:      'profile-api-draft-input',
+  profileDeleteRow:          'profile-delete-row',
+  profileDeleteSheet:        'profile-delete-sheet',
+
+  // Profile — legacy / misc
   profileNameInput:     'profile-name-input',
-  profileSaveBtn:       'profile-save-btn',
   profileNewBtn:        'profile-new-btn',
   profileSwitchRow:     'profile-switch-row',
-  profileSettingsBtn:   'profile-settings-btn',
   profileLogoutBtn:     'profile-logout-btn',
 
   // Spaces — nav
