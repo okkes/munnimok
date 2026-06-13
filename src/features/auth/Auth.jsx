@@ -45,17 +45,23 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
   const isApple  = signup.method === 'apple';
   const isSSO    = isGoogle || isApple;
 
-  // Main form state
-  const [firstName,      setFirstName]     = React.useState(signup.firstName || '');
-  const [lastName,       setLastName]      = React.useState(signup.lastName  || '');
+  // Draft persistence key — stable for the lifetime of this signup attempt
+  const draftKey = `munni_signup_draft_${signup.method}_${signup.canonicalEmail || ''}`;
+
+  // Main form state — lazy-initialize from saved draft so a refresh doesn't lose data
+  const [firstName,      setFirstName]     = React.useState(() => { try { return JSON.parse(localStorage.getItem(draftKey))?.firstName ?? (signup.firstName || ''); } catch { return signup.firstName || ''; } });
+  const [lastName,       setLastName]      = React.useState(() => { try { return JSON.parse(localStorage.getItem(draftKey))?.lastName  ?? (signup.lastName  || ''); } catch { return signup.lastName  || ''; } });
   const [email,          setEmail]         = React.useState(signup.displayEmail || '');
   const [connectedBanks, setConnectedBanks] = React.useState(
     () => (signup.banks || []).map((id, i) => ({ id, uid: `init_${i}` }))
   );
-  const [apiUrl,         setApiUrl]        = React.useState(signup.apiUrl || '');
-  const [country,        setCountry]       = React.useState('');
+  const [apiUrl,         setApiUrl]        = React.useState(() => { try { return JSON.parse(localStorage.getItem(draftKey))?.apiUrl   ?? (signup.apiUrl   || ''); } catch { return signup.apiUrl   || ''; } });
+  const [country,        setCountry]       = React.useState(() => { try { return JSON.parse(localStorage.getItem(draftKey))?.country  ?? '';                       } catch { return '';                     } });
   const [showCountry,    setShowCountry]   = React.useState(false);
+  const [countrySearch,  setCountrySearch] = React.useState('');
+  const [picture,        setPicture]       = React.useState(() => { try { return JSON.parse(localStorage.getItem(draftKey))?.picture  ?? (signup.picture  || null); } catch { return signup.picture  || null; } });
 
+  // Auto-detect country from IP — only if no draft/manual selection already made
   React.useEffect(() => {
     let cancelled = false;
     const detect = async () => {
@@ -65,15 +71,21 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
         const match = text.match(/^loc=([A-Z]{2})$/m);
         const code = match?.[1];
         if (!cancelled && code && COUNTRIES.some(c => c.code === code)) {
-          setCountry(code);
+          setCountry(prev => prev || code);
         }
       } catch {}
     };
     detect();
     return () => { cancelled = true; };
   }, []);
-  const [countrySearch,  setCountrySearch] = React.useState('');
-  const [picture,        setPicture]       = React.useState(signup.picture || null);
+
+  // Persist draft on every field change so a refresh/exit doesn't lose work
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      try { localStorage.setItem(draftKey, JSON.stringify({ firstName, lastName, country, picture, apiUrl })); } catch {}
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [firstName, lastName, country, picture, apiUrl, draftKey]);
   const [bankPsd2Step,   setBankPsd2Step]  = React.useState(null); // null | 'consent' | 'connecting' | 'done'
   const [showApiInfo,    setShowApiInfo]   = React.useState(false);
   const [showCountryInfo,setShowCountryInfo]= React.useState(false);
@@ -230,6 +242,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
   const handleComplete = () => {
     const errs = validate();
     if (Object.keys(errs).length > 0) { setErrors(errs); return; }
+    try { localStorage.removeItem(draftKey); } catch {}
     onComplete({
       firstName: firstName.trim(),
       lastName:  lastName.trim(),
@@ -731,19 +744,17 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
         </button>
       </div>
 
-      {/* API info overlay */}
+      {/* API info sheet */}
       {showApiInfo && (
-        <div data-testid={T.onboardApiInfoSheet} style={{ position:'absolute', inset:0, background:'rgba(27,26,23,0.45)', display:'flex', flexDirection:'column', justifyContent:'flex-end', zIndex:100, animation:'fadeIn 0.22s ease' }}
-          onClick={() => setShowApiInfo(false)}>
-          <div style={{ background:M.paper, borderTopLeftRadius:24, borderTopRightRadius:24, padding:'8px 24px 40px', animation:'mSheetUp 0.32s cubic-bezier(.2,.7,.2,1)' }} onClick={e => e.stopPropagation()}>
-            <div style={{ width:36, height:4, borderRadius:999, background:M.line, margin:'0 auto 20px' }}/>
+        <Sheet onClose={() => setShowApiInfo(false)}>
+          <div data-testid={T.onboardApiInfoSheet} style={{ padding:'0 16px 16px' }}>
             <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
               <I name="info" size={18} color={M.tint}/>
               <div style={{ fontSize:15, fontWeight:600, color:M.ink }}>{t('onboarding.apiUrl')}</div>
             </div>
             <div style={{ fontSize:14, color:M.ink2, lineHeight:1.6 }}>{t('onboarding.apiInfo')}</div>
           </div>
-        </div>
+        </Sheet>
       )}
 
       {/* Country picker */}
@@ -786,12 +797,10 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
         </Sheet>
       )}
 
-      {/* Avatar picker overlay */}
+      {/* Avatar picker sheet */}
       {showPicker && (
-        <div data-testid={T.onboardAvatarPicker} style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', flexDirection:'column', justifyContent:'flex-end', zIndex:100 }}
-          onClick={() => setShowPicker(false)}>
-          <div style={{ background:M.paper, borderRadius:'20px 20px 0 0', padding:'16px 20px 32px' }} onClick={e => e.stopPropagation()}>
-            <div style={{ width:36, height:4, borderRadius:2, background:M.line2, margin:'0 auto 16px' }}/>
+        <Sheet onClose={() => setShowPicker(false)}>
+          <div data-testid={T.onboardAvatarPicker} style={{ padding:'4px 16px 16px' }}>
             <div style={{ fontSize:14, fontWeight:600, color:M.ink, marginBottom:16 }}>{t('profile.picTitle')}</div>
             <label style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0', cursor:'pointer', borderBottom:`1px solid ${M.line2}`, marginBottom:14 }}>
               <div style={{ width:40, height:40, borderRadius:10, background:M.paper2, border:`1px solid ${M.line}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
@@ -809,7 +818,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
               ))}
             </div>
           </div>
-        </div>
+        </Sheet>
       )}
     </div>
   );

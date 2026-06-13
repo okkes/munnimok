@@ -963,10 +963,8 @@ function ScreenLoginGate({ onLogin }) {
         </div>
 
         {showOfflinePicker && (
-          <div style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', flexDirection:'column', justifyContent:'flex-end', zIndex:100 }}
-            onClick={() => setShowOfflinePicker(false)}>
-            <div style={{ background:M.paper, borderRadius:'20px 20px 0 0', padding:'16px 20px 32px' }} onClick={e => e.stopPropagation()}>
-              <div style={{ width:36, height:4, borderRadius:2, background:M.line2, margin:'0 auto 16px' }}/>
+          <Sheet onClose={() => setShowOfflinePicker(false)}>
+            <div style={{ padding:'4px 16px 16px' }}>
               <div style={{ fontSize:14, fontWeight:600, color:M.ink, marginBottom:16 }}>{t('profile.picTitle')}</div>
               <div style={{ display:'grid', gridTemplateColumns:'repeat(5, 1fr)', gap:10 }}>
                 {STOCK_AVATARS.map(av => (
@@ -977,7 +975,7 @@ function ScreenLoginGate({ onLogin }) {
                 ))}
               </div>
             </div>
-          </div>
+          </Sheet>
         )}
       </div>
     );

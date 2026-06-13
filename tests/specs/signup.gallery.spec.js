@@ -447,6 +447,8 @@ for (const V of VARIANTS) {
   test(`50 onboard – country missing error [${V.id}]`, async ({ browser }) => {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V);
+    // Block IP-based country detection so the field stays empty for this test
+    await page.route('https://www.cloudflare.com/cdn-cgi/trace', r => r.abort());
     await goToStep1(page, email('no-country'));
     await page.fill('[data-testid="onboard-firstname"]', 'Alice');
     await page.fill('[data-testid="onboard-lastname"]', 'Smith');
@@ -601,6 +603,43 @@ for (const V of VARIANTS) {
     await expect(skipLabels).toHaveCount(0);
     await shot(page, k('58-no-skip-link'));
     await teardown(page, ctx, k('58-no-skip-link'));
+  });
+
+  test(`60 onboard – Google name change retained after resume [${V.id}]`, async ({ browser }) => {
+    const { page, ctx } = await createPage(browser, V);
+    await base(page, V);
+    // Step 1: start Google signup → reach onboarding step 1 (default "Google van der Berg")
+    await page.click('[data-testid="login-create-account"]');
+    await page.waitForSelector('[data-testid="signup-pick-google"]', { timeout: 3000 });
+    await page.click('[data-testid="signup-pick-google"]');
+    await page.waitForSelector('[data-testid="onboard-firstname"]', { timeout: 5000 });
+    await shot(page, k('60-google-name-resume') + '--s1');
+    // Step 2: replace the default Google name with a custom one
+    await page.fill('[data-testid="onboard-firstname"]', 'Alice');
+    await page.fill('[data-testid="onboard-lastname"]', 'Smith');
+    // Wait for draft auto-save (300 ms debounce + margin)
+    await page.waitForTimeout(600);
+    await shot(page, k('60-google-name-resume') + '--s2');
+    // Step 3: capture the saved draft before "exit" — base() clears localStorage on every navigation,
+    // so we need a second addInitScript that re-injects our draft after the clear.
+    const draftKey = 'munni_signup_draft_google_google@munni.app';
+    const savedDraft = await page.evaluate((k) => localStorage.getItem(k), draftKey);
+    const inProgData = JSON.stringify({ method:'google', canonicalEmail:'google@munni.app', displayEmail:'munni-demo@gmail.com', backMode:'signup' });
+    await page.addInitScript((d) => {
+      localStorage.setItem('munni_signup_in_progress', d.inProg);
+      localStorage.setItem('munni_signup_draft_google_google@munni.app', d.draft);
+    }, { inProg: inProgData, draft: savedDraft });
+    // Navigate to simulate a new session (init scripts run in order: clear → re-inject our data)
+    await page.goto('/');
+    await page.waitForSelector('[data-testid="login-google-btn"]', { timeout: 5000 });
+    await shot(page, k('60-google-name-resume') + '--s3');
+    // Step 4: Google login → should detect in-progress signup → resume onboarding with saved names
+    await page.click('[data-testid="login-google-btn"]');
+    await page.waitForSelector('[data-testid="onboard-firstname"]', { timeout: 6000 });
+    await expect(page.locator('[data-testid="onboard-firstname"]')).toHaveValue('Alice');
+    await expect(page.locator('[data-testid="onboard-lastname"]')).toHaveValue('Smith');
+    await shot(page, k('60-google-name-resume'));
+    await teardown(page, ctx, k('60-google-name-resume'));
   });
 
   test(`59 onboard – unfinished signup resume [${V.id}]`, async ({ browser }) => {

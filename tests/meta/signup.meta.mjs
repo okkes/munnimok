@@ -275,4 +275,22 @@ export const GROUPS = [
       },
     ],
   },
+  {
+    name: 'Onboarding — Draft Persistence',
+    tests: [
+      {
+        key: '60-google-name-resume',
+        title: 'Google name change retained after resume',
+        desc: 'User starts Google signup, replaces the default "Google van der Berg" with "Alice Smith", then exits. On re-login with Google the custom names are still present — the 300 ms auto-save draft was restored.',
+        tags: ['state', 'edge-case'],
+        steps: [
+          'Onboarding step 1 — default Google name pre-filled',
+          'Name changed to "Alice Smith"',
+          'Page reloaded (simulates exit)',
+          'Google login pressed → onboarding resumes',
+          'Step 1 — "Alice" and "Smith" still in the inputs',
+        ],
+      },
+    ],
+  },
 ];
