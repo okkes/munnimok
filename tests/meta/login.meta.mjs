@@ -233,4 +233,60 @@ export const GROUPS = [
       },
     ],
   },
+  {
+    name: 'Login Screen Utilities',
+    tests: [
+      {
+        key: '20-lang-picker-open',
+        title: 'Language picker opens',
+        desc: 'Tap "Change language" → full-screen language picker. Three supported languages (EN, NL, TR) each show native name, English name, and "Available" badge.',
+        tags: ['navigation'],
+        steps: [
+          'Login screen — "Change language" tapped',
+          'Language picker — all 3 supported languages visible',
+        ],
+      },
+      {
+        key: '21-lang-switch-nl',
+        title: 'Switch language to Dutch',
+        desc: 'Select "Nederlands" in the picker → returns to login screen. Heading changes from "Welcome" to "Welkom", subtitle and all UI text update to Dutch.',
+        tags: ['navigation', 'state'],
+        steps: [
+          'Login screen (English)',
+          'Language picker',
+          'Login screen — heading now "Welkom" after Dutch selected',
+        ],
+      },
+      {
+        key: '22-terms-screen',
+        title: 'Terms of Service screen',
+        desc: 'Tap the "Terms of Service" link → ScreenTerms renders with 7 numbered sections (Acceptance, Service description, Read-only access, etc.). Back button returns to login.',
+        tags: ['navigation'],
+        steps: [
+          'Login screen — "Terms of Service" link tapped',
+          'Terms of Service screen',
+        ],
+      },
+      {
+        key: '23-privacy-screen',
+        title: 'Privacy Policy screen',
+        desc: 'Tap the "Privacy Policy" link → same ScreenTerms component with privacy content: Data we collect, How we use your data, Data storage, Your rights, Cookies, Contact.',
+        tags: ['navigation'],
+        steps: [
+          'Login screen — "Privacy Policy" link tapped',
+          'Privacy Policy screen',
+        ],
+      },
+      {
+        key: '24-demo-user',
+        title: 'Continue as demo user',
+        desc: 'Tap "Continue as demo user" at the very bottom → bypasses all auth. App loads instantly as "Demo van der Berg" with pre-seeded bank accounts and transactions.',
+        tags: ['state'],
+        steps: [
+          'Login screen — "Continue as demo user" tapped',
+          'Home screen — loaded as demo user',
+        ],
+      },
+    ],
+  },
 ];

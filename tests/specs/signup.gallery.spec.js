@@ -72,78 +72,7 @@ for (const V of VARIANTS) {
   const email = (suffix) => `test-${suffix}-${V.id.replace(/-/g, '')}@example.com`;
 
   // -------------------------------------------------------------------------
-  // Group A — Login Screen Extras
-  // -------------------------------------------------------------------------
-
-  test(`20 lang-picker – opens [${V.id}]`, async ({ browser }) => {
-    const { page, ctx } = await createPage(browser, V);
-    await base(page, V);
-    await shot(page, k('20-lang-picker-open') + '--s1');
-    // Open dropdown first, then navigate to full language screen via More
-    await page.click('[data-testid="login-lang-trigger"]');
-    await page.waitForSelector('[data-testid="login-lang-btn"]', { timeout: 2000 });
-    await page.click('[data-testid="login-lang-btn"]');
-    await page.waitForSelector('[data-testid="lang-option-en"]', { timeout: 3000 });
-    await expect(page.locator('[data-testid="lang-option-en"]')).toBeVisible();
-    await expect(page.locator('[data-testid="lang-option-nl"]')).toBeVisible();
-    await expect(page.locator('[data-testid="lang-option-tr"]')).toBeVisible();
-    await shot(page, k('20-lang-picker-open'));
-    await teardown(page, ctx, k('20-lang-picker-open'));
-  });
-
-  test(`21 lang-picker – switch to Dutch [${V.id}]`, async ({ browser }) => {
-    const { page, ctx } = await createPage(browser, V);
-    await base(page, V);
-    await shot(page, k('21-lang-switch-nl') + '--s1');
-    // Open dropdown first, then navigate to full language screen via More
-    await page.click('[data-testid="login-lang-trigger"]');
-    await page.waitForSelector('[data-testid="login-lang-btn"]', { timeout: 2000 });
-    await page.click('[data-testid="login-lang-btn"]');
-    await page.waitForSelector('[data-testid="lang-option-nl"]', { timeout: 3000 });
-    await shot(page, k('21-lang-switch-nl') + '--s2');
-    await page.click('[data-testid="lang-option-nl"]');
-    // After selection, picker closes and login screen shows in Dutch
-    await page.waitForSelector('[data-testid="login-google-btn"]', { timeout: 3000 });
-    await expect(page.locator('[data-testid="login-lang-trigger"]')).toBeVisible();
-    await shot(page, k('21-lang-switch-nl'));
-    await teardown(page, ctx, k('21-lang-switch-nl'));
-  });
-
-  test(`22 terms – screen opens [${V.id}]`, async ({ browser }) => {
-    const { page, ctx } = await createPage(browser, V);
-    await base(page, V);
-    await shot(page, k('22-terms-screen') + '--s1');
-    await page.click('[data-testid="login-terms-link"]');
-    await page.waitForSelector('[data-testid="terms-screen"]', { timeout: 3000 });
-    await expect(page.locator('[data-testid="terms-screen"]')).toBeVisible();
-    await shot(page, k('22-terms-screen'));
-    await teardown(page, ctx, k('22-terms-screen'));
-  });
-
-  test(`23 privacy – screen opens [${V.id}]`, async ({ browser }) => {
-    const { page, ctx } = await createPage(browser, V);
-    await base(page, V);
-    await shot(page, k('23-privacy-screen') + '--s1');
-    await page.click('[data-testid="login-privacy-link"]');
-    await page.waitForSelector('[data-testid="terms-screen"]', { timeout: 3000 });
-    await expect(page.locator('[data-testid="terms-screen"]')).toBeVisible();
-    await shot(page, k('23-privacy-screen'));
-    await teardown(page, ctx, k('23-privacy-screen'));
-  });
-
-  test(`24 demo-user – home loads [${V.id}]`, async ({ browser }) => {
-    const { page, ctx } = await createPage(browser, V);
-    await base(page, V);
-    await shot(page, k('24-demo-user') + '--s1');
-    await page.click('[data-testid="login-demo-btn"]');
-    await page.waitForSelector('[data-testid="tab-home"]', { timeout: 5000 });
-    await expect(page.locator('[data-testid="tab-home"]')).toBeVisible();
-    await shot(page, k('24-demo-user'));
-    await teardown(page, ctx, k('24-demo-user'));
-  });
-
-  // -------------------------------------------------------------------------
-  // Group B — Onboarding Step 1
+  // Group A — Onboarding Step 1
   // -------------------------------------------------------------------------
 
   test(`25 onboard-step1 – fresh form [${V.id}]`, async ({ browser }) => {
@@ -269,7 +198,7 @@ for (const V of VARIANTS) {
   });
 
   // -------------------------------------------------------------------------
-  // Group C — Onboarding Step 2 (Bank Connect)
+  // Group B — Onboarding Step 2 (Bank Connect)
   // -------------------------------------------------------------------------
 
   test(`33 onboard-step2 – empty state [${V.id}]`, async ({ browser }) => {
@@ -476,7 +405,7 @@ for (const V of VARIANTS) {
   });
 
   // -------------------------------------------------------------------------
-  // Group D — Browser Back Navigation
+  // Group C — Browser Back Navigation
   // -------------------------------------------------------------------------
 
   test(`44 back – step 2 to step 1 [${V.id}]`, async ({ browser }) => {
@@ -541,7 +470,7 @@ for (const V of VARIANTS) {
   });
 
   // -------------------------------------------------------------------------
-  // Group E — Onboarding UX Fixes
+  // Group D — Onboarding UX Fixes
   // -------------------------------------------------------------------------
 
   test(`51 onboard – step1 no back button [${V.id}]`, async ({ browser }) => {
