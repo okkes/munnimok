@@ -60,10 +60,10 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
     let cancelled = false;
     const detect = async () => {
       try {
-        const r1 = await fetch('https://api.ipify.org?format=json');
-        const { ip } = await r1.json();
-        const r2 = await fetch(`https://api.country.is/${ip}`);
-        const { country: code } = await r2.json();
+        const r = await fetch('https://www.cloudflare.com/cdn-cgi/trace');
+        const text = await r.text();
+        const match = text.match(/^loc=([A-Z]{2})$/m);
+        const code = match?.[1];
         if (!cancelled && code && COUNTRIES.some(c => c.code === code)) {
           setCountry(code);
         }
