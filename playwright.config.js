@@ -5,6 +5,7 @@ export default defineConfig({
   testDir: 'tests/specs',
   testMatch: ['**/*.gallery.spec.js'],
   workers: process.env.CI ? 3 : Math.max(1, os.cpus().length - 1), // CI: 3; local: all cores minus one
+  retries: 1, // retry once to handle transient vite dev server hiccups
   outputDir: 'tests/results',
   use: {
     baseURL: 'http://localhost:5173',

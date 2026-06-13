@@ -122,6 +122,7 @@ jobs:
           if ls tests/screenshots/*.png 1>/dev/null 2>&1; then
             node tests/generate-gallery.mjs --deploy
           fi
+          node tests/generate-failures.mjs --deploy
 
       # Copy gallery assets into dist/gallery/ so Pages serves them at /gallery/
       - name: Copy gallery to dist
@@ -129,6 +130,9 @@ jobs:
           mkdir -p dist/gallery/screenshots dist/gallery/videos
           if [ -f tests/gallery/index.html ]; then
             cp tests/gallery/index.html dist/gallery/
+          fi
+          if [ -f tests/gallery/failures.html ]; then
+            cp tests/gallery/failures.html dist/gallery/
           fi
           if ls tests/screenshots/*.png 1>/dev/null 2>&1; then
             cp tests/screenshots/*.png dist/gallery/screenshots/

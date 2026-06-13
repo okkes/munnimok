@@ -22,10 +22,10 @@ export function IOSStatusBar({ dark = false, time = '9:41' }) {
           <rect x="9.6" y="2.5" width="3.2" height="9.5" rx="0.7" fill={c}/>
           <rect x="14.4" y="0" width="3.2" height="12" rx="0.7" fill={c}/>
         </svg>
-        <svg width="17" height="12" viewBox="0 0 17 12">
-          <path d="M8.5 3.2C10.8 3.2 12.9 4.1 14.4 5.6L15.5 4.5C13.7 2.7 11.2 1.5 8.5 1.5C5.8 1.5 3.3 2.7 1.5 4.5L2.6 5.6C4.1 4.1 6.2 3.2 8.5 3.2Z" fill={c}/>
-          <path d="M8.5 6.8C9.9 6.8 11.1 7.3 12 8.2L13.1 7.1C11.8 5.9 10.2 5.1 8.5 5.1C6.8 5.1 5.2 5.9 3.9 7.1L5 8.2C5.9 7.3 7.1 6.8 8.5 6.8Z" fill={c}/>
-          <circle cx="8.5" cy="10.5" r="1.5" fill={c}/>
+        <svg width="17" height="12" viewBox="0 0 17 12" fill="none">
+          <path d="M3.5 5.5A9 9 0 0 1 13.5 5.5" stroke={c} strokeWidth="1.8" strokeLinecap="round"/>
+          <path d="M5.2 8A6 6 0 0 1 11.8 8" stroke={c} strokeWidth="1.8" strokeLinecap="round"/>
+          <circle cx="8.5" cy="11" r="1.3" fill={c}/>
         </svg>
         <svg width="27" height="13" viewBox="0 0 27 13">
           <rect x="0.5" y="0.5" width="23" height="12" rx="3.5" stroke={c} strokeOpacity="0.35" fill="none"/>
