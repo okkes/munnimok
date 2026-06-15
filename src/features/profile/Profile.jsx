@@ -128,7 +128,7 @@ export function ScreenProfile() {
           <Divider inset={48}/>
           <ProfileLink icon="box"     label={t('screen.categories')}       sub="Manage custom categories"           onClick={() => nav.push('manageCategories')}/>
           <Divider inset={48}/>
-          <ProfileLink icon="card"    label={t('screen.accounts')}         sub={`${connectedBanks} connected`}      onClick={() => nav.push('accountsAll')}/>
+          <ProfileLink icon="card"    label={t('screen.accounts')}         sub={`${connectedBanks} connected`}      onClick={() => nav.push('accounts')} testId="profile-link-accounts"/>
           <Divider inset={48}/>
           <ProfileLink icon="link"    label="Integrations"                 sub="4 stores connected"                 onClick={() => nav.push('integrations')}/>
           <Divider inset={48}/>
@@ -144,7 +144,7 @@ export function ScreenProfile() {
           <Divider inset={48}/>
           <ProfileLink icon="lock"    label="Privacy & security"/>
           <Divider inset={48}/>
-          <ProfileLink icon="sun"     label={t('settings.appearance')}     sub="Dark mode, fonts & display"          onClick={() => nav.push('settings')}/>
+          <ProfileLink icon="sun"     label={t('settings.appearance')}     sub="Dark mode, fonts & display"          onClick={() => nav.push('settings')} testId="profile-link-appearance"/>
           <Divider inset={48}/>
           <ProfileLink icon="globe" label={t('settings.language')} sub={t('settings.languageSub')} onClick={() => nav.push('language')}/>
           <Divider inset={48}/>
@@ -1622,27 +1622,47 @@ export function ScreenSpaceDetail({ params }) {
   const attachedAccountObjects = isMemberOfShared
     ? sharedAccts
     : [...accountIds.map(id => availableAccounts.find(a => a.id === id)).filter(Boolean), ...memberAttachedAccts];
-  const attachedMain = attachedAccountObjects.filter(a => a.type === 'checking');
-  const attachedSaving = attachedAccountObjects.filter(a => a.type !== 'checking');
+  const spaceAcctTypeColor = (type) => {
+    const m = { checking:'#FF6200', bank:'#FF6200', saving:'#A8782B', savings:'#A8782B',
+      cash:'#26A69A', brokerage:'#5E4A78', invest:'#5E4A78',
+      credit:'#E05555', mortgage:'#D4940A', loan:'#7B61FF' };
+    return m[type] || M.slate;
+  };
+  const spaceAcctIcon = (type) => {
+    const m = { checking:'card', bank:'card', saving:'piggy', savings:'piggy',
+      cash:'wallet', brokerage:'rocket', invest:'rocket', credit:'card', mortgage:'home', loan:'doc' };
+    return m[type] || 'card';
+  };
+  const spaceAcctLabel = (type) => {
+    const m = { checking:t('acct.bank'), bank:t('acct.bank'), saving:t('acct.saving'), savings:t('acct.saving'),
+      cash:t('acct.cashWallet'), brokerage:t('acct.brokerage'), invest:t('acct.brokerage'),
+      credit:t('acct.creditCard'), mortgage:t('acct.mortgage'), loan:t('acct.loan') };
+    return m[type] || type;
+  };
 
   const renderAttachedRow = (a, i) => {
     const sharedAcctData = sharedAccts.find(s => s.id === a.id);
     const isSharedAcct = !!sharedAcctData && !ownConnectedIds.has(a.id);
     const isOwnAcct = ownConnectedIds.has(a.id);
     const canDetach = myPerm === 'owner' || isOwnAcct;
+    const typeColor = spaceAcctTypeColor(a.type);
+    const typeLabel = spaceAcctLabel(a.type);
     return (
       <React.Fragment key={a.id}>
         {i > 0 && <Divider inset={50}/>}
         <div style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
-          <div style={{ width:36, height:36, borderRadius:10, background: a.color || M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-            <I name={a.type==='savings'?'piggy':a.type==='invest'?'rocket':'card'} size={16} color="#fff"/>
+          <div style={{ width:36, height:36, borderRadius:10, background: a.color || typeColor, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+            <I name={spaceAcctIcon(a.type)} size={16} color="#fff"/>
           </div>
           <div style={{ flex:1, minWidth:0 }}>
             <div style={{ fontSize:14, fontWeight:500 }}>{a.name}</div>
-            <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:2 }}>
-              <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono }}>{a.iban}</div>
-              {a.bankId && <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>Bank</span>}
-              {isSharedAcct && <span style={{ fontSize:9, fontWeight:600, padding:'1px 6px', borderRadius:999, background:M.violetSoft||'#EEE8FF', color:M.violet||'#7B61FF' }}>Shared</span>}
+            <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:2, flexWrap:'wrap' }}>
+              {a.iban && <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono }}>{a.iban}</div>}
+              <span style={{ fontSize:9, fontWeight:700, padding:'2px 6px', borderRadius:999, background:typeColor+'22', color:typeColor, textTransform:'uppercase', letterSpacing:'0.04em' }}>
+                {typeLabel}
+              </span>
+              {a.readOnly && <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase' }}>PSD2</span>}
+              {isSharedAcct && <span style={{ fontSize:9, fontWeight:600, padding:'1px 6px', borderRadius:999, background:M.violetSoft||'#EEE8FF', color:M.violet }}>Shared</span>}
             </div>
             {isProfileShared && sharedAcctData?.attachedBy && (() => {
               const attacher = userRegistry[sharedAcctData.attachedBy] || {};
@@ -1714,33 +1734,16 @@ export function ScreenSpaceDetail({ params }) {
           </div>
         </div>
 
-        {/* Attached main accounts */}
-        <div className="m-cap" style={{ marginBottom:4, paddingLeft:4 }}>{t('space.mainAccounts')}</div>
-        <div style={{ fontSize:11, color:M.ink3, marginBottom:8, paddingLeft:4 }}>{t('space.mainAccountsSub')}</div>
-        <div className="m-card" style={{ padding:'4px 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
-          {attachedMain.length === 0 && <div style={{ padding:'16px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>{t('space.noChecking')}</div>}
-          {attachedMain.map((a, i) => renderAttachedRow(a, i))}
+        {/* Financial Accounts card */}
+        <div className="m-cap" style={{ marginBottom:4, paddingLeft:4 }}>{t('space.financialAccounts')}</div>
+        <div style={{ fontSize:11, color:M.ink3, marginBottom:8, paddingLeft:4 }}>{t('space.financialAccountsSub')}</div>
+        <div data-testid="space-accounts-card" className="m-card" style={{ padding:'4px 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
+          {attachedAccountObjects.length === 0 && <div style={{ padding:'16px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>{t('space.noAccounts')}</div>}
+          {attachedAccountObjects.map((a, i) => renderAttachedRow(a, i))}
           {canEdit && (
             <>
-              {attachedMain.length > 0 && <Divider inset={0}/>}
-              <div className="m-tap" onClick={() => setShowAttachSheet('checking')}
-                style={{ display:'flex', alignItems:'center', gap:8, padding:'12px 0' }}>
-                <I name="plus" size={16} color={M.sage}/>
-                <div style={{ fontSize:13, color:M.sage, fontWeight:600 }}>{t('space.attachAccount')}</div>
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* Attached saving & investment accounts */}
-        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('space.savingAccounts')}</div>
-        <div className="m-card" style={{ padding:'4px 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
-          {attachedSaving.length === 0 && <div style={{ padding:'16px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>{t('space.noSaving')}</div>}
-          {attachedSaving.map((a, i) => renderAttachedRow(a, i))}
-          {canEdit && (
-            <>
-              {attachedSaving.length > 0 && <Divider inset={0}/>}
-              <div className="m-tap" onClick={() => setShowAttachSheet('saving')}
+              {attachedAccountObjects.length > 0 && <Divider inset={0}/>}
+              <div className="m-tap" onClick={() => setShowAttachSheet('any')}
                 style={{ display:'flex', alignItems:'center', gap:8, padding:'12px 0' }}>
                 <I name="plus" size={16} color={M.sage}/>
                 <div style={{ fontSize:13, color:M.sage, fontWeight:600 }}>{t('space.attachAccount')}</div>
@@ -1916,16 +1919,15 @@ export function ScreenSpaceDetail({ params }) {
           <div style={{ padding:'4px 16px 8px' }}>
             <div style={{ fontSize:17, fontWeight:700, marginBottom:16 }}>{t('space.attachAccount')}</div>
             {(() => {
-              const isChecking = showAttachSheet === 'checking';
               const attachedIds = new Set(attachedAccountObjects.map(a => a.id));
-              const candidates = availableAccounts.filter(a => (isChecking ? a.type === 'checking' : a.type !== 'checking') && !attachedIds.has(a.id));
+              const candidates = availableAccounts.filter(a => !attachedIds.has(a.id));
               if (candidates.length === 0) {
                 return (
                   <>
                     <div style={{ textAlign:'center', color:M.ink3, fontSize:13, padding:'16px 0', marginBottom:12 }}>
-                      {isChecking ? t('space.noCheckingToAttach') : t('space.noSavingToAttach')}
+                      {t('space.noAccounts')}
                     </div>
-                    <button className="m-tap" onClick={() => { setShowAttachSheet(null); nav.push('accountsAll'); }}
+                    <button className="m-tap" onClick={() => { setShowAttachSheet(null); nav.push('accounts'); }}
                       style={{ width:'100%', padding:'12px 0 4px', display:'flex', alignItems:'center', justifyContent:'center', gap:4, background:'transparent', border:'none', cursor:'pointer', fontFamily:M.fontUI }}>
                       <span style={{ fontSize:14, fontWeight:600, color:M.sage }}>{t('space.manageAccounts')} {'→'}</span>
                     </button>
@@ -1935,24 +1937,30 @@ export function ScreenSpaceDetail({ params }) {
               return (
                 <>
                   <div style={{ padding:'4px 0', marginBottom:8 }}>
-                    {candidates.map((a, i) => (
-                      <React.Fragment key={a.id}>
-                        {i > 0 && <Divider inset={50}/>}
-                        <div className="m-tap" onClick={() => { toggleAccount(a.id); setShowAttachSheet(null); }}
-                          style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
-                          <div style={{ width:36, height:36, borderRadius:10, background: a.color || M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                            <I name={a.type==='savings'?'piggy':a.type==='invest'?'rocket':'card'} size={16} color="#fff"/>
+                    {candidates.map((a, i) => {
+                      const tc = spaceAcctTypeColor(a.type);
+                      return (
+                        <React.Fragment key={a.id}>
+                          {i > 0 && <Divider inset={50}/>}
+                          <div className="m-tap" onClick={() => { toggleAccount(a.id); setShowAttachSheet(null); }}
+                            style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
+                            <div style={{ width:36, height:36, borderRadius:10, background: a.color || tc, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                              <I name={spaceAcctIcon(a.type)} size={16} color="#fff"/>
+                            </div>
+                            <div style={{ flex:1, minWidth:0 }}>
+                              <div style={{ fontSize:14, fontWeight:500 }}>{a.name}</div>
+                              <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:2 }}>
+                                {a.iban && <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono }}>{a.iban}</div>}
+                                <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:999, background:tc+'22', color:tc, textTransform:'uppercase' }}>{spaceAcctLabel(a.type)}</span>
+                              </div>
+                            </div>
+                            <I name="plus" size={16} color={M.sage}/>
                           </div>
-                          <div style={{ flex:1, minWidth:0 }}>
-                            <div style={{ fontSize:14, fontWeight:500 }}>{a.name}</div>
-                            <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono, marginTop:2 }}>{a.iban}</div>
-                          </div>
-                          <I name="plus" size={16} color={M.sage}/>
-                        </div>
-                      </React.Fragment>
-                    ))}
+                        </React.Fragment>
+                      );
+                    })}
                   </div>
-                  <button className="m-tap" onClick={() => { setShowAttachSheet(null); nav.push('accountsAll'); }}
+                  <button className="m-tap" onClick={() => { setShowAttachSheet(null); nav.push('accounts'); }}
                     style={{ width:'100%', padding:'16px 0 4px', display:'flex', alignItems:'center', justifyContent:'center', gap:4, background:'transparent', border:'none', cursor:'pointer', fontFamily:M.fontUI }}>
                     <span style={{ fontSize:14, fontWeight:600, color:M.sage }}>{t('space.manageAccounts')} {'→'}</span>
                   </button>

@@ -11,7 +11,8 @@ import { IOSDevice } from './IOSFrame.jsx';
 import { M, I, IcoGoogle, IcoApple, Divider, StatusBar, AppBar } from './theme.jsx';
 import { DarkCtx, NavProvider, useNav, Sheet, useDark } from './nav.jsx';
 import { DevModeProvider, DevPanel } from './DevMode.jsx';
-import { useLang, LangProvider } from '../shared/i18n.jsx';
+import { useLang, LangProvider, CurrencyProvider } from '../shared/i18n.jsx';
+import { COUNTRY_CURRENCY } from '../shared/constants.js';
 import { useLocalStorage, useSessionStorage } from '../shared/hooks.jsx';
 import { AppCtx, CatProvider, ProfilesProvider, useProfiles, TxProvider, RecurProvider, AllocProvider, useConnectedAccounts, ScreenAllocate, ScreenAllocateTopic, ScreenAllocateAddTopic, ResetSignalListener } from './providers.jsx';
 import { ScreenStub } from '../features/extra/Stub.jsx';
@@ -537,7 +538,15 @@ function ScreenLoginGate({ onLogin }) {
       const ctKey = computeUserDataKey(method, finalEmail, 'munni_profile_country');
       localStorage.setItem(fnKey, JSON.stringify(firstName));
       localStorage.setItem(lnKey, JSON.stringify(lastName));
-      if (data.country) localStorage.setItem(ctKey, JSON.stringify(data.country));
+      if (data.country) {
+        localStorage.setItem(ctKey, JSON.stringify(data.country));
+        // Auto-set display currency from country if not already set by user
+        const existingCurrency = localStorage.getItem('munni_display_currency');
+        if (!existingCurrency) {
+          const defaultCurrency = COUNTRY_CURRENCY[data.country] || 'EUR';
+          localStorage.setItem('munni_display_currency', JSON.stringify(defaultCurrency));
+        }
+      }
       if (newApiUrl && newApiUrl.trim()) {
         localStorage.setItem('munni_api_url', JSON.stringify(newApiUrl.trim()));
       }
@@ -1239,7 +1248,9 @@ export function App() {
     <DevModeProvider>
       <DarkCtx.Provider value={{ dark, setDark }}>
         <LangProvider>
-          {isMobile ? appContent : <IOSDevice>{appContent}</IOSDevice>}
+          <CurrencyProvider>
+            {isMobile ? appContent : <IOSDevice>{appContent}</IOSDevice>}
+          </CurrencyProvider>
         </LangProvider>
       </DarkCtx.Provider>
     </DevModeProvider>

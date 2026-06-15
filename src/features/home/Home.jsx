@@ -1,10 +1,10 @@
 ﻿import React from 'react';
 import { CATEGORIES, _catExt } from '../../shared/data/categories.js';
-import { fmtEur, fmtEurInt, fmtDate, computePeriodHistory, fmtSyncTime } from '../../shared/utils/format.js';
+import { fmtEur, fmtEurInt, fmtMoney, fmtMoneyInt, fmtDate, computePeriodHistory, fmtSyncTime } from '../../shared/utils/format.js';
 import { getUserId, getUserSyncKey } from '../../shared/utils/user.js';
 import { PORTFOLIO } from '../investments/data.js';
 import { M, I, IcoMDI, Divider, StatusBar } from '../../app/theme.jsx';
-import { useLang } from '../../shared/i18n.jsx';
+import { useLang, useCurrency } from '../../shared/i18n.jsx';
 import { useNav, TabBar } from '../../app/nav.jsx';
 import { EVENTS } from '../events/data.js';
 import { useLocalStorage } from '../../shared/hooks.jsx';
@@ -72,6 +72,7 @@ function CustomGraphCard({ card, txs }) {
 export function ScreenHome() {
   const nav = useNav();
   const { t } = useLang();
+  const { currency } = useCurrency();
   const alloc = useAlloc();
   const { txs, allTxs } = useTxCtx();
   const { profiles, setProfiles } = useProfiles();
@@ -450,8 +451,8 @@ export function ScreenHome() {
           <ProfileAvatar profile={activeProfile} size={42}/>
         </div>
         <div style={{ flex:1, minWidth:0 }}>
-          <div className="m-num" style={{ fontSize:22, fontWeight:600, letterSpacing:'-0.02em', lineHeight:1 }}>
-            {fmtEur(totalBalance)}
+          <div data-testid="home-balance-amount" className="m-num" style={{ fontSize:22, fontWeight:600, letterSpacing:'-0.02em', lineHeight:1 }}>
+            {fmtMoney(totalBalance, currency)}
           </div>
           <div style={{ display:'flex', alignItems:'center', gap:5, marginTop:3 }}>
             <div style={{ width:5, height:5, borderRadius:999, background:M.sage, flexShrink:0 }}/>

@@ -595,4 +595,65 @@ export const DUTCH_BANKS = [
   { id:'revolut', name:'Revolut',      country:'EU', bic:'REVOLT21', color:'#191C20', logo:'🔷' },
   { id:'n26',     name:'N26',          country:'EU', bic:'NTSBDEB1', color:'#000000', logo:'⬛' },
   { id:'wise',    name:'Wise',         country:'EU', bic:'TRWIBEB1', color:'#9FE870', logo:'🌍' },
+];
+
+// Extended bank list for new Financial Accounts creation flows
+export const EU_BANKS_EXTRA = [
+  { id:'deutsche',   name:'Deutsche Bank',     country:'DE', bic:'DEUTDEDB', color:'#0018A8', logo:'🏦' },
+  { id:'commerzbank',name:'Commerzbank',        country:'DE', bic:'COBADEFF', color:'#FFCA28', logo:'🏦' },
+  { id:'sparkasse',  name:'Sparkasse',          country:'DE', bic:'BELADEBE', color:'#E10000', logo:'🏦' },
+  { id:'dkb',        name:'DKB Bank',           country:'DE', bic:'SSKMDEMMX',color:'#002A6E', logo:'🏦' },
+  { id:'bnpparibas', name:'BNP Paribas',        country:'FR', bic:'BNPAFRPP', color:'#009266', logo:'🏦' },
+  { id:'agricole',   name:'Crédit Agricole',    country:'FR', bic:'AGRIFRPP', color:'#00A650', logo:'🏦' },
+  { id:'socgen',     name:'Société Générale',   country:'FR', bic:'SOGEFRPP', color:'#E30613', logo:'🏦' },
+  { id:'bbva',       name:'BBVA',               country:'ES', bic:'BBVAESM1', color:'#004481', logo:'🏦' },
+  { id:'santander',  name:'Santander',          country:'ES', bic:'BSCHESM1', color:'#CC0000', logo:'🏦' },
+  { id:'caixabank',  name:'CaixaBank',          country:'ES', bic:'CAIXESBB', color:'#007EBB', logo:'🏦' },
+  { id:'intesa',     name:'Intesa Sanpaolo',    country:'IT', bic:'BCITITMM', color:'#003087', logo:'🏦' },
+  { id:'unicredit',  name:'UniCredit',          country:'IT', bic:'UNCRITMM', color:'#ED1C24', logo:'🏦' },
+  { id:'kbc',        name:'KBC',                country:'BE', bic:'KREDBEBB', color:'#00629B', logo:'🏦' },
+  { id:'belfius',    name:'Belfius',            country:'BE', bic:'NICABEBB', color:'#BB0000', logo:'🏦' },
+  { id:'barclays',   name:'Barclays',           country:'GB', bic:'BARCGB22', color:'#00AEE9', logo:'🏦' },
+  { id:'hsbc',       name:'HSBC',               country:'GB', bic:'MIDLGB22', color:'#DB0011', logo:'🏦' },
+  { id:'lloyds',     name:'Lloyds Bank',        country:'GB', bic:'LOYDGB2L', color:'#024731', logo:'🏦' },
+  { id:'starling',   name:'Starling Bank',      country:'GB', bic:'SRLGGB2L', color:'#7ACCA0', logo:'🏦' },
+  { id:'monzo',      name:'Monzo',              country:'GB', bic:'MONZGB2L', color:'#FF3464', logo:'🏦' },
+  { id:'pko',        name:'PKO Bank Polski',    country:'PL', bic:'BPKOPLPW', color:'#003189', logo:'🏦' },
+  { id:'mbank',      name:'mBank',              country:'PL', bic:'BREXPLPW', color:'#E10000', logo:'🏦' },
+  { id:'csob',       name:'CSOB',               country:'CZ', bic:'CEKOCZPP', color:'#0055A5', logo:'🏦' },
+  { id:'kb',         name:'Komerční banka',     country:'CZ', bic:'KOMBCZPP', color:'#CC0000', logo:'🏦' },
+  { id:'otp',        name:'OTP Bank',           country:'HU', bic:'OTPVHUHB', color:'#008744', logo:'🏦' },
+  { id:'postfinance',name:'PostFinance',        country:'CH', bic:'POFICHBEXXX',color:'#FFD700',logo:'🏦' },
+  { id:'ubs',        name:'UBS',                country:'CH', bic:'UBSWCHZH80',color:'#EC0016',logo:'🏦' },
+  { id:'swissquote', name:'Swissquote',         country:'CH', bic:'SWQBCHZZXXX',color:'#00ADEF',logo:'🏦' },
+];
+
+export const US_BANKS = [
+  { id:'chase',      name:'Chase',             country:'US', bic:'CHASUS33', color:'#005EB8', logo:'🏦' },
+  { id:'bofa',       name:'Bank of America',   country:'US', bic:'BOFAUS3N', color:'#E31837', logo:'🏦' },
+  { id:'wells',      name:'Wells Fargo',       country:'US', bic:'WFBIUS6S', color:'#D71E28', logo:'🏦' },
+  { id:'citi',       name:'Citibank',          country:'US', bic:'CITIUS33', color:'#003B8E', logo:'🏦' },
+  { id:'usbank',     name:'U.S. Bank',         country:'US', bic:'USBKUS44', color:'#003087', logo:'🏦' },
+  { id:'capital1',   name:'Capital One',       country:'US', bic:'HIBKUS44', color:'#D03027', logo:'🏦' },
+  { id:'td_us',      name:'TD Bank (US)',      country:'US', bic:'TDOMCATT', color:'#34B233', logo:'🏦' },
+  { id:'pnc',        name:'PNC Bank',          country:'US', bic:'PNCCUS33', color:'#F58025', logo:'🏦' },
+  { id:'ally',       name:'Ally Bank',         country:'US', bic:'ALLYUS33', color:'#8B1C00', logo:'🏦' },
+  { id:'schwab_bank',name:'Charles Schwab Bank',country:'US',bic:'CSWBUS33', color:'#0047BB', logo:'🏦' },
+];
+
+export const ALL_BANKS = [...DUTCH_BANKS, ...EU_BANKS_EXTRA, ...US_BANKS,
+  { id:'other', name:'Other', country:'', bic:'', color:'#888', logo:'🏦' },
+];
+
+export const BROKERS = [
+  { id:'degiro',      name:'DEGIRO',              region:'EU',     color:'#5E4A78', logo:'🏦' },
+  { id:'ib',          name:'Interactive Brokers', region:'GLOBAL', color:'#003087', logo:'🏦' },
+  { id:'etoro',       name:'eToro',               region:'EU',     color:'#2FC069', logo:'🏦' },
+  { id:'saxo',        name:'Saxo Bank',           region:'EU',     color:'#003087', logo:'🏦' },
+  { id:'flatex',      name:'flatexDEGIRO',        region:'EU',     color:'#005AAA', logo:'🏦' },
+  { id:'trade_rep',   name:'Trade Republic',      region:'EU',     color:'#1A1A2E', logo:'🏦' },
+  { id:'fidelity',    name:'Fidelity',            region:'US',     color:'#319441', logo:'🏦' },
+  { id:'schwab',      name:'Charles Schwab',      region:'US',     color:'#0047BB', logo:'🏦' },
+  { id:'robinhood',   name:'Robinhood',           region:'US',     color:'#00B45A', logo:'🏦' },
+  { id:'other_broker',name:'Other',               region:'GLOBAL', color:'#888',   logo:'🏦' },
 ];

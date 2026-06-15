@@ -1,9 +1,10 @@
 ﻿import React from 'react';
-import { ACCOUNTS, DEMO_ACCOUNT_IDS, DEMO_ACCOUNTS, INTEGRATIONS, ALL_RECEIPTS, generateBankTxs, generateAsnTxs, DUTCH_BANKS, generateBankIban } from './data.js';
-import { fmtEur, fmtDate, computePeriodHistory, fmtSyncTime } from '../../shared/utils/format.js';
+import { ACCOUNTS, DEMO_ACCOUNT_IDS, DEMO_ACCOUNTS, INTEGRATIONS, ALL_RECEIPTS, generateBankTxs, generateAsnTxs, DUTCH_BANKS, generateBankIban, ALL_BANKS, BROKERS } from './data.js';
+import { fmtEur, fmtMoney, fmtMoneyInt, fmtDate, computePeriodHistory, fmtSyncTime } from '../../shared/utils/format.js';
 import { getUserId, getUserSyncKey, addDevLog } from '../../shared/utils/user.js';
 import { M, I, IcoMDI, Divider, StatusBar, AppBar } from '../../app/theme.jsx';
-import { useLang } from '../../shared/i18n.jsx';
+import { useLang, useCurrency } from '../../shared/i18n.jsx';
+import { CURRENCIES, STOCK_SPACE_AVATARS } from '../../shared/constants.js';
 import { useNav, Sheet } from '../../app/nav.jsx';
 import { useLocalStorage } from '../../shared/hooks.jsx';
 import { BarChart, StackedBar } from '../../shared/components/Charts.jsx';
@@ -445,21 +446,801 @@ const DEFAULT_PROFILES = [
 
 
 
+// ── Financial Accounts helpers ────────────────────────────────────────────────
+
+function acctGroup(type) {
+  return ['checking','bank','saving','savings','cash','brokerage','invest'].includes(type) ? 'asset' : 'liability';
+}
+function acctTypeLabel(type, t) {
+  const m = { checking:t('acct.bank'), bank:t('acct.bank'), saving:t('acct.saving'), savings:t('acct.saving'),
+               cash:t('acct.cashWallet'), brokerage:t('acct.brokerage'), invest:t('acct.brokerage'),
+               credit:t('acct.creditCard'), mortgage:t('acct.mortgage'), loan:t('acct.loan') };
+  return m[type] || type;
+}
+function acctTypeColor(type) {
+  const m = { checking:'#FF6200', bank:'#FF6200', saving:'#A8782B', savings:'#A8782B',
+               cash:'#26A69A', brokerage:'#5E4A78', invest:'#5E4A78',
+               credit:'#E05555', mortgage:'#D4940A', loan:'#7B61FF' };
+  return m[type] || M.slate;
+}
+function acctIcon(type) {
+  const m = { checking:'card', bank:'card', saving:'piggy', savings:'piggy',
+               cash:'wallet', brokerage:'rocket', invest:'rocket',
+               credit:'card', mortgage:'home', loan:'doc' };
+  return m[type] || 'card';
+}
+
+function AcctTypeBadge({ type, t }) {
+  const color = acctTypeColor(type);
+  return (
+    <span style={{ fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:999,
+      background:color+'22', color:color, textTransform:'uppercase', letterSpacing:'0.04em', flexShrink:0 }}>
+      {acctTypeLabel(type, t)}
+    </span>
+  );
+}
+
+function AcctRow({ acct, i, t, currency, onDelete }) {
+  const color = acct.color || acctTypeColor(acct.type);
+  const isLiability = acctGroup(acct.type) === 'liability';
+  return (
+    <React.Fragment>
+      {i > 0 && <Divider inset={52}/>}
+      <div data-testid="account-row" style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
+        <div style={{ width:38, height:38, borderRadius:10, background:color, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+          <I name={acctIcon(acct.type)} size={18} color="#fff"/>
+        </div>
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ fontSize:14, fontWeight:600 }}>{acct.name}</div>
+          <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:2, flexWrap:'wrap' }}>
+            {acct.iban && <span style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono }}>{acct.iban}</span>}
+            <AcctTypeBadge type={acct.type} t={t}/>
+            {acct.readOnly && <span style={{ fontSize:9, fontWeight:700, padding:'2px 6px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase' }}>PSD2</span>}
+          </div>
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+          <div className="m-num" style={{ fontSize:14, fontWeight:600, color: isLiability ? M.clay : M.ink }}>
+            {fmtMoney(acct.balance || 0, currency)}
+          </div>
+          <button className="m-tap" onClick={e => { e.stopPropagation(); onDelete(acct); }}
+            style={{ background:'none', border:'none', padding:4, cursor:'pointer', opacity:0.6 }}>
+            <I name="x" size={13} color={M.ink4}/>
+          </button>
+        </div>
+      </div>
+    </React.Fragment>
+  );
+}
+
+// ── Account type selector ────────────────────────────────────────────────────
+
+function AccountTypeSelectScreen({ onSelect, onBack }) {
+  const { t } = useLang();
+  const ASSET_TYPES = [
+    { id:'bank',     icon:'card',   label:t('acct.bank'),       sub:t('acct.bankDesc') },
+    { id:'saving',   icon:'piggy',  label:t('acct.saving'),     sub:t('acct.savingDesc') },
+    { id:'cash',     icon:'wallet', label:t('acct.cashWallet'), sub:t('acct.cashDesc') },
+    { id:'brokerage',icon:'rocket', label:t('acct.brokerage'),  sub:t('acct.brokerageDesc') },
+  ];
+  const LIAB_TYPES = [
+    { id:'credit',   icon:'card',   label:t('acct.creditCard'), sub:t('acct.creditDesc') },
+    { id:'mortgage', icon:'home',   label:t('acct.mortgage'),   sub:t('acct.mortgageDesc') },
+    { id:'loan',     icon:'doc',    label:t('acct.loan'),       sub:t('acct.loanDesc') },
+  ];
+  const renderTypes = (types) => types.map((tp, i) => (
+    <React.Fragment key={tp.id}>
+      {i > 0 && <Divider inset={52}/>}
+      <div data-testid={`acct-type-${tp.id}`} className="m-tap" onClick={() => onSelect(tp.id)}
+        style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
+        <div style={{ width:38, height:38, borderRadius:10, background:acctTypeColor(tp.id)+'22', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+          <I name={tp.icon} size={18} color={acctTypeColor(tp.id)}/>
+        </div>
+        <div style={{ flex:1 }}>
+          <div style={{ fontSize:14, fontWeight:600 }}>{tp.label}</div>
+          <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{tp.sub}</div>
+        </div>
+        <I name="caretR" size={14} color={M.ink4}/>
+      </div>
+    </React.Fragment>
+  ));
+  return (
+    <div className="m-screen m-fade" style={{ display:'flex', flexDirection:'column' }}>
+      <StatusBar/>
+      <div style={{ display:'flex', alignItems:'center', padding:'12px 20px', flexShrink:0, borderBottom:`1px solid ${M.line2}` }}>
+        <button className="m-tap" onClick={onBack}
+          style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:4, color:M.tint, fontFamily:M.fontUI, fontSize:15, padding:'4px 0', minWidth:60 }}>
+          <I name="arrowL" size={16} color={M.tint}/>{t('action.back')}
+        </button>
+        <div style={{ flex:1, textAlign:'center', fontWeight:600, fontSize:16, color:M.ink }}>{t('acct.selectType')}</div>
+        <div style={{ minWidth:60 }}/>
+      </div>
+      <div style={{ flex:1, overflowY:'auto', padding:'16px 20px 32px' }}>
+        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('acct.assets')} — {t('acct.assetDesc')}</div>
+        <div className="m-card" style={{ padding:'4px 16px', marginBottom:16, border:`1px solid ${M.line}` }}>{renderTypes(ASSET_TYPES)}</div>
+        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('acct.liabilities')} — {t('acct.liabilityDesc')}</div>
+        <div className="m-card" style={{ padding:'4px 16px', marginBottom:16, border:`1px solid ${M.line}` }}>{renderTypes(LIAB_TYPES)}</div>
+      </div>
+    </div>
+  );
+}
+
+// ── Manual/Automated method selector ────────────────────────────────────────
+
+function AccountMethodScreen({ typeLabel, onManual, onAutomatic, onBack }) {
+  const { t } = useLang();
+  return (
+    <div className="m-screen m-fade" style={{ display:'flex', flexDirection:'column' }}>
+      <StatusBar/>
+      <div style={{ display:'flex', alignItems:'center', padding:'12px 20px', flexShrink:0, borderBottom:`1px solid ${M.line2}` }}>
+        <button className="m-tap" onClick={onBack}
+          style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:4, color:M.tint, fontFamily:M.fontUI, fontSize:15, padding:'4px 0', minWidth:60 }}>
+          <I name="arrowL" size={16} color={M.tint}/>{t('action.back')}
+        </button>
+        <div style={{ flex:1, textAlign:'center', fontWeight:600, fontSize:16, color:M.ink }}>{typeLabel}</div>
+        <div style={{ minWidth:60 }}/>
+      </div>
+      <div style={{ flex:1, overflowY:'auto', padding:'24px 20px' }}>
+        <div data-testid="acct-method-manual" className="m-tap" onClick={onManual}
+          style={{ padding:'18px 20px', borderRadius:14, border:`1.5px solid ${M.line}`, background:M.card, marginBottom:12, display:'flex', alignItems:'center', gap:14 }}>
+          <div style={{ width:44, height:44, borderRadius:12, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+            <I name="plus" size={20} color={M.sage}/>
+          </div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:15, fontWeight:700 }}>{t('acct.manual')}</div>
+            <div style={{ fontSize:12, color:M.ink3, marginTop:2 }}>Enter balance and details manually</div>
+          </div>
+          <I name="caretR" size={14} color={M.ink4}/>
+        </div>
+        <div data-testid="acct-method-auto" className="m-tap" onClick={onAutomatic}
+          style={{ padding:'18px 20px', borderRadius:14, border:`1.5px solid ${M.line}`, background:M.card, marginBottom:16, display:'flex', alignItems:'center', gap:14 }}>
+          <div style={{ width:44, height:44, borderRadius:12, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+            <I name="sync" size={20} color={M.sage}/>
+          </div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:15, fontWeight:700 }}>{t('acct.automated')}</div>
+            <div style={{ fontSize:12, color:M.ink3, marginTop:2 }}>Sync via Open Banking — read-only</div>
+          </div>
+          <I name="caretR" size={14} color={M.ink4}/>
+        </div>
+        <div style={{ padding:'12px 16px', borderRadius:12, background:M.sageSoft, display:'flex', gap:10, alignItems:'flex-start' }}>
+          <I name="lock" size={16} color={M.sage}/>
+          <div style={{ fontSize:12, color:M.ink2, lineHeight:1.5 }}>{t('acct.psd2Notice')}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Reusable inline currency sheet ──────────────────────────────────────────
+
+function CurrencySheet({ open, current, onSelect, onClose, t }) {
+  return (
+    <Sheet open={open} onClose={onClose} title={t('acct.currency')}>
+      <div style={{ overflowY:'auto', flex:1 }}>
+        <div className="m-card" style={{ padding:'4px 16px', margin:'0 0 24px', border:`1px solid ${M.line}` }}>
+          {CURRENCIES.map((cur, i) => (
+            <React.Fragment key={cur.code}>
+              {i > 0 && <Divider inset={0}/>}
+              <div className="m-tap" onClick={() => onSelect(cur.code)}
+                style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
+                <span style={{ width:36, textAlign:'center', fontSize:16, fontWeight:700, color:M.sage }}>{cur.symbol}</span>
+                <div style={{ flex:1 }}>
+                  <span style={{ fontSize:14 }}>{cur.name}</span>
+                  <span style={{ fontSize:11, color:M.ink3, marginLeft:8, fontFamily:M.fontMono }}>{cur.code}</span>
+                </div>
+                {current === cur.code && <I name="check" size={16} color={M.sage}/>}
+              </div>
+            </React.Fragment>
+          ))}
+        </div>
+      </div>
+    </Sheet>
+  );
+}
+
+// ── Bank / Saving / Credit Manual form ──────────────────────────────────────
+
+function BankManualForm({ typeLabel, typeId, defaultCurrency, onSave, onBack }) {
+  const { t } = useLang();
+  const [bankSearch, setBankSearch] = React.useState('');
+  const [selectedBank, setSelectedBank] = React.useState(null);
+  const [showBankSearch, setShowBankSearch] = React.useState(true);
+  const [displayName, setDisplayName] = React.useState('');
+  const [accountNum, setAccountNum] = React.useState('');
+  const [balance, setBalance] = React.useState('0');
+  const [currency, setCurrency] = React.useState(defaultCurrency || 'EUR');
+  const [showCurrSheet, setShowCurrSheet] = React.useState(false);
+  const [errors, setErrors] = React.useState({});
+  const curInfo = CURRENCIES.find(c => c.code === currency);
+
+  const handleSave = () => {
+    const errs = {};
+    if (!selectedBank) errs.bank = 'Select a bank';
+    if (Object.keys(errs).length) { setErrors(errs); return; }
+    onSave({
+      id: `acct_${Date.now()}`,
+      name: displayName.trim() || (selectedBank?.id === 'other' ? typeLabel : selectedBank?.name || typeLabel),
+      type: typeId,
+      iban: accountNum.trim(),
+      balance: parseFloat(balance) || 0,
+      currency,
+      color: selectedBank?.color || acctTypeColor(typeId),
+      bankId: selectedBank?.id,
+    });
+  };
+
+  if (showBankSearch) {
+    const filteredBanks = ALL_BANKS.filter(b => !bankSearch || b.name.toLowerCase().includes(bankSearch.toLowerCase()) || (b.bic && b.bic.toLowerCase().includes(bankSearch.toLowerCase())));
+    return (
+      <div className="m-screen m-fade" style={{ display:'flex', flexDirection:'column' }}>
+        <StatusBar/>
+        <div style={{ display:'flex', alignItems:'center', padding:'12px 20px', flexShrink:0, borderBottom:`1px solid ${M.line2}` }}>
+          <button className="m-tap" onClick={onBack}
+            style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:4, color:M.tint, fontFamily:M.fontUI, fontSize:15, padding:'4px 0', minWidth:60 }}>
+            <I name="arrowL" size={16} color={M.tint}/>{t('action.back')}
+          </button>
+          <div style={{ flex:1, textAlign:'center', fontWeight:600, fontSize:16, color:M.ink }}>{typeLabel}</div>
+          <div style={{ minWidth:60 }}/>
+        </div>
+        <div style={{ padding:'12px 20px 8px', flexShrink:0 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 12px', borderRadius:10, border:`1px solid ${M.line}`, background:M.paper2 }}>
+            <I name="search" size={16} color={M.ink4}/>
+            <input autoFocus data-testid="acct-bank-search"
+              value={bankSearch} onChange={e => setBankSearch(e.target.value)}
+              placeholder={t('acct.bankSearch')}
+              style={{ flex:1, border:'none', background:'transparent', fontSize:14, fontFamily:M.fontUI, outline:'none', color:M.ink, padding:0 }}/>
+          </div>
+          {errors.bank && <div style={{ fontSize:11, color:M.clay, marginTop:4 }}>{errors.bank}</div>}
+        </div>
+        <div style={{ flex:1, overflowY:'auto', padding:'0 20px 24px' }}>
+          <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
+            {filteredBanks.length === 0 && <div style={{ padding:'20px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>{t('onboarding.noResults')}</div>}
+            {filteredBanks.map((bank, i) => (
+              <React.Fragment key={bank.id}>
+                {i > 0 && <Divider inset={48}/>}
+                <div data-testid={`bank-row-${bank.id}`} className="m-tap"
+                  onClick={() => { setSelectedBank(bank); setShowBankSearch(false); }}
+                  style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
+                  <div style={{ width:36, height:36, borderRadius:10, background:`${bank.color}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:18 }}>
+                    {bank.logo}
+                  </div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:14, fontWeight:500 }}><HighlightText text={bank.name} query={bankSearch.trim()}/></div>
+                    {bank.bic && <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono, marginTop:1 }}>{bank.bic}</div>}
+                  </div>
+                  {bank.country && <span style={{ fontSize:10, fontWeight:700, padding:'2px 6px', borderRadius:4, background:M.paper2, color:M.ink3 }}>{bank.country}</span>}
+                  <I name="caretR" size={14} color={M.ink4}/>
+                </div>
+              </React.Fragment>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="m-screen m-fade" style={{ display:'flex', flexDirection:'column' }}>
+      <StatusBar/>
+      <div style={{ display:'flex', alignItems:'center', padding:'12px 20px', flexShrink:0, borderBottom:`1px solid ${M.line2}` }}>
+        <button className="m-tap" onClick={() => setShowBankSearch(true)}
+          style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:4, color:M.tint, fontFamily:M.fontUI, fontSize:15, padding:'4px 0', minWidth:60 }}>
+          <I name="arrowL" size={16} color={M.tint}/>{t('action.back')}
+        </button>
+        <div style={{ flex:1, textAlign:'center', fontWeight:600, fontSize:16, color:M.ink }}>{typeLabel}</div>
+        <div style={{ minWidth:60 }}/>
+      </div>
+      <div style={{ flex:1, overflowY:'auto', padding:'20px 20px 32px' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 16px', borderRadius:12, background:M.sageSoft, marginBottom:20 }}>
+          <div style={{ width:36, height:36, borderRadius:10, background:`${selectedBank.color}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:18 }}>
+            {selectedBank.logo}
+          </div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:14, fontWeight:600 }}>{selectedBank.name}</div>
+            {selectedBank.bic && <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono }}>{selectedBank.bic}</div>}
+          </div>
+          <button className="m-tap" onClick={() => setShowBankSearch(true)}
+            style={{ fontSize:12, color:M.sage, background:'none', border:'none', cursor:'pointer', fontFamily:M.fontUI, fontWeight:600 }}>Change</button>
+        </div>
+        <div style={{ marginBottom:14 }}>
+          <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{t('acct.displayName')}</div>
+          <input data-testid="acct-display-name"
+            value={displayName} onChange={e => setDisplayName(e.target.value)}
+            placeholder={selectedBank.id === 'other' ? t('acct.displayNameRequired') : selectedBank.name}
+            style={{ width:'100%', boxSizing:'border-box', padding:'11px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none' }}/>
+        </div>
+        <div style={{ marginBottom:14 }}>
+          <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{t('acct.accountNumber')}</div>
+          <input data-testid="acct-account-number"
+            value={accountNum} onChange={e => setAccountNum(e.target.value)}
+            placeholder="e.g. NL12 INGB 0123 4567 89"
+            style={{ width:'100%', boxSizing:'border-box', padding:'11px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none' }}/>
+        </div>
+        <div style={{ marginBottom:14 }}>
+          <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{t('acct.currency')}</div>
+          <button data-testid="acct-currency-btn" className="m-tap"
+            onClick={() => setShowCurrSheet(true)}
+            style={{ width:'100%', padding:'11px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'space-between', color:M.ink }}>
+            <span>{curInfo ? `${curInfo.code} (${curInfo.symbol})` : currency}</span>
+            <I name="caretR" size={14} color={M.ink4}/>
+          </button>
+        </div>
+        <div style={{ marginBottom:24 }}>
+          <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{t('acct.initialBalance')}</div>
+          <input data-testid="acct-initial-balance" type="number"
+            value={balance} onChange={e => setBalance(e.target.value)} placeholder="0"
+            style={{ width:'100%', boxSizing:'border-box', padding:'11px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none' }}/>
+        </div>
+        <button data-testid="acct-save-btn" className="m-btn sage m-tap" style={{ width:'100%' }} onClick={handleSave}>
+          {t('action.save')}
+        </button>
+      </div>
+      <CurrencySheet open={showCurrSheet} current={currency} onSelect={c => { setCurrency(c); setShowCurrSheet(false); }} onClose={() => setShowCurrSheet(false)} t={t}/>
+    </div>
+  );
+}
+
+// ── Cash Wallet form ─────────────────────────────────────────────────────────
+
+function CashWalletForm({ defaultCurrency, onSave, onBack }) {
+  const { t } = useLang();
+  const [displayName, setDisplayName] = React.useState('');
+  const [balance, setBalance] = React.useState('0');
+  const [currency, setCurrency] = React.useState(defaultCurrency || 'EUR');
+  const [purpose, setPurpose] = React.useState('daily');
+  const [selectedIcon, setSelectedIcon] = React.useState('sp7');
+  const [showCurrSheet, setShowCurrSheet] = React.useState(false);
+  const [errors, setErrors] = React.useState({});
+  const CASH_ICONS = STOCK_SPACE_AVATARS;
+  const curInfo = CURRENCIES.find(c => c.code === currency);
+
+  const handleSave = () => {
+    if (!displayName.trim()) { setErrors({ name: t('acct.displayNameRequired') }); return; }
+    const icon = CASH_ICONS.find(i => i.id === selectedIcon);
+    onSave({ id:`acct_cash_${Date.now()}`, name:displayName.trim(), type:'cash', iban:'',
+      balance:parseFloat(balance)||0, currency, color:icon?.bg||M.sage, purpose });
+  };
+
+  return (
+    <div className="m-screen m-fade" style={{ display:'flex', flexDirection:'column' }}>
+      <StatusBar/>
+      <div style={{ display:'flex', alignItems:'center', padding:'12px 20px', flexShrink:0, borderBottom:`1px solid ${M.line2}` }}>
+        <button className="m-tap" onClick={onBack}
+          style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:4, color:M.tint, fontFamily:M.fontUI, fontSize:15, padding:'4px 0', minWidth:60 }}>
+          <I name="arrowL" size={16} color={M.tint}/>{t('action.back')}
+        </button>
+        <div style={{ flex:1, textAlign:'center', fontWeight:600, fontSize:16, color:M.ink }}>{t('acct.cashWallet')}</div>
+        <div style={{ minWidth:60 }}/>
+      </div>
+      <div style={{ flex:1, overflowY:'auto', padding:'20px 20px 32px' }}>
+        <div style={{ padding:'12px 16px', borderRadius:12, background:M.sageSoft, display:'flex', gap:10, alignItems:'flex-start', marginBottom:20 }}>
+          <I name="info" size={16} color={M.sage}/>
+          <div style={{ fontSize:12, color:M.ink2, lineHeight:1.55 }}>{t('acct.usageNotice')}</div>
+        </div>
+        <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>{t('acct.iconPicker')}</div>
+        <div style={{ display:'flex', flexWrap:'wrap', gap:8, marginBottom:20 }}>
+          {CASH_ICONS.map(ic => (
+            <button key={ic.id} data-testid={`cash-icon-${ic.id}`} className="m-tap"
+              onClick={() => setSelectedIcon(ic.id)}
+              style={{ width:44, height:44, borderRadius:12, background:selectedIcon===ic.id?ic.bg:M.paper2,
+                border:`2px solid ${selectedIcon===ic.id?ic.bg:M.line}`,
+                display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:20 }}>
+              {ic.emoji}
+            </button>
+          ))}
+        </div>
+        <div style={{ marginBottom:14 }}>
+          <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{t('acct.displayNameRequired')} *</div>
+          <input data-testid="cash-display-name"
+            value={displayName} onChange={e => { setDisplayName(e.target.value); setErrors({}); }}
+            placeholder={t('acct.cashWallet')}
+            style={{ width:'100%', boxSizing:'border-box', padding:'11px 14px', borderRadius:10,
+              border:`1px solid ${errors.name?M.clay:M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none' }}/>
+          {errors.name && <div style={{ fontSize:11, color:M.clay, marginTop:3 }}>{errors.name}</div>}
+        </div>
+        <div style={{ marginBottom:14 }}>
+          <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>{t('acct.purpose')}</div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+            {[['daily',t('acct.purposeDaily')],['saving',t('acct.purposeSaving')]].map(([val,label]) => (
+              <button key={val} data-testid={`cash-purpose-${val}`} className="m-tap"
+                onClick={() => setPurpose(val)}
+                style={{ padding:'10px 0', borderRadius:10, border:`1.5px solid ${purpose===val?M.sage:M.line}`,
+                  background:purpose===val?M.sageSoft:M.paper2, color:purpose===val?M.sage:M.ink2,
+                  fontSize:13, fontWeight:purpose===val?700:400, cursor:'pointer', fontFamily:M.fontUI }}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div style={{ marginBottom:14 }}>
+          <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{t('acct.currency')}</div>
+          <button data-testid="cash-currency-btn" className="m-tap"
+            onClick={() => setShowCurrSheet(true)}
+            style={{ width:'100%', padding:'11px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'space-between', color:M.ink }}>
+            <span>{curInfo?`${curInfo.code} (${curInfo.symbol})`:currency}</span>
+            <I name="caretR" size={14} color={M.ink4}/>
+          </button>
+        </div>
+        <div style={{ marginBottom:24 }}>
+          <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{t('acct.initialBalance')}</div>
+          <input data-testid="cash-initial-balance" type="number"
+            value={balance} onChange={e => setBalance(e.target.value)} placeholder="0"
+            style={{ width:'100%', boxSizing:'border-box', padding:'11px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none' }}/>
+        </div>
+        <button data-testid="cash-save-btn" className="m-btn sage m-tap" style={{ width:'100%' }} onClick={handleSave}>
+          {t('action.save')}
+        </button>
+      </div>
+      <CurrencySheet open={showCurrSheet} current={currency} onSelect={c=>{setCurrency(c);setShowCurrSheet(false);}} onClose={()=>setShowCurrSheet(false)} t={t}/>
+    </div>
+  );
+}
+
+// ── Broker flows ─────────────────────────────────────────────────────────────
+
+function BrokerManualForm({ defaultCurrency, onSave, onBack }) {
+  const { t } = useLang();
+  const [search, setSearch] = React.useState('');
+  const [selectedBroker, setSelectedBroker] = React.useState(null);
+  const [displayName, setDisplayName] = React.useState('');
+  const [currency, setCurrency] = React.useState(defaultCurrency||'EUR');
+  const [showCurrSheet, setShowCurrSheet] = React.useState(false);
+  const [errors, setErrors] = React.useState({});
+  const curInfo = CURRENCIES.find(c => c.code === currency);
+  const filtered = BROKERS.filter(b => !search || b.name.toLowerCase().includes(search.toLowerCase()));
+  const handleSave = () => {
+    if (!selectedBroker) { setErrors({broker:'Select a broker'}); return; }
+    onSave({ id:`acct_broker_${Date.now()}`,
+      name:displayName.trim()||(selectedBroker.id==='other_broker'?'Brokerage':selectedBroker.name),
+      type:'brokerage', iban:'', balance:0, currency, color:selectedBroker.color, brokerId:selectedBroker.id });
+  };
+  return (
+    <div className="m-screen m-fade" style={{ display:'flex', flexDirection:'column' }}>
+      <StatusBar/>
+      <div style={{ display:'flex', alignItems:'center', padding:'12px 20px', flexShrink:0, borderBottom:`1px solid ${M.line2}` }}>
+        <button className="m-tap" onClick={onBack} style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:4, color:M.tint, fontFamily:M.fontUI, fontSize:15, padding:'4px 0', minWidth:60 }}>
+          <I name="arrowL" size={16} color={M.tint}/>{t('action.back')}
+        </button>
+        <div style={{ flex:1, textAlign:'center', fontWeight:600, fontSize:16, color:M.ink }}>{t('acct.brokerage')}</div>
+        <div style={{ minWidth:60 }}/>
+      </div>
+      <div style={{ padding:'12px 20px 8px', flexShrink:0 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 12px', borderRadius:10, border:`1px solid ${M.line}`, background:M.paper2 }}>
+          <I name="search" size={16} color={M.ink4}/>
+          <input autoFocus data-testid="broker-search" value={search} onChange={e=>setSearch(e.target.value)}
+            placeholder={t('acct.brokerSearch')}
+            style={{ flex:1, border:'none', background:'transparent', fontSize:14, fontFamily:M.fontUI, outline:'none', color:M.ink, padding:0 }}/>
+        </div>
+        {errors.broker && <div style={{ fontSize:11, color:M.clay, marginTop:4 }}>{errors.broker}</div>}
+      </div>
+      <div style={{ flex:1, overflowY:'auto', padding:'8px 20px' }}>
+        <div className="m-card" style={{ padding:'4px 16px', marginBottom:16, border:`1px solid ${M.line}` }}>
+          {filtered.map((b, i) => (
+            <React.Fragment key={b.id}>
+              {i>0&&<Divider inset={48}/>}
+              <div data-testid={`broker-row-${b.id}`} className="m-tap" onClick={()=>setSelectedBroker(b)}
+                style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0', background:selectedBroker?.id===b.id?M.sageSoft:'transparent' }}>
+                <div style={{ width:36, height:36, borderRadius:10, background:`${b.color}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <span style={{ fontSize:18 }}>{b.logo}</span>
+                </div>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:14, fontWeight:500 }}><HighlightText text={b.name} query={search.trim()}/></div>
+                  <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{b.region}</div>
+                </div>
+                {selectedBroker?.id===b.id&&<I name="check" size={16} color={M.sage}/>}
+              </div>
+            </React.Fragment>
+          ))}
+        </div>
+        {selectedBroker && (
+          <>
+            <div style={{ marginBottom:14 }}>
+              <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{t('acct.displayName')}</div>
+              <input data-testid="broker-display-name" value={displayName} onChange={e=>setDisplayName(e.target.value)}
+                placeholder={selectedBroker.name}
+                style={{ width:'100%', boxSizing:'border-box', padding:'11px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none' }}/>
+            </div>
+            <div style={{ marginBottom:20 }}>
+              <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{t('acct.currency')} (locked after creation)</div>
+              <button data-testid="broker-currency-btn" className="m-tap" onClick={()=>setShowCurrSheet(true)}
+                style={{ width:'100%', padding:'11px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'space-between', color:M.ink }}>
+                <span>{curInfo?`${curInfo.code} (${curInfo.symbol})`:currency}</span>
+                <I name="caretR" size={14} color={M.ink4}/>
+              </button>
+            </div>
+            <button data-testid="broker-save-btn" className="m-btn sage m-tap" style={{ width:'100%' }} onClick={handleSave}>
+              {t('action.save')}
+            </button>
+          </>
+        )}
+      </div>
+      <CurrencySheet open={showCurrSheet} current={currency} onSelect={c=>{setCurrency(c);setShowCurrSheet(false);}} onClose={()=>setShowCurrSheet(false)} t={t}/>
+    </div>
+  );
+}
+
+function BrokerAutoFlow({ onSave, onBack }) {
+  const { t } = useLang();
+  const [step, setStep] = React.useState('search');
+  const [selectedBroker, setSelectedBroker] = React.useState(null);
+  const [search, setSearch] = React.useState('');
+  const filtered = BROKERS.filter(b => b.id!=='other_broker' && (!search || b.name.toLowerCase().includes(search.toLowerCase())));
+
+  const handleConnect = () => {
+    setStep('connecting');
+    setTimeout(() => {
+      onSave({ id:`acct_broker_auto_${Date.now()}`, name:selectedBroker.name, type:'brokerage',
+        iban:'', balance:parseFloat((5000+Math.random()*20000).toFixed(2)), currency:'EUR',
+        color:selectedBroker.color, brokerId:selectedBroker.id, readOnly:true });
+    }, 1800);
+  };
+
+  if (step==='connecting') return (
+    <div className="m-screen m-fade" style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:16, padding:'0 40px', textAlign:'center' }}>
+      <StatusBar/>
+      <div style={{ width:64, height:64, borderRadius:18, background:`${selectedBroker?.color}22`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:32 }}>{selectedBroker?.logo}</div>
+      <div style={{ fontSize:16, fontWeight:600 }}>Connecting to {selectedBroker?.name}…</div>
+      <div style={{ fontSize:13, color:M.ink3 }}>Fetching your portfolio</div>
+    </div>
+  );
+
+  if (step==='auth') return (
+    <div className="m-screen m-fade" style={{ display:'flex', flexDirection:'column' }}>
+      <StatusBar/>
+      <div style={{ display:'flex', alignItems:'center', padding:'12px 20px', flexShrink:0, borderBottom:`1px solid ${M.line2}` }}>
+        <button className="m-tap" onClick={()=>setStep('search')} style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:4, color:M.tint, fontFamily:M.fontUI, fontSize:15, padding:'4px 0', minWidth:60 }}>
+          <I name="arrowL" size={16} color={M.tint}/>{t('action.back')}
+        </button>
+        <div style={{ flex:1, textAlign:'center', fontWeight:600, fontSize:16 }}>{selectedBroker?.name}</div>
+        <div style={{ minWidth:60 }}/>
+      </div>
+      <div style={{ flex:1, overflowY:'auto', padding:'24px 24px 32px', display:'flex', flexDirection:'column', gap:16 }}>
+        <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:8, marginBottom:8 }}>
+          <div style={{ width:64, height:64, borderRadius:18, background:`${selectedBroker?.color}22`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:32 }}>{selectedBroker?.logo}</div>
+          <div style={{ fontSize:14, fontWeight:600 }}>Connect {selectedBroker?.name}</div>
+          <div style={{ fontSize:12, color:M.ink3 }}>Enter your login credentials</div>
+        </div>
+        <div className="m-card" style={{ padding:'0 16px', border:`1px solid ${M.line}` }}>
+          <div style={{ padding:'14px 0' }}>
+            <div style={{ fontSize:11, color:M.ink3, marginBottom:6 }}>Username</div>
+            <input data-testid="broker-creds-username" defaultValue="demo.user@munni.app"
+              style={{ width:'100%', boxSizing:'border-box', padding:'10px 12px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none' }}/>
+          </div>
+          <Divider/>
+          <div style={{ padding:'14px 0' }}>
+            <div style={{ fontSize:11, color:M.ink3, marginBottom:6 }}>Password</div>
+            <input type="password" defaultValue="••••••••"
+              style={{ width:'100%', boxSizing:'border-box', padding:'10px 12px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none' }}/>
+          </div>
+        </div>
+        <button data-testid="broker-connect-btn" className="m-btn sage m-tap" style={{ width:'100%' }} onClick={handleConnect}>
+          {t('acct.connectBroker')}
+        </button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="m-screen m-fade" style={{ display:'flex', flexDirection:'column' }}>
+      <StatusBar/>
+      <div style={{ display:'flex', alignItems:'center', padding:'12px 20px', flexShrink:0, borderBottom:`1px solid ${M.line2}` }}>
+        <button className="m-tap" onClick={onBack} style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:4, color:M.tint, fontFamily:M.fontUI, fontSize:15, padding:'4px 0', minWidth:60 }}>
+          <I name="arrowL" size={16} color={M.tint}/>{t('action.back')}
+        </button>
+        <div style={{ flex:1, textAlign:'center', fontWeight:600, fontSize:16 }}>{t('acct.connectBroker')}</div>
+        <div style={{ minWidth:60 }}/>
+      </div>
+      <div style={{ padding:'12px 20px 8px', flexShrink:0 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 12px', borderRadius:10, border:`1px solid ${M.line}`, background:M.paper2 }}>
+          <I name="search" size={16} color={M.ink4}/>
+          <input autoFocus data-testid="broker-auto-search" value={search} onChange={e=>setSearch(e.target.value)}
+            placeholder={t('acct.brokerSearch')}
+            style={{ flex:1, border:'none', background:'transparent', fontSize:14, fontFamily:M.fontUI, outline:'none', color:M.ink, padding:0 }}/>
+        </div>
+      </div>
+      <div style={{ flex:1, overflowY:'auto', padding:'8px 20px 24px' }}>
+        <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
+          {filtered.map((b, i) => (
+            <React.Fragment key={b.id}>
+              {i>0&&<Divider inset={48}/>}
+              <div data-testid={`broker-auto-row-${b.id}`} className="m-tap" onClick={()=>{setSelectedBroker(b);setStep('auth');}}
+                style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
+                <div style={{ width:36, height:36, borderRadius:10, background:`${b.color}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}><span style={{ fontSize:18 }}>{b.logo}</span></div>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:14, fontWeight:500 }}><HighlightText text={b.name} query={search.trim()}/></div>
+                  <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{b.region}</div>
+                </div>
+                <I name="caretR" size={14} color={M.ink4}/>
+              </div>
+            </React.Fragment>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Mortgage form ─────────────────────────────────────────────────────────────
+
+function MortgageForm({ defaultCurrency, onSave, onBack }) {
+  const { t } = useLang();
+  const [vals, setVals] = React.useState({ name:'', lender:'', original:'', balance:'', rate:'', years:'', monthly:'' });
+  const [errors, setErrors] = React.useState({});
+  const set = (k) => (e) => setVals(v=>({...v,[k]:e.target.value}));
+
+  const handleSave = () => {
+    const errs = {};
+    if (!vals.lender.trim()) errs.lender = 'Required';
+    if (!vals.original) errs.original = 'Required';
+    if (!vals.balance) errs.balance = 'Required';
+    if (Object.keys(errs).length) { setErrors(errs); return; }
+    onSave({ id:`acct_mortgage_${Date.now()}`, name:vals.name.trim()||`Mortgage · ${vals.lender.trim()}`,
+      type:'mortgage', iban:'', balance:-(parseFloat(vals.balance)||0), currency:defaultCurrency||'EUR',
+      color:M.ochre, lender:vals.lender.trim(), originalAmount:parseFloat(vals.original)||0,
+      interestRate:parseFloat(vals.rate)||0, contractYears:parseInt(vals.years)||0,
+      monthlyPayment:parseFloat(vals.monthly)||0 });
+  };
+
+  const fld = (label, key, placeholder, type='text', required=false) => (
+    <div style={{ marginBottom:14 }}>
+      <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{label}{required&&' *'}</div>
+      <input data-testid={`mortgage-${key}`} type={type} value={vals[key]} onChange={set(key)} placeholder={placeholder}
+        style={{ width:'100%', boxSizing:'border-box', padding:'11px 14px', borderRadius:10,
+          border:`1px solid ${errors[key]?M.clay:M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none' }}/>
+      {errors[key]&&<div style={{ fontSize:11, color:M.clay, marginTop:3 }}>{errors[key]}</div>}
+    </div>
+  );
+
+  return (
+    <div className="m-screen m-fade" style={{ display:'flex', flexDirection:'column' }}>
+      <StatusBar/>
+      <div style={{ display:'flex', alignItems:'center', padding:'12px 20px', flexShrink:0, borderBottom:`1px solid ${M.line2}` }}>
+        <button className="m-tap" onClick={onBack} style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:4, color:M.tint, fontFamily:M.fontUI, fontSize:15, padding:'4px 0', minWidth:60 }}>
+          <I name="arrowL" size={16} color={M.tint}/>{t('action.back')}
+        </button>
+        <div style={{ flex:1, textAlign:'center', fontWeight:600, fontSize:16, color:M.ink }}>{t('acct.mortgage')}</div>
+        <div style={{ minWidth:60 }}/>
+      </div>
+      <div style={{ flex:1, overflowY:'auto', padding:'20px 20px 32px' }}>
+        {fld(t('acct.displayName'),'name','My Home')}
+        {fld(t('acct.lenderName'),'lender','e.g. ING Bank','text',true)}
+        {fld(t('acct.originalAmount'),'original','e.g. 320000','number',true)}
+        {fld(t('acct.currentBalance'),'balance','e.g. 280000','number',true)}
+        {fld(t('acct.interestRate'),'rate','e.g. 3.5','number')}
+        {fld(t('acct.contractYears'),'years','e.g. 30','number')}
+        {fld(t('acct.monthlyPayment'),'monthly','e.g. 1200','number')}
+        <button data-testid="mortgage-save-btn" className="m-btn sage m-tap" style={{ width:'100%', marginTop:8 }} onClick={handleSave}>
+          {t('action.save')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Loan flow ─────────────────────────────────────────────────────────────────
+
+function LoanFlow({ defaultCurrency, onSave, onBack }) {
+  const { t } = useLang();
+  const [loanType, setLoanType] = React.useState(null);
+  const [vals, setVals] = React.useState({ name:'', lender:'', original:'', balance:'', rate:'', monthly:'', startDate:'' });
+  const [currency, setCurrency] = React.useState(defaultCurrency||'EUR');
+  const [showCurrSheet, setShowCurrSheet] = React.useState(false);
+  const [errors, setErrors] = React.useState({});
+  const curInfo = CURRENCIES.find(c => c.code === currency);
+  const LOAN_TYPES = [
+    {id:'personal',label:t('acct.loanPersonal')},{id:'car',label:t('acct.loanCar')},
+    {id:'student',label:t('acct.loanStudent')},{id:'other',label:t('acct.loanOther')},
+  ];
+  const set = (k) => (e) => setVals(v=>({...v,[k]:e.target.value}));
+
+  const handleSave = () => {
+    const errs = {};
+    if (!vals.lender.trim()) errs.lender='Required';
+    if (!vals.original) errs.original='Required';
+    if (Object.keys(errs).length) { setErrors(errs); return; }
+    const loanLabel = LOAN_TYPES.find(l=>l.id===loanType)?.label||t('acct.loan');
+    onSave({ id:`acct_loan_${Date.now()}`,
+      name:vals.name.trim()||`${loanLabel} · ${vals.lender.trim()}`,
+      type:'loan', iban:'', balance:-(parseFloat(vals.balance)||0), currency, color:M.violet,
+      loanType, lender:vals.lender.trim(), originalAmount:parseFloat(vals.original)||0,
+      interestRate:parseFloat(vals.rate)||0, monthlyPayment:parseFloat(vals.monthly)||0,
+      startDate:vals.startDate });
+  };
+
+  if (!loanType) return (
+    <div className="m-screen m-fade" style={{ display:'flex', flexDirection:'column' }}>
+      <StatusBar/>
+      <div style={{ display:'flex', alignItems:'center', padding:'12px 20px', flexShrink:0, borderBottom:`1px solid ${M.line2}` }}>
+        <button className="m-tap" onClick={onBack} style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:4, color:M.tint, fontFamily:M.fontUI, fontSize:15, padding:'4px 0', minWidth:60 }}>
+          <I name="arrowL" size={16} color={M.tint}/>{t('action.back')}
+        </button>
+        <div style={{ flex:1, textAlign:'center', fontWeight:600, fontSize:16, color:M.ink }}>{t('acct.loanType')}</div>
+        <div style={{ minWidth:60 }}/>
+      </div>
+      <div style={{ flex:1, overflowY:'auto', padding:'20px 20px 32px' }}>
+        <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
+          {LOAN_TYPES.map((lt,i) => (
+            <React.Fragment key={lt.id}>
+              {i>0&&<Divider inset={0}/>}
+              <div data-testid={`loan-type-${lt.id}`} className="m-tap" onClick={()=>setLoanType(lt.id)}
+                style={{ display:'flex', alignItems:'center', padding:'14px 0' }}>
+                <div style={{ flex:1, fontSize:14, fontWeight:500 }}>{lt.label}</div>
+                <I name="caretR" size={14} color={M.ink4}/>
+              </div>
+            </React.Fragment>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
+  const fld = (label, key, placeholder, type='text', required=false) => (
+    <div style={{ marginBottom:14 }}>
+      <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{label}{required&&' *'}</div>
+      <input data-testid={`loan-${key}`} type={type} value={vals[key]} onChange={set(key)} placeholder={placeholder}
+        style={{ width:'100%', boxSizing:'border-box', padding:'11px 14px', borderRadius:10,
+          border:`1px solid ${errors[key]?M.clay:M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none' }}/>
+      {errors[key]&&<div style={{ fontSize:11, color:M.clay, marginTop:3 }}>{errors[key]}</div>}
+    </div>
+  );
+
+  const loanLabel = LOAN_TYPES.find(l=>l.id===loanType)?.label||t('acct.loan');
+  return (
+    <div className="m-screen m-fade" style={{ display:'flex', flexDirection:'column' }}>
+      <StatusBar/>
+      <div style={{ display:'flex', alignItems:'center', padding:'12px 20px', flexShrink:0, borderBottom:`1px solid ${M.line2}` }}>
+        <button className="m-tap" onClick={()=>setLoanType(null)} style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:4, color:M.tint, fontFamily:M.fontUI, fontSize:15, padding:'4px 0', minWidth:60 }}>
+          <I name="arrowL" size={16} color={M.tint}/>{t('action.back')}
+        </button>
+        <div style={{ flex:1, textAlign:'center', fontWeight:600, fontSize:16, color:M.ink }}>{loanLabel}</div>
+        <div style={{ minWidth:60 }}/>
+      </div>
+      <div style={{ flex:1, overflowY:'auto', padding:'20px 20px 32px' }}>
+        {fld(t('acct.displayName'),'name','')}
+        {fld(t('acct.lenderName'),'lender','e.g. ABN AMRO','text',true)}
+        {fld(t('acct.originalAmount'),'original','e.g. 15000','number',true)}
+        {fld(t('acct.currentBalance'),'balance','e.g. 12000','number')}
+        {fld(t('acct.interestRate'),'rate','e.g. 5.5','number')}
+        <div style={{ marginBottom:14 }}>
+          <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{t('acct.currency')}</div>
+          <button data-testid="loan-currency-btn" className="m-tap" onClick={()=>setShowCurrSheet(true)}
+            style={{ width:'100%', padding:'11px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'space-between', color:M.ink }}>
+            <span>{curInfo?`${curInfo.code} (${curInfo.symbol})`:currency}</span>
+            <I name="caretR" size={14} color={M.ink4}/>
+          </button>
+        </div>
+        {fld(t('acct.monthlyPayment'),'monthly','e.g. 350','number')}
+        {fld(t('acct.startDate'),'startDate','','date')}
+        <button data-testid="loan-save-btn" className="m-btn sage m-tap" style={{ width:'100%', marginTop:8 }} onClick={handleSave}>
+          {t('action.save')}
+        </button>
+      </div>
+      <CurrencySheet open={showCurrSheet} current={currency} onSelect={c=>{setCurrency(c);setShowCurrSheet(false);}} onClose={()=>setShowCurrSheet(false)} t={t}/>
+    </div>
+  );
+}
+
+// ── Main Financial Accounts screen ───────────────────────────────────────────
+
 export function ScreenAccounts() {
   const nav = useNav();
+  const { t } = useLang();
+  const { currency } = useCurrency();
   const { addTxs } = useTxCtx();
   const [connectedAccounts, setConnectedAccounts] = useConnectedAccounts();
   const { profiles, setProfiles } = useProfiles();
-  const [bankSearch, setBankSearch] = React.useState('');
-  const [selectedBank, setSelectedBank] = useLocalStorage('munni_selected_bank', null);
-  const [psd2Step, setPsd2Step] = React.useState(null); // null | 'search' | 'login' | 'consent' | 'connecting' | 'done'
-  const [psd2Bank, setPsd2Bank] = React.useState(null);
-  const [customIban, setCustomIban] = React.useState('');
+
+  // New flow state machine
+  const [flowScreen, setFlowScreen] = React.useState(null); // null=main | 'typeSelect' | 'bankMethod' | 'bankManual' | 'bankAuto' | 'cashForm' | 'brokerMethod' | 'brokerManual' | 'brokerAuto' | 'creditMethod' | 'creditManual' | 'creditAuto' | 'savingMethod' | 'savingManual' | 'savingAuto' | 'mortgageForm' | 'loanFlow'
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(null);
 
-  const filteredBanks = DUTCH_BANKS.filter(b =>
-    !bankSearch || b.name.toLowerCase().includes(bankSearch.toLowerCase())
-  );
+  // PSD2 auto flow state (for bank/saving/credit automated)
+  const [psd2Step, setPsd2Step] = React.useState(null);
+  const [psd2Bank, setPsd2Bank] = React.useState(null);
+  const [customIban, setCustomIban] = React.useState('');
+  const [bankSearch, setBankSearch] = React.useState('');
+  const [selectedBank, setSelectedBank] = useLocalStorage('munni_selected_bank', null);
+  const [psd2TypeId, setPsd2TypeId] = React.useState('bank');
 
   const startBankConnect = (bank) => {
     setCustomIban(generateBankIban(bank));
@@ -479,22 +1260,29 @@ export function ScreenAccounts() {
         const newAcct = {
           id: `bank_${Date.now()}`,
           name: bank.name,
-          type: 'checking',
-          iban: savedIban.trim() || `NL${20 + (bank.name.length % 78)} ${bank.id.toUpperCase().slice(0,4)} ${Math.floor(1000000000 + (bank.name.charCodeAt(0) * 17 + Date.now()) % 9000000000)}`,
-          color: bankColors[bank.id] || M.slate,
+          type: psd2TypeId === 'saving' ? 'saving' : psd2TypeId === 'credit' ? 'credit' : 'bank',
+          iban: savedIban.trim() || generateBankIban(bank),
+          color: bankColors[bank.id] || bank.color || M.slate,
           bankId: bank.id,
+          readOnly: true,
         };
         const isAsn = bank.id === 'asn' || bank.name.toLowerCase().includes('asn');
         const newBalance = isAsn ? 3245.67 : parseFloat((1000 + Math.random() * 8000).toFixed(2));
         setConnectedAccounts(a => [...a, { ...newAcct, balance: newBalance }]);
         const newTxs = isAsn ? generateAsnTxs(newAcct.id) : generateBankTxs(newAcct.id, bank.name);
         addTxs(newTxs);
-        setProfiles(ps => ps.map(p => p.active ? { ...p, accountIds: [...(p.accountIds || []), newAcct.id] } : p));
+        setProfiles(ps => ps.map(p => p.active ? { ...p, accountIds: [...(p.accountIds||[]), newAcct.id] } : p));
         setSelectedBank(null);
         setPsd2Step('done');
       }, 1800);
     }
-    else if (psd2Step === 'done') setPsd2Step(null);
+    else if (psd2Step === 'done') { setPsd2Step(null); setFlowScreen(null); }
+  };
+
+  const handleSaveNewAccount = (acct) => {
+    setConnectedAccounts(a => [...a, acct]);
+    setProfiles(ps => ps.map(p => p.active ? { ...p, accountIds: [...(p.accountIds||[]), acct.id] } : p));
+    setFlowScreen(null);
   };
 
   const confirmDelete = (acct) => {
@@ -502,70 +1290,128 @@ export function ScreenAccounts() {
     setShowDeleteConfirm(null);
   };
 
+  // PSD2 flow screens (for automated bank/saving/credit)
   if (psd2Step === 'search') {
-    return <BankSearchFullScreen banks={DUTCH_BANKS} bankSearch={bankSearch} setBankSearch={setBankSearch} connectedAccounts={connectedAccounts} onSelect={startBankConnect} onBack={() => setPsd2Step(null)}/>;
+    return <BankSearchFullScreen banks={ALL_BANKS} bankSearch={bankSearch} setBankSearch={setBankSearch} connectedAccounts={connectedAccounts} onSelect={startBankConnect} onBack={() => { setPsd2Step(null); setFlowScreen('bankAuto'); }}/>;
+  }
+  if (psd2Step && psd2Step !== 'done') {
+    return <BankConnectPsd2Screen psd2Step={psd2Step} psd2Bank={psd2Bank} customIban={customIban} setCustomIban={setCustomIban} advancePsd2={advancePsd2} onClose={() => { setPsd2Step(null); setFlowScreen(null); }}/>;
   }
 
-  if (psd2Step) {
-    return <BankConnectPsd2Screen psd2Step={psd2Step} psd2Bank={psd2Bank} customIban={customIban} setCustomIban={setCustomIban} advancePsd2={advancePsd2} onClose={() => setPsd2Step(null)}/>;
+  // New account creation flows
+  if (flowScreen === 'typeSelect') return <AccountTypeSelectScreen onSelect={type => {
+    if (type === 'bank') setFlowScreen('bankMethod');
+    else if (type === 'saving') setFlowScreen('savingMethod');
+    else if (type === 'cash') setFlowScreen('cashForm');
+    else if (type === 'brokerage') setFlowScreen('brokerMethod');
+    else if (type === 'credit') setFlowScreen('creditMethod');
+    else if (type === 'mortgage') setFlowScreen('mortgageForm');
+    else if (type === 'loan') setFlowScreen('loanFlow');
+  }} onBack={() => setFlowScreen(null)}/>;
+
+  if (flowScreen === 'bankMethod') return <AccountMethodScreen typeLabel={t('acct.bank')}
+    onManual={() => setFlowScreen('bankManual')} onAutomatic={() => { setPsd2TypeId('bank'); setBankSearch(''); setPsd2Step('search'); setFlowScreen('bankAuto'); }} onBack={() => setFlowScreen('typeSelect')}/>;
+  if (flowScreen === 'bankManual') return <BankManualForm typeLabel={t('acct.bank')} typeId="bank" defaultCurrency={currency} onSave={handleSaveNewAccount} onBack={() => setFlowScreen('bankMethod')}/>;
+  if (flowScreen === 'bankAuto') return null; // handled by psd2Step above
+
+  if (flowScreen === 'savingMethod') return <AccountMethodScreen typeLabel={t('acct.saving')}
+    onManual={() => setFlowScreen('savingManual')} onAutomatic={() => { setPsd2TypeId('saving'); setBankSearch(''); setPsd2Step('search'); }} onBack={() => setFlowScreen('typeSelect')}/>;
+  if (flowScreen === 'savingManual') return <BankManualForm typeLabel={t('acct.saving')} typeId="saving" defaultCurrency={currency} onSave={handleSaveNewAccount} onBack={() => setFlowScreen('savingMethod')}/>;
+
+  if (flowScreen === 'cashForm') return <CashWalletForm defaultCurrency={currency} onSave={handleSaveNewAccount} onBack={() => setFlowScreen('typeSelect')}/>;
+
+  if (flowScreen === 'brokerMethod') return <AccountMethodScreen typeLabel={t('acct.brokerage')}
+    onManual={() => setFlowScreen('brokerManual')} onAutomatic={() => setFlowScreen('brokerAuto')} onBack={() => setFlowScreen('typeSelect')}/>;
+  if (flowScreen === 'brokerManual') return <BrokerManualForm defaultCurrency={currency} onSave={handleSaveNewAccount} onBack={() => setFlowScreen('brokerMethod')}/>;
+  if (flowScreen === 'brokerAuto') return <BrokerAutoFlow onSave={handleSaveNewAccount} onBack={() => setFlowScreen('brokerMethod')}/>;
+
+  if (flowScreen === 'creditMethod') return <AccountMethodScreen typeLabel={t('acct.creditCard')}
+    onManual={() => setFlowScreen('creditManual')} onAutomatic={() => { setPsd2TypeId('credit'); setBankSearch(''); setPsd2Step('search'); }} onBack={() => setFlowScreen('typeSelect')}/>;
+  if (flowScreen === 'creditManual') return <BankManualForm typeLabel={t('acct.creditCard')} typeId="credit" defaultCurrency={currency} onSave={handleSaveNewAccount} onBack={() => setFlowScreen('creditMethod')}/>;
+
+  if (flowScreen === 'mortgageForm') return <MortgageForm defaultCurrency={currency} onSave={handleSaveNewAccount} onBack={() => setFlowScreen('typeSelect')}/>;
+  if (flowScreen === 'loanFlow') return <LoanFlow defaultCurrency={currency} onSave={handleSaveNewAccount} onBack={() => setFlowScreen('typeSelect')}/>;
+
+  // PSD2 done banner reuse
+  if (psd2Step === 'done') {
+    return <BankConnectPsd2Screen psd2Step="done" psd2Bank={psd2Bank} customIban={customIban} setCustomIban={setCustomIban} advancePsd2={advancePsd2} onClose={() => { setPsd2Step(null); setFlowScreen(null); }}/>;
   }
+
+  // ── Main screen ──────────────────────────────────────────────────────────────
+  const assets = connectedAccounts.filter(a => acctGroup(a.type) === 'asset');
+  const liabilities = connectedAccounts.filter(a => acctGroup(a.type) === 'liability');
+  const totalAssets = assets.reduce((s, a) => s + (a.balance || 0), 0);
+  const totalLiabilities = liabilities.reduce((s, a) => s + (a.balance || 0), 0);
+  const netWorth = totalAssets + totalLiabilities;
 
   return (
     <div className="m-screen">
       <StatusBar/>
-      <AppBar title="Bank accounts"
+      <AppBar title={t('acct.financialAccounts')}
         leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
-        trailing={<button className="m-iconbtn m-tap" onClick={() => { setBankSearch(''); setPsd2Step('search'); }}><I name="plus" size={20}/></button>}
+        trailing={<button data-testid="account-add-btn" className="m-iconbtn m-tap" onClick={() => setFlowScreen('typeSelect')}><I name="plus" size={20}/></button>}
       />
       <div className="m-body-scroll">
-        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Connected accounts</div>
-        <div className="m-card" style={{ padding:'4px 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
-          {connectedAccounts.map((a, i) => {
-            const isSavings = a.type === 'savings';
-            const isInvest = a.type === 'invest';
-            return (
-              <React.Fragment key={a.id}>
-                {i > 0 && <Divider inset={50}/>}
-                <div className="m-tap" onClick={() => isSavings && nav.push('savingsDetail', { id: a.id })}
-                  style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
-                  <div style={{ width:38, height:38, borderRadius:10, background:a.color, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                    <I name={isSavings?'piggy':isInvest?'rocket':'card'} size={18} color="#fff"/>
-                  </div>
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:14, fontWeight:600 }}>{a.name}</div>
-                    <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:2 }}>
-                      <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono }}>{a.iban}</div>
-                      {a.readOnly && <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase', letterSpacing:'0.04em' }}>Read-only</span>}
-                    </div>
-                  </div>
-                  <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-                    <div className="m-num" style={{ fontSize:15, fontWeight:600 }}>{fmtEur(a.balance)}</div>
-                    <button className="m-tap" onClick={e => { e.stopPropagation(); setShowDeleteConfirm(a); }}
-                      style={{ background:'none', border:'none', padding:4, cursor:'pointer' }}>
-                      <I name="x" size={14} color={M.ink4}/>
-                    </button>
-                  </div>
-                </div>
-              </React.Fragment>
-            );
-          })}
+        {/* Net worth summary */}
+        <div style={{ margin:'0 0 20px', padding:'16px 20px', borderRadius:16, background:M.brand, color:'#fff' }}>
+          <div style={{ fontSize:11, fontWeight:600, opacity:0.7, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:4 }}>{t('acct.netWorth')}</div>
+          <div className="m-num" style={{ fontSize:28, fontWeight:800 }}>{fmtMoney(netWorth, currency)}</div>
+          <div style={{ display:'flex', gap:20, marginTop:10 }}>
+            <div>
+              <div style={{ fontSize:10, opacity:0.65 }}>{t('acct.assets')}</div>
+              <div className="m-num" style={{ fontSize:14, fontWeight:700 }}>{fmtMoney(totalAssets, currency)}</div>
+            </div>
+            <div>
+              <div style={{ fontSize:10, opacity:0.65 }}>{t('acct.liabilities')}</div>
+              <div className="m-num" style={{ fontSize:14, fontWeight:700 }}>{fmtMoney(totalLiabilities, currency)}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Assets group */}
+        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('acct.assets')}</div>
+        <div data-testid="assets-group" className="m-card" style={{ padding:'4px 16px', marginBottom:16, border:`1px solid ${M.line}` }}>
+          {assets.length === 0 ? (
+            <div style={{ padding:'16px 0', textAlign:'center', color:M.ink4, fontSize:13 }}>{t('acct.noAccounts')}</div>
+          ) : assets.map((a, i) => (
+            <AcctRow key={a.id} acct={a} i={i} t={t} currency={currency} onDelete={setShowDeleteConfirm}/>
+          ))}
           <Divider inset={0}/>
-          <div className="m-tap" onClick={() => { setBankSearch(''); setPsd2Step('search'); }} style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
+          <div data-testid="asset-add-row" className="m-tap" onClick={() => setFlowScreen('typeSelect')}
+            style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
             <div style={{ width:38, height:38, borderRadius:10, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
               <I name="plus" size={16} color={M.sage}/>
             </div>
-            <div style={{ flex:1, fontSize:14, fontWeight:600, color:M.sage }}>Connect a bank</div>
+            <div style={{ flex:1, fontSize:14, fontWeight:600, color:M.sage }}>{t('acct.addAccount')}</div>
             <I name="caretR" size={14} color={M.ink4}/>
           </div>
         </div>
 
-        <div style={{ padding:'12px 16px', borderRadius:14, background:M.sageSoft, display:'flex', gap:12, alignItems:'flex-start' }}>
+        {/* Liabilities group */}
+        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('acct.liabilities')}</div>
+        <div data-testid="liabilities-group" className="m-card" style={{ padding:'4px 16px', marginBottom:16, border:`1px solid ${M.line}` }}>
+          {liabilities.length === 0 ? (
+            <div style={{ padding:'16px 0', textAlign:'center', color:M.ink4, fontSize:13 }}>{t('acct.noAccounts')}</div>
+          ) : liabilities.map((a, i) => (
+            <AcctRow key={a.id} acct={a} i={i} t={t} currency={currency} onDelete={setShowDeleteConfirm}/>
+          ))}
+          <Divider inset={0}/>
+          <div className="m-tap" onClick={() => setFlowScreen('typeSelect')}
+            style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
+            <div style={{ width:38, height:38, borderRadius:10, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+              <I name="plus" size={16} color={M.sage}/>
+            </div>
+            <div style={{ flex:1, fontSize:14, fontWeight:600, color:M.sage }}>{t('acct.addAccount')}</div>
+            <I name="caretR" size={14} color={M.ink4}/>
+          </div>
+        </div>
+
+        {/* PSD2 notice */}
+        <div style={{ padding:'12px 16px', borderRadius:14, background:M.sageSoft, display:'flex', gap:12, alignItems:'flex-start', marginBottom:8 }}>
           <I name="lock" size={18} color={M.sage}/>
           <div style={{ flex:1 }}>
-            <div style={{ fontSize:13, fontWeight:600, color:M.sage }}>Read-only · PSD2 Open Banking</div>
-            <div style={{ fontSize:12, color:M.ink2, marginTop:4, lineHeight:1.45 }}>
-              munni reads transactions via Open Banking. We can never move money on your behalf.
-            </div>
+            <div style={{ fontSize:13, fontWeight:600, color:M.sage }}>{t('acct.psd2Title')}</div>
+            <div style={{ fontSize:12, color:M.ink2, marginTop:4, lineHeight:1.45 }}>{t('acct.psd2Notice')}</div>
           </div>
         </div>
         <div style={{ height:8 }}/>
@@ -574,17 +1420,17 @@ export function ScreenAccounts() {
       {showDeleteConfirm && (
         <Sheet onClose={() => setShowDeleteConfirm(null)}>
           <div style={{ padding:'4px 20px 32px' }}>
-            <div style={{ fontSize:17, fontWeight:700, marginBottom:8 }}>Remove account?</div>
+            <div style={{ fontSize:17, fontWeight:700, marginBottom:8 }}>{t('acct.removeTitle')}</div>
             <div style={{ fontSize:14, color:M.ink3, lineHeight:1.5, marginBottom:20 }}>
-              <strong>{showDeleteConfirm.name}</strong> will be disconnected. Historical transactions will remain but new syncing will stop.
+              <strong>{showDeleteConfirm.name}</strong> {t('acct.removeDesc')}
             </div>
             <button onClick={() => confirmDelete(showDeleteConfirm)}
               style={{ width:'100%', padding:'14px 0', background:M.clay, color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>
-              Remove account
+              {t('acct.removeConfirm')}
             </button>
             <button onClick={() => setShowDeleteConfirm(null)}
               style={{ width:'100%', padding:'14px 0', background:M.paper2, color:M.ink, border:`1px solid ${M.line}`, borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
-              Cancel
+              {t('action.cancel')}
             </button>
           </div>
         </Sheet>

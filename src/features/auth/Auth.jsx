@@ -4,6 +4,7 @@ import { COUNTRIES, countryName } from '../../shared/data/countries.js';
 import { M, I, IcoGoogle, IcoApple, StatusBar, Divider } from '../../app/theme.jsx';
 import { Sheet, useDark } from '../../app/nav.jsx';
 import { useLang } from '../../shared/i18n.jsx';
+import { COUNTRY_CURRENCY, CURRENCIES } from '../../shared/constants.js';
 import { DUTCH_BANKS, generateBankIban, DUTCH_BANKS as _DB } from '../accounts/data.js';
 
 function seededIban(bank, seed) {
@@ -720,6 +721,17 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
             <I name="caretR" size={14} color={M.ink4}/>
           </button>
           {errors.country && <div data-testid={T.onboardCountryErr} style={{ fontSize:11, color:M.clay, marginTop:4 }}>{errors.country}</div>}
+          {country && (() => {
+            const curCode = COUNTRY_CURRENCY[country] || 'EUR';
+            const curInfo = CURRENCIES.find(c => c.code === curCode);
+            return (
+              <div data-testid="onboard-currency-hint"
+                style={{ display:'flex', alignItems:'center', gap:6, marginTop:6, fontSize:11, color:M.sage, fontWeight:500 }}>
+                <I name="check" size={11} color={M.sage} stroke={2.5}/>
+                {t('onboarding.currencyAuto')} <span style={{ fontFamily:M.fontMono, fontWeight:700 }}>{curCode} ({curInfo?.symbol || curCode})</span>
+              </div>
+            );
+          })()}
         </div>
 
         {/* API endpoint */}

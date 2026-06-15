@@ -1,10 +1,10 @@
 ﻿import React from 'react';
 import { T } from '../../shared/testIds.js';
-import { STOCK_AVATARS } from '../../shared/constants.js';
+import { STOCK_AVATARS, CURRENCIES } from '../../shared/constants.js';
 import { CATEGORIES } from '../../shared/data/categories.js';
 import { computePeriodHistory, fmtEur, fmtDate } from '../../shared/utils/format.js';
 import { M, I, IcoMDI, Divider, StatusBar, AppBar } from '../../app/theme.jsx';
-import { useLang, OTHER_LANGUAGES, LangCtx } from '../../shared/i18n.jsx';
+import { useLang, OTHER_LANGUAGES, LangCtx, useCurrency } from '../../shared/i18n.jsx';
 import { NavCtx, useNav, useDark, Sheet } from '../../app/nav.jsx';
 import { useLocalStorage } from '../../shared/hooks.jsx';
 import { BarChart } from '../../shared/components/Charts.jsx';
@@ -127,44 +127,187 @@ export function ScreenLanguagePicker({ fromOnboarding = false, onBack }) {
   );
 }
 
+function CurrencyPickerSheet({ open, onClose }) {
+  const { t } = useLang();
+  const { currency, setCurrency } = useCurrency();
+  const [search, setSearch] = React.useState('');
+  const filtered = React.useMemo(() => {
+    const q = search.toLowerCase().trim();
+    if (!q) return CURRENCIES;
+    return CURRENCIES.filter(c => c.code.toLowerCase().includes(q) || c.name.toLowerCase().includes(q) || c.symbol.toLowerCase().includes(q));
+  }, [search]);
+  return (
+    <Sheet open={open} onClose={onClose} title={t('appearance.currencyPicker')}>
+      <div style={{ display:'flex', alignItems:'center', gap:8, padding:'0 16px 12px', flexShrink:0 }}>
+        <I name="search" size={15} color={M.ink4} style={{ flexShrink:0 }}/>
+        <input
+          data-testid="currency-search"
+          autoFocus value={search} onChange={e => setSearch(e.target.value)}
+          placeholder={t('appearance.currencySearch')}
+          style={{ flex:1, border:'none', outline:'none', background:'transparent', fontSize:14, fontFamily:M.fontUI, color:M.ink, padding:0 }}
+        />
+      </div>
+      <div style={{ overflowY:'auto', flex:1 }}>
+        <div className="m-card" style={{ padding:'4px 16px', margin:'0 0 24px', border:`1px solid ${M.line}` }}>
+          {filtered.length === 0 && (
+            <div style={{ padding:'20px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>No results</div>
+          )}
+          {filtered.map((cur, i) => (
+            <React.Fragment key={cur.code}>
+              {i > 0 && <Divider inset={0}/>}
+              <div data-testid={`currency-option-${cur.code}`} className="m-tap"
+                onClick={() => { setCurrency(cur.code); onClose(); }}
+                style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
+                <div style={{ width:36, height:36, borderRadius:10, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <span style={{ fontSize:15, fontWeight:700, color:M.sage }}>{cur.symbol}</span>
+                </div>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:14, fontWeight:500 }}>{cur.name}</div>
+                  <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono, marginTop:1 }}>{cur.code}</div>
+                </div>
+                {currency === cur.code && (
+                  <div style={{ width:20, height:20, borderRadius:999, background:M.sage, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                    <I name="check" size={11} color="#fff" stroke={2.5}/>
+                  </div>
+                )}
+              </div>
+            </React.Fragment>
+          ))}
+        </div>
+      </div>
+    </Sheet>
+  );
+}
+
 export function ScreenSettings() {
   const nav = useNav();
   const { dark, setDark } = useDark();
-  const { t } = useLang();
+  const { t, lang } = useLang();
+  const { currency } = useCurrency();
+  const [showCurrencyPicker, setShowCurrencyPicker] = React.useState(false);
+  const [scrollY, setScrollY] = React.useState(0);
+  const [settingsSearch, setSettingsSearch] = React.useState('');
+
+  const titleShrunken = scrollY > 44;
+  const curInfo = CURRENCIES.find(c => c.code === currency) || { code:'EUR', symbol:'€', name:'Euro' };
+  const langName = lang === 'nl' ? 'Nederlands' : lang === 'tr' ? 'Türkçe' : 'English';
+
+  const q = settingsSearch.toLowerCase().trim();
+  const visible = (label) => !q || label.toLowerCase().includes(q);
+
   return (
-    <div className="m-screen">
+    <div className="m-screen" style={{ position:'relative' }}>
       <StatusBar/>
-      <AppBar title={t('screen.settings')}
+      <AppBar
+        title={titleShrunken ? t('screen.settings') : ''}
         leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
       />
-      <div className="m-body-scroll">
-        <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>{t('settings.appearance')}</div>
-        <div className="m-card" style={{ padding: '4px 16px', marginBottom: 14, border: `1px solid ${M.line}` }}>
-          <div className="m-tap" onClick={() => setDark(!dark)} style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
-            <I name={dark ? 'moon' : 'sun'} size={18} color={M.ink2}/>
-            <div style={{ flex:1 }}>
-              <div style={{ fontSize:14, fontWeight:500 }}>{t('settings.darkMode')}</div>
-              <div style={{ fontSize:11, color:M.ink3, marginTop:2 }}>{dark ? t('settings.darkModeOn') : t('settings.darkModeOff')}</div>
-            </div>
-            <Toggle on={dark}/>
-          </div>
-          <Divider inset={0}/>
-          <FormRow label="Currency" value="EUR (â‚¬)" caretR/>
-          <Divider inset={0}/>
-          <FormRow label="Currency" value="EUR (â‚¬)" caretR/>
-          <Divider inset={0}/>
-          <FormRow label="Language" value="English" caretR/>
+
+      <div className="m-body-scroll" onScroll={e => setScrollY(e.target.scrollTop)} style={{ paddingBottom:96 }}>
+        {/* iOS-style large title */}
+        <div style={{
+          fontSize:30, fontWeight:800, color:M.brand, padding:'2px 20px 18px',
+          opacity: titleShrunken ? 0 : 1,
+          transform: titleShrunken ? 'translateY(-8px) scale(0.9)' : 'none',
+          transformOrigin:'left center',
+          transition:'opacity 0.18s, transform 0.18s',
+          pointerEvents: titleShrunken ? 'none' : 'auto',
+        }}>
+          {t('screen.settings')}
         </div>
 
-        <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Behaviour</div>
-        <div className="m-card" style={{ padding: '4px 16px', marginBottom: 14, border: `1px solid ${M.line}` }}>
-          <SettingToggle label="Auto-categorize" sub="Use AI to classify new tx" on/>
-          <Divider inset={0}/>
-          <SettingToggle label="Daily summary" sub="9:00 push notification" on/>
-          <Divider inset={0}/>
-          <SettingToggle label="Round-up to savings" sub="Round purchases up to nearest â‚¬1"/>
+        {/* Appearance */}
+        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('settings.appearance')}</div>
+        <div className="m-card" style={{ padding:'4px 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
+          {visible(t('settings.darkMode')) && (
+            <>
+              <div data-testid={T.darkModeToggle} className="m-tap" onClick={() => setDark(!dark)}
+                style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
+                <I name={dark ? 'moon' : 'sun'} size={18} color={M.ink2}/>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:14, fontWeight:500 }}>{t('settings.darkMode')}</div>
+                  <div style={{ fontSize:11, color:M.ink3, marginTop:2 }}>{dark ? t('settings.darkModeOn') : t('settings.darkModeOff')}</div>
+                </div>
+                <Toggle on={dark}/>
+              </div>
+              <Divider inset={0}/>
+            </>
+          )}
+          {visible(t('settings.currency')) && (
+            <>
+              <div data-testid="settings-currency-row" className="m-tap"
+                onClick={() => setShowCurrencyPicker(true)}
+                style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
+                <I name="tag" size={18} color={M.ink2}/>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:14, fontWeight:500 }}>{t('settings.currency')}</div>
+                  <div style={{ fontSize:11, color:M.ink3, marginTop:2 }}>{t('settings.currencySub')}</div>
+                </div>
+                <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                  <span style={{ fontSize:13, color:M.ink2, fontWeight:600 }}>{curInfo.code} ({curInfo.symbol})</span>
+                  <I name="caretR" size={14} color={M.ink4}/>
+                </div>
+              </div>
+              <Divider inset={0}/>
+            </>
+          )}
+          {visible(t('settings.changeLanguage')) && (
+            <div data-testid="settings-language-row" className="m-tap"
+              onClick={() => nav.push('languagePicker')}
+              style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
+              <I name="globe" size={18} color={M.ink2}/>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:14, fontWeight:500 }}>{t('settings.changeLanguage')}</div>
+                <div style={{ fontSize:11, color:M.ink3, marginTop:2 }}>{t('settings.languageSub')}</div>
+              </div>
+              <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                <span style={{ fontSize:13, color:M.ink2, fontWeight:600 }}>{langName}</span>
+                <I name="caretR" size={14} color={M.ink4}/>
+              </div>
+            </div>
+          )}
         </div>
+
+        {/* Behaviour */}
+        {(!q || 'behaviour auto-categorize daily summary round-up'.includes(q)) && (
+          <>
+            <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Behaviour</div>
+            <div className="m-card" style={{ padding:'4px 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
+              <SettingToggle label="Auto-categorize" sub="Use AI to classify new tx" on/>
+              <Divider inset={0}/>
+              <SettingToggle label="Daily summary" sub="9:00 push notification" on/>
+              <Divider inset={0}/>
+              <SettingToggle label="Round-up to savings" sub={`Round purchases up to nearest ${curInfo.symbol}1`}/>
+            </div>
+          </>
+        )}
       </div>
+
+      {/* Floating search bar */}
+      <div style={{
+        position:'absolute', bottom:24, left:16, right:16,
+        background:M.card, borderRadius:14,
+        boxShadow:'0 4px 20px rgba(0,0,0,0.14)',
+        border:`1px solid ${M.line}`,
+        display:'flex', alignItems:'center', gap:10,
+        padding:'11px 14px', zIndex:10,
+      }}>
+        <I name="search" size={16} color={M.ink4}/>
+        <input
+          data-testid="settings-search"
+          value={settingsSearch}
+          onChange={e => setSettingsSearch(e.target.value)}
+          placeholder="Search settings…"
+          style={{ flex:1, border:'none', outline:'none', background:'transparent', fontSize:14, fontFamily:M.fontUI, color:M.ink, padding:0 }}
+        />
+        {settingsSearch && (
+          <button onClick={() => setSettingsSearch('')} style={{ background:'none', border:'none', cursor:'pointer', padding:2, display:'flex' }}>
+            <I name="x" size={14} color={M.ink4}/>
+          </button>
+        )}
+      </div>
+
+      <CurrencyPickerSheet open={showCurrencyPicker} onClose={() => setShowCurrencyPicker(false)}/>
     </div>
   );
 }

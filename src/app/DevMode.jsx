@@ -721,9 +721,28 @@ const ANNOTATIONS = {
   },
 
   'accountsAll': {
-    screen: 'All accounts',
-    sub: 'Full list of all connected accounts across banks.',
-    storage: [ 'munni_bank_accounts_{userId} (LS)' ],
+    screen: 'Financial Accounts',
+    sub: 'Assets (Bank, Saving, Cash Wallet, Brokerage) and Liabilities (Credit Card, Mortgage, Loan) with type badges and net worth summary.',
+    states: [
+      'Main list — Assets group empty + Liabilities group empty + net worth €0',
+      'Main list — Assets with bank/saving/cash/brokerage rows, Liabilities with credit/mortgage/loan rows',
+      'typeSelect — 7 type tiles in two groups (Assets / Liabilities)',
+      'bankMethod — Manual vs Automated choice for Bank Account',
+      'bankManual — bank search screen (ALL_BANKS: NL + EU + US)',
+      'bankManual — bank selected, form with display name / account number / currency / initial balance',
+      'bankAuto — BankSearchFullScreen → BankConnectPsd2Screen flow (reuse)',
+      'savingMethod — same as bankMethod for Saving Account',
+      'cashForm — info notice + icon picker + required display name + purpose + currency + balance',
+      'brokerMethod — Manual vs Automated for Brokerage',
+      'brokerManual — BROKERS search + optional display name + currency',
+      'brokerAuto — broker search → mock auth → connecting spinner',
+      'creditMethod — Manual vs Automated for Credit Card',
+      'creditManual — same bank form but type=credit',
+      'mortgageForm — lender + original/current amount + rate + years + monthly',
+      'loanFlow — loan type selector → form with lender + amounts + currency + dates',
+      'Delete confirm sheet — remove account from assets or liabilities',
+    ],
+    storage: [ 'munni_bank_accounts_{userId} (LS)', 'munni_selected_bank (LS)' ],
   },
 
   'spaces': {

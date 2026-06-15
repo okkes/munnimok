@@ -21,6 +21,29 @@
   return `${day} ${mon} ${d.getFullYear()}, ${hm}`;
 }
 
+// Currency-aware money formatter. currencyCode defaults to EUR.
+export const fmtMoney = (n, currencyCode = 'EUR', opts = {}) => {
+  // Inline symbol map so format.js stays free of circular imports
+  const SYMS = {
+    EUR:'€', USD:'$', GBP:'£', CHF:'Fr', SEK:'kr', NOK:'kr', DKK:'kr',
+    PLN:'zł', CZK:'Kč', HUF:'Ft', RON:'lei', TRY:'₺', AUD:'A$', NZD:'NZ$',
+    CAD:'C$', BRL:'R$', MXN:'MX$', ARS:'AR$', JPY:'¥', KRW:'₩', CNY:'¥',
+    INR:'₹', SGD:'S$', AED:'AED', SAR:'SAR', ILS:'₪', QAR:'QR',
+    ZAR:'R', NGN:'₦', PKR:'Rs', IDR:'Rp', MYR:'RM', THB:'฿', VND:'₫', PHP:'₱',
+  };
+  const NO_DEC = new Set(['JPY','KRW','IDR','VND']);
+  const sign = n < 0 ? '−' : (opts.signed && n > 0 ? '+' : '');
+  const abs = Math.abs(n);
+  const decimals = opts.decimals ?? (NO_DEC.has(currencyCode) ? 0 : 2);
+  const s = abs.toLocaleString('nl-NL', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+  const sym = SYMS[currencyCode] || currencyCode;
+  return `${sign}${sym}${s}`;
+};
+export const fmtMoneyInt = (n, currencyCode = 'EUR') => fmtMoney(n, currencyCode, { decimals: 0 });
+
 export const fmtEur = (n, opts = {}) => {
   const sign = n < 0 ? '−' : (opts.signed && n > 0 ? '+' : '');
   const abs = Math.abs(n);
