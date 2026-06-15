@@ -540,12 +540,10 @@ function ScreenLoginGate({ onLogin }) {
       localStorage.setItem(lnKey, JSON.stringify(lastName));
       if (data.country) {
         localStorage.setItem(ctKey, JSON.stringify(data.country));
-        // Auto-set display currency from country if not already set by user
-        const existingCurrency = localStorage.getItem('munni_display_currency');
-        if (!existingCurrency) {
-          const defaultCurrency = COUNTRY_CURRENCY[data.country] || 'EUR';
-          localStorage.setItem('munni_display_currency', JSON.stringify(defaultCurrency));
-        }
+      }
+      // Store currency chosen during signup (user may have overridden the auto-value)
+      if (data.currency) {
+        localStorage.setItem('munni_display_currency', JSON.stringify(data.currency));
       }
       if (newApiUrl && newApiUrl.trim()) {
         localStorage.setItem('munni_api_url', JSON.stringify(newApiUrl.trim()));

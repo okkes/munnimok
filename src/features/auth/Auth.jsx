@@ -5,7 +5,7 @@ import { M, I, IcoGoogle, IcoApple, StatusBar, Divider } from '../../app/theme.j
 import { Sheet, useDark } from '../../app/nav.jsx';
 import { useLang } from '../../shared/i18n.jsx';
 import { COUNTRY_CURRENCY, CURRENCIES } from '../../shared/constants.js';
-import { DUTCH_BANKS, generateBankIban, DUTCH_BANKS as _DB } from '../accounts/data.js';
+import { DUTCH_BANKS, generateBankIban, ALL_BANKS, BANK_COUNTRY_LABELS, BANK_COUNTRY_ORDER } from '../accounts/data.js';
 
 function seededIban(bank, seed) {
   let h = 0;
@@ -94,6 +94,9 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
   const stepRef = React.useRef(1);
   const [showPicker,     setShowPicker]    = React.useState(false);
   const [errors,         setErrors]        = React.useState({});
+  const [selectedCurrency, setSelectedCurrency] = React.useState(null); // null = auto from country
+  const [showCurrencySheet, setShowCurrencySheet] = React.useState(false);
+  const [currencySearch, setCurrencySearch] = React.useState('');
   const fileInputRef = React.useRef(null);
   const step1ScrollRef  = React.useRef(null);
   const step1SavedScroll = React.useRef(0);
@@ -113,7 +116,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
   React.useEffect(() => {
     const el = step1ScrollRef.current;
     if (!el) return;
-    const anyOpen = showCountry || showApiInfo || showPicker || showCountryInfo;
+    const anyOpen = showCountry || showApiInfo || showPicker || showCountryInfo || showCurrencySheet;
     if (anyOpen) {
       step1SavedScroll.current = el.scrollTop;
       el.style.overflowY = 'hidden';
@@ -127,9 +130,21 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
 
   const filteredBanks = React.useMemo(() => {
     const q = bankSearch.toLowerCase().trim();
-    if (!q) return DUTCH_BANKS;
-    return DUTCH_BANKS.filter(b => b.name.toLowerCase().includes(q) || b.bic.toLowerCase().includes(q));
+    if (!q) return null; // grouped mode
+    return ALL_BANKS.filter(b => b.name.toLowerCase().includes(q) || (b.bic || '').toLowerCase().includes(q));
   }, [bankSearch]);
+
+  const bankGroups = React.useMemo(() => {
+    const byCountry = {};
+    ALL_BANKS.forEach(b => {
+      const key = b.country ?? '';
+      if (!byCountry[key]) byCountry[key] = [];
+      byCountry[key].push(b);
+    });
+    return BANK_COUNTRY_ORDER
+      .filter(code => byCountry[code]?.length)
+      .map(code => ({ code, label: BANK_COUNTRY_LABELS[code] || code, banks: byCountry[code] }));
+  }, []);
 
   // Popstate: handles main back + bank sub-screen back
   React.useEffect(() => {
@@ -244,15 +259,17 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
     const errs = validate();
     if (Object.keys(errs).length > 0) { setErrors(errs); return; }
     try { localStorage.removeItem(draftKey); } catch {}
+    const autoCur = COUNTRY_CURRENCY[country] || 'EUR';
     onComplete({
       firstName: firstName.trim(),
       lastName:  lastName.trim(),
       country,
+      currency:  selectedCurrency || autoCur,
       email:     isSSO ? signup.displayEmail : email.trim().toLowerCase(),
       apiUrl:    apiUrl.trim(),
       picture,
       connectedBanks: connectedBanks.map(b => {
-        const bank = DUTCH_BANKS.find(bk => bk.id === b.id);
+        const bank = ALL_BANKS.find(bk => bk.id === b.id);
         return { ...b, iban: b.iban || (bank ? seededIban(bank, b.uid) : '') };
       }),
     });
@@ -343,35 +360,72 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
         </div>
 
         <div style={{ flex:1, overflowY:'auto', padding:'0 20px 16px' }}>
-          <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
-            {filteredBanks.length === 0
-              ? <div data-testid={T.bankSearchNoResults} style={{ padding:'24px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>{t('onboarding.noResults')}</div>
-              : filteredBanks.map((bank, i) => {
-                  const connCount = connectedBanks.filter(b => b.id === bank.id).length;
-                  return (
-                    <React.Fragment key={bank.id}>
-                      {i > 0 && <Divider inset={48}/>}
-                      <div data-testid={T.bankListRow} className="m-tap" onClick={() => openBankCredentials(bank)}
-                        style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
-                        <div style={{ width:36, height:36, borderRadius:10, background:`${bank.color}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:18 }}>{bank.logo}</div>
-                        <div style={{ flex:1, minWidth:0 }}>
-                          <div style={{ fontSize:14, fontWeight:500, color:M.ink }}>{highlightMatch(bank.name, bankSearch.trim())}</div>
-                          <div style={{ fontSize:11, color:M.ink3, marginTop:1, fontFamily:M.fontMono }}>{highlightMatch(bank.bic, bankSearch.trim())}</div>
-                        </div>
-                        {connCount > 0 ? (
-                          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                            <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:M.sageSoft, color:M.sage }}>{connCount}×</span>
-                            <I name="caretR" size={14} color={M.sage}/>
+          {filteredBanks !== null ? (
+            /* Search results — flat */
+            <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
+              {filteredBanks.length === 0
+                ? <div data-testid={T.bankSearchNoResults} style={{ padding:'24px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>{t('onboarding.noResults')}</div>
+                : filteredBanks.map((bank, i) => {
+                    const connCount = connectedBanks.filter(b => b.id === bank.id).length;
+                    return (
+                      <React.Fragment key={bank.id}>
+                        {i > 0 && <Divider inset={48}/>}
+                        <div data-testid={T.bankListRow} className="m-tap" onClick={() => openBankCredentials(bank)}
+                          style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
+                          <div style={{ width:36, height:36, borderRadius:10, background:`${bank.color}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:18 }}>{bank.logo}</div>
+                          <div style={{ flex:1, minWidth:0 }}>
+                            <div style={{ fontSize:14, fontWeight:500, color:M.ink }}>{highlightMatch(bank.name, bankSearch.trim())}</div>
+                            {bank.bic && <div style={{ fontSize:11, color:M.ink3, marginTop:1, fontFamily:M.fontMono }}>{highlightMatch(bank.bic, bankSearch.trim())}</div>}
                           </div>
-                        ) : (
-                          <I name="caretR" size={14} color={M.ink4}/>
-                        )}
-                      </div>
-                    </React.Fragment>
-                  );
-                })
-            }
-          </div>
+                          {connCount > 0 ? (
+                            <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                              <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:M.sageSoft, color:M.sage }}>{connCount}×</span>
+                              <I name="caretR" size={14} color={M.sage}/>
+                            </div>
+                          ) : <I name="caretR" size={14} color={M.ink4}/>}
+                        </div>
+                      </React.Fragment>
+                    );
+                  })
+              }
+            </div>
+          ) : (
+            /* Grouped browse */
+            bankGroups.map(group => (
+              <div key={group.code}>
+                <div style={{ display:'flex', alignItems:'center', gap:8, padding:'14px 0 6px' }}>
+                  {group.code && group.code !== 'EU' && (
+                    <span style={{ fontSize:9, fontWeight:700, padding:'2px 5px', borderRadius:4, background:M.paper2, border:`1px solid ${M.line}`, color:M.ink3, fontFamily:M.fontMono, letterSpacing:'0.04em' }}>{group.code}</span>
+                  )}
+                  <span style={{ fontSize:11, fontWeight:700, color:M.ink3, textTransform:'uppercase', letterSpacing:'0.06em' }}>{group.label}</span>
+                </div>
+                <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
+                  {group.banks.map((bank, i) => {
+                    const connCount = connectedBanks.filter(b => b.id === bank.id).length;
+                    return (
+                      <React.Fragment key={bank.id}>
+                        {i > 0 && <Divider inset={48}/>}
+                        <div data-testid={T.bankListRow} className="m-tap" onClick={() => openBankCredentials(bank)}
+                          style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
+                          <div style={{ width:36, height:36, borderRadius:10, background:`${bank.color}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:18 }}>{bank.logo}</div>
+                          <div style={{ flex:1, minWidth:0 }}>
+                            <div style={{ fontSize:14, fontWeight:500, color:M.ink }}>{bank.name}</div>
+                            {bank.bic && <div style={{ fontSize:11, color:M.ink3, marginTop:1, fontFamily:M.fontMono }}>{bank.bic}</div>}
+                          </div>
+                          {connCount > 0 ? (
+                            <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                              <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:M.sageSoft, color:M.sage }}>{connCount}×</span>
+                              <I name="caretR" size={14} color={M.sage}/>
+                            </div>
+                          ) : <I name="caretR" size={14} color={M.ink4}/>}
+                        </div>
+                      </React.Fragment>
+                    );
+                  })}
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
     );
@@ -722,14 +776,19 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
           </button>
           {errors.country && <div data-testid={T.onboardCountryErr} style={{ fontSize:11, color:M.clay, marginTop:4 }}>{errors.country}</div>}
           {country && (() => {
-            const curCode = COUNTRY_CURRENCY[country] || 'EUR';
+            const autoCur = COUNTRY_CURRENCY[country] || 'EUR';
+            const curCode = selectedCurrency || autoCur;
             const curInfo = CURRENCIES.find(c => c.code === curCode);
+            const isAuto = !selectedCurrency || selectedCurrency === autoCur;
             return (
-              <div data-testid="onboard-currency-hint"
-                style={{ display:'flex', alignItems:'center', gap:6, marginTop:6, fontSize:11, color:M.sage, fontWeight:500 }}>
-                <I name="check" size={11} color={M.sage} stroke={2.5}/>
-                {t('onboarding.currencyAuto')} <span style={{ fontFamily:M.fontMono, fontWeight:700 }}>{curCode} ({curInfo?.symbol || curCode})</span>
-              </div>
+              <button data-testid="onboard-currency-hint"
+                onClick={() => { setCurrencySearch(''); setShowCurrencySheet(true); }}
+                style={{ width:'100%', display:'flex', alignItems:'center', gap:8, marginTop:6, padding:'10px 14px', borderRadius:12, border:`1.5px solid ${M.line}`, background:M.paper2, cursor:'pointer', fontFamily:M.fontUI, boxSizing:'border-box', textAlign:'left' }}>
+                <span style={{ fontFamily:M.fontMono, fontWeight:700, fontSize:15, color:M.ink }}>{curInfo?.symbol || curCode}</span>
+                <span style={{ flex:1, fontSize:14, color:M.ink }}>{curInfo?.name || curCode} <span style={{ fontFamily:M.fontMono, fontSize:12, color:M.ink3 }}>{curCode}</span></span>
+                {isAuto && <span style={{ fontSize:10, color:M.sage, fontWeight:600, padding:'2px 7px', borderRadius:999, background:M.sageSoft }}>auto</span>}
+                <I name="caretR" size={14} color={M.ink4}/>
+              </button>
             );
           })()}
         </div>
@@ -785,7 +844,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
           <div style={{ overflowY:'auto', maxHeight:340, paddingBottom:16 }}>
             {COUNTRIES.filter(c => !countrySearch || countryName(c, lang).toLowerCase().includes(countrySearch.toLowerCase()) || c.native.toLowerCase().includes(countrySearch.toLowerCase())).map(c => (
               <button key={c.code} className="m-tap"
-                onClick={() => { setCountry(c.code); setShowCountry(false); setErrors(prev => ({ ...prev, country: undefined })); }}
+                onClick={() => { setCountry(c.code); setShowCountry(false); setErrors(prev => ({ ...prev, country: undefined })); setSelectedCurrency(null); }}
                 style={{ width:'100%', display:'flex', alignItems:'center', gap:12, padding:'12px 20px', background:'transparent', border:'none', cursor:'pointer', fontFamily:M.fontUI }}>
                 <img src={countryFlagUrl(c.code)} width={24} height={24} style={{ ...flagStyle, flexShrink:0 }} alt={c.code}/>
                 <span style={{ flex:1, textAlign:'left', fontSize:15, color:M.ink }}>{highlightMatch(countryName(c, lang), countrySearch.trim())}</span>
@@ -805,6 +864,32 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
               <div style={{ fontSize:15, fontWeight:600, color:M.ink }}>{t('profile.country')}</div>
             </div>
             <div style={{ fontSize:14, color:M.ink2, lineHeight:1.6 }}>{t('profile.countryInfo')}</div>
+          </div>
+        </Sheet>
+      )}
+
+      {/* Currency picker sheet */}
+      {showCurrencySheet && (
+        <Sheet onClose={() => setShowCurrencySheet(false)}>
+          <div style={{ padding:'0 16px 8px' }}>
+            <div style={{ fontSize:17, fontWeight:700, marginBottom:12 }}>Select currency</div>
+            <input value={currencySearch} onChange={e => setCurrencySearch(e.target.value)}
+              placeholder="Search currencies…" autoFocus
+              style={{ width:'100%', boxSizing:'border-box', padding:'9px 14px', borderRadius:10, border:`1.5px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', color:M.ink, marginBottom:4 }}/>
+          </div>
+          <div style={{ overflowY:'auto', maxHeight:360, paddingBottom:16 }}>
+            {CURRENCIES.filter(c => !currencySearch || c.name.toLowerCase().includes(currencySearch.toLowerCase()) || c.code.toLowerCase().includes(currencySearch.toLowerCase())).map(c => {
+              const autoCur = COUNTRY_CURRENCY[country] || 'EUR';
+              const active = (selectedCurrency || autoCur) === c.code;
+              return (
+                <button key={c.code} onClick={() => { setSelectedCurrency(c.code); setShowCurrencySheet(false); }}
+                  style={{ width:'100%', display:'flex', alignItems:'center', gap:12, padding:'12px 20px', background:'transparent', border:'none', cursor:'pointer', fontFamily:M.fontUI }}>
+                  <span style={{ width:36, height:36, borderRadius:10, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', fontWeight:700, fontSize:14, fontFamily:M.fontMono, flexShrink:0, color:M.sage }}>{c.symbol}</span>
+                  <span style={{ flex:1, textAlign:'left', fontSize:15, color:M.ink }}>{c.name} <span style={{ fontSize:12, color:M.ink3, fontFamily:M.fontMono }}>{c.code}</span></span>
+                  {active && <I name="check" size={16} color={M.sage}/>}
+                </button>
+              );
+            })}
           </div>
         </Sheet>
       )}

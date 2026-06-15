@@ -1,5 +1,5 @@
 ﻿import React from 'react';
-import { ACCOUNTS, DEMO_ACCOUNT_IDS, DEMO_ACCOUNTS, INTEGRATIONS, ALL_RECEIPTS, generateBankTxs, generateAsnTxs, DUTCH_BANKS, generateBankIban, ALL_BANKS, BROKERS } from './data.js';
+import { ACCOUNTS, DEMO_ACCOUNT_IDS, DEMO_ACCOUNTS, INTEGRATIONS, ALL_RECEIPTS, generateBankTxs, generateAsnTxs, DUTCH_BANKS, generateBankIban, ALL_BANKS, BROKERS, BANK_COUNTRY_LABELS, BANK_COUNTRY_ORDER } from './data.js';
 import { fmtEur, fmtMoney, fmtMoneyInt, fmtDate, computePeriodHistory, fmtSyncTime } from '../../shared/utils/format.js';
 import { getUserId, getUserSyncKey, addDevLog } from '../../shared/utils/user.js';
 import { M, I, IcoMDI, Divider, StatusBar, AppBar } from '../../app/theme.jsx';
@@ -21,12 +21,58 @@ function HighlightText({ text, query }) {
 
 // ── Shared bank-connect screens (used by ScreenAccounts, ScreenAccountsAll, and Auth onboarding) ──
 
+function BankRow({ bank, query, connectedAccounts, onSelect }) {
+  const connCount = (connectedAccounts || []).filter(a => a.bankId === bank.id).length;
+  return (
+    <div className="m-tap" onClick={() => onSelect(bank)}
+      style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
+      <div style={{ width:36, height:36, borderRadius:10, background:`${bank.color}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:18 }}>{bank.logo}</div>
+      <div style={{ flex:1, minWidth:0 }}>
+        <div style={{ fontSize:14, fontWeight:500, color:M.ink }}><HighlightText text={bank.name} query={query}/></div>
+        {bank.bic && <div style={{ fontSize:11, color:M.ink3, marginTop:1, fontFamily:M.fontMono }}><HighlightText text={bank.bic} query={query}/></div>}
+      </div>
+      {connCount > 0 ? (
+        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+          <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:M.sageSoft, color:M.sage }}>{connCount}×</span>
+          <I name="caretR" size={14} color={M.sage}/>
+        </div>
+      ) : <I name="caretR" size={14} color={M.ink4}/>}
+    </div>
+  );
+}
+
+function BankGroupHeader({ countryCode, label }) {
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:8, padding:'14px 0 6px' }}>
+      {countryCode && countryCode !== 'EU' && (
+        <span style={{ fontSize:9, fontWeight:700, padding:'2px 5px', borderRadius:4, background:M.paper2, border:`1px solid ${M.line}`, color:M.ink3, fontFamily:M.fontMono, letterSpacing:'0.04em' }}>{countryCode}</span>
+      )}
+      <span style={{ fontSize:11, fontWeight:700, color:M.ink3, textTransform:'uppercase', letterSpacing:'0.06em' }}>{label}</span>
+    </div>
+  );
+}
+
 function BankSearchFullScreen({ banks, bankSearch, setBankSearch, connectedAccounts, onSelect, onBack }) {
-  const filteredBanks = React.useMemo(() => {
-    const q = bankSearch.toLowerCase().trim();
-    if (!q) return banks;
-    return banks.filter(b => b.name.toLowerCase().includes(q) || b.bic.toLowerCase().includes(q));
-  }, [banks, bankSearch]);
+  const q = bankSearch.trim();
+
+  const groups = React.useMemo(() => {
+    if (q) return null; // flat filtered mode
+    const byCountry = {};
+    banks.forEach(b => {
+      const key = b.country ?? '';
+      if (!byCountry[key]) byCountry[key] = [];
+      byCountry[key].push(b);
+    });
+    return BANK_COUNTRY_ORDER
+      .filter(code => byCountry[code]?.length)
+      .map(code => ({ code, label: BANK_COUNTRY_LABELS[code] || code, banks: byCountry[code] }));
+  }, [banks, q]);
+
+  const flatFiltered = React.useMemo(() => {
+    if (!q) return null;
+    const lq = q.toLowerCase();
+    return banks.filter(b => b.name.toLowerCase().includes(lq) || (b.bic || '').toLowerCase().includes(lq));
+  }, [banks, q]);
 
   return (
     <div className="m-screen m-fade" style={{ display:'flex', flexDirection:'column' }}>
@@ -42,38 +88,41 @@ function BankSearchFullScreen({ banks, bankSearch, setBankSearch, connectedAccou
       <div style={{ padding:'12px 20px 8px', flexShrink:0 }}>
         <div style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 12px', borderRadius:10, border:`1px solid ${M.line}`, background:M.paper2, boxSizing:'border-box' }}>
           <I name="search" size={16} color={M.ink4}/>
-          <input autoFocus value={bankSearch} onChange={e => setBankSearch(e.target.value)} placeholder="Search bank…"
+          <input data-testid="acct-bank-search" autoFocus value={bankSearch} onChange={e => setBankSearch(e.target.value)} placeholder="Search bank or BIC…"
             style={{ flex:1, border:'none', background:'transparent', fontSize:14, fontFamily:M.fontUI, outline:'none', color:M.ink, padding:0 }}/>
+          {bankSearch && <button onClick={() => setBankSearch('')} style={{ background:'none', border:'none', cursor:'pointer', padding:0, display:'flex' }}><I name="x" size={14} color={M.ink4}/></button>}
         </div>
       </div>
       <div style={{ flex:1, overflowY:'auto', padding:'0 20px 24px' }}>
-        <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
-          {filteredBanks.length === 0
-            ? <div style={{ padding:'24px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>No banks match your search</div>
-            : filteredBanks.map((bank, i) => {
-                const connCount = (connectedAccounts || []).filter(a => a.bankId === bank.id).length;
-                return (
+        {flatFiltered !== null ? (
+          /* Search results — flat list */
+          <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
+            {flatFiltered.length === 0
+              ? <div style={{ padding:'24px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>No banks match your search</div>
+              : flatFiltered.map((bank, i) => (
                   <React.Fragment key={bank.id}>
                     {i > 0 && <Divider inset={48}/>}
-                    <div className="m-tap" onClick={() => onSelect(bank)}
-                      style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
-                      <div style={{ width:36, height:36, borderRadius:10, background:`${bank.color}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:18 }}>{bank.logo}</div>
-                      <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontSize:14, fontWeight:500, color:M.ink }}><HighlightText text={bank.name} query={bankSearch.trim()}/></div>
-                        <div style={{ fontSize:11, color:M.ink3, marginTop:1, fontFamily:M.fontMono }}><HighlightText text={bank.bic} query={bankSearch.trim()}/></div>
-                      </div>
-                      {connCount > 0 ? (
-                        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                          <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:M.sageSoft, color:M.sage }}>{connCount}×</span>
-                          <I name="caretR" size={14} color={M.sage}/>
-                        </div>
-                      ) : <I name="caretR" size={14} color={M.ink4}/>}
-                    </div>
+                    <BankRow bank={bank} query={q} connectedAccounts={connectedAccounts} onSelect={onSelect}/>
                   </React.Fragment>
-                );
-              })
-          }
-        </div>
+                ))
+            }
+          </div>
+        ) : (
+          /* Grouped browse */
+          groups.map(group => (
+            <div key={group.code}>
+              <BankGroupHeader countryCode={group.code} label={group.label}/>
+              <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
+                {group.banks.map((bank, i) => (
+                  <React.Fragment key={bank.id}>
+                    {i > 0 && <Divider inset={48}/>}
+                    <BankRow bank={bank} query="" connectedAccounts={connectedAccounts} onSelect={onSelect}/>
+                  </React.Fragment>
+                ))}
+              </div>
+            </div>
+          ))
+        )}
       </div>
     </div>
   );
@@ -1290,12 +1339,15 @@ export function ScreenAccounts() {
     setShowDeleteConfirm(null);
   };
 
+  // PSD2 auto back: return to the correct method screen based on which type started the flow
+  const psd2MethodScreen = { bank:'bankMethod', saving:'savingMethod', credit:'creditMethod' }[psd2TypeId] || 'typeSelect';
+
   // PSD2 flow screens (for automated bank/saving/credit)
   if (psd2Step === 'search') {
-    return <BankSearchFullScreen banks={ALL_BANKS} bankSearch={bankSearch} setBankSearch={setBankSearch} connectedAccounts={connectedAccounts} onSelect={startBankConnect} onBack={() => { setPsd2Step(null); setFlowScreen('bankAuto'); }}/>;
+    return <BankSearchFullScreen banks={ALL_BANKS} bankSearch={bankSearch} setBankSearch={setBankSearch} connectedAccounts={connectedAccounts} onSelect={startBankConnect} onBack={() => { setPsd2Step(null); setFlowScreen(psd2MethodScreen); }}/>;
   }
   if (psd2Step && psd2Step !== 'done') {
-    return <BankConnectPsd2Screen psd2Step={psd2Step} psd2Bank={psd2Bank} customIban={customIban} setCustomIban={setCustomIban} advancePsd2={advancePsd2} onClose={() => { setPsd2Step(null); setFlowScreen(null); }}/>;
+    return <BankConnectPsd2Screen psd2Step={psd2Step} psd2Bank={psd2Bank} customIban={customIban} setCustomIban={setCustomIban} advancePsd2={advancePsd2} onClose={() => { setPsd2Step(null); setFlowScreen(psd2MethodScreen); }}/>;
   }
 
   // New account creation flows
@@ -1310,9 +1362,8 @@ export function ScreenAccounts() {
   }} onBack={() => setFlowScreen(null)}/>;
 
   if (flowScreen === 'bankMethod') return <AccountMethodScreen typeLabel={t('acct.bank')}
-    onManual={() => setFlowScreen('bankManual')} onAutomatic={() => { setPsd2TypeId('bank'); setBankSearch(''); setPsd2Step('search'); setFlowScreen('bankAuto'); }} onBack={() => setFlowScreen('typeSelect')}/>;
+    onManual={() => setFlowScreen('bankManual')} onAutomatic={() => { setPsd2TypeId('bank'); setBankSearch(''); setPsd2Step('search'); }} onBack={() => setFlowScreen('typeSelect')}/>;
   if (flowScreen === 'bankManual') return <BankManualForm typeLabel={t('acct.bank')} typeId="bank" defaultCurrency={currency} onSave={handleSaveNewAccount} onBack={() => setFlowScreen('bankMethod')}/>;
-  if (flowScreen === 'bankAuto') return null; // handled by psd2Step above
 
   if (flowScreen === 'savingMethod') return <AccountMethodScreen typeLabel={t('acct.saving')}
     onManual={() => setFlowScreen('savingManual')} onAutomatic={() => { setPsd2TypeId('saving'); setBankSearch(''); setPsd2Step('search'); }} onBack={() => setFlowScreen('typeSelect')}/>;
@@ -1340,9 +1391,6 @@ export function ScreenAccounts() {
   // ── Main screen ──────────────────────────────────────────────────────────────
   const assets = connectedAccounts.filter(a => acctGroup(a.type) === 'asset');
   const liabilities = connectedAccounts.filter(a => acctGroup(a.type) === 'liability');
-  const totalAssets = assets.reduce((s, a) => s + (a.balance || 0), 0);
-  const totalLiabilities = liabilities.reduce((s, a) => s + (a.balance || 0), 0);
-  const netWorth = totalAssets + totalLiabilities;
 
   return (
     <div className="m-screen">
@@ -1352,22 +1400,6 @@ export function ScreenAccounts() {
         trailing={<button data-testid="account-add-btn" className="m-iconbtn m-tap" onClick={() => setFlowScreen('typeSelect')}><I name="plus" size={20}/></button>}
       />
       <div className="m-body-scroll">
-        {/* Net worth summary */}
-        <div style={{ margin:'0 0 20px', padding:'16px 20px', borderRadius:16, background:M.brand, color:'#fff' }}>
-          <div style={{ fontSize:11, fontWeight:600, opacity:0.7, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:4 }}>{t('acct.netWorth')}</div>
-          <div className="m-num" style={{ fontSize:28, fontWeight:800 }}>{fmtMoney(netWorth, currency)}</div>
-          <div style={{ display:'flex', gap:20, marginTop:10 }}>
-            <div>
-              <div style={{ fontSize:10, opacity:0.65 }}>{t('acct.assets')}</div>
-              <div className="m-num" style={{ fontSize:14, fontWeight:700 }}>{fmtMoney(totalAssets, currency)}</div>
-            </div>
-            <div>
-              <div style={{ fontSize:10, opacity:0.65 }}>{t('acct.liabilities')}</div>
-              <div className="m-num" style={{ fontSize:14, fontWeight:700 }}>{fmtMoney(totalLiabilities, currency)}</div>
-            </div>
-          </div>
-        </div>
-
         {/* Assets group */}
         <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('acct.assets')}</div>
         <div data-testid="assets-group" className="m-card" style={{ padding:'4px 16px', marginBottom:16, border:`1px solid ${M.line}` }}>

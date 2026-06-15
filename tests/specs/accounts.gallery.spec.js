@@ -338,14 +338,13 @@ for (const V of VARIANTS) {
 
   // ── J: Net worth summary ─────────────────────────────────────────────────
 
-  test(`acct-j1 net worth banner visible [${V.id}]`, async ({ browser }) => {
+  test(`acct-j1 assets and liabilities groups always visible [${V.id}]`, async ({ browser }) => {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V);
     await goToAccounts(page);
-    // net worth banner is always visible (even if €0)
-    const banner = page.locator('text=/Net worth/i');
-    await expect(banner).toBeVisible();
-    await shot(page, k('acct-j1-net-worth-banner'));
-    await teardown(page, ctx, k('acct-j1-net-worth-banner'));
+    await expect(page.locator('[data-testid="assets-group"]')).toBeVisible();
+    await expect(page.locator('[data-testid="liabilities-group"]')).toBeVisible();
+    await shot(page, k('acct-j1-main-groups'));
+    await teardown(page, ctx, k('acct-j1-main-groups'));
   });
 }

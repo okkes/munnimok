@@ -645,6 +645,14 @@ export const ALL_BANKS = [...DUTCH_BANKS, ...EU_BANKS_EXTRA, ...US_BANKS,
   { id:'other', name:'Other', country:'', bic:'', color:'#888', logo:'🏦' },
 ];
 
+export const BANK_COUNTRY_LABELS = {
+  EU: 'International', NL: 'Netherlands', DE: 'Germany', FR: 'France',
+  ES: 'Spain', IT: 'Italy', BE: 'Belgium', GB: 'United Kingdom',
+  PL: 'Poland', CZ: 'Czech Republic', HU: 'Hungary', CH: 'Switzerland',
+  US: 'United States', '': 'Other',
+};
+export const BANK_COUNTRY_ORDER = ['EU','NL','DE','FR','ES','IT','BE','GB','PL','CZ','HU','CH','US',''];
+
 export const BROKERS = [
   { id:'degiro',      name:'DEGIRO',              region:'EU',     color:'#5E4A78', logo:'🏦' },
   { id:'ib',          name:'Interactive Brokers', region:'GLOBAL', color:'#003087', logo:'🏦' },
