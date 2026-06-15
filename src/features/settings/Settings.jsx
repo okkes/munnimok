@@ -253,7 +253,7 @@ export function ScreenSettings() {
           )}
           {visible(t('settings.changeLanguage')) && (
             <div data-testid="settings-language-row" className="m-tap"
-              onClick={() => nav.push('languagePicker')}
+              onClick={() => nav.push('language')}
               style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
               <I name="globe" size={18} color={M.ink2}/>
               <div style={{ flex:1 }}>

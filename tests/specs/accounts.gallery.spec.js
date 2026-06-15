@@ -4,9 +4,9 @@ import { VARIANTS, createPage, base, shot, teardown } from '../helpers/base.js';
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 async function goToAccounts(page) {
-  await page.click('[data-testid="login-demo"]');
-  await page.waitForSelector('[data-testid="nav-drawer"]', { timeout: 5000 });
-  await page.click('[data-testid="nav-drawer"]');
+  await page.click('[data-testid="login-demo-btn"]');
+  await page.waitForSelector('[data-testid="home-space-avatar"]', { timeout: 5000 });
+  await page.click('[data-testid="home-space-avatar"]');
   await page.waitForSelector('[data-testid="nav-drawer-settings"]', { timeout: 2000 });
   await page.click('[data-testid="nav-drawer-settings"]');
   await page.waitForSelector('[data-testid="profile-link-accounts"]', { timeout: 3000 });
@@ -120,7 +120,7 @@ for (const V of VARIANTS) {
     await page.fill('[data-testid="acct-initial-balance"]', '5000');
     await page.click('[data-testid="acct-save-btn"]');
     await page.waitForSelector('[data-testid="assets-group"]', { timeout: 2000 });
-    await expect(page.locator('[data-testid="account-row"]')).toBeVisible();
+    await expect(page.locator('[data-testid="account-row"]').first()).toBeVisible();
     await shot(page, k('acct-b5-bank-saved'));
     await teardown(page, ctx, k('acct-b5-bank-saved'));
   });
@@ -182,7 +182,7 @@ for (const V of VARIANTS) {
     await page.fill('[data-testid="cash-initial-balance"]', '250');
     await page.click('[data-testid="cash-save-btn"]');
     await page.waitForSelector('[data-testid="assets-group"]', { timeout: 2000 });
-    await expect(page.locator('[data-testid="account-row"]')).toBeVisible();
+    await expect(page.locator('[data-testid="account-row"]').first()).toBeVisible();
     await shot(page, k('acct-c3-cash-saved'));
     await teardown(page, ctx, k('acct-c3-cash-saved'));
   });
@@ -273,7 +273,7 @@ for (const V of VARIANTS) {
     await page.fill('[data-testid="loan-balance"]', '12500');
     await page.click('[data-testid="loan-save-btn"]');
     await page.waitForSelector('[data-testid="liabilities-group"]', { timeout: 2000 });
-    await expect(page.locator('[data-testid="account-row"]')).toBeVisible();
+    await expect(page.locator('[data-testid="account-row"]').first()).toBeVisible();
     await shot(page, k('acct-f2-loan-saved'));
     await teardown(page, ctx, k('acct-f2-loan-saved'));
   });
@@ -327,7 +327,7 @@ for (const V of VARIANTS) {
     const xBtn = page.locator('[data-testid="account-row"] button').first();
     if (await xBtn.count() > 0) {
       await xBtn.click();
-      await page.waitForSelector('[data-testid="sheet-overlay"]', { timeout: 2000 });
+      await page.waitForSelector('[data-testid="sheet-close"]', { timeout: 2000 });
       await shot(page, k('acct-i1-delete-confirm'));
     } else {
       // No pre-seeded account visible (demo user doesn't use that key) — just screenshot main
