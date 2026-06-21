@@ -62,7 +62,7 @@ export const SCREEN_REGISTRY = {
   events:         () => <ScreenEvents/>,
   eventDetail:    ({params}) => <ScreenEventDetail params={params}/>,
   eventCreate:    () => <ScreenEventCreate/>,
-  accounts:       () => <ScreenAccounts/>,
+  accounts:       ({params}) => <ScreenAccounts params={params}/>,
   accountsAll:    () => <ScreenAccountsAll/>,
   spaces:       () => <ScreenSpaces/>,
   spaceDetail:  ({params}) => <ScreenSpaceDetail params={params}/>,

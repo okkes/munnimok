@@ -565,7 +565,10 @@ function AcctRow({ acct, i, t, currency, onDelete, onEdit }) {
           <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:2, flexWrap:'wrap' }}>
             {acct.iban && <span style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono }}>{acct.iban}</span>}
             <AcctTypeBadge type={acct.type} t={t}/>
-            {acct.readOnly && <span style={{ fontSize:9, fontWeight:700, padding:'2px 6px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase' }}>PSD2</span>}
+            {acct.readOnly
+              ? <span style={{ fontSize:9, fontWeight:700, padding:'2px 6px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase' }}>{t('acct.automated')}</span>
+              : <span style={{ fontSize:9, fontWeight:700, padding:'2px 6px', borderRadius:999, background:M.paper2, color:M.ink3, textTransform:'uppercase', border:`1px solid ${M.line}` }}>{t('acct.manual')}</span>
+            }
           </div>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
@@ -1299,13 +1302,15 @@ function LoanFlow({ defaultCurrency, onSave, onBack }) {
 
 // ── Main Financial Accounts screen ───────────────────────────────────────────
 
-export function ScreenAccounts() {
+export function ScreenAccounts({ params }) {
   const nav = useNav();
   const { t } = useLang();
   const { currency } = useCurrency();
   const { addTxs } = useTxCtx();
   const [connectedAccounts, setConnectedAccounts] = useConnectedAccounts();
   const { profiles, setProfiles } = useProfiles();
+  // spaceId present = came from space detail "Manage accounts" → auto-attach new accounts to that space
+  const attachToSpaceId = params?.spaceId || null;
 
   // New flow state machine
   const [flowScreen, setFlowScreen] = React.useState(null); // null=main | 'typeSelect' | 'bankMethod' | 'bankManual' | 'bankAuto' | 'cashForm' | 'brokerMethod' | 'brokerManual' | 'brokerAuto' | 'creditMethod' | 'creditManual' | 'creditAuto' | 'savingMethod' | 'savingManual' | 'savingAuto' | 'mortgageForm' | 'loanFlow'
@@ -1314,7 +1319,6 @@ export function ScreenAccounts() {
   const [showEditSheet, setShowEditSheet] = React.useState(null); // null | acct object
   const [editName, setEditName] = React.useState('');
   const [editIban, setEditIban] = React.useState('');
-  const [editBalance, setEditBalance] = React.useState('');
 
   // PSD2 auto flow state (for bank/saving/credit automated)
   const [psd2Step, setPsd2Step] = React.useState(null);
@@ -1353,7 +1357,9 @@ export function ScreenAccounts() {
         setConnectedAccounts(a => [...a, { ...newAcct, balance: newBalance }]);
         const newTxs = isAsn ? generateAsnTxs(newAcct.id) : generateBankTxs(newAcct.id, bank.name);
         addTxs(newTxs);
-        setProfiles(ps => ps.map(p => p.active ? { ...p, accountIds: [...(p.accountIds||[]), newAcct.id] } : p));
+        if (attachToSpaceId) {
+          setProfiles(ps => ps.map(p => p.id === attachToSpaceId ? { ...p, accountIds: [...(p.accountIds||[]), newAcct.id] } : p));
+        }
         setSelectedBank(null);
         setPsd2Step('done');
       }, 1800);
@@ -1363,7 +1369,9 @@ export function ScreenAccounts() {
 
   const handleSaveNewAccount = (acct) => {
     setConnectedAccounts(a => [...a, acct]);
-    setProfiles(ps => ps.map(p => p.active ? { ...p, accountIds: [...(p.accountIds||[]), acct.id] } : p));
+    if (attachToSpaceId) {
+      setProfiles(ps => ps.map(p => p.id === attachToSpaceId ? { ...p, accountIds: [...(p.accountIds||[]), acct.id] } : p));
+    }
     setFlowScreen(null);
   };
 
@@ -1375,7 +1383,6 @@ export function ScreenAccounts() {
   const openEdit = (acct) => {
     setEditName(acct.name || '');
     setEditIban(acct.iban || '');
-    setEditBalance(String(acct.balance ?? 0));
     setShowEditSheet(acct);
   };
 
@@ -1385,7 +1392,6 @@ export function ScreenAccounts() {
       ...x,
       name: editName.trim() || x.name,
       iban: editIban.trim(),
-      ...(x.readOnly ? {} : { balance: parseFloat(editBalance) || 0 }),
     }));
     setShowEditSheet(null);
   };
@@ -1536,14 +1542,7 @@ export function ScreenAccounts() {
               <input value={editIban} onChange={e => setEditIban(e.target.value)} placeholder="e.g. NL12 INGB 0123 4567 89"
                 style={{ width:'100%', boxSizing:'border-box', padding:'11px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontMono, background:M.paper2, outline:'none' }}/>
             </div>
-            {!showEditSheet.readOnly && (
-              <div style={{ marginBottom:20 }}>
-                <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{t('acct.initialBalance')}</div>
-                <input type="number" value={editBalance} onChange={e => setEditBalance(e.target.value)}
-                  style={{ width:'100%', boxSizing:'border-box', padding:'11px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontMono, background:M.paper2, outline:'none' }}/>
-              </div>
-            )}
-            {showEditSheet.readOnly && <div style={{ marginBottom:20 }}/>}
+            <div style={{ marginBottom:20 }}/>
             <button onClick={saveEdit}
               style={{ width:'100%', padding:'14px 0', background:M.brand, color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>
               {t('action.save')}

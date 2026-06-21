@@ -127,9 +127,11 @@ export function ScreenLanguagePicker({ fromOnboarding = false, onBack }) {
   );
 }
 
-function CurrencyPickerSheet({ open, onClose }) {
+export function CurrencyPickerSheet({ open, onClose, value, onChange }) {
   const { t } = useLang();
-  const { currency, setCurrency } = useCurrency();
+  const ctx = useCurrency();
+  const currency = value !== undefined ? value : ctx.currency;
+  const setCurrency = onChange || ctx.setCurrency;
   const [search, setSearch] = React.useState('');
   const filtered = React.useMemo(() => {
     const q = search.toLowerCase().trim();
@@ -184,7 +186,6 @@ export function ScreenSettings() {
   const { dark, setDark } = useDark();
   const { t, lang } = useLang();
   const { currency } = useCurrency();
-  const [showCurrencyPicker, setShowCurrencyPicker] = React.useState(false);
   const [scrollY, setScrollY] = React.useState(0);
   const [settingsSearch, setSettingsSearch] = React.useState('');
 
@@ -229,24 +230,6 @@ export function ScreenSettings() {
                   <div style={{ fontSize:11, color:M.ink3, marginTop:2 }}>{dark ? t('settings.darkModeOn') : t('settings.darkModeOff')}</div>
                 </div>
                 <Toggle on={dark}/>
-              </div>
-              <Divider inset={0}/>
-            </>
-          )}
-          {visible(t('settings.currency')) && (
-            <>
-              <div data-testid="settings-currency-row" className="m-tap"
-                onClick={() => setShowCurrencyPicker(true)}
-                style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
-                <I name="tag" size={18} color={M.ink2}/>
-                <div style={{ flex:1 }}>
-                  <div style={{ fontSize:14, fontWeight:500 }}>{t('settings.currency')}</div>
-                  <div style={{ fontSize:11, color:M.ink3, marginTop:2 }}>{t('settings.currencySub')}</div>
-                </div>
-                <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                  <span style={{ fontSize:13, color:M.ink2, fontWeight:600 }}>{curInfo.code} ({curInfo.symbol})</span>
-                  <I name="caretR" size={14} color={M.ink4}/>
-                </div>
               </div>
               <Divider inset={0}/>
             </>
@@ -307,7 +290,6 @@ export function ScreenSettings() {
         )}
       </div>
 
-      <CurrencyPickerSheet open={showCurrencyPicker} onClose={() => setShowCurrencyPicker(false)}/>
     </div>
   );
 }

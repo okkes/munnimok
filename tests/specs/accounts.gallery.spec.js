@@ -354,4 +354,50 @@ for (const V of VARIANTS) {
     await shot(page, k('acct-j1-main-groups'));
     await teardown(page, ctx, k('acct-j1-main-groups'));
   });
+
+  // ── K: Manual/Automated badge & edit sheet ───────────────────────────────
+
+  test(`acct-k1 account row shows Manual badge not PSD2 [${V.id}]`, async ({ browser }) => {
+    const { page, ctx } = await createPage(browser, V);
+    await base(page, V);
+    await goToAccounts(page);
+    // Create a manual bank account
+    await openTypeSelect(page);
+    await page.click('[data-testid="acct-type-bank"]');
+    await page.click('[data-testid="acct-method-manual"]');
+    await page.waitForSelector('[data-testid="acct-bank-search"]', { timeout: 2000 });
+    await page.click('[data-testid="bank-row-ing"]');
+    await page.waitForSelector('[data-testid="acct-save-btn"]', { timeout: 2000 });
+    await page.click('[data-testid="acct-save-btn"]');
+    await page.waitForSelector('[data-testid="account-row"]', { timeout: 2000 });
+    const rowText = await page.locator('[data-testid="account-row"]').first().textContent();
+    expect(rowText).not.toContain('PSD2');
+    expect(rowText.toUpperCase()).toContain('MANUAL');
+    await shot(page, k('acct-k1-manual-badge'));
+    await teardown(page, ctx, k('acct-k1-manual-badge'));
+  });
+
+  test(`acct-k2 edit sheet has no initial balance field [${V.id}]`, async ({ browser }) => {
+    const { page, ctx } = await createPage(browser, V);
+    await base(page, V);
+    await goToAccounts(page);
+    // Create an account then open its edit sheet
+    await openTypeSelect(page);
+    await page.click('[data-testid="acct-type-bank"]');
+    await page.click('[data-testid="acct-method-manual"]');
+    await page.waitForSelector('[data-testid="acct-bank-search"]', { timeout: 2000 });
+    await page.click('[data-testid="bank-row-ing"]');
+    await page.waitForSelector('[data-testid="acct-save-btn"]', { timeout: 2000 });
+    await page.fill('[data-testid="acct-initial-balance"]', '1000');
+    await page.click('[data-testid="acct-save-btn"]');
+    await page.waitForSelector('[data-testid="account-row"]', { timeout: 2000 });
+    // Click the row to open edit sheet
+    await page.locator('[data-testid="account-row"]').first().click();
+    await page.waitForSelector('[data-testid="sheet-close"]', { timeout: 2000 });
+    await shot(page, k('acct-k2-edit-sheet'));
+    // Edit sheet must NOT expose an initial balance or balance field
+    await expect(page.locator('[data-testid="acct-initial-balance"]')).not.toBeVisible();
+    await expect(page.locator('[data-testid="acct-edit-balance"]')).not.toBeVisible();
+    await teardown(page, ctx, k('acct-k2-edit-sheet'));
+  });
 }

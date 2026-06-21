@@ -44,6 +44,8 @@ export const STOCK_SPACE_AVATARS = [
   { id:'sp8',  emoji:'⭐', bg:'#FFA726' },
   { id:'sp9',  emoji:'🎯', bg:'#EC407A' },
   { id:'sp10', emoji:'🌈', bg:'#AB47BC' },
+  { id:'sp11', emoji:'🔥', bg:'#EF5350' },
+  { id:'sp12', emoji:'💎', bg:'#42A5F5' },
 ];
 
 export const CURRENCIES = [

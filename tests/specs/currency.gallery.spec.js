@@ -31,7 +31,7 @@ async function goToSettingsScreen(page) {
   await page.click('[data-testid="nav-drawer-settings"]');
   await page.waitForSelector('[data-testid="profile-link-appearance"]', { timeout: 3000 });
   await page.click('[data-testid="profile-link-appearance"]');
-  await page.waitForSelector('[data-testid="settings-currency-row"]', { timeout: 3000 });
+  await page.waitForSelector('[data-testid="settings-language-row"]', { timeout: 3000 });
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
@@ -113,21 +113,6 @@ for (const V of VARIANTS) {
   });
 
   // (c) Settings screen: currency and language rows work
-
-  test(`currency-c1 settings currency row opens picker sheet [${V.id}]`, async ({ browser }) => {
-    const { page, ctx } = await createPage(browser, V);
-    await base(page, V, () => {
-      localStorage.setItem('munni_display_currency', JSON.stringify('EUR'));
-    });
-    await page.click('[data-testid="login-demo-btn"]');
-    await goToSettingsScreen(page);
-    await expect(page.locator('[data-testid="settings-currency-row"]')).toBeVisible();
-    await shot(page, k('currency-c1-settings-currency-row'));
-    await page.click('[data-testid="settings-currency-row"]');
-    await page.waitForSelector('[data-testid="sheet-close"]', { timeout: 2000 });
-    await shot(page, k('currency-c1-currency-picker-open'));
-    await teardown(page, ctx, k('currency-c1-currency-picker-open'));
-  });
 
   test(`currency-c2 settings language row navigates to language picker [${V.id}]`, async ({ browser }) => {
     const { page, ctx } = await createPage(browser, V);

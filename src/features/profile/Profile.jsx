@@ -7,12 +7,13 @@ import { DEMO_ACCOUNTS } from '../accounts/data.js';
 import { getDefaultProfileName, computeProfileKey } from './data.js';
 import { M, I, IcoMDI, IcoGoogle, IcoApple, Divider, StatusBar, AppBar } from '../../app/theme.jsx';
 import { useNav, Sheet, TabBar, useDark } from '../../app/nav.jsx';
-import { useLang } from '../../shared/i18n.jsx';
+import { useLang, useCurrency } from '../../shared/i18n.jsx';
 import { useLocalStorage, useSessionStorage, clearAllStorage } from '../../shared/hooks.jsx';
 import { useAppCtx, useProfiles, useTxCtx, useConnectedAccounts, Stat } from '../../app/providers.jsx';
-import { STOCK_AVATARS, STOCK_SPACE_AVATARS, PERM_COLOR, PERM_BG, permLabel, DEFAULT_API_URL, DEMO_API_URL, PROFILE_NAME_RE } from '../../shared/constants.js';
+import { STOCK_AVATARS, STOCK_SPACE_AVATARS, PERM_COLOR, PERM_BG, permLabel, DEFAULT_API_URL, DEMO_API_URL, PROFILE_NAME_RE, CURRENCIES } from '../../shared/constants.js';
 import { buildEffectivePerm } from '../../shared/sharedProfile.js';
 import { ProfileMembersSheet, MemberActionSheet } from '../friends/Friends.jsx';
+import { CurrencyPickerSheet } from '../settings/Settings.jsx';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
@@ -239,20 +240,18 @@ export function ScreenUserInfo() {
     return `https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/${r(a)}-${r(b)}.svg`;
   };
 
-  const [draftFirst,   setDraftFirst]   = React.useState(firstName);
-  const [draftLast,    setDraftLast]    = React.useState(lastName);
   const [draftCountry, setDraftCountry] = React.useState(country);
   const [showCountry,    setShowCountry]    = React.useState(false);
   const [countrySearch,  setCountrySearch]  = React.useState('');
   const [showCountryInfo,setShowCountryInfo]= React.useState(false);
   const [countryError,   setCountryError]   = React.useState('');
-  React.useEffect(() => { setDraftFirst(firstName);   }, [firstName]);
-  React.useEffect(() => { setDraftLast(lastName);     }, [lastName]);
-  React.useEffect(() => { setDraftCountry(country);   }, [country]);
+  React.useEffect(() => { setDraftCountry(country); }, [country]);
 
-  // Offline-only state
-  const [draftName, setDraftName] = React.useState(name);
-  React.useEffect(() => { setDraftName(name); }, [name]);
+  // Auto-save name to localStorage on every keystroke
+  React.useEffect(() => {
+    if (!firstName && !lastName) return;
+    setName([firstName, lastName].filter(Boolean).join(' '));
+  }, [firstName, lastName]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const offlineEncKeyKey     = computeUserDataKey(loginMethod, _safeEmail, 'munni_offline_enc_key');
   const offlineAutoBackupKey = computeUserDataKey(loginMethod, _safeEmail, 'munni_auto_backup');
@@ -366,26 +365,9 @@ export function ScreenUserInfo() {
     );
   };
 
-  const save = () => {
+  const saveCountry = () => {
     if (!draftCountry) { setCountryError(t('onboarding.errCountryRequired')); return; }
-    const fn = draftFirst.trim();
-    const ln = draftLast.trim();
-    setFirstName(fn); setLastName(ln);
     setCountry(draftCountry);
-    setName([fn, ln].filter(Boolean).join(' '));
-    nav.pop();
-  };
-
-  const saveOffline = () => {
-    const n = draftName.trim();
-    if (!n) return;
-    setName(n);
-    try {
-      const profiles = JSON.parse(localStorage.getItem('munni_offline_profiles') || '[]');
-      const updated = profiles.map(p => p.id === _safeEmail ? { ...p, name: n } : p);
-      localStorage.setItem('munni_offline_profiles', JSON.stringify(updated));
-    } catch {}
-    nav.pop();
   };
 
   const doBackup = async () => {
@@ -427,9 +409,6 @@ export function ScreenUserInfo() {
       <StatusBar/>
       <AppBar title={t('settings.myProfile')}
         leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
-        trailing={(!isDemo)
-          ? <button data-testid={T.profileSaveBtn} className="m-tap" onClick={isOffline ? saveOffline : save} style={{ background:'transparent', border:'none', fontSize:15, fontWeight:700, color:M.sage, cursor:'pointer', fontFamily:M.fontUI }}>{t('action.save')}</button>
-          : null}
       />
       <div className="m-body-scroll" ref={bodyScrollRef}>
 
@@ -459,7 +438,13 @@ export function ScreenUserInfo() {
             <div className="m-card" style={{ padding:'0 16px', marginBottom:16, border:`1px solid ${M.line}` }}>
               <div style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
                 <div style={{ width:70, fontSize:12, color:M.ink3, flexShrink:0 }}>{t('profile.usernameLabel')}</div>
-                <input data-testid="offline-profile-username" value={draftName} onChange={e => setDraftName(e.target.value)}
+                <input data-testid="offline-profile-username" value={name} onChange={e => {
+                  setName(e.target.value);
+                  try {
+                    const ps = JSON.parse(localStorage.getItem('munni_offline_profiles') || '[]');
+                    localStorage.setItem('munni_offline_profiles', JSON.stringify(ps.map(p => p.id === _safeEmail ? { ...p, name: e.target.value } : p)));
+                  } catch {}
+                }}
                   style={{ flex:1, fontSize:16, fontFamily:M.fontUI, border:'none', background:'transparent', outline:'none', color:M.ink }}/>
               </div>
             </div>
@@ -470,13 +455,13 @@ export function ScreenUserInfo() {
             <div className="m-card" style={{ padding:'0 16px', marginBottom:16, border:`1px solid ${M.line}` }}>
               <div style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
                 <div style={{ width:70, fontSize:12, color:M.ink3, flexShrink:0 }}>{t('settings.firstName')}</div>
-                <input data-testid={T.profileFirstNameInput} value={draftFirst} onChange={e => setDraftFirst(e.target.value)} disabled={isDemo}
+                <input data-testid={T.profileFirstNameInput} value={firstName} onChange={e => setFirstName(e.target.value)} disabled={isDemo}
                   style={{ flex:1, fontSize:16, fontFamily:M.fontUI, border:'none', background:'transparent', outline:'none', color:isDemo?M.ink3:M.ink }}/>
               </div>
               <Divider/>
               <div style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
                 <div style={{ width:70, fontSize:12, color:M.ink3, flexShrink:0 }}>{t('settings.lastName')}</div>
-                <input data-testid={T.profileLastNameInput} value={draftLast} onChange={e => setDraftLast(e.target.value)} disabled={isDemo}
+                <input data-testid={T.profileLastNameInput} value={lastName} onChange={e => setLastName(e.target.value)} disabled={isDemo}
                   style={{ flex:1, fontSize:16, fontFamily:M.fontUI, border:'none', background:'transparent', outline:'none', color:isDemo?M.ink3:M.ink }}/>
               </div>
             </div>
@@ -636,6 +621,7 @@ export function ScreenUserInfo() {
                 </div>
                 {!isDemo && <I name="caretR" size={14} color={M.ink4}/>}
               </div>
+              {/* country auto-saves on pick */}
             </div>
             {countryError && <div data-testid={T.profileCountryErr} style={{ fontSize:11, color:M.clay, marginBottom:16, paddingLeft:4 }}>{countryError}</div>}
 
@@ -735,7 +721,7 @@ export function ScreenUserInfo() {
           <div data-testid={T.profileCountrySheet} style={{ overflowY:'auto', maxHeight:340, paddingBottom:16 }}>
             {COUNTRIES.filter(c => !countrySearch || countryName(c, lang).toLowerCase().includes(countrySearch.toLowerCase()) || c.native.toLowerCase().includes(countrySearch.toLowerCase())).map(c => (
               <div key={c.code} className="m-tap"
-                onClick={() => { setDraftCountry(c.code); setShowCountry(false); setCountryError(''); }}
+                onClick={() => { setDraftCountry(c.code); setCountry(c.code); setShowCountry(false); setCountryError(''); }}
                 style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 20px', cursor:'pointer' }}>
                 <img src={countryFlagUrl(c.code)} width={24} height={24} style={{ ...flagStyle, flexShrink:0 }} alt={c.code}/>
                 <span style={{ flex:1, fontSize:15, color:M.ink }}>{highlightMatch(countryName(c, lang), countrySearch.trim())}</span>
@@ -1352,7 +1338,8 @@ export function ScreenSpaceDetail({ params }) {
   const [nameError, setNameError] = React.useState('');
   const [showPhotoSheet, setShowPhotoSheet] = React.useState(false);
   const [showMembersSheet, setShowMembersSheet] = React.useState(false);
-  const [memberActionSheet, setMemberActionSheet] = React.useState(null); // userId or null
+  const [memberActionSheet, setMemberActionSheet] = React.useState(null);
+  const [showSpaceCurrencyPicker, setShowSpaceCurrencyPicker] = React.useState(false);
 
   const myId = React.useMemo(() => getUserId(), []);
   const [invitations, setInvitations] = useLocalStorage('munni_global_invitations', []);
@@ -1362,6 +1349,17 @@ export function ScreenSpaceDetail({ params }) {
   const profile = profiles.find(p => p.id === params?.id);
   const profileId = profile?.id || 'none';
   const [sharedData, setSharedData] = useLocalStorage(`munni_shared_data_${profileId}`, { accounts: [], txs: [] });
+
+  // Per-space currency
+  const spaceCurrKey = `munni_display_currency_${profileId}`;
+  const [spaceCurrency, setSpaceCurrencyRaw] = useLocalStorage(spaceCurrKey, null);
+  const _globalCurr = React.useMemo(() => { try { const v = localStorage.getItem('munni_display_currency'); return v ? JSON.parse(v) : 'EUR'; } catch { return 'EUR'; } }, []);
+  const effectiveSpaceCurrency = spaceCurrency || _globalCurr;
+  const setSpaceCurrency = (v) => {
+    setSpaceCurrencyRaw(v);
+    window.dispatchEvent(new CustomEvent('munni-ls', {}));
+  };
+  const spaceCurrInfo = CURRENCIES.find(c => c.code === effectiveSpaceCurrency) || { code:'EUR', symbol:'€', name:'Euro' };
 
   // Process accepted profile invites for the owner so members appear as soon as they visit the profile detail,
   // not only when they open the members sheet (which was the previous requirement)
@@ -1661,7 +1659,10 @@ export function ScreenSpaceDetail({ params }) {
               <span style={{ fontSize:9, fontWeight:700, padding:'2px 6px', borderRadius:999, background:typeColor+'22', color:typeColor, textTransform:'uppercase', letterSpacing:'0.04em' }}>
                 {typeLabel}
               </span>
-              {a.readOnly && <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase' }}>PSD2</span>}
+              {a.readOnly
+                ? <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase' }}>{t('acct.automated')}</span>
+                : <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:999, background:M.paper2, color:M.ink3, textTransform:'uppercase', border:`1px solid ${M.line}` }}>{t('acct.manual')}</span>
+              }
               {isSharedAcct && <span style={{ fontSize:9, fontWeight:600, padding:'1px 6px', borderRadius:999, background:M.violetSoft||'#EEE8FF', color:M.violet }}>Shared</span>}
             </div>
             {isProfileShared && sharedAcctData?.attachedBy && (() => {
@@ -1690,47 +1691,64 @@ export function ScreenSpaceDetail({ params }) {
         leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
       />
       <div className="m-body-scroll">
-        {/* Avatar + name */}
-        <div className="m-card" style={{ padding:'18px 16px', marginBottom:16, border:`1px solid ${M.line}`, display:'flex', flexDirection:'column', alignItems:'center', gap:10 }}>
+        {/* Avatar + name — clean hero section */}
+        <div style={{ display:'flex', flexDirection:'column', alignItems:'center', paddingTop:20, paddingBottom:16, gap:6 }}>
           <button className="m-tap" onClick={() => setShowPhotoSheet(true)}
-            style={{ position:'relative', background:'none', border:'none', cursor:'pointer', padding:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
-            <ProfileAvatar profile={profile} size={72}/>
-            <div style={{ position:'absolute', bottom:0, right:0, width:22, height:22, borderRadius:999, background:M.sage, display:'flex', alignItems:'center', justifyContent:'center', border:'2px solid #fff' }}>
-              <I name="cam" size={11} color="#fff"/>
+            style={{ position:'relative', background:'none', border:'none', cursor:'pointer', padding:0 }}>
+            <ProfileAvatar profile={profile} size={80}/>
+            <div style={{ position:'absolute', bottom:0, right:0, width:24, height:24, borderRadius:999, background:M.sage, display:'flex', alignItems:'center', justifyContent:'center', border:'2px solid #fff' }}>
+              <I name="cam" size={12} color="#fff"/>
             </div>
           </button>
           <button className="m-tap" onClick={() => setShowPhotoSheet(true)}
-            style={{ fontSize:13, fontWeight:600, color:M.sage, background:'transparent', border:'none', cursor:'pointer', fontFamily:M.fontUI, padding:'4px 12px' }}>
+            style={{ fontSize:13, fontWeight:600, color:M.sage, background:'transparent', border:'none', cursor:'pointer', fontFamily:M.fontUI, padding:'2px 0' }}>
             {t('profile.changePhoto')}
           </button>
-          <div style={{ width:'100%' }}>
-            {editingName ? (
-              <>
-                <input
-                  data-testid="space-detail-name-input"
-                  autoFocus
-                  value={nameDraft}
-                  onChange={e => { setNameDraft(e.target.value); setNameError(''); }}
-                  onBlur={saveName}
-                  onKeyDown={e => e.key==='Enter' && saveName()}
-                  style={{ width:'100%', fontSize:16, fontWeight:600, border:`1px solid ${nameError ? M.clay : M.sage}`, borderRadius:8, padding:'6px 10px', fontFamily:M.fontUI, background:M.paper2, outline:'none', textAlign:'center', boxSizing:'border-box' }}
-                />
-                {nameError && <div data-testid="space-detail-name-error" style={{ fontSize:11, color:M.clay, marginTop:4, textAlign:'center' }}>{nameError}</div>}
-              </>
-            ) : (
-              <div data-testid="space-detail-name" className="m-tap" onClick={startEditName} style={{ textAlign:'center' }}>
-                <div style={{ fontSize:16, fontWeight:600, borderBottom:`1.5px dashed ${M.line2}`, display:'inline', paddingBottom:1 }}>{profile.localName || profile.name}</div>
-                <div style={{ fontSize:10, color:M.ink4, marginTop:4 }}>{isMemberOfShared ? t('space.tapRenameLocal') : t('space.tapRename')}</div>
-              </div>
-            )}
-            {isMemberOfShared && (profile.creatorId || profile.ownerId) && (
-              <div style={{ fontSize:12, color:M.ink3, marginTop:4, textAlign:'center' }}>
-                {t('space.by')} <span style={{ fontWeight:600 }}>{formatCreatorLabel(profile.creatorId || profile.ownerId, profile.ownerDisplay, userRegistry)}</span>
-              </div>
-            )}
-            {isActive && (
-              <div style={{ fontSize:11, color:M.sage, fontWeight:600, marginTop:3, textAlign:'center' }}>{t('space.active')}</div>
-            )}
+          {editingName ? (
+            <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:4 }}>
+              <input
+                data-testid="space-detail-name-input"
+                autoFocus
+                value={nameDraft}
+                onChange={e => { setNameDraft(e.target.value); setNameError(''); }}
+                onBlur={saveName}
+                onKeyDown={e => e.key==='Enter' && saveName()}
+                style={{ fontSize:18, fontWeight:700, border:`1px solid ${nameError ? M.clay : M.sage}`, borderRadius:8, padding:'5px 12px', fontFamily:M.fontUI, background:M.paper2, outline:'none', textAlign:'center', boxSizing:'border-box', width:220 }}
+              />
+              {nameError && <div data-testid="space-detail-name-error" style={{ fontSize:11, color:M.clay }}>{nameError}</div>}
+            </div>
+          ) : (
+            <div data-testid="space-detail-name" className="m-tap" onClick={startEditName} style={{ textAlign:'center' }}>
+              <div style={{ fontSize:18, fontWeight:700, color:M.ink }}>{profile.localName || profile.name}</div>
+              <div style={{ fontSize:10, color:M.ink4, marginTop:1 }}>{isMemberOfShared ? t('space.tapRenameLocal') : t('space.tapRename')}</div>
+            </div>
+          )}
+          {isMemberOfShared && (profile.creatorId || profile.ownerId) && (
+            <div style={{ fontSize:12, color:M.ink3 }}>
+              {t('space.by')} <span style={{ fontWeight:600 }}>{formatCreatorLabel(profile.creatorId || profile.ownerId, profile.ownerDisplay, userRegistry)}</span>
+            </div>
+          )}
+          {isActive && (
+            <div style={{ fontSize:11, color:M.sage, fontWeight:700, background:M.sageSoft, padding:'3px 12px', borderRadius:999, marginTop:2 }}>{t('space.active')}</div>
+          )}
+        </div>
+
+        {/* Settings section */}
+        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('space.settings')}</div>
+        <div className="m-card" style={{ padding:'4px 16px', marginBottom:16, border:`1px solid ${M.line}` }}>
+          <div data-testid="space-currency-row" className="m-tap" onClick={() => setShowSpaceCurrencyPicker(true)}
+            style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
+            <div style={{ width:32, height:32, borderRadius:9, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+              <I name="tag" size={16} color={M.ink2}/>
+            </div>
+            <div style={{ flex:1 }}>
+              <div style={{ fontSize:14, fontWeight:500 }}>{t('space.currency')}</div>
+              <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{t('space.currencySub')}</div>
+            </div>
+            <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+              <span style={{ fontSize:13, color:M.ink2, fontWeight:600 }}>{spaceCurrInfo.code} ({spaceCurrInfo.symbol})</span>
+              <I name="caretR" size={14} color={M.ink4}/>
+            </div>
           </div>
         </div>
 
@@ -1927,7 +1945,7 @@ export function ScreenSpaceDetail({ params }) {
                     <div style={{ textAlign:'center', color:M.ink3, fontSize:13, padding:'16px 0', marginBottom:12 }}>
                       {t('space.noAccounts')}
                     </div>
-                    <button className="m-tap" onClick={() => { setShowAttachSheet(null); nav.push('accounts'); }}
+                    <button className="m-tap" onClick={() => { setShowAttachSheet(null); nav.push('accounts', { spaceId: profile.id }); }}
                       style={{ width:'100%', padding:'12px 0 4px', display:'flex', alignItems:'center', justifyContent:'center', gap:4, background:'transparent', border:'none', cursor:'pointer', fontFamily:M.fontUI }}>
                       <span style={{ fontSize:14, fontWeight:600, color:M.sage }}>{t('space.manageAccounts')} {'→'}</span>
                     </button>
@@ -1975,10 +1993,10 @@ export function ScreenSpaceDetail({ params }) {
         <Sheet onClose={() => setShowPhotoSheet(false)}>
           <div style={{ padding:'4px 16px 8px' }}>
             <div style={{ fontSize:17, fontWeight:700, marginBottom:16 }}>{t('profile.choosePhoto')}</div>
-            <div style={{ display:'flex', gap:10, flexWrap:'wrap', marginBottom:20 }}>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(5, 1fr)', gap:10, marginBottom:20 }}>
               {STOCK_SPACE_AVATARS.map(av => (
                 <button key={av.id} className="m-tap" onClick={() => setPicture(av.id)}
-                  style={{ width:54, height:54, borderRadius:Math.round(54*0.28), background:av.bg, border: profile.picture===av.id ? `3px solid ${M.sage}` : '3px solid transparent', display:'flex', alignItems:'center', justifyContent:'center', fontSize:26, cursor:'pointer', boxSizing:'border-box' }}>
+                  style={{ width:'100%', aspectRatio:'1', borderRadius:Math.round(54*0.28), background:av.bg, border: (profile.localPicture||profile.picture)===av.id ? `3px solid ${M.sage}` : '3px solid transparent', display:'flex', alignItems:'center', justifyContent:'center', fontSize:26, cursor:'pointer', boxSizing:'border-box' }}>
                   {av.emoji}
                 </button>
               ))}
@@ -1993,6 +2011,13 @@ export function ScreenSpaceDetail({ params }) {
           </div>
         </Sheet>
       )}
+
+      <CurrencyPickerSheet
+        open={showSpaceCurrencyPicker}
+        onClose={() => setShowSpaceCurrencyPicker(false)}
+        value={effectiveSpaceCurrency}
+        onChange={(v) => { setSpaceCurrency(v); setShowSpaceCurrencyPicker(false); }}
+      />
 
       {showMembersSheet && (
         <ProfileMembersSheet profile={profile} onClose={() => setShowMembersSheet(false)}/>

@@ -21,10 +21,10 @@ export function getDefaultProfileName(lang) {
 
 export function getDefaultProfiles(method, lang = 'en') {
   const creatorId = getUserId();
-  if (method === 'google') return [{ id:'p_google', name:'Private', icon:'user', active:true, accountIds:['main','save','inv'], picture:'av3', isDemo:false, creatorId }];
-  if (method === 'apple')  return [{ id:'p_apple',  name:'Family',  icon:'house',active:true, accountIds:['abn_main'],           picture:'av4', isDemo:false, creatorId }];
-  if (method === 'bank')   return [{ id:'p_demo',   name:'Demo',    icon:'user', active:true, accountIds:['demo_main','demo_save'], picture:'av7', isDemo:true,  creatorId }];
-  return [{ id:'p_email', name:getDefaultProfileName(lang), icon:'user', active:true, accountIds:[], picture:'av1', isDemo:false, creatorId }];
+  if (method === 'google') return [{ id:'p_google', name:'Private', icon:'user', active:true, accountIds:['main','save','inv'], picture:'sp3', isDemo:false, creatorId }];
+  if (method === 'apple')  return [{ id:'p_apple',  name:'Family',  icon:'house',active:true, accountIds:['abn_main'],           picture:'sp6', isDemo:false, creatorId }];
+  if (method === 'bank')   return [{ id:'p_demo',   name:'Demo',    icon:'user', active:true, accountIds:['demo_main','demo_save'], picture:'sp8', isDemo:true,  creatorId }];
+  return [{ id:'p_email', name:getDefaultProfileName(lang), icon:'user', active:true, accountIds:[], picture:'sp1', isDemo:false, creatorId }];
 }
 export function initPerUserData(method, email, lang = 'en') {
   if (!method) return;

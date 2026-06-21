@@ -331,4 +331,16 @@ for (const V of VARIANTS) {
     await shot(page, k('22-spaces-back-from-list'));
     await teardown(page, ctx, k('22-spaces-back-from-list'));
   });
+
+  test(`23 spaces-detail – space currency row opens picker [${V.id}]`, async ({ browser }) => {
+    const { page, ctx } = await createPage(browser, V);
+    await base(page, V);
+    await goToSpaceDetail(page);
+    await expect(page.locator('[data-testid="space-currency-row"]')).toBeVisible();
+    await shot(page, k('23-spaces-currency-row'));
+    await page.click('[data-testid="space-currency-row"]');
+    await page.waitForSelector('[data-testid="sheet-close"]', { timeout: 2000 });
+    await shot(page, k('23-spaces-currency-picker-open'));
+    await teardown(page, ctx, k('23-spaces-currency-picker-open'));
+  });
 }

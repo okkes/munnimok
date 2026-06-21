@@ -129,8 +129,9 @@ for (const V of VARIANTS) {
     await expect(deRow).toBeVisible();
     await deRow.click();
     await expect(page.locator('[data-testid="profile-country-btn"]')).toContainText('Germany');
-    await page.click('[data-testid="profile-save-btn"]');
-    await page.waitForTimeout(300);
+    // Country auto-saves on selection; navigate back to Settings then re-enter My Profile to verify persistence
+    await page.goBack();
+    await page.waitForSelector('[data-testid="profile-settings-btn"]', { timeout: 3000 });
     await page.click('[data-testid="profile-settings-btn"]');
     await page.waitForSelector('[data-testid="profile-country-btn"]', { timeout: 3000 });
     await expect(page.locator('[data-testid="profile-country-btn"]')).toContainText('Germany');
@@ -218,7 +219,7 @@ for (const V of VARIANTS) {
     await expect(page.locator('[data-testid="profile-firstname-input"]')).toBeVisible();
     await expect(page.locator('[data-testid="profile-firstname-input"]')).toBeDisabled();
     await expect(page.locator('[data-testid="profile-lastname-input"]')).toBeDisabled();
-    // No Save button (demo users cannot save)
+    // No Save button (changes auto-save for all users)
     await expect(page.locator('[data-testid="profile-save-btn"]')).not.toBeVisible();
     // No API endpoint section
     await expect(page.locator('[data-testid="profile-api-row"]')).not.toBeVisible();
@@ -238,8 +239,8 @@ for (const V of VARIANTS) {
     // Name inputs editable (not disabled)
     await expect(page.locator('[data-testid="profile-firstname-input"]')).toBeVisible();
     await expect(page.locator('[data-testid="profile-firstname-input"]')).not.toBeDisabled();
-    // Save button present
-    await expect(page.locator('[data-testid="profile-save-btn"]')).toBeVisible();
+    // No Save button (changes auto-save)
+    await expect(page.locator('[data-testid="profile-save-btn"]')).not.toBeVisible();
     // API endpoint section visible
     await expect(page.locator('[data-testid="profile-api-row"]')).toBeVisible();
     // Email row: locked (Google lock icon — no m-tap class)
@@ -261,8 +262,8 @@ for (const V of VARIANTS) {
     await shot(page, k('09-userinfo-layout-email') + '--s1');
     // Name fields editable
     await expect(page.locator('[data-testid="profile-firstname-input"]')).not.toBeDisabled();
-    // Save button
-    await expect(page.locator('[data-testid="profile-save-btn"]')).toBeVisible();
+    // No Save button (changes auto-save)
+    await expect(page.locator('[data-testid="profile-save-btn"]')).not.toBeVisible();
     // Country section
     await expect(page.locator('[data-testid="profile-country-btn"]')).toBeVisible();
     // Email row tappable (canChangeEmail = true for email login)
@@ -374,8 +375,8 @@ for (const V of VARIANTS) {
     await page.fill('[data-testid="profile-firstname-input"]', 'Alice');
     await page.fill('[data-testid="profile-lastname-input"]', 'Wonder');
     await shot(page, k('14-name-edit-save') + '--s2');
-    await page.click('[data-testid="profile-save-btn"]');
-    // After save, back to Settings screen
+    // Name auto-saves; navigate back to Settings to verify identity card shows updated name
+    await page.goBack();
     await page.waitForSelector('[data-testid="profile-settings-btn"]', { timeout: 3000 });
     // Identity card shows updated name
     await expect(page.locator('[data-testid="profile-settings-btn"]')).toContainText('Alice');

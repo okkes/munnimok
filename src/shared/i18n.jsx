@@ -367,6 +367,7 @@ export const TRANSLATIONS = {
     // Space detail
     'space.financialAccounts':'Financial Accounts','space.financialAccountsSub':'Accounts attached to this space',
     'space.noAccounts':'No accounts attached',
+    'space.settings':'Settings','space.currency':'Currency','space.currencySub':'Display currency for this space',
   },
   nl: {
     'tab.home':'Thuis','tab.transactions':'Transacties','tab.recurring':'Terugkerend',
@@ -714,6 +715,7 @@ export const TRANSLATIONS = {
     'acct.removeConfirm':'Rekening verwijderen',
     'space.financialAccounts':'Financiële rekeningen','space.financialAccountsSub':'Rekeningen gekoppeld aan deze ruimte',
     'space.noAccounts':'Geen rekeningen gekoppeld',
+    'space.settings':'Instellingen','space.currency':'Valuta','space.currencySub':'Weergavevaluta voor deze ruimte',
   },
   tr: {
     'tab.home':'Ana sayfa','tab.transactions':'İşlemler','tab.recurring':'Düzenli ödemeler',
@@ -1061,6 +1063,7 @@ export const TRANSLATIONS = {
     'acct.removeConfirm':'Hesabı kaldır',
     'space.financialAccounts':'Finansal Hesaplar','space.financialAccountsSub':'Bu alana bağlı hesaplar',
     'space.noAccounts':'Bağlı hesap yok',
+    'space.settings':'Ayarlar','space.currency':'Para birimi','space.currencySub':'Bu alan için görüntüleme para birimi',
   },
 };
 
@@ -1077,19 +1080,54 @@ export const OTHER_LANGUAGES = [
   { code:'ja', name:'Japanese',   native:'日本語',     twemoji:'1f1ef-1f1f5' },
 ];
 
-// ── Currency display preference ──────────────────────────────────────────────
+// ── Currency display preference (per-space) ───────────────────────────────────
 export const CurrencyCtx = React.createContext({ currency:'EUR', setCurrency:()=>{} });
 export const useCurrency = () => React.useContext(CurrencyCtx);
 
+function _activeProfileCurrencyKey() {
+  try {
+    const method = sessionStorage.getItem('munni_last_login_method') || '';
+    const emailRaw = sessionStorage.getItem('munni_profile_email') || '""';
+    const email = JSON.parse(emailRaw) || '';
+    const profilesKey = method === 'google' ? 'munni_profiles_google'
+      : method === 'apple' ? 'munni_profiles_apple'
+      : method === 'bank' ? 'munni_profiles_bank'
+      : (email && !['google@munni.app','apple@munni.app','bank@munni.app',''].includes(email))
+        ? `munni_profiles_${email}` : 'munni_profiles';
+    const profiles = JSON.parse(localStorage.getItem(profilesKey) || '[]');
+    const active = profiles.find(p => p.active) || profiles[0];
+    if (!active?.id) return null;
+    return `munni_display_currency_${active.id}`;
+  } catch { return null; }
+}
+
+function _readCurrency() {
+  try {
+    const key = _activeProfileCurrencyKey();
+    if (key) { const v = localStorage.getItem(key); if (v) return JSON.parse(v); }
+    const v = localStorage.getItem('munni_display_currency');
+    return v ? JSON.parse(v) : 'EUR';
+  } catch { return 'EUR'; }
+}
+
 export function CurrencyProvider({ children }) {
-  const lsDefault = React.useMemo(() => {
-    try { const v = localStorage.getItem('munni_display_currency'); return v ? JSON.parse(v) : 'EUR'; } catch { return 'EUR'; }
-  }, []);
-  const [currency, setCurrencyRaw] = React.useState(lsDefault);
+  const [currency, setCurrencyRaw] = React.useState(_readCurrency);
+
   const setCurrency = React.useCallback((v) => {
+    const key = _activeProfileCurrencyKey();
     setCurrencyRaw(v);
-    try { localStorage.setItem('munni_display_currency', JSON.stringify(v)); } catch {}
+    try {
+      if (key) localStorage.setItem(key, JSON.stringify(v));
+      else localStorage.setItem('munni_display_currency', JSON.stringify(v));
+    } catch {}
   }, []);
+
+  React.useEffect(() => {
+    const refresh = () => setCurrencyRaw(_readCurrency());
+    window.addEventListener('munni-ls', refresh);
+    return () => window.removeEventListener('munni-ls', refresh);
+  }, []);
+
   return <CurrencyCtx.Provider value={{ currency, setCurrency }}>{children}</CurrencyCtx.Provider>;
 }
 
