@@ -779,16 +779,17 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
             const autoCur = COUNTRY_CURRENCY[country] || 'EUR';
             const curCode = selectedCurrency || autoCur;
             const curInfo = CURRENCIES.find(c => c.code === curCode);
-            const isAuto = !selectedCurrency || selectedCurrency === autoCur;
             return (
-              <button data-testid="onboard-currency-hint"
-                onClick={() => { setCurrencySearch(''); setShowCurrencySheet(true); }}
-                style={{ width:'100%', display:'flex', alignItems:'center', gap:8, marginTop:6, padding:'10px 14px', borderRadius:12, border:`1.5px solid ${M.line}`, background:M.paper2, cursor:'pointer', fontFamily:M.fontUI, boxSizing:'border-box', textAlign:'left' }}>
-                <span style={{ fontFamily:M.fontMono, fontWeight:700, fontSize:15, color:M.ink }}>{curInfo?.symbol || curCode}</span>
-                <span style={{ flex:1, fontSize:14, color:M.ink }}>{curInfo?.name || curCode} <span style={{ fontFamily:M.fontMono, fontSize:12, color:M.ink3 }}>{curCode}</span></span>
-                {isAuto && <span style={{ fontSize:10, color:M.sage, fontWeight:600, padding:'2px 7px', borderRadius:999, background:M.sageSoft }}>auto</span>}
-                <I name="caretR" size={14} color={M.ink4}/>
-              </button>
+              <div style={{ marginTop:14 }}>
+                <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>Currency</div>
+                <button data-testid="onboard-currency-hint"
+                  onClick={() => { setCurrencySearch(''); setShowCurrencySheet(true); }}
+                  style={{ width:'100%', display:'flex', alignItems:'center', gap:8, padding:'12px 14px', borderRadius:12, border:`1.5px solid ${M.line}`, background:M.paper2, cursor:'pointer', fontFamily:M.fontUI, boxSizing:'border-box', textAlign:'left' }}>
+                  <span style={{ fontFamily:M.fontMono, fontWeight:700, fontSize:15, color:M.ink }}>{curInfo?.symbol || curCode}</span>
+                  <span style={{ flex:1, fontSize:15, color:M.ink }}>{curInfo?.name || curCode} <span style={{ fontFamily:M.fontMono, fontSize:12, color:M.ink3 }}>{curCode}</span></span>
+                  <I name="caretR" size={14} color={M.ink4}/>
+                </button>
+              </div>
             );
           })()}
         </div>

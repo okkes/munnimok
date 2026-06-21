@@ -563,7 +563,7 @@ function AcctRow({ acct, i, t, currency, onDelete }) {
 
 // ── Account type selector ────────────────────────────────────────────────────
 
-function AccountTypeSelectScreen({ onSelect, onBack }) {
+function AccountTypeSelectScreen({ onSelect, onBack, filter }) {
   const { t } = useLang();
   const ASSET_TYPES = [
     { id:'bank',     icon:'card',   label:t('acct.bank'),       sub:t('acct.bankDesc') },
@@ -576,6 +576,8 @@ function AccountTypeSelectScreen({ onSelect, onBack }) {
     { id:'mortgage', icon:'home',   label:t('acct.mortgage'),   sub:t('acct.mortgageDesc') },
     { id:'loan',     icon:'doc',    label:t('acct.loan'),       sub:t('acct.loanDesc') },
   ];
+  const showAssets = !filter || filter === 'asset';
+  const showLiabs  = !filter || filter === 'liability';
   const renderTypes = (types) => types.map((tp, i) => (
     <React.Fragment key={tp.id}>
       {i > 0 && <Divider inset={52}/>}
@@ -592,6 +594,7 @@ function AccountTypeSelectScreen({ onSelect, onBack }) {
       </div>
     </React.Fragment>
   ));
+  const title = filter === 'asset' ? t('acct.assets') : filter === 'liability' ? t('acct.liabilities') : t('acct.selectType');
   return (
     <div className="m-screen m-fade" style={{ display:'flex', flexDirection:'column' }}>
       <StatusBar/>
@@ -600,14 +603,18 @@ function AccountTypeSelectScreen({ onSelect, onBack }) {
           style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:4, color:M.tint, fontFamily:M.fontUI, fontSize:15, padding:'4px 0', minWidth:60 }}>
           <I name="arrowL" size={16} color={M.tint}/>{t('action.back')}
         </button>
-        <div style={{ flex:1, textAlign:'center', fontWeight:600, fontSize:16, color:M.ink }}>{t('acct.selectType')}</div>
+        <div style={{ flex:1, textAlign:'center', fontWeight:600, fontSize:16, color:M.ink }}>{title}</div>
         <div style={{ minWidth:60 }}/>
       </div>
       <div style={{ flex:1, overflowY:'auto', padding:'16px 20px 32px' }}>
-        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('acct.assets')} — {t('acct.assetDesc')}</div>
-        <div className="m-card" style={{ padding:'4px 16px', marginBottom:16, border:`1px solid ${M.line}` }}>{renderTypes(ASSET_TYPES)}</div>
-        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('acct.liabilities')} — {t('acct.liabilityDesc')}</div>
-        <div className="m-card" style={{ padding:'4px 16px', marginBottom:16, border:`1px solid ${M.line}` }}>{renderTypes(LIAB_TYPES)}</div>
+        {showAssets && <>
+          <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('acct.assets')} — {t('acct.assetDesc')}</div>
+          <div className="m-card" style={{ padding:'4px 16px', marginBottom:16, border:`1px solid ${M.line}` }}>{renderTypes(ASSET_TYPES)}</div>
+        </>}
+        {showLiabs && <>
+          <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('acct.liabilities')} — {t('acct.liabilityDesc')}</div>
+          <div className="m-card" style={{ padding:'4px 16px', marginBottom:16, border:`1px solid ${M.line}` }}>{renderTypes(LIAB_TYPES)}</div>
+        </>}
       </div>
     </div>
   );
@@ -1281,6 +1288,7 @@ export function ScreenAccounts() {
 
   // New flow state machine
   const [flowScreen, setFlowScreen] = React.useState(null); // null=main | 'typeSelect' | 'bankMethod' | 'bankManual' | 'bankAuto' | 'cashForm' | 'brokerMethod' | 'brokerManual' | 'brokerAuto' | 'creditMethod' | 'creditManual' | 'creditAuto' | 'savingMethod' | 'savingManual' | 'savingAuto' | 'mortgageForm' | 'loanFlow'
+  const [typeFilter, setTypeFilter] = React.useState(null); // null=all | 'asset' | 'liability'
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(null);
 
   // PSD2 auto flow state (for bank/saving/credit automated)
@@ -1351,7 +1359,7 @@ export function ScreenAccounts() {
   }
 
   // New account creation flows
-  if (flowScreen === 'typeSelect') return <AccountTypeSelectScreen onSelect={type => {
+  if (flowScreen === 'typeSelect') return <AccountTypeSelectScreen filter={typeFilter} onSelect={type => {
     if (type === 'bank') setFlowScreen('bankMethod');
     else if (type === 'saving') setFlowScreen('savingMethod');
     else if (type === 'cash') setFlowScreen('cashForm');
@@ -1397,7 +1405,7 @@ export function ScreenAccounts() {
       <StatusBar/>
       <AppBar title={t('acct.financialAccounts')}
         leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
-        trailing={<button data-testid="account-add-btn" className="m-iconbtn m-tap" onClick={() => setFlowScreen('typeSelect')}><I name="plus" size={20}/></button>}
+        trailing={<button data-testid="account-add-btn" className="m-iconbtn m-tap" onClick={() => { setTypeFilter(null); setFlowScreen('typeSelect'); }}><I name="plus" size={20}/></button>}
       />
       <div className="m-body-scroll">
         {/* Assets group */}
@@ -1409,7 +1417,7 @@ export function ScreenAccounts() {
             <AcctRow key={a.id} acct={a} i={i} t={t} currency={currency} onDelete={setShowDeleteConfirm}/>
           ))}
           <Divider inset={0}/>
-          <div data-testid="asset-add-row" className="m-tap" onClick={() => setFlowScreen('typeSelect')}
+          <div data-testid="asset-add-row" className="m-tap" onClick={() => { setTypeFilter('asset'); setFlowScreen('typeSelect'); }}
             style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
             <div style={{ width:38, height:38, borderRadius:10, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
               <I name="plus" size={16} color={M.sage}/>
@@ -1428,7 +1436,7 @@ export function ScreenAccounts() {
             <AcctRow key={a.id} acct={a} i={i} t={t} currency={currency} onDelete={setShowDeleteConfirm}/>
           ))}
           <Divider inset={0}/>
-          <div className="m-tap" onClick={() => setFlowScreen('typeSelect')}
+          <div className="m-tap" onClick={() => { setTypeFilter('liability'); setFlowScreen('typeSelect'); }}
             style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
             <div style={{ width:38, height:38, borderRadius:10, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
               <I name="plus" size={16} color={M.sage}/>
