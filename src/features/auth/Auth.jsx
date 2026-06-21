@@ -53,9 +53,13 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
   const [firstName,      setFirstName]     = React.useState(() => { try { return JSON.parse(localStorage.getItem(draftKey))?.firstName ?? (signup.firstName || ''); } catch { return signup.firstName || ''; } });
   const [lastName,       setLastName]      = React.useState(() => { try { return JSON.parse(localStorage.getItem(draftKey))?.lastName  ?? (signup.lastName  || ''); } catch { return signup.lastName  || ''; } });
   const [email,          setEmail]         = React.useState(signup.displayEmail || '');
-  const [connectedBanks, setConnectedBanks] = React.useState(
-    () => (signup.banks || []).map((id, i) => ({ id, uid: `init_${i}` }))
-  );
+  const [connectedBanks, setConnectedBanks] = React.useState(() => {
+    try {
+      const draft = JSON.parse(localStorage.getItem(draftKey));
+      if (draft?.connectedBanks?.length) return draft.connectedBanks.map((b, i) => ({ id: b.id, uid: `draft_${i}`, iban: b.iban || '' }));
+    } catch {}
+    return (signup.banks || []).map((id, i) => ({ id, uid: `init_${i}` }));
+  });
   const [apiUrl,         setApiUrl]        = React.useState(() => { try { return JSON.parse(localStorage.getItem(draftKey))?.apiUrl   ?? (signup.apiUrl   || ''); } catch { return signup.apiUrl   || ''; } });
   const [country,        setCountry]       = React.useState(() => { try { return JSON.parse(localStorage.getItem(draftKey))?.country  ?? '';                       } catch { return '';                     } });
   const [showCountry,    setShowCountry]   = React.useState(false);
@@ -83,10 +87,15 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
   // Persist draft on every field change so a refresh/exit doesn't lose work
   React.useEffect(() => {
     const timer = setTimeout(() => {
-      try { localStorage.setItem(draftKey, JSON.stringify({ firstName, lastName, country, picture, apiUrl })); } catch {}
+      try {
+        localStorage.setItem(draftKey, JSON.stringify({
+          firstName, lastName, country, picture, apiUrl,
+          connectedBanks: connectedBanks.map(b => ({ id: b.id, iban: b.iban || '' })),
+        }));
+      } catch {}
     }, 300);
     return () => clearTimeout(timer);
-  }, [firstName, lastName, country, picture, apiUrl, draftKey]);
+  }, [firstName, lastName, country, picture, apiUrl, connectedBanks, draftKey]);
   const [bankPsd2Step,   setBankPsd2Step]  = React.useState(null); // null | 'consent' | 'connecting' | 'done'
   const [showApiInfo,    setShowApiInfo]   = React.useState(false);
   const [showCountryInfo,setShowCountryInfo]= React.useState(false);
@@ -125,7 +134,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
       el.style.overflowY = '';
       requestAnimationFrame(() => { el.scrollTop = step1SavedScroll.current; });
     }
-  }, [showCountry, showApiInfo, showPicker, showCountryInfo]);
+  }, [showCountry, showApiInfo, showPicker, showCountryInfo, showCurrencySheet]);
 
 
   const filteredBanks = React.useMemo(() => {
@@ -145,6 +154,12 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
       .filter(code => byCountry[code]?.length)
       .map(code => ({ code, label: BANK_COUNTRY_LABELS[code] || code, banks: byCountry[code] }));
   }, []);
+  const [expandedBankGroups, setExpandedBankGroups] = React.useState(() => new Set(['EU', 'NL']));
+  const toggleBankGroup = (code) => setExpandedBankGroups(prev => {
+    const next = new Set(prev);
+    if (next.has(code)) next.delete(code); else next.add(code);
+    return next;
+  });
 
   // Popstate: handles main back + bank sub-screen back
   React.useEffect(() => {
@@ -374,7 +389,12 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
                           style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
                           <div style={{ width:36, height:36, borderRadius:10, background:`${bank.color}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:18 }}>{bank.logo}</div>
                           <div style={{ flex:1, minWidth:0 }}>
-                            <div style={{ fontSize:14, fontWeight:500, color:M.ink }}>{highlightMatch(bank.name, bankSearch.trim())}</div>
+                            <div style={{ fontSize:14, fontWeight:500, color:M.ink, display:'flex', alignItems:'center', gap:6 }}>
+                              {highlightMatch(bank.name, bankSearch.trim())}
+                              <span style={{ fontSize:9, fontWeight:700, padding:'2px 5px', borderRadius:4, background:M.paper2, border:`1px solid ${M.line}`, color:M.ink3, fontFamily:M.fontMono, letterSpacing:'0.04em', flexShrink:0 }}>
+                                {bank.country || '—'}
+                              </span>
+                            </div>
                             {bank.bic && <div style={{ fontSize:11, color:M.ink3, marginTop:1, fontFamily:M.fontMono }}>{highlightMatch(bank.bic, bankSearch.trim())}</div>}
                           </div>
                           {connCount > 0 ? (
@@ -390,41 +410,49 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
               }
             </div>
           ) : (
-            /* Grouped browse */
-            bankGroups.map(group => (
-              <div key={group.code}>
-                <div style={{ display:'flex', alignItems:'center', gap:8, padding:'14px 0 6px' }}>
-                  {group.code && group.code !== 'EU' && (
-                    <span style={{ fontSize:9, fontWeight:700, padding:'2px 5px', borderRadius:4, background:M.paper2, border:`1px solid ${M.line}`, color:M.ink3, fontFamily:M.fontMono, letterSpacing:'0.04em' }}>{group.code}</span>
-                  )}
-                  <span style={{ fontSize:11, fontWeight:700, color:M.ink3, textTransform:'uppercase', letterSpacing:'0.06em' }}>{group.label}</span>
-                </div>
-                <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
-                  {group.banks.map((bank, i) => {
-                    const connCount = connectedBanks.filter(b => b.id === bank.id).length;
-                    return (
-                      <React.Fragment key={bank.id}>
-                        {i > 0 && <Divider inset={48}/>}
-                        <div data-testid={T.bankListRow} className="m-tap" onClick={() => openBankCredentials(bank)}
-                          style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
-                          <div style={{ width:36, height:36, borderRadius:10, background:`${bank.color}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:18 }}>{bank.logo}</div>
-                          <div style={{ flex:1, minWidth:0 }}>
-                            <div style={{ fontSize:14, fontWeight:500, color:M.ink }}>{bank.name}</div>
-                            {bank.bic && <div style={{ fontSize:11, color:M.ink3, marginTop:1, fontFamily:M.fontMono }}>{bank.bic}</div>}
-                          </div>
-                          {connCount > 0 ? (
-                            <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                              <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:M.sageSoft, color:M.sage }}>{connCount}×</span>
-                              <I name="caretR" size={14} color={M.sage}/>
+            /* Accordion grouped browse */
+            bankGroups.map(group => {
+              const isOpen = expandedBankGroups.has(group.code);
+              return (
+                <div key={group.code}>
+                  <div className="m-tap" onClick={() => toggleBankGroup(group.code)}
+                    style={{ display:'flex', alignItems:'center', gap:8, padding:'12px 4px 8px', cursor:'pointer', userSelect:'none' }}>
+                    {group.code && group.code !== 'EU' && (
+                      <span style={{ fontSize:9, fontWeight:700, padding:'2px 5px', borderRadius:4, background:M.paper2, border:`1px solid ${M.line}`, color:M.ink3, fontFamily:M.fontMono, letterSpacing:'0.04em' }}>{group.code}</span>
+                    )}
+                    <span style={{ flex:1, fontSize:11, fontWeight:700, color:M.ink3, textTransform:'uppercase', letterSpacing:'0.06em' }}>{group.label}</span>
+                    <span style={{ fontSize:11, color:M.ink4 }}>{group.banks.length}</span>
+                    <I name={isOpen ? 'caretD' : 'caretR'} size={14} color={M.ink4}/>
+                  </div>
+                  {isOpen && (
+                    <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}`, marginBottom:4 }}>
+                      {group.banks.map((bank, i) => {
+                        const connCount = connectedBanks.filter(b => b.id === bank.id).length;
+                        return (
+                          <React.Fragment key={bank.id}>
+                            {i > 0 && <Divider inset={48}/>}
+                            <div data-testid={T.bankListRow} className="m-tap" onClick={() => openBankCredentials(bank)}
+                              style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
+                              <div style={{ width:36, height:36, borderRadius:10, background:`${bank.color}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:18 }}>{bank.logo}</div>
+                              <div style={{ flex:1, minWidth:0 }}>
+                                <div style={{ fontSize:14, fontWeight:500, color:M.ink }}>{bank.name}</div>
+                                {bank.bic && <div style={{ fontSize:11, color:M.ink3, marginTop:1, fontFamily:M.fontMono }}>{bank.bic}</div>}
+                              </div>
+                              {connCount > 0 ? (
+                                <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                                  <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:M.sageSoft, color:M.sage }}>{connCount}×</span>
+                                  <I name="caretR" size={14} color={M.sage}/>
+                                </div>
+                              ) : <I name="caretR" size={14} color={M.ink4}/>}
                             </div>
-                          ) : <I name="caretR" size={14} color={M.ink4}/>}
-                        </div>
-                      </React.Fragment>
-                    );
-                  })}
+                          </React.Fragment>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </div>
@@ -784,9 +812,9 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
                 <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>Currency</div>
                 <button data-testid="onboard-currency-hint"
                   onClick={() => { setCurrencySearch(''); setShowCurrencySheet(true); }}
-                  style={{ width:'100%', display:'flex', alignItems:'center', gap:8, padding:'12px 14px', borderRadius:12, border:`1.5px solid ${M.line}`, background:M.paper2, cursor:'pointer', fontFamily:M.fontUI, boxSizing:'border-box', textAlign:'left' }}>
-                  <span style={{ fontFamily:M.fontMono, fontWeight:700, fontSize:15, color:M.ink }}>{curInfo?.symbol || curCode}</span>
-                  <span style={{ flex:1, fontSize:15, color:M.ink }}>{curInfo?.name || curCode} <span style={{ fontFamily:M.fontMono, fontSize:12, color:M.ink3 }}>{curCode}</span></span>
+                  style={{ width:'100%', display:'flex', alignItems:'center', gap:12, padding:'10px 14px', borderRadius:12, border:`1.5px solid ${M.line}`, background:M.paper2, cursor:'pointer', fontFamily:M.fontUI, boxSizing:'border-box', textAlign:'left' }}>
+                  <span style={{ width:36, height:36, borderRadius:10, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', fontWeight:700, fontSize:14, fontFamily:M.fontMono, flexShrink:0, color:M.sage }}>{curInfo?.symbol || curCode}</span>
+                  <span style={{ flex:1, fontSize:15, color:M.ink }}>{curInfo?.name || curCode} <span style={{ fontSize:12, color:M.ink3, fontFamily:M.fontMono }}>{curCode}</span></span>
                   <I name="caretR" size={14} color={M.ink4}/>
                 </button>
               </div>
@@ -875,7 +903,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
           <div style={{ padding:'0 16px 8px' }}>
             <div style={{ fontSize:17, fontWeight:700, marginBottom:12 }}>Select currency</div>
             <input value={currencySearch} onChange={e => setCurrencySearch(e.target.value)}
-              placeholder="Search currencies…" autoFocus
+              placeholder="Search currencies…"
               style={{ width:'100%', boxSizing:'border-box', padding:'9px 14px', borderRadius:10, border:`1.5px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', color:M.ink, marginBottom:4 }}/>
           </div>
           <div style={{ overflowY:'auto', maxHeight:360, paddingBottom:16 }}>
@@ -886,7 +914,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
                 <button key={c.code} onClick={() => { setSelectedCurrency(c.code); setShowCurrencySheet(false); }}
                   style={{ width:'100%', display:'flex', alignItems:'center', gap:12, padding:'12px 20px', background:'transparent', border:'none', cursor:'pointer', fontFamily:M.fontUI }}>
                   <span style={{ width:36, height:36, borderRadius:10, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', fontWeight:700, fontSize:14, fontFamily:M.fontMono, flexShrink:0, color:M.sage }}>{c.symbol}</span>
-                  <span style={{ flex:1, textAlign:'left', fontSize:15, color:M.ink }}>{c.name} <span style={{ fontSize:12, color:M.ink3, fontFamily:M.fontMono }}>{c.code}</span></span>
+                  <span style={{ flex:1, textAlign:'left', fontSize:15, color:M.ink }}>{highlightMatch(c.name, currencySearch.trim())} <span style={{ fontSize:12, color:M.ink3, fontFamily:M.fontMono }}>{c.code}</span></span>
                   {active && <I name="check" size={16} color={M.sage}/>}
                 </button>
               );

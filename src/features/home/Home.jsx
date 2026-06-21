@@ -511,7 +511,9 @@ export function ScreenHome() {
             <div style={{ flex:1, overflowY:'auto', padding:'0 12px' }}>
               {profiles.map(p => {
                 const sharedRaw = p.isShared ? (() => { try { return JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{}'); } catch { return {}; } })() : null;
-                const acctIds = p.isShared ? (sharedRaw?.accounts || []).map(a => a.id) : (p.accountIds || []);
+                const acctIds = p.isShared
+                  ? (sharedRaw?.accounts || []).map(a => a.id)
+                  : (p.accountIds || []).filter(id => connectedAccounts.some(a => a.id === id));
                 const acctCount = acctIds.length;
                 const acctLabel = acctCount === 0 ? t('word.noAccounts') : `${acctCount} ${acctCount === 1 ? t('word.account') : t('word.accounts')}`;
                 const reviewN = p.isShared

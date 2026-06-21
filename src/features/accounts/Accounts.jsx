@@ -21,14 +21,21 @@ function HighlightText({ text, query }) {
 
 // ── Shared bank-connect screens (used by ScreenAccounts, ScreenAccountsAll, and Auth onboarding) ──
 
-function BankRow({ bank, query, connectedAccounts, onSelect }) {
+function BankRow({ bank, query, countryCode, connectedAccounts, onSelect }) {
   const connCount = (connectedAccounts || []).filter(a => a.bankId === bank.id).length;
   return (
     <div className="m-tap" onClick={() => onSelect(bank)}
       style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
       <div style={{ width:36, height:36, borderRadius:10, background:`${bank.color}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:18 }}>{bank.logo}</div>
       <div style={{ flex:1, minWidth:0 }}>
-        <div style={{ fontSize:14, fontWeight:500, color:M.ink }}><HighlightText text={bank.name} query={query}/></div>
+        <div style={{ fontSize:14, fontWeight:500, color:M.ink, display:'flex', alignItems:'center', gap:6 }}>
+          <HighlightText text={bank.name} query={query}/>
+          {countryCode !== undefined && (
+            <span style={{ fontSize:9, fontWeight:700, padding:'2px 5px', borderRadius:4, background:M.paper2, border:`1px solid ${M.line}`, color:M.ink3, fontFamily:M.fontMono, letterSpacing:'0.04em', flexShrink:0 }}>
+              {countryCode || '—'}
+            </span>
+          )}
+        </div>
         {bank.bic && <div style={{ fontSize:11, color:M.ink3, marginTop:1, fontFamily:M.fontMono }}><HighlightText text={bank.bic} query={query}/></div>}
       </div>
       {connCount > 0 ? (
@@ -41,22 +48,11 @@ function BankRow({ bank, query, connectedAccounts, onSelect }) {
   );
 }
 
-function BankGroupHeader({ countryCode, label }) {
-  return (
-    <div style={{ display:'flex', alignItems:'center', gap:8, padding:'14px 0 6px' }}>
-      {countryCode && countryCode !== 'EU' && (
-        <span style={{ fontSize:9, fontWeight:700, padding:'2px 5px', borderRadius:4, background:M.paper2, border:`1px solid ${M.line}`, color:M.ink3, fontFamily:M.fontMono, letterSpacing:'0.04em' }}>{countryCode}</span>
-      )}
-      <span style={{ fontSize:11, fontWeight:700, color:M.ink3, textTransform:'uppercase', letterSpacing:'0.06em' }}>{label}</span>
-    </div>
-  );
-}
-
 function BankSearchFullScreen({ banks, bankSearch, setBankSearch, connectedAccounts, onSelect, onBack }) {
   const q = bankSearch.trim();
+  const [expanded, setExpanded] = React.useState(() => new Set(['EU', 'NL']));
 
   const groups = React.useMemo(() => {
-    if (q) return null; // flat filtered mode
     const byCountry = {};
     banks.forEach(b => {
       const key = b.country ?? '';
@@ -66,13 +62,19 @@ function BankSearchFullScreen({ banks, bankSearch, setBankSearch, connectedAccou
     return BANK_COUNTRY_ORDER
       .filter(code => byCountry[code]?.length)
       .map(code => ({ code, label: BANK_COUNTRY_LABELS[code] || code, banks: byCountry[code] }));
-  }, [banks, q]);
+  }, [banks]);
 
   const flatFiltered = React.useMemo(() => {
     if (!q) return null;
     const lq = q.toLowerCase();
     return banks.filter(b => b.name.toLowerCase().includes(lq) || (b.bic || '').toLowerCase().includes(lq));
   }, [banks, q]);
+
+  const toggleGroup = (code) => setExpanded(prev => {
+    const next = new Set(prev);
+    if (next.has(code)) next.delete(code); else next.add(code);
+    return next;
+  });
 
   return (
     <div className="m-screen m-fade" style={{ display:'flex', flexDirection:'column' }}>
@@ -95,33 +97,46 @@ function BankSearchFullScreen({ banks, bankSearch, setBankSearch, connectedAccou
       </div>
       <div style={{ flex:1, overflowY:'auto', padding:'0 20px 24px' }}>
         {flatFiltered !== null ? (
-          /* Search results — flat list */
+          /* Search results — flat list with country badge */
           <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
             {flatFiltered.length === 0
               ? <div style={{ padding:'24px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>No banks match your search</div>
               : flatFiltered.map((bank, i) => (
                   <React.Fragment key={bank.id}>
                     {i > 0 && <Divider inset={48}/>}
-                    <BankRow bank={bank} query={q} connectedAccounts={connectedAccounts} onSelect={onSelect}/>
+                    <BankRow bank={bank} query={q} countryCode={bank.country ?? ''} connectedAccounts={connectedAccounts} onSelect={onSelect}/>
                   </React.Fragment>
                 ))
             }
           </div>
         ) : (
-          /* Grouped browse */
-          groups.map(group => (
-            <div key={group.code}>
-              <BankGroupHeader countryCode={group.code} label={group.label}/>
-              <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
-                {group.banks.map((bank, i) => (
-                  <React.Fragment key={bank.id}>
-                    {i > 0 && <Divider inset={48}/>}
-                    <BankRow bank={bank} query="" connectedAccounts={connectedAccounts} onSelect={onSelect}/>
-                  </React.Fragment>
-                ))}
+          /* Accordion grouped browse */
+          groups.map(group => {
+            const isOpen = expanded.has(group.code);
+            return (
+              <div key={group.code}>
+                <div className="m-tap" onClick={() => toggleGroup(group.code)}
+                  style={{ display:'flex', alignItems:'center', gap:8, padding:'12px 4px 8px', cursor:'pointer', userSelect:'none' }}>
+                  {group.code && group.code !== 'EU' && (
+                    <span style={{ fontSize:9, fontWeight:700, padding:'2px 5px', borderRadius:4, background:M.paper2, border:`1px solid ${M.line}`, color:M.ink3, fontFamily:M.fontMono, letterSpacing:'0.04em' }}>{group.code}</span>
+                  )}
+                  <span style={{ flex:1, fontSize:11, fontWeight:700, color:M.ink3, textTransform:'uppercase', letterSpacing:'0.06em' }}>{group.label}</span>
+                  <span style={{ fontSize:11, color:M.ink4 }}>{group.banks.length}</span>
+                  <I name={isOpen ? 'caretD' : 'caretR'} size={14} color={M.ink4}/>
+                </div>
+                {isOpen && (
+                  <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}`, marginBottom:4 }}>
+                    {group.banks.map((bank, i) => (
+                      <React.Fragment key={bank.id}>
+                        {i > 0 && <Divider inset={48}/>}
+                        <BankRow bank={bank} query="" connectedAccounts={connectedAccounts} onSelect={onSelect}/>
+                      </React.Fragment>
+                    ))}
+                  </div>
+                )}
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>
@@ -129,6 +144,11 @@ function BankSearchFullScreen({ banks, bankSearch, setBankSearch, connectedAccou
 }
 
 function BankConnectPsd2Screen({ psd2Step, psd2Bank, customIban, setCustomIban, advancePsd2, onClose }) {
+  React.useEffect(() => {
+    if (psd2Step !== 'done') return;
+    const t = setTimeout(advancePsd2, 2000);
+    return () => clearTimeout(t);
+  }, [psd2Step]);
   return (
     <div className="m-screen m-fade" style={{ display:'flex', flexDirection:'column' }}>
       <StatusBar/>
@@ -1354,7 +1374,10 @@ export function ScreenAccounts() {
   if (psd2Step === 'search') {
     return <BankSearchFullScreen banks={ALL_BANKS} bankSearch={bankSearch} setBankSearch={setBankSearch} connectedAccounts={connectedAccounts} onSelect={startBankConnect} onBack={() => { setPsd2Step(null); setFlowScreen(psd2MethodScreen); }}/>;
   }
-  if (psd2Step && psd2Step !== 'done') {
+  if (psd2Step === 'done') {
+    return <BankConnectPsd2Screen psd2Step="done" psd2Bank={psd2Bank} customIban={customIban} setCustomIban={setCustomIban} advancePsd2={() => { setPsd2Step(null); setFlowScreen(null); }} onClose={() => { setPsd2Step(null); setFlowScreen(null); }}/>;
+  }
+  if (psd2Step) {
     return <BankConnectPsd2Screen psd2Step={psd2Step} psd2Bank={psd2Bank} customIban={customIban} setCustomIban={setCustomIban} advancePsd2={advancePsd2} onClose={() => { setPsd2Step(null); setFlowScreen(psd2MethodScreen); }}/>;
   }
 
@@ -1390,11 +1413,6 @@ export function ScreenAccounts() {
 
   if (flowScreen === 'mortgageForm') return <MortgageForm defaultCurrency={currency} onSave={handleSaveNewAccount} onBack={() => setFlowScreen('typeSelect')}/>;
   if (flowScreen === 'loanFlow') return <LoanFlow defaultCurrency={currency} onSave={handleSaveNewAccount} onBack={() => setFlowScreen('typeSelect')}/>;
-
-  // PSD2 done banner reuse
-  if (psd2Step === 'done') {
-    return <BankConnectPsd2Screen psd2Step="done" psd2Bank={psd2Bank} customIban={customIban} setCustomIban={setCustomIban} advancePsd2={advancePsd2} onClose={() => { setPsd2Step(null); setFlowScreen(null); }}/>;
-  }
 
   // ── Main screen ──────────────────────────────────────────────────────────────
   const assets = connectedAccounts.filter(a => acctGroup(a.type) === 'asset');
