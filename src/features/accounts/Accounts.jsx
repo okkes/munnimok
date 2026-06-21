@@ -549,13 +549,14 @@ function AcctTypeBadge({ type, t }) {
   );
 }
 
-function AcctRow({ acct, i, t, currency, onDelete }) {
+function AcctRow({ acct, i, t, currency, onDelete, onEdit }) {
   const color = acct.color || acctTypeColor(acct.type);
   const isLiability = acctGroup(acct.type) === 'liability';
   return (
     <React.Fragment>
       {i > 0 && <Divider inset={52}/>}
-      <div data-testid="account-row" style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
+      <div data-testid="account-row" className="m-tap" onClick={() => onEdit && onEdit(acct)}
+        style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
         <div style={{ width:38, height:38, borderRadius:10, background:color, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
           <I name={acctIcon(acct.type)} size={18} color="#fff"/>
         </div>
@@ -1310,6 +1311,10 @@ export function ScreenAccounts() {
   const [flowScreen, setFlowScreen] = React.useState(null); // null=main | 'typeSelect' | 'bankMethod' | 'bankManual' | 'bankAuto' | 'cashForm' | 'brokerMethod' | 'brokerManual' | 'brokerAuto' | 'creditMethod' | 'creditManual' | 'creditAuto' | 'savingMethod' | 'savingManual' | 'savingAuto' | 'mortgageForm' | 'loanFlow'
   const [typeFilter, setTypeFilter] = React.useState(null); // null=all | 'asset' | 'liability'
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(null);
+  const [showEditSheet, setShowEditSheet] = React.useState(null); // null | acct object
+  const [editName, setEditName] = React.useState('');
+  const [editIban, setEditIban] = React.useState('');
+  const [editBalance, setEditBalance] = React.useState('');
 
   // PSD2 auto flow state (for bank/saving/credit automated)
   const [psd2Step, setPsd2Step] = React.useState(null);
@@ -1365,6 +1370,24 @@ export function ScreenAccounts() {
   const confirmDelete = (acct) => {
     setConnectedAccounts(a => a.filter(x => x.id !== acct.id));
     setShowDeleteConfirm(null);
+  };
+
+  const openEdit = (acct) => {
+    setEditName(acct.name || '');
+    setEditIban(acct.iban || '');
+    setEditBalance(String(acct.balance ?? 0));
+    setShowEditSheet(acct);
+  };
+
+  const saveEdit = () => {
+    if (!showEditSheet) return;
+    setConnectedAccounts(a => a.map(x => x.id !== showEditSheet.id ? x : {
+      ...x,
+      name: editName.trim() || x.name,
+      iban: editIban.trim(),
+      ...(x.readOnly ? {} : { balance: parseFloat(editBalance) || 0 }),
+    }));
+    setShowEditSheet(null);
   };
 
   // PSD2 auto back: return to the correct method screen based on which type started the flow
@@ -1423,16 +1446,18 @@ export function ScreenAccounts() {
       <StatusBar/>
       <AppBar title={t('acct.financialAccounts')}
         leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
-        trailing={<button data-testid="account-add-btn" className="m-iconbtn m-tap" onClick={() => { setTypeFilter(null); setFlowScreen('typeSelect'); }}><I name="plus" size={20}/></button>}
       />
       <div className="m-body-scroll">
         {/* Assets group */}
-        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('acct.assets')}</div>
+        <div style={{ display:'flex', alignItems:'baseline', gap:8, marginBottom:8, paddingLeft:4 }}>
+          <div className="m-cap">{t('acct.assets')}</div>
+          <div style={{ fontSize:11, color:M.ink4 }}>{t('acct.assetDesc')}</div>
+        </div>
         <div data-testid="assets-group" className="m-card" style={{ padding:'4px 16px', marginBottom:16, border:`1px solid ${M.line}` }}>
           {assets.length === 0 ? (
             <div style={{ padding:'16px 0', textAlign:'center', color:M.ink4, fontSize:13 }}>{t('acct.noAccounts')}</div>
           ) : assets.map((a, i) => (
-            <AcctRow key={a.id} acct={a} i={i} t={t} currency={currency} onDelete={setShowDeleteConfirm}/>
+            <AcctRow key={a.id} acct={a} i={i} t={t} currency={currency} onDelete={setShowDeleteConfirm} onEdit={openEdit}/>
           ))}
           <Divider inset={0}/>
           <div data-testid="asset-add-row" className="m-tap" onClick={() => { setTypeFilter('asset'); setFlowScreen('typeSelect'); }}
@@ -1440,26 +1465,29 @@ export function ScreenAccounts() {
             <div style={{ width:38, height:38, borderRadius:10, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
               <I name="plus" size={16} color={M.sage}/>
             </div>
-            <div style={{ flex:1, fontSize:14, fontWeight:600, color:M.sage }}>{t('acct.addAccount')}</div>
+            <div style={{ flex:1, fontSize:14, fontWeight:600, color:M.sage }}>{t('acct.addAssetAccount')}</div>
             <I name="caretR" size={14} color={M.ink4}/>
           </div>
         </div>
 
         {/* Liabilities group */}
-        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('acct.liabilities')}</div>
+        <div style={{ display:'flex', alignItems:'baseline', gap:8, marginBottom:8, paddingLeft:4 }}>
+          <div className="m-cap">{t('acct.liabilities')}</div>
+          <div style={{ fontSize:11, color:M.ink4 }}>{t('acct.liabilityDesc')}</div>
+        </div>
         <div data-testid="liabilities-group" className="m-card" style={{ padding:'4px 16px', marginBottom:16, border:`1px solid ${M.line}` }}>
           {liabilities.length === 0 ? (
             <div style={{ padding:'16px 0', textAlign:'center', color:M.ink4, fontSize:13 }}>{t('acct.noAccounts')}</div>
           ) : liabilities.map((a, i) => (
-            <AcctRow key={a.id} acct={a} i={i} t={t} currency={currency} onDelete={setShowDeleteConfirm}/>
+            <AcctRow key={a.id} acct={a} i={i} t={t} currency={currency} onDelete={setShowDeleteConfirm} onEdit={openEdit}/>
           ))}
           <Divider inset={0}/>
-          <div className="m-tap" onClick={() => { setTypeFilter('liability'); setFlowScreen('typeSelect'); }}
+          <div data-testid="liability-add-row" className="m-tap" onClick={() => { setTypeFilter('liability'); setFlowScreen('typeSelect'); }}
             style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
             <div style={{ width:38, height:38, borderRadius:10, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
               <I name="plus" size={16} color={M.sage}/>
             </div>
-            <div style={{ flex:1, fontSize:14, fontWeight:600, color:M.sage }}>{t('acct.addAccount')}</div>
+            <div style={{ flex:1, fontSize:14, fontWeight:600, color:M.sage }}>{t('acct.addLiabilityAccount')}</div>
             <I name="caretR" size={14} color={M.ink4}/>
           </div>
         </div>
@@ -1489,6 +1517,40 @@ export function ScreenAccounts() {
             <button onClick={() => setShowDeleteConfirm(null)}
               style={{ width:'100%', padding:'14px 0', background:M.paper2, color:M.ink, border:`1px solid ${M.line}`, borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
               {t('action.cancel')}
+            </button>
+          </div>
+        </Sheet>
+      )}
+
+      {showEditSheet && (
+        <Sheet onClose={() => setShowEditSheet(null)}>
+          <div style={{ padding:'4px 20px 32px' }}>
+            <div style={{ fontSize:17, fontWeight:700, marginBottom:16 }}>{t('acct.editAccount')}</div>
+            <div style={{ marginBottom:14 }}>
+              <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{t('acct.accountName')}</div>
+              <input value={editName} onChange={e => setEditName(e.target.value)}
+                style={{ width:'100%', boxSizing:'border-box', padding:'11px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none' }}/>
+            </div>
+            <div style={{ marginBottom:14 }}>
+              <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{t('acct.accountNumber')}</div>
+              <input value={editIban} onChange={e => setEditIban(e.target.value)} placeholder="e.g. NL12 INGB 0123 4567 89"
+                style={{ width:'100%', boxSizing:'border-box', padding:'11px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontMono, background:M.paper2, outline:'none' }}/>
+            </div>
+            {!showEditSheet.readOnly && (
+              <div style={{ marginBottom:20 }}>
+                <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{t('acct.initialBalance')}</div>
+                <input type="number" value={editBalance} onChange={e => setEditBalance(e.target.value)}
+                  style={{ width:'100%', boxSizing:'border-box', padding:'11px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontMono, background:M.paper2, outline:'none' }}/>
+              </div>
+            )}
+            {showEditSheet.readOnly && <div style={{ marginBottom:20 }}/>}
+            <button onClick={saveEdit}
+              style={{ width:'100%', padding:'14px 0', background:M.brand, color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>
+              {t('action.save')}
+            </button>
+            <button onClick={() => { setShowDeleteConfirm(showEditSheet); setShowEditSheet(null); }}
+              style={{ width:'100%', padding:'14px 0', background:'transparent', color:M.clay, border:`1px solid ${M.clay}33`, borderRadius:12, fontSize:15, fontWeight:500, cursor:'pointer', fontFamily:M.fontUI }}>
+              {t('acct.removeConfirm')}
             </button>
           </div>
         </Sheet>

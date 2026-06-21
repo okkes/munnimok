@@ -11,12 +11,17 @@ async function goToAccounts(page) {
   await page.click('[data-testid="nav-drawer-settings"]');
   await page.waitForSelector('[data-testid="profile-link-accounts"]', { timeout: 3000 });
   await page.click('[data-testid="profile-link-accounts"]');
-  await page.waitForSelector('[data-testid="account-add-btn"]', { timeout: 3000 });
+  await page.waitForSelector('[data-testid="assets-group"]', { timeout: 3000 });
 }
 
 async function openTypeSelect(page) {
-  await page.click('[data-testid="account-add-btn"]');
+  await page.click('[data-testid="asset-add-row"]');
   await page.waitForSelector('[data-testid="acct-type-bank"]', { timeout: 2000 });
+}
+
+async function openLiabilityTypeSelect(page) {
+  await page.click('[data-testid="liability-add-row"]');
+  await page.waitForSelector('[data-testid="acct-type-credit"]', { timeout: 2000 });
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
@@ -36,16 +41,18 @@ for (const V of VARIANTS) {
     await teardown(page, ctx, k('acct-a1-main'));
   });
 
-  test(`acct-a2 type selector shows all 7 types [${V.id}]`, async ({ browser }) => {
+  test(`acct-a2 asset type selector shows only 4 asset types [${V.id}]`, async ({ browser }) => {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V);
     await goToAccounts(page);
-    await openTypeSelect(page);
-    for (const t of ['bank','saving','cash','brokerage','credit','mortgage','loan']) {
+    await page.click('[data-testid="asset-add-row"]');
+    await page.waitForSelector('[data-testid="acct-type-bank"]', { timeout: 2000 });
+    for (const t of ['bank','saving','cash','brokerage']) {
       await expect(page.locator(`[data-testid="acct-type-${t}"]`)).toBeVisible();
     }
-    await shot(page, k('acct-a2-type-select'));
-    await teardown(page, ctx, k('acct-a2-type-select'));
+    await expect(page.locator('[data-testid="acct-type-credit"]')).not.toBeVisible();
+    await shot(page, k('acct-a2-type-select-asset'));
+    await teardown(page, ctx, k('acct-a2-type-select-asset'));
   });
 
   // ── B: Bank account flow ─────────────────────────────────────────────────
@@ -223,7 +230,7 @@ for (const V of VARIANTS) {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V);
     await goToAccounts(page);
-    await openTypeSelect(page);
+    await openLiabilityTypeSelect(page);
     await page.click('[data-testid="acct-type-mortgage"]');
     await page.waitForSelector('[data-testid="mortgage-lender"]', { timeout: 2000 });
     await shot(page, k('acct-e1-mortgage-form'));
@@ -249,7 +256,7 @@ for (const V of VARIANTS) {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V);
     await goToAccounts(page);
-    await openTypeSelect(page);
+    await openLiabilityTypeSelect(page);
     await page.click('[data-testid="acct-type-loan"]');
     await page.waitForSelector('[data-testid="loan-type-personal"]', { timeout: 2000 });
     for (const t of ['personal','car','student','other']) {
@@ -263,7 +270,7 @@ for (const V of VARIANTS) {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V);
     await goToAccounts(page);
-    await openTypeSelect(page);
+    await openLiabilityTypeSelect(page);
     await page.click('[data-testid="acct-type-loan"]');
     await page.waitForSelector('[data-testid="loan-type-car"]', { timeout: 2000 });
     await page.click('[data-testid="loan-type-car"]');
@@ -304,7 +311,7 @@ for (const V of VARIANTS) {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V);
     await goToAccounts(page);
-    await openTypeSelect(page);
+    await openLiabilityTypeSelect(page);
     await page.click('[data-testid="acct-type-credit"]');
     await page.waitForSelector('[data-testid="acct-method-manual"]', { timeout: 2000 });
     await shot(page, k('acct-h1-credit-method'));

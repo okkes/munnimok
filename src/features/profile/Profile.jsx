@@ -87,7 +87,7 @@ export function ScreenProfile() {
   const initial = (firstName || name || '?').charAt(0).toUpperCase();
 
   const isDemo = loginMethod === 'bank';
-  const connectedBanks = connectedAccounts.filter(a => a.type === 'checking').length;
+  const connectedBanks = connectedAccounts.length;
   const _lastMethod = loginMethod;
   const [_overrideEmail] = useLocalStorage('munni_email_override', null);
   const _resolvedEmail = _overrideEmail?.to || email;
