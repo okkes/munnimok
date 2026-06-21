@@ -573,7 +573,7 @@ function AcctRow({ acct, i, t, currency, onDelete, onEdit }) {
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
           <div className="m-num" style={{ fontSize:14, fontWeight:600, color: isLiability ? M.clay : M.ink }}>
-            {fmtMoney(acct.balance || 0, currency)}
+            {fmtMoney(acct.balance || 0, acct.currency || currency)}
           </div>
           <button className="m-tap" onClick={e => { e.stopPropagation(); onDelete(acct); }}
             style={{ background:'none', border:'none', padding:4, cursor:'pointer', opacity:0.6 }}>
@@ -678,13 +678,13 @@ function AccountMethodScreen({ typeLabel, onManual, onAutomatic, onBack }) {
           </div>
           <div style={{ flex:1 }}>
             <div style={{ fontSize:15, fontWeight:700 }}>{t('acct.automated')}</div>
-            <div style={{ fontSize:12, color:M.ink3, marginTop:2 }}>Sync via Open Banking — read-only</div>
+            <div style={{ fontSize:12, color:M.ink3, marginTop:2 }}>Sync via Open Banking</div>
           </div>
           <I name="caretR" size={14} color={M.ink4}/>
         </div>
-        <div style={{ padding:'12px 16px', borderRadius:12, background:M.sageSoft, display:'flex', gap:10, alignItems:'flex-start' }}>
-          <I name="lock" size={16} color={M.sage}/>
-          <div style={{ fontSize:12, color:M.ink2, lineHeight:1.5 }}>{t('acct.psd2Notice')}</div>
+        <div style={{ display:'flex', gap:5, alignItems:'center', paddingTop:4, opacity:0.55 }}>
+          <I name="lock" size={11} color={M.ink3}/>
+          <div style={{ fontSize:11, color:M.ink3, lineHeight:1.4 }}>{t('acct.psd2Notice')}</div>
         </div>
       </div>
     </div>
@@ -1498,14 +1498,6 @@ export function ScreenAccounts({ params }) {
           </div>
         </div>
 
-        {/* PSD2 notice */}
-        <div style={{ padding:'12px 16px', borderRadius:14, background:M.sageSoft, display:'flex', gap:12, alignItems:'flex-start', marginBottom:8 }}>
-          <I name="lock" size={18} color={M.sage}/>
-          <div style={{ flex:1 }}>
-            <div style={{ fontSize:13, fontWeight:600, color:M.sage }}>{t('acct.psd2Title')}</div>
-            <div style={{ fontSize:12, color:M.ink2, marginTop:4, lineHeight:1.45 }}>{t('acct.psd2Notice')}</div>
-          </div>
-        </div>
         <div style={{ height:8 }}/>
       </div>
 
