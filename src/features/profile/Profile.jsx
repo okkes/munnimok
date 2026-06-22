@@ -1340,6 +1340,7 @@ export function ScreenSpaceDetail({ params }) {
   const [showPhotoSheet, setShowPhotoSheet] = React.useState(false);
   const [showMembersSheet, setShowMembersSheet] = React.useState(false);
   const [memberActionSheet, setMemberActionSheet] = React.useState(null);
+  const [memberCardSheet, setMemberCardSheet] = React.useState(null);
   const [showSpaceCurrencyPicker, setShowSpaceCurrencyPicker] = React.useState(false);
 
   const myId = React.useMemo(() => getUserId(), []);
@@ -1651,7 +1652,7 @@ export function ScreenSpaceDetail({ params }) {
   };
   const spaceAcctIcon = (type) => {
     const m = { checking:'card', bank:'card', saving:'piggy', savings:'piggy',
-      cash:'wallet', brokerage:'rocket', invest:'rocket', credit:'card', mortgage:'home', loan:'doc' };
+      cash:'wallet', brokerage:'rocket', invest:'rocket', credit:'card', mortgage:'home', loan:'receipt' };
     return m[type] || 'card';
   };
   const spaceAcctLabel = (type) => {
@@ -1847,16 +1848,17 @@ export function ScreenSpaceDetail({ params }) {
                         {i > 0 && <Divider inset={44}/>}
                         <div data-testid="member-row" className={tappable ? 'm-tap' : ''} onClick={tappable ? () => setMemberActionSheet(m.userId) : undefined}
                           style={{ display:'flex', alignItems:'center', gap:10, padding:'11px 0', cursor: tappable ? 'pointer' : 'default' }}>
-                          <div style={{ width:32, height:32, borderRadius:999, background:isFriend?M.paper2:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:13, fontWeight:700, color:isFriend?M.ink2:M.ink3 }}>
+                          <button className="m-tap" onClick={e => { e.stopPropagation(); setMemberCardSheet(m.userId); }}
+                            style={{ width:32, height:32, borderRadius:999, background:isFriend?M.sageSoft:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:13, fontWeight:700, color:isFriend?M.sage:M.ink3, cursor:'pointer', border:'none', padding:0 }}>
                             {displayName.charAt(0).toUpperCase()}
-                          </div>
+                          </button>
                           <div style={{ flex:1, minWidth:0 }}>
                             <div style={{ fontSize:14, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', color:isFriend?M.ink:M.ink2 }}>{displayName}</div>
                             {!isFriend && (
                               <div style={{ fontSize:11, color:M.ink4, marginTop:1 }}>{t('space.notFriend')}</div>
                             )}
                           </div>
-                          {!isFriend && !tappable && (
+                          {!isFriend && (
                             inviteSent
                               ? <span style={{ fontSize:10, color:M.ink4, flexShrink:0 }}>{t('friends.sent')}</span>
                               : <button className="m-tap" onClick={e => { e.stopPropagation(); sendFriendInvite(m.userId); }}
@@ -2072,6 +2074,44 @@ export function ScreenSpaceDetail({ params }) {
       {memberActionSheet && (
         <MemberActionSheet profile={profile} memberId={memberActionSheet} onClose={() => setMemberActionSheet(null)}/>
       )}
+      {memberCardSheet && (() => {
+        const mc = members.find(mm => mm.userId === memberCardSheet);
+        if (!mc) return null;
+        const mcInfo = userRegistry[mc.userId] || {};
+        const mcName = mcInfo.displayName || mc.displayName || mc.userId;
+        const mcPerm = buildEffectivePerm(sharedData, mc.userId, mc.permission);
+        const mcFriend = myFriendIds.has(mc.userId);
+        const mcSent = sentFriendInviteIds.has(mc.userId);
+        return (
+          <Sheet title={mcName} onClose={() => setMemberCardSheet(null)}>
+            <div style={{ padding:'4px 16px 24px' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:20 }}>
+                <div style={{ width:52, height:52, borderRadius:999, background:mcFriend?M.sageSoft:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, fontWeight:700, color:mcFriend?M.sage:M.ink3, flexShrink:0 }}>
+                  {mcName.charAt(0).toUpperCase()}
+                </div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:16, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{mcName}</div>
+                  <div style={{ fontSize:11, color:M.ink4, fontFamily:M.fontMono, marginTop:2 }}>{mc.userId}</div>
+                </div>
+                <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:mcPerm==='owner'?M.ochreSoft:mcPerm==='contributor'?M.sageSoft:M.paper2, color:PERM_COLOR[mcPerm]||M.ink3, textTransform:'uppercase', flexShrink:0 }}>
+                  {permLabel(mcPerm, t)||mcPerm}
+                </span>
+              </div>
+              {mcFriend
+                ? <div style={{ display:'flex', alignItems:'center', gap:8, padding:'12px 14px', borderRadius:12, background:M.sageSoft, color:M.sage, fontSize:13, fontWeight:600 }}>
+                    <I name="check" size={16} color={M.sage}/> {t('friends.alreadyFriends')}
+                  </div>
+                : mcSent
+                  ? <div style={{ padding:'12px 14px', borderRadius:12, background:M.paper2, color:M.ink3, fontSize:13 }}>{t('friends.sent')}</div>
+                  : <button className="m-tap" onClick={() => { sendFriendInvite(mc.userId); setMemberCardSheet(null); }}
+                      style={{ width:'100%', padding:'13px', borderRadius:12, background:M.sage, color:'#fff', fontSize:14, fontWeight:600, border:'none', cursor:'pointer', fontFamily:M.fontUI }}>
+                      {t('friends.invite')}
+                    </button>
+              }
+            </div>
+          </Sheet>
+        );
+      })()}
 
       {showDeleteConfirm && (
         <Sheet onClose={() => setShowDeleteConfirm(false)}>

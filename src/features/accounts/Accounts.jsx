@@ -535,7 +535,7 @@ export function acctTypeColor(type) {
 export function acctIcon(type) {
   const m = { checking:'card', bank:'card', saving:'piggy', savings:'piggy',
                cash:'wallet', brokerage:'rocket', invest:'rocket',
-               credit:'card', mortgage:'home', loan:'doc' };
+               credit:'card', mortgage:'home', loan:'receipt' };
   return m[type] || 'card';
 }
 
@@ -592,7 +592,7 @@ export function AccountTypeSelectScreen({ onSelect, onBack, filter }) {
   const LIAB_TYPES = [
     { id:'credit',   icon:'card',   label:t('acct.creditCard'), sub:t('acct.creditDesc') },
     { id:'mortgage', icon:'home',   label:t('acct.mortgage'),   sub:t('acct.mortgageDesc') },
-    { id:'loan',     icon:'doc',    label:t('acct.loan'),       sub:t('acct.loanDesc') },
+    { id:'loan',     icon:'receipt', label:t('acct.loan'),       sub:t('acct.loanDesc') },
   ];
   const showAssets = !filter || filter === 'asset';
   const showLiabs  = !filter || filter === 'liability';

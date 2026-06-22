@@ -513,10 +513,13 @@ export function ScreenHome() {
               <div style={{ position:'absolute', bottom:0, left:0, right:0, height:52, background:`linear-gradient(to bottom, ${M.paper}00, ${M.paper})`, pointerEvents:'none', zIndex:1 }}/>
               <div style={{ height:'100%', overflowY:'auto', padding:'0 12px' }}>
                 {profiles.map(p => {
-                  const sharedRaw = p.isShared ? (() => { try { return JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{}'); } catch { return {}; } })() : null;
+                  const hasMembers = (p.members || []).length > 0;
+                  const sharedRaw = (p.isShared || hasMembers) ? (() => { try { return JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{}'); } catch { return {}; } })() : null;
+                  const ownAcctIds = (p.accountIds || []).filter(id => connectedAccounts.some(a => a.id === id));
+                  const memberAcctIds = hasMembers ? (sharedRaw?.accounts || []).map(a => a.id).filter(id => !ownAcctIds.includes(id)) : [];
                   const acctIds = p.isShared
                     ? (sharedRaw?.accounts || []).map(a => a.id)
-                    : (p.accountIds || []).filter(id => connectedAccounts.some(a => a.id === id));
+                    : [...ownAcctIds, ...memberAcctIds];
                   const acctCount = acctIds.length;
                   const acctLabel = acctCount === 0 ? t('word.noAccounts') : `${acctCount} ${acctCount === 1 ? t('word.account') : t('word.accounts')}`;
                   const reviewN = p.isShared
@@ -537,7 +540,11 @@ export function ScreenHome() {
                           {p.localName || p.name}
                         </div>
                         <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>
-                          {p.isShared ? `${t('space.by')} ${(p.ownerDisplay || '').split(' ')[0]}` : acctLabel}
+                          {p.isShared
+                            ? (acctCount > 0
+                              ? `${acctLabel}, ${t('space.by')} ${(p.ownerDisplay || '').split(' ')[0]}`
+                              : `${t('space.by')} ${(p.ownerDisplay || '').split(' ')[0]}`)
+                            : acctLabel}
                         </div>
                       </div>
                       {p.active && <I name="check" size={14} color={M.sage}/>}

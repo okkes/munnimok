@@ -556,6 +556,12 @@ function ScreenLoginGate({ onLogin }) {
         localStorage.setItem(pKey, JSON.stringify(newPicture));
         window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: pKey } }));
       }
+      // Set session identity before initPerUserData so getUserId() inside getDefaultProfiles()
+      // resolves to the correct new user's email (not a leftover from a previous session).
+      // No munni-ss dispatch here — that would re-render ProfilesProvider mid-onboarding;
+      // doLogin() dispatches the reactive events after onboarding completes.
+      sessionStorage.setItem('munni_last_login_method', method);
+      sessionStorage.setItem('munni_profile_email', JSON.stringify(finalEmail || ''));
       // Initialise per-user data FIRST so the schema-version is set before doLogin calls
       // initPerUserData again — otherwise it would overwrite the bank accounts we save below.
       initPerUserData(method, finalEmail, lang);
