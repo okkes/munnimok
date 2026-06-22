@@ -549,7 +549,7 @@ function AcctTypeBadge({ type, t }) {
   );
 }
 
-function AcctRow({ acct, i, t, currency, onDelete, onEdit }) {
+function AcctRow({ acct, i, t, currency, onEdit }) {
   const color = acct.color || acctTypeColor(acct.type);
   const isLiability = acctGroup(acct.type) === 'liability';
   return (
@@ -571,14 +571,8 @@ function AcctRow({ acct, i, t, currency, onDelete, onEdit }) {
             }
           </div>
         </div>
-        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-          <div className="m-num" style={{ fontSize:14, fontWeight:600, color: isLiability ? M.clay : M.ink }}>
-            {fmtMoney(acct.balance || 0, acct.currency || currency)}
-          </div>
-          <button className="m-tap" onClick={e => { e.stopPropagation(); onDelete(acct); }}
-            style={{ background:'none', border:'none', padding:4, cursor:'pointer', opacity:0.6 }}>
-            <I name="x" size={13} color={M.ink4}/>
-          </button>
+        <div className="m-num" style={{ fontSize:14, fontWeight:600, color: isLiability ? M.clay : M.ink }}>
+          {fmtMoney(acct.balance || 0, acct.currency || currency)}
         </div>
       </div>
     </React.Fragment>
@@ -1615,7 +1609,7 @@ export function ScreenAccounts({ params }) {
           {assets.length === 0 ? (
             <div style={{ padding:'16px 0', textAlign:'center', color:M.ink4, fontSize:13 }}>{t('acct.noAccounts')}</div>
           ) : assets.map((a, i) => (
-            <AcctRow key={a.id} acct={a} i={i} t={t} currency={currency} onDelete={setShowDeleteConfirm} onEdit={openEdit}/>
+            <AcctRow key={a.id} acct={a} i={i} t={t} currency={currency} onEdit={openEdit}/>
           ))}
           <Divider inset={0}/>
           <div data-testid="asset-add-row" className="m-tap" onClick={() => { setTypeFilter('asset'); setFlowScreen('typeSelect'); }}
@@ -1637,7 +1631,7 @@ export function ScreenAccounts({ params }) {
           {liabilities.length === 0 ? (
             <div style={{ padding:'16px 0', textAlign:'center', color:M.ink4, fontSize:13 }}>{t('acct.noAccounts')}</div>
           ) : liabilities.map((a, i) => (
-            <AcctRow key={a.id} acct={a} i={i} t={t} currency={currency} onDelete={setShowDeleteConfirm} onEdit={openEdit}/>
+            <AcctRow key={a.id} acct={a} i={i} t={t} currency={currency} onEdit={openEdit}/>
           ))}
           <Divider inset={0}/>
           <div data-testid="liability-add-row" className="m-tap" onClick={() => { setTypeFilter('liability'); setFlowScreen('typeSelect'); }}

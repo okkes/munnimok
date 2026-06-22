@@ -124,6 +124,7 @@ for (const V of VARIANTS) {
     await page.waitForSelector('[data-testid="acct-bank-search"]', { timeout: 2000 });
     await page.click('[data-testid="bank-row-ing"]');
     await page.waitForSelector('[data-testid="acct-display-name"]', { timeout: 2000 });
+    await page.fill('[data-testid="acct-account-number"]', 'NL91INGB0417164300');
     await page.fill('[data-testid="acct-initial-balance"]', '5000');
     await page.click('[data-testid="acct-save-btn"]');
     await page.waitForSelector('[data-testid="assets-group"]', { timeout: 2000 });
@@ -140,11 +141,14 @@ for (const V of VARIANTS) {
     await page.click('[data-testid="acct-type-bank"]');
     await page.click('[data-testid="acct-method-manual"]');
     await page.waitForSelector('[data-testid="acct-bank-search"]', { timeout: 2000 });
-    // Try selecting "Other" and then go to form without filling name
+    // Search for "Other" to surface it from the collapsed accordion group
+    await page.fill('[data-testid="acct-bank-search"]', 'Other');
+    await page.waitForTimeout(150);
     await page.click('[data-testid="bank-row-other"]');
     await page.waitForSelector('[data-testid="acct-save-btn"]', { timeout: 2000 });
+    await page.fill('[data-testid="acct-account-number"]', 'NL91ABNA0417164300');
     await page.click('[data-testid="acct-save-btn"]');
-    // Should save since "Other" is a valid bank
+    // Should save since "Other" is a valid bank and account number is filled
     await page.waitForSelector('[data-testid="assets-group"]', { timeout: 2000 });
     await shot(page, k('acct-b6-bank-other-saved'));
     await teardown(page, ctx, k('acct-b6-bank-other-saved'));
@@ -298,6 +302,7 @@ for (const V of VARIANTS) {
     await page.waitForSelector('[data-testid="acct-bank-search"]', { timeout: 2000 });
     await page.click('[data-testid="bank-row-abn"]');
     await page.waitForSelector('[data-testid="acct-initial-balance"]', { timeout: 2000 });
+    await page.fill('[data-testid="acct-account-number"]', 'NL91ABNA0417164300');
     await page.fill('[data-testid="acct-initial-balance"]', '10000');
     await page.click('[data-testid="acct-save-btn"]');
     await page.waitForSelector('[data-testid="assets-group"]', { timeout: 2000 });
@@ -368,6 +373,7 @@ for (const V of VARIANTS) {
     await page.waitForSelector('[data-testid="acct-bank-search"]', { timeout: 2000 });
     await page.click('[data-testid="bank-row-ing"]');
     await page.waitForSelector('[data-testid="acct-save-btn"]', { timeout: 2000 });
+    await page.fill('[data-testid="acct-account-number"]', 'NL91INGB0417164300');
     await page.click('[data-testid="acct-save-btn"]');
     await page.waitForSelector('[data-testid="account-row"]', { timeout: 2000 });
     const rowText = await page.locator('[data-testid="account-row"]').first().textContent();
@@ -388,6 +394,7 @@ for (const V of VARIANTS) {
     await page.waitForSelector('[data-testid="acct-bank-search"]', { timeout: 2000 });
     await page.click('[data-testid="bank-row-ing"]');
     await page.waitForSelector('[data-testid="acct-save-btn"]', { timeout: 2000 });
+    await page.fill('[data-testid="acct-account-number"]', 'NL91INGB0417164300');
     await page.fill('[data-testid="acct-initial-balance"]', '1000');
     await page.click('[data-testid="acct-save-btn"]');
     await page.waitForSelector('[data-testid="account-row"]', { timeout: 2000 });

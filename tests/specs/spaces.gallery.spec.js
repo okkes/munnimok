@@ -325,7 +325,9 @@ for (const V of VARIANTS) {
     await base(page, V);
     await goToSpaces(page);
     await shot(page, k('22-spaces-back-from-list') + '--s1');
-    await page.goBack();
+    // Use evaluate to fire history.back() without Playwright waiting for a page-load event
+    await page.evaluate(() => window.history.back());
+    await page.waitForTimeout(400);
     await page.waitForSelector('[data-testid="spaces-nav-link"]', { timeout: 3000 });
     await expect(page.locator('[data-testid="spaces-nav-link"]')).toBeVisible();
     await shot(page, k('22-spaces-back-from-list'));

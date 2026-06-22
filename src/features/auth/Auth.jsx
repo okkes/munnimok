@@ -801,10 +801,12 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
             </div>
           </div>
 
-          {/* Primary CTA */}
-          <button data-testid={T.onboardComplete} className="m-btn sage m-tap" style={{ height:54, width:'100%', fontSize:16, fontWeight:700, marginBottom:12 }} onClick={handleComplete}>
-            {t('onboarding.complete')}
-          </button>
+          {/* Primary CTA — hidden when no accounts (skip button takes over) */}
+          {onboardAccounts.length > 0 && (
+            <button data-testid={T.onboardComplete} className="m-btn sage m-tap" style={{ height:54, width:'100%', fontSize:16, fontWeight:700, marginBottom:12 }} onClick={handleComplete}>
+              {t('onboarding.complete')}
+            </button>
+          )}
 
           {/* Skip for now — visible only when no accounts */}
           {onboardAccounts.length === 0 && (

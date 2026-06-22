@@ -564,7 +564,10 @@ function ScreenLoginGate({ onLogin }) {
         const acctKey = computeUserDataKey(method, finalEmail, 'munni_bank_accounts');
         localStorage.setItem(acctKey, JSON.stringify(data.onboardAccounts));
         window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: acctKey } }));
-        // Replace the profile's accountIds with exactly the onboarded set
+      }
+      // Always sync the active profile's accountIds with the onboarded set (even when empty)
+      // so the default space always reflects what was set up during signup.
+      if (data.onboardAccounts) {
         const profileKey = computeProfileKey(method, finalEmail);
         try {
           const profiles = JSON.parse(localStorage.getItem(profileKey) || 'null')

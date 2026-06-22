@@ -507,50 +507,55 @@ export function ScreenHome() {
               <div style={{ fontSize:24, fontWeight:800, color:M.brand, fontFamily:M.fontDisp, letterSpacing:'-0.02em' }}>munni</div>
             </div>
 
-            {/* Spaces list */}
-            <div style={{ flex:1, overflowY:'auto', padding:'0 12px' }}>
-              {profiles.map(p => {
-                const sharedRaw = p.isShared ? (() => { try { return JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{}'); } catch { return {}; } })() : null;
-                const acctIds = p.isShared
-                  ? (sharedRaw?.accounts || []).map(a => a.id)
-                  : (p.accountIds || []).filter(id => connectedAccounts.some(a => a.id === id));
-                const acctCount = acctIds.length;
-                const acctLabel = acctCount === 0 ? t('word.noAccounts') : `${acctCount} ${acctCount === 1 ? t('word.account') : t('word.accounts')}`;
-                const reviewN = p.isShared
-                  ? (sharedRaw?.txs || []).filter(tx => tx.needsReview && acctIds.includes(tx.account)).length
-                  : allTxs.filter(tx => tx.needsReview && acctIds.includes(tx.account)).length;
-                return (
-                  <div key={p.id} className="m-tap" onClick={() => activateProfile(p.id)}
-                    style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 8px', borderRadius:12,
-                             background:p.active ? M.sageSoft : 'transparent', marginBottom:2 }}>
-                    <div style={{ position:'relative', flexShrink:0 }}>
-                      <ProfileAvatar profile={p} size={38}/>
-                      {reviewN > 0 && (
-                        <div style={{ position:'absolute', top:-2, right:-2, width:10, height:10, borderRadius:999, background:M.ochre, border:`2px solid ${M.paper}` }}/>
-                      )}
-                    </div>
-                    <div style={{ flex:1, minWidth:0 }}>
-                      <div style={{ fontSize:14, fontWeight:600, color:p.active ? M.sage : M.ink, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                        {p.localName || p.name}
+            {/* Spaces list with scroll hint */}
+            <div style={{ position:'relative', flex:1, minHeight:0 }}>
+              {/* Bottom fade gradient — always visible, hints at scroll */}
+              <div style={{ position:'absolute', bottom:0, left:0, right:0, height:52, background:`linear-gradient(to bottom, ${M.paper}00, ${M.paper})`, pointerEvents:'none', zIndex:1 }}/>
+              <div style={{ height:'100%', overflowY:'auto', padding:'0 12px' }}>
+                {profiles.map(p => {
+                  const sharedRaw = p.isShared ? (() => { try { return JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{}'); } catch { return {}; } })() : null;
+                  const acctIds = p.isShared
+                    ? (sharedRaw?.accounts || []).map(a => a.id)
+                    : (p.accountIds || []).filter(id => connectedAccounts.some(a => a.id === id));
+                  const acctCount = acctIds.length;
+                  const acctLabel = acctCount === 0 ? t('word.noAccounts') : `${acctCount} ${acctCount === 1 ? t('word.account') : t('word.accounts')}`;
+                  const reviewN = p.isShared
+                    ? (sharedRaw?.txs || []).filter(tx => tx.needsReview && acctIds.includes(tx.account)).length
+                    : allTxs.filter(tx => tx.needsReview && acctIds.includes(tx.account)).length;
+                  return (
+                    <div key={p.id} className="m-tap" onClick={() => activateProfile(p.id)}
+                      style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 8px', borderRadius:12,
+                               background:p.active ? M.sageSoft : 'transparent', marginBottom:2 }}>
+                      <div style={{ position:'relative', flexShrink:0 }}>
+                        <ProfileAvatar profile={p} size={38}/>
+                        {reviewN > 0 && (
+                          <div style={{ position:'absolute', top:-2, right:-2, width:10, height:10, borderRadius:999, background:M.ochre, border:`2px solid ${M.paper}` }}/>
+                        )}
                       </div>
-                      <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>
-                        {p.isShared ? `${t('space.by')} ${(p.ownerDisplay || '').split(' ')[0]}` : acctLabel}
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:14, fontWeight:600, color:p.active ? M.sage : M.ink, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                          {p.localName || p.name}
+                        </div>
+                        <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>
+                          {p.isShared ? `${t('space.by')} ${(p.ownerDisplay || '').split(' ')[0]}` : acctLabel}
+                        </div>
                       </div>
+                      {p.active && <I name="check" size={14} color={M.sage}/>}
                     </div>
-                    {p.active && <I name="check" size={14} color={M.sage}/>}
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
 
-            {/* Manage spaces */}
-            <div style={{ padding:'8px 12px', flexShrink:0 }}>
-              <div className="m-tap" onClick={() => { setShowNavDrawer(false); nav.push('spaces'); }}
-                style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 8px', borderRadius:12 }}>
-                <div style={{ width:38, height:38, borderRadius:10, background:M.paper2, border:`1px solid ${M.line}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                  <I name="plus" size={16} color={M.ink2}/>
+                {/* Manage spaces — inside scroll, just below list entries */}
+                <div style={{ paddingBottom:20 }}>
+                  <Divider inset={0}/>
+                  <div className="m-tap" onClick={() => { setShowNavDrawer(false); nav.push('spaces'); }}
+                    style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 8px', borderRadius:12 }}>
+                    <div style={{ width:38, height:38, borderRadius:10, background:M.paper2, border:`1px solid ${M.line}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                      <I name="users" size={16} color={M.ink2}/>
+                    </div>
+                    <div style={{ fontSize:14, fontWeight:500, color:M.ink2 }}>{t('home.manageSpaces')}</div>
+                  </div>
                 </div>
-                <div style={{ fontSize:14, fontWeight:500, color:M.ink2 }}>{t('home.manageSpaces')}</div>
               </div>
             </div>
 

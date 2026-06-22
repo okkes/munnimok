@@ -113,4 +113,4 @@ export const PERM_BG    = { reader: M.paper2, contributor: M.sageSoft, owner: M.
 
 // Use instead of static PERM_LABEL object so i18n works correctly
 export const permLabel = (perm, t) =>
-  t(`profile.perm${perm.charAt(0).toUpperCase()}${perm.slice(1)}`);
+  t(`space.perm${perm.charAt(0).toUpperCase()}${perm.slice(1)}`);

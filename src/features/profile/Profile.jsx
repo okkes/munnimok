@@ -20,7 +20,8 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 export function ProfileAvatar({ profile, size = 36 }) {
   const borderRadius = Math.round(size * 0.28);
-  const displayPicture = profile?.localPicture || profile?.picture;
+  // 'none' sentinel means member explicitly removed their local picture — show letter fallback
+  const displayPicture = profile?.localPicture === 'none' ? null : (profile?.localPicture || profile?.picture);
   if (displayPicture) {
     if (displayPicture.startsWith('av')) {
       const av = STOCK_AVATARS.find(a => a.id === displayPicture);
@@ -1344,6 +1345,25 @@ export function ScreenSpaceDetail({ params }) {
   const myId = React.useMemo(() => getUserId(), []);
   const [invitations, setInvitations] = useLocalStorage('munni_global_invitations', []);
   const [userRegistry] = useLocalStorage('munni_global_users', {});
+  const [friendships] = useLocalStorage('munni_global_friendships', []);
+
+  const myFriendIds = React.useMemo(() => {
+    const s = new Set();
+    friendships.forEach(f => { if (f.users?.includes(myId)) s.add(f.users.find(u => u !== myId)); });
+    return s;
+  }, [friendships, myId]);
+
+  const sentFriendInviteIds = React.useMemo(() =>
+    new Set(invitations.filter(i => i.fromId === myId && i.type === 'friend' && i.status === 'pending').map(i => i.toId)),
+    [invitations, myId]
+  );
+
+  const sendFriendInvite = (userId) => {
+    setInvitations(prev => [...prev, {
+      id: `inv_fr_${Date.now()}`, type: 'friend', fromId: myId, toId: userId,
+      status: 'pending', fromDisplay: userRegistry[myId]?.displayName || myId,
+    }]);
+  };
 
   // All hooks before early return
   const profile = profiles.find(p => p.id === params?.id);
@@ -1498,7 +1518,10 @@ export function ScreenSpaceDetail({ params }) {
 
   const setPicture = (chosen) => {
     if (isMemberOfShared) {
-      setProfiles(ps => ps.map(p => p.id === profile.id ? { ...p, localPicture: chosen !== p.picture ? chosen : null } : p));
+      // 'none' is a sentinel meaning the member explicitly removed their local picture override
+      setProfiles(ps => ps.map(p => p.id === profile.id ? {
+        ...p, localPicture: chosen === null ? 'none' : (chosen !== p.picture ? chosen : null)
+      } : p));
     } else {
       setProfiles(ps => ps.map(p => p.id === profile.id ? { ...p, picture: chosen } : p));
       if (isProfileShared) setSharedData(prev => ({ ...prev, meta: { ...(prev.meta || {}), picture: chosen } }));
@@ -1736,8 +1759,8 @@ export function ScreenSpaceDetail({ params }) {
         {/* Settings section */}
         <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('space.settings')}</div>
         <div className="m-card" style={{ padding:'4px 16px', marginBottom:16, border:`1px solid ${M.line}` }}>
-          <div data-testid="space-currency-row" className="m-tap" onClick={() => setShowSpaceCurrencyPicker(true)}
-            style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
+          <div data-testid="space-currency-row" className={canEdit ? 'm-tap' : ''} onClick={canEdit ? () => setShowSpaceCurrencyPicker(true) : undefined}
+            style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0', opacity: canEdit ? 1 : 0.5 }}>
             <div style={{ width:32, height:32, borderRadius:9, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
               <I name="tag" size={16} color={M.ink2}/>
             </div>
@@ -1747,7 +1770,7 @@ export function ScreenSpaceDetail({ params }) {
             </div>
             <div style={{ display:'flex', alignItems:'center', gap:6 }}>
               <span style={{ fontSize:13, color:M.ink2, fontWeight:600 }}>{spaceCurrInfo.code} ({spaceCurrInfo.symbol})</span>
-              <I name="caretR" size={14} color={M.ink4}/>
+              {canEdit ? <I name="caretR" size={14} color={M.ink4}/> : <I name="lock" size={13} color={M.ink4}/>}
             </div>
           </div>
         </div>
@@ -1814,19 +1837,33 @@ export function ScreenSpaceDetail({ params }) {
                   })()}
                   {displayMembers.map((m, i) => {
                     const info = userRegistry[m.userId] || {};
+                    const displayName = info.displayName || m.displayName || m.userId;
                     const tappable = myPerm === 'owner';
                     const livePerm = buildEffectivePerm(sharedData, m.userId, m.permission);
+                    const isFriend = myFriendIds.has(m.userId);
+                    const inviteSent = sentFriendInviteIds.has(m.userId);
                     return (
                       <React.Fragment key={m.userId}>
                         {i > 0 && <Divider inset={44}/>}
                         <div data-testid="member-row" className={tappable ? 'm-tap' : ''} onClick={tappable ? () => setMemberActionSheet(m.userId) : undefined}
                           style={{ display:'flex', alignItems:'center', gap:10, padding:'11px 0', cursor: tappable ? 'pointer' : 'default' }}>
-                          <div style={{ width:32, height:32, borderRadius:999, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:13, fontWeight:700, color:M.ink2 }}>
-                            {(info.displayName||m.userId).charAt(0).toUpperCase()}
+                          <div style={{ width:32, height:32, borderRadius:999, background:isFriend?M.paper2:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:13, fontWeight:700, color:isFriend?M.ink2:M.ink3 }}>
+                            {displayName.charAt(0).toUpperCase()}
                           </div>
                           <div style={{ flex:1, minWidth:0 }}>
-                            <div style={{ fontSize:14, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{info.displayName||m.userId}</div>
+                            <div style={{ fontSize:14, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', color:isFriend?M.ink:M.ink2 }}>{displayName}</div>
+                            {!isFriend && (
+                              <div style={{ fontSize:11, color:M.ink4, marginTop:1 }}>{t('space.notFriend')}</div>
+                            )}
                           </div>
+                          {!isFriend && !tappable && (
+                            inviteSent
+                              ? <span style={{ fontSize:10, color:M.ink4, flexShrink:0 }}>{t('friends.sent')}</span>
+                              : <button className="m-tap" onClick={e => { e.stopPropagation(); sendFriendInvite(m.userId); }}
+                                  style={{ fontSize:10, fontWeight:600, color:M.sage, background:'none', border:`1px solid ${M.sage}`, borderRadius:99, padding:'3px 10px', cursor:'pointer', fontFamily:M.fontUI, flexShrink:0 }}>
+                                  {t('friends.invite')}
+                                </button>
+                          )}
                           <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:livePerm==='owner'?M.ochreSoft:livePerm==='contributor'?M.sageSoft:M.paper2, color:PERM_COLOR[livePerm]||M.ink3, textTransform:'uppercase', flexShrink:0 }}>
                             {permLabel(livePerm, t)||livePerm}
                           </span>
