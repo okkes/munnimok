@@ -28,10 +28,14 @@ async function goToStep2(page, email) {
   await page.waitForSelector('[data-testid="onboard-step2"]', { timeout: 3000 });
 }
 
-// Navigate to bank search.
+// Navigate to bank search via the new type-select → bank → automated path.
 async function goToBankSearch(page, email) {
   await goToStep2(page, email);
-  await page.click('[data-testid="onboard-add-bank"]');
+  await page.click('[data-testid="onboard-add-asset"]');
+  await page.waitForSelector('[data-testid="acct-type-bank"]', { timeout: 3000 });
+  await page.click('[data-testid="acct-type-bank"]');
+  await page.waitForSelector('[data-testid="acct-method-auto"]', { timeout: 3000 });
+  await page.click('[data-testid="acct-method-auto"]');
   await page.waitForSelector('[data-testid="bank-search-screen"]', { timeout: 3000 });
 }
 
@@ -56,13 +60,13 @@ async function goToConnecting(page, email) {
   await page.waitForSelector('[data-testid="bank-connecting-screen"]', { timeout: 3000 });
 }
 
-// Complete the full bank connect flow and land on step 2 with bank row.
+// Complete the full bank connect flow and land on step 2 with account row.
 async function goToStep2WithBank(page, email) {
   await goToConnecting(page, email);
   await page.waitForSelector('[data-testid="bank-done-screen"]', { timeout: 4000 });
   await page.click('[data-testid="bank-done-btn"]');
   await page.waitForSelector('[data-testid="onboard-step2"]', { timeout: 3000 });
-  await page.waitForSelector('[data-testid="onboard-bank-row"]', { timeout: 2000 });
+  await page.waitForSelector('[data-testid="onboard-acct-row"]', { timeout: 2000 });
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
@@ -201,13 +205,17 @@ for (const V of VARIANTS) {
   // Group B — Onboarding Step 2 (Bank Connect)
   // -------------------------------------------------------------------------
 
-  test(`33 onboard-step2 – empty state [${V.id}]`, async ({ browser }) => {
+  test(`33 onboard-step2 – empty state (email user) [${V.id}]`, async ({ browser }) => {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V);
     await goToStep2(page, email('s2empty'));
     await shot(page, k('33-onboard-step2-empty') + '--s1');
-    // No bank connected: primary CTA is "Add bank", skip link visible
-    await expect(page.locator('[data-testid="onboard-add-bank"]')).toBeVisible();
+    // Email user has no default accounts: assets + liabilities groups with "Add" rows visible
+    await expect(page.locator('[data-testid="onboard-assets-group"]')).toBeVisible();
+    await expect(page.locator('[data-testid="onboard-liabilities-group"]')).toBeVisible();
+    await expect(page.locator('[data-testid="onboard-add-asset"]')).toBeVisible();
+    await expect(page.locator('[data-testid="onboard-add-liability"]')).toBeVisible();
+    // Skip link visible when no accounts
     await expect(page.locator('[data-testid="onboard-bank-skip"]')).toBeVisible();
     await shot(page, k('33-onboard-step2-empty'));
     await teardown(page, ctx, k('33-onboard-step2-empty'));
@@ -218,7 +226,12 @@ for (const V of VARIANTS) {
     await base(page, V);
     await goToStep2(page, email('bsfilter'));
     await shot(page, k('34-bank-search-filter') + '--s1');
-    await page.click('[data-testid="onboard-add-bank"]');
+    // Navigate: add asset → bank type → automated → bank search
+    await page.click('[data-testid="onboard-add-asset"]');
+    await page.waitForSelector('[data-testid="acct-type-bank"]', { timeout: 3000 });
+    await page.click('[data-testid="acct-type-bank"]');
+    await page.waitForSelector('[data-testid="acct-method-auto"]', { timeout: 3000 });
+    await page.click('[data-testid="acct-method-auto"]');
     await page.waitForSelector('[data-testid="bank-search-screen"]', { timeout: 3000 });
     await page.fill('[data-testid="bank-search-input"]', 'rabo');
     await page.waitForTimeout(300);
@@ -362,17 +375,18 @@ for (const V of VARIANTS) {
     await teardown(page, ctx, k('40-bank-connected'));
   });
 
-  test(`41 step2-with-bank – row + Complete CTA [${V.id}]`, async ({ browser }) => {
+  test(`41 step2-with-bank – account row + Get Started CTA [${V.id}]`, async ({ browser }) => {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V);
     await goToConnecting(page, email('brow'));
     await page.waitForSelector('[data-testid="bank-done-screen"]', { timeout: 4000 });
     await shot(page, k('41-step2-with-bank') + '--s1');
     await page.click('[data-testid="bank-done-btn"]');
-    await page.waitForSelector('[data-testid="onboard-bank-row"]', { timeout: 3000 });
-    await expect(page.locator('[data-testid="onboard-bank-row"]')).toBeVisible();
+    await page.waitForSelector('[data-testid="onboard-acct-row"]', { timeout: 3000 });
+    await expect(page.locator('[data-testid="onboard-acct-row"]')).toBeVisible();
     await expect(page.locator('[data-testid="onboard-complete"]')).toBeVisible();
-    await expect(page.locator('[data-testid="onboard-add-another-bank"]')).toBeVisible();
+    // New design has "Add asset/liability" rows instead of "Add another bank"
+    await expect(page.locator('[data-testid="onboard-add-asset"]')).toBeVisible();
     await shot(page, k('41-step2-with-bank'));
     await teardown(page, ctx, k('41-step2-with-bank'));
   });
@@ -389,17 +403,18 @@ for (const V of VARIANTS) {
     await teardown(page, ctx, k('42-step2-skip'));
   });
 
-  test(`43 bank-remove – row removed [${V.id}]`, async ({ browser }) => {
+  test(`43 account-remove – row removed [${V.id}]`, async ({ browser }) => {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V);
     await goToStep2WithBank(page, email('bremove'));
     await shot(page, k('43-bank-remove') + '--s1');
-    // Click the × button on the bank row
-    await page.click('[data-testid="onboard-remove-bank"]');
+    // Click the × button on the account row
+    await page.click('[data-testid="onboard-remove-acct"]');
+    await page.waitForTimeout(200);
     await shot(page, k('43-bank-remove') + '--s2');
-    // Step 2 returns to empty state
-    await page.waitForSelector('[data-testid="onboard-add-bank"]', { timeout: 2000 });
-    await expect(page.locator('[data-testid="onboard-add-bank"]')).toBeVisible();
+    // Assets group still shows; add-asset row is visible; skip reappears
+    await expect(page.locator('[data-testid="onboard-assets-group"]')).toBeVisible();
+    await expect(page.locator('[data-testid="onboard-add-asset"]')).toBeVisible();
     await shot(page, k('43-bank-remove'));
     await teardown(page, ctx, k('43-bank-remove'));
   });
@@ -515,11 +530,11 @@ for (const V of VARIANTS) {
     await teardown(page, ctx, k('53-onboard-refresh-login'));
   });
 
-  test(`54 onboard – step2 back retains connected bank [${V.id}]`, async ({ browser }) => {
+  test(`54 onboard – step2 back retains connected account [${V.id}]`, async ({ browser }) => {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V);
     await goToStep2WithBank(page, email('back-bank'));
-    await expect(page.locator('[data-testid="onboard-bank-row"]')).toBeVisible();
+    await expect(page.locator('[data-testid="onboard-acct-row"]')).toBeVisible();
     await shot(page, k('54-onboard-back-retains-bank') + '--s1');
     // Go back to step 1
     await page.goBack();
@@ -533,8 +548,8 @@ for (const V of VARIANTS) {
     await page.locator('[data-testid="sheet-close"] button').filter({ hasText: 'Netherlands' }).first().click();
     await page.click('[data-testid="onboard-continue"]');
     await page.waitForSelector('[data-testid="onboard-step2"]', { timeout: 3000 });
-    // Bank row must still be there (retained in React state)
-    await expect(page.locator('[data-testid="onboard-bank-row"]')).toBeVisible();
+    // Account row must still be there (retained in React state)
+    await expect(page.locator('[data-testid="onboard-acct-row"]')).toBeVisible();
     await shot(page, k('54-onboard-back-retains-bank'));
     await teardown(page, ctx, k('54-onboard-back-retains-bank'));
   });
@@ -640,6 +655,67 @@ for (const V of VARIANTS) {
     await expect(page.locator('[data-testid="onboard-lastname"]')).toHaveValue('Smith');
     await shot(page, k('60-google-name-resume'));
     await teardown(page, ctx, k('60-google-name-resume'));
+  });
+
+  test(`61 onboard-step2 – Google SSO shows default accounts [${V.id}]`, async ({ browser }) => {
+    const { page, ctx } = await createPage(browser, V);
+    await base(page, V);
+    await page.click('[data-testid="login-create-account"]');
+    await page.waitForSelector('[data-testid="signup-pick-google"]');
+    await page.click('[data-testid="signup-pick-google"]');
+    await page.waitForSelector('[data-testid="onboard-firstname"]', { timeout: 5000 });
+    await page.fill('[data-testid="onboard-firstname"]', 'Google');
+    await page.fill('[data-testid="onboard-lastname"]', 'User');
+    await page.click('[data-testid="onboard-country-btn"]');
+    await page.waitForSelector('[data-testid="onboard-country-sheet"]', { timeout: 3000 });
+    await page.locator('[data-testid="sheet-close"] button').filter({ hasText: 'Netherlands' }).first().click();
+    await page.click('[data-testid="onboard-continue"]');
+    await page.waitForSelector('[data-testid="onboard-step2"]', { timeout: 3000 });
+    // Google SSO: 3 default accounts pre-populated (main ING + savings ING + brokerage DEGIRO)
+    const rows = page.locator('[data-testid="onboard-acct-row"]');
+    await expect(rows).toHaveCount(3);
+    // Skip link should NOT be visible since accounts exist
+    await expect(page.locator('[data-testid="onboard-bank-skip"]')).toHaveCount(0);
+    await shot(page, k('61-step2-google-defaults'));
+    await teardown(page, ctx, k('61-step2-google-defaults'));
+  });
+
+  test(`62 onboard-step2 – type select opens on add asset [${V.id}]`, async ({ browser }) => {
+    const { page, ctx } = await createPage(browser, V);
+    await base(page, V);
+    await goToStep2(page, email('typesel'));
+    await shot(page, k('62-step2-type-select') + '--s1');
+    await page.click('[data-testid="onboard-add-asset"]');
+    await page.waitForSelector('[data-testid="acct-type-bank"]', { timeout: 3000 });
+    await expect(page.locator('[data-testid="acct-type-bank"]')).toBeVisible();
+    await expect(page.locator('[data-testid="acct-type-saving"]')).toBeVisible();
+    await shot(page, k('62-step2-type-select'));
+    await teardown(page, ctx, k('62-step2-type-select'));
+  });
+
+  test(`63 onboard-step2 – manual bank form saves account [${V.id}]`, async ({ browser }) => {
+    const { page, ctx } = await createPage(browser, V);
+    await base(page, V);
+    await goToStep2(page, email('manualbank'));
+    await page.click('[data-testid="onboard-add-asset"]');
+    await page.waitForSelector('[data-testid="acct-type-bank"]', { timeout: 3000 });
+    await page.click('[data-testid="acct-type-bank"]');
+    await page.waitForSelector('[data-testid="acct-method-manual"]', { timeout: 3000 });
+    await shot(page, k('63-step2-manual-bank') + '--s1');
+    await page.click('[data-testid="acct-method-manual"]');
+    // Bank search appears first — pick the first bank
+    await page.waitForSelector('[data-testid="acct-bank-search"]', { timeout: 3000 });
+    await shot(page, k('63-step2-manual-bank') + '--s2');
+    await page.locator('[data-testid^="bank-row-"]').first().click();
+    // Form now shows — save without editing name
+    await page.waitForSelector('[data-testid="acct-save-btn"]', { timeout: 3000 });
+    await shot(page, k('63-step2-manual-bank') + '--s3');
+    await page.click('[data-testid="acct-save-btn"]');
+    // Returns to step 2 with new account row
+    await page.waitForSelector('[data-testid="onboard-acct-row"]', { timeout: 3000 });
+    await expect(page.locator('[data-testid="onboard-acct-row"]')).toBeVisible();
+    await shot(page, k('63-step2-manual-bank'));
+    await teardown(page, ctx, k('63-step2-manual-bank'));
   });
 
   test(`59 onboard – unfinished signup resume [${V.id}]`, async ({ browser }) => {

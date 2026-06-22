@@ -5,7 +5,8 @@ import { M, I, IcoGoogle, IcoApple, StatusBar, Divider } from '../../app/theme.j
 import { Sheet, useDark } from '../../app/nav.jsx';
 import { useLang } from '../../shared/i18n.jsx';
 import { COUNTRY_CURRENCY, CURRENCIES } from '../../shared/constants.js';
-import { DUTCH_BANKS, generateBankIban, ALL_BANKS, BANK_COUNTRY_LABELS, BANK_COUNTRY_ORDER } from '../accounts/data.js';
+import { DUTCH_BANKS, generateBankIban, ALL_BANKS, BANK_COUNTRY_LABELS, BANK_COUNTRY_ORDER, getDefaultAccounts } from '../accounts/data.js';
+import { acctGroup, acctTypeColor, acctIcon, AccountTypeSelectScreen, AccountMethodScreen, BankManualForm, CashWalletForm, BrokerManualForm, BrokerAutoFlow, MortgageForm, LoanFlow } from '../accounts/Accounts.jsx';
 
 function seededIban(bank, seed) {
   let h = 0;
@@ -53,12 +54,12 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
   const [firstName,      setFirstName]     = React.useState(() => { try { return JSON.parse(localStorage.getItem(draftKey))?.firstName ?? (signup.firstName || ''); } catch { return signup.firstName || ''; } });
   const [lastName,       setLastName]      = React.useState(() => { try { return JSON.parse(localStorage.getItem(draftKey))?.lastName  ?? (signup.lastName  || ''); } catch { return signup.lastName  || ''; } });
   const [email,          setEmail]         = React.useState(signup.displayEmail || '');
-  const [connectedBanks, setConnectedBanks] = React.useState(() => {
+  const [onboardAccounts, setOnboardAccounts] = React.useState(() => {
     try {
       const draft = JSON.parse(localStorage.getItem(draftKey));
-      if (draft?.connectedBanks?.length) return draft.connectedBanks.map((b, i) => ({ id: b.id, uid: `draft_${i}`, iban: b.iban || '' }));
+      if (draft?.onboardAccounts?.length) return draft.onboardAccounts;
     } catch {}
-    return (signup.banks || []).map((id, i) => ({ id, uid: `init_${i}` }));
+    return getDefaultAccounts(signup.method);
   });
   const [apiUrl,         setApiUrl]        = React.useState(() => { try { return JSON.parse(localStorage.getItem(draftKey))?.apiUrl   ?? (signup.apiUrl   || ''); } catch { return signup.apiUrl   || ''; } });
   const [country,        setCountry]       = React.useState(() => { try { return JSON.parse(localStorage.getItem(draftKey))?.country  ?? '';                       } catch { return '';                     } });
@@ -89,13 +90,12 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
     const timer = setTimeout(() => {
       try {
         localStorage.setItem(draftKey, JSON.stringify({
-          firstName, lastName, country, picture, apiUrl,
-          connectedBanks: connectedBanks.map(b => ({ id: b.id, iban: b.iban || '' })),
+          firstName, lastName, country, picture, apiUrl, onboardAccounts,
         }));
       } catch {}
     }, 300);
     return () => clearTimeout(timer);
-  }, [firstName, lastName, country, picture, apiUrl, connectedBanks, draftKey]);
+  }, [firstName, lastName, country, picture, apiUrl, onboardAccounts, draftKey]);
   const [bankPsd2Step,   setBankPsd2Step]  = React.useState(null); // null | 'consent' | 'connecting' | 'done'
   const [showApiInfo,    setShowApiInfo]   = React.useState(false);
   const [showCountryInfo,setShowCountryInfo]= React.useState(false);
@@ -106,6 +106,9 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
   const [selectedCurrency, setSelectedCurrency] = React.useState(null); // null = auto from country
   const [showCurrencySheet, setShowCurrencySheet] = React.useState(false);
   const [currencySearch, setCurrencySearch] = React.useState('');
+  // Account flow sub-screens for step 2
+  const [acctFlowScreen, setAcctFlowScreen] = React.useState(null);
+  const [acctTypeFilter, setAcctTypeFilter]  = React.useState(null);
   const fileInputRef = React.useRef(null);
   const step1ScrollRef  = React.useRef(null);
   const step1SavedScroll = React.useRef(0);
@@ -116,10 +119,10 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
   const [bankSearch,    setBankSearch]    = React.useState('');
   const [bankCreds,     setBankCreds]     = React.useState({ username:'', password:'', accountNumber:'' });
   const [credsError,    setCredsError]    = React.useState('');
-  const subScreenRef = React.useRef(null);
-  const skipPopsRef  = React.useRef(0);
-  const connectedBanksRef = React.useRef(connectedBanks);
-  React.useEffect(() => { connectedBanksRef.current = connectedBanks; }, [connectedBanks]);
+  const subScreenRef       = React.useRef(null);
+  const skipPopsRef        = React.useRef(0);
+  const acctFlowTypeRef    = React.useRef(null); // type being added: 'bank'|'saving'|'cash'|'brokerage'|'credit'|'mortgage'|'loan'
+  const psd2AccountTypeRef = React.useRef('checking'); // account type for PSD2 automated flow
 
   // Scroll lock for step-1 overlays
   React.useEffect(() => {
@@ -165,7 +168,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
   React.useEffect(() => {
     window.history.pushState({ munniLoginMode: 'signup-onboarding' }, '');
     const handlePop = () => {
-      if (skipPopsRef.current > 0) { skipPopsRef.current = 0; return; }
+      if (skipPopsRef.current > 0) { skipPopsRef.current -= 1; return; }
       if (subScreenRef.current === 'credentials') {
         subScreenRef.current = 'search';
         setBankSubScreen('search');
@@ -207,6 +210,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
     subScreenRef.current = null;
     setBankSubScreen(null);
     setBankPsd2Step(null);
+    setAcctFlowScreen(null);
     window.history.go(-1);
   };
 
@@ -218,11 +222,36 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
     window.history.go(-1);
   };
 
-  const addBank = (bankId, iban) => {
-    setConnectedBanks(prev => [...prev, { id: bankId, uid: `${Date.now()}_${Math.random()}`, iban: iban || '' }]);
+  const handleOnboardSave = (acct) => {
+    setOnboardAccounts(prev => [...prev, acct]);
+    setAcctFlowScreen(null);
+    setAcctTypeFilter(null);
   };
-  const removeBank = (uid) => {
-    setConnectedBanks(prev => prev.filter(b => b.uid !== uid));
+
+  const removeOnboardAccount = (id) => {
+    setOnboardAccounts(prev => prev.filter(a => a.id !== id));
+  };
+
+  const openAcctTypeSelect = (filter) => {
+    setAcctTypeFilter(filter);
+    setAcctFlowScreen('typeSelect');
+  };
+
+  const handleAcctTypeSelect = (typeId) => {
+    acctFlowTypeRef.current = typeId;
+    if (typeId === 'bank') setAcctFlowScreen('bankMethod');
+    else if (typeId === 'saving' || typeId === 'savings') setAcctFlowScreen('savingMethod');
+    else if (typeId === 'cash') setAcctFlowScreen('cashForm');
+    else if (typeId === 'brokerage' || typeId === 'invest') setAcctFlowScreen('brokerMethod');
+    else if (typeId === 'credit') setAcctFlowScreen('creditMethod');
+    else if (typeId === 'mortgage') setAcctFlowScreen('mortgageForm');
+    else if (typeId === 'loan') setAcctFlowScreen('loanFlow');
+  };
+
+  const openPsd2ForType = (acctType) => {
+    psd2AccountTypeRef.current = acctType;
+    setAcctFlowScreen(null);
+    openBankSearch();
   };
 
   const handleBankConnect = () => {
@@ -237,7 +266,17 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
   };
 
   const handlePsd2Done = () => {
-    addBank(pendingBank.id, bankCreds.accountNumber);
+    const bank = pendingBank;
+    setOnboardAccounts(prev => [...prev, {
+      id: `acct_${bank.id}_${Date.now()}`,
+      name: bank.name,
+      iban: bankCreds.accountNumber,
+      balance: 0,
+      type: psd2AccountTypeRef.current || 'checking',
+      color: bank.color,
+      method: 'auto',
+      bankId: bank.id,
+    }]);
     skipPopsRef.current = 1;
     subScreenRef.current = null;
     setBankSubScreen(null);
@@ -252,6 +291,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
     setBankSubScreen(null);
     setBankPsd2Step(null);
     setPendingBank(null);
+    setAcctFlowScreen(null);
     window.history.go(-2);
   };
 
@@ -276,17 +316,15 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
     try { localStorage.removeItem(draftKey); } catch {}
     const autoCur = COUNTRY_CURRENCY[country] || 'EUR';
     onComplete({
-      firstName: firstName.trim(),
-      lastName:  lastName.trim(),
+      firstName:      firstName.trim(),
+      lastName:       lastName.trim(),
       country,
-      currency:  selectedCurrency || autoCur,
-      email:     isSSO ? signup.displayEmail : email.trim().toLowerCase(),
-      apiUrl:    apiUrl.trim(),
+      currency:       selectedCurrency || autoCur,
+      email:          isSSO ? signup.displayEmail : email.trim().toLowerCase(),
+      apiUrl:         apiUrl.trim(),
       picture,
-      connectedBanks: connectedBanks.map(b => {
-        const bank = ALL_BANKS.find(bk => bk.id === b.id);
-        return { ...b, iban: b.iban || (bank ? seededIban(bank, b.uid) : '') };
-      }),
+      onboardAccounts,
+      connectedBanks: [],
     });
   };
 
@@ -381,7 +419,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
               {filteredBanks.length === 0
                 ? <div data-testid={T.bankSearchNoResults} style={{ padding:'24px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>{t('onboarding.noResults')}</div>
                 : filteredBanks.map((bank, i) => {
-                    const connCount = connectedBanks.filter(b => b.id === bank.id).length;
+                    const connCount = onboardAccounts.filter(a => a.bankId === bank.id).length;
                     return (
                       <React.Fragment key={bank.id}>
                         {i > 0 && <Divider inset={48}/>}
@@ -427,7 +465,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
                   {isOpen && (
                     <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}`, marginBottom:4 }}>
                       {group.banks.map((bank, i) => {
-                        const connCount = connectedBanks.filter(b => b.id === bank.id).length;
+                        const connCount = onboardAccounts.filter(a => a.bankId === bank.id).length;
                         return (
                           <React.Fragment key={bank.id}>
                             {i > 0 && <Divider inset={48}/>}
@@ -629,69 +667,102 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
     );
   }
 
-  // ── Step 2: bank connect ────────────────────────────────────────────
+  // ── Account type flow sub-screens (step 2) ─────────────────────────
+  const defaultCurrency = selectedCurrency || COUNTRY_CURRENCY[country] || 'EUR';
+  if (acctFlowScreen === 'typeSelect') return <AccountTypeSelectScreen filter={acctTypeFilter} onSelect={handleAcctTypeSelect} onBack={() => { setAcctFlowScreen(null); setAcctTypeFilter(null); }}/>;
+  if (acctFlowScreen === 'bankMethod') return <AccountMethodScreen typeLabel={t('acct.bank')} onManual={() => setAcctFlowScreen('bankManual')} onAutomatic={() => openPsd2ForType('checking')} onBack={() => setAcctFlowScreen('typeSelect')}/>;
+  if (acctFlowScreen === 'bankManual') return <BankManualForm typeLabel={t('acct.bank')} typeId="checking" defaultCurrency={defaultCurrency} onSave={handleOnboardSave} onBack={() => setAcctFlowScreen('bankMethod')}/>;
+  if (acctFlowScreen === 'savingMethod') return <AccountMethodScreen typeLabel={t('acct.saving')} onManual={() => setAcctFlowScreen('savingManual')} onAutomatic={() => openPsd2ForType('saving')} onBack={() => setAcctFlowScreen('typeSelect')}/>;
+  if (acctFlowScreen === 'savingManual') return <BankManualForm typeLabel={t('acct.saving')} typeId="saving" defaultCurrency={defaultCurrency} onSave={handleOnboardSave} onBack={() => setAcctFlowScreen('savingMethod')}/>;
+  if (acctFlowScreen === 'cashForm') return <CashWalletForm defaultCurrency={defaultCurrency} onSave={handleOnboardSave} onBack={() => setAcctFlowScreen('typeSelect')}/>;
+  if (acctFlowScreen === 'brokerMethod') return <AccountMethodScreen typeLabel={t('acct.brokerage')} onManual={() => setAcctFlowScreen('brokerManual')} onAutomatic={() => setAcctFlowScreen('brokerAuto')} onBack={() => setAcctFlowScreen('typeSelect')}/>;
+  if (acctFlowScreen === 'brokerManual') return <BrokerManualForm defaultCurrency={defaultCurrency} onSave={handleOnboardSave} onBack={() => setAcctFlowScreen('brokerMethod')}/>;
+  if (acctFlowScreen === 'brokerAuto') return <BrokerAutoFlow onSave={handleOnboardSave} onBack={() => setAcctFlowScreen('brokerMethod')}/>;
+  if (acctFlowScreen === 'creditMethod') return <AccountMethodScreen typeLabel={t('acct.creditCard')} onManual={() => setAcctFlowScreen('creditManual')} onAutomatic={() => openPsd2ForType('credit')} onBack={() => setAcctFlowScreen('typeSelect')}/>;
+  if (acctFlowScreen === 'creditManual') return <BankManualForm typeLabel={t('acct.creditCard')} typeId="credit" defaultCurrency={defaultCurrency} onSave={handleOnboardSave} onBack={() => setAcctFlowScreen('creditMethod')}/>;
+  if (acctFlowScreen === 'mortgageForm') return <MortgageForm defaultCurrency={defaultCurrency} onSave={handleOnboardSave} onBack={() => setAcctFlowScreen('typeSelect')}/>;
+  if (acctFlowScreen === 'loanFlow') return <LoanFlow defaultCurrency={defaultCurrency} onSave={handleOnboardSave} onBack={() => setAcctFlowScreen('typeSelect')}/>;
+
+  // ── Step 2: account setup ──────────────────────────────────────────
   if (onboardingStep === 2) {
+    const assets      = onboardAccounts.filter(a => acctGroup(a.type) === 'asset');
+    const liabilities = onboardAccounts.filter(a => acctGroup(a.type) === 'liability');
+
+    const renderOnboardRow = (acct, i) => (
+      <React.Fragment key={acct.id}>
+        {i > 0 && <Divider inset={48}/>}
+        <div data-testid="onboard-acct-row" style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
+          <div style={{ width:36, height:36, borderRadius:10, background:`${acctTypeColor(acct.type)}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+            <I name={acctIcon(acct.type)} size={18} color={acctTypeColor(acct.type)}/>
+          </div>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontSize:14, fontWeight:500, color:M.ink, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{acct.name}</div>
+            {acct.iban && <div style={{ fontSize:11, color:M.ink3, marginTop:1, fontFamily:M.fontMono }}>{acct.iban}</div>}
+          </div>
+          <button data-testid="onboard-remove-acct" className="m-tap" onClick={() => removeOnboardAccount(acct.id)}
+            style={{ background:'none', border:'none', cursor:'pointer', padding:4, display:'flex', alignItems:'center' }}>
+            <I name="x" size={14} color={M.ink4}/>
+          </button>
+        </div>
+      </React.Fragment>
+    );
+
     return (
       <div data-testid={T.onboardStep2} key="signup-bank" className="m-screen m-fade" style={{ position:'relative' }}>
         <StatusBar/>
         <div style={{ padding:'16px 20px 0', flexShrink:0, minHeight:40 }}>
-          {connectedBanks.length === 0 && (
-            <button className="m-tap" onClick={backFromStep2} style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:6, color:M.ink3, fontFamily:M.fontUI, fontSize:13 }}>
-              <I name="arrowL" size={16} color={M.ink3}/> {t('action.back')}
-            </button>
-          )}
+          <button className="m-tap" onClick={backFromStep2} style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:6, color:M.ink3, fontFamily:M.fontUI, fontSize:13 }}>
+            <I name="arrowL" size={16} color={M.ink3}/> {t('action.back')}
+          </button>
         </div>
         <div style={{ flex:1, overflowY:'auto', padding:'20px 24px 40px' }}>
           <div className="m-logo" style={{ fontSize:20, marginBottom:14 }}>munni<span className="dot">.</span></div>
           <div className="m-h2" style={{ marginBottom:4 }}>{t('onboarding.bankStepTitle')}</div>
           <div style={{ fontSize:13, color:M.ink3, marginBottom:20, lineHeight:1.5 }}>{t('onboarding.bankStepSub')}</div>
 
-          {/* Primary CTA: add bank */}
-          {connectedBanks.length === 0 ? (
-            <button data-testid={T.onboardAddBank} className="m-btn sage m-tap" style={{ width:'100%', height:54, fontSize:15, marginBottom:12 }} onClick={openBankSearch}>
-              <I name="plus" size={18} color="#fff"/>
-              {t('onboarding.addBank')}
-            </button>
-          ) : (
-            <div style={{ marginBottom:12 }}>
-              <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}`, marginBottom:10 }}>
-                {connectedBanks.map((entry, i) => {
-                  const bank = DUTCH_BANKS.find(b => b.id === entry.id);
-                  if (!bank) return null;
-                  const sameBeforeCount = connectedBanks.slice(0, i).filter(b => b.id === entry.id).length;
-                  const label = sameBeforeCount > 0 ? `${bank.name} (${sameBeforeCount + 1})` : bank.name;
-                  return (
-                    <React.Fragment key={entry.uid}>
-                      {i > 0 && <Divider inset={48}/>}
-                      <div data-testid={T.onboardBankRow} style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
-                        <div style={{ width:36, height:36, borderRadius:10, background:`${bank.color}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:18 }}>{bank.logo}</div>
-                        <div style={{ flex:1, minWidth:0 }}>
-                          <div style={{ fontSize:14, fontWeight:500, color:M.ink }}>{label}</div>
-                          <div style={{ fontSize:11, color:M.ink3, marginTop:1, fontFamily:M.fontMono }}>{entry.iban || seededIban(bank, entry.uid)}</div>
-                        </div>
-                        <button data-testid="onboard-remove-bank" className="m-tap" onClick={() => removeBank(entry.uid)}
-                          style={{ background:'none', border:'none', cursor:'pointer', padding:4, display:'flex', alignItems:'center' }}>
-                          <I name="x" size={14} color={M.ink4}/>
-                        </button>
-                      </div>
-                    </React.Fragment>
-                  );
-                })}
+          {/* Assets group */}
+          <div style={{ display:'flex', alignItems:'baseline', gap:8, marginBottom:8, paddingLeft:4 }}>
+            <div className="m-cap">{t('acct.assets')}</div>
+            <div style={{ fontSize:11, color:M.ink4 }}>{t('acct.assetDesc')}</div>
+          </div>
+          <div data-testid="onboard-assets-group" className="m-card" style={{ padding:'4px 16px', marginBottom:16, border:`1px solid ${M.line}` }}>
+            {assets.map(renderOnboardRow)}
+            {assets.length > 0 && <Divider inset={0}/>}
+            <div data-testid="onboard-add-asset" className="m-tap" onClick={() => openAcctTypeSelect('asset')}
+              style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
+              <div style={{ width:38, height:38, borderRadius:10, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <I name="plus" size={16} color={M.sage}/>
               </div>
-              <button data-testid={T.onboardAddAnotherBank} className="m-tap" onClick={openBankSearch}
-                style={{ width:'100%', padding:'11px 16px', borderRadius:12, border:`1.5px dashed ${M.line2}`, background:'transparent', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8, fontFamily:M.fontUI, boxSizing:'border-box' }}>
-                <I name="plus" size={15} color={M.tint}/>
-                <span style={{ fontSize:14, fontWeight:500, color:M.tint }}>{t('onboarding.addAnotherBank')}</span>
-              </button>
+              <div style={{ flex:1, fontSize:14, fontWeight:600, color:M.sage }}>{t('acct.addAssetAccount')}</div>
+              <I name="caretR" size={14} color={M.ink4}/>
             </div>
-          )}
+          </div>
 
-          {connectedBanks.length > 0 && (
-            <button data-testid={T.onboardComplete} className="m-btn sage m-tap" style={{ height:54, width:'100%', fontSize:16, fontWeight:700, marginBottom:12 }} onClick={handleComplete}>
-              {t('onboarding.complete')}
-            </button>
-          )}
-          {connectedBanks.length === 0 && (
+          {/* Liabilities group */}
+          <div style={{ display:'flex', alignItems:'baseline', gap:8, marginBottom:8, paddingLeft:4 }}>
+            <div className="m-cap">{t('acct.liabilities')}</div>
+            <div style={{ fontSize:11, color:M.ink4 }}>{t('acct.liabilityDesc')}</div>
+          </div>
+          <div data-testid="onboard-liabilities-group" className="m-card" style={{ padding:'4px 16px', marginBottom:20, border:`1px solid ${M.line}` }}>
+            {liabilities.map(renderOnboardRow)}
+            {liabilities.length > 0 && <Divider inset={0}/>}
+            <div data-testid="onboard-add-liability" className="m-tap" onClick={() => openAcctTypeSelect('liability')}
+              style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
+              <div style={{ width:38, height:38, borderRadius:10, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <I name="plus" size={16} color={M.sage}/>
+              </div>
+              <div style={{ flex:1, fontSize:14, fontWeight:600, color:M.sage }}>{t('acct.addLiabilityAccount')}</div>
+              <I name="caretR" size={14} color={M.ink4}/>
+            </div>
+          </div>
+
+          {/* Primary CTA */}
+          <button data-testid={T.onboardComplete} className="m-btn sage m-tap" style={{ height:54, width:'100%', fontSize:16, fontWeight:700, marginBottom:12 }} onClick={handleComplete}>
+            {t('onboarding.complete')}
+          </button>
+
+          {/* Skip for now — visible only when no accounts */}
+          {onboardAccounts.length === 0 && (
             <div style={{ textAlign:'center', marginBottom:4 }}>
               <button data-testid={T.onboardBankSkip} className="m-tap" onClick={handleComplete}
                 style={{ background:'none', border:'none', fontSize:13, color:M.ink4, cursor:'pointer', fontFamily:M.fontUI, padding:'10px 0' }}>
@@ -700,8 +771,8 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
             </div>
           )}
 
-          {/* PSD2 footnote — subtle, below CTA */}
-          <div style={{ display:'flex', gap:7, alignItems:'flex-start', marginTop:connectedBanks.length === 0 ? 8 : 10 }}>
+          {/* PSD2 footnote */}
+          <div style={{ display:'flex', gap:7, alignItems:'flex-start', marginTop:8 }}>
             <I name="lock" size={11} color={M.ink4}/>
             <div style={{ fontSize:10, color:M.ink4, lineHeight:1.55 }}>{t('onboarding.bankPSD2Note')}</div>
           </div>

@@ -517,22 +517,22 @@ const DEFAULT_PROFILES = [
 
 // ── Financial Accounts helpers ────────────────────────────────────────────────
 
-function acctGroup(type) {
+export function acctGroup(type) {
   return ['checking','bank','saving','savings','cash','brokerage','invest'].includes(type) ? 'asset' : 'liability';
 }
-function acctTypeLabel(type, t) {
+export function acctTypeLabel(type, t) {
   const m = { checking:t('acct.bank'), bank:t('acct.bank'), saving:t('acct.saving'), savings:t('acct.saving'),
                cash:t('acct.cashWallet'), brokerage:t('acct.brokerage'), invest:t('acct.brokerage'),
                credit:t('acct.creditCard'), mortgage:t('acct.mortgage'), loan:t('acct.loan') };
   return m[type] || type;
 }
-function acctTypeColor(type) {
+export function acctTypeColor(type) {
   const m = { checking:'#FF6200', bank:'#FF6200', saving:'#A8782B', savings:'#A8782B',
                cash:'#26A69A', brokerage:'#5E4A78', invest:'#5E4A78',
                credit:'#E05555', mortgage:'#D4940A', loan:'#7B61FF' };
   return m[type] || M.slate;
 }
-function acctIcon(type) {
+export function acctIcon(type) {
   const m = { checking:'card', bank:'card', saving:'piggy', savings:'piggy',
                cash:'wallet', brokerage:'rocket', invest:'rocket',
                credit:'card', mortgage:'home', loan:'doc' };
@@ -587,7 +587,7 @@ function AcctRow({ acct, i, t, currency, onDelete, onEdit }) {
 
 // ── Account type selector ────────────────────────────────────────────────────
 
-function AccountTypeSelectScreen({ onSelect, onBack, filter }) {
+export function AccountTypeSelectScreen({ onSelect, onBack, filter }) {
   const { t } = useLang();
   const ASSET_TYPES = [
     { id:'bank',     icon:'card',   label:t('acct.bank'),       sub:t('acct.bankDesc') },
@@ -646,7 +646,7 @@ function AccountTypeSelectScreen({ onSelect, onBack, filter }) {
 
 // ── Manual/Automated method selector ────────────────────────────────────────
 
-function AccountMethodScreen({ typeLabel, onManual, onAutomatic, onBack }) {
+export function AccountMethodScreen({ typeLabel, onManual, onAutomatic, onBack }) {
   const { t } = useLang();
   return (
     <div className="m-screen m-fade" style={{ display:'flex', flexDirection:'column' }}>
@@ -720,7 +720,7 @@ function CurrencySheet({ open, current, onSelect, onClose, t }) {
 
 // ── Bank / Saving / Credit Manual form ──────────────────────────────────────
 
-function BankManualForm({ typeLabel, typeId, defaultCurrency, onSave, onBack }) {
+export function BankManualForm({ typeLabel, typeId, defaultCurrency, onSave, onBack }) {
   const { t } = useLang();
   const [bankSearch, setBankSearch] = React.useState('');
   const [selectedBank, setSelectedBank] = React.useState(null);
@@ -862,7 +862,7 @@ function BankManualForm({ typeLabel, typeId, defaultCurrency, onSave, onBack }) 
 
 // ── Cash Wallet form ─────────────────────────────────────────────────────────
 
-function CashWalletForm({ defaultCurrency, onSave, onBack }) {
+export function CashWalletForm({ defaultCurrency, onSave, onBack }) {
   const { t } = useLang();
   const [displayName, setDisplayName] = React.useState('');
   const [balance, setBalance] = React.useState('0');
@@ -958,7 +958,7 @@ function CashWalletForm({ defaultCurrency, onSave, onBack }) {
 
 // ── Broker flows ─────────────────────────────────────────────────────────────
 
-function BrokerManualForm({ defaultCurrency, onSave, onBack }) {
+export function BrokerManualForm({ defaultCurrency, onSave, onBack }) {
   const { t } = useLang();
   const [search, setSearch] = React.useState('');
   const [selectedBroker, setSelectedBroker] = React.useState(null);
@@ -1039,7 +1039,7 @@ function BrokerManualForm({ defaultCurrency, onSave, onBack }) {
   );
 }
 
-function BrokerAutoFlow({ onSave, onBack }) {
+export function BrokerAutoFlow({ onSave, onBack }) {
   const { t } = useLang();
   const [step, setStep] = React.useState('search');
   const [selectedBroker, setSelectedBroker] = React.useState(null);
@@ -1142,7 +1142,7 @@ function BrokerAutoFlow({ onSave, onBack }) {
 
 // ── Mortgage form ─────────────────────────────────────────────────────────────
 
-function MortgageForm({ defaultCurrency, onSave, onBack }) {
+export function MortgageForm({ defaultCurrency, onSave, onBack }) {
   const { t } = useLang();
   const [vals, setVals] = React.useState({ name:'', lender:'', original:'', balance:'', rate:'', years:'', monthly:'' });
   const [errors, setErrors] = React.useState({});
@@ -1199,7 +1199,7 @@ function MortgageForm({ defaultCurrency, onSave, onBack }) {
 
 // ── Loan flow ─────────────────────────────────────────────────────────────────
 
-function LoanFlow({ defaultCurrency, onSave, onBack }) {
+export function LoanFlow({ defaultCurrency, onSave, onBack }) {
   const { t } = useLang();
   const [loanType, setLoanType] = React.useState(null);
   const [vals, setVals] = React.useState({ name:'', lender:'', original:'', balance:'', rate:'', monthly:'', startDate:'' });

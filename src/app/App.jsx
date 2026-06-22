@@ -559,31 +559,19 @@ function ScreenLoginGate({ onLogin }) {
       // Initialise per-user data FIRST so the schema-version is set before doLogin calls
       // initPerUserData again — otherwise it would overwrite the bank accounts we save below.
       initPerUserData(method, finalEmail, lang);
-      // Save connected banks as bank accounts so they appear in Settings > Accounts
-      if (data.connectedBanks && data.connectedBanks.length > 0) {
+      // Write onboarded accounts so they appear in Settings > Accounts
+      if (data.onboardAccounts && data.onboardAccounts.length > 0) {
         const acctKey = computeUserDataKey(method, finalEmail, 'munni_bank_accounts');
-        const bankAccounts = data.connectedBanks.map((b, i) => {
-          const bank = DUTCH_BANKS.find(bk => bk.id === b.id);
-          return {
-            id: `acct_${b.id}_${i}`,
-            name: `${bank ? bank.name : b.id}`,
-            iban: b.iban || '',
-            balance: 0,
-            type: 'checking',
-            color: bank?.color || '#4A6A4F',
-          };
-        });
-        localStorage.setItem(acctKey, JSON.stringify(bankAccounts));
+        localStorage.setItem(acctKey, JSON.stringify(data.onboardAccounts));
         window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: acctKey } }));
-        // Attach the new account IDs to the active profile
+        // Replace the profile's accountIds with exactly the onboarded set
         const profileKey = computeProfileKey(method, finalEmail);
         try {
           const profiles = JSON.parse(localStorage.getItem(profileKey) || 'null')
             || getDefaultProfiles(method, lang);
           const idx = Math.max(0, profiles.findIndex(p => p.active));
           if (profiles[idx]) {
-            const merged = [...new Set([...(profiles[idx].accountIds || []), ...bankAccounts.map(a => a.id)])];
-            profiles[idx] = { ...profiles[idx], accountIds: merged };
+            profiles[idx] = { ...profiles[idx], accountIds: data.onboardAccounts.map(a => a.id) };
             localStorage.setItem(profileKey, JSON.stringify(profiles));
             window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: profileKey } }));
           }
