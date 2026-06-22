@@ -160,7 +160,7 @@ const ANNOTATIONS = {
       { tag: 'type select',          note: 'Full-screen type picker (bank, saving, cash, brokerage / credit, mortgage, loan); filter=asset or liability' },
       { tag: 'method screen',        note: 'Manual vs Automated choice for bank/saving/credit/brokerage' },
       { tag: 'account form',         note: 'BankManualForm / CashWalletForm / BrokerManualForm / BrokerAutoFlow / MortgageForm / LoanFlow' },
-      { tag: 'bank search (PSD2)',   note: 'Automated bank path — full-screen search + credentials + consent + done sub-screens' },
+      { tag: 'bank search (PSD2)',   note: 'Automated bank path — full-screen search + credentials + consent + connected + editName sub-screens' },
       { tag: 'country picker',       note: 'Sheet with search; names shown in current app language (EN/NL/TR)' },
     ],
     flows: [
@@ -170,7 +170,7 @@ const ANNOTATIONS = {
       { from: 'Add asset/liability row', to: 'Type select screen' },
       { from: 'Type select → bank',      to: 'Method screen (Manual / Automated)' },
       { from: 'Method → Manual',         to: 'BankManualForm (bank search first, then form)' },
-      { from: 'Method → Automated',      to: 'Bank search → PSD2 flow → returns to step 2' },
+      { from: 'Method → Automated',      to: 'Bank search → PSD2 flow → editName screen → returns to step 2' },
       { from: 'Type select → brokerage', to: 'Method → BrokerManualForm or BrokerAutoFlow' },
       { from: 'Type select → cash',      to: 'CashWalletForm directly' },
       { from: 'Type select → mortgage',  to: 'MortgageForm directly' },

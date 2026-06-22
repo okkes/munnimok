@@ -1967,9 +1967,13 @@ export function ScreenSpaceDetail({ params }) {
                             </div>
                             <div style={{ flex:1, minWidth:0 }}>
                               <div style={{ fontSize:14, fontWeight:500 }}>{a.name}</div>
-                              <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:2 }}>
+                              <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:2, flexWrap:'wrap' }}>
                                 {a.iban && <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono }}>{a.iban}</div>}
                                 <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:999, background:tc+'22', color:tc, textTransform:'uppercase' }}>{spaceAcctLabel(a.type)}</span>
+                                {a.readOnly
+                                  ? <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase' }}>{t('acct.automated')}</span>
+                                  : <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:999, background:M.paper2, color:M.ink3, textTransform:'uppercase', border:`1px solid ${M.line}` }}>{t('acct.manual')}</span>
+                                }
                               </div>
                             </div>
                             <I name="plus" size={16} color={M.sage}/>
@@ -1992,8 +1996,15 @@ export function ScreenSpaceDetail({ params }) {
       {showPhotoSheet && (
         <Sheet onClose={() => setShowPhotoSheet(false)}>
           <div style={{ padding:'4px 16px 8px' }}>
-            <div style={{ fontSize:17, fontWeight:700, marginBottom:16 }}>{t('profile.choosePhoto')}</div>
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(5, 1fr)', gap:10, marginBottom:20 }}>
+            <div style={{ fontSize:17, fontWeight:700, marginBottom:16 }}>{t('profile.picTitle')}</div>
+            <label style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0', cursor:'pointer', borderBottom:`1px solid ${M.line2}`, marginBottom:14 }}>
+              <div style={{ width:40, height:40, borderRadius:10, background:M.paper2, border:`1px solid ${M.line}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <I name="cam" size={18} color={M.ink2}/>
+              </div>
+              <div style={{ fontSize:15, fontWeight:500 }}>{t('profile.chooseLibrary')}</div>
+              <input type="file" accept="image/*" onChange={handleFileChange} style={{ display:'none' }}/>
+            </label>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(5, 1fr)', gap:10, marginBottom:16 }}>
               {STOCK_SPACE_AVATARS.map(av => (
                 <button key={av.id} className="m-tap" onClick={() => setPicture(av.id)}
                   style={{ width:'100%', aspectRatio:'1', borderRadius:Math.round(54*0.28), background:av.bg, border: (profile.localPicture||profile.picture)===av.id ? `3px solid ${M.sage}` : '3px solid transparent', display:'flex', alignItems:'center', justifyContent:'center', fontSize:26, cursor:'pointer', boxSizing:'border-box' }}>
@@ -2001,13 +2012,12 @@ export function ScreenSpaceDetail({ params }) {
                 </button>
               ))}
             </div>
-            <label style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0', cursor:'pointer' }}>
-              <div style={{ width:40, height:40, borderRadius:10, background:M.paper2, border:`1px solid ${M.line}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                <I name="box" size={18} color={M.ink2}/>
-              </div>
-              <div style={{ fontSize:15, fontWeight:500 }}>{t('profile.chooseLibrary')}</div>
-              <input type="file" accept="image/*" onChange={handleFileChange} style={{ display:'none' }}/>
-            </label>
+            {(profile.localPicture || profile.picture) && (
+              <button className="m-tap" onClick={() => { setPicture(null); setShowPhotoSheet(false); }}
+                style={{ width:'100%', padding:'12px 0', background:M.paper2, color:M.clay, border:`1px solid ${M.line}`, borderRadius:12, fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+                {t('profile.removePic')}
+              </button>
+            )}
           </div>
         </Sheet>
       )}

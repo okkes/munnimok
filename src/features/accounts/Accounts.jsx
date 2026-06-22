@@ -16,7 +16,7 @@ function HighlightText({ text, query }) {
   if (!query) return <>{text}</>;
   const idx = text.toLowerCase().indexOf(query.toLowerCase());
   if (idx === -1) return <>{text}</>;
-  return <>{text.slice(0, idx)}<mark style={{ background: M.sageSoft, color: M.sage, borderRadius: 2, padding: '0 1px' }}>{text.slice(idx, idx + query.length)}</mark>{text.slice(idx + query.length)}</>;
+  return <>{text.slice(0, idx)}<mark style={{ background: M.sageSoft, color: M.sage, borderRadius: 2, padding: '1px 0' }}>{text.slice(idx, idx + query.length)}</mark>{text.slice(idx + query.length)}</>;
 }
 
 // ── Shared bank-connect screens (used by ScreenAccounts, ScreenAccountsAll, and Auth onboarding) ──
@@ -24,7 +24,7 @@ function HighlightText({ text, query }) {
 function BankRow({ bank, query, countryCode, connectedAccounts, onSelect }) {
   const connCount = (connectedAccounts || []).filter(a => a.bankId === bank.id).length;
   return (
-    <div className="m-tap" onClick={() => onSelect(bank)}
+    <div data-testid={`bank-row-${bank.id}`} className="m-tap" onClick={() => onSelect(bank)}
       style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
       <div style={{ width:36, height:36, borderRadius:10, background:`${bank.color}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:18 }}>{bank.logo}</div>
       <div style={{ flex:1, minWidth:0 }}>
@@ -48,7 +48,7 @@ function BankRow({ bank, query, countryCode, connectedAccounts, onSelect }) {
   );
 }
 
-function BankSearchFullScreen({ banks, bankSearch, setBankSearch, connectedAccounts, onSelect, onBack }) {
+function BankSearchFullScreen({ banks, bankSearch, setBankSearch, connectedAccounts, onSelect, onBack, title = 'Select a bank' }) {
   const q = bankSearch.trim();
   const [expanded, setExpanded] = React.useState(() => new Set(['EU', 'NL']));
 
@@ -84,7 +84,7 @@ function BankSearchFullScreen({ banks, bankSearch, setBankSearch, connectedAccou
           style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:4, color:M.tint, fontFamily:M.fontUI, fontSize:15, padding:'4px 0', minWidth:60 }}>
           <I name="arrowL" size={16} color={M.tint}/>Back
         </button>
-        <div style={{ flex:1, textAlign:'center', fontWeight:600, fontSize:16, color:M.ink, fontFamily:M.fontUI }}>Select a bank</div>
+        <div style={{ flex:1, textAlign:'center', fontWeight:600, fontSize:16, color:M.ink, fontFamily:M.fontUI }}>{title}</div>
         <div style={{ minWidth:60 }}/>
       </div>
       <div style={{ padding:'12px 20px 8px', flexShrink:0 }}>
@@ -153,7 +153,7 @@ function BankConnectPsd2Screen({ psd2Step, psd2Bank, customIban, setCustomIban, 
     <div className="m-screen m-fade" style={{ display:'flex', flexDirection:'column' }}>
       <StatusBar/>
       <div style={{ display:'flex', alignItems:'center', padding:'12px 20px', flexShrink:0, borderBottom:`1px solid ${M.line2}` }}>
-        {psd2Step !== 'connecting' ? (
+        {psd2Step !== 'connecting' && psd2Step !== 'done' ? (
           <button className="m-tap" onClick={onClose}
             style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:4, color:M.tint, fontFamily:M.fontUI, fontSize:15, padding:'4px 0', minWidth:60 }}>
             <I name="x" size={18} color={M.tint}/>
@@ -735,7 +735,7 @@ export function BankManualForm({ typeLabel, typeId, defaultCurrency, onSave, onB
 
   const handleSave = () => {
     const errs = {};
-    if (!selectedBank) errs.bank = 'Select a bank';
+    if (!accountNum.trim()) errs.accountNum = t('acct.required') || 'Required';
     if (Object.keys(errs).length) { setErrors(errs); return; }
     onSave({
       id: `acct_${Date.now()}`,
@@ -750,52 +750,20 @@ export function BankManualForm({ typeLabel, typeId, defaultCurrency, onSave, onB
   };
 
   if (showBankSearch) {
-    const filteredBanks = ALL_BANKS.filter(b => !bankSearch || b.name.toLowerCase().includes(bankSearch.toLowerCase()) || (b.bic && b.bic.toLowerCase().includes(bankSearch.toLowerCase())));
     return (
-      <div className="m-screen m-fade" style={{ display:'flex', flexDirection:'column' }}>
-        <StatusBar/>
-        <div style={{ display:'flex', alignItems:'center', padding:'12px 20px', flexShrink:0, borderBottom:`1px solid ${M.line2}` }}>
-          <button className="m-tap" onClick={onBack}
-            style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:4, color:M.tint, fontFamily:M.fontUI, fontSize:15, padding:'4px 0', minWidth:60 }}>
-            <I name="arrowL" size={16} color={M.tint}/>{t('action.back')}
-          </button>
-          <div style={{ flex:1, textAlign:'center', fontWeight:600, fontSize:16, color:M.ink }}>{typeLabel}</div>
-          <div style={{ minWidth:60 }}/>
-        </div>
-        <div style={{ padding:'12px 20px 8px', flexShrink:0 }}>
-          <div style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 12px', borderRadius:10, border:`1px solid ${M.line}`, background:M.paper2 }}>
-            <I name="search" size={16} color={M.ink4}/>
-            <input autoFocus data-testid="acct-bank-search"
-              value={bankSearch} onChange={e => setBankSearch(e.target.value)}
-              placeholder={t('acct.bankSearch')}
-              style={{ flex:1, border:'none', background:'transparent', fontSize:14, fontFamily:M.fontUI, outline:'none', color:M.ink, padding:0 }}/>
-          </div>
-          {errors.bank && <div style={{ fontSize:11, color:M.clay, marginTop:4 }}>{errors.bank}</div>}
-        </div>
-        <div style={{ flex:1, overflowY:'auto', padding:'0 20px 24px' }}>
-          <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
-            {filteredBanks.length === 0 && <div style={{ padding:'20px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>{t('onboarding.noResults')}</div>}
-            {filteredBanks.map((bank, i) => (
-              <React.Fragment key={bank.id}>
-                {i > 0 && <Divider inset={48}/>}
-                <div data-testid={`bank-row-${bank.id}`} className="m-tap"
-                  onClick={() => { setSelectedBank(bank); setShowBankSearch(false); }}
-                  style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
-                  <div style={{ width:36, height:36, borderRadius:10, background:`${bank.color}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:18 }}>
-                    {bank.logo}
-                  </div>
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:14, fontWeight:500 }}><HighlightText text={bank.name} query={bankSearch.trim()}/></div>
-                    {bank.bic && <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono, marginTop:1 }}>{bank.bic}</div>}
-                  </div>
-                  {bank.country && <span style={{ fontSize:10, fontWeight:700, padding:'2px 6px', borderRadius:4, background:M.paper2, color:M.ink3 }}>{bank.country}</span>}
-                  <I name="caretR" size={14} color={M.ink4}/>
-                </div>
-              </React.Fragment>
-            ))}
-          </div>
-        </div>
-      </div>
+      <BankSearchFullScreen
+        banks={ALL_BANKS}
+        bankSearch={bankSearch}
+        setBankSearch={setBankSearch}
+        connectedAccounts={[]}
+        title={typeLabel}
+        onSelect={(bank) => {
+          setSelectedBank(bank);
+          setDisplayName(bank.id === 'other' ? '' : bank.name);
+          setShowBankSearch(false);
+        }}
+        onBack={onBack}
+      />
     );
   }
 
@@ -819,8 +787,6 @@ export function BankManualForm({ typeLabel, typeId, defaultCurrency, onSave, onB
             <div style={{ fontSize:14, fontWeight:600 }}>{selectedBank.name}</div>
             {selectedBank.bic && <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono }}>{selectedBank.bic}</div>}
           </div>
-          <button className="m-tap" onClick={() => setShowBankSearch(true)}
-            style={{ fontSize:12, color:M.sage, background:'none', border:'none', cursor:'pointer', fontFamily:M.fontUI, fontWeight:600 }}>Change</button>
         </div>
         <div style={{ marginBottom:14 }}>
           <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{t('acct.displayName')}</div>
@@ -830,11 +796,12 @@ export function BankManualForm({ typeLabel, typeId, defaultCurrency, onSave, onB
             style={{ width:'100%', boxSizing:'border-box', padding:'11px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none' }}/>
         </div>
         <div style={{ marginBottom:14 }}>
-          <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{t('acct.accountNumber')}</div>
+          <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{t('acct.accountNumber')} *</div>
           <input data-testid="acct-account-number"
-            value={accountNum} onChange={e => setAccountNum(e.target.value)}
+            value={accountNum} onChange={e => { setAccountNum(e.target.value); setErrors({}); }}
             placeholder="e.g. NL12 INGB 0123 4567 89"
-            style={{ width:'100%', boxSizing:'border-box', padding:'11px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none' }}/>
+            style={{ width:'100%', boxSizing:'border-box', padding:'11px 14px', borderRadius:10, border:`1px solid ${errors.accountNum ? M.clay : M.line}`, fontSize:14, fontFamily:M.fontMono, background:M.paper2, outline:'none' }}/>
+          {errors.accountNum && <div style={{ fontSize:11, color:M.clay, marginTop:3 }}>{errors.accountNum}</div>}
         </div>
         <div style={{ marginBottom:14 }}>
           <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{t('acct.currency')}</div>
@@ -958,81 +925,164 @@ export function CashWalletForm({ defaultCurrency, onSave, onBack }) {
 
 // ── Broker flows ─────────────────────────────────────────────────────────────
 
+const BROKER_REGION_LABELS = { EU:'Europe', US:'United States', GLOBAL:'International' };
+const BROKER_REGION_ORDER = ['EU','US','GLOBAL'];
+
 export function BrokerManualForm({ defaultCurrency, onSave, onBack }) {
   const { t } = useLang();
   const [search, setSearch] = React.useState('');
   const [selectedBroker, setSelectedBroker] = React.useState(null);
+  const [showBrokerList, setShowBrokerList] = React.useState(true);
   const [displayName, setDisplayName] = React.useState('');
   const [currency, setCurrency] = React.useState(defaultCurrency||'EUR');
   const [showCurrSheet, setShowCurrSheet] = React.useState(false);
-  const [errors, setErrors] = React.useState({});
   const curInfo = CURRENCIES.find(c => c.code === currency);
-  const filtered = BROKERS.filter(b => !search || b.name.toLowerCase().includes(search.toLowerCase()));
+  const [expanded, setExpanded] = React.useState(() => new Set(['EU']));
+
+  const filtered = React.useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return null;
+    return BROKERS.filter(b => b.name.toLowerCase().includes(q));
+  }, [search]);
+
+  const groups = React.useMemo(() => {
+    const byRegion = {};
+    BROKERS.forEach(b => {
+      if (!byRegion[b.region]) byRegion[b.region] = [];
+      byRegion[b.region].push(b);
+    });
+    return BROKER_REGION_ORDER.filter(r => byRegion[r]?.length).map(r => ({ code:r, label:BROKER_REGION_LABELS[r]||r, brokers:byRegion[r] }));
+  }, []);
+
+  const toggleGroup = (code) => setExpanded(prev => {
+    const next = new Set(prev);
+    if (next.has(code)) next.delete(code); else next.add(code);
+    return next;
+  });
+
   const handleSave = () => {
-    if (!selectedBroker) { setErrors({broker:'Select a broker'}); return; }
     onSave({ id:`acct_broker_${Date.now()}`,
       name:displayName.trim()||(selectedBroker.id==='other_broker'?'Brokerage':selectedBroker.name),
       type:'brokerage', iban:'', balance:0, currency, color:selectedBroker.color, brokerId:selectedBroker.id });
   };
+
+  if (showBrokerList) {
+    const q = search.trim();
+    return (
+      <div className="m-screen m-fade" style={{ display:'flex', flexDirection:'column' }}>
+        <StatusBar/>
+        <div style={{ display:'flex', alignItems:'center', padding:'12px 20px', flexShrink:0, borderBottom:`1px solid ${M.line2}` }}>
+          <button className="m-tap" onClick={onBack} style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:4, color:M.tint, fontFamily:M.fontUI, fontSize:15, padding:'4px 0', minWidth:60 }}>
+            <I name="arrowL" size={16} color={M.tint}/>{t('action.back')}
+          </button>
+          <div style={{ flex:1, textAlign:'center', fontWeight:600, fontSize:16, color:M.ink }}>{t('acct.brokerage')}</div>
+          <div style={{ minWidth:60 }}/>
+        </div>
+        <div style={{ padding:'12px 20px 8px', flexShrink:0 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 12px', borderRadius:10, border:`1px solid ${M.line}`, background:M.paper2 }}>
+            <I name="search" size={16} color={M.ink4}/>
+            <input autoFocus data-testid="broker-search" value={search} onChange={e=>setSearch(e.target.value)}
+              placeholder={t('acct.brokerSearch')}
+              style={{ flex:1, border:'none', background:'transparent', fontSize:14, fontFamily:M.fontUI, outline:'none', color:M.ink, padding:0 }}/>
+            {search && <button onClick={()=>setSearch('')} style={{ background:'none', border:'none', cursor:'pointer', padding:0, display:'flex' }}><I name="x" size={14} color={M.ink4}/></button>}
+          </div>
+        </div>
+        <div style={{ flex:1, overflowY:'auto', padding:'0 20px 24px' }}>
+          {filtered !== null ? (
+            <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
+              {filtered.length === 0
+                ? <div style={{ padding:'24px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>{t('onboarding.noResults')}</div>
+                : filtered.map((b, i) => (
+                    <React.Fragment key={b.id}>
+                      {i>0&&<Divider inset={48}/>}
+                      <div data-testid={`broker-row-${b.id}`} className="m-tap"
+                        onClick={()=>{ setSelectedBroker(b); setDisplayName(b.id==='other_broker'?'':b.name); setShowBrokerList(false); }}
+                        style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
+                        <div style={{ width:36, height:36, borderRadius:10, background:`${b.color}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}><span style={{ fontSize:18 }}>{b.logo}</span></div>
+                        <div style={{ flex:1 }}>
+                          <div style={{ fontSize:14, fontWeight:500 }}><HighlightText text={b.name} query={q}/></div>
+                          <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{BROKER_REGION_LABELS[b.region]||b.region}</div>
+                        </div>
+                        <I name="caretR" size={14} color={M.ink4}/>
+                      </div>
+                    </React.Fragment>
+                  ))
+              }
+            </div>
+          ) : (
+            groups.map(group => {
+              const isOpen = expanded.has(group.code);
+              return (
+                <div key={group.code}>
+                  <div className="m-tap" onClick={()=>toggleGroup(group.code)}
+                    style={{ display:'flex', alignItems:'center', gap:8, padding:'12px 4px 8px', cursor:'pointer', userSelect:'none' }}>
+                    <span style={{ flex:1, fontSize:11, fontWeight:700, color:M.ink3, textTransform:'uppercase', letterSpacing:'0.06em' }}>{group.label}</span>
+                    <span style={{ fontSize:11, color:M.ink4 }}>{group.brokers.length}</span>
+                    <I name={isOpen?'caretD':'caretR'} size={14} color={M.ink4}/>
+                  </div>
+                  {isOpen && (
+                    <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}`, marginBottom:4 }}>
+                      {group.brokers.map((b, i) => (
+                        <React.Fragment key={b.id}>
+                          {i>0&&<Divider inset={48}/>}
+                          <div data-testid={`broker-row-${b.id}`} className="m-tap"
+                            onClick={()=>{ setSelectedBroker(b); setDisplayName(b.id==='other_broker'?'':b.name); setShowBrokerList(false); }}
+                            style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
+                            <div style={{ width:36, height:36, borderRadius:10, background:`${b.color}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}><span style={{ fontSize:18 }}>{b.logo}</span></div>
+                            <div style={{ flex:1 }}>
+                              <div style={{ fontSize:14, fontWeight:500 }}>{b.name}</div>
+                              <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{BROKER_REGION_LABELS[b.region]||b.region}</div>
+                            </div>
+                            <I name="caretR" size={14} color={M.ink4}/>
+                          </div>
+                        </React.Fragment>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="m-screen m-fade" style={{ display:'flex', flexDirection:'column' }}>
       <StatusBar/>
       <div style={{ display:'flex', alignItems:'center', padding:'12px 20px', flexShrink:0, borderBottom:`1px solid ${M.line2}` }}>
-        <button className="m-tap" onClick={onBack} style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:4, color:M.tint, fontFamily:M.fontUI, fontSize:15, padding:'4px 0', minWidth:60 }}>
+        <button className="m-tap" onClick={()=>setShowBrokerList(true)} style={{ background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:4, color:M.tint, fontFamily:M.fontUI, fontSize:15, padding:'4px 0', minWidth:60 }}>
           <I name="arrowL" size={16} color={M.tint}/>{t('action.back')}
         </button>
         <div style={{ flex:1, textAlign:'center', fontWeight:600, fontSize:16, color:M.ink }}>{t('acct.brokerage')}</div>
         <div style={{ minWidth:60 }}/>
       </div>
-      <div style={{ padding:'12px 20px 8px', flexShrink:0 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 12px', borderRadius:10, border:`1px solid ${M.line}`, background:M.paper2 }}>
-          <I name="search" size={16} color={M.ink4}/>
-          <input autoFocus data-testid="broker-search" value={search} onChange={e=>setSearch(e.target.value)}
-            placeholder={t('acct.brokerSearch')}
-            style={{ flex:1, border:'none', background:'transparent', fontSize:14, fontFamily:M.fontUI, outline:'none', color:M.ink, padding:0 }}/>
+      <div style={{ flex:1, overflowY:'auto', padding:'20px 20px 32px' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 16px', borderRadius:12, background:M.sageSoft, marginBottom:20 }}>
+          <div style={{ width:36, height:36, borderRadius:10, background:`${selectedBroker.color}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}><span style={{ fontSize:18 }}>{selectedBroker.logo}</span></div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:14, fontWeight:600 }}>{selectedBroker.name}</div>
+            <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{BROKER_REGION_LABELS[selectedBroker.region]||selectedBroker.region}</div>
+          </div>
         </div>
-        {errors.broker && <div style={{ fontSize:11, color:M.clay, marginTop:4 }}>{errors.broker}</div>}
-      </div>
-      <div style={{ flex:1, overflowY:'auto', padding:'8px 20px' }}>
-        <div className="m-card" style={{ padding:'4px 16px', marginBottom:16, border:`1px solid ${M.line}` }}>
-          {filtered.map((b, i) => (
-            <React.Fragment key={b.id}>
-              {i>0&&<Divider inset={48}/>}
-              <div data-testid={`broker-row-${b.id}`} className="m-tap" onClick={()=>setSelectedBroker(b)}
-                style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0', background:selectedBroker?.id===b.id?M.sageSoft:'transparent' }}>
-                <div style={{ width:36, height:36, borderRadius:10, background:`${b.color}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                  <span style={{ fontSize:18 }}>{b.logo}</span>
-                </div>
-                <div style={{ flex:1 }}>
-                  <div style={{ fontSize:14, fontWeight:500 }}><HighlightText text={b.name} query={search.trim()}/></div>
-                  <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{b.region}</div>
-                </div>
-                {selectedBroker?.id===b.id&&<I name="check" size={16} color={M.sage}/>}
-              </div>
-            </React.Fragment>
-          ))}
+        <div style={{ marginBottom:14 }}>
+          <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{t('acct.displayName')}</div>
+          <input data-testid="broker-display-name" value={displayName} onChange={e=>setDisplayName(e.target.value)}
+            placeholder={selectedBroker.name}
+            style={{ width:'100%', boxSizing:'border-box', padding:'11px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none' }}/>
         </div>
-        {selectedBroker && (
-          <>
-            <div style={{ marginBottom:14 }}>
-              <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{t('acct.displayName')}</div>
-              <input data-testid="broker-display-name" value={displayName} onChange={e=>setDisplayName(e.target.value)}
-                placeholder={selectedBroker.name}
-                style={{ width:'100%', boxSizing:'border-box', padding:'11px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none' }}/>
-            </div>
-            <div style={{ marginBottom:20 }}>
-              <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{t('acct.currency')} (locked after creation)</div>
-              <button data-testid="broker-currency-btn" className="m-tap" onClick={()=>setShowCurrSheet(true)}
-                style={{ width:'100%', padding:'11px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'space-between', color:M.ink }}>
-                <span>{curInfo?`${curInfo.code} (${curInfo.symbol})`:currency}</span>
-                <I name="caretR" size={14} color={M.ink4}/>
-              </button>
-            </div>
-            <button data-testid="broker-save-btn" className="m-btn sage m-tap" style={{ width:'100%' }} onClick={handleSave}>
-              {t('action.save')}
-            </button>
-          </>
-        )}
+        <div style={{ marginBottom:20 }}>
+          <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{t('acct.currency')}</div>
+          <button data-testid="broker-currency-btn" className="m-tap" onClick={()=>setShowCurrSheet(true)}
+            style={{ width:'100%', padding:'11px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'space-between', color:M.ink }}>
+            <span>{curInfo?`${curInfo.code} (${curInfo.symbol})`:currency}</span>
+            <I name="caretR" size={14} color={M.ink4}/>
+          </button>
+        </div>
+        <button data-testid="broker-save-btn" className="m-btn sage m-tap" style={{ width:'100%' }} onClick={handleSave}>
+          {t('action.save')}
+        </button>
       </div>
       <CurrencySheet open={showCurrSheet} current={currency} onSelect={c=>{setCurrency(c);setShowCurrSheet(false);}} onClose={()=>setShowCurrSheet(false)} t={t}/>
     </div>
@@ -1044,7 +1094,30 @@ export function BrokerAutoFlow({ onSave, onBack }) {
   const [step, setStep] = React.useState('search');
   const [selectedBroker, setSelectedBroker] = React.useState(null);
   const [search, setSearch] = React.useState('');
-  const filtered = BROKERS.filter(b => b.id!=='other_broker' && (!search || b.name.toLowerCase().includes(search.toLowerCase())));
+  const [expanded, setExpanded] = React.useState(() => new Set(['EU']));
+
+  const autoEligible = BROKERS.filter(b => b.id !== 'other_broker');
+
+  const filtered = React.useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return null;
+    return autoEligible.filter(b => b.name.toLowerCase().includes(q));
+  }, [search]);
+
+  const groups = React.useMemo(() => {
+    const byRegion = {};
+    autoEligible.forEach(b => {
+      if (!byRegion[b.region]) byRegion[b.region] = [];
+      byRegion[b.region].push(b);
+    });
+    return BROKER_REGION_ORDER.filter(r => byRegion[r]?.length).map(r => ({ code:r, label:BROKER_REGION_LABELS[r]||r, brokers:byRegion[r] }));
+  }, []);
+
+  const toggleGroup = (code) => setExpanded(prev => {
+    const next = new Set(prev);
+    if (next.has(code)) next.delete(code); else next.add(code);
+    return next;
+  });
 
   const handleConnect = () => {
     setStep('connecting');
@@ -1100,6 +1173,7 @@ export function BrokerAutoFlow({ onSave, onBack }) {
     </div>
   );
 
+  const q = search.trim();
   return (
     <div className="m-screen m-fade" style={{ display:'flex', flexDirection:'column' }}>
       <StatusBar/>
@@ -1116,25 +1190,63 @@ export function BrokerAutoFlow({ onSave, onBack }) {
           <input autoFocus data-testid="broker-auto-search" value={search} onChange={e=>setSearch(e.target.value)}
             placeholder={t('acct.brokerSearch')}
             style={{ flex:1, border:'none', background:'transparent', fontSize:14, fontFamily:M.fontUI, outline:'none', color:M.ink, padding:0 }}/>
+          {search && <button onClick={()=>setSearch('')} style={{ background:'none', border:'none', cursor:'pointer', padding:0, display:'flex' }}><I name="x" size={14} color={M.ink4}/></button>}
         </div>
       </div>
-      <div style={{ flex:1, overflowY:'auto', padding:'8px 20px 24px' }}>
-        <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
-          {filtered.map((b, i) => (
-            <React.Fragment key={b.id}>
-              {i>0&&<Divider inset={48}/>}
-              <div data-testid={`broker-auto-row-${b.id}`} className="m-tap" onClick={()=>{setSelectedBroker(b);setStep('auth');}}
-                style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
-                <div style={{ width:36, height:36, borderRadius:10, background:`${b.color}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}><span style={{ fontSize:18 }}>{b.logo}</span></div>
-                <div style={{ flex:1 }}>
-                  <div style={{ fontSize:14, fontWeight:500 }}><HighlightText text={b.name} query={search.trim()}/></div>
-                  <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{b.region}</div>
+      <div style={{ flex:1, overflowY:'auto', padding:'0 20px 24px' }}>
+        {filtered !== null ? (
+          <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
+            {filtered.length === 0
+              ? <div style={{ padding:'24px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>{t('onboarding.noResults')}</div>
+              : filtered.map((b, i) => (
+                  <React.Fragment key={b.id}>
+                    {i>0&&<Divider inset={48}/>}
+                    <div data-testid={`broker-auto-row-${b.id}`} className="m-tap" onClick={()=>{setSelectedBroker(b);setStep('auth');}}
+                      style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
+                      <div style={{ width:36, height:36, borderRadius:10, background:`${b.color}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}><span style={{ fontSize:18 }}>{b.logo}</span></div>
+                      <div style={{ flex:1 }}>
+                        <div style={{ fontSize:14, fontWeight:500 }}><HighlightText text={b.name} query={q}/></div>
+                        <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{BROKER_REGION_LABELS[b.region]||b.region}</div>
+                      </div>
+                      <I name="caretR" size={14} color={M.ink4}/>
+                    </div>
+                  </React.Fragment>
+                ))
+            }
+          </div>
+        ) : (
+          groups.map(group => {
+            const isOpen = expanded.has(group.code);
+            return (
+              <div key={group.code}>
+                <div className="m-tap" onClick={()=>toggleGroup(group.code)}
+                  style={{ display:'flex', alignItems:'center', gap:8, padding:'12px 4px 8px', cursor:'pointer', userSelect:'none' }}>
+                  <span style={{ flex:1, fontSize:11, fontWeight:700, color:M.ink3, textTransform:'uppercase', letterSpacing:'0.06em' }}>{group.label}</span>
+                  <span style={{ fontSize:11, color:M.ink4 }}>{group.brokers.length}</span>
+                  <I name={isOpen?'caretD':'caretR'} size={14} color={M.ink4}/>
                 </div>
-                <I name="caretR" size={14} color={M.ink4}/>
+                {isOpen && (
+                  <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}`, marginBottom:4 }}>
+                    {group.brokers.map((b, i) => (
+                      <React.Fragment key={b.id}>
+                        {i>0&&<Divider inset={48}/>}
+                        <div data-testid={`broker-auto-row-${b.id}`} className="m-tap" onClick={()=>{setSelectedBroker(b);setStep('auth');}}
+                          style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
+                          <div style={{ width:36, height:36, borderRadius:10, background:`${b.color}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}><span style={{ fontSize:18 }}>{b.logo}</span></div>
+                          <div style={{ flex:1 }}>
+                            <div style={{ fontSize:14, fontWeight:500 }}>{b.name}</div>
+                            <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{BROKER_REGION_LABELS[b.region]||b.region}</div>
+                          </div>
+                          <I name="caretR" size={14} color={M.ink4}/>
+                        </div>
+                      </React.Fragment>
+                    ))}
+                  </div>
+                )}
               </div>
-            </React.Fragment>
-          ))}
-        </div>
+            );
+          })
+        )}
       </div>
     </div>
   );
@@ -1327,6 +1439,8 @@ export function ScreenAccounts({ params }) {
   const [bankSearch, setBankSearch] = React.useState('');
   const [selectedBank, setSelectedBank] = useLocalStorage('munni_selected_bank', null);
   const [psd2TypeId, setPsd2TypeId] = React.useState('bank');
+  const [psd2NewAcctId, setPsd2NewAcctId] = React.useState(null);
+  const [psd2EditDisplayName, setPsd2EditDisplayName] = React.useState('');
 
   const startBankConnect = (bank) => {
     setCustomIban(generateBankIban(bank));
@@ -1361,6 +1475,8 @@ export function ScreenAccounts({ params }) {
           setProfiles(ps => ps.map(p => p.id === attachToSpaceId ? { ...p, accountIds: [...(p.accountIds||[]), newAcct.id] } : p));
         }
         setSelectedBank(null);
+        setPsd2NewAcctId(newAcct.id);
+        setPsd2EditDisplayName(bank.name);
         setPsd2Step('done');
       }, 1800);
     }
@@ -1403,8 +1519,44 @@ export function ScreenAccounts({ params }) {
   if (psd2Step === 'search') {
     return <BankSearchFullScreen banks={ALL_BANKS} bankSearch={bankSearch} setBankSearch={setBankSearch} connectedAccounts={connectedAccounts} onSelect={startBankConnect} onBack={() => { setPsd2Step(null); setFlowScreen(psd2MethodScreen); }}/>;
   }
+  if (psd2Step === 'editName') {
+    const bank = psd2Bank;
+    const handleNameSave = () => {
+      if (psd2NewAcctId) {
+        setConnectedAccounts(a => a.map(x => x.id === psd2NewAcctId ? { ...x, name: psd2EditDisplayName.trim() || x.name } : x));
+      }
+      setPsd2Step(null); setFlowScreen(null); setPsd2NewAcctId(null);
+    };
+    return (
+      <div className="m-screen m-fade" style={{ display:'flex', flexDirection:'column' }}>
+        <StatusBar/>
+        <div style={{ display:'flex', alignItems:'center', padding:'12px 20px', flexShrink:0, borderBottom:`1px solid ${M.line2}` }}>
+          <div style={{ minWidth:60 }}/>
+          <div style={{ flex:1, textAlign:'center', fontWeight:600, fontSize:16, color:M.ink }}>{t('acct.editAccount')}</div>
+          <div style={{ minWidth:60 }}/>
+        </div>
+        <div style={{ flex:1, overflowY:'auto', padding:'20px 20px 32px' }}>
+          {bank && (
+            <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 16px', borderRadius:12, background:M.sageSoft, marginBottom:20 }}>
+              <div style={{ width:36, height:36, borderRadius:10, background:`${bank.color}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:18 }}>{bank.logo}</div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:14, fontWeight:600 }}>{bank.name}</div>
+                {bank.bic && <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono }}>{bank.bic}</div>}
+              </div>
+            </div>
+          )}
+          <div style={{ marginBottom:24 }}>
+            <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{t('acct.displayName')}</div>
+            <input autoFocus value={psd2EditDisplayName} onChange={e => setPsd2EditDisplayName(e.target.value)}
+              style={{ width:'100%', boxSizing:'border-box', padding:'11px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', color:M.ink }}/>
+          </div>
+          <button className="m-btn sage m-tap" style={{ width:'100%' }} onClick={handleNameSave}>{t('action.done')}</button>
+        </div>
+      </div>
+    );
+  }
   if (psd2Step === 'done') {
-    return <BankConnectPsd2Screen psd2Step="done" psd2Bank={psd2Bank} customIban={customIban} setCustomIban={setCustomIban} advancePsd2={() => { setPsd2Step(null); setFlowScreen(null); }} onClose={() => { setPsd2Step(null); setFlowScreen(null); }}/>;
+    return <BankConnectPsd2Screen psd2Step="done" psd2Bank={psd2Bank} customIban={customIban} setCustomIban={setCustomIban} advancePsd2={() => { setPsd2Step('editName'); }} onClose={() => { setPsd2Step(null); setFlowScreen(null); }}/>;
   }
   if (psd2Step) {
     return <BankConnectPsd2Screen psd2Step={psd2Step} psd2Bank={psd2Bank} customIban={customIban} setCustomIban={setCustomIban} advancePsd2={advancePsd2} onClose={() => { setPsd2Step(null); setFlowScreen(psd2MethodScreen); }}/>;
@@ -1529,11 +1681,13 @@ export function ScreenAccounts({ params }) {
               <input value={editName} onChange={e => setEditName(e.target.value)}
                 style={{ width:'100%', boxSizing:'border-box', padding:'11px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none' }}/>
             </div>
-            <div style={{ marginBottom:14 }}>
-              <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{t('acct.accountNumber')}</div>
-              <input value={editIban} onChange={e => setEditIban(e.target.value)} placeholder="e.g. NL12 INGB 0123 4567 89"
-                style={{ width:'100%', boxSizing:'border-box', padding:'11px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontMono, background:M.paper2, outline:'none' }}/>
-            </div>
+            {!showEditSheet.readOnly && (
+              <div style={{ marginBottom:14 }}>
+                <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{t('acct.accountNumber')}</div>
+                <input value={editIban} onChange={e => setEditIban(e.target.value)} placeholder="e.g. NL12 INGB 0123 4567 89"
+                  style={{ width:'100%', boxSizing:'border-box', padding:'11px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontMono, background:M.paper2, outline:'none' }}/>
+              </div>
+            )}
             <div style={{ marginBottom:20 }}/>
             <button onClick={saveEdit}
               style={{ width:'100%', padding:'14px 0', background:M.brand, color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>

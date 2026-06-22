@@ -123,6 +123,8 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
   const skipPopsRef        = React.useRef(0);
   const acctFlowTypeRef    = React.useRef(null); // type being added: 'bank'|'saving'|'cash'|'brokerage'|'credit'|'mortgage'|'loan'
   const psd2AccountTypeRef = React.useRef('checking'); // account type for PSD2 automated flow
+  const psd2NewAcctRef     = React.useRef(null);
+  const [psd2EditName, setPsd2EditName] = React.useState('');
 
   // Scroll lock for step-1 overlays
   React.useEffect(() => {
@@ -267,8 +269,9 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
 
   const handlePsd2Done = () => {
     const bank = pendingBank;
+    const acctId = `acct_${bank.id}_${Date.now()}`;
     setOnboardAccounts(prev => [...prev, {
-      id: `acct_${bank.id}_${Date.now()}`,
+      id: acctId,
       name: bank.name,
       iban: bankCreds.accountNumber,
       balance: 0,
@@ -276,7 +279,20 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
       color: bank.color,
       method: 'auto',
       bankId: bank.id,
+      readOnly: true,
     }]);
+    psd2NewAcctRef.current = acctId;
+    setPsd2EditName(bank.name);
+    setBankPsd2Step('editName');
+  };
+
+  const handlePsd2NameSave = () => {
+    if (psd2NewAcctRef.current && psd2EditName.trim()) {
+      setOnboardAccounts(prev => prev.map(a =>
+        a.id === psd2NewAcctRef.current ? { ...a, name: psd2EditName.trim() } : a
+      ));
+    }
+    psd2NewAcctRef.current = null;
     skipPopsRef.current = 1;
     subScreenRef.current = null;
     setBankSubScreen(null);
@@ -586,6 +602,35 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
             <div className="m-h2">{t('onboarding.done.title')}</div>
             <div style={{ fontSize:13, color:M.ink3, lineHeight:1.5, maxWidth:260 }}>{t('onboarding.done.subtitle').replace('{bank}', bank.name)}</div>
             <button data-testid={T.bankDoneBtn} className="m-btn sage m-tap" onClick={handlePsd2Done} style={{ marginTop:8 }}>{t('action.done')}</button>
+          </div>
+        </div>
+      );
+    }
+
+    // Edit display name step (after PSD2 connect)
+    if (bankPsd2Step === 'editName') {
+      return (
+        <div data-testid="bank-editname-screen" key="bank-edit-name" className="m-screen m-fade" style={{ display:'flex', flexDirection:'column' }}>
+          <StatusBar/>
+          <div style={{ display:'flex', alignItems:'center', padding:'12px 20px', flexShrink:0, borderBottom:`1px solid ${M.line2}` }}>
+            <div style={{ minWidth:60 }}/>
+            <div style={{ flex:1, textAlign:'center', fontWeight:600, fontSize:16, color:M.ink, fontFamily:M.fontUI }}>{bank.name}</div>
+            <div style={{ minWidth:60 }}/>
+          </div>
+          <div style={{ flex:1, overflowY:'auto', padding:'20px 24px 40px' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 16px', borderRadius:12, background:M.sageSoft, marginBottom:20 }}>
+              <div style={{ width:36, height:36, borderRadius:10, background:`${bank.color}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:20 }}>{bank.logo}</div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:14, fontWeight:600 }}>{bank.name}</div>
+                {bank.bic && <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono }}>{bank.bic}</div>}
+              </div>
+            </div>
+            <div style={{ marginBottom:24 }}>
+              <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{t('acct.displayName')}</div>
+              <input autoFocus value={psd2EditName} onChange={e => setPsd2EditName(e.target.value)}
+                style={{ width:'100%', boxSizing:'border-box', padding:'11px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', color:M.ink }}/>
+            </div>
+            <button data-testid="bank-editname-done" className="m-btn sage m-tap" style={{ width:'100%' }} onClick={handlePsd2NameSave}>{t('action.done')}</button>
           </div>
         </div>
       );

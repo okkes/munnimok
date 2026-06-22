@@ -65,6 +65,8 @@ async function goToStep2WithBank(page, email) {
   await goToConnecting(page, email);
   await page.waitForSelector('[data-testid="bank-done-screen"]', { timeout: 4000 });
   await page.click('[data-testid="bank-done-btn"]');
+  await page.waitForSelector('[data-testid="bank-editname-screen"]', { timeout: 3000 });
+  await page.click('[data-testid="bank-editname-done"]');
   await page.waitForSelector('[data-testid="onboard-step2"]', { timeout: 3000 });
   await page.waitForSelector('[data-testid="onboard-acct-row"]', { timeout: 2000 });
 }
@@ -382,6 +384,8 @@ for (const V of VARIANTS) {
     await page.waitForSelector('[data-testid="bank-done-screen"]', { timeout: 4000 });
     await shot(page, k('41-step2-with-bank') + '--s1');
     await page.click('[data-testid="bank-done-btn"]');
+    await page.waitForSelector('[data-testid="bank-editname-screen"]', { timeout: 3000 });
+    await page.click('[data-testid="bank-editname-done"]');
     await page.waitForSelector('[data-testid="onboard-acct-row"]', { timeout: 3000 });
     await expect(page.locator('[data-testid="onboard-acct-row"]')).toBeVisible();
     await expect(page.locator('[data-testid="onboard-complete"]')).toBeVisible();
@@ -707,8 +711,9 @@ for (const V of VARIANTS) {
     await page.waitForSelector('[data-testid="acct-bank-search"]', { timeout: 3000 });
     await shot(page, k('63-step2-manual-bank') + '--s2');
     await page.locator('[data-testid^="bank-row-"]').first().click();
-    // Form now shows — save without editing name
+    // Form now shows — fill required account number, then save
     await page.waitForSelector('[data-testid="acct-save-btn"]', { timeout: 3000 });
+    await page.fill('[data-testid="acct-account-number"]', 'NL12 TEST 0123 4567 89');
     await shot(page, k('63-step2-manual-bank') + '--s3');
     await page.click('[data-testid="acct-save-btn"]');
     // Returns to step 2 with new account row
