@@ -179,10 +179,16 @@ export function Sheet({ children, onClose, open, title }) {
 
   React.useEffect(() => { didMountRef.current = true; }, []);
 
-  // Lock background scroll while sheet is open (Change 12)
+  // Lock background scroll while sheet is open, compensating for scrollbar width
+  // to prevent layout shift (which makes Playwright see elements as "not stable").
   React.useEffect(() => {
+    const scrollbarW = window.innerWidth - document.documentElement.clientWidth;
+    if (scrollbarW > 0) document.body.style.paddingRight = `${scrollbarW}px`;
     document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = ''; };
+    return () => {
+      document.body.style.overflow = '';
+      document.body.style.paddingRight = '';
+    };
   }, []);
 
   // Lock height after open animation so content filtering never shrinks the sheet
