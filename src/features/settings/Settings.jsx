@@ -619,13 +619,54 @@ export function ScreenTutorial() {
   );
 }
 
+function ScopeSelector({ scope, setScope, profiles }) {
+  const allProfiles = profiles.filter(p => !p.isDemo);
+  return (
+    <>
+      <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>Available in</div>
+      <div style={{ display:'flex', flexDirection:'column', gap:6, marginBottom:16 }}>
+        {/* All private spaces — independent checkbox */}
+        <button data-testid="scope-all-private" className="m-tap" onClick={() => setScope(s => ({ ...s, allPrivate: !s.allPrivate }))}
+          style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderRadius:10, border:`1.5px solid ${scope.allPrivate?M.sage:M.line}`, background:scope.allPrivate?M.sageSoft:M.paper2, cursor:'pointer', fontFamily:M.fontUI, textAlign:'left' }}>
+          <div style={{ width:18, height:18, borderRadius:4, border:`2px solid ${scope.allPrivate?M.sage:M.ink4}`, background:scope.allPrivate?M.sage:'transparent', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+            {scope.allPrivate && <I name="check" size={10} color="#fff"/>}
+          </div>
+          <div>
+            <div style={{ fontSize:13, fontWeight:500, color:M.ink }}>All private spaces</div>
+            <div style={{ fontSize:11, color:M.ink3 }}>Visible in all your personal spaces</div>
+          </div>
+        </button>
+        {/* Individual spaces — independently selectable */}
+        {allProfiles.length > 0 && (
+          <div style={{ display:'flex', flexDirection:'column', gap:4, maxHeight:200, overflowY:'auto' }}>
+            {allProfiles.map(p => {
+              const selected = (scope.spaces || []).includes(p.id);
+              const avatar = p.emoji || p.avatar;
+              return (
+                <button key={p.id} data-testid={`scope-space-${p.id}`} className="m-tap" onClick={() => setScope(s => ({ ...s, spaces: selected ? (s.spaces||[]).filter(id=>id!==p.id) : [...(s.spaces||[]), p.id] }))}
+                  style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderRadius:10, border:`1.5px solid ${selected?M.sage:M.line}`, background:selected?M.sageSoft:M.paper2, cursor:'pointer', fontFamily:M.fontUI, textAlign:'left' }}>
+                  <div style={{ width:18, height:18, borderRadius:4, border:`2px solid ${selected?M.sage:M.ink4}`, background:selected?M.sage:'transparent', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    {selected && <I name="check" size={10} color="#fff"/>}
+                  </div>
+                  {avatar && <span style={{ fontSize:16 }}>{avatar}</span>}
+                  <div style={{ fontSize:13, fontWeight:500, color:M.ink, flex:1 }}>{p.localName || p.name || p.displayName || 'Space'}</div>
+                  {p.isShared && <span style={{ fontSize:9, padding:'2px 5px', borderRadius:4, background:M.ochreSoft, color:M.ochre, fontWeight:700 }}>SHARED</span>}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 function NewCatForm({ onSave, isSub = false }) {
   const [name, setName] = React.useState('');
   const [icon, setIcon] = React.useState('help-circle-outline');
   const [color, setColor] = React.useState(M.slate);
-  const [scope, setScope] = React.useState('all_private');
+  const [scope, setScope] = React.useState({ allPrivate: true, spaces: [] });
   const { profiles } = useProfiles();
-  const privateProfiles = profiles.filter(p => !p.isShared && !p.isDemo);
   const mdiIcons = [
     'help-circle-outline','home-outline','car-outline','heart-outline','star-outline',
     'food-outline','cart-variant','coffee-outline','television-play','hospital-box-outline',
@@ -661,36 +702,7 @@ function NewCatForm({ onSave, isSub = false }) {
           </div>
         </>
       )}
-      {/* Scope selector */}
-      <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>Available in</div>
-      <div style={{ display:'flex', flexDirection:'column', gap:6, marginBottom:16 }}>
-        <button className="m-tap" onClick={() => setScope('all_private')}
-          style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderRadius:10, border:`1.5px solid ${scope==='all_private'?M.sage:M.line}`, background:scope==='all_private'?M.sageSoft:M.paper2, cursor:'pointer', fontFamily:M.fontUI, textAlign:'left' }}>
-          <div style={{ width:18, height:18, borderRadius:999, border:`2px solid ${scope==='all_private'?M.sage:M.ink4}`, background:scope==='all_private'?M.sage:'transparent', flexShrink:0 }}/>
-          <div style={{ flex:1 }}>
-            <div style={{ fontSize:13, fontWeight:500, color:M.ink }}>All private spaces</div>
-            <div style={{ fontSize:11, color:M.ink3 }}>Visible in all your personal spaces</div>
-          </div>
-        </button>
-        {privateProfiles.length > 0 && (
-          <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
-            {privateProfiles.map(p => {
-              const spaceScope = Array.isArray(scope) ? scope : [];
-              const selected = spaceScope.includes(p.id);
-              return (
-                <button key={p.id} className="m-tap" onClick={() => {
-                  const cur = Array.isArray(scope) ? scope : [];
-                  setScope(selected ? cur.filter(id => id !== p.id) : [...cur, p.id]);
-                }}
-                  style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderRadius:10, border:`1.5px solid ${selected?M.sage:M.line}`, background:selected?M.sageSoft:M.paper2, cursor:'pointer', fontFamily:M.fontUI, textAlign:'left' }}>
-                  <div style={{ width:18, height:18, borderRadius:4, border:`2px solid ${selected?M.sage:M.ink4}`, background:selected?M.sage:'transparent', flexShrink:0 }}/>
-                  <div style={{ fontSize:13, fontWeight:500, color:M.ink }}>{p.localName || p.name}</div>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
+      <ScopeSelector scope={scope} setScope={setScope} profiles={profiles}/>
       <button className="m-tap" onClick={() => name.trim() && onSave(name.trim(), icon, color, scope)}
         disabled={!name.trim()}
         style={{ width:'100%', background:M.sage, border:'none', borderRadius:12, padding:'13px', color:'#fff', fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, opacity: name.trim()?1:0.5 }}>
@@ -702,9 +714,27 @@ function NewCatForm({ onSave, isSub = false }) {
 
 function EditCatSheet({ entry, txCount = 0, onSave, onDelete, isPrebuilt = false }) {
   const [nameDraft, setNameDraft] = React.useState(entry.name);
+  const [iconDraft, setIconDraft] = React.useState(entry.icon || 'help-circle-outline');
+  const { profiles } = useProfiles();
+  // Normalize scope: handle old format (string or array) and new format ({ allPrivate, spaces })
+  const normalizeScope = (sc) => {
+    if (!sc) return { allPrivate: true, spaces: [] };
+    if (typeof sc === 'object' && !Array.isArray(sc)) return sc;
+    if (sc === 'all_private') return { allPrivate: true, spaces: [] };
+    if (Array.isArray(sc)) return { allPrivate: false, spaces: sc };
+    return { allPrivate: true, spaces: [] };
+  };
+  const [scopeDraft, setScopeDraft] = React.useState(() => normalizeScope(entry.scope));
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
   const canDelete = onDelete !== null;
   const isParent = entry.isParent;
+  const mdiIcons = [
+    'help-circle-outline','home-outline','car-outline','heart-outline','star-outline',
+    'food-outline','cart-variant','coffee-outline','television-play','hospital-box-outline',
+    'shopping-outline','island','school-outline','dumbbell','baby-face-outline',
+    'cash-plus','piggy-bank-outline','cellphone-link','gift-outline','book-education-outline',
+    'briefcase-outline','bus-side','airplane-takeoff','medication-outline','paw-outline',
+  ];
   if (showDeleteConfirm) {
     return (
       <div style={{ padding:'4px 16px 8px' }}>
@@ -728,11 +758,26 @@ function EditCatSheet({ entry, txCount = 0, onSave, onDelete, isPrebuilt = false
         <div style={{ padding:'12px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, marginBottom:8, color:M.ink }}>{nameDraft}</div>
       ) : (
         <input autoFocus value={nameDraft} onChange={e => setNameDraft(e.target.value)}
-          style={{ width:'100%', padding:'12px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box' }}/>
+          style={{ width:'100%', padding:'12px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box', marginBottom:14 }}/>
       )}
       {isPrebuilt && <div style={{ fontSize:11, color:M.ink3, marginBottom:16, paddingLeft:2 }}>Built-in category names cannot be changed.</div>}
-      {!isPrebuilt && <div style={{ marginBottom:20 }}/>}
-      <button onClick={() => nameDraft.trim() && onSave(nameDraft.trim(), entry.icon, entry.color)}
+      {!isPrebuilt && (
+        <>
+          {/* Icon picker (Change 13) */}
+          <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>Icon</div>
+          <div data-testid="edit-cat-icon-picker" style={{ display:'flex', flexWrap:'wrap', gap:8, marginBottom:14 }}>
+            {mdiIcons.map(ic => (
+              <button key={ic} className="m-tap" onClick={() => setIconDraft(ic)}
+                style={{ width:36, height:36, borderRadius:8, background: iconDraft===ic?M.sageSoft:M.paper2, border:`1.5px solid ${iconDraft===ic?M.sage:M.line}`, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>
+                <IcoMDI name={ic} size={15} color={iconDraft===ic?M.sage:M.ink3}/>
+              </button>
+            ))}
+          </div>
+          {/* Scope (Change 14) */}
+          <ScopeSelector scope={scopeDraft} setScope={setScopeDraft} profiles={profiles}/>
+        </>
+      )}
+      <button onClick={() => nameDraft.trim() && onSave(nameDraft.trim(), iconDraft, entry.color, scopeDraft)}
         style={{ width:'100%', padding:'14px 0', background:nameDraft.trim()?M.sage:M.line, color:nameDraft.trim()?'#fff':M.ink4, border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:nameDraft.trim()?'pointer':'default', fontFamily:M.fontUI, marginBottom:canDelete?12:10 }}>
         Save
       </button>
@@ -893,14 +938,23 @@ export function ScreenManageCategories() {
             <IcoMDI name={parentCat.icon||'help-circle-outline'} size={18} color={isCustom?'#fff':M.ink2}/>
           </div>
           <div className={isCustom ? 'm-tap' : ''} style={{ flex:1, cursor: isCustom ? 'pointer' : 'default' }}
-            onClick={isCustom ? () => setEditSheet({ catId: parentKey, parentId: null, isCustom:true, isParent: true, name: parentCat.name, icon: parentCat.icon || 'help-circle-outline', color: parentCat.color }) : undefined}
+            onClick={isCustom ? () => setEditSheet({ catId: parentKey, parentId: null, isCustom:true, isParent: true, name: parentCat.name, icon: parentCat.icon || 'help-circle-outline', color: parentCat.color, scope: parentCat.scope }) : undefined}
           >
             <div style={{ fontSize:15, fontWeight:600 }}>{parentCat.name}</div>
-            {isCustom && parentCat.scope && (
-              <div style={{ fontSize:10, color:M.ink4, marginTop:1 }}>
-                {parentCat.scope === 'all_private' ? 'All private spaces' : Array.isArray(parentCat.scope) ? `${parentCat.scope.length} space${parentCat.scope.length!==1?'s':''}` : ''}
-              </div>
-            )}
+            {isCustom && parentCat.scope && (() => {
+              const sc = parentCat.scope;
+              const parts = [];
+              const isNew = sc && typeof sc === 'object' && !Array.isArray(sc);
+              if (isNew) {
+                if (sc.allPrivate) parts.push('All private');
+                if ((sc.spaces||[]).length > 0) parts.push(`+${sc.spaces.length} space${sc.spaces.length!==1?'s':''}`);
+              } else if (sc === 'all_private') {
+                parts.push('All private spaces');
+              } else if (Array.isArray(sc) && sc.length > 0) {
+                parts.push(`${sc.length} space${sc.length!==1?'s':''}`);
+              }
+              return parts.length ? <div style={{ fontSize:10, color:M.ink4, marginTop:1 }}>{parts.join(' ')}</div> : null;
+            })()}
           </div>
           <span style={{ fontSize:12, color:M.ink3 }}>{subCount} subs</span>
           <button className="m-tap" onClick={() => setCollapsedParents(prev => ({ ...prev, [parentKey]: !prev[parentKey] }))}
@@ -931,7 +985,7 @@ export function ScreenManageCategories() {
                   cursor: (isCustomSub && !isOther) ? 'grab' : 'default',
                   touchAction: (isCustomSub && !isOther) ? 'none' : 'auto',
                 }}
-                onClick={isCustomSub && !isOther ? () => setEditSheet({ catId: subKey, parentId: parentKey, isCustom: true, isParent: false, name: subCat.name, icon: subCat.icon || 'help-circle-outline' }) : undefined}
+                onClick={isCustomSub && !isOther ? () => setEditSheet({ catId: subKey, parentId: parentKey, isCustom: true, isParent: false, name: subCat.name, icon: subCat.icon || 'help-circle-outline', scope: subCat.scope }) : undefined}
                 onPointerDown={(isCustomSub && !isOther) ? (e) => startDrag(e, subKey, parentKey, subCat.name, subCat.icon, parentCat.color || M.paper2) : undefined}
                 onPointerEnter={(dragState && !isOther) ? () => setDropTarget({ type:'reorder', catId: subKey, parentId: parentKey }) : undefined}
               >
@@ -1023,9 +1077,9 @@ export function ScreenManageCategories() {
             entry={editSheet}
             txCount={txCounts[editSheet.catId] || 0}
             isPrebuilt={!editSheet.isCustom}
-            onSave={(name, icon, color) => {
+            onSave={(name, icon, color, scope) => {
               if (editSheet.isCustom) {
-                setCustomCats(prev => prev.map(c => c.id === editSheet.catId ? { ...c, name, icon, color } : c));
+                setCustomCats(prev => prev.map(c => c.id === editSheet.catId ? { ...c, name, icon, color, scope } : c));
               } else {
                 setPremadeOverrides(prev => ({ ...prev, [editSheet.catId]: { name } }));
               }

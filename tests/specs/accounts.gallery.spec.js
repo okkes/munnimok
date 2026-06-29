@@ -362,7 +362,7 @@ for (const V of VARIANTS) {
 
   // ── K: Manual/Automated badge & edit sheet ───────────────────────────────
 
-  test(`acct-k1 account row shows Manual badge not PSD2 [${V.id}]`, async ({ browser }) => {
+  test(`acct-k1 account edit sheet shows Manual badge not PSD2 [${V.id}]`, async ({ browser }) => {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V);
     await goToAccounts(page);
@@ -376,9 +376,17 @@ for (const V of VARIANTS) {
     await page.fill('[data-testid="acct-account-number"]', 'NL91INGB0417164300');
     await page.click('[data-testid="acct-save-btn"]');
     await page.waitForSelector('[data-testid="account-row"]', { timeout: 2000 });
-    const rowText = await page.locator('[data-testid="account-row"]').first().textContent();
-    expect(rowText).not.toContain('PSD2');
-    expect(rowText.toUpperCase()).toContain('MANUAL');
+    // Type badge moved to edit sheet (Change 6) — click the LAST row (newly created manual account)
+    const allRows = page.locator('[data-testid="account-row"]');
+    await allRows.last().click();
+    // Wait for sheet to open (backdrop div is data-testid="sheet-close")
+    await page.waitForSelector('[data-testid="sheet-close"]', { timeout: 3000 });
+    await page.waitForTimeout(300);
+    // The sheet backdrop div contains the panel with the Manual/Automated badge
+    const sheetText = await page.locator('[data-testid="sheet-close"]').textContent();
+    // Manual account shows 'Manual' badge, NOT 'Automated'
+    expect(sheetText).toContain('Manual');
+    expect(sheetText).not.toContain('Automated');
     await shot(page, k('acct-k1-manual-badge'));
     await teardown(page, ctx, k('acct-k1-manual-badge'));
   });

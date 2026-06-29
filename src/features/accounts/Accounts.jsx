@@ -19,6 +19,68 @@ function HighlightText({ text, query }) {
   return <>{text.slice(0, idx)}<mark style={{ background: M.sageSoft, color: M.sage, borderRadius: 2, padding: '1px 0' }}>{text.slice(idx, idx + query.length)}</mark>{text.slice(idx + query.length)}</>;
 }
 
+// ── Bank logo SVG component ──────────────────────────────────────────────────
+
+function BankLogoSVG({ bankId, bankName, bankColor, size = 36, radius = 10 }) {
+  const s = { width:size, height:size, borderRadius:radius, overflow:'hidden', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' };
+  const text = (txt, bg, fg='#fff', fs=13) => (
+    <div style={{ ...s, background: bg }}>
+      <svg viewBox="0 0 40 40" width={size} height={size}>
+        <text x="20" y={fs > 11 ? 26 : 29} textAnchor="middle" fill={fg} fontWeight="900" fontSize={fs} fontFamily="Arial,sans-serif">{txt}</text>
+      </svg>
+    </div>
+  );
+  const heart = (bg) => (
+    <div style={{ ...s, background: bg }}>
+      <svg viewBox="0 0 40 40" width={size} height={size}>
+        <path d="M20 30 C20 30 6 21 6 13 C6 8 10 5 14 5 C16.5 5 18.5 6.5 20 8 C21.5 6.5 23.5 5 26 5 C30 5 34 8 34 13 C34 21 20 30 20 30Z" fill="white"/>
+      </svg>
+    </div>
+  );
+  const diamond = (bg, fg='#fff') => (
+    <div style={{ ...s, background: bg }}>
+      <svg viewBox="0 0 40 40" width={size} height={size}>
+        <polygon points="20,6 34,20 20,34 6,20" fill={fg}/>
+      </svg>
+    </div>
+  );
+  const leaf = (bg) => (
+    <div style={{ ...s, background: bg }}>
+      <svg viewBox="0 0 40 40" width={size} height={size}>
+        <path d="M20 32 C20 32 8 22 8 14 C8 9 13 6 20 8 C27 6 32 9 32 14 C32 22 20 32 20 32Z" fill="white" opacity="0.9"/>
+        <line x1="20" y1="32" x2="20" y2="14" stroke="white" strokeWidth="2" opacity="0.6"/>
+      </svg>
+    </div>
+  );
+  switch (bankId) {
+    case 'ing':         return text('ING', '#FF6200', '#fff', 13);
+    case 'abn':         return text('ABN', '#009B77', '#fff', 12);
+    case 'rabo':        return text('Rabo', '#004A97', '#fff', 10);
+    case 'sns':         return text('SNS', '#E30613', '#fff', 13);
+    case 'asn':         return leaf('#00A651');
+    case 'triodos':     return text('Trio', '#00A651', '#fff', 10);
+    case 'bunq':        return heart('#00D4A1');
+    case 'knab':        return text('KNAB', '#E40046', '#fff', 10);
+    case 'regio':       return text('Regio', '#0070BA', '#fff', 9);
+    case 'revolut':     return diamond('#191C20');
+    case 'n26':         return text('N26', '#000', '#fff', 14);
+    case 'wise':        return text('W', '#9FE870', '#222', 20);
+    case 'deutsche':    return text('DB', '#0018A8', '#fff', 13);
+    case 'commerzbank': return text('CB', '#FFCA28', '#333', 12);
+    case 'sparkasse':   return text('S', '#E10000', '#fff', 20);
+    case 'dkb':         return text('DKB', '#002A6E', '#fff', 12);
+    case 'monzo':       return text('M', '#FF3464', '#fff', 20);
+    case 'starling':    return text('SB', '#7ACCA0', '#fff', 12);
+    case 'lloyds':      return text('L', '#024731', '#fff', 20);
+    case 'barclays':    return text('B', '#00AEE9', '#fff', 20);
+    case 'hsbc':        return text('HSBC', '#DB0011', '#fff', 10);
+    default: {
+      const initials = (bankName || '').slice(0, 2).toUpperCase() || '?';
+      return <div style={{ ...s, background: bankColor || '#888', color:'#fff', fontSize:13, fontWeight:700, fontFamily:'Arial,sans-serif', display:'flex', alignItems:'center', justifyContent:'center' }}>{initials}</div>;
+    }
+  }
+}
+
 // ── Shared bank-connect screens (used by ScreenAccounts, ScreenAccountsAll, and Auth onboarding) ──
 
 function BankRow({ bank, query, countryCode, connectedAccounts, onSelect }) {
@@ -26,7 +88,7 @@ function BankRow({ bank, query, countryCode, connectedAccounts, onSelect }) {
   return (
     <div data-testid={`bank-row-${bank.id}`} className="m-tap" onClick={() => onSelect(bank)}
       style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
-      <div style={{ width:36, height:36, borderRadius:10, background:`${bank.color}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:18 }}>{bank.logo}</div>
+      <BankLogoSVG bankId={bank.id} bankName={bank.name} bankColor={bank.color} size={36} radius={10}/>
       <div style={{ flex:1, minWidth:0 }}>
         <div style={{ fontSize:14, fontWeight:500, color:M.ink, display:'flex', alignItems:'center', gap:6 }}>
           <HighlightText text={bank.name} query={query}/>
@@ -549,7 +611,7 @@ function AcctTypeBadge({ type, t }) {
   );
 }
 
-function AcctRow({ acct, i, t, currency, onEdit, sharedSpaces, onSharedBadge, isFlashing }) {
+function AcctRow({ acct, i, t, currency, onEdit, sharedSpaces, isFlashing }) {
   const color = acct.color || acctTypeColor(acct.type);
   const isLiability = acctGroup(acct.type) === 'liability';
   const sharedInSpaces = sharedSpaces || [];
@@ -557,17 +619,27 @@ function AcctRow({ acct, i, t, currency, onEdit, sharedSpaces, onSharedBadge, is
     <React.Fragment>
       {i > 0 && <Divider inset={52}/>}
       <div data-testid="account-row" className="m-tap" onClick={() => onEdit && onEdit(acct)}
-        style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0', background: isFlashing ? M.sageSoft : 'transparent', transition:'background 1s ease', borderRadius: isFlashing ? 8 : 0 }}>
-        <div style={{ width:38, height:38, borderRadius:10, background:color, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-          <I name={acctIcon(acct.type)} size={18} color="#fff"/>
+        style={{ position:'relative', display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
+        {isFlashing && (
+          <div style={{
+            position:'absolute', left:-16, top:0, bottom:0, width:3,
+            background:M.sage, borderRadius:'0 2px 2px 0',
+            animation: 'acctFlash 0.7s ease forwards'
+          }}/>
+        )}
+        <div style={{ width:38, height:38, borderRadius:10, background:acct.bankId ? 'transparent' : color, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0,
+          boxShadow: isFlashing ? `0 0 0 2px ${M.sage}` : 'none', transition:'box-shadow 0.7s ease' }}>
+          {acct.bankId
+            ? <BankLogoSVG bankId={acct.bankId} size={38} radius={10}/>
+            : <I name={acctIcon(acct.type)} size={18} color="#fff"/>
+          }
         </div>
         <div style={{ flex:1, minWidth:0 }}>
           <div style={{ fontSize:14, fontWeight:600 }}>{acct.name}</div>
           <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:2, flexWrap:'wrap' }}>
             {acct.iban && <span style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono }}>{acct.iban}</span>}
-            <AcctTypeBadge type={acct.type} t={t}/>
             {sharedInSpaces.length > 0 && (
-              <button className="m-tap" onClick={e => { e.stopPropagation(); onSharedBadge && onSharedBadge(acct, sharedInSpaces); }}
+              <button className="m-tap" onClick={e => { e.stopPropagation(); onEdit && onEdit(acct); }}
                 style={{ fontSize:9, fontWeight:700, padding:'2px 6px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase', border:'none', cursor:'pointer', fontFamily:M.fontUI }}>
                 Shared
               </button>
@@ -575,6 +647,38 @@ function AcctRow({ acct, i, t, currency, onEdit, sharedSpaces, onSharedBadge, is
           </div>
         </div>
         <div className="m-num" style={{ fontSize:14, fontWeight:600, color: isLiability ? M.clay : M.ink }}>
+          {fmtMoney(acct.balance || 0, acct.currency || currency)}
+        </div>
+      </div>
+    </React.Fragment>
+  );
+}
+
+// ── Shared-with-me row ───────────────────────────────────────────────────────
+
+function SharedWithMeRow({ acct, i, t, currency, onInfo }) {
+  const color = acct.color || acctTypeColor(acct.type);
+  return (
+    <React.Fragment>
+      {i > 0 && <Divider inset={52}/>}
+      <div data-testid="shared-with-me-row" className="m-tap" onClick={onInfo}
+        style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
+        <div style={{ width:38, height:38, borderRadius:10, background:acct.bankId ? 'transparent' : color, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+          {acct.bankId
+            ? <BankLogoSVG bankId={acct.bankId} size={38} radius={10}/>
+            : <I name={acctIcon(acct.type)} size={18} color="#fff"/>
+          }
+        </div>
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ fontSize:14, fontWeight:600 }}>{acct.name}</div>
+          <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:2 }}>
+            {acct.iban && <span style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono }}>{acct.iban}</span>}
+          </div>
+          {acct._fromSpaceName && (
+            <div style={{ fontSize:11, color:M.ink4, marginTop:1 }}>via {acct._fromSpaceName}</div>
+          )}
+        </div>
+        <div className="m-num" style={{ fontSize:14, fontWeight:600, color:M.ink }}>
           {fmtMoney(acct.balance || 0, acct.currency || currency)}
         </div>
       </div>
@@ -1428,7 +1532,7 @@ export function ScreenAccounts({ params }) {
   const [showEditSheet, setShowEditSheet] = React.useState(null); // null | acct object
   const [editName, setEditName] = React.useState('');
   const [editIban, setEditIban] = React.useState('');
-  const [sharedBadgeSheet, setSharedBadgeSheet] = React.useState(null); // { acct, spaces }
+  const [sharedWithMeSheet, setSharedWithMeSheet] = React.useState(null); // shared-with-me detail sheet
 
   // Compute which owned accounts are shared in any of my spaces
   const sharedInSpacesMap = React.useMemo(() => {
@@ -1444,6 +1548,31 @@ export function ScreenAccounts({ params }) {
     return map;
   }, [profiles]);
 
+  // Accounts shared with me (from spaces where I'm a non-owner member)
+  const sharedWithMeAccts = React.useMemo(() => {
+    const myId = getUserId();
+    const result = [];
+    const seen = new Set(connectedAccounts.map(a => a.id));
+    profiles.forEach(p => {
+      const isShared = p.isShared || (p.members || []).length > 0;
+      if (!isShared) return;
+      try {
+        const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{}');
+        const isMember = (sd.memberPerms || {})[myId] !== undefined;
+        const isOwner = p.ownerId === myId || (!p.ownerId && p.active);
+        if (isMember && !isOwner) {
+          (sd.accounts || []).forEach(a => {
+            if (!seen.has(a.id)) {
+              seen.add(a.id);
+              result.push({ ...a, _fromSpaceId: p.id, _fromSpaceName: p.name || p.displayName });
+            }
+          });
+        }
+      } catch {}
+    });
+    return result;
+  }, [profiles, connectedAccounts]);
+
   // Flash account from session storage (navigated from tx detail)
   const [highlightAcctRaw] = useSessionStorage('munni_highlight_acct', null);
   const highlightAcct = React.useMemo(() => {
@@ -1454,7 +1583,7 @@ export function ScreenAccounts({ params }) {
     if (highlightAcct) {
       setFlashAcctId(highlightAcct);
       sessionStorage.removeItem('munni_highlight_acct');
-      const timer = setTimeout(() => setFlashAcctId(null), 2000);
+      const timer = setTimeout(() => setFlashAcctId(null), 700);
       return () => clearTimeout(timer);
     }
   }, [highlightAcct]);
@@ -1565,7 +1694,7 @@ export function ScreenAccounts({ params }) {
         <div style={{ flex:1, overflowY:'auto', padding:'20px 20px 32px' }}>
           {bank && (
             <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 16px', borderRadius:12, background:M.sageSoft, marginBottom:20 }}>
-              <div style={{ width:36, height:36, borderRadius:10, background:`${bank.color}22`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontSize:18 }}>{bank.logo}</div>
+              <BankLogoSVG bankId={bank.id} bankName={bank.name} bankColor={bank.color} size={36} radius={10}/>
               <div style={{ flex:1 }}>
                 <div style={{ fontSize:14, fontWeight:600 }}>{bank.name}</div>
                 {bank.bic && <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono }}>{bank.bic}</div>}
@@ -1643,7 +1772,7 @@ export function ScreenAccounts({ params }) {
             <div style={{ padding:'16px 0', textAlign:'center', color:M.ink4, fontSize:13 }}>{t('acct.noAccounts')}</div>
           ) : assets.map((a, i) => (
             <AcctRow key={a.id} acct={a} i={i} t={t} currency={currency} onEdit={openEdit}
-              sharedSpaces={sharedInSpacesMap[a.id]} onSharedBadge={(acct, spaces) => setSharedBadgeSheet({ acct, spaces })}
+              sharedSpaces={sharedInSpacesMap[a.id]}
               isFlashing={flashAcctId === a.id}/>
           ))}
           <Divider inset={0}/>
@@ -1667,7 +1796,7 @@ export function ScreenAccounts({ params }) {
             <div style={{ padding:'16px 0', textAlign:'center', color:M.ink4, fontSize:13 }}>{t('acct.noAccounts')}</div>
           ) : liabilities.map((a, i) => (
             <AcctRow key={a.id} acct={a} i={i} t={t} currency={currency} onEdit={openEdit}
-              sharedSpaces={sharedInSpacesMap[a.id]} onSharedBadge={(acct, spaces) => setSharedBadgeSheet({ acct, spaces })}
+              sharedSpaces={sharedInSpacesMap[a.id]}
               isFlashing={flashAcctId === a.id}/>
           ))}
           <Divider inset={0}/>
@@ -1681,23 +1810,24 @@ export function ScreenAccounts({ params }) {
           </div>
         </div>
 
+        {/* Shared with me */}
+        {sharedWithMeAccts.length > 0 && (
+          <>
+            <div className="m-section-label" style={{ marginTop:16, display:'flex', justifyContent:'space-between', alignItems:'baseline' }}>
+              <span className="m-cap">{t('acct.sharedWith')}</span>
+              <span style={{ fontSize:11, color:M.ink4, fontWeight:400 }}>From spaces you're a member of</span>
+            </div>
+            <div className="m-card" style={{ padding:'0 16px', marginBottom:8, border:`1px solid ${M.line}` }}>
+              {sharedWithMeAccts.map((a, i) => (
+                <SharedWithMeRow key={a.id} acct={a} i={i} t={t} currency={currency}
+                  onInfo={() => setSharedWithMeSheet(a)}/>
+              ))}
+            </div>
+          </>
+        )}
+
         <div style={{ height:8 }}/>
       </div>
-
-      {sharedBadgeSheet && (
-        <Sheet title={sharedBadgeSheet.acct.name} onClose={() => setSharedBadgeSheet(null)}>
-          <div style={{ padding:'4px 16px 24px' }}>
-            <div style={{ fontSize:13, color:M.ink3, marginBottom:12 }}>This account is shared in the following spaces:</div>
-            {sharedBadgeSheet.spaces.map(s => (
-              <div key={s.spaceId} className="m-tap" onClick={() => { setSharedBadgeSheet(null); nav.push('space', { id: s.spaceId }); }}
-                style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 0', borderBottom:`1px solid ${M.line2}` }}>
-                <div style={{ flex:1, fontSize:14, fontWeight:500 }}>{s.spaceName}</div>
-                <I name="caretR" size={14} color={M.ink4}/>
-              </div>
-            ))}
-          </div>
-        </Sheet>
-      )}
 
       {showDeleteConfirm && (
         <Sheet onClose={() => setShowDeleteConfirm(null)}>
@@ -1718,34 +1848,116 @@ export function ScreenAccounts({ params }) {
         </Sheet>
       )}
 
-      {showEditSheet && (
-        <Sheet onClose={() => setShowEditSheet(null)}>
-          <div style={{ padding:'4px 20px 32px' }}>
-            <div style={{ fontSize:17, fontWeight:700, marginBottom:16 }}>{t('acct.editAccount')}</div>
-            <div style={{ marginBottom:14 }}>
-              <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{t('acct.accountName')}</div>
-              <input value={editName} onChange={e => setEditName(e.target.value)}
-                style={{ width:'100%', boxSizing:'border-box', padding:'11px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none' }}/>
-            </div>
-            {!showEditSheet.readOnly && (
-              <div style={{ marginBottom:14 }}>
-                <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{t('acct.accountNumber')}</div>
-                <input value={editIban} onChange={e => setEditIban(e.target.value)} placeholder="e.g. NL12 INGB 0123 4567 89"
-                  style={{ width:'100%', boxSizing:'border-box', padding:'11px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontMono, background:M.paper2, outline:'none' }}/>
+      {showEditSheet && (() => {
+        const sharedInSpaces = sharedInSpacesMap[showEditSheet.id] || [];
+        return (
+          <Sheet title={t('acct.accountDetails')} onClose={() => setShowEditSheet(null)}>
+            <div style={{ padding:'4px 20px 32px' }}>
+              {/* Type + method info row */}
+              <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:16 }}>
+                <AcctTypeBadge type={showEditSheet.type} t={t}/>
+                {showEditSheet.readOnly && (
+                  <span style={{ fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:999, background:M.sageSoft+'66', color:M.sage, textTransform:'uppercase', letterSpacing:'0.04em' }}>Automated</span>
+                )}
+                {!showEditSheet.readOnly && (
+                  <span style={{ fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:999, background:M.paper2, color:M.ink3, textTransform:'uppercase', letterSpacing:'0.04em', border:`1px solid ${M.line}` }}>Manual</span>
+                )}
               </div>
-            )}
-            <div style={{ marginBottom:20 }}/>
-            <button onClick={saveEdit}
-              style={{ width:'100%', padding:'14px 0', background:M.brand, color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>
-              {t('action.save')}
-            </button>
-            <button onClick={() => { setShowDeleteConfirm(showEditSheet); setShowEditSheet(null); }}
-              style={{ width:'100%', padding:'14px 0', background:'transparent', color:M.clay, border:`1px solid ${M.clay}33`, borderRadius:12, fontSize:15, fontWeight:500, cursor:'pointer', fontFamily:M.fontUI }}>
-              {t('acct.removeConfirm')}
-            </button>
-          </div>
-        </Sheet>
-      )}
+              <div style={{ marginBottom:14 }}>
+                <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{t('acct.accountName')}</div>
+                <input value={editName} onChange={e => setEditName(e.target.value)}
+                  style={{ width:'100%', boxSizing:'border-box', padding:'11px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none' }}/>
+              </div>
+              {!showEditSheet.readOnly && (
+                <div style={{ marginBottom:14 }}>
+                  <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{t('acct.accountNumber')}</div>
+                  <input value={editIban} onChange={e => setEditIban(e.target.value)} placeholder="e.g. NL12 INGB 0123 4567 89"
+                    style={{ width:'100%', boxSizing:'border-box', padding:'11px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontMono, background:M.paper2, outline:'none' }}/>
+                </div>
+              )}
+              {sharedInSpaces.length > 0 && (
+                <div style={{ marginBottom:16 }}>
+                  <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>Shared in</div>
+                  {sharedInSpaces.map(s => (
+                    <button key={s.spaceId} className="m-tap" onClick={() => { setShowEditSheet(null); nav.push('space', { id: s.spaceId }); }}
+                      style={{ width:'100%', display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderRadius:10, background:M.paper2, border:`1px solid ${M.line}`, marginBottom:6, cursor:'pointer', fontFamily:M.fontUI, textAlign:'left' }}>
+                      <div style={{ flex:1, fontSize:13, fontWeight:500, color:M.ink }}>{s.spaceName}</div>
+                      <I name="caretR" size={14} color={M.ink4}/>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div style={{ marginBottom:20 }}/>
+              <button onClick={saveEdit}
+                style={{ width:'100%', padding:'14px 0', background:M.brand, color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>
+                {t('action.save')}
+              </button>
+              <button onClick={() => { setShowDeleteConfirm(showEditSheet); setShowEditSheet(null); }}
+                style={{ width:'100%', padding:'14px 0', background:'transparent', color:M.clay, border:`1px solid ${M.clay}33`, borderRadius:12, fontSize:15, fontWeight:500, cursor:'pointer', fontFamily:M.fontUI }}>
+                {t('acct.removeConfirm')}
+              </button>
+            </div>
+          </Sheet>
+        );
+      })()}
+
+      {sharedWithMeSheet && (() => {
+        const myId = getUserId();
+        const isCoOwner = (sharedWithMeSheet.coOwners || []).includes(myId);
+        const authenticate = () => {
+          const spaceId = sharedWithMeSheet._fromSpaceId;
+          try {
+            const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${spaceId}`) || '{}');
+            const accounts = (sd.accounts || []).map(a =>
+              a.id === sharedWithMeSheet.id
+                ? { ...a, coOwners: [...new Set([...(a.coOwners || []), myId])] }
+                : a
+            );
+            localStorage.setItem(`munni_shared_data_${spaceId}`, JSON.stringify({ ...sd, accounts }));
+            window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: `munni_shared_data_${spaceId}` } }));
+            setSharedWithMeSheet(prev => prev ? { ...prev, coOwners: [...new Set([...(prev.coOwners || []), myId])] } : prev);
+          } catch {}
+        };
+        return (
+          <Sheet title="Shared account" onClose={() => setSharedWithMeSheet(null)}>
+            <div style={{ padding:'4px 20px 32px' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:20 }}>
+                <div style={{ width:44, height:44, borderRadius:12, background:sharedWithMeSheet.bankId ? 'transparent' : (sharedWithMeSheet.color || acctTypeColor(sharedWithMeSheet.type)), flexShrink:0 }}>
+                  {sharedWithMeSheet.bankId
+                    ? <BankLogoSVG bankId={sharedWithMeSheet.bankId} size={44} radius={12}/>
+                    : <I name={acctIcon(sharedWithMeSheet.type)} size={20} color="#fff"/>
+                  }
+                </div>
+                <div>
+                  <div style={{ fontSize:16, fontWeight:700, color:M.ink }}>{sharedWithMeSheet.name}</div>
+                  {sharedWithMeSheet.iban && <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono, marginTop:2 }}>{sharedWithMeSheet.iban}</div>}
+                </div>
+              </div>
+              {sharedWithMeSheet._fromSpaceName && (
+                <button className="m-tap" onClick={() => { setSharedWithMeSheet(null); nav.push('space', { id: sharedWithMeSheet._fromSpaceId }); }}
+                  style={{ width:'100%', display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderRadius:10, background:M.paper2, border:`1px solid ${M.line}`, marginBottom:16, cursor:'pointer', fontFamily:M.fontUI, textAlign:'left' }}>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontSize:11, color:M.ink3, marginBottom:2 }}>From space</div>
+                    <div style={{ fontSize:13, fontWeight:500, color:M.ink }}>{sharedWithMeSheet._fromSpaceName}</div>
+                  </div>
+                  <I name="caretR" size={14} color={M.ink4}/>
+                </button>
+              )}
+              {!isCoOwner && (
+                <button data-testid="authenticate-btn" className="m-tap" onClick={authenticate}
+                  style={{ width:'100%', padding:'13px', borderRadius:12, background:M.brand, color:'#fff', border:'none', fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginTop:8 }}>
+                  {t('acct.authenticate')}
+                </button>
+              )}
+              {isCoOwner && (
+                <div data-testid="co-owner-badge" style={{ padding:'10px 14px', borderRadius:10, background:M.sageSoft, fontSize:13, color:M.sage, textAlign:'center' }}>
+                  {t('acct.coOwner')}
+                </div>
+              )}
+            </div>
+          </Sheet>
+        );
+      })()}
     </div>
   );
 }

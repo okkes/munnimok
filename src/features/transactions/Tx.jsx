@@ -211,6 +211,18 @@ export function ScreenTxDetail({ params }) {
   const heroAmount = reimburseAmt !== 0 ? net : tx.amount;
   const showOriginal = reimburseAmt !== 0;
 
+  const [editingTitle, setEditingTitle] = React.useState(false);
+  const [titleDraft, setTitleDraft] = React.useState('');
+  const saveTitle = () => {
+    const val = titleDraft.trim();
+    if (val && val !== tx.merchant) {
+      updateTx(tx.id, { merchantDisplay: val });
+    } else if (!val) {
+      updateTx(tx.id, { merchantDisplay: undefined });
+    }
+    setEditingTitle(false);
+  };
+
   const saveNote = (text) => { updateTx(tx.id, { note: text }); };
 
   const removeCategory = (i) => {
@@ -238,18 +250,31 @@ export function ScreenTxDetail({ params }) {
           </div>
         )}
         <div style={{ pointerEvents: isLockedByOther ? 'none' : 'auto', opacity: isLockedByOther ? 0.65 : 1 }}>
-        {/* Hero — compact horizontal layout */}
-        <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0 16px' }}>
-          <div style={{ width:44, height:44, borderRadius:13, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-            <IcoMDI name={primaryCat.icon || 'help-circle-outline'} size={22} color={M.ink2}/>
+        {/* Hero */}
+        <div style={{ padding:'8px 0 20px' }}>
+          <div className="m-num" style={{ fontSize:34, fontWeight:700, color: heroAmount > 0 ? M.sage : (heroAmount === 0 ? M.ink3 : M.ink), lineHeight:1, letterSpacing:'-0.03em', marginBottom:4 }}>
+            {heroAmount > 0 ? '+' : heroAmount < 0 ? '−' : ''}{fmtEur(Math.abs(heroAmount))}
           </div>
-          <div style={{ flex:1 }}>
-            <div className="m-num" style={{ fontSize:26, fontWeight:700, color: heroAmount > 0 ? M.sage : (heroAmount === 0 ? M.ink3 : M.ink), lineHeight:1.1, letterSpacing:'-0.02em' }}>
-              {heroAmount > 0 ? '+' : heroAmount < 0 ? '−' : ''}{fmtEur(Math.abs(heroAmount))}
+          {showOriginal && (
+            <div className="m-num" style={{ fontSize:13, color:M.ink4, marginBottom:4, textDecoration:'line-through' }}>
+              {tx.amount < 0 ? '−' : '+'}{fmtEur(Math.abs(tx.amount))}
             </div>
-            <div style={{ fontSize:15, fontWeight:600, marginTop:2, color:M.ink }}>{tx.merchant}</div>
-            <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{fmtDate(tx.date, 'long')} · {tx.time}</div>
-          </div>
+          )}
+          {editingTitle ? (
+            <input autoFocus value={titleDraft} onChange={e=>setTitleDraft(e.target.value)}
+              onBlur={saveTitle} onKeyDown={e=>e.key==='Enter'&&saveTitle()}
+              style={{ fontSize:18, fontWeight:600, color:M.ink, border:'none', borderBottom:`2px solid ${M.sage}`, background:'transparent', outline:'none', width:'100%', fontFamily:M.fontUI, marginBottom:4, padding:'2px 0' }}/>
+          ) : (
+            <button data-testid="tx-title-edit-btn" className="m-tap" onClick={()=>{setTitleDraft(tx.merchantDisplay||tx.merchant);setEditingTitle(true);}}
+              style={{ fontSize:18, fontWeight:600, color:M.ink, background:'none', border:'none', cursor:'pointer', padding:0, fontFamily:M.fontUI, textAlign:'left', display:'flex', alignItems:'center', gap:6 }}>
+              <span data-testid="tx-display-name">{tx.merchantDisplay || tx.merchant}</span>
+              <IcoMDI name="pencil-outline" size={14} color={M.ink4}/>
+            </button>
+          )}
+          {tx.merchantDisplay && tx.merchantDisplay !== tx.merchant && (
+            <div style={{ fontSize:11, color:M.ink4, marginTop:2 }}>Originally: {tx.merchant}</div>
+          )}
+          <div style={{ fontSize:12, color:M.ink3, marginTop:4 }}>{fmtDate(tx.date, 'long')} · {tx.time}</div>
         </div>
 
         {/* Categories — own card */}
@@ -783,7 +808,8 @@ export function ScreenCategoryDrill({ params }) {
     : [cat.id];
 
   const periodBars = periodHistory.map(p => ({
-    label: new Date(p.start).toLocaleString('en-GB',{month:'short'}),
+    label: p.label,  // full range e.g. "20 Jun – 19 Jul"
+    shortLabel: new Date(p.start).toLocaleString('en-GB',{month:'short'}),  // for bar chart axis
     start: p.start,
     end: p.end,
     amount: allTxs.filter(t => t.amount < 0 && childIds.includes(t.cat) && t.date >= p.start && t.date <= p.end).reduce((s,t) => s + Math.abs(t.amount), 0),
@@ -799,7 +825,7 @@ export function ScreenCategoryDrill({ params }) {
   const total = periodBars[selectedBar]?.amount || 0;
 
   const barData = periodBars.map(b => b.amount);
-  const barLabels = periodBars.map(b => b.label);
+  const barLabels = periodBars.map(b => b.shortLabel);  // short month name for axis
   const barMax = Math.max(...barData, 1);
 
   const title = isParent ? `All ${cat.name}` : cat.name;

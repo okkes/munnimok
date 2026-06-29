@@ -163,6 +163,7 @@ if (typeof document !== 'undefined' && !document.getElementById('m-nav-styles'))
     @keyframes backdropFade { from { opacity:0; } to { opacity:1; } }
     @keyframes barRise { from { transform: scaleY(0); } to { transform: scaleY(1); } }
     .m-bar-animate { transform-origin: bottom; animation: barRise 0.4s cubic-bezier(0.34,1.56,0.64,1) both; }
+    @keyframes acctFlash { 0% { opacity:1; } 100% { opacity:0; } }
   `;
   document.head.appendChild(s);
 }
@@ -177,6 +178,12 @@ export function Sheet({ children, onClose, open, title }) {
   const [lockedMinHeight, setLockedMinHeight] = React.useState(null);
 
   React.useEffect(() => { didMountRef.current = true; }, []);
+
+  // Lock background scroll while sheet is open (Change 12)
+  React.useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = ''; };
+  }, []);
 
   // Lock height after open animation so content filtering never shrinks the sheet
   React.useEffect(() => {

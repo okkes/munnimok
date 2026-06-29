@@ -71,7 +71,7 @@ export function TxRow({ tx, onClick, showCat = true, showDate = false, dense = f
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
           <div style={{ fontSize: 14, fontWeight: 500, color: M.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>
-            {highlight ? <HighlightText text={tx.merchant} query={highlight}/> : tx.merchant}
+            {highlight ? <HighlightText text={tx.merchantDisplay || tx.merchant} query={highlight}/> : (tx.merchantDisplay || tx.merchant)}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
             {hasReimbursement && <div style={{ width:16, height:16, borderRadius:999, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center' }}><I name="link" size={9} color={M.sage}/></div>}

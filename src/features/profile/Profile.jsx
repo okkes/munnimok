@@ -1883,7 +1883,9 @@ export function ScreenSpaceDetail({ params }) {
                           <div style={{ flex:1, minWidth:0 }}>
                             <div style={{ fontSize:14, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', color:isFriend?M.ink:M.ink2 }}>{displayName}</div>
                             {!isFriend && (
-                              <div style={{ fontSize:11, color:M.ink4, marginTop:1 }}>{t('space.notFriend')}</div>
+                              <div style={{ fontSize:11, color: inviteSent ? M.sage : M.ink4, marginTop:1 }}>
+                                {inviteSent ? t('space.inviteSent') : t('space.notFriend')}
+                              </div>
                             )}
                           </div>
                           <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:livePerm==='owner'?M.ochreSoft:livePerm==='contributor'?M.sageSoft:M.paper2, color:PERM_COLOR[livePerm]||M.ink3, textTransform:'uppercase', flexShrink:0 }}>

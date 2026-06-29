@@ -1,18 +1,18 @@
 ﻿export const DEMO_ACCOUNT_IDS = ['demo_main', 'demo_save'];
 // Real accounts for google user
 export const REAL_ACCOUNTS = [
-  { id: 'main', name: 'Main · ING',        iban: 'NL47 INGB 0004 0000 4231', balance: 5240.18, type: 'checking', color: '#ff6200' },
-  { id: 'save', name: 'Savings · ING',     iban: 'NL47 INGB 0007 7000 7782', balance: 3120.50, type: 'savings',  color: '#A8782B' },
-  { id: 'inv',  name: 'Brokerage · DEGIRO',iban: 'NL47 DEGR 0001 0000 1015', balance: 365.00,  type: 'invest',  color: '#5E4A78' },
+  { id: 'main', bankId: 'ing',  name: 'Main · ING',        iban: 'NL47 INGB 0004 0000 4231', balance: 5240.18, type: 'checking', color: '#ff6200' },
+  { id: 'save', bankId: 'ing',  name: 'Savings · ING',     iban: 'NL47 INGB 0007 7000 7782', balance: 3120.50, type: 'savings',  color: '#A8782B' },
+  { id: 'inv',  bankId: 'degiro', name: 'Brokerage · DEGIRO',iban: 'NL47 DEGR 0001 0000 1015', balance: 365.00,  type: 'invest',  color: '#5E4A78' },
 ];
 // Demo accounts — separate IDs, clearly labelled demo, only usable by demo profiles
 export const DEMO_ACCOUNTS = [
-  { id: 'demo_main', name: 'Demo Checking · ING', iban: 'NL00 DEMO 0000 0001 00', balance: 3420.55, type: 'checking', color: '#4A6A4F', isDemo: true },
-  { id: 'demo_save', name: 'Demo Savings · ING',  iban: 'NL00 DEMO 0000 0002 00', balance: 8150.00, type: 'savings',  color: '#A8782B', isDemo: true },
+  { id: 'demo_main', bankId: 'ing', name: 'Demo Checking · ING', iban: 'NL00 DEMO 0000 0001 00', balance: 3420.55, type: 'checking', color: '#4A6A4F', isDemo: true },
+  { id: 'demo_save', bankId: 'ing', name: 'Demo Savings · ING',  iban: 'NL00 DEMO 0000 0002 00', balance: 8150.00, type: 'savings',  color: '#A8782B', isDemo: true },
 ];
 export const APPLE_ACCOUNTS = [
-  { id: 'abn_main', name: 'Betaalrekening · ABN AMRO', iban: 'NL47 ABNA 0428 7312 8940', balance: 3820.45, type: 'checking', color: '#009B77' },
-  { id: 'abn_save', name: 'Spaarrekening · ABN AMRO',  iban: 'NL47 ABNA 0561 2849 3012', balance: 12450.00, type: 'savings',  color: '#A8782B' },
+  { id: 'abn_main', bankId: 'abn', name: 'Betaalrekening · ABN AMRO', iban: 'NL47 ABNA 0428 7312 8940', balance: 3820.45, type: 'checking', color: '#009B77' },
+  { id: 'abn_save', bankId: 'abn', name: 'Spaarrekening · ABN AMRO',  iban: 'NL47 ABNA 0561 2849 3012', balance: 12450.00, type: 'savings',  color: '#A8782B' },
 ];
 export const ACCOUNTS = DEMO_ACCOUNTS; // backward compat alias
 
