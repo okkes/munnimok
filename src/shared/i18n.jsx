@@ -367,6 +367,7 @@ export const TRANSLATIONS = {
     // Space detail
     'space.financialAccounts':'Financial Accounts','space.financialAccountsSub':'Accounts attached to this space',
     'space.noAccounts':'No accounts attached',
+    'space.noAccountsToAttach':'No accounts to attach — create one first',
     'space.settings':'Settings','space.currency':'Currency','space.currencySub':'Display currency for this space',
   },
   nl: {
@@ -715,6 +716,7 @@ export const TRANSLATIONS = {
     'acct.removeConfirm':'Rekening verwijderen',
     'space.financialAccounts':'Financiële rekeningen','space.financialAccountsSub':'Rekeningen gekoppeld aan deze ruimte',
     'space.noAccounts':'Geen rekeningen gekoppeld',
+    'space.noAccountsToAttach':'Geen rekeningen om te koppelen — maak er eerst een aan',
     'space.settings':'Instellingen','space.currency':'Valuta','space.currencySub':'Weergavevaluta voor deze ruimte',
   },
   tr: {
@@ -1063,6 +1065,7 @@ export const TRANSLATIONS = {
     'acct.removeConfirm':'Hesabı kaldır',
     'space.financialAccounts':'Finansal Hesaplar','space.financialAccountsSub':'Bu alana bağlı hesaplar',
     'space.noAccounts':'Bağlı hesap yok',
+    'space.noAccountsToAttach':'Eklenecek hesap yok — önce bir tane oluşturun',
     'space.settings':'Ayarlar','space.currency':'Para birimi','space.currencySub':'Bu alan için görüntüleme para birimi',
   },
 };

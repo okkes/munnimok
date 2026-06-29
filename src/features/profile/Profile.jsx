@@ -1342,11 +1342,12 @@ export function ScreenSpaceDetail({ params }) {
   const [memberActionSheet, setMemberActionSheet] = React.useState(null);
   const [memberCardSheet, setMemberCardSheet] = React.useState(null);
   const [showSpaceCurrencyPicker, setShowSpaceCurrencyPicker] = React.useState(false);
+  const [acctDetailSheet, setAcctDetailSheet] = React.useState(null);
 
   const myId = React.useMemo(() => getUserId(), []);
   const [invitations, setInvitations] = useLocalStorage('munni_global_invitations', []);
   const [userRegistry] = useLocalStorage('munni_global_users', {});
-  const [friendships] = useLocalStorage('munni_global_friendships', []);
+  const [friendships, setFriendships] = useLocalStorage('munni_global_friendships', []);
 
   const myFriendIds = React.useMemo(() => {
     const s = new Set();
@@ -1360,10 +1361,17 @@ export function ScreenSpaceDetail({ params }) {
   );
 
   const sendFriendInvite = (userId) => {
-    setInvitations(prev => [...prev, {
-      id: `inv_fr_${Date.now()}`, type: 'friend', fromId: myId, toId: userId,
-      status: 'pending', fromDisplay: userRegistry[myId]?.displayName || myId,
-    }]);
+    const mutualInvite = invitations.find(i => i.fromId === userId && i.toId === myId && i.type === 'friend' && i.status === 'pending');
+    if (mutualInvite) {
+      // Both sides want to be friends — auto-approve
+      setInvitations(prev => prev.map(i => i.id === mutualInvite.id ? { ...i, status: 'accepted' } : i));
+      setFriendships(prev => [...prev, { id: `fr_${Date.now()}`, users: [myId, userId], since: Date.now() }]);
+    } else {
+      setInvitations(prev => [...prev, {
+        id: `inv_fr_${Date.now()}`, type: 'friend', fromId: myId, toId: userId,
+        status: 'pending', fromDisplay: userRegistry[myId]?.displayName || myId,
+      }]);
+    }
   };
 
   // All hooks before early return
@@ -1664,7 +1672,6 @@ export function ScreenSpaceDetail({ params }) {
 
   const renderAttachedRow = (a, i) => {
     const sharedAcctData = sharedAccts.find(s => s.id === a.id);
-    const isSharedAcct = !!sharedAcctData && !ownConnectedIds.has(a.id);
     const isOwnAcct = ownConnectedIds.has(a.id);
     const canDetach = myPerm === 'owner' || isOwnAcct;
     const typeColor = spaceAcctTypeColor(a.type);
@@ -1672,7 +1679,8 @@ export function ScreenSpaceDetail({ params }) {
     return (
       <React.Fragment key={a.id}>
         {i > 0 && <Divider inset={50}/>}
-        <div style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
+        <div className="m-tap" onClick={() => setAcctDetailSheet({ acct: a, sharedAcctData, canDetach, typeColor, typeLabel })}
+          style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
           <div style={{ width:36, height:36, borderRadius:10, background: a.color || typeColor, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
             <I name={spaceAcctIcon(a.type)} size={16} color="#fff"/>
           </div>
@@ -1683,24 +1691,10 @@ export function ScreenSpaceDetail({ params }) {
               <span style={{ fontSize:9, fontWeight:700, padding:'2px 6px', borderRadius:999, background:typeColor+'22', color:typeColor, textTransform:'uppercase', letterSpacing:'0.04em' }}>
                 {typeLabel}
               </span>
-              {a.readOnly
-                ? <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase' }}>{t('acct.automated')}</span>
-                : <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:999, background:M.paper2, color:M.ink3, textTransform:'uppercase', border:`1px solid ${M.line}` }}>{t('acct.manual')}</span>
-              }
-              {isSharedAcct && <span style={{ fontSize:9, fontWeight:600, padding:'1px 6px', borderRadius:999, background:M.violetSoft||'#EEE8FF', color:M.violet }}>Shared</span>}
             </div>
-            {isProfileShared && sharedAcctData?.attachedBy && (() => {
-              const attacher = userRegistry[sharedAcctData.attachedBy] || {};
-              const attacherName = attacher.displayName || sharedAcctData.attachedBy;
-              const isMe = sharedAcctData.attachedBy === myId;
-              return <div style={{ fontSize:11, color:M.ink4, marginTop:1 }}>{t('space.addedBy')} {isMe ? t('word.you') : attacherName}</div>;
-            })()}
           </div>
           {canDetach
-            ? <button className="m-tap" onClick={() => toggleAccount(a.id)}
-                style={{ width:24, height:24, background:M.claySoft, border:'none', borderRadius:999, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0 }}>
-                <I name="x" size={11} color={M.clay}/>
-              </button>
+            ? <I name="caretR" size={13} color={M.ink4}/>
             : <I name="lock" size={14} color={M.ink4}/>
           }
         </div>
@@ -1715,47 +1709,81 @@ export function ScreenSpaceDetail({ params }) {
         leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
       />
       <div className="m-body-scroll">
-        {/* Avatar + name — clean hero section */}
-        <div style={{ display:'flex', flexDirection:'column', alignItems:'center', paddingTop:20, paddingBottom:16, gap:6 }}>
-          <button className="m-tap" onClick={() => setShowPhotoSheet(true)}
-            style={{ position:'relative', background:'none', border:'none', cursor:'pointer', padding:0 }}>
-            <ProfileAvatar profile={profile} size={80}/>
-            <div style={{ position:'absolute', bottom:0, right:0, width:24, height:24, borderRadius:999, background:M.sage, display:'flex', alignItems:'center', justifyContent:'center', border:'2px solid #fff' }}>
-              <I name="cam" size={12} color="#fff"/>
+        {/* Avatar + name — compact iOS-like hero section */}
+        {isMemberOfShared ? (
+          /* Member view: horizontal row — photo left, name/owner right */
+          <div style={{ display:'flex', alignItems:'center', gap:16, padding:'20px 4px 16px' }}>
+            <button className="m-tap" onClick={() => setShowPhotoSheet(true)}
+              style={{ position:'relative', background:'none', border:'none', cursor:'pointer', padding:0, flexShrink:0 }}>
+              <ProfileAvatar profile={profile} size={64}/>
+              <div style={{ position:'absolute', bottom:0, right:0, width:20, height:20, borderRadius:999, background:M.sage, display:'flex', alignItems:'center', justifyContent:'center', border:'2px solid #fff' }}>
+                <I name="cam" size={10} color="#fff"/>
+              </div>
+            </button>
+            <div style={{ flex:1, minWidth:0 }}>
+              {editingName ? (
+                <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+                  <input
+                    data-testid="space-detail-name-input"
+                    autoFocus
+                    value={nameDraft}
+                    onChange={e => { setNameDraft(e.target.value); setNameError(''); }}
+                    onBlur={saveName}
+                    onKeyDown={e => e.key==='Enter' && saveName()}
+                    style={{ fontSize:17, fontWeight:700, border:`1px solid ${nameError ? M.clay : M.sage}`, borderRadius:8, padding:'5px 10px', fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box', width:'100%' }}
+                  />
+                  {nameError && <div data-testid="space-detail-name-error" style={{ fontSize:11, color:M.clay }}>{nameError}</div>}
+                </div>
+              ) : (
+                <div data-testid="space-detail-name" className="m-tap" onClick={startEditName}>
+                  <div style={{ fontSize:17, fontWeight:700, color:M.ink, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{profile.localName || profile.name}</div>
+                  <div style={{ fontSize:10, color:M.ink4, marginTop:1 }}>{t('space.tapRenameLocal')}</div>
+                </div>
+              )}
+              {(profile.creatorId || profile.ownerId) && (
+                <div style={{ fontSize:12, color:M.ink3, marginTop:3 }}>
+                  {t('space.by')} <span style={{ fontWeight:600 }}>{formatCreatorLabel(profile.creatorId || profile.ownerId, profile.ownerDisplay, userRegistry)}</span>
+                </div>
+              )}
+              {isActive && (
+                <div style={{ display:'inline-block', fontSize:10, color:M.sage, fontWeight:700, background:M.sageSoft, padding:'2px 10px', borderRadius:999, marginTop:4 }}>{t('space.active')}</div>
+              )}
             </div>
-          </button>
-          <button className="m-tap" onClick={() => setShowPhotoSheet(true)}
-            style={{ fontSize:13, fontWeight:600, color:M.sage, background:'transparent', border:'none', cursor:'pointer', fontFamily:M.fontUI, padding:'2px 0' }}>
-            {t('profile.changePhoto')}
-          </button>
-          {editingName ? (
-            <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:4 }}>
-              <input
-                data-testid="space-detail-name-input"
-                autoFocus
-                value={nameDraft}
-                onChange={e => { setNameDraft(e.target.value); setNameError(''); }}
-                onBlur={saveName}
-                onKeyDown={e => e.key==='Enter' && saveName()}
-                style={{ fontSize:18, fontWeight:700, border:`1px solid ${nameError ? M.clay : M.sage}`, borderRadius:8, padding:'5px 12px', fontFamily:M.fontUI, background:M.paper2, outline:'none', textAlign:'center', boxSizing:'border-box', width:220 }}
-              />
-              {nameError && <div data-testid="space-detail-name-error" style={{ fontSize:11, color:M.clay }}>{nameError}</div>}
-            </div>
-          ) : (
-            <div data-testid="space-detail-name" className="m-tap" onClick={startEditName} style={{ textAlign:'center' }}>
-              <div style={{ fontSize:18, fontWeight:700, color:M.ink }}>{profile.localName || profile.name}</div>
-              <div style={{ fontSize:10, color:M.ink4, marginTop:1 }}>{isMemberOfShared ? t('space.tapRenameLocal') : t('space.tapRename')}</div>
-            </div>
-          )}
-          {isMemberOfShared && (profile.creatorId || profile.ownerId) && (
-            <div style={{ fontSize:12, color:M.ink3 }}>
-              {t('space.by')} <span style={{ fontWeight:600 }}>{formatCreatorLabel(profile.creatorId || profile.ownerId, profile.ownerDisplay, userRegistry)}</span>
-            </div>
-          )}
-          {isActive && (
-            <div style={{ fontSize:11, color:M.sage, fontWeight:700, background:M.sageSoft, padding:'3px 12px', borderRadius:999, marginTop:2 }}>{t('space.active')}</div>
-          )}
-        </div>
+          </div>
+        ) : (
+          /* Owner view: centered, compact */
+          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', paddingTop:20, paddingBottom:16, gap:6 }}>
+            <button className="m-tap" onClick={() => setShowPhotoSheet(true)}
+              style={{ position:'relative', background:'none', border:'none', cursor:'pointer', padding:0 }}>
+              <ProfileAvatar profile={profile} size={64}/>
+              <div style={{ position:'absolute', bottom:0, right:0, width:20, height:20, borderRadius:999, background:M.sage, display:'flex', alignItems:'center', justifyContent:'center', border:'2px solid #fff' }}>
+                <I name="cam" size={10} color="#fff"/>
+              </div>
+            </button>
+            {editingName ? (
+              <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:4 }}>
+                <input
+                  data-testid="space-detail-name-input"
+                  autoFocus
+                  value={nameDraft}
+                  onChange={e => { setNameDraft(e.target.value); setNameError(''); }}
+                  onBlur={saveName}
+                  onKeyDown={e => e.key==='Enter' && saveName()}
+                  style={{ fontSize:17, fontWeight:700, border:`1px solid ${nameError ? M.clay : M.sage}`, borderRadius:8, padding:'5px 12px', fontFamily:M.fontUI, background:M.paper2, outline:'none', textAlign:'center', boxSizing:'border-box', width:220 }}
+                />
+                {nameError && <div data-testid="space-detail-name-error" style={{ fontSize:11, color:M.clay }}>{nameError}</div>}
+              </div>
+            ) : (
+              <div data-testid="space-detail-name" className="m-tap" onClick={startEditName} style={{ textAlign:'center' }}>
+                <div style={{ fontSize:17, fontWeight:700, color:M.ink }}>{profile.localName || profile.name}</div>
+                <div style={{ fontSize:10, color:M.ink4, marginTop:1 }}>{t('space.tapRename')}</div>
+              </div>
+            )}
+            {isActive && (
+              <div style={{ fontSize:10, color:M.sage, fontWeight:700, background:M.sageSoft, padding:'2px 10px', borderRadius:999, marginTop:2 }}>{t('space.active')}</div>
+            )}
+          </div>
+        )}
 
         {/* Settings section */}
         <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('space.settings')}</div>
@@ -1858,14 +1886,6 @@ export function ScreenSpaceDetail({ params }) {
                               <div style={{ fontSize:11, color:M.ink4, marginTop:1 }}>{t('space.notFriend')}</div>
                             )}
                           </div>
-                          {!isFriend && (
-                            inviteSent
-                              ? <span style={{ fontSize:10, color:M.ink4, flexShrink:0 }}>{t('friends.sent')}</span>
-                              : <button className="m-tap" onClick={e => { e.stopPropagation(); sendFriendInvite(m.userId); }}
-                                  style={{ fontSize:10, fontWeight:600, color:M.sage, background:'none', border:`1px solid ${M.sage}`, borderRadius:99, padding:'3px 10px', cursor:'pointer', fontFamily:M.fontUI, flexShrink:0 }}>
-                                  {t('friends.invite')}
-                                </button>
-                          )}
                           <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:999, background:livePerm==='owner'?M.ochreSoft:livePerm==='contributor'?M.sageSoft:M.paper2, color:PERM_COLOR[livePerm]||M.ink3, textTransform:'uppercase', flexShrink:0 }}>
                             {permLabel(livePerm, t)||livePerm}
                           </span>
@@ -1982,7 +2002,7 @@ export function ScreenSpaceDetail({ params }) {
                 return (
                   <>
                     <div style={{ textAlign:'center', color:M.ink3, fontSize:13, padding:'16px 0', marginBottom:12 }}>
-                      {t('space.noAccounts')}
+                      {t('space.noAccountsToAttach')}
                     </div>
                     <button className="m-tap" onClick={() => { setShowAttachSheet(null); nav.push('accounts', { spaceId: profile.id }); }}
                       style={{ width:'100%', padding:'12px 0 4px', display:'flex', alignItems:'center', justifyContent:'center', gap:4, background:'transparent', border:'none', cursor:'pointer', fontFamily:M.fontUI }}>
@@ -2031,6 +2051,53 @@ export function ScreenSpaceDetail({ params }) {
           </div>
         </Sheet>
       )}
+
+      {acctDetailSheet && (() => {
+        const { acct, sharedAcctData, canDetach, typeColor, typeLabel } = acctDetailSheet;
+        const attacher = sharedAcctData?.attachedBy ? (userRegistry[sharedAcctData.attachedBy] || {}) : null;
+        const attacherName = attacher?.displayName || sharedAcctData?.attachedBy;
+        const isMe = sharedAcctData?.attachedBy === myId;
+        return (
+          <Sheet title={acct.name} onClose={() => setAcctDetailSheet(null)}>
+            <div style={{ padding:'4px 16px 24px' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:14, marginBottom:20 }}>
+                <div style={{ width:48, height:48, borderRadius:13, background: acct.color || typeColor, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <I name={spaceAcctIcon(acct.type)} size={22} color="#fff"/>
+                </div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:16, fontWeight:600 }}>{acct.name}</div>
+                  {acct.iban && <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono, marginTop:2 }}>{acct.iban}</div>}
+                </div>
+              </div>
+              <div style={{ display:'flex', flexDirection:'column', gap:0 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 0', borderBottom:`1px solid ${M.line2}` }}>
+                  <div style={{ fontSize:12, color:M.ink3, width:80 }}>Type</div>
+                  <span style={{ fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:999, background:typeColor+'22', color:typeColor, textTransform:'uppercase', letterSpacing:'0.04em' }}>{typeLabel}</span>
+                </div>
+                <div style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 0', borderBottom:`1px solid ${M.line2}` }}>
+                  <div style={{ fontSize:12, color:M.ink3, width:80 }}>Method</div>
+                  {acct.readOnly
+                    ? <span style={{ fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase' }}>{t('acct.automated')}</span>
+                    : <span style={{ fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:999, background:M.paper2, color:M.ink3, textTransform:'uppercase', border:`1px solid ${M.line}` }}>{t('acct.manual')}</span>
+                  }
+                </div>
+                {isProfileShared && sharedAcctData?.attachedBy && (
+                  <div style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 0', borderBottom:`1px solid ${M.line2}` }}>
+                    <div style={{ fontSize:12, color:M.ink3, width:80 }}>{t('space.addedBy')}</div>
+                    <div style={{ fontSize:13, color:M.ink }}>{isMe ? t('word.you') : attacherName}</div>
+                  </div>
+                )}
+              </div>
+              {canDetach && (
+                <button className="m-tap" onClick={() => { toggleAccount(acct.id); setAcctDetailSheet(null); }}
+                  style={{ width:'100%', padding:'14px 0', marginTop:20, background:M.claySoft, color:M.clay, border:'none', borderRadius:12, fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+                  Detach from space
+                </button>
+              )}
+            </div>
+          </Sheet>
+        );
+      })()}
 
       {showPhotoSheet && (
         <Sheet onClose={() => setShowPhotoSheet(false)}>

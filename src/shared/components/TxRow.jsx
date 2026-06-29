@@ -1,8 +1,8 @@
-﻿import React from 'react';
+import React from 'react';
 import { CATEGORIES, _catExt, catPath } from '../data/categories.js';
 import { fmtEur, fmtDate } from '../utils/format.js';
 import { M, I, IcoMDI } from '../../app/theme.jsx';
-import { useTxCtx } from '../../app/providers.jsx';
+import { useTxCtx, useConnectedAccounts } from '../../app/providers.jsx';
 
 export function HighlightText({ text, query }) {
   if (!query) return <span>{text}</span>;
@@ -17,8 +17,20 @@ export function HighlightText({ text, query }) {
   );
 }
 
+// Inline account icon/color helpers (to avoid circular import with Accounts.jsx)
+const _acctIcon = (type) => {
+  const m = { checking:'card', bank:'card', saving:'piggy', savings:'piggy',
+    cash:'wallet', brokerage:'rocket', invest:'rocket', credit:'card', mortgage:'home', loan:'receipt' };
+  return m[type] || 'card';
+};
+const _acctColor = (type) => {
+  const m = { checking:'#FF6200', bank:'#FF6200', saving:'#A8782B', savings:'#A8782B',
+    cash:'#26A69A', brokerage:'#5E4A78', invest:'#5E4A78',
+    credit:'#E05555', mortgage:'#D4940A', loan:'#7B61FF' };
+  return m[type] || M.slate;
+};
 
-export function TxRow({ tx, onClick, showCat = true, showDate = false, dense = false, highlight = '' }) {
+export function TxRow({ tx, onClick, showCat = true, showDate = false, dense = false, highlight = '', catLabel = null }) {
   // Fix undefined categories for saving transactions
   let effectiveCat = tx.cat;
   if (tx.savingAccount && (!effectiveCat || effectiveCat === 'savings' || (!CATEGORIES[effectiveCat] && !_catExt[effectiveCat]))) {
@@ -26,23 +38,35 @@ export function TxRow({ tx, onClick, showCat = true, showDate = false, dense = f
   }
   const cat = CATEGORIES[effectiveCat] || _catExt[effectiveCat] || CATEGORIES[tx.cat] || _catExt[tx.cat] || {};
   const { txs: allTxs } = useTxCtx();
+  const [connectedAccounts] = useConnectedAccounts();
   const positive = tx.amount > 0;
   const isLinkedReimburse = tx.linkedTo;
   const reimburseTx = !positive ? allTxs.find(t => t.linkedTo === tx.id) : null;
   const hasReimbursement = !!reimburseTx;
   const displayAmount = hasReimbursement ? tx.amount + reimburseTx.amount : tx.amount;
   const displayPositive = displayAmount > 0;
+
+  // Look up the account for this transaction
+  const account = tx.account ? connectedAccounts.find(a => a.id === tx.account) : null;
+  const hasAccount = !!account;
+  const iconBg = hasAccount ? (account.color || _acctColor(account.type)) : M.paper2;
+  const iconName = hasAccount ? _acctIcon(account.type) : (cat.icon || 'help-circle-outline');
+  const iconColor = hasAccount ? '#fff' : M.ink2;
+
   return (
     <div data-testid="tx-row" onClick={onClick} className={onClick ? 'm-tap' : ''} style={{
       display: 'flex', alignItems: 'center', gap: 12,
       padding: dense ? '10px 0' : '12px 0',
     }}>
       <div style={{
-        width: 38, height: 38, borderRadius: 10, background: M.paper2,
+        width: 38, height: 38, borderRadius: 10, background: iconBg,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         flexShrink: 0,
       }}>
-        <IcoMDI name={cat.icon || 'help-circle-outline'} size={18} color={M.ink2}/>
+        {hasAccount
+          ? <I name={iconName} size={18} color={iconColor}/>
+          : <IcoMDI name={iconName} size={18} color={iconColor}/>
+        }
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
@@ -60,7 +84,12 @@ export function TxRow({ tx, onClick, showCat = true, showDate = false, dense = f
         {showCat && (
           <div style={{ display: 'flex', gap: 5, alignItems: 'center', marginTop: 3 }}>
             <div style={{ fontSize: 12, color: M.ink3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
-              {showDate ? fmtDate(tx.date) : (highlight ? <HighlightText text={catPath(cat)} query={highlight}/> : catPath(cat))}
+              {catLabel
+                ? catLabel
+                : showDate
+                  ? fmtDate(tx.date)
+                  : (highlight ? <HighlightText text={catPath(cat)} query={highlight}/> : catPath(cat))
+              }
             </div>
             {tx.recurring && <div style={{ width:14, height:14, borderRadius:4, background:M.paper2, border:`1px solid ${M.line}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, title:'Recurring' }}><I name="receipt" size={7} color={M.ink3}/></div>}
             {tx.needsReview && <div style={{ width:14, height:14, borderRadius:4, background:M.ochreSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}><I name="alert" size={7} color={M.ochre}/></div>}

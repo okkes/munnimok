@@ -623,6 +623,9 @@ function NewCatForm({ onSave, isSub = false }) {
   const [name, setName] = React.useState('');
   const [icon, setIcon] = React.useState('help-circle-outline');
   const [color, setColor] = React.useState(M.slate);
+  const [scope, setScope] = React.useState('all_private');
+  const { profiles } = useProfiles();
+  const privateProfiles = profiles.filter(p => !p.isShared && !p.isDemo);
   const mdiIcons = [
     'help-circle-outline','home-outline','car-outline','heart-outline','star-outline',
     'food-outline','cart-variant','coffee-outline','television-play','hospital-box-outline',
@@ -658,7 +661,37 @@ function NewCatForm({ onSave, isSub = false }) {
           </div>
         </>
       )}
-      <button className="m-tap" onClick={() => name.trim() && onSave(name.trim(), icon, color)}
+      {/* Scope selector */}
+      <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>Available in</div>
+      <div style={{ display:'flex', flexDirection:'column', gap:6, marginBottom:16 }}>
+        <button className="m-tap" onClick={() => setScope('all_private')}
+          style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderRadius:10, border:`1.5px solid ${scope==='all_private'?M.sage:M.line}`, background:scope==='all_private'?M.sageSoft:M.paper2, cursor:'pointer', fontFamily:M.fontUI, textAlign:'left' }}>
+          <div style={{ width:18, height:18, borderRadius:999, border:`2px solid ${scope==='all_private'?M.sage:M.ink4}`, background:scope==='all_private'?M.sage:'transparent', flexShrink:0 }}/>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:13, fontWeight:500, color:M.ink }}>All private spaces</div>
+            <div style={{ fontSize:11, color:M.ink3 }}>Visible in all your personal spaces</div>
+          </div>
+        </button>
+        {privateProfiles.length > 0 && (
+          <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+            {privateProfiles.map(p => {
+              const spaceScope = Array.isArray(scope) ? scope : [];
+              const selected = spaceScope.includes(p.id);
+              return (
+                <button key={p.id} className="m-tap" onClick={() => {
+                  const cur = Array.isArray(scope) ? scope : [];
+                  setScope(selected ? cur.filter(id => id !== p.id) : [...cur, p.id]);
+                }}
+                  style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderRadius:10, border:`1.5px solid ${selected?M.sage:M.line}`, background:selected?M.sageSoft:M.paper2, cursor:'pointer', fontFamily:M.fontUI, textAlign:'left' }}>
+                  <div style={{ width:18, height:18, borderRadius:4, border:`2px solid ${selected?M.sage:M.ink4}`, background:selected?M.sage:'transparent', flexShrink:0 }}/>
+                  <div style={{ fontSize:13, fontWeight:500, color:M.ink }}>{p.localName || p.name}</div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+      <button className="m-tap" onClick={() => name.trim() && onSave(name.trim(), icon, color, scope)}
         disabled={!name.trim()}
         style={{ width:'100%', background:M.sage, border:'none', borderRadius:12, padding:'13px', color:'#fff', fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, opacity: name.trim()?1:0.5 }}>
         {isSub ? 'Add sub-category' : 'Add category'}
@@ -863,6 +896,11 @@ export function ScreenManageCategories() {
             onClick={isCustom ? () => setEditSheet({ catId: parentKey, parentId: null, isCustom:true, isParent: true, name: parentCat.name, icon: parentCat.icon || 'help-circle-outline', color: parentCat.color }) : undefined}
           >
             <div style={{ fontSize:15, fontWeight:600 }}>{parentCat.name}</div>
+            {isCustom && parentCat.scope && (
+              <div style={{ fontSize:10, color:M.ink4, marginTop:1 }}>
+                {parentCat.scope === 'all_private' ? 'All private spaces' : Array.isArray(parentCat.scope) ? `${parentCat.scope.length} space${parentCat.scope.length!==1?'s':''}` : ''}
+              </div>
+            )}
           </div>
           <span style={{ fontSize:12, color:M.ink3 }}>{subCount} subs</span>
           <button className="m-tap" onClick={() => setCollapsedParents(prev => ({ ...prev, [parentKey]: !prev[parentKey] }))}
@@ -953,11 +991,11 @@ export function ScreenManageCategories() {
       {/* New parent sheet */}
       <Sheet open={newParentSheet} onClose={() => setNewParentSheet(false)} title="New parent category">
         <NewCatForm
-          onSave={(name, icon, color) => {
+          onSave={(name, icon, color, scope) => {
             const id = `cust_${Date.now()}`;
             setCustomCats(prev => [...prev,
-              { id, name, icon: icon||'box', color: color||M.slate, isParent:true, parent:null },
-              { id:`${id}_other`, name:'Other', icon:'dots-horizontal', color:M.paper2, isParent:false, parent:id }
+              { id, name, icon: icon||'box', color: color||M.slate, isParent:true, parent:null, scope: scope || 'all_private' },
+              { id:`${id}_other`, name:'Other', icon:'dots-horizontal', color:M.paper2, isParent:false, parent:id, scope: scope || 'all_private' }
             ]);
             setNewParentSheet(false);
           }}
@@ -968,10 +1006,10 @@ export function ScreenManageCategories() {
       <Sheet open={!!newSubSheet} onClose={() => setNewSubSheet(null)} title="New sub-category">
         <NewCatForm
           isSub={true}
-          onSave={(name, icon, color) => {
+          onSave={(name, icon, color, scope) => {
             const parentId = newSubSheet;
             setCustomCats(prev => [...prev,
-              { id:`cust_${Date.now()}`, name, icon: icon||'box', color: color||M.slate, isParent:false, parent:parentId }
+              { id:`cust_${Date.now()}`, name, icon: icon||'box', color: color||M.slate, isParent:false, parent:parentId, scope: scope || 'all_private' }
             ]);
             setNewSubSheet(null);
           }}

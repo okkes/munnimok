@@ -238,20 +238,18 @@ export function ScreenTxDetail({ params }) {
           </div>
         )}
         <div style={{ pointerEvents: isLockedByOther ? 'none' : 'auto', opacity: isLockedByOther ? 0.65 : 1 }}>
-        {/* Hero */}
-        <div style={{ textAlign: 'center', padding: '8px 0 28px' }}>
-          <div style={{
-            width: 64, height: 64, borderRadius: 18, background: M.paper2,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            margin: '0 auto 14px',
-          }}>
-            <IcoMDI name={primaryCat.icon || 'help-circle-outline'} size={28} color={M.ink2}/>
+        {/* Hero — compact horizontal layout */}
+        <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0 16px' }}>
+          <div style={{ width:44, height:44, borderRadius:13, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+            <IcoMDI name={primaryCat.icon || 'help-circle-outline'} size={22} color={M.ink2}/>
           </div>
-          <div className="m-num" style={{ fontSize: 38, fontWeight: 600, color: heroAmount > 0 ? M.sage : (heroAmount === 0 ? M.ink3 : M.ink), letterSpacing: '-0.025em' }}>
-            {heroAmount > 0 ? '+' : heroAmount < 0 ? '−' : ''}{fmtEur(Math.abs(heroAmount))}
+          <div style={{ flex:1 }}>
+            <div className="m-num" style={{ fontSize:26, fontWeight:700, color: heroAmount > 0 ? M.sage : (heroAmount === 0 ? M.ink3 : M.ink), lineHeight:1.1, letterSpacing:'-0.02em' }}>
+              {heroAmount > 0 ? '+' : heroAmount < 0 ? '−' : ''}{fmtEur(Math.abs(heroAmount))}
+            </div>
+            <div style={{ fontSize:15, fontWeight:600, marginTop:2, color:M.ink }}>{tx.merchant}</div>
+            <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{fmtDate(tx.date, 'long')} · {tx.time}</div>
           </div>
-          <div className="m-h2" style={{ marginTop: 14 }}>{tx.merchant}</div>
-          <div style={{ fontSize: 13, color: M.ink3, marginTop: 4 }}>{fmtDate(tx.date, 'long')} · {tx.time}</div>
         </div>
 
         {/* Categories — own card */}
@@ -260,6 +258,9 @@ export function ScreenTxDetail({ params }) {
           {txCats.map((c, i) => {
             const cat = CATEGORIES[c.catId] || _catExt[c.catId] || {};
             const isUncategorized = c.catId === 'expenseUncategorized' || c.catId === 'incomeUncategorized';
+            const parent = cat.parent ? (CATEGORIES[cat.parent] || _catExt[cat.parent]) : null;
+            const parentName = parent?.name || cat.group || '';
+            const subName = cat.name || c.catId;
             return (
               <React.Fragment key={c.catId + i}>
                 <div style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 0', opacity: isUncategorized ? 0.6 : 1 }}>
@@ -267,7 +268,8 @@ export function ScreenTxDetail({ params }) {
                     <IcoMDI name={cat.icon||'help-circle-outline'} size={14} color={isUncategorized ? M.ink4 : M.ink2}/>
                   </div>
                   <div style={{ flex:1 }}>
-                    <div style={{ fontSize:13, fontWeight:500, fontStyle: isUncategorized ? 'italic' : 'normal', color: isUncategorized ? M.ink3 : M.ink }}>{catPath(cat) || c.catId}</div>
+                    <div style={{ fontSize:13, fontWeight:500, fontStyle: isUncategorized ? 'italic' : 'normal', color: isUncategorized ? M.ink3 : M.ink }}>{subName}</div>
+                    {!isUncategorized && parentName && <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{parentName}</div>}
                     {isUncategorized && <div style={{ fontSize:10, color:M.ink4, marginTop:1 }}>Auto-set · add a category above to replace</div>}
                   </div>
                   <div className="m-num" style={{ fontSize:13, color: isUncategorized ? M.ink4 : M.ink2 }}>{fmtEur(c.amount)}</div>
@@ -313,7 +315,15 @@ export function ScreenTxDetail({ params }) {
 
         {/* General info card */}
         <div className="m-card" style={{ padding: '4px 16px', marginBottom: 14, border: `1px solid ${M.line}` }}>
-          <DetailRow label="Account" value={account?.name || '—'}/>
+          <div className={account ? 'm-tap' : ''} onClick={account ? () => {
+            sessionStorage.setItem('munni_highlight_acct', JSON.stringify({ id: account.id, at: Date.now() }));
+            window.dispatchEvent(new CustomEvent('munni-ss', { detail: { key: 'munni_highlight_acct' } }));
+            nav.push('accounts');
+          } : undefined} style={{ display:'flex', alignItems:'center', gap:10, padding:'13px 0' }}>
+            <div style={{ fontSize:12, color:M.ink3, width:96 }}>Account</div>
+            <div style={{ flex:1, fontSize:13, color:account ? M.ink : M.ink4 }}>{account?.name || '—'}</div>
+            {account && <I name="caretR" size={14} color={M.ink4}/>}
+          </div>
           <Divider inset={0}/>
           {(() => {
             const savAcct = tx.savingAccount ? ACCOUNTS.find(a => a.id === tx.savingAccount) : null;
@@ -850,7 +860,10 @@ export function ScreenCategoryDrill({ params }) {
             <div className="m-card" style={{ padding:'0 16px', border:`1px solid ${M.line}` }}>
               {byDay[day].map((t, i, a) => (
                 <React.Fragment key={t.id}>
-                  <TxRow tx={t} onClick={() => nav.push('txDetail', { id: t.id })}/>
+                  <TxRow tx={t} onClick={() => nav.push('txDetail', { id: t.id })}
+                    showCat={isParent}
+                    catLabel={isParent ? ((CATEGORIES[t.cat] || _catExt[t.cat])?.name || undefined) : undefined}
+                  />
                   {i < a.length-1 && <Divider inset={50}/>}
                 </React.Fragment>
               ))}

@@ -6,7 +6,7 @@ import { M, I, IcoMDI, Divider, StatusBar, AppBar } from '../../app/theme.jsx';
 import { useLang, useCurrency } from '../../shared/i18n.jsx';
 import { CURRENCIES, STOCK_SPACE_AVATARS } from '../../shared/constants.js';
 import { useNav, Sheet } from '../../app/nav.jsx';
-import { useLocalStorage } from '../../shared/hooks.jsx';
+import { useLocalStorage, useSessionStorage } from '../../shared/hooks.jsx';
 import { BarChart, StackedBar } from '../../shared/components/Charts.jsx';
 import { TxRow } from '../../shared/components/TxRow.jsx';
 import { useTxCtx, useProfiles, useConnectedAccounts, Stat } from '../../app/providers.jsx';
@@ -549,14 +549,15 @@ function AcctTypeBadge({ type, t }) {
   );
 }
 
-function AcctRow({ acct, i, t, currency, onEdit }) {
+function AcctRow({ acct, i, t, currency, onEdit, sharedSpaces, onSharedBadge, isFlashing }) {
   const color = acct.color || acctTypeColor(acct.type);
   const isLiability = acctGroup(acct.type) === 'liability';
+  const sharedInSpaces = sharedSpaces || [];
   return (
     <React.Fragment>
       {i > 0 && <Divider inset={52}/>}
       <div data-testid="account-row" className="m-tap" onClick={() => onEdit && onEdit(acct)}
-        style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
+        style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0', background: isFlashing ? M.sageSoft : 'transparent', transition:'background 1s ease', borderRadius: isFlashing ? 8 : 0 }}>
         <div style={{ width:38, height:38, borderRadius:10, background:color, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
           <I name={acctIcon(acct.type)} size={18} color="#fff"/>
         </div>
@@ -565,10 +566,12 @@ function AcctRow({ acct, i, t, currency, onEdit }) {
           <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:2, flexWrap:'wrap' }}>
             {acct.iban && <span style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono }}>{acct.iban}</span>}
             <AcctTypeBadge type={acct.type} t={t}/>
-            {acct.readOnly
-              ? <span style={{ fontSize:9, fontWeight:700, padding:'2px 6px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase' }}>{t('acct.automated')}</span>
-              : <span style={{ fontSize:9, fontWeight:700, padding:'2px 6px', borderRadius:999, background:M.paper2, color:M.ink3, textTransform:'uppercase', border:`1px solid ${M.line}` }}>{t('acct.manual')}</span>
-            }
+            {sharedInSpaces.length > 0 && (
+              <button className="m-tap" onClick={e => { e.stopPropagation(); onSharedBadge && onSharedBadge(acct, sharedInSpaces); }}
+                style={{ fontSize:9, fontWeight:700, padding:'2px 6px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase', border:'none', cursor:'pointer', fontFamily:M.fontUI }}>
+                Shared
+              </button>
+            )}
           </div>
         </div>
         <div className="m-num" style={{ fontSize:14, fontWeight:600, color: isLiability ? M.clay : M.ink }}>
@@ -1425,6 +1428,36 @@ export function ScreenAccounts({ params }) {
   const [showEditSheet, setShowEditSheet] = React.useState(null); // null | acct object
   const [editName, setEditName] = React.useState('');
   const [editIban, setEditIban] = React.useState('');
+  const [sharedBadgeSheet, setSharedBadgeSheet] = React.useState(null); // { acct, spaces }
+
+  // Compute which owned accounts are shared in any of my spaces
+  const sharedInSpacesMap = React.useMemo(() => {
+    const map = {};
+    profiles.filter(p => !p.isShared && (p.members || []).length > 0).forEach(p => {
+      (p.accountIds || []).forEach(id => {
+        if (!map[id]) map[id] = [];
+        if (!map[id].find(s => s.spaceId === p.id)) {
+          map[id].push({ spaceId: p.id, spaceName: p.localName || p.name });
+        }
+      });
+    });
+    return map;
+  }, [profiles]);
+
+  // Flash account from session storage (navigated from tx detail)
+  const [highlightAcctRaw] = useSessionStorage('munni_highlight_acct', null);
+  const highlightAcct = React.useMemo(() => {
+    try { const v = typeof highlightAcctRaw === 'string' ? JSON.parse(highlightAcctRaw) : highlightAcctRaw; return v && (Date.now() - v.at < 5000) ? v.id : null; } catch { return null; }
+  }, [highlightAcctRaw]);
+  const [flashAcctId, setFlashAcctId] = React.useState(null);
+  React.useEffect(() => {
+    if (highlightAcct) {
+      setFlashAcctId(highlightAcct);
+      sessionStorage.removeItem('munni_highlight_acct');
+      const timer = setTimeout(() => setFlashAcctId(null), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [highlightAcct]);
 
   // PSD2 auto flow state (for bank/saving/credit automated)
   const [psd2Step, setPsd2Step] = React.useState(null);
@@ -1609,7 +1642,9 @@ export function ScreenAccounts({ params }) {
           {assets.length === 0 ? (
             <div style={{ padding:'16px 0', textAlign:'center', color:M.ink4, fontSize:13 }}>{t('acct.noAccounts')}</div>
           ) : assets.map((a, i) => (
-            <AcctRow key={a.id} acct={a} i={i} t={t} currency={currency} onEdit={openEdit}/>
+            <AcctRow key={a.id} acct={a} i={i} t={t} currency={currency} onEdit={openEdit}
+              sharedSpaces={sharedInSpacesMap[a.id]} onSharedBadge={(acct, spaces) => setSharedBadgeSheet({ acct, spaces })}
+              isFlashing={flashAcctId === a.id}/>
           ))}
           <Divider inset={0}/>
           <div data-testid="asset-add-row" className="m-tap" onClick={() => { setTypeFilter('asset'); setFlowScreen('typeSelect'); }}
@@ -1631,7 +1666,9 @@ export function ScreenAccounts({ params }) {
           {liabilities.length === 0 ? (
             <div style={{ padding:'16px 0', textAlign:'center', color:M.ink4, fontSize:13 }}>{t('acct.noAccounts')}</div>
           ) : liabilities.map((a, i) => (
-            <AcctRow key={a.id} acct={a} i={i} t={t} currency={currency} onEdit={openEdit}/>
+            <AcctRow key={a.id} acct={a} i={i} t={t} currency={currency} onEdit={openEdit}
+              sharedSpaces={sharedInSpacesMap[a.id]} onSharedBadge={(acct, spaces) => setSharedBadgeSheet({ acct, spaces })}
+              isFlashing={flashAcctId === a.id}/>
           ))}
           <Divider inset={0}/>
           <div data-testid="liability-add-row" className="m-tap" onClick={() => { setTypeFilter('liability'); setFlowScreen('typeSelect'); }}
@@ -1646,6 +1683,21 @@ export function ScreenAccounts({ params }) {
 
         <div style={{ height:8 }}/>
       </div>
+
+      {sharedBadgeSheet && (
+        <Sheet title={sharedBadgeSheet.acct.name} onClose={() => setSharedBadgeSheet(null)}>
+          <div style={{ padding:'4px 16px 24px' }}>
+            <div style={{ fontSize:13, color:M.ink3, marginBottom:12 }}>This account is shared in the following spaces:</div>
+            {sharedBadgeSheet.spaces.map(s => (
+              <div key={s.spaceId} className="m-tap" onClick={() => { setSharedBadgeSheet(null); nav.push('space', { id: s.spaceId }); }}
+                style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 0', borderBottom:`1px solid ${M.line2}` }}>
+                <div style={{ flex:1, fontSize:14, fontWeight:500 }}>{s.spaceName}</div>
+                <I name="caretR" size={14} color={M.ink4}/>
+              </div>
+            ))}
+          </div>
+        </Sheet>
+      )}
 
       {showDeleteConfirm && (
         <Sheet onClose={() => setShowDeleteConfirm(null)}>
