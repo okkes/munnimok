@@ -904,7 +904,17 @@ export function ScreenUserInfo() {
                   }
                   Object.keys(localStorage).filter(k => k.startsWith('munni_') && k.includes(_safeEmail)).forEach(k => localStorage.removeItem(k));
                 } else {
-                  Object.keys(localStorage).filter(k => k.startsWith('munni_')).forEach(k => localStorage.removeItem(k));
+                  const userKey = loginMethod === 'email' && _safeEmail
+                    ? `_email_${_safeEmail.toLowerCase().replace(/[^a-z0-9]/g, '_')}`
+                    : `_${loginMethod || 'default'}`;
+                  const myProfilesKey = `munni_profiles${userKey}`;
+                  const myProfiles = (() => { try { return JSON.parse(localStorage.getItem(myProfilesKey) || '[]'); } catch { return []; } })();
+                  const mySpaceIds = new Set(myProfiles.filter(p => !p.isShared).map(p => p.id));
+                  Object.keys(localStorage).filter(k => {
+                    if (!k.startsWith('munni_') || k.startsWith('munni_global_')) return false;
+                    if (k.startsWith('munni_shared_data_')) return mySpaceIds.has(k.replace('munni_shared_data_', ''));
+                    return k.includes(userKey);
+                  }).forEach(k => localStorage.removeItem(k));
                 }
                 Object.keys(sessionStorage).filter(k => k.startsWith('munni_')).forEach(k => sessionStorage.removeItem(k));
                 window.location.reload();
@@ -1706,6 +1716,12 @@ export function ScreenSpaceDetail({ params }) {
             <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:2, flexWrap:'wrap' }}>
               {a.iban && <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono }}>{a.iban}</div>}
             </div>
+            {(sharedAcctData?.coOwners || []).length > 0 && (
+              <div style={{ fontSize:10, color:M.ink4, marginTop:2 }}>
+                Co-owners: {(sharedAcctData.coOwners).slice(0,3).map(id => userRegistry[id]?.displayName || id).join(', ')}
+                {sharedAcctData.coOwners.length > 3 ? ` +${sharedAcctData.coOwners.length - 3} more` : ''}
+              </div>
+            )}
           </div>
           {canDetach
             ? <I name="caretR" size={13} color={M.ink4}/>

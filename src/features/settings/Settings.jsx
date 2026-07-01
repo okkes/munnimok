@@ -1211,7 +1211,7 @@ export function InviteCards() {
         const profileData = {
           id: inv.profileId,
           name: ownerName,
-          ...(trimmedCustom && trimmedCustom !== ownerName ? { localName: trimmedCustom } : {}),
+          localName: trimmedCustom && trimmedCustom !== ownerName ? trimmedCustom : ownerName,
           icon: inv.profileIcon || 'users',
           active: false,
           accountIds: inv.profileAccountIds || [],

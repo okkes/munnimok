@@ -185,9 +185,12 @@ export function Sheet({ children, onClose, open, title }) {
     const scrollbarW = window.innerWidth - document.documentElement.clientWidth;
     if (scrollbarW > 0) document.body.style.paddingRight = `${scrollbarW}px`;
     document.body.style.overflow = 'hidden';
+    const scrollEls = Array.from(document.querySelectorAll('.m-body-scroll'));
+    scrollEls.forEach(el => { el.dataset._prevOv = el.style.overflowY || ''; el.style.overflowY = 'hidden'; });
     return () => {
       document.body.style.overflow = '';
       document.body.style.paddingRight = '';
+      scrollEls.forEach(el => { el.style.overflowY = el.dataset._prevOv || ''; delete el.dataset._prevOv; });
     };
   }, []);
 
