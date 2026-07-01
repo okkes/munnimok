@@ -188,15 +188,14 @@ for (const V of VARIANTS) {
   // Group C — Accept / decline invite
   // -------------------------------------------------------------------------
 
-  test(`12 spaces-invite – join button opens rename sheet [${V.id}]`, async ({ browser }) => {
+  test(`12 spaces-invite – join button accepts directly [${V.id}]`, async ({ browser }) => {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V, pendingInviteSetup);
     await goToSpaces(page);
     await shot(page, k('12-spaces-invite-join-sheet') + '--s1');
-    // First button in the invite row is "Join"
     await page.locator('[data-testid="space-invite-row"]').first().locator('button').first().click();
-    await page.waitForSelector('[data-testid="space-rename-invite-sheet"]', { timeout: 3000 });
-    await expect(page.locator('[data-testid="space-rename-invite-sheet"]')).toBeVisible();
+    await page.waitForTimeout(300);
+    await expect(page.locator('[data-testid="space-invite-section"]')).not.toBeVisible();
     await shot(page, k('12-spaces-invite-join-sheet'));
     await teardown(page, ctx, k('12-spaces-invite-join-sheet'));
   });

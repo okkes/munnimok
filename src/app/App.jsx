@@ -41,7 +41,7 @@ export const SCREEN_REGISTRY = {
   search:         () => <ScreenStub title="Search"/>,
   sync:           () => <ScreenStub title="Sync"/>,
   notifications:  () => <ScreenNotifications/>,
-  periods:        () => <ScreenPeriods/>,
+  periods:        ({params}) => <ScreenPeriods params={params}/>,
   tutorial:       () => <ScreenTutorial/>,
   manageCategories: () => <ScreenManageCategories/>,
   budgets:        () => <ScreenBudgets/>,

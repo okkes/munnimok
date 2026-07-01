@@ -128,6 +128,7 @@ export function ScreenTransactions() {
 
 export function ScreenTxDetail({ params }) {
   const nav = useNav();
+  const { t } = useLang();
   const { txs, updateTx } = useTxCtx();
   const { recurList, addRecur } = useRecurCtx();
   const [connectedAccounts] = useConnectedAccounts();
@@ -142,6 +143,7 @@ export function ScreenTxDetail({ params }) {
   const [showCatPicker, setShowCatPicker] = React.useState(false);
   const [showReceiptEdit, setShowReceiptEdit] = React.useState(false);
   const [showSavingPicker, setShowSavingPicker] = React.useState(false);
+  const [editingTxNote, setEditingTxNote] = React.useState(false);
 
   const tx = txs.find(t => t.id === params.id) || txs[0] || TRANSACTIONS[0];
   const positive = tx.amount > 0;
@@ -340,19 +342,33 @@ export function ScreenTxDetail({ params }) {
 
         {/* Notes card */}
         <div style={{ marginBottom:14 }}>
-          <div className="m-cap" style={{ marginBottom:6, paddingLeft:2 }}>Notes</div>
-          <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
-            <div style={{ padding:'12px 0' }}>
-              <textarea
-                value={noteText}
-                onChange={e => setNoteText(e.target.value.slice(0, NOTE_MAX))}
-                onBlur={() => saveNote(noteText)}
-                rows={noteText ? Math.min(5, Math.ceil(noteText.length / 40) + 1) : 2}
-                placeholder="Add a note…"
-                style={{ width:'100%', boxSizing:'border-box', border:`1px solid ${M.line}`, borderRadius:8, padding:'6px 8px', fontSize:13, fontFamily:M.fontUI, resize:'none', outline:'none', background:M.paper2, color:M.ink, lineHeight:1.5 }}
-              />
-              <div style={{ fontSize:10, color:M.ink4, textAlign:'right', marginTop:2 }}>{noteText.length}/{NOTE_MAX}</div>
-            </div>
+          <div className="m-cap" style={{ marginBottom:6, paddingLeft:2 }}>{t('tx.notes')}</div>
+          <div className="m-card" style={{ padding:'12px 16px', border:`1px solid ${M.line}` }}>
+            {editingTxNote ? (
+              <div>
+                <textarea autoFocus value={noteText} onChange={e => setNoteText(e.target.value.slice(0, NOTE_MAX))}
+                  rows={3} placeholder={t('tx.notesPlaceholder')}
+                  style={{ width:'100%', boxSizing:'border-box', padding:'10px 12px', borderRadius:8, border:`1px solid ${M.line}`, fontSize:13, fontFamily:M.fontUI, background:M.paper2, outline:'none', resize:'none', color:M.ink }}/>
+                <div style={{ display:'flex', gap:8, marginTop:8 }}>
+                  <button className="m-tap" onClick={() => { saveNote(noteText); setEditingTxNote(false); }}
+                    style={{ flex:1, padding:'9px 0', borderRadius:8, background:M.sage, color:'#fff', border:'none', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+                    {t('action.save')}
+                  </button>
+                  <button className="m-tap" onClick={() => setEditingTxNote(false)}
+                    style={{ flex:1, padding:'9px 0', borderRadius:8, background:M.paper2, color:M.ink3, border:`1px solid ${M.line}`, fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+                    {t('action.cancel')}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="m-tap" onClick={() => setEditingTxNote(true)}
+                style={{ display:'flex', alignItems:'flex-start', gap:10 }}>
+                <div style={{ flex:1, fontSize:13, color: noteText ? M.ink : M.ink4, lineHeight:1.5 }}>
+                  {noteText || t('tx.notesPlaceholder')}
+                </div>
+                <I name="edit" size={14} color={M.ink4} style={{ flexShrink:0, marginTop:2 }}/>
+              </div>
+            )}
           </div>
         </div>
 

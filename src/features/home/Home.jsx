@@ -86,7 +86,8 @@ export function ScreenHome() {
   const [goals] = useProfileGoals();
   const [debts] = useProfileDebts();
 
-  const [periodDay] = useLocalStorage('munni_period_day', 20);
+  const [globalPeriodDay] = useLocalStorage('munni_period_day', 20);
+  const periodDay = activeProfile?.periodDay || globalPeriodDay;
   const periodHistory = React.useMemo(() => computePeriodHistory(periodDay), [periodDay]);
 
   const reviewCount = txs.filter(t => t.needsReview).length;
@@ -105,7 +106,19 @@ export function ScreenHome() {
   const [invitations] = useLocalStorage('munni_global_invitations', []);
   const myId = React.useMemo(() => getUserId(), []);
   const pendingInvites = invitations.filter(inv => inv.toId === myId && inv.status === 'pending').length;
-  const totalBadge = notifUnread + pendingInvites;
+  const pendingCoOwnerRequests = React.useMemo(() => {
+    let count = 0;
+    profiles.filter(p => !p.isShared && (p.members||[]).length > 0).forEach(p => {
+      try {
+        const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{}');
+        (sd.accounts || []).forEach(a => {
+          count += (a.coOwnerRequests || []).filter(r => r.status === 'pending').length;
+        });
+      } catch {}
+    });
+    return count;
+  }, [profiles]);
+  const totalBadge = notifUnread + pendingInvites + pendingCoOwnerRequests;
   const isSharedActive = !!(activeProfile?.isShared || (activeProfile?.members||[]).length > 0);
   const activeSharedDataKey = isSharedActive ? `munni_shared_data_${activeProfile?.id}` : 'munni_shared_data_none';
   const [activeSharedData] = useLocalStorage(activeSharedDataKey, { accounts: [], txs: [] });

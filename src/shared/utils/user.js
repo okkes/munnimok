@@ -73,7 +73,8 @@ export function registerUserInGlobalRegistry(userId, displayName, picture) {
 }
 
 export function addDevLog(level, msg, src) {
-  const KEY = 'munni_dev_logs';
+  const method = sessionStorage.getItem('munni_last_login_method') || 'default';
+  const KEY = `munni_dev_logs_${method}`;
   try {
     const existing = JSON.parse(localStorage.getItem(KEY) || 'null');
     const arr = Array.isArray(existing) ? existing : [];

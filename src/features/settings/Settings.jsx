@@ -6,9 +6,9 @@ import { computePeriodHistory, fmtEur, fmtDate } from '../../shared/utils/format
 import { M, I, IcoMDI, Divider, StatusBar, AppBar } from '../../app/theme.jsx';
 import { useLang, OTHER_LANGUAGES, LangCtx, useCurrency } from '../../shared/i18n.jsx';
 import { NavCtx, useNav, useDark, Sheet } from '../../app/nav.jsx';
-import { useLocalStorage } from '../../shared/hooks.jsx';
+import { useLocalStorage, useSessionStorage } from '../../shared/hooks.jsx';
 import { BarChart } from '../../shared/components/Charts.jsx';
-import { useAppCtx, useTxCtx, useProfiles, useCatCtx, Stat } from '../../app/providers.jsx';
+import { useAppCtx, useTxCtx, useProfiles, useCatCtx, Stat, useConnectedAccounts } from '../../app/providers.jsx';
 import { Toggle, FormRow } from '../events/Events.jsx';
 import { HOME_CARDS_DEFAULT } from '../accounts/Accounts.jsx';
 import { ProfileAvatar } from '../profile/Profile.jsx';
@@ -294,11 +294,33 @@ export function ScreenSettings() {
   );
 }
 
-export function ScreenPeriods() {
+export function ScreenPeriods({ params }) {
   const nav = useNav();
   const { t } = useLang();
+  const profileId = params?.profileId || null;
+  const { profiles, setProfiles } = useProfiles();
   const [selectedDay, setSelectedDay] = useLocalStorage('munni_period_day', 20);
   const [periodType, setPeriodType] = useLocalStorage('munni_period_type', 'monthly');
+
+  // If profileId provided, read/write per-profile instead of global
+  const profile = profileId ? profiles.find(p => p.id === profileId) : null;
+  const profileDay = profile?.periodDay ?? selectedDay;
+  const profileType = profile?.periodType ?? periodType;
+  const [localDay, setLocalDay] = React.useState(profileDay);
+  const [localType, setLocalType] = React.useState(profileType);
+  React.useEffect(() => { if (profile) { setLocalDay(profile.periodDay ?? selectedDay); setLocalType(profile.periodType ?? periodType); } }, [profileId]);
+
+  const effectiveDay = profileId ? localDay : selectedDay;
+  const effectiveType = profileId ? localType : periodType;
+  const setEffectiveDay = profileId ? setLocalDay : setSelectedDay;
+  const setEffectiveType = profileId ? setLocalType : setPeriodType;
+
+  const handleSave = () => {
+    if (profileId && profile) {
+      setProfiles(ps => ps.map(p => p.id === profileId ? { ...p, periodDay: localDay, periodType: localType } : p));
+    }
+    nav.pop();
+  };
   const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
   const days = Array.from({ length: 28 }, (_, i) => i + 1);
   const ordinalStr = (d) => {
@@ -322,24 +344,24 @@ export function ScreenPeriods() {
         <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Period type</div>
         <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:8, marginBottom:20 }}>
           {[['monthly','Monthly'],['biweekly','Bi-weekly'],['weekly','Weekly']].map(([type,label]) => (
-            <button key={type} className="m-tap" onClick={() => setPeriodType(type)} style={{
-              height:48, borderRadius:12, border:`1.5px solid ${periodType===type?M.sage:M.line}`,
-              background:periodType===type?M.sage:M.card, color:periodType===type?'#fff':M.ink,
-              fontSize:13, fontWeight:periodType===type?700:400, cursor:'pointer', fontFamily:M.fontUI,
+            <button key={type} className="m-tap" onClick={() => setEffectiveType(type)} style={{
+              height:48, borderRadius:12, border:`1.5px solid ${effectiveType===type?M.sage:M.line}`,
+              background:effectiveType===type?M.sage:M.card, color:effectiveType===type?'#fff':M.ink,
+              fontSize:13, fontWeight:effectiveType===type?700:400, cursor:'pointer', fontFamily:M.fontUI,
             }}>{label}</button>
           ))}
         </div>
 
-        {periodType === 'monthly' ? (
+        {effectiveType === 'monthly' ? (
           <>
             <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Start day of month</div>
             <div style={{ display:'grid', gridTemplateColumns:'repeat(7, 1fr)', gap:8, marginBottom:20 }}>
               {days.map(d => (
-                <button key={d} className="m-tap" onClick={() => setSelectedDay(d)} style={{
-                  height:44, borderRadius:12, border:`1.5px solid ${selectedDay === d ? M.sage : M.line}`,
-                  background: selectedDay === d ? M.sage : M.card,
-                  color: selectedDay === d ? '#fff' : M.ink,
-                  fontSize:14, fontWeight: selectedDay === d ? 700 : 400,
+                <button key={d} className="m-tap" onClick={() => setEffectiveDay(d)} style={{
+                  height:44, borderRadius:12, border:`1.5px solid ${effectiveDay === d ? M.sage : M.line}`,
+                  background: effectiveDay === d ? M.sage : M.card,
+                  color: effectiveDay === d ? '#fff' : M.ink,
+                  fontSize:14, fontWeight: effectiveDay === d ? 700 : 400,
                   cursor:'pointer', fontFamily:M.fontUI,
                   display:'flex', alignItems:'center', justifyContent:'center',
                 }}>{d}</button>
@@ -348,10 +370,10 @@ export function ScreenPeriods() {
             <div className="m-card" style={{ padding:14, marginBottom:16, border:`1px solid ${M.line}` }}>
               <div style={{ fontSize:13, fontWeight:600, marginBottom:4 }}>Current period</div>
               <div style={{ fontSize:13, color:M.ink3 }}>
-                Starts on the <strong>{ordinalStr(selectedDay)}</strong> of each month.
+                Starts on the <strong>{ordinalStr(effectiveDay)}</strong> of each month.
               </div>
               <div style={{ fontSize:12, color:M.sage, marginTop:6, fontWeight:500 }}>
-                {(() => { const ph = computePeriodHistory(selectedDay); const cur = ph[ph.length-1]; return cur ? cur.label : ''; })()}
+                {(() => { const ph = computePeriodHistory(effectiveDay); const cur = ph[ph.length-1]; return cur ? cur.label : ''; })()}
               </div>
             </div>
           </>
@@ -360,10 +382,10 @@ export function ScreenPeriods() {
             <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Start day of week</div>
             <div style={{ display:'grid', gridTemplateColumns:'repeat(7, 1fr)', gap:6, marginBottom:20 }}>
               {DAY_NAMES.map((day, idx) => (
-                <button key={idx} className="m-tap" onClick={() => setSelectedDay(idx)} style={{
-                  height:44, borderRadius:12, border:`1.5px solid ${selectedDay===idx?M.sage:M.line}`,
-                  background:selectedDay===idx?M.sage:M.card, color:selectedDay===idx?'#fff':M.ink,
-                  fontSize:11, fontWeight:selectedDay===idx?700:400, cursor:'pointer', fontFamily:M.fontUI,
+                <button key={idx} className="m-tap" onClick={() => setEffectiveDay(idx)} style={{
+                  height:44, borderRadius:12, border:`1.5px solid ${effectiveDay===idx?M.sage:M.line}`,
+                  background:effectiveDay===idx?M.sage:M.card, color:effectiveDay===idx?'#fff':M.ink,
+                  fontSize:11, fontWeight:effectiveDay===idx?700:400, cursor:'pointer', fontFamily:M.fontUI,
                   display:'flex', alignItems:'center', justifyContent:'center',
                 }}>{day.slice(0,3)}</button>
               ))}
@@ -371,7 +393,7 @@ export function ScreenPeriods() {
             <div className="m-card" style={{ padding:14, marginBottom:16, border:`1px solid ${M.line}` }}>
               <div style={{ fontSize:13, fontWeight:600, marginBottom:4 }}>Current period</div>
               <div style={{ fontSize:13, color:M.ink3 }}>
-                {periodType === 'weekly' ? 'Weekly' : 'Every 2 weeks'}, starting on <strong>{DAY_NAMES[selectedDay] || 'Monday'}</strong>.
+                {effectiveType === 'weekly' ? 'Weekly' : 'Every 2 weeks'}, starting on <strong>{DAY_NAMES[effectiveDay] || 'Monday'}</strong>.
               </div>
             </div>
           </>
@@ -381,7 +403,7 @@ export function ScreenPeriods() {
           <strong>Tip:</strong> Monthly periods work best when your salary arrives on a fixed day.
         </div>
 
-        <button className="m-btn sage m-tap" style={{ width:'100%' }} onClick={() => nav.pop()}>
+        <button className="m-btn sage m-tap" style={{ width:'100%' }} onClick={handleSave}>
           {t('action.save')}
         </button>
       </div>
@@ -1377,6 +1399,7 @@ export function ScreenNotifications() {
   const [syncedReviewCount, setSyncedReviewCount] = React.useState(0);
   const [, setNotifUnread] = useLocalStorage('munni_notif_unread', 0);
   const { profiles } = useProfiles();
+  const [connectedAccounts] = useConnectedAccounts();
   const myId = React.useMemo(() => getUserId(), []);
 
   const coOwnerRequests = React.useMemo(() => {
@@ -1442,13 +1465,16 @@ export function ScreenNotifications() {
     setTimeout(() => {
       const count = Math.floor(Math.random() * 5) + 1;
       const now = new Date();
+      const loginMethod = sessionStorage.getItem('munni_last_login_method') || '';
+      const ownAccounts = connectedAccounts.filter(a => !a.isDemo && !a.isSharedCoOwner);
+      const accountPool = ownAccounts.length > 0 ? ownAccounts : [{ id: loginMethod === 'bank' ? 'demo_main' : 'main' }];
       const newTxs = Array.from({ length: count }, (_, i) => {
         const pool = MERCHANTS_POOL[Math.floor(Math.random() * MERCHANTS_POOL.length)];
         const amt = -(Math.round((pool.min + Math.random() * (pool.max - pool.min)) * 100) / 100);
         const id = `tsync_${Date.now()}_${i}`;
         const dateStr = now.toISOString().slice(0, 10);
-        const loginMethod = sessionStorage.getItem('munni_last_login_method') || '';
-        const accountId = loginMethod === 'bank' ? 'demo_main' : 'main';
+        const acct = accountPool[Math.floor(Math.random() * accountPool.length)];
+        const accountId = acct.id;
         return { id, date: dateStr, time: `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`, merchant: pool.merchant, desc: pool.desc, cat: pool.cat, amount: amt, account: accountId, needsReview: true, ...(pool.confidence ? { confidence: pool.confidence } : {}) };
       });
       addTxs(newTxs);
@@ -1515,8 +1541,8 @@ export function ScreenNotifications() {
                       <I name="card" size={16} color={M.ink3}/>
                     </div>
                     <div style={{ flex:1, minWidth:0 }}>
-                      <div style={{ fontSize:13, fontWeight:600, color:M.ink, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.req.userId} wants co-ownership</div>
-                      <div style={{ fontSize:11, color:M.ink3, marginTop:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.acct.name} · {item.spaceName}</div>
+                      <div style={{ fontSize:13, fontWeight:600, color:M.ink, lineHeight:1.4 }}>{item.req.userId} wants co-ownership of {item.acct.name}</div>
+                      <div style={{ fontSize:11, color:M.ink3, marginTop:1, lineHeight:1.4 }}>{item.acct.name} · {item.spaceName}</div>
                     </div>
                     <div style={{ display:'flex', gap:6, flexShrink:0 }}>
                       <button className="m-tap" onClick={() => acceptCoOwnerRequest(item)}
@@ -1583,7 +1609,9 @@ function LogPanel() {
   const { t } = useLang();
   const [open, setOpen] = React.useState(false);
   const [filter, setFilter] = React.useState('all');
-  const [logs, setLogs] = useLocalStorage('munni_dev_logs', DEFAULT_DEV_LOGS);
+  const [loginMethod] = useSessionStorage('munni_last_login_method', 'default');
+  const devLogsKey = React.useMemo(() => `munni_dev_logs_${loginMethod || 'default'}`, [loginMethod]);
+  const [logs, setLogs] = useLocalStorage(devLogsKey, DEFAULT_DEV_LOGS);
   const [readIds, setReadIds] = useLocalStorage('munni_log_read', []);
 
   const errCount = logs.filter(l => l.level==='error' && !readIds.includes(l.id)).length;
