@@ -14,6 +14,7 @@ import { STOCK_AVATARS, STOCK_SPACE_AVATARS, PERM_COLOR, PERM_BG, permLabel, DEF
 import { buildEffectivePerm } from '../../shared/sharedProfile.js';
 import { ProfileMembersSheet, MemberActionSheet } from '../friends/Friends.jsx';
 import { CurrencyPickerSheet } from '../settings/Settings.jsx';
+import { BankLogoSVG } from '../../shared/components/BankLogo.jsx';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
@@ -90,6 +91,22 @@ export function ScreenProfile() {
 
   const isDemo = loginMethod === 'bank';
   const connectedBanks = connectedAccounts.length;
+  const sharedCount = React.useMemo(() => {
+    const myId = getUserId();
+    let count = 0;
+    const seen = new Set(connectedAccounts.map(a => a.id));
+    profiles.forEach(p => {
+      try {
+        const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{}');
+        const isMember = (sd.memberPerms || {})[myId] !== undefined;
+        const isOwner = p.ownerId === myId || (!p.ownerId && !p.isShared);
+        if (isMember && !isOwner) {
+          (sd.accounts || []).forEach(a => { if (!seen.has(a.id)) { seen.add(a.id); count++; } });
+        }
+      } catch {}
+    });
+    return count;
+  }, [connectedAccounts, profiles]);
   const _lastMethod = loginMethod;
   const [_overrideEmail] = useLocalStorage('munni_email_override', null);
   const _resolvedEmail = _overrideEmail?.to || email;
@@ -130,7 +147,7 @@ export function ScreenProfile() {
           <Divider inset={48}/>
           <ProfileLink icon="box"     label={t('screen.categories')}       sub="Manage custom categories"           onClick={() => nav.push('manageCategories')}/>
           <Divider inset={48}/>
-          <ProfileLink icon="card"    label={t('screen.accounts')}         sub={`${connectedBanks} connected`}      onClick={() => nav.push('accounts')} testId="profile-link-accounts"/>
+          <ProfileLink icon="card"    label={t('screen.accounts')}         sub={sharedCount > 0 ? `${connectedBanks} connected · ${sharedCount} shared` : `${connectedBanks} connected`}      onClick={() => nav.push('accounts')} testId="profile-link-accounts"/>
           <Divider inset={48}/>
           <ProfileLink icon="link"    label="Integrations"                 sub="4 stores connected"                 onClick={() => nav.push('integrations')}/>
           <Divider inset={48}/>
@@ -1678,16 +1695,16 @@ export function ScreenSpaceDetail({ params }) {
         {i > 0 && <Divider inset={50}/>}
         <div className="m-tap" onClick={() => setAcctDetailSheet({ acct: a, sharedAcctData, canDetach, typeColor, typeLabel })}
           style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
-          <div style={{ width:36, height:36, borderRadius:10, background: a.color || typeColor, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-            <I name={spaceAcctIcon(a.type)} size={16} color="#fff"/>
-          </div>
+          {a.bankId
+            ? <BankLogoSVG bankId={a.bankId} bankName={a.name} bankColor={a.color} size={36} radius={10}/>
+            : <div style={{ width:36, height:36, borderRadius:10, background: a.color || typeColor, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <I name={spaceAcctIcon(a.type)} size={16} color="#fff"/>
+              </div>
+          }
           <div style={{ flex:1, minWidth:0 }}>
             <div style={{ fontSize:14, fontWeight:500 }}>{a.name}</div>
             <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:2, flexWrap:'wrap' }}>
               {a.iban && <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono }}>{a.iban}</div>}
-              <span style={{ fontSize:9, fontWeight:700, padding:'2px 6px', borderRadius:999, background:typeColor+'22', color:typeColor, textTransform:'uppercase', letterSpacing:'0.04em' }}>
-                {typeLabel}
-              </span>
             </div>
           </div>
           {canDetach
@@ -1754,43 +1771,45 @@ export function ScreenSpaceDetail({ params }) {
             </div>
           </div>
         ) : (
-          /* Owner view: centered, compact */
-          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', paddingTop:20, paddingBottom:16, gap:6 }}>
+          /* Owner view: same compact horizontal as member view */
+          <div style={{ display:'flex', alignItems:'center', gap:16, padding:'20px 4px 16px' }}>
             <button className="m-tap" onClick={() => setShowPhotoSheet(true)}
-              style={{ position:'relative', background:'none', border:'none', cursor:'pointer', padding:0 }}>
+              style={{ position:'relative', background:'none', border:'none', cursor:'pointer', padding:0, flexShrink:0 }}>
               <ProfileAvatar profile={profile} size={64}/>
               <div style={{ position:'absolute', bottom:0, right:0, width:20, height:20, borderRadius:999, background:M.sage, display:'flex', alignItems:'center', justifyContent:'center', border:'2px solid #fff' }}>
                 <I name="cam" size={10} color="#fff"/>
               </div>
             </button>
-            {editingName ? (
-              <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:4 }}>
-                <input
-                  data-testid="space-detail-name-input"
-                  autoFocus
-                  value={nameDraft}
-                  onChange={e => { setNameDraft(e.target.value); setNameError(''); }}
-                  onBlur={saveName}
-                  onKeyDown={e => e.key==='Enter' && saveName()}
-                  style={{ fontSize:17, fontWeight:700, border:`1px solid ${nameError ? M.clay : M.sage}`, borderRadius:8, padding:'5px 12px', fontFamily:M.fontUI, background:M.paper2, outline:'none', textAlign:'center', boxSizing:'border-box', width:220 }}
-                />
-                {nameError && <div data-testid="space-detail-name-error" style={{ fontSize:11, color:M.clay }}>{nameError}</div>}
-              </div>
-            ) : (
-              <div data-testid="space-detail-name" className="m-tap" onClick={startEditName} style={{ textAlign:'center' }}>
-                <div style={{ fontSize:17, fontWeight:700, color:M.ink }}>{profile.localName || profile.name}</div>
-                <div style={{ fontSize:10, color:M.ink4, marginTop:1 }}>{t('space.tapRename')}</div>
-              </div>
-            )}
-            {isActive && (
-              <div style={{ fontSize:10, color:M.sage, fontWeight:700, background:M.sageSoft, padding:'2px 10px', borderRadius:999, marginTop:2 }}>{t('space.active')}</div>
-            )}
-            {!isActive && (
-              <button className="m-tap" onClick={() => setProfiles(ps => ps.map(p => ({ ...p, active: p.id === profile.id })))}
-                style={{ fontSize:13, fontWeight:600, color:M.brand, background:'none', border:`1.5px solid ${M.brand}`, padding:'5px 14px', borderRadius:999, cursor:'pointer', fontFamily:M.fontUI, marginTop:4 }}>
-                {t('space.setActive')}
-              </button>
-            )}
+            <div style={{ flex:1, minWidth:0 }}>
+              {editingName ? (
+                <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+                  <input
+                    data-testid="space-detail-name-input"
+                    autoFocus
+                    value={nameDraft}
+                    onChange={e => { setNameDraft(e.target.value); setNameError(''); }}
+                    onBlur={saveName}
+                    onKeyDown={e => e.key==='Enter' && saveName()}
+                    style={{ fontSize:17, fontWeight:700, border:`1px solid ${nameError ? M.clay : M.sage}`, borderRadius:8, padding:'5px 10px', fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box', width:'100%' }}
+                  />
+                  {nameError && <div data-testid="space-detail-name-error" style={{ fontSize:11, color:M.clay }}>{nameError}</div>}
+                </div>
+              ) : (
+                <div data-testid="space-detail-name" className="m-tap" onClick={startEditName}>
+                  <div style={{ fontSize:17, fontWeight:700, color:M.ink, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{profile.localName || profile.name}</div>
+                  <div style={{ fontSize:10, color:M.ink4, marginTop:1 }}>{t('space.tapRename')}</div>
+                </div>
+              )}
+              <div style={{ fontSize:12, color:M.ink3, marginTop:3 }}>{t('space.createdByYou')}</div>
+              {isActive ? (
+                <div style={{ display:'inline-block', fontSize:10, color:M.sage, fontWeight:700, background:M.sageSoft, padding:'2px 10px', borderRadius:999, marginTop:4 }}>{t('space.active')}</div>
+              ) : (
+                <button className="m-tap" onClick={() => setProfiles(ps => ps.map(p => ({ ...p, active: p.id === profile.id })))}
+                  style={{ fontSize:12, fontWeight:600, color:M.brand, background:'none', border:`1.5px solid ${M.brand}`, padding:'3px 12px', borderRadius:999, cursor:'pointer', fontFamily:M.fontUI, marginTop:4 }}>
+                  {t('space.setActive')}
+                </button>
+              )}
+            </div>
           </div>
         )}
 

@@ -63,6 +63,7 @@ export function ScreenFriends() {
     if (toId === myId) { setInviteError(t('friends.inviteSelf')); return; }
     if (myFriendIds.includes(toId)) { setInviteError(t('friends.alreadyFriends')); return; }
     if (sentInvites.some(i => i.toId === toId)) { setInviteError(t('friends.sent')); return; }
+    if (!userRegistry[toId]) { setInviteError(t('friends.userNotFound')); return; }
     const isBlockedByRecipient = (blocks[toId] || []).some(b => b.userId === myId);
     if (!isBlockedByRecipient) {
       const theirPendingInvite = invitations.find(i => i.fromId === toId && i.toId === myId && i.type === 'friend' && i.status === 'pending');

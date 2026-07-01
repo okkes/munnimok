@@ -554,7 +554,7 @@ function AcctTypeBadge({ type, t }) {
   );
 }
 
-function AcctRow({ acct, i, t, currency, onEdit, sharedSpaces, isFlashing }) {
+function AcctRow({ acct, i, t, currency, onEdit, sharedSpaces, isFlashing, hasCoOwners, pendingCoOwners }) {
   const color = acct.color || acctTypeColor(acct.type);
   const isLiability = acctGroup(acct.type) === 'liability';
   const sharedInSpaces = sharedSpaces || [];
@@ -593,10 +593,20 @@ function AcctRow({ acct, i, t, currency, onEdit, sharedSpaces, isFlashing }) {
                 <span style={{ fontSize:9, fontWeight:700, padding:'2px 6px', borderRadius:999, background:M.violetSoft||'#EEE8FF', color:M.violet||'#7B61FF', textTransform:'uppercase' }}>Co-owner</span>
               </>
             )}
+            {hasCoOwners && !acct.isSharedCoOwner && (
+              <span style={{ fontSize:9, fontWeight:700, padding:'2px 6px', borderRadius:999, background:M.violetSoft||'#EEE8FF', color:M.violet||'#7B61FF', textTransform:'uppercase' }}>Co-owner</span>
+            )}
           </div>
         </div>
-        <div className="m-num" style={{ fontSize:14, fontWeight:600, color: isLiability ? M.clay : M.ink }}>
-          {fmtMoney(acct.balance || 0, acct.currency || currency)}
+        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+          {pendingCoOwners > 0 && (
+            <div style={{ width:18, height:18, borderRadius:999, background:M.clay, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+              <span style={{ fontSize:10, fontWeight:700, color:'#fff' }}>{pendingCoOwners}</span>
+            </div>
+          )}
+          <div className="m-num" style={{ fontSize:14, fontWeight:600, color: isLiability ? M.clay : M.ink }}>
+            {fmtMoney(acct.balance || 0, acct.currency || currency)}
+          </div>
         </div>
       </div>
     </React.Fragment>
@@ -1500,6 +1510,33 @@ export function ScreenAccounts({ params }) {
     return map;
   }, [profiles]);
 
+  const coOwnersMap = React.useMemo(() => {
+    const map = {};
+    profiles.filter(p => !p.isShared && (p.members || []).length > 0).forEach(p => {
+      try {
+        const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{}');
+        (sd.accounts || []).forEach(a => {
+          if ((a.coOwners || []).length > 0) map[a.id] = a.coOwners;
+        });
+      } catch {}
+    });
+    return map;
+  }, [profiles]);
+
+  const pendingCoOwnersMap = React.useMemo(() => {
+    const map = {};
+    profiles.filter(p => !p.isShared && (p.members || []).length > 0).forEach(p => {
+      try {
+        const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{}');
+        (sd.accounts || []).forEach(a => {
+          const pendingCount = (a.coOwnerRequests || []).filter(r => r.status === 'pending').length;
+          if (pendingCount > 0) map[a.id] = pendingCount;
+        });
+      } catch {}
+    });
+    return map;
+  }, [profiles]);
+
   // Accounts shared with me (from spaces where I'm a non-owner member)
   const sharedWithMeAccts = React.useMemo(() => {
     const myId = getUserId();
@@ -1600,7 +1637,21 @@ export function ScreenAccounts({ params }) {
   };
 
   const confirmDelete = (acct) => {
+    const myId = getUserId();
     setConnectedAccounts(a => a.filter(x => x.id !== acct.id));
+    if (acct.isSharedCoOwner && acct._coOwnerSpaceId) {
+      try {
+        const spaceId = acct._coOwnerSpaceId;
+        const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${spaceId}`) || '{}');
+        const accounts = (sd.accounts || []).map(a =>
+          a.id === acct.id
+            ? { ...a, coOwners: (a.coOwners || []).filter(id => id !== myId) }
+            : a
+        );
+        localStorage.setItem(`munni_shared_data_${spaceId}`, JSON.stringify({ ...sd, accounts }));
+        window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: `munni_shared_data_${spaceId}` } }));
+      } catch {}
+    }
     setShowDeleteConfirm(null);
   };
 
@@ -1670,6 +1721,47 @@ export function ScreenAccounts({ params }) {
     return <BankConnectPsd2Screen psd2Step={psd2Step} psd2Bank={psd2Bank} customIban={customIban} setCustomIban={setCustomIban} advancePsd2={advancePsd2} onClose={() => { setPsd2Step(null); setFlowScreen(psd2MethodScreen); }}/>;
   }
 
+  if (coOwnerAuthSheet && coOwnerPsd2Step) {
+    const myId = getUserId();
+    return (
+      <BankConnectPsd2Screen
+        psd2Step={coOwnerPsd2Step}
+        psd2Bank={{ id: coOwnerAuthSheet.bankId, name: coOwnerAuthSheet.name, color: coOwnerAuthSheet.color }}
+        customIban={coOwnerAuthSheet.iban || ''}
+        setCustomIban={() => {}}
+        ibanReadOnly={true}
+        advancePsd2={() => {
+          if (coOwnerPsd2Step === 'login') setCoOwnerPsd2Step('consent');
+          else if (coOwnerPsd2Step === 'consent') {
+            setCoOwnerPsd2Step('connecting');
+            const acct = coOwnerAuthSheet;
+            setTimeout(() => {
+              const spaceId = acct._fromSpaceId;
+              try {
+                const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${spaceId}`) || '{}');
+                const accounts = (sd.accounts || []).map(a =>
+                  a.id === acct.id ? { ...a, coOwners: [...new Set([...(a.coOwners || []), myId])] } : a
+                );
+                localStorage.setItem(`munni_shared_data_${spaceId}`, JSON.stringify({ ...sd, accounts }));
+                window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: `munni_shared_data_${spaceId}` } }));
+              } catch {}
+              setConnectedAccounts(a => {
+                if (a.some(x => x.id === acct.id)) return a;
+                return [...a, { ...acct, isSharedCoOwner: true, _coOwnerSpaceId: acct._fromSpaceId, _fromSpaceId: undefined, _fromSpaceName: undefined }];
+              });
+              setCoOwnerPsd2Step('done');
+            }, 1800);
+          }
+          else if (coOwnerPsd2Step === 'done') {
+            setCoOwnerAuthSheet(null);
+            setCoOwnerPsd2Step(null);
+          }
+        }}
+        onClose={() => { setCoOwnerAuthSheet(null); setCoOwnerPsd2Step(null); }}
+      />
+    );
+  }
+
   // New account creation flows
   if (flowScreen === 'typeSelect') return <AccountTypeSelectScreen filter={typeFilter} onSelect={type => {
     if (type === 'bank') setFlowScreen('bankMethod');
@@ -1725,7 +1817,9 @@ export function ScreenAccounts({ params }) {
           ) : assets.map((a, i) => (
             <AcctRow key={a.id} acct={a} i={i} t={t} currency={currency} onEdit={openEdit}
               sharedSpaces={sharedInSpacesMap[a.id]}
-              isFlashing={flashAcctId === a.id}/>
+              isFlashing={flashAcctId === a.id}
+              hasCoOwners={!!coOwnersMap[a.id]}
+              pendingCoOwners={pendingCoOwnersMap[a.id] || 0}/>
           ))}
           <Divider inset={0}/>
           <div data-testid="asset-add-row" className="m-tap" onClick={() => { setTypeFilter('asset'); setFlowScreen('typeSelect'); }}
@@ -1749,7 +1843,9 @@ export function ScreenAccounts({ params }) {
           ) : liabilities.map((a, i) => (
             <AcctRow key={a.id} acct={a} i={i} t={t} currency={currency} onEdit={openEdit}
               sharedSpaces={sharedInSpacesMap[a.id]}
-              isFlashing={flashAcctId === a.id}/>
+              isFlashing={flashAcctId === a.id}
+              hasCoOwners={!!coOwnersMap[a.id]}
+              pendingCoOwners={pendingCoOwnersMap[a.id] || 0}/>
           ))}
           <Divider inset={0}/>
           <div data-testid="liability-add-row" className="m-tap" onClick={() => { setTypeFilter('liability'); setFlowScreen('typeSelect'); }}
@@ -1765,11 +1861,11 @@ export function ScreenAccounts({ params }) {
         {/* Shared with me */}
         {sharedWithMeAccts.length > 0 && (
           <>
-            <div className="m-section-label" style={{ marginTop:16, display:'flex', justifyContent:'space-between', alignItems:'baseline' }}>
+            <div style={{ display:'flex', alignItems:'baseline', gap:8, marginTop:24, marginBottom:8, paddingLeft:4 }}>
               <span className="m-cap">{t('acct.sharedWith')}</span>
               <span style={{ fontSize:11, color:M.ink4, fontWeight:400 }}>From spaces you're a member of</span>
             </div>
-            <div className="m-card" style={{ padding:'0 16px', marginBottom:8, border:`1px solid ${M.line}` }}>
+            <div className="m-card" style={{ padding:'0 16px', marginBottom:16, border:`1px solid ${M.line}` }}>
               {sharedWithMeAccts.map((a, i) => (
                 <SharedWithMeRow key={a.id} acct={a} i={i} t={t} currency={currency}
                   onInfo={() => setSharedWithMeSheet(a)}/>
@@ -1873,6 +1969,23 @@ export function ScreenAccounts({ params }) {
                   {sharedWithMeSheet.iban && <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono, marginTop:2 }}>{sharedWithMeSheet.iban}</div>}
                 </div>
               </div>
+              {(() => {
+                const spaceId = sharedWithMeSheet._fromSpaceId;
+                let ownerName = null;
+                try {
+                  const fromProfile = profiles.find(p => p.id === spaceId);
+                  const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${spaceId}`) || '{}');
+                  const ownerEntry = Object.entries(sd.memberPerms || {}).find(([_, perm]) => perm === 'owner');
+                  const ownerId = ownerEntry?.[0] || fromProfile?.ownerId;
+                  const userRegistry = JSON.parse(localStorage.getItem('munni_global_users') || '{}');
+                  ownerName = userRegistry[ownerId]?.displayName || fromProfile?.ownerDisplay || ownerId;
+                } catch {}
+                return ownerName ? (
+                  <div style={{ fontSize:12, color:M.ink3, marginBottom:12 }}>
+                    Shared by <span style={{ fontWeight:600, color:M.ink2 }}>{ownerName}</span>
+                  </div>
+                ) : null;
+              })()}
               {sharedWithMeSheet._fromSpaceName && (
                 <button className="m-tap" onClick={() => { setSharedWithMeSheet(null); nav.push('spaceDetail', { id: sharedWithMeSheet._fromSpaceId }); }}
                   style={{ width:'100%', display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderRadius:10, background:M.paper2, border:`1px solid ${M.line}`, marginBottom:16, cursor:'pointer', fontFamily:M.fontUI, textAlign:'left' }}>
@@ -1928,6 +2041,9 @@ export function ScreenAccounts({ params }) {
             localStorage.setItem(`munni_shared_data_${spaceId}`, JSON.stringify({ ...sd, accounts }));
             window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: `munni_shared_data_${spaceId}` } }));
           } catch {}
+          // Re-open the shared-with-me sheet showing the pending state
+          const updatedAcct = { ...coOwnerRequestSheet, coOwnerRequests: [...(coOwnerRequestSheet.coOwnerRequests || []).filter(r => r.userId !== myId), { userId: myId, requestedAt: Date.now(), status: 'pending' }] };
+          setSharedWithMeSheet(updatedAcct);
           setCoOwnerRequestSheet(null);
         };
         return (
@@ -1952,44 +2068,6 @@ export function ScreenAccounts({ params }) {
         );
       })()}
 
-      {coOwnerAuthSheet && coOwnerPsd2Step && (
-        <BankConnectPsd2Screen
-          psd2Step={coOwnerPsd2Step}
-          psd2Bank={{ id: coOwnerAuthSheet.bankId, name: coOwnerAuthSheet.name, color: coOwnerAuthSheet.color }}
-          customIban={coOwnerAuthSheet.iban || ''}
-          setCustomIban={() => {}}
-          ibanReadOnly={true}
-          advancePsd2={() => {
-            const myId = getUserId();
-            if (coOwnerPsd2Step === 'login') setCoOwnerPsd2Step('consent');
-            else if (coOwnerPsd2Step === 'consent') {
-              setCoOwnerPsd2Step('connecting');
-              const acct = coOwnerAuthSheet;
-              setTimeout(() => {
-                const spaceId = acct._fromSpaceId;
-                try {
-                  const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${spaceId}`) || '{}');
-                  const accounts = (sd.accounts || []).map(a =>
-                    a.id === acct.id ? { ...a, coOwners: [...new Set([...(a.coOwners || []), myId])] } : a
-                  );
-                  localStorage.setItem(`munni_shared_data_${spaceId}`, JSON.stringify({ ...sd, accounts }));
-                  window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: `munni_shared_data_${spaceId}` } }));
-                } catch {}
-                setConnectedAccounts(a => {
-                  if (a.some(x => x.id === acct.id)) return a;
-                  return [...a, { ...acct, isSharedCoOwner: true, _fromSpaceId: undefined, _fromSpaceName: undefined, tags: [...(acct.tags || []), 'shared', 'co-owner'] }];
-                });
-                setCoOwnerPsd2Step('done');
-              }, 1800);
-            }
-            else if (coOwnerPsd2Step === 'done') {
-              setCoOwnerAuthSheet(null);
-              setCoOwnerPsd2Step(null);
-            }
-          }}
-          onClose={() => { setCoOwnerAuthSheet(null); setCoOwnerPsd2Step(null); }}
-        />
-      )}
     </div>
   );
 }

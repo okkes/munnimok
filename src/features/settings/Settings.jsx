@@ -1412,6 +1412,54 @@ export function ScreenNotifications() {
   const [newCount, setNewCount] = React.useState(0);
   const [syncedReviewCount, setSyncedReviewCount] = React.useState(0);
   const [, setNotifUnread] = useLocalStorage('munni_notif_unread', 0);
+  const { profiles } = useProfiles();
+  const myId = React.useMemo(() => getUserId(), []);
+
+  const coOwnerRequests = React.useMemo(() => {
+    const result = [];
+    profiles.filter(p => !p.isShared).forEach(p => {
+      try {
+        const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{}');
+        (sd.accounts || []).forEach(acct => {
+          (acct.coOwnerRequests || []).filter(r => r.status === 'pending').forEach(req => {
+            result.push({ acct, req, spaceId: p.id, spaceName: p.localName || p.name });
+          });
+        });
+      } catch {}
+    });
+    return result;
+  }, [profiles]);
+
+  const acceptCoOwnerRequest = (item) => {
+    try {
+      const sdKey = `munni_shared_data_${item.spaceId}`;
+      const sd = JSON.parse(localStorage.getItem(sdKey) || '{}');
+      const accounts = (sd.accounts || []).map(a =>
+        a.id === item.acct.id ? {
+          ...a,
+          coOwners: [...new Set([...(a.coOwners || []), item.req.userId])],
+          coOwnerRequests: (a.coOwnerRequests || []).map(r => r.userId === item.req.userId ? { ...r, status: 'accepted' } : r),
+        } : a
+      );
+      localStorage.setItem(sdKey, JSON.stringify({ ...sd, accounts }));
+      window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sdKey } }));
+    } catch {}
+  };
+
+  const denyCoOwnerRequest = (item) => {
+    try {
+      const sdKey = `munni_shared_data_${item.spaceId}`;
+      const sd = JSON.parse(localStorage.getItem(sdKey) || '{}');
+      const accounts = (sd.accounts || []).map(a =>
+        a.id === item.acct.id ? {
+          ...a,
+          coOwnerRequests: (a.coOwnerRequests || []).map(r => r.userId === item.req.userId ? { ...r, status: 'denied' } : r),
+        } : a
+      );
+      localStorage.setItem(sdKey, JSON.stringify({ ...sd, accounts }));
+      window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sdKey } }));
+    } catch {}
+  };
 
   React.useEffect(() => { setNotifUnread(0); }, []);
 
@@ -1490,6 +1538,38 @@ export function ScreenNotifications() {
         </div>
 
         <InviteCards/>
+
+        {coOwnerRequests.length > 0 && (
+          <div style={{ marginBottom:14 }}>
+            <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Co-ownership requests</div>
+            <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
+              {coOwnerRequests.map((item, i) => (
+                <React.Fragment key={`${item.acct.id}-${item.req.userId}`}>
+                  {i > 0 && <Divider inset={0}/>}
+                  <div style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
+                    <div style={{ width:36, height:36, borderRadius:10, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                      <I name="card" size={16} color={M.ink3}/>
+                    </div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:13, fontWeight:600, color:M.ink, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.req.userId} wants co-ownership</div>
+                      <div style={{ fontSize:11, color:M.ink3, marginTop:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.acct.name} · {item.spaceName}</div>
+                    </div>
+                    <div style={{ display:'flex', gap:6, flexShrink:0 }}>
+                      <button className="m-tap" onClick={() => acceptCoOwnerRequest(item)}
+                        style={{ padding:'6px 10px', borderRadius:8, background:M.sage, color:'#fff', border:'none', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+                        Accept
+                      </button>
+                      <button className="m-tap" onClick={() => denyCoOwnerRequest(item)}
+                        style={{ padding:'6px 10px', borderRadius:8, background:M.paper2, color:M.ink3, border:`1px solid ${M.line}`, fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+                        Deny
+                      </button>
+                    </div>
+                  </div>
+                </React.Fragment>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('notif.recentTitle')}</div>
         <div className="m-card" style={{ padding:'4px 16px', marginBottom:16, border:`1px solid ${M.line}` }}>

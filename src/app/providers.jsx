@@ -229,6 +229,29 @@ export function useConnectedAccounts() {
   return useLocalStorage(acctKey, defaultAccts);
 }
 
+export function useAllVisibleAccounts() {
+  const [connectedAccounts] = useConnectedAccounts();
+  const { profiles } = useProfiles();
+  return React.useMemo(() => {
+    const myId = getUserId();
+    const seen = new Set(connectedAccounts.map(a => a.id));
+    const shared = [];
+    profiles.forEach(p => {
+      try {
+        const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{}');
+        const isMember = (sd.memberPerms || {})[myId] !== undefined;
+        const isOwner = p.ownerId === myId || (!p.ownerId && !p.isShared);
+        if (isMember && !isOwner) {
+          (sd.accounts || []).forEach(a => {
+            if (!seen.has(a.id)) { seen.add(a.id); shared.push(a); }
+          });
+        }
+      } catch {}
+    });
+    return [...connectedAccounts, ...shared];
+  }, [connectedAccounts, profiles]);
+}
+
 export const DEFAULT_PROFILE_IDS = ['p_google','p_apple','p_demo','p_email'];
 export function useProfileBudgets() {
   const { profiles } = useProfiles();

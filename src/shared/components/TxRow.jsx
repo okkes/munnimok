@@ -2,7 +2,7 @@ import React from 'react';
 import { CATEGORIES, _catExt, catPath } from '../data/categories.js';
 import { fmtEur, fmtDate } from '../utils/format.js';
 import { M, I, IcoMDI } from '../../app/theme.jsx';
-import { useTxCtx, useConnectedAccounts } from '../../app/providers.jsx';
+import { useTxCtx, useAllVisibleAccounts } from '../../app/providers.jsx';
 import { BankLogoSVG } from './BankLogo.jsx';
 
 export function HighlightText({ text, query }) {
@@ -39,7 +39,7 @@ export function TxRow({ tx, onClick, showCat = true, showDate = false, dense = f
   }
   const cat = CATEGORIES[effectiveCat] || _catExt[effectiveCat] || CATEGORIES[tx.cat] || _catExt[tx.cat] || {};
   const { txs: allTxs } = useTxCtx();
-  const [connectedAccounts] = useConnectedAccounts();
+  const connectedAccounts = useAllVisibleAccounts();
   const positive = tx.amount > 0;
   const isLinkedReimburse = tx.linkedTo;
   const reimburseTx = !positive ? allTxs.find(t => t.linkedTo === tx.id) : null;
