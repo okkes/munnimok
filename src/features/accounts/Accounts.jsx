@@ -1487,6 +1487,7 @@ export function ScreenAccounts({ params }) {
   const { addTxs } = useTxCtx();
   const [connectedAccounts, setConnectedAccounts] = useConnectedAccounts();
   const { profiles, setProfiles } = useProfiles();
+  const [userRegistry] = useLocalStorage('munni_global_users', {});
   // spaceId present = came from space detail "Manage accounts" → auto-attach new accounts to that space
   const attachToSpaceId = params?.spaceId || null;
 
@@ -1511,7 +1512,7 @@ export function ScreenAccounts({ params }) {
       (p.accountIds || []).forEach(id => {
         if (!map[id]) map[id] = [];
         if (!map[id].find(s => s.spaceId === p.id))
-          map[id].push({ spaceId: p.id, spaceName: p.localName || p.name });
+          map[id].push({ spaceId: p.id, spaceName: p.name });
       });
     });
     // Member's own contributions: accounts I attached to spaces where I'm a member
@@ -1521,7 +1522,7 @@ export function ScreenAccounts({ params }) {
         (sd.accounts || []).filter(a => a.attachedBy === myId).forEach(a => {
           if (!map[a.id]) map[a.id] = [];
           if (!map[a.id].find(s => s.spaceId === p.id))
-            map[a.id].push({ spaceId: p.id, spaceName: p.localName || p.name });
+            map[a.id].push({ spaceId: p.id, spaceName: p.name });
         });
       } catch {}
     });
@@ -1562,7 +1563,7 @@ export function ScreenAccounts({ params }) {
         const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{}');
         (sd.accounts || []).forEach(acct => {
           (acct.coOwnerRequests || []).filter(r => r.status === 'pending').forEach(req => {
-            result.push({ acct, req, spaceId: p.id, spaceName: p.localName || p.name });
+            result.push({ acct, req, spaceId: p.id, spaceName: p.name });
           });
         });
       } catch {}
@@ -1625,6 +1626,24 @@ export function ScreenAccounts({ params }) {
     });
     return result;
   }, [profiles, connectedAccounts]);
+
+  const myId = React.useMemo(() => getUserId(), []);
+  React.useEffect(() => {
+    sharedWithMeAccts.forEach(acct => {
+      if ((acct.coOwners || []).includes(myId)) {
+        setConnectedAccounts(prev => {
+          if (prev.some(x => x.id === acct.id)) return prev;
+          return [...prev, {
+            ...acct,
+            isSharedCoOwner: true,
+            _coOwnerSpaceId: acct._fromSpaceId,
+            _fromSpaceId: undefined,
+            _fromSpaceName: undefined
+          }];
+        });
+      }
+    });
+  }, [sharedWithMeAccts]);
 
   // Flash account from session storage (navigated from tx detail)
   const [highlightAcctRaw] = useSessionStorage('munni_highlight_acct', null);
@@ -2052,6 +2071,41 @@ export function ScreenAccounts({ params }) {
                   ))}
                 </div>
               )}
+              {(() => {
+                const coOwners = coOwnersMap[showEditSheet.id] ||
+                  (() => {
+                    const coOwnerAcct = profiles.filter(p => p.isShared).flatMap(p => {
+                      try {
+                        const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{}');
+                        return (sd.accounts || []).filter(a => a.id === showEditSheet.id && (a.coOwners||[]).length > 0);
+                      } catch { return []; }
+                    })[0];
+                    return coOwnerAcct?.coOwners || [];
+                  })();
+                if (!coOwners.length) return null;
+                return (
+                  <div style={{ marginBottom:16 }}>
+                    <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>{t('acct.coOwnersLabel')}</div>
+                    {coOwners.map(id => {
+                      const entry = userRegistry[id] || {};
+                      const name = entry.displayName || id;
+                      const pic = entry.picture;
+                      const av = pic?.startsWith('av') ? (STOCK_AVATARS || []).find(a => a.id === pic) : null;
+                      return (
+                        <div key={id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderRadius:10, background:M.paper2, border:`1px solid ${M.line}`, marginBottom:6 }}>
+                          <div style={{ width:28, height:28, borderRadius:999, background: av ? av.bg : M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, overflow:'hidden' }}>
+                            {pic?.startsWith('data:') ? <img src={pic} style={{ width:28, height:28, objectFit:'cover' }}/>
+                              : av ? <span style={{ fontSize:14 }}>{av.emoji}</span>
+                              : <span style={{ fontSize:12, fontWeight:700, color:M.sage }}>{name[0]?.toUpperCase()}</span>}
+                          </div>
+                          <div style={{ flex:1, fontSize:13, fontWeight:500, color:M.ink }}>{name}</div>
+                          <span style={{ fontSize:9, fontWeight:700, padding:'2px 6px', borderRadius:999, background:M.sageSoft+'66', color:M.sage, textTransform:'uppercase', letterSpacing:'0.04em' }}>CO-OWNER</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
               <div style={{ marginBottom:20 }}/>
               <button onClick={saveEdit}
                 style={{ width:'100%', padding:'14px 0', background:M.brand, color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>
@@ -2117,27 +2171,9 @@ export function ScreenAccounts({ params }) {
                 </button>
               )}
               {isCoOwner ? (
-                <>
-                  <div data-testid="co-owner-badge" style={{ padding:'10px 14px', borderRadius:10, background:M.sageSoft, fontSize:13, color:M.sage, textAlign:'center', marginBottom:10 }}>
-                    {t('acct.coOwner')}
-                  </div>
-                  {isCoOwner && !alreadyInAssets && (
-                    <button className="m-tap" onClick={() => {
-                      setConnectedAccounts(a => {
-                        if (a.some(x => x.id === sharedWithMeSheet.id)) return a;
-                        return [...a, { ...sharedWithMeSheet, isSharedCoOwner: true, _coOwnerSpaceId: sharedWithMeSheet._fromSpaceId, _fromSpaceId: undefined, _fromSpaceName: undefined }];
-                      });
-                      setSharedWithMeSheet(null);
-                    }} style={{ width:'100%', padding:'14px 0', background:M.brand, border:'none', borderRadius:13, fontSize:15, fontWeight:700, color:'#fff', cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>
-                      Move to my assets
-                    </button>
-                  )}
-                  {isCoOwner && alreadyInAssets && (
-                    <button disabled style={{ width:'100%', padding:'14px 0', background:M.brand, border:'none', borderRadius:13, fontSize:15, fontWeight:700, color:'#fff', cursor:'not-allowed', fontFamily:M.fontUI, marginBottom:10, opacity:0.5 }}>
-                      Already in your assets
-                    </button>
-                  )}
-                </>
+                <div data-testid="co-owner-badge" style={{ padding:'10px 14px', borderRadius:10, background:M.sageSoft, fontSize:13, color:M.sage, textAlign:'center', marginBottom:10 }}>
+                  {t('acct.coOwner')}
+                </div>
               ) : hasPendingRequest ? (
                 <div style={{ padding:'10px 14px', borderRadius:10, background:M.paper2, border:`1px solid ${M.line}`, fontSize:13, color:M.ink3, textAlign:'center', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
                   <I name="receipt" size={14} color={M.ink3}/>

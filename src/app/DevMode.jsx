@@ -874,7 +874,7 @@ const ANNOTATIONS = {
       'Remove picture (isMemberOfShared): sets localPicture="none" sentinel → ProfileAvatar falls back to initials; null would fall through to space picture',
       'Only space: after member deletion creates new default profile so user is never profile-less',
       'Shared data sync: owner\'s attached accounts written to munni_shared_data_{profileId} for members to see',
-      'localName: members can give a shared space a different local nickname (stored in profile.localName)',
+      'Space name: synced for everyone via meta.name; spaceNote is personal per-user and not shared',
     ],
     storage: [
       'munni_profiles_{userId} (LS) — source of truth for space list and metadata',

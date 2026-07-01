@@ -537,7 +537,7 @@ export function ScreenHome() {
                       </div>
                       <div style={{ flex:1, minWidth:0 }}>
                         <div style={{ fontSize:14, fontWeight:600, color:p.active ? M.sage : M.ink, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                          {p.localName || p.name}
+                          {p.name}
                         </div>
                         <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>
                           {p.isShared

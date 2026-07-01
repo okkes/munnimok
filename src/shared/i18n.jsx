@@ -375,6 +375,10 @@ export const TRANSLATIONS = {
     'space.noAccountsToAttach':'No accounts to attach — create one first',
     'space.settings':'Settings','space.currency':'Currency','space.currencySub':'Display currency for this space',
     'space.setActive':'Set as active',
+    'space.notes':'Notes',
+    'space.notesPlaceholder':'Add a personal note...',
+    'space.notesHint':'Personal, not shared with members',
+    'acct.coOwnersLabel':'Co-owners',
   },
   nl: {
     'tab.home':'Thuis','tab.transactions':'Transacties','tab.recurring':'Terugkerend',
@@ -730,6 +734,10 @@ export const TRANSLATIONS = {
     'space.noAccountsToAttach':'Geen rekeningen om te koppelen — maak er eerst een aan',
     'space.settings':'Instellingen','space.currency':'Valuta','space.currencySub':'Weergavevaluta voor deze ruimte',
     'space.setActive':'Instellen als actief',
+    'space.notes':'Notities',
+    'space.notesPlaceholder':'Voeg een persoonlijke notitie toe...',
+    'space.notesHint':'Persoonlijk, niet gedeeld met leden',
+    'acct.coOwnersLabel':'Mede-eigenaren',
   },
   tr: {
     'tab.home':'Ana sayfa','tab.transactions':'İşlemler','tab.recurring':'Düzenli ödemeler',
@@ -1085,6 +1093,10 @@ export const TRANSLATIONS = {
     'space.noAccountsToAttach':'Eklenecek hesap yok — önce bir tane oluşturun',
     'space.settings':'Ayarlar','space.currency':'Para birimi','space.currencySub':'Bu alan için görüntüleme para birimi',
     'space.setActive':'Aktif olarak ayarla',
+    'space.notes':'Notlar',
+    'space.notesPlaceholder':'Kişisel not ekle...',
+    'space.notesHint':'Kişisel, üyelerle paylaşılmaz',
+    'acct.coOwnersLabel':'Ortak sahipler',
   },
 };
 

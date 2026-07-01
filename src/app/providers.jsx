@@ -1,7 +1,7 @@
 ﻿import React from 'react';
 import { CATEGORIES, _catExt, catPath } from '../shared/data/categories.js';
 import { fmtEur } from '../shared/utils/format.js';
-import { getUserId, computeUserDataKey } from '../shared/utils/user.js';
+import { getUserId, computeUserDataKey, isCurrentUserDeleted } from '../shared/utils/user.js';
 import { computeProfileKey, getDefaultProfiles } from '../features/profile/data.js';
 import { getDefaultAccounts, getDefaultTxs } from '../features/accounts/data.js';
 import { RECURRING } from '../features/recurring/data.js';
@@ -65,6 +65,14 @@ export function ProfilesProvider({ children }) {
   const [profiles, setProfiles] = useLocalStorage(profileKey, defaultProfiles);
   const myId = React.useMemo(() => getUserId(), []);
 
+  React.useEffect(() => {
+    const method = sessionStorage.getItem('munni_last_login_method');
+    if (method && isCurrentUserDeleted()) {
+      Object.keys(sessionStorage).filter(k => k.startsWith('munni_')).forEach(k => sessionStorage.removeItem(k));
+      window.location.reload();
+    }
+  }, []);
+
   // Global shared-profile signal detection: expelled (kicked) and left (voluntary leave)
   React.useEffect(() => {
     const checkSharedSignals = () => {
@@ -126,7 +134,7 @@ export function ProfilesProvider({ children }) {
             if (isSharedVariant && sd.meta) {
               const metaName = sd.meta.name;
               const metaPic = sd.meta.picture;
-              const nameChanged = !p.localName && metaName && metaName !== p.name;
+              const nameChanged = metaName && metaName !== p.name;
               const picChanged = !p.localPicture && metaPic !== undefined && metaPic !== p.picture;
               if (nameChanged || picChanged) {
                 changed = true;

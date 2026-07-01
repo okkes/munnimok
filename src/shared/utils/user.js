@@ -8,6 +8,23 @@ function getUserAccountsKey() {
   return `munni_bank_accounts_${m}`;
 }
 
+function deterministicId(method, email) {
+  const src = `${method}:${email.toLowerCase()}`;
+  let h = 2166136261;
+  for (let i = 0; i < src.length; i++) {
+    h ^= src.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
+  const result = [];
+  let n = h;
+  for (let i = 0; i < 8; i++) {
+    result.push(chars[n % chars.length]);
+    n = Math.floor(n / chars.length) || (h >> (i + 1));
+  }
+  return result.join('');
+}
+
 export function getUserId() {
   const m = sessionStorage.getItem('munni_last_login_method') || '';
   if (m === 'google') return 'ggl-0001';
@@ -20,20 +37,29 @@ export function getUserId() {
     } catch {}
     return 'off-0000';
   }
-  // Email user: generate/retrieve random ID
   try {
     const email = JSON.parse(sessionStorage.getItem('munni_profile_email') || '""') || '';
     if (email && !['google@munni.app','apple@munni.app','bank@munni.app',''].includes(email)) {
+      const newId = deterministicId('email', email);
       const regKey = 'munni_user_ids';
       const reg = JSON.parse(localStorage.getItem(regKey) || '{}');
-      if (!reg[email]) {
-        reg[email] = Array.from({ length: 8 }, () => 'abcdefghjkmnpqrstuvwxyz23456789'[Math.floor(Math.random() * 31)]).join('');
+      if (reg[email] !== newId) {
+        reg[email] = newId;
         localStorage.setItem(regKey, JSON.stringify(reg));
       }
-      return reg[email];
+      return newId;
     }
   } catch {}
   return 'usr-0000';
+}
+
+export function isCurrentUserDeleted() {
+  try {
+    const userId = getUserId();
+    if (!userId) return false;
+    const reg = JSON.parse(localStorage.getItem('munni_global_users') || '{}');
+    return reg[userId]?.deleted === true;
+  } catch { return false; }
 }
 
 export function registerUserInGlobalRegistry(userId, displayName, picture) {

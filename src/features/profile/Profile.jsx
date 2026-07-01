@@ -904,15 +904,76 @@ export function ScreenUserInfo() {
                   }
                   Object.keys(localStorage).filter(k => k.startsWith('munni_') && k.includes(_safeEmail)).forEach(k => localStorage.removeItem(k));
                 } else {
+                  const myId = _myId;
                   const userKey = loginMethod === 'email' && _safeEmail
                     ? `_email_${_safeEmail.toLowerCase().replace(/[^a-z0-9]/g, '_')}`
                     : `_${loginMethod || 'default'}`;
                   const myProfilesKey = `munni_profiles${userKey}`;
                   const myProfiles = (() => { try { return JSON.parse(localStorage.getItem(myProfilesKey) || '[]'); } catch { return []; } })();
-                  const mySpaceIds = new Set(myProfiles.filter(p => !p.isShared).map(p => p.id));
+                  myProfiles.filter(p => !p.isShared).forEach(p => {
+                    const sdKey = `munni_shared_data_${p.id}`;
+                    try {
+                      const sd = JSON.parse(localStorage.getItem(sdKey) || '{}');
+                      const perms = sd.memberPerms || {};
+                      const others = Object.entries(perms).filter(([uid]) => uid !== myId);
+                      const newOwners = others.filter(([_, perm]) => perm === 'owner');
+                      if (newOwners.length === 0) {
+                        const contribs = others.filter(([_, perm]) => perm === 'contributor');
+                        const readers = others.filter(([_, perm]) => perm === 'reader');
+                        const targets = contribs.length > 0 ? contribs : readers;
+                        const newPerms = Object.fromEntries(others);
+                        targets.forEach(([uid]) => { newPerms[uid] = 'owner'; });
+                        sd.memberPerms = newPerms;
+                      } else {
+                        sd.memberPerms = Object.fromEntries(others);
+                      }
+                      sd.accounts = (sd.accounts || []).map(a => {
+                        const otherCoOwners = (a.coOwners || []).filter(id => id !== myId);
+                        const reqs = (a.coOwnerRequests || []).filter(r => r.userId !== myId);
+                        if (a.attachedBy === myId) {
+                          if (otherCoOwners.length > 0) return { ...a, attachedBy: otherCoOwners[0], coOwners: otherCoOwners, coOwnerRequests: reqs };
+                          return null;
+                        }
+                        return { ...a, coOwners: otherCoOwners, coOwnerRequests: reqs };
+                      }).filter(Boolean);
+                      sd.left = { ...(sd.left || {}), [myId]: Date.now() };
+                      localStorage.setItem(sdKey, JSON.stringify(sd));
+                      window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sdKey } }));
+                    } catch {}
+                  });
+                  myProfiles.filter(p => p.isShared).forEach(p => {
+                    const sdKey = `munni_shared_data_${p.id}`;
+                    try {
+                      const sd = JSON.parse(localStorage.getItem(sdKey) || '{}');
+                      sd.accounts = (sd.accounts || []).map(a => {
+                        const otherCoOwners = (a.coOwners || []).filter(id => id !== myId);
+                        const reqs = (a.coOwnerRequests || []).filter(r => r.userId !== myId);
+                        if (a.attachedBy === myId) {
+                          if (otherCoOwners.length > 0) return { ...a, attachedBy: otherCoOwners[0], coOwners: otherCoOwners, coOwnerRequests: reqs };
+                          return null;
+                        }
+                        return { ...a, coOwners: otherCoOwners, coOwnerRequests: reqs };
+                      }).filter(Boolean);
+                      sd.left = { ...(sd.left || {}), [myId]: Date.now() };
+                      localStorage.setItem(sdKey, JSON.stringify(sd));
+                      window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sdKey } }));
+                    } catch {}
+                  });
+                  const fs = JSON.parse(localStorage.getItem('munni_global_friendships') || '[]');
+                  const fsUpdated = fs.filter(f => !( (f.users || []).includes(myId) ));
+                  localStorage.setItem('munni_global_friendships', JSON.stringify(fsUpdated));
+                  window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: 'munni_global_friendships' } }));
+                  const invs = JSON.parse(localStorage.getItem('munni_global_invitations') || '[]');
+                  const invsUpdated = invs.filter(i => i.fromId !== myId && i.toId !== myId);
+                  localStorage.setItem('munni_global_invitations', JSON.stringify(invsUpdated));
+                  window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: 'munni_global_invitations' } }));
+                  const gReg = JSON.parse(localStorage.getItem('munni_global_users') || '{}');
+                  gReg[myId] = { ...(gReg[myId] || {}), deleted: true, deletedAt: Date.now() };
+                  localStorage.setItem('munni_global_users', JSON.stringify(gReg));
+                  window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: 'munni_global_users' } }));
                   Object.keys(localStorage).filter(k => {
                     if (!k.startsWith('munni_') || k.startsWith('munni_global_')) return false;
-                    if (k.startsWith('munni_shared_data_')) return mySpaceIds.has(k.replace('munni_shared_data_', ''));
+                    if (k.startsWith('munni_shared_data_')) return false;
                     return k.includes(userKey);
                   }).forEach(k => localStorage.removeItem(k));
                 }
@@ -1106,7 +1167,6 @@ export function ScreenSpaces() {
   const [showNewProfile, setShowNewProfile] = React.useState(false);
   const [newProfileName, setNewProfileName] = React.useState('');
   const [newProfileError, setNewProfileError] = React.useState('');
-  const [renameInviteSheet, setRenameInviteSheet] = React.useState(null);
   const myId = React.useMemo(() => getUserId(), []);
   const [invitations, setInvitations] = useLocalStorage('munni_global_invitations', []);
   const [userRegistry] = useLocalStorage('munni_global_users', {});
@@ -1115,7 +1175,7 @@ export function ScreenSpaces() {
   const myBlockedSenderIds = new Set((_blocks[myId] || []).map(b => b.userId));
   const pendingProfileInvites = invitations.filter(i => i.type === 'profile' && i.toId === myId && i.status === 'pending' && !myBlockedSenderIds.has(i.fromId));
 
-  const acceptProfileInvite = (inv, customName = null) => {
+  const acceptProfileInvite = (inv) => {
     setInvitations(list => list.map(i => i.id === inv.id ? { ...i, status: 'accepted', respondedAt: Date.now() } : i));
     let freshName, freshPic;
     try {
@@ -1137,10 +1197,8 @@ export function ScreenSpaces() {
       const creatorId = inv.originalCreatorId || originalOwnerId;
       const ownerDisplay = userRegistry[creatorId]?.displayName || userRegistry[originalOwnerId]?.displayName || originalOwnerId;
       const ownerName = freshName || inv.profileName || 'Shared';
-      const trimmedCustom = customName?.trim();
       const profileData = {
         id: inv.profileId, name: ownerName,
-        ...(trimmedCustom && trimmedCustom !== ownerName ? { localName: trimmedCustom } : {}),
         icon: inv.profileIcon || 'users', active: false,
         accountIds: inv.profileAccountIds || [],
         picture: freshPic !== undefined ? freshPic : (inv.profilePicture || null),
@@ -1236,7 +1294,7 @@ export function ScreenSpaces() {
                         </div>
                       </div>
                       <div style={{ display:'flex', gap:8 }}>
-                        <button className="m-tap" onClick={() => setRenameInviteSheet({ inv, name: inv.profileName || '' })}
+                        <button className="m-tap" onClick={() => acceptProfileInvite(inv)}
                           style={{ flex:2, padding:'9px 0', borderRadius:8, background:M.sage, color:'#fff', border:'none', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
                           {t('space.inviteJoin')}
                         </button>
@@ -1263,7 +1321,7 @@ export function ScreenSpaces() {
                   <ProfileAvatar profile={p} size={36}/>
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ fontSize:14, fontWeight:600, display:'flex', alignItems:'center', gap:6 }}>
-                      {p.localName || p.name}
+                      {p.name}
                       {p.isShared && (p.members||[]).some(m => m.userId !== myId) && <span style={{ fontSize:8, fontWeight:700, padding:'1px 5px', borderRadius:999, background:M.violetSoft||'#EEE8FF', color:M.violet||'#7B61FF', textTransform:'uppercase' }}>Shared</span>}
                       {!p.isShared && (p.members||[]).length > 0 && <span style={{ fontSize:8, fontWeight:700, padding:'1px 5px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>Shared</span>}
                     </div>
@@ -1287,38 +1345,6 @@ export function ScreenSpaces() {
           </div>
         </div>
       </div>
-
-      {renameInviteSheet && (
-        <Sheet onClose={() => setRenameInviteSheet(null)}>
-          <div data-testid="space-rename-invite-sheet" style={{ padding:'4px 16px 20px' }}>
-            <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:16 }}>
-              <ProfileAvatar profile={{ name: renameInviteSheet.inv.profileName, picture: renameInviteSheet.inv.profilePicture || null }} size={44}/>
-              <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontSize:16, fontWeight:700, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{renameInviteSheet.inv.profileName || 'Shared profile'}</div>
-                <div style={{ fontSize:11, color:M.ink3, marginTop:2 }}>
-                  {t('space.by')} <strong>{userRegistry[renameInviteSheet.inv.fromId]?.displayName || renameInviteSheet.inv.fromId}</strong>
-                </div>
-              </div>
-            </div>
-            <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>{t('space.nameThisSpace')}</div>
-            <input autoFocus
-              value={renameInviteSheet.name}
-              onChange={e => setRenameInviteSheet(prev => ({ ...prev, name: e.target.value }))}
-              onKeyDown={e => e.key === 'Enter' && (acceptProfileInvite(renameInviteSheet.inv, renameInviteSheet.name), setRenameInviteSheet(null))}
-              style={{ width:'100%', padding:'12px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box', marginBottom:6 }}
-            />
-            <div style={{ fontSize:11, color:M.ink4, marginBottom:20 }}>{t('space.nameThisSpaceHint')}</div>
-            <button onClick={() => { acceptProfileInvite(renameInviteSheet.inv, renameInviteSheet.name); setRenameInviteSheet(null); }}
-              style={{ width:'100%', padding:'14px 0', background:M.sage, color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>
-              {t('space.inviteJoin')}
-            </button>
-            <button onClick={() => setRenameInviteSheet(null)}
-              style={{ width:'100%', padding:'14px 0', background:M.paper2, color:M.ink, border:`1px solid ${M.line}`, borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
-              {t('action.cancel')}
-            </button>
-          </div>
-        </Sheet>
-      )}
 
       {showNewProfile && (
         <Sheet onClose={() => { setShowNewProfile(false); setNewProfileName(''); setNewProfileError(''); }}>
@@ -1361,6 +1387,8 @@ export function ScreenSpaceDetail({ params }) {
   const [editingName, setEditingName] = React.useState(false);
   const [nameDraft, setNameDraft] = React.useState('');
   const [nameError, setNameError] = React.useState('');
+  const [editingNote, setEditingNote] = React.useState(false);
+  const [noteDraft, setNoteDraft] = React.useState('');
   const [showPhotoSheet, setShowPhotoSheet] = React.useState(false);
   const [showMembersSheet, setShowMembersSheet] = React.useState(false);
   const [memberActionSheet, setMemberActionSheet] = React.useState(null);
@@ -1515,7 +1543,7 @@ export function ScreenSpaceDetail({ params }) {
     const metaName = sharedData?.meta?.name;
     const metaPic = sharedData?.meta?.picture;
     if (!profile || (!metaName && metaPic === undefined)) return;
-    const nameChanged = !profile.localName && metaName && metaName !== profile.name;
+    const nameChanged = metaName && metaName !== profile.name;
     const picChanged = !profile.localPicture && metaPic !== undefined && metaPic !== profile.picture;
     if (!nameChanged && !picChanged) return;
     setProfiles(ps => ps.map(p => p.id === profile.id ? {
@@ -1525,7 +1553,7 @@ export function ScreenSpaceDetail({ params }) {
     } : p));
   }, [sharedData?.meta?.name, sharedData?.meta?.picture, profileId]);
 
-  const startEditName = () => { setNameDraft(profile.localName || profile.name); setNameError(''); setEditingName(true); };
+  const startEditName = () => { setNameDraft(profile.name); setNameError(''); setEditingName(true); };
   const saveName = () => {
     const trimmed = nameDraft.trim();
     if (!trimmed) { setEditingName(false); return; }
@@ -1539,14 +1567,20 @@ export function ScreenSpaceDetail({ params }) {
     }
     setNameError('');
     if (isMemberOfShared) {
-      setProfiles(ps => ps.map(p => p.id === profile.id
-        ? { ...p, localName: trimmed !== p.name ? trimmed : null }
-        : p));
+      if (canEdit) {
+        setSharedData(prev => ({ ...prev, meta: { ...(prev.meta || {}), name: trimmed } }));
+      }
+      setProfiles(ps => ps.map(p => p.id === profile.id ? { ...p, name: trimmed } : p));
     } else {
       setProfiles(ps => ps.map(p => p.id === profile.id ? { ...p, name: trimmed } : p));
       if (isProfileShared) setSharedData(prev => ({ ...prev, meta: { ...(prev.meta || {}), name: trimmed } }));
     }
     setEditingName(false);
+  };
+
+  const saveNote = () => {
+    setProfiles(ps => ps.map(p => p.id === profile.id ? { ...p, spaceNote: noteDraft } : p));
+    setEditingNote(false);
   };
 
   const setPicture = (chosen) => {
@@ -1716,12 +1750,6 @@ export function ScreenSpaceDetail({ params }) {
             <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:2, flexWrap:'wrap' }}>
               {a.iban && <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono }}>{a.iban}</div>}
             </div>
-            {(sharedAcctData?.coOwners || []).length > 0 && (
-              <div style={{ fontSize:10, color:M.ink4, marginTop:2 }}>
-                Co-owners: {(sharedAcctData.coOwners).slice(0,3).map(id => userRegistry[id]?.displayName || id).join(', ')}
-                {sharedAcctData.coOwners.length > 3 ? ` +${sharedAcctData.coOwners.length - 3} more` : ''}
-              </div>
-            )}
           </div>
           {canDetach
             ? <I name="caretR" size={13} color={M.ink4}/>
@@ -1766,8 +1794,8 @@ export function ScreenSpaceDetail({ params }) {
                 </div>
               ) : (
                 <div data-testid="space-detail-name" className="m-tap" onClick={startEditName}>
-                  <div style={{ fontSize:17, fontWeight:700, color:M.ink, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{profile.localName || profile.name}</div>
-                  <div style={{ fontSize:10, color:M.ink4, marginTop:1 }}>{t('space.tapRenameLocal')}</div>
+                  <div style={{ fontSize:17, fontWeight:700, color:M.ink, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{profile.name}</div>
+                  <div style={{ fontSize:10, color:M.ink4, marginTop:1 }}>{t('space.tapRename')}</div>
                 </div>
               )}
               {(profile.creatorId || profile.ownerId) && (
@@ -1812,7 +1840,7 @@ export function ScreenSpaceDetail({ params }) {
                 </div>
               ) : (
                 <div data-testid="space-detail-name" className="m-tap" onClick={startEditName}>
-                  <div style={{ fontSize:17, fontWeight:700, color:M.ink, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{profile.localName || profile.name}</div>
+                  <div style={{ fontSize:17, fontWeight:700, color:M.ink, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{profile.name}</div>
                   <div style={{ fontSize:10, color:M.ink4, marginTop:1 }}>{t('space.tapRename')}</div>
                 </div>
               )}
@@ -1828,6 +1856,42 @@ export function ScreenSpaceDetail({ params }) {
             </div>
           </div>
         )}
+
+        {/* Notes section */}
+        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('space.notes')}</div>
+        <div className="m-card" style={{ padding:'12px 16px', marginBottom:16, border:`1px solid ${M.line}` }}>
+          {editingNote ? (
+            <div>
+              <textarea
+                autoFocus
+                value={noteDraft}
+                onChange={e => setNoteDraft(e.target.value)}
+                rows={3}
+                style={{ width:'100%', boxSizing:'border-box', padding:'10px 12px', borderRadius:8, border:`1px solid ${M.line}`, fontSize:13, fontFamily:M.fontUI, background:M.paper2, outline:'none', resize:'none', color:M.ink }}
+                placeholder={t('space.notesPlaceholder')}
+              />
+              <div style={{ display:'flex', gap:8, marginTop:8 }}>
+                <button className="m-tap" onClick={saveNote}
+                  style={{ flex:1, padding:'9px 0', borderRadius:8, background:M.sage, color:'#fff', border:'none', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+                  {t('action.save')}
+                </button>
+                <button className="m-tap" onClick={() => setEditingNote(false)}
+                  style={{ flex:1, padding:'9px 0', borderRadius:8, background:M.paper2, color:M.ink3, border:`1px solid ${M.line}`, fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+                  {t('action.cancel')}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="m-tap" onClick={() => { setNoteDraft(profile.spaceNote || ''); setEditingNote(true); }}
+              style={{ display:'flex', alignItems:'flex-start', gap:10 }}>
+              <div style={{ flex:1, fontSize:13, color: profile.spaceNote ? M.ink : M.ink4, lineHeight:1.5 }}>
+                {profile.spaceNote || t('space.notesPlaceholder')}
+              </div>
+              <I name="edit" size={14} color={M.ink4} style={{ flexShrink:0, marginTop:2 }}/>
+            </div>
+          )}
+          {!editingNote && <div style={{ fontSize:11, color:M.ink4, marginTop:6 }}>{t('space.notesHint')}</div>}
+        </div>
 
         {/* Settings section */}
         <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('space.settings')}</div>

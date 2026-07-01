@@ -649,7 +649,7 @@ function ScopeSelector({ scope, setScope, profiles }) {
                     {selected && <I name="check" size={10} color="#fff"/>}
                   </div>
                   {avatar && <span style={{ fontSize:16 }}>{avatar}</span>}
-                  <div style={{ fontSize:13, fontWeight:500, color:M.ink, flex:1 }}>{p.localName || p.name || p.displayName || 'Space'}</div>
+                  <div style={{ fontSize:13, fontWeight:500, color:M.ink, flex:1 }}>{p.name || p.displayName || 'Space'}</div>
                   {p.isShared && <span style={{ fontSize:9, padding:'2px 5px', borderRadius:4, background:M.ochreSoft, color:M.ochre, fontWeight:700 }}>SHARED</span>}
                 </button>
               );
@@ -1134,7 +1134,6 @@ export function InviteCards() {
   const [blocks, setBlocks] = useLocalStorage('munni_global_blocks', {});
   const { profiles, setProfiles } = useProfiles();
   const [declineSheet, setDeclineSheet] = React.useState(null); // { inv, isProfile, onJustDecline }
-  const [renameInviteSheet, setRenameInviteSheet] = React.useState(null);
 
   const myBlockedSenderIds = new Set((blocks[myId] || []).map(b => b.userId));
   const pendingFriend = invitations.filter(inv => inv.toId === myId && inv.type === 'friend' && inv.status === 'pending' && !myBlockedSenderIds.has(inv.fromId));
@@ -1180,7 +1179,7 @@ export function InviteCards() {
     setDeclineSheet(null);
   };
 
-  const respondProfile = (inv, action, customName = null) => {
+  const respondProfile = (inv, action) => {
     setInvitations(list => list.map(i => i.id === inv.id ? { ...i, status: action, respondedAt: Date.now() } : i));
     if (action === 'accepted') {
       // Clear any stale left/expelled signals for me in this profile's sharedData so
@@ -1207,11 +1206,9 @@ export function InviteCards() {
         const originalOwnerId = inv.originalOwnerId || inv.fromId;
         const ownerDisplay = userRegistry[originalOwnerId]?.displayName || originalOwnerId;
         const ownerName = freshName || inv.profileName || 'Shared';
-        const trimmedCustom = customName?.trim();
         const profileData = {
           id: inv.profileId,
           name: ownerName,
-          localName: trimmedCustom && trimmedCustom !== ownerName ? trimmedCustom : ownerName,
           icon: inv.profileIcon || 'users',
           active: false,
           accountIds: inv.profileAccountIds || [],
@@ -1318,44 +1315,11 @@ export function InviteCards() {
             <div style={{ animation: animatingIds.has(inv.id) ? 'slideInNotif 0.38s cubic-bezier(0.16,1,0.3,1)' : 'none' }}>
               {inv.type === 'friend'
                 ? renderFriendInvite(inv, () => respondFriend(inv, 'accepted'), () => respondFriend(inv, 'declined'))
-                : renderProfileInvite(inv, () => setRenameInviteSheet({ inv, name: inv.profileName || '' }), () => respondProfile(inv, 'declined'))}
+                : renderProfileInvite(inv, () => respondProfile(inv, 'accepted'), () => respondProfile(inv, 'declined'))}
             </div>
           </React.Fragment>
         ))}
       </div>
-
-      {/* Rename-on-join sheet */}
-      {renameInviteSheet && (
-        <Sheet onClose={() => setRenameInviteSheet(null)}>
-          <div style={{ padding:'4px 16px 20px' }}>
-            <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:16 }}>
-              <ProfileAvatar profile={{ name: renameInviteSheet.inv.profileName, picture: renameInviteSheet.inv.profilePicture || null }} size={44}/>
-              <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontSize:16, fontWeight:700, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{renameInviteSheet.inv.profileName || 'Shared space'}</div>
-                <div style={{ fontSize:11, color:M.ink3, marginTop:2 }}>
-                  {t('space.by')} <strong>{userRegistry[renameInviteSheet.inv.fromId]?.displayName || renameInviteSheet.inv.fromId}</strong>
-                </div>
-              </div>
-            </div>
-            <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>{t('space.nameThisSpace')}</div>
-            <input autoFocus
-              value={renameInviteSheet.name}
-              onChange={e => setRenameInviteSheet(prev => ({ ...prev, name: e.target.value }))}
-              onKeyDown={e => e.key === 'Enter' && (respondProfile(renameInviteSheet.inv, 'accepted', renameInviteSheet.name), setRenameInviteSheet(null))}
-              style={{ width:'100%', padding:'12px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box', marginBottom:6 }}
-            />
-            <div style={{ fontSize:11, color:M.ink4, marginBottom:20 }}>{t('space.nameThisSpaceHint')}</div>
-            <button onClick={() => { respondProfile(renameInviteSheet.inv, 'accepted', renameInviteSheet.name); setRenameInviteSheet(null); }}
-              style={{ width:'100%', padding:'14px 0', background:M.sage, color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>
-              {t('space.inviteJoin')}
-            </button>
-            <button onClick={() => setRenameInviteSheet(null)}
-              style={{ width:'100%', padding:'14px 0', background:M.paper2, color:M.ink, border:`1px solid ${M.line}`, borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
-              {t('action.cancel')}
-            </button>
-          </div>
-        </Sheet>
-      )}
 
       {/* Decline options sheet */}
       {declineSheet && (
@@ -1422,7 +1386,7 @@ export function ScreenNotifications() {
         const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{}');
         (sd.accounts || []).forEach(acct => {
           (acct.coOwnerRequests || []).filter(r => r.status === 'pending').forEach(req => {
-            result.push({ acct, req, spaceId: p.id, spaceName: p.localName || p.name });
+            result.push({ acct, req, spaceId: p.id, spaceName: p.name });
           });
         });
       } catch {}
