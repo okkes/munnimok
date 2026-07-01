@@ -976,6 +976,16 @@ export function ScreenUserInfo() {
                     if (k.startsWith('munni_shared_data_')) return false;
                     return k.includes(userKey);
                   }).forEach(k => localStorage.removeItem(k));
+                  // Explicitly delete the profile key (email users have '@' in key which the pattern misses)
+                  const actualProfileKey = computeProfileKey(loginMethod, _safeEmail || '');
+                  localStorage.removeItem(actualProfileKey);
+                  // Allow re-signup with this method by removing from signup registries
+                  const sms = JSON.parse(localStorage.getItem('munni_signup_methods') || '[]');
+                  localStorage.setItem('munni_signup_methods', JSON.stringify(sms.filter(m => m !== loginMethod)));
+                  if (loginMethod === 'email' && _safeEmail) {
+                    const ses = JSON.parse(localStorage.getItem('munni_signup_emails') || '[]');
+                    localStorage.setItem('munni_signup_emails', JSON.stringify(ses.filter(e => e !== _safeEmail.toLowerCase())));
+                  }
                 }
                 Object.keys(sessionStorage).filter(k => k.startsWith('munni_')).forEach(k => sessionStorage.removeItem(k));
                 window.location.reload();

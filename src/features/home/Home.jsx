@@ -86,6 +86,8 @@ export function ScreenHome() {
   const [goals] = useProfileGoals();
   const [debts] = useProfileDebts();
 
+  const activeProfile = profiles.find(p => p.active) || profiles[0];
+
   const [globalPeriodDay] = useLocalStorage('munni_period_day', 20);
   const periodDay = activeProfile?.periodDay || globalPeriodDay;
   const periodHistory = React.useMemo(() => computePeriodHistory(periodDay), [periodDay]);
@@ -97,8 +99,6 @@ export function ScreenHome() {
   const pd = periodHistory[pidx] || periodHistory[periodHistory.length - 1];
   const isCurrent = pidx === periodHistory.length - 1;
   const currentUnallocated = alloc ? alloc.unallocated : pd.unallocated;
-
-  const activeProfile = profiles.find(p => p.active) || profiles[0];
   const [connectedAccounts] = useConnectedAccounts();
   const syncKey = React.useMemo(() => getUserSyncKey(), []);
   const [lastSyncedStr] = useLocalStorage(syncKey, null);

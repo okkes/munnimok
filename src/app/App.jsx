@@ -354,6 +354,13 @@ function ScreenLoginGate({ onLogin }) {
     sessionStorage.setItem('munni_profile_email', JSON.stringify(email || ''));
     window.dispatchEvent(new CustomEvent('munni-ss', { detail: { key: 'munni_profile_email' } }));
     const userId = getUserId();
+    // If this userId was previously deleted, clear the flag when starting fresh (no profile data = fresh signup)
+    const _gReg = JSON.parse(localStorage.getItem('munni_global_users') || '{}');
+    if (_gReg[userId]?.deleted && !localStorage.getItem(computeProfileKey(method, email || ''))) {
+      delete _gReg[userId].deleted;
+      delete _gReg[userId].deletedAt;
+      localStorage.setItem('munni_global_users', JSON.stringify(_gReg));
+    }
     const name = displayName || (method === 'google' ? 'Google van der Berg' : method === 'apple' ? 'Apple van der Berg' : method === 'bank' ? 'Demo User' : email || userId);
     const nameKey = computeUserDataKey(method, email, 'munni_profile_name');
     localStorage.setItem(nameKey, JSON.stringify(name));
