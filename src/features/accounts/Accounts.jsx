@@ -926,6 +926,10 @@ export function CashWalletForm({ defaultCurrency, onSave, onBack }) {
         <div style={{ minWidth:60 }}/>
       </div>
       <div style={{ flex:1, overflowY:'auto', padding:'20px 20px 32px' }}>
+        <div style={{ display:'flex', alignItems:'flex-start', gap:12, padding:'12px 14px', borderRadius:10, background:M.sageSoft, border:`1px solid ${M.sage}22`, marginBottom:16 }}>
+          <I name="info" size={16} color={M.sage} style={{ flexShrink:0, marginTop:1 }}/>
+          <div style={{ fontSize:12, color:M.ink2, lineHeight:1.6 }}>{t('acct.cashWalletTip')}</div>
+        </div>
         <div style={{ padding:'12px 16px', borderRadius:12, background:M.sageSoft, display:'flex', gap:10, alignItems:'flex-start', marginBottom:20 }}>
           <I name="info" size={16} color={M.sage}/>
           <div style={{ fontSize:12, color:M.ink2, lineHeight:1.55 }}>{t('acct.usageNotice')}</div>
@@ -1498,6 +1502,8 @@ export function ScreenAccounts({ params }) {
   const [showEditSheet, setShowEditSheet] = React.useState(null); // null | acct object
   const [editName, setEditName] = React.useState('');
   const [editIban, setEditIban] = React.useState('');
+  const [editCurrency, setEditCurrency] = React.useState('EUR');
+  const [showEditCurrencyPicker, setShowEditCurrencyPicker] = React.useState(false);
   const [sharedWithMeSheet, setSharedWithMeSheet] = React.useState(null); // shared-with-me detail sheet
   const [coOwnerAuthSheet, setCoOwnerAuthSheet] = React.useState(null); // account being co-owner authenticated
   const [coOwnerPsd2Step, setCoOwnerPsd2Step] = React.useState(null); // 'login'|'consent'|'connecting'|'done'
@@ -1741,15 +1747,18 @@ export function ScreenAccounts({ params }) {
   const openEdit = (acct) => {
     setEditName(acct.name || '');
     setEditIban(acct.iban || '');
+    setEditCurrency(acct.currency || 'EUR');
     setShowEditSheet(acct);
   };
 
   const saveEdit = () => {
     if (!showEditSheet) return;
+    const isManual = !showEditSheet.readOnly && !showEditSheet.bankId;
     setConnectedAccounts(a => a.map(x => x.id !== showEditSheet.id ? x : {
       ...x,
       name: editName.trim() || x.name,
       iban: editIban.trim(),
+      ...(isManual ? { currency: editCurrency } : {}),
     }));
     // Sync name change to shared data for co-owned or shared accounts
     const updatedName = editName.trim() || showEditSheet.name;
@@ -1772,6 +1781,31 @@ export function ScreenAccounts({ params }) {
         } catch {}
       });
     }
+    // Sync name to co-owners' connectedAccounts across all login methods
+    const trimmedName = editName.trim() || showEditSheet.name;
+    ['google', 'apple'].forEach(method => {
+      const key = `munni_bank_accounts_${method}`;
+      try {
+        const accts = JSON.parse(localStorage.getItem(key) || '[]');
+        const idx = accts.findIndex(a => a.id === showEditSheet.id);
+        if (idx >= 0) {
+          accts[idx] = { ...accts[idx], name: trimmedName };
+          localStorage.setItem(key, JSON.stringify(accts));
+          window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key } }));
+        }
+      } catch {}
+    });
+    Object.keys(localStorage).filter(k => k.startsWith('munni_bank_accounts_email_')).forEach(key => {
+      try {
+        const accts = JSON.parse(localStorage.getItem(key) || '[]');
+        const idx = accts.findIndex(a => a.id === showEditSheet.id);
+        if (idx >= 0) {
+          accts[idx] = { ...accts[idx], name: trimmedName };
+          localStorage.setItem(key, JSON.stringify(accts));
+          window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key } }));
+        }
+      } catch {}
+    });
     setShowEditSheet(null);
   };
 
@@ -2059,6 +2093,16 @@ export function ScreenAccounts({ params }) {
                     style={{ width:'100%', boxSizing:'border-box', padding:'11px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontMono, background:M.paper2, outline:'none' }}/>
                 </div>
               )}
+              {!showEditSheet.readOnly && !showEditSheet.bankId && (
+                <div style={{ marginBottom:14 }}>
+                  <div style={{ fontSize:12, color:M.ink3, marginBottom:5 }}>{t('acct.currency')}</div>
+                  <button className="m-tap" onClick={() => setShowEditCurrencyPicker(true)}
+                    style={{ width:'100%', display:'flex', alignItems:'center', justifyContent:'space-between', padding:'11px 14px', borderRadius:10, border:`1px solid ${M.line}`, background:M.paper2, fontFamily:M.fontUI, cursor:'pointer' }}>
+                    <span style={{ fontSize:14 }}>{editCurrency}</span>
+                    <I name="caretR" size={14} color={M.ink4}/>
+                  </button>
+                </div>
+              )}
               {sharedInSpaces.length > 0 && (
                 <div style={{ marginBottom:16 }}>
                   <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>Shared in</div>
@@ -2116,6 +2160,7 @@ export function ScreenAccounts({ params }) {
                 {t('acct.removeConfirm')}
               </button>
             </div>
+            <CurrencySheet open={showEditCurrencyPicker} current={editCurrency} onSelect={c => { setEditCurrency(c); setShowEditCurrencyPicker(false); }} onClose={() => setShowEditCurrencyPicker(false)} t={t}/>
           </Sheet>
         );
       })()}
@@ -2123,9 +2168,8 @@ export function ScreenAccounts({ params }) {
       {sharedWithMeSheet && (() => {
         const myId = getUserId();
         const isCoOwner = (sharedWithMeSheet.coOwners || []).includes(myId);
-        const isAutomated = !sharedWithMeSheet?.manual && sharedWithMeSheet?.bankId;
-        const isMemberAttached = !!sharedWithMeSheet?.attachedBy && sharedWithMeSheet?.attachedBy !== myId;
-        const showAuthenticate = isAutomated && !isMemberAttached;
+        const isAutomated = !!sharedWithMeSheet?.bankId && !sharedWithMeSheet?.manual;
+        const showAuthenticate = isAutomated; // automated (has bankId, not manual) → always authenticate flow
         const hasPendingRequest = (sharedWithMeSheet.coOwnerRequests || []).some(r => r.userId === myId && r.status === 'pending');
         const alreadyInAssets = connectedAccounts.some(x => x.id === sharedWithMeSheet?.id);
         return (

@@ -4,7 +4,8 @@ import { fmtEur, fmtDate } from '../../shared/utils/format.js';
 import { M, I, IcoMDI, Divider, StatusBar, AppBar } from '../../app/theme.jsx';
 import { useLang } from '../../shared/i18n.jsx';
 import { useNav, Sheet } from '../../app/nav.jsx';
-import { useTxCtx } from '../../app/providers.jsx';
+import { useTxCtx, useProfiles } from '../../app/providers.jsx';
+import { getUserId } from '../../shared/utils/user.js';
 import { HighlightText } from '../../shared/components/TxRow.jsx';
 import { DetailRow } from '../transactions/Tx.jsx';
 
@@ -12,10 +13,23 @@ import { DetailRow } from '../transactions/Tx.jsx';
 export function ScreenReviewSwipe() {
   const nav = useNav();
   const { txs, updateTx } = useTxCtx();
+  const { profiles } = useProfiles();
   const [reviewed, setReviewed] = React.useState(new Set());
   const [skipped, setSkipped] = React.useState(new Set());
+
+  const sharedReviewed = React.useMemo(() => {
+    const r = new Set();
+    profiles.forEach(p => {
+      try {
+        const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{}');
+        Object.keys(sd.reviewed || {}).forEach(txId => r.add(txId));
+      } catch {}
+    });
+    return r;
+  }, [profiles]);
+
   const reviewTxs = txs
-    .filter(t => t.needsReview)
+    .filter(t => t.needsReview && !sharedReviewed.has(t.id))
     .sort((a, b) => {
       const aGP = a.merchant === 'Google Playstore' ? 0 : 1;
       const bGP = b.merchant === 'Google Playstore' ? 0 : 1;
@@ -68,12 +82,29 @@ export function ScreenReviewSwipe() {
   const confirmCurrent = () => {
     if (txCats.length === 0) return;
     const toMark = new Set([tx.id, ...Array.from(bulkSelected)]);
+    const myId = getUserId();
     // Persist: clear needsReview and update categories in localStorage
     toMark.forEach(id => {
       const t = txs.find(x => x.id === id);
       if (!t) return;
       const cats = id === tx.id ? txCats.map(c => ({ catId: c.id, amount: c.amount })) : (t.cats || [{ catId: t.cat, amount: Math.abs(t.amount) }]);
       updateTx(id, { needsReview: false, cats, cat: cats[0]?.catId || t.cat });
+      // Mark reviewed in shared data for transactions that belong to shared spaces
+      profiles.forEach(p => {
+        try {
+          const sdKey = `munni_shared_data_${p.id}`;
+          const sd = JSON.parse(localStorage.getItem(sdKey) || '{}');
+          if ((sd.txs || []).some(st => st.id === id)) {
+            const updSd = {
+              ...sd,
+              reviewed: { ...(sd.reviewed || {}), [id]: { by: myId, at: Date.now() } },
+              txs: (sd.txs || []).map(st => st.id === id ? { ...st, needsReview: false } : st),
+            };
+            localStorage.setItem(sdKey, JSON.stringify(updSd));
+            window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sdKey } }));
+          }
+        } catch {}
+      });
     });
     setReviewed(r => new Set([...r, ...toMark]));
     setBulkSelected(new Set());
@@ -113,15 +144,14 @@ export function ScreenReviewSwipe() {
         leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="x" size={20}/></button>}
       />
 
-      <div style={{ display:'flex', justifyContent:'center', gap:4, padding:'0 20px 14px', flexShrink:0 }}>
-        {Array.from({ length: Math.min(initialCount, 30) }).map((_, i) => {
-          const done = i < reviewed.size + skipped.size;
-          const isSkipped = i >= reviewed.size && i < reviewed.size + skipped.size;
-          const isCurrent = i === reviewed.size + skipped.size;
-          return (
-            <div key={i} style={{ flex:1, height:3, borderRadius:999, background: done ? (isSkipped ? M.ink3 : M.sage) : (isCurrent ? M.ink : M.line2) }}/>
-          );
-        })}
+      <div style={{ padding:'0 20px 14px', flexShrink:0 }}>
+        <div style={{ width:'100%', height:3, borderRadius:999, background:M.line2 }}>
+          <div style={{
+            width:`${Math.min(100, ((reviewed.size + skipped.size) / Math.max(1, initialCount)) * 100)}%`,
+            height:'100%', borderRadius:999, background:M.sage,
+            transition:'width 0.3s ease'
+          }}/>
+        </div>
       </div>
 
       <div style={{ flex:1, overflowY:'auto', padding:'0 20px' }}>

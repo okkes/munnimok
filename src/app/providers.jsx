@@ -242,8 +242,8 @@ export function useAllVisibleAccounts() {
   const { profiles } = useProfiles();
   return React.useMemo(() => {
     const myId = getUserId();
-    const seen = new Set(connectedAccounts.map(a => a.id));
-    const shared = [];
+    const result = [...connectedAccounts];
+    const seenIds = new Set(connectedAccounts.map(a => a.id));
     profiles.forEach(p => {
       try {
         const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{}');
@@ -251,12 +251,21 @@ export function useAllVisibleAccounts() {
         const isOwner = p.ownerId === myId || (!p.ownerId && !p.isShared);
         if (isMember && !isOwner) {
           (sd.accounts || []).forEach(a => {
-            if (!seen.has(a.id)) { seen.add(a.id); shared.push(a); }
+            if (!seenIds.has(a.id)) {
+              seenIds.add(a.id);
+              result.push(a);
+            } else {
+              // ID conflict: prefer the one with bankId (more specific)
+              const existingIdx = result.findIndex(x => x.id === a.id);
+              if (existingIdx >= 0 && !result[existingIdx].bankId && a.bankId) {
+                result[existingIdx] = a;
+              }
+            }
           });
         }
       } catch {}
     });
-    return [...connectedAccounts, ...shared];
+    return result;
   }, [connectedAccounts, profiles]);
 }
 

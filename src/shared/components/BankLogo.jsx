@@ -53,6 +53,16 @@ export function BankLogoSVG({ bankId, bankName, bankColor, size = 36, radius = 1
     case 'lloyds':      return text('L', '#024731', '#fff', 20);
     case 'barclays':    return text('B', '#00AEE9', '#fff', 20);
     case 'hsbc':        return text('HSBC', '#DB0011', '#fff', 10);
+    // Brokerages
+    case 'degiro':      return text('D', '#FF3300', '#fff', 20);
+    case 'etoro':       return text('e', '#00A651', '#fff', 18);
+    case 'saxo':        return text('SB', '#003399', '#fff', 12);
+    case 'flatex':      return text('fx', '#005AAA', '#fff', 14);
+    case 'trade_rep':   return text('TR', '#1A1A2E', '#fff', 12);
+    case 'fidelity':    return text('F', '#5A9E44', '#fff', 20);
+    case 'schwab':      return text('CS', '#0047BB', '#fff', 12);
+    case 'robinhood':   return text('R', '#00C805', '#fff', 20);
+    case 'ib':          return text('IB', '#E31837', '#fff', 13);
     default: {
       const initials = (bankName || '').slice(0, 2).toUpperCase() || '?';
       return <div style={{ ...s, background: bankColor || '#888', color:'#fff', fontSize:13, fontWeight:700, fontFamily:'Arial,sans-serif', display:'flex', alignItems:'center', justifyContent:'center' }}>{initials}</div>;

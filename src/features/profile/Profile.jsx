@@ -1910,6 +1910,23 @@ export function ScreenSpaceDetail({ params }) {
               {canEdit ? <I name="caretR" size={14} color={M.ink4}/> : <I name="lock" size={13} color={M.ink4}/>}
             </div>
           </div>
+          <Divider inset={44}/>
+          <div className={canEdit ? 'm-tap' : ''} onClick={canEdit ? () => nav.push('periods', { profileId: profile.id }) : undefined}
+            style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0', opacity: canEdit ? 1 : 0.5 }}>
+            <div style={{ width:32, height:32, borderRadius:9, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+              <I name="cal" size={16} color={M.ink2}/>
+            </div>
+            <div style={{ flex:1 }}>
+              <div style={{ fontSize:14, fontWeight:500 }}>{t('space.period')}</div>
+              <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{t('space.periodSub')}</div>
+            </div>
+            <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+              <span style={{ fontSize:13, color:M.ink2, fontWeight:600 }}>
+                {profile.periodType === 'weekly' ? 'Weekly' : profile.periodType === 'biweekly' ? 'Bi-weekly' : `Day ${profile.periodDay || 20}`}
+              </span>
+              {canEdit ? <I name="caretR" size={14} color={M.ink4}/> : <I name="lock" size={13} color={M.ink4}/>}
+            </div>
+          </div>
         </div>
 
         {/* Financial Accounts card */}
