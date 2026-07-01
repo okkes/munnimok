@@ -106,7 +106,7 @@ function Router() {
         if (!Comp) return null;
         return (
           <div key={i} style={{
-            position: 'absolute', inset: 0, background: M.paper,
+            position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', background: M.paper,
             animation: 'mSlideIn 0.28s cubic-bezier(.2,.7,.2,1) both',
           }}>
             <Comp params={entry.params}/>
