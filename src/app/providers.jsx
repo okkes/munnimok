@@ -129,16 +129,25 @@ export function ProfilesProvider({ children }) {
                 return result;
               }
             }
-            // Name/picture sync: apply changes written by the other side
+            // Name/picture/period sync: apply changes written by the other side
             const isSharedVariant = p.isShared || (p.members || []).length > 0;
             if (isSharedVariant && sd.meta) {
               const metaName = sd.meta.name;
               const metaPic = sd.meta.picture;
+              const metaPeriodDay = sd.meta.periodDay;
+              const metaPeriodType = sd.meta.periodType;
               const nameChanged = metaName && metaName !== p.name;
               const picChanged = !p.localPicture && metaPic !== undefined && metaPic !== p.picture;
-              if (nameChanged || picChanged) {
+              const periodDayChanged = metaPeriodDay !== undefined && metaPeriodDay !== p.periodDay;
+              const periodTypeChanged = metaPeriodType !== undefined && metaPeriodType !== p.periodType;
+              if (nameChanged || picChanged || periodDayChanged || periodTypeChanged) {
                 changed = true;
-                return { ...p, ...(nameChanged ? { name: metaName } : {}), ...(picChanged ? { picture: metaPic } : {}) };
+                return { ...p,
+                  ...(nameChanged ? { name: metaName } : {}),
+                  ...(picChanged ? { picture: metaPic } : {}),
+                  ...(periodDayChanged ? { periodDay: metaPeriodDay } : {}),
+                  ...(periodTypeChanged ? { periodType: metaPeriodType } : {}),
+                };
               }
             }
           } catch {}

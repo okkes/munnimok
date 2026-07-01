@@ -70,7 +70,7 @@ if (typeof document !== 'undefined' && !document.getElementById('m-styles')) {
     .m-tap { cursor: pointer; transition: opacity 0.15s, transform 0.1s; }
     .m-tap:active { opacity: 0.7; transform: scale(0.98); }
     .m-screen { width:100%; height:100%; background:${M.paper}; color:${M.ink}; font-family:${M.fontUI}; display:flex; flex-direction:column; overflow:hidden; }
-    .m-body-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; padding: 0 20px 24px; overscroll-behavior: contain; }
+    .m-body-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; padding: 0 20px 24px; overscroll-behavior: contain; }
     .m-body-scroll::-webkit-scrollbar { display: none; }
     .m-appbar { display:flex; align-items:center; justify-content:space-between; padding: 8px 16px 12px; gap: 8px; flex-shrink: 0; }
     .m-iconbtn { width:36px; height:36px; border-radius:999px; background:transparent; border:none; display:flex; align-items:center; justify-content:center; cursor:pointer; color:${M.ink}; }

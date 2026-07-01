@@ -318,6 +318,17 @@ export function ScreenPeriods({ params }) {
   const handleSave = () => {
     if (profileId && profile) {
       setProfiles(ps => ps.map(p => p.id === profileId ? { ...p, periodDay: localDay, periodType: localType } : p));
+      // Sync to shared data so all members see the same period
+      const isSharedProfile = profile.isShared || (profile.members || []).length > 0;
+      if (isSharedProfile) {
+        try {
+          const sdKey = `munni_shared_data_${profileId}`;
+          const sd = JSON.parse(localStorage.getItem(sdKey) || '{}');
+          sd.meta = { ...(sd.meta || {}), periodDay: localDay, periodType: localType };
+          localStorage.setItem(sdKey, JSON.stringify(sd));
+          window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sdKey } }));
+        } catch {}
+      }
     }
     nav.pop();
   };
