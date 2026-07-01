@@ -11,74 +11,13 @@ import { BarChart, StackedBar } from '../../shared/components/Charts.jsx';
 import { TxRow } from '../../shared/components/TxRow.jsx';
 import { useTxCtx, useProfiles, useConnectedAccounts, Stat } from '../../app/providers.jsx';
 import { STOCK_AVATARS } from '../../shared/constants.js';
+import { BankLogoSVG } from '../../shared/components/BankLogo.jsx';
 
 function HighlightText({ text, query }) {
   if (!query) return <>{text}</>;
   const idx = text.toLowerCase().indexOf(query.toLowerCase());
   if (idx === -1) return <>{text}</>;
   return <>{text.slice(0, idx)}<mark style={{ background: M.sageSoft, color: M.sage, borderRadius: 2, padding: '1px 0' }}>{text.slice(idx, idx + query.length)}</mark>{text.slice(idx + query.length)}</>;
-}
-
-// ── Bank logo SVG component ──────────────────────────────────────────────────
-
-function BankLogoSVG({ bankId, bankName, bankColor, size = 36, radius = 10 }) {
-  const s = { width:size, height:size, borderRadius:radius, overflow:'hidden', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' };
-  const text = (txt, bg, fg='#fff', fs=13) => (
-    <div style={{ ...s, background: bg }}>
-      <svg viewBox="0 0 40 40" width={size} height={size}>
-        <text x="20" y={fs > 11 ? 26 : 29} textAnchor="middle" fill={fg} fontWeight="900" fontSize={fs} fontFamily="Arial,sans-serif">{txt}</text>
-      </svg>
-    </div>
-  );
-  const heart = (bg) => (
-    <div style={{ ...s, background: bg }}>
-      <svg viewBox="0 0 40 40" width={size} height={size}>
-        <path d="M20 30 C20 30 6 21 6 13 C6 8 10 5 14 5 C16.5 5 18.5 6.5 20 8 C21.5 6.5 23.5 5 26 5 C30 5 34 8 34 13 C34 21 20 30 20 30Z" fill="white"/>
-      </svg>
-    </div>
-  );
-  const diamond = (bg, fg='#fff') => (
-    <div style={{ ...s, background: bg }}>
-      <svg viewBox="0 0 40 40" width={size} height={size}>
-        <polygon points="20,6 34,20 20,34 6,20" fill={fg}/>
-      </svg>
-    </div>
-  );
-  const leaf = (bg) => (
-    <div style={{ ...s, background: bg }}>
-      <svg viewBox="0 0 40 40" width={size} height={size}>
-        <path d="M20 32 C20 32 8 22 8 14 C8 9 13 6 20 8 C27 6 32 9 32 14 C32 22 20 32 20 32Z" fill="white" opacity="0.9"/>
-        <line x1="20" y1="32" x2="20" y2="14" stroke="white" strokeWidth="2" opacity="0.6"/>
-      </svg>
-    </div>
-  );
-  switch (bankId) {
-    case 'ing':         return text('ING', '#FF6200', '#fff', 13);
-    case 'abn':         return text('ABN', '#009B77', '#fff', 12);
-    case 'rabo':        return text('Rabo', '#004A97', '#fff', 10);
-    case 'sns':         return text('SNS', '#E30613', '#fff', 13);
-    case 'asn':         return leaf('#00A651');
-    case 'triodos':     return text('Trio', '#00A651', '#fff', 10);
-    case 'bunq':        return heart('#00D4A1');
-    case 'knab':        return text('KNAB', '#E40046', '#fff', 10);
-    case 'regio':       return text('Regio', '#0070BA', '#fff', 9);
-    case 'revolut':     return diamond('#191C20');
-    case 'n26':         return text('N26', '#000', '#fff', 14);
-    case 'wise':        return text('W', '#9FE870', '#222', 20);
-    case 'deutsche':    return text('DB', '#0018A8', '#fff', 13);
-    case 'commerzbank': return text('CB', '#FFCA28', '#333', 12);
-    case 'sparkasse':   return text('S', '#E10000', '#fff', 20);
-    case 'dkb':         return text('DKB', '#002A6E', '#fff', 12);
-    case 'monzo':       return text('M', '#FF3464', '#fff', 20);
-    case 'starling':    return text('SB', '#7ACCA0', '#fff', 12);
-    case 'lloyds':      return text('L', '#024731', '#fff', 20);
-    case 'barclays':    return text('B', '#00AEE9', '#fff', 20);
-    case 'hsbc':        return text('HSBC', '#DB0011', '#fff', 10);
-    default: {
-      const initials = (bankName || '').slice(0, 2).toUpperCase() || '?';
-      return <div style={{ ...s, background: bankColor || '#888', color:'#fff', fontSize:13, fontWeight:700, fontFamily:'Arial,sans-serif', display:'flex', alignItems:'center', justifyContent:'center' }}>{initials}</div>;
-    }
-  }
 }
 
 // ── Shared bank-connect screens (used by ScreenAccounts, ScreenAccountsAll, and Auth onboarding) ──
@@ -205,7 +144,7 @@ function BankSearchFullScreen({ banks, bankSearch, setBankSearch, connectedAccou
   );
 }
 
-function BankConnectPsd2Screen({ psd2Step, psd2Bank, customIban, setCustomIban, advancePsd2, onClose }) {
+function BankConnectPsd2Screen({ psd2Step, psd2Bank, customIban, setCustomIban, advancePsd2, onClose, ibanReadOnly }) {
   React.useEffect(() => {
     if (psd2Step !== 'done') return;
     const t = setTimeout(advancePsd2, 2000);
@@ -248,9 +187,13 @@ function BankConnectPsd2Screen({ psd2Step, psd2Bank, customIban, setCustomIban, 
               </div>
               <Divider/>
               <div style={{ padding:'14px 0' }}>
-                <div style={{ fontSize:11, color:M.ink3, marginBottom:6 }}>Account number (IBAN)</div>
-                <input value={customIban} onChange={e => setCustomIban(e.target.value)}
-                  style={{ width:'100%', boxSizing:'border-box', padding:'10px 12px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontMono, background:M.paper2, outline:'none', color:M.ink }}/>
+                <div style={{ fontSize:11, color:M.ink3, marginBottom:6, display:'flex', alignItems:'center', gap:5 }}>
+                  Account number (IBAN)
+                  {ibanReadOnly && <I name="lock" size={11} color={M.ink4}/>}
+                </div>
+                <input value={customIban} onChange={e => !ibanReadOnly && setCustomIban(e.target.value)}
+                  disabled={ibanReadOnly}
+                  style={{ width:'100%', boxSizing:'border-box', padding:'10px 12px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontMono, background:ibanReadOnly ? M.line2 : M.paper2, outline:'none', color:ibanReadOnly ? M.ink3 : M.ink, cursor: ibanReadOnly ? 'not-allowed' : 'text' }}/>
               </div>
             </div>
             <div style={{ padding:'10px 12px', borderRadius:10, background:M.sageSoft, display:'flex', gap:10, alignItems:'flex-start' }}>
@@ -643,6 +586,12 @@ function AcctRow({ acct, i, t, currency, onEdit, sharedSpaces, isFlashing }) {
                 style={{ fontSize:9, fontWeight:700, padding:'2px 6px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase', border:'none', cursor:'pointer', fontFamily:M.fontUI }}>
                 Shared
               </button>
+            )}
+            {acct.isSharedCoOwner && (
+              <>
+                <span style={{ fontSize:9, fontWeight:700, padding:'2px 6px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>Shared</span>
+                <span style={{ fontSize:9, fontWeight:700, padding:'2px 6px', borderRadius:999, background:M.violetSoft||'#EEE8FF', color:M.violet||'#7B61FF', textTransform:'uppercase' }}>Co-owner</span>
+              </>
             )}
           </div>
         </div>
@@ -1533,6 +1482,9 @@ export function ScreenAccounts({ params }) {
   const [editName, setEditName] = React.useState('');
   const [editIban, setEditIban] = React.useState('');
   const [sharedWithMeSheet, setSharedWithMeSheet] = React.useState(null); // shared-with-me detail sheet
+  const [coOwnerAuthSheet, setCoOwnerAuthSheet] = React.useState(null); // account being co-owner authenticated
+  const [coOwnerPsd2Step, setCoOwnerPsd2Step] = React.useState(null); // 'login'|'consent'|'connecting'|'done'
+  const [coOwnerRequestSheet, setCoOwnerRequestSheet] = React.useState(null); // manual co-ownership request confirm
 
   // Compute which owned accounts are shared in any of my spaces
   const sharedInSpacesMap = React.useMemo(() => {
@@ -1879,7 +1831,7 @@ export function ScreenAccounts({ params }) {
                 <div style={{ marginBottom:16 }}>
                   <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>Shared in</div>
                   {sharedInSpaces.map(s => (
-                    <button key={s.spaceId} className="m-tap" onClick={() => { setShowEditSheet(null); nav.push('space', { id: s.spaceId }); }}
+                    <button key={s.spaceId} className="m-tap" onClick={() => { setShowEditSheet(null); nav.push('spaceDetail', { id: s.spaceId }); }}
                       style={{ width:'100%', display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderRadius:10, background:M.paper2, border:`1px solid ${M.line}`, marginBottom:6, cursor:'pointer', fontFamily:M.fontUI, textAlign:'left' }}>
                       <div style={{ flex:1, fontSize:13, fontWeight:500, color:M.ink }}>{s.spaceName}</div>
                       <I name="caretR" size={14} color={M.ink4}/>
@@ -1904,20 +1856,8 @@ export function ScreenAccounts({ params }) {
       {sharedWithMeSheet && (() => {
         const myId = getUserId();
         const isCoOwner = (sharedWithMeSheet.coOwners || []).includes(myId);
-        const authenticate = () => {
-          const spaceId = sharedWithMeSheet._fromSpaceId;
-          try {
-            const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${spaceId}`) || '{}');
-            const accounts = (sd.accounts || []).map(a =>
-              a.id === sharedWithMeSheet.id
-                ? { ...a, coOwners: [...new Set([...(a.coOwners || []), myId])] }
-                : a
-            );
-            localStorage.setItem(`munni_shared_data_${spaceId}`, JSON.stringify({ ...sd, accounts }));
-            window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: `munni_shared_data_${spaceId}` } }));
-            setSharedWithMeSheet(prev => prev ? { ...prev, coOwners: [...new Set([...(prev.coOwners || []), myId])] } : prev);
-          } catch {}
-        };
+        const isAutomated = sharedWithMeSheet.readOnly === true;
+        const hasPendingRequest = (sharedWithMeSheet.coOwnerRequests || []).some(r => r.userId === myId && r.status === 'pending');
         return (
           <Sheet title="Shared account" onClose={() => setSharedWithMeSheet(null)}>
             <div style={{ padding:'4px 20px 32px' }}>
@@ -1934,7 +1874,7 @@ export function ScreenAccounts({ params }) {
                 </div>
               </div>
               {sharedWithMeSheet._fromSpaceName && (
-                <button className="m-tap" onClick={() => { setSharedWithMeSheet(null); nav.push('space', { id: sharedWithMeSheet._fromSpaceId }); }}
+                <button className="m-tap" onClick={() => { setSharedWithMeSheet(null); nav.push('spaceDetail', { id: sharedWithMeSheet._fromSpaceId }); }}
                   style={{ width:'100%', display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderRadius:10, background:M.paper2, border:`1px solid ${M.line}`, marginBottom:16, cursor:'pointer', fontFamily:M.fontUI, textAlign:'left' }}>
                   <div style={{ flex:1 }}>
                     <div style={{ fontSize:11, color:M.ink3, marginBottom:2 }}>From space</div>
@@ -1943,21 +1883,113 @@ export function ScreenAccounts({ params }) {
                   <I name="caretR" size={14} color={M.ink4}/>
                 </button>
               )}
-              {!isCoOwner && (
-                <button data-testid="authenticate-btn" className="m-tap" onClick={authenticate}
-                  style={{ width:'100%', padding:'13px', borderRadius:12, background:M.brand, color:'#fff', border:'none', fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginTop:8 }}>
-                  {t('acct.authenticate')}
-                </button>
-              )}
-              {isCoOwner && (
+              {isCoOwner ? (
                 <div data-testid="co-owner-badge" style={{ padding:'10px 14px', borderRadius:10, background:M.sageSoft, fontSize:13, color:M.sage, textAlign:'center' }}>
                   {t('acct.coOwner')}
                 </div>
+              ) : hasPendingRequest ? (
+                <div style={{ padding:'10px 14px', borderRadius:10, background:M.paper2, border:`1px solid ${M.line}`, fontSize:13, color:M.ink3, textAlign:'center', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
+                  <I name="receipt" size={14} color={M.ink3}/>
+                  {t('acct.coOwnerPending')}
+                </div>
+              ) : isAutomated ? (
+                <button data-testid="authenticate-btn" className="m-tap" onClick={() => {
+                  setCoOwnerAuthSheet(sharedWithMeSheet);
+                  setCoOwnerPsd2Step('login');
+                  setSharedWithMeSheet(null);
+                }}
+                  style={{ width:'100%', padding:'13px', borderRadius:12, background:M.brand, color:'#fff', border:'none', fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginTop:8 }}>
+                  {t('acct.authenticate')}
+                </button>
+              ) : (
+                <button data-testid="authenticate-btn" className="m-tap" onClick={() => {
+                  setCoOwnerRequestSheet(sharedWithMeSheet);
+                }}
+                  style={{ width:'100%', padding:'13px', borderRadius:12, background:M.brand, color:'#fff', border:'none', fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginTop:8 }}>
+                  {t('acct.requestCoOwnership')}
+                </button>
               )}
             </div>
           </Sheet>
         );
       })()}
+
+      {coOwnerRequestSheet && (() => {
+        const myId = getUserId();
+        const sendRequest = () => {
+          const spaceId = coOwnerRequestSheet._fromSpaceId;
+          try {
+            const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${spaceId}`) || '{}');
+            const accounts = (sd.accounts || []).map(a =>
+              a.id === coOwnerRequestSheet.id
+                ? { ...a, coOwnerRequests: [...(a.coOwnerRequests || []).filter(r => r.userId !== myId), { userId: myId, requestedAt: Date.now(), status: 'pending' }] }
+                : a
+            );
+            localStorage.setItem(`munni_shared_data_${spaceId}`, JSON.stringify({ ...sd, accounts }));
+            window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: `munni_shared_data_${spaceId}` } }));
+          } catch {}
+          setCoOwnerRequestSheet(null);
+        };
+        return (
+          <Sheet title={t('acct.requestCoOwnership')} onClose={() => setCoOwnerRequestSheet(null)}>
+            <div style={{ padding:'4px 20px 32px' }}>
+              <div style={{ fontSize:14, fontWeight:600, color:M.ink, marginBottom:8 }}>
+                {t('acct.coOwnerRequest').replace('{name}', coOwnerRequestSheet.name)}
+              </div>
+              <div style={{ fontSize:13, color:M.ink3, lineHeight:1.6, marginBottom:24 }}>
+                {t('acct.coOwnerRequestDesc')}
+              </div>
+              <button className="m-tap" onClick={sendRequest}
+                style={{ width:'100%', padding:'14px', borderRadius:12, background:M.brand, color:'#fff', border:'none', fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>
+                {t('acct.requestCoOwnership')}
+              </button>
+              <button className="m-tap" onClick={() => setCoOwnerRequestSheet(null)}
+                style={{ width:'100%', padding:'14px', borderRadius:12, background:M.paper2, color:M.ink, border:`1px solid ${M.line}`, fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+                {t('action.cancel')}
+              </button>
+            </div>
+          </Sheet>
+        );
+      })()}
+
+      {coOwnerAuthSheet && coOwnerPsd2Step && (
+        <BankConnectPsd2Screen
+          psd2Step={coOwnerPsd2Step}
+          psd2Bank={{ id: coOwnerAuthSheet.bankId, name: coOwnerAuthSheet.name, color: coOwnerAuthSheet.color }}
+          customIban={coOwnerAuthSheet.iban || ''}
+          setCustomIban={() => {}}
+          ibanReadOnly={true}
+          advancePsd2={() => {
+            const myId = getUserId();
+            if (coOwnerPsd2Step === 'login') setCoOwnerPsd2Step('consent');
+            else if (coOwnerPsd2Step === 'consent') {
+              setCoOwnerPsd2Step('connecting');
+              const acct = coOwnerAuthSheet;
+              setTimeout(() => {
+                const spaceId = acct._fromSpaceId;
+                try {
+                  const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${spaceId}`) || '{}');
+                  const accounts = (sd.accounts || []).map(a =>
+                    a.id === acct.id ? { ...a, coOwners: [...new Set([...(a.coOwners || []), myId])] } : a
+                  );
+                  localStorage.setItem(`munni_shared_data_${spaceId}`, JSON.stringify({ ...sd, accounts }));
+                  window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: `munni_shared_data_${spaceId}` } }));
+                } catch {}
+                setConnectedAccounts(a => {
+                  if (a.some(x => x.id === acct.id)) return a;
+                  return [...a, { ...acct, isSharedCoOwner: true, _fromSpaceId: undefined, _fromSpaceName: undefined, tags: [...(acct.tags || []), 'shared', 'co-owner'] }];
+                });
+                setCoOwnerPsd2Step('done');
+              }, 1800);
+            }
+            else if (coOwnerPsd2Step === 'done') {
+              setCoOwnerAuthSheet(null);
+              setCoOwnerPsd2Step(null);
+            }
+          }}
+          onClose={() => { setCoOwnerAuthSheet(null); setCoOwnerPsd2Step(null); }}
+        />
+      )}
     </div>
   );
 }

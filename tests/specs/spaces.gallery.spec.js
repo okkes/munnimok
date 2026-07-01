@@ -57,8 +57,8 @@ async function goToSpaces(page, profilesOverride = null) {
 // Demo login → override profiles → navigate to space detail at given row index
 async function goToSpaceDetail(page, profilesOverride = null, idx = 0) {
   await goToSpaces(page, profilesOverride);
-  const btns = page.locator('[data-testid="space-row-detail-btn"]');
-  await btns.nth(idx).click();
+  const rows = page.locator('[data-testid="space-row"]');
+  await rows.nth(idx).click();
   await page.waitForSelector('[data-testid="space-detail-screen"]', { timeout: 3000 });
 }
 

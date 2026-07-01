@@ -338,39 +338,99 @@ export function ScreenTxDetail({ params }) {
           )}
         </div>
 
-        {/* General info card */}
-        <div className="m-card" style={{ padding: '4px 16px', marginBottom: 14, border: `1px solid ${M.line}` }}>
-          <div className={account ? 'm-tap' : ''} onClick={account ? () => {
-            sessionStorage.setItem('munni_highlight_acct', JSON.stringify({ id: account.id, at: Date.now() }));
-            window.dispatchEvent(new CustomEvent('munni-ss', { detail: { key: 'munni_highlight_acct' } }));
-            nav.push('accounts');
-          } : undefined} style={{ display:'flex', alignItems:'center', gap:10, padding:'13px 0' }}>
-            <div style={{ fontSize:12, color:M.ink3, width:96 }}>Account</div>
-            <div style={{ flex:1, fontSize:13, color:account ? M.ink : M.ink4 }}>{account?.name || '—'}</div>
-            {account && <I name="caretR" size={14} color={M.ink4}/>}
+        {/* Notes card */}
+        <div style={{ marginBottom:14 }}>
+          <div className="m-cap" style={{ marginBottom:6, paddingLeft:2 }}>Notes</div>
+          <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
+            <div style={{ padding:'12px 0' }}>
+              <textarea
+                value={noteText}
+                onChange={e => setNoteText(e.target.value.slice(0, NOTE_MAX))}
+                onBlur={() => saveNote(noteText)}
+                rows={noteText ? Math.min(5, Math.ceil(noteText.length / 40) + 1) : 2}
+                placeholder="Add a note…"
+                style={{ width:'100%', boxSizing:'border-box', border:`1px solid ${M.line}`, borderRadius:8, padding:'6px 8px', fontSize:13, fontFamily:M.fontUI, resize:'none', outline:'none', background:M.paper2, color:M.ink, lineHeight:1.5 }}
+              />
+              <div style={{ fontSize:10, color:M.ink4, textAlign:'right', marginTop:2 }}>{noteText.length}/{NOTE_MAX}</div>
+            </div>
           </div>
-          <Divider inset={0}/>
-          {(() => {
-            const savAcct = tx.savingAccount ? ACCOUNTS.find(a => a.id === tx.savingAccount) : null;
-            return (
-              <div className="m-tap" onClick={() => setShowSavingPicker(true)} style={{ display:'flex', alignItems:'center', gap:10, padding:'13px 0' }}>
-                <div style={{ fontSize:12, color:M.ink3, width:96 }}>Saving account</div>
-                <div style={{ flex:1, fontSize:13, color:savAcct ? M.ink : M.ink4 }}>
-                  {savAcct ? savAcct.name : 'None — tap to attach'}
+        </div>
+
+        {/* Reimbursement card */}
+        <div style={{ marginBottom:14 }}>
+          <div className="m-cap" style={{ marginBottom:6, paddingLeft:2 }}>Reimbursements</div>
+          <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
+            {originalTx && (
+              <>
+                <div className="m-tap" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0' }}
+                  onClick={() => nav.push('txDetail', { id: originalTx.id })}>
+                  <div style={{ width: 32, height: 32, borderRadius: 9, background: M.claySoft, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <IcoMDI name={CATEGORIES[originalTx.cat]?.icon || 'help-circle-outline'} size={16} color={M.clay}/>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 500 }}>{originalTx.merchant}</div>
+                    <div style={{ fontSize: 11, color: M.ink3, marginTop: 1 }}>{fmtDate(originalTx.date)} · original {fmtEur(Math.abs(originalTx.amount))}</div>
+                  </div>
+                  <div className="m-num" style={{ fontWeight: 600, color: M.clay }}>
+                    {netOriginalTx < 0 ? '−' : ''}{fmtEur(Math.abs(netOriginalTx))}
+                  </div>
+                  <I name="caretR" size={14} color={M.ink4}/>
                 </div>
+                {linkedTx && <Divider inset={0}/>}
+              </>
+            )}
+            {linkedTx && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0' }}>
+                <div className="m-tap" style={{ display:'flex', alignItems:'center', gap:12, flex:1, minWidth:0 }}
+                  onClick={() => nav.push('txDetail', { id: linkedTx.id })}>
+                  <div style={{ width: 32, height: 32, borderRadius: 9, background: M.sageSoft, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink:0 }}>
+                    <I name="link" size={16} color={M.sage}/>
+                  </div>
+                  <div style={{ flex: 1, minWidth:0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{linkedTx.merchant}</div>
+                    <div style={{ fontSize: 11, color: M.ink3, marginTop: 1 }}>{fmtDate(linkedTx.date)} · reimbursed</div>
+                  </div>
+                  <div className="m-num" style={{ fontWeight: 600, color: M.sage }}>+{fmtEur(linkedTx.amount)}</div>
+                  <I name="caretR" size={14} color={M.ink4}/>
+                </div>
+                <button className="m-tap" onClick={() => updateTx(linkedTx.id, { linkedTo: undefined })}
+                  style={{ background:'none', border:'none', color:M.clay, fontSize:18, lineHeight:1, cursor:'pointer', fontFamily:M.fontUI, padding:'0 0 0 8px', flexShrink:0 }}>×</button>
+              </div>
+            )}
+            {!originalTx && !linkedTx && net !== 0 && (
+              <div className="m-tap" onClick={() => nav.push('linkReimburse', { txId: tx.id, positive })}
+                style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 0' }}>
+                <div style={{ width:32, height:32, borderRadius:9, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <I name="link" size={16} color={M.ink3}/>
+                </div>
+                <div style={{ flex:1, fontSize:13, color:M.ink3 }}>{positive ? 'Link reimbursed expense' : 'Link a reimbursement'}</div>
                 <I name="caretR" size={14} color={M.ink4}/>
               </div>
-            );
-          })()}
-          {showOriginal && (
-            <>
+            )}
+            {net === 0 && !originalTx && !linkedTx && (
+              <div style={{ padding:'12px 0', fontSize:13, color:M.ink4, textAlign:'center' }}>No reimbursements</div>
+            )}
+          </div>
+        </div>
+
+        {/* Options card (only for expenses) */}
+        {!positive && (
+          <div style={{ marginBottom:14 }}>
+            <div className="m-cap" style={{ marginBottom:6, paddingLeft:2 }}>Options</div>
+            <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
+              {(() => {
+                const savAcct = tx.savingAccount ? ACCOUNTS.find(a => a.id === tx.savingAccount) : null;
+                return (
+                  <div className="m-tap" onClick={() => setShowSavingPicker(true)} style={{ display:'flex', alignItems:'center', gap:10, padding:'13px 0' }}>
+                    <div style={{ fontSize:12, color:M.ink3, width:96 }}>Saving account</div>
+                    <div style={{ flex:1, fontSize:13, color:savAcct ? M.ink : M.ink4 }}>
+                      {savAcct ? savAcct.name : 'None — tap to attach'}
+                    </div>
+                    <I name="caretR" size={14} color={M.ink4}/>
+                  </div>
+                );
+              })()}
               <Divider inset={0}/>
-              <DetailRow label="Original" value={`${tx.amount > 0 ? '+' : '−'}${fmtEur(Math.abs(tx.amount))}`}/>
-            </>
-          )}
-          <Divider inset={0}/>
-          {!positive && (
-            <>
               <div className="m-tap" onClick={() => setShowLinkRecurring(true)} style={{ display:'flex', alignItems:'center', gap:10, padding:'14px 0' }}>
                 <div style={{ fontSize:12, color:M.ink3, width:96 }}>Recurring</div>
                 <div style={{ flex:1, fontSize:13, color:linkedRecurring?M.ink:M.ink4, display:'flex', alignItems:'center', gap:8, minWidth:0 }}>
@@ -388,25 +448,32 @@ export function ScreenTxDetail({ params }) {
                   <I name="caretR" size={14} color={M.ink4}/>
                 )}
               </div>
-              <Divider inset={0}/>
-            </>
-          )}
-          <DetailRow label="Description" value={tx.desc} mono/>
-          <Divider inset={0}/>
-          {noteText !== undefined && (
-            <div className="m-tap" onClick={() => {}} style={{ display:'flex', alignItems:'flex-start', gap:10, padding:'12px 0' }}>
-              <div style={{ fontSize:12, color:M.ink3, width:96, paddingTop:1 }}>Note</div>
-              <textarea
-                value={noteText}
-                onChange={e => setNoteText(e.target.value.slice(0, NOTE_MAX))}
-                onBlur={() => saveNote(noteText)}
-                rows={noteText ? Math.min(5, Math.ceil(noteText.length / 40) + 1) : 2}
-                placeholder="Add a note…"
-                style={{ flex:1, border:`1px solid ${M.line}`, borderRadius:8, padding:'6px 8px', fontSize:13, fontFamily:M.fontUI, resize:'none', outline:'none', background:M.paper2, color:M.ink, lineHeight:1.5 }}
-              />
-              <div style={{ fontSize:10, color:M.ink4, alignSelf:'flex-end', paddingBottom:2, minWidth:30, textAlign:'right' }}>{noteText.length}/{NOTE_MAX}</div>
             </div>
-          )}
+          </div>
+        )}
+
+        {/* Details card */}
+        <div style={{ marginBottom:14 }}>
+          <div className="m-cap" style={{ marginBottom:6, paddingLeft:2 }}>Details</div>
+          <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
+            <div className={account ? 'm-tap' : ''} onClick={account ? () => {
+              sessionStorage.setItem('munni_highlight_acct', JSON.stringify({ id: account.id, at: Date.now() }));
+              window.dispatchEvent(new CustomEvent('munni-ss', { detail: { key: 'munni_highlight_acct' } }));
+              nav.push('accounts');
+            } : undefined} style={{ display:'flex', alignItems:'center', gap:10, padding:'13px 0' }}>
+              <div style={{ fontSize:12, color:M.ink3, width:96 }}>Account</div>
+              <div style={{ flex:1, fontSize:13, color:account ? M.ink : M.ink4 }}>{account?.name || '—'}</div>
+              {account && <I name="caretR" size={14} color={M.ink4}/>}
+            </div>
+            <Divider inset={0}/>
+            <DetailRow label="Description" value={tx.desc} mono/>
+            {showOriginal && (
+              <>
+                <Divider inset={0}/>
+                <DetailRow label="Original" value={`${tx.amount > 0 ? '+' : '−'}${fmtEur(Math.abs(tx.amount))}`}/>
+              </>
+            )}
+          </div>
         </div>
 
         {showLinkRecurring && (
@@ -535,61 +602,6 @@ export function ScreenTxDetail({ params }) {
           )}
         </div>
 
-        {/* Reimbursement of (this tx is a reimbursement) */}
-        {originalTx && (
-          <>
-            <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Reimbursement of</div>
-            <div className="m-card" style={{ padding: '4px 16px', marginBottom: 14, border: `1px solid ${M.line}` }}>
-              <div className="m-tap" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0' }}
-                onClick={() => nav.push('txDetail', { id: originalTx.id })}>
-                <div style={{ width: 32, height: 32, borderRadius: 9, background: M.claySoft, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <IcoMDI name={CATEGORIES[originalTx.cat]?.icon || 'help-circle-outline'} size={16} color={M.clay}/>
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 500 }}>{originalTx.merchant}</div>
-                  <div style={{ fontSize: 11, color: M.ink3, marginTop: 1 }}>{fmtDate(originalTx.date)} · original {fmtEur(Math.abs(originalTx.amount))}</div>
-                </div>
-                <div className="m-num" style={{ fontWeight: 600, color: M.clay }}>
-                  {netOriginalTx < 0 ? '−' : ''}{fmtEur(Math.abs(netOriginalTx))}
-                </div>
-                <I name="caretR" size={14} color={M.ink4}/>
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* Reimbursed by (this expense has a reimbursement) */}
-        {linkedTx && (
-          <>
-            <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Reimbursed by · 1</div>
-            <div className="m-card" style={{ padding: '4px 16px', marginBottom: 14, border: `1px solid ${M.line}` }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0' }}>
-                <div className="m-tap" style={{ display:'flex', alignItems:'center', gap:12, flex:1, minWidth:0 }}
-                  onClick={() => nav.push('txDetail', { id: linkedTx.id })}>
-                  <div style={{ width: 32, height: 32, borderRadius: 9, background: M.sageSoft, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink:0 }}>
-                    <I name="link" size={16} color={M.sage}/>
-                  </div>
-                  <div style={{ flex: 1, minWidth:0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{linkedTx.merchant}</div>
-                    <div style={{ fontSize: 11, color: M.ink3, marginTop: 1 }}>{fmtDate(linkedTx.date)} · reimbursed</div>
-                  </div>
-                  <div className="m-num" style={{ fontWeight: 600, color: M.sage }}>+{fmtEur(linkedTx.amount)}</div>
-                  <I name="caretR" size={14} color={M.ink4}/>
-                </div>
-                <button className="m-tap" onClick={() => updateTx(linkedTx.id, { linkedTo: undefined })}
-                  style={{ background:'none', border:'none', color:M.clay, fontSize:18, lineHeight:1, cursor:'pointer', fontFamily:M.fontUI, padding:'0 0 0 8px', flexShrink:0 }}>×</button>
-              </div>
-            </div>
-          </>
-        )}
-
-        {net !== 0 && (
-          <button className="m-btn outline m-tap" style={{ width: '100%', marginBottom: 18 }}
-            onClick={() => nav.push('linkReimburse', { txId: tx.id, positive })}>
-            <I name="link" size={16}/>
-            {positive ? 'Link reimbursed expense' : 'Link a reimbursement'}
-          </button>
-        )}
       </div>{/* end lock wrapper */}
     </div>{/* end m-body-scroll */}
 

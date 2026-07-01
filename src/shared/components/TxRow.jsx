@@ -3,6 +3,7 @@ import { CATEGORIES, _catExt, catPath } from '../data/categories.js';
 import { fmtEur, fmtDate } from '../utils/format.js';
 import { M, I, IcoMDI } from '../../app/theme.jsx';
 import { useTxCtx, useConnectedAccounts } from '../../app/providers.jsx';
+import { BankLogoSVG } from './BankLogo.jsx';
 
 export function HighlightText({ text, query }) {
   if (!query) return <span>{text}</span>;
@@ -58,16 +59,20 @@ export function TxRow({ tx, onClick, showCat = true, showDate = false, dense = f
       display: 'flex', alignItems: 'center', gap: 12,
       padding: dense ? '10px 0' : '12px 0',
     }}>
-      <div style={{
-        width: 38, height: 38, borderRadius: 10, background: iconBg,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        flexShrink: 0,
-      }}>
-        {hasAccount
-          ? <I name={iconName} size={18} color={iconColor}/>
-          : <IcoMDI name={iconName} size={18} color={iconColor}/>
-        }
-      </div>
+      {hasAccount && account.bankId ? (
+        <BankLogoSVG bankId={account.bankId} bankName={account.name} bankColor={account.color} size={38} radius={10}/>
+      ) : (
+        <div style={{
+          width: 38, height: 38, borderRadius: 10, background: iconBg,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          flexShrink: 0,
+        }}>
+          {hasAccount
+            ? <I name={iconName} size={18} color={iconColor}/>
+            : <IcoMDI name={iconName} size={18} color={iconColor}/>
+          }
+        </div>
+      )}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
           <div style={{ fontSize: 14, fontWeight: 500, color: M.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>

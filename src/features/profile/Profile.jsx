@@ -1231,11 +1231,10 @@ export function ScreenSpaces() {
             return (
               <React.Fragment key={p.id}>
                 {i > 0 && <Divider inset={48}/>}
-                <div data-testid="space-row" style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
-                  <div className="m-tap" onClick={() => activateProfile(p.id)} style={{ flexShrink:0 }}>
-                    <ProfileAvatar profile={p} size={36}/>
-                  </div>
-                  <div className="m-tap" onClick={() => activateProfile(p.id)} style={{ flex:1, minWidth:0 }}>
+                <div data-testid="space-row" className="m-tap" onClick={() => nav.push('spaceDetail', { id: p.id })}
+                  style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
+                  <ProfileAvatar profile={p} size={36}/>
+                  <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ fontSize:14, fontWeight:600, display:'flex', alignItems:'center', gap:6 }}>
                       {p.localName || p.name}
                       {p.isShared && (p.members||[]).some(m => m.userId !== myId) && <span style={{ fontSize:8, fontWeight:700, padding:'1px 5px', borderRadius:999, background:M.violetSoft||'#EEE8FF', color:M.violet||'#7B61FF', textTransform:'uppercase' }}>Shared</span>}
@@ -1248,9 +1247,7 @@ export function ScreenSpaces() {
                       <I name="check" size={11} color="#fff" stroke={2.5}/>
                     </div>
                   )}
-                  <button data-testid="space-row-detail-btn" className="m-iconbtn m-tap" onClick={() => nav.push('spaceDetail', { id: p.id })}>
-                    <I name="caretR" size={16} color={M.ink4}/>
-                  </button>
+                  <I name="caretR" size={16} color={M.ink4}/>
                 </div>
               </React.Fragment>
             );
@@ -1748,6 +1745,12 @@ export function ScreenSpaceDetail({ params }) {
               {isActive && (
                 <div style={{ display:'inline-block', fontSize:10, color:M.sage, fontWeight:700, background:M.sageSoft, padding:'2px 10px', borderRadius:999, marginTop:4 }}>{t('space.active')}</div>
               )}
+              {!isActive && (
+                <button className="m-tap" onClick={() => setProfiles(ps => ps.map(p => ({ ...p, active: p.id === profile.id })))}
+                  style={{ fontSize:13, fontWeight:600, color:M.brand, background:'none', border:`1.5px solid ${M.brand}`, padding:'5px 14px', borderRadius:999, cursor:'pointer', fontFamily:M.fontUI, marginTop:4 }}>
+                  {t('space.setActive')}
+                </button>
+              )}
             </div>
           </div>
         ) : (
@@ -1781,6 +1784,12 @@ export function ScreenSpaceDetail({ params }) {
             )}
             {isActive && (
               <div style={{ fontSize:10, color:M.sage, fontWeight:700, background:M.sageSoft, padding:'2px 10px', borderRadius:999, marginTop:2 }}>{t('space.active')}</div>
+            )}
+            {!isActive && (
+              <button className="m-tap" onClick={() => setProfiles(ps => ps.map(p => ({ ...p, active: p.id === profile.id })))}
+                style={{ fontSize:13, fontWeight:600, color:M.brand, background:'none', border:`1.5px solid ${M.brand}`, padding:'5px 14px', borderRadius:999, cursor:'pointer', fontFamily:M.fontUI, marginTop:4 }}>
+                {t('space.setActive')}
+              </button>
             )}
           </div>
         )}
@@ -2167,9 +2176,15 @@ export function ScreenSpaceDetail({ params }) {
                 </span>
               </div>
               {mcFriend
-                ? <div style={{ display:'flex', alignItems:'center', gap:8, padding:'12px 14px', borderRadius:12, background:M.sageSoft, color:M.sage, fontSize:13, fontWeight:600 }}>
-                    <I name="check" size={16} color={M.sage}/> {t('friends.alreadyFriends')}
-                  </div>
+                ? <button className="m-tap" onClick={() => { setMemberCardSheet(null); nav.push('friends'); }}
+                    style={{ width:'100%', display:'flex', alignItems:'center', gap:10, padding:'11px 14px', borderRadius:12, background:M.paper2, border:`1px solid ${M.line}`, cursor:'pointer', fontFamily:M.fontUI, textAlign:'left' }}>
+                    <I name="check" size={16} color={M.sage}/>
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontSize:13, fontWeight:600, color:M.ink }}>{t('friends.alreadyFriends')}</div>
+                      <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{t('friends.manageFriends')}</div>
+                    </div>
+                    <I name="caretR" size={14} color={M.ink4}/>
+                  </button>
                 : mcSent
                   ? <div style={{ padding:'12px 14px', borderRadius:12, background:M.paper2, color:M.ink3, fontSize:13 }}>{t('friends.sent')}</div>
                   : <button className="m-tap" onClick={() => { sendFriendInvite(mc.userId); setMemberCardSheet(null); }}
