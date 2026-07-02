@@ -78,22 +78,49 @@ const PERIOD = {
   prevIncome: 2380.00,
 };
 
-export function computePeriodHistory(day) {
+export function computePeriodHistory(day, type = 'monthly') {
   const result = [];
   const today = new Date();
-  // If today hasn't reached the period start day yet, the current period
-  // began in the previous month — shift the window back by 1.
-  const offset = today.getDate() < day ? 1 : 0;
-  for (let i = 5; i >= 0; i--) {
-    const startDate = new Date(today.getFullYear(), today.getMonth() - offset - i, day);
-    const endDate = new Date(today.getFullYear(), today.getMonth() - offset - i + 1, day - 1);
-    const fmtShort = d => d.toLocaleDateString('en-GB', { day:'numeric', month:'short' });
-    result.push({
-      label: `${fmtShort(startDate)} – ${fmtShort(endDate)}`,
-      start: startDate.toISOString().slice(0,10),
-      end: endDate.toISOString().slice(0,10),
-      income: 2480, expense: 1220, invest: 300, unallocated: 620
-    });
+  const fmtShort = d => d.toLocaleDateString('en-GB', { day:'numeric', month:'short' });
+  const push = (s, e) => result.push({
+    label: `${fmtShort(s)} – ${fmtShort(e)}`,
+    start: s.toISOString().slice(0, 10),
+    end: e.toISOString().slice(0, 10),
+    income: 2480, expense: 1220, invest: 300, unallocated: 620,
+  });
+
+  if (type === 'weekly') {
+    // day = 0-6 (0=Sun, 1=Mon …). Find start of the current week period.
+    const todayMid = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const diff = (todayMid.getDay() - day + 7) % 7;
+    const curStart = new Date(todayMid.getFullYear(), todayMid.getMonth(), todayMid.getDate() - diff);
+    for (let i = 5; i >= 0; i--) {
+      const s = new Date(curStart.getFullYear(), curStart.getMonth(), curStart.getDate() - i * 7);
+      const e = new Date(s.getFullYear(), s.getMonth(), s.getDate() + 6);
+      push(s, e);
+    }
+  } else if (type === 'biweekly') {
+    // day = 0-6. Use a fixed Sunday anchor so the cycle is consistent.
+    const anchor = new Date(2020, 0, 5); // 5 Jan 2020 is a Sunday (day 0)
+    const daysToDay = (day - anchor.getDay() + 7) % 7;
+    const first = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate() + daysToDay);
+    const todayMid = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const daysSince = Math.round((todayMid - first) / 86400000);
+    const periods = Math.floor(daysSince / 14);
+    const curStart = new Date(first.getFullYear(), first.getMonth(), first.getDate() + periods * 14);
+    for (let i = 5; i >= 0; i--) {
+      const s = new Date(curStart.getFullYear(), curStart.getMonth(), curStart.getDate() - i * 14);
+      const e = new Date(s.getFullYear(), s.getMonth(), s.getDate() + 13);
+      push(s, e);
+    }
+  } else {
+    // monthly: day = 1-31 (day of month)
+    const offset = today.getDate() < day ? 1 : 0;
+    for (let i = 5; i >= 0; i--) {
+      const s = new Date(today.getFullYear(), today.getMonth() - offset - i, day);
+      const e = new Date(today.getFullYear(), today.getMonth() - offset - i + 1, day - 1);
+      push(s, e);
+    }
   }
   return result;
 }

@@ -18,7 +18,8 @@ import { budgetColor, budgetSoft } from '../budgets/Budgets.jsx';
 function CustomGraphCard({ card, txs }) {
   const nav = useNav();
   const [periodDay] = useLocalStorage('munni_period_day', 20);
-  const periodHistory = computePeriodHistory(periodDay);
+  const [periodType] = useLocalStorage('munni_period_type', 'monthly');
+  const periodHistory = computePeriodHistory(periodDay, periodType);
   const currentPeriod = periodHistory[periodHistory.length - 1];
   const excluded = card.excludeCategories || [];
 
@@ -89,13 +90,15 @@ export function ScreenHome() {
   const activeProfile = profiles.find(p => p.active) || profiles[0];
 
   const [globalPeriodDay] = useLocalStorage('munni_period_day', 20);
-  const periodDay = activeProfile?.periodDay || globalPeriodDay;
-  const periodHistory = React.useMemo(() => computePeriodHistory(periodDay), [periodDay]);
+  const [globalPeriodType] = useLocalStorage('munni_period_type', 'monthly');
+  const periodDay = activeProfile?.periodDay ?? globalPeriodDay;
+  const periodType = activeProfile?.periodType ?? globalPeriodType;
+  const periodHistory = React.useMemo(() => computePeriodHistory(periodDay, periodType), [periodDay, periodType]);
 
   const reviewCount = txs.filter(t => t.needsReview).length;
   const budgetTop = [...budgets].sort((a, b) => (b.spent/b.total) - (a.spent/a.total)).slice(0, 3);
   const [pidx, setPidx] = React.useState(periodHistory.length - 1);
-  React.useEffect(() => { setPidx(periodHistory.length - 1); }, [periodDay]);
+  React.useEffect(() => { setPidx(periodHistory.length - 1); }, [periodDay, periodType]);
   const pd = periodHistory[pidx] || periodHistory[periodHistory.length - 1];
   const isCurrent = pidx === periodHistory.length - 1;
   const currentUnallocated = alloc ? alloc.unallocated : pd.unallocated;

@@ -665,8 +665,13 @@ export function ScreenExpenses() {
   const nav = useNav();
   const { t } = useLang();
   const { txs } = useTxCtx();
-  const [periodDay] = useLocalStorage('munni_period_day', 20);
-  const periodHistory = computePeriodHistory(periodDay);
+  const { profiles } = useProfiles();
+  const _activeProfile = profiles.find(p => p.active) || profiles[0];
+  const [_globalPeriodDay] = useLocalStorage('munni_period_day', 20);
+  const [_globalPeriodType] = useLocalStorage('munni_period_type', 'monthly');
+  const periodDay = _activeProfile?.periodDay ?? _globalPeriodDay;
+  const periodType = _activeProfile?.periodType ?? _globalPeriodType;
+  const periodHistory = computePeriodHistory(periodDay, periodType);
   const [pidx, setPidx] = React.useState(periodHistory.length - 1);
 
   const barValues = periodHistory.map(p =>
@@ -826,8 +831,13 @@ export function ScreenExpenses() {
 export function ScreenCategoryDrill({ params }) {
   const nav = useNav();
   const { txs: allTxs } = useTxCtx();
-  const [periodDay] = useLocalStorage('munni_period_day', 20);
-  const periodHistory = computePeriodHistory(periodDay);
+  const { profiles } = useProfiles();
+  const _ap = profiles.find(p => p.active) || profiles[0];
+  const [_gpd] = useLocalStorage('munni_period_day', 20);
+  const [_gpt] = useLocalStorage('munni_period_type', 'monthly');
+  const periodDay = _ap?.periodDay ?? _gpd;
+  const periodType = _ap?.periodType ?? _gpt;
+  const periodHistory = computePeriodHistory(periodDay, periodType);
   const cat = CATEGORIES[params?.id] || _catExt[params?.id] || CATEGORIES.restaurants;
   const isParent = !!cat.isParent;
 

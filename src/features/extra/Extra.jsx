@@ -8,14 +8,19 @@ import { useLang } from '../../shared/i18n.jsx';
 import { useNav, Sheet, TabBar } from '../../app/nav.jsx';
 import { useLocalStorage } from '../../shared/hooks.jsx';
 import { BarChart, BarChartScrollable } from '../../shared/components/Charts.jsx';
-import { useTxCtx, useProfileDebts, useAppCtx, Stat } from '../../app/providers.jsx';
+import { useTxCtx, useProfileDebts, useAppCtx, Stat, useProfiles } from '../../app/providers.jsx';
 
 export function ScreenIncome() {
   const nav = useNav();
   const { t } = useLang();
   const { txs: allTxs } = useTxCtx();
-  const [periodDay] = useLocalStorage('munni_period_day', 20);
-  const periodHistory = computePeriodHistory(periodDay);
+  const { profiles } = useProfiles();
+  const _ap = profiles.find(p => p.active) || profiles[0];
+  const [_gpd] = useLocalStorage('munni_period_day', 20);
+  const [_gpt] = useLocalStorage('munni_period_type', 'monthly');
+  const periodDay = _ap?.periodDay ?? _gpd;
+  const periodType = _ap?.periodType ?? _gpt;
+  const periodHistory = computePeriodHistory(periodDay, periodType);
   const [selBar, setSelBar] = React.useState(periodHistory.length - 1);
   const selPeriod = periodHistory[selBar] || periodHistory[periodHistory.length - 1];
   const periodStart = selPeriod.start;

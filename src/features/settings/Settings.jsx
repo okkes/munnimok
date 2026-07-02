@@ -384,7 +384,7 @@ export function ScreenPeriods({ params }) {
                 Starts on the <strong>{ordinalStr(effectiveDay)}</strong> of each month.
               </div>
               <div style={{ fontSize:12, color:M.sage, marginTop:6, fontWeight:500 }}>
-                {(() => { const ph = computePeriodHistory(effectiveDay); const cur = ph[ph.length-1]; return cur ? cur.label : ''; })()}
+                {(() => { const ph = computePeriodHistory(effectiveDay, effectiveType); const cur = ph[ph.length-1]; return cur ? cur.label : ''; })()}
               </div>
             </div>
           </>

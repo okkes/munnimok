@@ -2168,8 +2168,8 @@ export function ScreenAccounts({ params }) {
       {sharedWithMeSheet && (() => {
         const myId = getUserId();
         const isCoOwner = (sharedWithMeSheet.coOwners || []).includes(myId);
-        const isAutomated = !!sharedWithMeSheet?.bankId && !sharedWithMeSheet?.manual;
-        const showAuthenticate = isAutomated; // automated (has bankId, not manual) → always authenticate flow
+        const isAutomated = !!sharedWithMeSheet?.readOnly; // readOnly=true means PSD2-connected; manual accounts may also have bankId
+        const showAuthenticate = isAutomated;
         const hasPendingRequest = (sharedWithMeSheet.coOwnerRequests || []).some(r => r.userId === myId && r.status === 'pending');
         const alreadyInAssets = connectedAccounts.some(x => x.id === sharedWithMeSheet?.id);
         return (
