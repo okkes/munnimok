@@ -1489,6 +1489,27 @@ export function ScreenNotifications() {
         return { id, date: dateStr, time: `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`, merchant: pool.merchant, desc: pool.desc, cat: pool.cat, amount: amt, account: accountId, needsReview: true, ...(pool.confidence ? { confidence: pool.confidence } : {}) };
       });
       addTxs(newTxs);
+      // Fan synced txs into every shared space whose attached accounts overlap
+      try {
+        profiles.forEach(p => {
+          if (!(p.isShared || (p.members || []).length > 0)) return;
+          const sdKey = `munni_shared_data_${p.id}`;
+          const sd = JSON.parse(localStorage.getItem(sdKey) || '{"accounts":[],"txs":[]}');
+          const spaceAcctIds = new Set(
+            (sd.accounts || []).length > 0
+              ? (sd.accounts || []).map(a => a.id)
+              : (p.accountIds || [])
+          );
+          if (!spaceAcctIds.size) return;
+          const toAdd = newTxs.filter(tx => spaceAcctIds.has(tx.account));
+          if (!toAdd.length) return;
+          const existingIds = new Set((sd.txs || []).map(t => t.id));
+          const fresh = toAdd.filter(t => !existingIds.has(t.id));
+          if (!fresh.length) return;
+          localStorage.setItem(sdKey, JSON.stringify({ ...sd, txs: [...fresh, ...(sd.txs || [])] }));
+          window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sdKey } }));
+        });
+      } catch {}
       setNewCount(count);
       setSyncedReviewCount(count);
       setLastSyncedStr(now.toISOString());

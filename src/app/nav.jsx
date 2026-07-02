@@ -169,6 +169,7 @@ if (typeof document !== 'undefined' && !document.getElementById('m-nav-styles'))
 }
 
 export function Sheet({ children, onClose, open, title }) {
+  const isOpen = open === undefined || !!open;
   const [dragY, setDragY] = React.useState(0);
   const dragYRef = React.useRef(0);
   const startYRef = React.useRef(null);
@@ -179,9 +180,12 @@ export function Sheet({ children, onClose, open, title }) {
 
   React.useEffect(() => { didMountRef.current = true; }, []);
 
-  // Lock background scroll while sheet is open, compensating for scrollbar width
-  // to prevent layout shift (which makes Playwright see elements as "not stable").
+  // Lock background scroll only while the sheet is actually visible.
+  // Deps include isOpen so lock/unlock tracks open↔close, not just mount/unmount.
+  // Without this, the lock fires on mount even when open=false (all Sheets are kept
+  // in React's tree), leaving m-body-scroll permanently locked until screen unmounts.
   React.useEffect(() => {
+    if (!isOpen) return;
     const scrollbarW = window.innerWidth - document.documentElement.clientWidth;
     if (scrollbarW > 0) document.body.style.paddingRight = `${scrollbarW}px`;
     document.body.style.overflow = 'hidden';
@@ -192,17 +196,18 @@ export function Sheet({ children, onClose, open, title }) {
       document.body.style.paddingRight = '';
       scrollEls.forEach(el => { el.style.overflowY = el.dataset._prevOv || ''; delete el.dataset._prevOv; });
     };
-  }, []);
+  }, [isOpen]);
 
   // Lock height after open animation so content filtering never shrinks the sheet
   React.useEffect(() => {
+    if (!isOpen) { setLockedMinHeight(null); return; }
     const timer = setTimeout(() => {
       if (panelRef.current) {
         setLockedMinHeight(panelRef.current.getBoundingClientRect().height);
       }
     }, 380);
     return () => clearTimeout(timer);
-  }, []);
+  }, [isOpen]);
 
   // Push sheet above keyboard on iOS using Visual Viewport API
   React.useEffect(() => {
