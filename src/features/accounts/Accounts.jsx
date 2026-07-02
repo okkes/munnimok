@@ -1620,7 +1620,7 @@ export function ScreenAccounts({ params }) {
         const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{}');
         const isMember = (sd.memberPerms || {})[myId] !== undefined;
         const isOwner = p.ownerId === myId || (!p.ownerId && p.active);
-        if (isMember && !isOwner) {
+        if (isMember || isOwner) {
           (sd.accounts || []).forEach(a => {
             if (!seen.has(a.id)) {
               seen.add(a.id);

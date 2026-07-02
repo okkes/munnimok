@@ -345,7 +345,7 @@ export function ScreenTxDetail({ params }) {
           <div className="m-cap" style={{ marginBottom:6, paddingLeft:2 }}>{t('tx.notes')}</div>
           <div className="m-card" style={{ padding:'12px 16px', border:`1px solid ${M.line}` }}>
             {editingTxNote ? (
-              <div>
+              <div className="m-fade">
                 <textarea autoFocus value={noteText} onChange={e => setNoteText(e.target.value.slice(0, NOTE_MAX))}
                   rows={3} placeholder={t('tx.notesPlaceholder')}
                   style={{ width:'100%', boxSizing:'border-box', padding:'10px 12px', borderRadius:8, border:`1px solid ${M.line}`, fontSize:13, fontFamily:M.fontUI, background:M.paper2, outline:'none', resize:'none', color:M.ink }}/>

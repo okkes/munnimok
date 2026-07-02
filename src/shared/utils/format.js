@@ -82,10 +82,11 @@ export function computePeriodHistory(day, type = 'monthly') {
   const result = [];
   const today = new Date();
   const fmtShort = d => d.toLocaleDateString('en-GB', { day:'numeric', month:'short' });
+  const localStr = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   const push = (s, e) => result.push({
     label: `${fmtShort(s)} – ${fmtShort(e)}`,
-    start: s.toISOString().slice(0, 10),
-    end: e.toISOString().slice(0, 10),
+    start: localStr(s),
+    end: localStr(e),
     income: 2480, expense: 1220, invest: 300, unallocated: 620,
   });
 

@@ -1664,11 +1664,23 @@ export function ScreenSpaceDetail({ params }) {
     try {
       const sdKey = `munni_shared_data_${profile.id}`;
       const sd = JSON.parse(localStorage.getItem(sdKey) || '{}');
-      const myAcctIds = new Set((sd.accounts || []).filter(a => a.attachedBy === myId).map(a => a.id));
+      const updatedAccounts = (sd.accounts || []).map(a => {
+        const otherCoOwners = (a.coOwners || []).filter(id => id !== myId);
+        const reqs = (a.coOwnerRequests || []).filter(r => r.userId !== myId);
+        if (a.attachedBy !== myId) return { ...a, coOwners: otherCoOwners, coOwnerRequests: reqs };
+        // Account I attached: transfer to co-owner or remove
+        if (otherCoOwners.length > 0) return { ...a, attachedBy: otherCoOwners[0], coOwners: otherCoOwners, coOwnerRequests: reqs };
+        return null;
+      }).filter(Boolean);
+      const removedIds = new Set(
+        (sd.accounts || [])
+          .filter(a => a.attachedBy === myId && !(a.coOwners || []).some(id => id !== myId))
+          .map(a => a.id)
+      );
       localStorage.setItem(sdKey, JSON.stringify({
         ...sd,
-        accounts: (sd.accounts || []).filter(a => a.attachedBy !== myId),
-        txs: (sd.txs || []).filter(t => !myAcctIds.has(t.account)),
+        accounts: updatedAccounts,
+        txs: (sd.txs || []).filter(t => !removedIds.has(t.account)),
         ...(signalLeft ? { left: { ...(sd.left || {}), [myId]: Date.now() } } : {}),
       }));
       window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sdKey } }));
@@ -1871,7 +1883,7 @@ export function ScreenSpaceDetail({ params }) {
         <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('space.notes')}</div>
         <div className="m-card" style={{ padding:'12px 16px', marginBottom:16, border:`1px solid ${M.line}` }}>
           {editingNote ? (
-            <div>
+            <div className="m-fade">
               <textarea
                 autoFocus
                 value={noteDraft}
