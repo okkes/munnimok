@@ -1482,7 +1482,7 @@ export function ScreenSpaceDetail({ params }) {
   const nav = useNav();
   const { t, lang } = useLang();
   const { profiles, setProfiles } = useProfiles();
-  const [connectedAccounts] = useConnectedAccounts();
+  const [connectedAccounts, setConnectedAccounts] = useConnectedAccounts();
   const { allTxs: ownTxs } = useTxCtx();
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
   const [showLeaveConfirm, setShowLeaveConfirm] = React.useState(false);
@@ -1565,7 +1565,7 @@ export function ScreenSpaceDetail({ params }) {
     if (!profile || (profile.isShared && sharedData?.memberPerms?.[myId] !== 'owner')) return;
     const accepted = invitations.filter(inv =>
       inv.fromId === myId && inv.type === 'profile' && inv.profileId === profile.id && inv.status === 'accepted'
-      && !(profile.members || []).some(m => m.userId === inv.toId)
+      && !(sharedData?.memberPerms?.[inv.toId])
     );
     if (accepted.length === 0) return;
     setProfiles(ps => ps.map(p => {
@@ -1653,14 +1653,24 @@ export function ScreenSpaceDetail({ params }) {
 
   if (!profile) return null;
 
-  const members = profile.members || [];
+  // Derive members from sharedData.memberPerms (authoritative) to stay live as members join/leave
+  const members = sharedData?.memberPerms
+    ? Object.entries(sharedData.memberPerms).map(([uid, perm]) => {
+        const existing = (profile.members || []).find(m => m.userId === uid);
+        return { userId: uid, displayName: userRegistry[uid]?.displayName || existing?.displayName || uid, permission: perm, accountIds: existing?.accountIds || [] };
+      })
+    : profile.members || [];
   const isMemberOfShared = !!profile.isShared;
   const otherMembers = members.filter(m => m.userId !== myId);
   const hasOtherOwner = otherMembers.some(m => (sharedData?.memberPerms?.[m.userId] || m.permission) === 'owner');
   const myMembership = members.find(m => m.userId === myId);
   const myPerm = buildEffectivePerm(sharedData, myId, myMembership?.permission, !isMemberOfShared);
   const canEdit = myPerm !== 'reader';
-  const pendingInvitesForProfile = invitations.filter(i => i.fromId === myId && i.type === 'profile' && i.profileId === profile.id && i.status === 'pending');
+  // Exclude users already in the space from pending invites to avoid duplicates on re-invite
+  const pendingInvitesForProfile = invitations.filter(i =>
+    i.fromId === myId && i.type === 'profile' && i.profileId === profile.id && i.status === 'pending'
+    && !(sharedData?.memberPerms?.[i.toId])
+  );
   const sharedAccts = sharedData?.accounts || [];
   const accountIds = profile.accountIds || [];
   const ownConnected = connectedAccounts.filter(a => !a.isDemo);
@@ -1831,6 +1841,7 @@ export function ScreenSpaceDetail({ params }) {
       setReconnectPsd2Step('connecting');
       setTimeout(() => setReconnectPsd2Step('done'), 1800);
     } else if (reconnectPsd2Step === 'done') {
+      const reconnectAcct = sharedAccts.find(a => a.id === reconnectPsd2AccountId);
       setSharedData(sd => ({
         ...sd,
         accounts: (sd.accounts || []).map(a =>
@@ -1839,6 +1850,13 @@ export function ScreenSpaceDetail({ params }) {
             : a
         ),
       }));
+      if (reconnectAcct) {
+        const { disconnected, disconnectedAt, disconnectedBy, attachedBy, attachedFrom, coOwners, coOwnerRequests, forkedFrom, _fromSpaceId, _fromSpaceName, isSharedCoOwner, _coOwnerSpaceId, ...cleanAcct } = reconnectAcct;
+        setConnectedAccounts(prev => {
+          if (prev.some(a => a.id === cleanAcct.id || (cleanAcct.iban && a.iban === cleanAcct.iban))) return prev;
+          return [...prev, cleanAcct];
+        });
+      }
       setReconnectPsd2Step(null);
       setReconnectPsd2AccountId(null);
     }
@@ -1921,10 +1939,13 @@ export function ScreenSpaceDetail({ params }) {
       const sdKey = `munni_shared_data_${profile.id}`;
       const sd = JSON.parse(localStorage.getItem(sdKey) || '{}');
       const { updatedAccounts, removedIds } = applyLeaveBehavior(sd, myId);
+      const newMemberPerms = { ...(sd.memberPerms || {}) };
+      delete newMemberPerms[myId];
       localStorage.setItem(sdKey, JSON.stringify({
         ...sd,
         accounts: updatedAccounts,
         txs: (sd.txs || []).filter(t => !removedIds.has(t.account)),
+        memberPerms: newMemberPerms,
         ...(signalLeft ? { left: { ...(sd.left || {}), [myId]: Date.now() } } : {}),
       }));
       window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sdKey } }));

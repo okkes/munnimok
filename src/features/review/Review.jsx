@@ -5,6 +5,7 @@ import { M, I, IcoMDI, Divider, StatusBar, AppBar } from '../../app/theme.jsx';
 import { useLang } from '../../shared/i18n.jsx';
 import { useNav, Sheet } from '../../app/nav.jsx';
 import { useTxCtx, useProfiles } from '../../app/providers.jsx';
+import { useLocalStorage } from '../../shared/hooks.jsx';
 import { getUserId } from '../../shared/utils/user.js';
 import { HighlightText } from '../../shared/components/TxRow.jsx';
 import { DetailRow } from '../transactions/Tx.jsx';
@@ -12,10 +13,46 @@ import { DetailRow } from '../transactions/Tx.jsx';
 
 export function ScreenReviewSwipe() {
   const nav = useNav();
+  const { t } = useLang();
   const { txs, updateTx } = useTxCtx();
   const { profiles } = useProfiles();
   const [reviewed, setReviewed] = React.useState(new Set());
   const [skipped, setSkipped] = React.useState(new Set());
+  const myId = React.useMemo(() => getUserId(), []);
+  const activeProfile = profiles.find(p => p.active) || profiles[0];
+  const _sharedKey = (activeProfile?.isShared || (activeProfile?.members||[]).length > 0)
+    ? `munni_shared_data_${activeProfile?.id}` : 'munni_shared_data_none';
+  const [_activeSharedData] = useLocalStorage(_sharedKey, {});
+  const [_userRegistry] = useLocalStorage('munni_global_users', {});
+
+  // Mark the current tx as "being reviewed" in all shared spaces that have it
+  const markReviewing = React.useCallback((txId) => {
+    if (!txId) return;
+    profiles.forEach(p => {
+      try {
+        const sdKey = `munni_shared_data_${p.id}`;
+        const sd = JSON.parse(localStorage.getItem(sdKey) || '{}');
+        if (!(sd.txs || []).some(t => t.id === txId) && !(sd.txMeta || {})[txId]) return;
+        const txReviewing = { ...(sd.txReviewing || {}), [txId]: { userId: myId, startedAt: Date.now() } };
+        localStorage.setItem(sdKey, JSON.stringify({ ...sd, txReviewing }));
+        window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sdKey } }));
+      } catch {}
+    });
+  }, [profiles, myId]);
+
+  const clearReviewing = React.useCallback((txId) => {
+    if (!txId) return;
+    profiles.forEach(p => {
+      try {
+        const sdKey = `munni_shared_data_${p.id}`;
+        const sd = JSON.parse(localStorage.getItem(sdKey) || '{}');
+        if (!sd.txReviewing?.[txId] || sd.txReviewing[txId].userId !== myId) return;
+        const { [txId]: _r, ...remaining } = sd.txReviewing;
+        localStorage.setItem(sdKey, JSON.stringify({ ...sd, txReviewing: remaining }));
+        window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sdKey } }));
+      } catch {}
+    });
+  }, [profiles, myId]);
 
   const sharedReviewed = React.useMemo(() => {
     const r = new Set();
@@ -55,6 +92,24 @@ export function ScreenReviewSwipe() {
   React.useEffect(() => { if (tx) setTxCats(initCats(tx)); }, [idx, queue.length]);
   React.useEffect(() => { setBulkSelected(new Set()); }, [idx]);
 
+  // Track which tx is currently being reviewed (so others see "X is reviewing" in tx detail)
+  const _prevReviewingId = React.useRef(null);
+  React.useEffect(() => {
+    const prevId = _prevReviewingId.current;
+    const curId = tx?.id || null;
+    if (prevId !== curId) {
+      if (prevId) clearReviewing(prevId);
+      if (curId) markReviewing(curId);
+      _prevReviewingId.current = curId;
+    }
+    return () => {
+      if (_prevReviewingId.current) {
+        clearReviewing(_prevReviewingId.current);
+        _prevReviewingId.current = null;
+      }
+    };
+  }, [tx?.id]);
+
   const allocatedSum = txCats.reduce((s, c) => s + c.amount, 0);
   const txAbs = tx ? Math.abs(tx.amount) : 0;
   const unallocated = Math.max(0, txAbs - allocatedSum);
@@ -69,6 +124,12 @@ export function ScreenReviewSwipe() {
 
   const totalToConfirm = 1 + bulkSelected.size;
 
+  // Check if someone else is currently reviewing this tx
+  const _txReviewingEntry = tx ? _activeSharedData?.txReviewing?.[tx.id] : null;
+  const isBeingReviewedByOther = !!_txReviewingEntry && _txReviewingEntry.userId !== myId
+    && (Date.now() - (_txReviewingEntry.startedAt || 0)) < 300000;
+  const _reviewingByName = _userRegistry[_txReviewingEntry?.userId]?.displayName || _txReviewingEntry?.userId || 'Someone';
+
   const advance = () => {
     setDrag(160);
     setTimeout(() => {
@@ -82,7 +143,6 @@ export function ScreenReviewSwipe() {
   const confirmCurrent = () => {
     if (txCats.length === 0) return;
     const toMark = new Set([tx.id, ...Array.from(bulkSelected)]);
-    const myId = getUserId();
     // Persist: clear needsReview and update categories in localStorage
     toMark.forEach(id => {
       const t = txs.find(x => x.id === id);
@@ -269,6 +329,12 @@ export function ScreenReviewSwipe() {
         <div style={{ height:16 }}/>
       </div>
 
+      {isBeingReviewedByOther && (
+        <div style={{ margin:'0 20px 8px', padding:'9px 12px', borderRadius:10, background:M.ochreSoft, border:`1px solid ${M.ochre}`, display:'flex', alignItems:'center', gap:8 }}>
+          <I name="user" size={13} color={M.ochre}/>
+          <span style={{ fontSize:12, color:M.ochre, fontWeight:500 }}>{t('tx.reviewingViewOnly').replace('{name}', _reviewingByName)}</span>
+        </div>
+      )}
       <div style={{ display:'flex', gap:12, padding:'12px 20px 20px', flexShrink:0 }}>
         <button className="m-tap" onClick={() => { setSkipped(s => new Set([...s, tx.id])); setIdx(0); }} style={{
           flex:1, height:54, borderRadius:16, border:`1px solid ${M.line}`,
@@ -277,17 +343,26 @@ export function ScreenReviewSwipe() {
         }}>
           <I name="x" size={18} color={M.ink3}/> Skip
         </button>
-        <button className="m-tap" onClick={confirmCurrent} style={{
+        <button className={isBeingReviewedByOther ? '' : 'm-tap'} onClick={isBeingReviewedByOther ? undefined : confirmCurrent} disabled={isBeingReviewedByOther} style={{
           flex:2, height:54, borderRadius:16, border:'none',
-          background: txCats.length > 0 ? M.sage : M.line2,
-          color: txCats.length > 0 ? '#fff' : M.ink4,
-          display:'flex', alignItems:'center', justifyContent:'center', gap:8,
+          background: isBeingReviewedByOther ? M.line2 : (txCats.length > 0 ? M.sage : M.line2),
+          color: isBeingReviewedByOther ? M.ink4 : (txCats.length > 0 ? '#fff' : M.ink4),
+          display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:2,
           fontSize:14, fontWeight:600,
-          opacity: txCats.length > 0 ? 1 : 0.6,
-          cursor: txCats.length > 0 ? 'pointer' : 'default',
+          opacity: (isBeingReviewedByOther || txCats.length === 0) ? 0.6 : 1,
+          cursor: (isBeingReviewedByOther || txCats.length === 0) ? 'default' : 'pointer',
         }}>
-          <I name="check" size={20} color={txCats.length > 0 ? '#fff' : M.ink4} stroke={2.5}/>
-          {totalToConfirm > 1 ? `Confirm · ${totalToConfirm} txs` : 'Confirm'}
+          {isBeingReviewedByOther ? (
+            <>
+              <I name="lock" size={16} color={M.ink4}/>
+              <span style={{ fontSize:11, color:M.ink4 }}>{t('tx.reviewingViewOnly').replace('{name}', _reviewingByName)}</span>
+            </>
+          ) : (
+            <>
+              <I name="check" size={20} color={txCats.length > 0 ? '#fff' : M.ink4} stroke={2.5}/>
+              {totalToConfirm > 1 ? `Confirm · ${totalToConfirm} txs` : 'Confirm'}
+            </>
+          )}
         </button>
       </div>
 

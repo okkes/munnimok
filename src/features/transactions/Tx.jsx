@@ -195,6 +195,27 @@ export function ScreenTxDetail({ params }) {
     && (Date.now() - (_editingLock.since || 0)) < 300000;
   const _lockedByName = _userRegistry[_editingLock?.userId]?.displayName || _editingLock?.userId || 'Someone';
 
+  // When the previous holder releases the lock, viewers compete to acquire it (random delay to avoid ties)
+  const _prevLockedRef = React.useRef(isLockedByOther);
+  React.useEffect(() => {
+    const wasLocked = _prevLockedRef.current;
+    _prevLockedRef.current = isLockedByOther;
+    if (!wasLocked || isLockedByOther || _sharedKey === 'munni_shared_data_none') return;
+    const delay = Math.floor(Math.random() * 80);
+    const timer = setTimeout(() => {
+      try {
+        const sd = JSON.parse(localStorage.getItem(_sharedKey) || '{}');
+        const ex = sd.editing;
+        const stillLockedByOther = ex?.txId === tx.id && ex.userId !== _myId && (Date.now() - (ex.since || 0)) < 300000;
+        if (!stillLockedByOther) {
+          localStorage.setItem(_sharedKey, JSON.stringify({ ...sd, editing: { txId: tx.id, userId: _myId, since: Date.now() } }));
+          window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: _sharedKey } }));
+        }
+      } catch {}
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [isLockedByOther]);
+
   const linkedRecurId = tx.recurId || null;
   const linkedRecurring = recurList.find(r => r.id === linkedRecurId || r.txIds?.includes(tx.id));
 
@@ -248,7 +269,7 @@ export function ScreenTxDetail({ params }) {
         {isLockedByOther && (
           <div style={{ margin:'0 0 10px', padding:'10px 14px', borderRadius:12, background:M.ochreSoft, border:`1px solid ${M.ochre}`, display:'flex', alignItems:'center', gap:8 }}>
             <I name="lock" size={14} color={M.ochre}/>
-            <span style={{ fontSize:13, color:M.ochre, fontWeight:500 }}>{_lockedByName} is editing this transaction — view only</span>
+            <span style={{ fontSize:13, color:M.ochre, fontWeight:500 }}>{t('tx.editingViewOnly').replace('{name}', _lockedByName)}</span>
           </div>
         )}
         <div style={{ pointerEvents: isLockedByOther ? 'none' : 'auto', opacity: isLockedByOther ? 0.65 : 1 }}>

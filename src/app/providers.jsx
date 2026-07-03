@@ -195,6 +195,7 @@ export function TxProvider({ children }) {
 
   const allTxs = React.useMemo(() => {
     const sharedTxs = sharedData?.txs || [];
+    const txMeta = sharedData?.txMeta || {};
     const attachFromMap = {};
     (sharedData?.accounts || []).forEach(a => { if (a.attachedFrom) attachFromMap[a.id] = a.attachedFrom; });
     const sharedIds = new Set(sharedTxs.map(t => t.id));
@@ -203,8 +204,10 @@ export function TxProvider({ children }) {
       const cutoff = t.account ? attachFromMap[t.account] : null;
       return !(cutoff && t.date < cutoff);
     });
-    if (!sharedTxs.length && !Object.keys(attachFromMap).length) return ownTxs;
-    return [...filteredOwnTxs, ...sharedTxs];
+    // Apply per-space metadata overlay (category, notes, etc.) to each transaction
+    const applyMeta = (tx) => { const m = txMeta[tx.id]; return m ? { ...tx, ...m } : tx; };
+    if (!sharedTxs.length && !Object.keys(attachFromMap).length && !Object.keys(txMeta).length) return ownTxs;
+    return [...filteredOwnTxs, ...sharedTxs].map(applyMeta);
   }, [ownTxs, sharedData]);
 
   // Only show transactions whose account is in the active profile; empty profile = no transactions
@@ -213,16 +216,17 @@ export function TxProvider({ children }) {
     : [];
 
   const updateTx = (id, changes) => {
-    setOwnTxs(ts => ts.map(t => t.id === id ? {...t, ...changes} : t));
-    // Also sync to sharedData.txs so the other tab picks it up via storage event
     if (isSharedOrHasMembers && sharedDataKey !== 'munni_shared_data_none') {
+      // In space context: write per-space metadata overlay so changes are scoped to this space
       try {
-        const sd = JSON.parse(localStorage.getItem(sharedDataKey) || '{"accounts":[],"txs":[]}');
-        if ((sd.txs || []).some(t => t.id === id)) {
-          localStorage.setItem(sharedDataKey, JSON.stringify({ ...sd, txs: (sd.txs || []).map(t => t.id === id ? {...t, ...changes} : t) }));
-          window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sharedDataKey } }));
-        }
+        const sd = JSON.parse(localStorage.getItem(sharedDataKey) || '{}');
+        const txMeta = { ...(sd.txMeta || {}), [id]: { ...(sd.txMeta?.[id] || {}), ...changes } };
+        localStorage.setItem(sharedDataKey, JSON.stringify({ ...sd, txMeta }));
+        window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sharedDataKey } }));
       } catch {}
+    } else {
+      // Personal space: write directly to personal transaction store
+      setOwnTxs(ts => ts.map(t => t.id === id ? {...t, ...changes} : t));
     }
   };
   const addTxs = (newTxs) => setOwnTxs(ts => [...newTxs, ...ts]);

@@ -1894,14 +1894,37 @@ export function ScreenAccounts({ params }) {
             const acct = coOwnerAuthSheet;
             setTimeout(() => {
               const spaceId = acct._fromSpaceId;
-              try {
-                const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${spaceId}`) || '{}');
-                const accounts = (sd.accounts || []).map(a =>
-                  a.id === acct.id ? { ...a, coOwners: [...new Set([...(a.coOwners || []), myId])] } : a
-                );
-                localStorage.setItem(`munni_shared_data_${spaceId}`, JSON.stringify({ ...sd, accounts }));
-                window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: `munni_shared_data_${spaceId}` } }));
-              } catch {}
+              if (acct.disconnected) {
+                // Reconnecting a disconnected account: clear disconnected state across ALL spaces where it appears
+                Object.keys(localStorage)
+                  .filter(k => k.startsWith('munni_shared_data_'))
+                  .forEach(key => {
+                    try {
+                      const sd = JSON.parse(localStorage.getItem(key) || '{}');
+                      if (!(sd.memberPerms || {})[myId]) return;
+                      const hasMatch = (sd.accounts || []).some(
+                        a => a.id === acct.id || (acct.iban && a.iban === acct.iban)
+                      );
+                      if (!hasMatch) return;
+                      const accounts = (sd.accounts || []).map(a =>
+                        (a.id === acct.id || (acct.iban && a.iban === acct.iban))
+                          ? { ...a, disconnected: false, disconnectedAt: undefined, disconnectedBy: undefined, attachedBy: myId }
+                          : a
+                      );
+                      localStorage.setItem(key, JSON.stringify({ ...sd, accounts }));
+                      window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key } }));
+                    } catch {}
+                  });
+              } else {
+                try {
+                  const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${spaceId}`) || '{}');
+                  const accounts = (sd.accounts || []).map(a =>
+                    a.id === acct.id ? { ...a, coOwners: [...new Set([...(a.coOwners || []), myId])] } : a
+                  );
+                  localStorage.setItem(`munni_shared_data_${spaceId}`, JSON.stringify({ ...sd, accounts }));
+                  window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: `munni_shared_data_${spaceId}` } }));
+                } catch {}
+              }
               setConnectedAccounts(a => {
                 if (a.some(x => x.id === acct.id)) return a;
                 return [...a, { ...acct, isSharedCoOwner: true, _coOwnerSpaceId: acct._fromSpaceId, _fromSpaceId: undefined, _fromSpaceName: undefined }];

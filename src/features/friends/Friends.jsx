@@ -402,13 +402,16 @@ export function ProfileMembersSheet({ profile, onClose }) {
   const [invitations, setInvitations] = useLocalStorage('munni_global_invitations', []);
   const [userRegistry] = useLocalStorage('munni_global_users', {});
   const [sharedData] = useLocalStorage(`munni_shared_data_${profile.id}`, { accounts: [], txs: [] });
+  const [pendingInviteFid, setPendingInviteFid] = React.useState(null);
+  const [pendingInviteRole, setPendingInviteRole] = React.useState('contributor');
 
   const myFriendIds = friendships.filter(f=>f.users&&f.users.includes(myId)).map(f=>f.users.find(u=>u!==myId));
-  const members = profile.members || [];
+  const activeMemberIds = new Set(Object.keys(sharedData?.memberPerms || {}));
+  if (!activeMemberIds.size) (profile.members || []).forEach(m => activeMemberIds.add(m.userId));
   const pendingMemberInvites = invitations.filter(i=>i.fromId===myId&&i.type==='profile'&&i.profileId===profile.id&&i.status==='pending');
-  const uninvitedFriends = myFriendIds.filter(fid => !members.some(m=>m.userId===fid) && !pendingMemberInvites.some(i=>i.toId===fid));
+  const uninvitedFriends = myFriendIds.filter(fid => !activeMemberIds.has(fid) && !pendingMemberInvites.some(i=>i.toId===fid));
 
-  const inviteFriend = (friendId) => {
+  const inviteFriend = (friendId, role = 'contributor') => {
     const inv = {
       id:`inv_${Date.now()}`, fromId:myId, toId:friendId, type:'profile',
       profileId:profile.id, profileName:profile.name, profileIcon:profile.icon,
@@ -416,9 +419,11 @@ export function ProfileMembersSheet({ profile, onClose }) {
       profileAccountIds:profile.accountIds || [],
       originalOwnerId: profile.creatorId || profile.ownerId || myId,
       originalCreatorId: profile.creatorId || profile.ownerId || myId,
-      permission:'contributor', status:'pending', sentAt:Date.now(),
+      permission: role, status:'pending', sentAt:Date.now(),
     };
     setInvitations(arr=>[...arr, inv]);
+    setPendingInviteFid(null);
+    setPendingInviteRole('contributor');
     try {
       const sdKey = `munni_shared_data_${profile.id}`;
       const sd = JSON.parse(localStorage.getItem(sdKey) || '{}');
@@ -473,19 +478,45 @@ export function ProfileMembersSheet({ profile, onClose }) {
                 <div className="m-cap" style={{ marginBottom:8, marginTop: pendingMemberInvites.length > 0 ? 8 : 4 }}>{t('friends.friendsLabel')}</div>
                 {uninvitedFriends.map(fid => {
                   const info = userRegistry[fid] || {};
+                  const isPickingRole = pendingInviteFid === fid;
                   return (
-                    <div key={fid} style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 0', borderBottom:`1px solid ${M.line2}` }}>
-                      <div style={{ width:36, height:36, borderRadius:999, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:700, color:M.sage, flexShrink:0 }}>
-                        {(info.displayName||fid).charAt(0).toUpperCase()}
+                    <div key={fid} style={{ padding:'10px 0', borderBottom:`1px solid ${M.line2}` }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+                        <div style={{ width:36, height:36, borderRadius:999, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:700, color:M.sage, flexShrink:0 }}>
+                          {(info.displayName||fid).charAt(0).toUpperCase()}
+                        </div>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontSize:13, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{info.displayName||fid}</div>
+                          <div style={{ fontSize:10, color:M.ink4, fontFamily:M.fontMono, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{fid}</div>
+                        </div>
+                        {isPickingRole ? (
+                          <button className="m-tap" onClick={() => { setPendingInviteFid(null); setPendingInviteRole('contributor'); }}
+                            style={{ width:28, height:28, borderRadius:999, background:M.paper2, border:`1px solid ${M.line}`, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0 }}>
+                            <I name="x" size={13} color={M.ink3}/>
+                          </button>
+                        ) : (
+                          <button className="m-tap" onClick={() => { setPendingInviteFid(fid); setPendingInviteRole('contributor'); }}
+                            style={{ padding:'7px 16px', borderRadius:999, background:M.sage, color:'#fff', border:'none', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, flexShrink:0 }}>
+                            + {t('space.invite')}
+                          </button>
+                        )}
                       </div>
-                      <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontSize:13, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{info.displayName||fid}</div>
-                        <div style={{ fontSize:10, color:M.ink4, fontFamily:M.fontMono, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{fid}</div>
-                      </div>
-                      <button className="m-tap" onClick={() => inviteFriend(fid)}
-                        style={{ padding:'7px 16px', borderRadius:999, background:M.sage, color:'#fff', border:'none', fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, flexShrink:0 }}>
-                        + {t('space.invite')}
-                      </button>
+                      {isPickingRole && (
+                        <div style={{ marginTop:10, paddingLeft:48 }}>
+                          <div style={{ display:'flex', gap:6, marginBottom:8 }}>
+                            {PERM_LEVELS.map(perm => (
+                              <button key={perm} className="m-tap" onClick={() => setPendingInviteRole(perm)}
+                                style={{ flex:1, padding:'6px 4px', borderRadius:8, border:`1.5px solid ${pendingInviteRole===perm ? PERM_COLOR[perm] : M.line}`, background: pendingInviteRole===perm ? PERM_BG[perm] : M.paper, fontSize:11, fontWeight:600, color: pendingInviteRole===perm ? PERM_COLOR[perm] : M.ink3, cursor:'pointer', fontFamily:M.fontUI }}>
+                                {permLabel(perm, t)}
+                              </button>
+                            ))}
+                          </div>
+                          <button className="m-tap" onClick={() => inviteFriend(fid, pendingInviteRole)}
+                            style={{ width:'100%', padding:'9px', borderRadius:10, background:M.brand, color:'#fff', border:'none', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+                            {t('space.invite')} {t(`space.perm${pendingInviteRole.charAt(0).toUpperCase()}${pendingInviteRole.slice(1)}`)}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   );
                 })}

@@ -1489,14 +1489,25 @@ export function ScreenNotifications() {
     { merchant:'Apotheek Centraal',  desc:'APOTHEEK 7842',  cat:'prescription',    min:8,  max:40,  confidence:58, needsReview:true },
   ];
 
+  const activeProfile = profiles.find(p => p.active);
+  const activeSpaceAutomatedAccts = React.useMemo(() => {
+    if (!activeProfile) return [];
+    try {
+      const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${activeProfile.id}`) || '{}');
+      const fromSd = (sd.accounts || []).filter(a => a.readOnly);
+      if (fromSd.length > 0) return fromSd;
+    } catch {}
+    const attachedIds = new Set(activeProfile.accountIds || []);
+    return connectedAccounts.filter(a => !a.isDemo && a.readOnly && attachedIds.has(a.id));
+  }, [activeProfile?.id, activeProfile?.accountIds, connectedAccounts]);
+
   const handleSync = () => {
+    if (!activeSpaceAutomatedAccts.length) return;
     setSyncing(true);
     setTimeout(() => {
       const count = Math.floor(Math.random() * 5) + 1;
       const now = new Date();
-      const loginMethod = sessionStorage.getItem('munni_last_login_method') || '';
-      const ownAccounts = connectedAccounts.filter(a => !a.isDemo && !a.isSharedCoOwner);
-      const accountPool = ownAccounts.length > 0 ? ownAccounts : [{ id: loginMethod === 'bank' ? 'demo_main' : 'main' }];
+      const accountPool = activeSpaceAutomatedAccts;
       const newTxs = Array.from({ length: count }, (_, i) => {
         const pool = MERCHANTS_POOL[Math.floor(Math.random() * MERCHANTS_POOL.length)];
         const amt = -(Math.round((pool.min + Math.random() * (pool.max - pool.min)) * 100) / 100);
@@ -1553,7 +1564,7 @@ export function ScreenNotifications() {
               <div style={{ fontSize:12, color:M.ink3, marginTop:2 }}>{lastSyncedStr ? `${t('notif.lastSynced')} ${fmtSyncTime(lastSyncedStr)}` : t('notif.bankSyncSub')}</div>
             </div>
           </div>
-          <button className="m-btn sage m-tap" style={{ width:'100%' }} onClick={handleSync} disabled={syncing}>
+          <button className="m-btn sage m-tap" style={{ width:'100%' }} onClick={handleSync} disabled={syncing || activeSpaceAutomatedAccts.length === 0}>
             {syncing ? (
               <><I name="sync" size={16} color="#fff"/> {t('notif.syncing')}</>
             ) : (
