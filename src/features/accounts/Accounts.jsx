@@ -1654,13 +1654,13 @@ export function ScreenAccounts({ params }) {
         });
       }
     });
-    // Sync transferred manual accounts (where I'm attachedBy) into personal ASSETS
+    // Sync transferred manual accounts (where I'm attachedBy or co-owner) into personal ASSETS
     profiles.forEach(p => {
       const isShared = p.isShared || (p.members || []).length > 0;
       if (!isShared) return;
       try {
         const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{}');
-        (sd.accounts || []).filter(a => !a.readOnly && a.attachedBy === myId).forEach(acct => {
+        (sd.accounts || []).filter(a => !a.readOnly && (a.attachedBy === myId || (a.coOwners || []).includes(myId))).forEach(acct => {
           setConnectedAccounts(prev => {
             if (prev.some(x => x.id === acct.id)) return prev;
             return [...prev, { ...acct, isTransferred: true }];

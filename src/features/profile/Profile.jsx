@@ -1418,10 +1418,11 @@ export function ScreenSpaces() {
                     <div style={{ fontSize:14, fontWeight:600, display:'flex', alignItems:'center', gap:6 }}>
                       {p.name}
                       {p.isShared && (p.members||[]).some(m => m.userId !== myId) && <span style={{ fontSize:8, fontWeight:700, padding:'1px 5px', borderRadius:999, background:M.violetSoft||'#EEE8FF', color:M.violet||'#7B61FF', textTransform:'uppercase' }}>Shared</span>}
-                      {!p.isShared && (p.members||[]).length > 0 && <span style={{ fontSize:8, fontWeight:700, padding:'1px 5px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>Shared</span>}
+                      {!p.isShared && (p.members||[]).length > 0 && <span style={{ fontSize:8, fontWeight:700, padding:'1px 5px', borderRadius:999, background:M.violetSoft||'#EEE8FF', color:M.violet||'#7B61FF', textTransform:'uppercase' }}>Shared</span>}
                     </div>
                     <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{(() => {
                       if (!p.isShared) return sub;
+                      if (p.creatorId === myId || p.ownerId === myId) return sub;
                       try {
                         const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{}');
                         if ((sd.memberPerms || {})[myId] === 'owner') return sub;
