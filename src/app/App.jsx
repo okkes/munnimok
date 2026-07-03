@@ -1112,7 +1112,7 @@ function ScreenLoginGate({ onLogin }) {
           {/* Logo + language trigger row – overlaid at top of image */}
           <div style={{ position:'absolute', top:0, left:0, right:0, display:'flex', alignItems:'center', justifyContent:'space-between', padding:'4px 20px 0', zIndex:99 }}>
             <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-              <img src={munniLogoUrl} style={{ width:44, height:44, objectFit:'contain', flexShrink:0 }} alt="munni"/>
+              <img src={munniLogoUrl} className="m-logo-img" style={{ width:44, height:44, objectFit:'contain', flexShrink:0 }} alt="munni"/>
               <span className="m-logo" style={{ fontSize:22, fontWeight:700, color:M.brand, fontFamily:M.fontBrand, letterSpacing:'0.01em' }}>munni<span style={{ opacity:0.5 }}>.</span></span>
             </div>
             <div style={{ position:'relative' }}>
@@ -1178,7 +1178,7 @@ function ScreenLoginGate({ onLogin }) {
           {loginError && <div data-testid={T.loginError} style={{ fontSize:12, color:M.clay, lineHeight:1.4 }}>{loginError} <button onClick={() => { setLoginError(null); setSignupEmailInput(emailInput); setMode('signup-email'); }} style={{ background:'none', border:'none', color:M.sage, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, fontSize:12 }}>{t('login.createAccount')}</button></div>}
           <button data-testid={T.loginEmailSubmit} className="m-btn m-tap" style={{ height: compact?46:52, width:'100%', opacity:emailInput.trim()?1:0.5, background:M.brand, color:'#fff', border:'none', borderRadius:14, fontSize:15, fontWeight:600, fontFamily:M.fontUI, cursor:'pointer', position:'relative', overflow:'hidden', boxShadow:'0 4px 16px rgba(8,55,43,0.30), 0 1px 4px rgba(8,55,43,0.15)' }} onClick={handleEmailContinue} disabled={!emailInput.trim()}>
             {t('login.continue')}
-            <img src={leafOnlyUrl} alt="" aria-hidden="true" style={{ position:'absolute', right:-10, bottom:-8, width:72, height:72, objectFit:'contain', objectPosition:'right bottom', opacity:0.22, pointerEvents:'none' }}/>
+            <img src={leafOnlyUrl} className="m-logo-img" alt="" aria-hidden="true" style={{ position:'absolute', right:-10, bottom:-8, width:72, height:72, objectFit:'contain', objectPosition:'right bottom', opacity:0.22, pointerEvents:'none' }}/>
           </button>
           <button data-testid={T.loginCreateAccount} className="m-tap" onClick={() => { setLoginError(null); setMode('signup'); }}
             style={{ background:'transparent', border:'none', fontSize:13, cursor:'pointer', fontFamily:M.fontUI, textAlign:'center', width:'100%', padding:'4px 0 2px' }}>
@@ -1217,14 +1217,34 @@ function ScreenLoginGate({ onLogin }) {
   );
 }
 export function App() {
-  const [dark, setDark] = useLocalStorage('munni_dark', false);
+  const [dark, _setDark] = useLocalStorage('munni_dark', false);
   const [loggedIn, setLoggedIn] = React.useState(() => sessionStorage.getItem('munni_session_active') === 'true');
   const isMobile = React.useMemo(() => window.matchMedia('(max-width: 430px)').matches, []);
+
+  // Persist dark mode per-user so each account has its own preference.
+  const setDark = React.useCallback((val) => {
+    const userId = getUserId();
+    if (userId && userId !== 'usr-0000') {
+      localStorage.setItem(`munni_dark_${userId}`, JSON.stringify(!!val));
+    }
+    _setDark(val);
+  }, [_setDark]);
+
+  const handleLogin = React.useCallback(() => {
+    const userId = getUserId();
+    if (userId && userId !== 'usr-0000') {
+      const stored = localStorage.getItem(`munni_dark_${userId}`);
+      if (stored !== null) {
+        try { _setDark(JSON.parse(stored)); } catch {}
+      }
+    }
+    setLoggedIn(true);
+  }, [_setDark]);
 
   const appContent = (
     <AppCtx.Provider value={{ logout: () => { sessionStorage.removeItem('munni_session_active'); setLoggedIn(false); } }}>
     <ResetSignalListener/>
-    <div className="m m-app" style={{ width:'100%', height:'100%', background: M.paper, filter: dark ? 'invert(0.93) hue-rotate(180deg)' : 'none', transition:'filter 0.3s' }}>
+    <div className="m m-app" data-dark={dark} style={{ width:'100%', height:'100%', background: M.paper, filter: dark ? 'invert(0.93) hue-rotate(180deg)' : 'none', transition:'filter 0.3s' }}>
       {loggedIn ? (
         <CatProvider>
           <ProfilesProvider>
@@ -1240,7 +1260,7 @@ export function App() {
           </ProfilesProvider>
         </CatProvider>
       ) : (
-        <ScreenLoginGate onLogin={() => setLoggedIn(true)}/>
+        <ScreenLoginGate onLogin={handleLogin}/>
       )}
     </div>
     </AppCtx.Provider>

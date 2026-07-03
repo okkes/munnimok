@@ -100,7 +100,7 @@ export function ScreenProfile() {
         const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{}');
         const isMember = (sd.memberPerms || {})[myId] !== undefined;
         const isOwner = p.ownerId === myId || (!p.ownerId && !p.isShared);
-        if (isMember && !isOwner) {
+        if (isMember || isOwner) {
           (sd.accounts || []).forEach(a => { if (!seen.has(a.id)) { seen.add(a.id); count++; } });
         }
       } catch {}
@@ -150,8 +150,6 @@ export function ScreenProfile() {
           <ProfileLink icon="card"    label={t('screen.accounts')}         sub={sharedCount > 0 ? `${connectedBanks} connected · ${sharedCount} shared` : `${connectedBanks} connected`}      onClick={() => nav.push('accounts')} testId="profile-link-accounts"/>
           <Divider inset={48}/>
           <ProfileLink icon="link"    label="Integrations"                 sub="4 stores connected"                 onClick={() => nav.push('integrations')}/>
-          <Divider inset={48}/>
-          <ProfileLink icon="cal"     label={t('settings.periods')}        sub={(() => { const [pd] = useLocalStorage ? [null] : [null]; const pday = parseInt(localStorage.getItem('munni_period_day')||'20'); const ptype = localStorage.getItem('munni_period_type')||'monthly'; if(ptype==='weekly') return 'Weekly · '+['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][pday]||'Mon'; if(ptype==='biweekly') return 'Bi-weekly · '+['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][pday]||'Mon'; return 'Monthly · '+pday+(pday===1||pday===21?'st':pday===2||pday===22?'nd':pday===3||pday===23?'rd':'th'); })()} onClick={() => nav.push('periods')}/>
           <Divider inset={48}/>
           <ProfileLink icon="sliders" label={t('settings.customizeHome')}  sub="Reorder and show/hide cards"        onClick={() => nav.push('customizeHome')}/>
         </div>

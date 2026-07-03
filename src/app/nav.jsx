@@ -164,6 +164,7 @@ if (typeof document !== 'undefined' && !document.getElementById('m-nav-styles'))
     @keyframes barRise { from { transform: scaleY(0); } to { transform: scaleY(1); } }
     .m-bar-animate { transform-origin: bottom; animation: barRise 0.4s cubic-bezier(0.34,1.56,0.64,1) both; }
     @keyframes acctFlash { 0% { opacity:1; } 100% { opacity:0; } }
+    [data-dark="true"] img:not(.m-logo-img) { filter: invert(1) hue-rotate(180deg); }
   `;
   document.head.appendChild(s);
 }
