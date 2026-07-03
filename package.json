@@ -1,27 +1,14 @@
 {
-  "name": "munni",
+  "name": "munni-monorepo",
   "version": "0.1.0",
   "private": true,
-  "type": "module",
+  "workspaces": [
+    "apps/*"
+  ],
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
-    "gallery": "playwright test && node tests/generate-gallery.mjs && node tests/generate-failures.mjs",
-    "gallery:html": "node tests/generate-gallery.mjs",
-    "failures:html": "node tests/generate-failures.mjs",
-    "test": "playwright test",
-    "test:login": "playwright test --grep @login",
-    "test:profile": "playwright test --grep @profile",
-    "test:accounts": "playwright test --grep @accounts"
-  },
-  "dependencies": {
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
-  },
-  "devDependencies": {
-    "@playwright/test": "^1.60.0",
-    "@vitejs/plugin-react": "^4.3.4",
-    "vite": "^6.3.5"
+    "dev": "npm run dev -w @munni/app",
+    "build": "npm run build -w @munni/app",
+    "test": "npm test -w @munni/app",
+    "gallery": "npm run gallery -w @munni/app"
   }
 }
