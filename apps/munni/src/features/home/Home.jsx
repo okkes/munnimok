@@ -160,23 +160,36 @@ export function ScreenHome() {
 
   const renderCard = (id) => {
     switch(id) {
-      case 'review':
+      case 'review': {
         if (reviewCount === 0) return null;
+        const _reviewSession = activeSharedData?.reviewSession;
+        const _reviewLockedByOther = !!_reviewSession && _reviewSession.userId !== myId
+          && (Date.now() - (_reviewSession.startedAt || 0)) < 300000;
+        const _reviewLockerName = _reviewLockedByOther
+          ? ((() => { try { return JSON.parse(localStorage.getItem('munni_global_users') || '{}'); } catch { return {}; } })()[_reviewSession.userId]?.displayName || _reviewSession.userId || 'Someone')
+          : null;
         return (
-          <div key="review" className="m-tap m-card m-fade" onClick={() => nav.push('reviewSwipe')} style={{
-            padding:14, marginBottom:14, border:`1px solid ${M.ochreSoft}`, background:'#FBF6E9',
-            display:'flex', alignItems:'center', gap:12,
-          }}>
+          <div key="review" className={_reviewLockedByOther ? 'm-card m-fade' : 'm-tap m-card m-fade'}
+            onClick={_reviewLockedByOther ? undefined : () => nav.push('reviewSwipe')}
+            style={{
+              padding:14, marginBottom:14, border:`1px solid ${M.ochreSoft}`, background:'#FBF6E9',
+              display:'flex', alignItems:'center', gap:12,
+              opacity: _reviewLockedByOther ? 0.6 : 1,
+              cursor: _reviewLockedByOther ? 'default' : undefined,
+            }}>
             <div style={{ width:40, height:40, borderRadius:10, background:M.ochreSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
               <I name="sliders" size={18} color={M.ochre}/>
             </div>
             <div style={{ flex:1 }}>
               <div style={{ fontSize:14, fontWeight:600 }}>Review {reviewCount} transactions</div>
-              <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{t('review.title')}</div>
+              <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>
+                {_reviewLockedByOther ? `${_reviewLockerName} is reviewing right now` : t('review.title')}
+              </div>
             </div>
-            <I name="arrowR" size={16} color={M.ink3}/>
+            {!_reviewLockedByOther && <I name="arrowR" size={16} color={M.ink3}/>}
           </div>
         );
+      }
       case 'period':
         if (!isVisible('period')) return null;
         return (

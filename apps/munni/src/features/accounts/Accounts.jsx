@@ -1524,11 +1524,11 @@ export function ScreenAccounts({ params }) {
           map[id].push({ spaceId: p.id, spaceName: p.name });
       });
     });
-    // Member's own contributions: accounts I attached to spaces where I'm a member
+    // Member/co-owner contributions: accounts I attached to OR co-own in spaces where I'm a member
     profiles.filter(p => p.isShared).forEach(p => {
       try {
         const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{}');
-        (sd.accounts || []).filter(a => a.attachedBy === myId).forEach(a => {
+        (sd.accounts || []).filter(a => a.attachedBy === myId || (a.coOwners || []).includes(myId)).forEach(a => {
           if (!map[a.id]) map[a.id] = [];
           if (!map[a.id].find(s => s.spaceId === p.id))
             map[a.id].push({ spaceId: p.id, spaceName: p.name });
@@ -1539,12 +1539,21 @@ export function ScreenAccounts({ params }) {
   }, [profiles]);
 
   const coOwnersMap = React.useMemo(() => {
+    const myId = getUserId();
     const map = {};
-    profiles.filter(p => !p.isShared && (p.members || []).length > 0).forEach(p => {
+    // Scan both owner spaces (with members) and member spaces (isShared) — covers the case
+    // where the original creator left and remaining members now hold isShared profiles
+    profiles.filter(p => (!p.isShared && (p.members || []).length > 0) || p.isShared).forEach(p => {
       try {
         const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{}');
         (sd.accounts || []).forEach(a => {
-          if ((a.coOwners || []).length > 0) map[a.id] = a.coOwners;
+          const coOwners = a.coOwners || [];
+          if (coOwners.length === 0) return;
+          // Show the other party: if I am a co-owner, show the original attacher; otherwise show co-owners
+          const effectiveList = coOwners.includes(myId)
+            ? (a.attachedBy && a.attachedBy !== myId ? [a.attachedBy] : coOwners.filter(id => id !== myId))
+            : coOwners;
+          if (effectiveList.length > 0) map[a.id] = effectiveList;
         });
       } catch {}
     });
@@ -2158,6 +2167,7 @@ export function ScreenAccounts({ params }) {
                 </div>
               )}
               {(() => {
+                const _myId = getUserId();
                 const coOwners = coOwnersMap[showEditSheet.id] ||
                   (() => {
                     const coOwnerAcct = profiles.filter(p => p.isShared).flatMap(p => {
@@ -2166,7 +2176,14 @@ export function ScreenAccounts({ params }) {
                         return (sd.accounts || []).filter(a => a.id === showEditSheet.id && (a.coOwners||[]).length > 0);
                       } catch { return []; }
                     })[0];
-                    return coOwnerAcct?.coOwners || [];
+                    if (!coOwnerAcct) return [];
+                    const raw = coOwnerAcct.coOwners || [];
+                    if (raw.includes(_myId)) {
+                      return coOwnerAcct.attachedBy && coOwnerAcct.attachedBy !== _myId
+                        ? [coOwnerAcct.attachedBy]
+                        : raw.filter(id => id !== _myId);
+                    }
+                    return raw;
                   })();
                 if (!coOwners.length) return null;
                 return (

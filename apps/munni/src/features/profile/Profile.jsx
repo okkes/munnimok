@@ -1849,7 +1849,11 @@ export function ScreenSpaceDetail({ params }) {
       setProfiles(ps => ps.map(p => {
         if (p.id !== profile.id) return p;
         const ids = p.accountIds || [];
-        return { ...p, accountIds: [...ids, acct.id] };
+        // Store the history cutoff date per account on the profile so TxProvider can filter personal txs
+        const dateMap = fromDate
+          ? { ...(p.accountFromDates || {}), [acct.id]: fromDate }
+          : (p.accountFromDates || {});
+        return { ...p, accountIds: [...ids, acct.id], accountFromDates: dateMap };
       }));
     }
     if (members.length > 0 || isMemberOfShared) {
@@ -2357,8 +2361,7 @@ export function ScreenSpaceDetail({ params }) {
         ) : (
           <div className="m-card" style={{ padding:'4px 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
             {(() => {
-              // For isMemberOfShared views, the current user is rendered separately below — exclude self from this list
-              const displayMembers = isMemberOfShared ? members.filter(m => m.userId !== myId) : members;
+              const displayMembers = members.filter(m => m.userId !== myId);
               return (
                 <>
                   {displayMembers.length === 0 && pendingInvitesForProfile.length === 0 && !isMemberOfShared && !isProfileShared && (

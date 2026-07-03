@@ -197,7 +197,11 @@ export function TxProvider({ children }) {
     const sharedTxs = sharedData?.txs || [];
     const txMeta = sharedData?.txMeta || {};
     const attachFromMap = {};
+    // Shared accounts carry attachedFrom directly
     (sharedData?.accounts || []).forEach(a => { if (a.attachedFrom) attachFromMap[a.id] = a.attachedFrom; });
+    // Personal spaces store the cutoff on the profile (set during finalizeAttach)
+    const profileDates = activeProfile?.accountFromDates || {};
+    Object.entries(profileDates).forEach(([id, date]) => { if (date && !attachFromMap[id]) attachFromMap[id] = date; });
     const sharedIds = new Set(sharedTxs.map(t => t.id));
     const filteredOwnTxs = ownTxs.filter(t => {
       if (sharedIds.has(t.id)) return false;
@@ -208,7 +212,7 @@ export function TxProvider({ children }) {
     const applyMeta = (tx) => { const m = txMeta[tx.id]; return m ? { ...tx, ...m } : tx; };
     if (!sharedTxs.length && !Object.keys(attachFromMap).length && !Object.keys(txMeta).length) return ownTxs;
     return [...filteredOwnTxs, ...sharedTxs].map(applyMeta);
-  }, [ownTxs, sharedData]);
+  }, [ownTxs, sharedData, activeProfile?.accountFromDates]);
 
   // Only show transactions whose account is in the active profile; empty profile = no transactions
   const txs = activeAccountIds.length > 0
