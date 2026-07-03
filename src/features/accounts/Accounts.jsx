@@ -2233,12 +2233,9 @@ export function ScreenAccounts({ params }) {
                   {t('acct.authenticate')}
                 </button>
               ) : (
-                <button data-testid="authenticate-btn" className="m-tap" onClick={() => {
-                  setCoOwnerRequestSheet(sharedWithMeSheet);
-                }}
-                  style={{ width:'100%', padding:'13px', borderRadius:12, background:M.brand, color:'#fff', border:'none', fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginTop:8 }}>
-                  {t('acct.requestCoOwnership')}
-                </button>
+                <div style={{ padding:'12px 14px', borderRadius:10, background:M.paper2, border:`1px solid ${M.line}`, marginTop:4 }}>
+                  <div style={{ fontSize:12, color:M.ink3, lineHeight:1.5 }}>This is a manually managed account shared with you through this space. You can view transactions but the account is managed by the owner.</div>
+                </div>
               )}
             </div>
           </Sheet>

@@ -18,6 +18,27 @@ import { BankLogoSVG } from '../../shared/components/BankLogo.jsx';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
+function applyLeaveBehavior(sd, leavingId) {
+  const remainingMemberIds = Object.keys(sd.memberPerms || {}).filter(id => id !== leavingId);
+  const nextOwner = remainingMemberIds[0] || null;
+  const removedIds = new Set();
+  const updatedAccounts = (sd.accounts || []).map(a => {
+    const otherCoOwners = (a.coOwners || []).filter(id => id !== leavingId);
+    const reqs = (a.coOwnerRequests || []).filter(r => r.userId !== leavingId);
+    if (a.attachedBy !== leavingId) {
+      return { ...a, coOwners: otherCoOwners, coOwnerRequests: reqs };
+    }
+    if (a.readOnly) {
+      return { ...a, disconnected: true, disconnectedAt: Date.now(), disconnectedBy: leavingId, coOwners: otherCoOwners, coOwnerRequests: reqs };
+    }
+    if (nextOwner) {
+      return { ...a, attachedBy: nextOwner, coOwners: [], coOwnerRequests: [], forkedFrom: leavingId };
+    }
+    removedIds.add(a.id);
+    return null;
+  }).filter(Boolean);
+  return { updatedAccounts, removedIds };
+}
 
 export function ProfileAvatar({ profile, size = 36 }) {
   const borderRadius = Math.round(size * 0.28);
@@ -925,15 +946,9 @@ export function ScreenUserInfo() {
                       } else {
                         sd.memberPerms = Object.fromEntries(others);
                       }
-                      sd.accounts = (sd.accounts || []).map(a => {
-                        const otherCoOwners = (a.coOwners || []).filter(id => id !== myId);
-                        const reqs = (a.coOwnerRequests || []).filter(r => r.userId !== myId);
-                        if (a.attachedBy === myId) {
-                          if (otherCoOwners.length > 0) return { ...a, attachedBy: otherCoOwners[0], coOwners: otherCoOwners, coOwnerRequests: reqs };
-                          return null;
-                        }
-                        return { ...a, coOwners: otherCoOwners, coOwnerRequests: reqs };
-                      }).filter(Boolean);
+                      const { updatedAccounts: _ua, removedIds: _ri } = applyLeaveBehavior(sd, myId);
+                      sd.accounts = _ua;
+                      sd.txs = (sd.txs || []).filter(t => !_ri.has(t.account));
                       sd.left = { ...(sd.left || {}), [myId]: Date.now() };
                       localStorage.setItem(sdKey, JSON.stringify(sd));
                       window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sdKey } }));
@@ -943,15 +958,9 @@ export function ScreenUserInfo() {
                     const sdKey = `munni_shared_data_${p.id}`;
                     try {
                       const sd = JSON.parse(localStorage.getItem(sdKey) || '{}');
-                      sd.accounts = (sd.accounts || []).map(a => {
-                        const otherCoOwners = (a.coOwners || []).filter(id => id !== myId);
-                        const reqs = (a.coOwnerRequests || []).filter(r => r.userId !== myId);
-                        if (a.attachedBy === myId) {
-                          if (otherCoOwners.length > 0) return { ...a, attachedBy: otherCoOwners[0], coOwners: otherCoOwners, coOwnerRequests: reqs };
-                          return null;
-                        }
-                        return { ...a, coOwners: otherCoOwners, coOwnerRequests: reqs };
-                      }).filter(Boolean);
+                      const { updatedAccounts: _ua2, removedIds: _ri2 } = applyLeaveBehavior(sd, myId);
+                      sd.accounts = _ua2;
+                      sd.txs = (sd.txs || []).filter(t => !_ri2.has(t.account));
                       sd.left = { ...(sd.left || {}), [myId]: Date.now() };
                       localStorage.setItem(sdKey, JSON.stringify(sd));
                       window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sdKey } }));
@@ -1403,6 +1412,15 @@ export function ScreenSpaceDetail({ params }) {
   const [memberCardSheet, setMemberCardSheet] = React.useState(null);
   const [showSpaceCurrencyPicker, setShowSpaceCurrencyPicker] = React.useState(false);
   const [acctDetailSheet, setAcctDetailSheet] = React.useState(null);
+  const [pendingAttach, setPendingAttach] = React.useState(null); // { acct } when in step 2
+  const [attachMonths, setAttachMonths] = React.useState(3);
+  const [attachDateMode, setAttachDateMode] = React.useState('months'); // 'months' | 'date'
+  const [attachCustomDate, setAttachCustomDate] = React.useState('');
+  const [showMergeDialog, setShowMergeDialog] = React.useState(null); // { existingAcct, newAcct }
+  const [showDefaultAttachSheet, setShowDefaultAttachSheet] = React.useState(false);
+  const [defaultAttachDateMode, setDefaultAttachDateMode] = React.useState('months');
+  const [defaultAttachMonths, setDefaultAttachMonths] = React.useState(3);
+  const [defaultAttachCustomDate, setDefaultAttachCustomDate] = React.useState('');
 
   const myId = React.useMemo(() => getUserId(), []);
   const [invitations, setInvitations] = useLocalStorage('munni_global_invitations', []);
@@ -1612,6 +1630,92 @@ export function ScreenSpaceDetail({ params }) {
     reader.readAsDataURL(file);
   };
 
+  const oldestTxForAcct = (acctId) => {
+    const dates = (ownTxs || []).filter(t => t.account === acctId).map(t => t.date).filter(Boolean).sort();
+    return dates[0] || null;
+  };
+
+  const computeFromDate = (months) => {
+    if (!months) return null;
+    const d = new Date();
+    d.setMonth(d.getMonth() - months);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  };
+
+  const defaultAttachFrom = sharedData?.meta?.defaultAttachFrom || null;
+
+  const initiateAttach = (acct) => {
+    // Check for merge: this user previously attached this account and it was transferred to someone else
+    const forkInSpace = (sharedData?.accounts || []).find(a => a.forkedFrom === myId && !a.readOnly && (a.iban ? a.iban === acct.iban : a.name === acct.name));
+    if (forkInSpace) {
+      setShowMergeDialog({ existingAcct: forkInSpace, newAcct: acct });
+      setShowAttachSheet(null);
+      return;
+    }
+    // Init date picker defaults from space default or fallback to 3 months
+    if (defaultAttachFrom) {
+      setAttachDateMode('date');
+      setAttachCustomDate(defaultAttachFrom);
+    } else {
+      setAttachDateMode('months');
+      setAttachMonths(3);
+    }
+    setPendingAttach({ acct });
+  };
+
+  const finalizeAttach = (acct, fromDate) => {
+    const isInOwnIds = (profile.accountIds || []).includes(acct.id);
+    const isInSharedAccts = sharedAccts.some(a => a.id === acct.id);
+    if (!isInOwnIds && !isInSharedAccts) {
+      setProfiles(ps => ps.map(p => {
+        if (p.id !== profile.id) return p;
+        const ids = p.accountIds || [];
+        return { ...p, accountIds: [...ids, acct.id] };
+      }));
+    }
+    if (members.length > 0 || isMemberOfShared) {
+      setSharedData(sd => {
+        const existing = sd.accounts || [];
+        if (existing.some(a => a.id === acct.id)) return sd;
+        const { attachedBy: _ab, ...cleanAcct } = acct;
+        const newAcct = { ...cleanAcct, attachedBy: myId, attachedFrom: fromDate || null };
+        const acctTxs = (ownTxs || []).filter(t => t.account === acct.id && (!fromDate || t.date >= fromDate));
+        const existingTxIds = new Set((sd.txs || []).map(t => t.id));
+        const newTxs = acctTxs.filter(t => !existingTxIds.has(t.id));
+        return { ...sd, accounts: [...existing, newAcct], txs: [...(sd.txs || []), ...newTxs] };
+      });
+    }
+    setPendingAttach(null);
+    setShowAttachSheet(null);
+  };
+
+  const reconnectAccount = (accountId) => {
+    setSharedData(sd => ({
+      ...sd,
+      accounts: (sd.accounts || []).map(a =>
+        a.id === accountId
+          ? { ...a, disconnected: false, disconnectedAt: undefined, disconnectedBy: undefined, attachedBy: myId }
+          : a
+      ),
+    }));
+    setAcctDetailSheet(null);
+  };
+
+  const doMerge = () => {
+    if (!showMergeDialog) return;
+    const { existingAcct, newAcct } = showMergeDialog;
+    setSharedData(sd => {
+      const myTxs = (ownTxs || []).filter(t => t.account === newAcct.id);
+      const existingTxIds = new Set((sd.txs || []).map(t => t.id));
+      const toAdd = myTxs.filter(t => !existingTxIds.has(t.id)).map(t => ({ ...t, account: existingAcct.id }));
+      const updatedAccounts = (sd.accounts || []).map(a =>
+        a.id === existingAcct.id ? { ...a, attachedBy: myId, forkedFrom: undefined } : a
+      );
+      return { ...sd, accounts: updatedAccounts, txs: [...(sd.txs || []), ...toAdd] };
+    });
+    setShowMergeDialog(null);
+  };
+
   const toggleAccount = (accountId) => {
     const isInOwnIds = (profile.accountIds || []).includes(accountId);
     const isInSharedAccts = sharedAccts.some(a => a.id === accountId);
@@ -1662,19 +1766,7 @@ export function ScreenSpaceDetail({ params }) {
     try {
       const sdKey = `munni_shared_data_${profile.id}`;
       const sd = JSON.parse(localStorage.getItem(sdKey) || '{}');
-      const updatedAccounts = (sd.accounts || []).map(a => {
-        const otherCoOwners = (a.coOwners || []).filter(id => id !== myId);
-        const reqs = (a.coOwnerRequests || []).filter(r => r.userId !== myId);
-        if (a.attachedBy !== myId) return { ...a, coOwners: otherCoOwners, coOwnerRequests: reqs };
-        // Account I attached: transfer to co-owner or remove
-        if (otherCoOwners.length > 0) return { ...a, attachedBy: otherCoOwners[0], coOwners: otherCoOwners, coOwnerRequests: reqs };
-        return null;
-      }).filter(Boolean);
-      const removedIds = new Set(
-        (sd.accounts || [])
-          .filter(a => a.attachedBy === myId && !(a.coOwners || []).some(id => id !== myId))
-          .map(a => a.id)
-      );
+      const { updatedAccounts, removedIds } = applyLeaveBehavior(sd, myId);
       localStorage.setItem(sdKey, JSON.stringify({
         ...sd,
         accounts: updatedAccounts,
@@ -1749,16 +1841,17 @@ export function ScreenSpaceDetail({ params }) {
   };
 
   const renderAttachedRow = (a, i) => {
-    const sharedAcctData = sharedAccts.find(s => s.id === a.id);
+    const sharedAcctDataRow = sharedAccts.find(s => s.id === a.id);
     const isOwnAcct = ownConnectedIds.has(a.id);
     const canDetach = myPerm === 'owner' || isOwnAcct;
     const typeColor = spaceAcctTypeColor(a.type);
     const typeLabel = spaceAcctLabel(a.type);
+    const isDisconnected = !!(sharedAcctDataRow || a).disconnected;
     return (
       <React.Fragment key={a.id}>
         {i > 0 && <Divider inset={50}/>}
-        <div className="m-tap" onClick={() => setAcctDetailSheet({ acct: a, sharedAcctData, canDetach, typeColor, typeLabel })}
-          style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
+        <div className="m-tap" onClick={() => setAcctDetailSheet({ acct: a, sharedAcctData: sharedAcctDataRow, canDetach, typeColor, typeLabel })}
+          style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0', opacity: isDisconnected ? 0.55 : 1 }}>
           {a.bankId
             ? <BankLogoSVG bankId={a.bankId} bankName={a.name} bankColor={a.color} size={36} radius={10}/>
             : <div style={{ width:36, height:36, borderRadius:10, background: a.color || typeColor, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
@@ -1769,6 +1862,9 @@ export function ScreenSpaceDetail({ params }) {
             <div style={{ fontSize:14, fontWeight:500 }}>{a.name}</div>
             <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:2, flexWrap:'wrap' }}>
               {a.iban && <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono }}>{a.iban}</div>}
+              {isDisconnected && (
+                <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:999, background:M.claySoft, color:M.clay, textTransform:'uppercase' }}>Disconnected</span>
+              )}
             </div>
           </div>
           {canDetach
@@ -1954,6 +2050,28 @@ export function ScreenSpaceDetail({ params }) {
               </div>
             );
           })()}
+          <Divider inset={44}/>
+          <div className={canEdit ? 'm-tap' : ''} onClick={canEdit ? () => setShowDefaultAttachSheet(true) : undefined}
+            style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0', opacity: canEdit ? 1 : 0.5 }}>
+            <div style={{ width:32, height:32, borderRadius:9, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+              <I name="download" size={16} color={M.ink2}/>
+            </div>
+            <div style={{ flex:1 }}>
+              <div style={{ fontSize:14, fontWeight:500 }}>Default history start</div>
+              <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>Default date when attaching accounts</div>
+            </div>
+            <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+              <span style={{ fontSize:12, color:M.ink2, fontWeight:500 }}>
+                {defaultAttachFrom
+                  ? defaultAttachFrom
+                  : sharedData?.meta?.defaultAttachMonths
+                    ? `${sharedData.meta.defaultAttachMonths} months`
+                    : '3 months'
+                }
+              </span>
+              {canEdit ? <I name="caretR" size={14} color={M.ink4}/> : <I name="lock" size={13} color={M.ink4}/>}
+            </div>
+          </div>
         </div>
 
         {/* Financial Accounts card */}
@@ -2145,7 +2263,7 @@ export function ScreenSpaceDetail({ params }) {
         <div style={{ height:16 }}/>
       </div>
 
-      {showAttachSheet && (
+      {showAttachSheet && !pendingAttach && (
         <Sheet onClose={() => setShowAttachSheet(null)}>
           <div style={{ padding:'4px 16px 8px' }}>
             <div style={{ fontSize:17, fontWeight:700, marginBottom:16 }}>{t('space.attachAccount')}</div>
@@ -2173,7 +2291,7 @@ export function ScreenSpaceDetail({ params }) {
                       return (
                         <React.Fragment key={a.id}>
                           {i > 0 && <Divider inset={50}/>}
-                          <div className="m-tap" onClick={() => { toggleAccount(a.id); setShowAttachSheet(null); }}
+                          <div className="m-tap" onClick={() => initiateAttach(a)}
                             style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
                             <div style={{ width:36, height:36, borderRadius:10, background: a.color || tc, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                               <I name={spaceAcctIcon(a.type)} size={16} color="#fff"/>
@@ -2202,6 +2320,86 @@ export function ScreenSpaceDetail({ params }) {
                 </>
               );
             })()}
+          </div>
+        </Sheet>
+      )}
+
+      {pendingAttach && (
+        <Sheet onClose={() => { setPendingAttach(null); setShowAttachSheet(null); }}>
+          <div style={{ padding:'4px 16px 8px' }}>
+            <div style={{ fontSize:17, fontWeight:700, marginBottom:4 }}>Transaction history</div>
+            <div style={{ fontSize:12, color:M.ink3, marginBottom:20 }}>How far back should we pull transactions for <strong>{pendingAttach.acct.name}</strong>?</div>
+            {/* Mode tabs */}
+            <div style={{ display:'flex', gap:6, marginBottom:20 }}>
+              {[{k:'months', l:'Months back'}, {k:'date', l:'Specific date'}].map(m => (
+                <button key={m.k} className="m-tap" onClick={() => setAttachDateMode(m.k)}
+                  style={{ flex:1, padding:'8px 0', borderRadius:9, border:`1.5px solid ${attachDateMode===m.k?M.sage:M.line}`, background:attachDateMode===m.k?M.sageSoft:'transparent', color:attachDateMode===m.k?M.sage:M.ink3, fontSize:13, fontWeight:attachDateMode===m.k?600:400, cursor:'pointer', fontFamily:M.fontUI }}>
+                  {m.l}
+                </button>
+              ))}
+            </div>
+            {attachDateMode === 'months' ? (
+              <div style={{ display:'flex', flexWrap:'wrap', gap:8, marginBottom:20 }}>
+                {[1, 3, 6, 12, 24].map(n => (
+                  <button key={n} className="m-tap" onClick={() => setAttachMonths(n)}
+                    style={{ padding:'8px 16px', borderRadius:20, border:`1.5px solid ${attachMonths===n?M.sage:M.line}`, background:attachMonths===n?M.sageSoft:'transparent', color:attachMonths===n?M.sage:M.ink2, fontSize:13, fontWeight:attachMonths===n?600:400, cursor:'pointer', fontFamily:M.fontUI }}>
+                    {n < 12 ? `${n} month${n>1?'s':''}` : `${n/12} year${n>12?'s':''}`}
+                  </button>
+                ))}
+                {(() => {
+                  const oldest = oldestTxForAcct(pendingAttach.acct.id);
+                  return oldest ? (
+                    <button className="m-tap" onClick={() => setAttachMonths(0)}
+                      style={{ padding:'8px 16px', borderRadius:20, border:`1.5px solid ${attachMonths===0?M.sage:M.line}`, background:attachMonths===0?M.sageSoft:'transparent', color:attachMonths===0?M.sage:M.ink2, fontSize:13, fontWeight:attachMonths===0?600:400, cursor:'pointer', fontFamily:M.fontUI }}>
+                      All available <span style={{ fontSize:10, color:M.ink4 }}>(from {oldest})</span>
+                    </button>
+                  ) : null;
+                })()}
+              </div>
+            ) : (
+              <div style={{ marginBottom:20 }}>
+                <input type="date" value={attachCustomDate} onChange={e => setAttachCustomDate(e.target.value)}
+                  min={oldestTxForAcct(pendingAttach.acct.id) || ''}
+                  style={{ width:'100%', boxSizing:'border-box', padding:'12px 14px', borderRadius:10, border:`1.5px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', color:M.ink }}/>
+                {oldestTxForAcct(pendingAttach.acct.id) && (
+                  <div style={{ fontSize:11, color:M.ink4, marginTop:6 }}>Oldest available: {oldestTxForAcct(pendingAttach.acct.id)}</div>
+                )}
+              </div>
+            )}
+            <button className="m-tap m-btn" onClick={() => {
+              const fromDate = attachDateMode === 'months'
+                ? computeFromDate(attachMonths)
+                : (attachCustomDate || null);
+              finalizeAttach(pendingAttach.acct, fromDate);
+            }}
+              style={{ width:'100%', padding:'14px 0', background:M.brand, color:'#fff', border:'none', borderRadius:13, fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+              Attach account
+            </button>
+          </div>
+        </Sheet>
+      )}
+
+      {showMergeDialog && (
+        <Sheet onClose={() => setShowMergeDialog(null)}>
+          <div style={{ padding:'4px 16px 24px' }}>
+            <div style={{ fontSize:17, fontWeight:700, marginBottom:8 }}>Account already exists</div>
+            <div style={{ fontSize:13, color:M.ink3, lineHeight:1.6, marginBottom:20 }}>
+              <strong>{showMergeDialog.newAcct.name}</strong> was previously part of this space and a copy already exists here. Would you like to merge your transactions into the existing copy?
+            </div>
+            <button className="m-tap" onClick={doMerge}
+              style={{ width:'100%', padding:'14px 0', marginBottom:10, background:M.brand, color:'#fff', border:'none', borderRadius:12, fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+              Merge transactions
+            </button>
+            <button className="m-tap" onClick={() => {
+              const acct = showMergeDialog.newAcct;
+              setShowMergeDialog(null);
+              if (defaultAttachFrom) { setAttachDateMode('date'); setAttachCustomDate(defaultAttachFrom); }
+              else { setAttachDateMode('months'); setAttachMonths(3); }
+              setPendingAttach({ acct });
+            }}
+              style={{ width:'100%', padding:'14px 0', background:M.paper2, color:M.ink2, border:`1px solid ${M.line}`, borderRadius:12, fontSize:15, fontWeight:500, cursor:'pointer', fontFamily:M.fontUI }}>
+              Add separately
+            </button>
           </div>
         </Sheet>
       )}
@@ -2242,12 +2440,23 @@ export function ScreenSpaceDetail({ params }) {
                   </div>
                 )}
               </div>
-              {canDetach && (
-                <button className="m-tap" onClick={() => { toggleAccount(acct.id); setAcctDetailSheet(null); }}
-                  style={{ width:'100%', padding:'14px 0', marginTop:20, background:M.claySoft, color:M.clay, border:'none', borderRadius:12, fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
-                  Detach from space
-                </button>
-              )}
+              {(() => {
+                const isDisconnectedAcct = !!(acctDetailSheet?.sharedAcctData?.disconnected || (acctDetailSheet && (sharedAccts.find(s=>s.id===acct.id)||{}).disconnected));
+                return (<>
+                  {isDisconnectedAcct && acct.readOnly && (
+                    <button className="m-tap" onClick={() => reconnectAccount(acct.id)}
+                      style={{ width:'100%', padding:'14px 0', marginTop:20, background:M.sageSoft, color:M.sage, border:`1px solid ${M.sage}44`, borderRadius:12, fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+                      Reconnect
+                    </button>
+                  )}
+                  {canDetach && !isDisconnectedAcct && (
+                    <button className="m-tap" onClick={() => { toggleAccount(acct.id); setAcctDetailSheet(null); }}
+                      style={{ width:'100%', padding:'14px 0', marginTop:20, background:M.claySoft, color:M.clay, border:'none', borderRadius:12, fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+                      Detach from space
+                    </button>
+                  )}
+                </>);
+              })()}
             </div>
           </Sheet>
         );
@@ -2288,6 +2497,47 @@ export function ScreenSpaceDetail({ params }) {
         value={effectiveSpaceCurrency}
         onChange={(v) => { setSpaceCurrency(v); setShowSpaceCurrencyPicker(false); }}
       />
+
+      {showDefaultAttachSheet && (
+        <Sheet onClose={() => setShowDefaultAttachSheet(false)}>
+          <div style={{ padding:'4px 16px 8px' }}>
+            <div style={{ fontSize:17, fontWeight:700, marginBottom:4 }}>Default history start</div>
+            <div style={{ fontSize:12, color:M.ink3, marginBottom:20 }}>When members attach accounts, this is the default start date for transaction history.</div>
+            <div style={{ display:'flex', gap:6, marginBottom:20 }}>
+              {[{k:'months', l:'Months back'}, {k:'date', l:'Specific date'}].map(m => (
+                <button key={m.k} className="m-tap" onClick={() => setDefaultAttachDateMode(m.k)}
+                  style={{ flex:1, padding:'8px 0', borderRadius:9, border:`1.5px solid ${defaultAttachDateMode===m.k?M.sage:M.line}`, background:defaultAttachDateMode===m.k?M.sageSoft:'transparent', color:defaultAttachDateMode===m.k?M.sage:M.ink3, fontSize:13, fontWeight:defaultAttachDateMode===m.k?600:400, cursor:'pointer', fontFamily:M.fontUI }}>
+                  {m.l}
+                </button>
+              ))}
+            </div>
+            {defaultAttachDateMode === 'months' ? (
+              <div style={{ display:'flex', flexWrap:'wrap', gap:8, marginBottom:20 }}>
+                {[1, 3, 6, 12, 24].map(n => (
+                  <button key={n} className="m-tap" onClick={() => setDefaultAttachMonths(n)}
+                    style={{ padding:'8px 16px', borderRadius:20, border:`1.5px solid ${defaultAttachMonths===n?M.sage:M.line}`, background:defaultAttachMonths===n?M.sageSoft:'transparent', color:defaultAttachMonths===n?M.sage:M.ink2, fontSize:13, fontWeight:defaultAttachMonths===n?600:400, cursor:'pointer', fontFamily:M.fontUI }}>
+                    {n < 12 ? `${n} month${n>1?'s':''}` : `${n/12} year${n>12?'s':''}`}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div style={{ marginBottom:20 }}>
+                <input type="date" value={defaultAttachCustomDate} onChange={e => setDefaultAttachCustomDate(e.target.value)}
+                  style={{ width:'100%', boxSizing:'border-box', padding:'12px 14px', borderRadius:10, border:`1.5px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', color:M.ink }}/>
+              </div>
+            )}
+            <button className="m-tap m-btn" onClick={() => {
+              const value = defaultAttachDateMode === 'date' ? defaultAttachCustomDate : null;
+              const months = defaultAttachDateMode === 'months' ? defaultAttachMonths : null;
+              setSharedData(sd => ({ ...sd, meta: { ...(sd.meta||{}), defaultAttachFrom: value, defaultAttachMonths: months } }));
+              setShowDefaultAttachSheet(false);
+            }}
+              style={{ width:'100%', padding:'14px 0', background:M.brand, color:'#fff', border:'none', borderRadius:13, fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+              Save
+            </button>
+          </div>
+        </Sheet>
+      )}
 
       {showMembersSheet && (
         <ProfileMembersSheet profile={profile} onClose={() => setShowMembersSheet(false)}/>
