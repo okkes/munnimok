@@ -1217,32 +1217,45 @@ function ScreenLoginGate({ onLogin }) {
   );
 }
 export function App() {
-  const [dark, _setDark] = useLocalStorage('munni_dark', false);
+  // Use React.useState (not useLocalStorage) to prevent cross-tab dark mode sync.
+  // Each user gets their own preference keyed by userId.
+  const [dark, setDarkState] = React.useState(false);
   const [loggedIn, setLoggedIn] = React.useState(() => sessionStorage.getItem('munni_session_active') === 'true');
   const isMobile = React.useMemo(() => window.matchMedia('(max-width: 430px)').matches, []);
 
-  // Persist dark mode per-user so each account has its own preference.
+  // On mount: if already logged in (page refresh), load user's dark preference.
+  React.useEffect(() => {
+    if (sessionStorage.getItem('munni_session_active') === 'true') {
+      const userId = getUserId();
+      if (userId && userId !== 'usr-0000') {
+        const stored = localStorage.getItem(`munni_dark_${userId}`);
+        if (stored !== null) { try { setDarkState(JSON.parse(stored)); } catch {} }
+      }
+    }
+  }, []);
+
   const setDark = React.useCallback((val) => {
     const userId = getUserId();
     if (userId && userId !== 'usr-0000') {
       localStorage.setItem(`munni_dark_${userId}`, JSON.stringify(!!val));
     }
-    _setDark(val);
-  }, [_setDark]);
+    setDarkState(!!val);
+  }, []);
 
   const handleLogin = React.useCallback(() => {
     const userId = getUserId();
     if (userId && userId !== 'usr-0000') {
       const stored = localStorage.getItem(`munni_dark_${userId}`);
-      if (stored !== null) {
-        try { _setDark(JSON.parse(stored)); } catch {}
-      }
+      if (stored !== null) { try { setDarkState(JSON.parse(stored)); } catch {} }
+      else { setDarkState(false); }
+    } else {
+      setDarkState(false);
     }
     setLoggedIn(true);
-  }, [_setDark]);
+  }, []);
 
   const appContent = (
-    <AppCtx.Provider value={{ logout: () => { sessionStorage.removeItem('munni_session_active'); setLoggedIn(false); } }}>
+    <AppCtx.Provider value={{ logout: () => { sessionStorage.removeItem('munni_session_active'); setDarkState(false); setLoggedIn(false); } }}>
     <ResetSignalListener/>
     <div className="m m-app" data-dark={dark} style={{ width:'100%', height:'100%', background: M.paper, filter: dark ? 'invert(0.93) hue-rotate(180deg)' : 'none', transition:'filter 0.3s' }}>
       {loggedIn ? (

@@ -29,6 +29,10 @@ function applyLeaveBehavior(sd, leavingId) {
       return { ...a, coOwners: otherCoOwners, coOwnerRequests: reqs };
     }
     if (a.readOnly) {
+      const remainingCoOwner = otherCoOwners.find(id => remainingMemberIds.includes(id));
+      if (remainingCoOwner) {
+        return { ...a, attachedBy: remainingCoOwner, coOwners: otherCoOwners.filter(id => id !== remainingCoOwner), coOwnerRequests: reqs };
+      }
       return { ...a, disconnected: true, disconnectedAt: Date.now(), disconnectedBy: leavingId, coOwners: otherCoOwners, coOwnerRequests: reqs };
     }
     if (nextOwner) {
@@ -183,8 +187,6 @@ export function ScreenProfile() {
           <ProfileLink icon="lock"    label="Privacy & security"/>
           <Divider inset={48}/>
           <ProfileLink icon="sun"     label={t('settings.appearance')}     sub="Dark mode, fonts & display"          onClick={() => nav.push('settings')} testId="profile-link-appearance"/>
-          <Divider inset={48}/>
-          <ProfileLink icon="globe" label={t('settings.language')} sub={t('settings.languageSub')} onClick={() => nav.push('language')}/>
           <Divider inset={48}/>
           <ProfileLink icon="download" label={t('settings.exportData')} sub={t('settings.exportDataSub')} onClick={() => nav.push('exportData')}/>
           <Divider inset={48}/>
@@ -1645,6 +1647,16 @@ export function ScreenSpaceDetail({ params }) {
   const defaultAttachFrom = sharedData?.meta?.defaultAttachFrom || null;
 
   const initiateAttach = (acct) => {
+    // If there's a disconnected automated account in the space matching by IBAN/name, reconnect it directly
+    const disconnectedMatch = (sharedData?.accounts || []).find(a =>
+      a.disconnected && a.readOnly &&
+      (a.iban && acct.iban ? a.iban === acct.iban : a.name === acct.name)
+    );
+    if (disconnectedMatch) {
+      reconnectAccount(disconnectedMatch.id);
+      setShowAttachSheet(null);
+      return;
+    }
     // Check for merge: this user previously attached this account and it was transferred to someone else
     const forkInSpace = (sharedData?.accounts || []).find(a => a.forkedFrom === myId && !a.readOnly && (a.iban ? a.iban === acct.iban : a.name === acct.name));
     if (forkInSpace) {
@@ -1795,14 +1807,16 @@ export function ScreenSpaceDetail({ params }) {
 
   const transferAndLeave = () => {
     if (otherMembers.length === 0) return;
-    const newOwner = otherMembers[0];
     try {
       const sdKey = `munni_shared_data_${profile.id}`;
       const sd = JSON.parse(localStorage.getItem(sdKey) || '{}');
+      const newPerms = { ...(sd.memberPerms || {}) };
+      delete newPerms[myId];
+      Object.keys(newPerms).forEach(uid => { newPerms[uid] = 'owner'; });
       localStorage.setItem(sdKey, JSON.stringify({
         ...sd,
-        meta: { ...(sd.meta || {}), newOwnerId: newOwner.userId },
-        memberPerms: { ...(sd.memberPerms || {}), [newOwner.userId]: 'owner' },
+        meta: { ...(sd.meta || {}), newOwnerId: otherMembers[0]?.userId },
+        memberPerms: newPerms,
       }));
       window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sdKey } }));
     } catch {}
@@ -1916,7 +1930,10 @@ export function ScreenSpaceDetail({ params }) {
               )}
               {(profile.creatorId || profile.ownerId) && (
                 <div style={{ fontSize:12, color:M.ink3, marginTop:3 }}>
-                  {t('space.by')} <span style={{ fontWeight:600 }}>{formatCreatorLabel(profile.creatorId || profile.ownerId, profile.ownerDisplay, userRegistry)}</span>
+                  {(profile.creatorId || profile.ownerId) === myId
+                    ? t('space.createdByYou')
+                    : <>{t('space.by')} <span style={{ fontWeight:600 }}>{formatCreatorLabel(profile.creatorId || profile.ownerId, profile.ownerDisplay, userRegistry)}</span></>
+                  }
                 </div>
               )}
               {isActive && (
@@ -2360,6 +2377,7 @@ export function ScreenSpaceDetail({ params }) {
               <div style={{ marginBottom:20 }}>
                 <input type="date" value={attachCustomDate} onChange={e => setAttachCustomDate(e.target.value)}
                   min={oldestTxForAcct(pendingAttach.acct.id) || ''}
+                  max={new Date().toISOString().slice(0,10)}
                   style={{ width:'100%', boxSizing:'border-box', padding:'12px 14px', borderRadius:10, border:`1.5px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', color:M.ink }}/>
                 {oldestTxForAcct(pendingAttach.acct.id) && (
                   <div style={{ fontSize:11, color:M.ink4, marginTop:6 }}>Oldest available: {oldestTxForAcct(pendingAttach.acct.id)}</div>
@@ -2582,7 +2600,7 @@ export function ScreenSpaceDetail({ params }) {
                   ? <div style={{ padding:'12px 14px', borderRadius:12, background:M.paper2, color:M.ink3, fontSize:13 }}>{t('friends.sent')}</div>
                   : <button className="m-tap" onClick={() => { sendFriendInvite(mc.userId); setMemberCardSheet(null); }}
                       style={{ width:'100%', padding:'13px', borderRadius:12, background:M.sage, color:'#fff', fontSize:14, fontWeight:600, border:'none', cursor:'pointer', fontFamily:M.fontUI }}>
-                      {t('friends.invite')}
+                      {t('friends.sendRequest')}
                     </button>
               }
             </div>

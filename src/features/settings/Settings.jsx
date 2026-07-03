@@ -349,13 +349,16 @@ export function ScreenPeriods({ params }) {
       />
       <div className="m-body-scroll">
         <div style={{ padding:'12px 16px', borderRadius:12, background:M.sageSoft, marginBottom:18, fontSize:13, color:M.sage, lineHeight:1.6 }}>
-          <strong>What is a period?</strong> munni organises your finances in periods. A period starts on your chosen day — ideally when your salary arrives — so income and expenses always line up.
+          <strong>What is a period?</strong> munni organises your finances in periods. A period groups your transactions so you can see exactly what you earned and spent within a set timeframe — making it easy to stay on budget.
         </div>
 
         <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>Period type</div>
         <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:8, marginBottom:20 }}>
           {[['monthly','Monthly'],['biweekly','Bi-weekly'],['weekly','Weekly']].map(([type,label]) => (
-            <button key={type} className="m-tap" onClick={() => setEffectiveType(type)} style={{
+            <button key={type} className="m-tap" onClick={() => {
+              setEffectiveType(type);
+              if (type !== 'monthly' && effectiveDay > 6) setEffectiveDay(1);
+            }} style={{
               height:48, borderRadius:12, border:`1.5px solid ${effectiveType===type?M.sage:M.line}`,
               background:effectiveType===type?M.sage:M.card, color:effectiveType===type?'#fff':M.ink,
               fontSize:13, fontWeight:effectiveType===type?700:400, cursor:'pointer', fontFamily:M.fontUI,
@@ -394,25 +397,40 @@ export function ScreenPeriods({ params }) {
             <div style={{ display:'grid', gridTemplateColumns:'repeat(7, 1fr)', gap:6, marginBottom:20 }}>
               {DAY_NAMES.map((day, idx) => (
                 <button key={idx} className="m-tap" onClick={() => setEffectiveDay(idx)} style={{
-                  height:44, borderRadius:12, border:`1.5px solid ${effectiveDay===idx?M.sage:M.line}`,
-                  background:effectiveDay===idx?M.sage:M.card, color:effectiveDay===idx?'#fff':M.ink,
-                  fontSize:11, fontWeight:effectiveDay===idx?700:400, cursor:'pointer', fontFamily:M.fontUI,
+                  height:44, borderRadius:12, border:`1.5px solid ${(effectiveDay > 6 ? 1 : effectiveDay)===idx?M.sage:M.line}`,
+                  background:(effectiveDay > 6 ? 1 : effectiveDay)===idx?M.sage:M.card, color:(effectiveDay > 6 ? 1 : effectiveDay)===idx?'#fff':M.ink,
+                  fontSize:11, fontWeight:(effectiveDay > 6 ? 1 : effectiveDay)===idx?700:400, cursor:'pointer', fontFamily:M.fontUI,
                   display:'flex', alignItems:'center', justifyContent:'center',
                 }}>{day.slice(0,3)}</button>
               ))}
             </div>
-            <div className="m-card" style={{ padding:14, marginBottom:16, border:`1px solid ${M.line}` }}>
-              <div style={{ fontSize:13, fontWeight:600, marginBottom:4 }}>Current period</div>
-              <div style={{ fontSize:13, color:M.ink3 }}>
-                {effectiveType === 'weekly' ? 'Weekly' : 'Every 2 weeks'}, starting on <strong>{DAY_NAMES[effectiveDay] || 'Monday'}</strong>.
-              </div>
-            </div>
+            {(() => {
+              const dayIdx = effectiveDay > 6 ? 1 : effectiveDay;
+              const today = new Date(); today.setHours(0,0,0,0);
+              const daysBack = (today.getDay() - dayIdx + 7) % 7;
+              const start = new Date(today); start.setDate(today.getDate() - daysBack);
+              const end = new Date(start); end.setDate(start.getDate() + (effectiveType === 'biweekly' ? 13 : 6));
+              const fmt = (d) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+              return (
+                <div className="m-card" style={{ padding:14, marginBottom:16, border:`1px solid ${M.line}` }}>
+                  <div style={{ fontSize:13, fontWeight:600, marginBottom:4 }}>Current period</div>
+                  <div style={{ fontSize:13, color:M.ink3 }}>
+                    {effectiveType === 'weekly' ? 'Weekly' : 'Every 2 weeks'}, starting on <strong>{DAY_NAMES[dayIdx]}</strong>.
+                  </div>
+                  <div style={{ fontSize:12, color:M.sage, marginTop:6, fontWeight:500 }}>
+                    {fmt(start)} – {fmt(end)}
+                  </div>
+                </div>
+              );
+            })()}
           </>
         )}
 
-        <div style={{ padding:'10px 14px', borderRadius:10, background:M.ochreSoft, marginBottom:20, fontSize:12, color:M.ochre, lineHeight:1.5 }}>
-          <strong>Tip:</strong> Monthly periods work best when your salary arrives on a fixed day.
-        </div>
+        {effectiveType === 'monthly' && (
+          <div style={{ padding:'10px 14px', borderRadius:10, background:M.ochreSoft, marginBottom:20, fontSize:12, color:M.ochre, lineHeight:1.5 }}>
+            <strong>Tip:</strong> Set your start day to the earliest date your monthly salary could arrive. This ensures your income always falls inside the correct period — even when pay day shifts slightly.
+          </div>
+        )}
 
         <button className="m-btn sage m-tap" style={{ width:'100%' }} onClick={handleSave}>
           {t('action.save')}

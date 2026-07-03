@@ -1622,6 +1622,8 @@ export function ScreenAccounts({ params }) {
         const isOwner = p.ownerId === myId || (!p.ownerId && p.active);
         if (isMember || isOwner) {
           (sd.accounts || []).forEach(a => {
+            // Transferred manual accounts (attachedBy === me and not readOnly) are shown in ASSETS, not SHARED WITH ME
+            if (!a.readOnly && a.attachedBy === myId) return;
             if (!seen.has(a.id)) {
               seen.add(a.id);
               result.push({ ...a, _fromSpaceId: p.id, _fromSpaceName: p.name || p.displayName });
@@ -1649,7 +1651,21 @@ export function ScreenAccounts({ params }) {
         });
       }
     });
-  }, [sharedWithMeAccts]);
+    // Sync transferred manual accounts (where I'm attachedBy) into personal ASSETS
+    profiles.forEach(p => {
+      const isShared = p.isShared || (p.members || []).length > 0;
+      if (!isShared) return;
+      try {
+        const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{}');
+        (sd.accounts || []).filter(a => !a.readOnly && a.attachedBy === myId).forEach(acct => {
+          setConnectedAccounts(prev => {
+            if (prev.some(x => x.id === acct.id)) return prev;
+            return [...prev, { ...acct, isTransferred: true }];
+          });
+        });
+      } catch {}
+    });
+  }, [sharedWithMeAccts, profiles, myId]);
 
   // Flash account from session storage (navigated from tx detail)
   const [highlightAcctRaw] = useSessionStorage('munni_highlight_acct', null);
