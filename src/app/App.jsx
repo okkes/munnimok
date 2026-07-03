@@ -361,7 +361,7 @@ function ScreenLoginGate({ onLogin }) {
       delete _gReg[userId].deletedAt;
       localStorage.setItem('munni_global_users', JSON.stringify(_gReg));
     }
-    const name = displayName || (method === 'google' ? 'Google van der Berg' : method === 'apple' ? 'Apple van der Berg' : method === 'bank' ? 'Demo User' : email || userId);
+    const name = displayName || (method === 'google' ? 'Google van der Berg' : method === 'apple' ? 'Apple van der Berg' : method === 'bank' ? 'Demo User' : userId);
     const nameKey = computeUserDataKey(method, email, 'munni_profile_name');
     localStorage.setItem(nameKey, JSON.stringify(name));
     window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: nameKey } }));

@@ -195,10 +195,16 @@ export function TxProvider({ children }) {
 
   const allTxs = React.useMemo(() => {
     const sharedTxs = sharedData?.txs || [];
-    if (!sharedTxs.length) return ownTxs;
-    // sharedData.txs takes priority so cross-user edits are visible in both tabs
+    const attachFromMap = {};
+    (sharedData?.accounts || []).forEach(a => { if (a.attachedFrom) attachFromMap[a.id] = a.attachedFrom; });
     const sharedIds = new Set(sharedTxs.map(t => t.id));
-    return [...ownTxs.filter(t => !sharedIds.has(t.id)), ...sharedTxs];
+    const filteredOwnTxs = ownTxs.filter(t => {
+      if (sharedIds.has(t.id)) return false;
+      const cutoff = t.account ? attachFromMap[t.account] : null;
+      return !(cutoff && t.date < cutoff);
+    });
+    if (!sharedTxs.length && !Object.keys(attachFromMap).length) return ownTxs;
+    return [...filteredOwnTxs, ...sharedTxs];
   }, [ownTxs, sharedData]);
 
   // Only show transactions whose account is in the active profile; empty profile = no transactions

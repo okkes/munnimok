@@ -15,6 +15,7 @@ import { buildEffectivePerm } from '../../shared/sharedProfile.js';
 import { ProfileMembersSheet, MemberActionSheet } from '../friends/Friends.jsx';
 import { CurrencyPickerSheet } from '../settings/Settings.jsx';
 import { BankLogoSVG } from '../../shared/components/BankLogo.jsx';
+import { BankConnectPsd2Screen } from '../accounts/Accounts.jsx';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
@@ -1423,6 +1424,9 @@ export function ScreenSpaceDetail({ params }) {
   const [defaultAttachDateMode, setDefaultAttachDateMode] = React.useState('months');
   const [defaultAttachMonths, setDefaultAttachMonths] = React.useState(3);
   const [defaultAttachCustomDate, setDefaultAttachCustomDate] = React.useState('');
+  const [reconnectPsd2AccountId, setReconnectPsd2AccountId] = React.useState(null);
+  const [reconnectPsd2Step, setReconnectPsd2Step] = React.useState(null);
+  const [reconnectCustomIban, setReconnectCustomIban] = React.useState('');
 
   const myId = React.useMemo(() => getUserId(), []);
   const [invitations, setInvitations] = useLocalStorage('munni_global_invitations', []);
@@ -1545,6 +1549,24 @@ export function ScreenSpaceDetail({ params }) {
     } catch {}
   }, [profile?.members?.length, JSON.stringify(profile?.accountIds), profileId]);
 
+  // Auto-reconnect disconnected automated accounts when the user who caused the disconnection re-joins
+  React.useEffect(() => {
+    if (!myId || !(profile?.isShared || (profile?.members || []).length > 0) || !connectedAccounts?.length) return;
+    const disconnected = (sharedData?.accounts || []).filter(a => a.disconnected && a.readOnly && a.disconnectedBy === myId);
+    if (!disconnected.length) return;
+    const toReconnect = disconnected.filter(da =>
+      connectedAccounts.some(ma => da.iban && ma.iban ? da.iban === ma.iban : da.name === ma.name)
+    );
+    if (!toReconnect.length) return;
+    const ids = new Set(toReconnect.map(a => a.id));
+    setSharedData(sd => ({
+      ...sd,
+      accounts: (sd.accounts || []).map(a =>
+        ids.has(a.id) ? { ...a, disconnected: false, disconnectedAt: undefined, disconnectedBy: undefined, attachedBy: myId } : a
+      ),
+    }));
+  }, [myId, sharedData?.accounts, connectedAccounts, profile?.isShared, profile?.members?.length]);
+
   if (!profile) return null;
 
   const members = profile.members || [];
@@ -1613,10 +1635,15 @@ export function ScreenSpaceDetail({ params }) {
 
   const setPicture = (chosen) => {
     if (isMemberOfShared) {
-      // 'none' is a sentinel meaning the member explicitly removed their local picture override
-      setProfiles(ps => ps.map(p => p.id === profile.id ? {
-        ...p, localPicture: chosen === null ? 'none' : (chosen !== p.picture ? chosen : null)
-      } : p));
+      if (canEdit) {
+        setSharedData(prev => ({ ...prev, meta: { ...(prev.meta || {}), picture: chosen } }));
+        setProfiles(ps => ps.map(p => p.id === profile.id ? { ...p, picture: chosen, localPicture: null } : p));
+      } else {
+        // Reader: local-only override; 'none' sentinel means they explicitly cleared it
+        setProfiles(ps => ps.map(p => p.id === profile.id ? {
+          ...p, localPicture: chosen === null ? 'none' : (chosen !== p.picture ? chosen : null)
+        } : p));
+      }
     } else {
       setProfiles(ps => ps.map(p => p.id === profile.id ? { ...p, picture: chosen } : p));
       if (isProfileShared) setSharedData(prev => ({ ...prev, meta: { ...(prev.meta || {}), picture: chosen } }));
@@ -1711,6 +1738,26 @@ export function ScreenSpaceDetail({ params }) {
       ),
     }));
     setAcctDetailSheet(null);
+  };
+
+  const advanceReconnectPsd2 = () => {
+    if (reconnectPsd2Step === 'login') {
+      setReconnectPsd2Step('consent');
+    } else if (reconnectPsd2Step === 'consent') {
+      setReconnectPsd2Step('connecting');
+      setTimeout(() => setReconnectPsd2Step('done'), 1800);
+    } else if (reconnectPsd2Step === 'done') {
+      setSharedData(sd => ({
+        ...sd,
+        accounts: (sd.accounts || []).map(a =>
+          a.id === reconnectPsd2AccountId
+            ? { ...a, disconnected: false, disconnectedAt: undefined, disconnectedBy: undefined, attachedBy: myId }
+            : a
+        ),
+      }));
+      setReconnectPsd2Step(null);
+      setReconnectPsd2AccountId(null);
+    }
   };
 
   const doMerge = () => {
@@ -1901,12 +1948,14 @@ export function ScreenSpaceDetail({ params }) {
         {isMemberOfShared ? (
           /* Member view: horizontal row — photo left, name/owner right */
           <div style={{ display:'flex', alignItems:'center', gap:16, padding:'20px 4px 16px' }}>
-            <button className="m-tap" onClick={() => setShowPhotoSheet(true)}
-              style={{ position:'relative', background:'none', border:'none', cursor:'pointer', padding:0, flexShrink:0 }}>
+            <button className={canEdit ? "m-tap" : undefined} onClick={canEdit ? () => setShowPhotoSheet(true) : undefined}
+              style={{ position:'relative', background:'none', border:'none', cursor: canEdit ? 'pointer' : 'default', padding:0, flexShrink:0 }}>
               <ProfileAvatar profile={profile} size={64}/>
-              <div style={{ position:'absolute', bottom:0, right:0, width:20, height:20, borderRadius:999, background:M.sage, display:'flex', alignItems:'center', justifyContent:'center', border:'2px solid #fff' }}>
-                <I name="cam" size={10} color="#fff"/>
-              </div>
+              {canEdit && (
+                <div style={{ position:'absolute', bottom:0, right:0, width:20, height:20, borderRadius:999, background:M.sage, display:'flex', alignItems:'center', justifyContent:'center', border:'2px solid #fff' }}>
+                  <I name="cam" size={10} color="#fff"/>
+                </div>
+              )}
             </button>
             <div style={{ flex:1, minWidth:0 }}>
               {editingName ? (
@@ -1923,9 +1972,9 @@ export function ScreenSpaceDetail({ params }) {
                   {nameError && <div data-testid="space-detail-name-error" style={{ fontSize:11, color:M.clay }}>{nameError}</div>}
                 </div>
               ) : (
-                <div data-testid="space-detail-name" className="m-tap" onClick={startEditName}>
+                <div data-testid="space-detail-name" className={canEdit ? "m-tap" : undefined} onClick={canEdit ? startEditName : undefined}>
                   <div style={{ fontSize:17, fontWeight:700, color:M.ink, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{profile.name}</div>
-                  <div style={{ fontSize:10, color:M.ink4, marginTop:1 }}>{t('space.tapRename')}</div>
+                  {canEdit && <div style={{ fontSize:10, color:M.ink4, marginTop:1 }}>{t('space.tapRename')}</div>}
                 </div>
               )}
               {(profile.creatorId || profile.ownerId) && (
@@ -2459,13 +2508,28 @@ export function ScreenSpaceDetail({ params }) {
                 )}
               </div>
               {(() => {
-                const isDisconnectedAcct = !!(acctDetailSheet?.sharedAcctData?.disconnected || (acctDetailSheet && (sharedAccts.find(s=>s.id===acct.id)||{}).disconnected));
+                const sharedAcctInfo = sharedAccts.find(s => s.id === acct.id) || {};
+                const isDisconnectedAcct = !!(acctDetailSheet?.sharedAcctData?.disconnected || sharedAcctInfo.disconnected);
+                const disconnectedAt = acctDetailSheet?.sharedAcctData?.disconnectedAt || sharedAcctInfo.disconnectedAt;
                 return (<>
                   {isDisconnectedAcct && acct.readOnly && (
-                    <button className="m-tap" onClick={() => reconnectAccount(acct.id)}
-                      style={{ width:'100%', padding:'14px 0', marginTop:20, background:M.sageSoft, color:M.sage, border:`1px solid ${M.sage}44`, borderRadius:12, fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
-                      Reconnect
-                    </button>
+                    <>
+                      {disconnectedAt && (
+                        <div style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 0', borderTop:`1px solid ${M.line2}`, marginTop:8 }}>
+                          <div style={{ fontSize:12, color:M.ink3, width:110 }}>Disconnected on</div>
+                          <div style={{ fontSize:13, color:M.ink }}>{new Date(disconnectedAt).toLocaleDateString()}</div>
+                        </div>
+                      )}
+                      <button className="m-tap" onClick={() => {
+                        setReconnectPsd2AccountId(acct.id);
+                        setReconnectCustomIban(acct.iban || '');
+                        setAcctDetailSheet(null);
+                        setReconnectPsd2Step('login');
+                      }}
+                        style={{ width:'100%', padding:'14px 0', marginTop:12, background:M.sageSoft, color:M.sage, border:`1px solid ${M.sage}44`, borderRadius:12, fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+                        Reconnect
+                      </button>
+                    </>
                   )}
                   {canDetach && !isDisconnectedAcct && (
                     <button className="m-tap" onClick={() => { toggleAccount(acct.id); setAcctDetailSheet(null); }}
@@ -2676,6 +2740,22 @@ export function ScreenSpaceDetail({ params }) {
           </div>
         </Sheet>
       )}
+
+      {reconnectPsd2Step && (() => {
+        const reconnectAcct = sharedAccts.find(a => a.id === reconnectPsd2AccountId);
+        const psd2Bank = reconnectAcct ? { name: reconnectAcct.name, id: reconnectAcct.bankId, color: reconnectAcct.color } : null;
+        return (
+          <BankConnectPsd2Screen
+            psd2Step={reconnectPsd2Step}
+            psd2Bank={psd2Bank}
+            customIban={reconnectCustomIban}
+            setCustomIban={setReconnectCustomIban}
+            advancePsd2={advanceReconnectPsd2}
+            onClose={() => { setReconnectPsd2Step(null); setReconnectPsd2AccountId(null); }}
+            ibanReadOnly={true}
+          />
+        );
+      })()}
     </div>
   );
 }

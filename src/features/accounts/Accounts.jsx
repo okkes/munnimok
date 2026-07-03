@@ -144,7 +144,7 @@ function BankSearchFullScreen({ banks, bankSearch, setBankSearch, connectedAccou
   );
 }
 
-function BankConnectPsd2Screen({ psd2Step, psd2Bank, customIban, setCustomIban, advancePsd2, onClose, ibanReadOnly }) {
+export function BankConnectPsd2Screen({ psd2Step, psd2Bank, customIban, setCustomIban, advancePsd2, onClose, ibanReadOnly }) {
   React.useEffect(() => {
     if (psd2Step !== 'done') return;
     const t = setTimeout(advancePsd2, 2000);
