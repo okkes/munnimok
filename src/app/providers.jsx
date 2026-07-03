@@ -264,7 +264,9 @@ export function useAllVisibleAccounts() {
         const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{}');
         const isMember = (sd.memberPerms || {})[myId] !== undefined;
         const isOwner = p.ownerId === myId || (!p.ownerId && !p.isShared);
-        if (isMember && !isOwner) {
+        // Include accounts for members AND for owners of shared spaces (members may attach extra accounts)
+        const hasOtherMembers = !p.isShared && Object.keys(sd.memberPerms || {}).length > 0;
+        if (isMember || hasOtherMembers) {
           (sd.accounts || []).forEach(a => {
             if (!seenIds.has(a.id)) {
               seenIds.add(a.id);

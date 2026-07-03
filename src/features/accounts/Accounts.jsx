@@ -635,7 +635,10 @@ function SharedWithMeRow({ acct, i, t, currency, onInfo }) {
           }
         </div>
         <div style={{ flex:1, minWidth:0 }}>
-          <div style={{ fontSize:14, fontWeight:600 }}>{acct.name}</div>
+          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+            <span style={{ fontSize:14, fontWeight:600 }}>{acct.name}</span>
+            {acct.disconnected && <span style={{ fontSize:8, fontWeight:700, padding:'1px 5px', borderRadius:999, background:M.claySoft, color:M.clay, textTransform:'uppercase', flexShrink:0 }}>Disconnected</span>}
+          </div>
           <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:2 }}>
             {acct.iban && <span style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono }}>{acct.iban}</span>}
           </div>
@@ -1622,8 +1625,8 @@ export function ScreenAccounts({ params }) {
         const isOwner = p.ownerId === myId || (!p.ownerId && p.active);
         if (isMember || isOwner) {
           (sd.accounts || []).forEach(a => {
-            // Transferred manual accounts (attachedBy === me and not readOnly) are shown in ASSETS, not SHARED WITH ME
-            if (!a.readOnly && a.attachedBy === myId) return;
+            // Transferred manual accounts (attachedBy or co-owner and not readOnly) are shown in ASSETS, not SHARED WITH ME
+            if (!a.readOnly && (a.attachedBy === myId || (a.coOwners || []).includes(myId))) return;
             if (!seen.has(a.id)) {
               seen.add(a.id);
               result.push({ ...a, _fromSpaceId: p.id, _fromSpaceName: p.name || p.displayName });

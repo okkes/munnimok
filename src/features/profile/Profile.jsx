@@ -19,6 +19,23 @@ import { BankConnectPsd2Screen } from '../accounts/Accounts.jsx';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
+function getPersonalAcctKeys(uid) {
+  const prefix = 'munni_bank_accounts_';
+  if (uid === 'ggl-0001') return [`${prefix}google`];
+  if (uid === 'apl-0001') return [`${prefix}apple`];
+  if (uid === 'dmo-0001') return [`${prefix}bank`];
+  try {
+    const reg = JSON.parse(localStorage.getItem('munni_user_ids') || '{}');
+    for (const [email, id] of Object.entries(reg)) {
+      if (id === uid) {
+        const safe = email.toLowerCase().replace(/[^a-z0-9]/g, '_');
+        return [`${prefix}email_${safe}`];
+      }
+    }
+  } catch {}
+  return Object.keys(localStorage).filter(k => k.startsWith(`${prefix}email_`));
+}
+
 function applyLeaveBehavior(sd, leavingId) {
   const remainingMemberIds = Object.keys(sd.memberPerms || {}).filter(id => id !== leavingId);
   const nextOwner = remainingMemberIds[0] || null;
@@ -34,10 +51,22 @@ function applyLeaveBehavior(sd, leavingId) {
       if (remainingCoOwner) {
         return { ...a, attachedBy: remainingCoOwner, coOwners: otherCoOwners.filter(id => id !== remainingCoOwner), coOwnerRequests: reqs };
       }
+      const activeConnector = remainingMemberIds.find(uid => {
+        const keys = getPersonalAcctKeys(uid);
+        return keys.some(key => {
+          try {
+            const accts = JSON.parse(localStorage.getItem(key) || '[]');
+            return accts.some(pa => a.iban && pa.iban ? a.iban === pa.iban : pa.name === a.name);
+          } catch { return false; }
+        });
+      });
+      if (activeConnector) {
+        return { ...a, attachedBy: activeConnector, coOwners: otherCoOwners, coOwnerRequests: reqs };
+      }
       return { ...a, disconnected: true, disconnectedAt: Date.now(), disconnectedBy: leavingId, coOwners: otherCoOwners, coOwnerRequests: reqs };
     }
     if (nextOwner) {
-      return { ...a, attachedBy: nextOwner, coOwners: [], coOwnerRequests: [], forkedFrom: leavingId };
+      return { ...a, attachedBy: nextOwner, coOwners: remainingMemberIds.slice(1), coOwnerRequests: [], forkedFrom: leavingId };
     }
     removedIds.add(a.id);
     return null;
@@ -1197,7 +1226,7 @@ export function ScreenSpaces() {
 
   const acceptProfileInvite = (inv) => {
     setInvitations(list => list.map(i => i.id === inv.id ? { ...i, status: 'accepted', respondedAt: Date.now() } : i));
-    let freshName, freshPic;
+    let freshName, freshPic, freshMemberPerms;
     try {
       const sdKey = `munni_shared_data_${inv.profileId}`;
       const sd = JSON.parse(localStorage.getItem(sdKey) || '{}');
@@ -1210,6 +1239,7 @@ export function ScreenSpaces() {
       const freshSd = JSON.parse(localStorage.getItem(sdKey) || '{}');
       freshName = freshSd.meta?.name;
       freshPic = freshSd.meta?.picture;
+      freshMemberPerms = freshSd.memberPerms;
     } catch {}
     setProfiles(ps => {
       const existing = ps.find(p => p.id === inv.profileId);
@@ -1217,6 +1247,7 @@ export function ScreenSpaces() {
       const creatorId = inv.originalCreatorId || originalOwnerId;
       const ownerDisplay = userRegistry[creatorId]?.displayName || userRegistry[originalOwnerId]?.displayName || originalOwnerId;
       const ownerName = freshName || inv.profileName || 'Shared';
+      const permsToUse = freshMemberPerms || { [originalOwnerId]: 'owner' };
       const profileData = {
         id: inv.profileId, name: ownerName,
         icon: inv.profileIcon || 'users', active: false,
@@ -1224,11 +1255,35 @@ export function ScreenSpaces() {
         picture: freshPic !== undefined ? freshPic : (inv.profilePicture || null),
         isDemo: inv.profileIsDemo || false, isShared: true,
         creatorId, ownerId: originalOwnerId, ownerDisplay,
-        members: [{ userId: originalOwnerId, displayName: ownerDisplay, permission: 'owner', accountIds: [] }],
+        members: Object.entries(permsToUse).map(([uid, perm]) => ({
+          userId: uid,
+          displayName: userRegistry[uid]?.displayName || uid,
+          permission: perm,
+          accountIds: [],
+        })),
       };
       if (existing) return ps.map(p => p.id === inv.profileId ? { ...p, ...profileData } : p);
       return [...ps, profileData];
     });
+    // Auto-reconnect accounts that were disconnected when the current user previously left
+    try {
+      const sdKey = `munni_shared_data_${inv.profileId}`;
+      const sd = JSON.parse(localStorage.getItem(sdKey) || '{}');
+      const toReconnect = (sd.accounts || []).filter(a =>
+        a.disconnected && a.readOnly && a.disconnectedBy === myId &&
+        connectedAccounts.some(ca => a.iban && ca.iban ? a.iban === ca.iban : a.name === ca.name)
+      );
+      if (toReconnect.length > 0) {
+        const ids = new Set(toReconnect.map(a => a.id));
+        localStorage.setItem(sdKey, JSON.stringify({
+          ...sd,
+          accounts: (sd.accounts || []).map(a =>
+            ids.has(a.id) ? { ...a, disconnected: false, disconnectedAt: undefined, disconnectedBy: undefined, attachedBy: myId } : a
+          ),
+        }));
+        window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sdKey } }));
+      }
+    } catch {}
   };
 
   const declineProfileInvite = (inv) => {
@@ -1238,6 +1293,26 @@ export function ScreenSpaces() {
   const isUserDemo = sessionStorage.getItem('munni_last_login_method') === 'bank';
 
   const activateProfile = (id) => setProfiles(ps => ps.map(p => ({ ...p, active: p.id === id })));
+
+  // Remove shared spaces that were deleted by their owner (expelled signal in sharedData)
+  React.useEffect(() => {
+    const expelledIds = profiles
+      .filter(p => p.isShared)
+      .filter(p => {
+        try {
+          const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{}');
+          return !!sd.expelled?.[myId];
+        } catch { return false; }
+      })
+      .map(p => p.id);
+    if (expelledIds.length === 0) return;
+    setProfiles(ps => {
+      const remaining = ps.filter(p => !expelledIds.includes(p.id));
+      if (remaining.length === 0) return [{ id: `p_${Date.now()}`, name: 'Personal', icon: 'user', active: true, accountIds: [], isDemo: false, creatorId: myId }];
+      if (!remaining.find(p => p.active)) remaining[0] = { ...remaining[0], active: true };
+      return remaining;
+    });
+  }, [profiles.map(p => p.id).join(','), myId]);
 
   const createProfile = () => {
     const trimmed = newProfileName.trim();
@@ -1345,7 +1420,14 @@ export function ScreenSpaces() {
                       {p.isShared && (p.members||[]).some(m => m.userId !== myId) && <span style={{ fontSize:8, fontWeight:700, padding:'1px 5px', borderRadius:999, background:M.violetSoft||'#EEE8FF', color:M.violet||'#7B61FF', textTransform:'uppercase' }}>Shared</span>}
                       {!p.isShared && (p.members||[]).length > 0 && <span style={{ fontSize:8, fontWeight:700, padding:'1px 5px', borderRadius:999, background:M.sageSoft, color:M.sage, textTransform:'uppercase' }}>Shared</span>}
                     </div>
-                    <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{p.isShared ? `${t('space.by')} ${formatCreatorLabel(p.creatorId || p.ownerId, p.ownerDisplay, userRegistry)}` : sub}</div>
+                    <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{(() => {
+                      if (!p.isShared) return sub;
+                      try {
+                        const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{}');
+                        if ((sd.memberPerms || {})[myId] === 'owner') return sub;
+                      } catch {}
+                      return `${t('space.by')} ${formatCreatorLabel(p.creatorId || p.ownerId, p.ownerDisplay, userRegistry)}`;
+                    })()}</div>
                   </div>
                   {p.active && (
                     <div style={{ width:20, height:20, borderRadius:999, background:M.sage, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
@@ -1403,6 +1485,7 @@ export function ScreenSpaceDetail({ params }) {
   const { allTxs: ownTxs } = useTxCtx();
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
   const [showLeaveConfirm, setShowLeaveConfirm] = React.useState(false);
+  const [selectedNewOwner, setSelectedNewOwner] = React.useState(null);
   const [showAttachSheet, setShowAttachSheet] = React.useState(null);
   const [editingName, setEditingName] = React.useState(false);
   const [nameDraft, setNameDraft] = React.useState('');
@@ -1813,6 +1896,17 @@ export function ScreenSpaceDetail({ params }) {
   };
 
   const deleteProfile = () => {
+    try {
+      const sdKey = `munni_shared_data_${profile.id}`;
+      const sd = JSON.parse(localStorage.getItem(sdKey) || '{}');
+      const memberIds = Object.keys(sd.memberPerms || {}).filter(uid => uid !== myId);
+      if (memberIds.length > 0) {
+        const expelled = { ...(sd.expelled || {}) };
+        memberIds.forEach(uid => { expelled[uid] = Date.now(); });
+        localStorage.setItem(sdKey, JSON.stringify({ ...sd, expelled }));
+        window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sdKey } }));
+      }
+    } catch {}
     setProfiles(ps => {
       const remaining = ps.filter(p => p.id !== profile.id);
       if (!remaining.find(p => p.active) && remaining.length > 0) remaining[0] = { ...remaining[0], active: true };
@@ -1859,7 +1953,11 @@ export function ScreenSpaceDetail({ params }) {
       const sd = JSON.parse(localStorage.getItem(sdKey) || '{}');
       const newPerms = { ...(sd.memberPerms || {}) };
       delete newPerms[myId];
-      Object.keys(newPerms).forEach(uid => { newPerms[uid] = 'owner'; });
+      if (selectedNewOwner && newPerms[selectedNewOwner] !== undefined) {
+        newPerms[selectedNewOwner] = 'owner';
+      } else {
+        Object.keys(newPerms).forEach(uid => { newPerms[uid] = 'owner'; });
+      }
       localStorage.setItem(sdKey, JSON.stringify({
         ...sd,
         meta: { ...(sd.meta || {}), newOwnerId: otherMembers[0]?.userId },
@@ -1936,6 +2034,22 @@ export function ScreenSpaceDetail({ params }) {
       </React.Fragment>
     );
   };
+
+  if (reconnectPsd2Step) {
+    const reconnectAcct = sharedAccts.find(a => a.id === reconnectPsd2AccountId);
+    const psd2Bank = reconnectAcct ? { name: reconnectAcct.name, id: reconnectAcct.bankId, color: reconnectAcct.color } : null;
+    return (
+      <BankConnectPsd2Screen
+        psd2Step={reconnectPsd2Step}
+        psd2Bank={psd2Bank}
+        customIban={reconnectCustomIban}
+        setCustomIban={setReconnectCustomIban}
+        advancePsd2={advanceReconnectPsd2}
+        onClose={() => { setReconnectPsd2Step(null); setReconnectPsd2AccountId(null); }}
+        ibanReadOnly={true}
+      />
+    );
+  }
 
   return (
     <div data-testid="space-detail-screen" className="m-screen">
@@ -2040,8 +2154,11 @@ export function ScreenSpaceDetail({ params }) {
         )}
 
         {/* Notes section */}
-        <div className="m-cap" style={{ marginBottom:8, paddingLeft:4 }}>{t('space.notes')}</div>
-        <div className="m-card" style={{ padding:'12px 16px', marginBottom:16, border:`1px solid ${M.line}` }}>
+        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8, paddingLeft:4 }}>
+          <div className="m-cap" style={{ margin:0 }}>{t('space.notes')}</div>
+          <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase', letterSpacing:'0.04em' }}>{t('word.personal')}</span>
+        </div>
+        <div className="m-card" style={{ padding:'12px 16px', marginBottom:16, border:`1px solid ${M.line}`, background:M.ochreSoft+'44' }}>
           {editingNote ? (
             <div className="m-fade">
               <textarea
@@ -2049,7 +2166,7 @@ export function ScreenSpaceDetail({ params }) {
                 value={noteDraft}
                 onChange={e => setNoteDraft(e.target.value)}
                 rows={3}
-                style={{ width:'100%', boxSizing:'border-box', padding:'10px 12px', borderRadius:8, border:`1px solid ${M.line}`, fontSize:13, fontFamily:M.fontUI, background:M.paper2, outline:'none', resize:'none', color:M.ink }}
+                style={{ width:'100%', boxSizing:'border-box', padding:'10px 12px', borderRadius:8, border:`1px solid ${M.line}`, fontSize:13, fontFamily:M.fontUI, background:M.paper, outline:'none', resize:'none', color:M.ink }}
                 placeholder={t('space.notesPlaceholder')}
               />
               <div style={{ display:'flex', gap:8, marginTop:8 }}>
@@ -2066,13 +2183,15 @@ export function ScreenSpaceDetail({ params }) {
           ) : (
             <div className="m-tap" onClick={() => { setNoteDraft(profile.spaceNote || ''); setEditingNote(true); }}
               style={{ display:'flex', alignItems:'flex-start', gap:10 }}>
-              <div style={{ flex:1, fontSize:13, color: profile.spaceNote ? M.ink : M.ink4, lineHeight:1.5 }}>
+              <div style={{ flex:1, fontSize:13, color: profile.spaceNote ? M.ink : M.ink3, lineHeight:1.5 }}>
                 {profile.spaceNote || t('space.notesPlaceholder')}
               </div>
-              <I name="edit" size={14} color={M.ink4} style={{ flexShrink:0, marginTop:2 }}/>
+              <div style={{ width:28, height:28, borderRadius:8, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <I name="edit" size={13} color={M.ink2}/>
+              </div>
             </div>
           )}
-          {!editingNote && <div style={{ fontSize:11, color:M.ink4, marginTop:6 }}>{t('space.notesHint')}</div>}
+          {!editingNote && <div style={{ fontSize:11, color:M.ink3, marginTop:8 }}>{t('space.notesHint')}</div>}
         </div>
 
         {/* Settings section */}
@@ -2479,57 +2598,58 @@ export function ScreenSpaceDetail({ params }) {
         return (
           <Sheet title={acct.name} onClose={() => setAcctDetailSheet(null)}>
             <div style={{ padding:'4px 16px 24px' }}>
-              <div style={{ display:'flex', alignItems:'center', gap:14, marginBottom:20 }}>
-                <div style={{ width:48, height:48, borderRadius:13, background: acct.color || typeColor, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                  <I name={spaceAcctIcon(acct.type)} size={22} color="#fff"/>
-                </div>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontSize:16, fontWeight:600 }}>{acct.name}</div>
-                  {acct.iban && <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono, marginTop:2 }}>{acct.iban}</div>}
-                </div>
-              </div>
-              <div style={{ display:'flex', flexDirection:'column', gap:0 }}>
-                <div style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 0', borderBottom:`1px solid ${M.line2}` }}>
-                  <div style={{ fontSize:12, color:M.ink3, width:80 }}>Type</div>
-                  <span style={{ fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:999, background:typeColor+'22', color:typeColor, textTransform:'uppercase', letterSpacing:'0.04em' }}>{typeLabel}</span>
-                </div>
-                <div style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 0', borderBottom:`1px solid ${M.line2}` }}>
-                  <div style={{ fontSize:12, color:M.ink3, width:80 }}>Method</div>
-                  {acct.readOnly
-                    ? <span style={{ fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase' }}>{t('acct.automated')}</span>
-                    : <span style={{ fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:999, background:M.paper2, color:M.ink3, textTransform:'uppercase', border:`1px solid ${M.line}` }}>{t('acct.manual')}</span>
-                  }
-                </div>
-                {isProfileShared && sharedAcctData?.attachedBy && (
-                  <div style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 0', borderBottom:`1px solid ${M.line2}` }}>
-                    <div style={{ fontSize:12, color:M.ink3, width:80 }}>{t('space.addedBy')}</div>
-                    <div style={{ fontSize:13, color:M.ink }}>{isMe ? t('word.you') : attacherName}</div>
-                  </div>
-                )}
-              </div>
               {(() => {
                 const sharedAcctInfo = sharedAccts.find(s => s.id === acct.id) || {};
                 const isDisconnectedAcct = !!(acctDetailSheet?.sharedAcctData?.disconnected || sharedAcctInfo.disconnected);
                 const disconnectedAt = acctDetailSheet?.sharedAcctData?.disconnectedAt || sharedAcctInfo.disconnectedAt;
                 return (<>
+                  <div style={{ display:'flex', alignItems:'center', gap:14, marginBottom:20 }}>
+                    <div style={{ width:48, height:48, borderRadius:13, background: acct.bankId ? 'transparent' : (acct.color || typeColor), display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                      {acct.bankId
+                        ? <BankLogoSVG bankId={acct.bankId} size={48} radius={13}/>
+                        : <I name={spaceAcctIcon(acct.type)} size={22} color="#fff"/>
+                      }
+                    </div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:16, fontWeight:600 }}>{acct.name}</div>
+                      {acct.iban && <div style={{ fontSize:11, color:M.ink3, fontFamily:M.fontMono, marginTop:2 }}>{acct.iban}</div>}
+                    </div>
+                  </div>
+                  <div style={{ display:'flex', flexDirection:'column', gap:0 }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 0', borderBottom:`1px solid ${M.line2}` }}>
+                      <div style={{ fontSize:12, color:M.ink3, width:80 }}>Type</div>
+                      <span style={{ fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:999, background:typeColor+'22', color:typeColor, textTransform:'uppercase', letterSpacing:'0.04em' }}>{typeLabel}</span>
+                    </div>
+                    <div style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 0', borderBottom:`1px solid ${M.line2}` }}>
+                      <div style={{ fontSize:12, color:M.ink3, width:80 }}>Method</div>
+                      {acct.readOnly
+                        ? <span style={{ fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase' }}>{t('acct.automated')}</span>
+                        : <span style={{ fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:999, background:M.paper2, color:M.ink3, textTransform:'uppercase', border:`1px solid ${M.line}` }}>{t('acct.manual')}</span>
+                      }
+                    </div>
+                    {isProfileShared && sharedAcctData?.attachedBy && (
+                      <div style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 0', borderBottom:`1px solid ${M.line2}` }}>
+                        <div style={{ fontSize:12, color:M.ink3, width:80 }}>{t('space.addedBy')}</div>
+                        <div style={{ fontSize:13, color:M.ink }}>{isMe ? t('word.you') : attacherName}</div>
+                      </div>
+                    )}
+                    {isDisconnectedAcct && acct.readOnly && disconnectedAt && (
+                      <div style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 0', borderBottom:`1px solid ${M.line2}` }}>
+                        <div style={{ fontSize:12, color:M.ink3, width:80 }}>Disconnected</div>
+                        <div style={{ fontSize:13, color:M.ink }}>{new Date(disconnectedAt).toLocaleDateString()}</div>
+                      </div>
+                    )}
+                  </div>
                   {isDisconnectedAcct && acct.readOnly && (
-                    <>
-                      {disconnectedAt && (
-                        <div style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 0', borderTop:`1px solid ${M.line2}`, marginTop:8 }}>
-                          <div style={{ fontSize:12, color:M.ink3, width:110 }}>Disconnected on</div>
-                          <div style={{ fontSize:13, color:M.ink }}>{new Date(disconnectedAt).toLocaleDateString()}</div>
-                        </div>
-                      )}
-                      <button className="m-tap" onClick={() => {
-                        setReconnectPsd2AccountId(acct.id);
-                        setReconnectCustomIban(acct.iban || '');
-                        setAcctDetailSheet(null);
-                        setReconnectPsd2Step('login');
-                      }}
-                        style={{ width:'100%', padding:'14px 0', marginTop:12, background:M.sageSoft, color:M.sage, border:`1px solid ${M.sage}44`, borderRadius:12, fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
-                        Reconnect
-                      </button>
-                    </>
+                    <button className="m-tap" onClick={() => {
+                      setReconnectPsd2AccountId(acct.id);
+                      setReconnectCustomIban(acct.iban || '');
+                      setAcctDetailSheet(null);
+                      setReconnectPsd2Step('login');
+                    }}
+                      style={{ width:'100%', padding:'14px 0', marginTop:20, background:M.sageSoft, color:M.sage, border:`1px solid ${M.sage}44`, borderRadius:12, fontSize:15, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+                      Reconnect
+                    </button>
                   )}
                   {canDetach && !isDisconnectedAcct && (
                     <button className="m-tap" onClick={() => { toggleAccount(acct.id); setAcctDetailSheet(null); }}
@@ -2714,7 +2834,7 @@ export function ScreenSpaceDetail({ params }) {
       )}
 
       {showLeaveConfirm && (
-        <Sheet onClose={() => setShowLeaveConfirm(false)}>
+        <Sheet onClose={() => { setShowLeaveConfirm(false); setSelectedNewOwner(null); }}>
           <div data-testid="space-leave-sheet" style={{ padding:'4px 16px 8px' }}>
             {(() => {
               const isOwnerTransfer = myPerm === 'owner' && otherMembers.length > 0 && !hasOtherOwner;
@@ -2723,9 +2843,32 @@ export function ScreenSpaceDetail({ params }) {
                   <div style={{ fontSize:17, fontWeight:700, marginBottom:8 }}>
                     {isOwnerTransfer ? t('space.transferLeaveConfirmTitle') : t('space.leaveConfirmTitle')}
                   </div>
-                  <div style={{ fontSize:14, color:M.ink3, lineHeight:1.5, marginBottom:20 }}>
+                  <div style={{ fontSize:14, color:M.ink3, lineHeight:1.5, marginBottom:isOwnerTransfer ? 16 : 20 }}>
                     {isOwnerTransfer ? t('space.transferLeaveConfirmDesc') : t('space.leaveConfirmDesc')}
                   </div>
+                  {isOwnerTransfer && otherMembers.length > 0 && (
+                    <div style={{ marginBottom:20 }}>
+                      <div style={{ fontSize:12, fontWeight:600, color:M.ink3, textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:8 }}>{t('space.selectNewOwnerOptional')}</div>
+                      <div style={{ borderRadius:10, border:`1px solid ${M.line}`, overflow:'hidden' }}>
+                        {otherMembers.map((m, i) => {
+                          const isSelected = selectedNewOwner === m.userId;
+                          return (
+                            <React.Fragment key={m.userId}>
+                              {i > 0 && <Divider inset={52}/>}
+                              <div className="m-tap" onClick={() => setSelectedNewOwner(isSelected ? null : m.userId)}
+                                style={{ display:'flex', alignItems:'center', gap:12, padding:'11px 12px', background: isSelected ? M.sageSoft : 'transparent' }}>
+                                <ProfileAvatar profile={{ name: m.displayName, picture: null }} size={32}/>
+                                <div style={{ flex:1, fontSize:14, fontWeight:500 }}>{m.displayName}</div>
+                                <div style={{ width:20, height:20, borderRadius:999, border:`2px solid ${isSelected ? M.sage : M.line}`, background: isSelected ? M.sage : 'transparent', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                                  {isSelected && <I name="check" size={10} color="#fff" stroke={3}/>}
+                                </div>
+                              </div>
+                            </React.Fragment>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                   <button onClick={isOwnerTransfer ? transferAndLeave : leaveProfile}
                     style={{ width:'100%', padding:'14px 0', background:M.clay, color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>
                     {isOwnerTransfer ? t('space.transferLeave') : t('space.leave')}
@@ -2741,21 +2884,6 @@ export function ScreenSpaceDetail({ params }) {
         </Sheet>
       )}
 
-      {reconnectPsd2Step && (() => {
-        const reconnectAcct = sharedAccts.find(a => a.id === reconnectPsd2AccountId);
-        const psd2Bank = reconnectAcct ? { name: reconnectAcct.name, id: reconnectAcct.bankId, color: reconnectAcct.color } : null;
-        return (
-          <BankConnectPsd2Screen
-            psd2Step={reconnectPsd2Step}
-            psd2Bank={psd2Bank}
-            customIban={reconnectCustomIban}
-            setCustomIban={setReconnectCustomIban}
-            advancePsd2={advanceReconnectPsd2}
-            onClose={() => { setReconnectPsd2Step(null); setReconnectPsd2AccountId(null); }}
-            ibanReadOnly={true}
-          />
-        );
-      })()}
     </div>
   );
 }
