@@ -1,5 +1,5 @@
 ﻿import React from 'react';
-import { CATEGORIES, _catExt, catPath } from '../../shared/data/categories.js';
+import { CATEGORIES, _catExt, catPath, deriveTxType, getTypeFallbackCat, TX_TYPE_META } from '../../shared/data/categories.js';
 import { fmtEur, fmtDate, computePeriodHistory, dayLabel } from '../../shared/utils/format.js';
 import { getUserId } from '../../shared/utils/user.js';
 import { ACCOUNTS, TRANSACTIONS } from '../accounts/data.js';
@@ -10,7 +10,7 @@ import { useLocalStorage } from '../../shared/hooks.jsx';
 import { BarChart, StackedBar } from '../../shared/components/Charts.jsx';
 import { TxRow, HighlightText } from '../../shared/components/TxRow.jsx';
 import { useTxCtx, useRecurCtx, useConnectedAccounts, useProfiles } from '../../app/providers.jsx';
-import { CategoryPicker } from '../review/Review.jsx';
+import { CategoryPicker, TypePickerSheet, LinkedAccountPickerSheet, TypeBadge } from '../review/Review.jsx';
 import { ordinal } from '../recurring/Recurring.jsx';
 
 
@@ -142,11 +142,58 @@ export function ScreenTxDetail({ params }) {
   const [showLinkRecurring, setShowLinkRecurring] = React.useState(false);
   const [showCatPicker, setShowCatPicker] = React.useState(false);
   const [showReceiptEdit, setShowReceiptEdit] = React.useState(false);
-  const [showSavingPicker, setShowSavingPicker] = React.useState(false);
+  const [showTypePicker, setShowTypePicker] = React.useState(false);
+  const [showAcctPicker, setShowAcctPicker] = React.useState(false);
   const [editingTxNote, setEditingTxNote] = React.useState(false);
 
   const tx = txs.find(t => t.id === params.id) || txs[0] || TRANSACTIONS[0];
   const positive = tx.amount > 0;
+
+  // All accounts available to link (personal + shared space, excluding tx's own account)
+  const allAccounts = React.useMemo(() => {
+    const combined = [...connectedAccounts, ...(_sharedData?.accounts || [])];
+    return combined.filter((a, i, arr) => arr.findIndex(x => x.id === a.id) === i);
+  }, [connectedAccounts, _sharedData?.accounts]);
+  const txAccountObj = allAccounts.find(a => a.id === tx.account);
+  const linkableAccounts = allAccounts.filter(a => a.id !== tx.account);
+  const sharedSpaceAccounts = (_sharedData?.accounts || []).filter(a => a.id !== tx.account);
+  const personalLinkableAccounts = connectedAccounts.filter(a => a.id !== tx.account);
+
+  const [txType, setTxType] = React.useState(() => tx.txType || (positive ? 'Income' : 'Expense'));
+  const [linkedAcctId, setLinkedAcctId] = React.useState(() => tx.linkedAccount || null);
+  const linkedAcct = linkableAccounts.find(a => a.id === linkedAcctId);
+  const derivedType = linkedAcct ? deriveTxType(txAccountObj, linkedAcct, tx.amount) : null;
+  const effectiveType = derivedType || txType;
+
+  const onLinkedAcctChange = (acctId) => {
+    setLinkedAcctId(acctId || null);
+    const newLinked = acctId ? linkableAccounts.find(a => a.id === acctId) : null;
+    const newType = acctId ? deriveTxType(txAccountObj, newLinked, tx.amount) : txType;
+    if (acctId) setTxType(newType);
+    const curCatType = (CATEGORIES[txCats[0]?.catId] || _catExt[txCats[0]?.catId])?.type;
+    const targetType = acctId ? newType : txType;
+    if (curCatType !== targetType) {
+      const fallback = getTypeFallbackCat(targetType, !positive);
+      const newCats = [{ catId: fallback, amount: Math.abs(tx.amount) }];
+      setTxCats(newCats);
+      updateTx(tx.id, { linkedAccount: acctId || undefined, txType: targetType, cats: newCats, cat: fallback });
+    } else {
+      updateTx(tx.id, { linkedAccount: acctId || undefined, txType: targetType });
+    }
+  };
+
+  const onTypeChange = (type) => {
+    setTxType(type);
+    const curCatType = (CATEGORIES[txCats[0]?.catId] || _catExt[txCats[0]?.catId])?.type;
+    if (curCatType !== type) {
+      const fallback = getTypeFallbackCat(type, !positive);
+      const newCats = [{ catId: fallback, amount: Math.abs(tx.amount) }];
+      setTxCats(newCats);
+      updateTx(tx.id, { txType: type, cats: newCats, cat: fallback });
+    } else {
+      updateTx(tx.id, { txType: type });
+    }
+  };
 
   const initCats = () => tx.cats ? tx.cats.slice() : [{ catId: tx.cat, amount: Math.abs(tx.amount) }];
   const [txCats, setTxCats] = React.useState(initCats);
@@ -251,7 +298,7 @@ export function ScreenTxDetail({ params }) {
   const removeCategory = (i) => {
     setTxCats(s => {
       if (s.length === 1) {
-        const fallback = positive ? 'incomeUncategorized' : 'expenseUncategorized';
+        const fallback = getTypeFallbackCat(effectiveType, !positive);
         return [{ catId: fallback, amount: Math.abs(tx.amount) }];
       }
       return s.filter((_, j) => j !== i);
@@ -298,6 +345,32 @@ export function ScreenTxDetail({ params }) {
             <div style={{ fontSize:11, color:M.ink4, marginTop:2 }}>Originally: {tx.merchant}</div>
           )}
           <div style={{ fontSize:12, color:M.ink3, marginTop:4 }}>{fmtDate(tx.date, 'long')} · {tx.time}</div>
+        </div>
+
+        {/* Type + Connected Account */}
+        <div className="m-card" style={{ padding:'4px 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
+          <div className={linkedAcctId ? '' : 'm-tap'} onClick={linkedAcctId ? undefined : () => setShowTypePicker(true)}
+            style={{ display:'flex', alignItems:'center', gap:10, padding:'13px 0' }}>
+            <div style={{ fontSize:12, color:M.ink3, width:96 }}>{t('tx.type')}</div>
+            <div style={{ flex:1, display:'flex', alignItems:'center', gap:8 }}>
+              <TypeBadge type={effectiveType}/>
+              {linkedAcctId && <span style={{ fontSize:11, color:M.ink4 }}>{t('tx.typeLockedByAccount')}</span>}
+            </div>
+            {!linkedAcctId && <I name="caretR" size={14} color={M.ink4}/>}
+          </div>
+          <Divider inset={0}/>
+          <div className="m-tap" onClick={() => setShowAcctPicker(true)}
+            style={{ display:'flex', alignItems:'center', gap:10, padding:'13px 0' }}>
+            <div style={{ fontSize:12, color:M.ink3, width:96 }}>{t('tx.linkedAccount')}</div>
+            <div style={{ flex:1, fontSize:13, color: linkedAcct ? M.ink : M.ink4 }}>
+              {linkedAcct ? linkedAcct.name : t('tx.linkedAccountNone')}
+            </div>
+            {linkedAcctId && (
+              <button onClick={e => { e.stopPropagation(); onLinkedAcctChange(null); }}
+                style={{ background:'none', border:'none', color:M.clay, fontSize:18, lineHeight:1, cursor:'pointer', fontFamily:M.fontUI, padding:'0 4px', flexShrink:0 }}>×</button>
+            )}
+            <I name="caretR" size={14} color={M.ink4}/>
+          </div>
         </div>
 
         {/* Categories — own card */}
@@ -393,8 +466,8 @@ export function ScreenTxDetail({ params }) {
           </div>
         </div>
 
-        {/* Reimbursement card */}
-        <div style={{ marginBottom:14 }}>
+        {/* Reimbursements — Expense only */}
+        {effectiveType === 'Expense' && <div style={{ marginBottom:14 }}>
           <div className="m-cap" style={{ marginBottom:6, paddingLeft:2 }}>Reimbursements</div>
           <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
             {originalTx && (
@@ -448,26 +521,13 @@ export function ScreenTxDetail({ params }) {
               <div style={{ padding:'12px 0', fontSize:13, color:M.ink4, textAlign:'center' }}>No reimbursements</div>
             )}
           </div>
-        </div>
+        </div>}
 
-        {/* Options card (only for expenses) */}
-        {!positive && (
+        {/* Recurring — Expense, Debt Payment, Investment, Adjustment (not Income, Saving, Transfer) */}
+        {['Expense', 'Debt Payment', 'Investment', 'Adjustment'].includes(effectiveType) && (
           <div style={{ marginBottom:14 }}>
-            <div className="m-cap" style={{ marginBottom:6, paddingLeft:2 }}>Options</div>
+            <div className="m-cap" style={{ marginBottom:6, paddingLeft:2 }}>Recurring</div>
             <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
-              {(() => {
-                const savAcct = tx.savingAccount ? ACCOUNTS.find(a => a.id === tx.savingAccount) : null;
-                return (
-                  <div className="m-tap" onClick={() => setShowSavingPicker(true)} style={{ display:'flex', alignItems:'center', gap:10, padding:'13px 0' }}>
-                    <div style={{ fontSize:12, color:M.ink3, width:96 }}>Saving account</div>
-                    <div style={{ flex:1, fontSize:13, color:savAcct ? M.ink : M.ink4 }}>
-                      {savAcct ? savAcct.name : 'None — tap to attach'}
-                    </div>
-                    <I name="caretR" size={14} color={M.ink4}/>
-                  </div>
-                );
-              })()}
-              <Divider inset={0}/>
               <div className="m-tap" onClick={() => setShowLinkRecurring(true)} style={{ display:'flex', alignItems:'center', gap:10, padding:'14px 0' }}>
                 <div style={{ fontSize:12, color:M.ink3, width:96 }}>Recurring</div>
                 <div style={{ flex:1, fontSize:13, color:linkedRecurring?M.ink:M.ink4, display:'flex', alignItems:'center', gap:8, minWidth:0 }}>
@@ -548,52 +608,27 @@ export function ScreenTxDetail({ params }) {
           </Sheet>
         )}
 
-        {showSavingPicker && (
-          <Sheet onClose={() => setShowSavingPicker(false)}>
-            <div style={{ padding:'4px 20px 32px' }}>
-              <div className="m-h2" style={{ marginBottom:4 }}>Attach saving account</div>
-              <div style={{ fontSize:13, color:M.ink3, marginBottom:16 }}>Mark this transaction as a deposit or withdrawal to a saving account.</div>
-              <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}`, marginBottom:16 }}>
-                {ACCOUNTS.filter(a => a.type !== 'checking').map((a, i, arr) => (
-                  <React.Fragment key={a.id}>
-                    <div className="m-tap" onClick={() => {
-                      const newCat = tx.amount < 0 ? 'savingDeposit' : 'savingWithdraw';
-                      const newCats = [{ catId: newCat, amount: Math.abs(tx.amount) }];
-                      updateTx(tx.id, { savingAccount: a.id, cat: newCat, cats: newCats });
-                      setTxCats(newCats);
-                      setShowSavingPicker(false);
-                    }} style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
-                      <div style={{ width:36, height:36, borderRadius:10, background:a.color, display:'flex', alignItems:'center', justifyContent:'center' }}>
-                        <I name={a.type==='invest'?'rocket':'piggy'} size={16} color="#fff"/>
-                      </div>
-                      <div style={{ flex:1 }}>
-                        <div style={{ fontSize:14, fontWeight:500 }}>{a.name}</div>
-                        <div style={{ fontSize:11, color:M.ink3, marginTop:1, fontFamily:M.fontMono }}>{a.iban}</div>
-                      </div>
-                      {tx.savingAccount === a.id && <I name="check" size={16} color={M.sage}/>}
-                    </div>
-                    {i < arr.length - 1 && <Divider inset={48}/>}
-                  </React.Fragment>
-                ))}
-                {tx.savingAccount && (
-                  <>
-                    <Divider inset={0}/>
-                    <div className="m-tap" onClick={() => { updateTx(tx.id, { savingAccount: undefined }); setShowSavingPicker(false); }}
-                      style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
-                      <div style={{ width:36, height:36, borderRadius:10, background:M.claySoft, display:'flex', alignItems:'center', justifyContent:'center' }}>
-                        <I name="x" size={16} color={M.clay}/>
-                      </div>
-                      <div style={{ flex:1, fontSize:14, fontWeight:500, color:M.clay }}>Remove attachment</div>
-                    </div>
-                  </>
-                )}
-              </div>
-              <button className="m-btn outline m-tap" style={{ width:'100%' }} onClick={() => setShowSavingPicker(false)}>Cancel</button>
-            </div>
-          </Sheet>
+        {showTypePicker && (
+          <TypePickerSheet
+            currentType={txType}
+            onClose={() => setShowTypePicker(false)}
+            onPick={onTypeChange}
+          />
         )}
 
-        {/* Receipt */}
+        {showAcctPicker && (
+          <LinkedAccountPickerSheet
+            txAccountId={tx.account}
+            myAccounts={personalLinkableAccounts}
+            sharedAccounts={sharedSpaceAccounts}
+            linkedAcctId={linkedAcctId}
+            onClose={() => setShowAcctPicker(false)}
+            onPick={onLinkedAcctChange}
+          />
+        )}
+
+        {/* Receipt — Expense + Debt Payment */}
+        {['Expense', 'Debt Payment'].includes(effectiveType) && <>
         <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>Receipt</div>
         <div className="m-card" style={{ padding: 14, marginBottom: 14, border: `1px solid ${M.line}` }}>
           {hasReceiptState ? (
@@ -638,6 +673,7 @@ export function ScreenTxDetail({ params }) {
             </div>
           )}
         </div>
+        </>}
 
       </div>{/* end lock wrapper */}
     </div>{/* end m-body-scroll */}
@@ -645,14 +681,14 @@ export function ScreenTxDetail({ params }) {
       {showCatPicker && (
         <CategoryPicker
           selected={txCats.length === 1 && !isOnlyUncategorized ? txCats[0].catId : null}
-          positiveOnly={positive}
+          txType={effectiveType}
           defaultAmount={effectiveRemaining > 0.005 ? effectiveRemaining : 0}
           maxAmount={Math.abs(tx.amount)}
           onClose={() => setShowCatPicker(false)}
           onPick={(catId, val) => {
             setTxCats(s => {
               if (isOnlyUncategorized) {
-                const uncatId = positive ? 'incomeUncategorized' : 'expenseUncategorized';
+                const uncatId = getTypeFallbackCat(effectiveType, !positive);
                 const leftover = Math.round((Math.abs(tx.amount) - val) * 100) / 100;
                 if (leftover < 0.005) return [{ catId, amount: val }];
                 return [{ catId, amount: val }, { catId: uncatId, amount: leftover }];
@@ -696,7 +732,7 @@ export function ScreenExpenses() {
   const [pidx, setPidx] = React.useState(periodHistory.length - 1);
 
   const barValues = periodHistory.map(p =>
-    txs.filter(t => t.amount < 0 && !t.savingAccount && t.date >= p.start && t.date <= p.end)
+    txs.filter(t => t.amount < 0 && (!t.txType || t.txType === 'Expense') && t.date >= p.start && t.date <= p.end)
        .reduce((s,t) => s + Math.abs(t.amount), 0)
   );
   const barLabels = periodHistory.map(p => {
@@ -713,7 +749,7 @@ export function ScreenExpenses() {
   // Filter transactions by selected period
   const activeStart = periodStart;
   const activeEnd   = periodEnd;
-  const periodTxs = txs.filter(t => t.amount < 0 && !t.savingAccount && t.date >= activeStart && t.date <= activeEnd);
+  const periodTxs = txs.filter(t => t.amount < 0 && (!t.txType || t.txType === 'Expense') && t.date >= activeStart && t.date <= activeEnd);
 
   const totals = {};
   periodTxs.forEach(t => {

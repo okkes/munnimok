@@ -2357,7 +2357,7 @@ export function ScreenSavings() {
   const [correctionBalance, setCorrectionBalance] = React.useState('');
 
   const savingAccounts = connectedAccounts.filter(a => a.type === 'savings' || a.type === 'invest');
-  const savingsTxs = txs.filter(t => t.savingAccount);
+  const savingsTxs = txs.filter(t => t.txType === 'Saving' || t.txType === 'Investment');
 
   const doAddTx = () => {
     if (!addDraft.amount || !showAddSheet) return;
@@ -2373,7 +2373,7 @@ export function ScreenSavings() {
       time: '12:00',
       cat,
       account: showAddSheet.id,
-      savingAccount: showAddSheet.id,
+      txType: 'Saving',
       cats: [{ catId: cat, amount: amt }],
     };
     addTxs([newTx]);
@@ -2399,7 +2399,7 @@ export function ScreenSavings() {
       time: '12:00',
       cat,
       account: showCorrectionSheet.id,
-      savingAccount: showCorrectionSheet.id,
+      txType: 'Saving',
       cats: [{ catId: cat, amount: Math.abs(diff) }],
       isCorrection: true,
     };
@@ -2422,7 +2422,7 @@ export function ScreenSavings() {
             <span style={{ fontSize:12 }}>Create one under Settings › Accounts.</span>
           </div>
         ) : savingAccounts.map((acct) => {
-          const acctTxs = savingsTxs.filter(t => t.savingAccount === acct.id);
+          const acctTxs = savingsTxs.filter(t => t.linkedAccount === acct.id || t.account === acct.id);
           return (
             <div key={acct.id} className="m-card" style={{ padding:0, marginBottom:14, border:`1px solid ${M.line}`, overflow:'hidden' }}>
               <div style={{ padding:'14px 16px', display:'flex', alignItems:'center', gap:12, borderBottom:`1px solid ${M.line2}` }}>
@@ -2632,7 +2632,7 @@ export function ScreenSavingAccounts() {
         <div className="m-card" style={{ padding:'4px 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
           {savingAccounts.map((a, i) => {
             const isDisabled = disabled.includes(a.id);
-            const acctTxs = txs.filter(t => t.savingAccount === a.id);
+            const acctTxs = txs.filter(t => (t.txType === 'Saving' || t.txType === 'Investment') && (t.linkedAccount === a.id || t.account === a.id));
             const total = acctTxs.reduce((s, t) => s + Math.abs(t.amount), 0);
             return (
               <React.Fragment key={a.id}>
@@ -2926,7 +2926,7 @@ export function ScreenAccountsAll() {
       time: '12:00',
       cat,
       account: showAddTxSheet.id,
-      savingAccount: showAddTxSheet.id,
+      txType: 'Saving',
       cats: [{ catId: cat, amount: Math.abs(amt) }],
     };
     addTxs([newTx]);

@@ -44,7 +44,7 @@ export const TRANSACTIONS = [
   { id: 't10', date: D(3), time: '08:30', merchant: 'Koffie ☕',         desc: 'TOKI ESPRESSO',              cat: 'coffee',      amount: -3.80,  account: 'main' },
   { id: 't11', date: D(5), time: '20:00', merchant: "L'Osteria",         desc: "L'OSTERIA AMS",              cat: 'restaurants', amount: -32.00, account: 'main' },
   { id: 't12', date: D(6), time: '11:00', merchant: 'Albert Heijn',      desc: 'AH 5821',                    cat: 'groceries',   amount: -28.40, account: 'main' },
-  { id: 't13', date: D(7), time: '10:00', merchant: 'DEGIRO Buy',        desc: 'DEGIRO MTHLY ETF',           cat: 'invest',      amount: -300.00,account: 'main', recurring: true },
+  { id: 't13', date: D(7), time: '10:00', merchant: 'DEGIRO Buy',        desc: 'DEGIRO MTHLY ETF',           cat: 'investBuy',   amount: -300.00,account: 'main', recurring: true, linkedAccount: 'inv', txType: 'Investment' },
   { id: 't14', date: D(9), time: '16:00', merchant: 'Etos',              desc: 'ETOS 0341',                  cat: 'healthcare',  amount: -14.20, account: 'main', needsReview: true },
   { id: 't15', date: D(11), time: '20:30', merchant: 'Vapiano',           desc: 'VAPIANO 1234',               cat: 'restaurants', amount: -22.50, account: 'main' },
   { id: 't16', date: D(14), time: '12:00', merchant: 'Albert Heijn',      desc: 'AH 5821',                    cat: 'groceries',   amount: -38.10, account: 'main' },
@@ -152,13 +152,13 @@ export const TRANSACTIONS = [
   { id: 'gp1', date: D(9), time: '14:30', merchant: 'Google Playstore',  desc: 'GOOGLE*PLAY 493820',        cat: 'entertainment', cats:[{catId:'entertainment',amount:22.99}], amount: -22.99, account: 'main', confidence: 60, needsReview: true, aiSuggestCat: 'hobby' },
   { id: 'gp2', date: D(36), time: '11:20', merchant: 'Google Playstore',  desc: 'GOOGLE*PLAY 487231',        cat: 'entertainment', cats:[{catId:'entertainment',amount:8.99}],  amount: -8.99,  account: 'main', confidence: 62, needsReview: true, aiSuggestCat: 'hobby' },
   // Saving account transfers — ensures Savings row > €0
-  { id: 'sav1', date: D(9), time: '09:15', merchant: 'Savings transfer', desc: 'SPAAROVERBOEKING ING SAVE',  cat: 'savingDeposit', amount: -150.00, account: 'main', savingAccount: 'save' },
-  { id: 'sav2', date: D(25), time: '09:15', merchant: 'Savings transfer', desc: 'SPAAROVERBOEKING ING SAVE',  cat: 'savingDeposit', amount: -200.00, account: 'main', savingAccount: 'save' },
-  { id: 'sav3', date: D(61), time: '09:15', merchant: 'Savings transfer', desc: 'SPAAROVERBOEKING ING SAVE',  cat: 'savingDeposit', amount: -120.00, account: 'main', savingAccount: 'save' },
-  { id: 'sav4', date: D(91), time: '09:15', merchant: 'Savings transfer', desc: 'SPAAROVERBOEKING ING SAVE',  cat: 'savingDeposit', amount: -150.00, account: 'main', savingAccount: 'save' },
-  { id: 'sav5', date: D(122), time: '09:15', merchant: 'Savings transfer', desc: 'SPAAROVERBOEKING ING SAVE',  cat: 'savingDeposit', amount: -180.00, account: 'main', savingAccount: 'save' },
-  { id: 'sav6', date: D(152), time: '09:15', merchant: 'Savings transfer', desc: 'SPAAROVERBOEKING ING SAVE',  cat: 'savingDeposit', amount: -200.00, account: 'main', savingAccount: 'save' },
-  { id: 'sav7', date: D(183), time: '09:15', merchant: 'Savings transfer', desc: 'SPAAROVERBOEKING ING SAVE',  cat: 'savingDeposit', amount: -175.00, account: 'main', savingAccount: 'save' },
+  { id: 'sav1', date: D(9), time: '09:15', merchant: 'Savings transfer', desc: 'SPAAROVERBOEKING ING SAVE',  cat: 'savingDeposit', amount: -150.00, account: 'main', linkedAccount: 'save', txType: 'Saving' },
+  { id: 'sav2', date: D(25), time: '09:15', merchant: 'Savings transfer', desc: 'SPAAROVERBOEKING ING SAVE',  cat: 'savingDeposit', amount: -200.00, account: 'main', linkedAccount: 'save', txType: 'Saving' },
+  { id: 'sav3', date: D(61), time: '09:15', merchant: 'Savings transfer', desc: 'SPAAROVERBOEKING ING SAVE',  cat: 'savingDeposit', amount: -120.00, account: 'main', linkedAccount: 'save', txType: 'Saving' },
+  { id: 'sav4', date: D(91), time: '09:15', merchant: 'Savings transfer', desc: 'SPAAROVERBOEKING ING SAVE',  cat: 'savingDeposit', amount: -150.00, account: 'main', linkedAccount: 'save', txType: 'Saving' },
+  { id: 'sav5', date: D(122), time: '09:15', merchant: 'Savings transfer', desc: 'SPAAROVERBOEKING ING SAVE',  cat: 'savingDeposit', amount: -180.00, account: 'main', linkedAccount: 'save', txType: 'Saving' },
+  { id: 'sav6', date: D(152), time: '09:15', merchant: 'Savings transfer', desc: 'SPAAROVERBOEKING ING SAVE',  cat: 'savingDeposit', amount: -200.00, account: 'main', linkedAccount: 'save', txType: 'Saving' },
+  { id: 'sav7', date: D(183), time: '09:15', merchant: 'Savings transfer', desc: 'SPAAROVERBOEKING ING SAVE',  cat: 'savingDeposit', amount: -175.00, account: 'main', linkedAccount: 'save', txType: 'Saving' },
 ];
 
 // Deterministic daily transaction generator — 0–5 txs/day, avg ~100/month, Aug 2025 – Feb 2026
@@ -214,7 +214,7 @@ function genSeedTxs() {
       const savAmt = -(Math.round((80 + r() * 200) * 100) / 100);
       result.push({ id:`gsav${seed}`, date:iso, time:'09:00',
         merchant:'Savings transfer', desc:'SPAAROVERBOEKING ING',
-        cat:'savings', amount:savAmt, account:'main', savingAccount:'save' });
+        cat:'savingDeposit', amount:savAmt, account:'main', linkedAccount:'save', txType:'Saving' });
     }
   }
   return result;
@@ -239,7 +239,7 @@ export const ABN_TRANSACTIONS = [
   { id:'ab14', date:D(11), time:'18:00', merchant:'Kinepolis',          desc:'KINEPOLIS AMS',                cat:'entertainment',  amount: -28.00,  account:'abn_main' },
   { id:'ab15', date:D(12), time:'13:00', merchant:'Jumbo',              desc:'JUMBO SUPERMARKT AMS 0081',    cat:'groceries',      amount: -52.80,  account:'abn_main' },
   { id:'ab16', date:D(14), time:'19:45', merchant:'Restaurant De Kas',  desc:'RESTAURANTDE KAS AMS',         cat:'restaurants',    amount: -74.50,  account:'abn_main' },
-  { id:'ab17', date:D(15), time:'09:00', merchant:'ABN AMRO Sparen',    desc:'SPAAROVERBOEKING ABN FEB',     cat:'savings',        amount: -200.00, account:'abn_main', savingAccount:'abn_save' },
+  { id:'ab17', date:D(15), time:'09:00', merchant:'ABN AMRO Sparen',    desc:'SPAAROVERBOEKING ABN FEB',     cat:'savingDeposit',  amount: -200.00, account:'abn_main', linkedAccount:'abn_save', txType:'Saving' },
   { id:'ab18', date:D(16), time:'10:30', merchant:'Decathlon',          desc:'DECATHLON AMS WEST',           cat:'sportsEquipment',amount: -64.00,  account:'abn_main' },
   { id:'ab19', date:D(17), time:'14:00', merchant:'GVB Dagkaart',       desc:'GVB DAGKAART AMS',             cat:'transportPublic',amount: -8.00,   account:'abn_main' },
   { id:'ab20', date:D(18), time:'12:00', merchant:'Hema',               desc:'HEMA AMSTERDAM BIJLMER',       cat:'hobby',          amount: -23.50,  account:'abn_main' },
@@ -269,7 +269,7 @@ export const DEMO_TXS = [
   { id:'dm9',  date:D(176), time:'09:15', merchant:'Koffie ☕',        desc:'DEMO COFFEE BAR',           cat:'coffee',       amount: -4.50,   account:'demo_main' },
   { id:'dm10', date:D(169), time:'08:30', merchant:'Koffie ☕',        desc:'DEMO COFFEE BAR',           cat:'coffee',       amount: -4.50,   account:'demo_main' },
   { id:'dm11', date:D(172), time:'19:30', merchant:'Demo Restaurant',  desc:'DEMO RESTAURANT AMS',       cat:'restaurants',  amount: -38.50,  account:'demo_main' },
-  { id:'dm12', date:D(165), time:'09:00', merchant:'Savings transfer', desc:'DEMO SPAAROVERBOEKING',     cat:'savingDeposit',amount:-200.00,  account:'demo_main', savingAccount:'demo_save' },
+  { id:'dm12', date:D(165), time:'09:00', merchant:'Savings transfer', desc:'DEMO SPAAROVERBOEKING',     cat:'savingDeposit',amount:-200.00,  account:'demo_main', linkedAccount:'demo_save', txType:'Saving' },
   // === Month 2 (Jan 2026) ===
   { id:'dm13', date:D(145), time:'08:00', merchant:'Demo Corp BV',     desc:'DEMO CORP BV SALARIS JAN',  cat:'salary',       amount: 2200.00, account:'demo_main' },
   { id:'dm14', date:D(143), time:'00:00', merchant:'Demo Verhuur',     desc:'DEMO VERHUUR HUUR JAN',     cat:'housingRent',  amount: -850.00, account:'demo_main', recurring:true },
@@ -284,7 +284,7 @@ export const DEMO_TXS = [
   { id:'dm23', date:D(139), time:'08:30', merchant:'Koffie ☕',        desc:'DEMO COFFEE BAR',           cat:'coffee',       amount: -3.80,   account:'demo_main' },
   { id:'dm24', date:D(144), time:'20:00', merchant:'Demo Restaurant',  desc:'DEMO RESTAURANT AMS',       cat:'restaurants',  amount: -28.00,  account:'demo_main' },
   { id:'dm25', date:D(147), time:'14:00', merchant:'NS · Sprinter',    desc:'NS DEMO REIZIGERS',         cat:'transportPublic',amount:-18.40, account:'demo_main' },
-  { id:'dm26', date:D(135), time:'09:00', merchant:'Savings transfer', desc:'DEMO SPAAROVERBOEKING',     cat:'savingDeposit',amount:-150.00,  account:'demo_main', savingAccount:'demo_save' },
+  { id:'dm26', date:D(135), time:'09:00', merchant:'Savings transfer', desc:'DEMO SPAAROVERBOEKING',     cat:'savingDeposit',amount:-150.00,  account:'demo_main', linkedAccount:'demo_save', txType:'Saving' },
   // === Month 3 (Feb 2026) ===
   { id:'dm27', date:D(115), time:'08:00', merchant:'Demo Corp BV',     desc:'DEMO CORP BV SALARIS FEB',  cat:'salary',       amount: 2200.00, account:'demo_main' },
   { id:'dm28', date:D(113), time:'00:00', merchant:'Demo Verhuur',     desc:'DEMO VERHUUR HUUR FEB',     cat:'housingRent',  amount: -850.00, account:'demo_main', recurring:true },
@@ -299,7 +299,7 @@ export const DEMO_TXS = [
   { id:'dm37', date:D(114), time:'21:00', merchant:'Demo Restaurant',  desc:'DEMO RESTAURANT AMS',       cat:'restaurants',  amount: -45.00,  account:'demo_main' },
   { id:'dm38', date:D(117), time:'15:00', merchant:'NS · Sprinter',    desc:'NS DEMO REIZIGERS',         cat:'transportPublic',amount:-22.40, account:'demo_main' },
   { id:'dm39', date:D(107), time:'14:00', merchant:'Etos',             desc:'ETOS DEMO',                 cat:'healthcare',   amount: -18.50,  account:'demo_main' },
-  { id:'dm40', date:D(105), time:'09:00', merchant:'Savings transfer', desc:'DEMO SPAAROVERBOEKING',     cat:'savingDeposit',amount:-200.00,  account:'demo_main', savingAccount:'demo_save' },
+  { id:'dm40', date:D(105), time:'09:00', merchant:'Savings transfer', desc:'DEMO SPAAROVERBOEKING',     cat:'savingDeposit',amount:-200.00,  account:'demo_main', linkedAccount:'demo_save', txType:'Saving' },
   // === Month 4 (Mar 2026) ===
   { id:'dm41', date:D(85),  time:'08:00', merchant:'Demo Corp BV',     desc:'DEMO CORP BV SALARIS MAR',  cat:'salary',       amount: 2200.00, account:'demo_main' },
   { id:'dm42', date:D(83),  time:'00:00', merchant:'Demo Verhuur',     desc:'DEMO VERHUUR HUUR MAR',     cat:'housingRent',  amount: -850.00, account:'demo_main', recurring:true },
@@ -318,7 +318,7 @@ export const DEMO_TXS = [
   { id:'dm55', date:D(87),  time:'15:30', merchant:'NS · Sprinter',    desc:'NS DEMO REIZIGERS',         cat:'transportPublic',amount:-15.80, account:'demo_main' },
   { id:'dm56', date:D(75),  time:'13:00', merchant:'GVB',              desc:'GVB DEMO OV',               cat:'transportPublic',amount:-3.60,  account:'demo_main' },
   { id:'dm57', date:D(77),  time:'11:00', merchant:'Kruidvat',         desc:'KRUIDVAT DEMO',             cat:'healthcare',   amount: -12.80,  account:'demo_main' },
-  { id:'dm58', date:D(67),  time:'09:00', merchant:'Savings transfer', desc:'DEMO SPAAROVERBOEKING',     cat:'savingDeposit',amount:-250.00,  account:'demo_main', savingAccount:'demo_save' },
+  { id:'dm58', date:D(67),  time:'09:00', merchant:'Savings transfer', desc:'DEMO SPAAROVERBOEKING',     cat:'savingDeposit',amount:-250.00,  account:'demo_main', linkedAccount:'demo_save', txType:'Saving' },
   // === Month 5 (Apr 2026) ===
   { id:'dm59', date:D(55),  time:'08:00', merchant:'Demo Corp BV',     desc:'DEMO CORP BV SALARIS APR',  cat:'salary',       amount: 2200.00, account:'demo_main' },
   { id:'dm60', date:D(53),  time:'00:00', merchant:'Demo Verhuur',     desc:'DEMO VERHUUR HUUR APR',     cat:'housingRent',  amount: -850.00, account:'demo_main', recurring:true },
@@ -337,7 +337,7 @@ export const DEMO_TXS = [
   { id:'dm73', date:D(57),  time:'14:00', merchant:'NS · Sprinter',    desc:'NS DEMO REIZIGERS',         cat:'transportPublic',amount:-24.60, account:'demo_main' },
   { id:'dm74', date:D(43),  time:'16:00', merchant:'NS · Sprinter',    desc:'NS DEMO REIZIGERS',         cat:'transportPublic',amount:-18.80, account:'demo_main' },
   { id:'dm75', date:D(47),  time:'14:00', merchant:'Etos',             desc:'ETOS DEMO',                 cat:'healthcare',   amount: -22.40,  account:'demo_main' },
-  { id:'dm76', date:D(38),  time:'09:00', merchant:'Savings transfer', desc:'DEMO SPAAROVERBOEKING',     cat:'savingDeposit',amount:-300.00,  account:'demo_main', savingAccount:'demo_save' },
+  { id:'dm76', date:D(38),  time:'09:00', merchant:'Savings transfer', desc:'DEMO SPAAROVERBOEKING',     cat:'savingDeposit',amount:-300.00,  account:'demo_main', linkedAccount:'demo_save', txType:'Saving' },
   { id:'dm77', date:D(45),  time:'12:00', merchant:'Bol.com',          desc:'BOL.COM DEMO ORDER',        cat:'hobby',        amount: -34.99,  account:'demo_main', confidence:65, needsReview:true },
   // === Month 6 (May–Jun 2026) ===
   { id:'dm78', date:D(25),  time:'08:00', merchant:'Demo Corp BV',     desc:'DEMO CORP BV SALARIS MEI',  cat:'salary',       amount: 2200.00, account:'demo_main' },
@@ -360,7 +360,7 @@ export const DEMO_TXS = [
   { id:'dm95', date:D(13),  time:'15:00', merchant:'NS · Sprinter',    desc:'NS DEMO REIZIGERS',         cat:'transportPublic',amount:-14.40, account:'demo_main' },
   { id:'dm96', date:D(22),  time:'11:00', merchant:'Kruidvat',         desc:'KRUIDVAT DEMO',             cat:'healthcare',   amount: -16.90,  account:'demo_main' },
   { id:'dm97', date:D(15),  time:'09:00', merchant:'Etos',             desc:'ETOS DEMO',                 cat:'healthcare',   amount: -24.50,  account:'demo_main' },
-  { id:'dm98', date:D(8),   time:'09:00', merchant:'Savings transfer', desc:'DEMO SPAAROVERBOEKING',     cat:'savingDeposit',amount:-200.00,  account:'demo_main', savingAccount:'demo_save' },
+  { id:'dm98', date:D(8),   time:'09:00', merchant:'Savings transfer', desc:'DEMO SPAAROVERBOEKING',     cat:'savingDeposit',amount:-200.00,  account:'demo_main', linkedAccount:'demo_save', txType:'Saving' },
   { id:'dm99', date:D(11),  time:'12:00', merchant:'H&M Nederland',    desc:'HM DEMO NETHERLANDS',       cat:'clothing',     amount: -49.99,  account:'demo_main', confidence:70, needsReview:true },
   { id:'dm100',date:D(2),   time:'14:00', merchant:'Amazon.nl',        desc:'AMZN DEMO MKTPLC',          cat:'hobby',        amount: -28.99,  account:'demo_main', confidence:60, needsReview:true },
 ];

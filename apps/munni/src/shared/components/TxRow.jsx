@@ -32,9 +32,8 @@ const _acctColor = (type) => {
 };
 
 export function TxRow({ tx, onClick, showCat = true, showDate = false, dense = false, highlight = '', catLabel = null }) {
-  // Fix undefined categories for saving transactions
   let effectiveCat = tx.cat;
-  if (tx.savingAccount && (!effectiveCat || effectiveCat === 'savings' || (!CATEGORIES[effectiveCat] && !_catExt[effectiveCat]))) {
+  if (!CATEGORIES[effectiveCat] && !_catExt[effectiveCat] && tx.txType === 'Saving') {
     effectiveCat = tx.amount < 0 ? 'savingDeposit' : 'savingWithdraw';
   }
   const cat = CATEGORIES[effectiveCat] || _catExt[effectiveCat] || CATEGORIES[tx.cat] || _catExt[tx.cat] || {};

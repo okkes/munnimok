@@ -24,7 +24,7 @@ function CustomGraphCard({ card, txs }) {
   const excluded = card.excludeCategories || [];
 
   const filteredTxs = txs.filter(t => {
-    if (t.amount >= 0 || t.savingAccount) return false;
+    if (t.amount >= 0 || (t.txType && t.txType !== 'Expense')) return false;
     if (t.date < currentPeriod.start || t.date > currentPeriod.end) return false;
     const cat = CATEGORIES[t.cat] || _catExt[t.cat] || {};
     const parentId = cat.parent || cat.id;
@@ -141,9 +141,9 @@ export function ScreenHome() {
     return txs.filter(t => t.date >= start && t.date <= end);
   }, [txs, pd]);
   const periodIncome  = React.useMemo(() => periodTxs.filter(t => t.amount > 0).reduce((s,t) => s + t.amount, 0), [periodTxs]);
-  const periodExpense = React.useMemo(() => periodTxs.filter(t => t.amount < 0 && !t.savingAccount).reduce((s,t) => s + Math.abs(t.amount), 0), [periodTxs]);
-  const periodInvest  = React.useMemo(() => periodTxs.filter(t => t.cat === 'invest').reduce((s,t) => s + Math.abs(t.amount), 0), [periodTxs]);
-  const periodSavings = React.useMemo(() => periodTxs.filter(t => t.savingAccount).reduce((s,t) => s + Math.abs(t.amount), 0), [periodTxs]);
+  const periodExpense = React.useMemo(() => periodTxs.filter(t => t.amount < 0 && (!t.txType || t.txType === 'Expense')).reduce((s,t) => s + Math.abs(t.amount), 0), [periodTxs]);
+  const periodInvest  = React.useMemo(() => periodTxs.filter(t => t.txType === 'Investment').reduce((s,t) => s + Math.abs(t.amount), 0), [periodTxs]);
+  const periodSavings = React.useMemo(() => periodTxs.filter(t => t.txType === 'Saving').reduce((s,t) => s + Math.abs(t.amount), 0), [periodTxs]);
 
   const activateProfile = (id) => {
     setProfiles(ps => ps.map(p => ({ ...p, active: p.id === id })));

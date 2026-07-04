@@ -1,10 +1,10 @@
 ﻿import React from 'react';
-import { CATEGORIES, _catExt, catPath, catNameT, _GROUP_KEYS } from '../../shared/data/categories.js';
+import { CATEGORIES, _catExt, catPath, catNameT, _GROUP_KEYS, TX_TYPES, TX_TYPE_META, deriveTxType, getTypeFallbackCat } from '../../shared/data/categories.js';
 import { fmtEur, fmtDate } from '../../shared/utils/format.js';
 import { M, I, IcoMDI, Divider, StatusBar, AppBar } from '../../app/theme.jsx';
 import { useLang } from '../../shared/i18n.jsx';
 import { useNav, Sheet } from '../../app/nav.jsx';
-import { useTxCtx, useProfiles } from '../../app/providers.jsx';
+import { useTxCtx, useProfiles, useConnectedAccounts } from '../../app/providers.jsx';
 import { useLocalStorage } from '../../shared/hooks.jsx';
 import { getUserId } from '../../shared/utils/user.js';
 import { HighlightText } from '../../shared/components/TxRow.jsx';
@@ -24,6 +24,7 @@ export function ScreenReviewSwipe() {
     ? `munni_shared_data_${activeProfile?.id}` : 'munni_shared_data_none';
   const [_activeSharedData] = useLocalStorage(_sharedKey, {});
   const [_userRegistry] = useLocalStorage('munni_global_users', {});
+  const [connectedAccounts] = useConnectedAccounts();
 
   // Session-level review lock: first user to open the review screen claims the lock.
   // Others can only skip until the lock holder exits.
@@ -77,14 +78,33 @@ export function ScreenReviewSwipe() {
   const [bulkSelected, setBulkSelected] = React.useState(new Set());
   const [previewTx, setPreviewTx] = React.useState(null);
   const [dupError, setDupError] = React.useState(null);
+  const [showTypePicker, setShowTypePicker] = React.useState(false);
+  const [showAcctPicker, setShowAcctPicker] = React.useState(false);
 
   const tx = queue[idx];
   const isNegative = tx && tx.amount < 0;
 
+  const [reviewTxType, setReviewTxType] = React.useState(() => tx?.txType || (isNegative ? 'Expense' : 'Income'));
+  const [reviewLinkedAcctId, setReviewLinkedAcctId] = React.useState(() => tx?.linkedAccount || null);
+
+  // All accounts available to link (personal + shared space, excluding tx's own account)
+  const reviewSharedAccounts = _activeSharedData?.accounts || [];
+  const reviewAllLinkableAccounts = React.useMemo(() => {
+    const all = [...connectedAccounts, ...reviewSharedAccounts];
+    return all.filter((a, i, arr) => a.id !== tx?.account && arr.findIndex(x => x.id === a.id) === i);
+  }, [connectedAccounts, reviewSharedAccounts, tx?.account]);
+  const reviewTxAccount = [...connectedAccounts, ...reviewSharedAccounts].find(a => a.id === tx?.account);
+  const reviewLinkedAcct = reviewAllLinkableAccounts.find(a => a.id === reviewLinkedAcctId);
+
   const initCats = (t) => [{ id: t.aiSuggestCat || t.cat, amount: Math.abs(t.amount) }];
   const [txCats, setTxCats] = React.useState(() => tx ? initCats(tx) : []);
 
-  React.useEffect(() => { if (tx) setTxCats(initCats(tx)); }, [idx, queue.length]);
+  React.useEffect(() => {
+    if (!tx) return;
+    setTxCats(initCats(tx));
+    setReviewTxType(tx.txType || (tx.amount < 0 ? 'Expense' : 'Income'));
+    setReviewLinkedAcctId(tx.linkedAccount || null);
+  }, [idx, queue.length]);
   React.useEffect(() => { setBulkSelected(new Set()); }, [idx]);
 
   const allocatedSum = txCats.reduce((s, c) => s + c.amount, 0);
@@ -125,7 +145,7 @@ export function ScreenReviewSwipe() {
       const t = txs.find(x => x.id === id);
       if (!t) return;
       const cats = id === tx.id ? txCats.map(c => ({ catId: c.id, amount: c.amount })) : (t.cats || [{ catId: t.cat, amount: Math.abs(t.amount) }]);
-      updateTx(id, { needsReview: false, cats, cat: cats[0]?.catId || t.cat });
+      updateTx(id, { needsReview: false, cats, cat: cats[0]?.catId || t.cat, txType: reviewTxType, linkedAccount: reviewLinkedAcctId || undefined });
       // Mark reviewed in shared data for transactions that belong to shared spaces
       profiles.forEach(p => {
         try {
@@ -254,6 +274,31 @@ export function ScreenReviewSwipe() {
             </button>
           </div>
 
+          {/* Type + linked account row */}
+          <div style={{ display:'flex', gap:8, marginTop:12 }}>
+            <button className="m-tap" onClick={() => !reviewLinkedAcctId && setShowTypePicker(true)} style={{
+              flex:1, display:'flex', alignItems:'center', gap:6, padding:'8px 10px', borderRadius:10,
+              background:M.paper2, border:`1px solid ${M.line2}`, cursor: reviewLinkedAcctId ? 'default' : 'pointer',
+            }}>
+              <IcoMDI name={TX_TYPE_META[reviewTxType]?.icon || 'help-circle-outline'} size={13} color={TX_TYPE_META[reviewTxType]?.color || M.ink2}/>
+              <span style={{ fontSize:12, fontWeight:600, color: TX_TYPE_META[reviewTxType]?.color || M.ink2, flex:1, textAlign:'left' }}>{reviewTxType}</span>
+              {reviewLinkedAcctId ? <IcoMDI name="lock-outline" size={11} color={M.ink4}/> : <IcoMDI name="chevron-down" size={13} color={M.ink4}/>}
+            </button>
+            <button className="m-tap" onClick={() => setShowAcctPicker(true)} style={{
+              flex:1, display:'flex', alignItems:'center', gap:6, padding:'8px 10px', borderRadius:10,
+              background:M.paper2, border:`1px solid ${M.line2}`,
+            }}>
+              <IcoMDI name="bank-outline" size={13} color={M.ink3}/>
+              <span style={{ fontSize:12, color: reviewLinkedAcct ? M.ink : M.ink4, flex:1, textAlign:'left', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                {reviewLinkedAcct ? reviewLinkedAcct.name : 'Link account'}
+              </span>
+              {reviewLinkedAcctId
+                ? <button onClick={e => { e.stopPropagation(); setReviewLinkedAcctId(null); setReviewTxType(isNegative ? 'Expense' : 'Income'); }} style={{ background:'none', border:'none', color:M.clay, fontSize:14, lineHeight:1, cursor:'pointer', padding:0, fontFamily:M.fontUI }}>×</button>
+                : <IcoMDI name="chevron-down" size={13} color={M.ink4}/>
+              }
+            </button>
+          </div>
+
           {queueSimilar.length > 0 && (
             <div style={{ marginTop:14, borderRadius:12, background:M.violetSoft||'#EEE8FF', border:`1px solid ${M.violet}22`, overflow:'hidden' }}>
               <div style={{ padding:'10px 14px 8px', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
@@ -345,7 +390,7 @@ export function ScreenReviewSwipe() {
 
       {picking && <CategoryPicker
         selected={txCats[txCats.length-1]?.id}
-        filterPositive={isNegative}
+        txType={reviewTxType}
         defaultAmount={unallocated || txAbs}
         maxAmount={unallocated || txAbs}
         onClose={() => setPicking(false)}
@@ -359,6 +404,42 @@ export function ScreenReviewSwipe() {
           setPicking(false);
         }}
       />}
+
+      {showTypePicker && (
+        <TypePickerSheet
+          currentType={reviewTxType}
+          onClose={() => setShowTypePicker(false)}
+          onPick={(type) => {
+            setReviewTxType(type);
+            const curCatType = (CATEGORIES[txCats[0]?.id] || _catExt[txCats[0]?.id])?.type;
+            if (curCatType !== type) {
+              const fallback = getTypeFallbackCat(type, isNegative);
+              setTxCats([{ id: fallback, amount: txAbs }]);
+            }
+          }}
+        />
+      )}
+
+      {showAcctPicker && (
+        <LinkedAccountPickerSheet
+          txAccountId={tx?.account}
+          myAccounts={connectedAccounts.filter(a => a.id !== tx?.account)}
+          sharedAccounts={reviewSharedAccounts.filter(a => a.id !== tx?.account)}
+          linkedAcctId={reviewLinkedAcctId}
+          onClose={() => setShowAcctPicker(false)}
+          onPick={(acctId) => {
+            setReviewLinkedAcctId(acctId);
+            const linked = reviewAllLinkableAccounts.find(a => a.id === acctId);
+            const derived = acctId ? deriveTxType(reviewTxAccount, linked, tx.amount) : (isNegative ? 'Expense' : 'Income');
+            setReviewTxType(derived);
+            const curCatType = (CATEGORIES[txCats[0]?.id] || _catExt[txCats[0]?.id])?.type;
+            if (curCatType !== derived) {
+              const fallback = getTypeFallbackCat(derived, isNegative);
+              setTxCats([{ id: fallback, amount: txAbs }]);
+            }
+          }}
+        />
+      )}
 
       {dupError && (
         <div style={{ position:'fixed', bottom:120, left:'50%', transform:'translateX(-50%)', background:M.ink, color:'#fff', borderRadius:10, padding:'10px 16px', fontSize:13, fontWeight:600, zIndex:200, whiteSpace:'nowrap', boxShadow:'0 4px 20px rgba(0,0,0,0.2)', animation:'fadeIn 0.2s ease' }}>
@@ -487,7 +568,7 @@ function AmountEditSheet({ cat, initialAmount, maxAmount, onConfirm, onClose }) 
   );
 }
 
-export function CategoryPicker({ selected, onClose, onPick, filterPositive = false, positiveOnly = false, skipAmount = false, defaultAmount = 0, maxAmount = 999 }) {
+export function CategoryPicker({ selected, onClose, onPick, txType = 'Expense', skipAmount = false, defaultAmount = 0, maxAmount = 999 }) {
   const { t } = useLang();
   const [pickedId, setPickedId] = React.useState(null);
   const [str, press, setStr] = useNumpadStr(defaultAmount);
@@ -503,9 +584,8 @@ export function CategoryPicker({ selected, onClose, onPick, filterPositive = fal
   const allCatValues = [...Object.values(CATEGORIES), ...Object.values(_catExt)];
   allCatValues.forEach(c => {
     if (c.isParent) return;
-    if (positiveOnly && !c.positive) return;
-    if (!positiveOnly && c.positive) return;
-    if (!positiveOnly && c.group === 'Saving') return;
+    const catType = c.type || 'Expense';
+    if (catType !== txType) return;
     // For custom cats without group, derive group from parent name
     const groupKey = c.group || (c.parent && (CATEGORIES[c.parent] || _catExt[c.parent])?.name) || 'Custom';
     if (searchQ) {
@@ -747,5 +827,110 @@ export function ScreenLinkReimburse({ params }) {
         )}
       </div>
     </div>
+  );
+}
+
+// ── Shared pickers (exported for use in Tx.jsx) ─────────────────────────────
+
+export function TypeBadge({ type, size = 'normal' }) {
+  const meta = TX_TYPE_META[type] || {};
+  const pad = size === 'small' ? '2px 7px' : '3px 9px';
+  const fs = size === 'small' ? 10 : 12;
+  return (
+    <span style={{
+      fontSize: fs, fontWeight:700, letterSpacing:'0.01em',
+      color: meta.color || M.ink2,
+      background: (meta.color || M.ink2) + '1A',
+      borderRadius:999, padding: pad, display:'inline-flex', alignItems:'center', gap:4,
+    }}>
+      {meta.icon && <IcoMDI name={meta.icon} size={fs} color={meta.color || M.ink2}/>}
+      {type}
+    </span>
+  );
+}
+
+export function TypePickerSheet({ currentType, onClose, onPick }) {
+  return (
+    <Sheet onClose={onClose} title="Transaction type">
+      <div style={{ padding:'4px 20px 32px' }}>
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+          {TX_TYPES.map(type => {
+            const meta = TX_TYPE_META[type] || {};
+            const active = currentType === type;
+            return (
+              <button key={type} onClick={() => { onPick(type); onClose(); }} className="m-tap" style={{
+                padding:'14px 12px', borderRadius:12, textAlign:'left',
+                border:`1.5px solid ${active ? meta.color : M.line}`,
+                background: active ? (meta.color + '18') : M.paper2,
+                display:'flex', alignItems:'center', gap:8,
+              }}>
+                <IcoMDI name={meta.icon || 'help-circle-outline'} size={18} color={active ? meta.color : M.ink3}/>
+                <span style={{ fontSize:13, fontWeight:600, color: active ? meta.color : M.ink }}>{type}</span>
+                {active && <I name="check" size={14} color={meta.color} stroke={2.5} style={{ marginLeft:'auto' }}/>}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </Sheet>
+  );
+}
+
+export function LinkedAccountPickerSheet({ txAccountId, myAccounts, sharedAccounts, linkedAcctId, onClose, onPick }) {
+  const ACCT_TYPE_LABEL = { checking:'Checking', savings:'Savings', invest:'Brokerage', credit:'Credit' };
+  const renderAcct = (a) => (
+    <div key={a.id} className="m-tap" onClick={() => { onPick(a.id); onClose(); }} style={{
+      display:'flex', alignItems:'center', gap:12, padding:'13px 0',
+    }}>
+      <div style={{ width:36, height:36, borderRadius:10, background:a.color || M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+        <IcoMDI name={a.type === 'savings' ? 'piggy-bank-outline' : a.type === 'invest' ? 'chart-timeline-variant' : a.type === 'credit' ? 'credit-card-outline' : 'bank-outline'} size={17} color="#fff"/>
+      </div>
+      <div style={{ flex:1, minWidth:0 }}>
+        <div style={{ fontSize:13, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{a.name}</div>
+        <div style={{ fontSize:11, color:M.ink3, marginTop:1, fontFamily:M.fontMono }}>{a.iban || ACCT_TYPE_LABEL[a.type] || a.type}</div>
+      </div>
+      {linkedAcctId === a.id && <I name="check" size={16} color={M.sage} stroke={2.5}/>}
+    </div>
+  );
+  return (
+    <Sheet onClose={onClose} title="Link account">
+      <div style={{ padding:'4px 20px 32px', maxHeight:'70vh', overflowY:'auto' }}>
+        {linkedAcctId && (
+          <div className="m-card m-tap" onClick={() => { onPick(null); onClose(); }} style={{ padding:'12px 16px', marginBottom:12, border:`1px solid ${M.line}`, display:'flex', alignItems:'center', gap:10 }}>
+            <I name="x" size={16} color={M.clay}/>
+            <span style={{ fontSize:13, fontWeight:500, color:M.clay }}>Remove linked account</span>
+          </div>
+        )}
+        {myAccounts.length > 0 && (
+          <>
+            <div className="m-cap" style={{ marginBottom:4 }}>My accounts</div>
+            <div className="m-card" style={{ padding:'0 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
+              {myAccounts.map((a, i, arr) => (
+                <React.Fragment key={a.id}>
+                  {renderAcct(a)}
+                  {i < arr.length - 1 && <Divider inset={48}/>}
+                </React.Fragment>
+              ))}
+            </div>
+          </>
+        )}
+        {sharedAccounts.length > 0 && (
+          <>
+            <div className="m-cap" style={{ marginBottom:4 }}>Space accounts</div>
+            <div className="m-card" style={{ padding:'0 16px', border:`1px solid ${M.line}` }}>
+              {sharedAccounts.map((a, i, arr) => (
+                <React.Fragment key={a.id}>
+                  {renderAcct(a)}
+                  {i < arr.length - 1 && <Divider inset={48}/>}
+                </React.Fragment>
+              ))}
+            </div>
+          </>
+        )}
+        {myAccounts.length === 0 && sharedAccounts.length === 0 && (
+          <div style={{ textAlign:'center', padding:'32px 0', color:M.ink3, fontSize:13 }}>No other accounts available</div>
+        )}
+      </div>
+    </Sheet>
   );
 }
