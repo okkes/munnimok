@@ -254,11 +254,19 @@ export function ScreenTxDetail({ params }) {
   const _lockedByName = _userRegistry[_editingLock?.userId]?.displayName || _editingLock?.userId || 'Someone';
 
   // When the previous holder releases the lock, viewers compete to acquire it (random delay to avoid ties)
+  // Also sync local state from the latest tx data so view-only user sees the other's changes immediately
   const _prevLockedRef = React.useRef(isLockedByOther);
   React.useEffect(() => {
     const wasLocked = _prevLockedRef.current;
     _prevLockedRef.current = isLockedByOther;
     if (!wasLocked || isLockedByOther || _sharedKey === 'munni_shared_data_none') return;
+    // Sync all local state from the latest tx (captured in the closure at this render)
+    setTxCats(tx.cats ? tx.cats.slice() : [{ catId: tx.cat, amount: Math.abs(tx.amount) }]);
+    setTxType(tx.txType || (positive ? 'Income' : 'Expense'));
+    setLinkedAcctId(tx.linkedAccount || null);
+    setNoteText(tx.note || '');
+    setSyncNotif(true);
+    const clearNotif = setTimeout(() => setSyncNotif(false), 2500);
     const delay = Math.floor(Math.random() * 80);
     const timer = setTimeout(() => {
       try {
@@ -271,13 +279,14 @@ export function ScreenTxDetail({ params }) {
         }
       } catch {}
     }, delay);
-    return () => clearTimeout(timer);
+    return () => { clearTimeout(timer); clearTimeout(clearNotif); };
   }, [isLockedByOther]);
 
   const linkedRecurId = tx.recurId || null;
   const linkedRecurring = recurList.find(r => r.id === linkedRecurId || r.txIds?.includes(tx.id));
 
   const primaryCat = CATEGORIES[txCats[0]?.catId] || {};
+  const [syncNotif, setSyncNotif] = React.useState(false);
   const allocTotal = txCats.reduce((s, c) => s + c.amount, 0);
   const remaining = Math.round((Math.abs(effectiveAmount) - allocTotal) * 100) / 100;
   const isOnlyUncategorized = txCats.length === 1 && (txCats[0].catId === 'expenseUncategorized' || txCats[0].catId === 'incomeUncategorized');
@@ -307,11 +316,22 @@ export function ScreenTxDetail({ params }) {
 
   const removeCategory = (i) => {
     setTxCats(s => {
-      if (s.length === 1) {
-        const fallback = getTypeFallbackCat(effectiveType, !positive);
-        return [{ catId: fallback, amount: Math.abs(tx.amount) }];
+      const fallback = getTypeFallbackCat(effectiveType, !positive);
+      if (s.length === 1) return [{ catId: fallback, amount: Math.abs(effectiveAmount) }];
+      const removed = s[i];
+      const next = s.filter((_, j) => j !== i);
+      // If only fallback remains, reset to full effective amount
+      if (next.length === 1 && next[0].catId === fallback) {
+        return [{ catId: fallback, amount: Math.abs(effectiveAmount) }];
       }
-      return s.filter((_, j) => j !== i);
+      // Add removed amount back to existing fallback entry if present
+      const uncatIdx = next.findIndex(c => c.catId === fallback);
+      if (uncatIdx >= 0) {
+        return next.map((c, j) => j === uncatIdx
+          ? { ...c, amount: Math.round((c.amount + removed.amount) * 100) / 100 }
+          : c);
+      }
+      return next;
     });
   };
 
@@ -327,6 +347,12 @@ export function ScreenTxDetail({ params }) {
           <div style={{ margin:'0 0 10px', padding:'10px 14px', borderRadius:12, background:M.ochreSoft, border:`1px solid ${M.ochre}`, display:'flex', alignItems:'center', gap:8 }}>
             <I name="lock" size={14} color={M.ochre}/>
             <span style={{ fontSize:13, color:M.ochre, fontWeight:500 }}>{t('tx.editingViewOnly').replace('{name}', _lockedByName)}</span>
+          </div>
+        )}
+        {syncNotif && (
+          <div style={{ margin:'0 0 10px', padding:'10px 14px', borderRadius:12, background:M.sageSoft, border:`1px solid ${M.sage}`, display:'flex', alignItems:'center', gap:8, animation:'fadeIn 0.2s ease' }}>
+            <I name="check" size={14} color={M.sage}/>
+            <span style={{ fontSize:13, color:M.sage, fontWeight:500 }}>Refreshed with latest changes</span>
           </div>
         )}
         <div style={{ pointerEvents: isLockedByOther ? 'none' : 'auto', opacity: isLockedByOther ? 0.65 : 1 }}>
@@ -388,7 +414,7 @@ export function ScreenTxDetail({ params }) {
             const cat = CATEGORIES[c.catId] || _catExt[c.catId] || {};
             const isUncategorized = c.catId === 'expenseUncategorized' || c.catId === 'incomeUncategorized';
             const fallbackCatId = getTypeFallbackCat(effectiveType, !positive);
-            const isAutoSet = txCats.length === 1 && c.catId === fallbackCatId;
+            const isAutoSet = c.catId === fallbackCatId;
             const parent = cat.parent ? (CATEGORIES[cat.parent] || _catExt[cat.parent]) : null;
             const parentName = parent?.name || cat.group || '';
             const subName = cat.name || c.catId;

@@ -552,17 +552,27 @@ export function useNumpadStr(initial) {
 
 // Standalone amount-edit sheet — used to edit an existing category's amount
 function AmountEditSheet({ cat, initialAmount, maxAmount, onConfirm, onClose }) {
-  const [str, press] = useNumpadStr(initialAmount);
+  const [amtStr, setAmtStr] = React.useState(initialAmount > 0 ? initialAmount.toFixed(2).replace('.', ',') : '');
+  const val = parseFloat(amtStr.replace(',', '.')) || 0;
+  const ok = val > 0 && val <= maxAmount + 0.005;
   return (
-    <Sheet onClose={onClose}>
-      <div style={{ display:'flex', flexDirection:'column', height:460 }}>
-        <div style={{ padding:'4px 20px 0', display:'flex', alignItems:'center', gap:10, flexShrink:0 }}>
-          <div style={{ width:32, height:32, borderRadius:9, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center' }}>
-            <IcoMDI name={cat.icon || 'help-circle-outline'} size={15} color={M.ink2}/>
-          </div>
-          <div style={{ fontSize:15, fontWeight:600 }}>{catPath(cat)}</div>
-        </div>
-        <AmountNumpad amtStr={str} onPress={press} onConfirm={onConfirm} maxAmount={maxAmount} confirmLabel="Update amount"/>
+    <Sheet onClose={onClose} title={catPath(cat)}>
+      <div style={{ padding:'4px 0 32px' }}>
+        <input
+          type="text" inputMode="decimal" autoFocus
+          value={amtStr}
+          onChange={e => setAmtStr(e.target.value)}
+          onFocus={e => e.target.select()}
+          placeholder={`Max ${fmtEur(maxAmount)}`}
+          style={{ width:'100%', padding:'12px 14px', borderRadius:10, border:`1px solid ${val > maxAmount + 0.005 ? M.clay : M.line}`, fontSize:16, fontFamily:M.fontUI, color:M.ink, background:M.paper, outline:'none', boxSizing:'border-box', marginBottom:6 }}
+        />
+        {val > maxAmount + 0.005 && (
+          <div style={{ fontSize:11, color:M.clay, marginBottom:8 }}>Max {fmtEur(maxAmount)}</div>
+        )}
+        <button onClick={() => ok && onConfirm(val)} disabled={!ok}
+          style={{ width:'100%', padding:'14px 0', borderRadius:10, background: ok ? M.brand : M.paper2, color: ok ? '#fff' : M.ink4, border:'none', fontSize:14, fontWeight:600, cursor: ok ? 'pointer' : 'default', fontFamily:M.fontUI, marginTop:4 }}>
+          {ok ? `Update · ${fmtEur(val)}` : 'Enter amount'}
+        </button>
       </div>
     </Sheet>
   );
@@ -571,12 +581,14 @@ function AmountEditSheet({ cat, initialAmount, maxAmount, onConfirm, onClose }) 
 export function CategoryPicker({ selected, onClose, onPick, txType = 'Expense', skipAmount = false, defaultAmount = 0, maxAmount = 999 }) {
   const { t } = useLang();
   const [pickedId, setPickedId] = React.useState(null);
-  const [str, press, setStr] = useNumpadStr(defaultAmount);
+  const [amtStr, setAmtStr] = React.useState('');
   const [searchQ, setSearchQ] = React.useState('');
+  const amtVal = parseFloat(amtStr.replace(',', '.')) || 0;
+  const amtOk = amtVal > 0 && amtVal <= maxAmount + 0.005;
 
   const handlePickCat = (id) => {
     if (skipAmount) { onPick(id, 0); return; }
-    setStr(defaultAmount);
+    setAmtStr(defaultAmount > 0 ? defaultAmount.toFixed(2).replace('.', ',') : '');
     setPickedId(id);
   };
 
@@ -603,7 +615,7 @@ export function CategoryPicker({ selected, onClose, onPick, txType = 'Expense', 
     <div style={{ position:'absolute', inset:0, zIndex:100, animation:'mFadeIn 0.2s ease-out both' }}>
       <div style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0.4)' }} onClick={onClose}/>
       <div style={{
-        position:'absolute', left:0, right:0, bottom:0, top: pickedId ? 100 : 80,
+        position:'absolute', left:0, right:0, bottom:0, top: pickedId ? '45%' : 80,
         background:'#fff', borderTopLeftRadius:24, borderTopRightRadius:24,
         display:'flex', flexDirection:'column', overflow:'hidden',
         transition:'top 0.2s ease',
@@ -685,13 +697,23 @@ export function CategoryPicker({ selected, onClose, onPick, txType = 'Expense', 
               </div>
               <div style={{ width:60 }}/>
             </div>
-            <AmountNumpad
-              amtStr={str}
-              onPress={press}
-              maxAmount={maxAmount}
-              onConfirm={(val) => onPick(pickedId, val)}
-              confirmLabel={`Add · ${catPath(pickedCat)}`}
-            />
+            <div style={{ padding:'20px 20px 32px', display:'flex', flexDirection:'column', gap:10 }}>
+              <input
+                type="text" inputMode="decimal" autoFocus
+                value={amtStr}
+                onChange={e => setAmtStr(e.target.value)}
+                onFocus={e => e.target.select()}
+                placeholder={`Max ${fmtEur(maxAmount)}`}
+                style={{ width:'100%', padding:'12px 14px', borderRadius:10, border:`1px solid ${amtVal > maxAmount + 0.005 ? M.clay : M.line}`, fontSize:16, fontFamily:M.fontUI, color:M.ink, background:M.paper, outline:'none', boxSizing:'border-box' }}
+              />
+              {amtVal > maxAmount + 0.005 && (
+                <div style={{ fontSize:11, color:M.clay }}>Max {fmtEur(maxAmount)}</div>
+              )}
+              <button onClick={() => amtOk && onPick(pickedId, amtVal)} disabled={!amtOk}
+                style={{ width:'100%', padding:'14px 0', borderRadius:10, background: amtOk ? M.brand : M.paper2, color: amtOk ? '#fff' : M.ink4, border:'none', fontSize:14, fontWeight:600, cursor: amtOk ? 'pointer' : 'default', fontFamily:M.fontUI, marginTop:4 }}>
+                {amtOk ? `Add · ${catPath(pickedCat)} · ${fmtEur(amtVal)}` : `Add · ${catPath(pickedCat)}`}
+              </button>
+            </div>
           </>
         )}
       </div>
