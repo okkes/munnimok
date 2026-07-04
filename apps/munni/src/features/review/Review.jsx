@@ -699,6 +699,51 @@ export function CategoryPicker({ selected, onClose, onPick, txType = 'Expense', 
   );
 }
 
+function reduceCats(cats, reduceBy, txType, isNegative) {
+  let toReduce = Math.round(reduceBy * 100) / 100;
+  if (toReduce <= 0) return cats;
+  let result = cats.map(c => ({ ...c }));
+  const fallbackCatId = getTypeFallbackCat(txType, isNegative);
+
+  const reduceOne = (catId) => {
+    if (toReduce <= 0.005) return;
+    const idx = result.findIndex(c => c.catId === catId);
+    if (idx < 0) return;
+    const canReduce = Math.min(result[idx].amount, toReduce);
+    toReduce = Math.round((toReduce - canReduce) * 100) / 100;
+    const newAmt = Math.round((result[idx].amount - canReduce) * 100) / 100;
+    if (newAmt < 0.005 && result.length > 1) {
+      result = result.filter((_, i) => i !== idx);
+    } else {
+      result[idx] = { ...result[idx], amount: newAmt };
+    }
+  };
+
+  // Reduction order: reimburse → uncategorized/fallback → biggest specific
+  reduceOne('reimburse');
+  reduceOne('expenseUncategorized');
+  reduceOne('incomeUncategorized');
+  if (fallbackCatId !== 'expenseUncategorized' && fallbackCatId !== 'incomeUncategorized') {
+    reduceOne(fallbackCatId);
+  }
+  while (toReduce > 0.005 && result.length > 0) {
+    let biggestIdx = 0;
+    for (let i = 1; i < result.length; i++) {
+      if (result[i].amount > result[biggestIdx].amount) biggestIdx = i;
+    }
+    const canReduce = Math.min(result[biggestIdx].amount, toReduce);
+    toReduce = Math.round((toReduce - canReduce) * 100) / 100;
+    const newAmt = Math.round((result[biggestIdx].amount - canReduce) * 100) / 100;
+    if (newAmt < 0.005 && result.length > 1) {
+      result = result.filter((_, i) => i !== biggestIdx);
+    } else {
+      result[biggestIdx] = { ...result[biggestIdx], amount: newAmt };
+      break;
+    }
+  }
+  return result.length > 0 ? result : [{ catId: fallbackCatId, amount: 0 }];
+}
+
 export function ScreenLinkReimburse({ params }) {
   const nav = useNav();
   const { txs, updateTx } = useTxCtx();
@@ -745,18 +790,35 @@ export function ScreenLinkReimburse({ params }) {
   const handleConfirm = () => {
     if (!ok || !sourceTx || !selected) return;
     const roundAmt = Math.round(Math.min(val, maxAmt) * 100) / 100;
-    // Merge if same tx already linked, otherwise push new entry
+
+    // Update reimbursements — merge if same tx already linked
     const srcExisting = (sourceTx.reimbursements || []).find(r => r.txId === selected.id);
-    updateTx(sourceTx.id, {
-      reimbursements: srcExisting
-        ? (sourceTx.reimbursements || []).map(r => r.txId === selected.id ? { ...r, amount: Math.round((r.amount + roundAmt) * 100) / 100 } : r)
-        : [...(sourceTx.reimbursements || []), { txId: selected.id, amount: roundAmt }],
-    });
+    const newSrcReimb = srcExisting
+      ? (sourceTx.reimbursements || []).map(r => r.txId === selected.id ? { ...r, amount: Math.round((r.amount + roundAmt) * 100) / 100 } : r)
+      : [...(sourceTx.reimbursements || []), { txId: selected.id, amount: roundAmt }];
     const selExisting = (selected.reimbursements || []).find(r => r.txId === sourceTx.id);
+    const newSelReimb = selExisting
+      ? (selected.reimbursements || []).map(r => r.txId === sourceTx.id ? { ...r, amount: Math.round((r.amount + roundAmt) * 100) / 100 } : r)
+      : [...(selected.reimbursements || []), { txId: sourceTx.id, amount: roundAmt }];
+
+    // Reduce cats on source tx — update via callback into ScreenTxDetail's local state
+    const srcCats = sourceTx.cats || [{ catId: sourceTx.cat, amount: Math.abs(sourceTx.amount) }];
+    const srcIsNeg = sourceTx.amount < 0;
+    const srcTxType = sourceTx.txType || (srcIsNeg ? 'Expense' : 'Income');
+    const newSrcCats = reduceCats(srcCats, roundAmt, srcTxType, srcIsNeg);
+
+    // Reduce cats on selected tx
+    const selCats = selected.cats || [{ catId: selected.cat, amount: Math.abs(selected.amount) }];
+    const selIsNeg = selected.amount < 0;
+    const selTxType = selected.txType || (selIsNeg ? 'Expense' : 'Income');
+    const newSelCats = reduceCats(selCats, roundAmt, selTxType, selIsNeg);
+
+    updateTx(sourceTx.id, { reimbursements: newSrcReimb });
+    params?.onCatsUpdate?.(newSrcCats);
     updateTx(selected.id, {
-      reimbursements: selExisting
-        ? (selected.reimbursements || []).map(r => r.txId === sourceTx.id ? { ...r, amount: Math.round((r.amount + roundAmt) * 100) / 100 } : r)
-        : [...(selected.reimbursements || []), { txId: sourceTx.id, amount: roundAmt }],
+      reimbursements: newSelReimb,
+      cats: newSelCats,
+      cat: newSelCats.find(c => c.catId !== 'expenseUncategorized' && c.catId !== 'incomeUncategorized')?.catId || newSelCats[0]?.catId || selected.cat,
     });
     nav.pop();
   };

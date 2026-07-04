@@ -32,13 +32,13 @@ const D = (n) => {
 };
 
 export const TRANSACTIONS = [
-  { id: 't1',  date: D(1), time: '13:24', merchant: 'Vapiano',           desc: 'VAPIANO 1234 AMSTERDAM',     cat: 'restaurants', cats:[{catId:'restaurants',amount:14.40},{catId:'alcohol',amount:4.00}], amount: -18.40, account: 'main', confidence: 92, reimbursements:[{txId:'t7',amount:9.20}] },
+  { id: 't1',  date: D(1), time: '13:24', merchant: 'Vapiano',           desc: 'VAPIANO 1234 AMSTERDAM',     cat: 'restaurants', cats:[{catId:'restaurants',amount:5.20},{catId:'alcohol',amount:4.00}], amount: -18.40, account: 'main', confidence: 92, reimbursements:[{txId:'t7',amount:9.20}] },
   { id: 't2',  date: D(1), time: '11:08', merchant: 'Albert Heijn',      desc: 'AH 5821 AMS-CENTRAAL',       cat: 'groceries',   cats:[{catId:'groceries',amount:35.10},{catId:'toiletry',amount:7.00}], amount: -42.10, account: 'main', confidence: 99, hasReceipt: true },
   { id: 't3',  date: D(1), time: '08:00', merchant: 'Acme Salary',       desc: 'ACME BV PAYROLL FEB',        cat: 'salary',      amount: 2480.00, account: 'main' },
   { id: 't4',  date: D(2), time: '20:14', merchant: 'Spotify',           desc: 'SPOTIFY P34520',             cat: 'subs',        amount: -9.99,  account: 'main', recurring: true },
   { id: 't5',  date: D(2), time: '17:38', merchant: 'NS · Sprinter',     desc: 'NS REIZIGERS 2026',          cat: 'transportPublic', amount: -12.20, account: 'main' },
   { id: 't6',  date: D(2), time: '12:50', merchant: 'Apotheek Centraal', desc: 'APOTHEEK 7842',              cat: 'healthcare',  amount: -8.50,  account: 'main', confidence: 71, needsReview: true },
-  { id: 't7',  date: D(2), time: '19:20', merchant: 'Friend · Tikkie',   desc: 'TIKKIE J. DE VRIES',         cat: 'salary',      amount: 9.20,   account: 'main', reimbursements:[{txId:'t1',amount:9.20}] },
+  { id: 't7',  date: D(2), time: '19:20', merchant: 'Friend · Tikkie',   desc: 'TIKKIE J. DE VRIES',         cat: 'salary',      cats:[{catId:'salary',amount:0}], amount: 9.20,   account: 'main', reimbursements:[{txId:'t1',amount:9.20}] },
   { id: 't8',  date: D(3), time: '21:00', merchant: 'Amazon.nl',         desc: 'AMZN MKTPLC 49281',          cat: 'hobby',       amount: -34.99, account: 'main', confidence: 54, needsReview: true },
   { id: 't9',  date: D(3), time: '09:00', merchant: 'Rent · Stadgenoot', desc: 'STADGENOOT HUUR FEB',        cat: 'housingRent', amount: -740.00,account: 'main', recurring: true },
   { id: 't10', date: D(3), time: '08:30', merchant: 'Koffie ☕',         desc: 'TOKI ESPRESSO',              cat: 'coffee',      amount: -3.80,  account: 'main' },

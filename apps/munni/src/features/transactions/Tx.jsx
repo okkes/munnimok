@@ -279,9 +279,9 @@ export function ScreenTxDetail({ params }) {
 
   const primaryCat = CATEGORIES[txCats[0]?.catId] || {};
   const allocTotal = txCats.reduce((s, c) => s + c.amount, 0);
-  const remaining = Math.round((Math.abs(tx.amount) - allocTotal) * 100) / 100;
+  const remaining = Math.round((Math.abs(effectiveAmount) - allocTotal) * 100) / 100;
   const isOnlyUncategorized = txCats.length === 1 && (txCats[0].catId === 'expenseUncategorized' || txCats[0].catId === 'incomeUncategorized');
-  const effectiveRemaining = isOnlyUncategorized ? Math.abs(tx.amount) : remaining;
+  const effectiveRemaining = isOnlyUncategorized ? Math.abs(effectiveAmount) : remaining;
   const [showAllocInfo, setShowAllocInfo] = React.useState(false);
 
   React.useEffect(() => {
@@ -507,15 +507,38 @@ export function ScreenTxDetail({ params }) {
                         <I name="caretR" size={14} color={M.ink4}/>
                       </div>
                       <button onClick={() => {
+                        const freedAmt = r.amount;
+                        // Restore freed amount to fallback cat on source tx
+                        const fallbackCatId = getTypeFallbackCat(effectiveType, !positive);
+                        const hasFallback = txCats.some(c => c.catId === fallbackCatId);
+                        const newCats = hasFallback
+                          ? txCats.map(c => c.catId === fallbackCatId ? { ...c, amount: Math.round((c.amount + freedAmt) * 100) / 100 } : c)
+                          : [...txCats, { catId: fallbackCatId, amount: freedAmt }];
+                        setTxCats(newCats);
                         updateTx(tx.id, { reimbursements: txReimbursements.filter(x => x.txId !== r.txId) });
-                        if (lt.reimbursements) updateTx(lt.id, { reimbursements: lt.reimbursements.filter(x => x.txId !== tx.id) });
+                        // Restore freed amount to fallback cat on linked tx
+                        if (lt.reimbursements) {
+                          const ltCats = lt.cats || [{ catId: lt.cat, amount: Math.abs(lt.amount) }];
+                          const ltIsNeg = lt.amount < 0;
+                          const ltTxType = lt.txType || (ltIsNeg ? 'Expense' : 'Income');
+                          const ltFallbackId = getTypeFallbackCat(ltTxType, ltIsNeg);
+                          const ltHasFallback = ltCats.some(c => c.catId === ltFallbackId);
+                          const ltNewCats = ltHasFallback
+                            ? ltCats.map(c => c.catId === ltFallbackId ? { ...c, amount: Math.round((c.amount + freedAmt) * 100) / 100 } : c)
+                            : [...ltCats, { catId: ltFallbackId, amount: freedAmt }];
+                          updateTx(lt.id, {
+                            reimbursements: lt.reimbursements.filter(x => x.txId !== tx.id),
+                            cats: ltNewCats,
+                            cat: ltNewCats.find(c => c.catId !== 'expenseUncategorized' && c.catId !== 'incomeUncategorized')?.catId || ltNewCats[0]?.catId || lt.cat,
+                          });
+                        }
                       }} style={{ background:'none', border:'none', color:M.clay, fontSize:18, lineHeight:1, cursor:'pointer', fontFamily:M.fontUI, padding:'0 0 0 8px', flexShrink:0 }}>×</button>
                     </div>
                   </React.Fragment>
                 );
               })}
               {reimbursementLinks.length > 0 && <Divider inset={0}/>}
-              <div className="m-tap" onClick={() => nav.push('linkReimburse', { txId: tx.id, positive })}
+              <div className="m-tap" onClick={() => nav.push('linkReimburse', { txId: tx.id, positive, onCatsUpdate: (newCats) => setTxCats(newCats) })}
                 style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 0' }}>
                 <div style={{ width:32, height:32, borderRadius:9, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                   <I name="plus" size={16} color={M.ink3}/>
@@ -711,13 +734,13 @@ export function ScreenTxDetail({ params }) {
           selected={txCats.length === 1 && !isOnlyUncategorized ? txCats[0].catId : null}
           txType={effectiveType}
           defaultAmount={effectiveRemaining > 0.005 ? effectiveRemaining : 0}
-          maxAmount={Math.abs(tx.amount)}
+          maxAmount={Math.abs(effectiveAmount)}
           onClose={() => setShowCatPicker(false)}
           onPick={(catId, val) => {
             setTxCats(s => {
               if (isOnlyUncategorized) {
                 const uncatId = getTypeFallbackCat(effectiveType, !positive);
-                const leftover = Math.round((Math.abs(tx.amount) - val) * 100) / 100;
+                const leftover = Math.round((Math.abs(effectiveAmount) - val) * 100) / 100;
                 if (leftover < 0.005) return [{ catId, amount: val }];
                 return [{ catId, amount: val }, { catId: uncatId, amount: leftover }];
               }
