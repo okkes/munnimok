@@ -794,7 +794,13 @@ export function ScreenLinkReimburse({ params }) {
               const tRemaining = getRemaining(t);
               return (
                 <React.Fragment key={t.id}>
-                  <div className="m-tap" onClick={() => { setSelected(t); setAmtStr(''); }}
+                  <div className="m-tap" onClick={() => {
+                    const selRem = getRemaining(t);
+                    const srcRem = sourceTx ? getRemaining(sourceTx) : 0;
+                    const max = Math.min(srcRem, selRem);
+                    setSelected(t);
+                    setAmtStr(max > 0 ? max.toFixed(2).replace('.', ',') : '');
+                  }}
                     style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
                     <div style={{ width:36, height:36, borderRadius:10, background: txPositive ? M.sageSoft : M.claySoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                       <IcoMDI name={tCat.icon||'help-circle-outline'} size={16} color={txPositive ? M.sage : M.clay}/>
@@ -839,7 +845,9 @@ export function ScreenLinkReimburse({ params }) {
             <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>How much was reimbursed?</div>
             <input
               type="text" inputMode="decimal" autoFocus
-              value={amtStr} onChange={e => setAmtStr(e.target.value)}
+              value={amtStr}
+              onChange={e => setAmtStr(e.target.value)}
+              onFocus={e => e.target.select()}
               placeholder={`Max ${fmtEur(maxAmt)}`}
               style={{ width:'100%', padding:'12px 14px', borderRadius:10, border:`1px solid ${val > maxAmt + 0.005 ? M.clay : M.line}`, fontSize:16, fontFamily:M.fontUI, color:M.ink, background:M.paper, outline:'none', boxSizing:'border-box', marginBottom:6 }}
             />
@@ -958,10 +966,10 @@ export function LinkedAccountPickerSheet({ txAccountId, myAccounts, sharedAccoun
           <div style={{ textAlign:'center', padding:'32px 0', color:M.ink3, fontSize:13 }}>No other accounts available</div>
         )}
         {onGoToSettings && (
-          <div style={{ textAlign:'center', marginTop:20, padding:'14px 0', borderTop:`1px solid ${M.line}` }}>
-            <div style={{ fontSize:12, color:M.ink4 }}>Missing an account?</div>
-            <button onClick={onGoToSettings} style={{ background:'none', border:'none', color:M.brand, fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginTop:4, padding:0 }}>
-              Attach account to this space →
+          <div style={{ textAlign:'center', marginTop:16, padding:'12px 0', borderTop:`1px solid ${M.line}` }}>
+            <span style={{ fontSize:12, color:M.ink4 }}>Missing an account? </span>
+            <button onClick={onGoToSettings} style={{ background:'none', border:'none', color:M.brand, fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, padding:0 }}>
+              Manage space →
             </button>
           </div>
         )}

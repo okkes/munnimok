@@ -191,11 +191,22 @@ export function Sheet({ children, onClose, open, title }) {
     if (scrollbarW > 0) document.body.style.paddingRight = `${scrollbarW}px`;
     document.body.style.overflow = 'hidden';
     const scrollEls = Array.from(document.querySelectorAll('.m-body-scroll'));
-    scrollEls.forEach(el => { el.dataset._prevOv = el.style.overflowY || ''; el.style.overflowY = 'hidden'; });
+    scrollEls.forEach(el => {
+      el.dataset._prevOv = el.style.overflowY || '';
+      el.dataset._prevScroll = String(el.scrollTop);
+      el.style.overflowY = 'hidden';
+      el.scrollTop = parseInt(el.dataset._prevScroll, 10);
+    });
     return () => {
       document.body.style.overflow = '';
       document.body.style.paddingRight = '';
-      scrollEls.forEach(el => { el.style.overflowY = el.dataset._prevOv || ''; delete el.dataset._prevOv; });
+      scrollEls.forEach(el => {
+        const saved = parseInt(el.dataset._prevScroll || '0', 10);
+        el.style.overflowY = el.dataset._prevOv || 'auto';
+        el.scrollTop = saved;
+        delete el.dataset._prevOv;
+        delete el.dataset._prevScroll;
+      });
     };
   }, [isOpen]);
 
