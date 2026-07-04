@@ -52,14 +52,10 @@ export function ScreenReviewSwipe() {
 
   const sharedReviewed = React.useMemo(() => {
     const r = new Set();
-    profiles.forEach(p => {
-      try {
-        const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{}');
-        Object.keys(sd.reviewed || {}).forEach(txId => r.add(txId));
-      } catch {}
-    });
+    if (_sharedKey === 'munni_shared_data_none') return r;
+    Object.keys(_activeSharedData?.reviewed || {}).forEach(txId => r.add(txId));
     return r;
-  }, [profiles]);
+  }, [_sharedKey, _activeSharedData]);
 
   const reviewTxs = txs
     .filter(t => t.needsReview && !sharedReviewed.has(t.id))

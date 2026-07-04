@@ -223,11 +223,14 @@ export function ScreenTxDetail({ params }) {
 
   const account = connectedAccounts.find(a => a.id === tx.account) || (_sharedData?.accounts || []).find(a => a.id === tx.account) || ACCOUNTS.find(a => a.id === tx.account);
 
-  // Editing lock: first opener wins; subsequent openers are read-only
+  // Editing lock: first opener wins; subsequent openers are read-only.
+  // Skip acquisition if the tx is actively being reviewed by someone else.
   React.useEffect(() => {
     if (_sharedKey === 'munni_shared_data_none') return;
     try {
       const sd = JSON.parse(localStorage.getItem(_sharedKey) || '{}');
+      const rs = sd.reviewSession;
+      if (rs && rs.userId !== _myId && (Date.now() - (rs.startedAt || 0)) < 300000 && tx.needsReview) return;
       const existing = sd.editing;
       const alreadyLockedByOther = existing?.txId === tx.id && existing.userId !== _myId
         && (Date.now() - (existing.since || 0)) < 300000;
@@ -249,24 +252,28 @@ export function ScreenTxDetail({ params }) {
   }, [tx.id, _sharedKey]);
 
   const _editingLock = _sharedData?.editing;
-  const isLockedByOther = !!_editingLock && _editingLock.txId === tx.id && _editingLock.userId !== _myId
+  const isEditLockedByOther = !!_editingLock && _editingLock.txId === tx.id && _editingLock.userId !== _myId
     && (Date.now() - (_editingLock.since || 0)) < 300000;
-  const _lockedByName = _userRegistry[_editingLock?.userId]?.displayName || _editingLock?.userId || 'Someone';
+  const _reviewSession = _sharedData?.reviewSession;
+  const isReviewLockedByOther = !!_reviewSession && _reviewSession.userId !== _myId
+    && (Date.now() - (_reviewSession.startedAt || 0)) < 300000 && !!tx.needsReview;
+  const isLockedByOther = isEditLockedByOther || isReviewLockedByOther;
+  const _lockedByName = isReviewLockedByOther
+    ? (_userRegistry[_reviewSession?.userId]?.displayName || _reviewSession?.userId || 'Someone')
+    : (_userRegistry[_editingLock?.userId]?.displayName || _editingLock?.userId || 'Someone');
 
   // When the previous holder releases the lock, viewers compete to acquire it (random delay to avoid ties)
   // Also sync local state from the latest tx data so view-only user sees the other's changes immediately
-  const _prevLockedRef = React.useRef(isLockedByOther);
+  const _prevLockedRef = React.useRef(isEditLockedByOther);
   React.useEffect(() => {
     const wasLocked = _prevLockedRef.current;
-    _prevLockedRef.current = isLockedByOther;
-    if (!wasLocked || isLockedByOther || _sharedKey === 'munni_shared_data_none') return;
-    // Sync all local state from the latest tx (captured in the closure at this render)
+    _prevLockedRef.current = isEditLockedByOther;
+    if (!wasLocked || isEditLockedByOther || _sharedKey === 'munni_shared_data_none') return;
+    // Sync all local state from the latest tx
     setTxCats(tx.cats ? tx.cats.slice() : [{ catId: tx.cat, amount: Math.abs(tx.amount) }]);
     setTxType(tx.txType || (positive ? 'Income' : 'Expense'));
     setLinkedAcctId(tx.linkedAccount || null);
     setNoteText(tx.note || '');
-    setSyncNotif(true);
-    const clearNotif = setTimeout(() => setSyncNotif(false), 2500);
     const delay = Math.floor(Math.random() * 80);
     const timer = setTimeout(() => {
       try {
@@ -276,21 +283,29 @@ export function ScreenTxDetail({ params }) {
         if (!stillLockedByOther) {
           localStorage.setItem(_sharedKey, JSON.stringify({ ...sd, editing: { txId: tx.id, userId: _myId, since: Date.now() } }));
           window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: _sharedKey } }));
+          setSyncNotif(true);
         }
       } catch {}
     }, delay);
-    return () => { clearTimeout(timer); clearTimeout(clearNotif); };
-  }, [isLockedByOther]);
+    return () => clearTimeout(timer);
+  }, [isEditLockedByOther]);
 
   const linkedRecurId = tx.recurId || null;
   const linkedRecurring = recurList.find(r => r.id === linkedRecurId || r.txIds?.includes(tx.id));
 
   const primaryCat = CATEGORIES[txCats[0]?.catId] || {};
   const [syncNotif, setSyncNotif] = React.useState(false);
+  React.useEffect(() => {
+    if (!syncNotif) return;
+    const t = setTimeout(() => setSyncNotif(false), 2500);
+    return () => clearTimeout(t);
+  }, [syncNotif]);
+  const fallbackCatId = getTypeFallbackCat(effectiveType, !positive);
   const allocTotal = txCats.reduce((s, c) => s + c.amount, 0);
   const remaining = Math.round((Math.abs(effectiveAmount) - allocTotal) * 100) / 100;
-  const isOnlyUncategorized = txCats.length === 1 && (txCats[0].catId === 'expenseUncategorized' || txCats[0].catId === 'incomeUncategorized');
-  const effectiveRemaining = isOnlyUncategorized ? Math.abs(effectiveAmount) : remaining;
+  const isOnlyUncategorized = txCats.length === 1 && txCats[0].catId === fallbackCatId;
+  const specificAllocTotal = txCats.filter(c => c.catId !== fallbackCatId).reduce((s, c) => s + c.amount, 0);
+  const effectiveRemaining = Math.round((Math.abs(effectiveAmount) - specificAllocTotal) * 100) / 100;
   const [showAllocInfo, setShowAllocInfo] = React.useState(false);
 
   React.useEffect(() => {
@@ -410,10 +425,11 @@ export function ScreenTxDetail({ params }) {
         <div style={{ marginBottom:14 }}>
           <div className="m-cap" style={{ marginBottom:6, paddingLeft:2 }}>Categories</div>
           <div className="m-card" style={{ padding: '12px 16px', border: `1px solid ${M.line}`, position:'relative' }}>
-          {txCats.map((c, i) => {
+          {txCats.map((c, i) => ({ c, i }))
+            .sort((a, b) => a.c.catId === fallbackCatId ? -1 : b.c.catId === fallbackCatId ? 1 : 0)
+            .map(({ c, i }) => {
             const cat = CATEGORIES[c.catId] || _catExt[c.catId] || {};
             const isUncategorized = c.catId === 'expenseUncategorized' || c.catId === 'incomeUncategorized';
-            const fallbackCatId = getTypeFallbackCat(effectiveType, !positive);
             const isAutoSet = c.catId === fallbackCatId;
             const parent = cat.parent ? (CATEGORIES[cat.parent] || _catExt[cat.parent]) : null;
             const parentName = parent?.name || cat.group || '';
@@ -459,13 +475,16 @@ export function ScreenTxDetail({ params }) {
                 <I name="plus" size={14} color={M.ink4}/>
               </div>
               <span style={{ fontSize:13, color:M.ink3, fontWeight:500, flex:1 }}>Add category split</span>
-              <button onClick={() => setShowAllocInfo(s => !s)} style={{ width:20, height:20, borderRadius:999, border:`1.5px solid ${M.ink4}`, background:'none', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, cursor:'pointer', padding:0 }}>
+              <button onClick={() => setShowAllocInfo(s => !s)} style={{ position:'relative', zIndex:21, width:20, height:20, borderRadius:999, border:`1.5px solid ${M.ink4}`, background:'none', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, cursor:'pointer', padding:0 }}>
                 <span style={{ fontSize:11, fontWeight:700, color:M.ink4, lineHeight:1 }}>i</span>
               </button>
               {showAllocInfo && (
-                <div style={{ position:'absolute', right:16, bottom:52, background:M.ink, color:'#fff', fontSize:11, padding:'6px 10px', borderRadius:8, maxWidth:200, zIndex:20, lineHeight:1.5 }}>
-                  Full amount already allocated across categories.
-                </div>
+                <>
+                  <div style={{ position:'fixed', inset:0, zIndex:19 }} onClick={() => setShowAllocInfo(false)}/>
+                  <div style={{ position:'absolute', right:16, bottom:48, zIndex:20, background:M.paper, border:`1px solid ${M.line}`, boxShadow:'0 4px 20px rgba(0,0,0,0.1)', fontSize:12, padding:'10px 14px', borderRadius:12, maxWidth:220, lineHeight:1.6, color:M.ink2 }}>
+                    Full amount already allocated across categories.
+                  </div>
+                </>
               )}
             </div>
           )}
@@ -760,18 +779,26 @@ export function ScreenTxDetail({ params }) {
           selected={txCats.length === 1 && !isOnlyUncategorized ? txCats[0].catId : null}
           txType={effectiveType}
           defaultAmount={effectiveRemaining > 0.005 ? effectiveRemaining : 0}
-          maxAmount={Math.abs(effectiveAmount)}
+          maxAmount={effectiveRemaining}
           onClose={() => setShowCatPicker(false)}
           onPick={(catId, val) => {
             setTxCats(s => {
               if (isOnlyUncategorized) {
-                const uncatId = getTypeFallbackCat(effectiveType, !positive);
                 const leftover = Math.round((Math.abs(effectiveAmount) - val) * 100) / 100;
                 if (leftover < 0.005) return [{ catId, amount: val }];
-                return [{ catId, amount: val }, { catId: uncatId, amount: leftover }];
+                return [{ catId: fallbackCatId, amount: leftover }, { catId, amount: val }];
               }
               const idx = s.findIndex(x => x.catId === catId);
-              if (idx >= 0) return s.map((x, i) => i === idx ? { ...x, amount: val } : x);
+              if (idx >= 0) return s.map((x, j) => j === idx ? { ...x, amount: val } : x);
+              // Reduce uncategorized by the new cat's amount
+              const uncatIdx = s.findIndex(c => c.catId === fallbackCatId);
+              if (uncatIdx >= 0) {
+                const newUncatAmt = Math.round((s[uncatIdx].amount - val) * 100) / 100;
+                return [
+                  ...s.map((x, j) => j === uncatIdx ? { ...x, amount: Math.max(0, newUncatAmt) } : x),
+                  { catId, amount: val },
+                ];
+              }
               return [...s, { catId, amount: val }];
             });
             setShowCatPicker(false);

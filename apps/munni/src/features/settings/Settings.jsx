@@ -1492,13 +1492,15 @@ export function ScreenNotifications() {
   const activeProfile = profiles.find(p => p.active);
   const activeSpaceAutomatedAccts = React.useMemo(() => {
     if (!activeProfile) return [];
+    const attachedIds = new Set(activeProfile.accountIds || []);
     try {
       const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${activeProfile.id}`) || '{}');
-      const fromSd = (sd.accounts || []).filter(a => a.readOnly);
+      const fromSd = sd.accounts || [];
       if (fromSd.length > 0) return fromSd;
     } catch {}
-    const attachedIds = new Set(activeProfile.accountIds || []);
-    return connectedAccounts.filter(a => !a.isDemo && a.readOnly && attachedIds.has(a.id));
+    const personal = connectedAccounts.filter(a => attachedIds.has(a.id));
+    if (personal.length > 0) return personal;
+    return connectedAccounts;
   }, [activeProfile?.id, activeProfile?.accountIds, connectedAccounts]);
 
   const handleSync = () => {
