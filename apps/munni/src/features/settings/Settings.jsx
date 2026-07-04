@@ -1,7 +1,7 @@
 ﻿import React from 'react';
 import { T } from '../../shared/testIds.js';
 import { STOCK_AVATARS, CURRENCIES } from '../../shared/constants.js';
-import { CATEGORIES } from '../../shared/data/categories.js';
+import { CATEGORIES, getCatDirection } from '../../shared/data/categories.js';
 import { computePeriodHistory, fmtEur, fmtDate } from '../../shared/utils/format.js';
 import { M, I, IcoMDI, Divider, StatusBar, AppBar } from '../../app/theme.jsx';
 import { useLang, OTHER_LANGUAGES, LangCtx, useCurrency } from '../../shared/i18n.jsx';
@@ -712,11 +712,16 @@ function ScopeSelector({ scope, setScope, profiles }) {
   );
 }
 
+const CAT_TYPES = ['Expense', 'Income', 'Saving', 'Transfer', 'Investment', 'Debt Payment', 'Adjustment'];
+const CAT_TYPE_COLOR = { Expense: '#E05555', Income: '#27AE60', Saving: '#A8782B', Transfer: '#FF9800', Investment: '#673AB7', 'Debt Payment': '#9C27B0', Adjustment: '#607D8B' };
+
 function NewCatForm({ onSave, isSub = false }) {
   const [name, setName] = React.useState('');
   const [icon, setIcon] = React.useState('help-circle-outline');
   const [color, setColor] = React.useState(M.slate);
   const [scope, setScope] = React.useState({ allPrivate: true, spaces: [] });
+  const [catType, setCatType] = React.useState('Expense');
+  const [direction, setDirection] = React.useState('both');
   const { profiles } = useProfiles();
   const mdiIcons = [
     'help-circle-outline','home-outline','car-outline','heart-outline','star-outline',
@@ -733,6 +738,30 @@ function NewCatForm({ onSave, isSub = false }) {
         placeholder="Category name"
         style={{ width:'100%', boxSizing:'border-box', border:`1px solid ${M.line}`, borderRadius:10, padding:'11px 14px', fontSize:14, fontFamily:M.fontUI, marginBottom:14, outline:'none', background:M.paper2, color:M.ink }}
       />
+      {!isSub && (<>
+        <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>Transaction type</div>
+        <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginBottom:14 }}>
+          {CAT_TYPES.map(t => (
+            <button key={t} className="m-tap" onClick={() => setCatType(t)}
+              style={{ padding:'5px 11px', borderRadius:20, fontSize:11, fontWeight:600, cursor:'pointer', border:'none', fontFamily:M.fontUI,
+                background: catType===t ? (CAT_TYPE_COLOR[t]||M.sage) : M.paper2,
+                color: catType===t ? '#fff' : M.ink3 }}>
+              {t}
+            </button>
+          ))}
+        </div>
+      </>)}
+      <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>Applies to</div>
+      <div style={{ display:'flex', gap:6, marginBottom:14 }}>
+        {[['debit','Outgoing'],['credit','Incoming'],['both','Both']].map(([val, label]) => (
+          <button key={val} className="m-tap" onClick={() => setDirection(val)}
+            style={{ flex:1, padding:'7px 0', borderRadius:10, fontSize:12, fontWeight:600, cursor:'pointer', border:`1.5px solid ${direction===val?M.sage:M.line}`, fontFamily:M.fontUI,
+              background: direction===val ? M.sageSoft : M.paper2,
+              color: direction===val ? M.sage : M.ink3 }}>
+            {label}
+          </button>
+        ))}
+      </div>
       <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>Icon</div>
       <div style={{ display:'flex', flexWrap:'wrap', gap:8, marginBottom:14 }}>
         {mdiIcons.map(ic => (
@@ -754,7 +783,7 @@ function NewCatForm({ onSave, isSub = false }) {
         </>
       )}
       <ScopeSelector scope={scope} setScope={setScope} profiles={profiles}/>
-      <button className="m-tap" onClick={() => name.trim() && onSave(name.trim(), icon, color, scope)}
+      <button className="m-tap" onClick={() => name.trim() && onSave(name.trim(), icon, color, scope, catType, direction)}
         disabled={!name.trim()}
         style={{ width:'100%', background:M.sage, border:'none', borderRadius:12, padding:'13px', color:'#fff', fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, opacity: name.trim()?1:0.5 }}>
         {isSub ? 'Add sub-category' : 'Add category'}
@@ -858,6 +887,10 @@ export function ScreenManageCategories() {
   const [editSheet, setEditSheet] = React.useState(null);
   const [catInfoSheet, setCatInfoSheet] = React.useState(null);
   const [collapsedParents, setCollapsedParents] = React.useState({});
+  const [holdingCatId, setHoldingCatId] = React.useState(null);
+  const [pendingMove, setPendingMove] = React.useState(null);
+  const holdTimerRef = React.useRef(null);
+  const holdDataRef = React.useRef(null);
   const [txCounts, setTxCounts] = React.useState({});
 
   React.useEffect(() => {
@@ -905,11 +938,7 @@ export function ScreenManageCategories() {
     return subs.length === 1 && subs[0].id === `${parentId}_other`;
   };
 
-  const startDrag = (e, catId, parentId, label, icon, color) => {
-    e.preventDefault();
-    e.stopPropagation();
-    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
-    setDragState({ catId, parentId, x: e.clientX, y: e.clientY, ghostLabel: label, ghostIcon: icon, ghostColor: color });
+  const collapseAll = () => {
     setCollapsedParents(() => {
       const next = {};
       [...Object.values(CATEGORIES).filter(c => c.isParent), ...customCats.filter(c => c.isParent)].forEach(p => { next[p.id] = true; });
@@ -917,20 +946,85 @@ export function ScreenManageCategories() {
     });
   };
 
+  const activateDrag = (catId, parentId, label, icon, color, x, y, el, pointerId) => {
+    try { el?.setPointerCapture(pointerId); } catch {}
+    setHoldingCatId(null);
+    setDragState({ catId, parentId, x, y, ghostLabel: label, ghostIcon: icon, ghostColor: color });
+    collapseAll();
+  };
+
+  const startDrag = (e, catId, parentId, label, icon, color) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const el = e.currentTarget;
+    const pointerId = e.pointerId;
+    const startX = e.clientX, startY = e.clientY;
+    holdDataRef.current = { catId, parentId, label, icon, color, startX, startY, el, pointerId };
+    setHoldingCatId(catId);
+    if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
+    holdTimerRef.current = setTimeout(() => {
+      holdTimerRef.current = null;
+      if (holdDataRef.current?.catId === catId) {
+        activateDrag(catId, parentId, label, icon, color, startX, startY, el, pointerId);
+        holdDataRef.current = null;
+      }
+    }, 350);
+  };
+
+  const cancelHold = () => {
+    if (holdTimerRef.current) { clearTimeout(holdTimerRef.current); holdTimerRef.current = null; }
+    holdDataRef.current = null;
+    setHoldingCatId(null);
+  };
+
   const moveDrag = (e) => {
+    // If still in hold phase, check for early activation by movement
+    if (!dragState && holdDataRef.current) {
+      const { catId, parentId, label, icon, color, startX, startY, el, pointerId } = holdDataRef.current;
+      const dx = Math.abs(e.clientX - startX);
+      const dy = Math.abs(e.clientY - startY);
+      if (dx > 8 || dy > 8) {
+        if (holdTimerRef.current) { clearTimeout(holdTimerRef.current); holdTimerRef.current = null; }
+        holdDataRef.current = null;
+        activateDrag(catId, parentId, label, icon, color, e.clientX, e.clientY, el, pointerId);
+      }
+      return;
+    }
     if (!dragState) return;
     setDragState(d => d ? { ...d, x: e.clientX, y: e.clientY } : null);
     const scrollEl = document.querySelector('.m-body-scroll');
     if (scrollEl) {
       const rect = scrollEl.getBoundingClientRect();
-      if (e.clientY > rect.bottom - 60) scrollEl.scrollTop += 6;
-      else if (e.clientY < rect.top + 60) scrollEl.scrollTop -= 6;
+      if (e.clientY > rect.bottom - 60) scrollEl.scrollTop += 8;
+      else if (e.clientY < rect.top + 60) scrollEl.scrollTop -= 8;
     }
   };
 
   const endDrag = () => {
-    if (!dragState || !dropTarget) { setDragState(null); setDropTarget(null); setCollapsedParents({}); return; }
+    // Cancel hold if it didn't activate yet
+    if (holdDataRef.current) { cancelHold(); return; }
+    if (!dragState) return;
+    if (!dropTarget) { setDragState(null); setDropTarget(null); setCollapsedParents({}); return; }
+
     const { catId } = dragState;
+
+    // Cross-parent move: show confirmation sheet
+    if (dropTarget.type === 'parent' && dropTarget.parentId !== dragState.parentId) {
+      const fromParent = CATEGORIES[dragState.parentId] || customCats.find(c => c.id === dragState.parentId);
+      const toParent = CATEGORIES[dropTarget.parentId] || customCats.find(c => c.id === dropTarget.parentId);
+      const movingCat = customCats.find(c => c.id === catId);
+      setDragState(null); setDropTarget(null); setCollapsedParents({});
+      setPendingMove({
+        catId,
+        fromParentId: dragState.parentId,
+        toParentId: dropTarget.parentId,
+        fromParentName: fromParent?.name || dragState.parentId,
+        toParentName: toParent?.name || dropTarget.parentId,
+        catName: movingCat?.name || catId,
+      });
+      return;
+    }
+
     let destParentId = null;
     if (dropTarget.type === 'parent') {
       destParentId = dropTarget.parentId;
@@ -952,7 +1046,6 @@ export function ScreenManageCategories() {
     setDragState(null);
     setDropTarget(null);
     setCollapsedParents({});
-    // Scroll to and flash the destination parent
     if (destParentId && destParentId !== dragState.parentId) {
       setTimeout(() => {
         const el = parentRefs.current[destParentId];
@@ -1029,17 +1122,21 @@ export function ScreenManageCategories() {
             const subIconColor = parentCat.color || M.ink2;
             const isFlashing = flashCatId === subKey;
 
+            const isHolding = holdingCatId === subKey;
             return (
               <div key={subKey}
                 className="m-tap"
                 style={{ display:'flex', alignItems:'center', gap:10, padding:'11px 16px', borderTop:`1px solid ${M.line2}`,
-                  background: isFlashing ? (parentCat.color || M.sage) + '22' : dropTarget?.catId === subKey ? M.sageSoft : 'transparent',
-                  transition:'background 0.3s',
+                  background: isFlashing ? (parentCat.color || M.sage) + '22' : isHolding ? (parentCat.color || M.sage) + '18' : dropTarget?.catId === subKey ? M.sageSoft : 'transparent',
+                  transform: isHolding ? 'scale(0.97)' : 'none',
+                  transition:'background 0.15s, transform 0.15s',
                   cursor: (isCustomSub && !isOther) ? 'grab' : 'pointer',
                   touchAction: (isCustomSub && !isOther) ? 'none' : 'auto',
                 }}
-                onClick={() => setCatInfoSheet({ catId: subKey, parentId: parentKey, isCustom: !!isCustomSub, isOther: !!isOther })}
+                onClick={() => !dragState && setCatInfoSheet({ catId: subKey, parentId: parentKey, isCustom: !!isCustomSub, isOther: !!isOther })}
                 onPointerDown={(isCustomSub && !isOther) ? (e) => startDrag(e, subKey, parentKey, subCat.name, subCat.icon, parentCat.color || M.paper2) : undefined}
+                onPointerUp={(isCustomSub && !isOther) ? cancelHold : undefined}
+                onPointerCancel={(isCustomSub && !isOther) ? cancelHold : undefined}
                 onPointerEnter={(dragState && !isOther) ? () => setDropTarget({ type:'reorder', catId: subKey, parentId: parentKey }) : undefined}
               >
                 <div style={{ width:28, height:28, borderRadius:8, background: isOther ? (parentCat.color ? parentCat.color+'33' : M.paper2) : subBg, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
@@ -1098,11 +1195,11 @@ export function ScreenManageCategories() {
       {/* New parent sheet */}
       <Sheet open={newParentSheet} onClose={() => setNewParentSheet(false)} title="New parent category">
         <NewCatForm
-          onSave={(name, icon, color, scope) => {
+          onSave={(name, icon, color, scope, type, direction) => {
             const id = `cust_${Date.now()}`;
             setCustomCats(prev => [...prev,
-              { id, name, icon: icon||'box', color: color||M.slate, isParent:true, parent:null, scope: scope || 'all_private' },
-              { id:`${id}_other`, name:'Other', icon:'dots-horizontal', color:M.paper2, isParent:false, parent:id, scope: scope || 'all_private' }
+              { id, name, icon: icon||'box', color: color||M.slate, isParent:true, parent:null, scope: scope || 'all_private', type: type || 'Expense', direction: direction || 'both' },
+              { id:`${id}_other`, name:'Other', icon:'dots-horizontal', color:M.paper2, isParent:false, parent:id, scope: scope || 'all_private', type: type || 'Expense', direction: 'both' }
             ]);
             setNewParentSheet(false);
           }}
@@ -1113,10 +1210,11 @@ export function ScreenManageCategories() {
       <Sheet open={!!newSubSheet} onClose={() => setNewSubSheet(null)} title="New sub-category">
         <NewCatForm
           isSub={true}
-          onSave={(name, icon, color, scope) => {
+          onSave={(name, icon, color, scope, _type, direction) => {
             const parentId = newSubSheet;
+            const parentCat = CATEGORIES[parentId] || customCats.find(c => c.id === parentId);
             setCustomCats(prev => [...prev,
-              { id:`cust_${Date.now()}`, name, icon: icon||'box', color: color||M.slate, isParent:false, parent:parentId, scope: scope || 'all_private' }
+              { id:`cust_${Date.now()}`, name, icon: icon||'box', color: color||M.slate, isParent:false, parent:parentId, scope: scope || 'all_private', type: parentCat?.type || 'Expense', direction: direction || 'both' }
             ]);
             setNewSubSheet(null);
           }}
@@ -1136,7 +1234,8 @@ export function ScreenManageCategories() {
         const txType = baseCat.type || parentCatBase.type || 'Expense';
         const txCount = txCounts[catId] || 0;
         const canEdit = isCustom && !isOther;
-        const TYPE_COLOR = { Expense: M.clay, Income: M.sage, Saving: '#A8782B', Transfer: '#FF9800', Investment: '#673AB7', 'Debt Payment': '#9C27B0', Adjustment: '#607D8B' };
+        const directionVal = isCustom ? (customCatEntry?.direction || 'both') : getCatDirection(baseCat);
+        const DIR_LABEL = { debit: 'Outgoing', credit: 'Incoming', both: 'Both' };
         return (
           <Sheet title={displayName} onClose={() => setCatInfoSheet(null)}>
             <div style={{ padding:'4px 20px 32px' }}>
@@ -1154,8 +1253,13 @@ export function ScreenManageCategories() {
                 <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 0' }}>
                   <div style={{ fontSize:12, color:M.ink3, width:100 }}>Transaction type</div>
                   <div style={{ flex:1 }}>
-                    <span style={{ fontSize:12, fontWeight:600, color: TYPE_COLOR[txType] || M.ink2, background: (TYPE_COLOR[txType] || M.ink2) + '18', borderRadius:6, padding:'3px 8px' }}>{txType}</span>
+                    <span style={{ fontSize:12, fontWeight:600, color: CAT_TYPE_COLOR[txType] || M.ink2, background: (CAT_TYPE_COLOR[txType] || M.ink2) + '18', borderRadius:6, padding:'3px 8px' }}>{txType}</span>
                   </div>
+                </div>
+                <Divider/>
+                <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 0' }}>
+                  <div style={{ fontSize:12, color:M.ink3, width:100 }}>Applies to</div>
+                  <div style={{ flex:1, fontSize:13, color:M.ink }}>{DIR_LABEL[directionVal] || directionVal}</div>
                 </div>
                 <Divider/>
                 <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 0' }}>
@@ -1208,28 +1312,52 @@ export function ScreenManageCategories() {
         </Sheet>
       )}
 
-      {/* Floating drag ghost */}
+      {/* Pending move confirmation */}
+      {pendingMove && (
+        <Sheet title="Move category?" onClose={() => setPendingMove(null)}>
+          <div style={{ padding:'4px 20px 32px' }}>
+            <div style={{ fontSize:14, color:M.ink, marginBottom:24, lineHeight:1.6 }}>
+              Move <strong>{pendingMove.catName}</strong> from <strong>{pendingMove.fromParentName}</strong> to <strong>{pendingMove.toParentName}</strong>?
+            </div>
+            <button className="m-btn m-tap" style={{ width:'100%', marginBottom:10 }} onClick={() => {
+              const { catId, toParentId, fromParentId } = pendingMove;
+              setCustomCats(prev => prev.map(c => c.id === catId ? { ...c, parent: toParentId } : c));
+              setPendingMove(null);
+              setTimeout(() => {
+                const el = parentRefs.current[toParentId];
+                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                setFlashCatId(catId);
+                setTimeout(() => setFlashCatId(null), 1000);
+              }, 50);
+            }}>Move</button>
+            <button className="m-btn outline m-tap" style={{ width:'100%' }} onClick={() => setPendingMove(null)}>Cancel</button>
+          </div>
+        </Sheet>
+      )}
+
+      {/* Floating drag ghost — centered on pointer */}
       {dragState && (
         <div style={{
           position:'fixed',
-          left: dragState.x - 60,
-          top: dragState.y - 22,
-          transform: 'translateY(-50%)',
+          left: dragState.x,
+          top: dragState.y,
+          transform: 'translate(-50%, -50%)',
           zIndex: 9999,
           pointerEvents: 'none',
           display:'flex', alignItems:'center', gap:8,
-          padding:'8px 14px',
-          borderRadius:12,
+          padding:'9px 16px',
+          borderRadius:14,
           background: M.card,
-          boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
-          border:`1.5px solid ${dragState.ghostColor || M.line}`,
-          opacity: 0.95,
-          minWidth: 120,
+          boxShadow: '0 12px 32px rgba(0,0,0,0.22)',
+          border:`2px solid ${dragState.ghostColor || M.sage}`,
+          opacity: 0.96,
+          minWidth: 140,
+          animation: 'dragGhostIn 0.15s ease',
         }}>
-          <div style={{ width:28, height:28, borderRadius:8, background: dragState.ghostColor || M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-            <IcoMDI name={dragState.ghostIcon || 'help-circle-outline'} size={13} color="#fff"/>
+          <div style={{ width:30, height:30, borderRadius:9, background: (dragState.ghostColor || M.sage) + '33', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+            <IcoMDI name={dragState.ghostIcon || 'help-circle-outline'} size={15} color={dragState.ghostColor || M.sage}/>
           </div>
-          <div style={{ fontSize:13, fontWeight:600 }}>{dragState.ghostLabel}</div>
+          <div style={{ fontSize:13, fontWeight:600, color:M.ink }}>{dragState.ghostLabel}</div>
         </div>
       )}
     </div>

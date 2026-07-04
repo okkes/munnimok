@@ -77,6 +77,7 @@ if (typeof document !== 'undefined' && !document.getElementById('m-styles')) {
     .m-iconbtn { width:36px; height:36px; border-radius:999px; background:transparent; border:none; display:flex; align-items:center; justify-content:center; cursor:pointer; color:${M.ink}; }
     .m-iconbtn.filled { background:${M.card}; border:1px solid ${M.line}; }
     @keyframes mFadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+    @keyframes dragGhostIn { from { opacity: 0; transform: translate(-50%, -50%) scale(0.85); } to { opacity: 0.96; transform: translate(-50%, -50%) scale(1); } }
     @keyframes pulse { 0%, 100% { opacity: 0.35; transform: scale(0.75); } 50% { opacity: 1; transform: scale(1); } }
     @keyframes munniSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
     .m-fade { animation: mFadeIn 0.28s ease-out both; }

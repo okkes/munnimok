@@ -730,8 +730,9 @@ function reduceCats(cats, reduceBy, txType, isNegative) {
     }
   };
 
-  // Reduction order: reimburse → uncategorized/fallback → biggest specific
+  // Reduction order: reimburse/expenseReimburse → uncategorized/fallback → biggest specific
   reduceOne('reimburse');
+  reduceOne('expenseReimburse');
   reduceOne('expenseUncategorized');
   reduceOne('incomeUncategorized');
   if (fallbackCatId !== 'expenseUncategorized' && fallbackCatId !== 'incomeUncategorized') {

@@ -2687,6 +2687,12 @@ export function ScreenSpaceDetail({ params }) {
                     </div>
                   </div>
                   <div style={{ display:'flex', flexDirection:'column', gap:0 }}>
+                    {acct.balance != null && (
+                      <div style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 0', borderBottom:`1px solid ${M.line2}` }}>
+                        <div style={{ fontSize:12, color:M.ink3, width:80 }}>Balance</div>
+                        <div className="m-num" style={{ fontSize:15, fontWeight:700, color:M.ink }}>{fmtEur(acct.balance)}</div>
+                      </div>
+                    )}
                     <div style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 0', borderBottom:`1px solid ${M.line2}` }}>
                       <div style={{ fontSize:12, color:M.ink3, width:80 }}>Type</div>
                       <span style={{ fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:999, background:typeColor+'22', color:typeColor, textTransform:'uppercase', letterSpacing:'0.04em' }}>{typeLabel}</span>
