@@ -707,67 +707,59 @@ export function ScreenLinkReimburse({ params }) {
   const sourceTx = txs.find(t => t.id === txId);
   const [query, setQuery] = React.useState('');
   const [selected, setSelected] = React.useState(null);
-  const [str, pressStr, setStr] = useNumpadStr(0);
+  const [amtStr, setAmtStr] = React.useState('');
 
-  const maxAmt = sourceTx ? Math.abs(sourceTx.amount) : 999;
+  const getRemaining = (t) => {
+    const total = (t.reimbursements || []).reduce((s, r) => s + r.amount, 0);
+    return Math.max(0, Math.abs(t.amount) - total);
+  };
 
-  // Opposite-type transactions: if source is expense (negative), show income; if source is income, show expenses
+  const sourceRemaining = sourceTx ? getRemaining(sourceTx) : 0;
+
+  // Opposite-type candidates that are not yet fully reimbursed
   const allCandidates = txs.filter(t => {
     if (t.id === txId) return false;
-    return isPositive ? t.amount < 0 : t.amount > 0;
+    if (getRemaining(t) < 0.005) return false;
+    return isPositive
+      ? (t.txType === 'Expense' || (!t.txType && t.amount < 0))
+      : (t.txType === 'Income' || (!t.txType && t.amount > 0));
   });
 
   const filtered = query
     ? allCandidates.filter(t => {
         const q = query.toLowerCase();
-        return t.merchant.toLowerCase().includes(q) || t.desc.toLowerCase().includes(q);
+        return (t.merchantDisplay || t.merchant).toLowerCase().includes(q) || (t.desc || '').toLowerCase().includes(q);
       })
     : allCandidates;
 
-  // Sort by proximity to source transaction date
   const sorted = [...filtered].sort((a, b) => {
     if (!sourceTx) return 0;
-    const da = Math.abs(new Date(a.date) - new Date(sourceTx.date));
-    const db = Math.abs(new Date(b.date) - new Date(sourceTx.date));
-    return da - db;
+    return Math.abs(new Date(a.date) - new Date(sourceTx.date)) - Math.abs(new Date(b.date) - new Date(sourceTx.date));
   });
 
-  if (selected) {
-    const selCat = CATEGORIES[selected.cat] || {};
-    const val = parseFloat(str.replace(',', '.')) || 0;
-    const ok = val > 0 && val <= maxAmt;
-    return (
-      <div className="m-screen">
-        <StatusBar/>
-        <AppBar title="Set amount"
-          leading={<button className="m-iconbtn m-tap" onClick={() => setSelected(null)}><I name="arrowL" size={20}/></button>}
-        />
-        <div style={{ padding: '16px 20px 0' }}>
-          <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 16px', borderRadius:12, background:M.paper2, marginBottom:8 }}>
-            <div style={{ width:36, height:36, borderRadius:10, background: isPositive ? M.claySoft : M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-              <IcoMDI name={selCat.icon||'help-circle-outline'} size={16} color={isPositive ? M.clay : M.sage}/>
-            </div>
-            <div style={{ flex:1 }}>
-              <div style={{ fontSize:14, fontWeight:500 }}>{selected.merchant}</div>
-              <div style={{ fontSize:11, color:M.ink3, marginTop:2 }}>{fmtDate(selected.date)} · total {fmtEur(Math.abs(selected.amount))}</div>
-            </div>
-          </div>
-          <div style={{ fontSize:12, color:M.ink3, marginBottom:4, paddingLeft:4 }}>How much of this transaction is reimbursed?</div>
-        </div>
-        <AmountNumpad
-          amtStr={str}
-          onPress={pressStr}
-          maxAmount={maxAmt}
-          onConfirm={(v) => {
-            // Persist the link: selected tx links back to source
-            updateTx(selected.id, { linkedTo: txId, amount: isPositive ? -v : v });
-            nav.pop();
-          }}
-          confirmLabel={ok ? `Link · ${fmtEur(val)} reimbursed` : 'Enter amount'}
-        />
-      </div>
-    );
-  }
+  const selectedRemaining = selected ? getRemaining(selected) : 0;
+  const maxAmt = Math.min(sourceRemaining, selectedRemaining);
+  const val = parseFloat(amtStr.replace(',', '.')) || 0;
+  const ok = val > 0 && val <= maxAmt + 0.005;
+
+  const handleConfirm = () => {
+    if (!ok || !sourceTx || !selected) return;
+    const roundAmt = Math.round(Math.min(val, maxAmt) * 100) / 100;
+    // Merge if same tx already linked, otherwise push new entry
+    const srcExisting = (sourceTx.reimbursements || []).find(r => r.txId === selected.id);
+    updateTx(sourceTx.id, {
+      reimbursements: srcExisting
+        ? (sourceTx.reimbursements || []).map(r => r.txId === selected.id ? { ...r, amount: Math.round((r.amount + roundAmt) * 100) / 100 } : r)
+        : [...(sourceTx.reimbursements || []), { txId: selected.id, amount: roundAmt }],
+    });
+    const selExisting = (selected.reimbursements || []).find(r => r.txId === sourceTx.id);
+    updateTx(selected.id, {
+      reimbursements: selExisting
+        ? (selected.reimbursements || []).map(r => r.txId === sourceTx.id ? { ...r, amount: Math.round((r.amount + roundAmt) * 100) / 100 } : r)
+        : [...(selected.reimbursements || []), { txId: sourceTx.id, amount: roundAmt }],
+    });
+    nav.pop();
+  };
 
   return (
     <div className="m-screen">
@@ -779,44 +771,47 @@ export function ScreenLinkReimburse({ params }) {
         {sourceTx && (
           <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 16px', borderRadius:12, background:M.paper2, marginBottom:12 }}>
             <I name="link" size={14} color={M.ink3}/>
-            <span style={{ fontSize:12, color:M.ink3 }}>Linking to: <strong style={{ color:M.ink }}>{sourceTx.merchant}</strong> · {fmtEur(Math.abs(sourceTx.amount))}</span>
+            <span style={{ fontSize:12, color:M.ink3 }}>
+              Linking to: <strong style={{ color:M.ink }}>{sourceTx.merchantDisplay || sourceTx.merchant}</strong> · {fmtEur(sourceRemaining)} remaining
+            </span>
           </div>
         )}
-
         <div style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 12px', borderRadius:10, background:M.paper2, marginBottom:12, border:`1px solid ${M.line}` }}>
           <I name="search" size={15} color={M.ink3}/>
-          <input
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            placeholder="Search transactions…"
-            style={{ flex:1, border:'none', background:'transparent', fontSize:13, color:M.ink, outline:'none', fontFamily:M.fontUI }}
-          />
-          {query ? <button onClick={() => setQuery('')} style={{ background:'none', border:'none', color:M.ink3, cursor:'pointer', fontFamily:M.fontUI, fontSize:16, lineHeight:1 }}>×</button> : null}
+          <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search transactions…"
+            style={{ flex:1, border:'none', background:'transparent', fontSize:13, color:M.ink, outline:'none', fontFamily:M.fontUI }}/>
+          {query && <button onClick={() => setQuery('')} style={{ background:'none', border:'none', color:M.ink3, cursor:'pointer', fontFamily:M.fontUI, fontSize:16, lineHeight:1 }}>×</button>}
         </div>
-
         {sorted.length === 0 ? (
           <div style={{ padding:'32px 0', textAlign:'center', color:M.ink3, fontSize:13 }}>
-            {query ? `No results for "${query}"` : 'No transactions found'}
+            {query ? `No results for "${query}"` : 'No matching transactions'}
           </div>
         ) : (
           <div className="m-card" style={{ padding:'0 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
             {sorted.map((t, i, a) => {
-              const tCat = CATEGORIES[t.cat] || {};
+              const tCat = CATEGORIES[t.cat] || _catExt[t.cat] || {};
               const txPositive = t.amount > 0;
+              const tRemaining = getRemaining(t);
               return (
                 <React.Fragment key={t.id}>
-                  <div className="m-tap" onClick={() => { setSelected(t); setStr(Math.abs(t.amount).toFixed(2).replace('.', ',')); }} style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
+                  <div className="m-tap" onClick={() => { setSelected(t); setAmtStr(''); }}
+                    style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
                     <div style={{ width:36, height:36, borderRadius:10, background: txPositive ? M.sageSoft : M.claySoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                       <IcoMDI name={tCat.icon||'help-circle-outline'} size={16} color={txPositive ? M.sage : M.clay}/>
                     </div>
                     <div style={{ flex:1, minWidth:0 }}>
                       <div style={{ fontSize:14, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                        <HighlightText text={t.merchant} query={query}/>
+                        <HighlightText text={t.merchantDisplay || t.merchant} query={query}/>
                       </div>
                       <div style={{ fontSize:11, color:M.ink3, marginTop:2 }}>{fmtDate(t.date)} · {catPath(tCat)}</div>
                     </div>
-                    <div className="m-num" style={{ fontSize:14, fontWeight:600, color:txPositive ? M.sage : M.ink, flexShrink:0 }}>
-                      {txPositive ? '+' : '−'}{fmtEur(Math.abs(t.amount))}
+                    <div style={{ textAlign:'right', flexShrink:0 }}>
+                      <div className="m-num" style={{ fontSize:14, fontWeight:600, color: txPositive ? M.sage : M.ink }}>
+                        {txPositive ? '+' : '−'}{fmtEur(tRemaining)}
+                      </div>
+                      {tRemaining < Math.abs(t.amount) - 0.005 && (
+                        <div style={{ fontSize:10, color:M.ink4 }}>of {fmtEur(Math.abs(t.amount))}</div>
+                      )}
                     </div>
                   </div>
                   {i < a.length - 1 && <Divider inset={48}/>}
@@ -826,6 +821,38 @@ export function ScreenLinkReimburse({ params }) {
           </div>
         )}
       </div>
+
+      {selected && (
+        <Sheet onClose={() => setSelected(null)} title="Set reimbursement">
+          <div style={{ padding:'4px 20px 32px' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 16px', borderRadius:12, background:M.paper2, marginBottom:16 }}>
+              <div style={{ width:36, height:36, borderRadius:10, background: isPositive ? M.claySoft : M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <IcoMDI name={(CATEGORIES[selected.cat] || _catExt[selected.cat] || {}).icon || 'help-circle-outline'} size={16} color={isPositive ? M.clay : M.sage}/>
+              </div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:14, fontWeight:500 }}>{selected.merchantDisplay || selected.merchant}</div>
+                <div style={{ fontSize:11, color:M.ink3, marginTop:2 }}>
+                  {fmtDate(selected.date)} · {selectedRemaining < Math.abs(selected.amount) - 0.005 ? `${fmtEur(selectedRemaining)} remaining` : `total ${fmtEur(Math.abs(selected.amount))}`}
+                </div>
+              </div>
+            </div>
+            <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>How much was reimbursed?</div>
+            <input
+              type="text" inputMode="decimal" autoFocus
+              value={amtStr} onChange={e => setAmtStr(e.target.value)}
+              placeholder={`Max ${fmtEur(maxAmt)}`}
+              style={{ width:'100%', padding:'12px 14px', borderRadius:10, border:`1px solid ${val > maxAmt + 0.005 ? M.clay : M.line}`, fontSize:16, fontFamily:M.fontUI, color:M.ink, background:M.paper, outline:'none', boxSizing:'border-box', marginBottom:6 }}
+            />
+            {val > maxAmt + 0.005 && (
+              <div style={{ fontSize:11, color:M.clay, marginBottom:8 }}>Maximum is {fmtEur(maxAmt)}</div>
+            )}
+            <button onClick={handleConfirm} disabled={!ok}
+              style={{ width:'100%', padding:'14px 0', borderRadius:10, background: ok ? M.brand : M.paper2, color: ok ? '#fff' : M.ink4, border:'none', fontSize:14, fontWeight:600, cursor: ok ? 'pointer' : 'default', fontFamily:M.fontUI, marginTop:4 }}>
+              {ok ? `Link · ${fmtEur(val)} reimbursed` : 'Enter amount'}
+            </button>
+          </div>
+        </Sheet>
+      )}
     </div>
   );
 }

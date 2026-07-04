@@ -2,7 +2,7 @@ import React from 'react';
 import { CATEGORIES, _catExt, catPath } from '../data/categories.js';
 import { fmtEur, fmtDate } from '../utils/format.js';
 import { M, I, IcoMDI } from '../../app/theme.jsx';
-import { useTxCtx, useAllVisibleAccounts } from '../../app/providers.jsx';
+import { useAllVisibleAccounts } from '../../app/providers.jsx';
 import { BankLogoSVG } from './BankLogo.jsx';
 
 export function HighlightText({ text, query }) {
@@ -37,13 +37,13 @@ export function TxRow({ tx, onClick, showCat = true, showDate = false, dense = f
     effectiveCat = tx.amount < 0 ? 'savingDeposit' : 'savingWithdraw';
   }
   const cat = CATEGORIES[effectiveCat] || _catExt[effectiveCat] || CATEGORIES[tx.cat] || _catExt[tx.cat] || {};
-  const { txs: allTxs } = useTxCtx();
   const connectedAccounts = useAllVisibleAccounts();
   const positive = tx.amount > 0;
-  const isLinkedReimburse = tx.linkedTo;
-  const reimburseTx = !positive ? allTxs.find(t => t.linkedTo === tx.id) : null;
-  const hasReimbursement = !!reimburseTx;
-  const displayAmount = hasReimbursement ? tx.amount + reimburseTx.amount : tx.amount;
+  const totalReimbursed = (tx.reimbursements || []).reduce((s, r) => s + r.amount, 0);
+  const hasReimbursement = totalReimbursed > 0;
+  const displayAmount = hasReimbursement
+    ? tx.amount + (positive ? -totalReimbursed : totalReimbursed)
+    : tx.amount;
   const displayPositive = displayAmount > 0;
 
   // Look up the account for this transaction
@@ -93,7 +93,6 @@ export function TxRow({ tx, onClick, showCat = true, showDate = false, dense = f
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
         {hasReimbursement && <div style={{ width:16, height:16, borderRadius:999, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center' }}><I name="link" size={9} color={M.sage}/></div>}
-        {isLinkedReimburse && <div style={{ width:16, height:16, borderRadius:999, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center' }}><I name="link" size={9} color={M.sage}/></div>}
         <div className="m-num" style={{ fontSize: 15, fontWeight: 600, color: displayPositive ? M.sage : M.ink }}>
           {displayPositive ? '+' : ''}{fmtEur(displayAmount)}
         </div>

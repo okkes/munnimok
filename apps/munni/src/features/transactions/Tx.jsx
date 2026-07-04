@@ -211,11 +211,15 @@ export function ScreenTxDetail({ params }) {
 
   const NOTE_MAX = 200;
 
-  const linkedTx = txs.find(t => t.linkedTo === tx.id);
-  const originalTx = tx.linkedTo ? txs.find(t => t.id === tx.linkedTo) : null;
-  const reimburseAmt = linkedTx ? linkedTx.amount : 0;
-  const net = tx.amount + reimburseAmt;
-  const netOriginalTx = originalTx ? originalTx.amount + tx.amount : 0;
+  const txReimbursements = tx.reimbursements || [];
+  const totalReimbursed = txReimbursements.reduce((s, r) => s + r.amount, 0);
+  const effectiveAmount = totalReimbursed > 0
+    ? tx.amount + (positive ? -totalReimbursed : totalReimbursed)
+    : tx.amount;
+  const hasReimbursements = totalReimbursed > 0;
+  const reimbursementLinks = txReimbursements
+    .map(r => ({ ...r, linkedTx: txs.find(t => t.id === r.txId) }))
+    .filter(r => r.linkedTx);
 
   const account = connectedAccounts.find(a => a.id === tx.account) || (_sharedData?.accounts || []).find(a => a.id === tx.account) || ACCOUNTS.find(a => a.id === tx.account);
 
@@ -285,8 +289,7 @@ export function ScreenTxDetail({ params }) {
     updateTx(tx.id, { cats: txCats, cat: primaryCatId || tx.cat });
   }, [txCats]);
 
-  const heroAmount = reimburseAmt !== 0 ? net : tx.amount;
-  const showOriginal = reimburseAmt !== 0;
+  const heroAmount = effectiveAmount;
 
   const [editingTitle, setEditingTitle] = React.useState(false);
   const [titleDraft, setTitleDraft] = React.useState('');
@@ -332,11 +335,6 @@ export function ScreenTxDetail({ params }) {
           <div className="m-num" style={{ fontSize:34, fontWeight:700, color: heroAmount > 0 ? M.sage : (heroAmount === 0 ? M.ink3 : M.ink), lineHeight:1, letterSpacing:'-0.03em', marginBottom:4 }}>
             {heroAmount > 0 ? '+' : heroAmount < 0 ? '−' : ''}{fmtEur(Math.abs(heroAmount))}
           </div>
-          {showOriginal && (
-            <div className="m-num" style={{ fontSize:13, color:M.ink4, marginBottom:4, textDecoration:'line-through' }}>
-              {tx.amount < 0 ? '−' : '+'}{fmtEur(Math.abs(tx.amount))}
-            </div>
-          )}
           {editingTitle ? (
             <input autoFocus value={titleDraft} onChange={e=>setTitleDraft(e.target.value)}
               onBlur={saveTitle} onKeyDown={e=>e.key==='Enter'&&saveTitle()}
@@ -483,62 +481,51 @@ export function ScreenTxDetail({ params }) {
           </div>
         </div>
 
-        {/* Reimbursements — Expense only */}
-        {effectiveType === 'Expense' && <div style={{ marginBottom:14 }}>
-          <div className="m-cap" style={{ marginBottom:6, paddingLeft:2 }}>Reimbursements</div>
-          <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
-            {originalTx && (
-              <>
-                <div className="m-tap" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0' }}
-                  onClick={() => nav.push('txDetail', { id: originalTx.id })}>
-                  <div style={{ width: 32, height: 32, borderRadius: 9, background: M.claySoft, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <IcoMDI name={CATEGORIES[originalTx.cat]?.icon || 'help-circle-outline'} size={16} color={M.clay}/>
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 500 }}>{originalTx.merchant}</div>
-                    <div style={{ fontSize: 11, color: M.ink3, marginTop: 1 }}>{fmtDate(originalTx.date)} · original {fmtEur(Math.abs(originalTx.amount))}</div>
-                  </div>
-                  <div className="m-num" style={{ fontWeight: 600, color: M.clay }}>
-                    {netOriginalTx < 0 ? '−' : ''}{fmtEur(Math.abs(netOriginalTx))}
-                  </div>
-                  <I name="caretR" size={14} color={M.ink4}/>
-                </div>
-                {linkedTx && <Divider inset={0}/>}
-              </>
-            )}
-            {linkedTx && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0' }}>
-                <div className="m-tap" style={{ display:'flex', alignItems:'center', gap:12, flex:1, minWidth:0 }}
-                  onClick={() => nav.push('txDetail', { id: linkedTx.id })}>
-                  <div style={{ width: 32, height: 32, borderRadius: 9, background: M.sageSoft, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink:0 }}>
-                    <I name="link" size={16} color={M.sage}/>
-                  </div>
-                  <div style={{ flex: 1, minWidth:0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{linkedTx.merchant}</div>
-                    <div style={{ fontSize: 11, color: M.ink3, marginTop: 1 }}>{fmtDate(linkedTx.date)} · reimbursed</div>
-                  </div>
-                  <div className="m-num" style={{ fontWeight: 600, color: M.sage }}>+{fmtEur(linkedTx.amount)}</div>
-                  <I name="caretR" size={14} color={M.ink4}/>
-                </div>
-                <button className="m-tap" onClick={() => updateTx(linkedTx.id, { linkedTo: undefined })}
-                  style={{ background:'none', border:'none', color:M.clay, fontSize:18, lineHeight:1, cursor:'pointer', fontFamily:M.fontUI, padding:'0 0 0 8px', flexShrink:0 }}>×</button>
-              </div>
-            )}
-            {!originalTx && !linkedTx && net !== 0 && (
+        {/* Reimbursements — Expense and Income only */}
+        {['Expense', 'Income'].includes(effectiveType) && (
+          <div style={{ marginBottom:14 }}>
+            <div className="m-cap" style={{ marginBottom:6, paddingLeft:2 }}>Reimbursements</div>
+            <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
+              {reimbursementLinks.map((r, i) => {
+                const lt = r.linkedTx;
+                const ltPositive = lt.amount > 0;
+                const ltName = lt.merchantDisplay || lt.merchant;
+                return (
+                  <React.Fragment key={r.txId}>
+                    {i > 0 && <Divider inset={44}/>}
+                    <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0' }}>
+                      <div className="m-tap" style={{ display:'flex', alignItems:'center', gap:12, flex:1, minWidth:0 }}
+                        onClick={() => nav.push('txDetail', { id: lt.id })}>
+                        <div style={{ width:32, height:32, borderRadius:9, background: ltPositive ? M.sageSoft : M.claySoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                          <I name="link" size={16} color={ltPositive ? M.sage : M.clay}/>
+                        </div>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontSize:13, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{ltName}</div>
+                          <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{fmtDate(lt.date)} · {fmtEur(r.amount)} reimbursed</div>
+                        </div>
+                        <div className="m-num" style={{ fontWeight:600, color: ltPositive ? M.sage : M.ink }}>{ltPositive ? '+' : '−'}{fmtEur(r.amount)}</div>
+                        <I name="caretR" size={14} color={M.ink4}/>
+                      </div>
+                      <button onClick={() => {
+                        updateTx(tx.id, { reimbursements: txReimbursements.filter(x => x.txId !== r.txId) });
+                        if (lt.reimbursements) updateTx(lt.id, { reimbursements: lt.reimbursements.filter(x => x.txId !== tx.id) });
+                      }} style={{ background:'none', border:'none', color:M.clay, fontSize:18, lineHeight:1, cursor:'pointer', fontFamily:M.fontUI, padding:'0 0 0 8px', flexShrink:0 }}>×</button>
+                    </div>
+                  </React.Fragment>
+                );
+              })}
+              {reimbursementLinks.length > 0 && <Divider inset={0}/>}
               <div className="m-tap" onClick={() => nav.push('linkReimburse', { txId: tx.id, positive })}
                 style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 0' }}>
                 <div style={{ width:32, height:32, borderRadius:9, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                  <I name="link" size={16} color={M.ink3}/>
+                  <I name="plus" size={16} color={M.ink3}/>
                 </div>
-                <div style={{ flex:1, fontSize:13, color:M.ink3 }}>{positive ? 'Link reimbursed expense' : 'Link a reimbursement'}</div>
+                <div style={{ flex:1, fontSize:13, color:M.ink3 }}>Link a reimbursement</div>
                 <I name="caretR" size={14} color={M.ink4}/>
               </div>
-            )}
-            {net === 0 && !originalTx && !linkedTx && (
-              <div style={{ padding:'12px 0', fontSize:13, color:M.ink4, textAlign:'center' }}>No reimbursements</div>
-            )}
+            </div>
           </div>
-        </div>}
+        )}
 
         {/* Recurring — Expense, Debt Payment, Investment, Adjustment (not Income, Saving, Transfer) */}
         {['Expense', 'Debt Payment', 'Investment', 'Adjustment'].includes(effectiveType) && (
@@ -600,7 +587,7 @@ export function ScreenTxDetail({ params }) {
                 <div style={{ flex:1, fontSize:13, color:M.ink }}>{tx.merchant}</div>
               </div>
             </>)}
-            {showOriginal && (<>
+            {hasReimbursements && (<>
               <Divider inset={44}/>
               <div style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
                 <div style={{ width:32, height:32, borderRadius:9, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>

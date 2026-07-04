@@ -548,7 +548,7 @@ const ANNOTATIONS = {
     states: [
       'Categories card — category rows + "Add category split" row at bottom',
       'Notes card — standalone textarea for freeform notes',
-      'Reimbursements card — shows "Reimbursement of" (if this TX is a reimbursement), "Reimbursed by" (if linked reimbursement exists), or "Link a reimbursement" row (if neither)',
+      'Reimbursements card (Expense & Income) — lists reimbursement links with tap-to-navigate and × to remove both sides; always shows "Link a reimbursement" add row at bottom',
       'Options card (expenses only) — Saving account row + Recurring row (tappable)',
       'Details card — Account (tap to navigate to accounts), Description (monospace)',
     ],
@@ -579,8 +579,11 @@ const ANNOTATIONS = {
 
   'linkReimburse': {
     screen: 'Link reimbursement',
-    sub: 'Attach an incoming transaction as the reimbursement for an expense.',
-    flows: [ { from: 'Tx row', to: 'Links and closes sheet' } ],
+    sub: 'Pick an opposite-type tx and set a partial reimbursement amount. Bidirectional: updates reimbursements[] on both txs. Merges if same tx selected again.',
+    flows: [
+      { from: 'Tx row',        to: 'Opens amount Sheet (native decimal input)' },
+      { from: 'Confirm button', to: 'Saves reimbursements on both txs, pops screen' },
+    ],
   },
 
   'search':  { screen: 'Search',  sub: 'Stub — full-text transaction search (not yet implemented).' },
