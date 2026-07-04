@@ -184,7 +184,8 @@ export function TxProvider({ children }) {
 
   // Merge in shared profile data so invited members see the owner's accounts/txs
   const isSharedOrHasMembers = !!(activeProfile?.isShared || (activeProfile?.members||[]).length > 0);
-  const sharedDataKey = isSharedOrHasMembers ? `munni_shared_data_${activeProfile.id}` : 'munni_shared_data_none';
+  // Always use a profile-specific key so txMeta changes are scoped per profile, not global
+  const sharedDataKey = activeProfile?.id ? `munni_shared_data_${activeProfile.id}` : 'munni_shared_data_none';
   const [sharedData] = useLocalStorage(sharedDataKey, { accounts: [], txs: [] });
 
   // For shared profiles (invited members), profile.accountIds is a stale invite-time snapshot.
@@ -219,18 +220,21 @@ export function TxProvider({ children }) {
     ? allTxs.filter(t => t.account && activeAccountIds.includes(t.account))
     : [];
 
+  // Raw fields belong to the transaction itself; everything else is per-profile metadata
+  const RAW_TX_FIELDS = new Set(['merchant', 'merchantDisplay', 'desc', 'date', 'time', 'amount', 'account']);
   const updateTx = (id, changes) => {
-    if (isSharedOrHasMembers && sharedDataKey !== 'munni_shared_data_none') {
-      // In space context: write per-space metadata overlay so changes are scoped to this space
+    const rawChanges = Object.fromEntries(Object.entries(changes).filter(([k]) => RAW_TX_FIELDS.has(k)));
+    const metaChanges = Object.fromEntries(Object.entries(changes).filter(([k]) => !RAW_TX_FIELDS.has(k)));
+    if (Object.keys(rawChanges).length > 0) {
+      setOwnTxs(ts => ts.map(t => t.id === id ? { ...t, ...rawChanges } : t));
+    }
+    if (Object.keys(metaChanges).length > 0 && sharedDataKey !== 'munni_shared_data_none') {
       try {
         const sd = JSON.parse(localStorage.getItem(sharedDataKey) || '{}');
-        const txMeta = { ...(sd.txMeta || {}), [id]: { ...(sd.txMeta?.[id] || {}), ...changes } };
+        const txMeta = { ...(sd.txMeta || {}), [id]: { ...(sd.txMeta?.[id] || {}), ...metaChanges } };
         localStorage.setItem(sharedDataKey, JSON.stringify({ ...sd, txMeta }));
         window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sharedDataKey } }));
       } catch {}
-    } else {
-      // Personal space: write directly to personal transaction store
-      setOwnTxs(ts => ts.map(t => t.id === id ? {...t, ...changes} : t));
     }
   };
   const addTxs = (newTxs) => setOwnTxs(ts => [...newTxs, ...ts]);

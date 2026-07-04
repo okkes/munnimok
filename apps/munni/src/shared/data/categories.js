@@ -194,9 +194,14 @@ export function deriveTxType(srcAcct, dstAcct, amount) {
   if (!dstAcct) return amount > 0 ? 'Income' : 'Expense';
   const src = srcAcct?.type;
   const dst = dstAcct?.type;
-  if ((src === 'checking' && dst === 'savings') || (src === 'savings' && dst === 'checking')) return 'Saving';
-  if ((src === 'checking' && dst === 'invest')  || (src === 'invest'  && dst === 'checking')) return 'Investment';
-  if ((src === 'checking' && dst === 'credit')  || (src === 'credit'  && dst === 'checking')) return 'Debt Payment';
+  // Investment accounts (brokerage or invest type)
+  if (dst === 'invest' || dst === 'brokerage' || src === 'invest' || src === 'brokerage') return 'Investment';
+  // Savings accounts
+  if (dst === 'savings' || dst === 'saving' || src === 'savings' || src === 'saving') return 'Saving';
+  // Cash wallet with saving purpose
+  if ((dst === 'cash' && dstAcct?.purpose === 'saving') || (src === 'cash' && srcAcct?.purpose === 'saving')) return 'Saving';
+  // Credit card
+  if (dst === 'credit' || src === 'credit') return 'Debt Payment';
   return 'Transfer';
 }
 

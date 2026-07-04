@@ -3,6 +3,7 @@ import { CATEGORIES, _catExt, catPath, deriveTxType, getTypeFallbackCat, TX_TYPE
 import { fmtEur, fmtDate, computePeriodHistory, dayLabel } from '../../shared/utils/format.js';
 import { getUserId } from '../../shared/utils/user.js';
 import { ACCOUNTS, TRANSACTIONS } from '../accounts/data.js';
+import { acctTypeColor, acctIcon } from '../accounts/Accounts.jsx';
 import { M, I, IcoMDI, Divider, StatusBar, AppBar } from '../../app/theme.jsx';
 import { useLang } from '../../shared/i18n.jsx';
 import { useNav, Sheet, TabBar } from '../../app/nav.jsx';
@@ -10,7 +11,7 @@ import { useLocalStorage } from '../../shared/hooks.jsx';
 import { BarChart, StackedBar } from '../../shared/components/Charts.jsx';
 import { TxRow, HighlightText } from '../../shared/components/TxRow.jsx';
 import { useTxCtx, useRecurCtx, useConnectedAccounts, useProfiles } from '../../app/providers.jsx';
-import { CategoryPicker, TypePickerSheet, LinkedAccountPickerSheet, TypeBadge } from '../review/Review.jsx';
+import { CategoryPicker, TypePickerSheet, LinkedAccountPickerSheet } from '../review/Review.jsx';
 import { ordinal } from '../recurring/Recurring.jsx';
 
 
@@ -321,7 +322,7 @@ export function ScreenTxDetail({ params }) {
         )}
         <div style={{ pointerEvents: isLockedByOther ? 'none' : 'auto', opacity: isLockedByOther ? 0.65 : 1 }}>
         {/* Hero */}
-        <div style={{ padding:'8px 0 20px' }}>
+        <div style={{ padding:'8px 0 20px', textAlign:'center' }}>
           <div className="m-num" style={{ fontSize:34, fontWeight:700, color: heroAmount > 0 ? M.sage : (heroAmount === 0 ? M.ink3 : M.ink), lineHeight:1, letterSpacing:'-0.03em', marginBottom:4 }}>
             {heroAmount > 0 ? '+' : heroAmount < 0 ? '−' : ''}{fmtEur(Math.abs(heroAmount))}
           </div>
@@ -333,43 +334,39 @@ export function ScreenTxDetail({ params }) {
           {editingTitle ? (
             <input autoFocus value={titleDraft} onChange={e=>setTitleDraft(e.target.value)}
               onBlur={saveTitle} onKeyDown={e=>e.key==='Enter'&&saveTitle()}
-              style={{ fontSize:18, fontWeight:600, color:M.ink, border:'none', borderBottom:`2px solid ${M.sage}`, background:'transparent', outline:'none', width:'100%', fontFamily:M.fontUI, marginBottom:4, padding:'2px 0' }}/>
+              style={{ fontSize:18, fontWeight:600, color:M.ink, border:'none', borderBottom:`2px solid ${M.sage}`, background:'transparent', outline:'none', width:'100%', fontFamily:M.fontUI, marginBottom:4, padding:'2px 0', textAlign:'center' }}/>
           ) : (
             <button data-testid="tx-title-edit-btn" className="m-tap" onClick={()=>{setTitleDraft(tx.merchantDisplay||tx.merchant);setEditingTitle(true);}}
-              style={{ fontSize:18, fontWeight:600, color:M.ink, background:'none', border:'none', cursor:'pointer', padding:0, fontFamily:M.fontUI, textAlign:'left', display:'flex', alignItems:'center', gap:6 }}>
+              style={{ fontSize:18, fontWeight:600, color:M.ink, background:'none', border:'none', cursor:'pointer', padding:0, fontFamily:M.fontUI, textAlign:'center', display:'inline-flex', alignItems:'center', gap:6 }}>
               <span data-testid="tx-display-name">{tx.merchantDisplay || tx.merchant}</span>
               <IcoMDI name="pencil-outline" size={14} color={M.ink4}/>
             </button>
           )}
-          {tx.merchantDisplay && tx.merchantDisplay !== tx.merchant && (
-            <div style={{ fontSize:11, color:M.ink4, marginTop:2 }}>Originally: {tx.merchant}</div>
-          )}
           <div style={{ fontSize:12, color:M.ink3, marginTop:4 }}>{fmtDate(tx.date, 'long')} · {tx.time}</div>
         </div>
 
-        {/* Type + Connected Account */}
+        {/* Linked Account + Type */}
         <div className="m-card" style={{ padding:'4px 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
-          <div className={linkedAcctId ? '' : 'm-tap'} onClick={linkedAcctId ? undefined : () => setShowTypePicker(true)}
-            style={{ display:'flex', alignItems:'center', gap:10, padding:'13px 0' }}>
-            <div style={{ fontSize:12, color:M.ink3, width:96 }}>{t('tx.type')}</div>
-            <div style={{ flex:1, display:'flex', alignItems:'center', gap:8 }}>
-              <TypeBadge type={effectiveType}/>
-              {linkedAcctId && <span style={{ fontSize:11, color:M.ink4 }}>{t('tx.typeLockedByAccount')}</span>}
-            </div>
-            {!linkedAcctId && <I name="caretR" size={14} color={M.ink4}/>}
-          </div>
-          <Divider inset={0}/>
           <div className="m-tap" onClick={() => setShowAcctPicker(true)}
             style={{ display:'flex', alignItems:'center', gap:10, padding:'13px 0' }}>
             <div style={{ fontSize:12, color:M.ink3, width:96 }}>{t('tx.linkedAccount')}</div>
             <div style={{ flex:1, fontSize:13, color: linkedAcct ? M.ink : M.ink4 }}>
               {linkedAcct ? linkedAcct.name : t('tx.linkedAccountNone')}
             </div>
-            {linkedAcctId && (
-              <button onClick={e => { e.stopPropagation(); onLinkedAcctChange(null); }}
-                style={{ background:'none', border:'none', color:M.clay, fontSize:18, lineHeight:1, cursor:'pointer', fontFamily:M.fontUI, padding:'0 4px', flexShrink:0 }}>×</button>
-            )}
             <I name="caretR" size={14} color={M.ink4}/>
+          </div>
+          <Divider inset={96}/>
+          <div className={linkedAcctId ? '' : 'm-tap'} onClick={!linkedAcctId ? () => setShowTypePicker(true) : undefined}
+            style={{ display:'flex', alignItems:'center', gap:10, padding:'13px 0' }}>
+            <div style={{ fontSize:12, color:M.ink3, width:96 }}>{t('tx.type')}</div>
+            <div style={{ flex:1, display:'flex', alignItems:'center', gap:8 }}>
+              <div style={{ width:20, height:20, borderRadius:6, background:(TX_TYPE_META[effectiveType]?.color||M.sage)+'22', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <IcoMDI name={TX_TYPE_META[effectiveType]?.icon||'help-circle-outline'} size={12} color={TX_TYPE_META[effectiveType]?.color||M.sage}/>
+              </div>
+              <span style={{ fontSize:13, color:M.ink }}>{effectiveType}</span>
+              {linkedAcctId && <span style={{ fontSize:11, color:M.ink4 }}>{t('tx.typeLockedByAccount')}</span>}
+            </div>
+            {!linkedAcctId && <I name="caretR" size={14} color={M.ink4}/>}
           </div>
         </div>
 
@@ -443,7 +440,10 @@ export function ScreenTxDetail({ params }) {
                 <textarea autoFocus value={noteText} onChange={e => setNoteText(e.target.value.slice(0, NOTE_MAX))}
                   rows={3} placeholder={t('tx.notesPlaceholder')}
                   style={{ width:'100%', boxSizing:'border-box', padding:'10px 12px', borderRadius:8, border:`1px solid ${M.line}`, fontSize:13, fontFamily:M.fontUI, background:M.paper2, outline:'none', resize:'none', color:M.ink }}/>
-                <div style={{ display:'flex', gap:8, marginTop:8 }}>
+                <div style={{ textAlign:'right', fontSize:11, color: noteText.length > NOTE_MAX * 0.85 ? M.clay : M.ink4, marginTop:4 }}>
+                  {NOTE_MAX - noteText.length} remaining
+                </div>
+                <div style={{ display:'flex', gap:8, marginTop:6 }}>
                   <button className="m-tap" onClick={() => { saveNote(noteText); setEditingTxNote(false); }}
                     style={{ flex:1, padding:'9px 0', borderRadius:8, background:M.sage, color:'#fff', border:'none', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
                     {t('action.save')}
@@ -559,11 +559,24 @@ export function ScreenTxDetail({ params }) {
               nav.push('accounts');
             } : undefined} style={{ display:'flex', alignItems:'center', gap:10, padding:'13px 0' }}>
               <div style={{ fontSize:12, color:M.ink3, width:96 }}>Account</div>
-              <div style={{ flex:1, fontSize:13, color:account ? M.ink : M.ink4 }}>{account?.name || '—'}</div>
+              <div style={{ flex:1, display:'flex', alignItems:'center', gap:8 }}>
+                {account && (
+                  <div style={{ width:22, height:22, borderRadius:6, background: account.color || acctTypeColor(account.type), display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                    <I name={acctIcon(account.type)} size={12} color="#fff"/>
+                  </div>
+                )}
+                <span style={{ fontSize:13, color:account ? M.ink : M.ink4 }}>{account?.name || '—'}</span>
+              </div>
               {account && <I name="caretR" size={14} color={M.ink4}/>}
             </div>
             <Divider inset={0}/>
             <DetailRow label="Description" value={tx.desc} mono/>
+            {tx.merchantDisplay && tx.merchantDisplay !== tx.merchant && (
+              <>
+                <Divider inset={0}/>
+                <DetailRow label="Original name" value={tx.merchant}/>
+              </>
+            )}
             {showOriginal && (
               <>
                 <Divider inset={0}/>
