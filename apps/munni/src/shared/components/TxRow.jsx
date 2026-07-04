@@ -31,7 +31,7 @@ const _acctColor = (type) => {
   return m[type] || M.slate;
 };
 
-export function TxRow({ tx, onClick, showCat = true, showDate = false, dense = false, highlight = '', catLabel = null }) {
+export function TxRow({ tx, onClick, showCat = true, showDate = false, dense = false, highlight = '', catLabel = null, catAmount = null }) {
   let effectiveCat = tx.cat;
   if (!CATEGORIES[effectiveCat] && !_catExt[effectiveCat] && tx.txType === 'Saving') {
     effectiveCat = tx.amount < 0 ? 'savingDeposit' : 'savingWithdraw';
@@ -92,10 +92,21 @@ export function TxRow({ tx, onClick, showCat = true, showDate = false, dense = f
         )}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
-        {hasReimbursement && <div style={{ width:16, height:16, borderRadius:999, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center' }}><I name="link" size={9} color={M.sage}/></div>}
-        <div className="m-num" style={{ fontSize: 15, fontWeight: 600, color: displayPositive ? M.sage : M.ink }}>
-          {displayPositive ? '+' : ''}{fmtEur(displayAmount)}
-        </div>
+        {hasReimbursement && !catAmount && <div style={{ width:16, height:16, borderRadius:999, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center' }}><I name="link" size={9} color={M.sage}/></div>}
+        {catAmount != null ? (
+          <div style={{ textAlign:'right' }}>
+            <div className="m-num" style={{ fontSize: 15, fontWeight: 600, color: M.ink }}>
+              {fmtEur(catAmount)}
+            </div>
+            <div className="m-num" style={{ fontSize: 11, color: M.ink4, marginTop: 1 }}>
+              {displayPositive ? '+' : ''}{fmtEur(displayAmount)}
+            </div>
+          </div>
+        ) : (
+          <div className="m-num" style={{ fontSize: 15, fontWeight: 600, color: displayPositive ? M.sage : M.ink }}>
+            {displayPositive ? '+' : ''}{fmtEur(displayAmount)}
+          </div>
+        )}
       </div>
     </div>
   );

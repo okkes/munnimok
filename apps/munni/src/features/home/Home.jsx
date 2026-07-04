@@ -1,7 +1,7 @@
 ﻿import React from 'react';
 import { CATEGORIES, _catExt } from '../../shared/data/categories.js';
 import { fmtEur, fmtEurInt, fmtMoney, fmtMoneyInt, fmtDate, computePeriodHistory, fmtSyncTime } from '../../shared/utils/format.js';
-import { getUserId, getUserSyncKey } from '../../shared/utils/user.js';
+import { getUserId } from '../../shared/utils/user.js';
 import { PORTFOLIO } from '../investments/data.js';
 import { M, I, IcoMDI, Divider, StatusBar } from '../../app/theme.jsx';
 import { useLang, useCurrency } from '../../shared/i18n.jsx';
@@ -103,8 +103,9 @@ export function ScreenHome() {
   const isCurrent = pidx === periodHistory.length - 1;
   const currentUnallocated = alloc ? alloc.unallocated : pd.unallocated;
   const [connectedAccounts] = useConnectedAccounts();
-  const syncKey = React.useMemo(() => getUserSyncKey(), []);
-  const [lastSyncedStr] = useLocalStorage(syncKey, null);
+  const spaceSdKey = activeProfile?.id ? `munni_shared_data_${activeProfile.id}` : 'munni_shared_data_none';
+  const [homeSyncSd] = useLocalStorage(spaceSdKey, {});
+  const lastSyncedStr = homeSyncSd?.lastSyncedAt || null;
   const [notifUnread] = useLocalStorage('munni_notif_unread', 0);
   const [invitations] = useLocalStorage('munni_global_invitations', []);
   const myId = React.useMemo(() => getUserId(), []);

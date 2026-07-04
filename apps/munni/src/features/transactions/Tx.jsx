@@ -145,6 +145,7 @@ export function ScreenTxDetail({ params }) {
   const [showReceiptEdit, setShowReceiptEdit] = React.useState(false);
   const [showTypePicker, setShowTypePicker] = React.useState(false);
   const [showAcctPicker, setShowAcctPicker] = React.useState(false);
+  const [showAcctInfoSheet, setShowAcctInfoSheet] = React.useState(false);
   const [editingTxNote, setEditingTxNote] = React.useState(false);
 
   const tx = txs.find(t => t.id === params.id) || txs[0] || TRANSACTIONS[0];
@@ -202,7 +203,15 @@ export function ScreenTxDetail({ params }) {
     }
   };
 
-  const initCats = () => tx.cats ? tx.cats.slice() : [{ catId: tx.cat, amount: Math.abs(tx.amount) }];
+  const sanitizeCats = (cats) => {
+    const merged = {};
+    cats.forEach(c => {
+      if (merged[c.catId]) merged[c.catId] = { ...merged[c.catId], amount: Math.round((merged[c.catId].amount + c.amount) * 100) / 100 };
+      else merged[c.catId] = { ...c };
+    });
+    return Object.values(merged);
+  };
+  const initCats = () => sanitizeCats(tx.cats ? tx.cats.slice() : [{ catId: tx.cat, amount: Math.abs(tx.amount) }]);
   const [txCats, setTxCats] = React.useState(initCats);
   const [noteText, setNoteText] = React.useState(tx.note || '');
   // Derive from live tx so store/photo receipt additions are reflected immediately
@@ -301,6 +310,8 @@ export function ScreenTxDetail({ params }) {
     return () => clearTimeout(t);
   }, [syncNotif]);
   const fallbackCatId = getTypeFallbackCat(effectiveType, !positive);
+  const RESTRICTED_CATEGORY_TYPES = new Set(['Saving', 'Investment', 'Transfer', 'Debt Payment']);
+  const isCategoryRestricted = RESTRICTED_CATEGORY_TYPES.has(effectiveType);
   const allocTotal = txCats.reduce((s, c) => s + c.amount, 0);
   const remaining = Math.round((Math.abs(effectiveAmount) - allocTotal) * 100) / 100;
   const isOnlyUncategorized = txCats.length === 1 && txCats[0].catId === fallbackCatId;
@@ -447,7 +458,7 @@ export function ScreenTxDetail({ params }) {
                     {isAutoSet && !isUncategorized && parentName && <div style={{ fontSize:11, color:M.ink4, marginTop:1 }}>{parentName}</div>}
                   </div>
                   <div className="m-num" style={{ fontSize:13, color: isAutoSet ? M.ink4 : M.ink2 }}>{fmtEur(c.amount)}</div>
-                  {!isAutoSet && (
+                  {!isAutoSet && !isCategoryRestricted && (
                     <button onClick={() => removeCategory(i)} style={{ background:'none', border:'none', color:M.clay, padding:'0 4px', fontSize:18, lineHeight:1, cursor:'pointer', fontFamily:M.fontUI }}>×</button>
                   )}
                 </div>
@@ -455,14 +466,21 @@ export function ScreenTxDetail({ params }) {
               </React.Fragment>
             );
           })}
-          {remaining > 0.005 && !isOnlyUncategorized && (
+          {!isCategoryRestricted && remaining > 0.005 && !isOnlyUncategorized && (
             <div style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 0', borderTop:`1px dashed ${M.line2}`, marginTop:4 }}>
               <div style={{ width:28, height:28 }}/>
               <span style={{ flex:1, fontSize:12, color:M.ink4 }}>Unallocated</span>
               <span className="m-num" style={{ fontSize:12, color:M.ink4 }}>{fmtEur(remaining)}</span>
             </div>
           )}
-          {effectiveRemaining > 0.005 ? (
+          {isCategoryRestricted ? (
+            <div style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 0', borderTop:`1px solid ${M.line2}`, marginTop:4 }}>
+              <div style={{ width:28, height:28, borderRadius:8, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <IcoMDI name="lock-outline" size={14} color={M.ink4}/>
+              </div>
+              <span style={{ fontSize:12, color:M.ink4, flex:1 }}>{t('tx.catRestricted')}</span>
+            </div>
+          ) : effectiveRemaining > 0.005 ? (
             <div className="m-tap" onClick={() => setShowCatPicker(true)} style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 0', borderTop:`1px solid ${M.line2}`, marginTop:4 }}>
               <div style={{ width:28, height:28, borderRadius:8, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center' }}>
                 <I name="plus" size={14} color={M.sage}/>
@@ -625,11 +643,7 @@ export function ScreenTxDetail({ params }) {
         <div style={{ marginBottom:14 }}>
           <div className="m-cap" style={{ marginBottom:6, paddingLeft:2 }}>Details</div>
           <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
-            <div className={account ? 'm-tap' : ''} onClick={account ? () => {
-              sessionStorage.setItem('munni_highlight_acct', JSON.stringify({ id: account.id, at: Date.now() }));
-              window.dispatchEvent(new CustomEvent('munni-ss', { detail: { key: 'munni_highlight_acct' } }));
-              nav.push('accounts');
-            } : undefined} style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
+            <div className={account ? 'm-tap' : ''} onClick={account ? () => setShowAcctInfoSheet(true) : undefined} style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
               <div style={{ width:32, height:32, borderRadius:9, background: account ? (account.color || acctTypeColor(account.type)) : M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                 <I name={account ? acctIcon(account.type) : 'card'} size={16} color={account ? '#fff' : M.ink4}/>
               </div>
@@ -721,6 +735,43 @@ export function ScreenTxDetail({ params }) {
             onPick={onLinkedAcctChange}
             onGoToSettings={isSharedSpace ? () => { setShowAcctPicker(false); nav.push('spaceDetail', { id: _activeProfile?.id }); } : undefined}
           />
+        )}
+
+        {showAcctInfoSheet && account && (
+          <Sheet title={account.name} onClose={() => setShowAcctInfoSheet(false)}>
+            <div style={{ padding:'4px 20px 32px' }}>
+              <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}`, marginBottom:16 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
+                  <div style={{ width:32, height:32, borderRadius:9, background: account.color || acctTypeColor(account.type), display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                    <I name={acctIcon(account.type)} size={16} color="#fff"/>
+                  </div>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontSize:14, fontWeight:600 }}>{account.name}</div>
+                    <div style={{ fontSize:12, color:M.ink3, marginTop:1 }}>{account.type}</div>
+                  </div>
+                  <div className="m-num" style={{ fontSize:16, fontWeight:700 }}>{fmtEur(account.balance || 0)}</div>
+                </div>
+                {account.iban && <>
+                  <Divider inset={44}/>
+                  <div style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
+                    <div style={{ width:32, height:32, borderRadius:9, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                      <IcoMDI name="card-text-outline" size={16} color={M.ink3}/>
+                    </div>
+                    <div style={{ fontSize:12, color:M.ink3, width:80 }}>IBAN</div>
+                    <div style={{ flex:1, fontSize:12, fontFamily:M.fontMono, color:M.ink }}>{account.iban}</div>
+                  </div>
+                </>}
+              </div>
+              <button className="m-btn outline m-tap" style={{ width:'100%' }} onClick={() => {
+                setShowAcctInfoSheet(false);
+                sessionStorage.setItem('munni_highlight_acct', JSON.stringify({ id: account.id, at: Date.now() }));
+                window.dispatchEvent(new CustomEvent('munni-ss', { detail: { key: 'munni_highlight_acct' } }));
+                nav.push('accounts');
+              }}>
+                <I name="settings" size={15} color={M.ink2}/> Manage accounts
+              </button>
+            </div>
+          </Sheet>
         )}
 
         {/* Receipt — Expense + Debt Payment */}
@@ -1006,12 +1057,25 @@ export function ScreenCategoryDrill({ params }) {
     ? [...Object.values(CATEGORIES), ...Object.values(_catExt)].filter(c => c.parent === cat.id).map(c => c.id)
     : [cat.id];
 
+  const getCatAmount = (t) => {
+    if (t.cats?.length) {
+      const matching = t.cats.filter(c => childIds.includes(c.catId));
+      if (matching.length > 0) return matching.reduce((s, c) => s + c.amount, 0);
+    }
+    return Math.abs(t.amount);
+  };
+
   const periodBars = periodHistory.map(p => ({
-    label: p.label,  // full range e.g. "20 Jun – 19 Jul"
-    shortLabel: new Date(p.start).toLocaleString('en-GB',{month:'short'}),  // for bar chart axis
+    label: p.label,
+    shortLabel: new Date(p.start).toLocaleString('en-GB',{month:'short'}),
     start: p.start,
     end: p.end,
-    amount: allTxs.filter(t => t.amount < 0 && childIds.includes(t.cat) && t.date >= p.start && t.date <= p.end).reduce((s,t) => s + Math.abs(t.amount), 0),
+    amount: allTxs.filter(t => {
+      if (t.amount >= 0) return false;
+      if (t.date < p.start || t.date > p.end) return false;
+      if (t.cats?.length) return t.cats.some(c => childIds.includes(c.catId));
+      return childIds.includes(t.cat);
+    }).reduce((s, t) => s + getCatAmount(t), 0),
   }));
 
   const [selectedBar, setSelectedBar] = React.useState(() => {
@@ -1019,8 +1083,12 @@ export function ScreenCategoryDrill({ params }) {
     return idx >= 0 ? idx : periodHistory.length - 1;
   });
 
-  // All txs for this category
-  const txs = allTxs.filter(t => t.amount < 0 && childIds.includes(t.cat));
+  // All txs for this category (including split cats)
+  const txs = allTxs.filter(t => {
+    if (t.amount >= 0) return false;
+    if (t.cats?.length) return t.cats.some(c => childIds.includes(c.catId));
+    return childIds.includes(t.cat);
+  });
   const total = periodBars[selectedBar]?.amount || 0;
 
   const barData = periodBars.map(b => b.amount);
@@ -1083,15 +1151,23 @@ export function ScreenCategoryDrill({ params }) {
           <div key={day} style={{ marginBottom:8 }}>
             <div style={{ fontSize:11, fontWeight:600, color:M.ink3, paddingLeft:4, marginBottom:4 }}>{dayLabel(day)}</div>
             <div className="m-card" style={{ padding:'0 16px', border:`1px solid ${M.line}` }}>
-              {byDay[day].map((t, i, a) => (
-                <React.Fragment key={t.id}>
-                  <TxRow tx={t} onClick={() => nav.push('txDetail', { id: t.id })}
-                    showCat={isParent}
-                    catLabel={isParent ? ((CATEGORIES[t.cat] || _catExt[t.cat])?.name || undefined) : undefined}
-                  />
-                  {i < a.length-1 && <Divider inset={50}/>}
-                </React.Fragment>
-              ))}
+              {byDay[day].map((t, i, a) => {
+                const tCatAmt = getCatAmount(t);
+                const tEffAmt = t.reimbursements?.length
+                  ? t.amount + (t.amount > 0 ? -(t.reimbursements.reduce((s,r)=>s+r.amount,0)) : t.reimbursements.reduce((s,r)=>s+r.amount,0))
+                  : t.amount;
+                const showBoth = Math.abs(tCatAmt - Math.abs(tEffAmt)) > 0.005;
+                return (
+                  <React.Fragment key={t.id}>
+                    <TxRow tx={t} onClick={() => nav.push('txDetail', { id: t.id })}
+                      showCat={isParent}
+                      catLabel={isParent ? ((CATEGORIES[t.cat] || _catExt[t.cat])?.name || undefined) : undefined}
+                      catAmount={showBoth ? tCatAmt : null}
+                    />
+                    {i < a.length-1 && <Divider inset={50}/>}
+                  </React.Fragment>
+                );
+              })}
             </div>
           </div>
         ))}

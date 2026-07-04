@@ -14,7 +14,7 @@ import { HOME_CARDS_DEFAULT } from '../accounts/Accounts.jsx';
 import { ProfileAvatar } from '../profile/Profile.jsx';
 import { CategoryPicker } from '../review/Review.jsx';
 import { DUTCH_BANKS } from '../accounts/data.js';
-import { getUserId, getUserSyncKey } from '../../shared/utils/user.js';
+import { getUserId } from '../../shared/utils/user.js';
 
 function LangHighlight({ text, query }) {
   if (!query) return <>{text}</>;
@@ -1422,14 +1422,16 @@ export function ScreenNotifications() {
   const { t } = useLang();
   const { addTxs, txs } = useTxCtx();
   const [syncing, setSyncing] = React.useState(false);
-  const syncKey = React.useMemo(() => getUserSyncKey(), []);
-  const [lastSyncedStr, setLastSyncedStr] = useLocalStorage(syncKey, null);
   const [newCount, setNewCount] = React.useState(0);
   const [syncedReviewCount, setSyncedReviewCount] = React.useState(0);
   const [, setNotifUnread] = useLocalStorage('munni_notif_unread', 0);
   const { profiles } = useProfiles();
   const [connectedAccounts] = useConnectedAccounts();
   const myId = React.useMemo(() => getUserId(), []);
+  const activeProfile = profiles.find(p => p.active);
+  const spaceSdKey = activeProfile ? `munni_shared_data_${activeProfile.id}` : 'munni_shared_data_none';
+  const [spaceSd] = useLocalStorage(spaceSdKey, {});
+  const lastSyncedStr = spaceSd?.lastSyncedAt || null;
 
   const coOwnerRequests = React.useMemo(() => {
     const result = [];
@@ -1489,19 +1491,12 @@ export function ScreenNotifications() {
     { merchant:'Apotheek Centraal',  desc:'APOTHEEK 7842',  cat:'prescription',    min:8,  max:40,  confidence:58, needsReview:true },
   ];
 
-  const activeProfile = profiles.find(p => p.active);
   const activeSpaceAutomatedAccts = React.useMemo(() => {
     if (!activeProfile) return [];
     const attachedIds = new Set(activeProfile.accountIds || []);
-    try {
-      const sd = JSON.parse(localStorage.getItem(`munni_shared_data_${activeProfile.id}`) || '{}');
-      const fromSd = sd.accounts || [];
-      if (fromSd.length > 0) return fromSd;
-    } catch {}
-    const personal = connectedAccounts.filter(a => attachedIds.has(a.id));
-    if (personal.length > 0) return personal;
-    return connectedAccounts;
-  }, [activeProfile?.id, activeProfile?.accountIds, connectedAccounts]);
+    if (spaceSd?.accounts?.length > 0) return spaceSd.accounts;
+    return connectedAccounts.filter(a => attachedIds.has(a.id));
+  }, [activeProfile?.id, activeProfile?.accountIds, connectedAccounts, spaceSd]);
 
   const handleSync = () => {
     if (!activeSpaceAutomatedAccts.length) return;
@@ -1543,7 +1538,11 @@ export function ScreenNotifications() {
       } catch {}
       setNewCount(count);
       setSyncedReviewCount(count);
-      setLastSyncedStr(now.toISOString());
+      try {
+        const sd = JSON.parse(localStorage.getItem(spaceSdKey) || '{}');
+        localStorage.setItem(spaceSdKey, JSON.stringify({ ...sd, lastSyncedAt: now.toISOString() }));
+        window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: spaceSdKey } }));
+      } catch {}
       setSyncing(false);
     }, 1200);
   };
@@ -1573,6 +1572,9 @@ export function ScreenNotifications() {
               <><I name="sync" size={16} color="#fff"/> {t('notif.syncNow')}</>
             )}
           </button>
+          {!syncing && activeSpaceAutomatedAccts.length === 0 && (
+            <div style={{ marginTop:8, fontSize:12, color:M.ink4, textAlign:'center' }}>{t('notif.noAccountsSync')}</div>
+          )}
           {newCount > 0 && (
             <div style={{ marginTop:10, borderRadius:10, overflow:'hidden', border:`1px solid ${M.ochreSoft}` }}>
               <div style={{ padding:'8px 12px', background:M.ochreSoft, fontSize:12, color:M.ochre, fontWeight:500 }}>

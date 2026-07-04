@@ -73,7 +73,6 @@ export function ScreenReviewSwipe() {
   const [editAmt, setEditAmt] = React.useState(null);
   const [bulkSelected, setBulkSelected] = React.useState(new Set());
   const [previewTx, setPreviewTx] = React.useState(null);
-  const [dupError, setDupError] = React.useState(null);
   const [showTypePicker, setShowTypePicker] = React.useState(false);
   const [showAcctPicker, setShowAcctPicker] = React.useState(false);
 
@@ -391,12 +390,11 @@ export function ScreenReviewSwipe() {
         maxAmount={unallocated || txAbs}
         onClose={() => setPicking(false)}
         onPick={(id, amt) => {
-          if (txCats.some(c => c.id === id)) {
-            setDupError(CATEGORIES[id]?.name || id);
-            setTimeout(() => setDupError(null), 2500);
-            return;
-          }
-          setTxCats(cs => [...cs, { id, amount: amt }]);
+          setTxCats(cs => {
+            const idx = cs.findIndex(c => c.id === id);
+            if (idx >= 0) return cs.map((c, i) => i === idx ? { ...c, amount: Math.round((c.amount + amt) * 100) / 100 } : c);
+            return [...cs, { id, amount: amt }];
+          });
           setPicking(false);
         }}
       />}
@@ -437,11 +435,6 @@ export function ScreenReviewSwipe() {
         />
       )}
 
-      {dupError && (
-        <div style={{ position:'fixed', bottom:120, left:'50%', transform:'translateX(-50%)', background:M.ink, color:'#fff', borderRadius:10, padding:'10px 16px', fontSize:13, fontWeight:600, zIndex:200, whiteSpace:'nowrap', boxShadow:'0 4px 20px rgba(0,0,0,0.2)', animation:'fadeIn 0.2s ease' }}>
-          "{dupError}" is already added
-        </div>
-      )}
 
       {editAmt !== null && (
         <AmountEditSheet
