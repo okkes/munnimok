@@ -345,34 +345,41 @@ export function ScreenTxDetail({ params }) {
           <div style={{ fontSize:12, color:M.ink3, marginTop:4 }}>{fmtDate(tx.date, 'long')} · {tx.time}</div>
         </div>
 
-        {/* Linked Account + Type */}
-        <div className="m-card" style={{ padding:'4px 16px', marginBottom:14, border:`1px solid ${M.line}` }}>
-          <div className="m-tap" onClick={() => setShowAcctPicker(true)}
-            style={{ display:'flex', alignItems:'center', gap:10, padding:'13px 0' }}>
-            <div style={{ fontSize:12, color:M.ink3, width:96 }}>{t('tx.linkedAccount')}</div>
-            <div style={{ flex:1, fontSize:13, color: linkedAcct ? M.ink : M.ink4 }}>
-              {linkedAcct ? linkedAcct.name : t('tx.linkedAccountNone')}
-            </div>
-            <I name="caretR" size={14} color={M.ink4}/>
-          </div>
-          <Divider inset={96}/>
-          <div className={linkedAcctId ? '' : 'm-tap'} onClick={!linkedAcctId ? () => setShowTypePicker(true) : undefined}
-            style={{ display:'flex', alignItems:'center', gap:10, padding:'13px 0' }}>
-            <div style={{ fontSize:12, color:M.ink3, width:96 }}>{t('tx.type')}</div>
-            <div style={{ flex:1, display:'flex', alignItems:'center', gap:8 }}>
-              <div style={{ width:20, height:20, borderRadius:6, background:(TX_TYPE_META[effectiveType]?.color||M.sage)+'22', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                <IcoMDI name={TX_TYPE_META[effectiveType]?.icon||'help-circle-outline'} size={12} color={TX_TYPE_META[effectiveType]?.color||M.sage}/>
+        {/* Classification card */}
+        <div style={{ marginBottom:14 }}>
+          <div className="m-cap" style={{ marginBottom:6, paddingLeft:2 }}>Classification</div>
+          <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}` }}>
+            <div className="m-tap" onClick={() => setShowAcctPicker(true)}
+              style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
+              <div style={{ width:32, height:32, borderRadius:9, background: linkedAcct ? (linkedAcct.color || acctTypeColor(linkedAcct.type)) : M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <I name={linkedAcct ? acctIcon(linkedAcct.type) : 'link'} size={16} color={linkedAcct ? '#fff' : M.ink3}/>
               </div>
-              <span style={{ fontSize:13, color:M.ink }}>{effectiveType}</span>
-              {linkedAcctId && <span style={{ fontSize:11, color:M.ink4 }}>{t('tx.typeLockedByAccount')}</span>}
+              <div style={{ fontSize:12, color:M.ink3, width:80 }}>{t('tx.linkedAccount')}</div>
+              <div style={{ flex:1, fontSize:13, color: linkedAcct ? M.ink : M.ink4 }}>
+                {linkedAcct ? linkedAcct.name : t('tx.linkedAccountNone')}
+              </div>
+              <I name="caretR" size={14} color={M.ink4}/>
             </div>
-            {!linkedAcctId && <I name="caretR" size={14} color={M.ink4}/>}
+            <Divider inset={44}/>
+            <div className={linkedAcctId ? '' : 'm-tap'} onClick={!linkedAcctId ? () => setShowTypePicker(true) : undefined}
+              style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
+              <div style={{ width:32, height:32, borderRadius:9, background:(TX_TYPE_META[effectiveType]?.color||M.sage)+'22', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <IcoMDI name={TX_TYPE_META[effectiveType]?.icon||'help-circle-outline'} size={16} color={TX_TYPE_META[effectiveType]?.color||M.sage}/>
+              </div>
+              <div style={{ fontSize:12, color:M.ink3, width:80 }}>{t('tx.type')}</div>
+              <div style={{ flex:1, display:'flex', alignItems:'center', gap:8 }}>
+                <span style={{ fontSize:13, color:M.ink }}>{effectiveType}</span>
+                {linkedAcctId && <span style={{ fontSize:11, color:M.ink4 }}>{t('tx.typeLockedByAccount')}</span>}
+              </div>
+              {!linkedAcctId && <I name="caretR" size={14} color={M.ink4}/>}
+            </div>
           </div>
         </div>
 
-        {/* Categories — own card */}
-        <div className="m-card" style={{ padding: '12px 16px', marginBottom: 14, border: `1px solid ${M.line}`, position:'relative' }}>
-          <div className="m-cap" style={{ marginBottom: 8 }}>Categories</div>
+        {/* Categories */}
+        <div style={{ marginBottom:14 }}>
+          <div className="m-cap" style={{ marginBottom:6, paddingLeft:2 }}>Categories</div>
+          <div className="m-card" style={{ padding: '12px 16px', border: `1px solid ${M.line}`, position:'relative' }}>
           {txCats.map((c, i) => {
             const cat = CATEGORIES[c.catId] || _catExt[c.catId] || {};
             const isUncategorized = c.catId === 'expenseUncategorized' || c.catId === 'incomeUncategorized';
@@ -429,6 +436,7 @@ export function ScreenTxDetail({ params }) {
               )}
             </div>
           )}
+          </div>
         </div>
 
         {/* Notes card */}
@@ -557,32 +565,42 @@ export function ScreenTxDetail({ params }) {
               sessionStorage.setItem('munni_highlight_acct', JSON.stringify({ id: account.id, at: Date.now() }));
               window.dispatchEvent(new CustomEvent('munni-ss', { detail: { key: 'munni_highlight_acct' } }));
               nav.push('accounts');
-            } : undefined} style={{ display:'flex', alignItems:'center', gap:10, padding:'13px 0' }}>
-              <div style={{ fontSize:12, color:M.ink3, width:96 }}>Account</div>
-              <div style={{ flex:1, display:'flex', alignItems:'center', gap:8 }}>
-                {account && (
-                  <div style={{ width:22, height:22, borderRadius:6, background: account.color || acctTypeColor(account.type), display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                    <I name={acctIcon(account.type)} size={12} color="#fff"/>
-                  </div>
-                )}
-                <span style={{ fontSize:13, color:account ? M.ink : M.ink4 }}>{account?.name || '—'}</span>
+            } : undefined} style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
+              <div style={{ width:32, height:32, borderRadius:9, background: account ? (account.color || acctTypeColor(account.type)) : M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <I name={account ? acctIcon(account.type) : 'card'} size={16} color={account ? '#fff' : M.ink4}/>
               </div>
+              <div style={{ fontSize:12, color:M.ink3, width:80 }}>Account</div>
+              <div style={{ flex:1, fontSize:13, color:account ? M.ink : M.ink4 }}>{account?.name || '—'}</div>
               {account && <I name="caretR" size={14} color={M.ink4}/>}
             </div>
-            <Divider inset={0}/>
-            <DetailRow label="Description" value={tx.desc} mono/>
-            {tx.merchantDisplay && tx.merchantDisplay !== tx.merchant && (
-              <>
-                <Divider inset={0}/>
-                <DetailRow label="Original name" value={tx.merchant}/>
-              </>
-            )}
-            {showOriginal && (
-              <>
-                <Divider inset={0}/>
-                <DetailRow label="Original" value={`${tx.amount > 0 ? '+' : '−'}${fmtEur(Math.abs(tx.amount))}`}/>
-              </>
-            )}
+            <Divider inset={44}/>
+            <div style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
+              <div style={{ width:32, height:32, borderRadius:9, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <IcoMDI name="card-text-outline" size={16} color={M.ink3}/>
+              </div>
+              <div style={{ fontSize:12, color:M.ink3, width:80 }}>Description</div>
+              <div style={{ flex:1, fontSize:12, color:M.ink, fontFamily:M.fontMono, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{tx.desc}</div>
+            </div>
+            {tx.merchantDisplay && tx.merchantDisplay !== tx.merchant && (<>
+              <Divider inset={44}/>
+              <div style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
+                <div style={{ width:32, height:32, borderRadius:9, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <IcoMDI name="pencil-outline" size={16} color={M.ink3}/>
+                </div>
+                <div style={{ fontSize:12, color:M.ink3, width:80 }}>Original name</div>
+                <div style={{ flex:1, fontSize:13, color:M.ink }}>{tx.merchant}</div>
+              </div>
+            </>)}
+            {showOriginal && (<>
+              <Divider inset={44}/>
+              <div style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
+                <div style={{ width:32, height:32, borderRadius:9, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <IcoMDI name="cash-minus" size={16} color={M.ink3}/>
+                </div>
+                <div style={{ fontSize:12, color:M.ink3, width:80 }}>Original</div>
+                <div style={{ flex:1, fontSize:13, color:M.ink }}>{tx.amount > 0 ? '+' : '−'}{fmtEur(Math.abs(tx.amount))}</div>
+              </div>
+            </>)}
           </div>
         </div>
 
