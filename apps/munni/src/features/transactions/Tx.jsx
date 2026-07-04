@@ -162,9 +162,15 @@ export function ScreenTxDetail({ params }) {
   // In a shared space, only surface accounts that are attached to this space
   const myAccountIds = React.useMemo(() => new Set(connectedAccounts.map(a => a.id)), [connectedAccounts]);
   const spaceAcctIds = React.useMemo(() => new Set((_sharedData?.accounts || []).map(a => a.id)), [_sharedData?.accounts]);
-  const personalLinkableAccounts = isSharedSpace
-    ? connectedAccounts.filter(a => a.id !== tx.account && spaceAcctIds.has(a.id))
-    : connectedAccounts.filter(a => a.id !== tx.account);
+  const profileAttachedIds = React.useMemo(() => {
+    const ids = _activeProfile?.accountIds;
+    return ids?.length ? new Set(ids) : null;
+  }, [_activeProfile?.accountIds]);
+  const personalLinkableAccounts = connectedAccounts.filter(a => {
+    if (a.id === tx.account) return false;
+    if (isSharedSpace) return spaceAcctIds.has(a.id);
+    return profileAttachedIds ? profileAttachedIds.has(a.id) : true;
+  });
   const sharedSpaceAccounts = (_sharedData?.accounts || []).filter(a => a.id !== tx.account && !myAccountIds.has(a.id));
 
   const [txType, setTxType] = React.useState(() => tx.txType || (positive ? 'Income' : 'Expense'));
@@ -454,7 +460,7 @@ export function ScreenTxDetail({ params }) {
                   <div style={{ flex:1 }}>
                     <div style={{ fontSize:13, fontWeight:500, fontStyle: isUncategorized ? 'italic' : 'normal', color: isAutoSet ? M.ink3 : M.ink }}>{subName}</div>
                     {!isAutoSet && parentName && <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{parentName}</div>}
-                    {isUncategorized && <div style={{ fontSize:10, color:M.ink4, marginTop:1 }}>Auto-set · add a category above to replace</div>}
+                    {isUncategorized && <div style={{ fontSize:10, color:M.ink4, marginTop:1 }}>Tap + below to add a category split</div>}
                     {isAutoSet && !isUncategorized && parentName && <div style={{ fontSize:11, color:M.ink4, marginTop:1 }}>{parentName}</div>}
                   </div>
                   <div className="m-num" style={{ fontSize:13, color: isAutoSet ? M.ink4 : M.ink2 }}>{fmtEur(c.amount)}</div>
@@ -768,7 +774,7 @@ export function ScreenTxDetail({ params }) {
                 window.dispatchEvent(new CustomEvent('munni-ss', { detail: { key: 'munni_highlight_acct' } }));
                 nav.push('accounts');
               }}>
-                <I name="settings" size={15} color={M.ink2}/> Manage accounts
+                <IcoMDI name="bank-outline" size={16} color={M.ink2}/> Manage accounts
               </button>
             </div>
           </Sheet>
@@ -840,7 +846,7 @@ export function ScreenTxDetail({ params }) {
                 return [{ catId: fallbackCatId, amount: leftover }, { catId, amount: val }];
               }
               const idx = s.findIndex(x => x.catId === catId);
-              if (idx >= 0) return s.map((x, j) => j === idx ? { ...x, amount: val } : x);
+              if (idx >= 0) return s.map((x, j) => j === idx ? { ...x, amount: Math.round((x.amount + val) * 100) / 100 } : x);
               // Reduce uncategorized by the new cat's amount
               const uncatIdx = s.findIndex(c => c.catId === fallbackCatId);
               if (uncatIdx >= 0) {

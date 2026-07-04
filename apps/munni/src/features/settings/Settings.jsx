@@ -1426,7 +1426,7 @@ export function ScreenNotifications() {
   const [syncedReviewCount, setSyncedReviewCount] = React.useState(0);
   const [, setNotifUnread] = useLocalStorage('munni_notif_unread', 0);
   const { profiles } = useProfiles();
-  const [connectedAccounts] = useConnectedAccounts();
+  const [connectedAccounts, setConnectedAccounts] = useConnectedAccounts();
   const myId = React.useMemo(() => getUserId(), []);
   const activeProfile = profiles.find(p => p.active);
   const spaceSdKey = activeProfile ? `munni_shared_data_${activeProfile.id}` : 'munni_shared_data_none';
@@ -1515,6 +1515,16 @@ export function ScreenNotifications() {
         return { id, date: dateStr, time: `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`, merchant: pool.merchant, desc: pool.desc, cat: pool.cat, amount: amt, account: accountId, needsReview: true, ...(pool.confidence ? { confidence: pool.confidence } : {}) };
       });
       addTxs(newTxs);
+      // Update account balances: each synced tx changes its account's balance
+      const acctDelta = {};
+      newTxs.forEach(tx => { acctDelta[tx.account] = (acctDelta[tx.account] || 0) + tx.amount; });
+      if (Object.keys(acctDelta).length > 0) {
+        setConnectedAccounts(prev => prev.map(a =>
+          acctDelta[a.id] !== undefined
+            ? { ...a, balance: Math.round(((a.balance || 0) + acctDelta[a.id]) * 100) / 100 }
+            : a
+        ));
+      }
       // Fan synced txs into every shared space whose attached accounts overlap
       try {
         profiles.forEach(p => {
@@ -1532,7 +1542,11 @@ export function ScreenNotifications() {
           const existingIds = new Set((sd.txs || []).map(t => t.id));
           const fresh = toAdd.filter(t => !existingIds.has(t.id));
           if (!fresh.length) return;
-          localStorage.setItem(sdKey, JSON.stringify({ ...sd, txs: [...fresh, ...(sd.txs || [])] }));
+          const updatedAccts = (sd.accounts || []).map(a => {
+            const delta = fresh.filter(tx => tx.account === a.id).reduce((s, tx) => s + tx.amount, 0);
+            return delta !== 0 ? { ...a, balance: Math.round(((a.balance || 0) + delta) * 100) / 100 } : a;
+          });
+          localStorage.setItem(sdKey, JSON.stringify({ ...sd, accounts: updatedAccts, txs: [...fresh, ...(sd.txs || [])] }));
           window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: sdKey } }));
         });
       } catch {}

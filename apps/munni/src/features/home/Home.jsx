@@ -130,8 +130,9 @@ export function ScreenHome() {
     ? (activeSharedData.accounts || []).map(a => a.id)
     : (activeProfile?.accountIds || []);
   const allAccountsForBalance = [...connectedAccounts, ...(activeSharedData?.accounts || []).filter(sa => !connectedAccounts.some(ca => ca.id === sa.id))];
+  const BALANCE_TYPES = new Set(['checking', 'bank', 'saving', 'savings', 'cash', 'brokerage', 'invest']);
   const totalBalance = allAccountsForBalance
-    .filter(a => a.type === 'checking' && activeAccountIds.includes(a.id))
+    .filter(a => BALANCE_TYPES.has(a.type) && activeAccountIds.includes(a.id))
     .reduce((s, a) => s + (a.balance || 0), 0);
 
   // Compute period values from txs

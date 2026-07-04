@@ -56,6 +56,7 @@ if (typeof document !== 'undefined' && !document.getElementById('m-styles')) {
     .m-pill { display:inline-flex; align-items:center; padding:3px 8px; border-radius:999px; font-size:10px; font-weight:600; letter-spacing:0.02em; }
     .m-btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; height:48px; padding:0 22px; border-radius:14px; font-size:15px; font-weight:600; border:none; background:${M.ink}; color:${M.paper}; cursor:pointer; transition: transform 0.1s, opacity 0.15s; font-family: ${M.fontUI}; }
     .m-btn:active { transform: scale(0.98); opacity: 0.9; }
+    .m-btn:disabled { opacity: 0.38; cursor: not-allowed; pointer-events: none; }
     .m-btn.outline { background:transparent; color:${M.ink}; border:1px solid ${M.line}; }
     .m-btn.ghost { background:transparent; color:${M.ink}; }
     .m-btn.sage { background:${M.sage}; color:#fff; }
