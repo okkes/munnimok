@@ -136,7 +136,7 @@ export function ScreenSignupOnboarding({ signup, onComplete, onBack }) {
       el.style.overflowY = 'hidden';
       el.scrollTop = step1SavedScroll.current;
     } else {
-      el.style.overflowY = '';
+      el.style.overflowY = 'auto';
       requestAnimationFrame(() => { el.scrollTop = step1SavedScroll.current; });
     }
   }, [showCountry, showApiInfo, showPicker, showCountryInfo, showCurrencySheet]);

@@ -383,22 +383,25 @@ export function ScreenTxDetail({ params }) {
           {txCats.map((c, i) => {
             const cat = CATEGORIES[c.catId] || _catExt[c.catId] || {};
             const isUncategorized = c.catId === 'expenseUncategorized' || c.catId === 'incomeUncategorized';
+            const fallbackCatId = getTypeFallbackCat(effectiveType, !positive);
+            const isAutoSet = txCats.length === 1 && c.catId === fallbackCatId;
             const parent = cat.parent ? (CATEGORIES[cat.parent] || _catExt[cat.parent]) : null;
             const parentName = parent?.name || cat.group || '';
             const subName = cat.name || c.catId;
             return (
               <React.Fragment key={c.catId + i}>
-                <div style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 0', opacity: isUncategorized ? 0.6 : 1 }}>
-                  <div style={{ width:28, height:28, borderRadius:8, background: isUncategorized ? M.line2 : M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                    <IcoMDI name={cat.icon||'help-circle-outline'} size={14} color={isUncategorized ? M.ink4 : M.ink2}/>
+                <div style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 0', opacity: isAutoSet ? 0.6 : 1 }}>
+                  <div style={{ width:28, height:28, borderRadius:8, background: isAutoSet ? M.line2 : M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                    <IcoMDI name={cat.icon||'help-circle-outline'} size={14} color={isAutoSet ? M.ink4 : M.ink2}/>
                   </div>
                   <div style={{ flex:1 }}>
-                    <div style={{ fontSize:13, fontWeight:500, fontStyle: isUncategorized ? 'italic' : 'normal', color: isUncategorized ? M.ink3 : M.ink }}>{subName}</div>
-                    {!isUncategorized && parentName && <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{parentName}</div>}
+                    <div style={{ fontSize:13, fontWeight:500, fontStyle: isUncategorized ? 'italic' : 'normal', color: isAutoSet ? M.ink3 : M.ink }}>{subName}</div>
+                    {!isAutoSet && parentName && <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>{parentName}</div>}
                     {isUncategorized && <div style={{ fontSize:10, color:M.ink4, marginTop:1 }}>Auto-set · add a category above to replace</div>}
+                    {isAutoSet && !isUncategorized && parentName && <div style={{ fontSize:11, color:M.ink4, marginTop:1 }}>{parentName}</div>}
                   </div>
-                  <div className="m-num" style={{ fontSize:13, color: isUncategorized ? M.ink4 : M.ink2 }}>{fmtEur(c.amount)}</div>
-                  {!isUncategorized && (
+                  <div className="m-num" style={{ fontSize:13, color: isAutoSet ? M.ink4 : M.ink2 }}>{fmtEur(c.amount)}</div>
+                  {!isAutoSet && (
                     <button onClick={() => removeCategory(i)} style={{ background:'none', border:'none', color:M.clay, padding:'0 4px', fontSize:18, lineHeight:1, cursor:'pointer', fontFamily:M.fontUI }}>×</button>
                   )}
                 </div>
