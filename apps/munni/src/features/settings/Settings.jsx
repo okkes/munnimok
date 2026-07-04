@@ -1,4 +1,5 @@
 ﻿import React from 'react';
+import { createPortal } from 'react-dom';
 import { T } from '../../shared/testIds.js';
 import { STOCK_AVATARS, CURRENCIES } from '../../shared/constants.js';
 import { CATEGORIES, getCatDirection } from '../../shared/data/categories.js';
@@ -1335,8 +1336,8 @@ export function ScreenManageCategories() {
         </Sheet>
       )}
 
-      {/* Floating drag ghost — centered on pointer */}
-      {dragState && (
+      {/* Floating drag ghost — rendered via portal to escape containing block */}
+      {dragState && createPortal(
         <div style={{
           position:'fixed',
           left: dragState.x,
@@ -1358,7 +1359,8 @@ export function ScreenManageCategories() {
             <IcoMDI name={dragState.ghostIcon || 'help-circle-outline'} size={15} color={dragState.ghostColor || M.sage}/>
           </div>
           <div style={{ fontSize:13, fontWeight:600, color:M.ink }}>{dragState.ghostLabel}</div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
