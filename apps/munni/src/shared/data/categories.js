@@ -137,7 +137,6 @@ export const CATEGORIES = {
   // ── Adjustment ──────────────────────────────────────────────
   adjustment:             { id:'adjustment',             name:'Adjustment',         icon:'tune-variant',               group:'Adjustment',   isParent:true, color:'#607D8B', type:'Adjustment' },
   balanceAdjustment:      { id:'balanceAdjustment',      name:'Balance Adjustment', icon:'scale-balance',              group:'Adjustment',   parent:'adjustment', type:'Adjustment' },
-  refund:                 { id:'refund',                 name:'Refund',             icon:'undo-variant',               group:'Adjustment',   parent:'adjustment', type:'Adjustment' },
 };
 
 export let _catExt = {};

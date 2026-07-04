@@ -856,6 +856,7 @@ export function ScreenManageCategories() {
   const [dragState, setDragState] = React.useState(null);
   const [dropTarget, setDropTarget] = React.useState(null);
   const [editSheet, setEditSheet] = React.useState(null);
+  const [catInfoSheet, setCatInfoSheet] = React.useState(null);
   const [collapsedParents, setCollapsedParents] = React.useState({});
   const [txCounts, setTxCounts] = React.useState({});
 
@@ -869,7 +870,7 @@ export function ScreenManageCategories() {
 
   // Helpers
   const customParents = customCats.filter(c => c.isParent);
-  const premadeParents = Object.entries(CATEGORIES).filter(([k,v]) => v.isParent && !v.positive && k !== 'saving' && k !== 'expense');
+  const premadeParents = Object.entries(CATEGORIES).filter(([k,v]) => v.isParent && k !== 'expense');
 
   const getCustomSubs = (parentId) => customCats.filter(c => !c.isParent && c.parent === parentId);
   const getPremadeSubs = (parentKey) => Object.entries(CATEGORIES).filter(([k,v]) => v.parent === parentKey);
@@ -907,6 +908,7 @@ export function ScreenManageCategories() {
   const startDrag = (e, catId, parentId, label, icon, color) => {
     e.preventDefault();
     e.stopPropagation();
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
     setDragState({ catId, parentId, x: e.clientX, y: e.clientY, ghostLabel: label, ghostIcon: icon, ghostColor: color });
     setCollapsedParents(() => {
       const next = {};
@@ -1029,14 +1031,14 @@ export function ScreenManageCategories() {
 
             return (
               <div key={subKey}
-                className={isCustomSub && !isOther ? 'm-tap' : ''}
+                className="m-tap"
                 style={{ display:'flex', alignItems:'center', gap:10, padding:'11px 16px', borderTop:`1px solid ${M.line2}`,
                   background: isFlashing ? (parentCat.color || M.sage) + '22' : dropTarget?.catId === subKey ? M.sageSoft : 'transparent',
                   transition:'background 0.3s',
-                  cursor: (isCustomSub && !isOther) ? 'grab' : 'default',
+                  cursor: (isCustomSub && !isOther) ? 'grab' : 'pointer',
                   touchAction: (isCustomSub && !isOther) ? 'none' : 'auto',
                 }}
-                onClick={isCustomSub && !isOther ? () => setEditSheet({ catId: subKey, parentId: parentKey, isCustom: true, isParent: false, name: subCat.name, icon: subCat.icon || 'help-circle-outline', scope: subCat.scope }) : undefined}
+                onClick={() => setCatInfoSheet({ catId: subKey, parentId: parentKey, isCustom: !!isCustomSub, isOther: !!isOther })}
                 onPointerDown={(isCustomSub && !isOther) ? (e) => startDrag(e, subKey, parentKey, subCat.name, subCat.icon, parentCat.color || M.paper2) : undefined}
                 onPointerEnter={(dragState && !isOther) ? () => setDropTarget({ type:'reorder', catId: subKey, parentId: parentKey }) : undefined}
               >
@@ -1120,6 +1122,64 @@ export function ScreenManageCategories() {
           }}
         />
       </Sheet>
+
+      {/* Category info sheet */}
+      {catInfoSheet && (() => {
+        const { catId, parentId, isCustom, isOther } = catInfoSheet;
+        const baseCat = CATEGORIES[catId] || customCats.find(c => c.id === catId) || {};
+        const customCatEntry = customCats.find(c => c.id === catId);
+        const displayName = isCustom ? (customCatEntry?.name || baseCat.name || catId) : (premadeOverrides[catId]?.name || baseCat.name || catId);
+        const parentCatBase = CATEGORIES[parentId] || customCats.find(c => c.id === parentId) || {};
+        const parentDisplay = customCats.find(c => c.id === parentId)?.name || premadeOverrides[parentId]?.name || parentCatBase.name || parentId;
+        const iconName = isCustom ? (customCatEntry?.icon || 'help-circle-outline') : (baseCat.icon || 'help-circle-outline');
+        const iconColor = parentCatBase.color || M.sage;
+        const txType = baseCat.type || parentCatBase.type || 'Expense';
+        const txCount = txCounts[catId] || 0;
+        const canEdit = isCustom && !isOther;
+        const TYPE_COLOR = { Expense: M.clay, Income: M.sage, Saving: '#A8782B', Transfer: '#FF9800', Investment: '#673AB7', 'Debt Payment': '#9C27B0', Adjustment: '#607D8B' };
+        return (
+          <Sheet title={displayName} onClose={() => setCatInfoSheet(null)}>
+            <div style={{ padding:'4px 20px 32px' }}>
+              <div className="m-card" style={{ padding:16, border:`1px solid ${M.line}`, marginBottom:16 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:12 }}>
+                  <div style={{ width:44, height:44, borderRadius:12, background: iconColor + '22', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                    <IcoMDI name={iconName} size={20} color={iconColor}/>
+                  </div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:16, fontWeight:700, color:M.ink }}>{displayName}</div>
+                    <div style={{ fontSize:12, color:M.ink3, marginTop:2 }}>{parentDisplay}</div>
+                  </div>
+                </div>
+                <Divider/>
+                <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 0' }}>
+                  <div style={{ fontSize:12, color:M.ink3, width:100 }}>Transaction type</div>
+                  <div style={{ flex:1 }}>
+                    <span style={{ fontSize:12, fontWeight:600, color: TYPE_COLOR[txType] || M.ink2, background: (TYPE_COLOR[txType] || M.ink2) + '18', borderRadius:6, padding:'3px 8px' }}>{txType}</span>
+                  </div>
+                </div>
+                <Divider/>
+                <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 0' }}>
+                  <div style={{ fontSize:12, color:M.ink3, width:100 }}>Transactions</div>
+                  <div style={{ flex:1, fontSize:13, color:M.ink }}>{txCount > 0 ? txCount : 'None'}</div>
+                </div>
+                <Divider/>
+                <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 0' }}>
+                  <div style={{ fontSize:12, color:M.ink3, width:100 }}>Source</div>
+                  <div style={{ flex:1, fontSize:13, color:M.ink }}>{isCustom ? 'Custom' : 'Built-in'}</div>
+                </div>
+              </div>
+              {canEdit && (
+                <button className="m-btn outline m-tap" style={{ width:'100%' }} onClick={() => {
+                  setCatInfoSheet(null);
+                  setEditSheet({ catId, parentId, isCustom: true, isParent: false, name: customCatEntry?.name || '', icon: customCatEntry?.icon || 'help-circle-outline', scope: customCatEntry?.scope });
+                }}>
+                  <IcoMDI name="pencil-outline" size={16} color={M.ink2}/> Edit category
+                </button>
+              )}
+            </div>
+          </Sheet>
+        );
+      })()}
 
       {/* Edit sheet */}
       {editSheet && (

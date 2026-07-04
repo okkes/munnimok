@@ -95,8 +95,8 @@ export function TxRow({ tx, onClick, showCat = true, showDate = false, dense = f
         {hasReimbursement && !catAmount && <div style={{ width:16, height:16, borderRadius:999, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center' }}><I name="link" size={9} color={M.sage}/></div>}
         {catAmount != null ? (
           <div style={{ textAlign:'right' }}>
-            <div className="m-num" style={{ fontSize: 15, fontWeight: 600, color: M.ink }}>
-              {fmtEur(catAmount)}
+            <div className="m-num" style={{ fontSize: 15, fontWeight: 600, color: catAmount > 0 ? M.sage : M.ink }}>
+              {catAmount < 0 ? '−' : catAmount > 0 ? '+' : ''}{fmtEur(Math.abs(catAmount))}
             </div>
             <div className="m-num" style={{ fontSize: 11, color: M.ink4, marginTop: 1 }}>
               {displayPositive ? '+' : ''}{fmtEur(displayAmount)}

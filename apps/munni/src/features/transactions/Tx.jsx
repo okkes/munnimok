@@ -389,22 +389,24 @@ export function ScreenTxDetail({ params }) {
         )}
         <div style={{ pointerEvents: isLockedByOther ? 'none' : 'auto', opacity: isLockedByOther ? 0.65 : 1 }}>
         {/* Hero */}
-        <div style={{ padding:'8px 0 20px', textAlign:'center' }}>
-          <div className="m-num" style={{ fontSize:34, fontWeight:700, color: heroAmount > 0 ? M.sage : (heroAmount === 0 ? M.ink3 : M.ink), lineHeight:1, letterSpacing:'-0.03em', marginBottom:4 }}>
+        <div style={{ padding:'10px 0 22px', textAlign:'center' }}>
+          <div className="m-num" style={{ fontSize:36, fontWeight:700, color: heroAmount > 0 ? M.sage : (heroAmount === 0 ? M.ink3 : M.ink), lineHeight:1, letterSpacing:'-0.03em', marginBottom:8 }}>
             {heroAmount > 0 ? '+' : heroAmount < 0 ? '−' : ''}{fmtEur(Math.abs(heroAmount))}
           </div>
           {editingTitle ? (
             <input autoFocus value={titleDraft} onChange={e=>setTitleDraft(e.target.value)}
               onBlur={saveTitle} onKeyDown={e=>e.key==='Enter'&&saveTitle()}
-              style={{ fontSize:18, fontWeight:600, color:M.ink, border:'none', borderBottom:`2px solid ${M.sage}`, background:'transparent', outline:'none', width:'100%', fontFamily:M.fontUI, marginBottom:4, padding:'2px 0', textAlign:'center' }}/>
+              style={{ fontSize:17, fontWeight:600, color:M.ink, border:'none', borderBottom:`2px solid ${M.sage}`, background:'transparent', outline:'none', width:'80%', fontFamily:M.fontUI, marginBottom:4, padding:'2px 0', textAlign:'center' }}/>
           ) : (
-            <button data-testid="tx-title-edit-btn" className="m-tap" onClick={()=>{setTitleDraft(tx.merchantDisplay||tx.merchant);setEditingTitle(true);}}
-              style={{ fontSize:18, fontWeight:600, color:M.ink, background:'none', border:'none', cursor:'pointer', padding:0, fontFamily:M.fontUI, textAlign:'center', display:'inline-flex', alignItems:'center', gap:6 }}>
-              <span data-testid="tx-display-name">{tx.merchantDisplay || tx.merchant}</span>
-              <IcoMDI name="pencil-outline" size={14} color={M.ink4}/>
-            </button>
+            <div style={{ position:'relative', display:'inline-block', maxWidth:'80%', padding:'0 28px' }}>
+              <span data-testid="tx-display-name" style={{ fontSize:17, fontWeight:600, color:M.ink }}>{tx.merchantDisplay || tx.merchant}</span>
+              <button data-testid="tx-title-edit-btn" className="m-tap" onClick={()=>{setTitleDraft(tx.merchantDisplay||tx.merchant);setEditingTitle(true);}}
+                style={{ position:'absolute', right:0, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', padding:4, display:'flex', alignItems:'center' }}>
+                <IcoMDI name="pencil-outline" size={13} color={M.ink4}/>
+              </button>
+            </div>
           )}
-          <div style={{ fontSize:12, color:M.ink3, marginTop:4 }}>{fmtDate(tx.date, 'long')} · {tx.time}</div>
+          <div style={{ fontSize:12, color:M.ink3, marginTop:6 }}>{fmtDate(tx.date, 'long')} · {tx.time}</div>
         </div>
 
         {/* Classification card */}
@@ -443,8 +445,9 @@ export function ScreenTxDetail({ params }) {
           <div className="m-cap" style={{ marginBottom:6, paddingLeft:2 }}>Categories</div>
           <div className="m-card" style={{ padding: '12px 16px', border: `1px solid ${M.line}`, position:'relative' }}>
           {txCats.map((c, i) => ({ c, i }))
+            .filter(({ c }) => !(c.catId === fallbackCatId && c.amount < 0.005))
             .sort((a, b) => a.c.catId === fallbackCatId ? -1 : b.c.catId === fallbackCatId ? 1 : 0)
-            .map(({ c, i }) => {
+            .map(({ c, i }, di, darr) => {
             const cat = CATEGORIES[c.catId] || _catExt[c.catId] || {};
             const isUncategorized = c.catId === 'expenseUncategorized' || c.catId === 'incomeUncategorized';
             const isAutoSet = c.catId === fallbackCatId;
@@ -468,7 +471,7 @@ export function ScreenTxDetail({ params }) {
                     <button onClick={() => removeCategory(i)} style={{ background:'none', border:'none', color:M.clay, padding:'0 4px', fontSize:18, lineHeight:1, cursor:'pointer', fontFamily:M.fontUI }}>×</button>
                   )}
                 </div>
-                {i < txCats.length - 1 && <Divider/>}
+                {di < darr.length - 1 && <Divider/>}
               </React.Fragment>
             );
           })}
@@ -746,27 +749,22 @@ export function ScreenTxDetail({ params }) {
         {showAcctInfoSheet && account && (
           <Sheet title={account.name} onClose={() => setShowAcctInfoSheet(false)}>
             <div style={{ padding:'4px 20px 32px' }}>
-              <div className="m-card" style={{ padding:'4px 16px', border:`1px solid ${M.line}`, marginBottom:16 }}>
-                <div style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
-                  <div style={{ width:32, height:32, borderRadius:9, background: account.color || acctTypeColor(account.type), display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                    <I name={acctIcon(account.type)} size={16} color="#fff"/>
+              <div className="m-card" style={{ padding:16, border:`1px solid ${M.line}`, marginBottom:16 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+                  <div style={{ width:40, height:40, borderRadius:11, background: account.color || acctTypeColor(account.type), display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                    <I name={acctIcon(account.type)} size={18} color="#fff"/>
                   </div>
-                  <div style={{ flex:1 }}>
-                    <div style={{ fontSize:14, fontWeight:600 }}>{account.name}</div>
-                    <div style={{ fontSize:12, color:M.ink3, marginTop:1 }}>{account.type}</div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:14, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{account.name}</div>
+                    <div style={{ fontSize:11, color:M.ink3, marginTop:2, textTransform:'capitalize' }}>{account.type}</div>
                   </div>
-                  <div className="m-num" style={{ fontSize:16, fontWeight:700 }}>{fmtEur(account.balance || 0)}</div>
+                  <div className="m-num" style={{ fontSize:17, fontWeight:700, flexShrink:0 }}>{fmtEur(account.balance || 0)}</div>
                 </div>
-                {account.iban && <>
-                  <Divider inset={44}/>
-                  <div style={{ display:'flex', alignItems:'center', gap:12, padding:'13px 0' }}>
-                    <div style={{ width:32, height:32, borderRadius:9, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                      <IcoMDI name="card-text-outline" size={16} color={M.ink3}/>
-                    </div>
-                    <div style={{ fontSize:12, color:M.ink3, width:80 }}>IBAN</div>
-                    <div style={{ flex:1, fontSize:12, fontFamily:M.fontMono, color:M.ink }}>{account.iban}</div>
+                {account.iban && (
+                  <div style={{ marginTop:12, paddingTop:12, borderTop:`1px solid ${M.line2}`, fontSize:12, fontFamily:M.fontMono, color:M.ink2, letterSpacing:'0.04em', wordBreak:'break-all' }}>
+                    {account.iban}
                   </div>
-                </>}
+                )}
               </div>
               <button className="m-btn outline m-tap" style={{ width:'100%' }} onClick={() => {
                 setShowAcctInfoSheet(false);
@@ -846,7 +844,14 @@ export function ScreenTxDetail({ params }) {
                 return [{ catId: fallbackCatId, amount: leftover }, { catId, amount: val }];
               }
               const idx = s.findIndex(x => x.catId === catId);
-              if (idx >= 0) return s.map((x, j) => j === idx ? { ...x, amount: Math.round((x.amount + val) * 100) / 100 } : x);
+              if (idx >= 0) {
+                const uncatIdx = s.findIndex(c => c.catId === fallbackCatId);
+                return s.map((x, j) => {
+                  if (j === idx) return { ...x, amount: Math.round((x.amount + val) * 100) / 100 };
+                  if (uncatIdx >= 0 && j === uncatIdx) return { ...x, amount: Math.max(0, Math.round((x.amount - val) * 100) / 100) };
+                  return x;
+                });
+              }
               // Reduce uncategorized by the new cat's amount
               const uncatIdx = s.findIndex(c => c.catId === fallbackCatId);
               if (uncatIdx >= 0) {
@@ -1168,7 +1173,7 @@ export function ScreenCategoryDrill({ params }) {
                     <TxRow tx={t} onClick={() => nav.push('txDetail', { id: t.id })}
                       showCat={isParent}
                       catLabel={isParent ? ((CATEGORIES[t.cat] || _catExt[t.cat])?.name || undefined) : undefined}
-                      catAmount={showBoth ? tCatAmt : null}
+                      catAmount={showBoth ? (tEffAmt < 0 ? -tCatAmt : tCatAmt) : null}
                     />
                     {i < a.length-1 && <Divider inset={50}/>}
                   </React.Fragment>
