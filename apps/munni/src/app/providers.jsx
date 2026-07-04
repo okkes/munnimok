@@ -221,7 +221,7 @@ export function TxProvider({ children }) {
     : [];
 
   // Raw fields belong to the transaction itself; everything else is per-profile metadata
-  const RAW_TX_FIELDS = new Set(['merchant', 'merchantDisplay', 'desc', 'date', 'time', 'amount', 'account']);
+  const RAW_TX_FIELDS = new Set(['merchant', 'desc', 'date', 'time', 'amount', 'account']);
   const updateTx = (id, changes) => {
     const rawChanges = Object.fromEntries(Object.entries(changes).filter(([k]) => RAW_TX_FIELDS.has(k)));
     const metaChanges = Object.fromEntries(Object.entries(changes).filter(([k]) => !RAW_TX_FIELDS.has(k)));

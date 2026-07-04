@@ -73,17 +73,8 @@ export function TxRow({ tx, onClick, showCat = true, showDate = false, dense = f
         </div>
       )}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-          <div style={{ fontSize: 14, fontWeight: 500, color: M.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>
-            {highlight ? <HighlightText text={tx.merchantDisplay || tx.merchant} query={highlight}/> : (tx.merchantDisplay || tx.merchant)}
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
-            {hasReimbursement && <div style={{ width:16, height:16, borderRadius:999, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center' }}><I name="link" size={9} color={M.sage}/></div>}
-            {isLinkedReimburse && <div style={{ width:16, height:16, borderRadius:999, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center' }}><I name="link" size={9} color={M.sage}/></div>}
-            <div className="m-num" style={{ fontSize: 15, fontWeight: 600, color: displayPositive ? M.sage : M.ink }}>
-              {displayPositive ? '+' : ''}{fmtEur(displayAmount)}
-            </div>
-          </div>
+        <div style={{ fontSize: 14, fontWeight: 500, color: M.ink, lineHeight: 1.3 }}>
+          {highlight ? <HighlightText text={tx.merchantDisplay || tx.merchant} query={highlight}/> : (tx.merchantDisplay || tx.merchant)}
         </div>
         {showCat && (
           <div style={{ display: 'flex', gap: 5, alignItems: 'center', marginTop: 3 }}>
@@ -99,6 +90,13 @@ export function TxRow({ tx, onClick, showCat = true, showDate = false, dense = f
             {tx.needsReview && <div style={{ width:14, height:14, borderRadius:4, background:M.ochreSoft, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}><I name="alert" size={7} color={M.ochre}/></div>}
           </div>
         )}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+        {hasReimbursement && <div style={{ width:16, height:16, borderRadius:999, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center' }}><I name="link" size={9} color={M.sage}/></div>}
+        {isLinkedReimburse && <div style={{ width:16, height:16, borderRadius:999, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center' }}><I name="link" size={9} color={M.sage}/></div>}
+        <div className="m-num" style={{ fontSize: 15, fontWeight: 600, color: displayPositive ? M.sage : M.ink }}>
+          {displayPositive ? '+' : ''}{fmtEur(displayAmount)}
+        </div>
       </div>
     </div>
   );

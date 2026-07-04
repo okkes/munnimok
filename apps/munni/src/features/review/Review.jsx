@@ -876,7 +876,7 @@ export function TypePickerSheet({ currentType, onClose, onPick }) {
   );
 }
 
-export function LinkedAccountPickerSheet({ txAccountId, myAccounts, sharedAccounts, linkedAcctId, onClose, onPick }) {
+export function LinkedAccountPickerSheet({ txAccountId, myAccounts, sharedAccounts, linkedAcctId, onClose, onPick, onGoToSettings }) {
   const ACCT_TYPE_LABEL = { checking:'Checking', savings:'Savings', invest:'Brokerage', credit:'Credit' };
   const renderAcct = (a) => (
     <div key={a.id} className="m-tap" onClick={() => { onPick(a.id); onClose(); }} style={{
@@ -929,6 +929,14 @@ export function LinkedAccountPickerSheet({ txAccountId, myAccounts, sharedAccoun
         )}
         {myAccounts.length === 0 && sharedAccounts.length === 0 && (
           <div style={{ textAlign:'center', padding:'32px 0', color:M.ink3, fontSize:13 }}>No other accounts available</div>
+        )}
+        {onGoToSettings && (
+          <div style={{ textAlign:'center', marginTop:20, padding:'14px 0', borderTop:`1px solid ${M.line}` }}>
+            <div style={{ fontSize:12, color:M.ink4 }}>Missing an account?</div>
+            <button onClick={onGoToSettings} style={{ background:'none', border:'none', color:M.brand, fontSize:12, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginTop:4, padding:0 }}>
+              Attach account to this space →
+            </button>
+          </div>
         )}
       </div>
     </Sheet>

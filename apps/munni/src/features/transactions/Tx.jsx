@@ -150,6 +150,7 @@ export function ScreenTxDetail({ params }) {
   const tx = txs.find(t => t.id === params.id) || txs[0] || TRANSACTIONS[0];
   const positive = tx.amount > 0;
 
+  const isSharedSpace = _sharedKey !== 'munni_shared_data_none';
   // All accounts available to link (personal + shared space, excluding tx's own account)
   const allAccounts = React.useMemo(() => {
     const combined = [...connectedAccounts, ...(_sharedData?.accounts || [])];
@@ -157,8 +158,13 @@ export function ScreenTxDetail({ params }) {
   }, [connectedAccounts, _sharedData?.accounts]);
   const txAccountObj = allAccounts.find(a => a.id === tx.account);
   const linkableAccounts = allAccounts.filter(a => a.id !== tx.account);
-  const sharedSpaceAccounts = (_sharedData?.accounts || []).filter(a => a.id !== tx.account);
-  const personalLinkableAccounts = connectedAccounts.filter(a => a.id !== tx.account);
+  // In a shared space, only surface accounts that are attached to this space
+  const myAccountIds = React.useMemo(() => new Set(connectedAccounts.map(a => a.id)), [connectedAccounts]);
+  const spaceAcctIds = React.useMemo(() => new Set((_sharedData?.accounts || []).map(a => a.id)), [_sharedData?.accounts]);
+  const personalLinkableAccounts = isSharedSpace
+    ? connectedAccounts.filter(a => a.id !== tx.account && spaceAcctIds.has(a.id))
+    : connectedAccounts.filter(a => a.id !== tx.account);
+  const sharedSpaceAccounts = (_sharedData?.accounts || []).filter(a => a.id !== tx.account && !myAccountIds.has(a.id));
 
   const [txType, setTxType] = React.useState(() => tx.txType || (positive ? 'Income' : 'Expense'));
   const [linkedAcctId, setLinkedAcctId] = React.useState(() => tx.linkedAccount || null);
@@ -658,6 +664,7 @@ export function ScreenTxDetail({ params }) {
             linkedAcctId={linkedAcctId}
             onClose={() => setShowAcctPicker(false)}
             onPick={onLinkedAcctChange}
+            onGoToSettings={isSharedSpace ? () => { setShowAcctPicker(false); nav.push('spaceDetail', { id: _activeProfile?.id }); } : undefined}
           />
         )}
 
