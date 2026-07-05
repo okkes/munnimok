@@ -728,58 +728,51 @@ const MDI_ICON_LIST = [
   // Defaults & misc
   'help-circle-outline','star-outline','heart-outline','bell-outline','gift-outline',
   'map-marker-outline','earth','calendar-outline','clock-outline','shield-outline',
-  'flag-outline','bookmark-outline','tag-outline','lightning-bolt','sparkles',
+  'flag-outline','bookmark-outline','tag-outline','lightning-bolt','fire',
   // Home & Housing
-  'home-outline','home-city-outline','sofa-outline','bed-outline','bathtub-outline',
-  'shower','fridge-outline','washing-machine','lightbulb-outline','fire',
-  'water-outline','power-plug-outline','wifi','television','hammer-screwdriver',
-  'key-outline','door-closed-outline','garage-open-outline','pool','table-furniture',
+  'home-outline','home-city-outline','sofa-outline','bed-outline','shower',
+  'washing-machine','lightbulb-outline','water-outline','power-plug-outline',
+  'wifi','television','hammer-screwdriver','key-outline','door-closed-outline',
+  'fridge','bathtub-outline',
   // Transport
   'car-outline','car-sports','bus-side','train-variant','bike','motorbike',
   'airplane-takeoff','taxi','ferry','gas-station-outline','parking','scooter',
-  'bicycle','walk','subway-variant','tram-side',
+  'walk','subway-variant',
   // Food & Drink
   'food-outline','food-apple-outline','coffee-outline','beer-outline','glass-wine',
-  'pizza-outline','silverware-fork-knife','hamburger','noodles','cupcake',
-  'tea-outline','bottle-wine','baguette','fish','leaf-maple',
+  'pizza-outline','silverware-fork-knife','hamburger','fish','bottle-wine',
   // Shopping & Retail
   'cart-variant','shopping-outline','bag-personal-outline','receipt','store-outline',
   'barcode-scan','qrcode','hanger',
   // Clothing & Personal care
   'tshirt-crew-outline','shoe-heel','glasses','watch','hair-dryer-outline',
-  'face-woman-outline','flower-outline','perfume','lotion-outline','razor',
+  'face-woman-outline','flower-outline','razor',
   // Health & Fitness
   'hospital-box-outline','heart-pulse','pill-outline','dumbbell','run-fast',
-  'swimming','stethoscope','bandage-outline','tooth-outline','eye-outline',
-  'yoga','weight-lifter','meditation',
+  'swim','stethoscope','eye-outline',
   // Entertainment & Media
   'television-play','movie-open-outline','music-note-outline','headphones',
   'controller-classic-outline','book-open-page-variant-outline','palette-outline',
-  'camera-outline','youtube','spotify','netflix','theater','dice-multiple-outline',
+  'camera-outline','dice-multiple-outline','drama-masks',
   // Finance & Money
   'cash-plus','piggy-bank-outline','bank-outline','credit-card-outline',
   'currency-eur','chart-line','trending-up','trending-down','safe-square-outline',
   'chart-donut','percent','swap-horizontal','bank-transfer','currency-usd',
-  'calculator-outline','receipt-text-outline',
+  'calculator','cash-register','chart-box-outline','finance',
   // Education & Work
   'school-outline','book-education-outline','pencil-outline','certificate-outline',
   'graduation-cap','briefcase-outline','office-building-outline','desk-lamp',
-  'monitor-screenshot','printer-outline','account-group-outline','presentation',
+  'monitor-screenshot','printer-outline','account-group-outline',
   // Technology
-  'cellphone-link','laptop','tablet-cellphone','mouse-outline','keyboard-outline',
-  'headset-outline','cloud-outline','server-outline','code-braces',
+  'cellphone-link','laptop','tablet-cellphone',
+  'headset-outline','cloud-outline','server','code-braces',
   // Travel & Holiday
-  'island','pine-tree','landscape','camping','beach','mountain-snow',
-  'tent','suitcase-outline','passport','map-outline',
+  'island','pine-tree','landscape','camping','beach',
+  'tent','suitcase-outline','map-outline',
   // Kids & Family
-  'baby-face-outline','human-child','dog-side','cat','paw-outline',
-  'teddy-bear','school-bus','baby-carriage',
+  'baby-face-outline','human-child','dog-side','cat','paw-outline','school-bus',
   // Subscriptions & Services
-  'newspaper-variant-outline','phone-outline','email-outline','web',
-  'home-automation','security','robot-outline',
-  // Savings & Investment
-  'safe-square-outline','home-currency-usd','chart-box-outline','finance',
-  'trending-up','cash-register','bank-check',
+  'newspaper-variant-outline','phone-outline','email-outline','web','robot-outline',
 ];
 
 function InfoTooltip({ text, onClose }) {
@@ -1167,18 +1160,21 @@ export function ScreenManageCategories() {
   };
 
   const [flashCatId, setFlashCatId] = React.useState(null);
+  const [catSearch, setCatSearch] = React.useState('');
   const parentRefs = React.useRef({});
 
   const renderParentCard = (parentKey, parentCat, isCustom) => {
     const premadeSubs = isCustom ? [] : getPremadeSubs(parentKey);
     const customSubsHere = isCustom ? getCustomSubs(parentKey) : getCustomSubsOfPremade(parentKey);
     const rawSubs = isCustom ? customSubsHere : [...premadeSubs, ...customSubsHere];
-    // 'other' always last
     const otherSub = rawSubs.find(s => (Array.isArray(s) ? false : s.id === `${parentKey}_other`));
     const nonOther = rawSubs.filter(s => !(Array.isArray(s) ? false : s.id === `${parentKey}_other`));
-    const allSubs = otherSub ? [...nonOther, otherSub] : nonOther;
-    const subCount = allSubs.length;
-    const isCollapsed = !!collapsedParents[parentKey];
+    const q = catSearch.toLowerCase();
+    const allSubs = q
+      ? nonOther.filter(s => { const n = Array.isArray(s) ? s[1].name : s.name; return n.toLowerCase().includes(q); })
+      : (otherSub ? [...nonOther, otherSub] : nonOther);
+    const subCount = q ? allSubs.length : (otherSub ? nonOther.length + 1 : nonOther.length);
+    const isCollapsed = q ? false : !!collapsedParents[parentKey];
     const isDropTarget = dropTarget?.type === 'parent' && dropTarget.parentId === parentKey;
 
     return (
@@ -1202,7 +1198,7 @@ export function ScreenManageCategories() {
           <div className={isCustom ? 'm-tap' : ''} style={{ flex:1, cursor: isCustom ? 'pointer' : 'default' }}
             onClick={isCustom ? () => setEditSheet({ catId: parentKey, parentId: null, isCustom:true, isParent: true, name: parentCat.name, icon: parentCat.icon || 'help-circle-outline', color: parentCat.color, scope: parentCat.scope }) : undefined}
           >
-            <div style={{ fontSize:15, fontWeight:600 }}>{parentCat.name}</div>
+            <div style={{ fontSize:15, fontWeight:600 }}><LangHighlight text={parentCat.name} query={catSearch}/></div>
             {isCustom && parentCat.scope && (() => {
               const sc = parentCat.scope;
               const parts = [];
@@ -1259,7 +1255,7 @@ export function ScreenManageCategories() {
                   <IcoMDI name={subCat.icon||'help-circle-outline'} size={13} color={isOther ? (parentCat.color || M.ink3) : subIconColor}/>
                 </div>
                 <div style={{ flex:1 }}>
-                  <div style={{ fontSize:13, fontWeight:isOther?400:500, color:isOther?M.ink3:M.ink, fontStyle:isOther?'italic':'normal' }}>{subCat.name}</div>
+                  <div style={{ fontSize:13, fontWeight:isOther?400:500, color:isOther?M.ink3:M.ink, fontStyle:isOther?'italic':'normal' }}><LangHighlight text={subCat.name} query={catSearch}/></div>
                 </div>
                 {(isCustomSub && !isOther) && (
                   <div style={{ opacity:0.35, flexShrink:0 }}>
@@ -1292,18 +1288,57 @@ export function ScreenManageCategories() {
         trailing={<button className="m-tap m-iconbtn" onClick={() => setNewParentSheet(true)}><I name="plus" size={20}/></button>}
       />
       <div className="m-body-scroll">
+        {/* Search bar */}
+        <div style={{ position:'relative', marginBottom:16 }}>
+          <I name="search" size={14} color={M.ink4} style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', pointerEvents:'none' }}/>
+          <input value={catSearch} onChange={e => setCatSearch(e.target.value)} placeholder="Search categories…"
+            style={{ width:'100%', boxSizing:'border-box', paddingLeft:34, paddingRight: catSearch ? 32 : 12, paddingTop:9, paddingBottom:9, border:`1px solid ${M.line}`, borderRadius:10, fontSize:13, fontFamily:M.fontUI, background:M.paper2, color:M.ink, outline:'none' }}/>
+          {catSearch && (
+            <button onClick={() => setCatSearch('')} style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', padding:0 }}>
+              <I name="close" size={14} color={M.ink4}/>
+            </button>
+          )}
+        </div>
 
         {/* CUSTOM section */}
-        {customParents.length > 0 && (
-          <>
-            <div className="m-cap" style={{ marginBottom:8 }}>CUSTOM · {customParents.length}</div>
-            {customParents.map(p => renderParentCard(p.id, p, true))}
-          </>
-        )}
-
-        {/* PREMADE section */}
-        <div className="m-cap" style={{ marginBottom:8, marginTop: customParents.length>0?16:0 }}>PREMADE CATEGORIES</div>
-        {premadeParents.map(([k,v]) => renderParentCard(k, v, false))}
+        {(() => {
+          const q = catSearch.toLowerCase();
+          const visibleCustom = customParents.filter(p => {
+            if (!q) return true;
+            if (p.name.toLowerCase().includes(q)) return true;
+            const subs = getCustomSubs(p.id);
+            return subs.some(s => s.name.toLowerCase().includes(q));
+          });
+          const visiblePremade = premadeParents.filter(([k,v]) => {
+            if (!q) return true;
+            if (v.name.toLowerCase().includes(q)) return true;
+            const premSubs = getPremadeSubs(k);
+            const custSubs = getCustomSubsOfPremade(k);
+            return [...premSubs, ...custSubs].some(s => {
+              const name = Array.isArray(s) ? s[1].name : s.name;
+              return name.toLowerCase().includes(q);
+            });
+          });
+          return (
+            <>
+              {visibleCustom.length > 0 && (
+                <>
+                  <div className="m-cap" style={{ marginBottom:8 }}>CUSTOM · {visibleCustom.length}</div>
+                  {visibleCustom.map(p => renderParentCard(p.id, p, true))}
+                </>
+              )}
+              {visiblePremade.length > 0 && (
+                <>
+                  <div className="m-cap" style={{ marginBottom:8, marginTop: visibleCustom.length>0?16:0 }}>PREMADE CATEGORIES</div>
+                  {visiblePremade.map(([k,v]) => renderParentCard(k, v, false))}
+                </>
+              )}
+              {q && visibleCustom.length === 0 && visiblePremade.length === 0 && (
+                <div style={{ textAlign:'center', color:M.ink4, fontSize:13, padding:'32px 0' }}>No categories match "{catSearch}"</div>
+              )}
+            </>
+          );
+        })()}
 
         <div style={{ height:32 }}/>
       </div>

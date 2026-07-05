@@ -10,5 +10,10 @@
     "build": "npm run build -w @munni/app",
     "test": "npm test -w @munni/app",
     "gallery": "npm run gallery -w @munni/app"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^6.3.5",
+    "vite-plugin-pwa": "^1.3.0"
   }
 }
