@@ -673,36 +673,98 @@ export function ScreenTutorial() {
 
 function ScopeSelector({ scope, setScope, profiles }) {
   const allProfiles = profiles.filter(p => !p.isDemo);
+  const [spaceInfoSheet, setSpaceInfoSheet] = React.useState(null);
+  const [connectedAccounts] = useConnectedAccounts();
+
   return (
     <>
-      <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>Available in</div>
-      <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginBottom:16 }}>
-        {/* All private spaces chip */}
-        <button data-testid="scope-all-private" className="m-tap" onClick={() => setScope(s => ({ ...s, allPrivate: !s.allPrivate }))}
-          style={{ display:'flex', alignItems:'center', gap:6, padding:'5px 10px', borderRadius:20, border:`1.5px solid ${scope.allPrivate?M.sage:M.line}`, background:scope.allPrivate?M.sageSoft:M.paper2, cursor:'pointer', fontFamily:M.fontUI }}>
-          {scope.allPrivate
-            ? <I name="check" size={11} color={M.sage}/>
-            : <div style={{ width:11, height:11, borderRadius:3, border:`1.5px solid ${M.ink4}` }}/>}
-          <span style={{ fontSize:12, fontWeight:600, color:scope.allPrivate?M.sage:M.ink3 }}>All private</span>
-        </button>
-        {/* Individual space chips */}
-        {allProfiles.map(p => {
-          const selected = (scope.spaces || []).includes(p.id);
-          const avatar = p.emoji || p.avatar;
-          return (
-            <button key={p.id} data-testid={`scope-space-${p.id}`} className="m-tap"
+      <div style={{ fontSize:12, color:M.ink3, marginBottom:10 }}>Available in</div>
+
+      {/* All private spaces — full-width card row */}
+      <button data-testid="scope-all-private" className="m-tap"
+        onClick={() => setScope(s => ({ ...s, allPrivate: !s.allPrivate }))}
+        style={{ width:'100%', display:'flex', alignItems:'center', gap:12, padding:'12px 14px', borderRadius:12, border:`1.5px solid ${scope.allPrivate ? M.sage : M.line}`, background: scope.allPrivate ? M.sageSoft : M.paper2, cursor:'pointer', fontFamily:M.fontUI, marginBottom:8, boxSizing:'border-box' }}>
+        <div style={{ width:22, height:22, borderRadius:6, background: scope.allPrivate ? M.sage : 'transparent', border:`2px solid ${scope.allPrivate ? M.sage : M.ink4}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+          {scope.allPrivate && <I name="check" size={11} color="#fff"/>}
+        </div>
+        <div style={{ flex:1, textAlign:'left' }}>
+          <div style={{ fontSize:13, fontWeight:600, color: scope.allPrivate ? M.sage : M.ink2 }}>All private spaces</div>
+          <div style={{ fontSize:11, color: scope.allPrivate ? M.sageDk : M.ink4, marginTop:2 }}>Applies to all personal spaces you own</div>
+        </div>
+      </button>
+
+      {/* Individual space rows — split: left toggles, right opens info sheet */}
+      {allProfiles.map(p => {
+        const selected = (scope.spaces || []).includes(p.id);
+        const avatar = p.emoji || p.avatar;
+        const memberCount = (p.members || []).length;
+        return (
+          <div key={p.id} style={{ display:'flex', marginBottom:8 }}>
+            <button data-testid={`scope-space-${p.id}`} className="m-tap"
               onClick={() => setScope(s => ({ ...s, spaces: selected ? (s.spaces||[]).filter(id=>id!==p.id) : [...(s.spaces||[]), p.id] }))}
-              style={{ display:'flex', alignItems:'center', gap:5, padding:'5px 10px', borderRadius:20, border:`1.5px solid ${selected?M.sage:M.line}`, background:selected?M.sageSoft:M.paper2, cursor:'pointer', fontFamily:M.fontUI }}>
-              {selected
-                ? <I name="check" size={11} color={M.sage}/>
-                : <div style={{ width:11, height:11, borderRadius:3, border:`1.5px solid ${M.ink4}` }}/>}
-              {avatar && <span style={{ fontSize:13 }}>{avatar}</span>}
-              <span style={{ fontSize:12, fontWeight:500, color:selected?M.sage:M.ink3 }}>{p.name || p.displayName || 'Space'}</span>
-              {p.isShared && <span style={{ fontSize:9, padding:'1px 4px', borderRadius:4, background:M.ochreSoft, color:M.ochre, fontWeight:700 }}>SHARED</span>}
+              style={{ flex:1, display:'flex', alignItems:'center', gap:12, padding:'11px 14px', borderRadius:'12px 0 0 12px', border:`1.5px solid ${selected ? M.sage : M.line}`, borderRight:'none', background: selected ? M.sageSoft : M.paper2, cursor:'pointer', fontFamily:M.fontUI }}>
+              <div style={{ width:22, height:22, borderRadius:6, background: selected ? M.sage : 'transparent', border:`2px solid ${selected ? M.sage : M.ink4}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                {selected && <I name="check" size={11} color="#fff"/>}
+              </div>
+              <div style={{ width:30, height:30, borderRadius:9, background:M.card, border:`1px solid ${M.line}`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:17, flexShrink:0 }}>
+                {avatar || <I name="user" size={14} color={M.ink3}/>}
+              </div>
+              <div style={{ flex:1, textAlign:'left', minWidth:0 }}>
+                <div style={{ fontSize:13, fontWeight:500, color: selected ? M.sage : M.ink2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.name || p.displayName || 'Space'}</div>
+                <div style={{ fontSize:11, color: selected ? M.sageDk : M.ink4, marginTop:1 }}>{p.isShared ? `Shared · ${memberCount} member${memberCount!==1?'s':''}` : 'Personal space'}</div>
+              </div>
             </button>
-          );
-        })}
-      </div>
+            <button className="m-tap" onClick={() => setSpaceInfoSheet(p)}
+              style={{ width:44, alignSelf:'stretch', display:'flex', alignItems:'center', justifyContent:'center', borderRadius:'0 12px 12px 0', border:`1.5px solid ${selected ? M.sage : M.line}`, borderLeft:`1px solid ${M.line2}`, background: selected ? M.sageSoft : M.paper2, cursor:'pointer', flexShrink:0 }}>
+              <I name="info" size={16} color={selected ? M.sage : M.ink4}/>
+            </button>
+          </div>
+        );
+      })}
+
+      {/* Space detail sheet */}
+      {spaceInfoSheet && (() => {
+        const p = spaceInfoSheet;
+        let spaceAccounts = [];
+        try { spaceAccounts = JSON.parse(localStorage.getItem(`munni_shared_data_${p.id}`) || '{}').accounts || []; } catch {}
+        if (!spaceAccounts.length) spaceAccounts = connectedAccounts.filter(a => (p.accountIds || []).includes(a.id));
+        const avatar = p.emoji || p.avatar;
+        const memberCount = (p.members || []).length;
+        return (
+          <Sheet title={p.name || 'Space'} onClose={() => setSpaceInfoSheet(null)}>
+            <div style={{ padding:'4px 20px 32px' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:14, padding:'14px', borderRadius:14, background:M.paper2, border:`1px solid ${M.line}`, marginBottom:20 }}>
+                <div style={{ width:52, height:52, borderRadius:14, background:M.card, border:`1px solid ${M.line}`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:26, flexShrink:0 }}>
+                  {avatar || <I name="user" size={22} color={M.ink3}/>}
+                </div>
+                <div>
+                  <div style={{ fontSize:16, fontWeight:700, color:M.ink }}>{p.name || 'Space'}</div>
+                  <div style={{ fontSize:12, color:M.ink3, marginTop:3 }}>
+                    {p.isShared ? `Shared space · ${memberCount} member${memberCount!==1?'s':''}` : 'Personal space'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="m-cap" style={{ marginBottom:8, paddingLeft:2 }}>Bank accounts</div>
+              {spaceAccounts.length > 0 ? spaceAccounts.map((a, i) => (
+                <div key={i} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 14px', borderRadius:10, background:M.paper2, border:`1px solid ${M.line}`, marginBottom:8 }}>
+                  <div style={{ width:28, height:28, borderRadius:8, background:M.card, border:`1px solid ${M.line}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                    <I name="card" size={13} color={M.ink3}/>
+                  </div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:13, fontWeight:500, color:M.ink, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{a.name}</div>
+                    {a.bankId && <div style={{ fontSize:11, color:M.ink4, marginTop:1 }}>{a.bankId}</div>}
+                  </div>
+                </div>
+              )) : (
+                <div style={{ fontSize:13, color:M.ink4, padding:'14px', textAlign:'center', background:M.paper2, borderRadius:10, border:`1px solid ${M.line}` }}>No bank accounts linked to this space</div>
+              )}
+            </div>
+          </Sheet>
+        );
+      })()}
+
+      <div style={{ marginBottom:16 }}/>
     </>
   );
 }
@@ -909,7 +971,10 @@ function NewCatForm({ onSave, isSub = false }) {
 function EditCatSheet({ entry, txCount = 0, onSave, onDelete, isPrebuilt = false }) {
   const [nameDraft, setNameDraft] = React.useState(entry.name);
   const [iconDraft, setIconDraft] = React.useState(entry.icon || 'help-circle-outline');
+  const [parentIdDraft, setParentIdDraft] = React.useState(entry.parentId ?? null);
+  const [parentPickerOpen, setParentPickerOpen] = React.useState(false);
   const { profiles } = useProfiles();
+  const { customCats } = useCatCtx();
   const normalizeScope = (sc) => {
     if (!sc) return { allPrivate: true, spaces: [] };
     if (typeof sc === 'object' && !Array.isArray(sc)) return sc;
@@ -921,6 +986,17 @@ function EditCatSheet({ entry, txCount = 0, onSave, onDelete, isPrebuilt = false
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
   const canDelete = onDelete !== null;
   const isParent = entry.isParent;
+
+  const availableParents = React.useMemo(() => {
+    const premade = Object.entries(CATEGORIES)
+      .filter(([, v]) => v.isParent && !v.hidden)
+      .map(([k, v]) => ({ id: k, name: v.name, icon: v.icon, color: v.color }));
+    const custom = customCats
+      .filter(c => c.isParent)
+      .map(c => ({ id: c.id, name: c.name, icon: c.icon, color: c.color }));
+    return [...custom, ...premade];
+  }, [customCats]);
+
   if (showDeleteConfirm) {
     return (
       <div style={{ padding:'4px 16px 8px' }}>
@@ -954,9 +1030,51 @@ function EditCatSheet({ entry, txCount = 0, onSave, onDelete, isPrebuilt = false
           </div>
           {/* Scope */}
           <ScopeSelector scope={scopeDraft} setScope={setScopeDraft} profiles={profiles}/>
+          {/* Parent category — only for custom sub-categories */}
+          {!isParent && (() => {
+            const currentParent = availableParents.find(p => p.id === parentIdDraft);
+            return (
+              <>
+                <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>Parent category</div>
+                <button className="m-tap" onClick={() => setParentPickerOpen(true)}
+                  style={{ width:'100%', display:'flex', alignItems:'center', gap:12, padding:'11px 14px', borderRadius:12, border:`1px solid ${M.line}`, background:M.paper2, cursor:'pointer', fontFamily:M.fontUI, marginBottom:14, boxSizing:'border-box' }}>
+                  {currentParent && (
+                    <div style={{ width:30, height:30, borderRadius:9, background:currentParent.color || M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                      <IcoMDI name={currentParent.icon || 'help-circle-outline'} size={14} color='#fff'/>
+                    </div>
+                  )}
+                  <div style={{ flex:1, textAlign:'left' }}>
+                    <div style={{ fontSize:14, fontWeight:500, color:M.ink }}>{currentParent?.name || '—'}</div>
+                  </div>
+                  <I name="caretR" size={14} color={M.ink4}/>
+                </button>
+                {parentPickerOpen && (
+                  <Sheet title="Choose parent" onClose={() => setParentPickerOpen(false)}>
+                    <div style={{ padding:'4px 20px 32px' }}>
+                      {availableParents.map(p => {
+                        const isCurrent = p.id === parentIdDraft;
+                        return (
+                          <button key={p.id} className="m-tap" onClick={() => { setParentIdDraft(p.id); setParentPickerOpen(false); }}
+                            style={{ width:'100%', display:'flex', alignItems:'center', gap:12, padding:'12px 14px', borderRadius:12, border:`1.5px solid ${isCurrent ? M.sage : M.line}`, background: isCurrent ? M.sageSoft : 'transparent', cursor:'pointer', fontFamily:M.fontUI, marginBottom:8, boxSizing:'border-box' }}>
+                            <div style={{ width:32, height:32, borderRadius:9, background:p.color || M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                              <IcoMDI name={p.icon || 'help-circle-outline'} size={15} color='#fff'/>
+                            </div>
+                            <div style={{ flex:1, textAlign:'left' }}>
+                              <div style={{ fontSize:14, fontWeight:500, color: isCurrent ? M.sage : M.ink }}>{p.name}</div>
+                            </div>
+                            {isCurrent && <I name="check" size={14} color={M.sage}/>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </Sheet>
+                )}
+              </>
+            );
+          })()}
         </>
       )}
-      <button onClick={() => nameDraft.trim() && onSave(nameDraft.trim(), iconDraft, entry.color, scopeDraft)}
+      <button onClick={() => nameDraft.trim() && onSave(nameDraft.trim(), iconDraft, entry.color, scopeDraft, !isParent ? parentIdDraft : undefined)}
         style={{ width:'100%', padding:'14px 0', background:nameDraft.trim()?M.sage:M.line, color:nameDraft.trim()?'#fff':M.ink4, border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:nameDraft.trim()?'pointer':'default', fontFamily:M.fontUI, marginBottom:canDelete?12:10 }}>
         Save
       </button>
@@ -1069,9 +1187,12 @@ export function ScreenEditCat({ params }) {
           entry={entry}
           txCount={txCount}
           isPrebuilt={!isCustom}
-          onSave={(name, icon, color, scope) => {
+          onSave={(name, icon, color, scope, newParentId) => {
             if (isCustom) {
-              setCustomCats(prev => prev.map(c => c.id === catId ? { ...c, name, icon, color, scope } : c));
+              setCustomCats(prev => prev.map(c => c.id === catId ? {
+                ...c, name, icon, color, scope,
+                ...(newParentId !== undefined ? { parent: newParentId } : {}),
+              } : c));
             } else {
               setPremadeOverrides(prev => ({ ...prev, [catId]: { name } }));
             }
@@ -1287,8 +1408,9 @@ export function ScreenManageCategories() {
     const premadeSubs = isCustom ? [] : getPremadeSubs(parentKey);
     const customSubsHere = isCustom ? getCustomSubs(parentKey) : getCustomSubsOfPremade(parentKey);
     const rawSubs = isCustom ? customSubsHere : [...premadeSubs, ...customSubsHere];
-    const otherSub = rawSubs.find(s => (Array.isArray(s) ? false : s.id === `${parentKey}_other`));
-    const nonOther = rawSubs.filter(s => !(Array.isArray(s) ? false : s.id === `${parentKey}_other`));
+    const isOtherEntry = (s) => Array.isArray(s) ? s[1].name === 'Other' : s.id === `${parentKey}_other`;
+    const otherSub = rawSubs.find(s => isOtherEntry(s));
+    const nonOther = rawSubs.filter(s => !isOtherEntry(s));
     const q = catSearch.toLowerCase();
     const parentMatches = q && parentCat.name.toLowerCase().includes(q);
     const allSubs = q
@@ -1352,7 +1474,7 @@ export function ScreenManageCategories() {
             const subKey = Array.isArray(sub) ? sub[0] : sub.id;
             const subCat = Array.isArray(sub) ? sub[1] : sub;
             const isCustomSub = !Array.isArray(sub);
-            const isOther = isCustomSub && sub.id === `${parentKey}_other`;
+            const isOther = (isCustomSub && sub.id === `${parentKey}_other`) || (!isCustomSub && subCat.name === 'Other');
             // 'other' uses parent color same as other custom subs
             const subBg = parentCat.color ? parentCat.color + '33' : M.paper2;
             const subIconColor = parentCat.color || M.ink2;
@@ -1578,7 +1700,7 @@ export function ScreenManageCategories() {
                 </div>
 
                 {/* Arrow connector */}
-                <div style={{ display:'flex', justifyContent:'center', alignItems:'center', height:28 }}>
+                <div style={{ display:'flex', justifyContent:'center', alignItems:'center', height:28, position:'relative' }}>
                   <div style={{ width:1.5, height:'100%', background:M.line, position:'absolute' }}/>
                   <div style={{ background:M.paper, border:`1.5px solid ${M.line}`, borderRadius:'50%', width:22, height:22, display:'flex', alignItems:'center', justifyContent:'center', position:'relative', zIndex:1 }}>
                     <span style={{ display:'flex', transform:'rotate(90deg)' }}><I name="caretR" size={10} color={M.ink3}/></span>
