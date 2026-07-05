@@ -1316,10 +1316,11 @@ export function ScreenManageCategories() {
               {[0,1,2].map(i => <div key={i} style={{ width:2, height:2, borderRadius:'50%', background:M.ink3 }}/>)}
             </div>
           </button>
-          {/* Name area — tap toggles expand for ALL */}
-          <div className="m-tap" style={{ flex:1, cursor:'pointer' }}
+          {/* Name area — tap toggles expand; stretches to full row height for easy tapping */}
+          <div className="m-tap" style={{ flex:1, cursor:'pointer', alignSelf:'stretch', display:'flex', alignItems:'center' }}
             onClick={() => setExpandedParents(prev => ({ ...prev, [parentKey]: !prev[parentKey] }))}
           >
+          <div style={{ flex:1 }}>
             <div style={{ fontSize:15, fontWeight:600 }}><LangHighlight text={parentCat.name} query={catSearch}/></div>
             {isCustom && parentCat.scope && (() => {
               const sc = parentCat.scope;
@@ -1336,6 +1337,7 @@ export function ScreenManageCategories() {
               return parts.length ? <div style={{ fontSize:10, color:M.ink4, marginTop:1 }}>{parts.join(' ')}</div> : null;
             })()}
           </div>
+          </div>
           <button className="m-tap" onClick={() => setExpandedParents(prev => ({ ...prev, [parentKey]: !prev[parentKey] }))}
             style={{ background:'none', border:'none', cursor:'pointer', padding:4, display:'flex', alignItems:'center', justifyContent:'center' }}>
             <div style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)', transition:'transform 0.2s ease', display:'flex' }}>
@@ -1343,8 +1345,9 @@ export function ScreenManageCategories() {
             </div>
           </button>
         </div>
-        {/* Sub-categories */}
-        <div style={{ overflow:'hidden', maxHeight: isCollapsed ? 0 : 9999, transition:'max-height 0.35s ease' }}>
+        {/* Sub-categories — grid trick for smooth immediate collapse without magic max-height */}
+        <div style={{ display:'grid', gridTemplateRows: isCollapsed ? '0fr' : '1fr', transition:'grid-template-rows 0.25s ease-out' }}>
+        <div style={{ overflow:'hidden' }}>
           {allSubs.map((sub) => {
             const subKey = Array.isArray(sub) ? sub[0] : sub.id;
             const subCat = Array.isArray(sub) ? sub[1] : sub;
@@ -1391,6 +1394,7 @@ export function ScreenManageCategories() {
             <I name="plus" size={13} color={M.sage}/>
             <span style={{ fontSize:13, fontWeight:500 }}>Add sub-category</span>
           </button>
+        </div>
         </div>
       </div>
     );
@@ -1541,27 +1545,74 @@ export function ScreenManageCategories() {
       })()}
 
       {/* Pending move confirmation */}
-      {pendingMove && (
-        <Sheet title="Move category?" onClose={() => setPendingMove(null)}>
-          <div style={{ padding:'4px 20px 32px' }}>
-            <div style={{ fontSize:14, color:M.ink, marginBottom:24, lineHeight:1.6 }}>
-              Move <strong>{pendingMove.catName}</strong> from <strong>{pendingMove.fromParentName}</strong> to <strong>{pendingMove.toParentName}</strong>?
+      {pendingMove && (() => {
+        const movingCat = customCats.find(c => c.id === pendingMove.catId);
+        const fromParent = CATEGORIES[pendingMove.fromParentId] || customCats.find(c => c.id === pendingMove.fromParentId);
+        const toParent   = CATEGORIES[pendingMove.toParentId]   || customCats.find(c => c.id === pendingMove.toParentId);
+        const fromColor  = fromParent?.color || M.slate;
+        const toColor    = toParent?.color   || M.sage;
+        return (
+          <Sheet title="Move category?" onClose={() => setPendingMove(null)}>
+            <div style={{ padding:'4px 20px 32px' }}>
+              {/* Sub-cat being moved */}
+              <div style={{ display:'flex', justifyContent:'center', marginBottom:20 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 16px', borderRadius:12, border:`1.5px solid ${fromColor}40`, background:fromColor+'12' }}>
+                  <div style={{ width:26, height:26, borderRadius:7, background:fromColor+'33', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                    <IcoMDI name={movingCat?.icon||'help-circle-outline'} size={12} color={fromColor}/>
+                  </div>
+                  <span style={{ fontSize:14, fontWeight:700, color:M.ink }}>{pendingMove.catName}</span>
+                </div>
+              </div>
+
+              {/* From → To flow */}
+              <div style={{ marginBottom:24 }}>
+                {/* From row */}
+                <div style={{ display:'flex', alignItems:'center', gap:12, padding:'11px 14px', borderRadius:12, border:`1.5px solid ${M.line}`, background:M.paper2 }}>
+                  <div style={{ width:32, height:32, borderRadius:9, background:fromColor, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                    <IcoMDI name={fromParent?.icon||'help-circle-outline'} size={15} color='#fff'/>
+                  </div>
+                  <div>
+                    <div style={{ fontSize:10, color:M.ink4, fontWeight:700, textTransform:'uppercase', letterSpacing:0.5, marginBottom:1 }}>From</div>
+                    <div style={{ fontSize:14, fontWeight:600, color:M.ink }}>{pendingMove.fromParentName}</div>
+                  </div>
+                </div>
+
+                {/* Arrow connector */}
+                <div style={{ display:'flex', justifyContent:'center', alignItems:'center', height:28 }}>
+                  <div style={{ width:1.5, height:'100%', background:M.line, position:'absolute' }}/>
+                  <div style={{ background:M.paper, border:`1.5px solid ${M.line}`, borderRadius:'50%', width:22, height:22, display:'flex', alignItems:'center', justifyContent:'center', position:'relative', zIndex:1 }}>
+                    <span style={{ display:'flex', transform:'rotate(90deg)' }}><I name="caretR" size={10} color={M.ink3}/></span>
+                  </div>
+                </div>
+
+                {/* To row */}
+                <div style={{ display:'flex', alignItems:'center', gap:12, padding:'11px 14px', borderRadius:12, border:`1.5px solid ${toColor}60`, background:toColor+'12' }}>
+                  <div style={{ width:32, height:32, borderRadius:9, background:toColor, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                    <IcoMDI name={toParent?.icon||'help-circle-outline'} size={15} color='#fff'/>
+                  </div>
+                  <div>
+                    <div style={{ fontSize:10, color:toColor, fontWeight:700, textTransform:'uppercase', letterSpacing:0.5, marginBottom:1 }}>To</div>
+                    <div style={{ fontSize:14, fontWeight:600, color:M.ink }}>{pendingMove.toParentName}</div>
+                  </div>
+                </div>
+              </div>
+
+              <button className="m-btn m-tap" style={{ width:'100%', marginBottom:10 }} onClick={() => {
+                const { catId, toParentId } = pendingMove;
+                setCustomCats(prev => prev.map(c => c.id === catId ? { ...c, parent: toParentId } : c));
+                setPendingMove(null);
+                setTimeout(() => {
+                  const el = parentRefs.current[toParentId];
+                  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                  setFlashCatId(catId);
+                  setTimeout(() => setFlashCatId(null), 1000);
+                }, 50);
+              }}>Move</button>
+              <button className="m-btn outline m-tap" style={{ width:'100%' }} onClick={() => setPendingMove(null)}>Cancel</button>
             </div>
-            <button className="m-btn m-tap" style={{ width:'100%', marginBottom:10 }} onClick={() => {
-              const { catId, toParentId, fromParentId } = pendingMove;
-              setCustomCats(prev => prev.map(c => c.id === catId ? { ...c, parent: toParentId } : c));
-              setPendingMove(null);
-              setTimeout(() => {
-                const el = parentRefs.current[toParentId];
-                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                setFlashCatId(catId);
-                setTimeout(() => setFlashCatId(null), 1000);
-              }, 50);
-            }}>Move</button>
-            <button className="m-btn outline m-tap" style={{ width:'100%' }} onClick={() => setPendingMove(null)}>Cancel</button>
-          </div>
-        </Sheet>
-      )}
+          </Sheet>
+        );
+      })()}
 
       {/* Floating drag ghost — rendered via portal to escape containing block */}
       {dragState && createPortal(
