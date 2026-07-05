@@ -676,38 +676,32 @@ function ScopeSelector({ scope, setScope, profiles }) {
   return (
     <>
       <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>Available in</div>
-      <div style={{ display:'flex', flexDirection:'column', gap:6, marginBottom:16 }}>
-        {/* All private spaces — independent checkbox */}
+      <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginBottom:16 }}>
+        {/* All private spaces chip */}
         <button data-testid="scope-all-private" className="m-tap" onClick={() => setScope(s => ({ ...s, allPrivate: !s.allPrivate }))}
-          style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderRadius:10, border:`1.5px solid ${scope.allPrivate?M.sage:M.line}`, background:scope.allPrivate?M.sageSoft:M.paper2, cursor:'pointer', fontFamily:M.fontUI, textAlign:'left' }}>
-          <div style={{ width:18, height:18, borderRadius:4, border:`2px solid ${scope.allPrivate?M.sage:M.ink4}`, background:scope.allPrivate?M.sage:'transparent', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
-            {scope.allPrivate && <I name="check" size={10} color="#fff"/>}
-          </div>
-          <div>
-            <div style={{ fontSize:13, fontWeight:500, color:M.ink }}>All private spaces</div>
-            <div style={{ fontSize:11, color:M.ink3 }}>Visible in all your personal spaces</div>
-          </div>
+          style={{ display:'flex', alignItems:'center', gap:6, padding:'5px 10px', borderRadius:20, border:`1.5px solid ${scope.allPrivate?M.sage:M.line}`, background:scope.allPrivate?M.sageSoft:M.paper2, cursor:'pointer', fontFamily:M.fontUI }}>
+          {scope.allPrivate
+            ? <I name="check" size={11} color={M.sage}/>
+            : <div style={{ width:11, height:11, borderRadius:3, border:`1.5px solid ${M.ink4}` }}/>}
+          <span style={{ fontSize:12, fontWeight:600, color:scope.allPrivate?M.sage:M.ink3 }}>All private</span>
         </button>
-        {/* Individual spaces — independently selectable */}
-        {allProfiles.length > 0 && (
-          <div style={{ display:'flex', flexDirection:'column', gap:4, maxHeight:200, overflowY:'auto' }}>
-            {allProfiles.map(p => {
-              const selected = (scope.spaces || []).includes(p.id);
-              const avatar = p.emoji || p.avatar;
-              return (
-                <button key={p.id} data-testid={`scope-space-${p.id}`} className="m-tap" onClick={() => setScope(s => ({ ...s, spaces: selected ? (s.spaces||[]).filter(id=>id!==p.id) : [...(s.spaces||[]), p.id] }))}
-                  style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderRadius:10, border:`1.5px solid ${selected?M.sage:M.line}`, background:selected?M.sageSoft:M.paper2, cursor:'pointer', fontFamily:M.fontUI, textAlign:'left' }}>
-                  <div style={{ width:18, height:18, borderRadius:4, border:`2px solid ${selected?M.sage:M.ink4}`, background:selected?M.sage:'transparent', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
-                    {selected && <I name="check" size={10} color="#fff"/>}
-                  </div>
-                  {avatar && <span style={{ fontSize:16 }}>{avatar}</span>}
-                  <div style={{ fontSize:13, fontWeight:500, color:M.ink, flex:1 }}>{p.name || p.displayName || 'Space'}</div>
-                  {p.isShared && <span style={{ fontSize:9, padding:'2px 5px', borderRadius:4, background:M.ochreSoft, color:M.ochre, fontWeight:700 }}>SHARED</span>}
-                </button>
-              );
-            })}
-          </div>
-        )}
+        {/* Individual space chips */}
+        {allProfiles.map(p => {
+          const selected = (scope.spaces || []).includes(p.id);
+          const avatar = p.emoji || p.avatar;
+          return (
+            <button key={p.id} data-testid={`scope-space-${p.id}`} className="m-tap"
+              onClick={() => setScope(s => ({ ...s, spaces: selected ? (s.spaces||[]).filter(id=>id!==p.id) : [...(s.spaces||[]), p.id] }))}
+              style={{ display:'flex', alignItems:'center', gap:5, padding:'5px 10px', borderRadius:20, border:`1.5px solid ${selected?M.sage:M.line}`, background:selected?M.sageSoft:M.paper2, cursor:'pointer', fontFamily:M.fontUI }}>
+              {selected
+                ? <I name="check" size={11} color={M.sage}/>
+                : <div style={{ width:11, height:11, borderRadius:3, border:`1.5px solid ${M.ink4}` }}/>}
+              {avatar && <span style={{ fontSize:13 }}>{avatar}</span>}
+              <span style={{ fontSize:12, fontWeight:500, color:selected?M.sage:M.ink3 }}>{p.name || p.displayName || 'Space'}</span>
+              {p.isShared && <span style={{ fontSize:9, padding:'1px 4px', borderRadius:4, background:M.ochreSoft, color:M.ochre, fontWeight:700 }}>SHARED</span>}
+            </button>
+          );
+        })}
       </div>
     </>
   );
@@ -715,6 +709,138 @@ function ScopeSelector({ scope, setScope, profiles }) {
 
 const CAT_TYPES = ['Expense', 'Income', 'Saving', 'Transfer', 'Investment', 'Debt Payment', 'Adjustment'];
 const CAT_TYPE_COLOR = { Expense: '#E05555', Income: '#27AE60', Saving: '#A8782B', Transfer: '#FF9800', Investment: '#673AB7', 'Debt Payment': '#9C27B0', Adjustment: '#607D8B' };
+const CAT_TYPE_INFO = {
+  Expense: 'Regular spending — groceries, rent, subscriptions.',
+  Income: 'Money coming in — salary, freelance, gifts received.',
+  Saving: 'Money set aside for a goal or emergency fund.',
+  Transfer: 'Moves between your own accounts — no net change.',
+  Investment: 'Buying/selling assets — stocks, crypto, real estate.',
+  'Debt Payment': 'Paying off loans, credit cards, or mortgages.',
+  Adjustment: 'Manual balance corrections and reconciliation.',
+};
+const DIR_INFO = {
+  debit: 'Outgoing — applies only to money leaving (negative amounts).',
+  credit: 'Incoming — applies only to money arriving (positive amounts).',
+  both: 'Applies to both incoming and outgoing transactions.',
+};
+
+const MDI_ICON_LIST = [
+  // Defaults & misc
+  'help-circle-outline','star-outline','heart-outline','bell-outline','gift-outline',
+  'map-marker-outline','earth','calendar-outline','clock-outline','shield-outline',
+  'flag-outline','bookmark-outline','tag-outline','lightning-bolt','sparkles',
+  // Home & Housing
+  'home-outline','home-city-outline','sofa-outline','bed-outline','bathtub-outline',
+  'shower','fridge-outline','washing-machine','lightbulb-outline','fire',
+  'water-outline','power-plug-outline','wifi','television','hammer-screwdriver',
+  'key-outline','door-closed-outline','garage-open-outline','pool','table-furniture',
+  // Transport
+  'car-outline','car-sports','bus-side','train-variant','bike','motorbike',
+  'airplane-takeoff','taxi','ferry','gas-station-outline','parking','scooter',
+  'bicycle','walk','subway-variant','tram-side',
+  // Food & Drink
+  'food-outline','food-apple-outline','coffee-outline','beer-outline','glass-wine',
+  'pizza-outline','silverware-fork-knife','hamburger','noodles','cupcake',
+  'tea-outline','bottle-wine','baguette','fish','leaf-maple',
+  // Shopping & Retail
+  'cart-variant','shopping-outline','bag-personal-outline','receipt','store-outline',
+  'barcode-scan','qrcode','hanger',
+  // Clothing & Personal care
+  'tshirt-crew-outline','shoe-heel','glasses','watch','hair-dryer-outline',
+  'face-woman-outline','flower-outline','perfume','lotion-outline','razor',
+  // Health & Fitness
+  'hospital-box-outline','heart-pulse','pill-outline','dumbbell','run-fast',
+  'swimming','stethoscope','bandage-outline','tooth-outline','eye-outline',
+  'yoga','weight-lifter','meditation',
+  // Entertainment & Media
+  'television-play','movie-open-outline','music-note-outline','headphones',
+  'controller-classic-outline','book-open-page-variant-outline','palette-outline',
+  'camera-outline','youtube','spotify','netflix','theater','dice-multiple-outline',
+  // Finance & Money
+  'cash-plus','piggy-bank-outline','bank-outline','credit-card-outline',
+  'currency-eur','chart-line','trending-up','trending-down','safe-square-outline',
+  'chart-donut','percent','swap-horizontal','bank-transfer','currency-usd',
+  'calculator-outline','receipt-text-outline',
+  // Education & Work
+  'school-outline','book-education-outline','pencil-outline','certificate-outline',
+  'graduation-cap','briefcase-outline','office-building-outline','desk-lamp',
+  'monitor-screenshot','printer-outline','account-group-outline','presentation',
+  // Technology
+  'cellphone-link','laptop','tablet-cellphone','mouse-outline','keyboard-outline',
+  'headset-outline','cloud-outline','server-outline','code-braces',
+  // Travel & Holiday
+  'island','pine-tree','landscape','camping','beach','mountain-snow',
+  'tent','suitcase-outline','passport','map-outline',
+  // Kids & Family
+  'baby-face-outline','human-child','dog-side','cat','paw-outline',
+  'teddy-bear','school-bus','baby-carriage',
+  // Subscriptions & Services
+  'newspaper-variant-outline','phone-outline','email-outline','web',
+  'home-automation','security','robot-outline',
+  // Savings & Investment
+  'safe-square-outline','home-currency-usd','chart-box-outline','finance',
+  'trending-up','cash-register','bank-check',
+];
+
+function InfoTooltip({ text, onClose }) {
+  return (
+    <div onClick={onClose} style={{ position:'absolute', left:0, right:0, top:'100%', marginTop:4, zIndex:100,
+      background:M.card, border:`1px solid ${M.line}`, borderRadius:10, padding:'10px 12px',
+      fontSize:12, color:M.ink3, lineHeight:1.5, boxShadow:'0 4px 16px rgba(0,0,0,0.12)', cursor:'pointer' }}>
+      {text}
+    </div>
+  );
+}
+
+function IconPickerGrid({ icon, setIcon }) {
+  const [search, setSearch] = React.useState('');
+  const filtered = search.trim()
+    ? MDI_ICON_LIST.filter(ic => ic.includes(search.trim().toLowerCase().replace(/\s+/g,'-')))
+    : MDI_ICON_LIST;
+  return (
+    <>
+      <div style={{ position:'relative', marginBottom:8 }}>
+        <I name="search" size={13} color={M.ink4} style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', pointerEvents:'none' }}/>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search icons…"
+          style={{ width:'100%', boxSizing:'border-box', paddingLeft:28, paddingRight:10, paddingTop:7, paddingBottom:7, border:`1px solid ${M.line}`, borderRadius:8, fontSize:12, fontFamily:M.fontUI, background:M.paper2, color:M.ink, outline:'none' }}/>
+        {search && <button onClick={() => setSearch('')} style={{ position:'absolute', right:8, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', padding:0 }}><I name="close" size={12} color={M.ink4}/></button>}
+      </div>
+      <div style={{ display:'flex', flexWrap:'wrap', gap:6, maxHeight:180, overflowY:'auto', marginBottom:14 }}>
+        {filtered.length === 0 && <div style={{ fontSize:12, color:M.ink4, padding:'8px 0' }}>No icons match "{search}"</div>}
+        {filtered.map(ic => (
+          <button key={ic} className="m-tap" title={ic} onClick={() => setIcon(ic)}
+            style={{ width:34, height:34, borderRadius:8, background: icon===ic?M.sageSoft:M.paper2, border:`1.5px solid ${icon===ic?M.sage:M.line}`, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0 }}>
+            <IcoMDI name={ic} size={15} color={icon===ic?M.sage:M.ink3}/>
+          </button>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function ColorPickerRow({ color, setColor }) {
+  const presets = [M.sage, M.clay, M.ochre, M.violet, M.slate, '#e07b39', '#6b8e6b', '#8e6b8e', '#2196f3', '#00bcd4', '#ff5722', '#795548'];
+  const colorInputRef = React.useRef(null);
+  const isPreset = presets.includes(color);
+  return (
+    <div style={{ display:'flex', gap:7, marginBottom:16, flexWrap:'wrap', alignItems:'center' }}>
+      {presets.map(clr => (
+        <button key={clr} className="m-tap" onClick={() => setColor(clr)}
+          style={{ width:26, height:26, borderRadius:'50%', background:clr, border:`2.5px solid ${color===clr?M.ink:'transparent'}`, cursor:'pointer', flexShrink:0 }}/>
+      ))}
+      {/* Custom color swatch if not a preset */}
+      {!isPreset && (
+        <button className="m-tap" onClick={() => colorInputRef.current?.click()}
+          style={{ width:26, height:26, borderRadius:'50%', background:color, border:`2.5px solid ${M.ink}`, cursor:'pointer', flexShrink:0 }}/>
+      )}
+      {/* Rainbow / spectrum button */}
+      <button className="m-tap" title="Custom color" onClick={() => colorInputRef.current?.click()}
+        style={{ width:26, height:26, borderRadius:'50%', background:'conic-gradient(red,orange,yellow,lime,cyan,blue,violet,red)', border:`1.5px solid ${M.line}`, cursor:'pointer', flexShrink:0 }}/>
+      <input ref={colorInputRef} type="color" value={color} onChange={e => setColor(e.target.value)}
+        style={{ position:'absolute', opacity:0, width:0, height:0, pointerEvents:'none' }}/>
+    </div>
+  );
+}
 
 function NewCatForm({ onSave, isSub = false }) {
   const [name, setName] = React.useState('');
@@ -723,15 +849,9 @@ function NewCatForm({ onSave, isSub = false }) {
   const [scope, setScope] = React.useState({ allPrivate: true, spaces: [] });
   const [catType, setCatType] = React.useState('Expense');
   const [direction, setDirection] = React.useState('both');
+  const [tooltip, setTooltip] = React.useState(null);
   const { profiles } = useProfiles();
-  const mdiIcons = [
-    'help-circle-outline','home-outline','car-outline','heart-outline','star-outline',
-    'food-outline','cart-variant','coffee-outline','television-play','hospital-box-outline',
-    'shopping-outline','island','school-outline','dumbbell','baby-face-outline',
-    'cash-plus','piggy-bank-outline','cellphone-link','gift-outline','book-education-outline',
-    'briefcase-outline','bus-side','airplane-takeoff','medication-outline','paw-outline',
-  ];
-  const colors = [M.sage, M.clay, M.ochre, M.violet, M.slate, '#e07b39', '#6b8e6b', '#8e6b8e'];
+  const toggleTip = (key) => setTooltip(t => t === key ? null : key);
   return (
     <div style={{ paddingBottom:8 }}>
       <input
@@ -740,7 +860,13 @@ function NewCatForm({ onSave, isSub = false }) {
         style={{ width:'100%', boxSizing:'border-box', border:`1px solid ${M.line}`, borderRadius:10, padding:'11px 14px', fontSize:14, fontFamily:M.fontUI, marginBottom:14, outline:'none', background:M.paper2, color:M.ink }}
       />
       {!isSub && (<>
-        <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>Transaction type</div>
+        <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:8, position:'relative' }}>
+          <span style={{ fontSize:12, color:M.ink3 }}>Transaction type</span>
+          <button onClick={() => toggleTip('type')} style={{ background:'none', border:'none', cursor:'pointer', padding:0, display:'flex', alignItems:'center' }}>
+            <I name="info" size={13} color={tooltip==='type'?M.sage:M.ink4}/>
+          </button>
+          {tooltip === 'type' && <InfoTooltip text={CAT_TYPE_INFO[catType] || 'Choose the type that best fits this category.'} onClose={() => setTooltip(null)}/>}
+        </div>
         <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginBottom:14 }}>
           {CAT_TYPES.map(t => (
             <button key={t} className="m-tap" onClick={() => setCatType(t)}
@@ -752,7 +878,13 @@ function NewCatForm({ onSave, isSub = false }) {
           ))}
         </div>
       </>)}
-      <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>Applies to</div>
+      <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:8, position:'relative' }}>
+        <span style={{ fontSize:12, color:M.ink3 }}>Applies to</span>
+        <button onClick={() => toggleTip('dir')} style={{ background:'none', border:'none', cursor:'pointer', padding:0, display:'flex', alignItems:'center' }}>
+          <I name="info" size={13} color={tooltip==='dir'?M.sage:M.ink4}/>
+        </button>
+        {tooltip === 'dir' && <InfoTooltip text={DIR_INFO[direction]} onClose={() => setTooltip(null)}/>}
+      </div>
       <div style={{ display:'flex', gap:6, marginBottom:14 }}>
         {[['debit','Outgoing'],['credit','Incoming'],['both','Both']].map(([val, label]) => (
           <button key={val} className="m-tap" onClick={() => setDirection(val)}
@@ -764,23 +896,11 @@ function NewCatForm({ onSave, isSub = false }) {
         ))}
       </div>
       <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>Icon</div>
-      <div style={{ display:'flex', flexWrap:'wrap', gap:8, marginBottom:14 }}>
-        {mdiIcons.map(ic => (
-          <button key={ic} className="m-tap" onClick={() => setIcon(ic)}
-            style={{ width:36, height:36, borderRadius:8, background: icon===ic?M.sageSoft:M.paper2, border:`1.5px solid ${icon===ic?M.sage:M.line}`, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>
-            <IcoMDI name={ic} size={15} color={icon===ic?M.sage:M.ink3}/>
-          </button>
-        ))}
-      </div>
+      <IconPickerGrid icon={icon} setIcon={setIcon}/>
       {!isSub && (
         <>
           <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>Color</div>
-          <div style={{ display:'flex', gap:8, marginBottom:16, flexWrap:'wrap' }}>
-            {colors.map(clr => (
-              <button key={clr} className="m-tap" onClick={() => setColor(clr)}
-                style={{ width:28, height:28, borderRadius:'50%', background:clr, border:`2.5px solid ${color===clr?M.ink:'transparent'}`, cursor:'pointer' }}/>
-            ))}
-          </div>
+          <ColorPickerRow color={color} setColor={setColor}/>
         </>
       )}
       <ScopeSelector scope={scope} setScope={setScope} profiles={profiles}/>
@@ -797,7 +917,6 @@ function EditCatSheet({ entry, txCount = 0, onSave, onDelete, isPrebuilt = false
   const [nameDraft, setNameDraft] = React.useState(entry.name);
   const [iconDraft, setIconDraft] = React.useState(entry.icon || 'help-circle-outline');
   const { profiles } = useProfiles();
-  // Normalize scope: handle old format (string or array) and new format ({ allPrivate, spaces })
   const normalizeScope = (sc) => {
     if (!sc) return { allPrivate: true, spaces: [] };
     if (typeof sc === 'object' && !Array.isArray(sc)) return sc;
@@ -809,13 +928,6 @@ function EditCatSheet({ entry, txCount = 0, onSave, onDelete, isPrebuilt = false
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
   const canDelete = onDelete !== null;
   const isParent = entry.isParent;
-  const mdiIcons = [
-    'help-circle-outline','home-outline','car-outline','heart-outline','star-outline',
-    'food-outline','cart-variant','coffee-outline','television-play','hospital-box-outline',
-    'shopping-outline','island','school-outline','dumbbell','baby-face-outline',
-    'cash-plus','piggy-bank-outline','cellphone-link','gift-outline','book-education-outline',
-    'briefcase-outline','bus-side','airplane-takeoff','medication-outline','paw-outline',
-  ];
   if (showDeleteConfirm) {
     return (
       <div style={{ padding:'4px 16px 8px' }}>
@@ -844,17 +956,11 @@ function EditCatSheet({ entry, txCount = 0, onSave, onDelete, isPrebuilt = false
       {isPrebuilt && <div style={{ fontSize:11, color:M.ink3, marginBottom:16, paddingLeft:2 }}>Built-in category names cannot be changed.</div>}
       {!isPrebuilt && (
         <>
-          {/* Icon picker (Change 13) */}
           <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>Icon</div>
-          <div data-testid="edit-cat-icon-picker" style={{ display:'flex', flexWrap:'wrap', gap:8, marginBottom:14 }}>
-            {mdiIcons.map(ic => (
-              <button key={ic} className="m-tap" onClick={() => setIconDraft(ic)}
-                style={{ width:36, height:36, borderRadius:8, background: iconDraft===ic?M.sageSoft:M.paper2, border:`1.5px solid ${iconDraft===ic?M.sage:M.line}`, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>
-                <IcoMDI name={ic} size={15} color={iconDraft===ic?M.sage:M.ink3}/>
-              </button>
-            ))}
+          <div data-testid="edit-cat-icon-picker">
+            <IconPickerGrid icon={iconDraft} setIcon={setIconDraft}/>
           </div>
-          {/* Scope (Change 14) */}
+          {/* Scope */}
           <ScopeSelector scope={scopeDraft} setScope={setScopeDraft} profiles={profiles}/>
         </>
       )}
@@ -892,6 +998,7 @@ export function ScreenManageCategories() {
   const [pendingMove, setPendingMove] = React.useState(null);
   const holdTimerRef = React.useRef(null);
   const holdDataRef = React.useRef(null);
+  const justDraggedRef = React.useRef(false);
   const [txCounts, setTxCounts] = React.useState({});
 
   React.useEffect(() => {
@@ -1002,9 +1109,11 @@ export function ScreenManageCategories() {
   };
 
   const endDrag = () => {
-    // Cancel hold if it didn't activate yet
     if (holdDataRef.current) { cancelHold(); return; }
     if (!dragState) return;
+    // Suppress the click event that fires after pointerup
+    justDraggedRef.current = true;
+    setTimeout(() => { justDraggedRef.current = false; }, 200);
     if (!dropTarget) { setDragState(null); setDropTarget(null); setCollapsedParents({}); return; }
 
     const { catId } = dragState;
@@ -1076,9 +1185,15 @@ export function ScreenManageCategories() {
       <div key={parentKey} ref={el => parentRefs.current[parentKey] = el}
         data-parentkey={parentKey}
         className="m-card"
-        style={{ marginBottom:12, border:`1.5px solid ${isDropTarget ? (parentCat.color || M.sage) : M.line}`, borderRadius:14, overflow:'hidden', background: isDropTarget ? (parentCat.color ? parentCat.color + '11' : M.sageSoft) : 'transparent', transition:'border-color 0.15s, background 0.15s' }}
+        style={{ marginBottom:12, border:`${isDropTarget?'2.5px':'1.5px'} solid ${isDropTarget ? (parentCat.color || M.sage) : M.line}`, borderRadius:14, overflow:'hidden', background: isDropTarget ? (parentCat.color ? parentCat.color + '18' : M.sageSoft) : 'transparent', transition:'border-color 0.15s, background 0.15s, border-width 0.1s', position:'relative' }}
         onPointerEnter={dragState ? () => setDropTarget({ type:'parent', parentId: parentKey }) : undefined}
       >
+        {/* Drop-here badge */}
+        {isDropTarget && (
+          <div style={{ position:'absolute', top:8, right:12, zIndex:2, background: parentCat.color || M.sage, color:'#fff', fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:20, pointerEvents:'none', letterSpacing:0.3 }}>
+            DROP HERE
+          </div>
+        )}
         {/* Parent header */}
         <div style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 16px', background:M.paper }}>
           <div style={{ width:38, height:38, borderRadius:10, background:parentCat.color||M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
@@ -1134,7 +1249,7 @@ export function ScreenManageCategories() {
                   cursor: (isCustomSub && !isOther) ? 'grab' : 'pointer',
                   touchAction: (isCustomSub && !isOther) ? 'none' : 'auto',
                 }}
-                onClick={() => !dragState && setCatInfoSheet({ catId: subKey, parentId: parentKey, isCustom: !!isCustomSub, isOther: !!isOther })}
+                onClick={() => !dragState && !justDraggedRef.current && setCatInfoSheet({ catId: subKey, parentId: parentKey, isCustom: !!isCustomSub, isOther: !!isOther })}
                 onPointerDown={(isCustomSub && !isOther) ? (e) => startDrag(e, subKey, parentKey, subCat.name, subCat.icon, parentCat.color || M.paper2) : undefined}
                 onPointerUp={(isCustomSub && !isOther) ? cancelHold : undefined}
                 onPointerCancel={(isCustomSub && !isOther) ? cancelHold : undefined}
