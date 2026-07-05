@@ -1307,11 +1307,18 @@ export function ScreenManageCategories() {
       >
         {/* Parent header */}
         <div style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 16px', background:M.paper }}>
-          <div style={{ width:38, height:38, borderRadius:10, background:parentCat.color||M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+          {/* Icon — tappable for ALL parents, opens info/edit sheet */}
+          <button className="m-tap" onClick={() => setCatInfoSheet({ catId: parentKey, parentId: null, isCustom, isParent: true })}
+            style={{ position:'relative', width:38, height:38, borderRadius:10, background:parentCat.color||M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, border:'none', cursor:'pointer', padding:0 }}>
             <IcoMDI name={parentCat.icon||'help-circle-outline'} size={18} color={isCustom?'#fff':M.ink2}/>
-          </div>
-          <div className={isCustom ? 'm-tap' : ''} style={{ flex:1, cursor: isCustom ? 'pointer' : 'default' }}
-            onClick={isCustom ? () => nav.push('editCat', { catId: parentKey, parentId: null, isCustom:true, isParent: true, name: parentCat.name, icon: parentCat.icon || 'help-circle-outline', color: parentCat.color, scope: parentCat.scope }) : undefined}
+            {/* Subtle ··· badge signals the icon is tappable */}
+            <div style={{ position:'absolute', bottom:-3, right:-3, background:M.paper, border:`1px solid ${M.line}`, borderRadius:6, padding:'1.5px 3.5px', display:'flex', gap:1.5, alignItems:'center', pointerEvents:'none' }}>
+              {[0,1,2].map(i => <div key={i} style={{ width:2, height:2, borderRadius:'50%', background:M.ink3 }}/>)}
+            </div>
+          </button>
+          {/* Name area — tap toggles expand for ALL */}
+          <div className="m-tap" style={{ flex:1, cursor:'pointer' }}
+            onClick={() => setExpandedParents(prev => ({ ...prev, [parentKey]: !prev[parentKey] }))}
           >
             <div style={{ fontSize:15, fontWeight:600 }}><LangHighlight text={parentCat.name} query={catSearch}/></div>
             {isCustom && parentCat.scope && (() => {
@@ -1457,17 +1464,20 @@ export function ScreenManageCategories() {
         <div style={{ height:32 }}/>
       </div>
 
-      {/* Category info sheet */}
+      {/* Category info sheet — handles both parent and sub categories */}
       {catInfoSheet && (() => {
-        const { catId, parentId, isCustom, isOther } = catInfoSheet;
+        const { catId, parentId, isCustom, isOther, isParent: isParentSheet } = catInfoSheet;
         const baseCat = CATEGORIES[catId] || customCats.find(c => c.id === catId) || {};
         const customCatEntry = customCats.find(c => c.id === catId);
         const displayName = isCustom ? (customCatEntry?.name || baseCat.name || catId) : (premadeOverrides[catId]?.name || baseCat.name || catId);
-        const parentCatBase = CATEGORIES[parentId] || customCats.find(c => c.id === parentId) || {};
-        const parentDisplay = customCats.find(c => c.id === parentId)?.name || premadeOverrides[parentId]?.name || parentCatBase.name || parentId;
+        // For subs: show parent name as subtitle; for parents: show type group
+        const parentCatBase = parentId ? (CATEGORIES[parentId] || customCats.find(c => c.id === parentId) || {}) : {};
+        const parentDisplay = parentId ? (customCats.find(c => c.id === parentId)?.name || premadeOverrides[parentId]?.name || parentCatBase.name || parentId) : null;
         const iconName = isCustom ? (customCatEntry?.icon || 'help-circle-outline') : (baseCat.icon || 'help-circle-outline');
-        const iconColor = parentCatBase.color || M.sage;
-        const txType = baseCat.type || parentCatBase.type || 'Expense';
+        const iconColor = isParentSheet ? (baseCat.color || customCatEntry?.color || M.sage) : (parentCatBase.color || M.sage);
+        // Type: parents may have types[] (all-types); subs inherit parent type
+        const txTypes = baseCat.types || customCatEntry?.types;
+        const txType = txTypes ? null : (baseCat.type || customCatEntry?.type || parentCatBase.type || 'Expense');
         const txCount = txCounts[catId] || 0;
         const canEdit = isCustom && !isOther;
         const directionVal = isCustom ? (customCatEntry?.direction || 'both') : getCatDirection(baseCat);
@@ -1477,19 +1487,24 @@ export function ScreenManageCategories() {
             <div style={{ padding:'4px 20px 32px' }}>
               <div className="m-card" style={{ padding:16, border:`1px solid ${M.line}`, marginBottom:16 }}>
                 <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:12 }}>
-                  <div style={{ width:44, height:44, borderRadius:12, background: iconColor + '22', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                    <IcoMDI name={iconName} size={20} color={iconColor}/>
+                  <div style={{ width:44, height:44, borderRadius:12, background: iconColor + (isParentSheet ? '' : '22'), backgroundColor: isParentSheet ? iconColor : iconColor + '22', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                    <IcoMDI name={iconName} size={20} color={isParentSheet ? '#fff' : iconColor}/>
                   </div>
                   <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ fontSize:16, fontWeight:700, color:M.ink }}>{displayName}</div>
-                    <div style={{ fontSize:12, color:M.ink3, marginTop:2 }}>{parentDisplay}</div>
+                    {parentDisplay && <div style={{ fontSize:12, color:M.ink3, marginTop:2 }}>{parentDisplay}</div>}
+                    {!parentDisplay && <div style={{ fontSize:12, color:M.ink3, marginTop:2 }}>{isCustom ? 'Custom category' : 'Built-in category'}</div>}
                   </div>
                 </div>
                 <Divider/>
                 <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 0' }}>
                   <div style={{ fontSize:12, color:M.ink3, width:100 }}>Transaction type</div>
-                  <div style={{ flex:1 }}>
-                    <span style={{ fontSize:12, fontWeight:600, color: CAT_TYPE_COLOR[txType] || M.ink2, background: (CAT_TYPE_COLOR[txType] || M.ink2) + '18', borderRadius:6, padding:'3px 8px' }}>{txType}</span>
+                  <div style={{ flex:1, display:'flex', flexWrap:'wrap', gap:4 }}>
+                    {txTypes ? txTypes.map(t => (
+                      <span key={t} style={{ fontSize:11, fontWeight:600, color: CAT_TYPE_COLOR[t] || M.ink2, background: (CAT_TYPE_COLOR[t] || M.ink2) + '18', borderRadius:6, padding:'3px 7px' }}>{t}</span>
+                    )) : (
+                      <span style={{ fontSize:12, fontWeight:600, color: CAT_TYPE_COLOR[txType] || M.ink2, background: (CAT_TYPE_COLOR[txType] || M.ink2) + '18', borderRadius:6, padding:'3px 8px' }}>{txType}</span>
+                    )}
                   </div>
                 </div>
                 <Divider/>
@@ -1511,7 +1526,11 @@ export function ScreenManageCategories() {
               {canEdit && (
                 <button className="m-btn outline m-tap" style={{ width:'100%' }} onClick={() => {
                   setCatInfoSheet(null);
-                  nav.push('editCat', { catId, parentId, isCustom: true, isParent: false, name: customCatEntry?.name || '', icon: customCatEntry?.icon || 'help-circle-outline', color: undefined, scope: customCatEntry?.scope });
+                  if (isParentSheet) {
+                    nav.push('editCat', { catId, parentId: null, isCustom: true, isParent: true, name: customCatEntry?.name || '', icon: customCatEntry?.icon || 'help-circle-outline', color: customCatEntry?.color, scope: customCatEntry?.scope });
+                  } else {
+                    nav.push('editCat', { catId, parentId, isCustom: true, isParent: false, name: customCatEntry?.name || '', icon: customCatEntry?.icon || 'help-circle-outline', color: undefined, scope: customCatEntry?.scope });
+                  }
                 }}>
                   <IcoMDI name="pencil-outline" size={16} color={M.ink2}/> Edit category
                 </button>
