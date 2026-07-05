@@ -597,6 +597,7 @@ export function CategoryPicker({ selected, onClose, onPick, txType = 'Expense', 
     if (!groups[groupKey]) groups[groupKey] = [];
     groups[groupKey].push(c);
   });
+  Object.values(groups).forEach(arr => arr.sort((a, b) => a.name === 'Other' ? 1 : b.name === 'Other' ? -1 : 0));
 
   const pickedCat = CATEGORIES[pickedId] || _catExt[pickedId] || {};
 

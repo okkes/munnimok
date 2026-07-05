@@ -583,17 +583,18 @@ export function ScreenHome() {
                   );
                 })}
 
-                {/* Manage spaces — inside scroll, just below list entries */}
-                <div style={{ paddingBottom:20 }}>
-                  <Divider inset={0}/>
-                  <div className="m-tap" onClick={() => { setShowNavDrawer(false); nav.push('spaces'); }}
-                    style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 8px', borderRadius:12 }}>
-                    <div style={{ width:38, height:38, borderRadius:10, background:M.paper2, border:`1px solid ${M.line}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                      <I name="users" size={16} color={M.ink2}/>
-                    </div>
-                    <div style={{ fontSize:14, fontWeight:500, color:M.ink2 }}>{t('home.manageSpaces')}</div>
-                  </div>
+              </div>
+            </div>
+
+            {/* Manage spaces — always visible, outside the scroll area */}
+            <div style={{ padding:'4px 12px 4px', flexShrink:0 }}>
+              <Divider inset={0}/>
+              <div className="m-tap" onClick={() => { setShowNavDrawer(false); nav.push('spaces'); }}
+                style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 8px', borderRadius:12 }}>
+                <div style={{ width:38, height:38, borderRadius:10, background:M.paper2, border:`1px solid ${M.line}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <I name="users" size={16} color={M.ink2}/>
                 </div>
+                <div style={{ fontSize:14, fontWeight:500, color:M.ink2 }}>{t('home.manageSpaces')}</div>
               </div>
             </div>
 

@@ -428,7 +428,7 @@ const ANNOTATIONS = {
       { from: 'Space avatar (home-space-avatar)', to: 'Left nav drawer — shows all spaces + Settings' },
       { from: 'Nav drawer → space row', to: 'Activate that space, close drawer' },
       { from: 'Nav drawer → Settings (nav-drawer-settings)', to: 'profile tab (ScreenProfile)' },
-      { from: 'Nav drawer → Manage spaces', to: 'spaces screen (stack)', cond: 'button is inside the scrollable list, below last space row; icon is users (not +)' },
+      { from: 'Nav drawer → Manage spaces', to: 'spaces screen (stack)', cond: 'button is always visible outside the scroll area, between list and Settings; icon is users (not +)' },
       { from: 'Events card → See all',    to: 'events screen (stack, ScreenEvents)' },
       { from: 'Events card → event row',  to: 'eventDetail screen (stack)' },
       { from: 'Card tap',        to: 'Varies by card type (Tx, Budgets, Goals…)' },
