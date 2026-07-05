@@ -237,6 +237,7 @@ export const TRANSLATIONS = {
     // Notifications
     'notif.bankSync':'Bank sync','notif.bankSyncSub':'Pull latest transactions from your bank',
     'notif.noAccountsSync':'Connect a bank account to this space to enable sync',
+    'notif.notifBlocked':'Notifications blocked · enable in your device settings',
     'tx.catRestricted':'Category is set automatically by the transaction type.',
     'notif.lastSynced':'Last synced','notif.syncNow':'Sync now','notif.syncing':'Syncing…',
     'notif.txSynced':'{n} transaction synced','notif.txsSynced':'{n} transactions synced',
@@ -621,6 +622,7 @@ export const TRANSLATIONS = {
     'word.account':'rekening','word.accounts':'rekeningen','word.noAccounts':'Geen rekeningen','word.member':'lid','word.members':'leden','word.you':'jij','word.personal':'persoonlijk',
     'notif.bankSync':'Banksync','notif.bankSyncSub':'Haal de nieuwste transacties op van je bank',
     'notif.noAccountsSync':'Koppel een bankrekening aan deze ruimte om te synchroniseren',
+    'notif.notifBlocked':'Meldingen geblokkeerd · schakel in via je apparaatinstellingen',
     'tx.catRestricted':'Categorie wordt automatisch bepaald door het transactietype.',
     'notif.lastSynced':'Laatste sync','notif.syncNow':'Nu synchroniseren','notif.syncing':'Synchroniseren…',
     'notif.txSynced':'{n} transactie gesynchroniseerd','notif.txsSynced':'{n} transacties gesynchroniseerd',
@@ -996,6 +998,7 @@ export const TRANSLATIONS = {
     'word.account':'hesap','word.accounts':'hesap','word.noAccounts':'Hesap yok','word.member':'üye','word.members':'üye','word.you':'siz','word.personal':'kişisel',
     'notif.bankSync':'Banka senkronizasyonu','notif.bankSyncSub':'Bankandan en son işlemleri çek',
     'notif.noAccountsSync':'Senkronizasyonu etkinleştirmek için bu alana bir banka hesabı bağlayın',
+    'notif.notifBlocked':'Bildirimler engellendi · cihaz ayarlarından etkinleştirin',
     'tx.catRestricted':'Kategori, işlem türüne göre otomatik olarak ayarlanır.',
     'notif.lastSynced':'Son senkronizasyon','notif.syncNow':'Şimdi senkronize et','notif.syncing':'Senkronize ediliyor…',
     'notif.txSynced':'{n} işlem senkronize edildi','notif.txsSynced':'{n} işlem senkronize edildi',

@@ -1966,10 +1966,23 @@ export function ScreenNotifications() {
     return connectedAccounts.filter(a => attachedIds.has(a.id));
   }, [activeProfile?.id, activeProfile?.accountIds, connectedAccounts, spaceSd]);
 
-  const handleSync = () => {
+  const [notifPermission, setNotifPermission] = React.useState(() =>
+    ('Notification' in window ? Notification.permission : 'unsupported')
+  );
+
+  const handleSync = async () => {
     if (!activeSpaceAutomatedAccts.length) return;
+
+    // Request permission on first tap — must stay inside the user-gesture call stack for iOS
+    if ('Notification' in window && Notification.permission === 'default') {
+      try {
+        const result = await Notification.requestPermission();
+        setNotifPermission(result);
+      } catch {}
+    }
+
     setSyncing(true);
-    setTimeout(() => {
+    setTimeout(async () => {
       const count = Math.floor(Math.random() * 5) + 1;
       const now = new Date();
       const accountPool = activeSpaceAutomatedAccts;
@@ -2026,6 +2039,23 @@ export function ScreenNotifications() {
         window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: spaceSdKey } }));
       } catch {}
       setSyncing(false);
+
+      // Fire a native push notification via the service worker (works on iOS 16.4+ PWA)
+      if ('Notification' in window && Notification.permission === 'granted' && navigator.serviceWorker) {
+        try {
+          const reg = await navigator.serviceWorker.ready;
+          const body = count === 1
+            ? t('notif.txSynced').replace('{n}', '1')
+            : t('notif.txsSynced').replace('{n}', String(count));
+          await reg.showNotification(t('notif.bankSync'), {
+            body,
+            icon: './asset-logo-leaf-only.png',
+            badge: './asset-logo-leaf-only.png',
+            tag: 'munni-sync',
+            silent: false,
+          });
+        } catch {}
+      }
     }, 1200);
   };
 
@@ -2056,6 +2086,9 @@ export function ScreenNotifications() {
           </button>
           {!syncing && activeSpaceAutomatedAccts.length === 0 && (
             <div style={{ marginTop:8, fontSize:12, color:M.ink4, textAlign:'center' }}>{t('notif.noAccountsSync')}</div>
+          )}
+          {notifPermission === 'denied' && (
+            <div style={{ marginTop:8, fontSize:12, color:M.clay, textAlign:'center' }}>{t('notif.notifBlocked')}</div>
           )}
           {newCount > 0 && (
             <div style={{ marginTop:10, borderRadius:10, overflow:'hidden', border:`1px solid ${M.ochreSoft}` }}>
