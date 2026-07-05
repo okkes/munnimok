@@ -1,5 +1,5 @@
 ﻿import React from 'react';
-import { CATEGORIES, _catExt, catPath, deriveTxType, getTypeFallbackCat, TX_TYPE_META } from '../../shared/data/categories.js';
+import { CATEGORIES, _catExt, catPath, deriveTxType, getTypeFallbackCat, isUncatId, TX_TYPE_META } from '../../shared/data/categories.js';
 import { fmtEur, fmtDate, computePeriodHistory, dayLabel } from '../../shared/utils/format.js';
 import { getUserId } from '../../shared/utils/user.js';
 import { ACCOUNTS, TRANSACTIONS } from '../accounts/data.js';
@@ -326,7 +326,7 @@ export function ScreenTxDetail({ params }) {
   const [showAllocInfo, setShowAllocInfo] = React.useState(false);
 
   React.useEffect(() => {
-    const primaryCatId = txCats.find(c => c.catId !== 'expenseUncategorized' && c.catId !== 'incomeUncategorized')?.catId || txCats[0]?.catId;
+    const primaryCatId = txCats.find(c => !isUncatId(c.catId))?.catId || txCats[0]?.catId;
     updateTx(tx.id, { cats: txCats, cat: primaryCatId || tx.cat });
   }, [txCats]);
 
@@ -445,11 +445,11 @@ export function ScreenTxDetail({ params }) {
           <div className="m-cap" style={{ marginBottom:6, paddingLeft:2 }}>Categories</div>
           <div className="m-card" style={{ padding: '12px 16px', border: `1px solid ${M.line}`, position:'relative' }}>
           {txCats.map((c, i) => ({ c, i }))
-            .filter(({ c }) => !(c.catId === fallbackCatId && c.amount < 0.005))
-            .sort((a, b) => a.c.catId === fallbackCatId ? -1 : b.c.catId === fallbackCatId ? 1 : 0)
+            .filter(({ c }) => !(isUncatId(c.catId) && c.amount < 0.005))
+            .sort((a, b) => isUncatId(a.c.catId) ? -1 : isUncatId(b.c.catId) ? 1 : 0)
             .map(({ c, i }, di, darr) => {
             const cat = CATEGORIES[c.catId] || _catExt[c.catId] || {};
-            const isUncategorized = c.catId === 'expenseUncategorized' || c.catId === 'incomeUncategorized';
+            const isUncategorized = isUncatId(c.catId);
             const isAutoSet = c.catId === fallbackCatId;
             const parent = cat.parent ? (CATEGORIES[cat.parent] || _catExt[cat.parent]) : null;
             const parentName = parent?.name || cat.group || '';
@@ -601,7 +601,7 @@ export function ScreenTxDetail({ params }) {
                           updateTx(lt.id, {
                             reimbursements: lt.reimbursements.filter(x => x.txId !== tx.id),
                             cats: ltNewCats,
-                            cat: ltNewCats.find(c => c.catId !== 'expenseUncategorized' && c.catId !== 'incomeUncategorized')?.catId || ltNewCats[0]?.catId || lt.cat,
+                            cat: ltNewCats.find(c => !isUncatId(c.catId))?.catId || ltNewCats[0]?.catId || lt.cat,
                           });
                         }
                       }} style={{ background:'none', border:'none', color:M.clay, fontSize:18, lineHeight:1, cursor:'pointer', fontFamily:M.fontUI, padding:'0 0 0 8px', flexShrink:0 }}>×</button>

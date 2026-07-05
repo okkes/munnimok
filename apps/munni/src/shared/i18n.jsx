@@ -40,6 +40,7 @@ export const TRANSLATIONS = {
     'cat.transport.public':'Public Transport','cat.transport.car':'Car Payment',
     'cat.healthcare.doctor':'Doctor Visit','cat.healthcare.prescription':'Prescription',
     // All category ids (for full translation support)
+    'cat.uncategorized':'Uncategorized','cat.general':'General',
     'cat.incomeUncategorized':'Uncategorized','cat.reimburse':'Reimbursement',
     'cat.salary':'Salary','cat.freelance':'Freelance Work','cat.rental':'Rental Income',
     'cat.investIncome':'Investment Income','cat.incomeOther':'Other Income',
@@ -432,6 +433,7 @@ export const TRANSLATIONS = {
     'cat.housing.rent':'Huur & hypotheek','cat.housing.utility':'Nutsvoorzieningen',
     'cat.transport.public':'Openbaar vervoer','cat.transport.car':'Auto',
     'cat.healthcare.doctor':'Doktersbezoek','cat.healthcare.prescription':'Recept',
+    'cat.uncategorized':'Niet gecategoriseerd','cat.general':'Algemeen',
     'cat.incomeUncategorized':'Niet gecategoriseerd','cat.reimburse':'Vergoeding',
     'cat.salary':'Salaris','cat.freelance':'Freelancewerk','cat.rental':'Huurinkomsten',
     'cat.investIncome':'Investeringsinkomsten','cat.incomeOther':'Overige inkomsten',
@@ -806,6 +808,7 @@ export const TRANSLATIONS = {
     'cat.housing.rent':'Kira & ipotek','cat.housing.utility':'Faturalar',
     'cat.transport.public':'Toplu taşıma','cat.transport.car':'Araç ödemesi',
     'cat.healthcare.doctor':'Doktor ziyareti','cat.healthcare.prescription':'Reçete',
+    'cat.uncategorized':'Kategorisiz','cat.general':'Genel',
     'cat.incomeUncategorized':'Kategorisiz','cat.reimburse':'Geri ödeme',
     'cat.salary':'Maaş','cat.freelance':'Serbest çalışma','cat.rental':'Kira geliri',
     'cat.investIncome':'Yatırım geliri','cat.incomeOther':'Diğer gelirler',

@@ -1,7 +1,12 @@
+export const ALL_TX_TYPES = ['Expense','Income','Saving','Transfer','Investment','Debt Payment','Adjustment'];
+
 export const CATEGORIES = {
+  // ── General (hidden — universal fallback) ───────────────────
+  general:                { id:'general',                name:'General',            icon:'help-circle-outline',        group:'General',      isParent:true, hidden:true, types:ALL_TX_TYPES, direction:'both' },
+  uncategorized:          { id:'uncategorized',          name:'Uncategorized',      icon:'help-circle-outline',        group:'General',      parent:'general', hidden:true, types:ALL_TX_TYPES, direction:'both' },
   // ── Income ──────────────────────────────────────────────────
   income:                 { id:'income',                 name:'Income',             icon:'cash-plus',                  group:'Income',       isParent:true, positive:true, color:'#27AE60', type:'Income' },
-  incomeUncategorized:    { id:'incomeUncategorized',    name:'Uncategorized',      icon:'help-circle-outline',        group:'Income',       parent:'income', positive:true, type:'Income',  direction:'credit' },
+  incomeUncategorized:    { id:'incomeUncategorized',    name:'Uncategorized',      icon:'help-circle-outline',        group:'Income',       parent:'income', positive:true, type:'Income',  direction:'credit', hidden:true },
   reimburse:              { id:'reimburse',              name:'Reimbursement',      icon:'cash-refund',                group:'Income',       parent:'income', positive:true, type:'Income',  direction:'credit' },
   salary:                 { id:'salary',                 name:'Salary',             icon:'office-building-outline',    group:'Income',       parent:'income', positive:true, type:'Income',  direction:'credit' },
   freelance:              { id:'freelance',              name:'Freelance Work',     icon:'home-city-outline',          group:'Income',       parent:'income', positive:true, type:'Income',  direction:'credit' },
@@ -15,7 +20,7 @@ export const CATEGORIES = {
   // ── Expense (default) ───────────────────────────────────────
   expense:                { id:'expense',                name:'Expense',            icon:'cash-remove',                group:'Expense',      isParent:true, type:'Expense' },
   expenseReimburse:       { id:'expenseReimburse',       name:'Reimbursement',      icon:'cash-refund',                group:'Expense',      parent:'expense', type:'Expense', direction:'debit' },
-  expenseUncategorized:   { id:'expenseUncategorized',   name:'Uncategorized',      icon:'help-circle-outline',        group:'Expense',      parent:'expense', type:'Expense', direction:'debit' },
+  expenseUncategorized:   { id:'expenseUncategorized',   name:'Uncategorized',      icon:'help-circle-outline',        group:'Expense',      parent:'expense', type:'Expense', direction:'debit', hidden:true },
   // ── Housing ─────────────────────────────────────────────────
   housing:                { id:'housing',                name:'Housing',            icon:'home-outline',               group:'Housing',      isParent:true, color:'#E67E22', type:'Expense' },
   housingRent:            { id:'housingRent',            name:'Rent & Mortgage',    icon:'home-import-outline',        group:'Housing',      parent:'housing', type:'Expense' },
@@ -124,7 +129,7 @@ export const CATEGORIES = {
   cashDeposit:            { id:'cashDeposit',            name:'Cash Deposit',       icon:'cash-plus',                  group:'Transfer',     parent:'transfer', type:'Transfer',     direction:'credit' },
   // ── Debt Payment ────────────────────────────────────────────
   debt:                   { id:'debt',                   name:'Debt Payment',       icon:'credit-card-outline',        group:'Debt Payment', isParent:true, color:'#9C27B0', type:'Debt Payment' },
-  debtUncategorized:      { id:'debtUncategorized',      name:'Uncategorized',      icon:'help-circle-outline',        group:'Debt Payment', parent:'debt', type:'Debt Payment',   direction:'both' },
+  debtUncategorized:      { id:'debtUncategorized',      name:'Uncategorized',      icon:'help-circle-outline',        group:'Debt Payment', parent:'debt', type:'Debt Payment',   direction:'both', hidden:true },
   lendMoney:              { id:'lendMoney',              name:'Lend Money',         icon:'hand-coin-outline',          group:'Debt Payment', parent:'debt', type:'Debt Payment',   direction:'debit' },
   loanRepayment:          { id:'loanRepayment',          name:'Loan Repayment',     icon:'bank-outline',               group:'Debt Payment', parent:'debt', type:'Debt Payment',   direction:'debit' },
   creditCardPayment:      { id:'creditCardPayment',      name:'Credit Card',        icon:'credit-card-clock-outline',  group:'Debt Payment', parent:'debt', type:'Debt Payment',   direction:'debit' },
@@ -139,12 +144,27 @@ export const CATEGORIES = {
   balanceAdjustment:      { id:'balanceAdjustment',      name:'Balance Adjustment', icon:'scale-balance',              group:'Adjustment',   parent:'adjustment', type:'Adjustment', direction:'both' },
 };
 
+// Returns types array: multi-type for uncategorized, single-item for everything else
+export function getCatTypes(cat) {
+  if (!cat) return [];
+  if (cat.types) return cat.types;
+  if (cat.type) return [cat.type];
+  return [];
+}
+
+// True if catId is any of the legacy or current uncategorized IDs
+export function isUncatId(id) {
+  return id === 'uncategorized' || id === 'expenseUncategorized' || id === 'incomeUncategorized' || id === 'debtUncategorized';
+}
+
 // Derive direction if not explicitly set: Income→credit, Expense→debit, others→both
 export function getCatDirection(cat) {
   if (!cat) return 'both';
   if (cat.direction) return cat.direction;
-  if (cat.type === 'Income') return 'credit';
-  if (cat.type === 'Expense') return 'debit';
+  if (cat.types && cat.types.length > 1) return 'both';
+  const t = cat.type || cat.types?.[0];
+  if (t === 'Income') return 'credit';
+  if (t === 'Expense') return 'debit';
   return 'both';
 }
 
@@ -216,13 +236,13 @@ export function deriveTxType(srcAcct, dstAcct, amount) {
 // Default category for a given type + sign
 export function getTypeFallbackCat(txType, isNegative) {
   switch (txType) {
-    case 'Income':       return 'incomeUncategorized';
-    case 'Expense':      return 'expenseUncategorized';
+    case 'Income':       return 'uncategorized';
+    case 'Expense':      return 'uncategorized';
     case 'Saving':       return isNegative ? 'savingDeposit'   : 'savingWithdraw';
     case 'Transfer':     return isNegative ? 'transferOut'     : 'transferIn';
-    case 'Debt Payment': return 'debtUncategorized';
+    case 'Debt Payment': return 'uncategorized';
     case 'Investment':   return isNegative ? 'investBuy'       : 'investSell';
     case 'Adjustment':   return 'balanceAdjustment';
-    default:             return isNegative ? 'expenseUncategorized' : 'incomeUncategorized';
+    default:             return 'uncategorized';
   }
 }

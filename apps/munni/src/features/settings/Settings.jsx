@@ -2,7 +2,7 @@
 import { createPortal } from 'react-dom';
 import { T } from '../../shared/testIds.js';
 import { STOCK_AVATARS, CURRENCIES } from '../../shared/constants.js';
-import { CATEGORIES, getCatDirection } from '../../shared/data/categories.js';
+import { CATEGORIES, getCatDirection, isUncatId } from '../../shared/data/categories.js';
 import { computePeriodHistory, fmtEur, fmtDate } from '../../shared/utils/format.js';
 import { M, I, IcoMDI, Divider, StatusBar, AppBar } from '../../app/theme.jsx';
 import { useLang, OTHER_LANGUAGES, LangCtx, useCurrency } from '../../shared/i18n.jsx';
@@ -793,10 +793,10 @@ function IconPickerGrid({ icon, setIcon }) {
   return (
     <>
       <div style={{ position:'relative', marginBottom:8 }}>
-        <I name="search" size={13} color={M.ink4} style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', pointerEvents:'none' }}/>
+        <span style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', pointerEvents:'none', display:'flex' }}><I name="search" size={13} color={M.ink4}/></span>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search icons…"
           style={{ width:'100%', boxSizing:'border-box', paddingLeft:28, paddingRight:10, paddingTop:7, paddingBottom:7, border:`1px solid ${M.line}`, borderRadius:8, fontSize:12, fontFamily:M.fontUI, background:M.paper2, color:M.ink, outline:'none' }}/>
-        {search && <button onClick={() => setSearch('')} style={{ position:'absolute', right:8, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', padding:0 }}><I name="close" size={12} color={M.ink4}/></button>}
+        {search && <button onClick={() => setSearch('')} style={{ position:'absolute', right:8, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', padding:0, display:'flex' }}><I name="x" size={12} color={M.ink4}/></button>}
       </div>
       <div style={{ display:'flex', flexWrap:'wrap', gap:6, maxHeight:180, overflowY:'auto', marginBottom:14 }}>
         {filtered.length === 0 && <div style={{ fontSize:12, color:M.ink4, padding:'8px 0' }}>No icons match "{search}"</div>}
@@ -986,7 +986,7 @@ export function ScreenManageCategories() {
   const [dropTarget, setDropTarget] = React.useState(null);
   const [editSheet, setEditSheet] = React.useState(null);
   const [catInfoSheet, setCatInfoSheet] = React.useState(null);
-  const [collapsedParents, setCollapsedParents] = React.useState({});
+  const [expandedParents, setExpandedParents] = React.useState({});
   const [holdingCatId, setHoldingCatId] = React.useState(null);
   const [pendingMove, setPendingMove] = React.useState(null);
   const holdTimerRef = React.useRef(null);
@@ -1004,7 +1004,7 @@ export function ScreenManageCategories() {
 
   // Helpers
   const customParents = customCats.filter(c => c.isParent);
-  const premadeParents = Object.entries(CATEGORIES).filter(([k,v]) => v.isParent && k !== 'expense');
+  const premadeParents = Object.entries(CATEGORIES).filter(([k,v]) => v.isParent && !v.hidden);
 
   const getCustomSubs = (parentId) => customCats.filter(c => !c.isParent && c.parent === parentId);
   const getPremadeSubs = (parentKey) => Object.entries(CATEGORIES).filter(([k,v]) => v.parent === parentKey);
@@ -1014,7 +1014,7 @@ export function ScreenManageCategories() {
     setCustomCats(prev => prev.filter(c => c.id !== catId));
     setTxs(prev => prev.map(t => {
       if (t.cat === catId) {
-        const fallback = (t.amount >= 0) ? 'incomeUncategorized' : 'expenseUncategorized';
+        const fallback = 'uncategorized';
         return { ...t, cat: fallback, cats: [{ catId: fallback, amount: Math.abs(t.amount) }] };
       }
       return t;
@@ -1027,7 +1027,7 @@ export function ScreenManageCategories() {
     setCustomCats(prev => prev.filter(c => !subsToDelete.has(c.id) && c.parent !== parentId));
     setTxs(prev => prev.map(t => {
       if (subsToDelete.has(t.cat) || t.cat === parentId) {
-        const fallback = (t.amount >= 0) ? 'incomeUncategorized' : 'expenseUncategorized';
+        const fallback = 'uncategorized';
         return { ...t, cat: fallback, cats: [{ catId: fallback, amount: Math.abs(t.amount) }] };
       }
       return t;
@@ -1039,13 +1039,7 @@ export function ScreenManageCategories() {
     return subs.length === 1 && subs[0].id === `${parentId}_other`;
   };
 
-  const collapseAll = () => {
-    setCollapsedParents(() => {
-      const next = {};
-      [...Object.values(CATEGORIES).filter(c => c.isParent), ...customCats.filter(c => c.isParent)].forEach(p => { next[p.id] = true; });
-      return next;
-    });
-  };
+  const collapseAll = () => setExpandedParents({});
 
   const activateDrag = (catId, parentId, label, icon, color, x, y, el, pointerId) => {
     try { el?.setPointerCapture(pointerId); } catch {}
@@ -1093,6 +1087,15 @@ export function ScreenManageCategories() {
     }
     if (!dragState) return;
     setDragState(d => d ? { ...d, x: e.clientX, y: e.clientY } : null);
+    // Use elementFromPoint instead of onPointerEnter because setPointerCapture
+    // routes all events to the dragged element, bypassing other elements' enter events
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const parentCard = el?.closest('[data-parentkey]');
+    if (parentCard) {
+      setDropTarget({ type:'parent', parentId: parentCard.dataset.parentkey });
+    } else {
+      setDropTarget(null);
+    }
     const scrollEl = document.querySelector('.m-body-scroll');
     if (scrollEl) {
       const rect = scrollEl.getBoundingClientRect();
@@ -1107,7 +1110,7 @@ export function ScreenManageCategories() {
     // Suppress the click event that fires after pointerup
     justDraggedRef.current = true;
     setTimeout(() => { justDraggedRef.current = false; }, 200);
-    if (!dropTarget) { setDragState(null); setDropTarget(null); setCollapsedParents({}); return; }
+    if (!dropTarget) { setDragState(null); setDropTarget(null); return; }
 
     const { catId } = dragState;
 
@@ -1116,7 +1119,7 @@ export function ScreenManageCategories() {
       const fromParent = CATEGORIES[dragState.parentId] || customCats.find(c => c.id === dragState.parentId);
       const toParent = CATEGORIES[dropTarget.parentId] || customCats.find(c => c.id === dropTarget.parentId);
       const movingCat = customCats.find(c => c.id === catId);
-      setDragState(null); setDropTarget(null); setCollapsedParents({});
+      setDragState(null); setDropTarget(null);
       setPendingMove({
         catId,
         fromParentId: dragState.parentId,
@@ -1148,7 +1151,9 @@ export function ScreenManageCategories() {
     }
     setDragState(null);
     setDropTarget(null);
-    setCollapsedParents({});
+    // Expand destination parent so user can see the moved item
+    const newExpanded = destParentId ? { [destParentId]: true } : {};
+    setExpandedParents(newExpanded);
     if (destParentId && destParentId !== dragState.parentId) {
       setTimeout(() => {
         const el = parentRefs.current[destParentId];
@@ -1170,11 +1175,13 @@ export function ScreenManageCategories() {
     const otherSub = rawSubs.find(s => (Array.isArray(s) ? false : s.id === `${parentKey}_other`));
     const nonOther = rawSubs.filter(s => !(Array.isArray(s) ? false : s.id === `${parentKey}_other`));
     const q = catSearch.toLowerCase();
+    const parentMatches = q && parentCat.name.toLowerCase().includes(q);
     const allSubs = q
-      ? nonOther.filter(s => { const n = Array.isArray(s) ? s[1].name : s.name; return n.toLowerCase().includes(q); })
+      ? parentMatches
+        ? (otherSub ? [...nonOther, otherSub] : nonOther)
+        : nonOther.filter(s => { const n = Array.isArray(s) ? s[1].name : s.name; return n.toLowerCase().includes(q); })
       : (otherSub ? [...nonOther, otherSub] : nonOther);
-    const subCount = q ? allSubs.length : (otherSub ? nonOther.length + 1 : nonOther.length);
-    const isCollapsed = q ? false : !!collapsedParents[parentKey];
+    const isCollapsed = q ? false : !expandedParents[parentKey];
     const isDropTarget = dropTarget?.type === 'parent' && dropTarget.parentId === parentKey;
 
     return (
@@ -1182,7 +1189,6 @@ export function ScreenManageCategories() {
         data-parentkey={parentKey}
         className="m-card"
         style={{ marginBottom:12, border:`${isDropTarget?'2.5px':'1.5px'} solid ${isDropTarget ? (parentCat.color || M.sage) : M.line}`, borderRadius:14, overflow:'hidden', background: isDropTarget ? (parentCat.color ? parentCat.color + '18' : M.sageSoft) : 'transparent', transition:'border-color 0.15s, background 0.15s, border-width 0.1s', position:'relative' }}
-        onPointerEnter={dragState ? () => setDropTarget({ type:'parent', parentId: parentKey }) : undefined}
       >
         {/* Drop-here badge */}
         {isDropTarget && (
@@ -1214,8 +1220,7 @@ export function ScreenManageCategories() {
               return parts.length ? <div style={{ fontSize:10, color:M.ink4, marginTop:1 }}>{parts.join(' ')}</div> : null;
             })()}
           </div>
-          <span style={{ fontSize:12, color:M.ink3 }}>{subCount} subs</span>
-          <button className="m-tap" onClick={() => setCollapsedParents(prev => ({ ...prev, [parentKey]: !prev[parentKey] }))}
+          <button className="m-tap" onClick={() => setExpandedParents(prev => ({ ...prev, [parentKey]: !prev[parentKey] }))}
             style={{ background:'none', border:'none', cursor:'pointer', padding:4, display:'flex', alignItems:'center', justifyContent:'center' }}>
             <div style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)', transition:'transform 0.2s ease', display:'flex' }}>
               <I name="caretR" size={14} color={M.ink4}/>
@@ -1249,7 +1254,6 @@ export function ScreenManageCategories() {
                 onPointerDown={(isCustomSub && !isOther) ? (e) => startDrag(e, subKey, parentKey, subCat.name, subCat.icon, parentCat.color || M.paper2) : undefined}
                 onPointerUp={(isCustomSub && !isOther) ? cancelHold : undefined}
                 onPointerCancel={(isCustomSub && !isOther) ? cancelHold : undefined}
-                onPointerEnter={(dragState && !isOther) ? () => setDropTarget({ type:'reorder', catId: subKey, parentId: parentKey }) : undefined}
               >
                 <div style={{ width:28, height:28, borderRadius:8, background: isOther ? (parentCat.color ? parentCat.color+'33' : M.paper2) : subBg, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                   <IcoMDI name={subCat.icon||'help-circle-outline'} size={13} color={isOther ? (parentCat.color || M.ink3) : subIconColor}/>
@@ -1290,12 +1294,14 @@ export function ScreenManageCategories() {
       <div className="m-body-scroll">
         {/* Search bar */}
         <div style={{ position:'relative', marginBottom:16 }}>
-          <I name="search" size={14} color={M.ink4} style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', pointerEvents:'none' }}/>
+          <span style={{ position:'absolute', left:11, top:'50%', transform:'translateY(-50%)', pointerEvents:'none', display:'flex' }}>
+            <I name="search" size={14} color={M.ink4}/>
+          </span>
           <input value={catSearch} onChange={e => setCatSearch(e.target.value)} placeholder="Search categories…"
-            style={{ width:'100%', boxSizing:'border-box', paddingLeft:34, paddingRight: catSearch ? 32 : 12, paddingTop:9, paddingBottom:9, border:`1px solid ${M.line}`, borderRadius:10, fontSize:13, fontFamily:M.fontUI, background:M.paper2, color:M.ink, outline:'none' }}/>
+            style={{ width:'100%', boxSizing:'border-box', paddingLeft:32, paddingRight: catSearch ? 32 : 12, paddingTop:9, paddingBottom:9, border:`1px solid ${M.line}`, borderRadius:10, fontSize:13, fontFamily:M.fontUI, background:M.paper2, color:M.ink, outline:'none' }}/>
           {catSearch && (
-            <button onClick={() => setCatSearch('')} style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', padding:0 }}>
-              <I name="close" size={14} color={M.ink4}/>
+            <button onClick={() => setCatSearch('')} style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', padding:0, display:'flex' }}>
+              <I name="x" size={14} color={M.ink4}/>
             </button>
           )}
         </div>
@@ -1328,10 +1334,9 @@ export function ScreenManageCategories() {
                 </>
               )}
               {visiblePremade.length > 0 && (
-                <>
-                  <div className="m-cap" style={{ marginBottom:8, marginTop: visibleCustom.length>0?16:0 }}>PREMADE CATEGORIES</div>
+                <div style={{ marginTop: visibleCustom.length>0?16:0 }}>
                   {visiblePremade.map(([k,v]) => renderParentCard(k, v, false))}
-                </>
+                </div>
               )}
               {q && visibleCustom.length === 0 && visiblePremade.length === 0 && (
                 <div style={{ textAlign:'center', color:M.ink4, fontSize:13, padding:'32px 0' }}>No categories match "{catSearch}"</div>

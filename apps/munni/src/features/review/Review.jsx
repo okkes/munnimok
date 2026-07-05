@@ -1,5 +1,5 @@
 ﻿import React from 'react';
-import { CATEGORIES, _catExt, catPath, catNameT, _GROUP_KEYS, TX_TYPES, TX_TYPE_META, deriveTxType, getTypeFallbackCat } from '../../shared/data/categories.js';
+import { CATEGORIES, _catExt, catPath, catNameT, _GROUP_KEYS, TX_TYPES, TX_TYPE_META, deriveTxType, getTypeFallbackCat, isUncatId } from '../../shared/data/categories.js';
 import { fmtEur, fmtDate } from '../../shared/utils/format.js';
 import { M, I, IcoMDI, Divider, StatusBar, AppBar } from '../../app/theme.jsx';
 import { useLang } from '../../shared/i18n.jsx';
@@ -733,9 +733,11 @@ function reduceCats(cats, reduceBy, txType, isNegative) {
   // Reduction order: reimburse/expenseReimburse → uncategorized/fallback → biggest specific
   reduceOne('reimburse');
   reduceOne('expenseReimburse');
+  reduceOne('uncategorized');
   reduceOne('expenseUncategorized');
   reduceOne('incomeUncategorized');
-  if (fallbackCatId !== 'expenseUncategorized' && fallbackCatId !== 'incomeUncategorized') {
+  reduceOne('debtUncategorized');
+  if (!isUncatId(fallbackCatId)) {
     reduceOne(fallbackCatId);
   }
   while (toReduce > 0.005 && result.length > 0) {
@@ -830,7 +832,7 @@ export function ScreenLinkReimburse({ params }) {
     updateTx(selected.id, {
       reimbursements: newSelReimb,
       cats: newSelCats,
-      cat: newSelCats.find(c => c.catId !== 'expenseUncategorized' && c.catId !== 'incomeUncategorized')?.catId || newSelCats[0]?.catId || selected.cat,
+      cat: newSelCats.find(c => !isUncatId(c.catId))?.catId || newSelCats[0]?.catId || selected.cat,
     });
     nav.pop();
   };
