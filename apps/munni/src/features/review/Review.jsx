@@ -734,9 +734,6 @@ function reduceCats(cats, reduceBy, txType, isNegative) {
   reduceOne('reimburse');
   reduceOne('expenseReimburse');
   reduceOne('uncategorized');
-  reduceOne('expenseUncategorized');
-  reduceOne('incomeUncategorized');
-  reduceOne('debtUncategorized');
   if (!isUncatId(fallbackCatId)) {
     reduceOne(fallbackCatId);
   }

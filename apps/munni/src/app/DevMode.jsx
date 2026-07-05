@@ -608,8 +608,30 @@ const ANNOTATIONS = {
 
   'manageCategories': {
     screen: 'Manage categories',
-    sub: 'Reorder, rename, or hide transaction categories.',
+    sub: 'Search, expand, drag-to-reorder sub-categories across parents.',
+    flows: [
+      { from: '+ button',           to: 'newCat screen (parentId: null)' },
+      { from: 'Add sub-category',   to: 'newCat screen (parentId: parentKey)' },
+      { from: 'Custom parent name', to: 'editCat screen (parent entry)' },
+      { from: 'Sub-category tap',   to: 'catInfoSheet (info)' },
+      { from: 'Edit in info sheet', to: 'editCat screen (sub entry)' },
+      { from: 'Move confirmation',  to: 'pendingMove sheet' },
+    ],
+    storage: [ 'munni_categories_{userId} (LS)', 'munni_cat_overrides (LS)' ],
+  },
+
+  'newCat': {
+    screen: 'New category / New sub-category',
+    sub: 'Full-screen form: name, icon, color, scope, type, direction. Shows parent banner when adding a sub.',
+    flows: [ { from: 'Back / Save', to: 'manageCategories screen' } ],
     storage: [ 'munni_categories_{userId} (LS)' ],
+  },
+
+  'editCat': {
+    screen: 'Edit category / Edit sub-category',
+    sub: 'Full-screen form: name, icon, scope. Custom-only delete with confirmation. Prebuilt: name only (read-only).',
+    flows: [ { from: 'Back / Save / Delete', to: 'manageCategories screen' } ],
+    storage: [ 'munni_categories_{userId} (LS)', 'munni_cat_overrides (LS)' ],
   },
 
   'budgets': {

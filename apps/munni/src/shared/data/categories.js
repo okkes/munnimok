@@ -6,7 +6,6 @@ export const CATEGORIES = {
   uncategorized:          { id:'uncategorized',          name:'Uncategorized',      icon:'help-circle-outline',        group:'General',      parent:'general', hidden:true, types:ALL_TX_TYPES, direction:'both' },
   // ── Income ──────────────────────────────────────────────────
   income:                 { id:'income',                 name:'Income',             icon:'cash-plus',                  group:'Income',       isParent:true, positive:true, color:'#27AE60', type:'Income' },
-  incomeUncategorized:    { id:'incomeUncategorized',    name:'Uncategorized',      icon:'help-circle-outline',        group:'Income',       parent:'income', positive:true, type:'Income',  direction:'credit', hidden:true },
   reimburse:              { id:'reimburse',              name:'Reimbursement',      icon:'cash-refund',                group:'Income',       parent:'income', positive:true, type:'Income',  direction:'credit' },
   salary:                 { id:'salary',                 name:'Salary',             icon:'office-building-outline',    group:'Income',       parent:'income', positive:true, type:'Income',  direction:'credit' },
   freelance:              { id:'freelance',              name:'Freelance Work',     icon:'home-city-outline',          group:'Income',       parent:'income', positive:true, type:'Income',  direction:'credit' },
@@ -17,10 +16,9 @@ export const CATEGORIES = {
   saving:                 { id:'saving',                 name:'Saving',             icon:'piggy-bank-outline',         group:'Saving',       isParent:true, color:'#A8782B', type:'Saving' },
   savingWithdraw:         { id:'savingWithdraw',         name:'Withdrawal',         icon:'bank-remove',                group:'Saving',       parent:'saving', type:'Saving',  direction:'credit' },
   savingDeposit:          { id:'savingDeposit',          name:'Deposit',            icon:'bank-plus',                  group:'Saving',       parent:'saving', type:'Saving',  direction:'debit' },
-  // ── Expense (default) ───────────────────────────────────────
-  expense:                { id:'expense',                name:'Expense',            icon:'cash-remove',                group:'Expense',      isParent:true, type:'Expense' },
+  // ── Expense (default, hidden — group for expenseReimburse) ─
+  expense:                { id:'expense',                name:'Expense',            icon:'cash-remove',                group:'Expense',      isParent:true, hidden:true, type:'Expense' },
   expenseReimburse:       { id:'expenseReimburse',       name:'Reimbursement',      icon:'cash-refund',                group:'Expense',      parent:'expense', type:'Expense', direction:'debit' },
-  expenseUncategorized:   { id:'expenseUncategorized',   name:'Uncategorized',      icon:'help-circle-outline',        group:'Expense',      parent:'expense', type:'Expense', direction:'debit', hidden:true },
   // ── Housing ─────────────────────────────────────────────────
   housing:                { id:'housing',                name:'Housing',            icon:'home-outline',               group:'Housing',      isParent:true, color:'#E67E22', type:'Expense' },
   housingRent:            { id:'housingRent',            name:'Rent & Mortgage',    icon:'home-import-outline',        group:'Housing',      parent:'housing', type:'Expense' },
@@ -129,7 +127,6 @@ export const CATEGORIES = {
   cashDeposit:            { id:'cashDeposit',            name:'Cash Deposit',       icon:'cash-plus',                  group:'Transfer',     parent:'transfer', type:'Transfer',     direction:'credit' },
   // ── Debt Payment ────────────────────────────────────────────
   debt:                   { id:'debt',                   name:'Debt Payment',       icon:'credit-card-outline',        group:'Debt Payment', isParent:true, color:'#9C27B0', type:'Debt Payment' },
-  debtUncategorized:      { id:'debtUncategorized',      name:'Uncategorized',      icon:'help-circle-outline',        group:'Debt Payment', parent:'debt', type:'Debt Payment',   direction:'both', hidden:true },
   lendMoney:              { id:'lendMoney',              name:'Lend Money',         icon:'hand-coin-outline',          group:'Debt Payment', parent:'debt', type:'Debt Payment',   direction:'debit' },
   loanRepayment:          { id:'loanRepayment',          name:'Loan Repayment',     icon:'bank-outline',               group:'Debt Payment', parent:'debt', type:'Debt Payment',   direction:'debit' },
   creditCardPayment:      { id:'creditCardPayment',      name:'Credit Card',        icon:'credit-card-clock-outline',  group:'Debt Payment', parent:'debt', type:'Debt Payment',   direction:'debit' },
@@ -152,9 +149,9 @@ export function getCatTypes(cat) {
   return [];
 }
 
-// True if catId is any of the legacy or current uncategorized IDs
+// True if catId is the uncategorized fallback
 export function isUncatId(id) {
-  return id === 'uncategorized' || id === 'expenseUncategorized' || id === 'incomeUncategorized' || id === 'debtUncategorized';
+  return id === 'uncategorized';
 }
 
 // Derive direction if not explicitly set: Income→credit, Expense→debit, others→both

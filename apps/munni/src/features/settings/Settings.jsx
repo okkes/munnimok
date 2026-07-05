@@ -733,7 +733,7 @@ const MDI_ICON_LIST = [
   'home-outline','home-city-outline','sofa-outline','bed-outline','shower',
   'washing-machine','lightbulb-outline','water-outline','power-plug-outline',
   'wifi','television','hammer-screwdriver','key-outline','door-closed-outline',
-  'fridge','bathtub-outline',
+  'fridge',
   // Transport
   'car-outline','car-sports','bus-side','train-variant','bike','motorbike',
   'airplane-takeoff','taxi','ferry','gas-station-outline','parking','scooter',
@@ -762,7 +762,7 @@ const MDI_ICON_LIST = [
   // Education & Work
   'school-outline','book-education-outline','pencil-outline','certificate-outline',
   'graduation-cap','briefcase-outline','office-building-outline','desk-lamp',
-  'monitor-screenshot','printer-outline','account-group-outline',
+  'monitor','printer-outline','account-group-outline',
   // Technology
   'cellphone-link','laptop','tablet-cellphone',
   'headset-outline','cloud-outline','server','code-braces',
@@ -938,7 +938,6 @@ function EditCatSheet({ entry, txCount = 0, onSave, onDelete, isPrebuilt = false
   }
   return (
     <div style={{ padding:'4px 16px 8px' }}>
-      <div style={{ fontSize:17, fontWeight:700, marginBottom:16 }}>{isParent ? 'Edit category' : 'Edit sub-category'}</div>
       <div style={{ fontSize:12, color:M.ink3, marginBottom:6 }}>Name</div>
       {isPrebuilt ? (
         <div style={{ padding:'12px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, marginBottom:8, color:M.ink }}>{nameDraft}</div>
@@ -974,17 +973,125 @@ function EditCatSheet({ entry, txCount = 0, onSave, onDelete, isPrebuilt = false
   );
 }
 
+export function ScreenNewCat({ params }) {
+  const nav = useNav();
+  const { customCats, setCustomCats } = useCatCtx();
+  const parentId = params?.parentId ?? null;
+  const isParent = !parentId;
+  const parentCat = parentId ? (CATEGORIES[parentId] || customCats.find(c => c.id === parentId)) : null;
+
+  const handleSave = (name, icon, color, scope, catType, direction) => {
+    if (isParent) {
+      const id = `cust_${Date.now()}`;
+      setCustomCats(prev => [...prev,
+        { id, name, icon: icon||'box', color: color||M.slate, isParent:true, parent:null, scope: scope||'all_private', type: catType||'Expense', direction: direction||'both' },
+        { id:`${id}_other`, name:'Other', icon:'dots-horizontal', color:M.paper2, isParent:false, parent:id, scope: scope||'all_private', type: catType||'Expense', direction:'both' }
+      ]);
+    } else {
+      setCustomCats(prev => [...prev,
+        { id:`cust_${Date.now()}`, name, icon: icon||'box', color: color||M.slate, isParent:false, parent:parentId, scope: scope||'all_private', type: parentCat?.type||'Expense', direction: direction||'both' }
+      ]);
+    }
+    nav.pop();
+  };
+
+  return (
+    <div className="m-screen">
+      <StatusBar/>
+      <AppBar
+        title={isParent ? 'New category' : 'New sub-category'}
+        leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
+      />
+      <div className="m-body-scroll" style={{ paddingBottom:24 }}>
+        {!isParent && parentCat && (
+          <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 14px', background:M.sageSoft, borderRadius:12, marginBottom:20, border:`1px solid ${M.sage}33` }}>
+            <div style={{ width:28, height:28, borderRadius:8, background:parentCat.color||M.sage, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+              <IcoMDI name={parentCat.icon||'help-circle-outline'} size={13} color='#fff'/>
+            </div>
+            <div>
+              <div style={{ fontSize:10, color:M.sage, fontWeight:700, textTransform:'uppercase', letterSpacing:0.5 }}>Adding to</div>
+              <div style={{ fontSize:13, fontWeight:600, color:M.ink }}>{parentCat.name}</div>
+            </div>
+          </div>
+        )}
+        <NewCatForm onSave={handleSave} isSub={!isParent}/>
+      </div>
+    </div>
+  );
+}
+
+export function ScreenEditCat({ params }) {
+  const nav = useNav();
+  const { txs, setTxs } = useTxCtx();
+  const { customCats, setCustomCats } = useCatCtx();
+  const [premadeOverrides, setPremadeOverrides] = useLocalStorage('munni_cat_overrides', {});
+  const entry = params || {};
+  const { catId, isCustom, isParent: isParentCat } = entry;
+
+  const [txCount, setTxCount] = React.useState(0);
+  React.useEffect(() => {
+    setTxCount(txs.filter(t => t.cat === catId).length);
+  }, [txs, catId]);
+
+  const canDelete = React.useMemo(() => {
+    if (!isCustom) return false;
+    if (isParentCat) {
+      const subs = customCats.filter(c => !c.isParent && c.parent === catId);
+      return subs.length === 1 && subs[0].id === `${catId}_other`;
+    }
+    return true;
+  }, [isCustom, isParentCat, catId, customCats]);
+
+  const handleDelete = () => {
+    if (isParentCat) {
+      const subsToDelete = new Set(customCats.filter(c => c.parent === catId).map(c => c.id));
+      subsToDelete.add(catId);
+      setCustomCats(prev => prev.filter(c => !subsToDelete.has(c.id)));
+      setTxs(prev => prev.map(t => (subsToDelete.has(t.cat) || t.cat === catId)
+        ? { ...t, cat:'uncategorized', cats:[{ catId:'uncategorized', amount:Math.abs(t.amount) }] } : t));
+    } else {
+      setCustomCats(prev => prev.filter(c => c.id !== catId));
+      setTxs(prev => prev.map(t => t.cat === catId
+        ? { ...t, cat:'uncategorized', cats:[{ catId:'uncategorized', amount:Math.abs(t.amount) }] } : t));
+    }
+    nav.pop();
+  };
+
+  return (
+    <div className="m-screen">
+      <StatusBar/>
+      <AppBar
+        title={isParentCat ? 'Edit category' : 'Edit sub-category'}
+        leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
+      />
+      <div className="m-body-scroll" style={{ paddingBottom:24 }}>
+        <EditCatSheet
+          entry={entry}
+          txCount={txCount}
+          isPrebuilt={!isCustom}
+          onSave={(name, icon, color, scope) => {
+            if (isCustom) {
+              setCustomCats(prev => prev.map(c => c.id === catId ? { ...c, name, icon, color, scope } : c));
+            } else {
+              setPremadeOverrides(prev => ({ ...prev, [catId]: { name } }));
+            }
+            nav.pop();
+          }}
+          onDelete={canDelete ? handleDelete : null}
+        />
+      </div>
+    </div>
+  );
+}
+
 export function ScreenManageCategories() {
   const nav = useNav();
   const { t } = useLang();
   const { txs, setTxs } = useTxCtx();
   const { customCats, setCustomCats } = useCatCtx();
   const [premadeOverrides, setPremadeOverrides] = useLocalStorage('munni_cat_overrides', {});
-  const [newParentSheet, setNewParentSheet] = React.useState(false);
-  const [newSubSheet, setNewSubSheet] = React.useState(null);
   const [dragState, setDragState] = React.useState(null);
   const [dropTarget, setDropTarget] = React.useState(null);
-  const [editSheet, setEditSheet] = React.useState(null);
   const [catInfoSheet, setCatInfoSheet] = React.useState(null);
   const [expandedParents, setExpandedParents] = React.useState({});
   const [holdingCatId, setHoldingCatId] = React.useState(null);
@@ -1041,10 +1148,17 @@ export function ScreenManageCategories() {
 
   const collapseAll = () => setExpandedParents({});
 
-  const activateDrag = (catId, parentId, label, icon, color, x, y, el, pointerId) => {
+  const activateDrag = (catId, parentId, label, icon, color, x, y, el, pointerId, rect) => {
     try { el?.setPointerCapture(pointerId); } catch {}
     setHoldingCatId(null);
-    setDragState({ catId, parentId, x, y, ghostLabel: label, ghostIcon: icon, ghostColor: color });
+    setCatSearch('');
+    setDragState({
+      catId, parentId, x, y,
+      ghostLabel: label, ghostIcon: icon, ghostColor: color,
+      ghostLeft: rect?.left ?? 0,
+      ghostWidth: rect?.width ?? 260,
+      ghostHeight: rect?.height ?? 44,
+    });
     collapseAll();
   };
 
@@ -1054,13 +1168,14 @@ export function ScreenManageCategories() {
     const el = e.currentTarget;
     const pointerId = e.pointerId;
     const startX = e.clientX, startY = e.clientY;
-    holdDataRef.current = { catId, parentId, label, icon, color, startX, startY, el, pointerId };
+    const rect = el.getBoundingClientRect();
+    holdDataRef.current = { catId, parentId, label, icon, color, startX, startY, el, pointerId, rect };
     setHoldingCatId(catId);
     if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
     holdTimerRef.current = setTimeout(() => {
       holdTimerRef.current = null;
       if (holdDataRef.current?.catId === catId) {
-        activateDrag(catId, parentId, label, icon, color, startX, startY, el, pointerId);
+        activateDrag(catId, parentId, label, icon, color, startX, startY, el, pointerId, rect);
         holdDataRef.current = null;
       }
     }, 350);
@@ -1075,13 +1190,13 @@ export function ScreenManageCategories() {
   const moveDrag = (e) => {
     // If still in hold phase, check for early activation by movement
     if (!dragState && holdDataRef.current) {
-      const { catId, parentId, label, icon, color, startX, startY, el, pointerId } = holdDataRef.current;
+      const { catId, parentId, label, icon, color, startX, startY, el, pointerId, rect } = holdDataRef.current;
       const dx = Math.abs(e.clientX - startX);
       const dy = Math.abs(e.clientY - startY);
       if (dx > 8 || dy > 8) {
         if (holdTimerRef.current) { clearTimeout(holdTimerRef.current); holdTimerRef.current = null; }
         holdDataRef.current = null;
-        activateDrag(catId, parentId, label, icon, color, e.clientX, e.clientY, el, pointerId);
+        activateDrag(catId, parentId, label, icon, color, e.clientX, e.clientY, el, pointerId, rect);
       }
       return;
     }
@@ -1190,19 +1305,13 @@ export function ScreenManageCategories() {
         className="m-card"
         style={{ marginBottom:12, border:`${isDropTarget?'2.5px':'1.5px'} solid ${isDropTarget ? (parentCat.color || M.sage) : M.line}`, borderRadius:14, overflow:'hidden', background: isDropTarget ? (parentCat.color ? parentCat.color + '18' : M.sageSoft) : 'transparent', transition:'border-color 0.15s, background 0.15s, border-width 0.1s', position:'relative' }}
       >
-        {/* Drop-here badge */}
-        {isDropTarget && (
-          <div style={{ position:'absolute', top:8, right:12, zIndex:2, background: parentCat.color || M.sage, color:'#fff', fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:20, pointerEvents:'none', letterSpacing:0.3 }}>
-            DROP HERE
-          </div>
-        )}
         {/* Parent header */}
         <div style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 16px', background:M.paper }}>
           <div style={{ width:38, height:38, borderRadius:10, background:parentCat.color||M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
             <IcoMDI name={parentCat.icon||'help-circle-outline'} size={18} color={isCustom?'#fff':M.ink2}/>
           </div>
           <div className={isCustom ? 'm-tap' : ''} style={{ flex:1, cursor: isCustom ? 'pointer' : 'default' }}
-            onClick={isCustom ? () => setEditSheet({ catId: parentKey, parentId: null, isCustom:true, isParent: true, name: parentCat.name, icon: parentCat.icon || 'help-circle-outline', color: parentCat.color, scope: parentCat.scope }) : undefined}
+            onClick={isCustom ? () => nav.push('editCat', { catId: parentKey, parentId: null, isCustom:true, isParent: true, name: parentCat.name, icon: parentCat.icon || 'help-circle-outline', color: parentCat.color, scope: parentCat.scope }) : undefined}
           >
             <div style={{ fontSize:15, fontWeight:600 }}><LangHighlight text={parentCat.name} query={catSearch}/></div>
             {isCustom && parentCat.scope && (() => {
@@ -1270,7 +1379,7 @@ export function ScreenManageCategories() {
             );
           })}
           {/* +Sub button at bottom, after 'other' */}
-          <button className="m-tap" onClick={() => setNewSubSheet(parentKey)}
+          <button className="m-tap" onClick={() => nav.push('newCat', { parentId: parentKey })}
             style={{ width:'100%', padding:'10px 16px', borderTop:`1px solid ${M.line2}`, background:'transparent', border:'none', borderTopStyle:'solid', borderTopWidth:1, borderTopColor:M.line2, display:'flex', alignItems:'center', gap:8, cursor:'pointer', fontFamily:M.fontUI, color:M.sage }}>
             <I name="plus" size={13} color={M.sage}/>
             <span style={{ fontSize:13, fontWeight:500 }}>Add sub-category</span>
@@ -1289,7 +1398,7 @@ export function ScreenManageCategories() {
       <StatusBar/>
       <AppBar title={t('screen.categories')}
         leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
-        trailing={<button className="m-tap m-iconbtn" onClick={() => setNewParentSheet(true)}><I name="plus" size={20}/></button>}
+        trailing={<button className="m-tap m-iconbtn" onClick={() => nav.push('newCat', { parentId: null })}><I name="plus" size={20}/></button>}
       />
       <div className="m-body-scroll">
         {/* Search bar */}
@@ -1348,35 +1457,6 @@ export function ScreenManageCategories() {
         <div style={{ height:32 }}/>
       </div>
 
-      {/* New parent sheet */}
-      <Sheet open={newParentSheet} onClose={() => setNewParentSheet(false)} title="New parent category">
-        <NewCatForm
-          onSave={(name, icon, color, scope, type, direction) => {
-            const id = `cust_${Date.now()}`;
-            setCustomCats(prev => [...prev,
-              { id, name, icon: icon||'box', color: color||M.slate, isParent:true, parent:null, scope: scope || 'all_private', type: type || 'Expense', direction: direction || 'both' },
-              { id:`${id}_other`, name:'Other', icon:'dots-horizontal', color:M.paper2, isParent:false, parent:id, scope: scope || 'all_private', type: type || 'Expense', direction: 'both' }
-            ]);
-            setNewParentSheet(false);
-          }}
-        />
-      </Sheet>
-
-      {/* New sub sheet */}
-      <Sheet open={!!newSubSheet} onClose={() => setNewSubSheet(null)} title="New sub-category">
-        <NewCatForm
-          isSub={true}
-          onSave={(name, icon, color, scope, _type, direction) => {
-            const parentId = newSubSheet;
-            const parentCat = CATEGORIES[parentId] || customCats.find(c => c.id === parentId);
-            setCustomCats(prev => [...prev,
-              { id:`cust_${Date.now()}`, name, icon: icon||'box', color: color||M.slate, isParent:false, parent:parentId, scope: scope || 'all_private', type: parentCat?.type || 'Expense', direction: direction || 'both' }
-            ]);
-            setNewSubSheet(null);
-          }}
-        />
-      </Sheet>
-
       {/* Category info sheet */}
       {catInfoSheet && (() => {
         const { catId, parentId, isCustom, isOther } = catInfoSheet;
@@ -1431,7 +1511,7 @@ export function ScreenManageCategories() {
               {canEdit && (
                 <button className="m-btn outline m-tap" style={{ width:'100%' }} onClick={() => {
                   setCatInfoSheet(null);
-                  setEditSheet({ catId, parentId, isCustom: true, isParent: false, name: customCatEntry?.name || '', icon: customCatEntry?.icon || 'help-circle-outline', scope: customCatEntry?.scope });
+                  nav.push('editCat', { catId, parentId, isCustom: true, isParent: false, name: customCatEntry?.name || '', icon: customCatEntry?.icon || 'help-circle-outline', color: undefined, scope: customCatEntry?.scope });
                 }}>
                   <IcoMDI name="pencil-outline" size={16} color={M.ink2}/> Edit category
                 </button>
@@ -1440,33 +1520,6 @@ export function ScreenManageCategories() {
           </Sheet>
         );
       })()}
-
-      {/* Edit sheet */}
-      {editSheet && (
-        <Sheet onClose={() => setEditSheet(null)}>
-          <EditCatSheet
-            entry={editSheet}
-            txCount={txCounts[editSheet.catId] || 0}
-            isPrebuilt={!editSheet.isCustom}
-            onSave={(name, icon, color, scope) => {
-              if (editSheet.isCustom) {
-                setCustomCats(prev => prev.map(c => c.id === editSheet.catId ? { ...c, name, icon, color, scope } : c));
-              } else {
-                setPremadeOverrides(prev => ({ ...prev, [editSheet.catId]: { name } }));
-              }
-              setEditSheet(null);
-            }}
-            onDelete={editSheet.isCustom ? () => {
-              if (editSheet.isParent) {
-                deleteCustomParent(editSheet.catId);
-              } else {
-                deleteCustomSub(editSheet.catId);
-              }
-              setEditSheet(null);
-            } : null}
-          />
-        </Sheet>
-      )}
 
       {/* Pending move confirmation */}
       {pendingMove && (
@@ -1495,25 +1548,25 @@ export function ScreenManageCategories() {
       {dragState && createPortal(
         <div style={{
           position:'fixed',
-          left: dragState.x,
-          top: dragState.y,
-          transform: 'translate(-50%, -50%)',
+          left: dragState.ghostLeft,
+          top: dragState.y - dragState.ghostHeight / 2,
+          width: dragState.ghostWidth,
+          boxSizing:'border-box',
           zIndex: 9999,
           pointerEvents: 'none',
-          display:'flex', alignItems:'center', gap:8,
-          padding:'9px 16px',
+          display:'flex', alignItems:'center', gap:10,
+          padding:'11px 16px',
           borderRadius:14,
           background: M.card,
-          boxShadow: '0 12px 32px rgba(0,0,0,0.22)',
+          boxShadow: '0 14px 36px rgba(0,0,0,0.28)',
           border:`2px solid ${dragState.ghostColor || M.sage}`,
-          opacity: 0.96,
-          minWidth: 140,
-          animation: 'dragGhostIn 0.15s ease',
+          opacity: 0.97,
         }}>
-          <div style={{ width:30, height:30, borderRadius:9, background: (dragState.ghostColor || M.sage) + '33', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-            <IcoMDI name={dragState.ghostIcon || 'help-circle-outline'} size={15} color={dragState.ghostColor || M.sage}/>
+          <div style={{ width:28, height:28, borderRadius:8, background: (dragState.ghostColor || M.sage) + '33', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+            <IcoMDI name={dragState.ghostIcon || 'help-circle-outline'} size={13} color={dragState.ghostColor || M.sage}/>
           </div>
-          <div style={{ fontSize:13, fontWeight:600, color:M.ink }}>{dragState.ghostLabel}</div>
+          <div style={{ fontSize:13, fontWeight:500, color:M.ink, flex:1 }}>{dragState.ghostLabel}</div>
+          <I name="menu" size={13} color={M.ink4}/>
         </div>,
         document.body
       )}
