@@ -15,6 +15,7 @@ import { TxDetailScreen } from '@/features/transactions/TxDetailScreen';
 import { SpacesScreen } from '@/features/spaces/SpacesScreen';
 import { SettingsScreen } from '@/features/settings/SettingsScreen';
 import { ReviewScreen } from '@/features/review/ReviewScreen';
+import { AccountsScreen } from '@/features/accounts/AccountsScreen';
 
 const rootRoute = createRootRoute({ component: Outlet });
 
@@ -59,10 +60,20 @@ const txDetailRoute = createRoute({
 const spacesRoute = createRoute({ getParentRoute: () => appRoute, path: '/spaces', component: SpacesScreen });
 const settingsRoute = createRoute({ getParentRoute: () => appRoute, path: '/settings', component: SettingsScreen });
 const reviewRoute = createRoute({ getParentRoute: () => appRoute, path: '/review', component: ReviewScreen });
+const accountsRoute = createRoute({ getParentRoute: () => appRoute, path: '/accounts', component: AccountsScreen });
 
 const routeTree = rootRoute.addChildren([
   loginRoute,
-  appRoute.addChildren([indexRoute, homeRoute, transactionsRoute, txDetailRoute, spacesRoute, settingsRoute, reviewRoute]),
+  appRoute.addChildren([
+    indexRoute,
+    homeRoute,
+    transactionsRoute,
+    txDetailRoute,
+    spacesRoute,
+    settingsRoute,
+    reviewRoute,
+    accountsRoute,
+  ]),
 ]);
 
 // Hash history: works on any static host (GitHub Pages, nginx) without

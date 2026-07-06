@@ -36,6 +36,16 @@ export function SettingsScreen() {
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <div className="overflow-hidden rounded-card border border-line bg-surface">
           <button
+            data-testid="settings-accounts-row"
+            onClick={() => void navigate({ to: '/accounts' })}
+            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+          >
+            <Icon name="bank-outline" size={20} />
+            <span className="flex-1">{t('acct.financialAccounts')}</span>
+            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+          </button>
+          <div className="mx-4 h-px bg-line-2" />
+          <button
             data-testid="settings-language-row"
             onClick={() => setLangSheetOpen(true)}
             className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"

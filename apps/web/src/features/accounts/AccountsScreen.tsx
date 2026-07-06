@@ -1,0 +1,198 @@
+import { useState } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { useLang } from '@/i18n';
+import type { TranslationKey } from '@/i18n';
+import { useData } from '@/app/data';
+import { fmtCents } from '@/lib/money';
+import type { AccountRow, AccountType } from '@/db/types';
+import { AppBar, IconButton } from '@/ui/AppBar';
+import { Button } from '@/ui/Button';
+import { Icon } from '@/ui/Icon';
+import { Sheet } from '@/ui/Sheet';
+
+const TYPES: { type: AccountType; labelKey: TranslationKey; icon: string; liability?: boolean }[] = [
+  { type: 'checking', labelKey: 'acct.bank', icon: 'bank-outline' },
+  { type: 'savings', labelKey: 'acct.saving', icon: 'piggy-bank-outline' },
+  { type: 'cash', labelKey: 'acct.cashWallet', icon: 'wallet-outline' },
+  { type: 'brokerage', labelKey: 'acct.brokerage', icon: 'chart-line' },
+  { type: 'credit', labelKey: 'acct.creditCard', icon: 'credit-card-outline', liability: true },
+  { type: 'mortgage', labelKey: 'acct.mortgage', icon: 'home-percent-outline', liability: true },
+  { type: 'loan', labelKey: 'acct.loan', icon: 'hand-coin-outline', liability: true },
+];
+const typeDef = (type: AccountType) => TYPES.find((d) => d.type === type) ?? TYPES[0];
+const isLiability = (type: AccountType) => !!typeDef(type).liability;
+
+/** Parse a user-entered amount ('1.234,56' / '1234.56') to cents. */
+function parseCents(input: string): number | null {
+  let s = input.trim();
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.'); // EU format
+  const value = Number(s);
+  return Number.isFinite(value) ? Math.round(value * 100) : null;
+}
+
+export function AccountsScreen() {
+  const { t, lang } = useLang();
+  const { db, repo, spaceId } = useData();
+  const [addOpen, setAddOpen] = useState(false);
+  const [editing, setEditing] = useState<AccountRow | null>(null);
+  const [newType, setNewType] = useState<AccountType | null>(null);
+  const [name, setName] = useState('');
+  const [balance, setBalance] = useState('');
+
+  const accounts = useLiveQuery(
+    () => db.accounts.where('spaceId').equals(spaceId).filter((a) => a.deleted === 0 && !a.archived).toArray(),
+    [spaceId],
+  );
+  const assets = (accounts ?? []).filter((a) => !isLiability(a.type));
+  const liabilities = (accounts ?? []).filter((a) => isLiability(a.type));
+
+  const closeAdd = () => {
+    setAddOpen(false);
+    setNewType(null);
+    setName('');
+    setBalance('');
+  };
+
+  const createAccount = () => {
+    const cents = parseCents(balance || '0');
+    if (!newType || !name.trim() || cents === null) return;
+    void repo.upsert('account', spaceId, repo.newId(), {
+      name: name.trim(),
+      type: newType,
+      source: 'manual',
+      currency: 'EUR',
+      balanceCents: isLiability(newType) ? -Math.abs(cents) : cents,
+    });
+    closeAdd();
+  };
+
+  const saveEdit = () => {
+    if (!editing || !name.trim()) return;
+    void repo.upsert('account', spaceId, editing.id, { name: name.trim() });
+    setEditing(null);
+  };
+  const removeAccount = () => {
+    if (!editing) return;
+    void repo.remove('account', spaceId, editing.id);
+    setEditing(null);
+  };
+
+  const Row = ({ account }: { account: AccountRow }) => (
+    <button
+      data-testid={`account-row-${account.id}`}
+      onClick={() => {
+        setEditing(account);
+        setName(account.name);
+      }}
+      className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left"
+    >
+      <Icon name={typeDef(account.type).icon} size={22} color={account.color ?? 'var(--m-ink-3)'} />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[15px] text-ink">{account.name}</span>
+        {account.iban && <span className="block truncate font-mono text-[11px] text-ink-4">{account.iban}</span>}
+      </span>
+      <span className="m-num text-[15px] font-semibold text-ink">
+        {fmtCents(account.balanceCents, account.currency, lang)}
+      </span>
+    </button>
+  );
+
+  const Section = ({ titleKey, list }: { titleKey: TranslationKey; list: AccountRow[] }) =>
+    list.length === 0 ? null : (
+      <>
+        <div className="m-cap mt-5 mb-1 px-1">{t(titleKey)}</div>
+        <div className="overflow-hidden rounded-card border border-line bg-surface">
+          {list.map((a, i) => (
+            <div key={a.id}>
+              {i > 0 && <div className="mx-4 h-px bg-line-2" />}
+              <Row account={a} />
+            </div>
+          ))}
+        </div>
+      </>
+    );
+
+  return (
+    <div className="m-fade flex h-full flex-col" data-testid="screen-accounts">
+      <AppBar
+        title={t('acct.financialAccounts')}
+        leading={
+          <IconButton label={t('action.back')} testId="accounts-back" onClick={() => window.history.back()}>
+            <Icon name="chevron-left" size={24} />
+          </IconButton>
+        }
+        trailing={
+          <IconButton label={t('acct.addAccount')} testId="accounts-add" onClick={() => setAddOpen(true)}>
+            <Icon name="plus" size={22} />
+          </IconButton>
+        }
+      />
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
+        <Section titleKey="acct.assets" list={assets} />
+        <Section titleKey="acct.liabilities" list={liabilities} />
+      </div>
+
+      {/* Add account: type grid, then form */}
+      <Sheet open={addOpen} onOpenChange={(open) => !open && closeAdd()} title={newType ? t('acct.addAccount') : t('acct.selectType')} height={520}>
+        {!newType ? (
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            {TYPES.map((def) => (
+              <button
+                key={def.type}
+                data-testid={`accttype-${def.type}`}
+                onClick={() => setNewType(def.type)}
+                className="m-tap flex flex-col items-start gap-2 rounded-card border border-line bg-surface p-4 text-left"
+              >
+                <Icon name={def.icon} size={22} color="var(--m-accent)" />
+                <span className="text-[13px] font-medium text-ink">{t(def.labelKey)}</span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3 pt-1">
+            <div className="flex items-center gap-2 text-[13px] text-ink-3">
+              <Icon name={typeDef(newType).icon} size={16} />
+              {t(typeDef(newType).labelKey)} · {t('acct.manual')}
+            </div>
+            <input
+              data-testid="acctform-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={t('acct.accountName')}
+              className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+            />
+            <input
+              data-testid="acctform-balance"
+              value={balance}
+              onChange={(e) => setBalance(e.target.value)}
+              inputMode="decimal"
+              placeholder={`${t('acct.initialBalance')} (EUR)`}
+              className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+            />
+            <Button data-testid="acctform-save" onClick={createAccount} disabled={!name.trim()}>
+              {t('action.add')}
+            </Button>
+          </div>
+        )}
+      </Sheet>
+
+      {/* Edit account */}
+      <Sheet open={!!editing} onOpenChange={(open) => !open && setEditing(null)} title={t('acct.editAccount')} height={340}>
+        <div className="flex flex-col gap-3 pt-1">
+          <input
+            data-testid="acctedit-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none"
+          />
+          <Button data-testid="acctedit-save" onClick={saveEdit} disabled={!name.trim()}>
+            {t('action.save')}
+          </Button>
+          <Button variant="danger" data-testid="acctedit-delete" onClick={removeAccount}>
+            {t('action.delete')}
+          </Button>
+        </div>
+      </Sheet>
+    </div>
+  );
+}
