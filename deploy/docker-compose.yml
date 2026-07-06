@@ -9,13 +9,13 @@
 
 services:
   web:
-    image: ${REGISTRY:-cr.okkes.synology.me}/munni-web:${TAG:-latest}
+    image: ${REGISTRY:-ghcr.io/okkes}/munni-web:${TAG:-latest}
     restart: unless-stopped
     ports:
       - "8090:80"
 
   api:
-    image: ${REGISTRY:-cr.okkes.synology.me}/munni-api:${TAG:-latest}
+    image: ${REGISTRY:-ghcr.io/okkes}/munni-api:${TAG:-latest}
     restart: unless-stopped
     environment:
       ASPNETCORE_URLS: http://+:8080

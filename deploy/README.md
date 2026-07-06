@@ -3,10 +3,10 @@
 ## One-time setup
 
 0. **Images**: GitHub Actions builds and pushes `munni-api` / `munni-web`
-   to the private registry on every push to master
-   (`.github/workflows/release-images.yml`; credentials live in the repo's
-   Actions secrets). Nothing can be pulled before that workflow has run
-   green at least once.
+   to **GHCR** (`ghcr.io/okkes/...`, private) on every push to master
+   (`.github/workflows/release-images.yml`). The Synology registry stays
+   LAN-only — GitHub runners cannot reach it, so it is not used for CI.
+   Nothing can be pulled before that workflow has run green at least once.
 1. **Folders**: create a share for the stack, e.g. `/volume1/docker/munni`,
    and copy this `deploy/` folder into it. Fill in `env/.env.example` →
    `env/.env.local`, then copy it to a file named exactly `.env` **next to
@@ -15,13 +15,14 @@
    ```sh
    cp env/.env.local .env
    ```
-2. **Registry login** (private registry needs credentials for pulls —
+2. **Registry login** (pulling private GHCR images needs credentials —
    the "no basic auth credentials" error means this step is missing):
-   - Container Manager → *Registry* → *Settings* → *Add*:
-     URL `https://cr.okkes.synology.me`, plus the registry username and
-     password.
-   - Also once via SSH for scheduled-task pulls:
-     `sudo docker login cr.okkes.synology.me`
+   - Create a GitHub **fine-grained PAT** (or classic token) with only
+     `read:packages`: github.com → Settings → Developer settings →
+     Personal access tokens.
+   - Once via SSH on the NAS (covers Container Manager and scheduled
+     tasks): `sudo docker login ghcr.io -u okkes` and paste the token as
+     the password.
    Then create the *Project* in Container Manager pointing at
    `docker-compose.yml` in that folder.
 3. **Reverse proxy** (DSM → Login Portal → Advanced → Reverse Proxy), all

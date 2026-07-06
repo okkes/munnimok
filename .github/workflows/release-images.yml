@@ -10,8 +10,14 @@ on:
       - '.github/workflows/release-images.yml'
   workflow_dispatch:
 
+# GHCR: the Synology registry is LAN-only (GH runners time out reaching it),
+# so images live in GitHub's registry and the NAS pulls from ghcr.io.
 env:
-  REGISTRY: cr.okkes.synology.me
+  REGISTRY: ghcr.io/${{ github.repository_owner }}
+
+permissions:
+  contents: read
+  packages: write
 
 jobs:
   api-tests:
@@ -37,12 +43,12 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
-      - name: Login to private registry
+      - name: Login to GHCR
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ secrets.REGISTRY_USERNAME }}
-          password: ${{ secrets.REGISTRY_PASSWORD }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build & push api
         uses: docker/build-push-action@v6
