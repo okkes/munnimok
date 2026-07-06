@@ -53,14 +53,18 @@
 
 ## Updating
 
-Images are built by GitHub Actions and pushed to `${REGISTRY}`. On the NAS,
-a DSM Scheduled Task (root, daily or on demand) runs:
+Images are built by GitHub Actions and pushed to GHCR. On the NAS, a DSM
+Scheduled Task (user: root, daily or on demand) runs:
 
 ```sh
-cd /volume1/docker/munni && docker compose pull && docker compose up -d
+bash /volume1/docker/munni/update.sh
 ```
-(the sibling `.env` is picked up automatically; `docker login` must have
-been done once for the pulling user)
+
+`update.sh` re-authenticates to ghcr.io from the `GHCR_USER`/`GHCR_PAT`
+values in `.env` on every run, then pulls and restarts changed services —
+so it keeps working across reboots and even if Docker's stored login is
+ever wiped. The one-time manual `docker login` in step 2 is only needed
+for the very first pull via the Container Manager GUI.
 
 ## Local test stack (CI / development)
 
