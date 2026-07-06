@@ -75,8 +75,10 @@ export class SyncEngine {
     try {
       const spaces = await this.db.spaces.filter((s) => s.deleted === 0).toArray();
       // also flush outbox ops for spaces we no longer have rows for
-      const outboxSpaces = new Set((await this.db.outbox.toArray()).map((o) => o.spaceId));
-      const spaceIds = [...new Set([...spaces.map((s) => s.id), ...outboxSpaces])];
+      const outboxSpaces = (await this.db.outbox.toArray()).map((o) => o.spaceId);
+      // and pull spaces the server knows us to be in (fresh device / new invite)
+      const serverSpaces = await this.backend.listSpaces();
+      const spaceIds = [...new Set([...spaces.map((s) => s.id), ...outboxSpaces, ...serverSpaces])];
       for (const spaceId of spaceIds) await this.syncSpace(spaceId);
       this.setStatus('idle');
     } catch (err) {

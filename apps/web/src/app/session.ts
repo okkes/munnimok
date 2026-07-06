@@ -2,9 +2,13 @@ import { create } from 'zustand';
 
 /**
  * Who is using the app on this device. Demo and offline identities never
- * touch the network; user identities (Logto) arrive in Phase 2.
+ * touch the network; user identities sync through the API (auth via Logto,
+ * or header-based test auth in e2e).
  */
-export type Identity = { kind: 'demo' } | { kind: 'offline'; profileId: string };
+export type Identity =
+  | { kind: 'demo' }
+  | { kind: 'offline'; profileId: string }
+  | { kind: 'user'; sub: string; testAuth?: boolean };
 
 const SS_KEY = 'munni_session';
 
@@ -13,16 +17,24 @@ export function readSessionIdentity(): Identity | null {
     const raw = sessionStorage.getItem(SS_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Identity;
-    if (parsed.kind === 'demo' || parsed.kind === 'offline') return parsed;
+    if (parsed.kind === 'demo' || parsed.kind === 'offline' || parsed.kind === 'user') return parsed;
   } catch {
     // corrupted session — treat as signed out
   }
   return null;
 }
 
-/** Stable database identity string, e.g. 'demo' or 'offline_<id>'. */
+/** Stable database identity string, e.g. 'demo', 'offline_<id>', 'user_<sub>'. */
 export function identityKey(identity: Identity): string {
-  return identity.kind === 'demo' ? 'demo' : `offline_${identity.profileId}`;
+  switch (identity.kind) {
+    case 'demo':
+      return 'demo';
+    case 'offline':
+      return `offline_${identity.profileId}`;
+    case 'user':
+      // subs can contain chars unsafe for db names
+      return `user_${identity.sub.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+  }
 }
 
 interface SessionState {

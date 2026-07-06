@@ -15,6 +15,14 @@ public static class SyncEndpoints
 {
     public static void MapSync(this IEndpointRouteBuilder app)
     {
+        // fresh devices discover their spaces here before pulling
+        app.MapGet("/me/spaces", async (AppDbContext db, HttpContext http) =>
+        {
+            var userId = http.GetUserId();
+            var spaceIds = await db.SpaceMembers.Where(m => m.UserId == userId).Select(m => m.SpaceId).ToListAsync();
+            return Results.Ok(spaceIds);
+        }).RequireAuthorization();
+
         var group = app.MapGroup("/sync/{spaceId}").RequireAuthorization();
 
         group.MapPost("/push", async (string spaceId, PushRequest request, AppDbContext db, HttpContext http) =>

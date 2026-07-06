@@ -15,6 +15,8 @@ export interface PullResult {
 export interface SyncBackend {
   push(spaceId: string, clientId: string, ops: Op[]): Promise<PushResult>;
   pull(spaceId: string, since: number): Promise<PullResult>;
+  /** space ids this user is a member of — how a fresh device discovers its data */
+  listSpaces(): Promise<string[]>;
 }
 
 interface ApiBackendOptions {
@@ -50,6 +52,12 @@ export class ApiSyncBackend implements SyncBackend {
     });
     if (!res.ok) throw new SyncHttpError(res.status);
     return (await res.json()) as PullResult;
+  }
+
+  async listSpaces(): Promise<string[]> {
+    const res = await fetch(`${this.options.baseUrl}/me/spaces`, { headers: await this.headers() });
+    if (!res.ok) throw new SyncHttpError(res.status);
+    return (await res.json()) as string[];
   }
 }
 

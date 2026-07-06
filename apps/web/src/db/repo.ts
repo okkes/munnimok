@@ -11,6 +11,8 @@ export interface RepoOptions {
    * (otherwise it would grow forever with nowhere to drain).
    */
   trackOutbox: boolean;
+  /** called after every local write — used to nudge the sync engine */
+  onWrite?: () => void;
 }
 
 /**
@@ -68,6 +70,7 @@ export class Repo {
       await table.put({ ...row, id: entityId, spaceId } as never);
       if (this.options.trackOutbox) await this.db.outbox.add(op);
     });
+    this.options.onWrite?.();
   }
 
   /**

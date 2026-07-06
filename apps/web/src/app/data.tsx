@@ -1,9 +1,14 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
+import { v7 as uuidv7 } from 'uuid';
 import { MunniDB, identityDbName } from '@/db/schema';
 import { Repo } from '@/db/repo';
-import { getClock } from '@/db/device';
+import { getClock, getDeviceId } from '@/db/device';
 import { seedDemoIfNeeded } from '@/db/seed';
+import { ApiSyncBackend } from '@/sync/backend';
+import { SyncEngine } from '@/sync/engine';
+import { config } from './config';
+import { getAccessToken } from './authToken';
 import { identityKey, useSession } from './session';
 import type { Identity } from './session';
 
@@ -15,6 +20,8 @@ interface DataContextValue {
   /** the currently active space */
   spaceId: string;
   setActiveSpace: (spaceId: string) => Promise<void>;
+  /** present only for syncing (user) identities */
+  engine: SyncEngine | null;
 }
 
 const DataContext = createContext<DataContextValue | null>(null);
@@ -26,7 +33,9 @@ const DataContext = createContext<DataContextValue | null>(null);
  */
 export function DataProvider({ children }: { children: ReactNode }) {
   const identity = useSession((s) => s.identity);
-  const [state, setState] = useState<{ db: MunniDB; repo: Repo; spaceId: string } | null>(null);
+  const [state, setState] = useState<{ db: MunniDB; repo: Repo; spaceId: string; engine: SyncEngine | null } | null>(
+    null,
+  );
 
   useEffect(() => {
     if (!identity) {
@@ -35,21 +44,52 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
     let cancelled = false;
     const db = new MunniDB(identityDbName(identityKey(identity)));
-    // demo/offline identities never sync — no outbox
-    const repo = new Repo(db, getClock(), { trackOutbox: false });
+    const syncing = identity.kind === 'user';
+
+    let engine: SyncEngine | null = null;
+    const repo = new Repo(db, getClock(), {
+      trackOutbox: syncing, // demo/offline never sync — no outbox
+      onWrite: () => engine?.nudge(),
+    });
+    if (syncing) {
+      const backend = new ApiSyncBackend({
+        baseUrl: config.apiUrl,
+        getAuth: async () =>
+          identity.testAuth ? { testSub: identity.sub } : { bearer: await getAccessToken() },
+      });
+      engine = new SyncEngine(db, repo, backend, getDeviceId());
+    }
+
     void (async () => {
       if (identity.kind === 'demo') await seedDemoIfNeeded(repo);
+      if (engine) {
+        // initial sync: discover + pull this user's spaces (fresh device);
+        // tolerated to fail offline — local-first means we carry on
+        await engine.syncAll().catch(() => undefined);
+        if ((await db.spaces.filter((s) => s.deleted === 0).count()) === 0) {
+          const personalId = uuidv7();
+          await repo.upsert('space', personalId, personalId, {
+            name: 'Personal',
+            kind: 'personal',
+            currency: 'EUR',
+            periodType: 'month',
+            periodDay: 1,
+          });
+        }
+        engine.start();
+      }
       const stored = (await db.meta.get(ACTIVE_SPACE_KEY))?.value as string | undefined;
       const spaces = await db.spaces.filter((s) => s.deleted === 0).toArray();
       const spaceId = spaces.find((s) => s.id === stored)?.id ?? spaces[0]?.id;
       if (!spaceId) throw new Error('no space available after seed');
-      if (!cancelled) setState({ db, repo, spaceId });
+      if (!cancelled) setState({ db, repo, spaceId, engine });
     })().catch((err) => {
       // StrictMode double-mount closes the first db mid-seed — expected
       if (!cancelled) throw err;
     });
     return () => {
       cancelled = true;
+      engine?.stop();
       db.close();
     };
   }, [identity]);

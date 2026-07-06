@@ -34,6 +34,8 @@ export async function createPage(browser, variant) {
 
 // Inject language + theme into localStorage before page load, then navigate.
 // opts.demo: pre-authenticated demo session (skips the login screen).
+// opts.userSub: pre-authenticated syncing user via test auth (needs the
+//               docker-compose.test.yml API on localhost:8180).
 export async function base(page, variant, opts = {}) {
   await page.addInitScript((v) => {
     localStorage.clear();
@@ -42,10 +44,24 @@ export async function base(page, variant, opts = {}) {
     localStorage.setItem('munni_theme', v.dark ? 'dark' : 'light');
     if (v.demo) sessionStorage.setItem('munni_session', JSON.stringify({ kind: 'demo' }));
     if (v.demo) indexedDB.deleteDatabase('munni_demo'); // pristine seed every run
-  }, { lang: variant.lang, dark: variant.dark, demo: !!opts.demo });
+    if (v.userSub) {
+      sessionStorage.setItem('munni_session', JSON.stringify({ kind: 'user', sub: v.userSub, testAuth: true }));
+    }
+  }, { lang: variant.lang, dark: variant.dark, demo: !!opts.demo, userSub: opts.userSub ?? null });
   if (opts.extraSetup) await page.addInitScript(opts.extraSetup);
   await page.goto('/');
-  await page.waitForSelector(opts.demo ? '[data-testid="tab-home"]' : '[data-testid="screen-login"]');
+  const authed = opts.demo || opts.userSub;
+  await page.waitForSelector(authed ? '[data-testid="tab-home"]' : '[data-testid="screen-login"]');
+}
+
+// True when the docker-compose.test.yml API is reachable.
+export async function syncApiUp() {
+  try {
+    const res = await fetch('http://localhost:8180/health', { signal: AbortSignal.timeout(2000) });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 // Wait for the m-fade animation (280ms) to finish before screenshotting.

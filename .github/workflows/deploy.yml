@@ -44,6 +44,10 @@ jobs:
       - run: npx vitest run
         working-directory: apps/web
 
+      # Sync API for the two-device e2e specs (they skip if this is down)
+      - name: Start sync test stack
+        run: docker compose -f deploy/docker-compose.test.yml up --build -d --wait
+
       # Build the app
       - run: npm run build
         working-directory: apps/web

@@ -35,6 +35,10 @@ class InMemoryServer implements SyncBackend {
     if (this.forbiddenSpaces.has(spaceId)) throw new SyncHttpError(403);
     return { ops: this.ops.filter((o) => o.seq > since && o.spaceId === spaceId), latestSeq: this.lastSeq };
   }
+
+  async listSpaces(): Promise<string[]> {
+    return [...new Set(this.ops.map((o) => o.spaceId))].filter((id) => !this.forbiddenSpaces.has(id));
+  }
 }
 
 let dbCounter = 0;
@@ -119,6 +123,24 @@ describe('SyncEngine', () => {
     expect(await a.db.spaces.get('s1')).toBeUndefined();
     expect(await a.db.accounts.get('acc1')).toBeUndefined();
     expect(await a.db.outbox.count()).toBe(0);
+  });
+
+  it('fresh device discovers and pulls spaces it has never seen', async () => {
+    let wa = 1_000_000;
+    const a = device('devA', () => ++wa, server);
+    dbs.push(a.db);
+    await a.repo.upsert('space', 's1', 's1', { name: 'Existing', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
+    await a.repo.upsert('account', 's1', 'acc1', { name: 'Mine', balanceCents: 42 });
+    await a.engine.syncAll();
+
+    // brand-new device, empty database
+    let wb = 2_000_000;
+    const b = device('devB', () => ++wb, server);
+    dbs.push(b.db);
+    await b.engine.syncAll();
+
+    expect((await b.db.spaces.get('s1'))?.name).toBe('Existing');
+    expect((await b.db.accounts.get('acc1'))?.balanceCents).toBe(42);
   });
 
   it('interrupted push retries safely (idempotent op ids)', async () => {
