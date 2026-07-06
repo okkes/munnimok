@@ -40,6 +40,16 @@ export default defineConfig(({ mode }) => {
               handler: 'CacheFirst',
               options: { cacheName: 'google-fonts', expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 365 } },
             },
+            {
+              urlPattern: /^https:\/\/cdn\.jsdelivr\.net\/npm\/@mdi\//,
+              handler: 'CacheFirst',
+              options: { cacheName: 'mdi-font', expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 365 } },
+            },
+            {
+              urlPattern: /^https:\/\/cdn\.jsdelivr\.net\/gh\/twitter\/twemoji\//,
+              handler: 'CacheFirst',
+              options: { cacheName: 'twemoji', expiration: { maxEntries: 300, maxAgeSeconds: 60 * 60 * 24 * 365 } },
+            },
           ],
         },
       }),

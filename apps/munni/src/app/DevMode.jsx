@@ -622,14 +622,24 @@ const ANNOTATIONS = {
 
   'newCat': {
     screen: 'New category / New sub-category',
-    sub: 'Full-screen form: name, icon, color, scope, type, direction. Shows parent banner when adding a sub.',
-    flows: [ { from: 'Back / Save', to: 'manageCategories screen' } ],
+    sub: 'Parent: name, icon, color, direction only — no type or scope; Continue replaces to newOtherSub. Sub: adds type, scope (compact row → sheet), direction.',
+    flows: [
+      { from: 'Continue (parent)', to: 'newOtherSub screen (nav.replace)' },
+      { from: 'Back / Save (sub)', to: 'manageCategories screen' },
+    ],
+    storage: [ 'munni_categories_{userId} (LS)' ],
+  },
+
+  'newOtherSub': {
+    screen: 'Set up Other sub-category',
+    sub: 'Locked name "Other". User sets type, direction, icon, scope. Finish creates parentId_other sub. Back leaves parent with no subs (deletable).',
+    flows: [ { from: 'Back / Finish', to: 'manageCategories screen' } ],
     storage: [ 'munni_categories_{userId} (LS)' ],
   },
 
   'editCat': {
     screen: 'Edit category / Edit sub-category',
-    sub: 'Full-screen form: name, icon, scope. Custom-only delete with confirmation. Prebuilt: name only (read-only).',
+    sub: 'Icon via bottom sheet. Parent: name + icon only. Sub: name, icon, scope (compact row → sheet), type + direction. Custom-only delete with confirmation.',
     flows: [ { from: 'Back / Save / Delete', to: 'manageCategories screen' } ],
     storage: [ 'munni_categories_{userId} (LS)', 'munni_cat_overrides (LS)' ],
   },

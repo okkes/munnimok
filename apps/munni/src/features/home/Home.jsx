@@ -592,7 +592,7 @@ export function ScreenHome() {
               <div className="m-tap" onClick={() => { setShowNavDrawer(false); nav.push('spaces'); }}
                 style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 8px', borderRadius:12 }}>
                 <div style={{ width:38, height:38, borderRadius:10, background:M.paper2, border:`1px solid ${M.line}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                  <I name="users" size={16} color={M.ink2}/>
+                  <IcoMDI name="layers-outline" size={18} color={M.ink2}/>
                 </div>
                 <div style={{ fontSize:14, fontWeight:500, color:M.ink2 }}>{t('home.manageSpaces')}</div>
               </div>

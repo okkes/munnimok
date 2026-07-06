@@ -196,7 +196,7 @@ export function ScreenProfile() {
         {/* Manage */}
         <div className="m-cap" style={{ marginBottom: 8, paddingLeft: 4 }}>{t('settings.manage')}</div>
         <div className="m-card" style={{ padding: '4px 16px', marginBottom: 16, border: `1px solid ${M.line}` }}>
-          <ProfileLink icon="user"    label={t('settings.spaces')}       sub={`${profiles.length} space${profiles.length!==1?'s':''} · ${activeProfile?.name}`} onClick={() => nav.push('spaces')} testId="spaces-nav-link"/>
+          <ProfileLink mdiIcon="layers-outline" label={t('settings.spaces')}       sub={`${profiles.length} space${profiles.length!==1?'s':''} · ${activeProfile?.name}`} onClick={() => nav.push('spaces')} testId="spaces-nav-link"/>
           <Divider inset={48}/>
           <ProfileLink icon="users"   label={t('settings.friends')}        sub={t('settings.friendsSub')}               onClick={() => nav.push('friends')}/>
           <Divider inset={48}/>
@@ -2228,7 +2228,6 @@ export function ScreenSpaceDetail({ params }) {
         {/* Notes section */}
         <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8, paddingLeft:4 }}>
           <div className="m-cap" style={{ margin:0 }}>{t('space.notes')}</div>
-          <span style={{ fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:999, background:M.ochreSoft, color:M.ochre, textTransform:'uppercase', letterSpacing:'0.04em' }}>{t('word.personal')}</span>
         </div>
         <div className="m-card" style={{ padding:'12px 16px', marginBottom:16, border:`1px solid ${M.line}`, background:M.ochreSoft+'44' }}>
           {editingNote ? (
@@ -2238,9 +2237,11 @@ export function ScreenSpaceDetail({ params }) {
                 value={noteDraft}
                 onChange={e => setNoteDraft(e.target.value)}
                 rows={3}
+                maxLength={200}
                 style={{ width:'100%', boxSizing:'border-box', padding:'10px 12px', borderRadius:8, border:`1px solid ${M.line}`, fontSize:13, fontFamily:M.fontUI, background:M.paper, outline:'none', resize:'none', color:M.ink }}
                 placeholder={t('space.notesPlaceholder')}
               />
+              <div style={{ textAlign:'right', fontSize:11, color: noteDraft.length > 190 ? M.clay : M.ink4, marginTop:2 }}>{noteDraft.length}/200</div>
               <div style={{ display:'flex', gap:8, marginTop:8 }}>
                 <button className="m-tap" onClick={saveNote}
                   style={{ flex:1, padding:'9px 0', borderRadius:8, background:M.sage, color:'#fff', border:'none', fontSize:13, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
@@ -2984,11 +2985,11 @@ function ProfileRow({ active, label, sub, icon }) {
   );
 }
 
-function ProfileLink({ icon, label, sub, danger, onClick, testId }) {
+function ProfileLink({ icon, mdiIcon, label, sub, danger, onClick, testId }) {
   return (
     <div data-testid={testId} className="m-tap" onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 0' }}>
       <div style={{ width: 32, height: 32, borderRadius: 9, background: M.paper2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <I name={icon} size={16} color={danger ? M.clay : M.ink2}/>
+        {mdiIcon ? <IcoMDI name={mdiIcon} size={18} color={danger ? M.clay : M.ink2}/> : <I name={icon} size={16} color={danger ? M.clay : M.ink2}/>}
       </div>
       <div style={{ flex: 1 }}>
         <div style={{ fontSize: 14, fontWeight: 500, color: danger ? M.clay : M.ink }}>{label}</div>

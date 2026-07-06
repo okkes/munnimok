@@ -20,7 +20,7 @@ import { ScreenHome } from '../features/home/Home.jsx';
 import { ScreenTransactions, ScreenTxDetail, ScreenExpenses, ScreenCategoryDrill } from '../features/transactions/Tx.jsx';
 import { ScreenEvents, ScreenEventDetail, ScreenEventCreate } from '../features/events/Events.jsx';
 import { ScreenProfile, ScreenSpaces, ScreenSpaceDetail, ScreenUserInfo, ScreenExportData } from '../features/profile/Profile.jsx';
-import { ScreenLanguagePicker, ScreenSettings, ScreenPeriods, ScreenTutorial, ScreenNotifications, ScreenManageCategories, ScreenNewCat, ScreenEditCat, ScreenCustomizeHome } from '../features/settings/Settings.jsx';
+import { ScreenLanguagePicker, ScreenSettings, ScreenPeriods, ScreenTutorial, ScreenNotifications, ScreenManageCategories, ScreenNewCat, ScreenNewOtherSub, ScreenEditCat, ScreenCustomizeHome } from '../features/settings/Settings.jsx';
 import { ScreenAccounts, ScreenSavings, ScreenSavingsDetail, ScreenSavingAccounts, ScreenAccountsAll, ScreenIntegrations, ScreenIntegrationLogin, ScreenIntegrationReceipts } from '../features/accounts/Accounts.jsx';
 import { ScreenRecurringTab, ScreenRecurringDetail, ScreenRecurringCreate, ScreenRecurringDeals } from '../features/recurring/Recurring.jsx';
 import { ScreenBudgets, ScreenBudgetDetail, ScreenBudgetCreate } from '../features/budgets/Budgets.jsx';
@@ -45,6 +45,7 @@ export const SCREEN_REGISTRY = {
   tutorial:       () => <ScreenTutorial/>,
   manageCategories: () => <ScreenManageCategories/>,
   newCat:          ({params}) => <ScreenNewCat params={params}/>,
+  newOtherSub:     ({params}) => <ScreenNewOtherSub params={params}/>,
   editCat:         ({params}) => <ScreenEditCat params={params}/>,
   budgets:        () => <ScreenBudgets/>,
   budgetDetail:   ({params}) => <ScreenBudgetDetail params={params}/>,

@@ -574,6 +574,8 @@ export function CategoryPicker({ selected, onClose, onPick, txType = 'Expense', 
   const [searchQ, setSearchQ] = React.useState('');
   const amtVal = parseFloat(amtStr.replace(',', '.')) || 0;
   const amtOk = amtVal > 0 && amtVal <= maxAmount + 0.005;
+  const { profiles } = useProfiles();
+  const activeProfileId = profiles.find(p => p.active)?.id;
 
   const handlePickCat = (id) => {
     if (skipAmount) { onPick(id, 0); return; }
@@ -581,8 +583,20 @@ export function CategoryPicker({ selected, onClose, onPick, txType = 'Expense', 
     setPickedId(id);
   };
 
+  const normScope = (sc) => {
+    if (!sc || sc === 'all_private') return { allPrivate: true, spaces: [] };
+    if (typeof sc === 'object' && !Array.isArray(sc)) return sc;
+    if (Array.isArray(sc)) return { allPrivate: false, spaces: sc };
+    return { allPrivate: true, spaces: [] };
+  };
+
   const groups = {};
-  const allCatValues = [...Object.values(CATEGORIES), ...Object.values(_catExt)];
+  const visibleCustomCats = Object.values(_catExt).filter(c => {
+    if (!c.scope) return true;
+    const s = normScope(c.scope);
+    return s.allPrivate || (activeProfileId && (s.spaces || []).includes(activeProfileId));
+  });
+  const allCatValues = [...Object.values(CATEGORIES), ...visibleCustomCats];
   allCatValues.forEach(c => {
     if (c.isParent) return;
     const catType = c.type || 'Expense';

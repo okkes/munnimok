@@ -904,6 +904,26 @@ function ColorPickerRow({ color, setColor }) {
   );
 }
 
+function TypePickerSheet({ catType, setCatType, onClose }) {
+  return (
+    <Sheet title="Transaction type" onClose={onClose}>
+      <div style={{ padding:'4px 20px 32px' }}>
+        {CAT_TYPES.map(t => (
+          <button key={t} className="m-tap" onClick={() => { setCatType(t); onClose(); }}
+            style={{ width:'100%', display:'flex', alignItems:'center', gap:12, padding:'13px 14px', borderRadius:12, border:`1.5px solid ${catType===t ? M.sage : M.line}`, background: catType===t ? M.sageSoft : 'transparent', cursor:'pointer', fontFamily:M.fontUI, marginBottom:8, boxSizing:'border-box' }}>
+            <div style={{ width:10, height:10, borderRadius:'50%', background: CAT_TYPE_COLOR[t] || M.ink3, flexShrink:0 }}/>
+            <div style={{ flex:1, textAlign:'left' }}>
+              <div style={{ fontSize:14, fontWeight:500, color: catType===t ? M.sage : M.ink }}>{t}</div>
+              <div style={{ fontSize:11, color: catType===t ? M.sageDk : M.ink4, marginTop:1 }}>{CAT_TYPE_INFO[t] || ''}</div>
+            </div>
+            {catType===t && <I name="check" size={14} color={M.sage}/>}
+          </button>
+        ))}
+      </div>
+    </Sheet>
+  );
+}
+
 function NewCatForm({ onSave, isSub = false, parentDirection }) {
   const [name, setName] = React.useState('');
   const [icon, setIcon] = React.useState('help-circle-outline');
@@ -913,15 +933,22 @@ function NewCatForm({ onSave, isSub = false, parentDirection }) {
   const [direction, setDirection] = React.useState(parentDirection || 'both');
   const [tooltip, setTooltip] = React.useState(null);
   const [typePickerOpen, setTypePickerOpen] = React.useState(false);
+  const [iconPickerOpen, setIconPickerOpen] = React.useState(false);
+  const [scopeSheetOpen, setScopeSheetOpen] = React.useState(false);
   const [scopeError, setScopeError] = React.useState(false);
   const { profiles } = useProfiles();
   const toggleTip = (key) => setTooltip(t => t === key ? null : key);
 
   const handleSubmit = () => {
     if (!name.trim()) return;
-    if (!scope.allPrivate && (scope.spaces || []).length === 0) { setScopeError(true); return; }
+    if (isSub && !scope.allPrivate && (scope.spaces || []).length === 0) { setScopeError(true); return; }
     onSave(name.trim(), icon, color, scope, catType, direction);
   };
+
+  const scopeHasSelection = scope.allPrivate || (scope.spaces||[]).length > 0;
+  const scopeSummary = scope.allPrivate ? 'All private spaces'
+    : (scope.spaces||[]).length > 0 ? `${(scope.spaces||[]).length} space${(scope.spaces||[]).length!==1?'s':''} selected`
+    : 'No space selected';
 
   return (
     <div style={{ paddingBottom:8 }}>
@@ -930,7 +957,8 @@ function NewCatForm({ onSave, isSub = false, parentDirection }) {
         placeholder="Category name"
         style={{ width:'100%', boxSizing:'border-box', border:`1px solid ${M.line}`, borderRadius:10, padding:'11px 14px', fontSize:14, fontFamily:M.fontUI, marginBottom:14, outline:'none', background:M.paper2, color:M.ink }}
       />
-      {!isSub && (<>
+      {/* Type picker — sub-categories only */}
+      {isSub && (<>
         <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:8, position:'relative' }}>
           <span style={{ fontSize:12, color:M.ink3 }}>Transaction type</span>
           <button onClick={() => toggleTip('type')} style={{ background:'none', border:'none', cursor:'pointer', padding:0, display:'flex', alignItems:'center' }}>
@@ -944,24 +972,9 @@ function NewCatForm({ onSave, isSub = false, parentDirection }) {
           <div style={{ flex:1, textAlign:'left', fontSize:14, color:M.ink }}>{catType}</div>
           <I name="caretR" size={14} color={M.ink4}/>
         </button>
-        {typePickerOpen && (
-          <Sheet title="Transaction type" onClose={() => setTypePickerOpen(false)}>
-            <div style={{ padding:'4px 20px 32px' }}>
-              {CAT_TYPES.map(t => (
-                <button key={t} className="m-tap" onClick={() => { setCatType(t); setTypePickerOpen(false); }}
-                  style={{ width:'100%', display:'flex', alignItems:'center', gap:12, padding:'13px 14px', borderRadius:12, border:`1.5px solid ${catType===t ? M.sage : M.line}`, background: catType===t ? M.sageSoft : 'transparent', cursor:'pointer', fontFamily:M.fontUI, marginBottom:8, boxSizing:'border-box' }}>
-                  <div style={{ width:10, height:10, borderRadius:'50%', background: CAT_TYPE_COLOR[t] || M.ink3, flexShrink:0 }}/>
-                  <div style={{ flex:1, textAlign:'left' }}>
-                    <div style={{ fontSize:14, fontWeight:500, color: catType===t ? M.sage : M.ink }}>{t}</div>
-                    <div style={{ fontSize:11, color: catType===t ? M.sageDk : M.ink4, marginTop:1 }}>{CAT_TYPE_INFO[t] || ''}</div>
-                  </div>
-                  {catType===t && <I name="check" size={14} color={M.sage}/>}
-                </button>
-              ))}
-            </div>
-          </Sheet>
-        )}
+        {typePickerOpen && <TypePickerSheet catType={catType} setCatType={setCatType} onClose={() => setTypePickerOpen(false)}/>}
       </>)}
+      {/* Direction */}
       <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:8, position:'relative' }}>
         <span style={{ fontSize:12, color:M.ink3 }}>Applies to</span>
         <button onClick={() => toggleTip('dir')} style={{ background:'none', border:'none', cursor:'pointer', padding:0, display:'flex', alignItems:'center' }}>
@@ -979,19 +992,59 @@ function NewCatForm({ onSave, isSub = false, parentDirection }) {
           </button>
         ))}
       </div>
+      {/* Icon — tappable row that opens a sheet; shows color preview for parent cats */}
       <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>Icon</div>
-      <IconPickerGrid icon={icon} setIcon={setIcon}/>
+      <button className="m-tap" onClick={() => setIconPickerOpen(true)}
+        style={{ width:'100%', display:'flex', alignItems:'center', gap:12, padding:'11px 14px', borderRadius:12, border:`1px solid ${M.line}`, background:M.paper2, cursor:'pointer', fontFamily:M.fontUI, marginBottom:14, boxSizing:'border-box' }}>
+        <div style={{ width:32, height:32, borderRadius:9, background: !isSub ? (color || M.slate) : M.paper, border:`1px solid ${M.line2}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+          <IcoMDI name={icon} size={16} color={!isSub ? '#fff' : M.ink2}/>
+        </div>
+        <div style={{ flex:1, textAlign:'left', fontSize:13, color:M.ink3 }}>{icon.replace(/-/g, ' ')}</div>
+        <I name="caretR" size={14} color={M.ink4}/>
+      </button>
+      {iconPickerOpen && (
+        <Sheet title="Choose icon" onClose={() => setIconPickerOpen(false)}>
+          <div style={{ padding:'8px 16px 32px' }}>
+            <IconPickerGrid icon={icon} setIcon={setIcon}/>
+          </div>
+        </Sheet>
+      )}
+      {/* Color — parent categories only */}
       {!isSub && (
         <>
           <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>Color</div>
           <ColorPickerRow color={color} setColor={setColor}/>
         </>
       )}
-      <ScopeSelector scope={scope} setScope={s => { setScope(s); setScopeError(false); }} profiles={profiles} hasError={scopeError}/>
+      {/* Scope — sub-categories only, compact row ? sheet */}
+      {isSub && (
+        <>
+          <div style={{ fontSize:12, color: scopeError ? M.clay : M.ink3, marginBottom:8 }}>Available in</div>
+          <button className="m-tap" onClick={() => setScopeSheetOpen(true)}
+            style={{ width:'100%', display:'flex', alignItems:'center', gap:12, padding:'11px 14px', borderRadius:12, border:`1.5px solid ${scopeError ? M.clay : M.line}`, background:M.paper2, cursor:'pointer', fontFamily:M.fontUI, marginBottom:14, boxSizing:'border-box' }}>
+            <div style={{ width:22, height:22, borderRadius:6, background: scopeHasSelection ? M.sage : 'transparent', border:`2px solid ${scopeHasSelection ? M.sage : M.ink4}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+              {scopeHasSelection && <I name="check" size={11} color="#fff"/>}
+            </div>
+            <div style={{ flex:1, textAlign:'left', fontSize:14, color: scopeError && !scopeHasSelection ? M.clay : M.ink }}>{scopeSummary}</div>
+            <I name="caretR" size={14} color={M.ink4}/>
+          </button>
+          {scopeSheetOpen && (
+            <Sheet title="Available in" onClose={() => setScopeSheetOpen(false)}>
+              <div style={{ padding:'8px 16px 20px' }}>
+                <ScopeSelector scope={scope} setScope={s => { setScope(s); setScopeError(false); }} profiles={profiles} hasError={scopeError}/>
+                <button className="m-tap" onClick={() => setScopeSheetOpen(false)}
+                  style={{ width:'100%', padding:'13px 0', background:M.sage, color:'#fff', border:'none', borderRadius:12, fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+                  Done
+                </button>
+              </div>
+            </Sheet>
+          )}
+        </>
+      )}
       <button className="m-tap" onClick={handleSubmit}
         disabled={!name.trim()}
         style={{ width:'100%', background:M.sage, border:'none', borderRadius:12, padding:'13px', color:'#fff', fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, opacity: name.trim()?1:0.5 }}>
-        {isSub ? 'Add sub-category' : 'Add category'}
+        {isSub ? 'Add sub-category' : 'Continue'}
       </button>
     </div>
   );
@@ -1004,7 +1057,9 @@ function EditCatSheet({ entry, txCount = 0, onSave, onDelete, isPrebuilt = false
   const [parentPickerOpen, setParentPickerOpen] = React.useState(false);
   const [typePickerOpen, setTypePickerOpen] = React.useState(false);
   const [scopeError, setScopeError] = React.useState(false);
+  const [saveConfirmOpen, setSaveConfirmOpen] = React.useState(false);
   const { profiles } = useProfiles();
+  const activeProfileId = profiles.find(p => p.active)?.id;
   const { customCats } = useCatCtx();
   const { txs } = useTxCtx();
   const normalizeScope = (sc) => {
@@ -1014,22 +1069,47 @@ function EditCatSheet({ entry, txCount = 0, onSave, onDelete, isPrebuilt = false
     if (Array.isArray(sc)) return { allPrivate: false, spaces: sc };
     return { allPrivate: true, spaces: [] };
   };
+  const initialScopeRef = React.useRef(normalizeScope(entry.scope));
   const [scopeDraft, setScopeDraft] = React.useState(() => normalizeScope(entry.scope));
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
+  const [iconPickerOpen, setIconPickerOpen] = React.useState(false);
+  const [scopeSheetOpen, setScopeSheetOpen] = React.useState(false);
   const canDelete = onDelete !== null;
   const isParent = entry.isParent;
 
-  // Type editing — custom parent categories only
-  const actualCat = (!isPrebuilt && isParent) ? customCats.find(c => c.id === entry.catId) : null;
+  // Type editing — custom sub-categories only
+  const actualCat = (!isPrebuilt && !isParent) ? customCats.find(c => c.id === entry.catId) : null;
   const initialType = actualCat?.type || 'Expense';
   const [typeDraft, setTypeDraft] = React.useState(initialType);
   const typeChanged = typeDraft !== initialType;
 
-  const conflictCount = React.useMemo(() => {
-    if (!typeChanged || isPrebuilt || !isParent) return 0;
-    const affectedIds = new Set([entry.catId, ...customCats.filter(c => c.parent === entry.catId).map(c => c.id)]);
-    return txs.filter(t => affectedIds.has(t.cat) && t.txType && t.txType !== typeDraft).length;
-  }, [typeChanged, isPrebuilt, isParent, entry.catId, customCats, txs, typeDraft]);
+  // Scope narrowing: new scope is specific spaces and active profile not included
+  const scopeNarrowed = React.useMemo(() => {
+    if (isParent || isPrebuilt || scopeDraft.allPrivate) return false;
+    const initS = initialScopeRef.current;
+    const scopeActuallyChanged = initS.allPrivate !== scopeDraft.allPrivate
+      || [...(scopeDraft.spaces||[])].sort().join(',') !== [...(initS.spaces||[])].sort().join(',');
+    if (!scopeActuallyChanged) return false;
+    return !(scopeDraft.spaces||[]).includes(activeProfileId);
+  }, [isParent, isPrebuilt, scopeDraft, activeProfileId]);
+
+  // Transactions affected by type or scope change
+  const conflictTxs = React.useMemo(() => {
+    if (isPrebuilt || isParent) return [];
+    return txs.filter(t => {
+      if (t.cat !== entry.catId) return false;
+      if (typeChanged && t.txType && t.txType !== typeDraft) return true;
+      if (scopeNarrowed) return true;
+      return false;
+    });
+  }, [typeChanged, typeDraft, scopeNarrowed, isPrebuilt, isParent, entry.catId, txs]);
+
+  const conflictCount = conflictTxs.length;
+
+  const scopeHasSelection = scopeDraft.allPrivate || (scopeDraft.spaces||[]).length > 0;
+  const scopeSummary = scopeDraft.allPrivate ? 'All private spaces'
+    : (scopeDraft.spaces||[]).length > 0 ? `${(scopeDraft.spaces||[]).length} space${(scopeDraft.spaces||[]).length!==1?'s':''} selected`
+    : 'No space selected';
 
   const availableParents = React.useMemo(() => {
     const premade = Object.entries(CATEGORIES)
@@ -1041,10 +1121,15 @@ function EditCatSheet({ entry, txCount = 0, onSave, onDelete, isPrebuilt = false
     return [...custom, ...premade];
   }, [customCats]);
 
+  const executeSave = () => {
+    onSave(nameDraft.trim(), iconDraft, entry.color, !isParent ? scopeDraft : undefined, !isParent ? parentIdDraft : undefined, (!isPrebuilt && !isParent && typeChanged) ? typeDraft : undefined, scopeNarrowed);
+  };
+
   const handleSave = () => {
     if (!nameDraft.trim()) return;
-    if (!isPrebuilt && !scopeDraft.allPrivate && (scopeDraft.spaces || []).length === 0) { setScopeError(true); return; }
-    onSave(nameDraft.trim(), iconDraft, entry.color, scopeDraft, !isParent ? parentIdDraft : undefined, (!isPrebuilt && isParent && typeChanged) ? typeDraft : undefined);
+    if (!isPrebuilt && !isParent && !scopeDraft.allPrivate && (scopeDraft.spaces || []).length === 0) { setScopeError(true); return; }
+    if (conflictCount > 0) { setSaveConfirmOpen(true); return; }
+    executeSave();
   };
 
   if (showDeleteConfirm) {
@@ -1075,13 +1160,48 @@ function EditCatSheet({ entry, txCount = 0, onSave, onDelete, isPrebuilt = false
       {!isPrebuilt && (
         <>
           <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>Icon</div>
-          <div data-testid="edit-cat-icon-picker">
-            <IconPickerGrid icon={iconDraft} setIcon={setIconDraft}/>
-          </div>
-          {/* Scope */}
-          <ScopeSelector scope={scopeDraft} setScope={s => { setScopeDraft(s); setScopeError(false); }} profiles={profiles} hasError={scopeError}/>
-          {/* Transaction type — custom parent categories only */}
-          {isParent && (
+          <button data-testid="edit-cat-icon-picker" className="m-tap" onClick={() => setIconPickerOpen(true)}
+            style={{ width:'100%', display:'flex', alignItems:'center', gap:12, padding:'11px 14px', borderRadius:12, border:`1px solid ${M.line}`, background:M.paper2, cursor:'pointer', fontFamily:M.fontUI, marginBottom:14, boxSizing:'border-box' }}>
+            <div style={{ width:32, height:32, borderRadius:9, background: isParent ? (entry.color || M.slate) : M.paper, border:`1px solid ${M.line2}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+              <IcoMDI name={iconDraft} size={16} color={isParent ? '#fff' : M.ink2}/>
+            </div>
+            <div style={{ flex:1, textAlign:'left', fontSize:13, color:M.ink3 }}>{iconDraft.replace(/-/g, ' ')}</div>
+            <I name="caretR" size={14} color={M.ink4}/>
+          </button>
+          {iconPickerOpen && (
+            <Sheet title="Choose icon" onClose={() => setIconPickerOpen(false)}>
+              <div style={{ padding:'8px 16px 32px' }}>
+                <IconPickerGrid icon={iconDraft} setIcon={setIconDraft}/>
+              </div>
+            </Sheet>
+          )}
+          {/* Scope — sub-categories only */}
+          {!isParent && (
+            <>
+              <div style={{ fontSize:12, color: scopeError ? M.clay : M.ink3, marginBottom:8 }}>Available in</div>
+              <button className="m-tap" onClick={() => setScopeSheetOpen(true)}
+                style={{ width:'100%', display:'flex', alignItems:'center', gap:12, padding:'11px 14px', borderRadius:12, border:`1.5px solid ${scopeError ? M.clay : M.line}`, background:M.paper2, cursor:'pointer', fontFamily:M.fontUI, marginBottom:14, boxSizing:'border-box' }}>
+                <div style={{ width:22, height:22, borderRadius:6, background: scopeHasSelection ? M.sage : 'transparent', border:`2px solid ${scopeHasSelection ? M.sage : M.ink4}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  {scopeHasSelection && <I name="check" size={11} color="#fff"/>}
+                </div>
+                <div style={{ flex:1, textAlign:'left', fontSize:14, color: scopeError && !scopeHasSelection ? M.clay : M.ink }}>{scopeSummary}</div>
+                <I name="caretR" size={14} color={M.ink4}/>
+              </button>
+              {scopeSheetOpen && (
+                <Sheet title="Available in" onClose={() => setScopeSheetOpen(false)}>
+                  <div style={{ padding:'8px 16px 20px' }}>
+                    <ScopeSelector scope={scopeDraft} setScope={s => { setScopeDraft(s); setScopeError(false); }} profiles={profiles} hasError={scopeError}/>
+                    <button className="m-tap" onClick={() => setScopeSheetOpen(false)}
+                      style={{ width:'100%', padding:'13px 0', background:M.sage, color:'#fff', border:'none', borderRadius:12, fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+                      Done
+                    </button>
+                  </div>
+                </Sheet>
+              )}
+            </>
+          )}
+          {/* Transaction type — custom sub-categories only */}
+          {!isParent && (
             <>
               <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>Transaction type</div>
               <button className="m-tap" onClick={() => setTypePickerOpen(true)}
@@ -1090,28 +1210,7 @@ function EditCatSheet({ entry, txCount = 0, onSave, onDelete, isPrebuilt = false
                 <div style={{ flex:1, textAlign:'left', fontSize:14, color:M.ink }}>{typeDraft}</div>
                 <I name="caretR" size={14} color={M.ink4}/>
               </button>
-              {conflictCount > 0 && (
-                <div style={{ padding:'10px 14px', borderRadius:10, background:M.claySoft, marginBottom:14, fontSize:12, color:M.clay, lineHeight:1.5 }}>
-                  <strong>{conflictCount} transaction{conflictCount!==1?'s':''}</strong> using a conflicting type will be moved to Uncategorized on save.
-                </div>
-              )}
-              {typePickerOpen && (
-                <Sheet title="Transaction type" onClose={() => setTypePickerOpen(false)}>
-                  <div style={{ padding:'4px 20px 32px' }}>
-                    {CAT_TYPES.map(t => (
-                      <button key={t} className="m-tap" onClick={() => { setTypeDraft(t); setTypePickerOpen(false); }}
-                        style={{ width:'100%', display:'flex', alignItems:'center', gap:12, padding:'13px 14px', borderRadius:12, border:`1.5px solid ${typeDraft===t ? M.sage : M.line}`, background: typeDraft===t ? M.sageSoft : 'transparent', cursor:'pointer', fontFamily:M.fontUI, marginBottom:8, boxSizing:'border-box' }}>
-                        <div style={{ width:10, height:10, borderRadius:'50%', background: CAT_TYPE_COLOR[t] || M.ink3, flexShrink:0 }}/>
-                        <div style={{ flex:1, textAlign:'left' }}>
-                          <div style={{ fontSize:14, fontWeight:500, color: typeDraft===t ? M.sage : M.ink }}>{t}</div>
-                          <div style={{ fontSize:11, color: typeDraft===t ? M.sageDk : M.ink4, marginTop:1 }}>{CAT_TYPE_INFO[t] || ''}</div>
-                        </div>
-                        {typeDraft===t && <I name="check" size={14} color={M.sage}/>}
-                      </button>
-                    ))}
-                  </div>
-                </Sheet>
-              )}
+                  {typePickerOpen && <TypePickerSheet catType={typeDraft} setCatType={setTypeDraft} onClose={() => setTypePickerOpen(false)}/>}
             </>
           )}
           {/* Parent category — only for custom sub-categories */}
@@ -1158,18 +1257,53 @@ function EditCatSheet({ entry, txCount = 0, onSave, onDelete, isPrebuilt = false
           })()}
         </>
       )}
+      {conflictCount > 0 && (
+        <div style={{ padding:'10px 14px', borderRadius:10, background:M.claySoft, marginBottom:12, fontSize:12, color:M.clay, lineHeight:1.5 }}>
+          <strong>{conflictCount} transaction{conflictCount!==1?'s':''}</strong> will be moved to Uncategorized — type or scope no longer matches. You'll confirm before saving.
+        </div>
+      )}
       <button onClick={handleSave}
         style={{ width:'100%', padding:'14px 0', background:nameDraft.trim()?M.sage:M.line, color:nameDraft.trim()?'#fff':M.ink4, border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:nameDraft.trim()?'pointer':'default', fontFamily:M.fontUI, marginBottom:canDelete?12:10 }}>
         Save
       </button>
       {canDelete && (
-        <>
-          {txCount > 0 && <div style={{ fontSize:12, color:M.ochre, marginBottom:8, textAlign:'center' }}>{txCount} transaction{txCount!==1?'s':''} will be set to uncategorized</div>}
-          <button onClick={() => setShowDeleteConfirm(true)}
-            style={{ width:'100%', padding:'14px 0', background:'transparent', color:M.clay, border:`1.5px solid ${M.clay}`, borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
-            Delete category
-          </button>
-        </>
+        <button onClick={() => setShowDeleteConfirm(true)}
+          style={{ width:'100%', padding:'14px 0', background:'transparent', color:M.clay, border:`1.5px solid ${M.clay}`, borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+          Delete category
+        </button>
+      )}
+      {saveConfirmOpen && (
+        <Sheet title="Confirm changes" onClose={() => setSaveConfirmOpen(false)}>
+          <div style={{ padding:'4px 20px 32px' }}>
+            <div style={{ fontSize:14, color:M.ink2, marginBottom:16, lineHeight:1.5 }}>
+              The following <strong>{conflictCount} transaction{conflictCount!==1?'s':''}</strong> use <strong>{entry.name}</strong> but will be moved to <strong>Uncategorized</strong> because the transaction type or scope no longer matches.
+            </div>
+            <div style={{ maxHeight:240, overflowY:'auto', marginBottom:16, display:'flex', flexDirection:'column', gap:6 }}>
+              {conflictTxs.slice(0, 40).map(t => (
+                <div key={t.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderRadius:10, background:M.paper2, border:`1px solid ${M.line}` }}>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:13, fontWeight:500, color:M.ink, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{t.merchant || '—'}</div>
+                    <div style={{ fontSize:11, color:M.ink4 }}>{t.date || ''}</div>
+                  </div>
+                  <div style={{ fontSize:13, fontWeight:600, color: t.amount < 0 ? M.clay : M.sage, flexShrink:0 }}>
+                    {t.amount < 0 ? '-' : '+'}{Math.abs(t.amount).toFixed(2)}
+                  </div>
+                </div>
+              ))}
+              {conflictTxs.length > 40 && (
+                <div style={{ textAlign:'center', fontSize:12, color:M.ink4 }}>...and {conflictTxs.length - 40} more</div>
+              )}
+            </div>
+            <button className="m-tap" onClick={() => { setSaveConfirmOpen(false); executeSave(); }}
+              style={{ width:'100%', padding:'14px 0', background:M.sage, color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>
+              Confirm & Save
+            </button>
+            <button className="m-tap" onClick={() => setSaveConfirmOpen(false)}
+              style={{ width:'100%', padding:'14px 0', background:'transparent', color:M.ink2, border:`1px solid ${M.line}`, borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+              Cancel
+            </button>
+          </div>
+        </Sheet>
       )}
     </div>
   );
@@ -1187,15 +1321,15 @@ export function ScreenNewCat({ params }) {
     if (isParent) {
       const id = `cust_${Date.now()}`;
       setCustomCats(prev => [...prev,
-        { id, name, icon: icon||'box', color: color||M.slate, isParent:true, parent:null, scope: scope||'all_private', type: catType||'Expense', direction: direction||'both' },
-        { id:`${id}_other`, name:'Other', icon:'dots-horizontal', color:M.paper2, isParent:false, parent:id, scope: scope||'all_private', type: catType||'Expense', direction: direction||'both' }
+        { id, name, icon: icon||'help-circle-outline', color: color||M.slate, isParent:true, parent:null, direction: direction||'both' }
       ]);
+      nav.replace('newOtherSub', { parentId: id, parentName: name, parentColor: color||M.slate, parentIcon: icon||'help-circle-outline' });
     } else {
       setCustomCats(prev => [...prev,
-        { id:`cust_${Date.now()}`, name, icon: icon||'box', color: color||M.slate, isParent:false, parent:parentId, scope: scope||'all_private', type: parentCat?.type||'Expense', direction: direction||'both' }
+        { id:`cust_${Date.now()}`, name, icon: icon||'help-circle-outline', color: color||M.slate, isParent:false, parent:parentId, scope: scope||'all_private', type: catType||'Expense', direction: direction||'both' }
       ]);
+      nav.pop();
     }
-    nav.pop();
   };
 
   return (
@@ -1223,6 +1357,148 @@ export function ScreenNewCat({ params }) {
   );
 }
 
+export function ScreenNewOtherSub({ params }) {
+  const nav = useNav();
+  const { customCats, setCustomCats } = useCatCtx();
+  const { profiles } = useProfiles();
+  const parentId = params?.parentId;
+  const parentName = params?.parentName || '';
+  const parentColor = params?.parentColor || M.slate;
+  const parentIcon = params?.parentIcon || 'help-circle-outline';
+
+  const [catType, setCatType] = React.useState('Expense');
+  const [direction, setDirection] = React.useState('both');
+  const [icon, setIcon] = React.useState('dots-horizontal');
+  const [scope, setScope] = React.useState({ allPrivate: true, spaces: [] });
+  const [tooltip, setTooltip] = React.useState(null);
+  const [typePickerOpen, setTypePickerOpen] = React.useState(false);
+  const [iconPickerOpen, setIconPickerOpen] = React.useState(false);
+  const [scopeSheetOpen, setScopeSheetOpen] = React.useState(false);
+  const [scopeError, setScopeError] = React.useState(false);
+
+  const toggleTip = (key) => setTooltip(t => t === key ? null : key);
+  const scopeHasSelection = scope.allPrivate || (scope.spaces||[]).length > 0;
+  const scopeSummary = scope.allPrivate ? 'All private spaces'
+    : (scope.spaces||[]).length > 0 ? `${(scope.spaces||[]).length} space${(scope.spaces||[]).length!==1?'s':''} selected`
+    : 'No space selected';
+
+  const handleFinish = () => {
+    if (!scopeHasSelection) { setScopeError(true); return; }
+    setCustomCats(prev => [...prev,
+      { id:`${parentId}_other`, name:'Other', icon, color:M.paper2, isParent:false, parent:parentId, scope: scope||'all_private', type: catType||'Expense', direction: direction||'both' }
+    ]);
+    nav.pop();
+  };
+
+  return (
+    <div className="m-screen">
+      <StatusBar/>
+      <AppBar
+        title="Set up Other sub-category"
+        leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
+      />
+      <div className="m-body-scroll" style={{ paddingBottom:24 }}>
+        {/* Parent context */}
+        <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 14px', background:M.sageSoft, borderRadius:12, marginBottom:20, border:`1px solid ${M.sage}33` }}>
+          <div style={{ width:28, height:28, borderRadius:8, background:parentColor, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+            <IcoMDI name={parentIcon} size={13} color='#fff'/>
+          </div>
+          <div>
+            <div style={{ fontSize:10, color:M.sage, fontWeight:700, textTransform:'uppercase', letterSpacing:0.5 }}>Parent category</div>
+            <div style={{ fontSize:13, fontWeight:600, color:M.ink }}>{parentName}</div>
+          </div>
+        </div>
+        {/* Locked name */}
+        <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>Name</div>
+        <div style={{ display:'flex', alignItems:'center', gap:8, padding:'11px 14px', border:`1px solid ${M.line}`, borderRadius:10, background:M.paper2, marginBottom:14 }}>
+          <div style={{ flex:1, fontSize:14, color:M.ink3 }}>Other</div>
+          <div style={{ position:'relative', display:'flex', alignItems:'center' }}>
+            <button onClick={() => toggleTip('name')} style={{ background:'none', border:'none', cursor:'pointer', padding:0, display:'flex', alignItems:'center' }}>
+              <I name="info" size={13} color={tooltip==='name'?M.sage:M.ink4}/>
+            </button>
+            {tooltip === 'name' && <InfoTooltip text='Each main category must have an "Other" sub-category as a catch-all. The name is fixed by design.' onClose={() => setTooltip(null)}/>}
+          </div>
+        </div>
+        {/* Type */}
+        <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:8, position:'relative' }}>
+          <span style={{ fontSize:12, color:M.ink3 }}>Transaction type</span>
+          <button onClick={() => toggleTip('type')} style={{ background:'none', border:'none', cursor:'pointer', padding:0, display:'flex', alignItems:'center' }}>
+            <I name="info" size={13} color={tooltip==='type'?M.sage:M.ink4}/>
+          </button>
+          {tooltip === 'type' && <InfoTooltip text={CAT_TYPE_INFO[catType] || ''} onClose={() => setTooltip(null)}/>}
+        </div>
+        <button className="m-tap" onClick={() => { setTooltip(null); setTypePickerOpen(true); }}
+          style={{ width:'100%', display:'flex', alignItems:'center', gap:10, padding:'11px 14px', borderRadius:12, border:`1px solid ${M.line}`, background:M.paper2, cursor:'pointer', fontFamily:M.fontUI, marginBottom:14, boxSizing:'border-box' }}>
+          <div style={{ width:9, height:9, borderRadius:'50%', background: CAT_TYPE_COLOR[catType] || M.ink3, flexShrink:0 }}/>
+          <div style={{ flex:1, textAlign:'left', fontSize:14, color:M.ink }}>{catType}</div>
+          <I name="caretR" size={14} color={M.ink4}/>
+        </button>
+        {typePickerOpen && <TypePickerSheet catType={catType} setCatType={setCatType} onClose={() => setTypePickerOpen(false)}/>}
+        {/* Direction */}
+        <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:8, position:'relative' }}>
+          <span style={{ fontSize:12, color:M.ink3 }}>Applies to</span>
+          <button onClick={() => toggleTip('dir')} style={{ background:'none', border:'none', cursor:'pointer', padding:0, display:'flex', alignItems:'center' }}>
+            <I name="info" size={13} color={tooltip==='dir'?M.sage:M.ink4}/>
+          </button>
+          {tooltip === 'dir' && <InfoTooltip text={DIR_INFO[direction]} onClose={() => setTooltip(null)}/>}
+        </div>
+        <div style={{ display:'flex', gap:6, marginBottom:14 }}>
+          {[['debit','Outgoing'],['credit','Incoming'],['both','Both']].map(([val, label]) => (
+            <button key={val} className="m-tap" onClick={() => setDirection(val)}
+              style={{ flex:1, padding:'7px 0', borderRadius:10, fontSize:12, fontWeight:600, cursor:'pointer', border:`1.5px solid ${direction===val?M.sage:M.line}`, fontFamily:M.fontUI,
+                background: direction===val ? M.sageSoft : M.paper2,
+                color: direction===val ? M.sage : M.ink3 }}>
+              {label}
+            </button>
+          ))}
+        </div>
+        {/* Icon */}
+        <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>Icon</div>
+        <button className="m-tap" onClick={() => setIconPickerOpen(true)}
+          style={{ width:'100%', display:'flex', alignItems:'center', gap:12, padding:'11px 14px', borderRadius:12, border:`1px solid ${M.line}`, background:M.paper2, cursor:'pointer', fontFamily:M.fontUI, marginBottom:14, boxSizing:'border-box' }}>
+          <div style={{ width:32, height:32, borderRadius:9, background:M.paper, border:`1px solid ${M.line2}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+            <IcoMDI name={icon} size={16} color={M.ink2}/>
+          </div>
+          <div style={{ flex:1, textAlign:'left', fontSize:13, color:M.ink3 }}>{icon.replace(/-/g, ' ')}</div>
+          <I name="caretR" size={14} color={M.ink4}/>
+        </button>
+        {iconPickerOpen && (
+          <Sheet title="Choose icon" onClose={() => setIconPickerOpen(false)}>
+            <div style={{ padding:'8px 16px 32px' }}>
+              <IconPickerGrid icon={icon} setIcon={setIcon}/>
+            </div>
+          </Sheet>
+        )}
+        {/* Scope */}
+        <div style={{ fontSize:12, color: scopeError ? M.clay : M.ink3, marginBottom:8 }}>Available in</div>
+        <button className="m-tap" onClick={() => setScopeSheetOpen(true)}
+          style={{ width:'100%', display:'flex', alignItems:'center', gap:12, padding:'11px 14px', borderRadius:12, border:`1.5px solid ${scopeError ? M.clay : M.line}`, background:M.paper2, cursor:'pointer', fontFamily:M.fontUI, marginBottom:14, boxSizing:'border-box' }}>
+          <div style={{ width:22, height:22, borderRadius:6, background: scopeHasSelection ? M.sage : 'transparent', border:`2px solid ${scopeHasSelection ? M.sage : M.ink4}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+            {scopeHasSelection && <I name="check" size={11} color="#fff"/>}
+          </div>
+          <div style={{ flex:1, textAlign:'left', fontSize:14, color: scopeError && !scopeHasSelection ? M.clay : M.ink }}>{scopeSummary}</div>
+          <I name="caretR" size={14} color={M.ink4}/>
+        </button>
+        {scopeSheetOpen && (
+          <Sheet title="Available in" onClose={() => setScopeSheetOpen(false)}>
+            <div style={{ padding:'8px 16px 20px' }}>
+              <ScopeSelector scope={scope} setScope={s => { setScope(s); setScopeError(false); }} profiles={profiles} hasError={scopeError}/>
+              <button className="m-tap" onClick={() => setScopeSheetOpen(false)}
+                style={{ width:'100%', padding:'13px 0', background:M.sage, color:'#fff', border:'none', borderRadius:12, fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+                Done
+              </button>
+            </div>
+          </Sheet>
+        )}
+        <button className="m-tap" onClick={handleFinish}
+          style={{ width:'100%', background:M.sage, border:'none', borderRadius:12, padding:'13px', color:'#fff', fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
+          Finish
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function ScreenEditCat({ params }) {
   const nav = useNav();
   const { txs, setTxs } = useTxCtx();
@@ -1240,7 +1516,7 @@ export function ScreenEditCat({ params }) {
     if (!isCustom) return false;
     if (isParentCat) {
       const subs = customCats.filter(c => !c.isParent && c.parent === catId);
-      return subs.length === 1 && subs[0].id === `${catId}_other`;
+      return subs.length === 0 || (subs.length === 1 && subs[0].id === `${catId}_other`);
     }
     return true;
   }, [isCustom, isParentCat, catId, customCats]);
@@ -1272,19 +1548,18 @@ export function ScreenEditCat({ params }) {
           entry={entry}
           txCount={txCount}
           isPrebuilt={!isCustom}
-          onSave={(name, icon, color, scope, newParentId, newType) => {
+          onSave={(name, icon, color, scope, newParentId, newType, scopeNarrowed) => {
             if (isCustom) {
-              const prevType = customCats.find(c => c.id === catId)?.type;
-              const typeChanging = newType && newType !== prevType;
+              const typeChanging = !!newType;
               setCustomCats(prev => prev.map(c => {
-                if (c.id === catId) return { ...c, name, icon, color, scope, ...(newType ? { type: newType } : {}), ...(newParentId !== undefined ? { parent: newParentId } : {}) };
-                if (typeChanging && isParentCat && c.parent === catId) return { ...c, type: newType };
+                if (c.id === catId) return { ...c, name, icon, color, ...(scope !== undefined ? { scope } : {}), ...(newType ? { type: newType } : {}), ...(newParentId !== undefined ? { parent: newParentId } : {}) };
                 return c;
               }));
-              if (typeChanging && isParentCat) {
-                const affectedIds = new Set([catId, ...customCats.filter(c => c.parent === catId).map(c => c.id)]);
+              if ((typeChanging || scopeNarrowed) && !isParentCat) {
                 setTxs(prev => prev.map(t => {
-                  if (!affectedIds.has(t.cat) || !t.txType || t.txType === newType) return t;
+                  if (t.cat !== catId) return t;
+                  const typeConflict = typeChanging && t.txType && t.txType !== newType;
+                  if (!typeConflict && !scopeNarrowed) return t;
                   return { ...t, cat:'uncategorized', cats:[{ catId:'uncategorized', amount:Math.abs(t.amount) }] };
                 }));
               }
@@ -1366,6 +1641,7 @@ export function ScreenManageCategories() {
 
   const activateDrag = (catId, parentId, label, icon, color, x, y, el, pointerId, rect) => {
     try { el?.setPointerCapture(pointerId); } catch {}
+    document.activeElement?.blur();
     setHoldingCatId(null);
     setCatSearch('');
     setDragState({
@@ -1622,6 +1898,7 @@ export function ScreenManageCategories() {
       onPointerMove={moveDrag}
       onPointerUp={endDrag}
       onPointerCancel={endDrag}
+      style={{ userSelect: dragState ? 'none' : 'auto' }}
     >
       <StatusBar/>
       <AppBar title={t('screen.categories')}
@@ -1781,7 +2058,7 @@ export function ScreenManageCategories() {
                 </div>
               </div>
 
-              {/* From → To flow */}
+              {/* From ? To flow */}
               <div style={{ marginBottom:24 }}>
                 {/* From row */}
                 <div style={{ display:'flex', alignItems:'center', gap:12, padding:'11px 14px', borderRadius:12, border:`1.5px solid ${M.line}`, background:M.paper2 }}>
