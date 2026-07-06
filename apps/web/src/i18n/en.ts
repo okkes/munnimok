@@ -739,6 +739,13 @@ export const en = {
   'space.notesHint': 'Personal, not shared with members',
   'acct.coOwnersLabel': 'Co-owners',
   'cats.searchPlaceholder': 'Search categories…',
+  'import.statement': 'Import bank statement',
+  'import.preview': 'Import preview',
+  'import.newAccount': 'New account',
+  'import.txCount': '{n} transactions',
+  'import.doImport': 'Import',
+  'import.done': 'Imported {n} transactions, skipped {s} duplicates',
+  'import.invalidFile': 'This is not a valid CAMT.053 file',
 } as const;
 
 export type TranslationKey = keyof typeof en;

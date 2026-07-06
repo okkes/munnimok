@@ -741,4 +741,11 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'space.notesHint': 'Persoonlijk, niet gedeeld met leden',
   'acct.coOwnersLabel': 'Mede-eigenaren',
   'cats.searchPlaceholder': 'Zoek categorieën…',
+  'import.statement': 'Bankafschrift importeren',
+  'import.preview': 'Importoverzicht',
+  'import.newAccount': 'Nieuwe rekening',
+  'import.txCount': '{n} transacties',
+  'import.doImport': 'Importeren',
+  'import.done': '{n} transacties geïmporteerd, {s} duplicaten overgeslagen',
+  'import.invalidFile': 'Dit is geen geldig CAMT.053-bestand',
 };

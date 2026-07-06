@@ -1,5 +1,9 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { parseCamt053 } from '@/lib/camt053/parse';
+import type { CamtStatement } from '@/lib/camt053/parse';
+import { importCamtStatements } from './importCamt';
+import type { ImportResult } from './importCamt';
 import { useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
 import { useData } from '@/app/data';
@@ -38,6 +42,35 @@ export function AccountsScreen() {
   const [newType, setNewType] = useState<AccountType | null>(null);
   const [name, setName] = useState('');
   const [balance, setBalance] = useState('');
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [importPreview, setImportPreview] = useState<CamtStatement[] | null>(null);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [importError, setImportError] = useState(false);
+
+  const onFilePicked = async (file: File | undefined) => {
+    if (!file) return;
+    setImportError(false);
+    setImportResult(null);
+    try {
+      setImportPreview(parseCamt053(await file.text()));
+    } catch {
+      setImportPreview(null);
+      setImportError(true);
+      setImportPreview([]); // open the sheet to show the error
+    }
+  };
+
+  const runImport = async () => {
+    if (!importPreview?.length) return;
+    setImportResult(await importCamtStatements(repo, db, spaceId, importPreview));
+  };
+
+  const closeImport = () => {
+    setImportPreview(null);
+    setImportResult(null);
+    setImportError(false);
+    if (fileRef.current) fileRef.current.value = '';
+  };
 
   const accounts = useLiveQuery(
     () => db.accounts.where('spaceId').equals(spaceId).filter((a) => a.deleted === 0 && !a.archived).toArray(),
@@ -122,10 +155,27 @@ export function AccountsScreen() {
           </IconButton>
         }
         trailing={
-          <IconButton label={t('acct.addAccount')} testId="accounts-add" onClick={() => setAddOpen(true)}>
-            <Icon name="plus" size={22} />
-          </IconButton>
+          <>
+            <IconButton
+              label={t('import.statement')}
+              testId="accounts-import"
+              onClick={() => fileRef.current?.click()}
+            >
+              <Icon name="file-upload-outline" size={21} />
+            </IconButton>
+            <IconButton label={t('acct.addAccount')} testId="accounts-add" onClick={() => setAddOpen(true)}>
+              <Icon name="plus" size={22} />
+            </IconButton>
+          </>
         }
+      />
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".xml,text/xml,application/xml"
+        hidden
+        data-testid="accounts-import-input"
+        onChange={(e) => void onFilePicked(e.target.files?.[0])}
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <Section titleKey="acct.assets" list={assets} />
@@ -171,6 +221,50 @@ export function AccountsScreen() {
             />
             <Button data-testid="acctform-save" onClick={createAccount} disabled={!name.trim()}>
               {t('action.add')}
+            </Button>
+          </div>
+        )}
+      </Sheet>
+
+      {/* CAMT.053 import: preview then result */}
+      <Sheet open={importPreview !== null} onOpenChange={(open) => !open && closeImport()} title={t('import.preview')} height={420}>
+        {importError && (
+          <div className="flex items-center gap-2 rounded-card bg-negative-soft px-4 py-3 text-[14px] text-negative" data-testid="import-error">
+            <Icon name="alert-circle-outline" size={18} />
+            {t('import.invalidFile')}
+          </div>
+        )}
+        {!importError && !importResult && (
+          <div className="flex flex-col gap-3 pt-1" data-testid="import-preview">
+            {(importPreview ?? []).map((stmt) => {
+              const iban = stmt.iban.replace(/\s/g, '').toUpperCase();
+              const match = (accounts ?? []).find((a) => a.iban?.replace(/\s/g, '').toUpperCase() === iban);
+              return (
+                <div key={stmt.iban} className="flex items-center gap-3 rounded-card border border-line bg-surface px-4 py-3">
+                  <Icon name={match ? 'bank-check' : 'bank-plus'} size={22} color="var(--m-accent)" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[14px] font-medium text-ink">
+                      {match?.name ?? t('import.newAccount')}
+                    </span>
+                    <span className="block truncate font-mono text-[11px] text-ink-4">{stmt.iban}</span>
+                  </span>
+                  <span className="text-[12px] text-ink-3">{t('import.txCount', { n: stmt.entries.length })}</span>
+                </div>
+              );
+            })}
+            <Button data-testid="import-run" onClick={() => void runImport()} disabled={!importPreview?.length}>
+              {t('import.doImport')}
+            </Button>
+          </div>
+        )}
+        {importResult && (
+          <div className="flex flex-col items-center gap-3 pt-4 text-center" data-testid="import-result">
+            <Icon name="check-circle-outline" size={40} color="var(--m-accent)" />
+            <p className="text-[14px] text-ink-2">
+              {t('import.done', { n: importResult.imported, s: importResult.skipped })}
+            </p>
+            <Button variant="outline" data-testid="import-close" onClick={closeImport}>
+              {t('action.done')}
             </Button>
           </div>
         )}

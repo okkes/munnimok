@@ -741,4 +741,11 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'space.notesHint': 'Kişisel, üyelerle paylaşılmaz',
   'acct.coOwnersLabel': 'Ortak sahipler',
   'cats.searchPlaceholder': 'Kategori ara…',
+  'import.statement': 'Banka ekstresi içe aktar',
+  'import.preview': 'İçe aktarma önizlemesi',
+  'import.newAccount': 'Yeni hesap',
+  'import.txCount': '{n} işlem',
+  'import.doImport': 'İçe aktar',
+  'import.done': '{n} işlem içe aktarıldı, {s} kopya atlandı',
+  'import.invalidFile': 'Bu geçerli bir CAMT.053 dosyası değil',
 };
