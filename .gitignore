@@ -8,3 +8,11 @@ playwright-report/
 **/tests/gallery/
 **/tests/results/
 **/tests/videos/
+
+# Secrets: real env files never enter git — only *.example templates do.
+.env
+.env.*
+!.env.example
+**/env/.env
+**/env/.env.*
+!**/env/.env.example
