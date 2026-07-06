@@ -4,7 +4,7 @@ import { Drawer } from 'vaul';
 interface SheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  title?: ReactNode;
+  title?: string;
   children: ReactNode;
   /** Fixed content height in px; sheets must not resize while open. */
   height?: number;

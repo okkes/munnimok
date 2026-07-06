@@ -11,5 +11,8 @@
     "test": "npm test -w @munni/web",
     "gallery": "npm run gallery -w @munni/web",
     "legacy:dev": "npm run dev --prefix apps/legacy"
+  },
+  "volta": {
+    "node": "24.18.0"
   }
 }

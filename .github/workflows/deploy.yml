@@ -21,20 +21,17 @@ concurrency:
   group: pages
   cancel-in-progress: false
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - run: npm ci
@@ -53,7 +50,7 @@ jobs:
 
       # Restore screenshots + videos from cache so partial runs keep the full gallery intact
       - name: Restore gallery cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: |
             apps/web/tests/screenshots
@@ -82,8 +79,8 @@ jobs:
             echo "run_all=true" >> $GITHUB_OUTPUT
             echo "specs=" >> $GITHUB_OUTPUT
           else
-            CHANGED_SPECS=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} -- 'apps/web/tests/specs/*.spec.js' | sed 's|apps/web/||' | tr '\n' ' ')
-            SRC_CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} -- 'apps/web/src/' 'apps/web/tests/helpers/' | wc -l)
+            CHANGED_SPECS=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} -- 'apps/web/tests/specs/*.spec.js' 2>/dev/null | sed 's|apps/web/||' | tr '\n' ' ' || true)
+            SRC_CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} -- 'apps/web/src/' 'apps/web/tests/helpers/' 2>/dev/null | wc -l || true)
             if [ "$SRC_CHANGED" -gt "0" ]; then
               echo "run_all=true" >> $GITHUB_OUTPUT
               echo "specs=" >> $GITHUB_OUTPUT
@@ -108,7 +105,7 @@ jobs:
       # Upload test results (failure screenshots + traces) as downloadable artifact
       - name: Upload test results
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-results-${{ github.run_id }}
           path: apps/web/tests/results/
@@ -117,7 +114,7 @@ jobs:
       # Save screenshots + videos to cache (always, even if tests failed)
       - name: Save gallery cache
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: |
             apps/web/tests/screenshots
@@ -151,7 +148,7 @@ jobs:
             cp tests/videos/*.webm dist/gallery/videos/
           fi
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: apps/web/dist
 
