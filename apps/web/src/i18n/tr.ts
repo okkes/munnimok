@@ -750,4 +750,10 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'import.invalidFile': 'Bu geçerli bir CAMT.053 dosyası değil',
   'pwa.updateAvailable': 'Yeni bir munni sürümü mevcut',
   'pwa.reload': 'Yeniden yükle',
+  'gc.connect': 'Bankanı bağla',
+  'gc.connectSub': 'İşlemler günde 4 kez otomatik senkronize edilir',
+  'gc.completing': 'Banka bağlanıyor…',
+  'gc.done': 'Banka bağlandı',
+  'gc.failed': 'Banka bağlantısı başarısız — lütfen tekrar deneyin',
+  'gc.backToApp': 'munni\'ye geri dön',
 };

@@ -1,0 +1,73 @@
+using System.Security.Cryptography;
+using System.Text;
+
+namespace Munni.Api.GoCardless;
+
+/// <summary>A bank-consent journey (one user connecting one institution).</summary>
+public class GcRequisition
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    public required string SpaceId { get; set; }
+    public required string InstitutionId { get; set; }
+    /// <summary>GoCardless requisition id.</summary>
+    public required string RequisitionId { get; set; }
+    public required string Status { get; set; } // created | linked | expired
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+/// <summary>A linked bank account being fetched on schedule.</summary>
+public class GcLinkedAccount
+{
+    /// <summary>GoCardless account id.</summary>
+    public required string GcAccountId { get; set; }
+    public required string SpaceId { get; set; }
+    /// <summary>entity id of the account row in the space (uuidv5 of the IBAN).</summary>
+    public required string AccountEntityId { get; set; }
+    public required string Iban { get; set; }
+    public required string Currency { get; set; }
+    public Guid RequisitionId { get; set; }
+    public DateTimeOffset? LastFetchAt { get; set; }
+}
+
+/// <summary>
+/// RFC 4122 v5 (SHA-1, name-based) UUIDs with the same namespace as the
+/// client importer (apps/web/src/features/accounts/importCamt.ts), so a
+/// GoCardless account/transaction and a CAMT import of the same bank data
+/// produce identical entity ids — cross-source dedupe by construction.
+/// </summary>
+public static class ImportIds
+{
+    private static readonly Guid Namespace = Guid.Parse("5f3c9a70-0d3e-4e0f-9a57-6d2b3a1c8e42");
+
+    public static string AccountId(string iban) => V5($"acct:{Normalize(iban)}").ToString();
+    public static string TransactionId(string iban, string reference) => V5($"tx:{Normalize(iban)}:{reference}").ToString();
+    /// <summary>deterministic op ids so server-side ingests are idempotent</summary>
+    public static string OpId(string seed) => V5($"op:{seed}").ToString();
+
+    public static string Normalize(string iban) => iban.Replace(" ", "").ToUpperInvariant();
+
+    private static Guid V5(string name)
+    {
+        var namespaceBytes = Namespace.ToByteArray();
+        SwapByteOrder(namespaceBytes); // RFC byte order
+        var nameBytes = Encoding.UTF8.GetBytes(name);
+        var hash = SHA1.HashData([.. namespaceBytes, .. nameBytes]);
+
+        var guid = new byte[16];
+        Array.Copy(hash, guid, 16);
+        guid[6] = (byte)((guid[6] & 0x0F) | 0x50); // version 5
+        guid[8] = (byte)((guid[8] & 0x3F) | 0x80); // variant
+        SwapByteOrder(guid);
+        return new Guid(guid);
+    }
+
+    private static void SwapByteOrder(byte[] guid)
+    {
+        void Swap(int a, int b) => (guid[a], guid[b]) = (guid[b], guid[a]);
+        Swap(0, 3);
+        Swap(1, 2);
+        Swap(4, 5);
+        Swap(6, 7);
+    }
+}

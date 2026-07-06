@@ -41,66 +41,10 @@ public static class SyncEndpoints
                 return Results.Forbid();
             }
 
-            var incomingIds = request.Ops.Select(o => o.OpId).ToList();
-            var known = await db.SyncOps
-                .Where(o => o.SpaceId == spaceId && incomingIds.Contains(o.OpId))
-                .Select(o => o.OpId)
-                .ToListAsync();
-            var knownSet = known.ToHashSet();
-
-            var accepted = 0;
-            foreach (var op in request.Ops)
-            {
-                if (!knownSet.Add(op.OpId)) continue; // idempotent retry
-
-                var row = await db.EntityRows.FindAsync(spaceId, op.Entity, op.EntityId);
-                var local = row is null
-                    ? null
-                    : new EntityState
-                    {
-                        Data = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(row.DataJson) ?? new(),
-                        FieldVersions = JsonSerializer.Deserialize<Dictionary<string, string>>(row.FieldVersionsJson) ?? new(),
-                        Deleted = row.Deleted,
-                    };
-                var (state, _) = LwwMerge.Apply(local, op with { SpaceId = spaceId });
-
-                if (row is null)
-                {
-                    db.EntityRows.Add(new EntityRow
-                    {
-                        SpaceId = spaceId,
-                        Entity = op.Entity,
-                        EntityId = op.EntityId,
-                        Deleted = state.Deleted,
-                        DataJson = JsonSerializer.Serialize(state.Data),
-                        FieldVersionsJson = JsonSerializer.Serialize(state.FieldVersions),
-                    });
-                }
-                else
-                {
-                    row.Deleted = state.Deleted;
-                    row.DataJson = JsonSerializer.Serialize(state.Data);
-                    row.FieldVersionsJson = JsonSerializer.Serialize(state.FieldVersions);
-                }
-
-                space.LastSeq++;
-                db.SyncOps.Add(new SyncOpRow
-                {
-                    SpaceId = spaceId,
-                    Seq = space.LastSeq,
-                    OpId = op.OpId,
-                    UserId = userId,
-                    Entity = op.Entity,
-                    EntityId = op.EntityId,
-                    Hlc = op.Hlc,
-                    PayloadJson = JsonSerializer.Serialize(op.Fields),
-                    Deleted = op.Deleted,
-                });
-                accepted++;
-            }
-
+            var writer = new SyncWriter(db);
+            var (lastSeq, accepted) = await writer.ApplyAsync(space, userId, request.Ops);
             await db.SaveChangesAsync();
-            return Results.Ok(new PushResponse(space.LastSeq, accepted, request.Ops.Count - accepted));
+            return Results.Ok(new PushResponse(lastSeq, accepted, request.Ops.Count - accepted));
         });
 
         group.MapGet("/pull", async (string spaceId, long since, AppDbContext db, HttpContext http) =>

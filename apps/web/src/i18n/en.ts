@@ -748,6 +748,12 @@ export const en = {
   'import.invalidFile': 'This is not a valid CAMT.053 file',
   'pwa.updateAvailable': 'A new version of munni is available',
   'pwa.reload': 'Reload',
+  'gc.connect': 'Connect your bank',
+  'gc.connectSub': 'Transactions sync automatically 4× per day',
+  'gc.completing': 'Linking your bank…',
+  'gc.done': 'Bank connected',
+  'gc.failed': 'Bank connection failed — please try again',
+  'gc.backToApp': 'Back to munni',
 } as const;
 
 export type TranslationKey = keyof typeof en;

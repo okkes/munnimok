@@ -750,4 +750,10 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'import.invalidFile': 'Dit is geen geldig CAMT.053-bestand',
   'pwa.updateAvailable': 'Er is een nieuwe versie van munni beschikbaar',
   'pwa.reload': 'Vernieuwen',
+  'gc.connect': 'Verbind je bank',
+  'gc.connectSub': 'Transacties synchroniseren automatisch 4× per dag',
+  'gc.completing': 'Bank wordt gekoppeld…',
+  'gc.done': 'Bank verbonden',
+  'gc.failed': 'Bankverbinding mislukt — probeer het opnieuw',
+  'gc.backToApp': 'Terug naar munni',
 };

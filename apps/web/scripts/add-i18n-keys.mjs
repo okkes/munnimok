@@ -8,6 +8,12 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 
 const KEYS = {
   en: {
+    'gc.connect': 'Connect your bank',
+    'gc.connectSub': 'Transactions sync automatically 4× per day',
+    'gc.completing': 'Linking your bank…',
+    'gc.done': 'Bank connected',
+    'gc.failed': 'Bank connection failed — please try again',
+    'gc.backToApp': 'Back to munni',
     'pwa.updateAvailable': 'A new version of munni is available',
     'pwa.reload': 'Reload',
     'import.statement': 'Import bank statement',
@@ -19,6 +25,12 @@ const KEYS = {
     'import.invalidFile': 'This is not a valid CAMT.053 file',
   },
   nl: {
+    'gc.connect': 'Verbind je bank',
+    'gc.connectSub': 'Transacties synchroniseren automatisch 4× per dag',
+    'gc.completing': 'Bank wordt gekoppeld…',
+    'gc.done': 'Bank verbonden',
+    'gc.failed': 'Bankverbinding mislukt — probeer het opnieuw',
+    'gc.backToApp': 'Terug naar munni',
     'pwa.updateAvailable': 'Er is een nieuwe versie van munni beschikbaar',
     'pwa.reload': 'Vernieuwen',
     'import.statement': 'Bankafschrift importeren',
@@ -30,6 +42,12 @@ const KEYS = {
     'import.invalidFile': 'Dit is geen geldig CAMT.053-bestand',
   },
   tr: {
+    'gc.connect': 'Bankanı bağla',
+    'gc.connectSub': 'İşlemler günde 4 kez otomatik senkronize edilir',
+    'gc.completing': 'Banka bağlanıyor…',
+    'gc.done': 'Banka bağlandı',
+    'gc.failed': 'Banka bağlantısı başarısız — lütfen tekrar deneyin',
+    'gc.backToApp': "munni'ye geri dön",
     'pwa.updateAvailable': 'Yeni bir munni sürümü mevcut',
     'pwa.reload': 'Yeniden yükle',
     'import.statement': 'Banka ekstresi içe aktar',

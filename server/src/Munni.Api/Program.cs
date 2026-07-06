@@ -2,12 +2,21 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.EntityFrameworkCore;
 using Munni.Api.Auth;
 using Munni.Api.Data;
+using Munni.Api.GoCardless;
 using Munni.Api.Sync;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Db")));
+
+builder.Services.AddMemoryCache();
+if (!string.IsNullOrEmpty(builder.Configuration["GoCardless:SecretId"]))
+{
+    builder.Services.AddHttpClient<IGoCardlessApi, GoCardlessApi>(client =>
+        client.BaseAddress = new Uri("https://bankaccountdata.gocardless.com/api/v2/"));
+    builder.Services.AddHostedService<GcFetchService>();
+}
 
 if (builder.Configuration.GetValue<bool>("Auth:TestMode"))
 {
@@ -49,8 +58,15 @@ app.Use(async (http, next) =>
     await UserResolution.ResolveUser(http, db, () => next(http));
 });
 
-app.MapGet("/health", () => Results.Ok(new { status = "ok", build = Environment.GetEnvironmentVariable("BUILD_NUMBER") ?? "dev" }));
+var gcEnabled = !string.IsNullOrEmpty(app.Configuration["GoCardless:SecretId"]);
+app.MapGet("/health", () => Results.Ok(new
+{
+    status = "ok",
+    build = Environment.GetEnvironmentVariable("BUILD_NUMBER") ?? "dev",
+    capabilities = new { gocardless = gcEnabled },
+}));
 app.MapSync();
+if (gcEnabled) app.MapGoCardless();
 
 app.Run();
 

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Munni.Api.GoCardless;
 
 namespace Munni.Api.Data;
 
@@ -9,6 +10,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<SpaceMember> SpaceMembers => Set<SpaceMember>();
     public DbSet<SyncOpRow> SyncOps => Set<SyncOpRow>();
     public DbSet<EntityRow> EntityRows => Set<EntityRow>();
+    public DbSet<GcRequisition> GcRequisitions => Set<GcRequisition>();
+    public DbSet<GcLinkedAccount> GcLinkedAccounts => Set<GcLinkedAccount>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -30,6 +33,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasIndex(x => new { x.SpaceId, x.OpId }).IsUnique();
         });
         b.Entity<EntityRow>(e => e.HasKey(x => new { x.SpaceId, x.Entity, x.EntityId }));
+        b.Entity<GcRequisition>(e => e.HasKey(x => x.Id));
+        b.Entity<GcLinkedAccount>(e =>
+        {
+            e.HasKey(x => x.GcAccountId);
+            e.HasIndex(x => x.SpaceId);
+        });
     }
 }
 

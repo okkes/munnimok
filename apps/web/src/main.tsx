@@ -16,7 +16,10 @@ import { initPwa } from '@/app/pwa';
 import { ThemeProvider } from '@/app/theme';
 import { router } from '@/app/router';
 import { CallbackScreen, LogtoAppProvider, isCallbackPath } from '@/features/auth/logto';
+import { GcCallbackScreen } from '@/features/accounts/BankConnect';
 import { UpdateToast } from '@/ui/UpdateToast';
+
+const isGcCallbackPath = window.location.pathname.endsWith('/gc-callback');
 
 // error monitoring: GlitchTip speaks the Sentry protocol; no-op when unset
 if (config.glitchtipDsn) {
@@ -35,7 +38,13 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <ThemeProvider>
       <LangProvider>
         <LogtoAppProvider>
-          {isCallbackPath() ? <CallbackScreen /> : <RouterProvider router={router} />}
+          {isCallbackPath() ? (
+            <CallbackScreen />
+          ) : isGcCallbackPath ? (
+            <GcCallbackScreen />
+          ) : (
+            <RouterProvider router={router} />
+          )}
           <UpdateToast />
         </LogtoAppProvider>
       </LangProvider>

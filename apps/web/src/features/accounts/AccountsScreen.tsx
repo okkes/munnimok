@@ -1,9 +1,12 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { parseCamt053 } from '@/lib/camt053/parse';
 import type { CamtStatement } from '@/lib/camt053/parse';
+import { getApiCapabilities } from '@/lib/api';
+import { useSession } from '@/app/session';
 import { importCamtStatements } from './importCamt';
 import type { ImportResult } from './importCamt';
+import { BankConnectSheet } from './BankConnect';
 import { useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
 import { useData } from '@/app/data';
@@ -46,6 +49,14 @@ export function AccountsScreen() {
   const [importPreview, setImportPreview] = useState<CamtStatement[] | null>(null);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [importError, setImportError] = useState(false);
+  const identity = useSession((s) => s.identity);
+  const [gcAvailable, setGcAvailable] = useState(false);
+  const [connectOpen, setConnectOpen] = useState(false);
+
+  useEffect(() => {
+    if (identity?.kind !== 'user') return;
+    void getApiCapabilities().then((caps) => setGcAvailable(caps.gocardless));
+  }, [identity?.kind]);
 
   const onFilePicked = async (file: File | undefined) => {
     if (!file) return;
@@ -186,6 +197,22 @@ export function AccountsScreen() {
       <Sheet open={addOpen} onOpenChange={(open) => !open && closeAdd()} title={newType ? t('acct.addAccount') : t('acct.selectType')} height={520}>
         {!newType ? (
           <div className="grid grid-cols-2 gap-2 pt-1">
+            {gcAvailable && (
+              <button
+                data-testid="acct-connect-bank"
+                onClick={() => {
+                  setAddOpen(false);
+                  setConnectOpen(true);
+                }}
+                className="m-tap col-span-2 flex items-center gap-3 rounded-card border border-accent bg-accent-soft p-4 text-left"
+              >
+                <Icon name="bank-transfer" size={24} color="var(--m-accent-deep)" />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[14px] font-semibold text-accent-deep">{t('gc.connect')}</span>
+                  <span className="block text-[12px] text-ink-3">{t('gc.connectSub')}</span>
+                </span>
+              </button>
+            )}
             {TYPES.map((def) => (
               <button
                 key={def.type}
@@ -225,6 +252,8 @@ export function AccountsScreen() {
           </div>
         )}
       </Sheet>
+
+      <BankConnectSheet open={connectOpen} onOpenChange={setConnectOpen} />
 
       {/* CAMT.053 import: preview then result */}
       <Sheet open={importPreview !== null} onOpenChange={(open) => !open && closeImport()} title={t('import.preview')} height={420}>

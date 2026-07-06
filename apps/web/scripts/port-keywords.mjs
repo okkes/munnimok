@@ -133,3 +133,22 @@ ${rules.map((r) => `  ${JSON.stringify(r)},`).join('\n')}
 `,
 );
 console.log(`written ${rules.length} rules to ${out}`);
+
+// Also emit the server-side variant (embedded resource) with direction +
+// txType resolved from the catalog, so GoCardless ingestion categorizes
+// identically to client-side CAMT import.
+const catalog = new Map(
+  catalogSrc
+    .split('\n')
+    .map((line) => line.trim().replace(/,$/, ''))
+    .filter((line) => line.startsWith('{"id":'))
+    .map((line) => JSON.parse(line))
+    .map((c) => [c.id, c]),
+);
+const serverRules = rules.map((r) => {
+  const cat = catalog.get(r.catId);
+  return { ...r, direction: cat.direction, txType: cat.txTypes[0] ?? 'expense' };
+});
+const serverOut = path.resolve(here, '../../../server/src/Munni.Api/GoCardless/keyword-rules.json');
+writeFileSync(serverOut, JSON.stringify(serverRules, null, 1));
+console.log(`written ${serverRules.length} server rules to ${serverOut}`);
