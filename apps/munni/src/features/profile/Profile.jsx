@@ -214,7 +214,7 @@ export function ScreenProfile() {
         <div className="m-card" style={{ padding: '4px 16px', marginBottom: 16, border: `1px solid ${M.line}` }}>
           <ProfileLink icon="bell"    label={t('settings.notifications')}  onClick={() => nav.push('notifications')}/>
           <Divider inset={48}/>
-          <ProfileLink icon="lock"    label="Privacy & security"/>
+          <ProfileLink icon="lock"    label="Privacy & security" onClick={() => nav.push('privacySecurity')}/>
           <Divider inset={48}/>
           <ProfileLink icon="sun"     label={t('settings.appearance')}     sub="Dark mode, fonts & display"          onClick={() => nav.push('settings')} testId="profile-link-appearance"/>
           <Divider inset={48}/>

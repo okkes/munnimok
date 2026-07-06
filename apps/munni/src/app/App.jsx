@@ -33,6 +33,25 @@ import { ScreenSignupOnboarding } from '../features/auth/Auth.jsx';
 import { ScreenPortfolio } from '../features/portfolio/Portfolio.jsx';
 
 
+function ScreenPrivacySecurity() {
+  const nav = useNav();
+  return (
+    <div className="m-screen">
+      <StatusBar/>
+      <AppBar title="Privacy & security" leading={
+        <button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>
+      }/>
+      <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'0 32px 48px', gap:16 }}>
+        <div style={{ width:72, height:72, borderRadius:20, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center' }}>
+          <I name="lock" size={32} color={M.sage}/>
+        </div>
+        <div style={{ fontSize:22, fontWeight:700, color:M.ink, textAlign:'center' }}>Privacy & security</div>
+        <div style={{ fontSize:15, color:M.ink3, textAlign:'center', lineHeight:1.5 }}>Coming soon</div>
+      </div>
+    </div>
+  );
+}
+
 function ScreenHelpSupport() {
   const nav = useNav();
   const { t } = useLang();
@@ -63,6 +82,7 @@ export const SCREEN_REGISTRY = {
   notifications:  () => <ScreenNotifications/>,
   periods:        ({params}) => <ScreenPeriods params={params}/>,
   helpSupport:    () => <ScreenHelpSupport/>,
+  privacySecurity: () => <ScreenPrivacySecurity/>,
   manageCategories: () => <ScreenManageCategories/>,
   newCat:          ({params}) => <ScreenNewCat params={params}/>,
   newOtherSub:     ({params}) => <ScreenNewOtherSub params={params}/>,

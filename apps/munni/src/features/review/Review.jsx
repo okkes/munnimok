@@ -641,7 +641,17 @@ export function CategoryPicker({ selected, onClose, onPick, txType = 'Expense', 
             </div>
             <div style={{ flex:1, overflowY:'auto', padding:'0 20px 20px' }}>
               {Object.keys(groups).length === 0 && (
-                <div style={{ textAlign:'center', padding:'32px 0', color:M.ink3, fontSize:13 }}>No results for "{searchQ}"</div>
+                <div style={{ textAlign:'center', padding:'32px 0 16px', color:M.ink3, fontSize:13 }}>
+                  No results for "{searchQ}"
+                  {isActiveShared && (
+                    <div style={{ marginTop:14 }}>
+                      <button className="m-tap" onClick={() => { onClose(); nav.push('spaceCats', { spaceId: activeProfileId, spaceName: activeProfile?.name }); }}
+                        style={{ fontSize:12, color:M.sageDk, background:M.sageSoft, border:`1px solid ${M.line2}`, borderRadius:10, padding:'8px 14px', fontFamily:M.fontUI, cursor:'pointer', display:'inline-flex', alignItems:'center', gap:6 }}>
+                        <I name="info" size={12} color={M.sage}/> Add it to this shared space
+                      </button>
+                    </div>
+                  )}
+                </div>
               )}
               {Object.entries(groups).map(([groupName, cats]) => {
                 const gKey = _GROUP_KEYS[groupName];
@@ -678,14 +688,6 @@ export function CategoryPicker({ selected, onClose, onPick, txType = 'Expense', 
               <div style={{ padding:'8px 20px 20px', borderTop:`1px solid ${M.line2}`, flexShrink:0 }}>
                 <button className="m-tap" onClick={onClose} style={{ fontSize:12, color:M.ink3, background:'transparent', border:'none', fontFamily:M.fontUI, cursor:'pointer', display:'flex', alignItems:'center', gap:4 }}>
                   <I name="plus" size={12} color={M.ink3}/> Manage custom categories
-                </button>
-              </div>
-            )}
-            {isActiveShared && (
-              <div style={{ padding:'10px 20px 16px', borderTop:`1px solid ${M.line2}`, flexShrink:0, background:M.sageSoft }}>
-                <button className="m-tap" onClick={() => { onClose(); nav.push('spaceCats', { spaceId: activeProfileId, spaceName: activeProfile?.name }); }}
-                  style={{ fontSize:12, color:M.sageDk, background:'transparent', border:'none', fontFamily:M.fontUI, cursor:'pointer', display:'flex', alignItems:'center', gap:4 }}>
-                  <I name="info" size={12} color={M.sage}/> Can't find your category? Add it to this shared space
                 </button>
               </div>
             )}

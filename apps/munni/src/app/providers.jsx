@@ -28,14 +28,29 @@ export function CatProvider({ children }) {
   const safeEmail = React.useMemo(() => { try { return JSON.parse(rawEmail||'""')||''; } catch { return rawEmail||''; } }, [rawEmail]);
   const catKey = computeUserDataKey(loginMethod, safeEmail, 'munni_customCats');
   const [customCats, setCustomCats] = useLocalStorage(catKey, []);
-  const newEntries = Object.fromEntries(customCats.map(c => [c.id, c]));
-  Object.keys(_catExt).forEach(k => delete _catExt[k]);
-  Object.assign(_catExt, newEntries);
-  React.useEffect(() => {
-    const entries = Object.fromEntries(customCats.map(c => [c.id, c]));
+  const [, forceSpaceCatUpdate] = React.useReducer(x => x + 1, 0);
+
+  const rebuildCatExt = (cats) => {
+    const entries = Object.fromEntries(cats.map(c => [c.id, c]));
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k?.startsWith('munni_spaceCats_')) {
+          JSON.parse(localStorage.getItem(k) || '[]').forEach(c => { entries[c.id] = c; });
+        }
+      }
+    } catch {}
     Object.keys(_catExt).forEach(k => delete _catExt[k]);
     Object.assign(_catExt, entries);
-  }, [customCats]);
+  };
+
+  rebuildCatExt(customCats);
+  React.useEffect(() => { rebuildCatExt(customCats); }, [customCats]); // eslint-disable-line
+  React.useEffect(() => {
+    const handler = (e) => { if (e.detail?.key?.startsWith('munni_spaceCats_')) { rebuildCatExt(customCats); forceSpaceCatUpdate(); } };
+    window.addEventListener('munni-ls', handler);
+    return () => window.removeEventListener('munni-ls', handler);
+  }, [customCats]); // eslint-disable-line
   return <CatCtx.Provider value={{ customCats, setCustomCats }}>{children}</CatCtx.Provider>;
 }
 export const useCatCtx = () => React.useContext(CatCtx);

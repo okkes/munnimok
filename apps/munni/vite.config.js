@@ -27,9 +27,12 @@ export default defineConfig(({ mode }) => {
           orientation: 'portrait',
           start_url: './',
           scope: './',
+          id: './',
           icons: [
-            { src: 'asset-logo-leaf-only.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
-            { src: 'asset-logo-leaf-only.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
+            { src: 'asset-logo-leaf-only.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+            { src: 'asset-logo-leaf-only.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
+            { src: 'asset-logo-leaf-only.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+            { src: 'asset-logo-leaf-only.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
           ],
         },
         workbox: {

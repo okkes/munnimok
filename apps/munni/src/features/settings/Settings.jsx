@@ -882,7 +882,6 @@ function IconPickerGrid({ icon, setIcon }) {
 
 function ColorPickerRow({ color, setColor }) {
   const presets = [M.sage, M.clay, M.ochre, M.violet, M.slate, '#e07b39', '#6b8e6b', '#8e6b8e', '#2196f3', '#00bcd4', '#ff5722', '#795548'];
-  const colorInputRef = React.useRef(null);
   const isPreset = presets.includes(color);
   return (
     <div style={{ display:'flex', gap:7, marginBottom:16, flexWrap:'wrap', alignItems:'center' }}>
@@ -890,16 +889,20 @@ function ColorPickerRow({ color, setColor }) {
         <button key={clr} className="m-tap" onClick={() => setColor(clr)}
           style={{ width:26, height:26, borderRadius:'50%', background:clr, border:`2.5px solid ${color===clr?M.ink:'transparent'}`, cursor:'pointer', flexShrink:0 }}/>
       ))}
-      {/* Custom color swatch if not a preset */}
+      {/* Custom color swatch if not a preset — input overlaid for native mobile picker */}
       {!isPreset && (
-        <button className="m-tap" onClick={() => colorInputRef.current?.click()}
-          style={{ width:26, height:26, borderRadius:'50%', background:color, border:`2.5px solid ${M.ink}`, cursor:'pointer', flexShrink:0 }}/>
+        <div style={{ position:'relative', width:26, height:26, flexShrink:0 }}>
+          <div style={{ width:26, height:26, borderRadius:'50%', background:color, border:`2.5px solid ${M.ink}` }}/>
+          <input type="color" value={color} onChange={e => setColor(e.target.value)}
+            style={{ position:'absolute', inset:0, opacity:0, cursor:'pointer', width:'100%', height:'100%', border:'none', padding:0 }}/>
+        </div>
       )}
-      {/* Rainbow / spectrum button */}
-      <button className="m-tap" title="Custom color" onClick={() => colorInputRef.current?.click()}
-        style={{ width:26, height:26, borderRadius:'50%', background:'conic-gradient(red,orange,yellow,lime,cyan,blue,violet,red)', border:`1.5px solid ${M.line}`, cursor:'pointer', flexShrink:0 }}/>
-      <input ref={colorInputRef} type="color" value={color} onChange={e => setColor(e.target.value)}
-        style={{ position:'absolute', opacity:0, width:0, height:0, pointerEvents:'none' }}/>
+      {/* Rainbow / spectrum button — input overlaid for native mobile picker */}
+      <div style={{ position:'relative', width:26, height:26, borderRadius:'50%', flexShrink:0 }}>
+        <div style={{ width:26, height:26, borderRadius:'50%', background:'conic-gradient(red,orange,yellow,lime,cyan,blue,violet,red)', border:`1.5px solid ${M.line}` }}/>
+        <input type="color" value={color} onChange={e => setColor(e.target.value)}
+          style={{ position:'absolute', inset:0, opacity:0, cursor:'pointer', width:'100%', height:'100%', border:'none', padding:0 }}/>
+      </div>
     </div>
   );
 }
@@ -924,7 +927,7 @@ function TypePickerSheet({ catType, setCatType, onClose }) {
   );
 }
 
-function NewCatForm({ onSave, isSub = false, parentDirection, parentType }) {
+function NewCatForm({ onSave, isSub = false, parentDirection, parentType, submitLabel }) {
   const [name, setName] = React.useState('');
   const [icon, setIcon] = React.useState('help-circle-outline');
   const [color, setColor] = React.useState(M.slate);
@@ -1018,7 +1021,7 @@ function NewCatForm({ onSave, isSub = false, parentDirection, parentType }) {
       <button className="m-tap" onClick={handleSubmit}
         disabled={!name.trim()}
         style={{ width:'100%', background:M.sage, border:'none', borderRadius:12, padding:'13px', color:'#fff', fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, opacity: name.trim()?1:0.5 }}>
-        {isSub ? 'Add sub-category' : 'Continue'}
+        {submitLabel ?? (isSub ? 'Add sub-category' : 'Continue')}
       </button>
     </div>
   );
@@ -1314,10 +1317,14 @@ export function ScreenNewCat({ params }) {
     if (isParent) {
       const id = idPrefix;
       const type = catType || 'Expense';
-      addCat(prev => [...prev,
-        { id, name, icon: icon||'help-circle-outline', color: color||M.slate, isParent:true, parent:null, type, direction: direction||'both' }
+      const resolvedIcon = icon || 'help-circle-outline';
+      const resolvedColor = color || M.slate;
+      addCat(prev => [
+        ...prev,
+        { id, name, icon: resolvedIcon, color: resolvedColor, isParent: true, parent: null, type, direction: direction || 'both' },
+        { id: `${id}_other`, name: 'Other', icon: resolvedIcon, color: M.paper2, isParent: false, parent: id, scope: 'all_private', type, direction: 'both', isOther: true },
       ]);
-      nav.replace(spaceId ? 'newSpaceOtherSub' : 'newOtherSub', { parentId: id, parentName: name, parentColor: color||M.slate, parentIcon: icon||'help-circle-outline', parentType: type, spaceId });
+      nav.pop();
     } else {
       addCat(prev => [...prev,
         { id:`cust_${Date.now()}`, name, icon: icon||'help-circle-outline', color: color||M.slate, isParent:false, parent:parentId, scope:'all_private', type: parentType, direction: direction||'both' }
@@ -1345,7 +1352,7 @@ export function ScreenNewCat({ params }) {
             </div>
           </div>
         )}
-        <NewCatForm onSave={handleSave} isSub={!isParent} parentDirection={!isParent ? parentDirection : undefined} parentType={!isParent ? parentType : undefined}/>
+        <NewCatForm onSave={handleSave} isSub={!isParent} parentDirection={!isParent ? parentDirection : undefined} parentType={!isParent ? parentType : undefined} submitLabel={isParent ? 'Create category' : undefined}/>
       </div>
     </div>
   );
@@ -1612,23 +1619,30 @@ export function ScreenSpaceCategories({ params }) {
               <div className="m-tap" style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 16px', cursor:'pointer' }}
                 onClick={() => setExpandedParents(prev => ({ ...prev, [parent.id]: !isOpen }))}>
                 <button className="m-tap" onClick={e => { e.stopPropagation(); setCatInfoSheet({ catId: parent.id, isParent: true, spaceId }); }}
-                  style={{ width:40, height:40, borderRadius:12, background:parent.color||M.slate, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, border:'none', cursor:'pointer' }}>
+                  style={{ position:'relative', width:40, height:40, borderRadius:12, background:parent.color||M.slate, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, border:'none', cursor:'pointer' }}>
                   <IcoMDI name={parent.icon||'help-circle-outline'} size={18} color='#fff'/>
+                  <div style={{ position:'absolute', bottom:-3, right:-3, background:M.paper, border:`1px solid ${M.line}`, borderRadius:6, padding:'1.5px 3.5px', display:'flex', gap:1.5, alignItems:'center', pointerEvents:'none' }}>
+                    {[0,1,2].map(i => <div key={i} style={{ width:2, height:2, borderRadius:'50%', background:M.ink3 }}/>)}
+                  </div>
                 </button>
                 <div style={{ flex:1, fontSize:15, fontWeight:600, color:M.ink }}>{parent.name}</div>
                 <div style={{ transform: isOpen ? 'rotate(0deg)' : 'rotate(-90deg)', transition:'transform 0.18s' }}>
                   <I name="caretR" size={14} color={M.ink4}/>
                 </div>
               </div>
-              {isOpen && subs.map(sub => (
-                <div key={sub.id} className="m-tap" style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 16px', borderTop:`1px solid ${M.line2}`, cursor:'pointer' }}
-                  onClick={() => setCatInfoSheet({ catId: sub.id, parentId: parent.id, isParent: false, spaceId })}>
-                  <div style={{ width:28, height:28, borderRadius:8, background:(parent.color||M.slate)+'33', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                    <IcoMDI name={sub.icon||'help-circle-outline'} size={13} color={parent.color||M.ink2}/>
+              {isOpen && subs.map(sub => {
+                const isOtherSub = !!sub.isOther;
+                return (
+                  <div key={sub.id} className="m-tap" style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 16px', borderTop:`1px solid ${M.line2}`, cursor:'pointer' }}
+                    onClick={() => setCatInfoSheet({ catId: sub.id, parentId: parent.id, isParent: false, spaceId })}>
+                    <div style={{ width:28, height:28, borderRadius:8, background:(parent.color||M.slate)+'33', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                      <IcoMDI name={sub.icon||'help-circle-outline'} size={13} color={parent.color||M.ink2}/>
+                    </div>
+                    <div style={{ flex:1, fontSize:13, fontWeight: isOtherSub ? 400 : 500, color: isOtherSub ? M.ink3 : M.ink, fontStyle: isOtherSub ? 'italic' : 'normal' }}>{sub.name}</div>
+                    {!isOtherSub && <I name="caretR" size={12} color={M.ink4}/>}
                   </div>
-                  <div style={{ flex:1, fontSize:13, fontWeight:500, color:M.ink }}>{sub.name}</div>
-                </div>
-              ))}
+                );
+              })}
               {isOpen && (
                 <button className="m-tap" onClick={() => nav.push('newSpaceCat', { parentId: parent.id, spaceId })}
                   style={{ width:'100%', padding:'10px 16px', borderTop:`1px solid ${M.line2}`, background:'transparent', border:'none', borderTopStyle:'solid', borderTopWidth:1, borderTopColor:M.line2, display:'flex', alignItems:'center', gap:8, cursor:'pointer', fontFamily:M.fontUI, color:M.sage }}>
@@ -1650,15 +1664,48 @@ export function ScreenSpaceCategories({ params }) {
         const { catId, isParent: isP, parentId, spaceId: sid } = catInfoSheet;
         const cat = spaceCats.find(c => c.id === catId);
         if (!cat) { setCatInfoSheet(null); return null; }
+        const parentCat = !isP ? spaceCats.find(c => c.id === (parentId || cat.parent)) : null;
+        const iconColor = isP ? (cat.color || M.sage) : (parentCat?.color || M.sage);
+        const directionVal = cat.direction || 'both';
+        const DIR_LABEL = { debit: 'Outgoing', credit: 'Incoming', both: 'Both' };
+        const isOtherSub = !isP && !!cat.isOther;
         return (
           <Sheet title={cat.name} onClose={() => setCatInfoSheet(null)}>
             <div style={{ padding:'4px 20px 32px' }}>
-              <button className="m-btn outline m-tap" style={{ width:'100%', marginBottom:8 }} onClick={() => {
-                setCatInfoSheet(null);
-                nav.push('editSpaceCat', { catId, parentId: isP ? null : parentId, isCustom: true, isParent: isP, name: cat.name, icon: cat.icon, color: cat.color, direction: cat.direction || 'both', spaceId: sid });
-              }}>
-                <IcoMDI name="pencil-outline" size={16} color={M.ink2}/> Edit category
-              </button>
+              <div className="m-card" style={{ padding:16, border:`1px solid ${M.line}`, marginBottom:16 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:12 }}>
+                  <div style={{ width:44, height:44, borderRadius:12, background: isP ? iconColor : iconColor+'22', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                    <IcoMDI name={cat.icon||'help-circle-outline'} size={20} color={isP ? '#fff' : iconColor}/>
+                  </div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:16, fontWeight:700, color:M.ink }}>{cat.name}</div>
+                    <div style={{ fontSize:12, color:M.ink3, marginTop:2 }}>{parentCat ? parentCat.name : 'Space category'}</div>
+                  </div>
+                </div>
+                <Divider/>
+                <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 0' }}>
+                  <div style={{ fontSize:12, color:M.ink3, width:100 }}>Transaction type</div>
+                  <span style={{ fontSize:12, fontWeight:600, color: CAT_TYPE_COLOR[cat.type||'Expense']||M.ink2, background:(CAT_TYPE_COLOR[cat.type||'Expense']||M.ink2)+'18', borderRadius:6, padding:'3px 8px' }}>{cat.type||'Expense'}</span>
+                </div>
+                <Divider/>
+                <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 0' }}>
+                  <div style={{ fontSize:12, color:M.ink3, width:100 }}>Applies to</div>
+                  <div style={{ flex:1, fontSize:13, color:M.ink }}>{DIR_LABEL[directionVal] || directionVal}</div>
+                </div>
+                <Divider/>
+                <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 0' }}>
+                  <div style={{ fontSize:12, color:M.ink3, width:100 }}>Source</div>
+                  <div style={{ flex:1, fontSize:13, color:M.ink }}>Space custom</div>
+                </div>
+              </div>
+              {!isOtherSub && (
+                <button className="m-btn outline m-tap" style={{ width:'100%' }} onClick={() => {
+                  setCatInfoSheet(null);
+                  nav.push('editSpaceCat', { catId, parentId: isP ? null : (parentId || cat.parent), isCustom: true, isParent: isP, name: cat.name, icon: cat.icon, color: cat.color, direction: cat.direction || 'both', spaceId: sid });
+                }}>
+                  <IcoMDI name="pencil-outline" size={16} color={M.ink2}/> Edit category
+                </button>
+              )}
             </div>
           </Sheet>
         );
@@ -1715,6 +1762,8 @@ export function ScreenManageCategories() {
   const holdTimerRef = React.useRef(null);
   const holdDataRef = React.useRef(null);
   const justDraggedRef = React.useRef(false);
+  const scrollDirRef = React.useRef(0);
+  const scrollRafRef = React.useRef(null);
   const [txCounts, setTxCounts] = React.useState({});
 
   React.useEffect(() => {
@@ -1776,6 +1825,15 @@ export function ScreenManageCategories() {
       ghostWidth: rect?.width ?? 260,
       ghostHeight: rect?.height ?? 44,
     });
+    scrollDirRef.current = 0;
+    const scrollEl = document.querySelector('.m-body-scroll');
+    if (scrollEl) {
+      const loop = () => {
+        if (scrollDirRef.current !== 0) scrollEl.scrollTop += scrollDirRef.current * 6;
+        scrollRafRef.current = requestAnimationFrame(loop);
+      };
+      scrollRafRef.current = requestAnimationFrame(loop);
+    }
     collapseAll();
   };
 
@@ -1802,6 +1860,8 @@ export function ScreenManageCategories() {
     if (holdTimerRef.current) { clearTimeout(holdTimerRef.current); holdTimerRef.current = null; }
     holdDataRef.current = null;
     setHoldingCatId(null);
+    if (scrollRafRef.current) { cancelAnimationFrame(scrollRafRef.current); scrollRafRef.current = null; }
+    scrollDirRef.current = 0;
   };
 
   const moveDrag = (e) => {
@@ -1831,12 +1891,15 @@ export function ScreenManageCategories() {
     const scrollEl = document.querySelector('.m-body-scroll');
     if (scrollEl) {
       const rect = scrollEl.getBoundingClientRect();
-      if (e.clientY > rect.bottom - 60) scrollEl.scrollTop += 8;
-      else if (e.clientY < rect.top + 60) scrollEl.scrollTop -= 8;
+      if (e.clientY > rect.bottom - 60) scrollDirRef.current = 1;
+      else if (e.clientY < rect.top + 60) scrollDirRef.current = -1;
+      else scrollDirRef.current = 0;
     }
   };
 
   const endDrag = () => {
+    if (scrollRafRef.current) { cancelAnimationFrame(scrollRafRef.current); scrollRafRef.current = null; }
+    scrollDirRef.current = 0;
     if (holdDataRef.current) { cancelHold(); return; }
     if (!dragState) return;
     // Suppress the click event that fires after pointerup
