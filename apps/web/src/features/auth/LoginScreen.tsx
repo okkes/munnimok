@@ -1,9 +1,23 @@
 import { useNavigate } from '@tanstack/react-router';
+import { useLogto } from '@logto/react';
 import { useLang } from '@/i18n';
+import { logtoConfigured } from '@/app/config';
 import { useSession } from '@/app/session';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Logo } from '@/ui/Logo';
+import { callbackUri } from './logto';
+
+/** real OIDC sign-in — only rendered when Logto is configured */
+function LogtoSignInButton() {
+  const { t } = useLang();
+  const { signIn } = useLogto();
+  return (
+    <Button variant="primary" data-testid="login-signin-btn" onClick={() => void signIn(callbackUri())}>
+      {t('login.signIn')}
+    </Button>
+  );
+}
 
 /**
  * v1 login gate. Real sign-in (Logto) arrives in Phase 2 — until then the
@@ -28,12 +42,18 @@ export function LoginScreen() {
       </div>
 
       <div className="flex flex-col gap-3 pb-4">
-        <Button variant="primary" disabled data-testid="login-google-btn">
-          {t('login.google')}
-        </Button>
-        <Button variant="primary" disabled data-testid="login-apple-btn">
-          {t('login.apple')}
-        </Button>
+        {logtoConfigured ? (
+          <LogtoSignInButton />
+        ) : (
+          <>
+            <Button variant="primary" disabled data-testid="login-google-btn">
+              {t('login.google')}
+            </Button>
+            <Button variant="primary" disabled data-testid="login-apple-btn">
+              {t('login.apple')}
+            </Button>
+          </>
+        )}
         <div className="flex items-center gap-3 py-1">
           <div className="h-px flex-1 bg-line" />
           <span className="text-xs text-ink-4">{t('login.or')}</span>

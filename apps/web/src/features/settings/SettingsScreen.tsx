@@ -4,6 +4,7 @@ import { useLang } from '@/i18n';
 import type { Lang } from '@/i18n';
 import { useTheme } from '@/app/theme';
 import { destroyIdentityData } from '@/app/data';
+import { oidcSignOut } from '@/app/authToken';
 import { useSession } from '@/app/session';
 import { AppBar } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
@@ -25,8 +26,14 @@ export function SettingsScreen() {
   const signOut = async () => {
     const current = identity;
     logout();
+    // user identities keep their local data (fast re-login; sync is the
+    // source of truth); demo/offline are device-only and reset on logout
+    if (current?.kind === 'user') {
+      if (!current.testAuth && (await oidcSignOut(window.location.origin))) return; // full OIDC logout redirects
+      await navigate({ to: '/login' });
+      return;
+    }
     await navigate({ to: '/login' });
-    // demo (and offline) data is device-only; logout resets it to pristine
     if (current) await destroyIdentityData(current);
   };
 

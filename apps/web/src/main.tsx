@@ -13,6 +13,7 @@ import '@/ui/styles.css';
 import { LangProvider } from '@/i18n';
 import { ThemeProvider } from '@/app/theme';
 import { router } from '@/app/router';
+import { CallbackScreen, LogtoAppProvider, isCallbackPath } from '@/features/auth/logto';
 
 // Placeholder update flow; replaced by a proper in-app toast in the
 // hardening phase.
@@ -26,7 +27,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ThemeProvider>
       <LangProvider>
-        <RouterProvider router={router} />
+        <LogtoAppProvider>
+          {isCallbackPath() ? <CallbackScreen /> : <RouterProvider router={router} />}
+        </LogtoAppProvider>
       </LangProvider>
     </ThemeProvider>
   </React.StrictMode>,
