@@ -66,7 +66,13 @@ export function ReviewScreen() {
         {tx && cat && (
           <>
             <div className="mt-4 flex flex-1 flex-col items-center justify-center rounded-card border border-line bg-surface px-6 py-8 text-center" data-testid="review-card">
-              <div className="text-sm text-ink-3">{tx.date}</div>
+              <div className="text-sm text-ink-3">
+                {new Intl.DateTimeFormat(lang === 'en' ? 'en-GB' : lang === 'nl' ? 'nl-NL' : 'tr-TR', {
+                  weekday: 'long',
+                  day: 'numeric',
+                  month: 'long',
+                }).format(new Date(tx.date))}
+              </div>
               <div className="m-h2 mt-2 text-ink">{tx.merchant}</div>
               <div className="m-num mt-1 text-3xl text-ink">{fmtCents(tx.amountCents, tx.currency, lang, { sign: true })}</div>
               {tx.description && <div className="mt-2 font-mono text-xs text-ink-4">{tx.description}</div>}
