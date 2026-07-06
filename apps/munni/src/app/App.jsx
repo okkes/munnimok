@@ -1219,6 +1219,34 @@ function ScreenLoginGate({ onLogin }) {
     </div>
   );
 }
+function PendingNotificationChecker() {
+  const nav = useNav();
+  React.useEffect(() => {
+    const userId = getUserId();
+    if (!userId) return;
+    const key = `munni_pending_notifications_${userId}`;
+    try {
+      const pending = JSON.parse(localStorage.getItem(key) || '[]');
+      if (!pending.length) return;
+      localStorage.removeItem(key);
+      const show = (notif) => {
+        const title = notif.type === 'space_invite' ? 'Space invitation' : 'Notification';
+        const body = notif.type === 'space_invite' ? `You've been invited to "${notif.profileName}"` : '';
+        const n = new Notification(title, { body, icon: '/icons/icon-192.png' });
+        n.onclick = () => { window.focus(); nav.push('spaces'); n.close(); };
+      };
+      if ('Notification' in window) {
+        if (Notification.permission === 'granted') {
+          pending.forEach(show);
+        } else if (Notification.permission !== 'denied') {
+          Notification.requestPermission().then(p => { if (p === 'granted') pending.forEach(show); });
+        }
+      }
+    } catch {}
+  }, [nav]);
+  return null;
+}
+
 export function App() {
   // Use React.useState (not useLocalStorage) to prevent cross-tab dark mode sync.
   // Each user gets their own preference keyed by userId.
@@ -1268,6 +1296,7 @@ export function App() {
               <RecurProvider>
                 <AllocProvider>
                   <NavProvider initial="home">
+                    <PendingNotificationChecker/>
                     <Router/>
                   </NavProvider>
                 </AllocProvider>

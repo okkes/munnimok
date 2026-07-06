@@ -429,6 +429,14 @@ export function ProfileMembersSheet({ profile, onClose }) {
       permission: role, status:'pending', sentAt:Date.now(),
     };
     setInvitations(arr=>[...arr, inv]);
+    // Store pending notification for recipient so they see it on next load
+    try {
+      const notifKey = `munni_pending_notifications_${friendId}`;
+      const existing = JSON.parse(localStorage.getItem(notifKey) || '[]');
+      existing.push({ type:'space_invite', fromId:myId, profileId:profile.id, profileName:profile.name, sentAt:Date.now() });
+      localStorage.setItem(notifKey, JSON.stringify(existing));
+      window.dispatchEvent(new CustomEvent('munni-ls', { detail: { key: notifKey } }));
+    } catch {}
     setPendingInviteFid(null);
     setPendingInviteRole('contributor');
     try {

@@ -2771,12 +2771,13 @@ export function ScreenSpaceDetail({ params }) {
         </Sheet>
       )}
 
-      <CurrencyPickerSheet
-        open={showSpaceCurrencyPicker}
-        onClose={() => setShowSpaceCurrencyPicker(false)}
-        value={effectiveSpaceCurrency}
-        onChange={(v) => { setSpaceCurrency(v); setShowSpaceCurrencyPicker(false); }}
-      />
+      {showSpaceCurrencyPicker && (
+        <CurrencyPickerSheet
+          onClose={() => setShowSpaceCurrencyPicker(false)}
+          value={effectiveSpaceCurrency}
+          onChange={(v) => { setSpaceCurrency(v); setShowSpaceCurrencyPicker(false); }}
+        />
+      )}
 
       {showDefaultAttachSheet && (
         <Sheet onClose={() => setShowDefaultAttachSheet(false)}>
