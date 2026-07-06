@@ -1,4 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
+import { useNavigate } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { fmtCents } from '@/lib/money';
@@ -8,6 +9,7 @@ import { TxRow } from '@/ui/TxRow';
 export function HomeScreen() {
   const { t, lang } = useLang();
   const { db, spaceId } = useData();
+  const navigate = useNavigate();
 
   const accounts = useLiveQuery(
     () => db.accounts.where('spaceId').equals(spaceId).filter((a) => a.deleted === 0).toArray(),
@@ -50,7 +52,11 @@ export function HomeScreen() {
         <div className="m-cap mt-6 mb-1 px-1">{t('tab.transactions')}</div>
         <div className="rounded-card border border-line bg-surface px-3 py-1">
           {(recentTxs ?? []).map((tx) => (
-            <TxRow key={tx.id} tx={tx} />
+            <TxRow
+              key={tx.id}
+              tx={tx}
+              onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })}
+            />
           ))}
         </div>
       </div>

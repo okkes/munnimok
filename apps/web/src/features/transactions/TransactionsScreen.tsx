@@ -1,4 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
+import { useNavigate } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import type { TransactionRow } from '@/db/types';
@@ -20,6 +21,7 @@ function groupByDate(txs: TransactionRow[]): [string, TransactionRow[]][] {
 export function TransactionsScreen() {
   const { t, lang } = useLang();
   const { db, spaceId } = useData();
+  const navigate = useNavigate();
 
   const txs = useLiveQuery(
     () =>
@@ -47,7 +49,11 @@ export function TransactionsScreen() {
             <div className="m-cap mt-4 mb-1 px-1">{fmtDay(date)}</div>
             <div className="rounded-card border border-line bg-surface px-3 py-1">
               {list.map((tx) => (
-                <TxRow key={tx.id} tx={tx} />
+                <TxRow
+                  key={tx.id}
+                  tx={tx}
+                  onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })}
+                />
               ))}
             </div>
           </div>

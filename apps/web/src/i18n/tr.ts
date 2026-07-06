@@ -740,4 +740,5 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'space.notesPlaceholder': 'Kişisel not ekle...',
   'space.notesHint': 'Kişisel, üyelerle paylaşılmaz',
   'acct.coOwnersLabel': 'Ortak sahipler',
+  'cats.searchPlaceholder': 'Kategori ara…',
 };

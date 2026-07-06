@@ -740,4 +740,5 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'space.notesPlaceholder': 'Voeg een persoonlijke notitie toe...',
   'space.notesHint': 'Persoonlijk, niet gedeeld met leden',
   'acct.coOwnersLabel': 'Mede-eigenaren',
+  'cats.searchPlaceholder': 'Zoek categorieën…',
 };

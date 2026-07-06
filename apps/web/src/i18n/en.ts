@@ -738,6 +738,7 @@ export const en = {
   'space.notesPlaceholder': 'Add a personal note...',
   'space.notesHint': 'Personal, not shared with members',
   'acct.coOwnersLabel': 'Co-owners',
+  'cats.searchPlaceholder': 'Search categories…',
 } as const;
 
 export type TranslationKey = keyof typeof en;
