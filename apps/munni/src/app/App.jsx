@@ -20,7 +20,7 @@ import { ScreenHome } from '../features/home/Home.jsx';
 import { ScreenTransactions, ScreenTxDetail, ScreenExpenses, ScreenCategoryDrill } from '../features/transactions/Tx.jsx';
 import { ScreenEvents, ScreenEventDetail, ScreenEventCreate } from '../features/events/Events.jsx';
 import { ScreenProfile, ScreenSpaces, ScreenSpaceDetail, ScreenUserInfo, ScreenExportData } from '../features/profile/Profile.jsx';
-import { ScreenLanguagePicker, ScreenSettings, ScreenPeriods, ScreenTutorial, ScreenNotifications, ScreenManageCategories, ScreenNewCat, ScreenNewOtherSub, ScreenEditCat, ScreenCustomizeHome } from '../features/settings/Settings.jsx';
+import { ScreenLanguagePicker, ScreenSettings, ScreenPeriods, ScreenNotifications, ScreenManageCategories, ScreenNewCat, ScreenNewOtherSub, ScreenEditCat, ScreenCustomizeHome } from '../features/settings/Settings.jsx';
 import { ScreenAccounts, ScreenSavings, ScreenSavingsDetail, ScreenSavingAccounts, ScreenAccountsAll, ScreenIntegrations, ScreenIntegrationLogin, ScreenIntegrationReceipts } from '../features/accounts/Accounts.jsx';
 import { ScreenRecurringTab, ScreenRecurringDetail, ScreenRecurringCreate, ScreenRecurringDeals } from '../features/recurring/Recurring.jsx';
 import { ScreenBudgets, ScreenBudgetDetail, ScreenBudgetCreate } from '../features/budgets/Budgets.jsx';
@@ -33,6 +33,26 @@ import { ScreenSignupOnboarding } from '../features/auth/Auth.jsx';
 import { ScreenPortfolio } from '../features/portfolio/Portfolio.jsx';
 
 
+function ScreenHelpSupport() {
+  const nav = useNav();
+  const { t } = useLang();
+  return (
+    <div className="m-screen">
+      <StatusBar/>
+      <AppBar title={t('settings.help')} leading={
+        <button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>
+      }/>
+      <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'0 32px 48px', gap:16 }}>
+        <div style={{ width:72, height:72, borderRadius:20, background:M.sageSoft, display:'flex', alignItems:'center', justifyContent:'center' }}>
+          <I name="help" size={32} color={M.sage}/>
+        </div>
+        <div style={{ fontSize:22, fontWeight:700, color:M.ink, textAlign:'center' }}>{t('settings.help')}</div>
+        <div style={{ fontSize:15, color:M.ink3, textAlign:'center', lineHeight:1.5 }}>Coming soon</div>
+      </div>
+    </div>
+  );
+}
+
 export const SCREEN_REGISTRY = {
   txDetail:       ({params}) => <ScreenTxDetail params={params}/>,
   expenses:       () => <ScreenExpenses/>,
@@ -42,7 +62,7 @@ export const SCREEN_REGISTRY = {
   sync:           () => <ScreenStub title="Sync"/>,
   notifications:  () => <ScreenNotifications/>,
   periods:        ({params}) => <ScreenPeriods params={params}/>,
-  tutorial:       () => <ScreenTutorial/>,
+  helpSupport:    () => <ScreenHelpSupport/>,
   manageCategories: () => <ScreenManageCategories/>,
   newCat:          ({params}) => <ScreenNewCat params={params}/>,
   newOtherSub:     ({params}) => <ScreenNewOtherSub params={params}/>,

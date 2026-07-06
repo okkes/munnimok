@@ -1204,7 +1204,7 @@ function EditCatSheet({ entry, txCount = 0, onSave, onDelete, isPrebuilt = false
       {(isPrebuilt || isOtherSub) ? (
         <div style={{ padding:'12px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, marginBottom:8, color:M.ink }}>{nameDraft}</div>
       ) : (
-        <input autoFocus value={nameDraft} onChange={e => setNameDraft(e.target.value)}
+        <input value={nameDraft} onChange={e => setNameDraft(e.target.value)}
           style={{ width:'100%', padding:'12px 14px', borderRadius:10, border:`1px solid ${M.line}`, fontSize:14, fontFamily:M.fontUI, background:M.paper2, outline:'none', boxSizing:'border-box', marginBottom:14 }}/>
       )}
       {isPrebuilt && <div style={{ fontSize:11, color:M.ink3, marginBottom:16, paddingLeft:2 }}>Built-in category names cannot be changed.</div>}
@@ -1953,6 +1953,7 @@ export function ScreenManageCategories() {
                   transition:'background 0.15s, transform 0.15s',
                   cursor: (isCustomSub && !isOther) ? 'grab' : 'pointer',
                   touchAction: (isCustomSub && !isOther) ? 'none' : 'auto',
+                  userSelect: 'none', WebkitUserSelect: 'none',
                 }}
                 onClick={() => !dragState && !justDraggedRef.current && setCatInfoSheet({ catId: subKey, parentId: parentKey, isCustom: !!isCustomSub, isOther: !!isOther })}
                 onPointerDown={(isCustomSub && !isOther) ? (e) => startDrag(e, subKey, parentKey, subCat.name, subCat.icon, parentCat.color || M.paper2) : undefined}

@@ -601,9 +601,9 @@ const ANNOTATIONS = {
     flows: [ { from: 'Period row', to: 'Closes and updates period context' } ],
   },
 
-  'tutorial': {
-    screen: 'Tutorial',
-    sub: 'Onboarding walkthrough shown after first login or from Settings.',
+  'helpSupport': {
+    screen: 'Help & Support',
+    sub: 'Coming-soon placeholder screen accessible from Settings.',
   },
 
   'manageCategories': {
@@ -969,7 +969,7 @@ const ANNOTATIONS = {
       { from: 'Language row',      to: 'language screen (stack)' },
       { from: 'Notifications row', to: 'notifications screen (stack)' },
       { from: 'Periods row',       to: 'periods screen (stack)' },
-      { from: 'Tutorial row',      to: 'tutorial screen (stack)' },
+      { from: 'Help & support row', to: 'helpSupport screen (stack)' },
       { from: 'Categories row',    to: 'manageCategories screen (stack)' },
     ],
     storage: [

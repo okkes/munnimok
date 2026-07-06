@@ -220,9 +220,7 @@ export function ScreenProfile() {
           <Divider inset={48}/>
           <ProfileLink icon="download" label={t('settings.exportData')} sub={t('settings.exportDataSub')} onClick={() => nav.push('exportData')}/>
           <Divider inset={48}/>
-          <ProfileLink icon="map"     label={t('settings.tutorial')}       sub="Walkthrough of key features"        onClick={() => nav.push('tutorial')}/>
-          <Divider inset={48}/>
-          <ProfileLink icon="help"    label={t('settings.help')}/>
+          <ProfileLink icon="help"    label={t('settings.help')} onClick={() => nav.push('helpSupport')}/>
           <Divider inset={48}/>
           <ProfileLink icon="logout"  label={t('settings.signOut')}        danger onClick={logoutFn} testId={T.profileSignOutRow}/>
         </div>
