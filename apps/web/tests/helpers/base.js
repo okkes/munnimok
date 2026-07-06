@@ -33,16 +33,19 @@ export async function createPage(browser, variant) {
 }
 
 // Inject language + theme into localStorage before page load, then navigate.
-export async function base(page, variant, extraSetup) {
+// opts.demo: pre-authenticated demo session (skips the login screen).
+export async function base(page, variant, opts = {}) {
   await page.addInitScript((v) => {
     localStorage.clear();
     sessionStorage.clear();
     localStorage.setItem('munni_lang', v.lang);
     localStorage.setItem('munni_theme', v.dark ? 'dark' : 'light');
-  }, { lang: variant.lang, dark: variant.dark });
-  if (extraSetup) await page.addInitScript(extraSetup);
+    if (v.demo) sessionStorage.setItem('munni_session', JSON.stringify({ kind: 'demo' }));
+    if (v.demo) indexedDB.deleteDatabase('munni_demo'); // pristine seed every run
+  }, { lang: variant.lang, dark: variant.dark, demo: !!opts.demo });
+  if (opts.extraSetup) await page.addInitScript(opts.extraSetup);
   await page.goto('/');
-  await page.waitForSelector('[data-testid="tab-home"]');
+  await page.waitForSelector(opts.demo ? '[data-testid="tab-home"]' : '[data-testid="screen-login"]');
 }
 
 // Wait for the m-fade animation (280ms) to finish before screenshotting.

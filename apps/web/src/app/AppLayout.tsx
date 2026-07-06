@@ -1,6 +1,7 @@
 import { Link, Outlet, useRouterState } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
+import { DataProvider } from './data';
 import { Icon } from '@/ui/Icon';
 import { Logo } from '@/ui/Logo';
 
@@ -53,7 +54,9 @@ export function AppLayout() {
       {/* Content */}
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <div className="min-h-0 flex-1 overflow-hidden pt-[env(safe-area-inset-top)]">
-          <Outlet />
+          <DataProvider>
+            <Outlet />
+          </DataProvider>
         </div>
 
         {/* Mobile bottom tab bar */}

@@ -1,7 +1,10 @@
 import { useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import type { Lang } from '@/i18n';
 import { useTheme } from '@/app/theme';
+import { destroyIdentityData } from '@/app/data';
+import { useSession } from '@/app/session';
 import { AppBar } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
@@ -16,6 +19,16 @@ export function SettingsScreen() {
   const { t, lang, setLang } = useLang();
   const { theme, toggle } = useTheme();
   const [langSheetOpen, setLangSheetOpen] = useState(false);
+  const { identity, logout } = useSession();
+  const navigate = useNavigate();
+
+  const signOut = async () => {
+    const current = identity;
+    logout();
+    await navigate({ to: '/login' });
+    // demo (and offline) data is device-only; logout resets it to pristine
+    if (current) await destroyIdentityData(current);
+  };
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-settings">
@@ -43,6 +56,17 @@ export function SettingsScreen() {
             <Icon name={theme === 'dark' ? 'weather-night' : 'weather-sunny'} size={20} />
             <span className="flex-1">{t('settings.appearance')}</span>
             <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+          </button>
+        </div>
+
+        <div className="mt-4 overflow-hidden rounded-card border border-line bg-surface">
+          <button
+            data-testid="settings-signout"
+            onClick={() => void signOut()}
+            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-negative"
+          >
+            <Icon name="logout" size={20} />
+            <span className="flex-1">{t('settings.signOut')}</span>
           </button>
         </div>
 
