@@ -68,8 +68,15 @@ jobs:
           context: .
           file: apps/web/Dockerfile
           push: true
+          # production config from repo Variables (Settings -> Variables);
+          # sensible *.okkes.synology.me defaults until they are set
           build-args: |
             BUILD_NUMBER=${{ steps.meta.outputs.build }}
+            VITE_API_URL=${{ vars.VITE_API_URL || 'https://munni-api.okkes.synology.me' }}
+            VITE_LOGTO_ENDPOINT=${{ vars.VITE_LOGTO_ENDPOINT || 'https://logto.okkes.synology.me' }}
+            VITE_LOGTO_APP_ID=${{ vars.VITE_LOGTO_APP_ID || '' }}
+            VITE_LOGTO_RESOURCE=${{ vars.VITE_LOGTO_RESOURCE || 'https://munni-api.okkes.synology.me' }}
+            VITE_GLITCHTIP_DSN=${{ vars.VITE_GLITCHTIP_DSN || '' }}
           tags: |
             ${{ env.REGISTRY }}/munni-web:latest
             ${{ env.REGISTRY }}/munni-web:${{ steps.meta.outputs.build }}

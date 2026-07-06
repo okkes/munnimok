@@ -8,6 +8,8 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 
 const KEYS = {
   en: {
+    'pwa.updateAvailable': 'A new version of munni is available',
+    'pwa.reload': 'Reload',
     'import.statement': 'Import bank statement',
     'import.preview': 'Import preview',
     'import.newAccount': 'New account',
@@ -17,6 +19,8 @@ const KEYS = {
     'import.invalidFile': 'This is not a valid CAMT.053 file',
   },
   nl: {
+    'pwa.updateAvailable': 'Er is een nieuwe versie van munni beschikbaar',
+    'pwa.reload': 'Vernieuwen',
     'import.statement': 'Bankafschrift importeren',
     'import.preview': 'Importoverzicht',
     'import.newAccount': 'Nieuwe rekening',
@@ -26,6 +30,8 @@ const KEYS = {
     'import.invalidFile': 'Dit is geen geldig CAMT.053-bestand',
   },
   tr: {
+    'pwa.updateAvailable': 'Yeni bir munni sürümü mevcut',
+    'pwa.reload': 'Yeniden yükle',
     'import.statement': 'Banka ekstresi içe aktar',
     'import.preview': 'İçe aktarma önizlemesi',
     'import.newAccount': 'Yeni hesap',
@@ -41,18 +47,16 @@ const esc = (s) => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 for (const [lang, entries] of Object.entries(KEYS)) {
   const file = path.resolve(here, `../src/i18n/${lang}.ts`);
   let src = readFileSync(file, 'utf8');
-  const existing = Object.keys(entries).filter((k) => src.includes(`'${k}'`));
-  if (existing.length) {
-    console.log(`${lang}: skipping, already present: ${existing.join(', ')}`);
+  const missing = Object.entries(entries).filter(([k]) => !src.includes(`'${k}'`));
+  if (missing.length === 0) {
+    console.log(`${lang}: all present`);
     continue;
   }
-  const block = Object.entries(entries)
-    .map(([k, v]) => `  '${esc(k)}': '${esc(v)}',`)
-    .join('\n');
+  const block = missing.map(([k, v]) => `  '${esc(k)}': '${esc(v)}',`).join('\n');
   const marker = lang === 'en' ? '} as const;' : /\};\s*$/;
   const replaced =
     lang === 'en' ? src.replace(marker, `${block}\n} as const;`) : src.replace(marker, `${block}\n};\n`);
   if (replaced === src) throw new Error(`${lang}: marker not found`);
   writeFileSync(file, replaced, 'utf8');
-  console.log(`${lang}: +${Object.keys(entries).length} keys`);
+  console.log(`${lang}: +${missing.length} keys`);
 }

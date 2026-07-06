@@ -748,4 +748,6 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'import.doImport': 'İçe aktar',
   'import.done': '{n} işlem içe aktarıldı, {s} kopya atlandı',
   'import.invalidFile': 'Bu geçerli bir CAMT.053 dosyası değil',
+  'pwa.updateAvailable': 'Yeni bir munni sürümü mevcut',
+  'pwa.reload': 'Yeniden yükle',
 };

@@ -7,6 +7,17 @@ RUN npm ci --workspace @munni/web
 COPY apps/web apps/web
 # build number comes from git normally; docker builds pass it explicitly
 ARG BUILD_NUMBER=0
+# production config baked at build time (Vite env)
+ARG VITE_API_URL=""
+ARG VITE_LOGTO_ENDPOINT=""
+ARG VITE_LOGTO_APP_ID=""
+ARG VITE_LOGTO_RESOURCE=""
+ARG VITE_GLITCHTIP_DSN=""
+ENV VITE_API_URL=$VITE_API_URL \
+    VITE_LOGTO_ENDPOINT=$VITE_LOGTO_ENDPOINT \
+    VITE_LOGTO_APP_ID=$VITE_LOGTO_APP_ID \
+    VITE_LOGTO_RESOURCE=$VITE_LOGTO_RESOURCE \
+    VITE_GLITCHTIP_DSN=$VITE_GLITCHTIP_DSN
 RUN sed -i "s/execSync('git rev-list --count HEAD').toString().trim()/'${BUILD_NUMBER}'/" apps/web/vite.config.ts || true
 RUN npm run build --workspace @munni/web
 

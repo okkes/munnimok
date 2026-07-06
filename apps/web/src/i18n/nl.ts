@@ -748,4 +748,6 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'import.doImport': 'Importeren',
   'import.done': '{n} transacties geïmporteerd, {s} duplicaten overgeslagen',
   'import.invalidFile': 'Dit is geen geldig CAMT.053-bestand',
+  'pwa.updateAvailable': 'Er is een nieuwe versie van munni beschikbaar',
+  'pwa.reload': 'Vernieuwen',
 };

@@ -746,6 +746,8 @@ export const en = {
   'import.doImport': 'Import',
   'import.done': 'Imported {n} transactions, skipped {s} duplicates',
   'import.invalidFile': 'This is not a valid CAMT.053 file',
+  'pwa.updateAvailable': 'A new version of munni is available',
+  'pwa.reload': 'Reload',
 } as const;
 
 export type TranslationKey = keyof typeof en;

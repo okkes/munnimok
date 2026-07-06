@@ -61,6 +61,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
 
     void (async () => {
+      // ask the browser not to evict our data (iOS 7-day ITP wipe etc.);
+      // best-effort — installed PWAs are exempt anyway
+      if (identity.kind !== 'demo') void navigator.storage?.persist?.().catch(() => undefined);
       if (identity.kind === 'demo') await seedDemoIfNeeded(repo);
       if (engine) {
         // initial sync: discover + pull this user's spaces (fresh device);
