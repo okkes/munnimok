@@ -277,7 +277,11 @@ export function AccountsScreen() {
                     </span>
                     <span className="block truncate font-mono text-[11px] text-ink-4">{stmt.iban}</span>
                   </span>
-                  <span className="text-[12px] text-ink-3">{t('import.txCount', { n: stmt.entries.length })}</span>
+                  <span className="text-[12px] text-ink-3">
+                    {stmt.entries.length === 1
+                      ? t('import.txCountOne')
+                      : t('import.txCount', { n: stmt.entries.length })}
+                  </span>
                 </div>
               );
             })}

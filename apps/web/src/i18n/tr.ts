@@ -756,4 +756,5 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'gc.done': 'Banka bağlandı',
   'gc.failed': 'Banka bağlantısı başarısız — lütfen tekrar deneyin',
   'gc.backToApp': 'munni\'ye geri dön',
+  'import.txCountOne': '1 işlem',
 };

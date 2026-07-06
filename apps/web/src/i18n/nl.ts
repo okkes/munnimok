@@ -756,4 +756,5 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'gc.done': 'Bank verbonden',
   'gc.failed': 'Bankverbinding mislukt — probeer het opnieuw',
   'gc.backToApp': 'Terug naar munni',
+  'import.txCountOne': '1 transactie',
 };
