@@ -4,6 +4,7 @@ import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { fmtCents } from '@/lib/money';
 import { AppBar } from '@/ui/AppBar';
+import { Icon } from '@/ui/Icon';
 import { TxRow } from '@/ui/TxRow';
 
 export function HomeScreen() {
@@ -24,6 +25,16 @@ export function HomeScreen() {
         .filter((tx) => tx.deleted === 0)
         .limit(5)
         .toArray(),
+    [spaceId],
+  );
+
+  const reviewCount = useLiveQuery(
+    () =>
+      db.transactions
+        .where('spaceId')
+        .equals(spaceId)
+        .filter((tx) => tx.deleted === 0 && tx.needsReview === 1)
+        .count(),
     [spaceId],
   );
 
@@ -48,6 +59,20 @@ export function HomeScreen() {
             ))}
           </div>
         </div>
+
+        {(reviewCount ?? 0) > 0 && (
+          <button
+            data-testid="home-review-banner"
+            onClick={() => void navigate({ to: '/review' })}
+            className="m-tap mt-4 flex w-full items-center gap-3 rounded-card border border-line bg-warning-soft px-4 py-3.5 text-left"
+          >
+            <Icon name="progress-check" size={22} color="var(--m-warning)" />
+            <span className="flex-1 text-[14px] font-medium text-ink">
+              {t('review.title')} · {reviewCount}
+            </span>
+            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+          </button>
+        )}
 
         <div className="m-cap mt-6 mb-1 px-1">{t('tab.transactions')}</div>
         <div className="rounded-card border border-line bg-surface px-3 py-1">
