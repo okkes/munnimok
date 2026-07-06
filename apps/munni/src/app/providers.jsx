@@ -23,7 +23,11 @@ export const useAppCtx = () => React.useContext(AppCtx);
 
 export const CatCtx = React.createContext(null);
 export function CatProvider({ children }) {
-  const [customCats, setCustomCats] = useLocalStorage('munni_customCats', []);
+  const [loginMethod] = useSessionStorage('munni_last_login_method', '');
+  const [rawEmail] = useSessionStorage('munni_profile_email', '');
+  const safeEmail = React.useMemo(() => { try { return JSON.parse(rawEmail||'""')||''; } catch { return rawEmail||''; } }, [rawEmail]);
+  const catKey = computeUserDataKey(loginMethod, safeEmail, 'munni_customCats');
+  const [customCats, setCustomCats] = useLocalStorage(catKey, []);
   const newEntries = Object.fromEntries(customCats.map(c => [c.id, c]));
   Object.keys(_catExt).forEach(k => delete _catExt[k]);
   Object.assign(_catExt, newEntries);

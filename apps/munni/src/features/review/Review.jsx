@@ -575,7 +575,8 @@ export function CategoryPicker({ selected, onClose, onPick, txType = 'Expense', 
   const amtVal = parseFloat(amtStr.replace(',', '.')) || 0;
   const amtOk = amtVal > 0 && amtVal <= maxAmount + 0.005;
   const { profiles } = useProfiles();
-  const activeProfileId = profiles.find(p => p.active)?.id;
+  const activeProfile = profiles.find(p => p.active);
+  const activeProfileId = activeProfile?.id;
 
   const handlePickCat = (id) => {
     if (skipAmount) { onPick(id, 0); return; }
@@ -594,7 +595,8 @@ export function CategoryPicker({ selected, onClose, onPick, txType = 'Expense', 
   const visibleCustomCats = Object.values(_catExt).filter(c => {
     if (!c.scope) return true;
     const s = normScope(c.scope);
-    return s.allPrivate || (activeProfileId && (s.spaces || []).includes(activeProfileId));
+    if (s.allPrivate) return !activeProfile?.isShared;
+    return !!(activeProfileId && (s.spaces || []).includes(activeProfileId));
   });
   const allCatValues = [...Object.values(CATEGORIES), ...visibleCustomCats];
   allCatValues.forEach(c => {

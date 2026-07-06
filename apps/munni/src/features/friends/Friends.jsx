@@ -82,6 +82,14 @@ export function ScreenFriends() {
     setInvitations(arr => [...arr, inv]);
     setInviteInput(''); setInviteError(''); setInviteSent(true);
     setTimeout(() => setInviteSent(false), 2500);
+    if ('Notification' in window) {
+      const show = () => {
+        const n = new Notification(t('settings.friends'), { body: `${t('friends.inviteSent') || 'Invitation sent to'} ${toId}`, icon: '/icons/icon-192.png' });
+        n.onclick = () => { window.focus(); nav.push('friends'); n.close(); };
+      };
+      if (Notification.permission === 'granted') { show(); }
+      else if (Notification.permission !== 'denied') { Notification.requestPermission().then(p => { if (p === 'granted') show(); }); }
+    }
   };
 
   const cancelInvite = (invId) => setInvitations(arr => arr.filter(i => i.id !== invId));

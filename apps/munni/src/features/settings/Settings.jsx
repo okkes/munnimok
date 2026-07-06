@@ -924,7 +924,7 @@ function TypePickerSheet({ catType, setCatType, onClose }) {
   );
 }
 
-function NewCatForm({ onSave, isSub = false, parentDirection }) {
+function NewCatForm({ onSave, isSub = false, parentDirection, parentType }) {
   const [name, setName] = React.useState('');
   const [icon, setIcon] = React.useState('help-circle-outline');
   const [color, setColor] = React.useState(M.slate);
@@ -957,8 +957,8 @@ function NewCatForm({ onSave, isSub = false, parentDirection }) {
         placeholder="Category name"
         style={{ width:'100%', boxSizing:'border-box', border:`1px solid ${M.line}`, borderRadius:10, padding:'11px 14px', fontSize:14, fontFamily:M.fontUI, marginBottom:14, outline:'none', background:M.paper2, color:M.ink }}
       />
-      {/* Type picker — sub-categories only */}
-      {isSub && (<>
+      {/* Type picker — main categories only; subs inherit from parent */}
+      {!isSub && (<>
         <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:8, position:'relative' }}>
           <span style={{ fontSize:12, color:M.ink3 }}>Transaction type</span>
           <button onClick={() => toggleTip('type')} style={{ background:'none', border:'none', cursor:'pointer', padding:0, display:'flex', alignItems:'center' }}>
@@ -974,6 +974,13 @@ function NewCatForm({ onSave, isSub = false, parentDirection }) {
         </button>
         {typePickerOpen && <TypePickerSheet catType={catType} setCatType={setCatType} onClose={() => setTypePickerOpen(false)}/>}
       </>)}
+      {isSub && parentType && (
+        <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 14px', borderRadius:10, background:M.sageSoft, border:`1px solid ${M.sage}33`, marginBottom:14 }}>
+          <div style={{ width:9, height:9, borderRadius:'50%', background: CAT_TYPE_COLOR[parentType] || M.ink3, flexShrink:0 }}/>
+          <div style={{ flex:1, fontSize:13, color:M.ink2 }}>Type: <strong>{parentType}</strong></div>
+          <div style={{ fontSize:11, color:M.ink4 }}>Inherited</div>
+        </div>
+      )}
       {/* Direction */}
       <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:8, position:'relative' }}>
         <span style={{ fontSize:12, color:M.ink3 }}>Applies to</span>
@@ -1051,8 +1058,10 @@ function NewCatForm({ onSave, isSub = false, parentDirection }) {
 }
 
 function EditCatSheet({ entry, txCount = 0, onSave, onDelete, isPrebuilt = false }) {
+  const nav = useNav();
   const [nameDraft, setNameDraft] = React.useState(entry.name);
   const [iconDraft, setIconDraft] = React.useState(entry.icon || 'help-circle-outline');
+  const [directionDraft, setDirectionDraft] = React.useState(entry.direction || 'both');
   const [parentIdDraft, setParentIdDraft] = React.useState(entry.parentId ?? null);
   const [parentPickerOpen, setParentPickerOpen] = React.useState(false);
   const [typePickerOpen, setTypePickerOpen] = React.useState(false);
@@ -1077,8 +1086,8 @@ function EditCatSheet({ entry, txCount = 0, onSave, onDelete, isPrebuilt = false
   const canDelete = onDelete !== null;
   const isParent = entry.isParent;
 
-  // Type editing — custom sub-categories only
-  const actualCat = (!isPrebuilt && !isParent) ? customCats.find(c => c.id === entry.catId) : null;
+  // Type editing — custom parent categories only; subs inherit
+  const actualCat = (!isPrebuilt && isParent) ? customCats.find(c => c.id === entry.catId) : null;
   const initialType = actualCat?.type || 'Expense';
   const [typeDraft, setTypeDraft] = React.useState(initialType);
   const typeChanged = typeDraft !== initialType;
@@ -1093,18 +1102,28 @@ function EditCatSheet({ entry, txCount = 0, onSave, onDelete, isPrebuilt = false
     return !(scopeDraft.spaces||[]).includes(activeProfileId);
   }, [isParent, isPrebuilt, scopeDraft, activeProfileId]);
 
-  // Transactions affected by type or scope change
+  // Transactions affected by type (parent) or scope (sub) change
   const conflictTxs = React.useMemo(() => {
-    if (isPrebuilt || isParent) return [];
-    return txs.filter(t => {
-      if (t.cat !== entry.catId) return false;
-      if (typeChanged && t.txType && t.txType !== typeDraft) return true;
-      if (scopeNarrowed) return true;
-      return false;
-    });
-  }, [typeChanged, typeDraft, scopeNarrowed, isPrebuilt, isParent, entry.catId, txs]);
+    if (isPrebuilt) return [];
+    if (isParent) {
+      if (!typeChanged) return [];
+      const subIds = new Set(customCats.filter(c => c.parent === entry.catId).map(c => c.id));
+      subIds.add(entry.catId);
+      return txs.filter(t => subIds.has(t.cat) && t.txType && t.txType !== typeDraft);
+    }
+    return txs.filter(t => t.cat === entry.catId && scopeNarrowed);
+  }, [typeChanged, typeDraft, scopeNarrowed, isPrebuilt, isParent, entry.catId, txs, customCats]);
 
   const conflictCount = conflictTxs.length;
+
+  const deleteTxs = React.useMemo(() => {
+    if (isParent) {
+      const subIds = new Set(customCats.filter(c => c.parent === entry.catId).map(c => c.id));
+      subIds.add(entry.catId);
+      return txs.filter(t => subIds.has(t.cat));
+    }
+    return txs.filter(t => t.cat === entry.catId);
+  }, [isParent, txs, entry.catId, customCats]);
 
   const scopeHasSelection = scopeDraft.allPrivate || (scopeDraft.spaces||[]).length > 0;
   const scopeSummary = scopeDraft.allPrivate ? 'All private spaces'
@@ -1122,7 +1141,7 @@ function EditCatSheet({ entry, txCount = 0, onSave, onDelete, isPrebuilt = false
   }, [customCats]);
 
   const executeSave = () => {
-    onSave(nameDraft.trim(), iconDraft, entry.color, !isParent ? scopeDraft : undefined, !isParent ? parentIdDraft : undefined, (!isPrebuilt && !isParent && typeChanged) ? typeDraft : undefined, scopeNarrowed);
+    onSave(nameDraft.trim(), iconDraft, entry.color, !isParent ? scopeDraft : undefined, !isParent ? parentIdDraft : undefined, (!isPrebuilt && isParent && typeChanged) ? typeDraft : undefined, scopeNarrowed, directionDraft);
   };
 
   const handleSave = () => {
@@ -1134,14 +1153,39 @@ function EditCatSheet({ entry, txCount = 0, onSave, onDelete, isPrebuilt = false
 
   if (showDeleteConfirm) {
     return (
-      <div style={{ padding:'4px 16px 8px' }}>
-        <div style={{ fontSize:17, fontWeight:700, marginBottom:8 }}>Delete "{entry.name}"?</div>
-        {txCount > 0 && (
-          <div style={{ padding:'10px 14px', borderRadius:10, background:M.claySoft, marginBottom:14, fontSize:13, color:M.clay, lineHeight:1.5 }}>
-            <strong>{txCount} transaction{txCount!==1?'s':''}</strong> using this category will be set to Uncategorized.
+      <div style={{ display:'flex', flexDirection:'column', padding:'4px 16px 8px', minHeight:0 }}>
+        {/* Red warning at top */}
+        <div style={{ padding:'12px 14px', borderRadius:10, background:M.claySoft, marginBottom:14, border:`1px solid ${M.clay}40` }}>
+          <div style={{ fontSize:15, fontWeight:700, color:M.clay, marginBottom:4 }}>Delete "{entry.name}"?</div>
+          {deleteTxs.length > 0 ? (
+            <div style={{ fontSize:13, color:M.clay, lineHeight:1.5 }}>
+              <strong>{deleteTxs.length} transaction{deleteTxs.length!==1?'s':''}</strong> will be moved to Uncategorized. This cannot be undone.
+            </div>
+          ) : (
+            <div style={{ fontSize:13, color:M.clay, lineHeight:1.5 }}>This action cannot be undone.</div>
+          )}
+        </div>
+        {/* Scrollable tx list */}
+        {deleteTxs.length > 0 && (
+          <div style={{ flex:1, overflowY:'auto', maxHeight:260, marginBottom:14, display:'flex', flexDirection:'column', gap:6 }}>
+            {deleteTxs.slice(0, 50).map(t => (
+              <button key={t.id} className="m-tap" onClick={() => nav.push('txDetail', { id: t.id })}
+                style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderRadius:10, background:M.paper2, border:`1px solid ${M.line}`, cursor:'pointer', textAlign:'left', width:'100%', fontFamily:M.fontUI }}>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:13, fontWeight:500, color:M.ink, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{t.merchant || '—'}</div>
+                  <div style={{ fontSize:11, color:M.ink4 }}>{t.date || ''}</div>
+                </div>
+                <div style={{ fontSize:13, fontWeight:600, color: t.amount < 0 ? M.clay : M.sage, flexShrink:0 }}>
+                  {t.amount < 0 ? '-' : '+'}{Math.abs(t.amount).toFixed(2)}
+                </div>
+              </button>
+            ))}
+            {deleteTxs.length > 50 && (
+              <div style={{ textAlign:'center', fontSize:12, color:M.ink4 }}>…and {deleteTxs.length - 50} more</div>
+            )}
           </div>
         )}
-        <div style={{ fontSize:13, color:M.ink3, marginBottom:20, lineHeight:1.5 }}>This action cannot be undone.</div>
+        {/* Delete / Cancel at bottom */}
         <button onClick={onDelete} style={{ width:'100%', padding:'14px 0', background:M.clay, color:'#fff', border:'none', borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, marginBottom:10 }}>Delete</button>
         <button onClick={() => setShowDeleteConfirm(false)} style={{ width:'100%', padding:'14px 0', background:M.paper2, color:M.ink, border:`1px solid ${M.line}`, borderRadius:12, fontSize:16, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>Cancel</button>
       </div>
@@ -1175,6 +1219,18 @@ function EditCatSheet({ entry, txCount = 0, onSave, onDelete, isPrebuilt = false
               </div>
             </Sheet>
           )}
+          {/* Direction — applies to */}
+          <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>Applies to</div>
+          <div style={{ display:'flex', gap:6, marginBottom:14 }}>
+            {[['debit','Outgoing'],['credit','Incoming'],['both','Both']].map(([val, label]) => (
+              <button key={val} className="m-tap" onClick={() => setDirectionDraft(val)}
+                style={{ flex:1, padding:'7px 0', borderRadius:10, fontSize:12, fontWeight:600, cursor:'pointer', border:`1.5px solid ${directionDraft===val?M.sage:M.line}`, fontFamily:M.fontUI,
+                  background: directionDraft===val ? M.sageSoft : M.paper2,
+                  color: directionDraft===val ? M.sage : M.ink3 }}>
+                {label}
+              </button>
+            ))}
+          </div>
           {/* Scope — sub-categories only */}
           {!isParent && (
             <>
@@ -1200,8 +1256,8 @@ function EditCatSheet({ entry, txCount = 0, onSave, onDelete, isPrebuilt = false
               )}
             </>
           )}
-          {/* Transaction type — custom sub-categories only */}
-          {!isParent && (
+          {/* Transaction type — custom parent categories only; subs inherit */}
+          {isParent && (
             <>
               <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>Transaction type</div>
               <button className="m-tap" onClick={() => setTypePickerOpen(true)}
@@ -1210,9 +1266,21 @@ function EditCatSheet({ entry, txCount = 0, onSave, onDelete, isPrebuilt = false
                 <div style={{ flex:1, textAlign:'left', fontSize:14, color:M.ink }}>{typeDraft}</div>
                 <I name="caretR" size={14} color={M.ink4}/>
               </button>
-                  {typePickerOpen && <TypePickerSheet catType={typeDraft} setCatType={setTypeDraft} onClose={() => setTypePickerOpen(false)}/>}
+              {typePickerOpen && <TypePickerSheet catType={typeDraft} setCatType={setTypeDraft} onClose={() => setTypePickerOpen(false)}/>}
             </>
           )}
+          {/* Sub shows inherited type (read-only) */}
+          {!isParent && (() => {
+            const parentCat = customCats.find(c => c.id === entry.parentId) || {};
+            const inheritedType = parentCat.type || 'Expense';
+            return (
+              <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 14px', borderRadius:10, background:M.sageSoft, border:`1px solid ${M.sage}33`, marginBottom:14 }}>
+                <div style={{ width:9, height:9, borderRadius:'50%', background: CAT_TYPE_COLOR[inheritedType] || M.ink3, flexShrink:0 }}/>
+                <div style={{ flex:1, fontSize:13, color:M.ink2 }}>Type: <strong>{inheritedType}</strong></div>
+                <div style={{ fontSize:11, color:M.ink4 }}>Inherited</div>
+              </div>
+            );
+          })()}
           {/* Parent category — only for custom sub-categories */}
           {!isParent && (() => {
             const currentParent = availableParents.find(p => p.id === parentIdDraft);
@@ -1316,17 +1384,19 @@ export function ScreenNewCat({ params }) {
   const isParent = !parentId;
   const parentCat = parentId ? (CATEGORIES[parentId] || customCats.find(c => c.id === parentId)) : null;
   const parentDirection = parentCat ? (parentCat.direction || getCatDirection(parentCat) || 'both') : 'both';
+  const parentType = parentCat ? (parentCat.type || 'Expense') : 'Expense';
 
   const handleSave = (name, icon, color, scope, catType, direction) => {
     if (isParent) {
       const id = `cust_${Date.now()}`;
+      const type = catType || 'Expense';
       setCustomCats(prev => [...prev,
-        { id, name, icon: icon||'help-circle-outline', color: color||M.slate, isParent:true, parent:null, direction: direction||'both' }
+        { id, name, icon: icon||'help-circle-outline', color: color||M.slate, isParent:true, parent:null, type, direction: direction||'both' }
       ]);
-      nav.replace('newOtherSub', { parentId: id, parentName: name, parentColor: color||M.slate, parentIcon: icon||'help-circle-outline' });
+      nav.replace('newOtherSub', { parentId: id, parentName: name, parentColor: color||M.slate, parentIcon: icon||'help-circle-outline', parentType: type });
     } else {
       setCustomCats(prev => [...prev,
-        { id:`cust_${Date.now()}`, name, icon: icon||'help-circle-outline', color: color||M.slate, isParent:false, parent:parentId, scope: scope||'all_private', type: catType||'Expense', direction: direction||'both' }
+        { id:`cust_${Date.now()}`, name, icon: icon||'help-circle-outline', color: color||M.slate, isParent:false, parent:parentId, scope: scope||'all_private', type: parentType, direction: direction||'both' }
       ]);
       nav.pop();
     }
@@ -1351,7 +1421,7 @@ export function ScreenNewCat({ params }) {
             </div>
           </div>
         )}
-        <NewCatForm onSave={handleSave} isSub={!isParent} parentDirection={!isParent ? parentDirection : undefined}/>
+        <NewCatForm onSave={handleSave} isSub={!isParent} parentDirection={!isParent ? parentDirection : undefined} parentType={!isParent ? parentType : undefined}/>
       </div>
     </div>
   );
@@ -1366,12 +1436,11 @@ export function ScreenNewOtherSub({ params }) {
   const parentColor = params?.parentColor || M.slate;
   const parentIcon = params?.parentIcon || 'help-circle-outline';
 
-  const [catType, setCatType] = React.useState('Expense');
+  const parentType = params?.parentType || customCats.find(c => c.id === parentId)?.type || 'Expense';
   const [direction, setDirection] = React.useState('both');
   const [icon, setIcon] = React.useState('dots-horizontal');
   const [scope, setScope] = React.useState({ allPrivate: true, spaces: [] });
   const [tooltip, setTooltip] = React.useState(null);
-  const [typePickerOpen, setTypePickerOpen] = React.useState(false);
   const [iconPickerOpen, setIconPickerOpen] = React.useState(false);
   const [scopeSheetOpen, setScopeSheetOpen] = React.useState(false);
   const [scopeError, setScopeError] = React.useState(false);
@@ -1385,7 +1454,7 @@ export function ScreenNewOtherSub({ params }) {
   const handleFinish = () => {
     if (!scopeHasSelection) { setScopeError(true); return; }
     setCustomCats(prev => [...prev,
-      { id:`${parentId}_other`, name:'Other', icon, color:M.paper2, isParent:false, parent:parentId, scope: scope||'all_private', type: catType||'Expense', direction: direction||'both' }
+      { id:`${parentId}_other`, name:'Other', icon, color:M.paper2, isParent:false, parent:parentId, scope: scope||'all_private', type: parentType, direction: direction||'both' }
     ]);
     nav.pop();
   };
@@ -1419,21 +1488,13 @@ export function ScreenNewOtherSub({ params }) {
             {tooltip === 'name' && <InfoTooltip text='Each main category must have an "Other" sub-category as a catch-all. The name is fixed by design.' onClose={() => setTooltip(null)}/>}
           </div>
         </div>
-        {/* Type */}
-        <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:8, position:'relative' }}>
-          <span style={{ fontSize:12, color:M.ink3 }}>Transaction type</span>
-          <button onClick={() => toggleTip('type')} style={{ background:'none', border:'none', cursor:'pointer', padding:0, display:'flex', alignItems:'center' }}>
-            <I name="info" size={13} color={tooltip==='type'?M.sage:M.ink4}/>
-          </button>
-          {tooltip === 'type' && <InfoTooltip text={CAT_TYPE_INFO[catType] || ''} onClose={() => setTooltip(null)}/>}
+        {/* Type — inherited from parent; not editable per sub */}
+        <div style={{ fontSize:12, color:M.ink3, marginBottom:8 }}>Transaction type</div>
+        <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 14px', borderRadius:10, background:M.sageSoft, border:`1px solid ${M.sage}33`, marginBottom:14 }}>
+          <div style={{ width:9, height:9, borderRadius:'50%', background: CAT_TYPE_COLOR[parentType] || M.ink3, flexShrink:0 }}/>
+          <div style={{ flex:1, fontSize:13, color:M.ink2 }}><strong>{parentType}</strong></div>
+          <div style={{ fontSize:11, color:M.ink4 }}>Inherited from parent</div>
         </div>
-        <button className="m-tap" onClick={() => { setTooltip(null); setTypePickerOpen(true); }}
-          style={{ width:'100%', display:'flex', alignItems:'center', gap:10, padding:'11px 14px', borderRadius:12, border:`1px solid ${M.line}`, background:M.paper2, cursor:'pointer', fontFamily:M.fontUI, marginBottom:14, boxSizing:'border-box' }}>
-          <div style={{ width:9, height:9, borderRadius:'50%', background: CAT_TYPE_COLOR[catType] || M.ink3, flexShrink:0 }}/>
-          <div style={{ flex:1, textAlign:'left', fontSize:14, color:M.ink }}>{catType}</div>
-          <I name="caretR" size={14} color={M.ink4}/>
-        </button>
-        {typePickerOpen && <TypePickerSheet catType={catType} setCatType={setCatType} onClose={() => setTypePickerOpen(false)}/>}
         {/* Direction */}
         <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:8, position:'relative' }}>
           <span style={{ fontSize:12, color:M.ink3 }}>Applies to</span>
@@ -1501,7 +1562,7 @@ export function ScreenNewOtherSub({ params }) {
 
 export function ScreenEditCat({ params }) {
   const nav = useNav();
-  const { txs, setTxs } = useTxCtx();
+  const { txs, setTxs, updateTx } = useTxCtx();
   const { customCats, setCustomCats } = useCatCtx();
   const [premadeOverrides, setPremadeOverrides] = useLocalStorage('munni_cat_overrides', {});
   const entry = params || {};
@@ -1526,12 +1587,14 @@ export function ScreenEditCat({ params }) {
       const subsToDelete = new Set(customCats.filter(c => c.parent === catId).map(c => c.id));
       subsToDelete.add(catId);
       setCustomCats(prev => prev.filter(c => !subsToDelete.has(c.id)));
-      setTxs(prev => prev.map(t => (subsToDelete.has(t.cat) || t.cat === catId)
-        ? { ...t, cat:'uncategorized', cats:[{ catId:'uncategorized', amount:Math.abs(t.amount) }] } : t));
+      txs.filter(t => subsToDelete.has(t.cat)).forEach(t =>
+        updateTx(t.id, { cat:'uncategorized', cats:[{ catId:'uncategorized', amount:Math.abs(t.amount) }] })
+      );
     } else {
       setCustomCats(prev => prev.filter(c => c.id !== catId));
-      setTxs(prev => prev.map(t => t.cat === catId
-        ? { ...t, cat:'uncategorized', cats:[{ catId:'uncategorized', amount:Math.abs(t.amount) }] } : t));
+      txs.filter(t => t.cat === catId).forEach(t =>
+        updateTx(t.id, { cat:'uncategorized', cats:[{ catId:'uncategorized', amount:Math.abs(t.amount) }] })
+      );
     }
     nav.pop();
   };
@@ -1548,20 +1611,36 @@ export function ScreenEditCat({ params }) {
           entry={entry}
           txCount={txCount}
           isPrebuilt={!isCustom}
-          onSave={(name, icon, color, scope, newParentId, newType, scopeNarrowed) => {
+          onSave={(name, icon, color, scope, newParentId, newType, scopeNarrowed, direction) => {
             if (isCustom) {
-              const typeChanging = !!newType;
-              setCustomCats(prev => prev.map(c => {
-                if (c.id === catId) return { ...c, name, icon, color, ...(scope !== undefined ? { scope } : {}), ...(newType ? { type: newType } : {}), ...(newParentId !== undefined ? { parent: newParentId } : {}) };
-                return c;
-              }));
-              if ((typeChanging || scopeNarrowed) && !isParentCat) {
-                setTxs(prev => prev.map(t => {
-                  if (t.cat !== catId) return t;
-                  const typeConflict = typeChanging && t.txType && t.txType !== newType;
-                  if (!typeConflict && !scopeNarrowed) return t;
-                  return { ...t, cat:'uncategorized', cats:[{ catId:'uncategorized', amount:Math.abs(t.amount) }] };
+              if (isParentCat && newType) {
+                // Propagate type change to all subs
+                setCustomCats(prev => prev.map(c => {
+                  if (c.id === catId) return { ...c, name, icon, color, type: newType, ...(direction !== undefined ? { direction } : {}) };
+                  if (c.parent === catId) return { ...c, type: newType };
+                  return c;
                 }));
+                // Uncategorize txs in any sub/parent that conflict with new type
+                const subIds = new Set(customCats.filter(c => c.parent === catId).map(c => c.id));
+                subIds.add(catId);
+                txs.filter(t => subIds.has(t.cat) && t.txType && t.txType !== newType).forEach(t =>
+                  updateTx(t.id, { cat:'uncategorized', cats:[{ catId:'uncategorized', amount:Math.abs(t.amount) }] })
+                );
+              } else if (isParentCat) {
+                setCustomCats(prev => prev.map(c => {
+                  if (c.id === catId) return { ...c, name, icon, color, ...(direction !== undefined ? { direction } : {}) };
+                  return c;
+                }));
+              } else {
+                setCustomCats(prev => prev.map(c => {
+                  if (c.id === catId) return { ...c, name, icon, color, ...(scope !== undefined ? { scope } : {}), ...(newParentId !== undefined ? { parent: newParentId } : {}), ...(direction !== undefined ? { direction } : {}) };
+                  return c;
+                }));
+                if (scopeNarrowed) {
+                  txs.filter(t => t.cat === catId).forEach(t =>
+                    updateTx(t.id, { cat:'uncategorized', cats:[{ catId:'uncategorized', amount:Math.abs(t.amount) }] })
+                  );
+                }
               }
             } else {
               setPremadeOverrides(prev => ({ ...prev, [catId]: { name } }));
@@ -1798,10 +1877,11 @@ export function ScreenManageCategories() {
         className="m-card"
         style={{ marginBottom:12, border:`${isDropTarget?'2.5px':'1.5px'} solid ${isDropTarget ? (parentCat.color || M.sage) : M.line}`, borderRadius:14, overflow:'hidden', background: isDropTarget ? (parentCat.color ? parentCat.color + '18' : M.sageSoft) : 'transparent', transition:'border-color 0.15s, background 0.15s, border-width 0.1s', position:'relative' }}
       >
-        {/* Parent header */}
-        <div style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 16px', background:M.paper }}>
-          {/* Icon — tappable for ALL parents, opens info/edit sheet */}
-          <button className="m-tap" onClick={() => setCatInfoSheet({ catId: parentKey, parentId: null, isCustom, isParent: true })}
+        {/* Parent header — whole row toggles expand; icon button opens info sheet */}
+        <div className="m-tap" style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 16px', background:M.paper, cursor:'pointer' }}
+          onClick={() => setExpandedParents(prev => ({ ...prev, [parentKey]: !prev[parentKey] }))}>
+          {/* Icon — stops propagation, opens info/edit sheet */}
+          <button className="m-tap" onClick={e => { e.stopPropagation(); setCatInfoSheet({ catId: parentKey, parentId: null, isCustom, isParent: true }); }}
             style={{ position:'relative', width:38, height:38, borderRadius:10, background:parentCat.color||M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, border:'none', cursor:'pointer', padding:0 }}>
             <IcoMDI name={parentCat.icon||'help-circle-outline'} size={18} color={isCustom?'#fff':M.ink2}/>
             {/* Subtle ··· badge signals the icon is tappable */}
@@ -1809,10 +1889,7 @@ export function ScreenManageCategories() {
               {[0,1,2].map(i => <div key={i} style={{ width:2, height:2, borderRadius:'50%', background:M.ink3 }}/>)}
             </div>
           </button>
-          {/* Name area — tap toggles expand; stretches to full row height for easy tapping */}
-          <div className="m-tap" style={{ flex:1, cursor:'pointer', alignSelf:'stretch', display:'flex', alignItems:'center' }}
-            onClick={() => setExpandedParents(prev => ({ ...prev, [parentKey]: !prev[parentKey] }))}
-          >
+          {/* Name area */}
           <div style={{ flex:1 }}>
             <div style={{ fontSize:15, fontWeight:600 }}><LangHighlight text={parentCat.name} query={catSearch}/></div>
             {isCustom && parentCat.scope && (() => {
@@ -1830,13 +1907,11 @@ export function ScreenManageCategories() {
               return parts.length ? <div style={{ fontSize:10, color:M.ink4, marginTop:1 }}>{parts.join(' ')}</div> : null;
             })()}
           </div>
-          </div>
-          <button className="m-tap" onClick={() => setExpandedParents(prev => ({ ...prev, [parentKey]: !prev[parentKey] }))}
-            style={{ background:'none', border:'none', cursor:'pointer', padding:4, display:'flex', alignItems:'center', justifyContent:'center' }}>
+          <div style={{ padding:4, display:'flex', alignItems:'center', justifyContent:'center' }}>
             <div style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)', transition:'transform 0.2s ease', display:'flex' }}>
               <I name="caretR" size={14} color={M.ink4}/>
             </div>
-          </button>
+          </div>
         </div>
         {/* Sub-categories — grid trick for smooth immediate collapse without magic max-height */}
         <div style={{ display:'grid', gridTemplateRows: isCollapsed ? '0fr' : '1fr', transition:'grid-template-rows 0.25s ease-out' }}>
