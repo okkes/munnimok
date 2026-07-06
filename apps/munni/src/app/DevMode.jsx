@@ -639,9 +639,50 @@ const ANNOTATIONS = {
 
   'editCat': {
     screen: 'Edit category / Edit sub-category',
-    sub: 'Icon via bottom sheet. Parent: name + icon only. Sub: name, icon, scope (compact row → sheet), type + direction. Custom-only delete with confirmation.',
-    flows: [ { from: 'Back / Save / Delete', to: 'manageCategories screen' } ],
-    storage: [ 'munni_categories_{userId} (LS)', 'munni_cat_overrides (LS)' ],
+    sub: 'Icon via bottom sheet. Parent: name + icon only. Sub: name, icon, direction. Custom-only delete with confirmation. Other sub: direction only, read-only name/icon.',
+    flows: [ { from: 'Back / Save / Delete', to: 'manageCategories or spaceCats screen' } ],
+    storage: [ 'munni_categories_{userId} (LS)', 'munni_cat_overrides (LS)', 'munni_spaceCats_{spaceId} (LS) when spaceId param present' ],
+  },
+
+  'spaceCats': {
+    screen: 'Space categories',
+    sub: 'Custom categories specific to a shared space. Lists space cats grouped by parent. Accessible from Space detail > Space categories row (shared spaces only).',
+    flows: [
+      { from: '+ button',                    to: 'newSpaceCat screen' },
+      { from: 'Add sub-category',            to: 'newSpaceCat screen (parentId param)' },
+      { from: 'Edit (cat info sheet)',       to: 'editSpaceCat screen' },
+      { from: '"Copy from my categories"',   to: 'copy sheet — lists private custom cats; copies cat + subs to space' },
+    ],
+    rules: [
+      'Only shows space-specific custom cats (not premade)',
+      'Premade cats are implicitly included everywhere',
+      '"Copy" button shows disabled "Copied" state if cat already exists in space',
+    ],
+    storage: [ 'munni_spaceCats_{spaceId} (LS)' ],
+  },
+
+  'newSpaceCat': {
+    screen: 'New space category / sub (reuses ScreenNewCat)',
+    sub: 'Same as newCat but spaceId param routes storage to munni_spaceCats_{spaceId}.',
+    flows: [
+      { from: 'Continue (parent)', to: 'newSpaceOtherSub screen (nav.replace)' },
+      { from: 'Back / Save (sub)', to: 'spaceCats screen' },
+    ],
+    storage: [ 'munni_spaceCats_{spaceId} (LS)' ],
+  },
+
+  'newSpaceOtherSub': {
+    screen: 'Set up Other sub for space cat (reuses ScreenNewOtherSub)',
+    sub: 'Same as newOtherSub but routes to space cats storage.',
+    flows: [ { from: 'Back / Finish', to: 'spaceCats screen' } ],
+    storage: [ 'munni_spaceCats_{spaceId} (LS)' ],
+  },
+
+  'editSpaceCat': {
+    screen: 'Edit space category (reuses ScreenEditCat)',
+    sub: 'Same as editCat but spaceId param routes storage to munni_spaceCats_{spaceId}.',
+    flows: [ { from: 'Back / Save / Delete', to: 'spaceCats screen' } ],
+    storage: [ 'munni_spaceCats_{spaceId} (LS)' ],
   },
 
   'budgets': {

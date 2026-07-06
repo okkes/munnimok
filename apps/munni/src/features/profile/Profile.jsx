@@ -2328,6 +2328,20 @@ export function ScreenSpaceDetail({ params }) {
               {canEdit ? <I name="caretR" size={14} color={M.ink4}/> : <I name="lock" size={13} color={M.ink4}/>}
             </div>
           </div>
+          {(isProfileShared || !!localStorage.getItem(`munni_shared_data_${profile?.id}`)) && (<>
+            <Divider inset={44}/>
+            <div className="m-tap" onClick={() => nav.push('spaceCats', { spaceId: profile.id, spaceName: profile.name })}
+              style={{ display:'flex', alignItems:'center', gap:12, padding:'14px 0' }}>
+              <div style={{ width:32, height:32, borderRadius:9, background:M.paper2, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <I name="tag" size={16} color={M.ink2}/>
+              </div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:14, fontWeight:500 }}>Space categories</div>
+                <div style={{ fontSize:11, color:M.ink3, marginTop:1 }}>Custom categories for this space</div>
+              </div>
+              <I name="caretR" size={14} color={M.ink4}/>
+            </div>
+          </>)}
         </div>
 
         {/* Financial Accounts card */}

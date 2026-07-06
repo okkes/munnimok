@@ -5,7 +5,7 @@ import { M, I, IcoMDI, Divider, StatusBar, AppBar } from '../../app/theme.jsx';
 import { useLang } from '../../shared/i18n.jsx';
 import { useNav, Sheet } from '../../app/nav.jsx';
 import { useTxCtx, useProfiles, useConnectedAccounts } from '../../app/providers.jsx';
-import { useLocalStorage } from '../../shared/hooks.jsx';
+import { useLocalStorage, useSpaceCats } from '../../shared/hooks.jsx';
 import { getUserId } from '../../shared/utils/user.js';
 import { HighlightText } from '../../shared/components/TxRow.jsx';
 import { DetailRow } from '../transactions/Tx.jsx';
@@ -577,6 +577,9 @@ export function CategoryPicker({ selected, onClose, onPick, txType = 'Expense', 
   const { profiles } = useProfiles();
   const activeProfile = profiles.find(p => p.active);
   const activeProfileId = activeProfile?.id;
+  const isActiveShared = !!(activeProfile?.isShared || (activeProfile?.members || []).length > 0 || (activeProfileId && !!localStorage.getItem(`munni_shared_data_${activeProfileId}`)));
+  const [spaceCatsForActive] = useSpaceCats(isActiveShared ? activeProfileId : null);
+  const nav = useNav();
 
   const handlePickCat = (id) => {
     if (skipAmount) { onPick(id, 0); return; }
@@ -584,21 +587,11 @@ export function CategoryPicker({ selected, onClose, onPick, txType = 'Expense', 
     setPickedId(id);
   };
 
-  const normScope = (sc) => {
-    if (!sc || sc === 'all_private') return { allPrivate: true, spaces: [] };
-    if (typeof sc === 'object' && !Array.isArray(sc)) return sc;
-    if (Array.isArray(sc)) return { allPrivate: false, spaces: sc };
-    return { allPrivate: true, spaces: [] };
-  };
-
   const groups = {};
-  const visibleCustomCats = Object.values(_catExt).filter(c => {
-    if (!c.scope) return true;
-    const s = normScope(c.scope);
-    if (s.allPrivate) return !activeProfile?.isShared;
-    return !!(activeProfileId && (s.spaces || []).includes(activeProfileId));
-  });
-  const allCatValues = [...Object.values(CATEGORIES), ...visibleCustomCats];
+  // In shared space: premade + space-specific custom cats only.
+  // In private space: premade + user private custom cats.
+  const extraCats = isActiveShared ? spaceCatsForActive : Object.values(_catExt).filter(c => !c.scope || c.scope === 'all_private' || c.scope?.allPrivate);
+  const allCatValues = [...Object.values(CATEGORIES), ...extraCats];
   allCatValues.forEach(c => {
     if (c.isParent) return;
     const catType = c.type || 'Expense';
@@ -681,10 +674,18 @@ export function CategoryPicker({ selected, onClose, onPick, txType = 'Expense', 
                 );
               })}
             </div>
-            {(Object.keys(groups).length === 0 || searchQ) && (
+            {(Object.keys(groups).length === 0 || searchQ) && !isActiveShared && (
               <div style={{ padding:'8px 20px 20px', borderTop:`1px solid ${M.line2}`, flexShrink:0 }}>
                 <button className="m-tap" onClick={onClose} style={{ fontSize:12, color:M.ink3, background:'transparent', border:'none', fontFamily:M.fontUI, cursor:'pointer', display:'flex', alignItems:'center', gap:4 }}>
                   <I name="plus" size={12} color={M.ink3}/> Manage custom categories
+                </button>
+              </div>
+            )}
+            {isActiveShared && (
+              <div style={{ padding:'10px 20px 16px', borderTop:`1px solid ${M.line2}`, flexShrink:0, background:M.sageSoft }}>
+                <button className="m-tap" onClick={() => { onClose(); nav.push('spaceCats', { spaceId: activeProfileId, spaceName: activeProfile?.name }); }}
+                  style={{ fontSize:12, color:M.sageDk, background:'transparent', border:'none', fontFamily:M.fontUI, cursor:'pointer', display:'flex', alignItems:'center', gap:4 }}>
+                  <I name="info" size={12} color={M.sage}/> Can't find your category? Add it to this shared space
                 </button>
               </div>
             )}

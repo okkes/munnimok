@@ -7,7 +7,7 @@ import { computePeriodHistory, fmtEur, fmtDate } from '../../shared/utils/format
 import { M, I, IcoMDI, Divider, StatusBar, AppBar } from '../../app/theme.jsx';
 import { useLang, OTHER_LANGUAGES, LangCtx, useCurrency } from '../../shared/i18n.jsx';
 import { NavCtx, useNav, useDark, Sheet } from '../../app/nav.jsx';
-import { useLocalStorage, useSessionStorage } from '../../shared/hooks.jsx';
+import { useLocalStorage, useSessionStorage, useSpaceCats } from '../../shared/hooks.jsx';
 import { BarChart } from '../../shared/components/Charts.jsx';
 import { useAppCtx, useTxCtx, useProfiles, useCatCtx, Stat, useConnectedAccounts } from '../../app/providers.jsx';
 import { Toggle, FormRow } from '../events/Events.jsx';
@@ -928,27 +928,17 @@ function NewCatForm({ onSave, isSub = false, parentDirection, parentType }) {
   const [name, setName] = React.useState('');
   const [icon, setIcon] = React.useState('help-circle-outline');
   const [color, setColor] = React.useState(M.slate);
-  const [scope, setScope] = React.useState({ allPrivate: true, spaces: [] });
   const [catType, setCatType] = React.useState('Expense');
   const [direction, setDirection] = React.useState(parentDirection || 'both');
   const [tooltip, setTooltip] = React.useState(null);
   const [typePickerOpen, setTypePickerOpen] = React.useState(false);
   const [iconPickerOpen, setIconPickerOpen] = React.useState(false);
-  const [scopeSheetOpen, setScopeSheetOpen] = React.useState(false);
-  const [scopeError, setScopeError] = React.useState(false);
-  const { profiles } = useProfiles();
   const toggleTip = (key) => setTooltip(t => t === key ? null : key);
 
   const handleSubmit = () => {
     if (!name.trim()) return;
-    if (isSub && !scope.allPrivate && (scope.spaces || []).length === 0) { setScopeError(true); return; }
-    onSave(name.trim(), icon, color, scope, catType, direction);
+    onSave(name.trim(), icon, color, catType, direction);
   };
-
-  const scopeHasSelection = scope.allPrivate || (scope.spaces||[]).length > 0;
-  const scopeSummary = scope.allPrivate ? 'All private spaces'
-    : (scope.spaces||[]).length > 0 ? `${(scope.spaces||[]).length} space${(scope.spaces||[]).length!==1?'s':''} selected`
-    : 'No space selected';
 
   return (
     <div style={{ paddingBottom:8 }}>
@@ -1025,31 +1015,6 @@ function NewCatForm({ onSave, isSub = false, parentDirection, parentType }) {
           <ColorPickerRow color={color} setColor={setColor}/>
         </>
       )}
-      {/* Scope — sub-categories only, compact row ? sheet */}
-      {isSub && (
-        <>
-          <div style={{ fontSize:12, color: scopeError ? M.clay : M.ink3, marginBottom:8 }}>Available in</div>
-          <button className="m-tap" onClick={() => setScopeSheetOpen(true)}
-            style={{ width:'100%', display:'flex', alignItems:'center', gap:12, padding:'11px 14px', borderRadius:12, border:`1.5px solid ${scopeError ? M.clay : M.line}`, background:M.paper2, cursor:'pointer', fontFamily:M.fontUI, marginBottom:14, boxSizing:'border-box' }}>
-            <div style={{ width:22, height:22, borderRadius:6, background: scopeHasSelection ? M.sage : 'transparent', border:`2px solid ${scopeHasSelection ? M.sage : M.ink4}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-              {scopeHasSelection && <I name="check" size={11} color="#fff"/>}
-            </div>
-            <div style={{ flex:1, textAlign:'left', fontSize:14, color: scopeError && !scopeHasSelection ? M.clay : M.ink }}>{scopeSummary}</div>
-            <I name="caretR" size={14} color={M.ink4}/>
-          </button>
-          {scopeSheetOpen && (
-            <Sheet title="Available in" onClose={() => setScopeSheetOpen(false)}>
-              <div style={{ padding:'8px 16px 20px' }}>
-                <ScopeSelector scope={scope} setScope={s => { setScope(s); setScopeError(false); }} profiles={profiles} hasError={scopeError}/>
-                <button className="m-tap" onClick={() => setScopeSheetOpen(false)}
-                  style={{ width:'100%', padding:'13px 0', background:M.sage, color:'#fff', border:'none', borderRadius:12, fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
-                  Done
-                </button>
-              </div>
-            </Sheet>
-          )}
-        </>
-      )}
       <button className="m-tap" onClick={handleSubmit}
         disabled={!name.trim()}
         style={{ width:'100%', background:M.sage, border:'none', borderRadius:12, padding:'13px', color:'#fff', fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI, opacity: name.trim()?1:0.5 }}>
@@ -1067,24 +1032,11 @@ function EditCatSheet({ entry, txCount = 0, onSave, onDelete, isPrebuilt = false
   const [parentIdDraft, setParentIdDraft] = React.useState(entry.parentId ?? null);
   const [parentPickerOpen, setParentPickerOpen] = React.useState(false);
   const [typePickerOpen, setTypePickerOpen] = React.useState(false);
-  const [scopeError, setScopeError] = React.useState(false);
   const [saveConfirmOpen, setSaveConfirmOpen] = React.useState(false);
-  const { profiles } = useProfiles();
-  const activeProfileId = profiles.find(p => p.active)?.id;
   const { customCats } = useCatCtx();
   const { txs } = useTxCtx();
-  const normalizeScope = (sc) => {
-    if (!sc) return { allPrivate: true, spaces: [] };
-    if (typeof sc === 'object' && !Array.isArray(sc)) return sc;
-    if (sc === 'all_private') return { allPrivate: true, spaces: [] };
-    if (Array.isArray(sc)) return { allPrivate: false, spaces: sc };
-    return { allPrivate: true, spaces: [] };
-  };
-  const initialScopeRef = React.useRef(normalizeScope(entry.scope));
-  const [scopeDraft, setScopeDraft] = React.useState(() => normalizeScope(entry.scope));
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
   const [iconPickerOpen, setIconPickerOpen] = React.useState(false);
-  const [scopeSheetOpen, setScopeSheetOpen] = React.useState(false);
   const canDelete = onDelete !== null;
   const isParent = entry.isParent;
   const isOtherSub = !isParent && !!entry.isOther;
@@ -1095,31 +1047,17 @@ function EditCatSheet({ entry, txCount = 0, onSave, onDelete, isPrebuilt = false
   const [typeDraft, setTypeDraft] = React.useState(initialType);
   const typeChanged = typeDraft !== initialType;
 
-  // Scope narrowing: new scope is specific spaces and active profile not included
-  const scopeNarrowed = React.useMemo(() => {
-    if (isParent || isPrebuilt || scopeDraft.allPrivate) return false;
-    const initS = initialScopeRef.current;
-    const scopeActuallyChanged = initS.allPrivate !== scopeDraft.allPrivate
-      || [...(scopeDraft.spaces||[])].sort().join(',') !== [...(initS.spaces||[])].sort().join(',');
-    if (!scopeActuallyChanged) return false;
-    return !(scopeDraft.spaces||[]).includes(activeProfileId);
-  }, [isParent, isPrebuilt, scopeDraft, activeProfileId]);
-
-  // Transactions affected by type (parent) or scope (sub) change
+  // Transactions affected by type change (parent categories only)
   const conflictTxs = React.useMemo(() => {
-    if (isPrebuilt) return [];
-    if (isParent) {
-      if (!typeChanged) return [];
-      const subIds = new Set(customCats.filter(c => c.parent === entry.catId).map(c => c.id));
-      subIds.add(entry.catId);
-      return txs.filter(t => {
-        if (!subIds.has(t.cat)) return false;
-        const inferred = t.txType || (t.amount < 0 ? 'Expense' : 'Income');
-        return inferred !== typeDraft;
-      });
-    }
-    return txs.filter(t => t.cat === entry.catId && scopeNarrowed);
-  }, [typeChanged, typeDraft, scopeNarrowed, isPrebuilt, isParent, entry.catId, txs, customCats]);
+    if (isPrebuilt || !isParent || !typeChanged) return [];
+    const subIds = new Set(customCats.filter(c => c.parent === entry.catId).map(c => c.id));
+    subIds.add(entry.catId);
+    return txs.filter(t => {
+      if (!subIds.has(t.cat)) return false;
+      const inferred = t.txType || (t.amount < 0 ? 'Expense' : 'Income');
+      return inferred !== typeDraft;
+    });
+  }, [typeChanged, typeDraft, isPrebuilt, isParent, entry.catId, txs, customCats]);
 
   const conflictCount = conflictTxs.length;
 
@@ -1132,11 +1070,6 @@ function EditCatSheet({ entry, txCount = 0, onSave, onDelete, isPrebuilt = false
     return txs.filter(t => t.cat === entry.catId);
   }, [isParent, txs, entry.catId, customCats]);
 
-  const scopeHasSelection = scopeDraft.allPrivate || (scopeDraft.spaces||[]).length > 0;
-  const scopeSummary = scopeDraft.allPrivate ? 'All private spaces'
-    : (scopeDraft.spaces||[]).length > 0 ? `${(scopeDraft.spaces||[]).length} space${(scopeDraft.spaces||[]).length!==1?'s':''} selected`
-    : 'No space selected';
-
   const availableParents = React.useMemo(() => {
     const premade = Object.entries(CATEGORIES)
       .filter(([, v]) => v.isParent && !v.hidden)
@@ -1148,12 +1081,11 @@ function EditCatSheet({ entry, txCount = 0, onSave, onDelete, isPrebuilt = false
   }, [customCats]);
 
   const executeSave = () => {
-    onSave(nameDraft.trim(), iconDraft, entry.color, !isParent ? scopeDraft : undefined, !isParent ? parentIdDraft : undefined, (!isPrebuilt && isParent && typeChanged) ? typeDraft : undefined, scopeNarrowed, directionDraft);
+    onSave(nameDraft.trim(), iconDraft, entry.color, !isParent ? parentIdDraft : undefined, (!isPrebuilt && isParent && typeChanged) ? typeDraft : undefined, directionDraft);
   };
 
   const handleSave = () => {
     if (!nameDraft.trim()) return;
-    if (!isPrebuilt && !isParent && !scopeDraft.allPrivate && (scopeDraft.spaces || []).length === 0) { setScopeError(true); return; }
     if (conflictCount > 0) { setSaveConfirmOpen(true); return; }
     executeSave();
   };
@@ -1243,31 +1175,6 @@ function EditCatSheet({ entry, txCount = 0, onSave, onDelete, isPrebuilt = false
               ))}
             </div>
           </>)}
-          {/* Scope — non-Other sub-categories only */}
-          {!isParent && !isOtherSub && (
-            <>
-              <div style={{ fontSize:12, color: scopeError ? M.clay : M.ink3, marginBottom:8 }}>Available in</div>
-              <button className="m-tap" onClick={() => setScopeSheetOpen(true)}
-                style={{ width:'100%', display:'flex', alignItems:'center', gap:12, padding:'11px 14px', borderRadius:12, border:`1.5px solid ${scopeError ? M.clay : M.line}`, background:M.paper2, cursor:'pointer', fontFamily:M.fontUI, marginBottom:14, boxSizing:'border-box' }}>
-                <div style={{ width:22, height:22, borderRadius:6, background: scopeHasSelection ? M.sage : 'transparent', border:`2px solid ${scopeHasSelection ? M.sage : M.ink4}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                  {scopeHasSelection && <I name="check" size={11} color="#fff"/>}
-                </div>
-                <div style={{ flex:1, textAlign:'left', fontSize:14, color: scopeError && !scopeHasSelection ? M.clay : M.ink }}>{scopeSummary}</div>
-                <I name="caretR" size={14} color={M.ink4}/>
-              </button>
-              {scopeSheetOpen && (
-                <Sheet title="Available in" onClose={() => setScopeSheetOpen(false)}>
-                  <div style={{ padding:'8px 16px 20px' }}>
-                    <ScopeSelector scope={scopeDraft} setScope={s => { setScopeDraft(s); setScopeError(false); }} profiles={profiles} hasError={scopeError}/>
-                    <button className="m-tap" onClick={() => setScopeSheetOpen(false)}
-                      style={{ width:'100%', padding:'13px 0', background:M.sage, color:'#fff', border:'none', borderRadius:12, fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
-                      Done
-                    </button>
-                  </div>
-                </Sheet>
-              )}
-            </>
-          )}
           {/* Transaction type — custom parent categories only; subs inherit */}
           {isParent && (
             <>
@@ -1392,23 +1299,28 @@ function EditCatSheet({ entry, txCount = 0, onSave, onDelete, isPrebuilt = false
 export function ScreenNewCat({ params }) {
   const nav = useNav();
   const { customCats, setCustomCats } = useCatCtx();
+  const spaceId = params?.spaceId ?? null;
+  const [spaceCats, setSpaceCats] = useSpaceCats(spaceId);
   const parentId = params?.parentId ?? null;
   const isParent = !parentId;
-  const parentCat = parentId ? (CATEGORIES[parentId] || customCats.find(c => c.id === parentId)) : null;
+  const allCats = spaceId ? spaceCats : customCats;
+  const parentCat = parentId ? (CATEGORIES[parentId] || allCats.find(c => c.id === parentId)) : null;
   const parentDirection = parentCat ? (parentCat.direction || getCatDirection(parentCat) || 'both') : 'both';
   const parentType = parentCat ? (parentCat.type || 'Expense') : 'Expense';
+  const addCat = spaceId ? setSpaceCats : setCustomCats;
+  const idPrefix = spaceId ? `space_${spaceId.slice(-6)}_${Date.now()}` : `cust_${Date.now()}`;
 
-  const handleSave = (name, icon, color, scope, catType, direction) => {
+  const handleSave = (name, icon, color, catType, direction) => {
     if (isParent) {
-      const id = `cust_${Date.now()}`;
+      const id = idPrefix;
       const type = catType || 'Expense';
-      setCustomCats(prev => [...prev,
+      addCat(prev => [...prev,
         { id, name, icon: icon||'help-circle-outline', color: color||M.slate, isParent:true, parent:null, type, direction: direction||'both' }
       ]);
-      nav.replace('newOtherSub', { parentId: id, parentName: name, parentColor: color||M.slate, parentIcon: icon||'help-circle-outline', parentType: type });
+      nav.replace(spaceId ? 'newSpaceOtherSub' : 'newOtherSub', { parentId: id, parentName: name, parentColor: color||M.slate, parentIcon: icon||'help-circle-outline', parentType: type, spaceId });
     } else {
-      setCustomCats(prev => [...prev,
-        { id:`cust_${Date.now()}`, name, icon: icon||'help-circle-outline', color: color||M.slate, isParent:false, parent:parentId, scope: scope||'all_private', type: parentType, direction: direction||'both' }
+      addCat(prev => [...prev,
+        { id:`cust_${Date.now()}`, name, icon: icon||'help-circle-outline', color: color||M.slate, isParent:false, parent:parentId, scope:'all_private', type: parentType, direction: direction||'both' }
       ]);
       nav.pop();
     }
@@ -1442,31 +1354,26 @@ export function ScreenNewCat({ params }) {
 export function ScreenNewOtherSub({ params }) {
   const nav = useNav();
   const { customCats, setCustomCats } = useCatCtx();
-  const { profiles } = useProfiles();
+  const spaceId = params?.spaceId ?? null;
+  const [spaceCats, setSpaceCats] = useSpaceCats(spaceId);
   const parentId = params?.parentId;
   const parentName = params?.parentName || '';
   const parentColor = params?.parentColor || M.slate;
   const parentIcon = params?.parentIcon || 'help-circle-outline';
 
-  const parentType = params?.parentType || customCats.find(c => c.id === parentId)?.type || 'Expense';
+  const allCats = spaceId ? spaceCats : customCats;
+  const parentType = params?.parentType || allCats.find(c => c.id === parentId)?.type || 'Expense';
+  const addCat = spaceId ? setSpaceCats : setCustomCats;
   const [direction, setDirection] = React.useState('both');
   const [icon, setIcon] = React.useState('dots-horizontal');
-  const [scope, setScope] = React.useState({ allPrivate: true, spaces: [] });
   const [tooltip, setTooltip] = React.useState(null);
   const [iconPickerOpen, setIconPickerOpen] = React.useState(false);
-  const [scopeSheetOpen, setScopeSheetOpen] = React.useState(false);
-  const [scopeError, setScopeError] = React.useState(false);
 
   const toggleTip = (key) => setTooltip(t => t === key ? null : key);
-  const scopeHasSelection = scope.allPrivate || (scope.spaces||[]).length > 0;
-  const scopeSummary = scope.allPrivate ? 'All private spaces'
-    : (scope.spaces||[]).length > 0 ? `${(scope.spaces||[]).length} space${(scope.spaces||[]).length!==1?'s':''} selected`
-    : 'No space selected';
 
   const handleFinish = () => {
-    if (!scopeHasSelection) { setScopeError(true); return; }
-    setCustomCats(prev => [...prev,
-      { id:`${parentId}_other`, name:'Other', icon, color:M.paper2, isParent:false, parent:parentId, scope: scope||'all_private', type: parentType, direction: direction||'both' }
+    addCat(prev => [...prev,
+      { id:`${parentId}_other`, name:'Other', icon, color:M.paper2, isParent:false, parent:parentId, scope:'all_private', type: parentType, direction: direction||'both' }
     ]);
     nav.pop();
   };
@@ -1542,27 +1449,6 @@ export function ScreenNewOtherSub({ params }) {
             </div>
           </Sheet>
         )}
-        {/* Scope */}
-        <div style={{ fontSize:12, color: scopeError ? M.clay : M.ink3, marginBottom:8 }}>Available in</div>
-        <button className="m-tap" onClick={() => setScopeSheetOpen(true)}
-          style={{ width:'100%', display:'flex', alignItems:'center', gap:12, padding:'11px 14px', borderRadius:12, border:`1.5px solid ${scopeError ? M.clay : M.line}`, background:M.paper2, cursor:'pointer', fontFamily:M.fontUI, marginBottom:14, boxSizing:'border-box' }}>
-          <div style={{ width:22, height:22, borderRadius:6, background: scopeHasSelection ? M.sage : 'transparent', border:`2px solid ${scopeHasSelection ? M.sage : M.ink4}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-            {scopeHasSelection && <I name="check" size={11} color="#fff"/>}
-          </div>
-          <div style={{ flex:1, textAlign:'left', fontSize:14, color: scopeError && !scopeHasSelection ? M.clay : M.ink }}>{scopeSummary}</div>
-          <I name="caretR" size={14} color={M.ink4}/>
-        </button>
-        {scopeSheetOpen && (
-          <Sheet title="Available in" onClose={() => setScopeSheetOpen(false)}>
-            <div style={{ padding:'8px 16px 20px' }}>
-              <ScopeSelector scope={scope} setScope={s => { setScope(s); setScopeError(false); }} profiles={profiles} hasError={scopeError}/>
-              <button className="m-tap" onClick={() => setScopeSheetOpen(false)}
-                style={{ width:'100%', padding:'13px 0', background:M.sage, color:'#fff', border:'none', borderRadius:12, fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
-                Done
-              </button>
-            </div>
-          </Sheet>
-        )}
         <button className="m-tap" onClick={handleFinish}
           style={{ width:'100%', background:M.sage, border:'none', borderRadius:12, padding:'13px', color:'#fff', fontSize:14, fontWeight:600, cursor:'pointer', fontFamily:M.fontUI }}>
           Finish
@@ -1574,11 +1460,15 @@ export function ScreenNewOtherSub({ params }) {
 
 export function ScreenEditCat({ params }) {
   const nav = useNav();
-  const { txs, setTxs, updateTx } = useTxCtx();
+  const { txs, updateTx } = useTxCtx();
   const { customCats, setCustomCats } = useCatCtx();
+  const spaceId = params?.spaceId ?? null;
+  const [spaceCats, setSpaceCats] = useSpaceCats(spaceId);
   const [premadeOverrides, setPremadeOverrides] = useLocalStorage('munni_cat_overrides', {});
   const entry = params || {};
   const { catId, isCustom, isParent: isParentCat } = entry;
+  const activeCats = spaceId ? spaceCats : customCats;
+  const setActiveCats = spaceId ? setSpaceCats : setCustomCats;
 
   const [txCount, setTxCount] = React.useState(0);
   React.useEffect(() => {
@@ -1589,23 +1479,23 @@ export function ScreenEditCat({ params }) {
     if (!isCustom) return false;
     if (entry.isOther) return false;
     if (isParentCat) {
-      const subs = customCats.filter(c => !c.isParent && c.parent === catId);
+      const subs = activeCats.filter(c => !c.isParent && c.parent === catId);
       return subs.length === 0 || (subs.length === 1 && subs[0].id === `${catId}_other`);
     }
     return true;
-  }, [isCustom, isParentCat, catId, customCats, entry.isOther]);
+  }, [isCustom, isParentCat, catId, activeCats, entry.isOther]);
 
   const handleDelete = () => {
     if (isParentCat) {
-      const subsToDelete = new Set(customCats.filter(c => c.parent === catId).map(c => c.id));
+      const subsToDelete = new Set(activeCats.filter(c => c.parent === catId).map(c => c.id));
       subsToDelete.add(catId);
-      setCustomCats(prev => prev.filter(c => !subsToDelete.has(c.id)));
-      txs.filter(t => subsToDelete.has(t.cat)).forEach(t =>
+      setActiveCats(prev => prev.filter(c => !subsToDelete.has(c.id)));
+      if (!spaceId) txs.filter(t => subsToDelete.has(t.cat)).forEach(t =>
         updateTx(t.id, { cat:'uncategorized', cats:[{ catId:'uncategorized', amount:Math.abs(t.amount) }] })
       );
     } else {
-      setCustomCats(prev => prev.filter(c => c.id !== catId));
-      txs.filter(t => t.cat === catId).forEach(t =>
+      setActiveCats(prev => prev.filter(c => c.id !== catId));
+      if (!spaceId) txs.filter(t => t.cat === catId).forEach(t =>
         updateTx(t.id, { cat:'uncategorized', cats:[{ catId:'uncategorized', amount:Math.abs(t.amount) }] })
       );
     }
@@ -1624,40 +1514,35 @@ export function ScreenEditCat({ params }) {
           entry={entry}
           txCount={txCount}
           isPrebuilt={!isCustom}
-          onSave={(name, icon, color, scope, newParentId, newType, scopeNarrowed, direction) => {
+          onSave={(name, icon, color, newParentId, newType, direction) => {
             if (isCustom) {
               if (isParentCat && newType) {
-                // Propagate type change to all subs
-                setCustomCats(prev => prev.map(c => {
+                setActiveCats(prev => prev.map(c => {
                   if (c.id === catId) return { ...c, name, icon, color, type: newType, ...(direction !== undefined ? { direction } : {}) };
                   if (c.parent === catId) return { ...c, type: newType };
                   return c;
                 }));
-                // Uncategorize txs in any sub/parent that conflict with new type
-                const subIds = new Set(customCats.filter(c => c.parent === catId).map(c => c.id));
-                subIds.add(catId);
-                txs.filter(t => {
-                  if (!subIds.has(t.cat)) return false;
-                  const inferred = t.txType || (t.amount < 0 ? 'Expense' : 'Income');
-                  return inferred !== newType;
-                }).forEach(t =>
-                  updateTx(t.id, { cat:'uncategorized', cats:[{ catId:'uncategorized', amount:Math.abs(t.amount) }] })
-                );
+                if (!spaceId) {
+                  const subIds = new Set(activeCats.filter(c => c.parent === catId).map(c => c.id));
+                  subIds.add(catId);
+                  txs.filter(t => {
+                    if (!subIds.has(t.cat)) return false;
+                    const inferred = t.txType || (t.amount < 0 ? 'Expense' : 'Income');
+                    return inferred !== newType;
+                  }).forEach(t =>
+                    updateTx(t.id, { cat:'uncategorized', cats:[{ catId:'uncategorized', amount:Math.abs(t.amount) }] })
+                  );
+                }
               } else if (isParentCat) {
-                setCustomCats(prev => prev.map(c => {
+                setActiveCats(prev => prev.map(c => {
                   if (c.id === catId) return { ...c, name, icon, color, ...(direction !== undefined ? { direction } : {}) };
                   return c;
                 }));
               } else {
-                setCustomCats(prev => prev.map(c => {
-                  if (c.id === catId) return { ...c, name, icon, color, ...(scope !== undefined ? { scope } : {}), ...(newParentId !== undefined ? { parent: newParentId } : {}), ...(direction !== undefined ? { direction } : {}) };
+                setActiveCats(prev => prev.map(c => {
+                  if (c.id === catId) return { ...c, name, icon, color, ...(newParentId !== undefined ? { parent: newParentId } : {}), ...(direction !== undefined ? { direction } : {}) };
                   return c;
                 }));
-                if (scopeNarrowed) {
-                  txs.filter(t => t.cat === catId).forEach(t =>
-                    updateTx(t.id, { cat:'uncategorized', cats:[{ catId:'uncategorized', amount:Math.abs(t.amount) }] })
-                  );
-                }
               }
             } else {
               setPremadeOverrides(prev => ({ ...prev, [catId]: { name } }));
@@ -1667,6 +1552,150 @@ export function ScreenEditCat({ params }) {
           onDelete={canDelete ? handleDelete : null}
         />
       </div>
+    </div>
+  );
+}
+
+export function ScreenSpaceCategories({ params }) {
+  const nav = useNav();
+  const { t } = useLang();
+  const spaceId = params?.spaceId;
+  const spaceName = params?.spaceName || 'Space';
+  const [spaceCats, setSpaceCats] = useSpaceCats(spaceId);
+  const { customCats } = useCatCtx();
+  const [catInfoSheet, setCatInfoSheet] = React.useState(null);
+  const [expandedParents, setExpandedParents] = React.useState({});
+  const [showCopySheet, setShowCopySheet] = React.useState(false);
+  const [copySearch, setCopySearch] = React.useState('');
+
+  const parents = spaceCats.filter(c => c.isParent);
+  const getSubs = (parentId) => spaceCats.filter(c => !c.isParent && c.parent === parentId);
+
+  // Private custom parents the user can copy from (not already in space)
+  const spaceParentIds = new Set(spaceCats.map(c => c.id));
+  const copyableCats = customCats.filter(c => c.isParent && !spaceParentIds.has(c.id));
+  const filteredCopyable = copySearch
+    ? copyableCats.filter(c => c.name.toLowerCase().includes(copySearch.toLowerCase()))
+    : copyableCats;
+
+  const copyToSpace = (cat) => {
+    const subs = customCats.filter(c => c.parent === cat.id);
+    setSpaceCats(prev => [...prev, { ...cat }, ...subs]);
+  };
+
+  return (
+    <div className="m-screen">
+      <StatusBar/>
+      <AppBar
+        title="Space categories"
+        leading={<button className="m-iconbtn m-tap" onClick={() => nav.pop()}><I name="arrowL" size={20}/></button>}
+        trailing={<button className="m-tap m-iconbtn" onClick={() => nav.push('newSpaceCat', { parentId: null, spaceId })}><I name="plus" size={20}/></button>}
+      />
+      <div className="m-body-scroll" style={{ paddingBottom:80 }}>
+        <div style={{ fontSize:12, color:M.ink3, marginBottom:12, paddingTop:4, paddingLeft:2 }}>
+          Custom categories for <strong>{spaceName}</strong>. Premade categories are always included automatically.
+        </div>
+
+        {parents.length === 0 && (
+          <div style={{ textAlign:'center', padding:'32px 0 16px', color:M.ink3 }}>
+            <IcoMDI name="tag-outline" size={32} color={M.ink4}/>
+            <div style={{ fontSize:14, marginTop:12 }}>No space-specific categories yet</div>
+            <div style={{ fontSize:12, color:M.ink4, marginTop:4 }}>Tap + to add or copy from your private categories</div>
+          </div>
+        )}
+
+        {parents.map(parent => {
+          const isOpen = expandedParents[parent.id] !== false;
+          const subs = getSubs(parent.id);
+          return (
+            <div key={parent.id} className="m-card" style={{ marginBottom:10, padding:0, overflow:'hidden', border:`1px solid ${M.line}` }}>
+              <div className="m-tap" style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 16px', cursor:'pointer' }}
+                onClick={() => setExpandedParents(prev => ({ ...prev, [parent.id]: !isOpen }))}>
+                <button className="m-tap" onClick={e => { e.stopPropagation(); setCatInfoSheet({ catId: parent.id, isParent: true, spaceId }); }}
+                  style={{ width:40, height:40, borderRadius:12, background:parent.color||M.slate, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, border:'none', cursor:'pointer' }}>
+                  <IcoMDI name={parent.icon||'help-circle-outline'} size={18} color='#fff'/>
+                </button>
+                <div style={{ flex:1, fontSize:15, fontWeight:600, color:M.ink }}>{parent.name}</div>
+                <div style={{ transform: isOpen ? 'rotate(0deg)' : 'rotate(-90deg)', transition:'transform 0.18s' }}>
+                  <I name="caretR" size={14} color={M.ink4}/>
+                </div>
+              </div>
+              {isOpen && subs.map(sub => (
+                <div key={sub.id} className="m-tap" style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 16px', borderTop:`1px solid ${M.line2}`, cursor:'pointer' }}
+                  onClick={() => setCatInfoSheet({ catId: sub.id, parentId: parent.id, isParent: false, spaceId })}>
+                  <div style={{ width:28, height:28, borderRadius:8, background:(parent.color||M.slate)+'33', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                    <IcoMDI name={sub.icon||'help-circle-outline'} size={13} color={parent.color||M.ink2}/>
+                  </div>
+                  <div style={{ flex:1, fontSize:13, fontWeight:500, color:M.ink }}>{sub.name}</div>
+                </div>
+              ))}
+              {isOpen && (
+                <button className="m-tap" onClick={() => nav.push('newSpaceCat', { parentId: parent.id, spaceId })}
+                  style={{ width:'100%', padding:'10px 16px', borderTop:`1px solid ${M.line2}`, background:'transparent', border:'none', borderTopStyle:'solid', borderTopWidth:1, borderTopColor:M.line2, display:'flex', alignItems:'center', gap:8, cursor:'pointer', fontFamily:M.fontUI, color:M.sage }}>
+                  <I name="plus" size={13} color={M.sage}/><span style={{ fontSize:13, fontWeight:500 }}>Add sub-category</span>
+                </button>
+              )}
+            </div>
+          );
+        })}
+
+        {/* Copy from private categories */}
+        <button className="m-btn outline m-tap" style={{ width:'100%', marginTop:8 }} onClick={() => setShowCopySheet(true)}>
+          <I name="copy" size={16} color={M.ink2}/> Copy from my categories
+        </button>
+      </div>
+
+      {/* Cat info / edit sheet */}
+      {catInfoSheet && (() => {
+        const { catId, isParent: isP, parentId, spaceId: sid } = catInfoSheet;
+        const cat = spaceCats.find(c => c.id === catId);
+        if (!cat) { setCatInfoSheet(null); return null; }
+        return (
+          <Sheet title={cat.name} onClose={() => setCatInfoSheet(null)}>
+            <div style={{ padding:'4px 20px 32px' }}>
+              <button className="m-btn outline m-tap" style={{ width:'100%', marginBottom:8 }} onClick={() => {
+                setCatInfoSheet(null);
+                nav.push('editSpaceCat', { catId, parentId: isP ? null : parentId, isCustom: true, isParent: isP, name: cat.name, icon: cat.icon, color: cat.color, direction: cat.direction || 'both', spaceId: sid });
+              }}>
+                <IcoMDI name="pencil-outline" size={16} color={M.ink2}/> Edit category
+              </button>
+            </div>
+          </Sheet>
+        );
+      })()}
+
+      {/* Copy sheet */}
+      {showCopySheet && (
+        <Sheet title="Copy from my categories" onClose={() => { setShowCopySheet(false); setCopySearch(''); }}>
+          <div style={{ padding:'4px 16px 32px' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 12px', borderRadius:10, background:M.paper2, border:`1px solid ${M.line}`, marginBottom:14 }}>
+              <I name="search" size={14} color={M.ink3}/>
+              <input value={copySearch} onChange={e => setCopySearch(e.target.value)} placeholder="Search categories…"
+                style={{ flex:1, border:'none', background:'transparent', fontSize:13, color:M.ink, outline:'none', fontFamily:M.fontUI }}/>
+            </div>
+            {filteredCopyable.length === 0 && (
+              <div style={{ textAlign:'center', padding:'24px 0', color:M.ink3, fontSize:13 }}>
+                {copyableCats.length === 0 ? 'No private custom categories to copy' : 'No results'}
+              </div>
+            )}
+            {filteredCopyable.map(cat => (
+              <div key={cat.id} className="m-tap" style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 0', borderBottom:`1px solid ${M.line2}` }}>
+                <div style={{ width:36, height:36, borderRadius:10, background:cat.color||M.slate, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <IcoMDI name={cat.icon||'help-circle-outline'} size={16} color='#fff'/>
+                </div>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:14, fontWeight:600, color:M.ink }}>{cat.name}</div>
+                  <div style={{ fontSize:11, color:M.ink4 }}>{customCats.filter(c => c.parent === cat.id).length} sub-categories</div>
+                </div>
+                <button className="m-tap" onClick={() => { copyToSpace(cat); }}
+                  style={{ padding:'6px 14px', borderRadius:8, background: spaceParentIds.has(cat.id) ? M.sageSoft : M.sage, color: spaceParentIds.has(cat.id) ? M.sage : '#fff', border:'none', fontSize:12, fontWeight:600, cursor: spaceParentIds.has(cat.id) ? 'default' : 'pointer', fontFamily:M.fontUI }}>
+                  {spaceParentIds.has(cat.id) ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+            ))}
+          </div>
+        </Sheet>
+      )}
     </div>
   );
 }

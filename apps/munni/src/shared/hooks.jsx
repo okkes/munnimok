@@ -29,6 +29,15 @@ export function useLocalStorage(key, defaultValue) {
   return [state, set];
 }
 
+// useSpaceCats — reads/writes the custom category list for a shared space.
+// Returns [cats, setter] like useLocalStorage but handles null spaceId gracefully.
+export function useSpaceCats(spaceId) {
+  const key = spaceId ? `munni_spaceCats_${spaceId}` : '_spacecats_noop';
+  const [cats, setCats] = useLocalStorage(key, []);
+  if (!spaceId) return [[], () => {}];
+  return [cats, setCats];
+}
+
 export function clearAllStorage() {
   // Write reset signal BEFORE clearing — other tabs receive the storage event and reload
   localStorage.setItem('munni_reset_signal', String(Date.now()));
