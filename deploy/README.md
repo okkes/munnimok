@@ -2,11 +2,28 @@
 
 ## One-time setup
 
+0. **Images**: GitHub Actions builds and pushes `munni-api` / `munni-web`
+   to the private registry on every push to master
+   (`.github/workflows/release-images.yml`; credentials live in the repo's
+   Actions secrets). Nothing can be pulled before that workflow has run
+   green at least once.
 1. **Folders**: create a share for the stack, e.g. `/volume1/docker/munni`,
-   and copy this `deploy/` folder into it. Copy `env/.env.example` to
-   `env/.env.local` and fill in every value.
-2. **Container Manager**: create a *Project* pointing at
-   `docker-compose.yml`, with the env file set to `env/.env.local`.
+   and copy this `deploy/` folder into it. Fill in `env/.env.example` →
+   `env/.env.local`, then copy it to a file named exactly `.env` **next to
+   `docker-compose.yml`** — Container Manager has no env-file picker;
+   docker compose only auto-reads a sibling `.env`:
+   ```sh
+   cp env/.env.local .env
+   ```
+2. **Registry login** (private registry needs credentials for pulls —
+   the "no basic auth credentials" error means this step is missing):
+   - Container Manager → *Registry* → *Settings* → *Add*:
+     URL `https://cr.okkes.synology.me`, plus the registry username and
+     password.
+   - Also once via SSH for scheduled-task pulls:
+     `sudo docker login cr.okkes.synology.me`
+   Then create the *Project* in Container Manager pointing at
+   `docker-compose.yml` in that folder.
 3. **Reverse proxy** (DSM → Login Portal → Advanced → Reverse Proxy), all
    HTTPS with the `*.okkes.synology.me` wildcard certificate:
    | Source | Destination |
@@ -39,8 +56,10 @@ Images are built by GitHub Actions and pushed to `${REGISTRY}`. On the NAS,
 a DSM Scheduled Task (root, daily or on demand) runs:
 
 ```sh
-cd /volume1/docker/munni && docker compose --env-file env/.env.local pull && docker compose --env-file env/.env.local up -d
+cd /volume1/docker/munni && docker compose pull && docker compose up -d
 ```
+(the sibling `.env` is picked up automatically; `docker login` must have
+been done once for the pulling user)
 
 ## Local test stack (CI / development)
 
