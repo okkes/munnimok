@@ -1,8 +1,10 @@
 node_modules/
 dist/
 .vite/
-tests/screenshots/
-tests/gallery/
-tests/results/
-tests/videos/
 playwright-report/
+
+# Playwright artifacts: screenshots are committed (visual review),
+# videos/results/gallery HTML are regenerated and cached in CI.
+**/tests/gallery/
+**/tests/results/
+**/tests/videos/

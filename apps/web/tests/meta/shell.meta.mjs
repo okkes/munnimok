@@ -1,0 +1,59 @@
+export const FEATURE       = 'shell';
+export const FEATURE_LABEL = 'App Shell';
+
+export const GROUPS = [
+  {
+    name: 'Navigation',
+    tests: [
+      {
+        key: '01-shell-home',
+        title: 'Home tab (default)',
+        desc: 'App boots to the Home tab with the bottom tab bar (mobile) and URL routed to #/home.',
+        tags: ['first-run'],
+      },
+      {
+        key: '02-shell-tabs',
+        title: 'Tab navigation',
+        desc: 'Tapping each tab switches screens: Transactions → Spaces → Settings.',
+        tags: ['navigation'],
+        steps: [
+          'Transactions tab',
+          'Spaces tab',
+          'Settings tab',
+        ],
+      },
+      {
+        key: '03-shell-back',
+        title: 'Browser back between tabs',
+        desc: 'Every screen has a real URL, so the browser/device back button returns to the previous tab.',
+        tags: ['navigation'],
+        steps: [
+          'Transactions tab opened',
+          'Browser back → Home tab',
+        ],
+      },
+    ],
+  },
+  {
+    name: 'Appearance & Language',
+    tests: [
+      {
+        key: '04-shell-language',
+        title: 'Language switch (EN → NL)',
+        desc: 'Settings → Language opens the shared bottom sheet; picking Nederlands relabels the whole UI.',
+        tags: ['state'],
+        steps: [
+          'Settings screen',
+          'Language sheet open',
+          'UI in Dutch',
+        ],
+      },
+      {
+        key: '05-shell-dark',
+        title: 'Dark mode toggle',
+        desc: 'Appearance row toggles the warm-dark theme; the choice persists in localStorage.',
+        tags: ['state'],
+      },
+    ],
+  },
+];

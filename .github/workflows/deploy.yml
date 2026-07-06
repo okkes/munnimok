@@ -41,21 +41,21 @@ jobs:
 
       # Install only the Chromium browser (faster than full install)
       - run: npx playwright install --with-deps chromium
-        working-directory: apps/munni
+        working-directory: apps/web
 
       # Build the app
       - run: npm run build
-        working-directory: apps/munni
+        working-directory: apps/web
 
       # Restore screenshots + videos from cache so partial runs keep the full gallery intact
       - name: Restore gallery cache
         uses: actions/cache/restore@v4
         with:
           path: |
-            apps/munni/tests/screenshots
-            apps/munni/tests/videos
-          key: gallery-${{ github.run_id }}
-          restore-keys: gallery-
+            apps/web/tests/screenshots
+            apps/web/tests/videos
+          key: gallery-web-${{ github.run_id }}
+          restore-keys: gallery-web-
 
       # On push: detect which spec files changed; run only those.
       # On schedule / manual dispatch: run all tests.
@@ -63,8 +63,8 @@ jobs:
       - name: Detect changed test specs
         id: tests
         run: |
-          HAS_SHOTS=$(ls apps/munni/tests/screenshots/*.png 2>/dev/null | wc -l)
-          HAS_VIDS=$(ls apps/munni/tests/videos/*.webm 2>/dev/null | wc -l)
+          HAS_SHOTS=$(ls apps/web/tests/screenshots/*.png 2>/dev/null | wc -l)
+          HAS_VIDS=$(ls apps/web/tests/videos/*.webm 2>/dev/null | wc -l)
           if [ "$HAS_SHOTS" = "0" ] || [ "$HAS_VIDS" = "0" ]; then
             echo "run_all=true" >> $GITHUB_OUTPUT
             echo "specs=" >> $GITHUB_OUTPUT
@@ -78,8 +78,8 @@ jobs:
             echo "run_all=true" >> $GITHUB_OUTPUT
             echo "specs=" >> $GITHUB_OUTPUT
           else
-            CHANGED_SPECS=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} -- 'apps/munni/tests/specs/*.spec.js' | tr '\n' ' ')
-            SRC_CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} -- 'apps/munni/src/' 'apps/munni/tests/helpers/' | wc -l)
+            CHANGED_SPECS=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} -- 'apps/web/tests/specs/*.spec.js' | sed 's|apps/web/||' | tr '\n' ' ')
+            SRC_CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} -- 'apps/web/src/' 'apps/web/tests/helpers/' | wc -l)
             if [ "$SRC_CHANGED" -gt "0" ]; then
               echo "run_all=true" >> $GITHUB_OUTPUT
               echo "specs=" >> $GITHUB_OUTPUT
@@ -93,13 +93,13 @@ jobs:
       - name: Run all Playwright tests
         if: steps.tests.outputs.run_all == 'true'
         run: npx playwright test
-        working-directory: apps/munni
+        working-directory: apps/web
 
       # Partial run: only spec files changed in this push
       - name: Run changed Playwright tests
         if: steps.tests.outputs.run_all != 'true' && steps.tests.outputs.specs != ''
         run: npx playwright test ${{ steps.tests.outputs.specs }}
-        working-directory: apps/munni
+        working-directory: apps/web
 
       # Upload test results (failure screenshots + traces) as downloadable artifact
       - name: Upload test results
@@ -107,7 +107,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-results-${{ github.run_id }}
-          path: apps/munni/tests/results/
+          path: apps/web/tests/results/
           retention-days: 7
 
       # Save screenshots + videos to cache (always, even if tests failed)
@@ -116,13 +116,13 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: |
-            apps/munni/tests/screenshots
-            apps/munni/tests/videos
-          key: gallery-${{ github.run_id }}
+            apps/web/tests/screenshots
+            apps/web/tests/videos
+          key: gallery-web-${{ github.run_id }}
 
       # Generate gallery HTML using --deploy flag (paths relative to gallery/ folder)
       - name: Generate gallery HTML
-        working-directory: apps/munni
+        working-directory: apps/web
         run: |
           if ls tests/screenshots/*.png 1>/dev/null 2>&1; then
             node tests/generate-gallery.mjs --deploy
@@ -131,7 +131,7 @@ jobs:
 
       # Copy gallery assets into dist/gallery/ so Pages serves them at /gallery/
       - name: Copy gallery to dist
-        working-directory: apps/munni
+        working-directory: apps/web
         run: |
           mkdir -p dist/gallery/screenshots dist/gallery/videos
           if [ -f tests/gallery/index.html ]; then
@@ -149,7 +149,7 @@ jobs:
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: apps/munni/dist
+          path: apps/web/dist
 
   deploy:
     needs: build

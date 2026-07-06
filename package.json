@@ -1,19 +1,15 @@
 {
   "name": "munni-monorepo",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "workspaces": [
-    "apps/*"
+    "apps/web"
   ],
   "scripts": {
-    "dev": "npm run dev -w @munni/app",
-    "build": "npm run build -w @munni/app",
-    "test": "npm test -w @munni/app",
-    "gallery": "npm run gallery -w @munni/app"
-  },
-  "devDependencies": {
-    "@vitejs/plugin-react": "^4.3.4",
-    "vite": "^6.3.5",
-    "vite-plugin-pwa": "^1.3.0"
+    "dev": "npm run dev -w @munni/web",
+    "build": "npm run build -w @munni/web",
+    "test": "npm test -w @munni/web",
+    "gallery": "npm run gallery -w @munni/web",
+    "legacy:dev": "npm run dev --prefix apps/legacy"
   }
 }

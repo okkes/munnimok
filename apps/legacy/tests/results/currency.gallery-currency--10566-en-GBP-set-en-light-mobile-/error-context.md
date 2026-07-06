@@ -1,0 +1,212 @@
+# Instructions
+
+- Following Playwright test failed.
+- Explain why, be concise, respect Playwright best practices.
+- Provide a snippet of code with the fix, if possible.
+
+# Test info
+
+- Name: currency.gallery.spec.js >> currency-b2 home balance shows £ when GBP set [en-light-mobile]
+- Location: tests\specs\currency.gallery.spec.js:102:3
+
+# Error details
+
+```
+Test timeout of 30000ms exceeded.
+```
+
+# Page snapshot
+
+```yaml
+- generic [ref=e5]:
+  - generic [ref=e6]:
+    - generic [ref=e8] [cursor=pointer]: ⭐
+    - generic [ref=e9]:
+      - generic [ref=e10]: £11.570,55
+      - generic [ref=e13]: Not synced yet
+    - button [ref=e15] [cursor=pointer]:
+      - img [ref=e16]
+  - generic [ref=e19]:
+    - generic [ref=e20] [cursor=pointer]:
+      - img [ref=e22]
+      - generic [ref=e26]:
+        - generic [ref=e27]: Review 3 transactions
+        - generic [ref=e28]: Transaction Review
+      - img [ref=e29]
+    - generic [ref=e31]:
+      - generic [ref=e32]:
+        - generic [ref=e33]: Overview
+        - generic [ref=e34]:
+          - button [ref=e35] [cursor=pointer]:
+            - img [ref=e36]
+          - generic [ref=e38]: 20 Jun – 19 Jul
+          - button [ref=e39] [cursor=pointer]:
+            - img [ref=e40]
+      - generic [ref=e42] [cursor=pointer]:
+        - img [ref=e44]
+        - generic [ref=e47]: Income
+        - generic [ref=e48]: €0
+        - img [ref=e49]
+      - generic [ref=e52] [cursor=pointer]:
+        - img [ref=e54]
+        - generic [ref=e57]: Spent
+        - generic [ref=e58]: €269
+        - img [ref=e59]
+      - generic [ref=e62] [cursor=pointer]:
+        - img [ref=e64]
+        - generic [ref=e68]: Invested
+        - generic [ref=e69]: €0
+        - img [ref=e70]
+      - generic [ref=e73] [cursor=pointer]:
+        - img [ref=e75]
+        - generic [ref=e79]: Savings
+        - generic [ref=e80]: €200
+        - img [ref=e81]
+      - generic [ref=e84] [cursor=pointer]:
+        - generic [ref=e85]:
+          - img [ref=e86]
+          - generic [ref=e91]: "!"
+        - generic [ref=e92]:
+          - generic [ref=e93]: Allocate
+          - generic [ref=e94]: Unallocated — tap to plan
+        - generic [ref=e95]: €200
+        - img [ref=e96]
+    - generic [ref=e98]:
+      - generic [ref=e99]:
+        - generic [ref=e101]: Budgets
+        - generic [ref=e111] [cursor=pointer]:
+          - text: See all 8
+          - img [ref=e112]
+      - generic [ref=e114]:
+        - generic [ref=e115] [cursor=pointer]:
+          - img [ref=e117]
+          - generic [ref=e119]:
+            - generic [ref=e120]:
+              - generic [ref=e121]: Nightlife
+              - generic [ref=e122]: −€28
+            - generic [ref=e125]: 1d left
+        - generic [ref=e126] [cursor=pointer]:
+          - img [ref=e128]
+          - generic [ref=e131]:
+            - generic [ref=e132]:
+              - generic [ref=e133]: Hobby
+              - generic [ref=e134]: −€5
+            - generic [ref=e137]: 13d left
+        - generic [ref=e138] [cursor=pointer]:
+          - img [ref=e140]
+          - generic [ref=e144]:
+            - generic [ref=e145]:
+              - generic [ref=e146]: Transport
+              - generic [ref=e147]: €5 left
+            - generic [ref=e150]: 1d left
+    - generic [ref=e151]:
+      - generic [ref=e152]:
+        - generic [ref=e153]: Goals
+        - generic [ref=e154] [cursor=pointer]:
+          - text: See all
+          - img [ref=e155]
+      - generic [ref=e157]:
+        - img [ref=e158]:
+          - generic [ref=e161]: 39%
+        - generic [ref=e162]:
+          - generic [ref=e163]: €3,500,00 saved
+          - generic [ref=e164]: of €9,000,00 total saved
+      - generic [ref=e165]:
+        - generic [ref=e166] [cursor=pointer]:
+          - img [ref=e168]
+          - generic [ref=e172]:
+            - generic [ref=e173]: Emergency fund
+            - generic [ref=e174]: €2,400
+          - img [ref=e177]
+        - generic [ref=e179] [cursor=pointer]:
+          - img [ref=e181]
+          - generic [ref=e185]:
+            - generic [ref=e186]: Trip to Lisbon
+            - generic [ref=e187]: €720
+          - img [ref=e190]
+        - generic [ref=e192] [cursor=pointer]:
+          - img [ref=e194]
+          - generic [ref=e198]:
+            - generic [ref=e199]: New laptop
+            - generic [ref=e200]: €380
+          - img [ref=e203]
+    - generic [ref=e205] [cursor=pointer]:
+      - generic [ref=e206]:
+        - generic [ref=e207]: Debts
+        - generic [ref=e208]:
+          - text: 4 active debts
+          - img [ref=e209]
+      - generic [ref=e211]:
+        - generic [ref=e212]: €235,680
+        - generic [ref=e213]: 16% paid off overall
+      - generic [ref=e216]: 4 active debts · started at €280,480,00
+    - generic [ref=e217]:
+      - generic [ref=e218]:
+        - generic [ref=e219]: Upcoming
+        - generic [ref=e220] [cursor=pointer]:
+          - text: See all
+          - img [ref=e221]
+      - generic [ref=e223]:
+        - generic [ref=e224] [cursor=pointer]:
+          - generic [ref=e226]: 󱤄
+          - generic [ref=e227]:
+            - generic [ref=e228]: Eneco · Energy
+            - generic [ref=e230]: tomorrow
+          - generic [ref=e231]: −€65,00
+        - generic [ref=e233] [cursor=pointer]:
+          - generic [ref=e235]: 󰻏
+          - generic [ref=e236]:
+            - generic [ref=e237]: Spotify
+            - generic [ref=e239]: in 3 days
+          - generic [ref=e240]: −€9,99
+    - generic [ref=e241] [cursor=pointer]:
+      - img [ref=e243]
+      - generic [ref=e246]:
+        - generic [ref=e247]: Investments
+        - generic [ref=e248]:
+          - text: €12,481
+          - generic [ref=e249]: +11.4%
+      - img [ref=e250]
+      - img [ref=e253]
+    - generic [ref=e255]:
+      - generic [ref=e256]:
+        - generic [ref=e257]: Events
+        - generic [ref=e258] [cursor=pointer]:
+          - text: See all 3
+          - img [ref=e259]
+      - generic [ref=e261]:
+        - generic [ref=e262] [cursor=pointer]:
+          - img [ref=e264]
+          - generic [ref=e266]:
+            - generic [ref=e267]: Lisbon trip 2025
+            - generic [ref=e268]: closed
+          - generic [ref=e269]: €1,186,30
+        - generic [ref=e270] [cursor=pointer]:
+          - img [ref=e272]
+          - generic [ref=e274]:
+            - generic [ref=e275]: Anna · Birthday
+            - generic [ref=e276]: closed
+          - generic [ref=e277]: €312,40
+        - generic [ref=e278] [cursor=pointer]:
+          - img [ref=e280]
+          - generic [ref=e282]:
+            - generic [ref=e283]: Berlin weekend
+            - generic [ref=e284]: upcoming
+          - generic [ref=e285]: €0,00
+  - generic [ref=e287]:
+    - button "Home" [ref=e288] [cursor=pointer]:
+      - img [ref=e289]
+      - generic [ref=e291]: Home
+    - button "Transactions" [ref=e292] [cursor=pointer]:
+      - img [ref=e293]
+      - generic [ref=e295]: Transactions
+    - button "Recurring" [ref=e296] [cursor=pointer]:
+      - img [ref=e297]
+      - generic [ref=e300]: Recurring
+    - button "Portfolio" [ref=e301] [cursor=pointer]:
+      - img [ref=e302]
+      - generic [ref=e304]: Portfolio
+    - button "Insights" [ref=e305] [cursor=pointer]:
+      - img [ref=e306]
+      - generic [ref=e308]: Insights
+```
