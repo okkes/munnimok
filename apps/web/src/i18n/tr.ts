@@ -856,4 +856,12 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'lock.usePin': 'PIN kullan',
   'lock.wrongPin': 'Yanlış PIN',
   'lock.notSupported': 'Bu cihazda biyometrik kilit açma yok — PIN kullanılacak',
+  'sync.connecting': 'Hesabına bağlanılıyor — alanların getirilirken lütfen bekle…',
+  'sync.status': 'Senkronizasyon',
+  'sync.synced': 'Güncel',
+  'sync.syncing': 'Senkronize ediliyor…',
+  'sync.offline': 'Çevrimdışı — değişiklikler bu cihazda saklanıyor',
+  'sync.error': 'Senkronizasyon sorunu — otomatik olarak yeniden denenecek',
+  'sync.lastSync': 'Son senkronizasyon',
+  'sync.never': 'Henüz senkronize edilmedi',
 };

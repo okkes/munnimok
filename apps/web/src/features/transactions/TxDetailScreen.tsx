@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useParams } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
@@ -143,12 +143,10 @@ export function TxDetailScreen() {
         <ReimburseSection tx={tx} />
 
         <div className="m-cap mt-5 mb-1 px-1">{t('tx.notes')}</div>
-        <textarea
-          data-testid="tx-detail-notes"
-          defaultValue={tx.notes ?? ''}
-          onBlur={(e) => saveNotes(e.target.value)}
+        <NotesField
+          value={tx.notes ?? ''}
+          onSave={saveNotes}
           placeholder={t('tx.notesPlaceholder')}
-          rows={3}
           className="w-full resize-none rounded-card border border-line bg-surface px-4 py-3 text-[14px] text-ink outline-none placeholder:text-ink-4"
         />
       </div>
@@ -163,5 +161,39 @@ export function TxDetailScreen() {
       <TxTypeSheet open={typeOpen} onOpenChange={setTypeOpen} tx={tx} />
       <SplitEditorSheet open={splitOpen} onOpenChange={setSplitOpen} tx={tx} />
     </div>
+  );
+}
+
+/**
+ * Notes editor that stays live in shared spaces: remote edits replace
+ * the draft whenever this user is not actively typing in the field.
+ */
+function NotesField({
+  value,
+  onSave,
+  placeholder,
+  className,
+}: {
+  value: string;
+  onSave: (notes: string) => void;
+  placeholder: string;
+  className: string;
+}) {
+  const [draft, setDraft] = useState(value);
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    if (document.activeElement !== ref.current) setDraft(value);
+  }, [value]);
+  return (
+    <textarea
+      ref={ref}
+      data-testid="tx-detail-notes"
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => onSave(draft)}
+      placeholder={placeholder}
+      rows={3}
+      className={className}
+    />
   );
 }

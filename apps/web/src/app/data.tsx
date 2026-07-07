@@ -1,6 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { v7 as uuidv7 } from 'uuid';
+import { useLang } from '@/i18n';
+import { Icon } from '@/ui/Icon';
 import { MunniDB, identityDbName } from '@/db/schema';
 import { Repo } from '@/db/repo';
 import { getClock, getDeviceId } from '@/db/device';
@@ -8,11 +10,73 @@ import { seedDemoIfNeeded } from '@/db/seed';
 import { ApiSyncBackend } from '@/sync/backend';
 import { SyncEngine } from '@/sync/engine';
 import { config } from './config';
-import { getAccessToken } from './authToken';
+import { getAccessToken, waitForAuthReady } from './authToken';
 import { identityKey, useSession } from './session';
 import type { Identity } from './session';
 
 const ACTIVE_SPACE_KEY = 'activeSpaceId';
+/** id of a personal space this device created during bootstrap (self-heal marker) */
+const BOOTSTRAP_SPACE_KEY = 'bootstrapSpaceId';
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * First-run bootstrap for syncing identities — FAIL CLOSED: a personal
+ * space is only ever created after the server CONFIRMED this account has
+ * no spaces. Network/auth failures retry with backoff instead of
+ * spawning an empty duplicate space (an early bug that stranded devices
+ * on a blank copy). Existing local data always loads without a server.
+ */
+export async function bootstrapUserSpaces(
+  db: MunniDB,
+  repo: Repo,
+  engine: SyncEngine,
+  isCancelled: () => boolean,
+  baseRetryMs = 2_000,
+): Promise<void> {
+  const hasLocalSpaces = async () => (await db.spaces.filter((s) => s.deleted === 0).count()) > 0;
+
+  for (let attempt = 0; ; attempt++) {
+    await engine.syncAll().catch(() => undefined);
+    if (engine.getStatus() !== 'error' && engine.getStatus() !== 'offline') break; // server confirmed our spaces
+    if (await hasLocalSpaces()) return; // offline but usable — local-first
+    // brand-new device with nothing local: keep trying, capped backoff
+    await sleep(Math.min(baseRetryMs * 2 ** attempt, baseRetryMs * 8));
+    if (isCancelled()) return;
+  }
+
+  if (!(await hasLocalSpaces())) {
+    // server confirmed: brand-new user — create the personal space once
+    const personalId = uuidv7();
+    await repo.upsert('space', personalId, personalId, {
+      name: 'Personal',
+      kind: 'personal',
+      currency: 'EUR',
+      periodType: 'month',
+      periodDay: 1,
+    });
+    await db.meta.put({ key: BOOTSTRAP_SPACE_KEY, value: personalId });
+    // show the one-time onboarding (this device created the space)
+    await db.meta.put({ key: 'needsOnboarding', value: true });
+    return;
+  }
+
+  // self-heal: if a bootstrap-created space is still empty while the
+  // account's real spaces arrived (pre-fix duplicates), retire it
+  const bootstrapId = (await db.meta.get(BOOTSTRAP_SPACE_KEY))?.value as string | undefined;
+  if (!bootstrapId) return;
+  const others = await db.spaces.filter((s) => s.deleted === 0 && s.id !== bootstrapId).count();
+  if (others === 0) return;
+  const [txs, accounts, cats] = await Promise.all([
+    db.transactions.where('spaceId').equals(bootstrapId).count(),
+    db.accounts.where('spaceId').equals(bootstrapId).count(),
+    db.categories.where('spaceId').equals(bootstrapId).count(),
+  ]);
+  if (txs === 0 && accounts === 0 && cats === 0) {
+    await repo.remove('space', bootstrapId, bootstrapId);
+  }
+  await db.meta.delete(BOOTSTRAP_SPACE_KEY);
+}
 
 interface DataContextValue {
   db: MunniDB;
@@ -78,22 +142,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
         });
       }
       if (engine) {
-        // initial sync: discover + pull this user's spaces (fresh device);
-        // tolerated to fail offline — local-first means we carry on
-        await engine.syncAll().catch(() => undefined);
-        if ((await db.spaces.filter((s) => s.deleted === 0).count()) === 0) {
-          const personalId = uuidv7();
-          await repo.upsert('space', personalId, personalId, {
-            name: 'Personal',
-            kind: 'personal',
-            currency: 'EUR',
-            periodType: 'month',
-            periodDay: 1,
-          });
-          // brand-new user (this device created the personal space):
-          // show the one-time onboarding
-          await db.meta.put({ key: 'needsOnboarding', value: true });
-        }
+        // wait out the OIDC session restore, then fail-closed bootstrap
+        await waitForAuthReady();
+        if (cancelled) return;
+        await bootstrapUserSpaces(db, repo, engine, () => cancelled);
+        if (cancelled) return;
         engine.start();
       }
       const stored = (await db.meta.get(ACTIVE_SPACE_KEY))?.value as string | undefined;
@@ -124,10 +177,32 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const value = useMemo(() => (state ? { ...state, setActiveSpace } : null), [state, setActiveSpace]);
 
   if (!identity) return null;
-  if (!value) {
-    return <div className="flex h-full items-center justify-center text-ink-3" data-testid="data-loading" />;
-  }
+  if (!value) return <ConnectingScreen />;
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
+}
+
+/**
+ * Shown while the database opens (instant) or a brand-new device waits
+ * for the server during bootstrap (can take a while offline) — the
+ * message only appears once it's clearly the latter.
+ */
+function ConnectingScreen() {
+  const { t } = useLang();
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setSlow(true), 1_500);
+    return () => clearTimeout(timer);
+  }, []);
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-3 text-ink-3" data-testid="data-loading">
+      {slow && (
+        <>
+          <Icon name="cloud-sync-outline" size={32} color="var(--m-ink-4)" />
+          <p className="max-w-[260px] text-center text-[13px]">{t('sync.connecting')}</p>
+        </>
+      )}
+    </div>
+  );
 }
 
 export function useData(): DataContextValue {

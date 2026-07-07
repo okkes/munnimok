@@ -17,6 +17,8 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddMemoryCache();
 // request-body validators (Validation/Validators.cs) — UI input is never trusted
 builder.Services.AddValidatorsFromAssemblyContaining<Program>(ServiceLifetime.Singleton);
+// SSE fan-out for near-real-time sync
+builder.Services.AddSingleton<SpaceEventBroadcaster>();
 
 // web push: enabled when a VAPID key pair is configured
 var pushEnabled = !string.IsNullOrEmpty(builder.Configuration["Push:VapidPublicKey"])

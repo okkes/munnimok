@@ -854,6 +854,14 @@ export const en = {
   'lock.usePin': 'Use PIN',
   'lock.wrongPin': 'Wrong PIN',
   'lock.notSupported': 'Biometric unlock is not available on this device — a PIN will be used',
+  'sync.connecting': 'Connecting to your account — hold on while we fetch your spaces…',
+  'sync.status': 'Sync',
+  'sync.synced': 'Up to date',
+  'sync.syncing': 'Syncing…',
+  'sync.offline': 'Offline — changes are saved on this device',
+  'sync.error': 'Sync problem — will retry automatically',
+  'sync.lastSync': 'Last sync',
+  'sync.never': 'Not synced yet',
 } as const;
 
 export type TranslationKey = keyof typeof en;

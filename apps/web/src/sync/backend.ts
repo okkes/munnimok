@@ -17,6 +17,11 @@ export interface SyncBackend {
   pull(spaceId: string, since: number): Promise<PullResult>;
   /** space ids this user is a member of — how a fresh device discovers its data */
   listSpaces(): Promise<string[]>;
+  /**
+   * Optional long-lived change stream: resolves when the stream ends,
+   * rejects on connection errors; `onEvent` fires per changed space.
+   */
+  events?(signal: AbortSignal, onEvent: (spaceId: string) => void): Promise<void>;
 }
 
 interface ApiBackendOptions {
@@ -58,6 +63,51 @@ export class ApiSyncBackend implements SyncBackend {
     const res = await fetch(`${this.options.baseUrl}/me/spaces`, { headers: await this.headers() });
     if (!res.ok) throw new SyncHttpError(res.status);
     return (await res.json()) as string[];
+  }
+
+  /**
+   * Server-sent events over fetch (EventSource cannot send auth
+   * headers). Lines look like `data: {"spaceId":"…"}`; comment lines
+   * (keepalives) are ignored.
+   */
+  async events(signal: AbortSignal, onEvent: (spaceId: string) => void): Promise<void> {
+    const res = await fetch(`${this.options.baseUrl}/sync/events`, {
+      headers: { ...(await this.headers()), Accept: 'text/event-stream' },
+      signal,
+    });
+    if (!res.ok || !res.body) throw new SyncHttpError(res.status);
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) return;
+      buffer = drainSseBuffer(buffer + decoder.decode(value, { stream: true }), onEvent);
+    }
+  }
+}
+
+/** emits every complete SSE message in the buffer; returns the remainder */
+export function drainSseBuffer(buffer: string, onEvent: (spaceId: string) => void): string {
+  let boundary = buffer.indexOf('\n\n');
+  while (boundary !== -1) {
+    emitSseChunk(buffer.slice(0, boundary), onEvent);
+    buffer = buffer.slice(boundary + 2);
+    boundary = buffer.indexOf('\n\n');
+  }
+  return buffer;
+}
+
+function emitSseChunk(chunk: string, onEvent: (spaceId: string) => void): void {
+  for (const line of chunk.split('\n')) {
+    if (!line.startsWith('data:')) continue; // keepalive comments etc.
+    try {
+      const payload = JSON.parse(line.slice(5).trim()) as { spaceId?: string };
+      if (payload.spaceId) onEvent(payload.spaceId);
+    } catch {
+      // malformed event — skip, the poll is the safety net
+    }
   }
 }
 

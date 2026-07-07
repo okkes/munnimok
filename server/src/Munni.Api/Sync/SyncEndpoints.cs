@@ -24,9 +24,13 @@ public static class SyncEndpoints
             return Results.Ok(spaceIds);
         }).RequireAuthorization();
 
+        // near-real-time change stream: emits {"spaceId":…} whenever one of
+        // the caller's spaces accepted new ops (push or bank ingest)
+        app.MapGet("/sync/events", StreamEvents).RequireAuthorization();
+
         var group = app.MapGroup("/sync/{spaceId}").RequireAuthorization();
 
-        group.MapPost("/push", async (string spaceId, PushRequest request, AppDbContext db, HttpContext http) =>
+        group.MapPost("/push", async (string spaceId, PushRequest request, AppDbContext db, SpaceEventBroadcaster events, HttpContext http) =>
         {
             var userId = http.GetUserId();
             var space = await db.Spaces.FindAsync(spaceId);
@@ -47,6 +51,7 @@ public static class SyncEndpoints
             var writer = new SyncWriter(db);
             var (lastSeq, accepted) = await writer.ApplyAsync(space, userId, request.Ops);
             await db.SaveChangesAsync();
+            if (accepted > 0) events.Publish(spaceId); // wake the other devices/members
             return Results.Ok(new PushResponse(lastSeq, accepted, request.Ops.Count - accepted));
         }).WithValidation<PushRequest>();
 
@@ -88,5 +93,54 @@ public static class SyncEndpoints
         var userId = http.GetUserId();
         var isMember = await db.SpaceMembers.AnyAsync(m => m.SpaceId == spaceId && m.UserId == userId);
         return isMember ? null : Results.Forbid();
+    }
+
+    private static async Task StreamEvents(AppDbContext db, SpaceEventBroadcaster events, HttpContext http)
+    {
+        var userId = http.GetUserId();
+        // membership snapshot at connect; new invites are picked up when the
+        // client reconnects (and the 10s poll covers the gap meanwhile)
+        var mySpaces = (await db.SpaceMembers.Where(m => m.UserId == userId).Select(m => m.SpaceId).ToListAsync())
+            .ToHashSet();
+
+        http.Response.Headers.ContentType = "text/event-stream";
+        http.Response.Headers.CacheControl = "no-cache";
+        http.Response.Headers["X-Accel-Buffering"] = "no"; // reverse proxies must not buffer the stream
+
+        var (id, reader) = events.Subscribe();
+        try
+        {
+            await http.Response.WriteAsync(": connected\n\n", http.RequestAborted);
+            await http.Response.Body.FlushAsync(http.RequestAborted);
+            while (!http.RequestAborted.IsCancellationRequested)
+            {
+                using var keepalive = CancellationTokenSource.CreateLinkedTokenSource(http.RequestAborted);
+                keepalive.CancelAfter(TimeSpan.FromSeconds(25));
+                string? spaceId = null;
+                try
+                {
+                    spaceId = await reader.ReadAsync(keepalive.Token);
+                }
+                catch (OperationCanceledException) when (!http.RequestAborted.IsCancellationRequested)
+                {
+                    // no events for a while — keepalive comment holds proxies open
+                }
+
+                if (spaceId is not null && !mySpaces.Contains(spaceId)) continue;
+                var frame = spaceId is null
+                    ? ": keepalive\n\n"
+                    : $"data: {JsonSerializer.Serialize(new { spaceId })}\n\n";
+                await http.Response.WriteAsync(frame, http.RequestAborted);
+                await http.Response.Body.FlushAsync(http.RequestAborted);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // client went away — normal for a long-lived stream
+        }
+        finally
+        {
+            events.Unsubscribe(id);
+        }
     }
 }

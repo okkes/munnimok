@@ -15,6 +15,8 @@ import { Sheet } from '@/ui/Sheet';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Avatar } from '@/features/profile/ProfileScreen';
 import { disablePush, enablePush, getPushSubscription, pushSupported } from '@/lib/push';
+import { LAST_SYNC_KEY } from '@/sync/engine';
+import type { SyncStatus } from '@/sync/engine';
 import {
   biometricAvailable,
   hashPin,
@@ -24,6 +26,45 @@ import {
   validPin,
   writeLockConfig,
 } from '@/features/lock/lock';
+
+const SYNC_STATUS_KEYS = {
+  idle: 'sync.synced',
+  syncing: 'sync.syncing',
+  offline: 'sync.offline',
+  error: 'sync.error',
+} as const;
+
+/** live sync state + last successful sync — silent failures can't hide */
+function SyncStatusRow() {
+  const { t, lang } = useLang();
+  const { db, engine } = useData();
+  const [status, setStatus] = useState<SyncStatus>(engine?.getStatus() ?? 'idle');
+  useEffect(() => engine?.onStatus(setStatus), [engine]);
+  const lastSync = useLiveQuery(async () => (await db.meta.get(LAST_SYNC_KEY))?.value as number | undefined, []);
+
+  if (!engine) return null;
+  const healthy = status === 'idle' || status === 'syncing';
+  return (
+    <div className="flex w-full items-center gap-3 px-4 py-3.5 text-left text-[15px] text-ink" data-testid="settings-sync-row">
+      <Icon
+        name={healthy ? 'cloud-check-outline' : 'cloud-alert-outline'}
+        size={20}
+        color={healthy ? 'var(--m-accent)' : 'var(--m-warning)'}
+      />
+      <span className="min-w-0 flex-1">
+        <span className="block" data-testid="settings-sync-status">
+          {t(SYNC_STATUS_KEYS[status])}
+        </span>
+        <span className="block text-[11px] text-ink-4">
+          {t('sync.lastSync')}:{' '}
+          {lastSync
+            ? new Date(lastSync).toLocaleString(LOCALES[lang], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+            : t('sync.never')}
+        </span>
+      </span>
+    </div>
+  );
+}
 
 function ProfileHeaderRow({ onClick }: { onClick: () => void }) {
   const { t } = useLang();
@@ -166,6 +207,11 @@ export function SettingsScreen() {
       <AppBar large title={t('screen.settings')} />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <ProfileHeaderRow onClick={() => void navigate({ to: '/profile' })} />
+        {identity?.kind === 'user' && (
+          <div className="mb-4 overflow-hidden rounded-card border border-line bg-surface">
+            <SyncStatusRow />
+          </div>
+        )}
         <div className="overflow-hidden rounded-card border border-line bg-surface">
           <button
             data-testid="settings-accounts-row"

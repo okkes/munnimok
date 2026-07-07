@@ -4,20 +4,29 @@ import type { SyncBackend } from './backend';
 import { SyncHttpError } from './backend';
 
 const cursorKey = (spaceId: string) => `syncCursor_${spaceId}`;
+export const LAST_SYNC_KEY = 'lastSyncAt';
 
 export type SyncStatus = 'idle' | 'syncing' | 'error' | 'offline';
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * Drives sync for one identity: flush the outbox, then pull and merge
  * remote ops, per space. Any interleaving is safe — pushes are idempotent
  * (op ids), pulls are cursor-based, and the merge is commutative. A 403 on
  * a space means we lost membership: local copy of that space is purged.
+ *
+ * Freshness comes from three layers: a server-sent-events stream (near
+ * real-time while open), a 10s visible poll as fallback, and wake-ups on
+ * focus/online. Web push covers the closed-app case.
  */
 export class SyncEngine {
   private timer: ReturnType<typeof setInterval> | null = null;
   private running = false;
   private readonly listeners = new Set<(status: SyncStatus) => void>();
   private status: SyncStatus = 'idle';
+  private eventsAbort: AbortController | null = null;
+  private eventDebounce: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private readonly db: MunniDB,
@@ -40,14 +49,15 @@ export class SyncEngine {
     return this.status;
   }
 
-  /** start background loop: on start, on regaining connectivity/visibility, every 60s while visible */
+  /** start background loop: SSE stream + wake on focus/online + 10s visible poll */
   start(): void {
     void this.syncAll();
     window.addEventListener('online', this.handleWake);
     document.addEventListener('visibilitychange', this.handleWake);
     this.timer = setInterval(() => {
       if (document.visibilityState === 'visible') void this.syncAll();
-    }, 60_000);
+    }, 10_000);
+    void this.listenEvents();
   }
 
   stop(): void {
@@ -55,6 +65,31 @@ export class SyncEngine {
     document.removeEventListener('visibilitychange', this.handleWake);
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    this.eventsAbort?.abort();
+    this.eventsAbort = null;
+  }
+
+  /** near-real-time: the server announces changed spaces over SSE */
+  private async listenEvents(): Promise<void> {
+    if (!this.backend.events) return;
+    this.eventsAbort = new AbortController();
+    const { signal } = this.eventsAbort;
+    let retryMs = 1_000;
+    while (!signal.aborted) {
+      try {
+        await this.backend.events(signal, () => {
+          // coalesce event bursts into one sync pass
+          if (this.eventDebounce) clearTimeout(this.eventDebounce);
+          this.eventDebounce = setTimeout(() => void this.syncAll(), 300);
+        });
+        retryMs = 1_000; // stream ended cleanly — reconnect promptly
+      } catch {
+        // connection lost/refused — the poll keeps us fresh meanwhile
+      }
+      if (signal.aborted) return;
+      await sleep(retryMs);
+      retryMs = Math.min(retryMs * 2, 30_000);
+    }
   }
 
   private readonly handleWake = () => {
@@ -80,6 +115,7 @@ export class SyncEngine {
       const serverSpaces = await this.backend.listSpaces();
       const spaceIds = [...new Set([...spaces.map((s) => s.id), ...outboxSpaces, ...serverSpaces])];
       for (const spaceId of spaceIds) await this.syncSpace(spaceId);
+      await this.db.meta.put({ key: LAST_SYNC_KEY, value: Date.now() });
       this.setStatus('idle');
     } catch (err) {
       this.setStatus(err instanceof TypeError ? 'offline' : 'error'); // fetch network errors are TypeError

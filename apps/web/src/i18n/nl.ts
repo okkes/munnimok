@@ -856,4 +856,12 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'lock.usePin': 'Gebruik pincode',
   'lock.wrongPin': 'Onjuiste pincode',
   'lock.notSupported': 'Biometrisch ontgrendelen is niet beschikbaar op dit apparaat — er wordt een pincode gebruikt',
+  'sync.connecting': 'Verbinden met je account — even geduld, we halen je spaces op…',
+  'sync.status': 'Synchronisatie',
+  'sync.synced': 'Up-to-date',
+  'sync.syncing': 'Synchroniseren…',
+  'sync.offline': 'Offline — wijzigingen worden op dit apparaat bewaard',
+  'sync.error': 'Synchronisatieprobleem — opnieuw proberen gebeurt automatisch',
+  'sync.lastSync': 'Laatste synchronisatie',
+  'sync.never': 'Nog niet gesynchroniseerd',
 };
