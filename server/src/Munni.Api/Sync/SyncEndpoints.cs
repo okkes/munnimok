@@ -35,11 +35,13 @@ public static class SyncEndpoints
                 // first push creates the space with the pusher as owner
                 space = new Space { Id = spaceId };
                 db.Spaces.Add(space);
-                db.SpaceMembers.Add(new SpaceMember { SpaceId = spaceId, UserId = userId, Role = "owner" });
+                db.SpaceMembers.Add(new SpaceMember { SpaceId = spaceId, UserId = userId, Role = Social.SpaceRoles.Owner });
             }
-            else if (!await db.SpaceMembers.AnyAsync(m => m.SpaceId == spaceId && m.UserId == userId))
+            else
             {
-                return Results.Forbid();
+                var membership = await db.SpaceMembers.FirstOrDefaultAsync(m => m.SpaceId == spaceId && m.UserId == userId);
+                // readers may pull but never push
+                if (membership is null || !Social.SpaceRoles.CanWrite(membership.Role)) return Results.Forbid();
             }
 
             var writer = new SyncWriter(db);

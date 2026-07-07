@@ -104,6 +104,27 @@ for (const V of VARIANTS) {
     await expect(bob.page.locator('[data-testid="screen-spaces"]')).toContainText('Shared Home', { timeout: 15000 });
     await shot(bob.page, k('33-space-share'));
 
+    // roles: alice (owner) demotes bob to reader, then back to contributor
+    // (reopen the settings sheet so the members list includes bob)
+    await alice.page.keyboard.press('Escape');
+    await alice.page.waitForTimeout(700);
+    await alice.page.locator('[data-testid^="space-edit-"]:right-of(:text("Shared Home"))').first().click();
+    await alice.page.waitForSelector('[data-testid^="space-role-"]', { timeout: 10000 });
+    await alice.page.locator('[data-testid^="space-role-"]').selectOption('reader');
+    await alice.page.waitForTimeout(500);
+    await expect(alice.page.locator('[data-testid^="space-role-"]')).toHaveValue('reader');
+    await shot(alice.page, k('57-space-roles'));
+    await alice.page.locator('[data-testid^="space-role-"]').selectOption('contributor');
+    await alice.page.waitForTimeout(500);
+
+    // bob leaves the space: it disappears from his list, alice keeps it
+    await bob.page.locator('[data-testid^="space-edit-"]:right-of(:text("Shared Home"))').first().click();
+    await bob.page.waitForSelector('[data-testid="space-leave"]');
+    await bob.page.click('[data-testid="space-leave"]'); // arm
+    await bob.page.click('[data-testid="space-leave"]'); // confirm
+    await expect(bob.page.locator('[data-testid="screen-spaces"]')).not.toContainText('Shared Home', { timeout: 10000 });
+    await shot(bob.page, k('57-space-roles') + '--s1');
+
     await teardown(bob.page, bob.ctx, k('33-space-share') + '--bob');
     await teardown(alice.page, alice.ctx, k('33-space-share'));
   });

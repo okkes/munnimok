@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useLang } from '@/i18n';
+import type { TranslationKey } from '@/i18n';
 import { useData } from '@/app/data';
 import { apiFetch } from '@/lib/api';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
+
+export type SpaceRole = 'owner' | 'contributor' | 'reader';
 
 interface InviteDto {
   id: string;
@@ -16,7 +19,7 @@ interface InviteDto {
 interface MemberDto {
   userId: string;
   displayName: string | null;
-  role: string;
+  role: SpaceRole;
 }
 interface FriendDto {
   userId: string;
@@ -24,6 +27,8 @@ interface FriendDto {
 }
 
 const short = (id: string) => `${id.slice(0, 8)}…`;
+const ROLES: SpaceRole[] = ['owner', 'contributor', 'reader'];
+const roleKey = (role: string): TranslationKey => `space.role.${role}` as TranslationKey;
 
 /** Pending space invites, shown at the top of the Spaces tab. */
 export function SpaceInvitesBanner() {
@@ -54,7 +59,7 @@ export function SpaceInvitesBanner() {
               {invite.spaceName ?? invite.spaceId.slice(0, 12)}
             </span>
             <span className="block truncate text-[12px] text-ink-3">
-              {t('space.invitedYou', { name: invite.fromName ?? short(invite.fromUserId) })}
+              {t('space.invitedYou', { name: invite.fromName ?? short(invite.fromUserId) })} · {t(roleKey(invite.role))}
             </span>
           </span>
           <Button size="sm" data-testid={`space-invite-accept-${invite.id}`} onClick={() => void respond(invite, 'accept')}>
@@ -73,13 +78,23 @@ export function SpaceInvitesBanner() {
   );
 }
 
-/** Members + invite-a-friend for the space edit sheet (user identities). */
-export function SpaceMembersSection({ spaceId, spaceName }: { spaceId: string; spaceName: string }) {
+interface SpaceMembersSectionProps {
+  spaceId: string;
+  spaceName: string;
+  /** reports the current user's role once members are loaded */
+  onMyRole?: (role: SpaceRole) => void;
+  /** called after this user left the space (sheet should close) */
+  onLeft?: () => void;
+}
+
+/** Members, roles + invite-a-friend for the space settings sheet (user identities). */
+export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: SpaceMembersSectionProps) {
   const { t } = useLang();
-  const { repo } = useData();
+  const { db, repo, engine, setActiveSpace, spaceId: activeSpaceId } = useData();
   const [members, setMembers] = useState<MemberDto[] | null>(null);
   const [friends, setFriends] = useState<FriendDto[]>([]);
   const [me, setMe] = useState<string | null>(null);
+  const [confirmLeave, setConfirmLeave] = useState(false);
 
   const reload = useCallback(async () => {
     const [membersRes, friendsRes, meRes] = await Promise.all([
@@ -93,15 +108,20 @@ export function SpaceMembersSection({ spaceId, spaceName }: { spaceId: string; s
   }, [spaceId]);
   useEffect(() => void reload(), [reload]);
 
+  const myRole = members?.find((m) => m.userId === me)?.role;
+  useEffect(() => {
+    if (myRole) onMyRole?.(myRole);
+  }, [myRole, onMyRole]);
+
   if (members === null) return null; // not a member / offline — hide section
-  const myRole = members.find((m) => m.userId === me)?.role;
+  const isOwner = myRole === 'owner';
   const memberIds = new Set(members.map((m) => m.userId));
   const invitable = friends.filter((f) => !memberIds.has(f.userId));
 
   const invite = async (toUserId: string) => {
     await apiFetch(`/spaces/${spaceId}/invites`, {
       method: 'POST',
-      body: JSON.stringify({ toUserId, role: 'member', spaceName }),
+      body: JSON.stringify({ toUserId, role: 'contributor', spaceName }),
     });
     // inviting someone makes this a shared space: its categories become
     // space-scoped and user-scoped categories stop leaking into it
@@ -111,6 +131,20 @@ export function SpaceMembersSection({ spaceId, spaceName }: { spaceId: string; s
   const kick = async (userId: string) => {
     await apiFetch(`/spaces/${spaceId}/members/${userId}`, { method: 'DELETE' });
     await reload();
+  };
+  const changeRole = async (userId: string, role: SpaceRole) => {
+    await apiFetch(`/spaces/${spaceId}/members/${userId}/role`, { method: 'PUT', body: JSON.stringify({ role }) });
+    await reload();
+  };
+  const leave = async () => {
+    if (!me) return;
+    await apiFetch(`/spaces/${spaceId}/members/${me}`, { method: 'DELETE' });
+    await engine?.purgeSpace(spaceId);
+    if (activeSpaceId === spaceId) {
+      const remaining = await db.spaces.filter((s) => s.deleted === 0 && s.id !== spaceId).first();
+      if (remaining) await setActiveSpace(remaining.id);
+    }
+    onLeft?.();
   };
 
   return (
@@ -123,8 +157,26 @@ export function SpaceMembersSection({ spaceId, spaceName }: { spaceId: string; s
             <span className="min-w-0 flex-1 truncate text-[14px] text-ink">
               {m.displayName ?? short(m.userId)}
             </span>
-            <span className="text-[11px] text-ink-4">{m.role}</span>
-            {myRole === 'owner' && m.userId !== me && (
+            {isOwner && m.userId !== me ? (
+              // owners assign roles; picking "owner" transfers ownership
+              <select
+                data-testid={`space-role-${m.userId}`}
+                value={m.role}
+                onChange={(e) => void changeRole(m.userId, e.target.value as SpaceRole)}
+                className="rounded-md border border-line bg-surface px-1.5 py-1 text-[11px] text-ink-2"
+              >
+                {ROLES.map((role) => (
+                  <option key={role} value={role}>
+                    {t(roleKey(role))}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span className="text-[11px] text-ink-4" data-testid={`space-rolelabel-${m.userId}`}>
+                {t(roleKey(m.role))}
+              </span>
+            )}
+            {isOwner && m.userId !== me && (
               <button
                 aria-label={t('action.delete')}
                 data-testid={`space-kick-${m.userId}`}
@@ -137,7 +189,7 @@ export function SpaceMembersSection({ spaceId, spaceName }: { spaceId: string; s
           </div>
         ))}
       </div>
-      {myRole === 'owner' && invitable.length > 0 && (
+      {isOwner && invitable.length > 0 && (
         <>
           <div className="m-cap mt-3 mb-1 px-1">{t('space.addMember')}</div>
           <div className="flex flex-wrap gap-2">
@@ -153,6 +205,19 @@ export function SpaceMembersSection({ spaceId, spaceName }: { spaceId: string; s
             ))}
           </div>
         </>
+      )}
+      {members.length > 1 && (
+        <div className="mt-4">
+          {confirmLeave && <p className="mb-2 text-[13px] text-ink-3">{t('space.leaveConfirm')}</p>}
+          <Button
+            variant="outline"
+            className="w-full"
+            data-testid="space-leave"
+            onClick={() => (confirmLeave ? void leave() : setConfirmLeave(true))}
+          >
+            {confirmLeave ? t('action.confirm') : t('space.leave')}
+          </Button>
+        </div>
       )}
     </div>
   );

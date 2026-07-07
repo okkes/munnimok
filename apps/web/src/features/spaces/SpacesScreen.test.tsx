@@ -52,6 +52,52 @@ describe('SpacesScreen (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId(`space-row-${id}`).textContent).toContain('Household'));
   });
 
+  it('saves icon, color, currency, period and history start from the settings sheet', async () => {
+    renderApp('/spaces');
+    await screen.findByTestId('screen-spaces');
+    await waitFor(() => expect(screen.getByText('Active space')).toBeTruthy());
+    const id = activeRow()!.getAttribute('data-testid')!.replace('space-row-', '');
+
+    fireEvent.click(screen.getByTestId(`space-edit-${id}`));
+    fireEvent.click(await screen.findByTestId('space-icon-briefcase-outline'));
+    fireEvent.click(screen.getByTestId('space-color-3498DB'));
+    fireEvent.click(screen.getByTestId('space-currency-TRY'));
+    fireEvent.click(screen.getByTestId('space-period-week'));
+    fireEvent.change(screen.getByTestId('space-history-start'), { target: { value: '2026-01-01' } });
+    fireEvent.click(screen.getByTestId('space-edit-save'));
+
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const space = await db.spaces.get(id);
+      expect(space?.icon).toBe('briefcase-outline');
+      expect(space?.color).toBe('#3498DB');
+      expect(space?.currency).toBe('TRY');
+      expect(space?.periodType).toBe('week');
+      expect(space?.historyStartDate).toBe('2026-01-01');
+    });
+    db.close();
+
+    // the list row shows the chosen icon color
+    const row = screen.getByTestId(`space-row-${id}`);
+    expect(row.innerHTML).toContain('briefcase-outline');
+  });
+
+  it('monthly period exposes the start-day input, weekly hides it', async () => {
+    renderApp('/spaces');
+    await screen.findByTestId('screen-spaces');
+    await waitFor(() => expect(screen.getByText('Active space')).toBeTruthy());
+    const id = activeRow()!.getAttribute('data-testid')!.replace('space-row-', '');
+
+    fireEvent.click(screen.getByTestId(`space-edit-${id}`));
+    const day = await screen.findByTestId('space-period-day');
+    fireEvent.change(day, { target: { value: '40' } });
+    expect((day as HTMLInputElement).value).toBe('28'); // clamped
+
+    fireEvent.click(screen.getByTestId('space-period-biweekly'));
+    expect(screen.queryByTestId('space-period-day')).toBeNull();
+  });
+
   it('refuses deleting the active or only space, allows deleting another', async () => {
     renderApp('/spaces');
     await screen.findByTestId('screen-spaces');

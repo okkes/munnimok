@@ -12,6 +12,7 @@ public sealed record FriendRequestDto(Guid Id, Guid FromUserId, string? FromName
 public sealed record FriendsResponse(List<FriendDto> Friends, List<FriendRequestDto> SentPending, List<FriendRequestDto> ReceivedPending);
 public sealed record SendFriendRequest(Guid ToUserId);
 public sealed record SendSpaceInvite(Guid ToUserId, string Role, string? SpaceName);
+public sealed record ChangeRoleRequest(string Role);
 public sealed record SpaceInviteDto(Guid Id, string SpaceId, string? SpaceName, Guid FromUserId, string? FromName, string Role);
 public sealed record MemberDto(Guid UserId, string? DisplayName, string Role);
 
@@ -20,8 +21,6 @@ public static class SocialEndpoints
     private const string StatusAccepted = "accepted";
     private const string StatusPending = "pending";
     private const string StatusDeclined = "declined";
-    private const string RoleOwner = "owner";
-    private const string RoleMember = "member";
 
     public static void MapSocial(this IEndpointRouteBuilder app)
     {
@@ -37,6 +36,7 @@ public static class SocialEndpoints
         authed.MapGet("/me/invites", GetMyInvites);
         authed.MapPost("/spaces/invites/{id:guid}/{action}", RespondToInvite);
         authed.MapGet("/spaces/{spaceId}/members", GetMembers);
+        authed.MapPut("/spaces/{spaceId}/members/{userId:guid}/role", ChangeMemberRole).WithValidation<ChangeRoleRequest>();
         authed.MapDelete("/spaces/{spaceId}/members/{userId:guid}", RemoveMember);
     }
 
@@ -130,7 +130,7 @@ public static class SocialEndpoints
     {
         var me = http.GetUserId();
         var membership = await db.SpaceMembers.FirstOrDefaultAsync(m => m.SpaceId == spaceId && m.UserId == me);
-        if (membership is null || membership.Role != RoleOwner) return Results.Forbid();
+        if (membership is null || !SpaceRoles.IsOwner(membership.Role)) return Results.Forbid();
 
         var (a, b) = me < request.ToUserId ? (me, request.ToUserId) : (request.ToUserId, me);
         var friends = await db.Friendships.AnyAsync(f => f.UserAId == a && f.UserBId == b && f.Status == StatusAccepted);
@@ -147,7 +147,7 @@ public static class SocialEndpoints
                 SpaceId = spaceId,
                 FromUserId = me,
                 ToUserId = request.ToUserId,
-                Role = request.Role == RoleOwner ? RoleOwner : RoleMember,
+                Role = SpaceRoles.Assignable.Contains(request.Role) ? request.Role : SpaceRoles.Contributor,
                 Status = StatusPending,
                 SpaceName = request.SpaceName,
             });
@@ -188,7 +188,26 @@ public static class SocialEndpoints
         var members = await db.SpaceMembers.Where(m => m.SpaceId == spaceId).ToListAsync();
         var ids = members.Select(m => m.UserId).ToList();
         var names = await db.Users.Where(u => ids.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.DisplayName);
-        return Results.Ok(members.Select(m => new MemberDto(m.UserId, names.GetValueOrDefault(m.UserId), m.Role)).ToList());
+        return Results.Ok(members.Select(m => new MemberDto(m.UserId, names.GetValueOrDefault(m.UserId), SpaceRoles.Normalize(m.Role))).ToList());
+    }
+
+    /// <summary>Owner-only. Also how ownership is transferred (promote to owner).</summary>
+    private static async Task<IResult> ChangeMemberRole(string spaceId, Guid userId, ChangeRoleRequest request, AppDbContext db, HttpContext http)
+    {
+        var me = http.GetUserId();
+        var myRole = (await db.SpaceMembers.FirstOrDefaultAsync(m => m.SpaceId == spaceId && m.UserId == me))?.Role;
+        if (myRole is null || !SpaceRoles.IsOwner(myRole)) return Results.Forbid();
+
+        var member = await db.SpaceMembers.FirstOrDefaultAsync(m => m.SpaceId == spaceId && m.UserId == userId);
+        if (member is null) return Results.NotFound();
+
+        // an owner may not demote themself while they are the only owner
+        if (userId == me && request.Role != SpaceRoles.Owner && !await HasAnotherOwner(db, spaceId, me))
+            return Results.BadRequest(new { error = "last owner" });
+
+        member.Role = request.Role;
+        await db.SaveChangesAsync();
+        return Results.Ok();
     }
 
     private static async Task<IResult> RemoveMember(string spaceId, Guid userId, AppDbContext db, HttpContext http)
@@ -196,13 +215,27 @@ public static class SocialEndpoints
         var me = http.GetUserId();
         var myRole = (await db.SpaceMembers.FirstOrDefaultAsync(m => m.SpaceId == spaceId && m.UserId == me))?.Role;
         var removingSelf = userId == me;
-        if (myRole is null || (!removingSelf && myRole != RoleOwner)) return Results.Forbid();
+        if (myRole is null || (!removingSelf && !SpaceRoles.IsOwner(myRole))) return Results.Forbid();
         var member = await db.SpaceMembers.FirstOrDefaultAsync(m => m.SpaceId == spaceId && m.UserId == userId);
         if (member is not null)
         {
             db.SpaceMembers.Remove(member);
+            // never leave a space ownerless: promote the longest-standing
+            // remaining member (deterministic by user id) when the last
+            // owner walks out
+            if (SpaceRoles.IsOwner(member.Role) && !await HasAnotherOwner(db, spaceId, userId))
+            {
+                var successor = await db.SpaceMembers
+                    .Where(m => m.SpaceId == spaceId && m.UserId != userId)
+                    .OrderBy(m => m.UserId)
+                    .FirstOrDefaultAsync();
+                if (successor is not null) successor.Role = SpaceRoles.Owner;
+            }
             await db.SaveChangesAsync();
         }
         return Results.Ok();
     }
+
+    private static async Task<bool> HasAnotherOwner(AppDbContext db, string spaceId, Guid excludingUserId) =>
+        await db.SpaceMembers.AnyAsync(m => m.SpaceId == spaceId && m.UserId != excludingUserId && m.Role == SpaceRoles.Owner);
 }

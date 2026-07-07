@@ -10,14 +10,21 @@ import type { SyncEnvelope } from '@/sync/merge';
 
 export type SpaceKind = 'personal' | 'shared';
 
+export type SpacePeriodType = 'month' | 'week' | 'biweekly' | 'custom';
+
 export interface SpaceRow extends SyncEnvelope {
   id: string;
   name: string;
   kind: SpaceKind;
   currency: string; // ISO 4217, e.g. 'EUR'
-  periodType: 'month' | 'custom';
-  periodDay: number; // day of month the budget period starts
+  periodType: SpacePeriodType;
+  periodDay: number; // day of month the budget period starts (month type)
   picture?: string;
+  /** MDI icon shown in lists (default 'leaf') */
+  icon?: string;
+  color?: string;
+  /** default start date (yyyy-mm-dd) for transaction history when accounts get attached */
+  historyStartDate?: string;
 }
 
 export type AccountType = 'checking' | 'savings' | 'cash' | 'brokerage' | 'credit' | 'mortgage' | 'loan';

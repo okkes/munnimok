@@ -23,13 +23,22 @@ public sealed class SendFriendRequestValidator : AbstractValidator<SendFriendReq
 
 public sealed class SendSpaceInviteValidator : AbstractValidator<SendSpaceInvite>
 {
-    private static readonly string[] Roles = ["member", "owner"];
+    // "member" accepted for older clients; the server maps it to contributor
+    private static readonly string[] Roles = [.. SpaceRoles.Assignable, SpaceRoles.LegacyMember];
 
     public SendSpaceInviteValidator()
     {
         RuleFor(r => r.ToUserId).NotEmpty();
-        RuleFor(r => r.Role).NotEmpty().Must(Roles.Contains).WithMessage("role must be member or owner");
+        RuleFor(r => r.Role).NotEmpty().Must(Roles.Contains).WithMessage("role must be owner, contributor or reader");
         RuleFor(r => r.SpaceName).MaximumLength(200);
+    }
+}
+
+public sealed class ChangeRoleRequestValidator : AbstractValidator<ChangeRoleRequest>
+{
+    public ChangeRoleRequestValidator()
+    {
+        RuleFor(r => r.Role).NotEmpty().Must(SpaceRoles.Assignable.Contains).WithMessage("role must be owner, contributor or reader");
     }
 }
 

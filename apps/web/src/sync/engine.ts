@@ -111,8 +111,8 @@ export class SyncEngine {
     }
   }
 
-  /** membership revoked: remove all local data belonging to the space */
-  private async purgeSpace(spaceId: string): Promise<void> {
+  /** membership revoked (403) or explicitly left: remove all local data of the space */
+  async purgeSpace(spaceId: string): Promise<void> {
     const scoped = [this.db.accounts, this.db.categories, this.db.transactions];
     await this.db.transaction('rw', [this.db.spaces, ...scoped, this.db.outbox, this.db.meta], async () => {
       await this.db.spaces.delete(spaceId);
