@@ -76,7 +76,7 @@ export function parseCamt053(xml: string): CamtStatement[] {
 
       const txDtls = children(ntry, 'NtryDtls').flatMap((d) => children(d, 'TxDtls'))[0] ?? null;
       const relatedParty = debit ? 'Cdtr' : 'Dbtr';
-      const counterpartyName = text(txDtls, 'RltdPties', relatedParty, 'Nm');
+      let counterpartyName = text(txDtls, 'RltdPties', relatedParty, 'Nm');
       const counterpartyIban = text(txDtls, `RltdPties`, `${relatedParty}Acct`, 'Id', 'IBAN');
 
       const remittance = txDtls
@@ -87,12 +87,23 @@ export function parseCamt053(xml: string): CamtStatement[] {
             .join(' ')
         : '';
       const addtlInfo = text(ntry, 'AddtlNtryInf') ?? '';
-      const description = [remittance, addtlInfo].filter(Boolean).join(' ').trim();
+      // human-written remittance beats the bank's machine summary line
+      const description = (remittance || addtlInfo).trim();
 
+      // POS/card entries (ASN, SNS…) carry no party block — the merchant
+      // sits in AddtlNtryInf before the '>' column ("Albert Heijn 1842 >CITY …")
+      if (!counterpartyName && addtlInfo.includes('>')) {
+        counterpartyName = addtlInfo.split('>')[0].trim() || undefined;
+      }
+
+      // ING exports carry AcctSvcrRef/EndToEndId (order preserved so ids of
+      // past imports never change); ASN only numbers entries via NtryRef/TxId
       const ref =
         text(ntry, 'AcctSvcrRef') ??
         text(txDtls, 'Refs', 'AcctSvcrRef') ??
         text(txDtls, 'Refs', 'EndToEndId') ??
+        text(ntry, 'NtryRef') ??
+        text(txDtls, 'Refs', 'TxId') ??
         `${date}:${cents}:${counterpartyName ?? ''}:${description.slice(0, 40)}`;
 
       entries.push({

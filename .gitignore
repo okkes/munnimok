@@ -19,3 +19,4 @@ playwright-report/
 bin/
 obj/
 **/coverage/
+*.scratch.test.ts

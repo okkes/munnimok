@@ -258,11 +258,12 @@ export function AccountsScreen() {
         )}
         {!importError && !importResult && (
           <div className="flex flex-col gap-3 pt-1" data-testid="import-preview">
-            {(importPreview ?? []).map((stmt) => {
+            {(importPreview ?? []).map((stmt, i) => {
               const iban = stmt.iban.replace(/\s/g, '').toUpperCase();
               const match = (accounts ?? []).find((a) => a.iban?.replace(/\s/g, '').toUpperCase() === iban);
               return (
-                <div key={stmt.iban} className="flex items-center gap-3 rounded-card border border-line bg-surface px-4 py-3">
+                // key by index: monthly exports repeat the same IBAN per statement
+                <div key={`${stmt.iban}-${i}`} className="flex items-center gap-3 rounded-card border border-line bg-surface px-4 py-3">
                   <Icon name={match ? 'bank-check' : 'bank-plus'} size={22} color="var(--m-accent)" />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[14px] font-medium text-ink">
