@@ -10,22 +10,22 @@ namespace Munni.Api.GoCardless;
 /// </summary>
 public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<GcFetchService> logger) : BackgroundService
 {
-    protected override async Task ExecuteAsync(CancellationToken ct)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         using var timer = new PeriodicTimer(TimeSpan.FromHours(6));
         // first run shortly after startup, then every 6h
-        await Task.Delay(TimeSpan.FromMinutes(2), ct);
+        await Task.Delay(TimeSpan.FromMinutes(2), stoppingToken);
         do
         {
             try
             {
-                await FetchAllAsync(ct);
+                await FetchAllAsync(stoppingToken);
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "gocardless fetch cycle failed");
             }
-        } while (await timer.WaitForNextTickAsync(ct));
+        } while (await timer.WaitForNextTickAsync(stoppingToken));
     }
 
     private async Task FetchAllAsync(CancellationToken ct)
@@ -52,7 +52,8 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
                 var accepted = await new GcIngest(db).IngestAccountAsync(space, linked, details, balances, transactions);
                 linked.LastFetchAt = DateTimeOffset.UtcNow;
                 await db.SaveChangesAsync(ct);
-                logger.LogInformation("gc fetch {Iban}: {Accepted} new ops", linked.Iban, accepted);
+                if (logger.IsEnabled(LogLevel.Information))
+                    logger.LogInformation("gc fetch {Iban}: {Accepted} new ops", linked.Iban, accepted);
                 await Task.Delay(TimeSpan.FromSeconds(5), ct);
             }
             catch (HttpRequestException ex)

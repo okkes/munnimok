@@ -41,7 +41,8 @@ try {
 Write-Host "==> dotnet-sonarscanner (munni-api, dockerized)" -ForegroundColor Cyan
 cmd /c "docker build -q -t munni-sonar-dotnet -f `"$repo\deploy\sonar\Dockerfile.dotnet`" `"$repo\deploy\sonar`" 2>&1"
 if ($LASTEXITCODE -ne 0) { Write-Error 'failed to build the dotnet scanner image' }
-$inner = "dotnet sonarscanner begin /k:munni-api /n:munni-api /d:sonar.host.url=http://host.docker.internal:9000 /d:sonar.token=$token && dotnet build Munni.slnx --no-incremental && dotnet sonarscanner end /d:sonar.token=$token"
+# EF migrations are generated code — excluded from analysis
+$inner = "dotnet sonarscanner begin /k:munni-api /n:munni-api /d:sonar.host.url=http://host.docker.internal:9000 /d:sonar.token=$token /d:sonar.exclusions=**/Migrations/** && dotnet build Munni.slnx --no-incremental && dotnet sonarscanner end /d:sonar.token=$token"
 cmd /c "docker run --rm -v `"$repo\server`:/src`" munni-sonar-dotnet sh -c `"$inner`" 2>&1"
 if ($LASTEXITCODE -ne 0) { Write-Error 'api analysis failed' }
 

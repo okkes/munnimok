@@ -16,38 +16,38 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Friendship> Friendships => Set<Friendship>();
     public DbSet<SpaceInvite> SpaceInvites => Set<SpaceInvite>();
 
-    protected override void OnModelCreating(ModelBuilder b)
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        b.Entity<User>(e =>
+        modelBuilder.Entity<User>(e =>
         {
             e.HasKey(x => x.Id);
             e.HasIndex(x => x.Sub).IsUnique();
         });
-        b.Entity<Space>(e => e.HasKey(x => x.Id));
-        b.Entity<SpaceMember>(e =>
+        modelBuilder.Entity<Space>(e => e.HasKey(x => x.Id));
+        modelBuilder.Entity<SpaceMember>(e =>
         {
             e.HasKey(x => new { x.SpaceId, x.UserId });
             e.HasIndex(x => x.UserId);
         });
-        b.Entity<SyncOpRow>(e =>
+        modelBuilder.Entity<SyncOpRow>(e =>
         {
             e.HasKey(x => x.Id);
             e.HasIndex(x => new { x.SpaceId, x.Seq }).IsUnique();
             e.HasIndex(x => new { x.SpaceId, x.OpId }).IsUnique();
         });
-        b.Entity<EntityRow>(e => e.HasKey(x => new { x.SpaceId, x.Entity, x.EntityId }));
-        b.Entity<GcRequisition>(e => e.HasKey(x => x.Id));
-        b.Entity<GcLinkedAccount>(e =>
+        modelBuilder.Entity<EntityRow>(e => e.HasKey(x => new { x.SpaceId, x.Entity, x.EntityId }));
+        modelBuilder.Entity<GcRequisition>(e => e.HasKey(x => x.Id));
+        modelBuilder.Entity<GcLinkedAccount>(e =>
         {
             e.HasKey(x => x.GcAccountId);
             e.HasIndex(x => x.SpaceId);
         });
-        b.Entity<Friendship>(e =>
+        modelBuilder.Entity<Friendship>(e =>
         {
             e.HasKey(x => x.Id);
             e.HasIndex(x => new { x.UserAId, x.UserBId }).IsUnique();
         });
-        b.Entity<SpaceInvite>(e =>
+        modelBuilder.Entity<SpaceInvite>(e =>
         {
             e.HasKey(x => x.Id);
             e.HasIndex(x => x.ToUserId);

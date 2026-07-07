@@ -49,8 +49,23 @@ public static class GcEndpoints
         }).WithValidation<CreateRequisitionRequest>();
 
         // called by the app after the bank redirects back
-        group.MapPost("/requisitions/{reference:guid}/complete", async (Guid reference, IGoCardlessApi gc, AppDbContext db, HttpContext http) =>
+        group.MapPost("/requisitions/{reference:guid}/complete", CompleteRequisition);
+
+        // connection status for the UI (next scheduled fetch, expiry handling)
+        group.MapGet("/connections", async (AppDbContext db, HttpContext http) =>
         {
+            var userId = http.GetUserId();
+            var spaceIds = await db.SpaceMembers.Where(m => m.UserId == userId).Select(m => m.SpaceId).ToListAsync();
+            var connections = await db.GcLinkedAccounts
+                .Where(a => spaceIds.Contains(a.SpaceId))
+                .Select(a => new { a.GcAccountId, a.SpaceId, a.AccountEntityId, a.Iban, a.LastFetchAt })
+                .ToListAsync();
+            return Results.Ok(connections);
+        });
+    }
+
+    private static async Task<IResult> CompleteRequisition(Guid reference, IGoCardlessApi gc, AppDbContext db, HttpContext http)
+    {
             var userId = http.GetUserId();
             var requisition = await db.GcRequisitions.FindAsync(reference);
             if (requisition is null || requisition.UserId != userId) return Results.NotFound();
@@ -94,18 +109,5 @@ public static class GcEndpoints
             requisition.Status = "linked";
             await db.SaveChangesAsync();
             return Results.Ok(new CompleteResponse(status.Status, linkedCount, imported));
-        });
-
-        // connection status for the UI (next scheduled fetch, expiry handling)
-        group.MapGet("/connections", async (AppDbContext db, HttpContext http) =>
-        {
-            var userId = http.GetUserId();
-            var spaceIds = await db.SpaceMembers.Where(m => m.UserId == userId).Select(m => m.SpaceId).ToListAsync();
-            var connections = await db.GcLinkedAccounts
-                .Where(a => spaceIds.Contains(a.SpaceId))
-                .Select(a => new { a.GcAccountId, a.SpaceId, a.AccountEntityId, a.Iban, a.LastFetchAt })
-                .ToListAsync();
-            return Results.Ok(connections);
-        });
     }
 }

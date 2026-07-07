@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Munni.Api.Data;
 using Munni.Api.Sync;
 
@@ -10,7 +11,7 @@ namespace Munni.Api.GoCardless;
 /// idempotent (SyncWriter dedupes), and entity ids match the client-side
 /// CAMT importer so cross-source imports collapse into the same rows.
 /// </summary>
-public sealed class GcIngest(AppDbContext db)
+public sealed partial class GcIngest(AppDbContext db)
 {
     public async Task<int> IngestAccountAsync(
         Space space,
@@ -25,7 +26,7 @@ public sealed class GcIngest(AppDbContext db)
 
         // account row (create or refresh balance)
         var balance = balances.FirstOrDefault(b => b.BalanceType is "closingBooked" or "interimBooked")
-                      ?? balances.FirstOrDefault();
+                      ?? (balances.Count > 0 ? balances[0] : null);
         var accountFields = new Dictionary<string, JsonElement>
         {
             ["name"] = Json(details.Name ?? $"Bank · {linked.Iban[^4..]}"),
@@ -79,13 +80,21 @@ public sealed class GcIngest(AppDbContext db)
 
     private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max];
 
+    [GeneratedRegex(@"<br\s*/?>", RegexOptions.IgnoreCase)]
+    private static partial Regex BrTagRegex();
+
+    [GeneratedRegex(@"</?[a-zA-Z][^>]*>")]
+    private static partial Regex HtmlTagRegex();
+
+    [GeneratedRegex(@"\s+")]
+    private static partial Regex WhitespaceRegex();
+
     /// <summary>ING et al. embed literal &lt;br&gt; separators in remittance text.</summary>
     private static string? CleanBankText(string? text)
     {
         if (string.IsNullOrEmpty(text)) return text;
-        var cleaned = System.Text.RegularExpressions.Regex.Replace(text, @"<br\s*/?>", " · ",
-            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-        cleaned = System.Text.RegularExpressions.Regex.Replace(cleaned, @"</?[a-zA-Z][^>]*>", " ");
-        return System.Text.RegularExpressions.Regex.Replace(cleaned, @"\s+", " ").Trim();
+        var cleaned = BrTagRegex().Replace(text, " · ");
+        cleaned = HtmlTagRegex().Replace(cleaned, " ");
+        return WhitespaceRegex().Replace(cleaned, " ").Trim();
     }
 }

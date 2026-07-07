@@ -18,16 +18,18 @@ builder.Services.AddMemoryCache();
 builder.Services.AddValidatorsFromAssemblyContaining<Program>(ServiceLifetime.Singleton);
 if (!string.IsNullOrEmpty(builder.Configuration["GoCardless:SecretId"]))
 {
+    // fixed vendor endpoint, overridable for tests/self-hosted proxies
+    var gcBaseUrl = builder.Configuration["GoCardless:BaseUrl"] ?? "https://bankaccountdata.gocardless.com/api/v2/";
     builder.Services.AddHttpClient<IGoCardlessApi, GoCardlessApi>(client =>
-        client.BaseAddress = new Uri("https://bankaccountdata.gocardless.com/api/v2/"));
+        client.BaseAddress = new Uri(gcBaseUrl));
     builder.Services.AddHostedService<GcFetchService>();
 }
 
 if (builder.Configuration.GetValue<bool>("Auth:TestMode"))
 {
     builder.Services
-        .AddAuthentication(TestAuthHandler.Scheme)
-        .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(TestAuthHandler.Scheme, null);
+        .AddAuthentication(TestAuthHandler.SchemeName)
+        .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(TestAuthHandler.SchemeName, null);
 }
 else
 {
@@ -92,6 +94,4 @@ app.MapSocial();
 app.MapAdmin(gcEnabled);
 if (gcEnabled) app.MapGoCardless();
 
-app.Run();
-
-public partial class Program;
+await app.RunAsync();

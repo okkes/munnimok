@@ -17,7 +17,7 @@ public sealed class TestAuthHandler(
     ILoggerFactory logger,
     UrlEncoder encoder) : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
 {
-    public const string Scheme = "TestAuth";
+    public const string SchemeName = "TestAuth";
 
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
@@ -25,8 +25,8 @@ public sealed class TestAuthHandler(
         if (string.IsNullOrWhiteSpace(sub))
             return Task.FromResult(AuthenticateResult.Fail("missing X-User-Sub"));
 
-        var identity = new ClaimsIdentity([new Claim("sub", sub)], Scheme);
-        var ticket = new AuthenticationTicket(new ClaimsPrincipal(identity), Scheme);
+        var identity = new ClaimsIdentity([new Claim("sub", sub)], SchemeName);
+        var ticket = new AuthenticationTicket(new ClaimsPrincipal(identity), SchemeName);
         return Task.FromResult(AuthenticateResult.Success(ticket));
     }
 }

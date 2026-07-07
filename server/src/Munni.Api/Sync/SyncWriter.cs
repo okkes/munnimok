@@ -90,12 +90,12 @@ public static class ServerHlc
     {
         const string chars = "0123456789abcdefghijklmnopqrstuvwxyz";
         if (value == 0) return "0";
-        var s = "";
+        var buffer = new System.Text.StringBuilder(13); // enough for long.MaxValue
         while (value > 0)
         {
-            s = chars[(int)(value % 36)] + s;
+            buffer.Insert(0, chars[(int)(value % 36)]);
             value /= 36;
         }
-        return s;
+        return buffer.ToString();
     }
 }
