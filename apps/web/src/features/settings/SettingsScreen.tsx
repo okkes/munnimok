@@ -69,6 +69,16 @@ export function SettingsScreen() {
             <span className="flex-1">{t('acct.financialAccounts')}</span>
             <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
           </button>
+          <div className="mx-4 h-px bg-line-2" />
+          <button
+            data-testid="settings-categories-row"
+            onClick={() => void navigate({ to: '/categories' })}
+            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+          >
+            <Icon name="shape-outline" size={20} />
+            <span className="flex-1">{t('screen.categories')}</span>
+            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+          </button>
           {gcAvailable && (
             <>
               <div className="mx-4 h-px bg-line-2" />

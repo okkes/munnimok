@@ -1,15 +1,15 @@
-import { CATEGORY_BY_ID, UNCATEGORIZED_ID } from '@/domain/categories';
 import { useLang } from '@/i18n';
-import type { TranslationKey } from '@/i18n';
 import { fmtCents } from '@/lib/money';
 import { cleanBankText } from '@/lib/text';
 import type { TransactionRow } from '@/db/types';
+import { catName, useCategories } from '@/features/categories/useCategories';
 import { Icon } from './Icon';
 
 export function TxRow({ tx, onClick }: { tx: TransactionRow; onClick?: () => void }) {
   const { t, lang } = useLang();
-  const cat = CATEGORY_BY_ID.get(tx.catId ?? UNCATEGORIZED_ID) ?? CATEGORY_BY_ID.get(UNCATEGORIZED_ID)!;
-  const parent = cat.parentId ? CATEGORY_BY_ID.get(cat.parentId) : undefined;
+  const cats = useCategories();
+  const cat = cats.byId(tx.catId);
+  const parent = cat.parentId ? cats.byId(cat.parentId) : undefined;
   const color = cat.color ?? parent?.color ?? 'var(--m-ink-3)';
   const positive = tx.amountCents > 0;
 
@@ -28,7 +28,7 @@ export function TxRow({ tx, onClick }: { tx: TransactionRow; onClick?: () => voi
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[14px] font-medium text-ink">{cleanBankText(tx.merchant)}</span>
         <span className="block truncate text-xs text-ink-3">
-          {t(cat.nameKey as TranslationKey)}
+          {catName(cat, t)}
           {tx.needsReview === 1 && (
             <span className="ml-1.5 rounded bg-warning-soft px-1 py-px text-[10px] font-semibold text-warning">
               {t('review.confirm')}

@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { CATEGORY_BY_ID, UNCATEGORIZED_ID } from '@/domain/categories';
 import { useLang } from '@/i18n';
-import type { TranslationKey } from '@/i18n';
 import { useData } from '@/app/data';
+import { catName, useCategories } from '@/features/categories/useCategories';
 import { fmtCents } from '@/lib/money';
 import { cleanBankText } from '@/lib/text';
 import { AppBar, IconButton } from '@/ui/AppBar';
@@ -18,6 +17,7 @@ import { CategoryPicker } from '@/features/categories/CategoryPicker';
 export function ReviewScreen() {
   const { t, lang } = useLang();
   const { db, repo, spaceId } = useData();
+  const cats = useCategories();
   const [pickerOpen, setPickerOpen] = useState(false);
 
   const queue = useLiveQuery(
@@ -37,12 +37,12 @@ export function ReviewScreen() {
   };
   const recategorize = (catId: string) => {
     if (!tx) return;
-    const txType = CATEGORY_BY_ID.get(catId)?.txTypes[0] ?? tx.txType;
+    const txType = cats.byId(catId).txTypes[0] ?? tx.txType;
     void repo.upsert('transaction', spaceId, tx.id, { catId, txType, needsReview: 0 });
   };
 
-  const cat = tx ? (CATEGORY_BY_ID.get(tx.catId ?? UNCATEGORIZED_ID) ?? CATEGORY_BY_ID.get(UNCATEGORIZED_ID)!) : null;
-  const parent = cat?.parentId ? CATEGORY_BY_ID.get(cat.parentId) : undefined;
+  const cat = tx ? cats.byId(tx.catId) : null;
+  const parent = cat?.parentId ? cats.byId(cat.parentId) : undefined;
   const color = cat?.color ?? parent?.color ?? 'var(--m-ink-3)';
 
   return (
@@ -83,7 +83,7 @@ export function ReviewScreen() {
                 className="m-tap mt-6 inline-flex items-center gap-2 rounded-full border border-line bg-bg px-4 py-2 text-[14px] font-medium text-ink"
               >
                 <Icon name={cat.icon} size={18} color={color} />
-                {t(cat.nameKey as TranslationKey)}
+                {catName(cat, t)}
                 <Icon name="pencil-outline" size={14} color="var(--m-ink-4)" />
               </button>
             </div>

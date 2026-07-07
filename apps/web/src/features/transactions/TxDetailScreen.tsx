@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useParams } from '@tanstack/react-router';
-import { CATEGORY_BY_ID, UNCATEGORIZED_ID } from '@/domain/categories';
 import { useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
 import { useData } from '@/app/data';
+import { catName, useCategories } from '@/features/categories/useCategories';
 import { fmtCents } from '@/lib/money';
 import { cleanBankText } from '@/lib/text';
 import { AppBar, IconButton } from '@/ui/AppBar';
@@ -23,15 +23,16 @@ export function TxDetailScreen() {
 
   const tx = useLiveQuery(() => db.transactions.get(txId), [txId]);
   const account = useLiveQuery(() => (tx ? db.accounts.get(tx.accountId) : undefined), [tx?.accountId]);
+  const cats = useCategories();
 
   if (!tx) return <div className="h-full" data-testid="screen-tx-detail" />;
 
-  const cat = CATEGORY_BY_ID.get(tx.catId ?? UNCATEGORIZED_ID) ?? CATEGORY_BY_ID.get(UNCATEGORIZED_ID)!;
-  const parent = cat.parentId ? CATEGORY_BY_ID.get(cat.parentId) : undefined;
+  const cat = cats.byId(tx.catId);
+  const parent = cat.parentId ? cats.byId(cat.parentId) : undefined;
   const color = cat.color ?? parent?.color ?? 'var(--m-ink-3)';
 
   const setCategory = (catId: string) => {
-    const txType = CATEGORY_BY_ID.get(catId)?.txTypes[0] ?? tx.txType;
+    const txType = cats.byId(catId).txTypes[0] ?? tx.txType;
     void repo.upsert('transaction', spaceId, tx.id, { catId, txType, needsReview: 0 });
   };
   const saveNotes = (notes: string) => {
@@ -77,7 +78,7 @@ export function TxDetailScreen() {
             className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
           >
             <Icon name={cat.icon} size={20} color={color} />
-            <span className="flex-1">{t(cat.nameKey as TranslationKey)}</span>
+            <span className="flex-1">{catName(cat, t)}</span>
             {tx.needsReview === 1 && (
               <span className="rounded bg-warning-soft px-1.5 py-0.5 text-[10px] font-semibold text-warning">
                 {t('review.confirm')}

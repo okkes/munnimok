@@ -769,4 +769,8 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'txform.date': 'Datum',
   'txform.account': 'Rekening',
   'txform.category': 'Categorie',
+  'cats.addCustom': 'Nieuwe categorie',
+  'cats.editCustom': 'Categorie bewerken',
+  'cats.name': 'Categorienaam',
+  'cats.customBadge': 'Eigen',
 };

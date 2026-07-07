@@ -1,10 +1,8 @@
 import { useMemo, useState } from 'react';
-import { BUILTIN_CATEGORIES } from '@/domain/categories';
-import type { BuiltinCategory } from '@/domain/categories';
 import { useLang } from '@/i18n';
-import type { TranslationKey } from '@/i18n';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
+import { catName, useCategories } from './useCategories';
 
 interface CategoryPickerProps {
   open: boolean;
@@ -13,24 +11,23 @@ interface CategoryPickerProps {
   onPick: (catId: string) => void;
 }
 
-/** Bottom sheet listing the catalog grouped by parent, with search. */
+/** Bottom sheet listing the catalog (built-in + custom) grouped by parent, with search. */
 export function CategoryPicker({ open, onOpenChange, selectedId, onPick }: CategoryPickerProps) {
   const { t } = useLang();
+  const cats = useCategories();
   const [query, setQuery] = useState('');
 
   const groups = useMemo(() => {
-    const name = (c: BuiltinCategory) => t(c.nameKey as TranslationKey);
     const q = query.trim().toLowerCase();
-    const parents = BUILTIN_CATEGORIES.filter((c) => c.isParent && !c.hidden);
-    return parents
+    return cats.parents
       .map((parent) => ({
         parent,
-        children: BUILTIN_CATEGORIES.filter(
-          (c) => c.parentId === parent.id && !c.hidden && (!q || name(c).toLowerCase().includes(q)),
-        ),
+        children: cats
+          .childrenOf(parent.id)
+          .filter((c) => !q || catName(c, t).toLowerCase().includes(q)),
       }))
       .filter((g) => g.children.length > 0);
-  }, [query, t]);
+  }, [cats, query, t]);
 
   const pick = (catId: string) => {
     onPick(catId);
@@ -51,7 +48,7 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick }: Categ
         <div key={parent.id}>
           <div className="m-cap mt-3 mb-1 flex items-center gap-1.5 px-1" style={{ color: parent.color }}>
             <Icon name={parent.icon} size={14} />
-            {t(parent.nameKey as TranslationKey)}
+            {catName(parent, t)}
           </div>
           {children.map((cat) => (
             <button
@@ -60,8 +57,8 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick }: Categ
               onClick={() => pick(cat.id)}
               className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-1 py-2.5 text-left text-[14px] text-ink"
             >
-              <Icon name={cat.icon} size={19} color={parent.color} />
-              <span className="flex-1">{t(cat.nameKey as TranslationKey)}</span>
+              <Icon name={cat.icon} size={19} color={cat.color ?? parent.color} />
+              <span className="flex-1">{catName(cat, t)}</span>
               {selectedId === cat.id && <Icon name="check" size={18} color="var(--m-accent)" />}
             </button>
           ))}

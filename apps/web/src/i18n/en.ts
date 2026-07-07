@@ -767,6 +767,10 @@ export const en = {
   'txform.date': 'Date',
   'txform.account': 'Account',
   'txform.category': 'Category',
+  'cats.addCustom': 'New category',
+  'cats.editCustom': 'Edit category',
+  'cats.name': 'Category name',
+  'cats.customBadge': 'Custom',
 } as const;
 
 export type TranslationKey = keyof typeof en;

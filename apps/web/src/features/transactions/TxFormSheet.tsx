@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { CATEGORY_BY_ID, UNCATEGORIZED_ID } from '@/domain/categories';
+import { UNCATEGORIZED_ID } from '@/domain/categories';
 import { useLang } from '@/i18n';
-import type { TranslationKey } from '@/i18n';
 import { useData } from '@/app/data';
+import { catName, useCategories } from '@/features/categories/useCategories';
 import { parseCents } from '@/lib/money';
 import type { TransactionRow } from '@/db/types';
 import { Button } from '@/ui/Button';
@@ -28,6 +28,7 @@ const todayIso = () => new Date().toISOString().slice(0, 10);
 export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
   const { t } = useLang();
   const { db, repo, spaceId } = useData();
+  const cats = useCategories();
   const [amount, setAmount] = useState('');
   const [isExpense, setIsExpense] = useState(true);
   const [merchant, setMerchant] = useState('');
@@ -62,7 +63,7 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
     }
   }, [open, tx]);
 
-  const cat = CATEGORY_BY_ID.get(catId) ?? CATEGORY_BY_ID.get(UNCATEGORIZED_ID)!;
+  const cat = cats.byId(catId);
   const effectiveAccount = accountId ?? accounts?.[0]?.id ?? null;
   const cents = parseCents(amount);
   const valid = !!merchant.trim() && cents !== null && cents > 0 && !!effectiveAccount && !!date;
@@ -70,7 +71,7 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
   const save = () => {
     if (!valid || !effectiveAccount) return;
     const signed = isExpense ? -Math.abs(cents!) : Math.abs(cents!);
-    const txType = CATEGORY_BY_ID.get(catId)?.txTypes[0] ?? (isExpense ? 'expense' : 'income');
+    const txType = cats.byId(catId).txTypes[0] ?? (isExpense ? 'expense' : 'income');
     void repo.upsert('transaction', spaceId, tx?.id ?? repo.newId(), {
       accountId: effectiveAccount,
       date,
@@ -162,8 +163,8 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
             onClick={() => setPickerOpen(true)}
             className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink"
           >
-            <Icon name={cat.icon} size={20} color={cat.color ?? CATEGORY_BY_ID.get(cat.parentId ?? '')?.color} />
-            <span className="flex-1">{t(cat.nameKey as TranslationKey)}</span>
+            <Icon name={cat.icon} size={20} color={cat.color ?? cats.byId(cat.parentId).color} />
+            <span className="flex-1">{catName(cat, t)}</span>
             <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
           </button>
 

@@ -769,4 +769,8 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'txform.date': 'Tarih',
   'txform.account': 'Hesap',
   'txform.category': 'Kategori',
+  'cats.addCustom': 'Yeni kategori',
+  'cats.editCustom': 'Kategoriyi düzenle',
+  'cats.name': 'Kategori adı',
+  'cats.customBadge': 'Özel',
 };

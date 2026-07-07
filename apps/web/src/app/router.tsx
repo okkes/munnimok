@@ -16,6 +16,7 @@ import { SpacesScreen } from '@/features/spaces/SpacesScreen';
 import { SettingsScreen } from '@/features/settings/SettingsScreen';
 import { ReviewScreen } from '@/features/review/ReviewScreen';
 import { AccountsScreen } from '@/features/accounts/AccountsScreen';
+import { ManageCategoriesScreen } from '@/features/categories/ManageCategoriesScreen';
 
 const rootRoute = createRootRoute({ component: Outlet });
 
@@ -61,6 +62,11 @@ const spacesRoute = createRoute({ getParentRoute: () => appRoute, path: '/spaces
 const settingsRoute = createRoute({ getParentRoute: () => appRoute, path: '/settings', component: SettingsScreen });
 const reviewRoute = createRoute({ getParentRoute: () => appRoute, path: '/review', component: ReviewScreen });
 const accountsRoute = createRoute({ getParentRoute: () => appRoute, path: '/accounts', component: AccountsScreen });
+const categoriesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/categories',
+  component: ManageCategoriesScreen,
+});
 
 const routeTree = rootRoute.addChildren([
   loginRoute,
@@ -73,6 +79,7 @@ const routeTree = rootRoute.addChildren([
     settingsRoute,
     reviewRoute,
     accountsRoute,
+    categoriesRoute,
   ]),
 ]);
 
