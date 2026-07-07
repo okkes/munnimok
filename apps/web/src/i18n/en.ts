@@ -755,6 +755,9 @@ export const en = {
   'gc.failed': 'Bank connection failed — please try again',
   'gc.backToApp': 'Back to munni',
   'import.txCountOne': '1 transaction',
+  'gc.connections': 'Bank connections',
+  'gc.lastSync': 'Last sync',
+  'gc.never': 'Not synced yet',
 } as const;
 
 export type TranslationKey = keyof typeof en;

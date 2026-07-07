@@ -757,4 +757,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'gc.failed': 'Banka bağlantısı başarısız — lütfen tekrar deneyin',
   'gc.backToApp': 'munni\'ye geri dön',
   'import.txCountOne': '1 işlem',
+  'gc.connections': 'Banka bağlantıları',
+  'gc.lastSync': 'Son senkronizasyon',
+  'gc.never': 'Henüz senkronize edilmedi',
 };
