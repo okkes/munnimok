@@ -31,6 +31,9 @@ else
         .AddAuthentication("Bearer")
         .AddJwtBearer("Bearer", options =>
         {
+            // keep original OIDC claim names — otherwise "sub" is renamed to
+            // the legacy ClaimTypes.NameIdentifier and user resolution fails
+            options.MapInboundClaims = false;
             options.Authority = builder.Configuration["Auth:Authority"];
             options.TokenValidationParameters.ValidAudience = builder.Configuration["Auth:Audience"];
             // local docker: browser sees localhost:3001 (issuer) but this

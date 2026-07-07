@@ -38,7 +38,8 @@ public static class UserResolution
     /// <summary>JIT-provisions a user row for the authenticated subject.</summary>
     public static async Task ResolveUser(HttpContext http, AppDbContext db, Func<Task> next)
     {
-        var sub = http.User.FindFirstValue("sub");
+        // "sub" with MapInboundClaims=false; NameIdentifier as a safety net
+        var sub = http.User.FindFirstValue("sub") ?? http.User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (!string.IsNullOrEmpty(sub))
         {
             var user = await db.Users.FirstOrDefaultAsync(u => u.Sub == sub);
