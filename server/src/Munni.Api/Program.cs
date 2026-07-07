@@ -26,13 +26,18 @@ if (builder.Configuration.GetValue<bool>("Auth:TestMode"))
 }
 else
 {
-    // Logto OIDC bearer — configured when the NAS stack lands (Phase 2b)
+    // Logto OIDC bearer (production: https://logto.<domain>/oidc)
     builder.Services
         .AddAuthentication("Bearer")
         .AddJwtBearer("Bearer", options =>
         {
             options.Authority = builder.Configuration["Auth:Authority"];
             options.TokenValidationParameters.ValidAudience = builder.Configuration["Auth:Audience"];
+            // local docker: browser sees localhost:3001 (issuer) but this
+            // container must fetch metadata via the compose network
+            var metadata = builder.Configuration["Auth:MetadataAddress"];
+            if (!string.IsNullOrEmpty(metadata)) options.MetadataAddress = metadata;
+            options.RequireHttpsMetadata = builder.Configuration.GetValue("Auth:RequireHttps", true);
         });
 }
 builder.Services.AddAuthorization();

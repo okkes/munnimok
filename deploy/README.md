@@ -66,6 +66,38 @@ so it keeps working across reboots and even if Docker's stored login is
 ever wiped. The one-time manual `docker login` in step 2 is only needed
 for the very first pull via the Container Manager GUI.
 
+## Local full-stack test (before touching the NAS)
+
+Everything except HTTPS/reverse-proxy, on localhost:
+
+1. `docker compose --env-file deploy/env/.env.local -f deploy/docker-compose.local.yml up -d --build`
+   (from the repo root; GoCardless keys are passed through if present)
+2. Open the Logto admin console at **http://localhost:3002**, create the
+   admin account, then:
+   - *Applications* → Create → **Single-page app**, name `munni`:
+     - Redirect URI: `http://localhost:5173/auth-callback`
+     - Post sign-out redirect URI: `http://localhost:5173/`
+     - CORS allowed origin: `http://localhost:5173`
+   - *API resources* → Create: identifier exactly `http://localhost:8180`
+3. Put the app id into `apps/web/.env.local` (git-ignored):
+   ```
+   VITE_API_URL=http://localhost:8180
+   VITE_LOGTO_ENDPOINT=http://localhost:3001
+   VITE_LOGTO_APP_ID=<the app id from step 2>
+   VITE_LOGTO_RESOURCE=http://localhost:8180
+   ```
+4. `npm run dev` (repo root) and open http://localhost:5173 — the login
+   screen now shows the real **Sign in** button. Create a user in the
+   Logto sign-up flow, and you're in a fully syncing account: open a
+   second browser (or private window), sign in with the same user, and
+   watch edits flow between them.
+5. Bank connect (optional, uses your real GoCardless account): add
+   account → *Connect your bank*. The consent redirect returns to
+   `http://localhost:5173/gc-callback`.
+
+Tear down with `docker compose -f deploy/docker-compose.local.yml down`
+(add `-v` to also wipe the local database volume).
+
 ## Local test stack (CI / development)
 
 `docker-compose.test.yml` runs api+postgres only, with header-based test

@@ -1,0 +1,63 @@
+# Full-stack LOCAL test: real Logto + API + Postgres on localhost, the app
+# runs via the vite dev server (npm run dev). No HTTPS, no reverse proxy.
+#
+#   docker compose --env-file deploy/env/.env.local -f deploy/docker-compose.local.yml up -d --build
+#
+# Then follow "Local full-stack test" in deploy/README.md.
+services:
+  api:
+    build:
+      context: ../server
+      dockerfile: src/Munni.Api/Dockerfile
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Db: Host=postgres;Database=munni;Username=munni;Password=localtest
+      Db__AutoMigrate: "true"
+      # browser-visible issuer is localhost:3001; metadata fetched in-network
+      Auth__Authority: http://localhost:3001/oidc
+      Auth__MetadataAddress: http://logto:3001/oidc/.well-known/openid-configuration
+      Auth__RequireHttps: "false"
+      Auth__Audience: http://localhost:8180
+      Cors__Origins__0: http://localhost:5173
+      GoCardless__SecretId: ${GOCARDLESS_SECRET_ID:-}
+      GoCardless__SecretKey: ${GOCARDLESS_SECRET_KEY:-}
+    ports:
+      - "8180:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      logto:
+        condition: service_started
+
+  logto:
+    image: svhd/logto:1.24
+    entrypoint: ["sh", "-c", "npm run cli db seed -- --swe && npm start"]
+    environment:
+      TRUST_PROXY_HEADER: "0"
+      DB_URL: postgres://munni:localtest@postgres:5432/logto
+      ENDPOINT: http://localhost:3001
+      ADMIN_ENDPOINT: http://localhost:3002
+    ports:
+      - "3001:3001"
+      - "3002:3002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: munni
+      POSTGRES_PASSWORD: localtest
+      POSTGRES_DB: munni
+    volumes:
+      - pgdata_local:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U munni"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata_local:
