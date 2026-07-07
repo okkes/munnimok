@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { apiFetch, getApiCapabilities } from '@/lib/api';
+import { config } from '@/app/config';
 import { useLang } from '@/i18n';
 import type { Lang } from '@/i18n';
 import { useTheme } from '@/app/theme';
@@ -164,6 +165,7 @@ export function SettingsScreen() {
 
         <div className="pt-6 pb-6 text-center text-[11px] text-ink-4">
           munni · v{__APP_VERSION__} · build {String(__BUILD_NUMBER__)}
+          {config.channel !== 'production' && ` · ${config.channel || 'local'}`}
         </div>
       </div>
 

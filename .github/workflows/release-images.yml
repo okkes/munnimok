@@ -51,10 +51,12 @@ jobs:
           # master -> latest (production), dev -> dev (staging)
           if [ "${GITHUB_REF_NAME}" = "dev" ]; then
             echo "channel=dev" >> $GITHUB_OUTPUT
+            echo "app_channel=staging" >> $GITHUB_OUTPUT
             echo "api_url=${{ vars.VITE_API_URL_DEV || 'https://munni-test-api.okkes.synology.me' }}" >> $GITHUB_OUTPUT
             echo "logto_app=${{ vars.VITE_LOGTO_APP_ID_DEV || '' }}" >> $GITHUB_OUTPUT
           else
             echo "channel=latest" >> $GITHUB_OUTPUT
+            echo "app_channel=production" >> $GITHUB_OUTPUT
             echo "api_url=${{ vars.VITE_API_URL || 'https://munni-api.okkes.synology.me' }}" >> $GITHUB_OUTPUT
             echo "logto_app=${{ vars.VITE_LOGTO_APP_ID || '' }}" >> $GITHUB_OUTPUT
           fi
@@ -95,6 +97,7 @@ jobs:
             VITE_LOGTO_APP_ID=${{ steps.meta.outputs.logto_app }}
             VITE_LOGTO_RESOURCE=${{ steps.meta.outputs.api_url }}
             VITE_GLITCHTIP_DSN=${{ vars.VITE_GLITCHTIP_DSN || '' }}
+            VITE_CHANNEL=${{ steps.meta.outputs.app_channel }}
           tags: |
             ${{ env.REGISTRY }}/munni-web:${{ steps.meta.outputs.channel }}
             ${{ env.REGISTRY }}/munni-web:${{ steps.meta.outputs.channel }}-${{ steps.meta.outputs.build }}

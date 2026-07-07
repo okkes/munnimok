@@ -13,6 +13,8 @@ export const config = {
     resource: (import.meta.env.VITE_LOGTO_RESOURCE as string | undefined) ?? '',
   },
   glitchtipDsn: (import.meta.env.VITE_GLITCHTIP_DSN as string | undefined) ?? '',
+  /** 'production' | 'staging' | '' (local dev) — shown in the Settings footer */
+  channel: (import.meta.env.VITE_CHANNEL as string | undefined) ?? '',
 };
 
 export const logtoConfigured = Boolean(config.logto.endpoint && config.logto.appId);

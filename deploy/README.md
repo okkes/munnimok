@@ -79,7 +79,12 @@ database, sharing the production Logto/GlitchTip containers:
    sign-out `/`, CORS origin) and an API resource
    `https://munni-test-api.<domain>`; put the app id in the repo's
    Actions **Variables** as `VITE_LOGTO_APP_ID_DEV`.
-3. Start/update: `bash update.sh docker-compose.staging.yml` (own
+3. Copy `.env` to `.env.staging` next to `update.sh` and adjust: its own
+   `POSTGRES_PASSWORD`, same `GHCR_USER`/`GHCR_PAT`/`ADMIN_SUBS`,
+   GoCardless keys optional. `update.sh` picks the env file by compose
+   file (`.env` for production, `.env.staging` for staging), so the two
+   environments never share secrets.
+4. Start/update: `bash update.sh docker-compose.staging.yml` (own
    scheduled task, or run on demand).
 
 Flow: feature work merges into `dev` → verify at munni-test → merge
