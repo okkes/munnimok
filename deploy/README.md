@@ -124,5 +124,22 @@ auth (`X-User-Sub`) instead of Logto:
 
 ```sh
 docker compose -f deploy/docker-compose.test.yml up --build -d
-curl -H "X-User-Sub: alice" http://localhost:8180/health
+curl -H "X-User-Sub: alice" http://localhost:8181/health
 ```
+
+## SonarQube analysis (local machine only)
+
+SonarQube needs ~2-3 GB RAM, so it never runs on the NAS — spin it up
+locally when you want a quality report:
+
+1. `docker compose -f deploy/docker-compose.sonar.yml up -d` and wait
+   for http://localhost:9000 (first boot takes a minute or two).
+2. First time only: log in `admin` / `admin`, set a new password, then
+   *My Account → Security → Generate token* and add
+   `SONAR_TOKEN=<token>` to `deploy/env/.env.local`.
+3. `./deploy/sonar/analyze.ps1` — runs the web tests with coverage and
+   uploads the `munni-web` analysis (the scanner runs in Docker, nothing
+   to install). The API is analyzed too if `dotnet-sonarscanner` +
+   Java 17 are installed; otherwise CodeQL in CI keeps covering C#.
+4. `docker compose -f deploy/docker-compose.sonar.yml down` when done
+   (analysis history survives in the named volumes).

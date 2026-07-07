@@ -46,14 +46,18 @@ describe('TxFormSheet (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('txform-category').textContent).toContain('Grocery'));
 
     fireEvent.click(screen.getByTestId('txform-save'));
-    await waitFor(() => {
-      const row = [...screen.getByTestId('tx-list').querySelectorAll('[data-testid^="tx-row-"]')].find((r) =>
-        r.textContent?.includes('Bakker Bart'),
-      );
-      expect(row).toBeTruthy();
-      expect(row!.textContent).toContain('-€12.34');
-      expect(row!.textContent).toContain('Grocery');
-    });
+    // generous timeout: coverage instrumentation slows the liveQuery round-trip
+    await waitFor(
+      () => {
+        const row = [...screen.getByTestId('tx-list').querySelectorAll('[data-testid^="tx-row-"]')].find((r) =>
+          r.textContent?.includes('Bakker Bart'),
+        );
+        expect(row).toBeTruthy();
+        expect(row!.textContent).toContain('-€12.34');
+        expect(row!.textContent).toContain('Grocery');
+      },
+      { timeout: 5000 },
+    );
   });
 
   it('the income toggle stores a positive amount', async () => {
