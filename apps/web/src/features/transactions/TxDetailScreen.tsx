@@ -12,6 +12,7 @@ import { Icon } from '@/ui/Icon';
 import { CategoryPicker } from '@/features/categories/CategoryPicker';
 import { netAmountCents, totalReimbursedCents } from '@/domain/reimbursement';
 import { ReimburseSection } from './ReimburseSection';
+import { SplitEditorSheet } from './SplitEditorSheet';
 import { TxFormSheet } from './TxFormSheet';
 import { TxTypeSheet } from './TxTypeSheet';
 
@@ -24,6 +25,7 @@ export function TxDetailScreen() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [typeOpen, setTypeOpen] = useState(false);
+  const [splitOpen, setSplitOpen] = useState(false);
 
   const tx = useLiveQuery(() => db.transactions.get(txId), [txId]);
   const account = useLiveQuery(() => (tx ? db.accounts.get(tx.accountId) : undefined), [tx?.accountId]);
@@ -81,20 +83,44 @@ export function TxDetailScreen() {
         </div>
 
         <div className="overflow-hidden rounded-card border border-line bg-surface">
-          <button
-            data-testid="tx-detail-category-row"
-            onClick={() => setPickerOpen(true)}
-            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
-          >
-            <Icon name={cat.icon} size={20} color={color} />
-            <span className="flex-1">{catName(cat, t)}</span>
-            {tx.needsReview === 1 && (
-              <span className="rounded bg-warning-soft px-1.5 py-0.5 text-[10px] font-semibold text-warning">
-                {t('review.confirm')}
-              </span>
-            )}
-            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-          </button>
+          <div className="flex items-center">
+            <button
+              data-testid="tx-detail-category-row"
+              onClick={() => setPickerOpen(true)}
+              className="m-tap flex min-w-0 flex-1 items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+            >
+              <Icon name={cat.icon} size={20} color={color} />
+              <span className="flex-1">{catName(cat, t)}</span>
+              {tx.needsReview === 1 && (
+                <span className="rounded bg-warning-soft px-1.5 py-0.5 text-[10px] font-semibold text-warning">
+                  {t('review.confirm')}
+                </span>
+              )}
+              <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+            </button>
+            <button
+              data-testid="tx-detail-split"
+              aria-label={t('split.action')}
+              onClick={() => setSplitOpen(true)}
+              className="m-tap mr-3 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-none bg-bg-2 text-ink-3"
+            >
+              <Icon name="call-split" size={17} />
+            </button>
+          </div>
+          {!!tx.splits?.length && (
+            <div className="px-4 pb-3" data-testid="tx-detail-splits">
+              {tx.splits.map((s) => {
+                const sc = cats.byId(s.catId);
+                return (
+                  <div key={s.catId} className="flex items-center gap-2 py-1 text-[13px] text-ink-2">
+                    <Icon name={sc.icon} size={15} color={sc.color ?? cats.byId(sc.parentId ?? '').color} />
+                    <span className="flex-1 truncate">{catName(sc, t)}</span>
+                    <span className="m-num">{fmtCents(s.amountCents, tx.currency, lang)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
           <div className="mx-4 h-px bg-line-2" />
           <button
             data-testid="tx-detail-type-row"
@@ -129,6 +155,7 @@ export function TxDetailScreen() {
 
       <CategoryPicker open={pickerOpen} onOpenChange={setPickerOpen} selectedId={tx.catId} onPick={setCategory} />
       <TxTypeSheet open={typeOpen} onOpenChange={setTypeOpen} tx={tx} />
+      <SplitEditorSheet open={splitOpen} onOpenChange={setSplitOpen} tx={tx} />
     </div>
   );
 }

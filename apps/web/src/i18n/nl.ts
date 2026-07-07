@@ -791,4 +791,10 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'reimb.net': 'Netto',
   'reimb.amountLabel': 'Te koppelen bedrag',
   'tx.searchPlaceholder': 'Zoek transacties…',
+  'split.title': 'Categorieën splitsen',
+  'split.action': 'Splitsen',
+  'split.addRow': 'Categorie toevoegen',
+  'split.remaining': 'Nog {amount} toe te wijzen',
+  'split.over': '{amount} te veel toegewezen',
+  'split.clear': 'Splitsing verwijderen',
 };

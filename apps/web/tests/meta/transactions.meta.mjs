@@ -70,6 +70,16 @@ export const GROUPS = [
         desc: 'Linking a counter-account derives the type from what that account is (savings → Saving, credit → Debt Payment); manual type choice locks, conflicting categories reset to Uncategorized for review, and unlinking restores free typing.',
         tags: ['state', 'edge-case'],
       },
+      {
+        key: '36-tx-split',
+        title: 'Split across categories',
+        desc: 'The split editor partitions a transaction across categories — amounts must sum exactly (remainder chip auto-balances), the largest slice becomes the primary category, and clearing restores a single category.',
+        tags: ['state'],
+        steps: [
+          'Balanced split editor',
+          'Detail with breakdown',
+        ],
+      },
     ],
   },
 ];

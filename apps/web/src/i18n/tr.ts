@@ -791,4 +791,10 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'reimb.net': 'Net',
   'reimb.amountLabel': 'Bağlanacak tutar',
   'tx.searchPlaceholder': 'İşlem ara…',
+  'split.title': 'Kategorileri böl',
+  'split.action': 'Böl',
+  'split.addRow': 'Kategori ekle',
+  'split.remaining': 'Atanacak {amount} kaldı',
+  'split.over': '{amount} fazla atandı',
+  'split.clear': 'Bölmeyi kaldır',
 };

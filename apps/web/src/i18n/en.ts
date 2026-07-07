@@ -789,6 +789,12 @@ export const en = {
   'reimb.net': 'Net',
   'reimb.amountLabel': 'Amount to link',
   'tx.searchPlaceholder': 'Search transactions…',
+  'split.title': 'Split categories',
+  'split.action': 'Split',
+  'split.addRow': 'Add category',
+  'split.remaining': '{amount} left to assign',
+  'split.over': '{amount} assigned too much',
+  'split.clear': 'Remove split',
 } as const;
 
 export type TranslationKey = keyof typeof en;

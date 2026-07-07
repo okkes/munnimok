@@ -145,6 +145,40 @@ for (const V of VARIANTS) {
     await teardown(page, ctx, k('35-tx-type-link'));
   });
 
+  test(`tx-a9 split a transaction across two categories [${V.id}]`, async ({ browser }) => {
+    const { page, ctx } = await createPage(browser, V);
+    await base(page, V, { demo: true });
+    await openFirstReviewTx(page); // dm100: -28.99
+    await page.click('[data-testid="tx-detail-split"]');
+    await page.waitForSelector('[data-testid="split-editor"]');
+    // assign 20.00 to the first row; second row is open -> remainder shown
+    await page.fill('[data-testid="split-amount-0"]', '20,00');
+    await expect(page.locator('[data-testid="split-remainder"]')).toContainText('8.99');
+    await expect(page.locator('[data-testid="split-save"]')).toBeDisabled();
+    // pick a category for row 2 and auto-balance via the remainder chip
+    await page.click('[data-testid="split-cat-1"]');
+    await page.waitForSelector('[data-testid="catpicker-search"]');
+    await page.fill('[data-testid="catpicker-search"]', 'gift');
+    await page.click('[data-testid="catpicker-gift"]');
+    await page.waitForTimeout(700);
+    await page.click('[data-testid="split-remainder"]');
+    await expect(page.locator('[data-testid="split-amount-1"]')).toHaveValue('8,99');
+    await shot(page, k('36-tx-split') + '--s1');
+    await page.click('[data-testid="split-save"]');
+    await page.waitForTimeout(500);
+    // breakdown visible; primary category = largest slice (Hobby, 20.00)
+    await expect(page.locator('[data-testid="tx-detail-splits"]')).toContainText('20.00');
+    await expect(page.locator('[data-testid="tx-detail-splits"]')).toContainText('8.99');
+    await expect(page.locator('[data-testid="tx-detail-category-row"]')).toContainText('Hobby');
+    await shot(page, k('36-tx-split'));
+    // clearing restores a single category
+    await page.click('[data-testid="tx-detail-split"]');
+    await page.click('[data-testid="split-clear"]');
+    await page.waitForTimeout(500);
+    await expect(page.locator('[data-testid="tx-detail-splits"]')).toHaveCount(0);
+    await teardown(page, ctx, k('36-tx-split'));
+  });
+
   test(`tx-a4 notes persist [${V.id}]`, async ({ browser }) => {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V, { demo: true });
