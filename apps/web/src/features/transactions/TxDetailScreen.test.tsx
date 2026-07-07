@@ -29,3 +29,117 @@ describe('TxDetailScreen (demo identity)', () => {
     await waitFor(() => expect(document.body.textContent).not.toBe(''));
   });
 });
+
+describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase('munni_demo');
+  });
+
+  it('changing to a conflicting type clears the category and flags review', async () => {
+    renderApp('/transactions/dm6');
+    fireEvent.click(await screen.findByTestId('tx-detail-type-row'));
+    await screen.findByTestId('txtype-options');
+    fireEvent.click(screen.getByTestId('txtype-income'));
+    // groceries only allows expense -> category falls back to uncategorized
+    await waitFor(() => {
+      expect(screen.getByTestId('tx-detail-type-row').textContent).toContain('Income');
+      expect(screen.getByTestId('tx-detail-category-row').textContent).toContain('Uncategorized');
+    });
+  });
+
+  it('linking a savings counter-account derives the type and locks it', async () => {
+    renderApp('/transactions/dm6');
+    fireEvent.click(await screen.findByTestId('tx-detail-type-row'));
+    fireEvent.click(await screen.findByTestId('txtype-linked-demo_save'));
+    await waitFor(() => expect(screen.getByTestId('tx-detail-type-row').textContent).toContain('Saving'));
+
+    // reopen: manual type choice is now locked
+    fireEvent.click(screen.getByTestId('tx-detail-type-row'));
+    expect(await screen.findByTestId('txtype-locked-note')).toBeTruthy();
+    expect((screen.getByTestId('txtype-expense') as HTMLButtonElement).disabled).toBe(true);
+
+    // unlink restores manual choice
+    fireEvent.click(screen.getByTestId('txtype-linked-none'));
+    await waitFor(() => expect(screen.queryByTestId('txtype-locked-note')).toBeNull());
+  });
+});
+
+describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase('munni_demo');
+  });
+
+  it('links a credit with a clamped partial amount, then unlinks it', async () => {
+    renderApp('/transactions/dm6');
+    fireEvent.click(await screen.findByTestId('reimb-add'));
+
+    // pick the salary credit; the prefill is clamped to the expense (52,40)
+    const picker = await screen.findByTestId('reimb-picker');
+    await waitFor(() => expect(picker.querySelector('[data-testid^="reimb-pick-"]')).toBeTruthy());
+    fireEvent.click(picker.querySelector('[data-testid^="reimb-pick-"]')!);
+    const amountInput = (await screen.findByTestId('reimb-amount')) as HTMLInputElement;
+    expect(amountInput.value).toBe('52,40');
+
+    // link a partial 20,00 instead
+    fireEvent.change(amountInput, { target: { value: '20,00' } });
+    fireEvent.click(screen.getByTestId('reimb-save'));
+
+    const summary = await screen.findByTestId('reimb-summary');
+    expect(summary.textContent).toContain('€20.00');
+    expect(summary.textContent).toContain('€52.40');
+    // hero shows the net amount, gross struck through
+    expect(screen.getByTestId('tx-detail-amount').textContent).toContain('-€32.40');
+    expect(screen.getByTestId('tx-detail-gross').textContent).toContain('-€52.40');
+
+    // unlink restores the original state
+    await waitFor(() =>
+      expect(screen.getByTestId('reimb-list').querySelector('[data-testid^="reimb-unlink-"]')).toBeTruthy(),
+    );
+    fireEvent.click(screen.getByTestId('reimb-list').querySelector('[data-testid^="reimb-unlink-"]')!);
+    await waitFor(() => {
+      expect(screen.queryByTestId('reimb-summary')).toBeNull();
+      expect(screen.getByTestId('tx-detail-amount').textContent).toContain('-€52.40');
+    });
+  });
+});
+
+describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase('munni_demo');
+  });
+
+  it('splits across two categories with auto-balance, then clears the split', async () => {
+    renderApp('/transactions/dm6');
+    fireEvent.click(await screen.findByTestId('tx-detail-split'));
+    await screen.findByTestId('split-editor');
+
+    // shrink the first row: a remainder appears and blocks saving
+    fireEvent.change(screen.getByTestId('split-amount-0'), { target: { value: '30,00' } });
+    const remainder = await screen.findByTestId('split-remainder');
+    expect(remainder.textContent).toContain('€22.40');
+    expect((screen.getByTestId('split-save') as HTMLButtonElement).disabled).toBe(true);
+
+    // give the second row a category, auto-balance the remainder, save
+    fireEvent.click(screen.getByTestId('split-cat-1'));
+    fireEvent.click(await screen.findByTestId('catpicker-restaurants'));
+    fireEvent.click(screen.getByTestId('split-remainder'));
+    await waitFor(() => expect((screen.getByTestId('split-save') as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByTestId('split-save'));
+
+    // detail shows the split breakdown
+    const splitsList = await screen.findByTestId('tx-detail-splits');
+    expect(splitsList.textContent).toContain('€30.00');
+    expect(splitsList.textContent).toContain('€22.40');
+
+    // clear the split again
+    fireEvent.click(screen.getByTestId('tx-detail-split'));
+    fireEvent.click(await screen.findByTestId('split-clear'));
+    await waitFor(() => expect(screen.queryByTestId('tx-detail-splits')).toBeNull());
+  });
+});
