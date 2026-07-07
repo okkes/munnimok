@@ -773,4 +773,9 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'cats.editCustom': 'Categorie bewerken',
   'cats.name': 'Categorienaam',
   'cats.customBadge': 'Eigen',
+  'friends.addById': 'Voeg een vriend toe met hun gebruikers-ID',
+  'friends.idPlaceholder': 'Plak hun gebruikers-ID…',
+  'friends.pendingSent': 'Verzonden verzoeken',
+  'friends.pendingReceived': 'Ontvangen verzoeken',
+  'friends.empty': 'Nog geen vrienden — deel je ID om te verbinden',
 };

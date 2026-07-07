@@ -771,6 +771,11 @@ export const en = {
   'cats.editCustom': 'Edit category',
   'cats.name': 'Category name',
   'cats.customBadge': 'Custom',
+  'friends.addById': 'Add a friend with their user ID',
+  'friends.idPlaceholder': 'Paste their user ID…',
+  'friends.pendingSent': 'Sent requests',
+  'friends.pendingReceived': 'Received requests',
+  'friends.empty': 'No friends yet — share your ID to connect',
 } as const;
 
 export type TranslationKey = keyof typeof en;

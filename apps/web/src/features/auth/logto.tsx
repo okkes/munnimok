@@ -62,7 +62,15 @@ export function CallbackScreen() {
   const { isLoading } = useHandleSignInCallback(() => {
     void (async () => {
       const claims = await getIdTokenClaims();
-      if (claims?.sub) login({ kind: 'user', sub: claims.sub });
+      if (claims?.sub) {
+        login({ kind: 'user', sub: claims.sub });
+        // best-effort display name for friends/space members
+        const name = claims.name ?? claims.username ?? claims.email;
+        if (name) {
+          const { apiFetch } = await import('@/lib/api');
+          void apiFetch('/me', { method: 'PUT', body: JSON.stringify({ displayName: name }) }).catch(() => undefined);
+        }
+      }
       window.location.replace(`${window.location.origin}/#/home`);
     })();
   });

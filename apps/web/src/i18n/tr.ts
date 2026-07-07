@@ -773,4 +773,9 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'cats.editCustom': 'Kategoriyi düzenle',
   'cats.name': 'Kategori adı',
   'cats.customBadge': 'Özel',
+  'friends.addById': 'Kullanıcı ID ile arkadaş ekle',
+  'friends.idPlaceholder': 'Kullanıcı ID yapıştır…',
+  'friends.pendingSent': 'Gönderilen istekler',
+  'friends.pendingReceived': 'Alınan istekler',
+  'friends.empty': 'Henüz arkadaş yok — bağlanmak için ID’ni paylaş',
 };
