@@ -54,11 +54,8 @@ var app = builder.Build();
 if (app.Configuration.GetValue<bool>("Db:AutoMigrate"))
 {
     using var scope = app.Services.CreateScope();
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    // adopt databases created by the old EnsureCreated startup, then
     // real migrations: schema evolves in place across releases
-    await LegacyBaseline.ApplyIfNeededAsync(db, app.Logger);
-    await db.Database.MigrateAsync();
+    await scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.MigrateAsync();
 }
 
 // handled errors keep their CORS headers — unhandled exceptions wipe the
