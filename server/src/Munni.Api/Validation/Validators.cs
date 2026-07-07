@@ -1,0 +1,74 @@
+using FluentValidation;
+using Munni.Api.GoCardless;
+using Munni.Api.Social;
+using Munni.Api.Sync;
+
+namespace Munni.Api.Validation;
+
+public sealed class UpdateMeRequestValidator : AbstractValidator<UpdateMeRequest>
+{
+    public UpdateMeRequestValidator()
+    {
+        RuleFor(r => r.DisplayName).NotEmpty().MaximumLength(100);
+    }
+}
+
+public sealed class SendFriendRequestValidator : AbstractValidator<SendFriendRequest>
+{
+    public SendFriendRequestValidator()
+    {
+        RuleFor(r => r.ToUserId).NotEmpty();
+    }
+}
+
+public sealed class SendSpaceInviteValidator : AbstractValidator<SendSpaceInvite>
+{
+    private static readonly string[] Roles = ["member", "owner"];
+
+    public SendSpaceInviteValidator()
+    {
+        RuleFor(r => r.ToUserId).NotEmpty();
+        RuleFor(r => r.Role).NotEmpty().Must(Roles.Contains).WithMessage("role must be member or owner");
+        RuleFor(r => r.SpaceName).MaximumLength(200);
+    }
+}
+
+public sealed class SyncOpDtoValidator : AbstractValidator<SyncOpDto>
+{
+    private static readonly string[] Entities = ["space", "account", "category", "transaction"];
+
+    public SyncOpDtoValidator()
+    {
+        RuleFor(o => o.OpId).NotEmpty().MaximumLength(64);
+        RuleFor(o => o.SpaceId).NotEmpty().MaximumLength(64);
+        RuleFor(o => o.Entity).NotEmpty().Must(Entities.Contains).WithMessage("unknown entity");
+        RuleFor(o => o.EntityId).NotEmpty().MaximumLength(64);
+        RuleFor(o => o.Hlc).NotEmpty().MaximumLength(64);
+        RuleFor(o => o.Fields).NotNull();
+    }
+}
+
+public sealed class PushRequestValidator : AbstractValidator<PushRequest>
+{
+    public PushRequestValidator()
+    {
+        RuleFor(r => r.ClientId).NotEmpty().MaximumLength(64);
+        RuleFor(r => r.Ops).NotNull();
+        RuleFor(r => r.Ops.Count).LessThanOrEqualTo(1000).WithMessage("push at most 1000 ops per request");
+        RuleForEach(r => r.Ops).SetValidator(new SyncOpDtoValidator());
+    }
+}
+
+public sealed class CreateRequisitionRequestValidator : AbstractValidator<CreateRequisitionRequest>
+{
+    public CreateRequisitionRequestValidator()
+    {
+        RuleFor(r => r.SpaceId).NotEmpty().MaximumLength(64);
+        RuleFor(r => r.InstitutionId).NotEmpty().MaximumLength(128);
+        RuleFor(r => r.RedirectUrl)
+            .NotEmpty()
+            .Must(url => Uri.TryCreate(url, UriKind.Absolute, out var uri)
+                         && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+            .WithMessage("redirectUrl must be an absolute http(s) URL");
+    }
+}

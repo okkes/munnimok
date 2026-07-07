@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Munni.Api.Auth;
 using Munni.Api.Data;
+using Munni.Api.Validation;
 
 namespace Munni.Api.Social;
 
@@ -33,7 +34,7 @@ public static class SocialEndpoints
             user!.DisplayName = request.DisplayName.Trim();
             await db.SaveChangesAsync();
             return Results.Ok(new MeResponse(user.Id, user.DisplayName));
-        });
+        }).WithValidation<UpdateMeRequest>();
 
         // ── friends ─────────────────────────────────────────────────────────
         authed.MapGet("/friends", async (AppDbContext db, HttpContext http) =>
@@ -79,7 +80,7 @@ public static class SocialEndpoints
             }
             await db.SaveChangesAsync();
             return Results.Ok();
-        });
+        }).WithValidation<SendFriendRequest>();
 
         authed.MapPost("/friends/requests/{id:guid}/accept", async (Guid id, AppDbContext db, HttpContext http) =>
         {
@@ -134,7 +135,7 @@ public static class SocialEndpoints
                 await db.SaveChangesAsync();
             }
             return Results.Ok();
-        });
+        }).WithValidation<SendSpaceInvite>();
 
         authed.MapGet("/me/invites", async (AppDbContext db, HttpContext http) =>
         {

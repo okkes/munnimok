@@ -37,19 +37,12 @@ try {
     if ($LASTEXITCODE -ne 0) { Write-Error 'web analysis failed' }
 } finally { Pop-Location }
 
-# --- api: SonarScanner for .NET (optional; needs dotnet tool + Java 17+) ---
-$hasScanner = [bool](Get-Command dotnet-sonarscanner -ErrorAction SilentlyContinue)
-$hasJava = [bool](Get-Command java -ErrorAction SilentlyContinue)
-if ($hasScanner -and $hasJava) {
-    Write-Host "==> dotnet-sonarscanner (munni-api)" -ForegroundColor Cyan
-    Push-Location (Join-Path $repo 'server')
-    try {
-        cmd /c "dotnet sonarscanner begin /k:munni-api /n:munni-api /d:sonar.host.url=$hostUrl /d:sonar.token=$token 2>&1"
-        cmd /c "dotnet build Munni.slnx --no-incremental 2>&1"
-        cmd /c "dotnet sonarscanner end /d:sonar.token=$token 2>&1"
-    } finally { Pop-Location }
-} else {
-    Write-Host "==> skipping API analysis (install with: dotnet tool install --global dotnet-sonarscanner; needs Java 17+). CodeQL in CI still covers C#." -ForegroundColor Yellow
-}
+# --- api: SonarScanner for .NET, dockerized (nothing to install) ---
+Write-Host "==> dotnet-sonarscanner (munni-api, dockerized)" -ForegroundColor Cyan
+cmd /c "docker build -q -t munni-sonar-dotnet -f `"$repo\deploy\sonar\Dockerfile.dotnet`" `"$repo\deploy\sonar`" 2>&1"
+if ($LASTEXITCODE -ne 0) { Write-Error 'failed to build the dotnet scanner image' }
+$inner = "dotnet sonarscanner begin /k:munni-api /n:munni-api /d:sonar.host.url=http://host.docker.internal:9000 /d:sonar.token=$token && dotnet build Munni.slnx --no-incremental && dotnet sonarscanner end /d:sonar.token=$token"
+cmd /c "docker run --rm -v `"$repo\server`:/src`" munni-sonar-dotnet sh -c `"$inner`" 2>&1"
+if ($LASTEXITCODE -ne 0) { Write-Error 'api analysis failed' }
 
 Write-Host "Done - results at $hostUrl" -ForegroundColor Green

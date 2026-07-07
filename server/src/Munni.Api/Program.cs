@@ -1,3 +1,4 @@
+using FluentValidation;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.EntityFrameworkCore;
 using Munni.Api.Auth;
@@ -13,6 +14,8 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Db")));
 
 builder.Services.AddMemoryCache();
+// request-body validators (Validation/Validators.cs) — UI input is never trusted
+builder.Services.AddValidatorsFromAssemblyContaining<Program>(ServiceLifetime.Singleton);
 if (!string.IsNullOrEmpty(builder.Configuration["GoCardless:SecretId"]))
 {
     builder.Services.AddHttpClient<IGoCardlessApi, GoCardlessApi>(client =>

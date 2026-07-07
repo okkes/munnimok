@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Munni.Api.Auth;
 using Munni.Api.Data;
+using Munni.Api.Validation;
 
 namespace Munni.Api.GoCardless;
 
@@ -45,7 +46,7 @@ public static class GcEndpoints
             });
             await db.SaveChangesAsync();
             return Results.Ok(new CreateRequisitionResponse(reference.ToString(), created.Link));
-        });
+        }).WithValidation<CreateRequisitionRequest>();
 
         // called by the app after the bank redirects back
         group.MapPost("/requisitions/{reference:guid}/complete", async (Guid reference, IGoCardlessApi gc, AppDbContext db, HttpContext http) =>

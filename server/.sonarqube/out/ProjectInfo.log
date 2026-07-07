@@ -1,0 +1,25 @@
+Product projects
+---------------------------------------
+/src/src/Munni.Api/Munni.Api.csproj
+
+
+Test projects
+---------------------------------------
+/src/tests/Munni.Api.Tests/Munni.Api.Tests.csproj
+
+
+Invalid projects
+---------------------------------------
+{none}
+
+
+Skipped projects
+---------------------------------------
+{none}
+
+
+Excluded projects
+---------------------------------------
+{none}
+
+

@@ -1,0 +1,11 @@
+W
+L/src/tests/Munni.Api.Tests/obj/Debug/net10.0/Munni.Api.Tests.AssemblyInfo.csutf-8Y
+N/src/tests/Munni.Api.Tests/obj/Debug/net10.0/Munni.Api.Tests.GlobalUsings.g.csutf-8g
+\/src/tests/Munni.Api.Tests/obj/Debug/net10.0/.NETCoreApp,Version=v10.0.AssemblyAttributes.csutf-8n
+c/root/.nuget/packages/microsoft.net.test.sdk/17.14.1/build/net8.0/Microsoft.NET.Test.Sdk.Program.csutf-80
+'/src/tests/Munni.Api.Tests/UnitTest1.csutf-89
+0/src/tests/Munni.Api.Tests/SyncEndpointsTests.csutf-8;
+2/src/tests/Munni.Api.Tests/SocialEndpointsTests.csutf-84
++/src/tests/Munni.Api.Tests/LwwMergeTests.csutf-86
+-/src/tests/Munni.Api.Tests/GoCardlessTests.csutf-8:
+1/src/tests/Munni.Api.Tests/AdminEndpointsTests.csutf-8

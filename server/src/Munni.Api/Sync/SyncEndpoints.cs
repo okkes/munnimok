@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Munni.Api.Auth;
 using Munni.Api.Data;
+using Munni.Api.Validation;
 
 namespace Munni.Api.Sync;
 
@@ -45,7 +46,7 @@ public static class SyncEndpoints
             var (lastSeq, accepted) = await writer.ApplyAsync(space, userId, request.Ops);
             await db.SaveChangesAsync();
             return Results.Ok(new PushResponse(lastSeq, accepted, request.Ops.Count - accepted));
-        });
+        }).WithValidation<PushRequest>();
 
         group.MapGet("/pull", async (string spaceId, long since, AppDbContext db, HttpContext http) =>
         {
