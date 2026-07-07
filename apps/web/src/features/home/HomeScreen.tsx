@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useNavigate } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
@@ -28,6 +29,11 @@ export function HomeScreen() {
     [spaceId],
   );
 
+  const needsOnboarding = useLiveQuery(() => db.meta.get('needsOnboarding'), []);
+  useEffect(() => {
+    if (needsOnboarding?.value === true) void navigate({ to: '/onboarding' });
+  }, [needsOnboarding, navigate]);
+
   const reviewCount = useLiveQuery(
     () =>
       db.transactions
@@ -38,8 +44,9 @@ export function HomeScreen() {
     [spaceId],
   );
 
+  const space = useLiveQuery(() => db.spaces.get(spaceId), [spaceId]);
   const totalCents = (accounts ?? []).reduce((sum, a) => sum + a.balanceCents, 0);
-  const currency = accounts?.[0]?.currency ?? 'EUR';
+  const currency = space?.currency ?? accounts?.[0]?.currency ?? 'EUR';
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-home">

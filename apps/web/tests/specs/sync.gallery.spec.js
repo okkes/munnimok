@@ -108,6 +108,32 @@ for (const V of VARIANTS) {
     await teardown(alice.page, alice.ctx, k('33-space-share'));
   });
 
+  test(`sync-a4 onboarding shows once for brand-new users, sets currency [${V.id}]`, async ({ browser }) => {
+    test.skip(!(await syncApiUp()), 'sync API not running');
+    const sub = `e2e-onboard-${Date.now()}`;
+
+    const a = await createPage(browser, V);
+    await base(a.page, V, { userSub: sub });
+    // brand-new user -> redirected to onboarding
+    await a.page.waitForSelector('[data-testid="screen-onboarding"]');
+    await a.page.fill('[data-testid="onboarding-name"]', 'Okkes Test');
+    await a.page.click('[data-testid="onboarding-country"]');
+    await a.page.waitForSelector('[data-testid="onboarding-country-search"]');
+    await a.page.fill('[data-testid="onboarding-country-search"]', 'Turk');
+    await a.page.click('[data-testid="onboarding-country-TR"]');
+    await expect(a.page.locator('[data-testid="onboarding-currency-hint"]')).toContainText('TRY');
+    await shot(a.page, k('37-onboarding'));
+    await a.page.click('[data-testid="onboarding-save"]');
+    await a.page.waitForSelector('[data-testid="screen-home"]');
+    // currency applied to the personal space: home total renders in TRY
+    await expect(a.page.locator('[data-testid="home-total-balance"]')).toContainText('TRY');
+    // reload: onboarding never comes back
+    await a.page.reload();
+    await a.page.waitForSelector('[data-testid="screen-home"]');
+    await expect(a.page.locator('[data-testid="screen-onboarding"]')).toHaveCount(0);
+    await teardown(a.page, a.ctx, k('37-onboarding'));
+  });
+
   test(`sync-a2 personal space exists exactly once for a returning user [${V.id}]`, async ({ browser }) => {
     test.skip(!(await syncApiUp()), 'sync API not running');
     const sub = `e2e-solo-${Date.now()}`;

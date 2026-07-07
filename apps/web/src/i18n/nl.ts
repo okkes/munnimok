@@ -797,4 +797,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'split.remaining': 'Nog {amount} toe te wijzen',
   'split.over': '{amount} te veel toegewezen',
   'split.clear': 'Splitsing verwijderen',
+  'onboarding.country': 'Land',
+  'onboarding.countrySearch': 'Zoek land…',
+  'action.skip': 'Overslaan',
 };

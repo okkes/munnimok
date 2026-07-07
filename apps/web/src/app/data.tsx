@@ -78,6 +78,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
             periodType: 'month',
             periodDay: 1,
           });
+          // brand-new user (this device created the personal space):
+          // show the one-time onboarding
+          await db.meta.put({ key: 'needsOnboarding', value: true });
         }
         engine.start();
       }

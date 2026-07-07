@@ -795,6 +795,9 @@ export const en = {
   'split.remaining': '{amount} left to assign',
   'split.over': '{amount} assigned too much',
   'split.clear': 'Remove split',
+  'onboarding.country': 'Country',
+  'onboarding.countrySearch': 'Search country…',
+  'action.skip': 'Skip',
 } as const;
 
 export type TranslationKey = keyof typeof en;

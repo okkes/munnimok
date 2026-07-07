@@ -797,4 +797,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'split.remaining': 'Atanacak {amount} kaldı',
   'split.over': '{amount} fazla atandı',
   'split.clear': 'Bölmeyi kaldır',
+  'onboarding.country': 'Ülke',
+  'onboarding.countrySearch': 'Ülke ara…',
+  'action.skip': 'Atla',
 };
