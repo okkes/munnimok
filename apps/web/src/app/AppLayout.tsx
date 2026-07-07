@@ -60,7 +60,9 @@ export function AppLayout() {
         </div>
 
         {/* Mobile bottom tab bar */}
-        <nav className="flex shrink-0 items-stretch justify-around border-t border-line bg-bg pb-[env(safe-area-inset-bottom)] md:hidden">
+        {/* capped inset: Safari's minimized toolbar inflates the env() value
+            far past the 34px home indicator, blowing the footer up */}
+        <nav className="flex shrink-0 items-stretch justify-around border-t border-line bg-bg pb-[min(env(safe-area-inset-bottom),28px)] md:hidden">
           {TABS.map((tab) => {
             const active = pathname.startsWith(tab.to);
             return (
