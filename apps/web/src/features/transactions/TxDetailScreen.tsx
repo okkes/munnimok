@@ -10,6 +10,7 @@ import { cleanBankText } from '@/lib/text';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
 import { CategoryPicker } from '@/features/categories/CategoryPicker';
+import { TxFormSheet } from './TxFormSheet';
 
 const DATE_FMT: Record<string, string> = { en: 'en-GB', nl: 'nl-NL', tr: 'tr-TR' };
 
@@ -18,6 +19,7 @@ export function TxDetailScreen() {
   const { db, repo, spaceId } = useData();
   const { txId } = useParams({ strict: false }) as { txId: string };
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
 
   const tx = useLiveQuery(() => db.transactions.get(txId), [txId]);
   const account = useLiveQuery(() => (tx ? db.accounts.get(tx.accountId) : undefined), [tx?.accountId]);
@@ -47,7 +49,16 @@ export function TxDetailScreen() {
             <Icon name="chevron-left" size={24} />
           </IconButton>
         }
+        trailing={
+          // bank-imported rows are the bank's truth — only manual txs are editable
+          !tx.importRef ? (
+            <IconButton label={t('action.edit')} testId="tx-detail-edit" onClick={() => setEditOpen(true)}>
+              <Icon name="pencil-outline" size={20} />
+            </IconButton>
+          ) : undefined
+        }
       />
+      {!tx.importRef && <TxFormSheet open={editOpen} onOpenChange={setEditOpen} tx={tx} />}
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <div className="flex flex-col items-center py-6 text-center">
           <div className="m-num text-4xl text-ink" data-testid="tx-detail-amount">

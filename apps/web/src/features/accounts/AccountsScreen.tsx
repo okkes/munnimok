@@ -10,7 +10,7 @@ import { BankConnectSheet } from './BankConnect';
 import { useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
 import { useData } from '@/app/data';
-import { fmtCents } from '@/lib/money';
+import { fmtCents, parseCents } from '@/lib/money';
 import type { AccountRow, AccountType } from '@/db/types';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
@@ -29,13 +29,6 @@ const TYPES: { type: AccountType; labelKey: TranslationKey; icon: string; liabil
 const typeDef = (type: AccountType) => TYPES.find((d) => d.type === type) ?? TYPES[0];
 const isLiability = (type: AccountType) => !!typeDef(type).liability;
 
-/** Parse a user-entered amount ('1.234,56' / '1234.56') to cents. */
-function parseCents(input: string): number | null {
-  let s = input.trim();
-  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.'); // EU format
-  const value = Number(s);
-  return Number.isFinite(value) ? Math.round(value * 100) : null;
-}
 
 export function AccountsScreen() {
   const { t, lang } = useLang();

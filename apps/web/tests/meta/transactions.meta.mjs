@@ -39,4 +39,25 @@ export const GROUPS = [
       },
     ],
   },
+  {
+    name: 'Manual Transactions',
+    tests: [
+      {
+        key: '27-tx-create',
+        title: 'Add a manual transaction',
+        desc: 'The + button opens the form: sign toggle, amount (EU decimals), name, date, account chips, category picker. Saved transactions appear in the list immediately.',
+        tags: ['state'],
+        steps: [
+          'Filled form',
+          'New transaction in the list',
+        ],
+      },
+      {
+        key: '28-tx-edit',
+        title: 'Edit a manual transaction',
+        desc: 'Manual transactions get a pencil in the detail header; amount, name, date, account and category are editable. Bank-imported rows stay read-only (their data is the bank’s truth).',
+        tags: ['state', 'edge-case'],
+      },
+    ],
+  },
 ];

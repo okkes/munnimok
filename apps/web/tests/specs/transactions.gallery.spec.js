@@ -57,6 +57,44 @@ for (const V of VARIANTS) {
     await teardown(page, ctx, k('11-tx-cat-search'));
   });
 
+  test(`tx-a5 create manual transaction [${V.id}]`, async ({ browser }) => {
+    const { page, ctx } = await createPage(browser, V);
+    await base(page, V, { demo: true });
+    await page.click('[data-testid="tab-transactions"]');
+    await page.click('[data-testid="tx-add"]');
+    await page.waitForSelector('[data-testid="txform-amount"]');
+    await page.fill('[data-testid="txform-amount"]', '12,50');
+    await page.fill('[data-testid="txform-merchant"]', 'Test Lunch');
+    await page.click('[data-testid="txform-category"]');
+    await page.waitForSelector('[data-testid="catpicker-search"]');
+    await page.fill('[data-testid="catpicker-search"]', 'dining');
+    await page.click('[data-testid="catpicker-restaurants"]');
+    await page.waitForTimeout(500);
+    await shot(page, k('27-tx-create') + '--s1');
+    await page.click('[data-testid="txform-save"]');
+    await page.waitForTimeout(500);
+    await expect(page.locator('[data-testid="tx-list"]')).toContainText('Test Lunch');
+    await expect(page.locator('[data-testid="tx-list"]')).toContainText('12.50');
+    await shot(page, k('27-tx-create'));
+    await teardown(page, ctx, k('27-tx-create'));
+  });
+
+  test(`tx-a6 edit manual transaction amount and name [${V.id}]`, async ({ browser }) => {
+    const { page, ctx } = await createPage(browser, V);
+    await base(page, V, { demo: true });
+    await openFirstReviewTx(page); // dm100 — demo txs have no importRef, so editable
+    await page.click('[data-testid="tx-detail-edit"]');
+    await page.waitForSelector('[data-testid="txform-amount"]');
+    await page.fill('[data-testid="txform-amount"]', '99,99');
+    await page.fill('[data-testid="txform-merchant"]', 'Amazon Corrected');
+    await page.click('[data-testid="txform-save"]');
+    await page.waitForTimeout(500);
+    await expect(page.locator('[data-testid="tx-detail-amount"]')).toContainText('99.99');
+    await expect(page.locator('[data-testid="screen-tx-detail"]')).toContainText('Amazon Corrected');
+    await shot(page, k('28-tx-edit'));
+    await teardown(page, ctx, k('28-tx-edit'));
+  });
+
   test(`tx-a4 notes persist [${V.id}]`, async ({ browser }) => {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V, { demo: true });

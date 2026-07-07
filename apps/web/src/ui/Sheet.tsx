@@ -8,15 +8,20 @@ interface SheetProps {
   children: ReactNode;
   /** Fixed content height in px; sheets must not resize while open. */
   height?: number;
+  /**
+   * Set while a child sheet is stacked on top: interactions inside the
+   * child would otherwise count as outside-clicks and dismiss this sheet.
+   */
+  locked?: boolean;
 }
 
 /**
  * The one shared bottom sheet for the whole app: swipe-to-dismiss and
  * background scroll locking come from vaul. Never build inline overlays.
  */
-export function Sheet({ open, onOpenChange, title, children, height }: SheetProps) {
+export function Sheet({ open, onOpenChange, title, children, height, locked }: SheetProps) {
   return (
-    <Drawer.Root open={open} onOpenChange={onOpenChange}>
+    <Drawer.Root open={open} onOpenChange={(next) => (locked && !next ? undefined : onOpenChange(next))} dismissible={!locked}>
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 z-40 bg-black/40" />
         <Drawer.Content

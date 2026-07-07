@@ -758,6 +758,15 @@ export const en = {
   'gc.connections': 'Bank connections',
   'gc.lastSync': 'Last sync',
   'gc.never': 'Not synced yet',
+  'txform.addTitle': 'Add transaction',
+  'txform.editTitle': 'Edit transaction',
+  'txform.amount': 'Amount',
+  'txform.expense': 'Expense',
+  'txform.income': 'Income',
+  'txform.merchant': 'Name or merchant',
+  'txform.date': 'Date',
+  'txform.account': 'Account',
+  'txform.category': 'Category',
 } as const;
 
 export type TranslationKey = keyof typeof en;

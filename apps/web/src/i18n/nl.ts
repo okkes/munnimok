@@ -760,4 +760,13 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'gc.connections': 'Bankverbindingen',
   'gc.lastSync': 'Laatste synchronisatie',
   'gc.never': 'Nog niet gesynchroniseerd',
+  'txform.addTitle': 'Transactie toevoegen',
+  'txform.editTitle': 'Transactie bewerken',
+  'txform.amount': 'Bedrag',
+  'txform.expense': 'Uitgave',
+  'txform.income': 'Inkomsten',
+  'txform.merchant': 'Naam of winkel',
+  'txform.date': 'Datum',
+  'txform.account': 'Rekening',
+  'txform.category': 'Categorie',
 };

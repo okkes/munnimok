@@ -760,4 +760,13 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'gc.connections': 'Banka bağlantıları',
   'gc.lastSync': 'Son senkronizasyon',
   'gc.never': 'Henüz senkronize edilmedi',
+  'txform.addTitle': 'İşlem ekle',
+  'txform.editTitle': 'İşlemi düzenle',
+  'txform.amount': 'Tutar',
+  'txform.expense': 'Gider',
+  'txform.income': 'Gelir',
+  'txform.merchant': 'İsim veya satıcı',
+  'txform.date': 'Tarih',
+  'txform.account': 'Hesap',
+  'txform.category': 'Kategori',
 };

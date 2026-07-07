@@ -1,10 +1,13 @@
+import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useNavigate } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import type { TransactionRow } from '@/db/types';
-import { AppBar } from '@/ui/AppBar';
+import { AppBar, IconButton } from '@/ui/AppBar';
+import { Icon } from '@/ui/Icon';
 import { TxRow } from '@/ui/TxRow';
+import { TxFormSheet } from './TxFormSheet';
 
 const DATE_FMT: Record<string, string> = { en: 'en-GB', nl: 'nl-NL', tr: 'tr-TR' };
 
@@ -22,6 +25,7 @@ export function TransactionsScreen() {
   const { t, lang } = useLang();
   const { db, spaceId } = useData();
   const navigate = useNavigate();
+  const [addOpen, setAddOpen] = useState(false);
 
   const txs = useLiveQuery(
     () =>
@@ -42,7 +46,16 @@ export function TransactionsScreen() {
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-transactions">
-      <AppBar large title={t('tab.transactions')} />
+      <AppBar
+        large
+        title={t('tab.transactions')}
+        trailing={
+          <IconButton label={t('txform.addTitle')} testId="tx-add" onClick={() => setAddOpen(true)}>
+            <Icon name="plus" size={22} />
+          </IconButton>
+        }
+      />
+      <TxFormSheet open={addOpen} onOpenChange={setAddOpen} />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6" data-testid="tx-list">
         {groupByDate(txs ?? []).map(([date, list]) => (
           <div key={date}>
