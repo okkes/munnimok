@@ -34,7 +34,9 @@ export function LoginScreen() {
   };
 
   return (
-    <div className="m-fade flex h-full flex-col bg-bg px-6" data-testid="screen-login">
+    <div className="m-fade flex h-full flex-col items-center bg-bg px-6" data-testid="screen-login">
+      {/* constrain to a phone-ish column on desktop */}
+      <div className="flex h-full w-full max-w-[420px] flex-col">
       <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
         <Logo size={44} />
         <h1 className="m-h2 mt-4 text-ink">{t('login.welcomeFirst')}</h1>
@@ -68,6 +70,7 @@ export function LoginScreen() {
       <p className="pb-[max(24px,env(safe-area-inset-bottom))] text-center text-[11px] text-ink-4">
         {t('login.terms')}
       </p>
+      </div>
     </div>
   );
 }
