@@ -60,6 +60,48 @@ for (const V of VARIANTS) {
     await teardown(page, ctx, k('04-shell-language'));
   });
 
+  test(`shell-a6 offline profile: create, add data, sign out keeps it [${V.id}]`, async ({ browser }) => {
+    const { page, ctx } = await createPage(browser, V);
+    await base(page, V); // login screen, no session
+    await page.click('[data-testid="login-offline-btn"]');
+    await page.waitForSelector('[data-testid="offline-name"]');
+    await page.fill('[data-testid="offline-name"]', 'Okkes Offline');
+    await shot(page, k('38-offline') + '--s1');
+    await page.click('[data-testid="offline-create"]');
+    await page.waitForSelector('[data-testid="tab-home"]');
+    // personal space carries the profile name
+    await page.click('[data-testid="tab-spaces"]');
+    await expect(page.locator('[data-testid="screen-spaces"]')).toContainText('Okkes Offline');
+    // add a cash account, then a manual transaction (zero network)
+    await page.click('[data-testid="tab-settings"]');
+    await page.click('[data-testid="settings-accounts-row"]');
+    await page.click('[data-testid="accounts-add"]');
+    await page.click('[data-testid="accttype-cash"]');
+    await page.fill('[data-testid="acctform-name"]', 'Wallet');
+    await page.fill('[data-testid="acctform-balance"]', '100');
+    await page.click('[data-testid="acctform-save"]');
+    await page.waitForTimeout(500);
+    await page.click('[data-testid="tab-transactions"]');
+    await page.click('[data-testid="tx-add"]');
+    await page.fill('[data-testid="txform-amount"]', '5,00');
+    await page.fill('[data-testid="txform-merchant"]', 'Offline Coffee');
+    await page.click('[data-testid="txform-save"]');
+    await page.waitForTimeout(500);
+    await expect(page.locator('[data-testid="tx-list"]')).toContainText('Offline Coffee');
+    await shot(page, k('38-offline') + '--s2');
+    // sign out does NOT destroy offline data; profile is selectable again
+    await page.click('[data-testid="tab-settings"]');
+    await page.click('[data-testid="settings-signout"]');
+    await page.waitForSelector('[data-testid="screen-login"]');
+    await page.click('[data-testid="login-offline-btn"]');
+    await page.locator('[data-testid^="offline-profile-"]').click();
+    await page.waitForSelector('[data-testid="tab-home"]');
+    await page.click('[data-testid="tab-transactions"]');
+    await expect(page.locator('[data-testid="tx-list"]')).toContainText('Offline Coffee');
+    await shot(page, k('38-offline'));
+    await teardown(page, ctx, k('38-offline'));
+  });
+
   test(`shell-a5 dark mode toggle [${V.id}]`, async ({ browser }) => {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V, { demo: true });

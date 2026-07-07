@@ -54,6 +54,17 @@ export const GROUPS = [
         desc: 'Appearance row toggles the warm-dark theme; the choice persists in localStorage.',
         tags: ['state'],
       },
+      {
+        key: '38-offline',
+        title: 'Offline mode lifecycle',
+        desc: 'Create a fully local profile (zero network, ever): personal space named after it, accounts and transactions work offline, signing out keeps the data, and the profile is selectable again on the login screen.',
+        tags: ['state', 'edge-case'],
+        steps: [
+          'Offline profile sheet',
+          'Offline transaction added',
+          'Data intact after sign-out and re-entry',
+        ],
+      },
     ],
   },
 ];

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useLogto } from '@logto/react';
 import { useLang } from '@/i18n';
@@ -6,7 +7,9 @@ import { useSession } from '@/app/session';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Logo } from '@/ui/Logo';
+import { Sheet } from '@/ui/Sheet';
 import { callbackUri } from './logto';
+import { addOfflineProfile, listOfflineProfiles } from './offlineProfiles';
 
 /** real OIDC sign-in — only rendered when Logto is configured */
 function LogtoSignInButton() {
@@ -27,10 +30,23 @@ export function LoginScreen() {
   const { t } = useLang();
   const { login } = useSession();
   const navigate = useNavigate();
+  const [offlineOpen, setOfflineOpen] = useState(false);
+  const [profileName, setProfileName] = useState('');
+  const profiles = listOfflineProfiles();
 
   const enterDemo = () => {
     login({ kind: 'demo' });
     void navigate({ to: '/home' });
+  };
+
+  const enterOffline = (profileId: string) => {
+    login({ kind: 'offline', profileId });
+    void navigate({ to: '/home' });
+  };
+
+  const createOffline = () => {
+    if (!profileName.trim()) return;
+    enterOffline(addOfflineProfile(profileName).id);
   };
 
   return (
@@ -65,7 +81,44 @@ export function LoginScreen() {
           <Icon name="account-eye-outline" size={18} />
           {t('login.demoUser')}
         </Button>
+        <Button variant="ghost" onClick={() => setOfflineOpen(true)} data-testid="login-offline-btn">
+          <Icon name="lock-outline" size={16} />
+          {t('offline.loginBtn')}
+        </Button>
       </div>
+
+      {/* offline mode: fully local profiles, zero network */}
+      <Sheet open={offlineOpen} onOpenChange={setOfflineOpen} title={t('offline.infoTitle')} height={460}>
+        <p className="pb-3 text-[13px] text-ink-3">{t('offline.infoSubtitle')}</p>
+        {profiles.length > 0 && (
+          <div className="mb-3 overflow-hidden rounded-card border border-line bg-surface" data-testid="offline-profiles">
+            {profiles.map((p) => (
+              <button
+                key={p.id}
+                data-testid={`offline-profile-${p.id}`}
+                onClick={() => enterOffline(p.id)}
+                className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3 text-left text-[14px] text-ink"
+              >
+                <Icon name="account-lock-outline" size={19} color="var(--m-ink-3)" />
+                <span className="flex-1 truncate">{p.name}</span>
+                <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="flex gap-2">
+          <input
+            data-testid="offline-name"
+            value={profileName}
+            onChange={(e) => setProfileName(e.target.value)}
+            placeholder={t('login.namePlaceholder')}
+            className="h-11 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 text-[14px] text-ink outline-none placeholder:text-ink-4"
+          />
+          <Button size="sm" className="h-11" data-testid="offline-create" onClick={createOffline} disabled={!profileName.trim()}>
+            {t('offline.addProfile')}
+          </Button>
+        </div>
+      </Sheet>
 
       <p className="pb-[max(24px,env(safe-area-inset-bottom))] text-center text-[11px] text-ink-4">
         {t('login.terms')}

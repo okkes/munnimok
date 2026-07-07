@@ -65,6 +65,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // best-effort — installed PWAs are exempt anyway
       if (identity.kind !== 'demo') void navigator.storage?.persist?.().catch(() => undefined);
       if (identity.kind === 'demo') await seedDemoIfNeeded(repo);
+      if (identity.kind === 'offline' && (await db.spaces.filter((s) => s.deleted === 0).count()) === 0) {
+        // fully local profile: personal space named after the profile
+        const { offlineProfileName } = await import('@/features/auth/offlineProfiles');
+        const personalId = uuidv7();
+        await repo.upsert('space', personalId, personalId, {
+          name: offlineProfileName(identity.profileId) ?? 'Personal',
+          kind: 'personal',
+          currency: 'EUR',
+          periodType: 'month',
+          periodDay: 1,
+        });
+      }
       if (engine) {
         // initial sync: discover + pull this user's spaces (fresh device);
         // tolerated to fail offline — local-first means we carry on

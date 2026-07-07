@@ -48,15 +48,16 @@ export function SettingsScreen() {
   const signOut = async () => {
     const current = identity;
     logout();
-    // user identities keep their local data (fast re-login; sync is the
-    // source of truth); demo/offline are device-only and reset on logout
+    // user identities keep local data (sync is the source of truth);
+    // offline profiles keep their data too (this device IS the truth) —
+    // only the demo resets to its pristine dataset on sign-out
     if (current?.kind === 'user') {
       if (!current.testAuth && (await oidcSignOut(window.location.origin))) return; // full OIDC logout redirects
       await navigate({ to: '/login' });
       return;
     }
     await navigate({ to: '/login' });
-    if (current) await destroyIdentityData(current);
+    if (current?.kind === 'demo') await destroyIdentityData(current);
   };
 
   return (
