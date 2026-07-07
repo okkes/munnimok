@@ -136,6 +136,7 @@ export function SplitEditorSheet({ open, onOpenChange, tx }: { open: boolean; on
       <CategoryPicker
         open={pickerFor !== null}
         onOpenChange={(next) => !next && setPickerFor(null)}
+        direction={tx.amountCents < 0 ? 'debit' : 'credit'}
         selectedId={pickerFor !== null ? rows[pickerFor]?.catId : undefined}
         onPick={(catId) => {
           if (pickerFor !== null) setRows((r) => r.map((x, j) => (j === pickerFor ? { ...x, catId } : x)));

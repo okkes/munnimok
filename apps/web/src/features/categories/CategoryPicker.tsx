@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { directionAllows } from '@/domain/categoryRules';
 import { useLang } from '@/i18n';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
@@ -9,10 +10,12 @@ interface CategoryPickerProps {
   onOpenChange: (open: boolean) => void;
   selectedId?: string;
   onPick: (catId: string) => void;
+  /** the transaction's side — hides categories of the opposite direction */
+  direction?: 'debit' | 'credit';
 }
 
 /** Bottom sheet listing the catalog (built-in + custom) grouped by parent, with search. */
-export function CategoryPicker({ open, onOpenChange, selectedId, onPick }: CategoryPickerProps) {
+export function CategoryPicker({ open, onOpenChange, selectedId, onPick, direction }: CategoryPickerProps) {
   const { t } = useLang();
   const cats = useCategories();
   const [query, setQuery] = useState('');
@@ -24,10 +27,11 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick }: Categ
         parent,
         children: cats
           .childrenOf(parent.id)
+          .filter((c) => !direction || directionAllows(c.direction, direction))
           .filter((c) => !q || catName(c, t).toLowerCase().includes(q)),
       }))
       .filter((g) => g.children.length > 0);
-  }, [cats, query, t]);
+  }, [cats, query, t, direction]);
 
   const pick = (catId: string) => {
     onPick(catId);

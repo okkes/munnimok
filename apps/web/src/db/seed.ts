@@ -43,6 +43,40 @@ export async function seedDemoIfNeeded(repo: Repo): Promise<void> {
     });
   }
 
+  // one custom main + sub so the category system is visible in demo:
+  // "Padel Club" (expense main with its locked Other) and a credit-only
+  // sub under the builtin Income parent
+  await repo.upsert('category', DEMO_SPACE_ID, 'demo_cat_padel', {
+    name: 'Padel Club',
+    icon: 'tennis',
+    color: '#1ABC9C',
+    txType: 'expense',
+    isParent: 1,
+    sortOrder: 999,
+    builtin: 0,
+  });
+  await repo.upsert('category', DEMO_SPACE_ID, 'demo_cat_padel_other', {
+    parentId: 'demo_cat_padel',
+    name: 'Other',
+    icon: 'tennis',
+    color: '',
+    txType: 'expense',
+    direction: 'both',
+    isOther: 1,
+    sortOrder: 9999,
+    builtin: 0,
+  });
+  await repo.upsert('category', DEMO_SPACE_ID, 'demo_cat_sidegig', {
+    parentId: 'income',
+    name: 'Side gig',
+    icon: 'laptop',
+    color: '',
+    txType: 'income',
+    direction: 'credit',
+    sortOrder: 999,
+    builtin: 0,
+  });
+
   for (const tx of DEMO_TXS) {
     await repo.upsert('transaction', DEMO_SPACE_ID, tx.id, {
       accountId: tx.account,

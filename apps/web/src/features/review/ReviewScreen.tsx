@@ -98,7 +98,13 @@ export function ReviewScreen() {
           </>
         )}
       </div>
-      <CategoryPicker open={pickerOpen} onOpenChange={setPickerOpen} selectedId={tx?.catId} onPick={recategorize} />
+      <CategoryPicker
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        selectedId={tx?.catId}
+        onPick={recategorize}
+        direction={tx ? (tx.amountCents < 0 ? 'debit' : 'credit') : undefined}
+      />
     </div>
   );
 }

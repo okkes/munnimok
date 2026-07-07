@@ -173,7 +173,13 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
           </Button>
         </div>
       </Sheet>
-      <CategoryPicker open={pickerOpen} onOpenChange={setPickerOpen} selectedId={catId} onPick={setCatId} />
+      <CategoryPicker
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        selectedId={catId}
+        onPick={setCatId}
+        direction={isExpense ? 'debit' : 'credit'}
+      />
     </>
   );
 }

@@ -39,6 +39,16 @@ export interface AccountRow extends SyncEnvelope {
 
 export type TxType = 'income' | 'expense' | 'saving' | 'transfer' | 'debtPayment' | 'investment' | 'adjustment';
 
+export type CatDirection = 'debit' | 'credit' | 'both';
+
+/**
+ * Custom category row. Main (parent) categories carry the transaction
+ * type + color; sub categories inherit both from their parent and carry
+ * only a direction (which side of the ledger they may be used on).
+ * Rows live in the space they were created in: a personal space makes
+ * them user-scoped (visible across all the user's personal spaces), a
+ * shared space makes them visible to that space's members only.
+ */
 export interface CategoryRow extends SyncEnvelope {
   id: string;
   spaceId: string;
@@ -49,7 +59,14 @@ export interface CategoryRow extends SyncEnvelope {
   name?: string;
   icon: string; // MDI icon name
   color: string;
+  /** authoritative on parents; derived from the parent for subs */
   txType: TxType;
+  /** subs only; parents have no direction */
+  direction?: CatDirection;
+  /** custom main category (no parentId) */
+  isParent?: 0 | 1;
+  /** the auto-created "Other" sub of a custom main (direction locked to 'both') */
+  isOther?: 0 | 1;
   sortOrder: number;
   builtin: 0 | 1;
 }

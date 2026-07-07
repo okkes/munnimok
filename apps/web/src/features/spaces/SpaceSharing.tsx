@@ -76,6 +76,7 @@ export function SpaceInvitesBanner() {
 /** Members + invite-a-friend for the space edit sheet (user identities). */
 export function SpaceMembersSection({ spaceId, spaceName }: { spaceId: string; spaceName: string }) {
   const { t } = useLang();
+  const { repo } = useData();
   const [members, setMembers] = useState<MemberDto[] | null>(null);
   const [friends, setFriends] = useState<FriendDto[]>([]);
   const [me, setMe] = useState<string | null>(null);
@@ -102,6 +103,9 @@ export function SpaceMembersSection({ spaceId, spaceName }: { spaceId: string; s
       method: 'POST',
       body: JSON.stringify({ toUserId, role: 'member', spaceName }),
     });
+    // inviting someone makes this a shared space: its categories become
+    // space-scoped and user-scoped categories stop leaking into it
+    await repo.upsert('space', spaceId, spaceId, { kind: 'shared' });
     await reload();
   };
   const kick = async (userId: string) => {

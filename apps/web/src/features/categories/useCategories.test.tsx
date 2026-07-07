@@ -58,7 +58,8 @@ describe('useCategories', () => {
       icon: 'tennis',
       color: '#123456',
       txType: 'expense',
-      parentId: 'leisure',
+      direction: 'debit',
+      parentId: 'sport',
       deleted: 0,
       fieldVersions: {},
     } as never);
@@ -67,6 +68,68 @@ describe('useCategories', () => {
       expect(cat.custom).toBe(true);
       expect(cat.name).toBe('Padel');
       expect(cat.direction).toBe('debit');
+      // type derives from the builtin parent, not the stored field
+      expect(cat.txTypes).toEqual(['expense']);
+    });
+  });
+
+  it('custom mains carry their type; subs inherit it and default to both directions', async () => {
+    renderWithData(<Probe />);
+    await screen.findByTestId('probe');
+    await db!.categories.bulkAdd([
+      {
+        id: 'main1',
+        spaceId,
+        name: 'Side gig',
+        icon: 'briefcase-outline',
+        color: '#654321',
+        txType: 'income',
+        isParent: 1,
+        sortOrder: 1,
+        deleted: 0,
+        fieldVersions: {},
+      },
+      {
+        id: 'main1_other',
+        spaceId,
+        name: 'Other',
+        icon: 'briefcase-outline',
+        color: '',
+        parentId: 'main1',
+        isOther: 1,
+        direction: 'debit', // must be ignored: Other is locked to both
+        sortOrder: 2,
+        deleted: 0,
+        fieldVersions: {},
+      },
+      {
+        id: 'sub1',
+        spaceId,
+        name: 'Coaching',
+        icon: 'school-outline',
+        color: '',
+        parentId: 'main1',
+        direction: 'credit',
+        sortOrder: 3,
+        deleted: 0,
+        fieldVersions: {},
+      },
+    ] as never[]);
+    await waitFor(() => {
+      const main = latest!.byId('main1');
+      expect(main.isParent).toBe(true);
+      expect(main.txTypes).toEqual(['income']);
+      expect(latest!.parents.some((p) => p.id === 'main1')).toBe(true);
+
+      const other = latest!.byId('main1_other');
+      expect(other.isOther).toBe(true);
+      expect(other.direction).toBe('both');
+      expect(other.txTypes).toEqual(['income']);
+
+      const sub = latest!.byId('sub1');
+      expect(sub.direction).toBe('credit');
+      expect(sub.txTypes).toEqual(['income']); // inherited from main1
+      expect(latest!.childrenOf('main1').map((c) => c.id)).toEqual(['main1_other', 'sub1']);
     });
   });
 });
