@@ -8,6 +8,9 @@ import { tr } from './tr';
 export type Lang = 'en' | 'nl' | 'tr';
 export type { TranslationKey };
 
+/** BCP 47 locale per UI language, for Intl formatting */
+export const LOCALES: Record<Lang, string> = { en: 'en-GB', nl: 'nl-NL', tr: 'tr-TR' };
+
 const DICTS: Record<Lang, Partial<Record<TranslationKey, string>>> = { en, nl, tr };
 const LS_KEY = 'munni_lang';
 

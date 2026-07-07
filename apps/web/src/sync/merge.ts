@@ -56,8 +56,8 @@ export function applyOp<T extends Record<string, unknown>>(
   local: (T & SyncEnvelope) | null,
   op: Op,
 ): MergeResult<T> {
-  const fieldVersions = { ...(local?.fieldVersions ?? {}) };
-  const merged: Record<string, unknown> = { ...(local ?? {}) };
+  const fieldVersions = { ...local?.fieldVersions };
+  const merged: Record<string, unknown> = { ...local };
   const appliedFields: string[] = [];
 
   for (const [field, value] of Object.entries(op.fields)) {

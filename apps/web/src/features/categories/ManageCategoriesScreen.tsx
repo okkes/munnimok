@@ -3,7 +3,6 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { ALL_TX_TYPES } from '@/domain/txType';
 import type { CategoryRow, CatDirection, TxType } from '@/db/types';
 import { useLang } from '@/i18n';
-import type { TranslationKey } from '@/i18n';
 import { useData } from '@/app/data';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
@@ -161,7 +160,7 @@ export function ManageCategoriesScreen() {
     const onMove = (e: PointerEvent) => {
       const el = document.elementFromPoint(e.clientX, e.clientY);
       const group = el?.closest?.('[data-cat-group]');
-      setDropTarget(group?.getAttribute('data-cat-group') ?? null);
+      setDropTarget((group as HTMLElement | null)?.dataset.catGroup ?? null);
     };
     const onUp = () => {
       const target = dropTargetRef.current;
@@ -181,14 +180,12 @@ export function ManageCategoriesScreen() {
 
   const editing = mode?.kind === 'editMain' || mode?.kind === 'editSub';
   const isMainForm = mode?.kind === 'newMain' || mode?.kind === 'editMain';
-  const formParent =
-    mode?.kind === 'newSub' ? cats.byId(mode.parentId) : mode?.kind === 'editSub' ? cats.byId(mode.row.parentId) : null;
-  const formTitle =
-    mode?.kind === 'newMain'
-      ? t('cats.newMain')
-      : mode?.kind === 'newSub'
-        ? t('cats.newSub')
-        : t('cats.editCustom');
+  let formParent = null;
+  if (mode?.kind === 'newSub') formParent = cats.byId(mode.parentId);
+  else if (mode?.kind === 'editSub') formParent = cats.byId(mode.row.parentId);
+  let formTitle = t('cats.editCustom');
+  if (mode?.kind === 'newMain') formTitle = t('cats.newMain');
+  else if (mode?.kind === 'newSub') formTitle = t('cats.newSub');
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-manage-cats">
@@ -227,7 +224,7 @@ export function ManageCategoriesScreen() {
               <Icon name={parent.icon} size={14} />
               <span className="flex-1">{catName(parent, t)}</span>
               <span className="rounded bg-bg-2 px-1.5 py-0.5 text-[9px] font-semibold normal-case text-ink-3">
-                {t(`tx.type.${parent.txTypes[0]}` as TranslationKey)}
+                {t(`tx.type.${parent.txTypes[0]}`)}
               </span>
               {parent.custom && (
                 <button
@@ -302,7 +299,7 @@ export function ManageCategoriesScreen() {
             <div className="flex items-center gap-2 text-[13px] text-ink-3">
               <Icon name={formParent.icon} size={16} color={formParent.color} />
               {catName(formParent, t)} ·{' '}
-              <span data-testid="catform-inherited-type">{t(`tx.type.${formParent.txTypes[0]}` as TranslationKey)}</span>
+              <span data-testid="catform-inherited-type">{t(`tx.type.${formParent.txTypes[0]}`)}</span>
             </div>
           )}
           <input
@@ -329,7 +326,7 @@ export function ManageCategoriesScreen() {
                         : 'border-line bg-surface text-ink-2'
                     }`}
                   >
-                    {t(`tx.type.${type}` as TranslationKey)}
+                    {t(`tx.type.${type}`)}
                   </button>
                 ))}
               </div>
@@ -365,7 +362,7 @@ export function ManageCategoriesScreen() {
                         : 'border-line bg-surface text-ink-2'
                     }`}
                   >
-                    {t(`cats.direction.${d}` as TranslationKey)}
+                    {t(`cats.direction.${d}`)}
                   </button>
                 ))}
               </div>

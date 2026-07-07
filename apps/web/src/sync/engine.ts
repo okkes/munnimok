@@ -16,7 +16,7 @@ export type SyncStatus = 'idle' | 'syncing' | 'error' | 'offline';
 export class SyncEngine {
   private timer: ReturnType<typeof setInterval> | null = null;
   private running = false;
-  private listeners = new Set<(status: SyncStatus) => void>();
+  private readonly listeners = new Set<(status: SyncStatus) => void>();
   private status: SyncStatus = 'idle';
 
   constructor(
@@ -57,7 +57,7 @@ export class SyncEngine {
     this.timer = null;
   }
 
-  private handleWake = () => {
+  private readonly handleWake = () => {
     if (document.visibilityState === 'visible') void this.syncAll();
   };
 

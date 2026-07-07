@@ -69,8 +69,8 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
   const valid = !!merchant.trim() && cents !== null && cents > 0 && !!effectiveAccount && !!date;
 
   const save = () => {
-    if (!valid || !effectiveAccount) return;
-    const signed = isExpense ? -Math.abs(cents!) : Math.abs(cents!);
+    if (!valid || !effectiveAccount || cents === null) return;
+    const signed = isExpense ? -Math.abs(cents) : Math.abs(cents);
     const txType = cats.byId(catId).txTypes[0] ?? (isExpense ? 'expense' : 'income');
     void repo.upsert('transaction', spaceId, tx?.id ?? repo.newId(), {
       accountId: effectiveAccount,
@@ -108,7 +108,7 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
               <button
                 data-testid="txform-income"
                 onClick={() => setIsExpense(false)}
-                className={`m-tap border-none px-3 text-[13px] font-medium ${!isExpense ? 'bg-accent-soft text-accent-deep' : 'bg-surface text-ink-3'}`}
+                className={`m-tap border-none px-3 text-[13px] font-medium ${isExpense ? 'bg-surface text-ink-3' : 'bg-accent-soft text-accent-deep'}`}
               >
                 +
               </button>

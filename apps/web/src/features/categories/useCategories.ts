@@ -47,7 +47,8 @@ const parentTxType = (row: CategoryRow, parentById: Map<string, CategoryRow>): T
 function toCat(row: CategoryRow, parentById: Map<string, CategoryRow>): Cat {
   const isParent = row.isParent === 1;
   const txType = isParent ? (row.txType ?? 'expense') : parentTxType(row, parentById);
-  const direction: CatDirection = isParent ? 'both' : row.isOther === 1 ? 'both' : (row.direction ?? 'both');
+  // parents have no direction of their own; "Other" subs are locked to both
+  const direction: CatDirection = isParent || row.isOther === 1 ? 'both' : (row.direction ?? 'both');
   return {
     id: row.id,
     parentId: row.parentId,

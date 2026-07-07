@@ -29,6 +29,60 @@ const TYPES: { type: AccountType; labelKey: TranslationKey; icon: string; liabil
 const typeDef = (type: AccountType) => TYPES.find((d) => d.type === type) ?? TYPES[0];
 const isLiability = (type: AccountType) => !!typeDef(type).liability;
 
+function AccountRowButton({
+  account,
+  lang,
+  onEdit,
+}: {
+  account: AccountRow;
+  lang: ReturnType<typeof useLang>['lang'];
+  onEdit: (account: AccountRow) => void;
+}) {
+  return (
+    <button
+      data-testid={`account-row-${account.id}`}
+      onClick={() => onEdit(account)}
+      className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left"
+    >
+      <Icon name={typeDef(account.type).icon} size={22} color={account.color ?? 'var(--m-ink-3)'} />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[15px] text-ink">{account.name}</span>
+        {account.iban && <span className="block truncate font-mono text-[11px] text-ink-4">{account.iban}</span>}
+      </span>
+      <span className="m-num text-[15px] font-semibold text-ink">
+        {fmtCents(account.balanceCents, account.currency, lang)}
+      </span>
+    </button>
+  );
+}
+
+function AccountSection({
+  title,
+  list,
+  lang,
+  onEdit,
+}: {
+  title: string;
+  list: AccountRow[];
+  lang: ReturnType<typeof useLang>['lang'];
+  onEdit: (account: AccountRow) => void;
+}) {
+  if (list.length === 0) return null;
+  return (
+    <>
+      <div className="m-cap mt-5 mb-1 px-1">{title}</div>
+      <div className="overflow-hidden rounded-card border border-line bg-surface">
+        {list.map((a, i) => (
+          <div key={a.id}>
+            {i > 0 && <div className="mx-4 h-px bg-line-2" />}
+            <AccountRowButton account={a} lang={lang} onEdit={onEdit} />
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
 
 export function AccountsScreen() {
   const { t, lang } = useLang();
@@ -114,40 +168,10 @@ export function AccountsScreen() {
     setEditing(null);
   };
 
-  const Row = ({ account }: { account: AccountRow }) => (
-    <button
-      data-testid={`account-row-${account.id}`}
-      onClick={() => {
-        setEditing(account);
-        setName(account.name);
-      }}
-      className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left"
-    >
-      <Icon name={typeDef(account.type).icon} size={22} color={account.color ?? 'var(--m-ink-3)'} />
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-[15px] text-ink">{account.name}</span>
-        {account.iban && <span className="block truncate font-mono text-[11px] text-ink-4">{account.iban}</span>}
-      </span>
-      <span className="m-num text-[15px] font-semibold text-ink">
-        {fmtCents(account.balanceCents, account.currency, lang)}
-      </span>
-    </button>
-  );
-
-  const Section = ({ titleKey, list }: { titleKey: TranslationKey; list: AccountRow[] }) =>
-    list.length === 0 ? null : (
-      <>
-        <div className="m-cap mt-5 mb-1 px-1">{t(titleKey)}</div>
-        <div className="overflow-hidden rounded-card border border-line bg-surface">
-          {list.map((a, i) => (
-            <div key={a.id}>
-              {i > 0 && <div className="mx-4 h-px bg-line-2" />}
-              <Row account={a} />
-            </div>
-          ))}
-        </div>
-      </>
-    );
+  const openEdit = (account: AccountRow) => {
+    setEditing(account);
+    setName(account.name);
+  };
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-accounts">
@@ -182,13 +206,38 @@ export function AccountsScreen() {
         onChange={(e) => void onFilePicked(e.target.files?.[0])}
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
-        <Section titleKey="acct.assets" list={assets} />
-        <Section titleKey="acct.liabilities" list={liabilities} />
+        <AccountSection title={t('acct.assets')} list={assets} lang={lang} onEdit={openEdit} />
+        <AccountSection title={t('acct.liabilities')} list={liabilities} lang={lang} onEdit={openEdit} />
       </div>
 
       {/* Add account: type grid, then form */}
       <Sheet open={addOpen} onOpenChange={(open) => !open && closeAdd()} title={newType ? t('acct.addAccount') : t('acct.selectType')} height={520}>
-        {!newType ? (
+        {newType ? (
+          <div className="flex flex-col gap-3 pt-1">
+            <div className="flex items-center gap-2 text-[13px] text-ink-3">
+              <Icon name={typeDef(newType).icon} size={16} />
+              {t(typeDef(newType).labelKey)} · {t('acct.manual')}
+            </div>
+            <input
+              data-testid="acctform-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={t('acct.accountName')}
+              className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+            />
+            <input
+              data-testid="acctform-balance"
+              value={balance}
+              onChange={(e) => setBalance(e.target.value)}
+              inputMode="decimal"
+              placeholder={`${t('acct.initialBalance')} (EUR)`}
+              className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+            />
+            <Button data-testid="acctform-save" onClick={createAccount} disabled={!name.trim()}>
+              {t('action.add')}
+            </Button>
+          </div>
+        ) : (
           <div className="grid grid-cols-2 gap-2 pt-1">
             {gcAvailable && (
               <button
@@ -217,31 +266,6 @@ export function AccountsScreen() {
                 <span className="text-[13px] font-medium text-ink">{t(def.labelKey)}</span>
               </button>
             ))}
-          </div>
-        ) : (
-          <div className="flex flex-col gap-3 pt-1">
-            <div className="flex items-center gap-2 text-[13px] text-ink-3">
-              <Icon name={typeDef(newType).icon} size={16} />
-              {t(typeDef(newType).labelKey)} · {t('acct.manual')}
-            </div>
-            <input
-              data-testid="acctform-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder={t('acct.accountName')}
-              className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
-            />
-            <input
-              data-testid="acctform-balance"
-              value={balance}
-              onChange={(e) => setBalance(e.target.value)}
-              inputMode="decimal"
-              placeholder={`${t('acct.initialBalance')} (EUR)`}
-              className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
-            />
-            <Button data-testid="acctform-save" onClick={createAccount} disabled={!name.trim()}>
-              {t('action.add')}
-            </Button>
           </div>
         )}
       </Sheet>

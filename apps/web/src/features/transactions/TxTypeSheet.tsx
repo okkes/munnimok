@@ -1,6 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useLang } from '@/i18n';
-import type { TranslationKey } from '@/i18n';
 import { useData } from '@/app/data';
 import { ALL_TX_TYPES, applyTypeChange, typeForLinkedAccount } from '@/domain/txType';
 import { useCategories } from '@/features/categories/useCategories';
@@ -71,7 +70,7 @@ export function TxTypeSheet({ open, onOpenChange, tx }: { open: boolean; onOpenC
             onClick={() => chooseType(type)}
             className="m-tap flex items-center gap-3 border-none bg-transparent px-1 py-2.5 text-left text-[14px] text-ink disabled:opacity-40"
           >
-            <span className="flex-1">{t(`tx.type.${type}` as TranslationKey)}</span>
+            <span className="flex-1">{t(`tx.type.${type}`)}</span>
             {tx.txType === type && <Icon name="check" size={18} color="var(--m-accent)" />}
           </button>
         ))}
@@ -83,7 +82,7 @@ export function TxTypeSheet({ open, onOpenChange, tx }: { open: boolean; onOpenC
           data-testid="txtype-linked-none"
           onClick={() => chooseLinked(null)}
           className={`m-tap rounded-full border px-3 py-1.5 text-[12px] ${
-            !tx.linkedAccountId ? 'border-accent bg-accent-soft font-medium text-accent-deep' : 'border-line bg-surface text-ink-2'
+            tx.linkedAccountId ? 'border-line bg-surface text-ink-2' : 'border-accent bg-accent-soft font-medium text-accent-deep'
           }`}
         >
           {t('tx.linkedAccountNone')}

@@ -25,6 +25,21 @@ interface FriendsResponse {
 
 const short = (id: string) => `${id.slice(0, 8)}…`;
 
+function PersonRow({ name, sub, children }: { name: string; sub?: string; children?: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-3 border-b border-line-2 px-4 py-3 last:border-0">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent-soft text-accent-deep">
+        <Icon name="account-outline" size={19} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[14px] font-medium text-ink">{name}</span>
+        {sub && <span className="block truncate font-mono text-[11px] text-ink-4">{sub}</span>}
+      </span>
+      {children}
+    </div>
+  );
+}
+
 /** Friends management (user identities only): the gateway to shared spaces. */
 export function FriendsScreen() {
   const { t } = useLang();
@@ -69,19 +84,6 @@ export function FriendsScreen() {
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
-
-  const Row = ({ name, sub, children }: { name: string; sub?: string; children?: React.ReactNode }) => (
-    <div className="flex items-center gap-3 border-b border-line-2 px-4 py-3 last:border-0">
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent-soft text-accent-deep">
-        <Icon name="account-outline" size={19} />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-[14px] font-medium text-ink">{name}</span>
-        {sub && <span className="block truncate font-mono text-[11px] text-ink-4">{sub}</span>}
-      </span>
-      {children}
-    </div>
-  );
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-friends">
@@ -130,14 +132,14 @@ export function FriendsScreen() {
             <div className="m-cap mt-5 mb-1 px-1">{t('friends.pendingReceived')}</div>
             <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="friends-received">
               {data!.receivedPending.map((r) => (
-                <Row key={r.id} name={r.fromName ?? short(r.fromUserId)} sub={short(r.fromUserId)}>
+                <PersonRow key={r.id} name={r.fromName ?? short(r.fromUserId)} sub={short(r.fromUserId)}>
                   <Button size="sm" data-testid={`friends-accept-${r.id}`} onClick={() => void accept(r.id)}>
                     {t('friends.accept')}
                   </Button>
                   <button aria-label={t('friends.decline')} onClick={() => void removeFriend(r.fromUserId)} className="m-tap border-none bg-transparent text-ink-4">
                     <Icon name="close" size={18} />
                   </button>
-                </Row>
+                </PersonRow>
               ))}
             </div>
           </>
@@ -149,9 +151,9 @@ export function FriendsScreen() {
             <div className="m-cap mt-5 mb-1 px-1">{t('friends.pendingSent')}</div>
             <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="friends-sent">
               {data!.sentPending.map((r) => (
-                <Row key={r.id} name={r.toName ?? short(r.toUserId)} sub={short(r.toUserId)}>
+                <PersonRow key={r.id} name={r.toName ?? short(r.toUserId)} sub={short(r.toUserId)}>
                   <Icon name="clock-outline" size={16} color="var(--m-ink-4)" />
-                </Row>
+                </PersonRow>
               ))}
             </div>
           </>
@@ -161,13 +163,13 @@ export function FriendsScreen() {
         <div className="m-cap mt-5 mb-1 px-1">{t('settings.friends')}</div>
         <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="friends-list">
           {(data?.friends ?? []).map((f) => (
-            <Row key={f.userId} name={f.displayName ?? short(f.userId)} sub={short(f.userId)}>
+            <PersonRow key={f.userId} name={f.displayName ?? short(f.userId)} sub={short(f.userId)}>
               <button aria-label={t('action.delete')} data-testid={`friends-remove-${f.userId}`} onClick={() => void removeFriend(f.userId)} className="m-tap border-none bg-transparent text-ink-4">
                 <Icon name="account-remove-outline" size={18} />
               </button>
-            </Row>
+            </PersonRow>
           ))}
-          {data && data.friends.length === 0 && (
+          {data?.friends.length === 0 && (
             <div className="px-4 py-6 text-center text-[13px] text-ink-3">{t('friends.empty')}</div>
           )}
         </div>

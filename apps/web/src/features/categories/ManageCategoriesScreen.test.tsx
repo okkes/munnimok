@@ -33,7 +33,8 @@ describe('ManageCategoriesScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('catform-save'));
 
     // the new main appears as a group header with its type badge…
-    await waitFor(() => expect(screen.getByText('Music lessons')).toBeTruthy());
+    // (generous timeout: coverage instrumentation slows the live query)
+    await waitFor(() => expect(screen.getByText('Music lessons')).toBeTruthy(), { timeout: 5000 });
     const header = screen.getByText('Music lessons').closest('.m-cap')!;
     expect(header.textContent).toContain('Income');
     // …and the auto "Other" sub exists but is not editable

@@ -30,15 +30,16 @@ export function encodeHlc(hlc: Hlc): string {
 }
 
 export function decodeHlc(encoded: string): Hlc {
-  const wallMs = parseInt(encoded.slice(0, WALL_WIDTH), 36);
-  const counter = parseInt(encoded.slice(WALL_WIDTH + 1, WALL_WIDTH + 1 + COUNTER_WIDTH), 36);
+  const wallMs = Number.parseInt(encoded.slice(0, WALL_WIDTH), 36);
+  const counter = Number.parseInt(encoded.slice(WALL_WIDTH + 1, WALL_WIDTH + 1 + COUNTER_WIDTH), 36);
   const deviceId = encoded.slice(WALL_WIDTH + 1 + COUNTER_WIDTH + 1);
   return { wallMs, counter, deviceId };
 }
 
 /** later > earlier; deviceId breaks exact ties deterministically. */
 export function compareHlc(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
+  if (a < b) return -1;
+  return a > b ? 1 : 0;
 }
 
 export interface HlcState {
@@ -67,13 +68,11 @@ export class HlcClock {
     const wall = this.wallClock();
     if (wall > this.state.lastWallMs) {
       this.state = { lastWallMs: wall, counter: 0 };
+    } else if (this.state.counter >= MAX_COUNTER) {
+      // counter exhausted within one ms — bump logical time instead
+      this.state = { lastWallMs: this.state.lastWallMs + 1, counter: 0 };
     } else {
-      if (this.state.counter >= MAX_COUNTER) {
-        // counter exhausted within one ms — bump logical time instead
-        this.state = { lastWallMs: this.state.lastWallMs + 1, counter: 0 };
-      } else {
-        this.state = { lastWallMs: this.state.lastWallMs, counter: this.state.counter + 1 };
-      }
+      this.state = { lastWallMs: this.state.lastWallMs, counter: this.state.counter + 1 };
     }
     this.onStateChange?.(this.state);
     return encodeHlc({ wallMs: this.state.lastWallMs, counter: this.state.counter, deviceId: this.deviceId });

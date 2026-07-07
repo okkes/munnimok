@@ -116,9 +116,12 @@ export function GcCallbackScreen() {
   return logtoConfigured ? <GcCallbackWithLogto /> : <GcCallbackInner bearer={null} />;
 }
 
+// symbol sentinel: 'pending' as a literal would widen into the string union
+const PENDING = Symbol('pending');
+
 function GcCallbackWithLogto() {
   const { isLoading, isAuthenticated, getAccessToken } = useLogto();
-  const [bearer, setBearer] = useState<string | null | 'pending'>('pending');
+  const [bearer, setBearer] = useState<string | null | typeof PENDING>(PENDING);
 
   useEffect(() => {
     if (isLoading) return;
@@ -129,7 +132,7 @@ function GcCallbackWithLogto() {
     void getAccessToken(config.logto.resource || undefined).then((token) => setBearer(token ?? null));
   }, [isLoading, isAuthenticated, getAccessToken]);
 
-  if (bearer === 'pending') return <GcCallbackShell state="working" />;
+  if (bearer === PENDING) return <GcCallbackShell state="working" />;
   return <GcCallbackInner bearer={bearer} />;
 }
 
@@ -163,19 +166,20 @@ function GcCallbackInner({ bearer }: { bearer: string | null }) {
   return <GcCallbackShell state={state} />;
 }
 
+const SHELL_ICONS = { working: 'bank-outline', done: 'check-circle-outline', failed: 'alert-circle-outline' } as const;
+const SHELL_TEXT_KEYS = { working: 'gc.completing', done: 'gc.done', failed: 'gc.failed' } as const;
+
 function GcCallbackShell({ state }: { state: 'working' | 'done' | 'failed' }) {
   const { t } = useLang();
 
   return (
     <div className="flex h-dvh flex-col items-center justify-center gap-4 bg-bg px-6 text-center" data-testid="screen-gc-callback">
       <Icon
-        name={state === 'done' ? 'check-circle-outline' : state === 'failed' ? 'alert-circle-outline' : 'bank-outline'}
+        name={SHELL_ICONS[state]}
         size={44}
         color={state === 'failed' ? 'var(--m-negative)' : 'var(--m-accent)'}
       />
-      <div className="m-h3 text-ink">
-        {state === 'working' ? t('gc.completing') : state === 'done' ? t('gc.done') : t('gc.failed')}
-      </div>
+      <div className="m-h3 text-ink">{t(SHELL_TEXT_KEYS[state])}</div>
       {state !== 'working' && (
         <a href={`${window.location.origin}/#/accounts`} className="m-tap rounded-btn bg-brand px-5 py-3 text-[14px] font-semibold text-on-brand no-underline">
           {t('gc.backToApp')}

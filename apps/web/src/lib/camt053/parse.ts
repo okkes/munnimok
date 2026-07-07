@@ -45,6 +45,67 @@ const toCents = (amount: string | undefined): number | null => {
   return Number.isFinite(value) ? Math.round(value * 100) : null;
 };
 
+function parseClosingBalance(stmt: Element): number | null {
+  let closingBalanceCents: number | null = null;
+  for (const bal of children(stmt, 'Bal')) {
+    if (text(bal, 'Tp', 'CdOrPrtry', 'Cd') !== 'CLBD') continue;
+    const cents = toCents(text(bal, 'Amt'));
+    if (cents === null) continue;
+    closingBalanceCents = text(bal, 'CdtDbtInd') === 'DBIT' ? -cents : cents;
+  }
+  return closingBalanceCents;
+}
+
+function parseEntry(ntry: Element, statementCurrency: string): CamtEntry | null {
+  const amtEl = children(ntry, 'Amt')[0];
+  const cents = toCents(amtEl?.textContent?.trim());
+  if (cents === null) return null;
+  const debit = text(ntry, 'CdtDbtInd') === 'DBIT';
+  const date = text(ntry, 'BookgDt', 'Dt') ?? text(ntry, 'ValDt', 'Dt') ?? '';
+
+  const txDtls = children(ntry, 'NtryDtls').flatMap((d) => children(d, 'TxDtls'))[0] ?? null;
+  const relatedParty = debit ? 'Cdtr' : 'Dbtr';
+  let counterpartyName = text(txDtls, 'RltdPties', relatedParty, 'Nm');
+  const counterpartyIban = text(txDtls, `RltdPties`, `${relatedParty}Acct`, 'Id', 'IBAN');
+
+  const remittance = txDtls
+    ? children(txDtls, 'RmtInf')
+        .flatMap((r) => children(r, 'Ustrd'))
+        .map((u) => u.textContent?.trim() ?? '')
+        .filter(Boolean)
+        .join(' ')
+    : '';
+  const addtlInfo = text(ntry, 'AddtlNtryInf') ?? '';
+  // human-written remittance beats the bank's machine summary line
+  const description = (remittance || addtlInfo).trim();
+
+  // POS/card entries (ASN, SNS…) carry no party block — the merchant
+  // sits in AddtlNtryInf before the '>' column ("Albert Heijn 1842 >CITY …")
+  if (!counterpartyName && addtlInfo.includes('>')) {
+    counterpartyName = addtlInfo.split('>')[0].trim() || undefined;
+  }
+
+  // ING exports carry AcctSvcrRef/EndToEndId (order preserved so ids of
+  // past imports never change); ASN only numbers entries via NtryRef/TxId
+  const ref =
+    text(ntry, 'AcctSvcrRef') ??
+    text(txDtls, 'Refs', 'AcctSvcrRef') ??
+    text(txDtls, 'Refs', 'EndToEndId') ??
+    text(ntry, 'NtryRef') ??
+    text(txDtls, 'Refs', 'TxId') ??
+    `${date}:${cents}:${counterpartyName ?? ''}:${description.slice(0, 40)}`;
+
+  return {
+    amountCents: debit ? -cents : cents,
+    currency: amtEl?.getAttribute('Ccy') ?? statementCurrency,
+    date,
+    counterpartyName,
+    counterpartyIban,
+    description,
+    ref,
+  };
+}
+
 export function parseCamt053(xml: string): CamtStatement[] {
   const doc = new DOMParser().parseFromString(xml, 'text/xml');
   if (doc.querySelector('parsererror')) throw new Error('Invalid XML');
@@ -56,67 +117,9 @@ export function parseCamt053(xml: string): CamtStatement[] {
   return children(bkToCstmr, 'Stmt').map((stmt) => {
     const iban = text(stmt, 'Acct', 'Id', 'IBAN') ?? '';
     const currency = text(stmt, 'Acct', 'Ccy') ?? 'EUR';
-
-    // closing booked balance
-    let closingBalanceCents: number | null = null;
-    for (const bal of children(stmt, 'Bal')) {
-      if (text(bal, 'Tp', 'CdOrPrtry', 'Cd') !== 'CLBD') continue;
-      const cents = toCents(text(bal, 'Amt'));
-      if (cents === null) continue;
-      closingBalanceCents = text(bal, 'CdtDbtInd') === 'DBIT' ? -cents : cents;
-    }
-
-    const entries: CamtEntry[] = [];
-    for (const ntry of children(stmt, 'Ntry')) {
-      const amtEl = children(ntry, 'Amt')[0];
-      const cents = toCents(amtEl?.textContent?.trim());
-      if (cents === null) continue;
-      const debit = text(ntry, 'CdtDbtInd') === 'DBIT';
-      const date = text(ntry, 'BookgDt', 'Dt') ?? text(ntry, 'ValDt', 'Dt') ?? '';
-
-      const txDtls = children(ntry, 'NtryDtls').flatMap((d) => children(d, 'TxDtls'))[0] ?? null;
-      const relatedParty = debit ? 'Cdtr' : 'Dbtr';
-      let counterpartyName = text(txDtls, 'RltdPties', relatedParty, 'Nm');
-      const counterpartyIban = text(txDtls, `RltdPties`, `${relatedParty}Acct`, 'Id', 'IBAN');
-
-      const remittance = txDtls
-        ? children(txDtls, 'RmtInf')
-            .flatMap((r) => children(r, 'Ustrd'))
-            .map((u) => u.textContent?.trim() ?? '')
-            .filter(Boolean)
-            .join(' ')
-        : '';
-      const addtlInfo = text(ntry, 'AddtlNtryInf') ?? '';
-      // human-written remittance beats the bank's machine summary line
-      const description = (remittance || addtlInfo).trim();
-
-      // POS/card entries (ASN, SNS…) carry no party block — the merchant
-      // sits in AddtlNtryInf before the '>' column ("Albert Heijn 1842 >CITY …")
-      if (!counterpartyName && addtlInfo.includes('>')) {
-        counterpartyName = addtlInfo.split('>')[0].trim() || undefined;
-      }
-
-      // ING exports carry AcctSvcrRef/EndToEndId (order preserved so ids of
-      // past imports never change); ASN only numbers entries via NtryRef/TxId
-      const ref =
-        text(ntry, 'AcctSvcrRef') ??
-        text(txDtls, 'Refs', 'AcctSvcrRef') ??
-        text(txDtls, 'Refs', 'EndToEndId') ??
-        text(ntry, 'NtryRef') ??
-        text(txDtls, 'Refs', 'TxId') ??
-        `${date}:${cents}:${counterpartyName ?? ''}:${description.slice(0, 40)}`;
-
-      entries.push({
-        amountCents: debit ? -cents : cents,
-        currency: amtEl?.getAttribute('Ccy') ?? currency,
-        date,
-        counterpartyName,
-        counterpartyIban,
-        description,
-        ref,
-      });
-    }
-
-    return { iban, currency, closingBalanceCents, entries };
+    const entries = children(stmt, 'Ntry')
+      .map((ntry) => parseEntry(ntry, currency))
+      .filter((entry): entry is CamtEntry => entry !== null);
+    return { iban, currency, closingBalanceCents: parseClosingBalance(stmt), entries };
   });
 }

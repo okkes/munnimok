@@ -63,6 +63,41 @@ export async function subsOf(db: MunniDB, parent: CategoryRow): Promise<Category
   return db.categories.filter((c) => c.deleted === 0 && c.parentId === parent.id).toArray();
 }
 
+interface EditImpact {
+  affected: TransactionRow[];
+  detachIds: Set<string>;
+  /** the sub's new inherited type when it moves under another parent */
+  movedType?: TxType;
+}
+
+const addBroken = (impact: EditImpact, broken: TransactionRow[], catIds: Iterable<string>) => {
+  if (broken.length === 0) return;
+  for (const tx of broken) {
+    if (!impact.affected.some((a) => a.id === tx.id)) impact.affected.push(tx);
+  }
+  for (const id of catIds) impact.detachIds.add(id);
+};
+
+/** rule 1: type change on a parent breaks every differently-typed tx in the subtree */
+const typeChangeImpact = (impact: EditImpact, txs: TransactionRow[], row: CategoryRow, changes: CategoryChanges, subtree: Set<string>) => {
+  if (row.isParent !== 1 || !changes.txType || changes.txType === row.txType) return;
+  addBroken(impact, affectedByTypeChange(txs, subtree, changes.txType), subtree);
+};
+
+/** rule 2: direction change on a sub breaks wrong-side txs */
+const directionChangeImpact = (impact: EditImpact, txs: TransactionRow[], row: CategoryRow, changes: CategoryChanges) => {
+  if (row.isParent === 1 || !changes.direction || changes.direction === (row.direction ?? 'both')) return;
+  addBroken(impact, affectedByDirectionChange(txs, row.id, changes.direction), [row.id]);
+};
+
+/** rule 3: moving a sub under a parent of another type breaks differently-typed txs */
+const moveImpact = async (impact: EditImpact, db: MunniDB, txs: TransactionRow[], row: CategoryRow, changes: CategoryChanges) => {
+  if (row.isParent === 1 || !changes.parentId || changes.parentId === row.parentId) return;
+  impact.movedType = await parentTypeOf(db, changes.parentId);
+  if (impact.movedType === row.txType) return;
+  addBroken(impact, affectedByTypeChange(txs, new Set([row.id]), impact.movedType), [row.id]);
+};
+
 /**
  * Prepare an edit. `affected` is what the warning shows; `commit`
  * detaches those transactions and saves the change (type changes on a
@@ -75,51 +110,23 @@ export async function prepareCategoryEdit(
   changes: CategoryChanges,
 ): Promise<PendingCommit> {
   const txs = await txsInSpaces(db, await visibleSpaceIds(db, row));
-  const affected: TransactionRow[] = [];
-  const detachIds = new Set<string>();
-
-  const isParent = row.isParent === 1;
-  const subs = isParent ? await subsOf(db, row) : [];
+  const subs = row.isParent === 1 ? await subsOf(db, row) : [];
   const subtree = new Set([row.id, ...subs.map((s) => s.id)]);
 
-  // 1) type change on a parent breaks every differently-typed tx in the subtree
-  if (isParent && changes.txType && changes.txType !== row.txType) {
-    const broken = affectedByTypeChange(txs, subtree, changes.txType);
-    if (broken.length > 0) {
-      affected.push(...broken);
-      subtree.forEach((id) => detachIds.add(id));
-    }
-  }
-
-  // 2) direction change on a sub breaks wrong-side txs
-  if (!isParent && changes.direction && changes.direction !== (row.direction ?? 'both')) {
-    for (const tx of affectedByDirectionChange(txs, row.id, changes.direction)) {
-      if (!affected.some((a) => a.id === tx.id)) affected.push(tx);
-      detachIds.add(row.id);
-    }
-  }
-
-  // 3) moving a sub under a parent of another type breaks differently-typed txs
-  let movedType: TxType | undefined;
-  if (!isParent && changes.parentId && changes.parentId !== row.parentId) {
-    movedType = await parentTypeOf(db, changes.parentId);
-    if (movedType !== row.txType) {
-      for (const tx of affectedByTypeChange(txs, new Set([row.id]), movedType)) {
-        if (!affected.some((a) => a.id === tx.id)) affected.push(tx);
-        detachIds.add(row.id);
-      }
-    }
-  }
+  const impact: EditImpact = { affected: [], detachIds: new Set() };
+  typeChangeImpact(impact, txs, row, changes, subtree);
+  directionChangeImpact(impact, txs, row, changes);
+  await moveImpact(impact, db, txs, row, changes);
 
   return {
-    affected,
+    affected: impact.affected,
     commit: async () => {
-      if (detachIds.size > 0) await detachAll(repo, affected, detachIds);
+      if (impact.detachIds.size > 0) await detachAll(repo, impact.affected, impact.detachIds);
       const patch: Partial<CategoryRow> = { ...changes };
-      if (movedType) patch.txType = movedType;
-      await repo.upsert('category', row.spaceId, row.id, patch as Record<string, unknown>);
+      if (impact.movedType) patch.txType = impact.movedType;
+      await repo.upsert('category', row.spaceId, row.id, patch);
       // keep stored txType on subs consistent with the parent
-      if (isParent && changes.txType && changes.txType !== row.txType) {
+      if (row.isParent === 1 && changes.txType && changes.txType !== row.txType) {
         for (const sub of subs) {
           await repo.upsert('category', sub.spaceId, sub.id, { txType: changes.txType });
         }

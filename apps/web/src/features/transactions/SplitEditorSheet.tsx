@@ -13,9 +13,14 @@ import { Sheet } from '@/ui/Sheet';
 import { useSheetStackLock } from '@/ui/useSheetStackLock';
 
 interface Row {
+  /** stable key for React list rendering (rows have no natural id) */
+  key: string;
   catId: string;
   amount: string; // user-facing text, EU decimals
 }
+
+let rowCounter = 0;
+const newRow = (catId: string, amount: string): Row => ({ key: `r${rowCounter++}`, catId, amount });
 
 const toText = (cents: number) => (cents / 100).toFixed(2).replace('.', ',');
 const toSplits = (rows: Row[]): TxSplit[] => rows.map((r) => ({ catId: r.catId, amountCents: parseCents(r.amount) ?? 0 }));
@@ -32,13 +37,10 @@ export function SplitEditorSheet({ open, onOpenChange, tx }: { open: boolean; on
   useEffect(() => {
     if (!open) return;
     if (tx.splits?.length) {
-      setRows(tx.splits.map((s) => ({ catId: s.catId, amount: toText(s.amountCents) })));
+      setRows(tx.splits.map((s) => newRow(s.catId, toText(s.amountCents))));
     } else {
       // start from the current category + an empty second row
-      setRows([
-        { catId: tx.catId ?? UNCATEGORIZED_ID, amount: toText(Math.abs(tx.amountCents)) },
-        { catId: UNCATEGORIZED_ID, amount: '0,00' },
-      ]);
+      setRows([newRow(tx.catId ?? UNCATEGORIZED_ID, toText(Math.abs(tx.amountCents))), newRow(UNCATEGORIZED_ID, '0,00')]);
     }
   }, [open, tx]);
 
@@ -64,14 +66,22 @@ export function SplitEditorSheet({ open, onOpenChange, tx }: { open: boolean; on
     onOpenChange(false);
   };
 
-  const autoBalance = () => setRows((r) => balanceLastRow(tx.amountCents, toSplits(r)).map((s) => ({ catId: s.catId, amount: toText(s.amountCents) })));
+  const autoBalance = () =>
+    setRows((r) =>
+      balanceLastRow(tx.amountCents, toSplits(r)).map((s, i) => ({ ...r[i], catId: s.catId, amount: toText(s.amountCents) })),
+    );
+
+  const setRowAmount = (index: number, amount: string) =>
+    setRows((r) => r.map((x, j) => (j === index ? { ...x, amount } : x)));
+  const removeRow = (index: number) => setRows((r) => r.filter((_, j) => j !== index));
+  const addRow = () => setRows((r) => [...r, newRow(UNCATEGORIZED_ID, '0,00')]);
 
   return (
     <>
       <Sheet open={open} onOpenChange={onOpenChange} title={t('split.title')} height={560} locked={locked}>
         <div className="flex flex-col gap-2 pt-1" data-testid="split-editor">
           {rows.map((row, i) => (
-            <div key={i} className="flex items-center gap-2">
+            <div key={row.key} className="flex items-center gap-2">
               <button
                 data-testid={`split-cat-${i}`}
                 onClick={() => setPickerFor(i)}
@@ -83,7 +93,7 @@ export function SplitEditorSheet({ open, onOpenChange, tx }: { open: boolean; on
               <input
                 data-testid={`split-amount-${i}`}
                 value={row.amount}
-                onChange={(e) => setRows((r) => r.map((x, j) => (j === i ? { ...x, amount: e.target.value } : x)))}
+                onChange={(e) => setRowAmount(i, e.target.value)}
                 inputMode="decimal"
                 className="h-11 w-24 rounded-input border border-line bg-surface px-3 text-right text-[14px] text-ink outline-none"
               />
@@ -91,7 +101,7 @@ export function SplitEditorSheet({ open, onOpenChange, tx }: { open: boolean; on
                 <button
                   aria-label={t('action.delete')}
                   data-testid={`split-remove-${i}`}
-                  onClick={() => setRows((r) => r.filter((_, j) => j !== i))}
+                  onClick={() => removeRow(i)}
                   className="m-tap border-none bg-transparent text-ink-4"
                 >
                   <Icon name="close" size={16} />
@@ -102,7 +112,7 @@ export function SplitEditorSheet({ open, onOpenChange, tx }: { open: boolean; on
 
           <button
             data-testid="split-add-row"
-            onClick={() => setRows((r) => [...r, { catId: UNCATEGORIZED_ID, amount: '0,00' }])}
+            onClick={addRow}
             className="m-tap flex items-center gap-1.5 border-none bg-transparent px-1 py-1 text-[13px] font-medium text-accent-deep"
           >
             <Icon name="plus" size={16} />
@@ -135,9 +145,11 @@ export function SplitEditorSheet({ open, onOpenChange, tx }: { open: boolean; on
       </Sheet>
       <CategoryPicker
         open={pickerFor !== null}
-        onOpenChange={(next) => !next && setPickerFor(null)}
+        onOpenChange={(next) => {
+          if (!next) setPickerFor(null);
+        }}
         direction={tx.amountCents < 0 ? 'debit' : 'credit'}
-        selectedId={pickerFor !== null ? rows[pickerFor]?.catId : undefined}
+        selectedId={pickerFor === null ? undefined : rows[pickerFor]?.catId}
         onPick={(catId) => {
           if (pickerFor !== null) setRows((r) => r.map((x, j) => (j === pickerFor ? { ...x, catId } : x)));
         }}

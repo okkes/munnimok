@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { apiFetch, getApiCapabilities } from '@/lib/api';
 import { config } from '@/app/config';
-import { useLang } from '@/i18n';
+import { LOCALES, useLang } from '@/i18n';
 import type { Lang } from '@/i18n';
 import { useTheme } from '@/app/theme';
 import { destroyIdentityData } from '@/app/data';
@@ -181,7 +181,7 @@ export function SettingsScreen() {
               <span className="block text-[12px] text-ink-3">
                 {t('gc.lastSync')}:{' '}
                 {c.lastFetchAt
-                  ? new Date(c.lastFetchAt).toLocaleString(lang === 'en' ? 'en-GB' : lang === 'nl' ? 'nl-NL' : 'tr-TR', {
+                  ? new Date(c.lastFetchAt).toLocaleString(LOCALES[lang], {
                       day: 'numeric',
                       month: 'short',
                       hour: '2-digit',

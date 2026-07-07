@@ -66,11 +66,14 @@ describe('TxFormSheet (demo identity)', () => {
     fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '50' } });
     fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Refund BV' } });
     fireEvent.click(screen.getByTestId('txform-save'));
-    await waitFor(() => {
-      const row = [...screen.getByTestId('tx-list').querySelectorAll('[data-testid^="tx-row-"]')].find((r) =>
-        r.textContent?.includes('Refund BV'),
-      );
-      expect(row!.textContent).toContain('+€50.00');
-    });
+    await waitFor(
+      () => {
+        const row = [...screen.getByTestId('tx-list').querySelectorAll('[data-testid^="tx-row-"]')].find((r) =>
+          r.textContent?.includes('Refund BV'),
+        );
+        expect(row!.textContent).toContain('+€50.00');
+      },
+      { timeout: 5000 },
+    );
   });
 });

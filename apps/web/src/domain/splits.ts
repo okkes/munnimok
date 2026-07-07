@@ -33,7 +33,7 @@ export function primaryCatId(splits: TxSplit[]): string | undefined {
 export function balanceLastRow(amountCents: number, splits: TxSplit[]): TxSplit[] {
   if (splits.length === 0) return splits;
   const head = splits.slice(0, -1);
-  const last = splits[splits.length - 1];
+  const last = splits.at(-1)!;
   const open = Math.abs(amountCents) - splitsTotalCents(head);
   return [...head, { ...last, amountCents: Math.max(0, open) }];
 }

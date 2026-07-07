@@ -116,7 +116,22 @@ export function ReimburseSection({ tx }: { tx: TransactionRow }) {
 
       {/* pick a credit tx, then confirm the amount */}
       <Sheet open={pickerOpen} onOpenChange={setPickerOpen} title={t('reimb.link')} height={520}>
-        {!chosen ? (
+        {chosen ? (
+          <div className="flex flex-col gap-3 pt-1" data-testid="reimb-confirm">
+            <div className="text-[14px] text-ink">{cleanBankText(chosen.merchant)}</div>
+            <input
+              data-testid="reimb-amount"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              inputMode="decimal"
+              placeholder={t('reimb.amountLabel')}
+              className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none"
+            />
+            <Button data-testid="reimb-save" onClick={confirm}>
+              {t('action.save')}
+            </Button>
+          </div>
+        ) : (
           <div data-testid="reimb-picker">
             {(credits ?? []).map((credit) => (
               <button
@@ -135,21 +150,6 @@ export function ReimburseSection({ tx }: { tx: TransactionRow }) {
                 </span>
               </button>
             ))}
-          </div>
-        ) : (
-          <div className="flex flex-col gap-3 pt-1" data-testid="reimb-confirm">
-            <div className="text-[14px] text-ink">{cleanBankText(chosen.merchant)}</div>
-            <input
-              data-testid="reimb-amount"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              inputMode="decimal"
-              placeholder={t('reimb.amountLabel')}
-              className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none"
-            />
-            <Button data-testid="reimb-save" onClick={confirm}>
-              {t('action.save')}
-            </Button>
           </div>
         )}
       </Sheet>

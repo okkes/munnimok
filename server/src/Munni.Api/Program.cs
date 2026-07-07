@@ -19,7 +19,7 @@ builder.Services.AddValidatorsFromAssemblyContaining<Program>(ServiceLifetime.Si
 if (!string.IsNullOrEmpty(builder.Configuration["GoCardless:SecretId"]))
 {
     // fixed vendor endpoint, overridable for tests/self-hosted proxies
-    var gcBaseUrl = builder.Configuration["GoCardless:BaseUrl"] ?? "https://bankaccountdata.gocardless.com/api/v2/";
+    var gcBaseUrl = builder.Configuration["GoCardless:BaseUrl"] ?? "https://bankaccountdata.gocardless.com/api/v2/"; // NOSONAR(S1075) vendor API base
     builder.Services.AddHttpClient<IGoCardlessApi, GoCardlessApi>(client =>
         client.BaseAddress = new Uri(gcBaseUrl));
     builder.Services.AddHostedService<GcFetchService>();

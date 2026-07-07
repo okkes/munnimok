@@ -26,6 +26,53 @@ export interface ImportResult {
 
 const normalizeIban = (iban: string) => iban.replace(/\s/g, '').toUpperCase();
 
+async function createStatementAccount(
+  repo: Repo,
+  spaceId: string,
+  accountId: string,
+  stmt: CamtStatement,
+  iban: string,
+): Promise<void> {
+  await repo.upsert('account', spaceId, accountId, {
+    name: `Bank · ${iban.slice(-4)}`,
+    type: 'checking',
+    source: 'camt053',
+    currency: stmt.currency,
+    balanceCents: stmt.closingBalanceCents ?? 0,
+    iban: stmt.iban,
+  });
+}
+
+/** returns true when the entry was new (imported), false when it already existed */
+async function importEntry(
+  repo: Repo,
+  db: MunniDB,
+  spaceId: string,
+  accountId: string,
+  iban: string,
+  entry: CamtStatement['entries'][number],
+): Promise<boolean> {
+  const txId = uuidv5(`tx:${iban}:${entry.ref}`, IMPORT_NS);
+  if (await db.transactions.get(txId)) return false;
+
+  const direction = entry.amountCents < 0 ? 'debit' : 'credit';
+  const catId = predictCategory(`${entry.counterpartyName ?? ''} ${entry.description}`, direction) ?? UNCATEGORIZED_ID;
+  const txType: TxType = CATEGORY_BY_ID.get(catId)?.txTypes[0] ?? (direction === 'credit' ? 'income' : 'expense');
+  await repo.upsert('transaction', spaceId, txId, {
+    accountId,
+    date: entry.date,
+    amountCents: entry.amountCents,
+    currency: entry.currency,
+    merchant: entry.counterpartyName ?? entry.description.slice(0, 40),
+    description: entry.description,
+    catId,
+    txType,
+    needsReview: catId === UNCATEGORIZED_ID ? 1 : 0,
+    importRef: entry.ref,
+  });
+  return true;
+}
+
 /** Match statements to existing accounts by IBAN (creating where needed) and import entries idempotently. */
 export async function importCamtStatements(
   repo: Repo,
@@ -34,7 +81,7 @@ export async function importCamtStatements(
   statements: CamtStatement[],
 ): Promise<ImportResult> {
   const existing = await db.accounts.where('spaceId').equals(spaceId).filter((a) => a.deleted === 0).toArray();
-  const byIban = new Map(existing.filter((a) => a.iban).map((a) => [normalizeIban(a.iban!), a]));
+  const byIban = new Map(existing.flatMap((a) => (a.iban ? [[normalizeIban(a.iban), a] as const] : [])));
 
   let imported = 0;
   let skipped = 0;
@@ -44,46 +91,18 @@ export async function importCamtStatements(
     const iban = normalizeIban(stmt.iban);
     const match = byIban.get(iban);
     const accountId = match?.id ?? uuidv5(`acct:${iban}`, IMPORT_NS);
-
-    if (!match) {
-      await repo.upsert('account', spaceId, accountId, {
-        name: `Bank · ${iban.slice(-4)}`,
-        type: 'checking',
-        source: 'camt053',
-        currency: stmt.currency,
-        balanceCents: stmt.closingBalanceCents ?? 0,
-        iban: stmt.iban,
-      });
-    } else if (stmt.closingBalanceCents !== null) {
+    if (!match) await createStatementAccount(repo, spaceId, accountId, stmt, iban);
+    else if (stmt.closingBalanceCents !== null)
       await repo.upsert('account', spaceId, accountId, { balanceCents: stmt.closingBalanceCents });
-    }
 
     let txCount = 0;
     for (const entry of stmt.entries) {
-      const txId = uuidv5(`tx:${iban}:${entry.ref}`, IMPORT_NS);
-      if (await db.transactions.get(txId)) {
+      if (await importEntry(repo, db, spaceId, accountId, iban, entry)) {
+        imported++;
+        txCount++;
+      } else {
         skipped++;
-        continue;
       }
-      const direction = entry.amountCents < 0 ? 'debit' : 'credit';
-      const catId =
-        predictCategory(`${entry.counterpartyName ?? ''} ${entry.description}`, direction) ?? UNCATEGORIZED_ID;
-      const txType: TxType =
-        CATEGORY_BY_ID.get(catId)?.txTypes[0] ?? (direction === 'credit' ? 'income' : 'expense');
-      await repo.upsert('transaction', spaceId, txId, {
-        accountId,
-        date: entry.date,
-        amountCents: entry.amountCents,
-        currency: entry.currency,
-        merchant: entry.counterpartyName ?? entry.description.slice(0, 40) ?? '—',
-        description: entry.description,
-        catId,
-        txType,
-        needsReview: catId === UNCATEGORIZED_ID ? 1 : 0,
-        importRef: entry.ref,
-      });
-      imported++;
-      txCount++;
     }
 
     accounts.push({

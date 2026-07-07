@@ -58,11 +58,11 @@ export function TxDetailScreen() {
         }
         trailing={
           // bank-imported rows are the bank's truth — only manual txs are editable
-          !tx.importRef ? (
+          tx.importRef ? undefined : (
             <IconButton label={t('action.edit')} testId="tx-detail-edit" onClick={() => setEditOpen(true)}>
               <Icon name="pencil-outline" size={20} />
             </IconButton>
-          ) : undefined
+          )
         }
       />
       {!tx.importRef && <TxFormSheet open={editOpen} onOpenChange={setEditOpen} tx={tx} />}

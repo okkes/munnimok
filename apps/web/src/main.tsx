@@ -33,18 +33,19 @@ if (config.glitchtipDsn) {
 
 initPwa();
 
+// OIDC / bank-consent redirects land outside the hash router
+function AppEntry() {
+  if (isCallbackPath()) return <CallbackScreen />;
+  if (isGcCallbackPath) return <GcCallbackScreen />;
+  return <RouterProvider router={router} />;
+}
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ThemeProvider>
       <LangProvider>
         <LogtoAppProvider>
-          {isCallbackPath() ? (
-            <CallbackScreen />
-          ) : isGcCallbackPath ? (
-            <GcCallbackScreen />
-          ) : (
-            <RouterProvider router={router} />
-          )}
+          <AppEntry />
           <UpdateToast />
         </LogtoAppProvider>
       </LangProvider>

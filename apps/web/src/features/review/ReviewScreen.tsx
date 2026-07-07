@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useLang } from '@/i18n';
+import { directionOfTx } from '@/domain/categoryRules';
+import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { fmtCents } from '@/lib/money';
@@ -68,7 +69,7 @@ export function ReviewScreen() {
           <>
             <div className="mt-4 flex flex-1 flex-col items-center justify-center rounded-card border border-line bg-surface px-6 py-8 text-center" data-testid="review-card">
               <div className="text-sm text-ink-3">
-                {new Intl.DateTimeFormat(lang === 'en' ? 'en-GB' : lang === 'nl' ? 'nl-NL' : 'tr-TR', {
+                {new Intl.DateTimeFormat(LOCALES[lang], {
                   weekday: 'long',
                   day: 'numeric',
                   month: 'long',
@@ -103,7 +104,7 @@ export function ReviewScreen() {
         onOpenChange={setPickerOpen}
         selectedId={tx?.catId}
         onPick={recategorize}
-        direction={tx ? (tx.amountCents < 0 ? 'debit' : 'credit') : undefined}
+        direction={tx && directionOfTx(tx)}
       />
     </div>
   );
