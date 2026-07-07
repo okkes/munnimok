@@ -64,6 +64,12 @@ export const GROUPS = [
         desc: 'Expenses can link credit transactions as (partial) reimbursements: amounts are clamped to what is possible, the hero shows the net cost with the gross struck through, and unlinking restores it.',
         tags: ['state'],
       },
+      {
+        key: '35-tx-type-link',
+        title: 'Counter-account locks the type',
+        desc: 'Linking a counter-account derives the type from what that account is (savings → Saving, credit → Debt Payment); manual type choice locks, conflicting categories reset to Uncategorized for review, and unlinking restores free typing.',
+        tags: ['state', 'edge-case'],
+      },
     ],
   },
 ];

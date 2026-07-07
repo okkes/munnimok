@@ -85,6 +85,8 @@ export interface TransactionRow extends SyncEnvelope {
   /** deterministic id source for imported rows (bank tx id / CAMT entry ref) */
   importRef?: string;
   reimbursements?: TxReimbursement[];
+  /** counter-account for transfers/savings/debt payments — locks txType */
+  linkedAccountId?: string;
 }
 
 /** Local-only queue of ops not yet accepted by the server. */

@@ -13,6 +13,7 @@ import { CategoryPicker } from '@/features/categories/CategoryPicker';
 import { netAmountCents, totalReimbursedCents } from '@/domain/reimbursement';
 import { ReimburseSection } from './ReimburseSection';
 import { TxFormSheet } from './TxFormSheet';
+import { TxTypeSheet } from './TxTypeSheet';
 
 const DATE_FMT: Record<string, string> = { en: 'en-GB', nl: 'nl-NL', tr: 'tr-TR' };
 
@@ -22,6 +23,7 @@ export function TxDetailScreen() {
   const { txId } = useParams({ strict: false }) as { txId: string };
   const [pickerOpen, setPickerOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [typeOpen, setTypeOpen] = useState(false);
 
   const tx = useLiveQuery(() => db.transactions.get(txId), [txId]);
   const account = useLiveQuery(() => (tx ? db.accounts.get(tx.accountId) : undefined), [tx?.accountId]);
@@ -94,11 +96,16 @@ export function TxDetailScreen() {
             <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
           </button>
           <div className="mx-4 h-px bg-line-2" />
-          <div className="flex items-center gap-3 px-4 py-3.5 text-[15px] text-ink">
+          <button
+            data-testid="tx-detail-type-row"
+            onClick={() => setTypeOpen(true)}
+            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+          >
             <Icon name="bank-outline" size={20} color="var(--m-ink-3)" />
             <span className="flex-1 truncate">{account?.name ?? '—'}</span>
             <span className="text-xs text-ink-4">{t(`tx.type.${tx.txType}` as TranslationKey)}</span>
-          </div>
+            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+          </button>
           {tx.description && (
             <>
               <div className="mx-4 h-px bg-line-2" />
@@ -121,6 +128,7 @@ export function TxDetailScreen() {
       </div>
 
       <CategoryPicker open={pickerOpen} onOpenChange={setPickerOpen} selectedId={tx.catId} onPick={setCategory} />
+      <TxTypeSheet open={typeOpen} onOpenChange={setTypeOpen} tx={tx} />
     </div>
   );
 }
