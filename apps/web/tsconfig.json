@@ -20,5 +20,7 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src"]
+  "include": ["src"],
+  // scratch tests read local-only files (real bank data) and use node APIs
+  "exclude": ["src/**/*.scratch.test.ts"]
 }

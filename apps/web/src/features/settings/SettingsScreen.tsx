@@ -163,7 +163,7 @@ export function SettingsScreen() {
         </div>
 
         <div className="pt-6 pb-6 text-center text-[11px] text-ink-4">
-          munni · v1.0.0 · build {String(__BUILD_NUMBER__)}
+          munni · v{__APP_VERSION__} · build {String(__BUILD_NUMBER__)}
         </div>
       </div>
 

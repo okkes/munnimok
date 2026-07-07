@@ -2,8 +2,8 @@ import { defineConfig } from 'vitest/config';
 import path from 'node:path';
 
 export default defineConfig({
-  // vite.config injects the git commit count; tests use a stable stand-in
-  define: { __BUILD_NUMBER__: JSON.stringify('test') },
+  // vite.config injects the git commit count + package version; tests use stand-ins
+  define: { __BUILD_NUMBER__: JSON.stringify('test'), __APP_VERSION__: JSON.stringify('0.0.0-test') },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),
