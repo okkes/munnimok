@@ -2,7 +2,7 @@ name: Build & push images
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, dev]
     paths:
       - 'apps/web/**'
       - 'server/**'
@@ -27,7 +27,14 @@ jobs:
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 10.0.x
-      - run: dotnet test server/Munni.slnx
+      - run: dotnet test server/Munni.slnx --collect:"XPlat Code Coverage" --results-directory coverage
+      - name: Coverage summary
+        run: |
+          FILE=$(find coverage -name 'coverage.cobertura.xml' | head -1)
+          if [ -n "$FILE" ]; then
+            RATE=$(grep -o 'line-rate="[0-9.]*"' "$FILE" | head -1 | grep -o '[0-9.]*')
+            echo "### API line coverage: $(awk "BEGIN{printf \"%.1f%%\", $RATE*100}")" >> $GITHUB_STEP_SUMMARY
+          fi
 
   images:
     needs: api-tests
@@ -37,9 +44,20 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Compute build number
+      - name: Compute build number and channel
         id: meta
-        run: echo "build=$(git rev-list --count HEAD)" >> $GITHUB_OUTPUT
+        run: |
+          echo "build=$(git rev-list --count HEAD)" >> $GITHUB_OUTPUT
+          # master -> latest (production), dev -> dev (staging)
+          if [ "${GITHUB_REF_NAME}" = "dev" ]; then
+            echo "channel=dev" >> $GITHUB_OUTPUT
+            echo "api_url=${{ vars.VITE_API_URL_DEV || 'https://munni-test-api.okkes.synology.me' }}" >> $GITHUB_OUTPUT
+            echo "logto_app=${{ vars.VITE_LOGTO_APP_ID_DEV || '' }}" >> $GITHUB_OUTPUT
+          else
+            echo "channel=latest" >> $GITHUB_OUTPUT
+            echo "api_url=${{ vars.VITE_API_URL || 'https://munni-api.okkes.synology.me' }}" >> $GITHUB_OUTPUT
+            echo "logto_app=${{ vars.VITE_LOGTO_APP_ID || '' }}" >> $GITHUB_OUTPUT
+          fi
 
       - uses: docker/setup-buildx-action@v3
 
@@ -57,8 +75,8 @@ jobs:
           file: server/src/Munni.Api/Dockerfile
           push: true
           tags: |
-            ${{ env.REGISTRY }}/munni-api:latest
-            ${{ env.REGISTRY }}/munni-api:${{ steps.meta.outputs.build }}
+            ${{ env.REGISTRY }}/munni-api:${{ steps.meta.outputs.channel }}
+            ${{ env.REGISTRY }}/munni-api:${{ steps.meta.outputs.channel }}-${{ steps.meta.outputs.build }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -72,13 +90,13 @@ jobs:
           # sensible *.okkes.synology.me defaults until they are set
           build-args: |
             BUILD_NUMBER=${{ steps.meta.outputs.build }}
-            VITE_API_URL=${{ vars.VITE_API_URL || 'https://munni-api.okkes.synology.me' }}
+            VITE_API_URL=${{ steps.meta.outputs.api_url }}
             VITE_LOGTO_ENDPOINT=${{ vars.VITE_LOGTO_ENDPOINT || 'https://logto.okkes.synology.me' }}
-            VITE_LOGTO_APP_ID=${{ vars.VITE_LOGTO_APP_ID || '' }}
-            VITE_LOGTO_RESOURCE=${{ vars.VITE_LOGTO_RESOURCE || 'https://munni-api.okkes.synology.me' }}
+            VITE_LOGTO_APP_ID=${{ steps.meta.outputs.logto_app }}
+            VITE_LOGTO_RESOURCE=${{ steps.meta.outputs.api_url }}
             VITE_GLITCHTIP_DSN=${{ vars.VITE_GLITCHTIP_DSN || '' }}
           tags: |
-            ${{ env.REGISTRY }}/munni-web:latest
-            ${{ env.REGISTRY }}/munni-web:${{ steps.meta.outputs.build }}
+            ${{ env.REGISTRY }}/munni-web:${{ steps.meta.outputs.channel }}
+            ${{ env.REGISTRY }}/munni-web:${{ steps.meta.outputs.channel }}-${{ steps.meta.outputs.build }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

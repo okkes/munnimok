@@ -66,6 +66,25 @@ so it keeps working across reboots and even if Docker's stored login is
 ever wiped. The one-time manual `docker login` in step 2 is only needed
 for the very first pull via the Container Manager GUI.
 
+## Staging environment (dev branch)
+
+Pushes to the `dev` branch build `:dev`-tagged images. The staging stack
+(`docker-compose.staging.yml`) runs beside production with its own
+database, sharing the production Logto/GlitchTip containers:
+
+1. Reverse proxy: `munni-test.` → `localhost:8095`, `munni-test-api.` →
+   `localhost:8096` (same wildcard cert).
+2. Logto console: register a second SPA app for
+   `https://munni-test.<domain>` (redirect `/auth-callback`, post
+   sign-out `/`, CORS origin) and an API resource
+   `https://munni-test-api.<domain>`; put the app id in the repo's
+   Actions **Variables** as `VITE_LOGTO_APP_ID_DEV`.
+3. Start/update: `bash update.sh docker-compose.staging.yml` (own
+   scheduled task, or run on demand).
+
+Flow: feature work merges into `dev` → verify at munni-test → merge
+`dev` into `master` → production picks it up on the next update.
+
 ## Local full-stack test (before touching the NAS)
 
 Everything except HTTPS/reverse-proxy, on localhost:

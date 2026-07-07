@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, dev]
   schedule:
     - cron: '0 6 * * *'  # daily 6 AM UTC — full test suite + gallery refresh
   workflow_dispatch:
@@ -40,8 +40,8 @@ jobs:
       - run: npx playwright install --with-deps chromium
         working-directory: apps/web
 
-      # Unit tests (sync primitives, db layer)
-      - run: npx vitest run
+      # Unit tests with coverage (finance app: correctness paths must be covered)
+      - run: npx vitest run --coverage
         working-directory: apps/web
 
       # Sync API for the two-device e2e specs (they skip if this is down)
@@ -157,6 +157,8 @@ jobs:
           path: apps/web/dist
 
   deploy:
+    # Pages (app demo + gallery) only publishes from production
+    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
     environment:

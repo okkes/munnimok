@@ -1,0 +1,56 @@
+# munni STAGING stack (dev branch images) for the Synology NAS.
+# Runs beside production with its own database; shares the production
+# Logto + GlitchTip containers to keep NAS RAM in check (register a
+# separate Logto SPA app for the munni-test origin).
+#
+# DSM reverse proxy:
+#   munni-test.okkes.synology.me      -> localhost:8095
+#   munni-test-api.okkes.synology.me  -> localhost:8096
+#
+# Same .env as production. Update via:  bash update.sh docker-compose.staging.yml
+name: munni-staging
+services:
+  web:
+    image: ${REGISTRY:-ghcr.io/okkes}/munni-web:dev
+    restart: unless-stopped
+    ports:
+      - "8095:80"
+
+  api:
+    image: ${REGISTRY:-ghcr.io/okkes}/munni-api:dev
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Db: Host=postgres;Database=munni;Username=munni;Password=${POSTGRES_PASSWORD}
+      Db__AutoMigrate: "true"
+      Auth__Authority: https://logto.${DOMAIN}/oidc
+      Auth__Audience: https://munni-test-api.${DOMAIN}
+      Cors__Origins__0: https://munni-test.${DOMAIN}
+      GoCardless__SecretId: ${GOCARDLESS_SECRET_ID}
+      GoCardless__SecretKey: ${GOCARDLESS_SECRET_KEY}
+      Admin__Subs: ${ADMIN_SUBS:-}
+      Sentry__Dsn: ${API_SENTRY_DSN:-}
+      BUILD_NUMBER: dev
+    ports:
+      - "8096:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: munni
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: munni
+    volumes:
+      - pgdata_staging:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U munni"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata_staging:
