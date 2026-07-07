@@ -5,6 +5,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),
+      // Vite-only virtual module — stubbed for unit tests
+      'virtual:pwa-register': path.resolve(__dirname, 'src/test/pwa-register-stub.ts'),
     },
   },
   test: {
