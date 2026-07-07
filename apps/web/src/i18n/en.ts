@@ -776,6 +776,7 @@ export const en = {
   'friends.pendingSent': 'Sent requests',
   'friends.pendingReceived': 'Received requests',
   'friends.empty': 'No friends yet — share your ID to connect',
+  'space.invitedYou': '{name} invited you',
 } as const;
 
 export type TranslationKey = keyof typeof en;

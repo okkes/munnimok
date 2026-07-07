@@ -778,4 +778,5 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'friends.pendingSent': 'Verzonden verzoeken',
   'friends.pendingReceived': 'Ontvangen verzoeken',
   'friends.empty': 'Nog geen vrienden — deel je ID om te verbinden',
+  'space.invitedYou': '{name} heeft je uitgenodigd',
 };

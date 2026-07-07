@@ -778,4 +778,5 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'friends.pendingSent': 'Gönderilen istekler',
   'friends.pendingReceived': 'Alınan istekler',
   'friends.empty': 'Henüz arkadaş yok — bağlanmak için ID’ni paylaş',
+  'space.invitedYou': '{name} seni davet etti',
 };

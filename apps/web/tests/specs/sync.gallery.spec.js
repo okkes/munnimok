@@ -57,6 +57,57 @@ for (const V of VARIANTS) {
     await teardown(a.page, a.ctx, k('25-sync-devices'));
   });
 
+  test(`sync-a3 shared space: invite via UI, member data converges [${V.id}]`, async ({ browser }) => {
+    test.skip(!(await syncApiUp()), 'sync API not running');
+    test.setTimeout(150_000);
+    const run = Date.now();
+
+    // alice: create a space to share
+    const alice = await createPage(browser, V);
+    await base(alice.page, V, { userSub: `e2e-owner-${run}` });
+    await alice.page.click('[data-testid="tab-spaces"]');
+    await alice.page.click('[data-testid="spaces-add"]');
+    await alice.page.fill('[data-testid="space-create-name"]', 'Shared Home');
+    await alice.page.click('[data-testid="space-create-save"]');
+    await alice.page.waitForTimeout(3000); // push
+
+    // friendship: bob requests, alice accepts
+    const bob = await createPage(browser, V);
+    await base(bob.page, V, { userSub: `e2e-member-${run}` });
+    await alice.page.click('[data-testid="tab-settings"]');
+    await alice.page.click('[data-testid="settings-friends-row"]');
+    await expect(alice.page.locator('[data-testid="friends-copy-id"] span')).toHaveText(/^[0-9a-f]{8}-/, { timeout: 10000 });
+    const aliceId = (await alice.page.locator('[data-testid="friends-copy-id"] span').textContent()).trim();
+    await bob.page.click('[data-testid="tab-settings"]');
+    await bob.page.click('[data-testid="settings-friends-row"]');
+    await bob.page.fill('[data-testid="friends-add-input"]', aliceId);
+    await bob.page.click('[data-testid="friends-add-send"]');
+    await alice.page.click('[data-testid="friends-back"]');
+    await alice.page.click('[data-testid="settings-friends-row"]');
+    await alice.page.locator('[data-testid^="friends-accept-"]').click();
+    await alice.page.waitForTimeout(500);
+
+    // alice invites bob to the shared space via the members section
+    await alice.page.click('[data-testid="tab-spaces"]');
+    await alice.page.click('[data-testid="screen-spaces"] button:has-text("Shared Home") >> nth=0');
+    await alice.page.locator('[data-testid^="space-edit-"]:right-of(:text("Shared Home"))').first().click();
+    await alice.page.waitForSelector('[data-testid="space-members"]');
+    await shot(alice.page, k('33-space-share') + '--s1');
+    await alice.page.locator('[data-testid^="space-invite-"]').first().click();
+    await alice.page.waitForTimeout(800);
+
+    // bob: accept the invite banner; the shared space + its data arrive
+    await bob.page.click('[data-testid="tab-spaces"]');
+    await expect(bob.page.locator('[data-testid="space-invites"]')).toContainText('Shared Home', { timeout: 10000 });
+    await shot(bob.page, k('33-space-share') + '--s2');
+    await bob.page.locator('[data-testid^="space-invite-accept-"]').click();
+    await expect(bob.page.locator('[data-testid="screen-spaces"]')).toContainText('Shared Home', { timeout: 15000 });
+    await shot(bob.page, k('33-space-share'));
+
+    await teardown(bob.page, bob.ctx, k('33-space-share') + '--bob');
+    await teardown(alice.page, alice.ctx, k('33-space-share'));
+  });
+
   test(`sync-a2 personal space exists exactly once for a returning user [${V.id}]`, async ({ browser }) => {
     test.skip(!(await syncApiUp()), 'sync API not running');
     const sub = `e2e-solo-${Date.now()}`;

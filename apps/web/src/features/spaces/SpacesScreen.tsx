@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
+import { useSession } from '@/app/session';
+import { SpaceInvitesBanner, SpaceMembersSection } from './SpaceSharing';
 import type { SpaceRow } from '@/db/types';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
@@ -16,6 +18,8 @@ import { Sheet } from '@/ui/Sheet';
 export function SpacesScreen() {
   const { t } = useLang();
   const { db, repo, spaceId, setActiveSpace } = useData();
+  const identity = useSession((s) => s.identity);
+  const syncing = identity?.kind === 'user';
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<SpaceRow | null>(null);
   const [name, setName] = useState('');
@@ -71,6 +75,7 @@ export function SpacesScreen() {
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
+        {syncing && <SpaceInvitesBanner />}
         <div className="overflow-hidden rounded-card border border-line bg-surface">
           {(spaces ?? []).map((space, i) => {
             const active = space.id === spaceId;
@@ -132,7 +137,7 @@ export function SpacesScreen() {
       </Sheet>
 
       {/* Edit space */}
-      <Sheet open={!!editing} onOpenChange={(open) => !open && setEditing(null)} title={t('action.edit')} height={360}>
+      <Sheet open={!!editing} onOpenChange={(open) => !open && setEditing(null)} title={t('action.edit')} height={syncing ? 600 : 360}>
         <div className="flex flex-col gap-3 pt-1">
           <input
             data-testid="space-edit-name"
@@ -151,6 +156,7 @@ export function SpacesScreen() {
               {deleteError}
             </p>
           )}
+          {syncing && editing && <SpaceMembersSection spaceId={editing.id} spaceName={editing.name} />}
         </div>
       </Sheet>
     </div>

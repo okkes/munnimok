@@ -22,6 +22,17 @@ export const GROUPS = [
         desc: 'A returning user on a brand-new device pulls their existing personal space instead of creating a second one.',
         tags: ['edge-case'],
       },
+      {
+        key: '33-space-share',
+        title: 'Share a space end-to-end',
+        desc: 'Owner invites a friend from the space’s members sheet; the friend accepts the invite banner on the Spaces tab and the shared space (with its data) syncs in.',
+        tags: ['state'],
+        steps: [
+          'Owner: members sheet with invitable friend',
+          'Member: invite banner',
+          'Member: shared space arrived',
+        ],
+      },
     ],
   },
 ];
