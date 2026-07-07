@@ -42,10 +42,10 @@ export async function base(page, variant, opts = {}) {
     sessionStorage.clear();
     localStorage.setItem('munni_lang', v.lang);
     localStorage.setItem('munni_theme', v.dark ? 'dark' : 'light');
-    if (v.demo) sessionStorage.setItem('munni_session', JSON.stringify({ kind: 'demo' }));
+    if (v.demo) localStorage.setItem('munni_session', JSON.stringify({ kind: 'demo' }));
     if (v.demo) indexedDB.deleteDatabase('munni_demo'); // pristine seed every run
     if (v.userSub) {
-      sessionStorage.setItem('munni_session', JSON.stringify({ kind: 'user', sub: v.userSub, testAuth: true }));
+      localStorage.setItem('munni_session', JSON.stringify({ kind: 'user', sub: v.userSub, testAuth: true }));
     }
   }, { lang: variant.lang, dark: variant.dark, demo: !!opts.demo, userSub: opts.userSub ?? null });
   if (opts.extraSetup) await page.addInitScript(opts.extraSetup);

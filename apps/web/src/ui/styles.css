@@ -109,6 +109,7 @@
     margin: 0;
     padding: 0;
     height: 100%;
+    overflow: hidden;
     overscroll-behavior: none;
   }
   body {
@@ -118,8 +119,12 @@
     -webkit-font-smoothing: antialiased;
     -webkit-tap-highlight-color: transparent;
   }
+  /* fixed app frame: the document itself can never scroll, so the bottom
+     tab bar is always visible (Android URL-bar dance, iOS standalone). All
+     scrolling happens inside designated containers. */
   #root {
-    height: 100dvh;
+    position: fixed;
+    inset: 0;
   }
   /* prevent iOS zoom-on-focus */
   input,

@@ -10,11 +10,15 @@ export type Identity =
   | { kind: 'offline'; profileId: string }
   | { kind: 'user'; sub: string; testAuth?: boolean };
 
+// localStorage, deliberately: local-first means killing/restarting the app
+// (or the PWA process) must NOT sign you out — your data is on the device.
+// Only an explicit sign-out clears the identity. Logto tokens live in
+// localStorage too, so background token refresh survives restarts.
 const SS_KEY = 'munni_session';
 
 export function readSessionIdentity(): Identity | null {
   try {
-    const raw = sessionStorage.getItem(SS_KEY);
+    const raw = localStorage.getItem(SS_KEY) ?? sessionStorage.getItem(SS_KEY); // sessionStorage: pre-migration fallback
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Identity;
     if (parsed.kind === 'demo' || parsed.kind === 'offline' || parsed.kind === 'user') return parsed;
@@ -46,10 +50,11 @@ interface SessionState {
 export const useSession = create<SessionState>((set) => ({
   identity: readSessionIdentity(),
   login: (identity) => {
-    sessionStorage.setItem(SS_KEY, JSON.stringify(identity));
+    localStorage.setItem(SS_KEY, JSON.stringify(identity));
     set({ identity });
   },
   logout: () => {
+    localStorage.removeItem(SS_KEY);
     sessionStorage.removeItem(SS_KEY);
     set({ identity: null });
   },
