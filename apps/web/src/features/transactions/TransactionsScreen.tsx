@@ -4,6 +4,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import type { TransactionRow } from '@/db/types';
+import { filterTxs } from '@/domain/txFilter';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
 import { TxRow } from '@/ui/TxRow';
@@ -26,6 +27,14 @@ export function TransactionsScreen() {
   const { db, spaceId } = useData();
   const navigate = useNavigate();
   const [addOpen, setAddOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [accountFilter, setAccountFilter] = useState<string | undefined>();
+  const [reviewOnly, setReviewOnly] = useState(false);
+
+  const accounts = useLiveQuery(
+    () => db.accounts.where('spaceId').equals(spaceId).filter((a) => a.deleted === 0).toArray(),
+    [spaceId],
+  );
 
   const txs = useLiveQuery(
     () =>
@@ -56,8 +65,43 @@ export function TransactionsScreen() {
         }
       />
       <TxFormSheet open={addOpen} onOpenChange={setAddOpen} />
+      {/* search + filters */}
+      <div className="shrink-0 px-5 pb-1">
+        <input
+          data-testid="tx-search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={t('tx.searchPlaceholder')}
+          className="h-11 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+        />
+        <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+          <button
+            data-testid="tx-filter-review"
+            onClick={() => setReviewOnly((v) => !v)}
+            className={`m-tap shrink-0 rounded-full border px-3 py-1.5 text-[12px] ${
+              reviewOnly ? 'border-warning bg-warning-soft font-medium text-warning' : 'border-line bg-surface text-ink-2'
+            }`}
+          >
+            {t('review.confirm')}
+          </button>
+          {(accounts ?? []).map((a) => (
+            <button
+              key={a.id}
+              data-testid={`tx-filter-account-${a.id}`}
+              onClick={() => setAccountFilter((cur) => (cur === a.id ? undefined : a.id))}
+              className={`m-tap shrink-0 rounded-full border px-3 py-1.5 text-[12px] ${
+                accountFilter === a.id
+                  ? 'border-accent bg-accent-soft font-medium text-accent-deep'
+                  : 'border-line bg-surface text-ink-2'
+              }`}
+            >
+              {a.name}
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6" data-testid="tx-list">
-        {groupByDate(txs ?? []).map(([date, list]) => (
+        {groupByDate(filterTxs(txs ?? [], { query, accountId: accountFilter, onlyNeedsReview: reviewOnly })).map(([date, list]) => (
           <div key={date}>
             <div className="m-cap mt-4 mb-1 px-1">{fmtDay(date)}</div>
             <div className="rounded-card border border-line bg-surface px-3 py-1">

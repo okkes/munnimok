@@ -790,4 +790,5 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'reimb.of': '{a} van {b} terugbetaald',
   'reimb.net': 'Netto',
   'reimb.amountLabel': 'Te koppelen bedrag',
+  'tx.searchPlaceholder': 'Zoek transacties…',
 };

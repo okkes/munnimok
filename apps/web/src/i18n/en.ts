@@ -788,6 +788,7 @@ export const en = {
   'reimb.of': '{a} of {b} reimbursed',
   'reimb.net': 'Net',
   'reimb.amountLabel': 'Amount to link',
+  'tx.searchPlaceholder': 'Search transactions…',
 } as const;
 
 export type TranslationKey = keyof typeof en;

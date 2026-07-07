@@ -790,4 +790,5 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'reimb.of': '{b} tutarın {a} kadarı geri ödendi',
   'reimb.net': 'Net',
   'reimb.amountLabel': 'Bağlanacak tutar',
+  'tx.searchPlaceholder': 'İşlem ara…',
 };
