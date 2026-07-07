@@ -68,14 +68,18 @@ describe('SpacesScreen (demo identity)', () => {
 
     const { MunniDB } = await import('@/db/schema');
     const db = new MunniDB('munni_demo');
-    await waitFor(async () => {
-      const space = await db.spaces.get(id);
-      expect(space?.icon).toBe('briefcase-outline');
-      expect(space?.color).toBe('#3498DB');
-      expect(space?.currency).toBe('TRY');
-      expect(space?.periodType).toBe('week');
-      expect(space?.historyStartDate).toBe('2026-01-01');
-    });
+    // generous timeout: parallel suites slow the Dexie round-trip
+    await waitFor(
+      async () => {
+        const space = await db.spaces.get(id);
+        expect(space?.icon).toBe('briefcase-outline');
+        expect(space?.color).toBe('#3498DB');
+        expect(space?.currency).toBe('TRY');
+        expect(space?.periodType).toBe('week');
+        expect(space?.historyStartDate).toBe('2026-01-01');
+      },
+      { timeout: 5000 },
+    );
     db.close();
 
     // the list row shows the chosen icon color

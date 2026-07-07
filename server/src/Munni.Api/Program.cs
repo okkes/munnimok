@@ -5,6 +5,7 @@ using Munni.Api.Auth;
 using Munni.Api.Data;
 using Munni.Api.Admin;
 using Munni.Api.GoCardless;
+using Munni.Api.Push;
 using Munni.Api.Social;
 using Munni.Api.Sync;
 
@@ -16,6 +17,16 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddMemoryCache();
 // request-body validators (Validation/Validators.cs) — UI input is never trusted
 builder.Services.AddValidatorsFromAssemblyContaining<Program>(ServiceLifetime.Singleton);
+
+// web push: enabled when a VAPID key pair is configured
+var pushEnabled = !string.IsNullOrEmpty(builder.Configuration["Push:VapidPublicKey"])
+                  && !string.IsNullOrEmpty(builder.Configuration["Push:VapidPrivateKey"]);
+if (pushEnabled) builder.Services.AddSingleton<IPushSender, WebPushSender>();
+builder.Services.AddScoped(sp => new PushNotifier(
+    sp.GetRequiredService<AppDbContext>(),
+    sp.GetService<IPushSender>() ?? new NoopPushSender(),
+    sp.GetRequiredService<ILogger<PushNotifier>>()));
+
 if (!string.IsNullOrEmpty(builder.Configuration["GoCardless:SecretId"]))
 {
     // fixed vendor endpoint, overridable for tests/self-hosted proxies
@@ -87,10 +98,17 @@ app.MapGet("/health", () => Results.Ok(new
 {
     status = "ok",
     build = Environment.GetEnvironmentVariable("BUILD_NUMBER") ?? "dev",
-    capabilities = new { gocardless = gcEnabled, testAuth = app.Configuration.GetValue<bool>("Auth:TestMode") },
+    capabilities = new
+    {
+        gocardless = gcEnabled,
+        testAuth = app.Configuration.GetValue<bool>("Auth:TestMode"),
+        push = pushEnabled,
+        vapidPublicKey = app.Configuration["Push:VapidPublicKey"] ?? "",
+    },
 }));
 app.MapSync();
 app.MapSocial();
+app.MapPush();
 app.MapAdmin(gcEnabled);
 if (gcEnabled) app.MapGoCardless();
 

@@ -22,6 +22,9 @@ services:
       Cors__Origins__0: http://localhost:5173
       GoCardless__SecretId: ${GOCARDLESS_SECRET_ID:-}
       GoCardless__SecretKey: ${GOCARDLESS_SECRET_KEY:-}
+      Push__VapidPublicKey: ${PUSH_VAPID_PUBLIC_KEY:-}
+      Push__VapidPrivateKey: ${PUSH_VAPID_PRIVATE_KEY:-}
+      Push__Subject: ${PUSH_VAPID_SUBJECT:-mailto:admin@localhost}
       Admin__Subs: ${ADMIN_SUBS:-}
     ports:
       - "8180:8080"

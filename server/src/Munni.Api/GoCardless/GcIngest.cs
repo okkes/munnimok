@@ -20,6 +20,7 @@ public sealed partial class GcIngest(AppDbContext db)
         IReadOnlyList<GcBalance> balances,
         IReadOnlyList<GcTransaction> transactions)
     {
+        var accountOps = new List<SyncOpDto>();
         var ops = new List<SyncOpDto>();
         var counter = 0;
         string NextHlc() => ServerHlc.Now(counter++);
@@ -36,7 +37,7 @@ public sealed partial class GcIngest(AppDbContext db)
             ["iban"] = Json(linked.Iban),
         };
         if (balance is not null) accountFields["balanceCents"] = Json(ToCents(balance.BalanceAmount.Amount));
-        ops.Add(NewOp(space.Id, "account", linked.AccountEntityId, accountFields, NextHlc(), $"acct:{linked.GcAccountId}:{DateOnly.FromDateTime(DateTime.UtcNow)}"));
+        accountOps.Add(NewOp(space.Id, "account", linked.AccountEntityId, accountFields, NextHlc(), $"acct:{linked.GcAccountId}:{DateOnly.FromDateTime(DateTime.UtcNow)}"));
 
         foreach (var tx in transactions)
         {
@@ -67,6 +68,8 @@ public sealed partial class GcIngest(AppDbContext db)
         }
 
         var writer = new SyncWriter(db);
+        await writer.ApplyAsync(space, null, accountOps);
+        // returns NEW transactions only (account/balance refresh not counted)
         var (_, accepted) = await writer.ApplyAsync(space, null, ops);
         return accepted;
     }

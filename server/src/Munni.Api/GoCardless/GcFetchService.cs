@@ -54,6 +54,13 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
                 await db.SaveChangesAsync(ct);
                 if (logger.IsEnabled(LogLevel.Information))
                     logger.LogInformation("gc fetch {Iban}: {Accepted} new ops", linked.Iban, accepted);
+
+                // wake the members' devices: notification + data preload
+                if (accepted > 0)
+                {
+                    var notifier = scope.ServiceProvider.GetRequiredService<Push.PushNotifier>();
+                    await notifier.NotifyNewTransactionsAsync(linked.SpaceId, accepted, ct);
+                }
                 await Task.Delay(TimeSpan.FromSeconds(5), ct);
             }
             catch (HttpRequestException ex)

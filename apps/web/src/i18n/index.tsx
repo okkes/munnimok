@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
+import { mirrorLangForSw } from '@/lib/swBridge';
 import { en } from './en';
 import type { TranslationKey } from './en';
 import { nl } from './nl';
@@ -45,6 +46,8 @@ export function LangProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     document.documentElement.lang = lang;
+    // push notifications (service worker) must speak the app's language
+    mirrorLangForSw(lang);
   }, [lang]);
 
   const t = useCallback<TFunc>(

@@ -9,11 +9,22 @@ import { destroyIdentityData } from '@/app/data';
 import { oidcSignOut } from '@/app/authToken';
 import { useSession } from '@/app/session';
 import { AppBar } from '@/ui/AppBar';
+import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useData } from '@/app/data';
 import { Avatar } from '@/features/profile/ProfileScreen';
+import { disablePush, enablePush, getPushSubscription, pushSupported } from '@/lib/push';
+import {
+  biometricAvailable,
+  hashPin,
+  randomSalt,
+  readLockConfig,
+  registerBiometric,
+  validPin,
+  writeLockConfig,
+} from '@/features/lock/lock';
 
 function ProfileHeaderRow({ onClick }: { onClick: () => void }) {
   const { t } = useLang();
@@ -56,14 +67,78 @@ export function SettingsScreen() {
   const [connections, setConnections] = useState<
     { gcAccountId: string; iban: string; lastFetchAt: string | null }[] | null
   >(null);
+  const [vapidKey, setVapidKey] = useState('');
+  const [pushOn, setPushOn] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
+  const [lockOn, setLockOn] = useState(() => readLockConfig() !== null);
+  const [lockSheetOpen, setLockSheetOpen] = useState(false);
+  const [lockPin, setLockPin] = useState('');
+  const [lockPin2, setLockPin2] = useState('');
+  const [lockTimeout, setLockTimeout] = useState(60);
+  const [lockBioAvailable, setLockBioAvailable] = useState(false);
+  const [lockError, setLockError] = useState<string | null>(null);
 
   useEffect(() => {
     if (identity?.kind !== 'user') return;
-    void getApiCapabilities().then((caps) => setGcAvailable(caps.gocardless));
+    void getApiCapabilities().then((caps) => {
+      setGcAvailable(caps.gocardless);
+      if (caps.push && caps.vapidPublicKey && pushSupported()) setVapidKey(caps.vapidPublicKey);
+    });
+    void getPushSubscription().then((sub) => setPushOn(!!sub));
     void apiFetch('/admin/ping')
       .then((res) => setIsAdmin(res.ok))
       .catch(() => setIsAdmin(false));
   }, [identity?.kind]);
+
+  const toggleLock = async () => {
+    if (lockOn) {
+      // the user already proved themself at unlock time — direct disable
+      writeLockConfig(null);
+      setLockOn(false);
+      return;
+    }
+    setLockPin('');
+    setLockPin2('');
+    setLockTimeout(60);
+    setLockError(null);
+    setLockBioAvailable(await biometricAvailable());
+    setLockSheetOpen(true);
+  };
+
+  const saveLock = async () => {
+    if (!validPin(lockPin)) return;
+    if (lockPin !== lockPin2) {
+      setLockError(t('lock.pinMismatch'));
+      return;
+    }
+    // biometrics are best-effort: cancelled/unsupported leaves PIN-only
+    const credentialId = lockBioAvailable ? await registerBiometric() : null;
+    const pinSalt = randomSalt();
+    writeLockConfig({
+      enabled: true,
+      credentialId: credentialId ?? undefined,
+      pinSalt,
+      pinHash: await hashPin(lockPin, pinSalt),
+      timeoutSec: lockTimeout,
+    });
+    setLockOn(true);
+    setLockSheetOpen(false);
+  };
+
+  const togglePush = async () => {
+    if (pushBusy) return;
+    setPushBusy(true);
+    try {
+      if (pushOn) {
+        await disablePush();
+        setPushOn(false);
+      } else {
+        setPushOn(await enablePush(vapidKey));
+      }
+    } finally {
+      setPushBusy(false);
+    }
+  };
 
   const openConnections = () => {
     setConnectionsOpen(true);
@@ -153,6 +228,55 @@ export function SettingsScreen() {
             </span>
             <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
           </button>
+          {vapidKey && (
+            <>
+              <div className="mx-4 h-px bg-line-2" />
+              <button
+                data-testid="settings-push-toggle"
+                onClick={() => void togglePush()}
+                disabled={pushBusy}
+                className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+              >
+                <Icon name={pushOn ? 'bell-ring-outline' : 'bell-outline'} size={20} />
+                <span className="min-w-0 flex-1">
+                  <span className="block">{t('settings.notifications')}</span>
+                  <span className="block text-[11px] text-ink-4">
+                    {typeof Notification !== 'undefined' && Notification.permission === 'denied'
+                      ? t('push.denied')
+                      : t('push.sub')}
+                  </span>
+                </span>
+                <span
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                    pushOn ? 'bg-accent-soft text-accent-deep' : 'bg-bg-2 text-ink-4'
+                  }`}
+                  data-testid="settings-push-state"
+                >
+                  {pushOn ? 'ON' : 'OFF'}
+                </span>
+              </button>
+            </>
+          )}
+          <div className="mx-4 h-px bg-line-2" />
+          <button
+            data-testid="settings-lock-toggle"
+            onClick={() => void toggleLock()}
+            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+          >
+            <Icon name={lockOn ? 'lock' : 'lock-open-variant-outline'} size={20} />
+            <span className="min-w-0 flex-1">
+              <span className="block">{t('lock.title')}</span>
+              <span className="block text-[11px] text-ink-4">{t('lock.sub')}</span>
+            </span>
+            <span
+              className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                lockOn ? 'bg-accent-soft text-accent-deep' : 'bg-bg-2 text-ink-4'
+              }`}
+              data-testid="settings-lock-state"
+            >
+              {lockOn ? 'ON' : 'OFF'}
+            </span>
+          </button>
           <div className="mx-4 h-px bg-line-2" />
           <button
             data-testid="settings-theme-toggle"
@@ -219,6 +343,58 @@ export function SettingsScreen() {
             </span>
           </div>
         ))}
+      </Sheet>
+
+      {/* App lock setup: backup PIN + re-lock timeout (+ biometrics when available) */}
+      <Sheet open={lockSheetOpen} onOpenChange={setLockSheetOpen} title={t('lock.setup')} height={440}>
+        <div className="flex flex-col gap-3 pt-1">
+          {!lockBioAvailable && <p className="text-[12px] text-ink-3">{t('lock.notSupported')}</p>}
+          <input
+            data-testid="lock-setup-pin"
+            type="password"
+            inputMode="numeric"
+            autoComplete="off"
+            value={lockPin}
+            onChange={(e) => setLockPin(e.target.value.replaceAll(/\D/g, ''))}
+            placeholder={t('lock.pinLabel')}
+            className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+          />
+          <input
+            data-testid="lock-setup-pin2"
+            type="password"
+            inputMode="numeric"
+            autoComplete="off"
+            value={lockPin2}
+            onChange={(e) => setLockPin2(e.target.value.replaceAll(/\D/g, ''))}
+            placeholder={t('lock.pinConfirm')}
+            className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+          />
+          <div className="m-cap px-1">{t('lock.timeout')}</div>
+          <div className="flex gap-2">
+            {[0, 60, 300, 900].map((seconds) => (
+              <button
+                key={seconds}
+                data-testid={`lock-timeout-${seconds}`}
+                onClick={() => setLockTimeout(seconds)}
+                className={`m-tap flex-1 rounded-full border px-2 py-1.5 text-[11px] ${
+                  lockTimeout === seconds
+                    ? 'border-accent bg-accent-soft font-medium text-accent-deep'
+                    : 'border-line bg-surface text-ink-2'
+                }`}
+              >
+                {t(`lock.timeout.${seconds}` as Parameters<typeof t>[0])}
+              </button>
+            ))}
+          </div>
+          {lockError && (
+            <p className="text-center text-[13px] text-negative" data-testid="lock-setup-error">
+              {lockError}
+            </p>
+          )}
+          <Button data-testid="lock-setup-save" onClick={() => void saveLock()} disabled={!validPin(lockPin)}>
+            {t('action.save')}
+          </Button>
+        </div>
       </Sheet>
 
       <Sheet open={langSheetOpen} onOpenChange={setLangSheetOpen} title={t('lang.title')}>

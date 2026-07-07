@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Munni.Api.GoCardless;
+using Munni.Api.Push;
 using Munni.Api.Social;
 
 namespace Munni.Api.Data;
@@ -15,6 +16,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<GcLinkedAccount> GcLinkedAccounts => Set<GcLinkedAccount>();
     public DbSet<Friendship> Friendships => Set<Friendship>();
     public DbSet<SpaceInvite> SpaceInvites => Set<SpaceInvite>();
+    public DbSet<PushSubscriptionRow> PushSubscriptions => Set<PushSubscriptionRow>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -51,6 +53,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         {
             e.HasKey(x => x.Id);
             e.HasIndex(x => x.ToUserId);
+        });
+        modelBuilder.Entity<PushSubscriptionRow>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.Endpoint).IsUnique();
+            e.HasIndex(x => x.UserId);
         });
     }
 }

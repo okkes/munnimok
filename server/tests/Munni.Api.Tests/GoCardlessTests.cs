@@ -80,7 +80,7 @@ public class GcIngestTests
 
         var accepted = await new GcIngest(db).IngestAccountAsync(space, Linked("s1"), Details, Balances, Transactions);
         await db.SaveChangesAsync();
-        Assert.Equal(4, accepted); // 1 account + 3 txs
+        Assert.Equal(3, accepted); // new TRANSACTIONS only — the account op is not counted
 
         var account = await db.EntityRows.FindAsync("s1", "account", ImportIds.AccountId("NL69INGB0123456789"));
         var accountData = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(account!.DataJson)!;

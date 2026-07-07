@@ -69,6 +69,20 @@ public sealed class PushRequestValidator : AbstractValidator<PushRequest>
     }
 }
 
+public sealed class SubscribeRequestValidator : AbstractValidator<Munni.Api.Push.SubscribeRequest>
+{
+    public SubscribeRequestValidator()
+    {
+        RuleFor(r => r.Endpoint)
+            .NotEmpty()
+            .MaximumLength(2048)
+            .Must(url => Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps)
+            .WithMessage("endpoint must be an absolute https URL");
+        RuleFor(r => r.P256dh).NotEmpty().MaximumLength(256);
+        RuleFor(r => r.Auth).NotEmpty().MaximumLength(128);
+    }
+}
+
 public sealed class CreateRequisitionRequestValidator : AbstractValidator<CreateRequisitionRequest>
 {
     public CreateRequisitionRequestValidator()

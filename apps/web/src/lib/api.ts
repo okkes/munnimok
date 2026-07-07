@@ -19,6 +19,8 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
 
 export interface ApiCapabilities {
   gocardless: boolean;
+  push?: boolean;
+  vapidPublicKey?: string;
 }
 
 let capabilities: ApiCapabilities | null = null;

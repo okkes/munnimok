@@ -10,7 +10,7 @@ export default defineConfig(({ mode }) => {
   let buildNumber: number | string = 'dev';
   if (mode === 'production') {
     try {
-      buildNumber = parseInt(execSync('git rev-list --count HEAD').toString().trim(), 10);
+      buildNumber = Number.parseInt(execSync('git rev-list --count HEAD').toString().trim(), 10); // NOSONAR(S4036) build-time git, trusted environment
     } catch {
       buildNumber = 0;
     }
@@ -21,6 +21,10 @@ export default defineConfig(({ mode }) => {
       react(),
       tailwindcss(),
       VitePWA({
+        // custom worker: precaching + Web Push handlers (src/sw.ts)
+        strategies: 'injectManifest',
+        srcDir: 'src',
+        filename: 'sw.ts',
         registerType: 'prompt',
         includeAssets: ['favicon.ico', 'icon-192.png', 'icon-512.png'],
         manifest: {
@@ -41,7 +45,7 @@ export default defineConfig(({ mode }) => {
             { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
           ],
         },
-        workbox: {
+        injectManifest: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
           maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         },

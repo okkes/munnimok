@@ -17,6 +17,8 @@ import { ThemeProvider } from '@/app/theme';
 import { router } from '@/app/router';
 import { CallbackScreen, LogtoAppProvider, isCallbackPath } from '@/features/auth/logto';
 import { GcCallbackScreen } from '@/features/accounts/BankConnect';
+import { LockScreen } from '@/features/lock/LockScreen';
+import { initLockWatcher, useLock } from '@/features/lock/lock';
 import { UpdateToast } from '@/ui/UpdateToast';
 
 const isGcCallbackPath = window.location.pathname.endsWith('/gc-callback');
@@ -32,9 +34,13 @@ if (config.glitchtipDsn) {
 }
 
 initPwa();
+initLockWatcher();
 
 // OIDC / bank-consent redirects land outside the hash router
 function AppEntry() {
+  // the app lock gates everything, including login and callbacks
+  const locked = useLock((s) => s.locked);
+  if (locked) return <LockScreen />;
   if (isCallbackPath()) return <CallbackScreen />;
   if (isGcCallbackPath) return <GcCallbackScreen />;
   return <RouterProvider router={router} />;

@@ -837,6 +837,23 @@ export const en = {
   'profile.userId': 'User ID',
   'profile.email': 'Email',
   'profile.saved': 'Saved',
+  'push.sub': 'Get notified when new bank transactions arrive',
+  'push.denied': 'Notifications are blocked in your browser settings',
+  'lock.title': 'App lock',
+  'lock.sub': 'Require fingerprint / face to open the app',
+  'lock.setup': 'Turn on app lock',
+  'lock.pinLabel': 'Backup PIN (4-8 digits)',
+  'lock.pinConfirm': 'Repeat PIN',
+  'lock.pinMismatch': 'PINs do not match',
+  'lock.timeout': 'Lock after',
+  'lock.timeout.0': 'Immediately',
+  'lock.timeout.60': '1 minute',
+  'lock.timeout.300': '5 minutes',
+  'lock.timeout.900': '15 minutes',
+  'lock.unlock': 'Unlock',
+  'lock.usePin': 'Use PIN',
+  'lock.wrongPin': 'Wrong PIN',
+  'lock.notSupported': 'Biometric unlock is not available on this device — a PIN will be used',
 } as const;
 
 export type TranslationKey = keyof typeof en;
