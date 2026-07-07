@@ -800,4 +800,5 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'onboarding.country': 'Ülke',
   'onboarding.countrySearch': 'Ülke ara…',
   'action.skip': 'Atla',
+  'friends.requiresAccount': 'Arkadaşlar için hesap gerekir — başkalarıyla bağlanmak için giriş yap',
 };

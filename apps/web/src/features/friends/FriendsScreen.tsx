@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useSession } from '@/app/session';
 import { useLang } from '@/i18n';
 import { apiFetch } from '@/lib/api';
 import { AppBar, IconButton } from '@/ui/AppBar';
@@ -27,6 +28,9 @@ const short = (id: string) => `${id.slice(0, 8)}…`;
 /** Friends management (user identities only): the gateway to shared spaces. */
 export function FriendsScreen() {
   const { t } = useLang();
+  // friends are server-mediated: demo/offline identities must stay fully
+  // local, so the screen shows a sign-in note and makes zero network calls
+  const isUser = useSession((s) => s.identity?.kind === 'user');
   const [me, setMe] = useState<{ userId: string } | null>(null);
   const [data, setData] = useState<FriendsResponse | null>(null);
   const [addId, setAddId] = useState('');
@@ -38,9 +42,10 @@ export function FriendsScreen() {
   }, []);
 
   useEffect(() => {
+    if (!isUser) return;
     void apiFetch('/me').then(async (res) => res.ok && setMe(await res.json()));
     void reload();
-  }, [reload]);
+  }, [reload, isUser]);
 
   const sendRequest = async () => {
     const id = addId.trim();
@@ -88,6 +93,12 @@ export function FriendsScreen() {
           </IconButton>
         }
       />
+      {!isUser && (
+        <div className="flex flex-1 items-center justify-center px-8 text-center text-[14px] text-ink-3" data-testid="friends-requires-account">
+          {t('friends.requiresAccount')}
+        </div>
+      )}
+      {isUser && (
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         {/* my id */}
         <div className="mt-2 rounded-card border border-line bg-surface px-4 py-3">
@@ -161,6 +172,7 @@ export function FriendsScreen() {
           )}
         </div>
       </div>
+      )}
     </div>
   );
 }

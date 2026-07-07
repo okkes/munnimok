@@ -798,6 +798,7 @@ export const en = {
   'onboarding.country': 'Country',
   'onboarding.countrySearch': 'Search country…',
   'action.skip': 'Skip',
+  'friends.requiresAccount': 'Friends need an account — sign in to connect with others',
 } as const;
 
 export type TranslationKey = keyof typeof en;

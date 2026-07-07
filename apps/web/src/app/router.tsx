@@ -74,7 +74,7 @@ const friendsRoute = createRoute({ getParentRoute: () => appRoute, path: '/frien
 const adminRoute = createRoute({ getParentRoute: () => appRoute, path: '/admin', component: AdminScreen });
 const onboardingRoute = createRoute({ getParentRoute: () => appRoute, path: '/onboarding', component: OnboardingScreen });
 
-const routeTree = rootRoute.addChildren([
+export const routeTree = rootRoute.addChildren([
   loginRoute,
   appRoute.addChildren([
     indexRoute,

@@ -800,4 +800,5 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'onboarding.country': 'Land',
   'onboarding.countrySearch': 'Zoek land…',
   'action.skip': 'Overslaan',
+  'friends.requiresAccount': 'Voor vrienden heb je een account nodig — log in om met anderen te verbinden',
 };
