@@ -2,6 +2,7 @@ import { CATEGORY_BY_ID, UNCATEGORIZED_ID } from '@/domain/categories';
 import { useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
 import { fmtCents } from '@/lib/money';
+import { cleanBankText } from '@/lib/text';
 import type { TransactionRow } from '@/db/types';
 import { Icon } from './Icon';
 
@@ -25,7 +26,7 @@ export function TxRow({ tx, onClick }: { tx: TransactionRow; onClick?: () => voi
         <Icon name={cat.icon} size={20} />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[14px] font-medium text-ink">{tx.merchant}</span>
+        <span className="block truncate text-[14px] font-medium text-ink">{cleanBankText(tx.merchant)}</span>
         <span className="block truncate text-xs text-ink-3">
           {t(cat.nameKey as TranslationKey)}
           {tx.needsReview === 1 && (

@@ -6,6 +6,7 @@ import { useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
 import { useData } from '@/app/data';
 import { fmtCents } from '@/lib/money';
+import { cleanBankText } from '@/lib/text';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
 import { CategoryPicker } from '@/features/categories/CategoryPicker';
@@ -40,7 +41,7 @@ export function TxDetailScreen() {
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-tx-detail">
       <AppBar
-        title={tx.merchant}
+        title={cleanBankText(tx.merchant)}
         leading={
           <IconButton label={t('action.back')} testId="tx-detail-back" onClick={() => window.history.back()}>
             <Icon name="chevron-left" size={24} />
@@ -82,7 +83,7 @@ export function TxDetailScreen() {
           {tx.description && (
             <>
               <div className="mx-4 h-px bg-line-2" />
-              <div className="px-4 py-3.5 font-mono text-xs text-ink-3">{tx.description}</div>
+              <div className="px-4 py-3.5 font-mono text-xs text-ink-3">{cleanBankText(tx.description)}</div>
             </>
           )}
         </div>

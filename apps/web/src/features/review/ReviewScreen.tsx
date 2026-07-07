@@ -5,6 +5,7 @@ import { useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
 import { useData } from '@/app/data';
 import { fmtCents } from '@/lib/money';
+import { cleanBankText } from '@/lib/text';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
@@ -73,9 +74,9 @@ export function ReviewScreen() {
                   month: 'long',
                 }).format(new Date(tx.date))}
               </div>
-              <div className="m-h2 mt-2 text-ink">{tx.merchant}</div>
+              <div className="m-h2 mt-2 text-ink">{cleanBankText(tx.merchant)}</div>
               <div className="m-num mt-1 text-3xl text-ink">{fmtCents(tx.amountCents, tx.currency, lang, { sign: true })}</div>
-              {tx.description && <div className="mt-2 font-mono text-xs text-ink-4">{tx.description}</div>}
+              {tx.description && <div className="mt-2 font-mono text-xs text-ink-4">{cleanBankText(tx.description)}</div>}
               <button
                 data-testid="review-category-chip"
                 onClick={() => setPickerOpen(true)}

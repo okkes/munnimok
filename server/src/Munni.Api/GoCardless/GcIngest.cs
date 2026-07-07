@@ -43,8 +43,8 @@ public sealed class GcIngest(AppDbContext db)
             if (reference is null || tx.BookingDate is null) continue;
             var cents = ToCents(tx.TransactionAmount.Amount);
             var direction = cents < 0 ? "debit" : "credit";
-            var counterparty = cents < 0 ? tx.CreditorName : tx.DebtorName;
-            var description = tx.RemittanceInformationUnstructured ?? "";
+            var counterparty = CleanBankText(cents < 0 ? tx.CreditorName : tx.DebtorName);
+            var description = CleanBankText(tx.RemittanceInformationUnstructured) ?? "";
             var predicted = KeywordPredictor.Predict($"{counterparty} {description}", direction);
 
             var fields = new Dictionary<string, JsonElement>
@@ -78,4 +78,14 @@ public sealed class GcIngest(AppDbContext db)
     private static int ToCents(string amount) => (int)Math.Round(decimal.Parse(amount, System.Globalization.CultureInfo.InvariantCulture) * 100);
 
     private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max];
+
+    /// <summary>ING et al. embed literal &lt;br&gt; separators in remittance text.</summary>
+    private static string? CleanBankText(string? text)
+    {
+        if (string.IsNullOrEmpty(text)) return text;
+        var cleaned = System.Text.RegularExpressions.Regex.Replace(text, @"<br\s*/?>", " · ",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        cleaned = System.Text.RegularExpressions.Regex.Replace(cleaned, @"</?[a-zA-Z][^>]*>", " ");
+        return System.Text.RegularExpressions.Regex.Replace(cleaned, @"\s+", " ").Trim();
+    }
 }

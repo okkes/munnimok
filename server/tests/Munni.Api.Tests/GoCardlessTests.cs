@@ -56,7 +56,7 @@ public class GcIngestTests
     private static readonly List<GcBalance> Balances = [new(new GcAmount("1234.56", "EUR"), "closingBooked")];
     private static readonly List<GcTransaction> Transactions =
     [
-        new("BANKREF-1", null, "2026-07-05", null, new GcAmount("-42.10", "EUR"), "Albert Heijn", null, "AH 1350 AMSTERDAM"),
+        new("BANKREF-1", null, "2026-07-05", null, new GcAmount("-42.10", "EUR"), "Albert Heijn", null, "AH 1350<br>AMSTERDAM<br>Pasvolgnr 001"),
         new("BANKREF-2", null, "2026-07-04", null, new GcAmount("2200.00", "EUR"), null, "Werkgever BV", "SALARIS JUNI"),
         new("BANKREF-3", null, "2026-07-03", null, new GcAmount("-9.99", "EUR"), "Onbekend XQZ", null, "QWERTY"),
     ];
@@ -91,6 +91,8 @@ public class GcIngestTests
         var txData = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(groceriesTx!.DataJson)!;
         Assert.Equal("groceries", txData["catId"].GetString());
         Assert.Equal(0, txData["needsReview"].GetInt32());
+        // ING-style <br> separators are sanitized on ingest
+        Assert.Equal("AH 1350 · AMSTERDAM · Pasvolgnr 001", txData["description"].GetString());
 
         var unknownTx = await db.EntityRows.FindAsync("s1", "transaction", ImportIds.TransactionId("NL69INGB0123456789", "BANKREF-3"));
         var unknownData = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(unknownTx!.DataJson)!;
