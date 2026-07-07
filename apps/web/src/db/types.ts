@@ -59,6 +59,13 @@ export interface TxSplit {
   amountCents: number;
 }
 
+/** money received back against an expense (owned by the expense side) */
+export interface TxReimbursement {
+  /** the credit transaction that pays (part of) this expense back */
+  txId: string;
+  amountCents: number;
+}
+
 export interface TransactionRow extends SyncEnvelope {
   id: string;
   spaceId: string;
@@ -77,7 +84,7 @@ export interface TransactionRow extends SyncEnvelope {
   counterIban?: string;
   /** deterministic id source for imported rows (bank tx id / CAMT entry ref) */
   importRef?: string;
-  reimbursedByTxIds?: string[];
+  reimbursements?: TxReimbursement[];
 }
 
 /** Local-only queue of ops not yet accepted by the server. */

@@ -785,4 +785,9 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'admin.stale': 'verouderd',
   'admin.deleteSelected': 'Geselecteerde verwijderen ({n})',
   'admin.spaces': '{n} spaces',
+  'reimb.section': 'Terugbetalingen',
+  'reimb.link': 'Terugbetaling koppelen',
+  'reimb.of': '{a} van {b} terugbetaald',
+  'reimb.net': 'Netto',
+  'reimb.amountLabel': 'Te koppelen bedrag',
 };

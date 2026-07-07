@@ -785,4 +785,9 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'admin.stale': 'eski',
   'admin.deleteSelected': 'Seçilenleri sil ({n})',
   'admin.spaces': '{n} alan',
+  'reimb.section': 'Geri ödemeler',
+  'reimb.link': 'Geri ödeme bağla',
+  'reimb.of': '{b} tutarın {a} kadarı geri ödendi',
+  'reimb.net': 'Net',
+  'reimb.amountLabel': 'Bağlanacak tutar',
 };

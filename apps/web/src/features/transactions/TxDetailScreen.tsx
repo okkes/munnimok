@@ -10,6 +10,8 @@ import { cleanBankText } from '@/lib/text';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
 import { CategoryPicker } from '@/features/categories/CategoryPicker';
+import { netAmountCents, totalReimbursedCents } from '@/domain/reimbursement';
+import { ReimburseSection } from './ReimburseSection';
 import { TxFormSheet } from './TxFormSheet';
 
 const DATE_FMT: Record<string, string> = { en: 'en-GB', nl: 'nl-NL', tr: 'tr-TR' };
@@ -63,8 +65,13 @@ export function TxDetailScreen() {
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <div className="flex flex-col items-center py-6 text-center">
           <div className="m-num text-4xl text-ink" data-testid="tx-detail-amount">
-            {fmtCents(tx.amountCents, tx.currency, lang, { sign: true })}
+            {fmtCents(netAmountCents(tx), tx.currency, lang, { sign: true })}
           </div>
+          {totalReimbursedCents(tx) > 0 && (
+            <div className="m-num mt-0.5 text-sm text-ink-4 line-through" data-testid="tx-detail-gross">
+              {fmtCents(tx.amountCents, tx.currency, lang, { sign: true })}
+            </div>
+          )}
           <div className="mt-1 text-sm text-ink-3">
             {fmtDay.format(new Date(tx.date))}
             {tx.time ? ` · ${tx.time}` : ''}
@@ -99,6 +106,8 @@ export function TxDetailScreen() {
             </>
           )}
         </div>
+
+        <ReimburseSection tx={tx} />
 
         <div className="m-cap mt-5 mb-1 px-1">{t('tx.notes')}</div>
         <textarea

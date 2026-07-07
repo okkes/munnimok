@@ -56,7 +56,7 @@ export async function seedDemoIfNeeded(repo: Repo): Promise<void> {
       splits: tx.splits,
       txType: txTypeFor(tx.cat),
       needsReview: tx.needsReview ? 1 : 0,
-      reimbursedByTxIds: tx.reimbursements?.map((r) => r.txId),
+      reimbursements: tx.reimbursements?.map((r) => ({ txId: r.txId, amountCents: r.amountCents })),
     });
   }
 

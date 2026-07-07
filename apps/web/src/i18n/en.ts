@@ -783,6 +783,11 @@ export const en = {
   'admin.stale': 'stale',
   'admin.deleteSelected': 'Delete selected ({n})',
   'admin.spaces': '{n} spaces',
+  'reimb.section': 'Reimbursements',
+  'reimb.link': 'Link reimbursement',
+  'reimb.of': '{a} of {b} reimbursed',
+  'reimb.net': 'Net',
+  'reimb.amountLabel': 'Amount to link',
 } as const;
 
 export type TranslationKey = keyof typeof en;

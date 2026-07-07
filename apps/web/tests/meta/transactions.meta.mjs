@@ -58,6 +58,12 @@ export const GROUPS = [
         desc: 'Manual transactions get a pencil in the detail header; amount, name, date, account and category are editable. Bank-imported rows stay read-only (their data is the bank’s truth).',
         tags: ['state', 'edge-case'],
       },
+      {
+        key: '34-tx-reimburse',
+        title: 'Link a reimbursement',
+        desc: 'Expenses can link credit transactions as (partial) reimbursements: amounts are clamped to what is possible, the hero shows the net cost with the gross struck through, and unlinking restores it.',
+        tags: ['state'],
+      },
     ],
   },
 ];

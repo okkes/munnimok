@@ -95,6 +95,30 @@ for (const V of VARIANTS) {
     await teardown(page, ctx, k('28-tx-edit'));
   });
 
+  test(`tx-a7 link and unlink a reimbursement [${V.id}]`, async ({ browser }) => {
+    const { page, ctx } = await createPage(browser, V);
+    await base(page, V, { demo: true });
+    await openFirstReviewTx(page); // dm100: Amazon.nl -28.99
+    // link the salary credit, capped automatically at the open remainder
+    await page.click('[data-testid="reimb-add"]');
+    await page.waitForSelector('[data-testid="reimb-picker"]');
+    await page.locator('[data-testid^="reimb-pick-"]').first().click();
+    await expect(page.locator('[data-testid="reimb-amount"]')).toHaveValue('28,99'); // clamped prefill
+    await page.fill('[data-testid="reimb-amount"]', '10,00');
+    await page.click('[data-testid="reimb-save"]');
+    await page.waitForTimeout(500);
+    // net −18.99, gross struck through, summary line
+    await expect(page.locator('[data-testid="tx-detail-amount"]')).toContainText('18.99');
+    await expect(page.locator('[data-testid="tx-detail-gross"]')).toContainText('28.99');
+    await expect(page.locator('[data-testid="reimb-summary"]')).toContainText('10.00');
+    await shot(page, k('34-tx-reimburse'));
+    // unlink restores the gross amount
+    await page.locator('[data-testid^="reimb-unlink-"]').click();
+    await expect(page.locator('[data-testid="tx-detail-amount"]')).toContainText('28.99');
+    await expect(page.locator('[data-testid="tx-detail-gross"]')).toHaveCount(0);
+    await teardown(page, ctx, k('34-tx-reimburse'));
+  });
+
   test(`tx-a4 notes persist [${V.id}]`, async ({ browser }) => {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V, { demo: true });
