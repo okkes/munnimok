@@ -5,7 +5,7 @@ import { config } from '@/app/config';
 import { LOCALES, useLang } from '@/i18n';
 import type { Lang } from '@/i18n';
 import { useTheme } from '@/app/theme';
-import { destroyIdentityData } from '@/app/data';
+import { destroyIdentityData, useData } from '@/app/data';
 import { oidcSignOut } from '@/app/authToken';
 import { useSession } from '@/app/session';
 import { AppBar } from '@/ui/AppBar';
@@ -13,7 +13,6 @@ import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useData } from '@/app/data';
 import { Avatar } from '@/features/profile/ProfileScreen';
 import { disablePush, enablePush, getPushSubscription, pushSupported } from '@/lib/push';
 import {

@@ -18,6 +18,12 @@ const SPACE_ICONS = [
 const SPACE_COLORS = ['#08372B', '#3498DB', '#27AE60', '#9B59B6', '#E74C3C', '#F39C12', '#16A085', '#E91E63'];
 const CURRENCIES = ['EUR', 'USD', 'GBP', 'TRY', 'CHF', 'SEK', 'NOK', 'DKK', 'PLN'];
 const PERIODS: SpacePeriodType[] = ['month', 'week', 'biweekly'];
+const PERIOD_KEYS = {
+  month: 'space.periodMonthly',
+  week: 'space.periodWeekly',
+  biweekly: 'space.periodBiweekly',
+  custom: 'space.periodMonthly',
+} as const;
 
 /**
  * Spaces: separate bookkeeping areas, shared with other people or not.
@@ -257,7 +263,7 @@ export function SpacesScreen() {
                   periodType === p ? 'border-accent bg-accent-soft font-medium text-accent-deep' : 'border-line bg-surface text-ink-2'
                 }`}
               >
-                {p === 'month' ? t('space.periodMonthly') : p === 'week' ? t('space.periodWeekly') : t('space.periodBiweekly')}
+                {t(PERIOD_KEYS[p])}
               </button>
             ))}
           </div>

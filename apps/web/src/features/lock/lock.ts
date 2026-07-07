@@ -40,8 +40,7 @@ export function writeLockConfig(config: LockConfig | null): void {
 const toHex = (buffer: ArrayBuffer) =>
   [...new Uint8Array(buffer)].map((b) => b.toString(16).padStart(2, '0')).join('');
 
-export const randomSalt = (): string =>
-  toHex(crypto.getRandomValues(new Uint8Array(16)).buffer as ArrayBuffer);
+export const randomSalt = (): string => toHex(crypto.getRandomValues(new Uint8Array(16)).buffer);
 
 export async function hashPin(pin: string, salt: string): Promise<string> {
   const data = new TextEncoder().encode(`${salt}:${pin}`);
@@ -52,7 +51,8 @@ export const validPin = (pin: string): boolean => /^\d{4,8}$/.test(pin);
 
 // ── WebAuthn platform authenticator ────────────────────────────────────
 const b64url = (buffer: ArrayBuffer) =>
-  btoa(String.fromCharCode(...new Uint8Array(buffer))).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '');
+  // '=' is base64 padding and only ever appears at the end
+  btoa(String.fromCodePoint(...new Uint8Array(buffer))).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
 
 const fromB64url = (value: string) =>
   Uint8Array.from(atob(value.replaceAll('-', '+').replaceAll('_', '/')), (c) => c.codePointAt(0)!);
@@ -100,7 +100,7 @@ export async function verifyBiometric(credentialId: string): Promise<boolean> {
     const assertion = await navigator.credentials.get({
       publicKey: {
         challenge: crypto.getRandomValues(new Uint8Array(32)),
-        allowCredentials: [{ type: 'public-key', id: fromB64url(credentialId) as BufferSource }],
+        allowCredentials: [{ type: 'public-key', id: fromB64url(credentialId) }],
         userVerification: 'required',
         timeout: 60_000,
       },
