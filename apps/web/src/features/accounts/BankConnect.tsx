@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useLogto } from '@logto/react';
 import { useLang } from '@/i18n';
+import { config, logtoConfigured } from '@/app/config';
 import { useData } from '@/app/data';
 import { apiFetch } from '@/lib/api';
 import { Icon } from '@/ui/Icon';
@@ -104,12 +106,40 @@ export function BankConnectSheet({ open, onOpenChange }: { open: boolean; onOpen
   );
 }
 
-/** rendered at /gc-callback (outside the hash router) after the bank redirect */
+/**
+ * rendered at /gc-callback (outside the hash router) after the bank
+ * redirect. With Logto configured we must wait for the SDK to restore the
+ * session before calling the API — firing immediately loses the race and
+ * 401s.
+ */
 export function GcCallbackScreen() {
-  const { t } = useLang();
-  const [state, setState] = useState<'working' | 'done' | 'failed'>('working');
+  return logtoConfigured ? <GcCallbackWithLogto /> : <GcCallbackInner bearer={null} />;
+}
+
+function GcCallbackWithLogto() {
+  const { isLoading, isAuthenticated, getAccessToken } = useLogto();
+  const [bearer, setBearer] = useState<string | null | 'pending'>('pending');
 
   useEffect(() => {
+    if (isLoading) return;
+    if (!isAuthenticated) {
+      setBearer(null); // no session — inner screen will fail gracefully
+      return;
+    }
+    void getAccessToken(config.logto.resource || undefined).then((token) => setBearer(token ?? null));
+  }, [isLoading, isAuthenticated, getAccessToken]);
+
+  if (bearer === 'pending') return <GcCallbackShell state="working" />;
+  return <GcCallbackInner bearer={bearer} />;
+}
+
+function GcCallbackInner({ bearer }: { bearer: string | null }) {
+  const [state, setState] = useState<'working' | 'done' | 'failed'>('working');
+  const started = useRef(false);
+
+  useEffect(() => {
+    if (started.current) return; // StrictMode double-mount guard
+    started.current = true;
     void (async () => {
       const reference =
         new URLSearchParams(window.location.search).get('ref') ?? sessionStorage.getItem('munni_gc_ref');
@@ -118,7 +148,9 @@ export function GcCallbackScreen() {
         return;
       }
       try {
-        const res = await apiFetch(`/gocardless/requisitions/${reference}/complete`, { method: 'POST' });
+        const headers: Record<string, string> = {};
+        if (bearer) headers.Authorization = `Bearer ${bearer}`;
+        const res = await apiFetch(`/gocardless/requisitions/${reference}/complete`, { method: 'POST', headers });
         if (!res.ok) throw new Error(String(res.status));
         sessionStorage.removeItem('munni_gc_ref');
         setState('done');
@@ -126,7 +158,13 @@ export function GcCallbackScreen() {
         setState('failed');
       }
     })();
-  }, []);
+  }, [bearer]);
+
+  return <GcCallbackShell state={state} />;
+}
+
+function GcCallbackShell({ state }: { state: 'working' | 'done' | 'failed' }) {
+  const { t } = useLang();
 
   return (
     <div className="flex h-dvh flex-col items-center justify-center gap-4 bg-bg px-6 text-center" data-testid="screen-gc-callback">
