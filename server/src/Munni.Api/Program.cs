@@ -54,8 +54,17 @@ var app = builder.Build();
 if (app.Configuration.GetValue<bool>("Db:AutoMigrate"))
 {
     using var scope = app.Services.CreateScope();
-    await scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.EnsureCreatedAsync();
+    // real migrations: schema evolves in place across releases
+    await scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.MigrateAsync();
 }
+
+// handled errors keep their CORS headers — unhandled exceptions wipe the
+// response and the browser misreports them as CORS failures
+app.UseExceptionHandler(errorApp => errorApp.Run(async http =>
+{
+    http.Response.StatusCode = 500;
+    await http.Response.WriteAsJsonAsync(new { error = "internal error" });
+}));
 
 app.UseCors();
 app.UseAuthentication();
