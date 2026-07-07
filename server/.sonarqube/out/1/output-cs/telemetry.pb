@@ -1,1 +1,0 @@
->R1/src/tests/Munni.Api.Tests/Munni.Api.Tests.csprojòCSharp14

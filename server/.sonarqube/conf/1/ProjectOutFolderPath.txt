@@ -1,1 +1,0 @@
-/src/.sonarqube/out/1

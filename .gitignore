@@ -20,3 +20,6 @@ bin/
 obj/
 **/coverage/
 *.scratch.test.ts
+
+# SonarScanner for .NET working files
+server/.sonarqube/
