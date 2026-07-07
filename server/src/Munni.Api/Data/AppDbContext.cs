@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Munni.Api.GoCardless;
+using Munni.Api.Social;
 
 namespace Munni.Api.Data;
 
@@ -12,6 +13,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<EntityRow> EntityRows => Set<EntityRow>();
     public DbSet<GcRequisition> GcRequisitions => Set<GcRequisition>();
     public DbSet<GcLinkedAccount> GcLinkedAccounts => Set<GcLinkedAccount>();
+    public DbSet<Friendship> Friendships => Set<Friendship>();
+    public DbSet<SpaceInvite> SpaceInvites => Set<SpaceInvite>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -39,6 +42,16 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasKey(x => x.GcAccountId);
             e.HasIndex(x => x.SpaceId);
         });
+        b.Entity<Friendship>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.UserAId, x.UserBId }).IsUnique();
+        });
+        b.Entity<SpaceInvite>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.ToUserId);
+        });
     }
 }
 
@@ -48,6 +61,8 @@ public class User
     /// <summary>OIDC subject (Logto) or test-mode identifier.</summary>
     public required string Sub { get; set; }
     public string? Email { get; set; }
+    /// <summary>shown to friends/space members; set by the client after login</summary>
+    public string? DisplayName { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 

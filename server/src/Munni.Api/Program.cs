@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Munni.Api.Auth;
 using Munni.Api.Data;
 using Munni.Api.GoCardless;
+using Munni.Api.Social;
 using Munni.Api.Sync;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -83,6 +84,7 @@ app.MapGet("/health", () => Results.Ok(new
     capabilities = new { gocardless = gcEnabled },
 }));
 app.MapSync();
+app.MapSocial();
 if (gcEnabled) app.MapGoCardless();
 
 app.Run();
