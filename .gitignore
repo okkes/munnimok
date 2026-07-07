@@ -18,3 +18,4 @@ playwright-report/
 !**/env/.env.example
 bin/
 obj/
+**/coverage/
