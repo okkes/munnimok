@@ -779,4 +779,10 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'friends.pendingReceived': 'Alınan istekler',
   'friends.empty': 'Henüz arkadaş yok — bağlanmak için ID’ni paylaş',
   'space.invitedYou': '{name} seni davet etti',
+  'admin.title': 'Yönetim',
+  'admin.users': 'Kullanıcılar',
+  'admin.requisitions': 'Banka bağlantıları (GoCardless)',
+  'admin.stale': 'eski',
+  'admin.deleteSelected': 'Seçilenleri sil ({n})',
+  'admin.spaces': '{n} alan',
 };

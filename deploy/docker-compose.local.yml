@@ -4,6 +4,7 @@
 #   docker compose --env-file deploy/env/.env.local -f deploy/docker-compose.local.yml up -d --build
 #
 # Then follow "Local full-stack test" in deploy/README.md.
+name: munni-local
 services:
   api:
     build:
@@ -21,6 +22,7 @@ services:
       Cors__Origins__0: http://localhost:5173
       GoCardless__SecretId: ${GOCARDLESS_SECRET_ID:-}
       GoCardless__SecretKey: ${GOCARDLESS_SECRET_KEY:-}
+      Admin__Subs: ${ADMIN_SUBS:-}
     ports:
       - "8180:8080"
     depends_on:
@@ -61,3 +63,5 @@ services:
 
 volumes:
   pgdata_local:
+    # fixed name: survives the compose-project rename (pre-existing data)
+    name: deploy_pgdata_local

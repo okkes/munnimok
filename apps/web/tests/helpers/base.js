@@ -54,11 +54,13 @@ export async function base(page, variant, opts = {}) {
   await page.waitForSelector(authed ? '[data-testid="tab-home"]' : '[data-testid="screen-login"]');
 }
 
-// True when the docker-compose.test.yml API is reachable.
+// True when the docker-compose.test.yml API (header test-auth) is reachable.
 export async function syncApiUp() {
   try {
-    const res = await fetch('http://localhost:8180/health', { signal: AbortSignal.timeout(2000) });
-    return res.ok;
+    const res = await fetch('http://localhost:8181/health', { signal: AbortSignal.timeout(2000) });
+    if (!res.ok) return false;
+    const body = await res.json();
+    return body.capabilities?.testAuth === true;
   } catch {
     return false;
   }

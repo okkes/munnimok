@@ -779,4 +779,10 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'friends.pendingReceived': 'Ontvangen verzoeken',
   'friends.empty': 'Nog geen vrienden — deel je ID om te verbinden',
   'space.invitedYou': '{name} heeft je uitgenodigd',
+  'admin.title': 'Beheer',
+  'admin.users': 'Gebruikers',
+  'admin.requisitions': 'Bankverbindingen (GoCardless)',
+  'admin.stale': 'verouderd',
+  'admin.deleteSelected': 'Geselecteerde verwijderen ({n})',
+  'admin.spaces': '{n} spaces',
 };

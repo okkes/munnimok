@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.EntityFrameworkCore;
 using Munni.Api.Auth;
 using Munni.Api.Data;
+using Munni.Api.Admin;
 using Munni.Api.GoCardless;
 using Munni.Api.Social;
 using Munni.Api.Sync;
@@ -81,10 +82,11 @@ app.MapGet("/health", () => Results.Ok(new
 {
     status = "ok",
     build = Environment.GetEnvironmentVariable("BUILD_NUMBER") ?? "dev",
-    capabilities = new { gocardless = gcEnabled },
+    capabilities = new { gocardless = gcEnabled, testAuth = app.Configuration.GetValue<bool>("Auth:TestMode") },
 }));
 app.MapSync();
 app.MapSocial();
+app.MapAdmin(gcEnabled);
 if (gcEnabled) app.MapGoCardless();
 
 app.Run();

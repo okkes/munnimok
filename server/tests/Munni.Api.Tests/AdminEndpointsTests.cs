@@ -1,0 +1,138 @@
+using System.Net;
+using System.Net.Http.Json;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Munni.Api.Admin;
+using Munni.Api.Data;
+using Munni.Api.GoCardless;
+
+namespace Munni.Api.Tests;
+
+/// <summary>Fake GoCardless with two requisitions, one unknown locally (stale).</summary>
+public sealed class FakeGoCardless : IGoCardlessApi
+{
+    public List<string> Deleted { get; } = [];
+    public List<GcRequisitionListItem> Requisitions { get; } =
+    [
+        new("req-known", "LN", "ING_INGBNL2A", DateTimeOffset.UtcNow.AddDays(-2), null, ["acc-1"]),
+        new("req-stale", "CR", "ING_INGBNL2A", DateTimeOffset.UtcNow.AddDays(-9), null, []),
+    ];
+
+    public Task<IReadOnlyList<GcRequisitionListItem>> ListRequisitionsAsync(CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<GcRequisitionListItem>>(Requisitions);
+
+    public Task DeleteRequisitionAsync(string requisitionId, CancellationToken ct = default)
+    {
+        Deleted.Add(requisitionId);
+        Requisitions.RemoveAll(r => r.Id == requisitionId);
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<GcInstitution>> GetInstitutionsAsync(string country, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<GcInstitution>>([]);
+    public Task<GcRequisitionCreated> CreateRequisitionAsync(string institutionId, string redirect, string reference, CancellationToken ct = default) =>
+        throw new NotImplementedException();
+    public Task<GcRequisitionStatus> GetRequisitionAsync(string requisitionId, CancellationToken ct = default) =>
+        throw new NotImplementedException();
+    public Task<GcAccountDetails> GetAccountDetailsAsync(string gcAccountId, CancellationToken ct = default) =>
+        throw new NotImplementedException();
+    public Task<IReadOnlyList<GcBalance>> GetBalancesAsync(string gcAccountId, CancellationToken ct = default) =>
+        throw new NotImplementedException();
+    public Task<IReadOnlyList<GcTransaction>> GetTransactionsAsync(string gcAccountId, DateOnly? from, CancellationToken ct = default) =>
+        throw new NotImplementedException();
+}
+
+public class AdminApiFactory : WebApplicationFactory<Program>
+{
+    public FakeGoCardless Gc { get; } = new();
+
+    protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
+    {
+        builder.UseSetting("Auth:TestMode", "true");
+        builder.UseSetting("Db:AutoMigrate", "false");
+        builder.UseSetting("GoCardless:SecretId", "test"); // enables admin GC routes
+        builder.UseSetting("Admin:Subs", "the-admin, another-admin");
+        builder.ConfigureServices(services =>
+        {
+            foreach (var d in services
+                         .Where(d =>
+                             d.ServiceType == typeof(DbContextOptions<AppDbContext>) ||
+                             d.ServiceType == typeof(DbContextOptions) ||
+                             d.ServiceType == typeof(AppDbContext) ||
+                             d.ServiceType == typeof(IGoCardlessApi) ||
+                             d.ServiceType == typeof(Microsoft.Extensions.Hosting.IHostedService) && d.ImplementationType == typeof(GcFetchService) ||
+                             d.ServiceType.Name.Contains("IDbContextOptionsConfiguration"))
+                         .ToList())
+            {
+                services.Remove(d);
+            }
+            services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase("admin-tests"));
+            services.AddSingleton<IGoCardlessApi>(Gc);
+        });
+    }
+}
+
+public class AdminEndpointsTests : IClassFixture<AdminApiFactory>
+{
+    private readonly AdminApiFactory _factory;
+
+    public AdminEndpointsTests(AdminApiFactory factory) => _factory = factory;
+
+    private HttpClient ClientFor(string sub)
+    {
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-User-Sub", sub);
+        return client;
+    }
+
+    [Fact]
+    public async Task NonAdminIsForbiddenEverywhere()
+    {
+        var user = ClientFor("regular-user");
+        Assert.Equal(HttpStatusCode.Forbidden, (await user.GetAsync("/admin/ping")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await user.GetAsync("/admin/users")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await user.GetAsync("/admin/gocardless/requisitions")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await user.DeleteAsync("/admin/gocardless/requisitions/req-x")).StatusCode);
+    }
+
+    [Fact]
+    public async Task AdminSeesUsersAndRequisitionsWithStaleFlag_AndDeletes()
+    {
+        var admin = ClientFor("the-admin");
+        Assert.True((await admin.GetAsync("/admin/ping")).IsSuccessStatusCode);
+
+        // seed a local record matching req-known
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var owner = new User { Id = Guid.NewGuid(), Sub = "the-owner" };
+            db.Users.Add(owner);
+            db.GcRequisitions.Add(new GcRequisition
+            {
+                Id = Guid.NewGuid(),
+                UserId = owner.Id,
+                SpaceId = "s1",
+                InstitutionId = "ING_INGBNL2A",
+                RequisitionId = "req-known",
+                Status = "linked",
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var users = await admin.GetFromJsonAsync<List<AdminUserDto>>("/admin/users");
+        Assert.Contains(users!, u => u.Sub == "the-owner");
+
+        var requisitions = await admin.GetFromJsonAsync<List<AdminRequisitionDto>>("/admin/gocardless/requisitions");
+        Assert.Equal(2, requisitions!.Count);
+        Assert.True(requisitions.Single(r => r.RequisitionId == "req-stale").Stale);
+        Assert.False(requisitions.Single(r => r.RequisitionId == "req-known").Stale);
+        Assert.Equal("the-owner", requisitions.Single(r => r.RequisitionId == "req-known").OwnerSub);
+
+        // delete the stale one: GC called, list shrinks
+        Assert.True((await admin.DeleteAsync("/admin/gocardless/requisitions/req-stale")).IsSuccessStatusCode);
+        Assert.Contains("req-stale", _factory.Gc.Deleted);
+        var after = await admin.GetFromJsonAsync<List<AdminRequisitionDto>>("/admin/gocardless/requisitions");
+        Assert.Single(after!);
+    }
+}

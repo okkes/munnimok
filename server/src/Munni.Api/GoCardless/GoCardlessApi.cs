@@ -47,11 +47,21 @@ public sealed record GcTransaction(
     [property: JsonPropertyName("debtorName")] string? DebtorName,
     [property: JsonPropertyName("remittanceInformationUnstructured")] string? RemittanceInformationUnstructured);
 
+public sealed record GcRequisitionListItem(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("institution_id")] string InstitutionId,
+    [property: JsonPropertyName("created")] DateTimeOffset? Created,
+    [property: JsonPropertyName("reference")] string? Reference,
+    [property: JsonPropertyName("accounts")] List<string> Accounts);
+
 public interface IGoCardlessApi
 {
     Task<IReadOnlyList<GcInstitution>> GetInstitutionsAsync(string country, CancellationToken ct = default);
     Task<GcRequisitionCreated> CreateRequisitionAsync(string institutionId, string redirect, string reference, CancellationToken ct = default);
     Task<GcRequisitionStatus> GetRequisitionAsync(string requisitionId, CancellationToken ct = default);
+    Task<IReadOnlyList<GcRequisitionListItem>> ListRequisitionsAsync(CancellationToken ct = default);
+    Task DeleteRequisitionAsync(string requisitionId, CancellationToken ct = default);
     Task<GcAccountDetails> GetAccountDetailsAsync(string gcAccountId, CancellationToken ct = default);
     Task<IReadOnlyList<GcBalance>> GetBalancesAsync(string gcAccountId, CancellationToken ct = default);
     Task<IReadOnlyList<GcTransaction>> GetTransactionsAsync(string gcAccountId, DateOnly? from, CancellationToken ct = default);
@@ -117,6 +127,19 @@ public sealed class GoCardlessApi(HttpClient http, IConfiguration config) : IGoC
 
     public Task<GcRequisitionStatus> GetRequisitionAsync(string requisitionId, CancellationToken ct = default) =>
         GetAsync<GcRequisitionStatus>($"requisitions/{requisitionId}/", ct);
+
+    private sealed record RequisitionList([property: JsonPropertyName("results")] List<GcRequisitionListItem> Results);
+
+    public async Task<IReadOnlyList<GcRequisitionListItem>> ListRequisitionsAsync(CancellationToken ct = default) =>
+        (await GetAsync<RequisitionList>("requisitions/?limit=100", ct)).Results;
+
+    public async Task DeleteRequisitionAsync(string requisitionId, CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Delete, $"requisitions/{requisitionId}/");
+        request.Headers.Authorization = new("Bearer", await GetTokenAsync(ct));
+        var response = await http.SendAsync(request, ct);
+        response.EnsureSuccessStatusCode();
+    }
 
     private sealed record DetailsEnvelope([property: JsonPropertyName("account")] GcAccountDetails Account);
 

@@ -24,6 +24,7 @@ export function SettingsScreen() {
   const { identity, logout } = useSession();
   const navigate = useNavigate();
   const [gcAvailable, setGcAvailable] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [connectionsOpen, setConnectionsOpen] = useState(false);
   const [connections, setConnections] = useState<
     { gcAccountId: string; iban: string; lastFetchAt: string | null }[] | null
@@ -32,6 +33,9 @@ export function SettingsScreen() {
   useEffect(() => {
     if (identity?.kind !== 'user') return;
     void getApiCapabilities().then((caps) => setGcAvailable(caps.gocardless));
+    void apiFetch('/admin/ping')
+      .then((res) => setIsAdmin(res.ok))
+      .catch(() => setIsAdmin(false));
   }, [identity?.kind]);
 
   const openConnections = () => {
@@ -131,6 +135,20 @@ export function SettingsScreen() {
             <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
           </button>
         </div>
+
+        {isAdmin && (
+          <div className="mt-4 overflow-hidden rounded-card border border-line bg-surface">
+            <button
+              data-testid="settings-admin-row"
+              onClick={() => void navigate({ to: '/admin' })}
+              className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+            >
+              <Icon name="shield-crown-outline" size={20} />
+              <span className="flex-1">{t('admin.title')}</span>
+              <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+            </button>
+          </div>
+        )}
 
         <div className="mt-4 overflow-hidden rounded-card border border-line bg-surface">
           <button

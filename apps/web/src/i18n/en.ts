@@ -777,6 +777,12 @@ export const en = {
   'friends.pendingReceived': 'Received requests',
   'friends.empty': 'No friends yet — share your ID to connect',
   'space.invitedYou': '{name} invited you',
+  'admin.title': 'Admin',
+  'admin.users': 'Users',
+  'admin.requisitions': 'Bank connections (GoCardless)',
+  'admin.stale': 'stale',
+  'admin.deleteSelected': 'Delete selected ({n})',
+  'admin.spaces': '{n} spaces',
 } as const;
 
 export type TranslationKey = keyof typeof en;

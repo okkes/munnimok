@@ -26,6 +26,8 @@ services:
       Cors__Origins__0: https://munni.${DOMAIN}
       GoCardless__SecretId: ${GOCARDLESS_SECRET_ID}
       GoCardless__SecretKey: ${GOCARDLESS_SECRET_KEY}
+      # comma-separated OIDC subs that may open the in-app admin area
+      Admin__Subs: ${ADMIN_SUBS:-}
       Sentry__Dsn: ${API_SENTRY_DSN:-}
       BUILD_NUMBER: ${TAG:-latest}
     ports:
