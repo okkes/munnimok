@@ -11,6 +11,32 @@ import { useSession } from '@/app/session';
 import { AppBar } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { useData } from '@/app/data';
+import { Avatar } from '@/features/profile/ProfileScreen';
+
+function ProfileHeaderRow({ onClick }: { onClick: () => void }) {
+  const { t } = useLang();
+  const { db } = useData();
+  const profile = useLiveQuery(
+    async () => (await db.meta.get('profile'))?.value as { name?: string; picture?: string } | undefined,
+    [],
+  );
+  return (
+    <button
+      data-testid="settings-profile-row"
+      onClick={onClick}
+      className="m-tap mb-4 flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3.5 text-left"
+    >
+      <Avatar picture={profile?.picture} size={44} />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[15px] font-semibold text-ink">{profile?.name ?? t('profile.title')}</span>
+        <span className="block text-[12px] text-ink-3">{t('profile.title')}</span>
+      </span>
+      <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+    </button>
+  );
+}
 
 const LANGS: { code: Lang; labelKey: 'lang.en' | 'lang.nl' | 'lang.tr'; badge: string }[] = [
   { code: 'en', labelKey: 'lang.en', badge: 'EN' },
@@ -65,6 +91,7 @@ export function SettingsScreen() {
     <div className="m-fade flex h-full flex-col" data-testid="screen-settings">
       <AppBar large title={t('screen.settings')} />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
+        <ProfileHeaderRow onClick={() => void navigate({ to: '/profile' })} />
         <div className="overflow-hidden rounded-card border border-line bg-surface">
           <button
             data-testid="settings-accounts-row"

@@ -63,6 +63,8 @@ public class User
     public string? Email { get; set; }
     /// <summary>shown to friends/space members; set by the client after login</summary>
     public string? DisplayName { get; set; }
+    /// <summary>avatar preset id ("icon|color"), chosen on the profile screen</summary>
+    public string? Picture { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 

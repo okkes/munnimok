@@ -10,6 +10,7 @@ public sealed class UpdateMeRequestValidator : AbstractValidator<UpdateMeRequest
     public UpdateMeRequestValidator()
     {
         RuleFor(r => r.DisplayName).NotEmpty().MaximumLength(100);
+        RuleFor(r => r.Picture).MaximumLength(64);
     }
 }
 
