@@ -21,7 +21,10 @@ configure({ asyncUtilTimeout: 5000 });
 const isTeardownNoise = (reason: unknown): boolean =>
   (reason as { name?: string } | undefined)?.name === 'DatabaseClosedError';
 
-process.on('unhandledRejection', (reason) => {
+// the app tsconfig has no node types — structural access is enough here
+const proc = (globalThis as { process?: { on(event: 'unhandledRejection', listener: (reason: unknown) => void): unknown } })
+  .process;
+proc?.on('unhandledRejection', (reason) => {
   if (isTeardownNoise(reason)) return;
   throw reason;
 });

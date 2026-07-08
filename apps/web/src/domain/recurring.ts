@@ -61,6 +61,10 @@ export function nextDueDate(
   return null;
 }
 
+/** an actual payment within 25% (or €1 for small amounts) of the estimate */
+export const recurringAmountMatches = (rec: Pick<RecurringRow, 'amountCents'>, txAmountCents: number): boolean =>
+  Math.abs(Math.abs(txAmountCents) - rec.amountCents) <= Math.max(100, rec.amountCents * 0.25);
+
 export const isDueWithin = (
   rec: Pick<RecurringRow, 'active' | 'every' | 'dueDay' | 'dueMonth' | 'since' | 'until'>,
   today: string,

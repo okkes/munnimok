@@ -5,7 +5,7 @@ import { LOCALES, useLang } from '@/i18n';
 import { visibleTransactions, writeTxTransform } from '@/db/joined';
 import type { SpaceTx } from '@/db/joined';
 import { merchantKey } from '@/domain/merchantKey';
-import { addDays, nextDueDate } from '@/domain/recurring';
+import { addDays, nextDueDate, recurringAmountMatches } from '@/domain/recurring';
 import { recurringDismissId } from '@/domain/feedIds';
 import type { MunniDB } from '@/db/schema';
 import type { Repo } from '@/db/repo';
@@ -63,9 +63,6 @@ export function useRecurringOps(): RecurringOps {
   };
 }
 
-const amountMatches = (rec: RecurringRow, tx: SpaceTx): boolean =>
-  Math.abs(Math.abs(tx.amountCents) - rec.amountCents) <= Math.max(100, rec.amountCents * 0.25);
-
 const cycleOf = (rec: RecurringRow, date: string): string =>
   rec.every === 'year' ? date.slice(0, 4) : date.slice(0, 7);
 
@@ -98,7 +95,7 @@ export async function reconcileRecurringLinks(db: MunniDB, repo: Repo, spaceId: 
   for (const tx of [...txs].sort((a, b) => a.date.localeCompare(b.date))) {
     if (tx.recurringId || tx.amountCents >= 0 || tx.txType !== 'expense') continue;
     const rec = byKey.get(merchantKey(tx.merchant));
-    if (!rec || !amountMatches(rec, tx)) continue;
+    if (!rec || !recurringAmountMatches(rec, tx.amountCents)) continue;
     const cycle = cycleOf(rec, tx.date);
     const cycles = linkedCycles.get(rec.id) ?? new Set();
     if (cycles.has(cycle)) continue; // one payment per billing cycle
@@ -131,7 +128,7 @@ export function useRecurringReminders(): void {
         .toArray();
       for (const rec of recs) {
         const next = nextDueDate(rec, today);
-        if (!next || next > addDays(today, rec.notifyDaysBefore!)) continue;
+        if (!next || next > addDays(today, rec.notifyDaysBefore ?? 0)) continue;
         const key = `recNotified_${rec.id}_${next}`;
         if (await db.meta.get(key)) continue; // one reminder per due date
         await db.meta.put({ key, value: Date.now() });

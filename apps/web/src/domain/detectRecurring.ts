@@ -68,7 +68,7 @@ function suggestionFor(key: string, group: DetectInput[], today: string): Recurr
   if (!cadence) return null;
 
   // a dead subscription (no charge for ~1.5 cycles) is not a suggestion
-  const gapToToday = dayNumber(today) - days[days.length - 1];
+  const gapToToday = dayNumber(today) - days.at(-1)!;
   if (gapToToday > median(gaps) * 1.5) return null;
 
   const amounts = byDate.map((t) => Math.abs(t.amountCents));
@@ -78,7 +78,7 @@ function suggestionFor(key: string, group: DetectInput[], today: string): Recurr
   const confidence = Math.min(95, 55 + Math.min(byDate.length, 8) * 3 + (stable ? 12 : 0) + (cadence.regular ? 10 : 0));
   if (confidence < 65) return null;
 
-  const last = byDate[byDate.length - 1];
+  const last = byDate.at(-1)!;
   return {
     merchantKey: key,
     name: last.merchant,
