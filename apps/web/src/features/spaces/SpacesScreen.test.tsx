@@ -61,7 +61,10 @@ describe('SpacesScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId(`space-edit-${id}`));
     fireEvent.change(await screen.findByTestId('space-edit-name'), { target: { value: 'Household' } });
     fireEvent.click(screen.getByTestId('space-edit-save'));
-    await waitFor(() => expect(screen.getByTestId(`space-row-${id}`).textContent).toContain('Household'));
+    // save navigates back to the list; live query re-render can lag under load
+    await waitFor(() => expect(screen.getByTestId(`space-row-${id}`).textContent).toContain('Household'), {
+      timeout: 5000,
+    });
   });
 
   it('saves icon, color, currency, period and history start from the settings sheet', async () => {
@@ -94,9 +97,12 @@ describe('SpacesScreen (demo identity)', () => {
     db.close();
 
     // the list row shows the chosen icon (live query re-render — must wait)
-    await waitFor(() => {
-      expect(screen.getByTestId(`space-row-${id}`).innerHTML).toContain('briefcase-outline');
-    });
+    await waitFor(
+      () => {
+        expect(screen.getByTestId(`space-row-${id}`).innerHTML).toContain('briefcase-outline');
+      },
+      { timeout: 5000 },
+    );
   });
 
   it('monthly period exposes the start-day input, weekly hides it', async () => {
@@ -122,10 +128,10 @@ describe('SpacesScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId(`space-edit-${firstId}`));
     fireEvent.click(await screen.findByTestId('space-edit-delete'));
     expect(await screen.findByTestId('space-delete-error')).toBeTruthy();
-    fireEvent.keyDown(document.body, { key: 'Escape' });
+    fireEvent.click(screen.getByTestId('spacesettings-back')); // settings is a screen now
 
     // create a second space (becomes active), then the first is deletable
-    fireEvent.click(screen.getByTestId('spaces-add'));
+    fireEvent.click(await screen.findByTestId('spaces-add'));
     fireEvent.change(await screen.findByTestId('space-create-name'), { target: { value: 'Temp' } });
     fireEvent.click(screen.getByTestId('space-create-save'));
     await waitFor(() => expect(activeRow()!.textContent).toContain('Temp'));

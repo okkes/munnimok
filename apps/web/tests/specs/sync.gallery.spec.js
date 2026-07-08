@@ -141,13 +141,13 @@ for (const V of VARIANTS) {
     await expect(alice.page.locator('[data-testid="space-addfriend-sent"]')).toBeVisible({ timeout: 10000 });
 
     // bob accepts on his friends screen (re-entered: the screen loads
-    // requests on mount); alice reopens the sheet so the fresh friendship
-    // shows up as an invitable chip
+    // requests on mount); alice re-enters the settings screen so the
+    // fresh friendship shows up as an invitable chip
     await bob.page.click('[data-testid="friends-back"]');
     await bob.page.click('[data-testid="settings-friends-row"]');
     await bob.page.locator('[data-testid^="friends-accept-"]').click({ timeout: 10000 });
     await bob.page.waitForTimeout(500);
-    await alice.page.keyboard.press('Escape');
+    await alice.page.click('[data-testid="spacesettings-back"]');
     await alice.page.waitForTimeout(700);
     await alice.page.locator('[data-testid^="space-edit-"]:right-of(:text("Shared Home"))').first().click();
     await alice.page.waitForSelector('[data-testid="space-members"]');
@@ -164,8 +164,8 @@ for (const V of VARIANTS) {
     await shot(bob.page, k('33-space-share'));
 
     // roles: alice (owner) demotes bob to reader, then back to contributor
-    // (reopen the settings sheet so the members list includes bob)
-    await alice.page.keyboard.press('Escape');
+    // (re-enter the settings screen so the members list includes bob)
+    await alice.page.click('[data-testid="spacesettings-back"]');
     await alice.page.waitForTimeout(700);
     await alice.page.locator('[data-testid^="space-edit-"]:right-of(:text("Shared Home"))').first().click();
     await alice.page.waitForSelector('[data-testid^="space-role-"]', { timeout: 10000 });

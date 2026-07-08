@@ -13,6 +13,7 @@ import { HomeScreen } from '@/features/home/HomeScreen';
 import { TransactionsScreen } from '@/features/transactions/TransactionsScreen';
 import { TxDetailScreen } from '@/features/transactions/TxDetailScreen';
 import { SpacesScreen } from '@/features/spaces/SpacesScreen';
+import { SpaceSettingsScreen } from '@/features/spaces/SpaceSettingsScreen';
 import { SettingsScreen } from '@/features/settings/SettingsScreen';
 import { ReviewScreen } from '@/features/review/ReviewScreen';
 import { AccountsScreen } from '@/features/accounts/AccountsScreen';
@@ -63,6 +64,11 @@ const txDetailRoute = createRoute({
   component: TxDetailScreen,
 });
 const spacesRoute = createRoute({ getParentRoute: () => appRoute, path: '/spaces', component: SpacesScreen });
+const spaceSettingsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/spaces/$spaceId',
+  component: SpaceSettingsScreen,
+});
 const settingsRoute = createRoute({ getParentRoute: () => appRoute, path: '/settings', component: SettingsScreen });
 const reviewRoute = createRoute({ getParentRoute: () => appRoute, path: '/review', component: ReviewScreen });
 const accountsRoute = createRoute({ getParentRoute: () => appRoute, path: '/accounts', component: AccountsScreen });
@@ -84,6 +90,7 @@ export const routeTree = rootRoute.addChildren([
     transactionsRoute,
     txDetailRoute,
     spacesRoute,
+    spaceSettingsRoute,
     settingsRoute,
     reviewRoute,
     accountsRoute,
