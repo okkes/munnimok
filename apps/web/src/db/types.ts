@@ -113,6 +113,50 @@ export interface TransactionRow extends SyncEnvelope {
   linkedAccountId?: string;
 }
 
+/**
+ * Per-space transformation overlay for one raw transaction (feature B:
+ * raw bank data lives once in the account's feed space; every attached
+ * space keeps its own opinions about it). Deterministic id
+ * uuidv5("meta:" + spaceId + ":" + txId) — concurrent creation by two
+ * members converges via LWW.
+ */
+export interface TxMetaRow extends SyncEnvelope {
+  id: string;
+  /** the viewing space that owns these opinions */
+  spaceId: string;
+  /** raw transaction id inside the feed space */
+  txId: string;
+  catId?: string;
+  txType: TxType;
+  needsReview: 0 | 1;
+  notes?: string;
+  splits?: TxSplit[];
+  reimbursements?: TxReimbursement[];
+  linkedAccountId?: string;
+}
+
+/**
+ * Attachment of a financial account (its feed space) to a viewing
+ * space. Lives in the viewing space so members render it offline; the
+ * server keeps the authoritative copy for feed access control.
+ */
+export interface AccountLinkRow extends SyncEnvelope {
+  id: string;
+  /** the space the account is attached to */
+  spaceId: string;
+  /** feed space carrying the raw account + transactions */
+  feedSpaceId: string;
+  /** account entity id inside the feed */
+  accountId: string;
+  /** user who attached it (their display name frozen for offline rendering) */
+  attachedBy?: string;
+  attachedByName?: string;
+  /** transactions before this date stay hidden in this space */
+  historyFrom?: string;
+  /** owner left the space: history stays, no new data flows */
+  archived?: 0 | 1;
+}
+
 /** Local-only queue of ops not yet accepted by the server. */
 export interface OutboxRow {
   opId: string;
@@ -130,11 +174,13 @@ export interface MetaRow {
   value: unknown;
 }
 
-export type EntityName = 'space' | 'account' | 'category' | 'transaction';
+export type EntityName = 'space' | 'account' | 'category' | 'transaction' | 'txMeta' | 'accountLink';
 
 export interface EntityRowMap {
   space: SpaceRow;
   account: AccountRow;
   category: CategoryRow;
   transaction: TransactionRow;
+  txMeta: TxMetaRow;
+  accountLink: AccountLinkRow;
 }

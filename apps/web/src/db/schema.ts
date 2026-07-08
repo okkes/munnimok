@@ -1,6 +1,7 @@
 import Dexie from 'dexie';
 import type { Table } from 'dexie';
 import type {
+  AccountLinkRow,
   AccountRow,
   CategoryRow,
   EntityName,
@@ -8,6 +9,7 @@ import type {
   OutboxRow,
   SpaceRow,
   TransactionRow,
+  TxMetaRow,
 } from './types';
 
 /**
@@ -20,6 +22,8 @@ export class MunniDB extends Dexie {
   accounts!: Table<AccountRow, string>;
   categories!: Table<CategoryRow, string>;
   transactions!: Table<TransactionRow, string>;
+  txMeta!: Table<TxMetaRow, string>;
+  accountLinks!: Table<AccountLinkRow, string>;
   outbox!: Table<OutboxRow, string>;
   meta!: Table<MetaRow, string>;
 
@@ -33,6 +37,11 @@ export class MunniDB extends Dexie {
       outbox: 'opId, spaceId, hlc',
       meta: 'key',
     });
+    // feature B: per-space transformation overlay + account attachments
+    this.version(2).stores({
+      txMeta: 'id, spaceId, txId, [spaceId+txId]',
+      accountLinks: 'id, spaceId, feedSpaceId, accountId',
+    });
   }
 
   tableFor<E extends EntityName>(entity: E) {
@@ -45,6 +54,10 @@ export class MunniDB extends Dexie {
         return this.categories;
       case 'transaction':
         return this.transactions;
+      case 'txMeta':
+        return this.txMeta;
+      case 'accountLink':
+        return this.accountLinks;
       default:
         throw new Error(`unknown entity: ${entity}`);
     }

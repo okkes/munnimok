@@ -1,0 +1,22 @@
+import { v5 as uuidv5 } from 'uuid';
+
+/**
+ * Deterministic ids for feature B (shared financial accounts). The
+ * namespace matches the import namespace on both client and server, so
+ * any device — or another member reconnecting the same IBAN via PSD2 —
+ * derives the identical feed and overlay ids. That is what makes
+ * reconnects seamless and concurrent overlay creation convergent.
+ */
+const IMPORT_NS = '5f3c9a70-0d3e-4e0f-9a57-6d2b3a1c8e42';
+
+const normalizeIban = (iban: string) => iban.replaceAll(/\s/g, '').toUpperCase();
+
+/** sync-space id of a bank account's feed */
+export const feedSpaceId = (iban: string): string => uuidv5(`feed:${normalizeIban(iban)}`, IMPORT_NS);
+
+/** per-space overlay row id for a raw transaction */
+export const txMetaId = (spaceId: string, txId: string): string => uuidv5(`meta:${spaceId}:${txId}`, IMPORT_NS);
+
+/** attachment row id (one per account per space) */
+export const accountLinkId = (spaceId: string, feedId: string): string =>
+  uuidv5(`link:${spaceId}:${feedId}`, IMPORT_NS);
