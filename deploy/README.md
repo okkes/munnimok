@@ -132,6 +132,25 @@ docker compose -f deploy/docker-compose.test.yml up --build -d
 curl -H "X-User-Sub: alice" http://localhost:8181/health
 ```
 
+## Admin console (separate app + container)
+
+The operator console lives in `apps/admin` and ships as its own image
+(`munni-admin`), listed in the production compose on port **8085**.
+One-time setup:
+
+1. Reverse proxy: `munni-admin.<domain>` → `localhost:8085` and
+   **restrict it to LAN** in the DSM firewall.
+2. Logto console: register a *third* SPA app for
+   `https://munni-admin.<domain>` (redirect `/auth-callback`, post
+   sign-out `/`, CORS that origin) and set the repo Actions Variable
+   `VITE_LOGTO_APP_ID_ADMIN` (and `VITE_LOGTO_APP_ID_ADMIN_DEV` if you
+   ever want a staging admin).
+3. Admin authority stays server-side: only subs listed in `ADMIN_SUBS`
+   can use `/admin/*`, regardless of who opens the page.
+
+Local dev: `npm run dev -w @munni/admin` (port 5175) against the local
+API — without Logto configured it shows a test-subject box (test auth).
+
 ## SonarQube analysis (local machine only)
 
 SonarQube needs ~2-3 GB RAM, so it never runs on the NAS — spin it up

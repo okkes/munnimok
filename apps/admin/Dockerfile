@@ -1,0 +1,21 @@
+# Admin console: standalone SPA in its own container (nginx)
+FROM node:24-alpine AS build
+WORKDIR /repo
+COPY package.json package-lock.json ./
+COPY apps/admin/package.json apps/admin/
+RUN npm ci --workspace @munni/admin
+COPY apps/admin apps/admin
+ARG VITE_API_URL=""
+ARG VITE_LOGTO_ENDPOINT=""
+ARG VITE_LOGTO_APP_ID=""
+ARG VITE_LOGTO_RESOURCE=""
+ENV VITE_API_URL=$VITE_API_URL \
+    VITE_LOGTO_ENDPOINT=$VITE_LOGTO_ENDPOINT \
+    VITE_LOGTO_APP_ID=$VITE_LOGTO_APP_ID \
+    VITE_LOGTO_RESOURCE=$VITE_LOGTO_RESOURCE
+RUN npm run build --workspace @munni/admin
+
+FROM nginx:alpine
+COPY apps/admin/nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /repo/apps/admin/dist /usr/share/nginx/html
+EXPOSE 80

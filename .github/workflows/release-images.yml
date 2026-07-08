@@ -54,11 +54,13 @@ jobs:
             echo "app_channel=staging" >> $GITHUB_OUTPUT
             echo "api_url=${{ vars.VITE_API_URL_DEV || 'https://munni-test-api.okkes.synology.me' }}" >> $GITHUB_OUTPUT
             echo "logto_app=${{ vars.VITE_LOGTO_APP_ID_DEV || '' }}" >> $GITHUB_OUTPUT
+            echo "logto_app_admin=${{ vars.VITE_LOGTO_APP_ID_ADMIN_DEV || '' }}" >> $GITHUB_OUTPUT
           else
             echo "channel=latest" >> $GITHUB_OUTPUT
             echo "app_channel=production" >> $GITHUB_OUTPUT
             echo "api_url=${{ vars.VITE_API_URL || 'https://munni-api.okkes.synology.me' }}" >> $GITHUB_OUTPUT
             echo "logto_app=${{ vars.VITE_LOGTO_APP_ID || '' }}" >> $GITHUB_OUTPUT
+            echo "logto_app_admin=${{ vars.VITE_LOGTO_APP_ID_ADMIN || '' }}" >> $GITHUB_OUTPUT
           fi
 
       - uses: docker/setup-buildx-action@v3
@@ -101,5 +103,22 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/munni-web:${{ steps.meta.outputs.channel }}
             ${{ env.REGISTRY }}/munni-web:${{ steps.meta.outputs.channel }}-${{ steps.meta.outputs.build }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & push admin
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/admin/Dockerfile
+          push: true
+          build-args: |
+            VITE_API_URL=${{ steps.meta.outputs.api_url }}
+            VITE_LOGTO_ENDPOINT=${{ vars.VITE_LOGTO_ENDPOINT || 'https://logto.okkes.synology.me' }}
+            VITE_LOGTO_APP_ID=${{ steps.meta.outputs.logto_app_admin }}
+            VITE_LOGTO_RESOURCE=${{ steps.meta.outputs.api_url }}
+          tags: |
+            ${{ env.REGISTRY }}/munni-admin:${{ steps.meta.outputs.channel }}
+            ${{ env.REGISTRY }}/munni-admin:${{ steps.meta.outputs.channel }}-${{ steps.meta.outputs.build }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
