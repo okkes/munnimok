@@ -33,6 +33,7 @@ export async function bootstrapUserSpaces(
   engine: SyncEngine,
   isCancelled: () => boolean,
   baseRetryMs = 2_000,
+  onAttemptFailed?: (attempt: number) => void,
 ): Promise<void> {
   const hasLocalSpaces = async () => (await db.spaces.filter((s) => s.deleted === 0).count()) > 0;
 
@@ -40,7 +41,9 @@ export async function bootstrapUserSpaces(
     await engine.syncAll().catch(() => undefined);
     if (engine.getStatus() !== 'error' && engine.getStatus() !== 'offline') break; // server confirmed our spaces
     if (await hasLocalSpaces()) return; // offline but usable — local-first
-    // brand-new device with nothing local: keep trying, capped backoff
+    // brand-new device with nothing local: keep trying, capped backoff —
+    // and tell the UI, so a broken server/proxy is visible, not a spinner
+    onAttemptFailed?.(attempt + 1);
     await sleep(Math.min(baseRetryMs * 2 ** attempt, baseRetryMs * 8));
     if (isCancelled()) return;
   }
@@ -100,6 +103,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<{ db: MunniDB; repo: Repo; spaceId: string; engine: SyncEngine | null } | null>(
     null,
   );
+  const [failedAttempts, setFailedAttempts] = useState(0);
 
   useEffect(() => {
     if (!identity) {
@@ -145,8 +149,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
         // wait out the OIDC session restore, then fail-closed bootstrap
         await waitForAuthReady();
         if (cancelled) return;
-        await bootstrapUserSpaces(db, repo, engine, () => cancelled);
+        await bootstrapUserSpaces(db, repo, engine, () => cancelled, undefined, (n) => {
+          if (!cancelled) setFailedAttempts(n);
+        });
         if (cancelled) return;
+        setFailedAttempts(0);
         engine.start();
       }
       const stored = (await db.meta.get(ACTIVE_SPACE_KEY))?.value as string | undefined;
@@ -177,28 +184,43 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const value = useMemo(() => (state ? { ...state, setActiveSpace } : null), [state, setActiveSpace]);
 
   if (!identity) return null;
-  if (!value) return <ConnectingScreen />;
+  if (!value) return <ConnectingScreen failedAttempts={failedAttempts} />;
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 }
 
 /**
  * Shown while the database opens (instant) or a brand-new device waits
  * for the server during bootstrap (can take a while offline) — the
- * message only appears once it's clearly the latter.
+ * message only appears once it's clearly the latter. After repeated
+ * failed rounds the screen names the problem (broken API/proxy is a
+ * config error, not a loading state) and offers a way out.
  */
-function ConnectingScreen() {
+function ConnectingScreen({ failedAttempts = 0 }: { failedAttempts?: number }) {
   const { t } = useLang();
+  const logout = useSession((s) => s.logout);
   const [slow, setSlow] = useState(false);
   useEffect(() => {
     const timer = setTimeout(() => setSlow(true), 1_500);
     return () => clearTimeout(timer);
   }, []);
+  const unreachable = failedAttempts >= 2;
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 text-ink-3" data-testid="data-loading">
       {slow && (
         <>
-          <Icon name="cloud-sync-outline" size={32} color="var(--m-ink-4)" />
-          <p className="max-w-[260px] text-center text-[13px]">{t('sync.connecting')}</p>
+          <Icon name={unreachable ? 'cloud-alert' : 'cloud-sync-outline'} size={32} color="var(--m-ink-4)" />
+          <p className="max-w-[280px] text-center text-[13px]" data-testid={unreachable ? 'connect-error' : undefined}>
+            {unreachable ? t('sync.serverUnreachable') : t('sync.connecting')}
+          </p>
+          {unreachable && (
+            <button
+              onClick={() => void logout()}
+              data-testid="connect-signout"
+              className="m-tap mt-2 rounded-full border border-line bg-surface px-5 py-2 text-[13px] font-semibold text-ink"
+            >
+              {t('settings.signOut')}
+            </button>
+          )}
         </>
       )}
     </div>

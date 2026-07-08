@@ -857,6 +857,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'lock.wrongPin': 'Onjuiste pincode',
   'lock.notSupported': 'Biometrisch ontgrendelen is niet beschikbaar op dit apparaat — er wordt een pincode gebruikt',
   'sync.connecting': 'Verbinden met je account — even geduld, we halen je spaces op…',
+  'sync.serverUnreachable': 'Kan de server van munni niet bereiken. Controleer je verbinding — we blijven het automatisch proberen.',
   'sync.status': 'Synchronisatie',
   'sync.synced': 'Up-to-date',
   'sync.syncing': 'Synchroniseren…',

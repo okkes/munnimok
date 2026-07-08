@@ -855,6 +855,7 @@ export const en = {
   'lock.wrongPin': 'Wrong PIN',
   'lock.notSupported': 'Biometric unlock is not available on this device — a PIN will be used',
   'sync.connecting': 'Connecting to your account — hold on while we fetch your spaces…',
+  'sync.serverUnreachable': "Can't reach munni's server. Check your connection — we keep retrying automatically.",
   'sync.status': 'Sync',
   'sync.synced': 'Up to date',
   'sync.syncing': 'Syncing…',

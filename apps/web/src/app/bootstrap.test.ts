@@ -102,6 +102,18 @@ describe('bootstrapUserSpaces (fail closed)', () => {
     db.close();
   });
 
+  it('reports each failed round so the UI can surface an unreachable server', async () => {
+    const { db, repo, server, engine } = setup();
+    server.failuresLeft = 3;
+    const reported: number[] = [];
+
+    await bootstrapUserSpaces(db, repo, engine, () => false, FAST_RETRY_MS, (n) => reported.push(n));
+
+    expect(reported).toEqual([1, 2, 3]); // one per failed round, then success
+    expect((await db.spaces.filter((s) => s.deleted === 0).toArray())).toHaveLength(1);
+    db.close();
+  });
+
   it('self-heals a pre-fix empty duplicate once the real spaces arrive', async () => {
     const { db, repo, server, engine } = setup();
     // device had auto-created "dup" during an outage (old fail-open bug)
