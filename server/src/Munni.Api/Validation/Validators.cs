@@ -1,9 +1,31 @@
 using FluentValidation;
+using Munni.Api.Accounts;
 using Munni.Api.GoCardless;
 using Munni.Api.Social;
 using Munni.Api.Sync;
 
 namespace Munni.Api.Validation;
+
+public sealed class RegisterFeedRequestValidator : AbstractValidator<RegisterFeedRequest>
+{
+    public RegisterFeedRequestValidator()
+    {
+        RuleFor(r => r.FeedSpaceId).NotEmpty().MaximumLength(64)
+            .Must(FeedAccess.IsFeedShaped).WithMessage("feed ids are deterministic uuidv5 values");
+        RuleFor(r => r.AccountRef).NotEmpty().MaximumLength(64);
+    }
+}
+
+public sealed class AttachAccountRequestValidator : AbstractValidator<AttachAccountRequest>
+{
+    public AttachAccountRequestValidator()
+    {
+        RuleFor(r => r.FeedSpaceId).NotEmpty().MaximumLength(64);
+        RuleFor(r => r.AccountId).NotEmpty().MaximumLength(64);
+        RuleFor(r => r.HistoryFrom).Matches(@"^\d{4}-\d{2}-\d{2}$").When(r => !string.IsNullOrEmpty(r.HistoryFrom))
+            .WithMessage("historyFrom must be yyyy-mm-dd");
+    }
+}
 
 public sealed class UpdateMeRequestValidator : AbstractValidator<UpdateMeRequest>
 {

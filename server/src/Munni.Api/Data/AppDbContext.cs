@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Munni.Api.Accounts;
 using Munni.Api.GoCardless;
 using Munni.Api.Push;
 using Munni.Api.Social;
@@ -17,6 +18,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Friendship> Friendships => Set<Friendship>();
     public DbSet<SpaceInvite> SpaceInvites => Set<SpaceInvite>();
     public DbSet<PushSubscriptionRow> PushSubscriptions => Set<PushSubscriptionRow>();
+    public DbSet<FeedSpace> FeedSpaces => Set<FeedSpace>();
+    public DbSet<SpaceAccountLink> SpaceAccountLinks => Set<SpaceAccountLink>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -59,6 +62,17 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasKey(x => x.Id);
             e.HasIndex(x => x.Endpoint).IsUnique();
             e.HasIndex(x => x.UserId);
+        });
+        modelBuilder.Entity<FeedSpace>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.OwnerUserId);
+        });
+        modelBuilder.Entity<SpaceAccountLink>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.SpaceId, x.FeedSpaceId, x.AccountId }).IsUnique();
+            e.HasIndex(x => x.FeedSpaceId);
         });
     }
 }

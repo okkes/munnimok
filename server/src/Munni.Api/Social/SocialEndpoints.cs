@@ -181,6 +181,9 @@ public static class SocialEndpoints
         {
             invite.Status = StatusAccepted;
             db.SpaceMembers.Add(new SpaceMember { SpaceId = invite.SpaceId, UserId = me, Role = invite.Role });
+            // rejoining member with a still-connected bank: their archived
+            // account attachments in this space reconnect automatically
+            await Accounts.AccountEndpoints.ReviveLinksOnJoinAsync(db, invite.SpaceId, me);
         }
         else invite.Status = StatusDeclined;
         await db.SaveChangesAsync();
@@ -231,6 +234,9 @@ public static class SocialEndpoints
         if (member is not null)
         {
             db.SpaceMembers.Remove(member);
+            // the leaver's attached bank accounts freeze in this space:
+            // shared history stays readable, new data stops flowing
+            await Accounts.AccountEndpoints.ArchiveLinksOnLeaveAsync(db, spaceId, userId);
             // never leave a space ownerless: promote the longest-standing
             // remaining member (deterministic by user id) when the last
             // owner walks out

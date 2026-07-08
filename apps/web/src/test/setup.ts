@@ -1,3 +1,10 @@
+import { configure } from '@testing-library/react';
+
+// coverage instrumentation slows liveQuery round-trips well past RTL's
+// 1s default — every findBy*/waitFor gets headroom instead of piecemeal
+// per-test timeouts (repeated flake source)
+configure({ asyncUtilTimeout: 5000 });
+
 /**
  * Global vitest setup. Unmounting a screen closes the per-identity
  * Dexie database while its liveQuery observables may still be

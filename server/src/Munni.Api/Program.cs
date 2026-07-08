@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
+using Munni.Api.Accounts;
 using Munni.Api.Auth;
 using Munni.Api.Data;
 using Munni.Api.Admin;
@@ -161,6 +162,7 @@ app.MapGet("/health", () => Results.Ok(new
 app.MapSync();
 app.MapSocial();
 app.MapPush();
+app.MapAccounts();
 app.MapAdmin(gcEnabled);
 if (gcEnabled) app.MapGoCardless();
 
