@@ -10,6 +10,8 @@ import { seedDemoIfNeeded } from '@/db/seed';
 import { ApiSyncBackend } from '@/sync/backend';
 import { SyncEngine } from '@/sync/engine';
 import { config } from './config';
+import { requestOutboxSync } from './pwa';
+import { clearSwSession, jwtExpiryMs, mirrorSessionForSw } from '@/lib/swBridge';
 import { getAccessToken, waitForAuthReady } from './authToken';
 import { identityKey, useSession } from './session';
 import type { Identity } from './session';
@@ -108,6 +110,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!identity) {
       setState(null);
+      clearSwSession(); // signed out: background sync stops immediately
       return;
     }
     let cancelled = false;
@@ -120,12 +123,34 @@ export function DataProvider({ children }: { children: ReactNode }) {
       onWrite: () => engine?.nudge(),
     });
     if (syncing) {
+      const key = identityKey(identity);
       const backend = new ApiSyncBackend({
         baseUrl: config.apiUrl,
-        getAuth: async () =>
-          identity.testAuth ? { testSub: identity.sub } : { bearer: await getAccessToken() },
+        getAuth: async () => {
+          if (identity.testAuth) {
+            mirrorSessionForSw({ apiUrl: config.apiUrl, identityKey: key, testSub: identity.sub });
+            return { testSub: identity.sub };
+          }
+          const bearer = await getAccessToken();
+          // mirror the fresh token for the worker's background sync
+          // (push-triggered pull + Android outbox flush, app killed)
+          if (bearer) {
+            mirrorSessionForSw({
+              apiUrl: config.apiUrl,
+              identityKey: key,
+              bearer,
+              expiresAt: jwtExpiryMs(bearer) ?? Date.now() + 10 * 60_000,
+            });
+          }
+          return { bearer };
+        },
       });
       engine = new SyncEngine(db, repo, backend, getDeviceId());
+      // pushes failing (offline / server away) — arm the background
+      // flush so the outbox drains even if the app is killed meanwhile
+      engine.onStatus((status) => {
+        if (status === 'offline' || status === 'error') requestOutboxSync();
+      });
     }
 
     void (async () => {

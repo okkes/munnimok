@@ -21,3 +21,19 @@ export function initPwa(): void {
     },
   });
 }
+
+/**
+ * Ask the browser to flush the outbox when connectivity returns, even
+ * if the app is killed meanwhile (Android's one-shot Background Sync;
+ * iOS has no equivalent — there the outbox flushes on next open).
+ */
+export function requestOutboxSync(): void {
+  void navigator.serviceWorker?.ready
+    .then((registration) => {
+      const syncable = registration as ServiceWorkerRegistration & {
+        sync?: { register: (tag: string) => Promise<void> };
+      };
+      return syncable.sync?.register('munni-outbox');
+    })
+    .catch(() => undefined); // unsupported/denied — normal on iOS
+}

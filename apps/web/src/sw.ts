@@ -5,6 +5,7 @@
 // device so new bank transactions are announced even while the app is
 // closed, and opening the notification lands in a freshly syncing app.
 import { cleanupOutdatedCaches, precacheAndRoute } from 'workbox-precaching';
+import { backgroundPull, flushOutbox } from '@/sync/swSync';
 
 declare const self: ServiceWorkerGlobalScope;
 
@@ -60,6 +61,7 @@ self.addEventListener('push', (event) => {
 
   event.waitUntil(
     (async () => {
+      // the notification first — iOS requires one per push event
       const texts = TEXTS[await readLang()] ?? TEXTS.en;
       const count = payload.count ?? 1;
       const body = count === 1 ? texts.one : texts.many.replace('{n}', String(count));
@@ -70,6 +72,32 @@ self.addEventListener('push', (event) => {
         tag: `new-tx-${payload.spaceId ?? 'all'}`, // coalesce per space
         data: { spaceId: payload.spaceId },
       });
+      // …then pre-sync the announced data into IndexedDB while we're
+      // awake, so opening the app (or the notification) starts hot.
+      // Best-effort: an expired mirrored token just skips.
+      try {
+        await backgroundPull(payload.spaceId);
+      } catch {
+        // offline again / server hiccup — the app syncs on next open
+      }
+    })(),
+  );
+});
+
+// Android one-shot Background Sync: connectivity returned while the app
+// is killed — flush queued local ops, then pull what we missed.
+self.addEventListener('sync', (event: Event) => {
+  const sync = event as Event & { tag?: string; waitUntil: (p: Promise<unknown>) => void };
+  if (sync.tag !== 'munni-outbox') return;
+  sync.waitUntil(
+    (async () => {
+      try {
+        await flushOutbox();
+        await backgroundPull();
+      } catch {
+        // the sync manager retries with backoff on rejection — but a
+        // missing/expired session must NOT loop, hence catch-all here
+      }
     })(),
   );
 });
