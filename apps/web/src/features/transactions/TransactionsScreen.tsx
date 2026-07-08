@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
+import { useSpaceTransactions } from '@/application/transactions';
 import { catName, useCategories } from '@/features/categories/useCategories';
+import { EMPTY_FILTERS, FilterSheet, countActive } from './FilterSheet';
+import type { SheetFilters } from './FilterSheet';
 import { useLang } from '@/i18n';
 import type { TransactionRow } from '@/db/types';
 import { filterTxs } from '@/domain/txFilter';
@@ -29,13 +31,13 @@ export function TransactionsScreen() {
   const navigate = useNavigate();
   const [addOpen, setAddOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [accountFilter, setAccountFilter] = useState<string | undefined>();
   const [reviewOnly, setReviewOnly] = useState(false);
+  const [filters, setFilters] = useState<SheetFilters>(EMPTY_FILTERS);
+  const [filterOpen, setFilterOpen] = useState(false);
   // overview drill-down: category + period arrive as search params
   const { catId, from, to } = useSearch({ strict: false }) as { catId?: string; from?: string; to?: string };
   const cats = useCategories();
 
-  const accounts = useSpaceAccounts();
   const allTxs = useSpaceTransactions();
 
   const fmtDay = (iso: string) =>
@@ -43,24 +45,35 @@ export function TransactionsScreen() {
       new Date(iso),
     );
 
-  // a main category matches itself and all of its subs
+  // a main category matches itself and all of its subs; the drill-down
+  // param wins over the sheet's category picks while active
   const catIds = useMemo(() => {
-    if (!catId) return undefined;
-    return new Set([catId, ...cats.childrenOf(catId).map((c) => c.id)]);
-  }, [catId, cats]);
+    const mains = catId ? [catId] : [...filters.mainCatIds];
+    if (mains.length === 0) return undefined;
+    return new Set(mains.flatMap((id) => [id, ...cats.childrenOf(id).map((c) => c.id)]));
+  }, [catId, filters.mainCatIds, cats]);
 
   // filter FIRST, then newest-first capped at 200 — an old category match
   // must not vanish behind the recency cap
   const txs = useMemo(() => {
     if (!allTxs) return undefined;
     // filterTxs returns a fresh array — sorting it in place mutates no input
-    const matched = filterTxs(allTxs, { query, accountId: accountFilter, onlyNeedsReview: reviewOnly, catIds, from, to });
+    const matched = filterTxs(allTxs, {
+      query,
+      accountIds: filters.accountIds,
+      onlyNeedsReview: reviewOnly,
+      catIds,
+      txTypes: filters.txTypes,
+      from: catId ? from : filters.from,
+      to: catId ? to : filters.to,
+    });
     matched.sort((a, b) => b.date.localeCompare(a.date));
     return matched.slice(0, 200);
-  }, [allTxs, query, accountFilter, reviewOnly, catIds, from, to]);
+  }, [allTxs, query, filters, reviewOnly, catIds, catId, from, to]);
 
   const groups = groupByDate(txs ?? []);
-  const filtering = !!query || !!accountFilter || reviewOnly || !!catIds;
+  const activeCount = countActive(filters);
+  const filtering = !!query || reviewOnly || !!catIds || activeCount > 0;
   const drillCat = catId ? cats.byId(catId) : null;
 
   return (
@@ -100,6 +113,25 @@ export function TransactionsScreen() {
           </button>
         )}
         <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+          {/* accounts/types/categories/dates live in the filter sheet —
+              chips per account stopped scaling once feeds multiplied */}
+          <button
+            data-testid="tx-filter-open"
+            onClick={() => setFilterOpen(true)}
+            className={`m-tap flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12px] ${
+              activeCount > 0
+                ? 'border-accent bg-accent-soft font-medium text-accent-deep'
+                : 'border-line bg-surface text-ink-2'
+            }`}
+          >
+            <Icon name="filter-variant" size={14} />
+            {t('tx.filters')}
+            {activeCount > 0 && (
+              <span className="rounded-full bg-accent px-1.5 text-[10px] font-bold text-on-brand" data-testid="tx-filter-count">
+                {activeCount}
+              </span>
+            )}
+          </button>
           <button
             data-testid="tx-filter-review"
             onClick={() => setReviewOnly((v) => !v)}
@@ -109,22 +141,19 @@ export function TransactionsScreen() {
           >
             {t('review.confirm')}
           </button>
-          {(accounts ?? []).map((a) => (
+          {activeCount > 0 && (
             <button
-              key={a.id}
-              data-testid={`tx-filter-account-${a.id}`}
-              onClick={() => setAccountFilter((cur) => (cur === a.id ? undefined : a.id))}
-              className={`m-tap shrink-0 rounded-full border px-3 py-1.5 text-[12px] ${
-                accountFilter === a.id
-                  ? 'border-accent bg-accent-soft font-medium text-accent-deep'
-                  : 'border-line bg-surface text-ink-2'
-              }`}
+              data-testid="tx-filter-clear"
+              onClick={() => setFilters(EMPTY_FILTERS)}
+              className="m-tap flex shrink-0 items-center gap-1 rounded-full border border-line bg-surface px-3 py-1.5 text-[12px] text-ink-3"
             >
-              {a.name}
+              <Icon name="close" size={12} />
+              {t('tx.filtersReset')}
             </button>
-          ))}
+          )}
         </div>
       </div>
+      <FilterSheet open={filterOpen} onOpenChange={setFilterOpen} value={filters} onChange={setFilters} />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6" data-testid="tx-list">
         {txs && groups.length === 0 && (
           <EmptyState

@@ -43,17 +43,36 @@ describe('filterTxs', () => {
   });
 
   it('account and review filters combine with query', () => {
-    expect(filterTxs(rows, { accountId: 'a2' }).map((t) => t.id)).toEqual(['2']);
+    expect(filterTxs(rows, { accountIds: new Set(['a2']) }).map((t) => t.id)).toEqual(['2']);
     expect(filterTxs(rows, { onlyNeedsReview: true }).map((t) => t.id)).toEqual(['3']);
-    expect(filterTxs(rows, { accountId: 'a1', onlyNeedsReview: true, query: 'rente' }).map((t) => t.id)).toEqual(['3']);
-    expect(filterTxs(rows, { accountId: 'a2', onlyNeedsReview: true })).toHaveLength(0);
+    expect(
+      filterTxs(rows, { accountIds: new Set(['a1']), onlyNeedsReview: true, query: 'rente' }).map((t) => t.id),
+    ).toEqual(['3']);
+    expect(filterTxs(rows, { accountIds: new Set(['a2']), onlyNeedsReview: true })).toHaveLength(0);
+    // multi-account: union
+    expect(filterTxs(rows, { accountIds: new Set(['a1', 'a2']) })).toHaveLength(3);
   });
 
-  it('hasActiveFilter ignores whitespace-only queries', () => {
+  it('type, category and date-range filters (filter sheet + overview drill)', () => {
+    const typed = [
+      tx({ id: 't1', txType: 'expense', catId: 'groceries', date: '2026-07-05' }),
+      tx({ id: 't2', txType: 'saving', catId: 'savingDeposit', date: '2026-07-10' }),
+      tx({ id: 't3', txType: 'income', catId: undefined, date: '2026-08-01' }),
+    ];
+    expect(filterTxs(typed, { txTypes: new Set(['saving']) }).map((t) => t.id)).toEqual(['t2']);
+    expect(filterTxs(typed, { catIds: new Set(['groceries']) }).map((t) => t.id)).toEqual(['t1']);
+    expect(filterTxs(typed, { from: '2026-07-06', to: '2026-07-31' }).map((t) => t.id)).toEqual(['t2']);
+    // empty sets mean "no restriction"
+    expect(filterTxs(typed, { txTypes: new Set(), catIds: new Set(), accountIds: new Set() })).toHaveLength(3);
+  });
+
+  it('hasActiveFilter ignores whitespace-only queries and empty sets', () => {
     expect(hasActiveFilter({})).toBe(false);
     expect(hasActiveFilter({ query: '   ' })).toBe(false);
+    expect(hasActiveFilter({ accountIds: new Set(), txTypes: new Set(), catIds: new Set() })).toBe(false);
     expect(hasActiveFilter({ query: 'a' })).toBe(true);
-    expect(hasActiveFilter({ accountId: 'a1' })).toBe(true);
+    expect(hasActiveFilter({ accountIds: new Set(['a1']) })).toBe(true);
     expect(hasActiveFilter({ onlyNeedsReview: true })).toBe(true);
+    expect(hasActiveFilter({ from: '2026-01-01' })).toBe(true);
   });
 });

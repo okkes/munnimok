@@ -43,18 +43,30 @@ describe('TransactionsScreen (demo identity)', () => {
     await waitFor(() => expect(rows().length).toBeGreaterThan(3));
   });
 
-  it('account chips toggle account filtering', async () => {
+  it('the filter sheet narrows by account and type; clear restores everything', async () => {
     renderApp('/transactions');
     await screen.findByTestId('tx-list');
     await waitFor(() => expect(rows().length).toBeGreaterThan(3));
     const all = rows().length;
 
     // the demo savings account has no transactions — filter yields none
-    const chip = await screen.findByTestId('tx-filter-account-demo_save');
-    fireEvent.click(chip);
+    fireEvent.click(screen.getByTestId('tx-filter-open'));
+    fireEvent.click(await screen.findByTestId('filter-account-demo_save'));
+    fireEvent.click(screen.getByTestId('filter-done'));
     await waitFor(() => expect(rows().length).toBe(0));
-    // clicking the active chip clears the filter
-    fireEvent.click(chip);
+    expect(screen.getByTestId('tx-filter-count').textContent).toBe('1');
+
+    // the clear chip resets the sheet filters
+    fireEvent.click(screen.getByTestId('tx-filter-clear'));
     await waitFor(() => expect(rows().length).toBe(all));
+
+    // type filter: saving transactions only
+    fireEvent.click(screen.getByTestId('tx-filter-open'));
+    fireEvent.click(await screen.findByTestId('filter-type-saving'));
+    fireEvent.click(screen.getByTestId('filter-done'));
+    await waitFor(() => {
+      expect(rows().length).toBeGreaterThan(0);
+      expect(rows().length).toBeLessThan(all);
+    });
   });
 });
