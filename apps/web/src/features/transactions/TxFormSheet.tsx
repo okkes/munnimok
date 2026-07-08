@@ -91,7 +91,7 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
         open={open}
         onOpenChange={onOpenChange}
         title={tx ? t('txform.editTitle') : t('txform.addTitle')}
-        height={560}
+        size="tall"
         locked={locked}
       >
         <div className="flex flex-col gap-3 pt-1">

@@ -55,7 +55,7 @@ export function TxTypeSheet({ open, onOpenChange, tx }: { open: boolean; onOpenC
   };
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange} title={t('tx.type')} height={560}>
+    <Sheet open={open} onOpenChange={onOpenChange} title={t('tx.type')} size="tall">
       {locked && (
         <p className="pb-2 text-[12px] text-ink-3" data-testid="txtype-locked-note">
           {t('tx.typeLockedByAccount')}

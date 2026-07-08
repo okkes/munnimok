@@ -204,6 +204,12 @@ export function ManageCategoriesScreen() {
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
+        {/* one-line legend: the arrows carry meaning nowhere else explained */}
+        <p className="mt-2 flex items-center gap-1 px-1 text-[11px] text-ink-4">
+          <Icon name="arrow-up-thin" size={13} /> {t('cats.legendDebit')}
+          <span className="px-0.5">·</span>
+          <Icon name="arrow-down-thin" size={13} /> {t('cats.legendCredit')}
+        </p>
         {cats.sharedScope && (personalCats?.length ?? 0) > 0 && (
           <button
             data-testid="cats-copy-open"
@@ -238,18 +244,20 @@ export function ManageCategoriesScreen() {
               )}
               <button
                 aria-label={t('cats.addSub')}
+                title={t('cats.addSub')}
                 data-testid={`cats-addsub-${parent.id}`}
                 onClick={() => openNewSub(parent.id)}
-                className="m-tap border-none bg-transparent p-0.5 text-ink-4"
+                className="m-tap flex h-6 w-6 items-center justify-center rounded-full border border-line bg-surface text-ink-3 shadow-[0_1px_4px_rgba(0,0,0,0.06)]"
               >
-                <Icon name="plus" size={15} />
+                <Icon name="plus" size={14} />
               </button>
             </div>
             <div className="overflow-hidden rounded-card border border-line bg-surface">
               {cats.childrenOf(parent.id).map((cat, i) => (
                 <div key={cat.id} className={dragging?.id === cat.id ? 'opacity-40' : ''}>
                   {i > 0 && <div className="mx-4 h-px bg-line-2" />}
-                  <div className="flex items-center">
+                  {/* custom rows read as "yours": subtle accent wash */}
+                  <div className={`flex items-center ${cat.custom && !cat.isOther ? 'bg-accent-soft/35' : ''}`}>
                     <button
                       data-testid={`managecat-${cat.id}`}
                       disabled={!cat.custom || cat.isOther}
@@ -259,7 +267,9 @@ export function ManageCategoriesScreen() {
                       <Icon name={cat.icon} size={19} color={parent.color} />
                       <span className="min-w-0 flex-1 truncate">{catName(cat, t)}</span>
                       {cat.direction && cat.direction !== 'both' && (
-                        <Icon name={cat.direction === 'debit' ? 'arrow-up-thin' : 'arrow-down-thin'} size={15} color="var(--m-ink-4)" />
+                        <span title={t(cat.direction === 'debit' ? 'cats.legendDebit' : 'cats.legendCredit')}>
+                          <Icon name={cat.direction === 'debit' ? 'arrow-up-thin' : 'arrow-down-thin'} size={15} color="var(--m-ink-4)" />
+                        </span>
                       )}
                       {cat.custom && !cat.isOther && (
                         <>
@@ -293,7 +303,7 @@ export function ManageCategoriesScreen() {
       </div>
 
       {/* create / edit */}
-      <Sheet open={mode !== null} onOpenChange={(open) => !open && setMode(null)} title={formTitle} height={600}>
+      <Sheet open={mode !== null} onOpenChange={(open) => !open && setMode(null)} title={formTitle} size="tall">
         <div className="flex flex-col gap-3 pt-1">
           {formParent && (
             <div className="flex items-center gap-2 text-[13px] text-ink-3">
@@ -419,7 +429,7 @@ export function ManageCategoriesScreen() {
       </Sheet>
 
       {/* impact warning before a breaking change */}
-      <Sheet open={pending !== null} onOpenChange={(open) => !open && setPending(null)} title={t('cats.impactTitle')} height={280}>
+      <Sheet open={pending !== null} onOpenChange={(open) => !open && setPending(null)} title={t('cats.impactTitle')} size="compact">
         <p className="pt-1 text-[14px] text-ink-2" data-testid="cats-impact-text">
           {t(pendingKind === 'delete' ? 'cats.deleteWarning' : 'cats.impactWarning', {
             n: pending?.affected.length ?? 0,
@@ -436,7 +446,7 @@ export function ManageCategoriesScreen() {
       </Sheet>
 
       {/* copy personal categories into this shared space */}
-      <Sheet open={copyOpen} onOpenChange={setCopyOpen} title={t('cats.copyFromPersonal')} height={520}>
+      <Sheet open={copyOpen} onOpenChange={setCopyOpen} title={t('cats.copyFromPersonal')} size="tall">
         <div data-testid="cats-copy-list">
           {(personalCats ?? [])
             .filter((r) => r.isOther !== 1 && (r.isParent === 1 || !personalCats?.some((p) => p.id === r.parentId)))

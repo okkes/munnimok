@@ -115,7 +115,7 @@ export function ReimburseSection({ tx }: { tx: TransactionRow }) {
       </div>
 
       {/* pick a credit tx, then confirm the amount */}
-      <Sheet open={pickerOpen} onOpenChange={setPickerOpen} title={t('reimb.link')} height={520}>
+      <Sheet open={pickerOpen} onOpenChange={setPickerOpen} title={t('reimb.link')} size="tall">
         {chosen ? (
           <div className="flex flex-col gap-3 pt-1" data-testid="reimb-confirm">
             <div className="text-[14px] text-ink">{cleanBankText(chosen.merchant)}</div>

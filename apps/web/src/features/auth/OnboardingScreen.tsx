@@ -133,7 +133,7 @@ export function OnboardingScreen() {
 
       <BankConnectSheet open={connectOpen} onOpenChange={setConnectOpen} />
 
-      <Sheet open={countryOpen} onOpenChange={setCountryOpen} title={t('onboarding.country')} height={560}>
+      <Sheet open={countryOpen} onOpenChange={setCountryOpen} title={t('onboarding.country')} size="tall">
         <input
           data-testid="onboarding-country-search"
           value={query}

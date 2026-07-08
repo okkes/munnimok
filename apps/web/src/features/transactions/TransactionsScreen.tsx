@@ -6,6 +6,8 @@ import { useData } from '@/app/data';
 import type { TransactionRow } from '@/db/types';
 import { filterTxs } from '@/domain/txFilter';
 import { AppBar, IconButton } from '@/ui/AppBar';
+import { Button } from '@/ui/Button';
+import { EmptyState } from '@/ui/EmptyState';
 import { Icon } from '@/ui/Icon';
 import { TxRow } from '@/ui/TxRow';
 import { TxFormSheet } from './TxFormSheet';
@@ -52,6 +54,9 @@ export function TransactionsScreen() {
     new Intl.DateTimeFormat(DATE_FMT[lang], { weekday: 'short', day: 'numeric', month: 'short' }).format(
       new Date(iso),
     );
+
+  const groups = groupByDate(filterTxs(txs ?? [], { query, accountId: accountFilter, onlyNeedsReview: reviewOnly }));
+  const filtering = !!query || !!accountFilter || reviewOnly;
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-transactions">
@@ -101,7 +106,22 @@ export function TransactionsScreen() {
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6" data-testid="tx-list">
-        {groupByDate(filterTxs(txs ?? [], { query, accountId: accountFilter, onlyNeedsReview: reviewOnly })).map(([date, list]) => (
+        {txs && groups.length === 0 && (
+          <EmptyState
+            testId="tx-empty"
+            icon={filtering ? 'magnify' : 'receipt-text-outline'}
+            text={t(filtering ? 'tx.emptyFiltered' : 'tx.emptyList')}
+            action={
+              filtering ? undefined : (
+                <Button size="sm" variant="outline" onClick={() => void navigate({ to: '/accounts' })}>
+                  <Icon name="bank-plus" size={16} />
+                  {t('tx.emptyCta')}
+                </Button>
+              )
+            }
+          />
+        )}
+        {groups.map(([date, list]) => (
           <div key={date}>
             <div className="m-cap mt-4 mb-1 px-1">{fmtDay(date)}</div>
             <div className="rounded-card border border-line bg-surface px-3 py-1">

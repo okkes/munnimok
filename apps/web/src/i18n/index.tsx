@@ -12,6 +12,10 @@ export type { TranslationKey };
 /** BCP 47 locale per UI language, for Intl formatting */
 export const LOCALES: Record<Lang, string> = { en: 'en-GB', nl: 'nl-NL', tr: 'tr-TR' };
 
+export const LANGS: Lang[] = ['en', 'nl', 'tr'];
+/** native names — a language picker must be readable in the language it offers */
+export const LANG_NAMES: Record<Lang, string> = { en: 'English', nl: 'Nederlands', tr: 'Türkçe' };
+
 const DICTS: Record<Lang, Partial<Record<TranslationKey, string>>> = { en, nl, tr };
 const LS_KEY = 'munni_lang';
 

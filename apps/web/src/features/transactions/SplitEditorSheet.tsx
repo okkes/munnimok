@@ -78,7 +78,7 @@ export function SplitEditorSheet({ open, onOpenChange, tx }: { open: boolean; on
 
   return (
     <>
-      <Sheet open={open} onOpenChange={onOpenChange} title={t('split.title')} height={560} locked={locked}>
+      <Sheet open={open} onOpenChange={onOpenChange} title={t('split.title')} size="tall" locked={locked}>
         <div className="flex flex-col gap-2 pt-1" data-testid="split-editor">
           {rows.map((row, i) => (
             <div key={row.key} className="flex items-center gap-2">

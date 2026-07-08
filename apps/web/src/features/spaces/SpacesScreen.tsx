@@ -171,7 +171,7 @@ export function SpacesScreen() {
       </div>
 
       {/* Create space */}
-      <Sheet open={createOpen} onOpenChange={setCreateOpen} title={t('space.new')} height={300}>
+      <Sheet open={createOpen} onOpenChange={setCreateOpen} title={t('space.new')} size="compact">
         <div className="flex flex-col gap-3 pt-1">
           <input
             data-testid="space-create-name"
@@ -187,7 +187,7 @@ export function SpacesScreen() {
       </Sheet>
 
       {/* Space settings */}
-      <Sheet open={!!editing} onOpenChange={(open) => !open && setEditing(null)} title={t('space.settings')} height={640}>
+      <Sheet open={!!editing} onOpenChange={(open) => !open && setEditing(null)} title={t('space.settings')} size="tall">
         <div className="flex flex-col gap-3 pt-1 pb-4">
           {readOnly && (
             <p className="rounded-card bg-bg-2 px-4 py-2.5 text-[13px] text-ink-3" data-testid="space-reader-note">

@@ -8,6 +8,12 @@ import { renderApp } from '@/test/harness';
 // Local-first law also applies to demo/offline sign-in: zero network.
 const fetchSpy = vi.fn(() => Promise.reject(new Error('network disabled in test')));
 
+// deterministic regardless of the developer's .env.local
+vi.mock('@/app/config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/app/config')>()),
+  logtoConfigured: false,
+}));
+
 describe('LoginScreen', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -37,6 +43,23 @@ describe('LoginScreen', () => {
     const identity = readSessionIdentity();
     expect(identity?.kind).toBe('offline');
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('the language pill switches the UI language and persists it', async () => {
+    renderApp('/login', { signedIn: false });
+    fireEvent.click(await screen.findByTestId('login-lang-trigger'));
+    fireEvent.click(await screen.findByTestId('login-lang-nl'));
+    await waitFor(() => expect(screen.getByTestId('login-demo-btn').textContent).toContain('demo'));
+    expect(localStorage.getItem('munni_lang')).toBe('nl');
+    expect(fetchSpy).not.toHaveBeenCalled(); // language art/data is bundled
+  });
+
+  it('unavailable providers are hidden when Logto is not configured', async () => {
+    renderApp('/login', { signedIn: false });
+    await screen.findByTestId('login-demo-btn');
+    expect(screen.queryByTestId('login-google-btn')).toBeNull();
+    expect(screen.queryByTestId('login-apple-btn')).toBeNull();
+    expect(screen.queryByTestId('login-signin-btn')).toBeNull();
   });
 
   it('an existing offline profile is offered on the next visit and keeps its data', async () => {

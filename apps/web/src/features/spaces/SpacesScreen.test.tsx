@@ -93,9 +93,10 @@ describe('SpacesScreen (demo identity)', () => {
     );
     db.close();
 
-    // the list row shows the chosen icon color
-    const row = screen.getByTestId(`space-row-${id}`);
-    expect(row.innerHTML).toContain('briefcase-outline');
+    // the list row shows the chosen icon (live query re-render — must wait)
+    await waitFor(() => {
+      expect(screen.getByTestId(`space-row-${id}`).innerHTML).toContain('briefcase-outline');
+    });
   });
 
   it('monthly period exposes the start-day input, weekly hides it', async () => {

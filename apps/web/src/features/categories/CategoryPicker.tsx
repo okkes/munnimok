@@ -40,7 +40,7 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
   };
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange} title={t('screen.categories')} height={620}>
+    <Sheet open={open} onOpenChange={onOpenChange} title={t('screen.categories')} size="tall">
       <input
         data-testid="catpicker-search"
         value={query}

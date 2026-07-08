@@ -14,6 +14,7 @@ import { fmtCents, parseCents } from '@/lib/money';
 import type { AccountRow, AccountType } from '@/db/types';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
+import { EmptyState } from '@/ui/EmptyState';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 
@@ -223,12 +224,34 @@ export function AccountsScreen() {
         onChange={(e) => void onFilePicked(e.target.files?.[0])}
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
-        <AccountSection title={t('acct.assets')} list={assets} lang={lang} onEdit={openEdit} />
-        <AccountSection title={t('acct.liabilities')} list={liabilities} lang={lang} onEdit={openEdit} />
+        {accounts?.length === 0 ? (
+          <EmptyState
+            testId="accounts-empty"
+            icon="bank-outline"
+            text={t('acct.emptyList')}
+            action={
+              <div className="flex gap-2">
+                <Button size="sm" onClick={() => setAddOpen(true)}>
+                  <Icon name="plus" size={16} />
+                  {t('acct.addAccount')}
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()}>
+                  <Icon name="file-upload-outline" size={16} />
+                  {t('import.statement')}
+                </Button>
+              </div>
+            }
+          />
+        ) : (
+          <>
+            <AccountSection title={t('acct.assets')} list={assets} lang={lang} onEdit={openEdit} />
+            <AccountSection title={t('acct.liabilities')} list={liabilities} lang={lang} onEdit={openEdit} />
+          </>
+        )}
       </div>
 
       {/* Add account: type grid, then form */}
-      <Sheet open={addOpen} onOpenChange={(open) => !open && closeAdd()} title={newType ? t('acct.addAccount') : t('acct.selectType')} height={520}>
+      <Sheet open={addOpen} onOpenChange={(open) => !open && closeAdd()} title={newType ? t('acct.addAccount') : t('acct.selectType')} size="tall">
         {newType ? (
           <div className="flex flex-col gap-3 pt-1">
             <div className="flex items-center gap-2 text-[13px] text-ink-3">
@@ -290,7 +313,7 @@ export function AccountsScreen() {
       <BankConnectSheet open={connectOpen} onOpenChange={setConnectOpen} />
 
       {/* CAMT.053 import: preview then result */}
-      <Sheet open={importPreview !== null} onOpenChange={(open) => !open && closeImport()} title={t('import.preview')} height={420}>
+      <Sheet open={importPreview !== null} onOpenChange={(open) => !open && closeImport()} title={t('import.preview')} size="form">
         {importError && (
           <div className="flex items-center gap-2 rounded-card bg-negative-soft px-4 py-3 text-[14px] text-negative" data-testid="import-error">
             <Icon name="alert-circle-outline" size={18} />
@@ -339,7 +362,7 @@ export function AccountsScreen() {
       </Sheet>
 
       {/* Edit account */}
-      <Sheet open={!!editing} onOpenChange={(open) => !open && setEditing(null)} title={t('acct.editAccount')} height={400}>
+      <Sheet open={!!editing} onOpenChange={(open) => !open && setEditing(null)} title={t('acct.editAccount')} size="form">
         <div className="flex flex-col gap-3 pt-1">
           <input
             data-testid="acctedit-name"

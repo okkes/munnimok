@@ -66,7 +66,7 @@ export function BankConnectSheet({ open, onOpenChange }: { open: boolean; onOpen
   );
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange} title={t('gc.connect')} height={560}>
+    <Sheet open={open} onOpenChange={onOpenChange} title={t('gc.connect')} size="tall">
       <p className="pb-2 text-[12px] text-ink-3">{t('gc.connectSub')}</p>
       {failed && (
         <div className="mb-2 flex items-center gap-2 rounded-card bg-negative-soft px-4 py-3 text-[13px] text-negative" data-testid="gc-error">

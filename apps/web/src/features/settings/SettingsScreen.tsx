@@ -348,7 +348,7 @@ export function SettingsScreen() {
       </div>
 
       {/* Bank connections status */}
-      <Sheet open={connectionsOpen} onOpenChange={setConnectionsOpen} title={t('gc.connections')} height={380}>
+      <Sheet open={connectionsOpen} onOpenChange={setConnectionsOpen} title={t('gc.connections')} size="form">
         <p className="pb-2 text-[12px] text-ink-3">{t('gc.connectSub')}</p>
         {connections === null && <div className="py-6 text-center text-sm text-ink-3">…</div>}
         {connections?.map((c) => (
@@ -373,7 +373,7 @@ export function SettingsScreen() {
       </Sheet>
 
       {/* App lock setup: backup PIN + re-lock timeout (+ biometrics when available) */}
-      <Sheet open={lockSheetOpen} onOpenChange={setLockSheetOpen} title={t('lock.setup')} height={440}>
+      <Sheet open={lockSheetOpen} onOpenChange={setLockSheetOpen} title={t('lock.setup')} size="form">
         <div className="flex flex-col gap-3 pt-1">
           {!lockBioAvailable && <p className="text-[12px] text-ink-3">{t('lock.notSupported')}</p>}
           <input
