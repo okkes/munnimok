@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderApp } from '@/test/harness';
 import { DEMO_SPACE_ID } from '@/db/seed';
 import { reconcileRecurringLinks } from '@/application/recurring';
@@ -85,6 +85,36 @@ describe('RecurringScreen (demo identity)', () => {
     // the dismissal is persisted, not just hidden
     expect(await db.recurringDismissals.count()).toBe(1);
     db.close();
+  }, 15_000);
+
+  it('the brand picker offers vendored icons and picking stores the logo', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) =>
+      String(url).includes('brands/index.json')
+        ? new Response(JSON.stringify([{ slug: 'netflix', title: 'Netflix' }]), { status: 200 })
+        : new Response('', { status: 404 }),
+    );
+    renderApp('/recurring');
+    await screen.findByTestId('screen-recurring');
+
+    fireEvent.click(screen.getByTestId('recurring-add'));
+    fireEvent.change(await screen.findByTestId('recform-name'), { target: { value: 'Netflix' } });
+    fireEvent.change(screen.getByTestId('recform-amount'), { target: { value: '13.99' } });
+    fireEvent.click(screen.getByTestId('recform-logo-open'));
+    fireEvent.click(await screen.findByTestId('brandpicker-netflix'));
+    // the sheet row reflects the chosen brand logo
+    expect(screen.getByTestId('recform-logo-open').textContent).toContain('Brand logo');
+    fireEvent.click(screen.getByTestId('recform-save'));
+
+    const db = new MunniDB('munni_demo');
+    await waitFor(
+      async () => {
+        const rec = (await db.recurrings.toArray()).find((r) => r.name === 'Netflix');
+        expect(rec?.logo).toBe('brands/netflix.svg');
+      },
+      { timeout: 5000 },
+    );
+    db.close();
+    fetchMock.mockRestore();
   }, 15_000);
 
   it('accepting a suggestion prefills the sheet and links past payments on save', async () => {

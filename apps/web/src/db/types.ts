@@ -162,6 +162,8 @@ export interface RecurringRow extends SyncEnvelope {
   amountCents: number;
   catId?: string;
   icon?: string;
+  /** brand logo: '/brands/{slug}.svg' (vendored, offline) or a logo.dev URL — wins over `icon` */
+  logo?: string;
   every: RecurringEvery;
   /** due day of month 1..31 (clamped to shorter months) */
   dueDay: number;

@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useParams } from '@tanstack/react-router';
 import { useSpaceTransaction, useTxTransform } from '@/application/transactions';
 import { useRecurringOps, useRecurrings } from '@/application/recurring';
+import { RecurringVisual } from '@/features/recurring/RecurringScreen';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { catName, useCategories } from '@/features/categories/useCategories';
@@ -213,7 +214,7 @@ export function TxDetailScreen() {
                 }}
                 className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-1 py-3 text-left text-[14px] text-ink last:border-0"
               >
-                <Icon name={r.icon ?? 'autorenew'} size={18} color="var(--m-ink-3)" />
+                <RecurringVisual rec={r} size={18} active={false} />
                 <span className="min-w-0 flex-1 truncate">{r.name}</span>
                 <span className="m-num text-[12px] text-ink-4">{fmtCents(r.amountCents, tx.currency, lang)}</span>
                 {tx.recurringId === r.id && <Icon name="check" size={17} color="var(--m-accent-deep)" />}

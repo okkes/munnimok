@@ -38,6 +38,9 @@ services:
       Push__VapidPublicKey: ${PUSH_VAPID_PUBLIC_KEY:-}
       Push__VapidPrivateKey: ${PUSH_VAPID_PRIVATE_KEY:-}
       Push__Subject: ${PUSH_VAPID_SUBJECT:-mailto:admin@localhost}
+      # logo.dev brand search for recurring costs (optional)
+      Logos__SecretKey: ${LOGODEV_SECRET_KEY:-}
+      Logos__PublicToken: ${LOGODEV_PUBLIC_TOKEN:-}
       # comma-separated OIDC subs that may open the in-app admin area
       Admin__Subs: ${ADMIN_SUBS:-}
       Sentry__Dsn: ${API_SENTRY_DSN:-}

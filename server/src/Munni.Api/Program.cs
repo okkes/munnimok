@@ -9,6 +9,7 @@ using Munni.Api.Auth;
 using Munni.Api.Data;
 using Munni.Api.Admin;
 using Munni.Api.GoCardless;
+using Munni.Api.Logos;
 using Munni.Api.Push;
 using Munni.Api.Social;
 using Munni.Api.Sync;
@@ -43,6 +44,20 @@ if (!string.IsNullOrEmpty(builder.Configuration["GoCardless:SecretId"]))
     builder.Services.AddHttpClient<IGoCardlessApi, GoCardlessApi>(client =>
         client.BaseAddress = new Uri(gcBaseUrl));
     builder.Services.AddHostedService<GcFetchService>();
+}
+
+// brand-logo search (logo.dev) — enabled when both keys are configured
+var logosEnabled = !string.IsNullOrEmpty(builder.Configuration["Logos:SecretKey"])
+                   && !string.IsNullOrEmpty(builder.Configuration["Logos:PublicToken"]);
+if (logosEnabled)
+{
+    builder.Services.AddHttpClient(LogoEndpoints.HttpClientName, client =>
+    {
+        client.BaseAddress = new Uri("https://api.logo.dev/"); // NOSONAR(S1075) vendor API base
+        client.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", builder.Configuration["Logos:SecretKey"]);
+        client.Timeout = TimeSpan.FromSeconds(5);
+    });
 }
 
 if (builder.Configuration.GetValue<bool>("Auth:TestMode"))
@@ -157,11 +172,13 @@ app.MapGet("/health", () => Results.Ok(new
         testAuth = app.Configuration.GetValue<bool>("Auth:TestMode"),
         push = pushEnabled,
         vapidPublicKey = app.Configuration["Push:VapidPublicKey"] ?? "",
+        logos = logosEnabled,
     },
 }));
 app.MapSync();
 app.MapSocial();
 app.MapPush();
+app.MapLogos(app.Configuration);
 app.MapAccounts();
 app.MapAdmin(gcEnabled);
 if (gcEnabled) app.MapGoCardless();

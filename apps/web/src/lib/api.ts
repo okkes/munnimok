@@ -33,6 +33,8 @@ export interface ApiCapabilities {
   gocardless: boolean;
   push?: boolean;
   vapidPublicKey?: string;
+  /** logo.dev brand search proxy configured server-side */
+  logos?: boolean;
 }
 
 let capabilities: ApiCapabilities | null = null;

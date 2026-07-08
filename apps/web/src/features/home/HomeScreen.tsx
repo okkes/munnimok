@@ -7,6 +7,7 @@ import { OVERVIEW_KINDS, overviewSummary } from '@/domain/overview';
 import type { OverviewKind, OverviewSummary } from '@/domain/overview';
 import { periodHistory } from '@/domain/periods';
 import { addDays, nextDueDate } from '@/domain/recurring';
+import { RecurringVisual } from '@/features/recurring/RecurringScreen';
 import type { RecurringRow } from '@/db/types';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
@@ -145,7 +146,7 @@ export function HomeScreen() {
                   onClick={() => void navigate({ to: '/recurring' })}
                   className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-2.5 text-left last:border-0"
                 >
-                  <Icon name={rec.icon ?? 'autorenew'} size={16} color="var(--m-ink-3)" />
+                  <RecurringVisual rec={rec} size={16} active={false} />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[13px] font-medium text-ink">{rec.name}</span>
                     <span className="block text-[11px] text-ink-4">{fmtShort(nextDue)}</span>

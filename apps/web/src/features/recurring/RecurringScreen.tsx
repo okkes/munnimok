@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useLang } from '@/i18n';
-import { LOCALES } from '@/i18n';
+import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useSpaceTransactions } from '@/application/transactions';
 import { localToday, useDismissedKeys, useRecurringOps, useRecurrings } from '@/application/recurring';
@@ -11,6 +10,7 @@ import { detectRecurring } from '@/domain/detectRecurring';
 import type { RecurringSuggestion } from '@/domain/detectRecurring';
 import { periodHistory } from '@/domain/periods';
 import { fmtCents } from '@/lib/money';
+import { BrandIconPicker } from './BrandIconPicker';
 import { CategoryPicker } from '@/features/categories/CategoryPicker';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import type { RecurringEvery, RecurringKind, RecurringRow } from '@/db/types';
@@ -31,6 +31,7 @@ interface FormState {
   kind: RecurringKind;
   amount: string; // major units as typed
   catId?: string;
+  logo?: string;
   every: RecurringEvery;
   dueDay: number;
   dueMonth: number;
@@ -59,6 +60,7 @@ const formFromRec = (rec: RecurringRow): FormState => ({
   kind: rec.kind,
   amount: (rec.amountCents / 100).toFixed(2),
   catId: rec.catId,
+  logo: rec.logo || undefined,
   every: rec.every,
   dueDay: rec.dueDay,
   dueMonth: rec.dueMonth ?? 1,
@@ -67,6 +69,12 @@ const formFromRec = (rec: RecurringRow): FormState => ({
   active: rec.active === 1,
   merchantKey: rec.merchantKey,
 });
+
+/** brand logo when set, the kind's MDI icon otherwise */
+export function RecurringVisual({ rec, size = 17, active = true }: Readonly<{ rec: Pick<RecurringRow, 'logo' | 'icon' | 'kind'>; size?: number; active?: boolean }>) {
+  if (rec.logo) return <img src={rec.logo} alt="" className="object-contain" style={{ width: size, height: size }} />;
+  return <Icon name={rec.icon ?? KIND_ICON[rec.kind]} size={size} color={active ? 'var(--m-accent-deep)' : 'var(--m-ink-2)'} />;
+}
 
 const formFromSuggestion = (s: RecurringSuggestion): FormState => ({
   ...emptyForm(),
@@ -105,6 +113,7 @@ export function RecurringScreen() {
   const [view, setView] = useState<'period' | 'year'>('period');
   const [form, setForm] = useState<FormState | null>(null);
   const [catPickerOpen, setCatPickerOpen] = useState(false);
+  const [brandPickerOpen, setBrandPickerOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   // pick up freshly imported payments the moment the screen opens
@@ -153,7 +162,7 @@ export function RecurringScreen() {
   const empty = (recs?.length ?? 0) === 0 && suggestions.length === 0;
 
   const save = async () => {
-    if (!form || !form.name.trim()) return;
+    if (!form?.name.trim()) return;
     const amountCents = Math.round(Number.parseFloat(form.amount.replace(',', '.')) * 100);
     if (!Number.isFinite(amountCents) || amountCents <= 0) return;
     const fromSuggestion = form.id === null && !!form.merchantKey;
@@ -164,6 +173,8 @@ export function RecurringScreen() {
       amountCents,
       catId: form.catId,
       icon: KIND_ICON[form.kind],
+      logo: form.logo ?? '', // '' clears — an absent field would not sync
+
       every: form.every,
       dueDay: Math.min(31, Math.max(1, form.dueDay || 1)),
       ...(form.every === 'year' ? { dueMonth: Math.min(12, Math.max(1, form.dueMonth || 1)) } : {}),
@@ -207,7 +218,7 @@ export function RecurringScreen() {
       className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-3 text-left last:border-0"
     >
       <span className={`relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${c.paid && view === 'period' ? 'bg-accent-soft' : 'bg-bg-2'}`}>
-        <Icon name={c.rec.icon ?? KIND_ICON[c.rec.kind]} size={17} color={c.paid && view === 'period' ? 'var(--m-accent-deep)' : 'var(--m-ink-2)'} />
+        <RecurringVisual rec={c.rec} active={c.paid && view === 'period'} />
         {c.paid && view === 'period' && (
           <span className="absolute -right-1 -bottom-1 flex h-4 w-4 items-center justify-center rounded-full bg-accent text-white ring-2 ring-surface">
             <Icon name="check" size={9} />
@@ -398,6 +409,23 @@ export function RecurringScreen() {
               className="h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[15px] text-ink outline-none placeholder:text-ink-4"
             />
 
+            <div className="m-cap px-1">{t('recurring.iconTitle')}</div>
+            <button
+              data-testid="recform-logo-open"
+              onClick={() => setBrandPickerOpen(true)}
+              className="m-tap flex h-12 w-full items-center gap-3 rounded-input border border-line bg-surface px-4 text-left text-[14px]"
+            >
+              {form.logo ? (
+                <img src={form.logo} alt="" className="h-6 w-6 object-contain" />
+              ) : (
+                <Icon name={KIND_ICON[form.kind]} size={18} color="var(--m-ink-3)" />
+              )}
+              <span className={`min-w-0 flex-1 truncate ${form.logo ? 'text-ink' : 'text-ink-3'}`}>
+                {form.logo ? t('recurring.iconChosen') : t('recurring.iconNone')}
+              </span>
+              <Icon name="chevron-down" size={17} color="var(--m-ink-4)" />
+            </button>
+
             <div className="m-cap px-1">{t('recurring.category')}</div>
             <button
               data-testid="recform-cat-open"
@@ -514,6 +542,13 @@ export function RecurringScreen() {
         onPick={(catId) => {
           if (form) setForm({ ...form, catId });
           setCatPickerOpen(false);
+        }}
+      />
+      <BrandIconPicker
+        open={brandPickerOpen}
+        onOpenChange={setBrandPickerOpen}
+        onPick={({ logo }) => {
+          if (form) setForm({ ...form, logo: logo ?? undefined });
         }}
       />
     </div>
