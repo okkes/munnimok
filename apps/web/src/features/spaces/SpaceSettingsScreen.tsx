@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useParams, useRouter } from '@tanstack/react-router';
-import { useLang } from '@/i18n';
+import { LOCALES, useLang } from '@/i18n';
 import { downscaleImage } from '@/lib/image';
 import { useData } from '@/app/data';
 import { useSession } from '@/app/session';
@@ -26,13 +26,19 @@ const PERIOD_KEYS = {
   custom: 'space.periodMonthly',
 } as const;
 
+const WEEKDAYS = [1, 2, 3, 4, 5, 6, 7]; // ISO: Monday … Sunday
+const clampWeekday = (day: number) => Math.min(Math.max(day || 1, 1), 7);
+/** localized short weekday name — 5 Jan 2020 + n lands on ISO weekday n */
+const weekdayName = (weekday: number, lang: keyof typeof LOCALES) =>
+  new Intl.DateTimeFormat(LOCALES[lang], { weekday: 'short' }).format(new Date(2020, 0, 5 + weekday));
+
 /**
  * A space's settings as a full screen (was an overloaded sheet):
  * identity (name/icon/color), money (currency/period/history start) and
  * members (roles, ownership, leave). Browser back = route back.
  */
 export function SpaceSettingsScreen() {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const { db, repo, spaceId: activeSpaceId } = useData();
   const identity = useSession((s) => s.identity);
   const syncing = identity?.kind === 'user';
@@ -116,7 +122,9 @@ export function SpaceSettingsScreen() {
           </IconButton>
         }
       />
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-8">
+      {/* overflow-x-hidden: wide chip rows must swipe inside their own
+          containers, never pan the whole screen sideways */}
+      <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-5 pb-8">
         {space && (
           <div className="flex flex-col gap-3 pt-1 pb-4">
             {readOnly && (
@@ -218,14 +226,15 @@ export function SpaceSettingsScreen() {
             </div>
 
             <div className="m-cap px-1">{t('space.periodTitle')}</div>
-            <div className="flex gap-2">
+            {/* wrap: NL/TR labels (Tweewekelijks…) must never widen the page */}
+            <div className="flex flex-wrap gap-2">
               {PERIODS.map((p) => (
                 <button
                   key={p}
                   data-testid={`space-period-${p}`}
                   disabled={readOnly}
                   onClick={() => setPeriodType(p)}
-                  className={`m-tap flex-1 rounded-full border px-3 py-1.5 text-[12px] ${
+                  className={`m-tap min-w-[30%] flex-1 rounded-full border px-3 py-1.5 text-[12px] ${
                     periodType === p ? 'border-accent bg-accent-soft font-medium text-accent-deep' : 'border-line bg-surface text-ink-2'
                   }`}
                 >
@@ -233,7 +242,7 @@ export function SpaceSettingsScreen() {
                 </button>
               ))}
             </div>
-            {periodType === 'month' && (
+            {periodType === 'month' ? (
               <label className="flex items-center gap-3 text-[13px] text-ink-2">
                 {t('space.periodDayLabel')}
                 <input
@@ -247,6 +256,25 @@ export function SpaceSettingsScreen() {
                   className="h-10 w-20 rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none"
                 />
               </label>
+            ) : (
+              // weekly/bi-weekly periods start on a chosen weekday (legacy parity)
+              <div className="flex flex-wrap gap-1.5">
+                {WEEKDAYS.map((weekday) => (
+                  <button
+                    key={weekday}
+                    data-testid={`space-weekday-${weekday}`}
+                    disabled={readOnly}
+                    onClick={() => setPeriodDay(weekday)}
+                    className={`m-tap rounded-full border px-2.5 py-1.5 text-[12px] ${
+                      clampWeekday(periodDay) === weekday
+                        ? 'border-accent bg-accent-soft font-medium text-accent-deep'
+                        : 'border-line bg-surface text-ink-2'
+                    }`}
+                  >
+                    {weekdayName(weekday, lang)}
+                  </button>
+                ))}
+              </div>
             )}
 
             <div className="m-cap px-1">{t('space.historyStart')}</div>

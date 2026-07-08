@@ -5,7 +5,7 @@ import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactio
 import { OVERVIEW_KINDS, overviewSummary } from '@/domain/overview';
 import type { OverviewKind, OverviewSummary } from '@/domain/overview';
 import { periodHistory } from '@/domain/periods';
-import { useLang } from '@/i18n';
+import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { fmtCents } from '@/lib/money';
 import { AppBar } from '@/ui/AppBar';
@@ -41,11 +41,16 @@ export function HomeScreen() {
   const space = useLiveQuery(() => db.spaces.get(spaceId), [spaceId]);
   const totalCents = (accounts ?? []).reduce((sum, a) => sum + a.balanceCents, 0);
   const currency = space?.currency ?? accounts?.[0]?.currency ?? 'EUR';
+  const period = useMemo(
+    () => periodHistory(space?.periodType ?? 'month', space?.periodDay ?? 1, 1)[0],
+    [space?.periodType, space?.periodDay],
+  );
   const summary = useMemo(() => {
-    const [period] = periodHistory(space?.periodType ?? 'month', space?.periodDay ?? 1, 1);
     const accountsById = new Map((accounts ?? []).map((a) => [a.id, a]));
     return overviewSummary(allTxs ?? [], accountsById, period);
-  }, [allTxs, accounts, space?.periodType, space?.periodDay]);
+  }, [allTxs, accounts, period]);
+  const fmtShort = (iso: string) =>
+    new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' });
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-home">
@@ -78,7 +83,12 @@ export function HomeScreen() {
 
         {/* landing-zone block: this period's overview. Future blocks
             (goals, budgets, events…) follow this same compact pattern. */}
-        <div className="m-cap mt-5 mb-1 px-1">{t('overview.thisPeriod')}</div>
+        <div className="m-cap mt-5 mb-1 flex items-baseline justify-between px-1">
+          <span>{t('overview.thisPeriod')}</span>
+          <span className="text-[10px] font-medium normal-case text-ink-4" data-testid="home-period-range">
+            {fmtShort(period.start)} – {fmtShort(period.end)}
+          </span>
+        </div>
         <div className="grid grid-cols-2 overflow-hidden rounded-card border border-line bg-surface">
           {OVERVIEW_KINDS.map((kind, i) => (
             <button

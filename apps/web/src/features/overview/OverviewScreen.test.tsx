@@ -48,6 +48,32 @@ describe('Overview (demo identity)', () => {
     expect(document.querySelectorAll(`[data-testid="overview-subs-${catId}"] .m-num`).length).toBeGreaterThan(0);
   });
 
+  it('category rows drill into period-scoped transactions (All + subs)', async () => {
+    renderApp('/overview/expense');
+    await screen.findByTestId('screen-overview');
+    await waitFor(() => expect(screen.getByTestId('overview-total').textContent).toMatch(/€[1-9]/));
+
+    const group = await waitFor(() => {
+      const el = document.querySelector('[data-testid^="overview-group-"]');
+      expect(el).toBeTruthy();
+      return el!;
+    });
+    fireEvent.click(group); // unfold
+    const all = await waitFor(() => {
+      const el = document.querySelector('[data-testid^="overview-all-"]');
+      expect(el).toBeTruthy();
+      return el!;
+    });
+    fireEvent.click(all);
+
+    // lands on transactions, scoped to the category + current period
+    await screen.findByTestId('screen-transactions');
+    expect(await screen.findByTestId('tx-drill-chip')).toBeTruthy();
+    // clearing the chip returns to the unfiltered list
+    fireEvent.click(screen.getByTestId('tx-drill-chip'));
+    await waitFor(() => expect(screen.queryByTestId('tx-drill-chip')).toBeNull());
+  });
+
   it('selecting an older period updates the total', async () => {
     renderApp('/overview/expense');
     await screen.findByTestId('screen-overview');

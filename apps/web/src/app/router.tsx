@@ -57,6 +57,12 @@ const transactionsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/transactions',
   component: TransactionsScreen,
+  // overview drill-down: category + period land here as search params
+  validateSearch: (search: Record<string, unknown>): { catId?: string; from?: string; to?: string } => ({
+    catId: typeof search.catId === 'string' ? search.catId : undefined,
+    from: typeof search.from === 'string' ? search.from : undefined,
+    to: typeof search.to === 'string' ? search.to : undefined,
+  }),
 });
 const txDetailRoute = createRoute({
   getParentRoute: () => appRoute,

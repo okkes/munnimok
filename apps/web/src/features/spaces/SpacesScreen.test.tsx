@@ -117,6 +117,18 @@ describe('SpacesScreen (demo identity)', () => {
 
     fireEvent.click(screen.getByTestId('space-period-biweekly'));
     expect(screen.queryByTestId('space-period-day')).toBeNull();
+    // weekly/bi-weekly periods pick a START WEEKDAY instead (legacy parity)
+    expect(screen.getByTestId('space-weekday-3')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('space-weekday-3'));
+    fireEvent.click(screen.getByTestId('space-edit-save'));
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const space = await db.spaces.get(id);
+      expect(space?.periodType).toBe('biweekly');
+      expect(space?.periodDay).toBe(3); // Wednesday
+    });
+    db.close();
   });
 
   it('refuses deleting the active or only space, allows deleting another', async () => {

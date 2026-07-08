@@ -142,6 +142,7 @@ const KEYS = {
     'overview.investment': 'Invested',
     'overview.thisPeriod': 'This period',
     'overview.transactions': '{n} transactions',
+    'overview.allIn': 'All {name}',
     'onboarding.bankTitle': 'Connect your bank',
     'onboarding.bankSub': 'See your real transactions right away — munni only gets read access, arranged by your own bank',
     'onboarding.importInstead': 'Import a bank statement instead',

@@ -6,6 +6,11 @@ export interface TxFilter {
   query?: string;
   accountId?: string;
   onlyNeedsReview?: boolean;
+  /** category ids to match — a main category passes itself plus its subs */
+  catIds?: ReadonlySet<string>;
+  /** inclusive yyyy-mm-dd bounds (overview drill-down scopes to a period) */
+  from?: string;
+  to?: string;
 }
 
 export function filterTxs(txs: TransactionRow[], filter: TxFilter): TransactionRow[] {
@@ -13,6 +18,9 @@ export function filterTxs(txs: TransactionRow[], filter: TxFilter): TransactionR
   return txs.filter((tx) => {
     if (filter.accountId && tx.accountId !== filter.accountId) return false;
     if (filter.onlyNeedsReview && tx.needsReview !== 1) return false;
+    if (filter.catIds && !filter.catIds.has(tx.catId ?? '')) return false;
+    if (filter.from && tx.date < filter.from) return false;
+    if (filter.to && tx.date > filter.to) return false;
     if (q) {
       const haystack = `${cleanBankText(tx.merchant)} ${cleanBankText(tx.description)}`.toLowerCase();
       if (!haystack.includes(q)) return false;
@@ -22,4 +30,4 @@ export function filterTxs(txs: TransactionRow[], filter: TxFilter): TransactionR
 }
 
 export const hasActiveFilter = (f: TxFilter): boolean =>
-  Boolean(f.query?.trim() || f.accountId || f.onlyNeedsReview);
+  Boolean(f.query?.trim() || f.accountId || f.onlyNeedsReview || f.catIds || f.from || f.to);

@@ -17,21 +17,29 @@ const localIso = (d: Date): string =>
 
 const shift = (d: Date, days: number): Date => new Date(d.getFullYear(), d.getMonth(), d.getDate() + days);
 
-function weeklyStart(today: Date, lengthDays: number): Date {
-  // Monday-anchored; 6 Jan 2020 is a Monday
-  const anchor = new Date(2020, 0, 6);
+function weeklyStart(today: Date, lengthDays: number, weekday: number): Date {
+  // anchored on the chosen weekday; 6 Jan 2020 is a Monday, so weekday
+  // 1 (Mon) … 7 (Sun) offsets from there and the cycle never drifts
+  const anchor = new Date(2020, 0, 6 + (weekday - 1));
   const midnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const daysSince = Math.floor((midnight.getTime() - anchor.getTime()) / 86_400_000);
+  // both are local midnights, but DST makes the raw diff N days ± 1h —
+  // floor would land a day short exactly on period-boundary days
+  const daysSince = Math.round((midnight.getTime() - anchor.getTime()) / 86_400_000);
   const periods = Math.floor(daysSince / lengthDays);
   return shift(anchor, periods * lengthDays);
 }
 
-/** newest last: the `count` most recent periods including the current one */
+/**
+ * Newest last: the `count` most recent periods including the current one.
+ * `periodDay` means day-of-month (1-28) for monthly and day-of-week
+ * (1 = Monday … 7 = Sunday) for weekly/bi-weekly periods.
+ */
 export function periodHistory(periodType: SpacePeriodType, periodDay: number, count: number, now = new Date()): Period[] {
   const result: Period[] = [];
   if (periodType === 'week' || periodType === 'biweekly') {
     const length = periodType === 'week' ? 7 : 14;
-    const current = weeklyStart(now, length);
+    const weekday = Math.min(Math.max(periodDay || 1, 1), 7);
+    const current = weeklyStart(now, length, weekday);
     for (let i = count - 1; i >= 0; i--) {
       const start = shift(current, -i * length);
       result.push({ start: localIso(start), end: localIso(shift(start, length - 1)) });

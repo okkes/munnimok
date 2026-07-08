@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useParams } from '@tanstack/react-router';
+import { useNavigate, useParams } from '@tanstack/react-router';
 import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
 import { useData } from '@/app/data';
 import { categoryBreakdown, contributionCents, txsForKind } from '@/domain/overview';
@@ -32,6 +32,7 @@ export function OverviewScreen() {
   const { t, lang } = useLang();
   const { db, spaceId } = useData();
   const { kind } = useParams({ strict: false }) as { kind: OverviewKind };
+  const navigate = useNavigate();
   const cats = useCategories();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
@@ -67,6 +68,9 @@ export function OverviewScreen() {
   );
 
   const period = periods[periodIndex];
+  // drill into a category's transactions, scoped to the selected period
+  const openTransactions = (catId: string) =>
+    void navigate({ to: '/transactions', search: { catId, from: period.start, to: period.end } });
   const groups = useMemo(
     () => categoryBreakdown(kind, txs ?? [], accountsById, period, cats),
     [kind, txs, accountsById, period, cats],
@@ -156,8 +160,30 @@ export function OverviewScreen() {
                 </button>
                 {isOpen && group.subs.length > 0 && (
                   <div className="bg-bg-2 px-4 py-1" data-testid={`overview-subs-${group.catId}`}>
+                    {/* whole main category first (legacy 'All'): the header
+                        row folds/unfolds, so this is how you reach ALL of
+                        the main's transactions */}
+                    <button
+                      data-testid={`overview-all-${group.catId}`}
+                      onClick={() => openTransactions(group.catId)}
+                      className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent py-2.5 text-left"
+                    >
+                      <Icon name="format-list-bulleted" size={16} color="var(--m-ink-3)" />
+                      <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">
+                        {t('overview.allIn', { name: catName(main, t) })}
+                      </span>
+                      <span className="m-num text-[13px] font-medium text-ink">
+                        {fmtCents(group.totalCents, currency, lang)}
+                      </span>
+                      <Icon name="chevron-right" size={14} color="var(--m-ink-4)" />
+                    </button>
                     {group.subs.map((sub) => (
-                      <div key={sub.catId} className="flex items-center gap-3 border-b border-line-2 py-2.5 last:border-0">
+                      <button
+                        key={sub.catId}
+                        data-testid={`overview-sub-${sub.catId}`}
+                        onClick={() => openTransactions(sub.catId)}
+                        className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent py-2.5 text-left last:border-0"
+                      >
                         <Icon name={cats.byId(sub.catId).icon} size={16} color="var(--m-ink-3)" />
                         <span className="min-w-0 flex-1 truncate text-[13px] text-ink">
                           {catName(cats.byId(sub.catId), t)}
@@ -166,7 +192,8 @@ export function OverviewScreen() {
                         <span className="m-num text-[13px] font-medium text-ink">
                           {fmtCents(sub.totalCents, currency, lang)}
                         </span>
-                      </div>
+                        <Icon name="chevron-right" size={14} color="var(--m-ink-4)" />
+                      </button>
                     ))}
                   </div>
                 )}

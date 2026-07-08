@@ -891,6 +891,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'overview.investment': 'Yatırılan',
   'overview.thisPeriod': 'Bu dönem',
   'overview.transactions': '{n} işlem',
+  'overview.allIn': 'Tüm {name}',
   'onboarding.bankTitle': 'Bankanı bağla',
   'onboarding.bankSub': 'Gerçek işlemlerini hemen gör — munni yalnızca okuma erişimi alır, bunu kendi bankan ayarlar',
   'onboarding.importInstead': 'Bunun yerine banka ekstresi içe aktar',

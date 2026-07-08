@@ -111,6 +111,9 @@
     height: 100%;
     overflow: hidden;
     overscroll-behavior: none;
+    /* also on html: iOS standalone paints OS bands (home indicator area)
+       with the root background — white default reads as a broken footer */
+    background: var(--m-bg);
   }
   body {
     background: var(--m-bg);

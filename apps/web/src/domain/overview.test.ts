@@ -52,6 +52,19 @@ describe('periodHistory', () => {
     expect(days).toBe(14);
     expect(inPeriod('2026-07-08', p)).toBe(true);
   });
+
+  it('weekly/biweekly periods start on the chosen weekday', () => {
+    // periodDay 3 = Wednesday; on Wed 8 Jul 2026 the current week IS 8 Jul…
+    const [wed] = periodHistory('week', 3, 1, new Date(2026, 6, 8));
+    expect(wed).toEqual({ start: '2026-07-08', end: '2026-07-14' });
+    // …and on Tue 7 Jul it is still the week that began the previous Wednesday
+    const [prev] = periodHistory('week', 3, 1, new Date(2026, 6, 7));
+    expect(prev).toEqual({ start: '2026-07-01', end: '2026-07-07' });
+    // sunday-start biweekly stays 14 days on the sunday grid
+    const [sun] = periodHistory('biweekly', 7, 1, new Date(2026, 6, 8));
+    expect(new Date(sun.start).getDay()).toBe(0); // JS Sunday
+    expect((Date.parse(sun.end) - Date.parse(sun.start)) / 86_400_000 + 1).toBe(14);
+  });
 });
 
 describe('contribution sign mechanics (user spec)', () => {

@@ -891,6 +891,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'overview.investment': 'Belegd',
   'overview.thisPeriod': 'Deze periode',
   'overview.transactions': '{n} transacties',
+  'overview.allIn': 'Alles in {name}',
   'onboarding.bankTitle': 'Verbind je bank',
   'onboarding.bankSub': 'Zie meteen je echte transacties — munni krijgt alleen leestoegang, geregeld via je eigen bank',
   'onboarding.importInstead': 'Liever een bankafschrift importeren',
