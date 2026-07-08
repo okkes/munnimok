@@ -1,6 +1,7 @@
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.EntityFrameworkCore;
+using Scalar.AspNetCore;
 using Munni.Api.Auth;
 using Munni.Api.Data;
 using Munni.Api.Admin;
@@ -19,6 +20,9 @@ builder.Services.AddMemoryCache();
 builder.Services.AddValidatorsFromAssemblyContaining<Program>(ServiceLifetime.Singleton);
 // SSE fan-out for near-real-time sync
 builder.Services.AddSingleton<SpaceEventBroadcaster>();
+
+// OpenAPI document + Scalar reference UI at /scalar
+builder.Services.AddOpenApi();
 
 // web push: enabled when a VAPID key pair is configured
 var pushEnabled = !string.IsNullOrEmpty(builder.Configuration["Push:VapidPublicKey"])
@@ -94,6 +98,10 @@ app.Use(async (http, next) =>
     var db = http.RequestServices.GetRequiredService<AppDbContext>();
     await UserResolution.ResolveUser(http, db, () => next(http));
 });
+
+// interactive API reference (Scalar) backed by the generated OpenAPI doc
+app.MapOpenApi();
+app.MapScalarApiReference(options => options.WithTitle("munni API"));
 
 var gcEnabled = !string.IsNullOrEmpty(app.Configuration["GoCardless:SecretId"]);
 app.MapGet("/health", () => Results.Ok(new
