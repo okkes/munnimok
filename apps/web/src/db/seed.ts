@@ -6,9 +6,11 @@ import { DEMO_ACCOUNTS, DEMO_TXS } from './demo-data';
 export const DEMO_SPACE_ID = 'demo_space';
 const SEED_FLAG = 'seeded_demo_v1';
 
-const isoDaysAgo = (daysAgo: number): string => {
+// local date, matching the local-time period math in domain/periods.ts —
+// a daysAgo:0 row must always fall inside the current local budget period
+export const isoDaysAgo = (daysAgo: number): string => {
   const d = new Date(Date.now() - daysAgo * 86_400_000);
-  return d.toISOString().slice(0, 10);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
 const txTypeFor = (catId: string): TxType => CATEGORY_BY_ID.get(catId)?.txTypes[0] ?? 'expense';

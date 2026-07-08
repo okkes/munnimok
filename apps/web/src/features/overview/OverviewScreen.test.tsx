@@ -2,8 +2,13 @@
 import 'fake-indexeddb/auto';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { DEMO_TXS } from '@/db/demo-data';
+import { isoDaysAgo } from '@/db/seed';
+import { inPeriod, periodHistory } from '@/domain/periods';
 import { renderApp } from '@/test/harness';
 
+// /€[1-9]/ (not /€\d/) so the assertion cannot pass on the €0.00 that
+// renders before the live query has delivered the seeded transactions
 describe('Overview (demo identity)', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -14,8 +19,8 @@ describe('Overview (demo identity)', () => {
   it('home shows the four period tiles with money values', async () => {
     renderApp('/home');
     await screen.findByTestId('home-overview-expense');
-    // demo data always has a purchase within the last 3 days -> spent > 0
-    await waitFor(() => expect(screen.getByTestId('home-overview-expense').textContent).toMatch(/€\d/));
+    // the demo seed guarantees a purchase inside the current period (dm102, daysAgo 0)
+    await waitFor(() => expect(screen.getByTestId('home-overview-expense').textContent).toMatch(/€[1-9]/));
     expect(screen.getByTestId('home-overview-income')).toBeTruthy();
     expect(screen.getByTestId('home-overview-saving')).toBeTruthy();
     expect(screen.getByTestId('home-overview-investment')).toBeTruthy();
@@ -27,7 +32,7 @@ describe('Overview (demo identity)', () => {
     fireEvent.click(screen.getByTestId('home-overview-expense'));
 
     await screen.findByTestId('screen-overview');
-    await waitFor(() => expect(screen.getByTestId('overview-total').textContent).toMatch(/€\d/));
+    await waitFor(() => expect(screen.getByTestId('overview-total').textContent).toMatch(/€[1-9]/));
     expect(screen.getByTestId('overview-barchart')).toBeTruthy();
     expect(screen.getByTestId('overview-stackedbar')).toBeTruthy();
 
@@ -46,7 +51,7 @@ describe('Overview (demo identity)', () => {
   it('selecting an older period updates the total', async () => {
     renderApp('/overview/expense');
     await screen.findByTestId('screen-overview');
-    await waitFor(() => expect(screen.getByTestId('overview-total').textContent).toMatch(/€\d/));
+    await waitFor(() => expect(screen.getByTestId('overview-total').textContent).toMatch(/€[1-9]/));
     const current = screen.getByTestId('overview-total').textContent;
 
     fireEvent.click(screen.getByTestId('overview-bar-0')); // oldest period
@@ -54,23 +59,26 @@ describe('Overview (demo identity)', () => {
   });
 
   it('saving uses the checking-side sign mechanic (deposits count positive)', async () => {
+    // compute, from the seed itself, a period bar that holds a saving deposit —
+    // never fireEvent inside waitFor: the clicks mutate the DOM, which re-runs
+    // the callback forever and starves waitFor's own timeout (real hang we had)
+    const periods = periodHistory('month', 1, 6);
+    const depositDate = DEMO_TXS.filter((tx) => tx.cat === 'savingDeposit')
+      .map((tx) => isoDaysAgo(tx.daysAgo))
+      .find((date) => periods.some((p) => inPeriod(date, p)));
+    expect(depositDate).toBeTruthy(); // the seed always has a deposit in range
+    const barIndex = periods.findIndex((p) => inPeriod(depositDate!, p));
+
     renderApp('/overview/saving');
     await screen.findByTestId('screen-overview');
-    // demo savingDeposit rows are negative on the checking account ->
-    // shown as a positive amount saved in some period bar
     await waitFor(() => {
       expect(document.querySelectorAll('[data-testid^="overview-bar-"]')).toHaveLength(6);
     });
-    // find a period with saving activity by clicking through the bars
-    // (inside waitFor: the transactions arrive via a live query)
-    await waitFor(() => {
-      let found = false;
-      for (let i = 5; i >= 0 && !found; i--) {
-        fireEvent.click(screen.getByTestId(`overview-bar-${i}`));
-        const text = screen.getByTestId('overview-total').textContent ?? '';
-        if (/€[1-9]/.test(text) && !text.includes('-')) found = true;
-      }
-      expect(found).toBe(true);
-    });
+
+    fireEvent.click(screen.getByTestId(`overview-bar-${barIndex}`));
+    // demo savingDeposit rows are negative on the checking account ->
+    // shown as a positive amount saved once the live query has delivered
+    await waitFor(() => expect(screen.getByTestId('overview-total').textContent).toMatch(/€[1-9]/));
+    expect(screen.getByTestId('overview-total').textContent).not.toContain('-');
   });
 });
