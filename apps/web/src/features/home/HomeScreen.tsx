@@ -1,12 +1,23 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useNavigate } from '@tanstack/react-router';
+import { OVERVIEW_KINDS, overviewSummary } from '@/domain/overview';
+import type { OverviewKind, OverviewSummary } from '@/domain/overview';
+import { periodHistory } from '@/domain/periods';
 import { useLang } from '@/i18n';
+import type { TranslationKey } from '@/i18n';
 import { useData } from '@/app/data';
 import { fmtCents } from '@/lib/money';
 import { AppBar } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
 import { TxRow } from '@/ui/TxRow';
+
+const TILE_META: Record<OverviewKind, { icon: string; color: string; field: keyof OverviewSummary }> = {
+  income: { icon: 'cash-plus', color: 'var(--m-accent)', field: 'incomeCents' },
+  expense: { icon: 'cash-remove', color: 'var(--m-negative)', field: 'expenseCents' },
+  saving: { icon: 'piggy-bank-outline', color: '#A8782B', field: 'savingCents' },
+  investment: { icon: 'chart-timeline-variant', color: '#673AB7', field: 'investmentCents' },
+};
 
 export function HomeScreen() {
   const { t, lang } = useLang();
@@ -48,6 +59,17 @@ export function HomeScreen() {
   const totalCents = (accounts ?? []).reduce((sum, a) => sum + a.balanceCents, 0);
   const currency = space?.currency ?? accounts?.[0]?.currency ?? 'EUR';
 
+  // this period's overview (earned / spent / saved / invested)
+  const allTxs = useLiveQuery(
+    () => db.transactions.where('spaceId').equals(spaceId).filter((tx) => tx.deleted === 0).toArray(),
+    [spaceId],
+  );
+  const summary = useMemo(() => {
+    const [period] = periodHistory(space?.periodType ?? 'month', space?.periodDay ?? 1, 1);
+    const accountsById = new Map((accounts ?? []).map((a) => [a.id, a]));
+    return overviewSummary(allTxs ?? [], accountsById, period);
+  }, [allTxs, accounts, space?.periodType, space?.periodDay]);
+
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-home">
       <AppBar large title={t('tab.home')} />
@@ -65,6 +87,31 @@ export function HomeScreen() {
               </div>
             ))}
           </div>
+        </div>
+
+        {/* overview tiles: this period, tap to drill into categories */}
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          {OVERVIEW_KINDS.map((kind) => (
+            <button
+              key={kind}
+              data-testid={`home-overview-${kind}`}
+              onClick={() => void navigate({ to: '/overview/$kind', params: { kind } })}
+              className="m-tap flex items-center gap-3 rounded-card border border-line bg-surface px-4 py-3.5 text-left"
+            >
+              <span
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
+                style={{ background: `color-mix(in srgb, ${TILE_META[kind].color} 14%, transparent)`, color: TILE_META[kind].color }}
+              >
+                <Icon name={TILE_META[kind].icon} size={18} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[11px] font-medium text-ink-3">{t(`overview.${kind}` as TranslationKey)}</span>
+                <span className="m-num block truncate text-[15px] font-semibold text-ink">
+                  {fmtCents(summary[TILE_META[kind].field], currency, lang)}
+                </span>
+              </span>
+            </button>
+          ))}
         </div>
 
         {(reviewCount ?? 0) > 0 && (

@@ -18,8 +18,8 @@ import { ReviewScreen } from '@/features/review/ReviewScreen';
 import { AccountsScreen } from '@/features/accounts/AccountsScreen';
 import { ManageCategoriesScreen } from '@/features/categories/ManageCategoriesScreen';
 import { FriendsScreen } from '@/features/friends/FriendsScreen';
-import { AdminScreen } from '@/features/admin/AdminScreen';
 import { OnboardingScreen } from '@/features/auth/OnboardingScreen';
+import { OverviewScreen } from '@/features/overview/OverviewScreen';
 import { ProfileScreen } from '@/features/profile/ProfileScreen';
 
 const rootRoute = createRootRoute({ component: Outlet });
@@ -72,9 +72,9 @@ const categoriesRoute = createRoute({
   component: ManageCategoriesScreen,
 });
 const friendsRoute = createRoute({ getParentRoute: () => appRoute, path: '/friends', component: FriendsScreen });
-const adminRoute = createRoute({ getParentRoute: () => appRoute, path: '/admin', component: AdminScreen });
 const onboardingRoute = createRoute({ getParentRoute: () => appRoute, path: '/onboarding', component: OnboardingScreen });
 const profileRoute = createRoute({ getParentRoute: () => appRoute, path: '/profile', component: ProfileScreen });
+const overviewRoute = createRoute({ getParentRoute: () => appRoute, path: '/overview/$kind', component: OverviewScreen });
 
 export const routeTree = rootRoute.addChildren([
   loginRoute,
@@ -89,9 +89,9 @@ export const routeTree = rootRoute.addChildren([
     accountsRoute,
     categoriesRoute,
     friendsRoute,
-    adminRoute,
     onboardingRoute,
     profileRoute,
+    overviewRoute,
   ]),
 ]);
 
