@@ -1,9 +1,10 @@
 # Overnight report — 8 Jul 2026
 
 Everything you asked for is done, verified and pushed to `dev`
-(13 commits). Suites: **web 268/268 unit** (4 consecutive clean runs),
-**API 47/47**, **Playwright 43/43**, **Sonar 0 open issues on both
-dashboards**. Local + e2e docker stacks rebuilt and smoke-checked.
+(16 commits). Suites: **web 268/268 unit** (repeatedly clean, also
+under coverage), **API 54/54**, **Playwright 43/43**, **Sonar 0 open
+issues on both dashboards**. Local + e2e docker stacks rebuilt and
+smoke-checked; dev CI green.
 
 ## What landed
 
@@ -16,6 +17,7 @@ dashboards**. Local + e2e docker stacks rebuilt and smoke-checked.
 | Scalar API reference | `http://localhost:8180/scalar` (and NAS API domain `/scalar`) |
 | Admin console as its own app + container (same API — justified in the commit/readme) | `apps/admin`, port 8085 prod / `npm run dev -w @munni/admin` (5175); removed from the member app |
 | The three review docs you asked for | `docs/architecture-review.md`, `docs/security-review.md`, `docs/design-review.md` |
+| Security S2-S4 already fixed (bonus arc) | API rate limiting (global per-sub bucket + strict social-mutations window, 7 new tests), route-param shape validation, CSP/security headers in both nginx images (app verified booting under CSP) |
 
 ## The one real battle: the "flaky" test suite
 
@@ -41,8 +43,9 @@ which also makes the demo look alive today.
    language chips in onboarding, folding Friends into space members.
 2. **Architecture review** — R1 (application layer) is the refactor I
    recommend interleaving with feature B P2-P4; the rest can wait.
-3. **Security review** — S1 (feed-space squatting) is designed into
-   B P2 as a hard requirement; S2-S4 are small server/nginx follow-ups.
+3. **Security review** — S2-S4 are already fixed and verified (see
+   table); only S1 (feed-space squatting) remains, designed into B P2
+   as a hard requirement.
 4. **Your side for the admin console**: third Logto SPA app +
    `VITE_LOGTO_APP_ID_ADMIN` repo variable + `munni-admin.` reverse
    proxy (LAN-only) — steps in `deploy/README.md`.
