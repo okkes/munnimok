@@ -55,30 +55,53 @@ public sealed class WebPushSender(IConfiguration config) : IPushSender
 }
 
 /// <summary>
-/// Notifies every member of a space (all their devices) that new
-/// transactions arrived — the app preloads them the moment it opens.
+/// Sends Web Push notifications: sync announcements (new transactions
+/// arrived — the app preloads them the moment it opens) and social
+/// events (friend requests, space invites). Payloads carry raw facts;
+/// the service worker localizes the visible text.
 /// </summary>
 public sealed class PushNotifier(AppDbContext db, IPushSender sender, ILogger<PushNotifier> logger)
 {
     public async Task NotifyNewTransactionsAsync(string spaceId, int count, CancellationToken ct)
     {
         var userIds = await db.SpaceMembers.Where(m => m.SpaceId == spaceId).Select(m => m.UserId).ToListAsync(ct);
+        await SendToUsersAsync(userIds, new { type = "new-transactions", spaceId, count }, ct);
+    }
+
+    /// <summary>"{fromName} sent you a friend request"</summary>
+    public Task NotifyFriendRequestAsync(Guid toUserId, string? fromName, CancellationToken ct) =>
+        SendToUsersAsync([toUserId], new { type = "friend-request", fromName }, ct);
+
+    /// <summary>"{fromName} accepted your friend request"</summary>
+    public Task NotifyFriendAcceptedAsync(Guid toUserId, string? fromName, CancellationToken ct) =>
+        SendToUsersAsync([toUserId], new { type = "friend-accept", fromName }, ct);
+
+    /// <summary>"{fromName} invited you to {spaceName}"</summary>
+    public Task NotifySpaceInviteAsync(Guid toUserId, string? fromName, string? spaceName, CancellationToken ct) =>
+        SendToUsersAsync([toUserId], new { type = "space-invite", fromName, spaceName }, ct);
+
+    /// <summary>"{fromName} joined {spaceName}" — closes the inviter's loop</summary>
+    public Task NotifySpaceJoinAsync(Guid toUserId, string? fromName, string? spaceName, CancellationToken ct) =>
+        SendToUsersAsync([toUserId], new { type = "space-join", fromName, spaceName }, ct);
+
+    private async Task SendToUsersAsync(IReadOnlyCollection<Guid> userIds, object payload, CancellationToken ct)
+    {
         var subscriptions = await db.PushSubscriptions.Where(s => userIds.Contains(s.UserId)).ToListAsync(ct);
         if (subscriptions.Count == 0) return;
 
-        var payload = JsonSerializer.Serialize(new { type = "new-transactions", spaceId, count });
+        var json = JsonSerializer.Serialize(payload);
         foreach (var subscription in subscriptions)
         {
             try
             {
-                if (!await sender.SendAsync(subscription, payload, ct))
+                if (!await sender.SendAsync(subscription, json, ct))
                 {
                     db.PushSubscriptions.Remove(subscription);
                 }
             }
             catch (Exception ex)
             {
-                // one broken push service must not block the fetch cycle
+                // one broken push service must not block the caller
                 logger.LogWarning(ex, "push send failed for user {UserId}", subscription.UserId);
             }
         }

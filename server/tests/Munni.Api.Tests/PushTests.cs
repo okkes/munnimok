@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -70,6 +71,95 @@ public class PushTests : IClassFixture<SyncApiFactory>
             Sent.Add((subscription.UserId, payload));
             return Task.FromResult(true);
         }
+    }
+
+    [Fact]
+    public async Task Social_events_notify_the_affected_user()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var sender = new FakeSender();
+        using var factory = _factory.WithWebHostBuilder(b =>
+            b.ConfigureServices(s => s.AddSingleton<IPushSender>(sender)));
+
+        HttpClient ClientOf(string sub)
+        {
+            var client = factory.CreateClient();
+            client.DefaultRequestHeaders.Add("X-User-Sub", sub);
+            return client;
+        }
+        var alice = ClientOf($"soc-a-{suffix}");
+        var bob = ClientOf($"soc-b-{suffix}");
+        await alice.PutAsJsonAsync("/me", new UpdateMeRequest("Alice"));
+        await bob.PutAsJsonAsync("/me", new UpdateMeRequest("Bob"));
+        var aliceId = (await alice.GetFromJsonAsync<MeResponse>("/me"))!.UserId;
+        var bobId = (await bob.GetFromJsonAsync<MeResponse>("/me"))!.UserId;
+        await alice.PostAsJsonAsync("/me/push-subscriptions", new SubscribeRequest($"https://p/{suffix}/alice", "p", "a"));
+        await bob.PostAsJsonAsync("/me/push-subscriptions", new SubscribeRequest($"https://p/{suffix}/bob", "p", "a"));
+
+        // friend request -> Bob is notified
+        Assert.True((await alice.PostAsJsonAsync("/friends/requests", new SendFriendRequest(bobId))).IsSuccessStatusCode);
+        var sent = Assert.Single(sender.Sent);
+        Assert.Equal(bobId, sent.UserId);
+        Assert.Contains("\"type\":\"friend-request\"", sent.Payload);
+        Assert.Contains("Alice", sent.Payload);
+
+        // acceptance -> the requester (Alice) is notified
+        var friends = await bob.GetFromJsonAsync<FriendsResponse>("/friends");
+        var requestId = Assert.Single(friends!.ReceivedPending).Id;
+        Assert.True((await bob.PostAsync($"/friends/requests/{requestId}/accept", null)).IsSuccessStatusCode);
+        Assert.Contains(sender.Sent, s => s.UserId == aliceId && s.Payload.Contains("\"type\":\"friend-accept\"") && s.Payload.Contains("Bob"));
+
+        // space invite -> Bob is notified, and the owner sees it pending
+        var spaceId = $"space_soc_{suffix}";
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.Spaces.Add(new Space { Id = spaceId });
+            db.SpaceMembers.Add(new SpaceMember { SpaceId = spaceId, UserId = aliceId, Role = SpaceRoles.Owner });
+            await db.SaveChangesAsync();
+        }
+        Assert.True((await alice.PostAsJsonAsync($"/spaces/{spaceId}/invites",
+            new SendSpaceInvite(bobId, "contributor", "Push Space"))).IsSuccessStatusCode);
+        Assert.Contains(sender.Sent, s => s.UserId == bobId && s.Payload.Contains("\"type\":\"space-invite\"") && s.Payload.Contains("Push Space"));
+        var outgoing = await alice.GetFromJsonAsync<List<OutgoingInviteDto>>($"/spaces/{spaceId}/invites");
+        Assert.Equal(bobId, Assert.Single(outgoing!).ToUserId);
+
+        // joining -> the inviter (Alice) is notified
+        var invites = await bob.GetFromJsonAsync<List<SpaceInviteDto>>("/me/invites");
+        var inviteId = Assert.Single(invites!).Id;
+        Assert.True((await bob.PostAsync($"/spaces/invites/{inviteId}/accept", null)).IsSuccessStatusCode);
+        Assert.Contains(sender.Sent, s => s.UserId == aliceId && s.Payload.Contains("\"type\":\"space-join\"") && s.Payload.Contains("Bob"));
+        Assert.Empty((await alice.GetFromJsonAsync<List<OutgoingInviteDto>>($"/spaces/{spaceId}/invites"))!);
+    }
+
+    [Fact]
+    public async Task Pending_invite_can_be_revoked_by_an_owner_only()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var alice = ClientFor($"rev-a-{suffix}");
+        var bob = ClientFor($"rev-b-{suffix}");
+        var aliceId = (await alice.GetFromJsonAsync<MeResponse>("/me"))!.UserId;
+        var bobId = (await bob.GetFromJsonAsync<MeResponse>("/me"))!.UserId;
+
+        var spaceId = $"space_rev_{suffix}";
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var (a, b) = aliceId < bobId ? (aliceId, bobId) : (bobId, aliceId);
+            db.Friendships.Add(new Friendship { Id = Guid.NewGuid(), UserAId = a, UserBId = b, RequestedBy = aliceId, Status = "accepted" });
+            db.Spaces.Add(new Space { Id = spaceId });
+            db.SpaceMembers.Add(new SpaceMember { SpaceId = spaceId, UserId = aliceId, Role = SpaceRoles.Owner });
+            await db.SaveChangesAsync();
+        }
+        Assert.True((await alice.PostAsJsonAsync($"/spaces/{spaceId}/invites",
+            new SendSpaceInvite(bobId, "contributor", "Rev Space"))).IsSuccessStatusCode);
+        var inviteId = Assert.Single((await alice.GetFromJsonAsync<List<OutgoingInviteDto>>($"/spaces/{spaceId}/invites"))!).Id;
+
+        // the invited user is not an owner of the space -> may not revoke
+        Assert.Equal(HttpStatusCode.Forbidden, (await bob.DeleteAsync($"/spaces/invites/{inviteId}")).StatusCode);
+        Assert.True((await alice.DeleteAsync($"/spaces/invites/{inviteId}")).IsSuccessStatusCode);
+        Assert.Empty((await alice.GetFromJsonAsync<List<OutgoingInviteDto>>($"/spaces/{spaceId}/invites"))!);
+        Assert.Empty((await bob.GetFromJsonAsync<List<SpaceInviteDto>>("/me/invites"))!);
     }
 
     [Fact]
