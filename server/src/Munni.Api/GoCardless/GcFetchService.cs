@@ -56,10 +56,14 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
                     logger.LogInformation("gc fetch {Iban}: {Accepted} new ops", linked.Iban, accepted);
 
                 // wake the members' devices: SSE for open apps, push
-                // notification + preload for closed ones
+                // notification + preload for closed ones. Raw rows land in
+                // the FEED space; the overlay lands in the target space —
+                // publish both so attached members react immediately.
                 if (accepted > 0)
                 {
-                    scope.ServiceProvider.GetRequiredService<Sync.SpaceEventBroadcaster>().Publish(linked.SpaceId);
+                    var events = scope.ServiceProvider.GetRequiredService<Sync.SpaceEventBroadcaster>();
+                    events.Publish(ImportIds.FeedSpaceId(linked.Iban));
+                    events.Publish(linked.SpaceId);
                     var notifier = scope.ServiceProvider.GetRequiredService<Push.PushNotifier>();
                     await notifier.NotifyNewTransactionsAsync(linked.SpaceId, accepted, ct);
                 }

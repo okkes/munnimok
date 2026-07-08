@@ -42,6 +42,12 @@ public static class ImportIds
 
     public static string AccountId(string iban) => V5($"acct:{Normalize(iban)}").ToString();
     public static string TransactionId(string iban, string reference) => V5($"tx:{Normalize(iban)}:{reference}").ToString();
+    /// <summary>sync-space id of a bank account's feed (matches client feedIds.ts)</summary>
+    public static string FeedSpaceId(string iban) => V5($"feed:{Normalize(iban)}").ToString();
+    /// <summary>per-space overlay row id for a raw transaction (matches client feedIds.ts)</summary>
+    public static string TxMetaId(string spaceId, string txId) => V5($"meta:{spaceId}:{txId}").ToString();
+    /// <summary>attachment mirror row id, one per account per space (matches client feedIds.ts)</summary>
+    public static string AccountLinkId(string spaceId, string feedId) => V5($"link:{spaceId}:{feedId}").ToString();
     /// <summary>deterministic op ids so server-side ingests are idempotent</summary>
     public static string OpId(string seed) => V5($"op:{seed}").ToString();
 

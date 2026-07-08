@@ -14,6 +14,9 @@ public class ImportIdsTests
         // namespace — cross-source dedupe depends on byte-exact equality
         Assert.Equal("7fd11b1d-fe03-5861-b867-cc94677242a0", ImportIds.AccountId("NL69INGB0123456789"));
         Assert.Equal("897f58a0-87b1-58b3-b18a-1c4ce075f18f", ImportIds.TransactionId("NL69INGB0123456789", "REF-001"));
+        Assert.Equal("7a851e04-b799-58c9-8b49-27ca7c6936a7", ImportIds.FeedSpaceId("NL69INGB0123456789"));
+        Assert.Equal("6c267a1d-3fe2-58d5-8241-84653d30da87", ImportIds.TxMetaId("space1", "tx1"));
+        Assert.Equal("1f2e3617-f88d-5266-aee7-eebe344abdc2", ImportIds.AccountLinkId("space1", "feed1"));
     }
 
     [Fact]
@@ -61,6 +64,10 @@ public class GcIngestTests
         new("BANKREF-3", null, "2026-07-03", null, new GcAmount("-9.99", "EUR"), "Onbekend XQZ", null, "QWERTY"),
     ];
 
+    private static readonly Guid OwnerId = Guid.NewGuid();
+    private static readonly Guid RequisitionId = Guid.NewGuid();
+    private static readonly string FeedId = ImportIds.FeedSpaceId("NL69INGB0123456789");
+
     private static GcLinkedAccount Linked(string spaceId) => new()
     {
         GcAccountId = "gc-acc-1",
@@ -68,56 +75,87 @@ public class GcIngestTests
         AccountEntityId = ImportIds.AccountId("NL69INGB0123456789"),
         Iban = "NL69INGB0123456789",
         Currency = "EUR",
+        RequisitionId = RequisitionId,
     };
 
-    [Fact]
-    public async Task IngestCreatesAccountAndCategorizedTransactions()
+    private static async Task<AppDbContext> SeedDbAsync()
     {
-        await using var db = NewDb();
-        var space = new Space { Id = "s1" };
-        db.Spaces.Add(space);
+        var db = NewDb();
+        db.Spaces.Add(new Space { Id = "s1" });
+        db.GcRequisitions.Add(new GcRequisition
+        {
+            Id = RequisitionId,
+            UserId = OwnerId,
+            SpaceId = "s1",
+            InstitutionId = "ING_INGBNL2A",
+            RequisitionId = "gc-req-1",
+            Status = "linked",
+        });
         await db.SaveChangesAsync();
+        return db;
+    }
 
-        var accepted = await new GcIngest(db).IngestAccountAsync(space, Linked("s1"), Details, Balances, Transactions);
+    [Fact]
+    public async Task IngestWritesRawIntoTheFeedAndOverlayIntoTheSpace()
+    {
+        await using var db = await SeedDbAsync();
+        var space = await db.Spaces.FindAsync("s1");
+
+        var accepted = await new GcIngest(db).IngestAccountAsync(space!, Linked("s1"), Details, Balances, Transactions);
         await db.SaveChangesAsync();
-        Assert.Equal(3, accepted); // new TRANSACTIONS only — the account op is not counted
+        Assert.Equal(3, accepted); // new RAW transactions only
 
-        var account = await db.EntityRows.FindAsync("s1", "account", ImportIds.AccountId("NL69INGB0123456789"));
+        // the feed exists: registry entry, owner membership, attachment to s1
+        Assert.NotNull(await db.FeedSpaces.FindAsync(FeedId));
+        Assert.True(await db.SpaceMembers.AnyAsync(m => m.SpaceId == FeedId && m.UserId == OwnerId));
+        Assert.True(await db.SpaceAccountLinks.AnyAsync(l => l.SpaceId == "s1" && l.FeedSpaceId == FeedId && !l.Archived));
+
+        // account row lives in the FEED with the dated raw balance
+        var account = await db.EntityRows.FindAsync(FeedId, "account", ImportIds.AccountId("NL69INGB0123456789"));
         var accountData = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(account!.DataJson)!;
         Assert.Equal(123456, accountData["balanceCents"].GetInt32());
         Assert.Equal("gocardless", accountData["source"].GetString());
+        Assert.True(accountData.ContainsKey("balanceAsOf"));
 
-        var groceriesTx = await db.EntityRows.FindAsync("s1", "transaction", ImportIds.TransactionId("NL69INGB0123456789", "BANKREF-1"));
-        var txData = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(groceriesTx!.DataJson)!;
-        Assert.Equal("groceries", txData["catId"].GetString());
-        Assert.Equal(0, txData["needsReview"].GetInt32());
-        // ING-style <br> separators are sanitized on ingest
+        // raw halves carry no opinion; <br> separators are sanitized
+        var rawTx = await db.EntityRows.FindAsync(FeedId, "transaction", ImportIds.TransactionId("NL69INGB0123456789", "BANKREF-1"));
+        var txData = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(rawTx!.DataJson)!;
+        Assert.False(txData.ContainsKey("catId"));
         Assert.Equal("AH 1350 · AMSTERDAM · Pasvolgnr 001", txData["description"].GetString());
+        Assert.Equal(0, await db.EntityRows.CountAsync(r => r.SpaceId == "s1" && r.Entity == "transaction"));
 
-        var unknownTx = await db.EntityRows.FindAsync("s1", "transaction", ImportIds.TransactionId("NL69INGB0123456789", "BANKREF-3"));
-        var unknownData = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(unknownTx!.DataJson)!;
+        // the target space holds the predicted overlay + the link mirror
+        var txId = ImportIds.TransactionId("NL69INGB0123456789", "BANKREF-1");
+        var meta = await db.EntityRows.FindAsync("s1", "txMeta", ImportIds.TxMetaId("s1", txId));
+        var metaData = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(meta!.DataJson)!;
+        Assert.Equal("groceries", metaData["catId"].GetString());
+        Assert.Equal(0, metaData["needsReview"].GetInt32());
+
+        var unknownId = ImportIds.TransactionId("NL69INGB0123456789", "BANKREF-3");
+        var unknownMeta = await db.EntityRows.FindAsync("s1", "txMeta", ImportIds.TxMetaId("s1", unknownId));
+        var unknownData = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(unknownMeta!.DataJson)!;
         Assert.Equal("uncategorized", unknownData["catId"].GetString());
         Assert.Equal(1, unknownData["needsReview"].GetInt32());
+
+        Assert.NotNull(await db.EntityRows.FindAsync("s1", "accountLink", ImportIds.AccountLinkId("s1", FeedId)));
     }
 
     [Fact]
     public async Task RefetchIsIdempotent()
     {
-        await using var db = NewDb();
-        var space = new Space { Id = "s1" };
-        db.Spaces.Add(space);
-        await db.SaveChangesAsync();
+        await using var db = await SeedDbAsync();
+        var space = await db.Spaces.FindAsync("s1");
 
         var ingest = new GcIngest(db);
         var linked = Linked("s1");
-        await ingest.IngestAccountAsync(space, linked, Details, Balances, Transactions);
+        await ingest.IngestAccountAsync(space!, linked, Details, Balances, Transactions);
         await db.SaveChangesAsync();
-        var secondRun = await ingest.IngestAccountAsync(space, linked, Details, Balances, Transactions);
+        var secondRun = await ingest.IngestAccountAsync(space!, linked, Details, Balances, Transactions);
         await db.SaveChangesAsync();
 
-        // account op has a per-day seed (accepted again is fine at most 0-1);
-        // transactions must never duplicate
-        Assert.True(secondRun <= 1);
-        Assert.Equal(3, await db.EntityRows.CountAsync(r => r.SpaceId == "s1" && r.Entity == "transaction"));
+        Assert.Equal(0, secondRun); // deterministic op ids: nothing re-imports
+        Assert.Equal(3, await db.EntityRows.CountAsync(r => r.SpaceId == FeedId && r.Entity == "transaction"));
+        Assert.Equal(3, await db.EntityRows.CountAsync(r => r.SpaceId == "s1" && r.Entity == "txMeta"));
+        Assert.Equal(1, await db.SpaceAccountLinks.CountAsync());
     }
 }
