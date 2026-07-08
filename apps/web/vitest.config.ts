@@ -18,7 +18,19 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['src/**/*.{ts,tsx}'],
-      exclude: ['src/**/*.test.{ts,tsx}', 'src/test/**', 'src/i18n/**', 'src/db/demo-data.ts', 'src/domain/keyword-categories.ts'],
+      // excluded beyond test/data files: main.tsx (bootstrap wiring — only
+      // executes in a real browser boot) and sw.ts (service-worker runtime
+      // glue; its decision logic lives in sync/swNotifications + sync/swSync,
+      // which ARE tested)
+      exclude: [
+        'src/**/*.test.{ts,tsx}',
+        'src/test/**',
+        'src/i18n/**',
+        'src/db/demo-data.ts',
+        'src/domain/keyword-categories.ts',
+        'src/main.tsx',
+        'src/sw.ts',
+      ],
       reporter: ['text-summary', 'html'],
     },
   },

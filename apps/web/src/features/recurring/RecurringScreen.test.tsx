@@ -142,6 +142,76 @@ describe('RecurringScreen (demo identity)', () => {
   }, 15_000);
 });
 
+describe('RecurringScreen editing (demo identity)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase('munni_demo');
+  });
+
+  it('year view multiplies, editing toggles active, delete needs a second tap', async () => {
+    renderApp('/recurring');
+    await screen.findByTestId('screen-recurring');
+
+    fireEvent.click(screen.getByTestId('recurring-add'));
+    fireEvent.change(await screen.findByTestId('recform-name'), { target: { value: 'Gym' } });
+    fireEvent.change(screen.getByTestId('recform-amount'), { target: { value: '25' } });
+    fireEvent.click(screen.getByTestId('recform-notify-7'));
+    fireEvent.click(screen.getByTestId('recform-save'));
+    const row = await screen.findByText('Gym', {}, { timeout: 5000 });
+
+    // a monthly cost costs 12× per year
+    fireEvent.click(screen.getByTestId('recurring-view-year'));
+    await waitFor(() => expect(screen.getByTestId('recurring-summary').textContent).toMatch(/300/));
+    fireEvent.click(screen.getByTestId('recurring-view-period'));
+
+    // deactivating moves it into the inactive section
+    fireEvent.click(row.closest('button')!);
+    fireEvent.click(await screen.findByTestId('recform-active'));
+    fireEvent.click(screen.getByTestId('recform-save'));
+    await waitFor(() => expect(screen.getByText(/Inactive/)).toBeTruthy(), { timeout: 5000 });
+
+    // destructive delete: first tap arms, second removes
+    fireEvent.click(screen.getByText('Gym').closest('button')!);
+    fireEvent.click(await screen.findByTestId('recform-delete'));
+    fireEvent.click(screen.getByTestId('recform-delete'));
+    await waitFor(() => expect(screen.queryByText('Gym')).toBeNull(), { timeout: 5000 });
+  }, 15_000);
+
+  it('fires a local reminder once when a due date enters the notify window', async () => {
+    // arrange the recurring first (its own app instance)
+    const first = renderApp('/recurring');
+    await screen.findByTestId('screen-recurring');
+    fireEvent.click(screen.getByTestId('recurring-add'));
+    fireEvent.change(await screen.findByTestId('recform-name'), { target: { value: 'Rent' } });
+    fireEvent.change(screen.getByTestId('recform-amount'), { target: { value: '740' } });
+    fireEvent.change(screen.getByTestId('recform-dueday'), {
+      target: { value: String(Math.min(new Date().getDate(), 28)) },
+    });
+    fireEvent.click(screen.getByTestId('recform-notify-7'));
+    fireEvent.click(screen.getByTestId('recform-save'));
+    await screen.findByText('Rent', {}, { timeout: 5000 });
+    first.unmount();
+
+    // a fresh app open inside the window fires exactly one notification
+    const showNotification = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(window, 'Notification', { configurable: true, value: { permission: 'granted' } });
+    Object.defineProperty(navigator, 'serviceWorker', {
+      configurable: true,
+      value: { ready: Promise.resolve({ showNotification }) },
+    });
+    const second = renderApp('/home');
+    await waitFor(() => expect(showNotification).toHaveBeenCalledTimes(1), { timeout: 5000 });
+    expect(showNotification.mock.calls[0][1].body).toContain('Rent');
+    second.unmount();
+
+    renderApp('/home'); // same due date -> already notified, stays quiet
+    await screen.findByTestId('screen-home');
+    await new Promise((r) => setTimeout(r, 150));
+    expect(showNotification).toHaveBeenCalledTimes(1);
+  }, 20_000);
+});
+
 describe('reconcileRecurringLinks', () => {
   it('links matching unlinked expenses at most once per billing cycle', async () => {
     const db = new MunniDB(`munni_test_rec_${Math.random().toString(36).slice(2)}`);

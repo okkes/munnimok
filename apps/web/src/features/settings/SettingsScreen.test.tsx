@@ -1,8 +1,11 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
-import { renderApp } from '@/test/harness';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { USER_TEST_DB, renderApp, renderAppAsUser } from '@/test/harness';
+import { readLockConfig } from '@/features/lock/lock';
+import { resetApiCapabilitiesCache } from '@/lib/api';
+import { useSession } from '@/app/session';
 
 describe('SettingsScreen (demo identity)', () => {
   beforeEach(() => {
@@ -57,4 +60,109 @@ describe('SettingsScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('settings-accounts-row'));
     expect(await screen.findByTestId('screen-accounts')).toBeTruthy();
   });
+
+  it('app lock setup: mismatch is rejected, matching PINs arm the lock, toggle disarms', async () => {
+    renderApp('/settings');
+    await screen.findByTestId('screen-settings');
+
+    fireEvent.click(screen.getByTestId('settings-lock-toggle'));
+    fireEvent.change(await screen.findByTestId('lock-setup-pin'), { target: { value: '1234' } });
+    fireEvent.change(screen.getByTestId('lock-setup-pin2'), { target: { value: '9999' } });
+    fireEvent.click(screen.getByTestId('lock-setup-save'));
+    expect(await screen.findByTestId('lock-setup-error')).toBeTruthy(); // mismatch
+
+    fireEvent.change(screen.getByTestId('lock-setup-pin2'), { target: { value: '1234' } });
+    fireEvent.click(screen.getByTestId('lock-timeout-300'));
+    fireEvent.click(screen.getByTestId('lock-setup-save'));
+    await waitFor(() => {
+      const config = readLockConfig();
+      expect(config?.timeoutSec).toBe(300);
+      expect(config?.pinHash).toMatch(/^[0-9a-f]{64}$/); // hashed, never the raw pin
+    });
+
+    // the user proved themself at unlock time — disabling is direct
+    fireEvent.click(screen.getByTestId('settings-lock-toggle'));
+    await waitFor(() => expect(readLockConfig()).toBeNull());
+  }, 15_000);
+});
+
+describe('SettingsScreen (user identity, scripted server)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase(USER_TEST_DB);
+    resetApiCapabilitiesCache(); // each test scripts its own /health
+  });
+
+  /** the push-capable browser surface happy-dom lacks */
+  const installPushEnv = () => {
+    const subscription = {
+      endpoint: 'https://push.example/settings',
+      toJSON: () => ({ keys: { p256dh: 'p', auth: 'a' } }),
+      unsubscribe: vi.fn().mockResolvedValue(true),
+    };
+    const pushManager = {
+      getSubscription: vi.fn().mockResolvedValue(null),
+      subscribe: vi.fn().mockResolvedValue(subscription),
+    };
+    Object.defineProperty(navigator, 'serviceWorker', {
+      configurable: true,
+      value: { ready: Promise.resolve({ pushManager }) },
+    });
+    Object.defineProperty(window, 'PushManager', { configurable: true, value: function PushManager() {} });
+    Object.defineProperty(window, 'Notification', {
+      configurable: true,
+      value: { requestPermission: vi.fn().mockResolvedValue('granted') },
+    });
+    return pushManager;
+  };
+
+  it('shows the sync card and user rows; the connections sheet lists bank links', async () => {
+    renderAppAsUser('/settings', {
+      api: {
+        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: true, push: false } }),
+        'GET /gocardless/connections': () => [{ gcAccountId: 'g1', iban: 'NL69INGB0123456789', lastFetchAt: null }],
+      },
+    });
+
+    await screen.findByTestId('settings-sync-row');
+    expect(screen.getByTestId('settings-friends-row')).toBeTruthy();
+    fireEvent.click(await screen.findByTestId('settings-connections-row'));
+    await waitFor(() => expect(screen.getByText('NL69INGB0123456789')).toBeTruthy());
+  }, 15_000);
+
+  it('push toggle subscribes with the server VAPID key and registers the endpoint', async () => {
+    const pushManager = installPushEnv();
+    const registrations: unknown[] = [];
+    renderAppAsUser('/settings', {
+      api: {
+        'GET /health': () => ({
+          status: 'ok',
+          capabilities: { gocardless: false, push: true, vapidPublicKey: 'BPtest-key_123' },
+        }),
+        'POST /me/push-subscriptions': (body) => {
+          registrations.push(body);
+          return {};
+        },
+      },
+    });
+
+    fireEvent.click(await screen.findByTestId('settings-push-toggle'));
+    await waitFor(() => expect(registrations).toHaveLength(1));
+    expect(pushManager.subscribe).toHaveBeenCalledWith(expect.objectContaining({ userVisibleOnly: true }));
+    expect(registrations[0]).toMatchObject({ endpoint: 'https://push.example/settings' });
+    await waitFor(() => expect(screen.getByTestId('settings-push-state').textContent?.length).toBeGreaterThan(0));
+  }, 15_000);
+
+  it('user sign-out keeps the local database (sync is the source of truth)', async () => {
+    renderAppAsUser('/settings', {
+      api: { 'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false } }) },
+    });
+    await screen.findByTestId('screen-settings');
+    fireEvent.click(screen.getByTestId('settings-signout'));
+    expect(await screen.findByTestId('screen-login')).toBeTruthy();
+    expect(useSession.getState().identity).toBeNull();
+    const dbs = await indexedDB.databases();
+    expect(dbs.some((d) => d.name === USER_TEST_DB)).toBe(true); // data survives
+  }, 15_000);
 });

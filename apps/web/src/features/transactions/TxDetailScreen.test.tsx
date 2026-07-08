@@ -3,6 +3,10 @@ import 'fake-indexeddb/auto';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { renderApp } from '@/test/harness';
+import { DEMO_SPACE_ID } from '@/db/seed';
+import { HlcClock } from '@/sync/hlc';
+import { Repo } from '@/db/repo';
+import { MunniDB } from '@/db/schema';
 
 describe('TxDetailScreen (demo identity)', () => {
   beforeEach(() => {
@@ -28,6 +32,35 @@ describe('TxDetailScreen (demo identity)', () => {
     // resolves to either the detail shell or a redirect back — must render something
     await waitFor(() => expect(document.body.textContent).not.toBe(''));
   });
+
+  it('an expense attaches to a recurring cost and detaches again', async () => {
+    renderApp('/transactions/dm6'); // dm6 is a demo expense
+    await screen.findByTestId('screen-tx-detail');
+
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(db, new HlcClock('seed-att'), { trackOutbox: false });
+    await repo.upsert('recurring', DEMO_SPACE_ID, 'rec-gym', {
+      name: 'Gym',
+      kind: 'subscription',
+      amountCents: 2499,
+      every: 'month',
+      dueDay: 10,
+      active: 1,
+    });
+
+    fireEvent.click(await screen.findByTestId('tx-detail-recurring-row'));
+    fireEvent.click(await screen.findByTestId('tx-recurring-rec-gym'));
+    await waitFor(async () => expect((await db.transactions.get('dm6'))?.recurringId).toBe('rec-gym'), {
+      timeout: 5000,
+    });
+    // the row now names the linked cost
+    await waitFor(() => expect(screen.getByTestId('tx-detail-recurring-row').textContent).toContain('Gym'));
+
+    fireEvent.click(screen.getByTestId('tx-detail-recurring-row'));
+    fireEvent.click(await screen.findByTestId('tx-recurring-none'));
+    await waitFor(async () => expect((await db.transactions.get('dm6'))?.recurringId).toBeFalsy(), { timeout: 5000 });
+    db.close();
+  }, 15_000);
 });
 
 describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {

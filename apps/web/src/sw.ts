@@ -4,8 +4,11 @@
 // the old generateSW build, plus Web Push — a notification wakes the
 // device so new bank transactions are announced even while the app is
 // closed, and opening the notification lands in a freshly syncing app.
+// Runtime glue only — the decisions live in sync/swNotifications (tested).
 import { cleanupOutdatedCaches, precacheAndRoute } from 'workbox-precaching';
 import { backgroundPull, flushOutbox } from '@/sync/swSync';
+import { buildNotification, readWorkerLang } from '@/sync/swNotifications';
+import type { PushPayload } from '@/sync/swNotifications';
 
 declare const self: ServiceWorkerGlobalScope;
 
@@ -22,99 +25,6 @@ self.addEventListener('message', (event) => {
   if ((event.data as { type?: string } | undefined)?.type === 'SKIP_WAITING') void self.skipWaiting();
 });
 
-// ── push notifications ──────────────────────────────────────────────────
-// The app language is mirrored into a tiny IDB store (push workers boot
-// cold, so module state would be lost).
-interface PushTexts {
-  title: string;
-  one: string;
-  many: string;
-  friendRequest: string;
-  friendAccept: string;
-  spaceInvite: string;
-  spaceJoin: string;
-  someone: string;
-  aSpace: string;
-}
-const TEXTS: Record<string, PushTexts> = {
-  en: {
-    title: 'munni',
-    one: '1 new transaction arrived',
-    many: '{n} new transactions arrived',
-    friendRequest: '{name} sent you a friend request',
-    friendAccept: '{name} accepted your friend request',
-    spaceInvite: '{name} invited you to "{space}"',
-    spaceJoin: '{name} joined "{space}"',
-    someone: 'Someone',
-    aSpace: 'a space',
-  },
-  nl: {
-    title: 'munni',
-    one: '1 nieuwe transactie ontvangen',
-    many: '{n} nieuwe transacties ontvangen',
-    friendRequest: '{name} heeft je een vriendschapsverzoek gestuurd',
-    friendAccept: '{name} heeft je vriendschapsverzoek geaccepteerd',
-    spaceInvite: '{name} heeft je uitgenodigd voor "{space}"',
-    spaceJoin: '{name} doet nu mee in "{space}"',
-    someone: 'Iemand',
-    aSpace: 'een ruimte',
-  },
-  tr: {
-    title: 'munni',
-    one: '1 yeni işlem geldi',
-    many: '{n} yeni işlem geldi',
-    friendRequest: '{name} sana arkadaşlık isteği gönderdi',
-    friendAccept: '{name} arkadaşlık isteğini kabul etti',
-    spaceInvite: '{name} seni "{space}" alanına davet etti',
-    spaceJoin: '{name} "{space}" alanına katıldı',
-    someone: 'Birisi',
-    aSpace: 'bir alan',
-  },
-};
-
-/** body + click-through target + coalescing tag for one social push */
-function socialNotification(payload: PushPayload, texts: PushTexts): { body: string; url: string; tag: string } | null {
-  const name = payload.fromName ?? texts.someone;
-  const space = payload.spaceName ?? texts.aSpace;
-  switch (payload.type) {
-    case 'friend-request':
-      return { body: texts.friendRequest.replace('{name}', name), url: './#/friends', tag: 'friend-request' };
-    case 'friend-accept':
-      return { body: texts.friendAccept.replace('{name}', name), url: './#/friends', tag: 'friend-accept' };
-    case 'space-invite':
-      return { body: texts.spaceInvite.replace('{name}', name).replace('{space}', space), url: './#/spaces', tag: 'space-invite' };
-    case 'space-join':
-      return { body: texts.spaceJoin.replace('{name}', name).replace('{space}', space), url: './#/spaces', tag: 'space-join' };
-    default:
-      return null;
-  }
-}
-
-function readLang(): Promise<string> {
-  return new Promise((resolve) => {
-    const open = indexedDB.open('munni_sw', 1);
-    open.onupgradeneeded = () => open.result.createObjectStore('kv');
-    open.onerror = () => resolve('en');
-    open.onsuccess = () => {
-      try {
-        const get = open.result.transaction('kv', 'readonly').objectStore('kv').get('lang');
-        get.onsuccess = () => resolve(typeof get.result === 'string' ? get.result : 'en');
-        get.onerror = () => resolve('en');
-      } catch {
-        resolve('en');
-      }
-    };
-  });
-}
-
-interface PushPayload {
-  type?: string;
-  spaceId?: string;
-  count?: number;
-  fromName?: string;
-  spaceName?: string;
-}
-
 self.addEventListener('push', (event) => {
   const payload = (() => {
     try {
@@ -127,38 +37,24 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     (async () => {
       // the notification first — iOS requires one per push event
-      const texts = TEXTS[await readLang()] ?? TEXTS.en;
-
-      if (payload.type === 'new-transactions') {
-        const count = payload.count ?? 1;
-        const body = count === 1 ? texts.one : texts.many.replace('{n}', String(count));
-        await self.registration.showNotification(texts.title, {
-          body,
-          icon: 'icon-192.png',
-          badge: 'icon-192.png',
-          tag: `new-tx-${payload.spaceId ?? 'all'}`, // coalesce per space
-          data: { spaceId: payload.spaceId, url: './#/transactions' },
-        });
-        // …then pre-sync the announced data into IndexedDB while we're
-        // awake, so opening the app (or the notification) starts hot.
-        // Best-effort: an expired mirrored token just skips.
-        try {
-          await backgroundPull(payload.spaceId);
-        } catch {
-          // offline again / server hiccup — the app syncs on next open
-        }
-        return;
-      }
-
-      const social = socialNotification(payload, texts);
-      if (!social) return;
-      await self.registration.showNotification(texts.title, {
-        body: social.body,
+      const notification = buildNotification(payload, await readWorkerLang());
+      if (!notification) return;
+      await self.registration.showNotification(notification.title, {
+        body: notification.body,
         icon: 'icon-192.png',
         badge: 'icon-192.png',
-        tag: social.tag,
-        data: { url: social.url },
+        tag: notification.tag,
+        data: { url: notification.url, spaceId: notification.pullSpaceId },
       });
+      if (!notification.pull) return;
+      // …then pre-sync the announced data into IndexedDB while we're
+      // awake, so opening the app (or the notification) starts hot.
+      // Best-effort: an expired mirrored token just skips.
+      try {
+        await backgroundPull(notification.pullSpaceId);
+      } catch {
+        // offline again / server hiccup — the app syncs on next open
+      }
     })(),
   );
 });

@@ -1,5 +1,11 @@
-import { describe, expect, it } from 'vitest';
-import { fitWithin, isDataImage } from './image';
+// @vitest-environment happy-dom
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { downscaleImage, fitWithin, isDataImage } from './image';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 describe('fitWithin', () => {
   it('keeps small images untouched', () => {
@@ -24,5 +30,28 @@ describe('isDataImage', () => {
     expect(isDataImage('data:text/plain;base64,x')).toBe(false);
     expect(isDataImage(null)).toBe(false);
     expect(isDataImage(undefined)).toBe(false);
+  });
+});
+
+describe('downscaleImage', () => {
+  it('draws the bitmap onto a fitted canvas and returns the JPEG data URL', async () => {
+    const close = vi.fn();
+    vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue({ width: 1000, height: 500, close }));
+    const drawImage = vi.fn();
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ drawImage } as never);
+    vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/jpeg;base64,tiny');
+
+    const url = await downscaleImage(new Blob(['x']), 256);
+    expect(url).toBe('data:image/jpeg;base64,tiny');
+    expect(drawImage).toHaveBeenCalledWith(expect.anything(), 0, 0, 256, 128);
+    expect(close).toHaveBeenCalled(); // bitmap released on success
+  });
+
+  it('releases the bitmap when the canvas is unavailable', async () => {
+    const close = vi.fn();
+    vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue({ width: 10, height: 10, close }));
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+    await expect(downscaleImage(new Blob(['x']))).rejects.toThrow('canvas unavailable');
+    expect(close).toHaveBeenCalled();
   });
 });

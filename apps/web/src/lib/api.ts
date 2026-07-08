@@ -39,6 +39,11 @@ export interface ApiCapabilities {
 
 let capabilities: ApiCapabilities | null = null;
 
+/** test seam: the per-page-load cache must not leak between test cases */
+export function resetApiCapabilitiesCache(): void {
+  capabilities = null;
+}
+
 /** Server feature flags from /health (cached per page load). */
 export async function getApiCapabilities(): Promise<ApiCapabilities> {
   if (capabilities) return capabilities;

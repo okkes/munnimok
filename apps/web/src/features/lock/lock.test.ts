@@ -1,7 +1,19 @@
 // @vitest-environment happy-dom
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useSession } from '@/app/session';
-import { hashPin, randomSalt, readLockConfig, shouldLock, useLock, validPin, writeLockConfig } from './lock';
+import {
+  biometricAvailable,
+  hashPin,
+  initLockWatcher,
+  randomSalt,
+  readLockConfig,
+  registerBiometric,
+  shouldLock,
+  useLock,
+  validPin,
+  verifyBiometric,
+  writeLockConfig,
+} from './lock';
 import type { LockConfig } from './lock';
 
 const config = (overrides: Partial<LockConfig> = {}): LockConfig => ({
@@ -95,6 +107,49 @@ describe('useLock store', () => {
     useLock.getState().lock();
     expect(useLock.getState().locked).toBe(true);
     useLock.getState().unlock();
+    expect(useLock.getState().locked).toBe(false);
+  });
+});
+
+describe('webauthn wrappers', () => {
+  it('biometricAvailable is false where PublicKeyCredential is missing', async () => {
+    expect(await biometricAvailable()).toBe(false);
+  });
+
+  it('registerBiometric returns the credential id as base64url; cancel/verify-failure degrade', async () => {
+    const rawId = new Uint8Array([1, 2, 3, 250]).buffer;
+    Object.defineProperty(navigator, 'credentials', {
+      configurable: true,
+      value: { create: vi.fn().mockResolvedValue({ rawId }), get: vi.fn().mockResolvedValue({}) },
+    });
+    const id = await registerBiometric();
+    expect(id).toBe('AQID-g'); // base64url, unpadded
+    expect(await verifyBiometric(id!)).toBe(true);
+
+    (navigator.credentials.create as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('cancelled'));
+    expect(await registerBiometric()).toBeNull();
+    (navigator.credentials.get as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('no'));
+    expect(await verifyBiometric(id!)).toBe(false);
+  });
+});
+
+describe('lock watcher', () => {
+  it('re-locks after the timeout out of sight and unlocks on identity change', () => {
+    localStorage.clear();
+    useSession.getState().login({ kind: 'demo' });
+    writeLockConfig(config({ timeoutSec: 0 }));
+    useLock.setState({ locked: false });
+    initLockWatcher();
+
+    let visibility = 'hidden';
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility });
+    document.dispatchEvent(new Event('visibilitychange')); // going hidden arms the timer
+    visibility = 'visible';
+    document.dispatchEvent(new Event('visibilitychange')); // returning past the timeout locks
+    expect(useLock.getState().locked).toBe(true);
+
+    // signing out (identity change) frees the shared machine
+    useSession.getState().logout();
     expect(useLock.getState().locked).toBe(false);
   });
 });

@@ -92,6 +92,48 @@ describe('ReviewScreen (demo identity)', () => {
     db.close();
   }, 15_000);
 
+  it('a matching recurring cost offers itself and confirm links the payment', async () => {
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+
+    // a Netflix subscription + a flagged Netflix charge arrive
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(db, new HlcClock('seed-link'), { trackOutbox: false });
+    await repo.upsert('recurring', DEMO_SPACE_ID, 'rec-nfx', {
+      name: 'Netflix',
+      kind: 'subscription',
+      amountCents: 1399,
+      every: 'month',
+      dueDay: 7,
+      active: 1,
+      merchantKey: 'netflix com',
+    });
+    const today = new Date();
+    const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'tx-nfx', {
+      accountId: 'demo_main',
+      date: iso,
+      amountCents: -1399,
+      currency: 'EUR',
+      merchant: 'NETFLIX.COM',
+      catId: 'subs',
+      txType: 'expense',
+      needsReview: 1,
+    });
+
+    // the newest card is the Netflix charge, with the link chip pre-enabled
+    await waitFor(() => expect(screen.getByTestId('review-card').textContent).toContain('NETFLIX.COM'), { timeout: 5000 });
+    const chip = await screen.findByTestId('review-link-recurring');
+    expect(chip.textContent).toContain('Netflix');
+
+    fireEvent.click(screen.getByTestId('review-confirm-btn'));
+    await waitFor(
+      async () => expect((await db.transactions.get('tx-nfx'))?.recurringId).toBe('rec-nfx'),
+      { timeout: 5000 },
+    );
+    db.close();
+  }, 15_000);
+
   it('skip moves on and the skipped pile can be revisited', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
