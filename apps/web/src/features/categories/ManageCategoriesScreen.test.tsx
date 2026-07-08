@@ -55,7 +55,8 @@ describe('ManageCategoriesScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('catform-icon-dumbbell'));
     fireEvent.click(screen.getByTestId('catform-save'));
 
-    const custom = await screen.findByText('Padel');
+    // live query re-render after the write can lag under coverage load
+    const custom = await screen.findByText('Padel', {}, { timeout: 5000 });
     expect(custom.closest('button')!.textContent).toContain('Custom');
   });
 

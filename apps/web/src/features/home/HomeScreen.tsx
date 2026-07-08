@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useNavigate } from '@tanstack/react-router';
 import { OVERVIEW_KINDS, overviewSummary } from '@/domain/overview';
@@ -22,6 +22,7 @@ export function HomeScreen() {
   const { t, lang } = useLang();
   const { db, spaceId } = useData();
   const navigate = useNavigate();
+  const [accountsOpen, setAccountsOpen] = useState(false);
 
   const accounts = useLiveQuery(
     () => db.accounts.where('spaceId').equals(spaceId).filter((a) => a.deleted === 0).toArray(),
@@ -73,39 +74,53 @@ export function HomeScreen() {
     <div className="m-fade flex h-full flex-col" data-testid="screen-home">
       <AppBar large title={t('tab.home')} />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
-        <div className="rounded-card bg-brand px-5 py-6 text-on-brand">
-          <div className="text-xs font-medium uppercase tracking-wider opacity-70">{t('home.balance')}</div>
-          <div className="m-num mt-1 text-4xl" data-testid="home-total-balance">
+        {/* slim balance band: one line; accounts fold out on tap */}
+        <button
+          data-testid="home-balance-band"
+          onClick={() => setAccountsOpen((v) => !v)}
+          className="m-tap w-full rounded-card border-none bg-brand px-5 py-4 text-left text-on-brand"
+        >
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="text-xs font-medium tracking-wider uppercase opacity-70">{t('home.balance')}</span>
+            <Icon name={accountsOpen ? 'chevron-up' : 'chevron-down'} size={16} color="currentColor" />
+          </div>
+          <div className="m-num mt-0.5 text-[28px]" data-testid="home-total-balance">
             {accounts ? fmtCents(totalCents, currency, lang) : '—'}
           </div>
-          <div className="mt-3 flex flex-col gap-1">
-            {(accounts ?? []).map((a) => (
-              <div key={a.id} className="flex items-center justify-between text-[13px] opacity-90">
-                <span className="truncate">{a.name}</span>
-                <span className="m-num">{fmtCents(a.balanceCents, a.currency, lang)}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+          {accountsOpen && (
+            <div className="mt-2 flex flex-col gap-1" data-testid="home-balance-accounts">
+              {(accounts ?? []).map((a) => (
+                <div key={a.id} className="flex items-center justify-between text-[13px] opacity-90">
+                  <span className="truncate">{a.name}</span>
+                  <span className="m-num">{fmtCents(a.balanceCents, a.currency, lang)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </button>
 
-        {/* overview tiles: this period, tap to drill into categories */}
-        <div className="mt-4 grid grid-cols-2 gap-2">
-          {OVERVIEW_KINDS.map((kind) => (
+        {/* landing-zone block: this period's overview. Future blocks
+            (goals, budgets, events…) follow this same compact pattern. */}
+        <div className="m-cap mt-5 mb-1 px-1">{t('overview.thisPeriod')}</div>
+        <div className="grid grid-cols-2 overflow-hidden rounded-card border border-line bg-surface">
+          {OVERVIEW_KINDS.map((kind, i) => (
             <button
               key={kind}
               data-testid={`home-overview-${kind}`}
               onClick={() => void navigate({ to: '/overview/$kind', params: { kind } })}
-              className="m-tap flex items-center gap-3 rounded-card border border-line bg-surface px-4 py-3.5 text-left"
+              className={`m-tap flex items-center gap-2.5 border-none bg-transparent px-4 py-3 text-left ${
+                i % 2 === 1 ? 'border-l border-l-line-2' : ''
+              } ${i > 1 ? 'border-t border-t-line-2' : ''}`}
             >
               <span
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg"
                 style={{ background: `color-mix(in srgb, ${TILE_META[kind].color} 14%, transparent)`, color: TILE_META[kind].color }}
               >
-                <Icon name={TILE_META[kind].icon} size={18} />
+                <Icon name={TILE_META[kind].icon} size={15} />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block text-[11px] font-medium text-ink-3">{t(`overview.${kind}`)}</span>
-                <span className="m-num block truncate text-[15px] font-semibold text-ink">
+                <span className="block text-[10px] font-medium text-ink-3">{t(`overview.${kind}`)}</span>
+                <span className="m-num block truncate text-[13px] font-semibold text-ink">
                   {fmtCents(summary[TILE_META[kind].field], currency, lang)}
                 </span>
               </span>
@@ -113,22 +128,22 @@ export function HomeScreen() {
           ))}
         </div>
 
-        {(reviewCount ?? 0) > 0 && (
-          <button
-            data-testid="home-review-banner"
-            onClick={() => void navigate({ to: '/review' })}
-            className="m-tap mt-4 flex w-full items-center gap-3 rounded-card border border-line bg-warning-soft px-4 py-3.5 text-left"
-          >
-            <Icon name="progress-check" size={22} color="var(--m-warning)" />
-            <span className="flex-1 text-[14px] font-medium text-ink">
-              {t('review.title')} · {reviewCount}
-            </span>
-            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-          </button>
-        )}
-
-        <div className="m-cap mt-6 mb-1 px-1">{t('tab.transactions')}</div>
+        <div className="m-cap mt-5 mb-1 px-1">{t('tab.transactions')}</div>
         <div className="rounded-card border border-line bg-surface px-3 py-1">
+          {(reviewCount ?? 0) > 0 && (
+            // quiet list row, not a shouting banner — review is a task, not an alarm
+            <button
+              data-testid="home-review-banner"
+              onClick={() => void navigate({ to: '/review' })}
+              className="m-tap -mx-3 flex w-[calc(100%+24px)] items-center gap-3 border-b border-line-2 bg-transparent px-4 py-3 text-left"
+            >
+              <Icon name="progress-check" size={18} color="var(--m-warning)" />
+              <span className="flex-1 text-[13px] font-medium text-ink-2">
+                {t('review.title')} · {reviewCount}
+              </span>
+              <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
+            </button>
+          )}
           {(recentTxs ?? []).map((tx) => (
             <TxRow
               key={tx.id}
