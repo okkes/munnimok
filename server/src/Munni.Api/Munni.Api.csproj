@@ -23,4 +23,9 @@
     <EmbeddedResource Include="GoCardless\keyword-rules.json" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- test seams (GcFetchService.FetchAllAsync etc.) -->
+    <InternalsVisibleTo Include="Munni.Api.Tests" />
+  </ItemGroup>
+
 </Project>

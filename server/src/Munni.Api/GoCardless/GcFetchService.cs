@@ -28,7 +28,10 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
         } while (await timer.WaitForNextTickAsync(stoppingToken));
     }
 
-    private async Task FetchAllAsync(CancellationToken ct)
+    /// <summary>seconds between account fetches (staggering); tests shrink it</summary>
+    internal TimeSpan AccountDelay { get; set; } = TimeSpan.FromSeconds(5);
+
+    internal async Task FetchAllAsync(CancellationToken ct)
     {
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -67,7 +70,7 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
                     var notifier = scope.ServiceProvider.GetRequiredService<Push.PushNotifier>();
                     await notifier.NotifyNewTransactionsAsync(linked.SpaceId, accepted, ct);
                 }
-                await Task.Delay(TimeSpan.FromSeconds(5), ct);
+                await Task.Delay(AccountDelay, ct);
             }
             catch (HttpRequestException ex)
             {

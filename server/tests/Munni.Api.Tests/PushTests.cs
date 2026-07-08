@@ -133,6 +133,57 @@ public class PushTests : IClassFixture<SyncApiFactory>
     }
 
     [Fact]
+    public async Task Remove_friend_declines_pending_requests_and_is_idempotent()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var alice = ClientFor($"rm-a-{suffix}");
+        var bob = ClientFor($"rm-b-{suffix}");
+        var aliceId = (await alice.GetFromJsonAsync<MeResponse>("/me"))!.UserId;
+        var bobId = (await bob.GetFromJsonAsync<MeResponse>("/me"))!.UserId;
+
+        Assert.True((await alice.PostAsJsonAsync("/friends/requests", new SendFriendRequest(bobId))).IsSuccessStatusCode);
+        // the recipient "removes" the requester -> the pending edge is gone
+        Assert.True((await bob.DeleteAsync($"/friends/{aliceId}")).IsSuccessStatusCode);
+        var friends = await alice.GetFromJsonAsync<FriendsResponse>("/friends");
+        Assert.Empty(friends!.SentPending);
+        Assert.Empty(friends.Friends);
+        // removing a non-existent edge stays a harmless 200
+        Assert.True((await bob.DeleteAsync($"/friends/{aliceId}")).IsSuccessStatusCode);
+    }
+
+    [Fact]
+    public async Task Declined_space_invites_disappear_without_membership()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var alice = ClientFor($"dec-a-{suffix}");
+        var bob = ClientFor($"dec-b-{suffix}");
+        var aliceId = (await alice.GetFromJsonAsync<MeResponse>("/me"))!.UserId;
+        var bobId = (await bob.GetFromJsonAsync<MeResponse>("/me"))!.UserId;
+
+        var spaceId = $"space_dec_{suffix}";
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var (a, b) = aliceId < bobId ? (aliceId, bobId) : (bobId, aliceId);
+            db.Friendships.Add(new Friendship { Id = Guid.NewGuid(), UserAId = a, UserBId = b, RequestedBy = aliceId, Status = "accepted" });
+            db.Spaces.Add(new Space { Id = spaceId });
+            db.SpaceMembers.Add(new SpaceMember { SpaceId = spaceId, UserId = aliceId, Role = SpaceRoles.Owner });
+            await db.SaveChangesAsync();
+        }
+        Assert.True((await alice.PostAsJsonAsync($"/spaces/{spaceId}/invites",
+            new SendSpaceInvite(bobId, "contributor", "Dec Space"))).IsSuccessStatusCode);
+        var invite = Assert.Single((await bob.GetFromJsonAsync<List<SpaceInviteDto>>("/me/invites"))!);
+
+        Assert.True((await bob.PostAsync($"/spaces/invites/{invite.Id}/decline", null)).IsSuccessStatusCode);
+        Assert.Empty((await bob.GetFromJsonAsync<List<SpaceInviteDto>>("/me/invites"))!);
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            Assert.False(await db.SpaceMembers.AnyAsync(m => m.SpaceId == spaceId && m.UserId == bobId));
+        }
+    }
+
+    [Fact]
     public async Task Pending_invite_can_be_revoked_by_an_owner_only()
     {
         var suffix = Guid.NewGuid().ToString("N")[..8];
