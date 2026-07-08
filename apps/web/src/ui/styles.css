@@ -136,9 +136,11 @@
     inset: 0;
   }
   @supports (-webkit-touch-callout: none) {
-    /* iOS/iPadOS only */
+    /* iOS/iPadOS only: dvh itself proved wrong on iPhones (a dead band
+       stayed under the tab bar), so the app frame takes the measured
+       innerHeight that pwa.ts mirrors into --vvh on every resize */
     #root {
-      height: 100dvh;
+      height: var(--vvh, 100dvh);
     }
   }
   /* prevent iOS zoom-on-focus */

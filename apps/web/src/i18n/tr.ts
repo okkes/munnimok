@@ -906,4 +906,8 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'sync.offlineBanner': 'Çevrimdışı — değişiklikler bu cihazda saklanır.',
   'sync.reasonNoNetwork': 'İnternet bağlantısı yok.',
   'sync.reasonUnreachable': 'munni sunucusuna ulaşılamıyor — bir güvenlik duvarı veya ağ filtresi engelliyor olabilir.',
+  'color.custom': 'Özel renk',
+  'cats.moveNone': 'Olduğu yerde bırak',
+  'cats.moveConfirmTitle': 'Kategori taşınsın mı?',
+  'cats.moveConfirmText': '"{name}" buraya taşınsın mı?',
 };

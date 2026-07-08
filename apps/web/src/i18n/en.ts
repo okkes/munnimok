@@ -904,6 +904,10 @@ export const en = {
   'sync.offlineBanner': 'Offline — changes are saved on this device.',
   'sync.reasonNoNetwork': 'No internet connection.',
   'sync.reasonUnreachable': 'The munni server can’t be reached — a firewall or network filter may be blocking it.',
+  'color.custom': 'Custom color',
+  'cats.moveNone': 'Keep where it is',
+  'cats.moveConfirmTitle': 'Move category?',
+  'cats.moveConfirmText': 'Move "{name}" here?',
 } as const;
 
 export type TranslationKey = keyof typeof en;

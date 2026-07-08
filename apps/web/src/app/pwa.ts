@@ -20,6 +20,24 @@ export function initPwa(): void {
       usePwa.setState({ needRefresh: true, update: () => void updateSW(true) });
     },
   });
+  initViewportHeightVar();
+}
+
+/**
+ * iOS viewport height, measured instead of trusted: 100dvh (and 100vh)
+ * proved unreliable on iPhones — both left a dead band under the tab
+ * bar. window.innerHeight is what WebKit actually renders: it tracks
+ * Safari's toolbar collapse/expansion, is exact in standalone PWAs, and
+ * — unlike visualViewport.height — does NOT shrink when the keyboard
+ * overlays the page. styles.css consumes the value as --vvh (iOS only).
+ */
+function initViewportHeightVar(): void {
+  const apply = () =>
+    document.documentElement.style.setProperty('--vvh', `${window.innerHeight}px`);
+  apply();
+  window.addEventListener('resize', apply);
+  window.addEventListener('pageshow', apply); // bfcache restores skip load
+  window.addEventListener('orientationchange', () => setTimeout(apply, 250));
 }
 
 /**

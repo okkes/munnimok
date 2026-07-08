@@ -10,6 +10,7 @@ import type { SpaceRole } from './SpaceSharing';
 import type { AccountRow, SpacePeriodType } from '@/db/types';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
+import { ColorPicker } from '@/ui/ColorPicker';
 import { Icon } from '@/ui/Icon';
 
 const SPACE_ICONS = [
@@ -291,19 +292,14 @@ export function SpaceSettingsScreen() {
             </div>
 
             <div className="m-cap px-1">{t('space.color')}</div>
-            <div className="flex flex-wrap gap-2">
-              {SPACE_COLORS.map((c) => (
-                <button
-                  key={c}
-                  aria-label={c}
-                  data-testid={`space-color-${c.slice(1)}`}
-                  disabled={readOnly}
-                  onClick={() => setColor(c)}
-                  className={`m-tap h-8 w-8 rounded-full border-2 ${color === c ? 'border-ink' : 'border-transparent'}`}
-                  style={{ background: c }}
-                />
-              ))}
-            </div>
+            <ColorPicker
+              colors={SPACE_COLORS}
+              value={color}
+              onChange={setColor}
+              disabled={readOnly}
+              testIdPrefix="space-color"
+              customLabel={t('color.custom')}
+            />
 
             <div className="m-cap px-1">{t('space.currency')}</div>
             <div className="flex gap-2 overflow-x-auto pb-1">

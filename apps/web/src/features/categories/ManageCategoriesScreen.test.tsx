@@ -77,6 +77,37 @@ describe('ManageCategoriesScreen (demo identity)', () => {
     await waitFor(() => expect(screen.queryByText('Padel & Tennis')).toBeNull());
   });
 
+  it('drag-and-drop: lifting a sub folds the mains, dropping asks to confirm, confirming moves it', async () => {
+    await openScreen();
+    fireEvent.click(screen.getByTestId('cats-addsub-sport'));
+    fireEvent.change(await screen.findByTestId('catform-name'), { target: { value: 'Padel' } });
+    fireEvent.click(screen.getByTestId('catform-save'));
+    const row = (await screen.findByText('Padel', {}, { timeout: 5000 })).closest('button')!;
+    const catId = row.getAttribute('data-testid')!.replace('managecat-', '');
+
+    // lifting via the handle folds every main into a drop row + shows the ghost
+    fireEvent.pointerDown(screen.getByTestId(`cats-drag-${catId}`), { clientY: 200 });
+    const dropRow = await screen.findByTestId('cats-drop-entertainment');
+    expect(screen.getByTestId('cats-drag-ghost').textContent).toContain('Padel');
+
+    // hover the entertainment fold row (the rail probe is stubbed — happy-dom has no layout)
+    (document as unknown as { elementFromPoint: (x: number, y: number) => Element | null }).elementFromPoint = () =>
+      dropRow;
+    fireEvent.pointerMove(window, { clientY: 260 });
+    await waitFor(() => expect(screen.getByTestId('cats-drop-entertainment').className).toContain('border-accent'));
+
+    // release → visual confirmation sheet → confirm commits the move
+    fireEvent.pointerUp(window);
+    fireEvent.click(await screen.findByTestId('cats-move-confirm'));
+    await waitFor(
+      () => {
+        const moved = screen.getByText('Padel').closest('[data-cat-group]');
+        expect(moved?.getAttribute('data-cat-group')).toBe('entertainment');
+      },
+      { timeout: 5000 },
+    );
+  });
+
   it('moving a sub via Move to… works instantly when types match', async () => {
     await openScreen();
     fireEvent.click(screen.getByTestId('cats-addsub-sport'));
@@ -85,6 +116,8 @@ describe('ManageCategoriesScreen (demo identity)', () => {
     const row = (await screen.findByText('Padel')).closest('button')!;
 
     fireEvent.click(row);
+    // the move target lives behind a picker row now (chips didn't scale)
+    fireEvent.click(await screen.findByTestId('catform-move-open'));
     fireEvent.click(await screen.findByTestId('catform-move-entertainment')); // expense -> expense
     fireEvent.click(screen.getByTestId('catform-save'));
     await waitFor(() => {

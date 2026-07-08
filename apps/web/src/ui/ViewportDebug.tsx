@@ -24,10 +24,12 @@ export function ViewportDebug() {
 
     const measure = () => {
       const cs = getComputedStyle(probe);
+      const root = document.getElementById('root');
       setLines([
         `inner ${window.innerHeight} / outer ${window.outerHeight}`,
         `visual ${Math.round(window.visualViewport?.height ?? 0)} / screen ${window.screen.height}`,
         `dvh ${probe.offsetHeight} / svh ${svhProbe.offsetHeight}`,
+        `vvh ${document.documentElement.style.getPropertyValue('--vvh') || '—'} / root ${root?.offsetHeight ?? 0}`,
         `safe top ${cs.paddingTop} bottom ${cs.paddingBottom}`,
         `standalone ${window.matchMedia('(display-mode: standalone)').matches}`,
       ]);

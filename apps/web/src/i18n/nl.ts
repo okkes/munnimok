@@ -906,4 +906,8 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'sync.offlineBanner': 'Offline — wijzigingen worden op dit apparaat bewaard.',
   'sync.reasonNoNetwork': 'Geen internetverbinding.',
   'sync.reasonUnreachable': 'De munni-server is niet bereikbaar — mogelijk blokkeert een firewall of netwerkfilter de verbinding.',
+  'color.custom': 'Eigen kleur',
+  'cats.moveNone': 'Laten waar die staat',
+  'cats.moveConfirmTitle': 'Categorie verplaatsen?',
+  'cats.moveConfirmText': '"{name}" hierheen verplaatsen?',
 };
