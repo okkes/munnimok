@@ -678,6 +678,7 @@ export const en = {
   'acct.displayNameRequired': 'Display name',
   'acct.accountNumber': 'Account number',
   'acct.initialBalance': 'Initial balance',
+  'acct.balanceNow': 'Current balance',
   'acct.currency': 'Currency',
   'acct.purpose': 'Purpose',
   'acct.purposeDaily': 'Daily spending',

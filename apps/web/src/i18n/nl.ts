@@ -680,6 +680,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'acct.displayNameRequired': 'Weergavenaam',
   'acct.accountNumber': 'Rekeningnummer',
   'acct.initialBalance': 'Beginsaldo',
+  'acct.balanceNow': 'Huidig saldo',
   'acct.currency': 'Valuta',
   'acct.purpose': 'Doel',
   'acct.purposeDaily': 'Dagelijkse uitgaven',

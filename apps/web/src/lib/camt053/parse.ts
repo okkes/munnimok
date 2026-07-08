@@ -24,6 +24,8 @@ export interface CamtStatement {
   currency: string;
   /** closing booked balance (CLBD) in cents, if present */
   closingBalanceCents: number | null;
+  /** date the closing balance was true (yyyy-mm-dd) — decides whether it may overwrite a newer manual balance */
+  balanceAsOf?: string | null;
   entries: CamtEntry[];
 }
 
@@ -45,15 +47,18 @@ const toCents = (amount: string | undefined): number | null => {
   return Number.isFinite(value) ? Math.round(value * 100) : null;
 };
 
-function parseClosingBalance(stmt: Element): number | null {
-  let closingBalanceCents: number | null = null;
+function parseClosingBalance(stmt: Element): { cents: number; date: string | null } | null {
+  let closing: { cents: number; date: string | null } | null = null;
   for (const bal of children(stmt, 'Bal')) {
     if (text(bal, 'Tp', 'CdOrPrtry', 'Cd') !== 'CLBD') continue;
     const cents = toCents(text(bal, 'Amt'));
     if (cents === null) continue;
-    closingBalanceCents = text(bal, 'CdtDbtInd') === 'DBIT' ? -cents : cents;
+    closing = {
+      cents: text(bal, 'CdtDbtInd') === 'DBIT' ? -cents : cents,
+      date: text(bal, 'Dt', 'Dt') ?? text(bal, 'Dt', 'DtTm')?.slice(0, 10) ?? null,
+    };
   }
-  return closingBalanceCents;
+  return closing;
 }
 
 function parseEntry(ntry: Element, statementCurrency: string): CamtEntry | null {
@@ -120,6 +125,7 @@ export function parseCamt053(xml: string): CamtStatement[] {
     const entries = children(stmt, 'Ntry')
       .map((ntry) => parseEntry(ntry, currency))
       .filter((entry): entry is CamtEntry => entry !== null);
-    return { iban, currency, closingBalanceCents: parseClosingBalance(stmt), entries };
+    const closing = parseClosingBalance(stmt);
+    return { iban, currency, closingBalanceCents: closing?.cents ?? null, balanceAsOf: closing?.date ?? null, entries };
   });
 }

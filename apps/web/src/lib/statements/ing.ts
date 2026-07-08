@@ -80,13 +80,21 @@ export function parseIngCurrentCsv(content: string): ParsedStatement[] {
     amount: headerIndex(header, 'Bedrag (EUR)'),
     kind: headerIndex(header, 'Mutatiesoort'),
     memo: headerIndex(header, 'Mededelingen'),
+    // newer ING exports include the running balance; older ones don't
+    balance: headerIndex(header, 'Saldo na mutatie'),
   };
   const iban = rows[1]?.[col.account]?.trim() ?? '';
   const raws: RawEntry[] = [];
+  let closing: { date: string; cents: number } | null = null;
   for (const row of rows.slice(1)) {
     const date = normalizeDate(row[col.date] ?? '');
     const cents = euAmountToCents(row[col.amount] ?? '');
     if (!date || cents === null) continue;
+    if (col.balance >= 0) {
+      const balanceCents = euAmountToCents(row[col.balance] ?? '');
+      // exports are newest-first: the first row of the newest day is the latest state
+      if (balanceCents !== null && (!closing || date > closing.date)) closing = { date, cents: balanceCents };
+    }
     raws.push({
       date,
       amountCents: sign(row[col.afBij] ?? '') * cents,
@@ -95,7 +103,16 @@ export function parseIngCurrentCsv(content: string): ParsedStatement[] {
       description: [row[col.kind]?.trim(), row[col.memo]?.trim()].filter(Boolean).join(' · '),
     });
   }
-  return [{ iban, currency: 'EUR', closingBalanceCents: null, entries: toEntries(raws), accountType: 'checking' }];
+  return [
+    {
+      iban,
+      currency: 'EUR',
+      closingBalanceCents: closing?.cents ?? null,
+      balanceAsOf: closing?.date ?? null,
+      entries: toEntries(raws),
+      accountType: 'checking',
+    },
+  ];
 }
 
 /** ING savings (semicolon CSV, running balance) */
@@ -137,6 +154,7 @@ export function parseIngSavingsCsv(content: string): ParsedStatement[] {
       iban: accountRef, // not an IBAN, but the stable account reference
       currency: rows[1]?.[col.currency]?.trim() || 'EUR',
       closingBalanceCents: closing?.cents ?? null,
+      balanceAsOf: closing?.date ?? null,
       entries: toEntries(raws),
       accountType: 'savings',
       accountName,

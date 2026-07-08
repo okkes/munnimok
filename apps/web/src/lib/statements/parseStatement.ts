@@ -22,11 +22,13 @@ export function parseStatement(content: string, fileName?: string): ParsedStatem
   if (head.includes('"Kaartnummer"')) {
     return parseIngCreditcardCsv(content, fileName);
   }
-  if (head.includes('"Saldo na mutatie"')) {
-    return parseIngSavingsCsv(content);
-  }
+  // current account BEFORE savings: newer current-account exports also
+  // carry "Saldo na mutatie" and must not be routed to the savings parser
   if (head.includes('"Naam / Omschrijving"') && head.includes('"Tegenrekening"')) {
     return parseIngCurrentCsv(content);
+  }
+  if (head.includes('"Saldo na mutatie"')) {
+    return parseIngSavingsCsv(content);
   }
   throw new Error('Unsupported statement format');
 }

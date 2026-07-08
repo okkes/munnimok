@@ -38,6 +38,9 @@ export interface AccountRow extends SyncEnvelope {
   source: AccountSource;
   currency: string;
   balanceCents: number;
+  /** date balanceCents was known true (yyyy-mm-dd): statement balances and
+   *  manual edits both stamp it, and only a newer date may overwrite */
+  balanceAsOf?: string;
   iban?: string;
   bankId?: string;
   color?: string;

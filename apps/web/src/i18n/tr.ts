@@ -680,6 +680,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'acct.displayNameRequired': 'Görünen ad',
   'acct.accountNumber': 'Hesap numarası',
   'acct.initialBalance': 'Başlangıç bakiyesi',
+  'acct.balanceNow': 'Güncel bakiye',
   'acct.currency': 'Para birimi',
   'acct.purpose': 'Amaç',
   'acct.purposeDaily': 'Günlük harcama',

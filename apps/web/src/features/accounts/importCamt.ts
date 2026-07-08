@@ -26,6 +26,21 @@ export interface ImportResult {
 
 const normalizeIban = (iban: string) => iban.replace(/\s/g, '').toUpperCase();
 
+/**
+ * May this statement's balance overwrite what the account shows?
+ * Both statement balances and manual edits are dated; the newer date
+ * wins. An undated existing balance (pre-feature rows, GC snapshots)
+ * loses to any dated statement balance — bank truth beats unknown age.
+ */
+export function statementBalanceWins(
+  account: { balanceAsOf?: string },
+  stmt: { closingBalanceCents: number | null; balanceAsOf?: string | null },
+): boolean {
+  if (stmt.closingBalanceCents === null) return false;
+  if (!account.balanceAsOf) return true;
+  return !!stmt.balanceAsOf && stmt.balanceAsOf >= account.balanceAsOf;
+}
+
 async function createStatementAccount(
   repo: Repo,
   spaceId: string,
@@ -40,6 +55,7 @@ async function createStatementAccount(
     source: 'camt053',
     currency: stmt.currency,
     balanceCents: stmt.closingBalanceCents ?? 0,
+    ...(stmt.balanceAsOf ? { balanceAsOf: stmt.balanceAsOf } : {}),
     iban: stmt.iban,
   });
 }
@@ -93,8 +109,11 @@ export async function importCamtStatements(
     const match = byIban.get(iban);
     const accountId = match?.id ?? uuidv5(`acct:${iban}`, IMPORT_NS);
     if (!match) await createStatementAccount(repo, spaceId, accountId, stmt, iban);
-    else if (stmt.closingBalanceCents !== null)
-      await repo.upsert('account', spaceId, accountId, { balanceCents: stmt.closingBalanceCents });
+    else if (statementBalanceWins(match, stmt))
+      await repo.upsert('account', spaceId, accountId, {
+        balanceCents: stmt.closingBalanceCents!,
+        ...(stmt.balanceAsOf ? { balanceAsOf: stmt.balanceAsOf } : {}),
+      });
 
     let txCount = 0;
     for (const entry of stmt.entries) {

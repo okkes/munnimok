@@ -144,6 +144,13 @@ export function AccountsScreen() {
     setBalance('');
   };
 
+  // manual balances are statements of "true today" — date them so a
+  // statement import can tell whether its balance is newer (see importCamt)
+  const localToday = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
   const createAccount = () => {
     const cents = parseCents(balance || '0');
     if (!newType || !name.trim() || cents === null) return;
@@ -153,13 +160,21 @@ export function AccountsScreen() {
       source: 'manual',
       currency: 'EUR',
       balanceCents: isLiability(newType) ? -Math.abs(cents) : cents,
+      balanceAsOf: localToday(),
     });
     closeAdd();
   };
 
   const saveEdit = () => {
     if (!editing || !name.trim()) return;
-    void repo.upsert('account', spaceId, editing.id, { name: name.trim() });
+    const cents = parseCents(balance || '');
+    let signed: number | null = null;
+    if (cents !== null) signed = isLiability(editing.type) ? -Math.abs(cents) : cents;
+    const balanceChanged = signed !== null && signed !== editing.balanceCents;
+    void repo.upsert('account', spaceId, editing.id, {
+      name: name.trim(),
+      ...(balanceChanged ? { balanceCents: signed!, balanceAsOf: localToday() } : {}),
+    });
     setEditing(null);
   };
   const removeAccount = () => {
@@ -171,6 +186,8 @@ export function AccountsScreen() {
   const openEdit = (account: AccountRow) => {
     setEditing(account);
     setName(account.name);
+    // liabilities store negative cents but are edited as positive amounts
+    setBalance((Math.abs(account.balanceCents) / 100).toFixed(2));
   };
 
   return (
@@ -322,13 +339,21 @@ export function AccountsScreen() {
       </Sheet>
 
       {/* Edit account */}
-      <Sheet open={!!editing} onOpenChange={(open) => !open && setEditing(null)} title={t('acct.editAccount')} height={340}>
+      <Sheet open={!!editing} onOpenChange={(open) => !open && setEditing(null)} title={t('acct.editAccount')} height={400}>
         <div className="flex flex-col gap-3 pt-1">
           <input
             data-testid="acctedit-name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none"
+          />
+          <input
+            data-testid="acctedit-balance"
+            value={balance}
+            onChange={(e) => setBalance(e.target.value)}
+            inputMode="decimal"
+            placeholder={`${t('acct.balanceNow')} (${editing?.currency ?? 'EUR'})`}
+            className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
           />
           <Button data-testid="acctedit-save" onClick={saveEdit} disabled={!name.trim()}>
             {t('action.save')}

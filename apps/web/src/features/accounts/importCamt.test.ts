@@ -100,4 +100,55 @@ describe('importCamtStatements', () => {
     ]);
     expect((await db.accounts.get(accountId))!.balanceCents).toBe(123456);
   });
+
+  it('a dated statement balance overwrites only when it is not older', async () => {
+    await importCamtStatements(repo, db, 's1', [
+      statement({ closingBalanceCents: 5000, balanceAsOf: '2026-07-05', entries: [] }),
+    ]);
+    const accountId = (await db.accounts.toArray())[0].id;
+    expect((await db.accounts.get(accountId))!).toMatchObject({ balanceCents: 5000, balanceAsOf: '2026-07-05' });
+
+    // an OLDER statement (re-importing last month's file) must not regress the balance
+    await importCamtStatements(repo, db, 's1', [
+      statement({ closingBalanceCents: 1111, balanceAsOf: '2026-06-01', entries: [] }),
+    ]);
+    expect((await db.accounts.get(accountId))!).toMatchObject({ balanceCents: 5000, balanceAsOf: '2026-07-05' });
+
+    // a newer one wins
+    await importCamtStatements(repo, db, 's1', [
+      statement({ closingBalanceCents: 7777, balanceAsOf: '2026-07-06', entries: [] }),
+    ]);
+    expect((await db.accounts.get(accountId))!).toMatchObject({ balanceCents: 7777, balanceAsOf: '2026-07-06' });
+  });
+
+  it('a dated statement balance beats an undated manual one (unknown age loses to bank truth)', async () => {
+    await repo.upsert('account', 's1', 'acct-manual', {
+      name: 'Mijn ING',
+      type: 'checking',
+      source: 'manual',
+      currency: 'EUR',
+      balanceCents: 42,
+      iban: 'NL69INGB0123456789',
+    });
+    await importCamtStatements(repo, db, 's1', [
+      statement({ closingBalanceCents: 9000, balanceAsOf: '2026-07-01', entries: [] }),
+    ]);
+    expect((await db.accounts.get('acct-manual'))!).toMatchObject({ balanceCents: 9000, balanceAsOf: '2026-07-01' });
+  });
+
+  it('a manual balance dated after the statement is kept', async () => {
+    await repo.upsert('account', 's1', 'acct-manual', {
+      name: 'Mijn ING',
+      type: 'checking',
+      source: 'manual',
+      currency: 'EUR',
+      balanceCents: 42,
+      balanceAsOf: '2026-07-08', // user corrected it today
+      iban: 'NL69INGB0123456789',
+    });
+    await importCamtStatements(repo, db, 's1', [
+      statement({ closingBalanceCents: 9000, balanceAsOf: '2026-07-01', entries: [] }),
+    ]);
+    expect((await db.accounts.get('acct-manual'))!).toMatchObject({ balanceCents: 42, balanceAsOf: '2026-07-08' });
+  });
 });

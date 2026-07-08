@@ -65,15 +65,37 @@ describe('parseStatement — ING current account', () => {
 });
 
 describe('parseStatement — ING savings', () => {
-  it('takes the newest running balance and the account name', () => {
+  it('takes the newest running balance (with its date) and the account name', () => {
     const [stmt] = parseStatement(ING_SAVINGS);
     expect(stmt.accountType).toBe('savings');
     expect(stmt.accountName).toBe('Oranje Spaarrekening');
     expect(stmt.iban).toBe('V 286-81505');
     expect(stmt.closingBalanceCents).toBe(150_920); // newest row's saldo
+    expect(stmt.balanceAsOf).toBe('2026-01-01'); // …and the day it was true
     const withdrawal = stmt.entries.find((e) => e.amountCents < 0)!;
     expect(withdrawal.amountCents).toBe(-150_000);
     expect(withdrawal.counterpartyIban).toBe('NL74INGB0001029507');
+  });
+});
+
+describe('parseStatement — ING current account with balance column', () => {
+  // newer ING exports append "Saldo na mutatie" (and "Tag") to the current-account CSV
+  const WITH_BALANCE = `"Datum","Naam / Omschrijving","Rekening","Tegenrekening","Code","Af Bij","Bedrag (EUR)","Mutatiesoort","Mededelingen","Saldo na mutatie","Tag"
+"20260702","Bakker","NL74INGB0001029507","","BA","Af","3,50","Betaalautomaat","BROOD","996,50",""
+"20260701","Werkgever BV","NL74INGB0001029507","NL00WERK0000000001","GT","Bij","1.000,00","Online bankieren","SALARIS","1.000,00",""`;
+
+  it('still routes to the current-account parser and picks the newest balance', () => {
+    const [stmt] = parseStatement(WITH_BALANCE);
+    expect(stmt.accountType).toBe('checking'); // NOT mis-detected as savings
+    expect(stmt.iban).toBe('NL74INGB0001029507');
+    expect(stmt.closingBalanceCents).toBe(99_650);
+    expect(stmt.balanceAsOf).toBe('2026-07-02');
+  });
+
+  it('exports without the balance column yield no balance', () => {
+    const [stmt] = parseStatement(ING_CURRENT);
+    expect(stmt.closingBalanceCents).toBeNull();
+    expect(stmt.balanceAsOf).toBeNull();
   });
 });
 
