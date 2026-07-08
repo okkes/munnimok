@@ -23,3 +23,9 @@ obj/
 
 # SonarScanner for .NET working files
 server/.sonarqube/
+
+# local tool state and artifacts
+test-results/
+.claude/
+.codex/
+temporary/
