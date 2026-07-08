@@ -18,26 +18,30 @@ public sealed record MemberDto(Guid UserId, string? DisplayName, string Role);
 
 public static class SocialEndpoints
 {
+    /// <summary>Strict rate-limit policy for writes that reach other people.</summary>
+    public const string MutationsPolicy = "social-mutations";
+
     private const string StatusAccepted = "accepted";
     private const string StatusPending = "pending";
     private const string StatusDeclined = "declined";
 
     public static void MapSocial(this IEndpointRouteBuilder app)
     {
-        var authed = app.MapGroup("").RequireAuthorization();
+        var authed = app.MapGroup("").RequireAuthorization().WithSafeRouteParams();
 
         authed.MapGet("/me", GetMe);
         authed.MapPut("/me", UpdateMe).WithValidation<UpdateMeRequest>();
         authed.MapGet("/friends", GetFriends);
-        authed.MapPost("/friends/requests", SendFriendRequestAsync).WithValidation<SendFriendRequest>();
-        authed.MapPost("/friends/requests/{id:guid}/accept", AcceptFriendRequest);
-        authed.MapDelete("/friends/{userId:guid}", RemoveFriend);
-        authed.MapPost("/spaces/{spaceId}/invites", SendSpaceInviteAsync).WithValidation<SendSpaceInvite>();
+        // writes that reach OTHER people get the stricter limiter (invite spam)
+        authed.MapPost("/friends/requests", SendFriendRequestAsync).WithValidation<SendFriendRequest>().RequireRateLimiting(MutationsPolicy);
+        authed.MapPost("/friends/requests/{id:guid}/accept", AcceptFriendRequest).RequireRateLimiting(MutationsPolicy);
+        authed.MapDelete("/friends/{userId:guid}", RemoveFriend).RequireRateLimiting(MutationsPolicy);
+        authed.MapPost("/spaces/{spaceId}/invites", SendSpaceInviteAsync).WithValidation<SendSpaceInvite>().RequireRateLimiting(MutationsPolicy);
         authed.MapGet("/me/invites", GetMyInvites);
-        authed.MapPost("/spaces/invites/{id:guid}/{action}", RespondToInvite);
+        authed.MapPost("/spaces/invites/{id:guid}/{action}", RespondToInvite).RequireRateLimiting(MutationsPolicy);
         authed.MapGet("/spaces/{spaceId}/members", GetMembers);
-        authed.MapPut("/spaces/{spaceId}/members/{userId:guid}/role", ChangeMemberRole).WithValidation<ChangeRoleRequest>();
-        authed.MapDelete("/spaces/{spaceId}/members/{userId:guid}", RemoveMember);
+        authed.MapPut("/spaces/{spaceId}/members/{userId:guid}/role", ChangeMemberRole).WithValidation<ChangeRoleRequest>().RequireRateLimiting(MutationsPolicy);
+        authed.MapDelete("/spaces/{spaceId}/members/{userId:guid}", RemoveMember).RequireRateLimiting(MutationsPolicy);
     }
 
     // ── identity ────────────────────────────────────────────────────────

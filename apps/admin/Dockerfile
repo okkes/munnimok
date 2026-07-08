@@ -17,5 +17,6 @@ RUN npm run build --workspace @munni/admin
 
 FROM nginx:alpine
 COPY apps/admin/nginx.conf /etc/nginx/conf.d/default.conf
+COPY deploy/nginx/security-headers.conf /etc/nginx/snippets/security-headers.conf
 COPY --from=build /repo/apps/admin/dist /usr/share/nginx/html
 EXPOSE 80

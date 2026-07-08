@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Munni.Api.Auth;
 using Munni.Api.Data;
 using Munni.Api.GoCardless;
+using Munni.Api.Validation;
 
 namespace Munni.Api.Admin;
 
@@ -25,7 +26,7 @@ public static class AdminEndpoints
 {
     public static void MapAdmin(this IEndpointRouteBuilder app, bool goCardlessEnabled)
     {
-        var group = app.MapGroup("/admin").RequireAuthorization();
+        var group = app.MapGroup("/admin").RequireAuthorization().WithSafeRouteParams();
 
         group.MapGet("/ping", async (HttpContext http, AppDbContext db, IConfiguration config) =>
             await IsAdminAsync(http, db, config) ? Results.Ok(new { admin = true, gocardless = goCardlessEnabled }) : Results.Forbid());

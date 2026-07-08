@@ -10,15 +10,20 @@ public sealed record CreateRequisitionRequest(string SpaceId, string Institution
 public sealed record CreateRequisitionResponse(string Reference, string Link);
 public sealed record CompleteResponse(string Status, int LinkedAccounts, int ImportedTransactions);
 
-public static class GcEndpoints
+public static partial class GcEndpoints
 {
+    [System.Text.RegularExpressions.GeneratedRegex("^[A-Za-z]{2}$")]
+    private static partial System.Text.RegularExpressions.Regex CountryCode();
+
     public static void MapGoCardless(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/gocardless").RequireAuthorization();
+        var group = app.MapGroup("/gocardless").RequireAuthorization().WithSafeRouteParams();
 
         // institution list, cached: it changes rarely and GC rate-limits
         group.MapGet("/institutions", async (string country, IGoCardlessApi gc, IMemoryCache cache) =>
         {
+            if (!CountryCode().IsMatch(country))
+                return Results.BadRequest(new { error = "country must be a 2-letter code" });
             var list = await cache.GetOrCreateAsync($"gc-institutions-{country}", async entry =>
             {
                 entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(24);

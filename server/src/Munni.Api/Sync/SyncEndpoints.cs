@@ -28,7 +28,7 @@ public static class SyncEndpoints
         // the caller's spaces accepted new ops (push or bank ingest)
         app.MapGet("/sync/events", StreamEvents).RequireAuthorization();
 
-        var group = app.MapGroup("/sync/{spaceId}").RequireAuthorization();
+        var group = app.MapGroup("/sync/{spaceId}").RequireAuthorization().WithSafeRouteParams();
 
         group.MapPost("/push", async (string spaceId, PushRequest request, AppDbContext db, SpaceEventBroadcaster events, HttpContext http) =>
         {

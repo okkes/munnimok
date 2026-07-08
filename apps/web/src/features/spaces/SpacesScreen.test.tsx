@@ -11,19 +11,32 @@ describe('SpacesScreen (demo identity)', () => {
     indexedDB.deleteDatabase('munni_demo');
   });
 
-  const activeRow = () => screen.getByText('Active space').closest('[data-testid^="space-row-"]');
+  // the 'Active space' badge can transiently match zero or two elements
+  // mid-render (coverage slows liveQuery), so always resolve inside waitFor
+  const activeRow = () =>
+    screen
+      .getAllByText('Active space')
+      .map((el) => el.closest('[data-testid^="space-row-"]'))
+      .find(Boolean);
+  const findActiveRow = async () => {
+    let row: Element | undefined;
+    await waitFor(() => {
+      row = activeRow() ?? undefined;
+      expect(row).toBeTruthy();
+    });
+    return row!;
+  };
 
   it('shows the demo space as active', async () => {
     renderApp('/spaces');
     await screen.findByTestId('screen-spaces');
-    await waitFor(() => expect(screen.getByText('Active space')).toBeTruthy());
+    await findActiveRow();
   });
 
   it('creates a space and switches to it, then can switch back', async () => {
     renderApp('/spaces');
     await screen.findByTestId('screen-spaces');
-    await waitFor(() => expect(screen.getByText('Active space')).toBeTruthy());
-    const first = activeRow()!.getAttribute('data-testid')!;
+    const first = (await findActiveRow()).getAttribute('data-testid')!;
 
     fireEvent.click(screen.getByTestId('spaces-add'));
     fireEvent.change(await screen.findByTestId('space-create-name'), { target: { value: 'Side hustle' } });
@@ -43,8 +56,7 @@ describe('SpacesScreen (demo identity)', () => {
   it('renames a space from the edit sheet', async () => {
     renderApp('/spaces');
     await screen.findByTestId('screen-spaces');
-    await waitFor(() => expect(screen.getByText('Active space')).toBeTruthy());
-    const id = activeRow()!.getAttribute('data-testid')!.replace('space-row-', '');
+    const id = (await findActiveRow()).getAttribute('data-testid')!.replace('space-row-', '');
 
     fireEvent.click(screen.getByTestId(`space-edit-${id}`));
     fireEvent.change(await screen.findByTestId('space-edit-name'), { target: { value: 'Household' } });
@@ -55,8 +67,7 @@ describe('SpacesScreen (demo identity)', () => {
   it('saves icon, color, currency, period and history start from the settings sheet', async () => {
     renderApp('/spaces');
     await screen.findByTestId('screen-spaces');
-    await waitFor(() => expect(screen.getByText('Active space')).toBeTruthy());
-    const id = activeRow()!.getAttribute('data-testid')!.replace('space-row-', '');
+    const id = (await findActiveRow()).getAttribute('data-testid')!.replace('space-row-', '');
 
     fireEvent.click(screen.getByTestId(`space-edit-${id}`));
     fireEvent.click(await screen.findByTestId('space-icon-briefcase-outline'));
@@ -90,8 +101,7 @@ describe('SpacesScreen (demo identity)', () => {
   it('monthly period exposes the start-day input, weekly hides it', async () => {
     renderApp('/spaces');
     await screen.findByTestId('screen-spaces');
-    await waitFor(() => expect(screen.getByText('Active space')).toBeTruthy());
-    const id = activeRow()!.getAttribute('data-testid')!.replace('space-row-', '');
+    const id = (await findActiveRow()).getAttribute('data-testid')!.replace('space-row-', '');
 
     fireEvent.click(screen.getByTestId(`space-edit-${id}`));
     const day = await screen.findByTestId('space-period-day');
@@ -105,8 +115,7 @@ describe('SpacesScreen (demo identity)', () => {
   it('refuses deleting the active or only space, allows deleting another', async () => {
     renderApp('/spaces');
     await screen.findByTestId('screen-spaces');
-    await waitFor(() => expect(screen.getByText('Active space')).toBeTruthy());
-    const firstId = activeRow()!.getAttribute('data-testid')!.replace('space-row-', '');
+    const firstId = (await findActiveRow()).getAttribute('data-testid')!.replace('space-row-', '');
 
     // active space cannot be deleted
     fireEvent.click(screen.getByTestId(`space-edit-${firstId}`));

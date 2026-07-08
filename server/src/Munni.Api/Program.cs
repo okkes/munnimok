@@ -1,5 +1,7 @@
+using System.Threading.RateLimiting;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
 using Munni.Api.Auth;
@@ -73,6 +75,44 @@ var corsOrigins = builder.Configuration.GetSection("Cors:Origins").Get<string[]>
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
     p.WithOrigins(corsOrigins).AllowAnyHeader().AllowAnyMethod()));
 
+// abuse guard, partitioned per user (per IP before auth). The global
+// bucket is sized for the sync engine polling every ten seconds across
+// many spaces; the social-mutations policy throttles writes that reach
+// OTHER people (invites, friend requests, role changes) much harder.
+// Functional tests run with TestMode and get effectively-unlimited
+// defaults unless a test sets RateLimits keys explicitly (RateLimitTests).
+static string RateLimitKey(HttpContext http) =>
+    http.User.FindFirst("sub")?.Value ?? http.Connection.RemoteIpAddress?.ToString() ?? "anon";
+var unlimitedForTests = builder.Configuration.GetValue<bool>("Auth:TestMode") ? int.MaxValue : (int?)null;
+var globalTokens = builder.Configuration.GetValue<int?>("RateLimits:GlobalTokens") ?? unlimitedForTests ?? 600;
+var globalRefillPer10S = builder.Configuration.GetValue<int?>("RateLimits:GlobalRefillPer10s") ?? unlimitedForTests ?? 60;
+var socialPerMinute = builder.Configuration.GetValue<int?>("RateLimits:SocialPerMinute") ?? unlimitedForTests ?? 30;
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = (ctx, _) =>
+    {
+        ctx.HttpContext.Response.Headers.RetryAfter = "10";
+        return ValueTask.CompletedTask;
+    };
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(http =>
+        RateLimitPartition.GetTokenBucketLimiter(RateLimitKey(http), _ => new TokenBucketRateLimiterOptions
+        {
+            TokenLimit = globalTokens, // burst headroom (bootstrap pulls, imports)
+            TokensPerPeriod = globalRefillPer10S,
+            ReplenishmentPeriod = TimeSpan.FromSeconds(10), // 60/10s = 360 requests/min sustained
+            QueueLimit = 0,
+            AutoReplenishment = true,
+        }));
+    options.AddPolicy(Munni.Api.Social.SocialEndpoints.MutationsPolicy, http =>
+        RateLimitPartition.GetFixedWindowLimiter(RateLimitKey(http), _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = socialPerMinute,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        }));
+});
+
 var app = builder.Build();
 
 if (app.Configuration.GetValue<bool>("Db:AutoMigrate"))
@@ -92,6 +132,8 @@ app.UseExceptionHandler(errorApp => errorApp.Run(async http =>
 
 app.UseCors();
 app.UseAuthentication();
+// after authentication so the partition key is the OIDC sub, not the IP
+app.UseRateLimiter();
 app.UseAuthorization();
 app.Use(async (http, next) =>
 {
