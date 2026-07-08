@@ -22,13 +22,19 @@ describe('apiFetch', () => {
     expect(headers.get('Content-Type')).toBe('application/json');
   });
 
-  it('sends no auth headers for demo identities', async () => {
+  it('refuses the network entirely for demo/offline identities', async () => {
     localStorage.setItem('munni_session', JSON.stringify({ kind: 'demo' }));
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({}));
+    await expect(apiFetch('/health')).rejects.toThrow(/local-only/);
+    localStorage.setItem('munni_session', JSON.stringify({ kind: 'offline', profileId: 'p1' }));
+    await expect(apiFetch('/health')).rejects.toThrow(/local-only/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('still fetches while signed out (login provisioning)', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({}));
     await apiFetch('/health');
-    const headers = new Headers(fetchMock.mock.calls[0][1]!.headers);
-    expect(headers.get('X-User-Sub')).toBeNull();
-    expect(headers.get('Authorization')).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('preserves caller-supplied headers and method', async () => {
@@ -42,7 +48,15 @@ describe('apiFetch', () => {
 });
 
 describe('getApiCapabilities', () => {
+  beforeEach(() => localStorage.clear());
   afterEach(() => vi.restoreAllMocks());
+
+  it('answers "no server features" for offline identities without touching the network', async () => {
+    localStorage.setItem('munni_session', JSON.stringify({ kind: 'offline', profileId: 'p1' }));
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({}));
+    expect((await getApiCapabilities()).gocardless).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 
   it('caches the first result for the page lifetime', async () => {
     const fetchMock = vi

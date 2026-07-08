@@ -10,7 +10,12 @@ import { backgroundPull, flushOutbox } from '@/sync/swSync';
 declare const self: ServiceWorkerGlobalScope;
 
 cleanupOutdatedCaches();
-precacheAndRoute(self.__WB_MANIFEST);
+// ignoreURLParametersMatching: the MDI icon font is referenced as
+// …webfont.woff2?v=7.4.47 — with the default matcher that query defeats
+// the precache lookup and the request goes to the network, which is why
+// icons rendered as squares offline. Every precached asset is
+// content-hashed, so matching URLs without their query is always safe.
+precacheAndRoute(self.__WB_MANIFEST, { ignoreURLParametersMatching: [/.*/] });
 
 // UpdateToast's reload button posts SKIP_WAITING (registerSW prompt mode)
 self.addEventListener('message', (event) => {
@@ -20,11 +25,70 @@ self.addEventListener('message', (event) => {
 // ── push notifications ──────────────────────────────────────────────────
 // The app language is mirrored into a tiny IDB store (push workers boot
 // cold, so module state would be lost).
-const TEXTS: Record<string, { title: string; one: string; many: string }> = {
-  en: { title: 'munni', one: '1 new transaction arrived', many: '{n} new transactions arrived' },
-  nl: { title: 'munni', one: '1 nieuwe transactie ontvangen', many: '{n} nieuwe transacties ontvangen' },
-  tr: { title: 'munni', one: '1 yeni işlem geldi', many: '{n} yeni işlem geldi' },
+interface PushTexts {
+  title: string;
+  one: string;
+  many: string;
+  friendRequest: string;
+  friendAccept: string;
+  spaceInvite: string;
+  spaceJoin: string;
+  someone: string;
+  aSpace: string;
+}
+const TEXTS: Record<string, PushTexts> = {
+  en: {
+    title: 'munni',
+    one: '1 new transaction arrived',
+    many: '{n} new transactions arrived',
+    friendRequest: '{name} sent you a friend request',
+    friendAccept: '{name} accepted your friend request',
+    spaceInvite: '{name} invited you to "{space}"',
+    spaceJoin: '{name} joined "{space}"',
+    someone: 'Someone',
+    aSpace: 'a space',
+  },
+  nl: {
+    title: 'munni',
+    one: '1 nieuwe transactie ontvangen',
+    many: '{n} nieuwe transacties ontvangen',
+    friendRequest: '{name} heeft je een vriendschapsverzoek gestuurd',
+    friendAccept: '{name} heeft je vriendschapsverzoek geaccepteerd',
+    spaceInvite: '{name} heeft je uitgenodigd voor "{space}"',
+    spaceJoin: '{name} doet nu mee in "{space}"',
+    someone: 'Iemand',
+    aSpace: 'een ruimte',
+  },
+  tr: {
+    title: 'munni',
+    one: '1 yeni işlem geldi',
+    many: '{n} yeni işlem geldi',
+    friendRequest: '{name} sana arkadaşlık isteği gönderdi',
+    friendAccept: '{name} arkadaşlık isteğini kabul etti',
+    spaceInvite: '{name} seni "{space}" alanına davet etti',
+    spaceJoin: '{name} "{space}" alanına katıldı',
+    someone: 'Birisi',
+    aSpace: 'bir alan',
+  },
 };
+
+/** body + click-through target + coalescing tag for one social push */
+function socialNotification(payload: PushPayload, texts: PushTexts): { body: string; url: string; tag: string } | null {
+  const name = payload.fromName ?? texts.someone;
+  const space = payload.spaceName ?? texts.aSpace;
+  switch (payload.type) {
+    case 'friend-request':
+      return { body: texts.friendRequest.replace('{name}', name), url: './#/friends', tag: 'friend-request' };
+    case 'friend-accept':
+      return { body: texts.friendAccept.replace('{name}', name), url: './#/friends', tag: 'friend-accept' };
+    case 'space-invite':
+      return { body: texts.spaceInvite.replace('{name}', name).replace('{space}', space), url: './#/spaces', tag: 'space-invite' };
+    case 'space-join':
+      return { body: texts.spaceJoin.replace('{name}', name).replace('{space}', space), url: './#/spaces', tag: 'space-join' };
+    default:
+      return null;
+  }
+}
 
 function readLang(): Promise<string> {
   return new Promise((resolve) => {
@@ -47,6 +111,8 @@ interface PushPayload {
   type?: string;
   spaceId?: string;
   count?: number;
+  fromName?: string;
+  spaceName?: string;
 }
 
 self.addEventListener('push', (event) => {
@@ -57,29 +123,42 @@ self.addEventListener('push', (event) => {
       return {} as PushPayload;
     }
   })();
-  if (payload.type !== 'new-transactions') return;
 
   event.waitUntil(
     (async () => {
       // the notification first — iOS requires one per push event
       const texts = TEXTS[await readLang()] ?? TEXTS.en;
-      const count = payload.count ?? 1;
-      const body = count === 1 ? texts.one : texts.many.replace('{n}', String(count));
+
+      if (payload.type === 'new-transactions') {
+        const count = payload.count ?? 1;
+        const body = count === 1 ? texts.one : texts.many.replace('{n}', String(count));
+        await self.registration.showNotification(texts.title, {
+          body,
+          icon: 'icon-192.png',
+          badge: 'icon-192.png',
+          tag: `new-tx-${payload.spaceId ?? 'all'}`, // coalesce per space
+          data: { spaceId: payload.spaceId, url: './#/transactions' },
+        });
+        // …then pre-sync the announced data into IndexedDB while we're
+        // awake, so opening the app (or the notification) starts hot.
+        // Best-effort: an expired mirrored token just skips.
+        try {
+          await backgroundPull(payload.spaceId);
+        } catch {
+          // offline again / server hiccup — the app syncs on next open
+        }
+        return;
+      }
+
+      const social = socialNotification(payload, texts);
+      if (!social) return;
       await self.registration.showNotification(texts.title, {
-        body,
+        body: social.body,
         icon: 'icon-192.png',
         badge: 'icon-192.png',
-        tag: `new-tx-${payload.spaceId ?? 'all'}`, // coalesce per space
-        data: { spaceId: payload.spaceId },
+        tag: social.tag,
+        data: { url: social.url },
       });
-      // …then pre-sync the announced data into IndexedDB while we're
-      // awake, so opening the app (or the notification) starts hot.
-      // Best-effort: an expired mirrored token just skips.
-      try {
-        await backgroundPull(payload.spaceId);
-      } catch {
-        // offline again / server hiccup — the app syncs on next open
-      }
     })(),
   );
 });
@@ -104,6 +183,7 @@ self.addEventListener('sync', (event: Event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
+  const url = (event.notification.data as { url?: string } | undefined)?.url ?? './#/transactions';
   event.waitUntil(
     (async () => {
       const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
@@ -111,7 +191,7 @@ self.addEventListener('notificationclick', (event) => {
       // focusing (or opening) the app triggers its start-up sync,
       // pulling the announced transactions immediately
       if (existing) await existing.focus();
-      else await self.clients.openWindow('./#/transactions');
+      else await self.clients.openWindow(url);
     })(),
   );
 });

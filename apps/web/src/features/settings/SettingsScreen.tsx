@@ -6,6 +6,7 @@ import { LOCALES, useLang } from '@/i18n';
 import type { Lang } from '@/i18n';
 import { useTheme } from '@/app/theme';
 import { destroyIdentityData, useData } from '@/app/data';
+import { OFFLINE_REASON_KEYS, useOfflineReason } from '@/app/OfflineBanner';
 import { oidcSignOut } from '@/app/authToken';
 import { useSession } from '@/app/session';
 import { AppBar } from '@/ui/AppBar';
@@ -41,6 +42,7 @@ function SyncStatusRow() {
   const [status, setStatus] = useState<SyncStatus>(engine?.getStatus() ?? 'idle');
   useEffect(() => engine?.onStatus(setStatus), [engine]);
   const lastSync = useLiveQuery(async () => (await db.meta.get(LAST_SYNC_KEY))?.value as number | undefined, []);
+  const offlineReason = useOfflineReason();
 
   if (!engine) return null;
   const healthy = status === 'idle' || status === 'syncing';
@@ -61,6 +63,11 @@ function SyncStatusRow() {
             ? new Date(lastSync).toLocaleString(LOCALES[lang], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
             : t('sync.never')}
         </span>
+        {offlineReason && (
+          <span className="block text-[11px]" style={{ color: 'var(--m-warning)' }} data-testid="settings-sync-reason">
+            {t(OFFLINE_REASON_KEYS[offlineReason])}
+          </span>
+        )}
       </span>
     </div>
   );

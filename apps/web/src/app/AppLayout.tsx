@@ -2,6 +2,7 @@ import { Link, Outlet, useRouterState } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
 import { DataProvider } from './data';
+import { OfflineBanner } from './OfflineBanner';
 import { Icon } from '@/ui/Icon';
 import { Logo } from '@/ui/Logo';
 
@@ -53,9 +54,12 @@ export function AppLayout() {
 
       {/* Content */}
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <div className="min-h-0 flex-1 overflow-hidden pt-[env(safe-area-inset-top)]">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden pt-[env(safe-area-inset-top)]">
           <DataProvider>
-            <Outlet />
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <Outlet />
+            </div>
+            <OfflineBanner />
           </DataProvider>
         </div>
 

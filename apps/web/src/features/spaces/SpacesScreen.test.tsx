@@ -149,7 +149,22 @@ describe('SpacesScreen (demo identity)', () => {
     await waitFor(() => expect(activeRow()!.textContent).toContain('Temp'));
 
     fireEvent.click(screen.getByTestId(`space-edit-${firstId}`));
+    // destructive: first tap arms the confirmation, second tap deletes
     fireEvent.click(await screen.findByTestId('space-edit-delete'));
+    expect(await screen.findByTestId('space-delete-confirm-note')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('space-edit-delete'));
     await waitFor(() => expect(screen.queryByTestId(`space-row-${firstId}`)).toBeNull());
+  });
+
+  it('lists the accounts attached to the space in its settings', async () => {
+    renderApp('/spaces');
+    await screen.findByTestId('screen-spaces');
+    const id = (await findActiveRow()).getAttribute('data-testid')!.replace('space-row-', '');
+
+    fireEvent.click(screen.getByTestId(`space-edit-${id}`));
+    const section = await screen.findByTestId('space-accounts');
+    // the demo space owns its seeded accounts directly
+    await waitFor(() => expect(section.textContent).toContain('Demo Savings'), { timeout: 5000 });
+    expect(screen.getByTestId('space-accounts-manage')).toBeTruthy();
   });
 });

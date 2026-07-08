@@ -25,6 +25,15 @@ import { ViewportDebug } from '@/ui/ViewportDebug';
 
 const isGcCallbackPath = window.location.pathname.endsWith('/gc-callback');
 
+// Chosen-offline identities (demo / offline mode) promise ZERO network
+// traffic — not even crash reports. Signed-in users who merely lost
+// connectivity are different: their reports queue locally and flush
+// once the network returns (offline transport below).
+const isZeroNetworkIdentity = () => {
+  const kind = useSession.getState().identity?.kind;
+  return kind === 'demo' || kind === 'offline';
+};
+
 // error monitoring: GlitchTip speaks the Sentry protocol; no-op when unset
 if (config.glitchtipDsn) {
   Sentry.init({
@@ -32,6 +41,17 @@ if (config.glitchtipDsn) {
     release: `munni-web@${String(__BUILD_NUMBER__)}`,
     // financial app: never send request/response bodies or user input
     sendDefaultPii: false,
+    // errors only: the session ping (fires at init, before any identity
+    // check could run) and outcome client reports would break the
+    // zero-network promise, and we don't use release health anyway
+    integrations: (defaults) => defaults.filter((integration) => integration.name !== 'BrowserSession'),
+    sendClientReports: false,
+    // no connectivity ≠ no telemetry: queue in IndexedDB, flush when online
+    transport: Sentry.makeBrowserOfflineTransport(Sentry.makeFetchTransport),
+    // the offline transport reads OfflineTransportOptions, which the init
+    // options type doesn't surface — hence the widened literal
+    transportOptions: { flushAtStartup: true } as Partial<Parameters<typeof Sentry.makeFetchTransport>[0]>,
+    beforeSend: (event) => (isZeroNetworkIdentity() ? null : event),
   });
 }
 

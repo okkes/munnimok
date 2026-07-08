@@ -899,4 +899,11 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'onboarding.bankSub': 'Zie meteen je echte transacties — munni krijgt alleen leestoegang, geregeld via je eigen bank',
   'onboarding.importInstead': 'Liever een bankafschrift importeren',
   'onboarding.later': 'Doe dit later',
+  'space.spaceInviteSent': 'Uitnodiging verstuurd naar {name} — te accepteren in hun Ruimtes-tab',
+  'space.invitePendingTitle': 'Openstaande uitnodigingen',
+  'space.invitePending': 'Uitgenodigd — wacht op reactie',
+  'space.deleteConfirmNote': 'Dit verwijdert de ruimte en alle gegevens definitief voor alle leden. Tik nogmaals om te bevestigen.',
+  'sync.offlineBanner': 'Offline — wijzigingen worden op dit apparaat bewaard.',
+  'sync.reasonNoNetwork': 'Geen internetverbinding.',
+  'sync.reasonUnreachable': 'De munni-server is niet bereikbaar — mogelijk blokkeert een firewall of netwerkfilter de verbinding.',
 };

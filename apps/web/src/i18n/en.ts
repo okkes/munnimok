@@ -897,6 +897,13 @@ export const en = {
   'onboarding.bankSub': 'See your real transactions right away — munni only gets read access, arranged by your own bank',
   'onboarding.importInstead': 'Import a bank statement instead',
   'onboarding.later': 'Do this later',
+  'space.spaceInviteSent': 'Invitation sent to {name} — they can accept it in their Spaces tab',
+  'space.invitePendingTitle': 'Pending invites',
+  'space.invitePending': 'Invited — waiting for a response',
+  'space.deleteConfirmNote': 'This permanently removes the space and its data for every member. Tap again to confirm.',
+  'sync.offlineBanner': 'Offline — changes are saved on this device.',
+  'sync.reasonNoNetwork': 'No internet connection.',
+  'sync.reasonUnreachable': 'The munni server can’t be reached — a firewall or network filter may be blocking it.',
 } as const;
 
 export type TranslationKey = keyof typeof en;

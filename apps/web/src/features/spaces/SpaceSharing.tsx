@@ -28,6 +28,12 @@ interface FriendDto {
   displayName: string | null;
   picture?: string | null;
 }
+interface OutgoingInviteDto {
+  id: string;
+  toUserId: string;
+  toName: string | null;
+  role: string;
+}
 
 const short = (id: string) => `${id.slice(0, 8)}…`;
 const ROLES: SpaceRole[] = ['owner', 'contributor', 'reader'];
@@ -96,20 +102,24 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
   const { db, repo, engine, setActiveSpace, spaceId: activeSpaceId } = useData();
   const [members, setMembers] = useState<MemberDto[] | null>(null);
   const [friends, setFriends] = useState<FriendDto[]>([]);
+  const [outgoing, setOutgoing] = useState<OutgoingInviteDto[]>([]);
   const [me, setMe] = useState<string | null>(null);
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [friendId, setFriendId] = useState('');
   const [friendRequestSent, setFriendRequestSent] = useState(false);
+  const [inviteSentTo, setInviteSentTo] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
-    const [membersRes, friendsRes, meRes] = await Promise.all([
+    const [membersRes, friendsRes, meRes, outgoingRes] = await Promise.all([
       apiFetch(`/spaces/${spaceId}/members`).catch(() => null),
       apiFetch('/friends').catch(() => null),
       apiFetch('/me').catch(() => null),
+      apiFetch(`/spaces/${spaceId}/invites`).catch(() => null), // owner-only: 403 for others
     ]);
     if (membersRes?.ok) setMembers((await membersRes.json()) as MemberDto[]);
     if (friendsRes?.ok) setFriends(((await friendsRes.json()) as { friends: FriendDto[] }).friends);
     if (meRes?.ok) setMe(((await meRes.json()) as { userId: string }).userId);
+    if (outgoingRes?.ok) setOutgoing((await outgoingRes.json()) as OutgoingInviteDto[]);
   }, [spaceId]);
   useEffect(() => void reload(), [reload]);
 
@@ -121,16 +131,23 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
   if (members === null) return null; // not a member / offline — hide section
   const isOwner = myRole === 'owner';
   const memberIds = new Set(members.map((m) => m.userId));
-  const invitable = friends.filter((f) => !memberIds.has(f.userId));
+  const pendingIds = new Set(outgoing.map((i) => i.toUserId));
+  const invitable = friends.filter((f) => !memberIds.has(f.userId) && !pendingIds.has(f.userId));
 
-  const invite = async (toUserId: string) => {
-    await apiFetch(`/spaces/${spaceId}/invites`, {
+  const invite = async (friend: FriendDto) => {
+    const res = await apiFetch(`/spaces/${spaceId}/invites`, {
       method: 'POST',
-      body: JSON.stringify({ toUserId, role: 'contributor', spaceName }),
-    });
+      body: JSON.stringify({ toUserId: friend.userId, role: 'contributor', spaceName }),
+    }).catch(() => null);
+    if (res?.ok) setInviteSentTo(friend.displayName ?? short(friend.userId));
     // inviting someone makes this a shared space: its categories become
     // space-scoped and user-scoped categories stop leaking into it
     await repo.upsert('space', spaceId, spaceId, { kind: 'shared' });
+    await reload();
+  };
+  const revokeInvite = async (inviteId: string) => {
+    await apiFetch(`/spaces/invites/${inviteId}`, { method: 'DELETE' }).catch(() => null);
+    setInviteSentTo(null);
     await reload();
   };
   const addFriend = async () => {
@@ -204,16 +221,48 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
           </div>
         ))}
       </div>
+      {isOwner && outgoing.length > 0 && (
+        <>
+          <div className="m-cap mt-3 mb-1 px-1">{t('space.invitePendingTitle')}</div>
+          <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="space-outgoing-invites">
+            {outgoing.map((invitation) => (
+              <div key={invitation.id} className="flex items-center gap-3 border-b border-line-2 px-4 py-2.5 last:border-0">
+                <Icon name="clock-outline" size={18} color="var(--m-ink-4)" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[14px] text-ink">
+                    {invitation.toName ?? short(invitation.toUserId)}
+                  </span>
+                  <span className="block truncate text-[12px] text-ink-4">{t('space.invitePending')}</span>
+                </span>
+                <button
+                  aria-label={t('action.delete')}
+                  data-testid={`space-invite-revoke-${invitation.id}`}
+                  onClick={() => void revokeInvite(invitation.id)}
+                  className="m-tap border-none bg-transparent text-ink-4"
+                >
+                  <Icon name="close" size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
       {isOwner && (
         <>
           <div className="m-cap mt-3 mb-1 px-1">{t('space.addMember')}</div>
+          {inviteSentTo && (
+            <p className="mb-2 flex items-center gap-1.5 px-1 text-[12px] text-accent-deep" data-testid="space-invite-sent">
+              <Icon name="check-circle-outline" size={14} />
+              {t('space.spaceInviteSent', { name: inviteSentTo })}
+            </p>
+          )}
           {invitable.length > 0 && (
             <div className="mb-2 flex flex-wrap gap-2">
               {invitable.map((f) => (
                 <button
                   key={f.userId}
                   data-testid={`space-invite-${f.userId}`}
-                  onClick={() => void invite(f.userId)}
+                  onClick={() => void invite(f)}
                   className="m-tap rounded-full border border-line bg-surface px-3 py-1.5 text-[13px] text-ink-2"
                 >
                   + {f.displayName ?? short(f.userId)}

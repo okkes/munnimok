@@ -899,4 +899,11 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'onboarding.bankSub': 'Gerçek işlemlerini hemen gör — munni yalnızca okuma erişimi alır, bunu kendi bankan ayarlar',
   'onboarding.importInstead': 'Bunun yerine banka ekstresi içe aktar',
   'onboarding.later': 'Daha sonra yap',
+  'space.spaceInviteSent': '{name} kişisine davet gönderildi — Alanlar sekmesinden kabul edebilir',
+  'space.invitePendingTitle': 'Bekleyen davetler',
+  'space.invitePending': 'Davet edildi — yanıt bekleniyor',
+  'space.deleteConfirmNote': 'Bu, alanı ve verilerini tüm üyeler için kalıcı olarak siler. Onaylamak için tekrar dokun.',
+  'sync.offlineBanner': 'Çevrimdışı — değişiklikler bu cihazda saklanır.',
+  'sync.reasonNoNetwork': 'İnternet bağlantısı yok.',
+  'sync.reasonUnreachable': 'munni sunucusuna ulaşılamıyor — bir güvenlik duvarı veya ağ filtresi engelliyor olabilir.',
 };

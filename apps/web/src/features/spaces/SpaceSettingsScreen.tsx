@@ -1,13 +1,13 @@
 import { useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useParams, useRouter } from '@tanstack/react-router';
+import { useNavigate, useParams, useRouter } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { downscaleImage } from '@/lib/image';
 import { useData } from '@/app/data';
 import { useSession } from '@/app/session';
 import { SpaceMembersSection } from './SpaceSharing';
 import type { SpaceRole } from './SpaceSharing';
-import type { SpacePeriodType } from '@/db/types';
+import type { AccountRow, SpacePeriodType } from '@/db/types';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
@@ -31,6 +31,98 @@ const clampWeekday = (day: number) => Math.min(Math.max(day || 1, 1), 7);
 /** localized short weekday name — 5 Jan 2020 + n lands on ISO weekday n */
 const weekdayName = (weekday: number, lang: keyof typeof LOCALES) =>
   new Intl.DateTimeFormat(LOCALES[lang], { weekday: 'short' }).format(new Date(2020, 0, 5 + weekday));
+
+interface AttachedAccountEntry {
+  key: string;
+  name: string;
+  subtitle: string;
+  archived: boolean;
+}
+
+/**
+ * The financial accounts this space sees: manual/imported accounts that
+ * live in the space itself plus feed accounts attached via accountLink
+ * rows. Pure local data — renders offline for every identity.
+ */
+function AttachedAccountsSection({ spaceId }: Readonly<{ spaceId: string }>) {
+  const { t } = useLang();
+  const { db } = useData();
+  const navigate = useNavigate();
+
+  const entries = useLiveQuery(async () => {
+    const [ownAccounts, links] = await Promise.all([
+      db.accounts.filter((a) => a.deleted === 0 && a.spaceId === spaceId).toArray(),
+      db.accountLinks.filter((l) => l.deleted === 0 && l.spaceId === spaceId).toArray(),
+    ]);
+    const feedAccounts = new Map<string, AccountRow>();
+    for (const account of await db.accounts.where('id').anyOf(links.map((l) => l.accountId)).toArray()) {
+      feedAccounts.set(account.id, account);
+    }
+    const ibanTail = (iban?: string) => (iban ? `…${iban.slice(-4)}` : undefined);
+    const list: AttachedAccountEntry[] = ownAccounts.map((account) => ({
+      key: account.id,
+      name: account.name,
+      subtitle: [ibanTail(account.iban), t(account.source === 'manual' ? 'acct.manual' : 'acct.automated')]
+        .filter(Boolean)
+        .join(' · '),
+      archived: !!account.archived,
+    }));
+    for (const link of links) {
+      const account = feedAccounts.get(link.accountId);
+      list.push({
+        key: link.id,
+        name: account?.name ?? t('acct.bank'),
+        subtitle: [
+          ibanTail(account?.iban),
+          link.attachedByName ? `${t('space.by')} ${link.attachedByName}` : undefined,
+          link.historyFrom ? `${t('acct.historyFrom')} ${link.historyFrom}` : undefined,
+        ]
+          .filter(Boolean)
+          .join(' · '),
+        archived: !!link.archived,
+      });
+    }
+    list.sort((x, y) => x.name.localeCompare(y.name));
+    return list;
+  }, [db, spaceId]);
+
+  return (
+    <div className="mt-2" data-testid="space-accounts">
+      <div className="m-cap mb-1 px-1">{t('space.financialAccounts')}</div>
+      {entries?.length === 0 && (
+        <p className="px-1 text-[13px] text-ink-4" data-testid="space-accounts-empty">
+          {t('space.noAccounts')}
+        </p>
+      )}
+      {!!entries?.length && (
+        <div className="overflow-hidden rounded-card border border-line bg-surface">
+          {entries.map((entry) => (
+            <div key={entry.key} className="flex items-center gap-3 border-b border-line-2 px-4 py-2.5 last:border-0">
+              <Icon name="bank-outline" size={18} color="var(--m-ink-3)" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[14px] text-ink">{entry.name}</span>
+                {entry.subtitle && <span className="block truncate text-[12px] text-ink-4">{entry.subtitle}</span>}
+              </span>
+              {entry.archived && (
+                <span className="shrink-0 rounded-full bg-bg-2 px-2 py-0.5 text-[11px] text-ink-3">
+                  {t('acct.archived')}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      <button
+        data-testid="space-accounts-manage"
+        onClick={() => void navigate({ to: '/accounts' })}
+        className="m-tap mt-1.5 flex items-center gap-1 border-none bg-transparent px-1 text-[13px] text-accent-deep"
+      >
+        {t('space.manageAccounts')}
+        <Icon name="chevron-right" size={15} />
+      </button>
+    </div>
+  );
+}
 
 /**
  * A space's settings as a full screen (was an overloaded sheet):
@@ -60,6 +152,7 @@ export function SpaceSettingsScreen() {
   const [historyStart, setHistoryStart] = useState('');
   const [picture, setPicture] = useState('');
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   // role in this space; local-only identities are always owner
   const [myRole, setMyRole] = useState<SpaceRole>('owner');
@@ -106,6 +199,10 @@ export function SpaceSettingsScreen() {
     }
     if ((spaceCount ?? 0) <= 1) {
       setDeleteError(t('space.cannotDeleteOnly'));
+      return;
+    }
+    if (!confirmDelete) {
+      setConfirmDelete(true); // destructive: second tap confirms
       return;
     }
     void repo.remove('space', space.id, space.id);
@@ -293,16 +390,6 @@ export function SpaceSettingsScreen() {
                 {t('action.save')}
               </Button>
             )}
-            {myRole === 'owner' && (
-              <Button variant="danger" data-testid="space-edit-delete" onClick={deleteSpace}>
-                {t('space.delete')}
-              </Button>
-            )}
-            {deleteError && (
-              <p className="text-center text-[13px] text-negative" data-testid="space-delete-error">
-                {deleteError}
-              </p>
-            )}
             {syncing && (
               <SpaceMembersSection
                 spaceId={space.id}
@@ -310,6 +397,26 @@ export function SpaceSettingsScreen() {
                 onMyRole={setMyRole}
                 onLeft={() => goBack()}
               />
+            )}
+            <AttachedAccountsSection spaceId={space.id} />
+            {/* danger zone last: deleting is the one action that must never sit
+                between things people actually come here for */}
+            {myRole === 'owner' && (
+              <div className="mt-4 flex flex-col gap-2">
+                {confirmDelete && (
+                  <p className="px-1 text-[13px] text-ink-3" data-testid="space-delete-confirm-note">
+                    {t('space.deleteConfirmNote')}
+                  </p>
+                )}
+                <Button variant="danger" data-testid="space-edit-delete" onClick={deleteSpace}>
+                  {confirmDelete ? t('action.confirm') : t('space.delete')}
+                </Button>
+              </div>
+            )}
+            {deleteError && (
+              <p className="text-center text-[13px] text-negative" data-testid="space-delete-error">
+                {deleteError}
+              </p>
             )}
           </div>
         )}
