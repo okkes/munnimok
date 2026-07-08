@@ -7,7 +7,6 @@ import type { OverviewKind } from '@/domain/overview';
 import { periodHistory } from '@/domain/periods';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { LOCALES, useLang } from '@/i18n';
-import type { TranslationKey } from '@/i18n';
 import { fmtCents } from '@/lib/money';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { BarChart, StackedBar } from '@/ui/charts';
@@ -87,7 +86,7 @@ export function OverviewScreen() {
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-overview">
       <AppBar
-        title={t(`overview.${kind}` as TranslationKey)}
+        title={t(`overview.${kind}`)}
         leading={
           <IconButton label={t('action.back')} testId="overview-back" onClick={() => window.history.back()}>
             <Icon name="chevron-left" size={24} />

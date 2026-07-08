@@ -19,19 +19,24 @@ export function parseCsv(content: string, delimiter: ',' | ';'): string[][] {
     row = [];
   };
 
+  // returns how many extra chars were consumed (1 for an escaped quote)
+  const readQuoted = (ch: string, next: string | undefined): number => {
+    if (ch !== '"') {
+      field += ch;
+      return 0;
+    }
+    if (next === '"') {
+      field += '"';
+      return 1;
+    }
+    inQuotes = false;
+    return 0;
+  };
+
   for (let i = 0; i < content.length; i++) {
     const ch = content[i];
     if (inQuotes) {
-      if (ch === '"') {
-        if (content[i + 1] === '"') {
-          field += '"';
-          i++;
-        } else {
-          inQuotes = false;
-        }
-      } else {
-        field += ch;
-      }
+      i += readQuoted(ch, content[i + 1]);
     } else if (ch === '"') {
       inQuotes = true;
     } else if (ch === delimiter) {

@@ -85,7 +85,7 @@ export async function visibleAccounts(db: MunniDB, spaceId: string): Promise<Spa
   const out: SpaceAccount[] = [...legacy];
   for (const link of links) {
     const account = await db.accounts.get(link.accountId);
-    if (account && account.deleted === 0) out.push({ ...account, link });
+    if (account?.deleted === 0) out.push({ ...account, link });
   }
   return out;
 }

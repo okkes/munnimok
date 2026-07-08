@@ -5,7 +5,6 @@ import { OVERVIEW_KINDS, overviewSummary } from '@/domain/overview';
 import type { OverviewKind, OverviewSummary } from '@/domain/overview';
 import { periodHistory } from '@/domain/periods';
 import { useLang } from '@/i18n';
-import type { TranslationKey } from '@/i18n';
 import { useData } from '@/app/data';
 import { fmtCents } from '@/lib/money';
 import { AppBar } from '@/ui/AppBar';
@@ -105,7 +104,7 @@ export function HomeScreen() {
                 <Icon name={TILE_META[kind].icon} size={18} />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block text-[11px] font-medium text-ink-3">{t(`overview.${kind}` as TranslationKey)}</span>
+                <span className="block text-[11px] font-medium text-ink-3">{t(`overview.${kind}`)}</span>
                 <span className="m-num block truncate text-[15px] font-semibold text-ink">
                   {fmtCents(summary[TILE_META[kind].field], currency, lang)}
                 </span>

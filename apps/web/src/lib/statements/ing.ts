@@ -49,7 +49,8 @@ function toEntries(raws: RawEntry[]): CamtEntry[] {
   const sorted = [...raws].sort((a, b) => a.date.localeCompare(b.date));
   const ordinals = new Map<string, number>();
   return sorted.map((raw) => {
-    const key = `${raw.date}:${raw.amountCents}:${tinyHash(`${raw.counterpartyName ?? ''}|${raw.description}`)}`;
+    const content = `${raw.counterpartyName ?? ''}|${raw.description}`;
+    const key = `${raw.date}:${raw.amountCents}:${tinyHash(content)}`;
     const ordinal = (ordinals.get(key) ?? 0) + 1;
     ordinals.set(key, ordinal);
     return {
