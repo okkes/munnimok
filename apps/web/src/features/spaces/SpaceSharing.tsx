@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
 import { useData } from '@/app/data';
+import { adoptUserCategoriesOnShare } from '@/features/categories/categoryOps';
 import { apiFetch } from '@/lib/api';
 import { Avatar } from '@/features/profile/ProfileScreen';
 import { Button } from '@/ui/Button';
@@ -141,8 +142,14 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
     }).catch(() => null);
     if (res?.ok) setInviteSentTo(friend.displayName ?? short(friend.userId));
     // inviting someone makes this a shared space: its categories become
-    // space-scoped and user-scoped categories stop leaking into it
-    await repo.upsert('space', spaceId, spaceId, { kind: 'shared' });
+    // space-scoped and user-scoped categories stop leaking into it — so
+    // the user-scoped ones its transactions already use are adopted
+    // (copied in + references rewritten) BEFORE the flip
+    const space = await db.spaces.get(spaceId);
+    if (space && space.kind !== 'shared') {
+      await adoptUserCategoriesOnShare(db, repo, spaceId);
+      await repo.upsert('space', spaceId, spaceId, { kind: 'shared' });
+    }
     await reload();
   };
   const revokeInvite = async (inviteId: string) => {

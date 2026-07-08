@@ -5,7 +5,8 @@ import {
   affectedByTypeChange,
   detachCategoryPatch,
 } from '@/domain/categoryRules';
-import type { CategoryRow, CatDirection, TransactionRow, TxType } from '@/db/types';
+import { adoptedCategoryId } from '@/domain/feedIds';
+import type { CategoryRow, CatDirection, TransactionRow, TxSplit, TxType } from '@/db/types';
 import type { MunniDB } from '@/db/schema';
 import type { Repo } from '@/db/repo';
 
@@ -202,6 +203,21 @@ export async function createSubCategory(
   return id;
 }
 
+/** the copyable payload of a category row (fresh envelope on the target) */
+const categoryCopyFields = (r: CategoryRow, overrides: Partial<CategoryRow>): Record<string, unknown> => ({
+  parentId: r.parentId,
+  name: r.name,
+  icon: r.icon,
+  color: r.color,
+  txType: r.txType,
+  direction: r.direction,
+  isParent: r.isParent,
+  isOther: r.isOther,
+  sortOrder: r.sortOrder,
+  builtin: 0,
+  ...overrides,
+});
+
 /**
  * Copy a personal (user-scoped) category into a shared space. Parents
  * are copied with their whole subtree; a sub under a builtin parent is
@@ -213,26 +229,128 @@ export async function copyCategoryToSpace(
   targetSpaceId: string,
   row: CategoryRow,
 ): Promise<void> {
-  const strip = (r: CategoryRow, overrides: Partial<CategoryRow>): Record<string, unknown> => ({
-    parentId: r.parentId,
-    name: r.name,
-    icon: r.icon,
-    color: r.color,
-    txType: r.txType,
-    direction: r.direction,
-    isParent: r.isParent,
-    isOther: r.isOther,
-    sortOrder: r.sortOrder,
-    builtin: 0,
-    ...overrides,
-  });
   if (row.isParent === 1) {
     const newParentId = repo.newId();
-    await repo.upsert('category', targetSpaceId, newParentId, strip(row, { parentId: undefined }));
+    await repo.upsert('category', targetSpaceId, newParentId, categoryCopyFields(row, { parentId: undefined }));
     for (const sub of await subsOf(db, row)) {
-      await repo.upsert('category', targetSpaceId, repo.newId(), strip(sub, { parentId: newParentId }));
+      await repo.upsert('category', targetSpaceId, repo.newId(), categoryCopyFields(sub, { parentId: newParentId }));
     }
   } else {
-    await repo.upsert('category', targetSpaceId, repo.newId(), strip(row, {}));
+    await repo.upsert('category', targetSpaceId, repo.newId(), categoryCopyFields(row, {}));
   }
+}
+
+/** rewrites a splits array through the id map; undefined when nothing changed */
+const remapSplits = (splits: TxSplit[] | undefined, idMap: Map<string, string>): TxSplit[] | undefined => {
+  if (!splits?.some((s) => idMap.has(s.catId))) return undefined;
+  return splits.map((s) => (idMap.has(s.catId) ? { ...s, catId: idMap.get(s.catId)! } : s));
+};
+
+/** rows that reference categories (transactions and overlays share the shape) */
+type CatHolder = Pick<TransactionRow, 'id' | 'catId' | 'splits'>;
+
+const collectUserScopedUse = (holders: CatHolder[], userScoped: (id?: string) => CategoryRow | undefined): Set<string> => {
+  const used = new Set<string>();
+  for (const holder of holders) {
+    if (userScoped(holder.catId)) used.add(holder.catId!);
+    for (const split of holder.splits ?? []) {
+      if (userScoped(split.catId)) used.add(split.catId);
+    }
+  }
+  return used;
+};
+
+/**
+ * Copy whole units: a used sub pulls its custom parent with ALL siblings
+ * (a half-copied group would be confusing); subs under builtin parents
+ * copy alone.
+ */
+const planCopyUnits = (used: Set<string>, catById: Map<string, CategoryRow>, personalIds: Set<string>) => {
+  const parentUnits = new Map<string, CategoryRow>();
+  const loneSubs: CategoryRow[] = [];
+  for (const id of used) {
+    const row = catById.get(id)!;
+    if (row.isParent === 1) {
+      parentUnits.set(row.id, row);
+      continue;
+    }
+    const parent = row.parentId ? catById.get(row.parentId) : undefined;
+    if (parent && personalIds.has(parent.spaceId)) parentUnits.set(parent.id, parent);
+    else loneSubs.push(row);
+  }
+  return { parentUnits, loneSubs };
+};
+
+async function copyUnitsIntoSpace(
+  db: MunniDB,
+  repo: Repo,
+  spaceId: string,
+  parentUnits: Map<string, CategoryRow>,
+  loneSubs: CategoryRow[],
+): Promise<Map<string, string>> {
+  const idMap = new Map<string, string>();
+  const copy = async (row: CategoryRow, overrides: Partial<CategoryRow>): Promise<string> => {
+    const newId = adoptedCategoryId(spaceId, row.id);
+    idMap.set(row.id, newId);
+    await repo.upsert('category', spaceId, newId, categoryCopyFields(row, overrides));
+    return newId;
+  };
+  for (const parent of parentUnits.values()) {
+    const newParentId = await copy(parent, { parentId: undefined });
+    for (const sub of await subsOf(db, parent)) await copy(sub, { parentId: newParentId });
+  }
+  for (const sub of loneSubs) await copy(sub, {});
+  return idMap;
+}
+
+async function rewriteReferences(
+  repo: Repo,
+  entity: 'transaction' | 'txMeta',
+  spaceId: string,
+  holders: CatHolder[],
+  idMap: Map<string, string>,
+): Promise<void> {
+  for (const holder of holders) {
+    const catId = holder.catId ? idMap.get(holder.catId) : undefined;
+    const splits = remapSplits(holder.splits, idMap);
+    if (!catId && !splits) continue;
+    await repo.upsert(entity, spaceId, holder.id, {
+      ...(catId ? { catId } : {}),
+      ...(splits ? { splits } : {}),
+    });
+  }
+}
+
+/**
+ * A personal space that becomes shared adopts every user-scoped custom
+ * category its transactions use: the rows are copied into the space
+ * (deterministic ids — concurrent inviters converge) and the space's
+ * transactions and overlays are rewritten to the copies. Without this,
+ * those references stop resolving the moment the space turns shared —
+ * for every member INCLUDING the owner — and render as Uncategorized.
+ * Idempotent: after adoption the references point at space-local rows,
+ * so a second run finds nothing user-scoped in use.
+ */
+export async function adoptUserCategoriesOnShare(db: MunniDB, repo: Repo, spaceId: string): Promise<void> {
+  const spaces = await db.spaces.filter((s) => s.deleted === 0).toArray();
+  const personalIds = new Set(spaces.filter((s) => s.kind !== 'shared' && s.id !== spaceId).map((s) => s.id));
+
+  const [txs, metas, cats] = await Promise.all([
+    db.transactions.filter((t) => t.deleted === 0 && t.spaceId === spaceId).toArray(),
+    db.txMeta.filter((m) => m.deleted === 0 && m.spaceId === spaceId).toArray(),
+    db.categories.filter((c) => c.deleted === 0).toArray(),
+  ]);
+  const catById = new Map(cats.map((c) => [c.id, c]));
+  const userScoped = (id: string | undefined): CategoryRow | undefined => {
+    const row = id ? catById.get(id) : undefined;
+    return row && personalIds.has(row.spaceId) ? row : undefined;
+  };
+
+  const used = collectUserScopedUse([...txs, ...metas], userScoped);
+  if (used.size === 0) return;
+
+  const { parentUnits, loneSubs } = planCopyUnits(used, catById, personalIds);
+  const idMap = await copyUnitsIntoSpace(db, repo, spaceId, parentUnits, loneSubs);
+  await rewriteReferences(repo, 'transaction', spaceId, txs, idMap);
+  await rewriteReferences(repo, 'txMeta', spaceId, metas, idMap);
 }

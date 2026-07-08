@@ -29,3 +29,15 @@ export const txMetaId = (spaceId: string, txId: string): string => uuidv5(`meta:
 /** attachment row id (one per account per space) */
 export const accountLinkId = (spaceId: string, feedId: string): string =>
   uuidv5(`link:${spaceId}:${feedId}`, IMPORT_NS);
+
+/**
+ * Id of a user-scoped category's copy inside a space that became shared —
+ * deterministic so two owners' devices adopting concurrently converge on
+ * the same rows instead of duplicating them.
+ */
+export const adoptedCategoryId = (spaceId: string, sourceCatId: string): string =>
+  uuidv5(`catcopy:${spaceId}:${sourceCatId}`, IMPORT_NS);
+
+/** one dismissal row per merchant pattern per space (LWW-convergent) */
+export const recurringDismissId = (spaceId: string, merchantKeyValue: string): string =>
+  uuidv5(`recdis:${spaceId}:${merchantKeyValue}`, IMPORT_NS);
