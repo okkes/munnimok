@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { parseCamt053 } from '@/lib/camt053/parse';
-import type { CamtStatement } from '@/lib/camt053/parse';
+import { parseStatement } from '@/lib/statements/parseStatement';
+import type { ParsedStatement } from '@/lib/statements/parseStatement';
 import { getApiCapabilities } from '@/lib/api';
 import { useSession } from '@/app/session';
 import { importCamtStatements } from './importCamt';
@@ -93,7 +93,7 @@ export function AccountsScreen() {
   const [name, setName] = useState('');
   const [balance, setBalance] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
-  const [importPreview, setImportPreview] = useState<CamtStatement[] | null>(null);
+  const [importPreview, setImportPreview] = useState<ParsedStatement[] | null>(null);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [importError, setImportError] = useState(false);
   const identity = useSession((s) => s.identity);
@@ -110,7 +110,7 @@ export function AccountsScreen() {
     setImportError(false);
     setImportResult(null);
     try {
-      setImportPreview(parseCamt053(await file.text()));
+      setImportPreview(parseStatement(await file.text(), file.name));
     } catch {
       setImportPreview(null);
       setImportError(true);
@@ -200,7 +200,7 @@ export function AccountsScreen() {
       <input
         ref={fileRef}
         type="file"
-        accept=".xml,text/xml,application/xml"
+        accept=".xml,.csv,text/xml,application/xml,text/csv"
         hidden
         data-testid="accounts-import-input"
         onChange={(e) => void onFilePicked(e.target.files?.[0])}

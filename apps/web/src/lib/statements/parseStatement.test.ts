@@ -1,0 +1,103 @@
+// @vitest-environment happy-dom
+import { describe, expect, it } from 'vitest';
+import { euAmountToCents, normalizeDate, parseCsv } from './csv';
+import { parseStatement } from './parseStatement';
+
+// sanitized single-row samples of the three real ING export shapes
+const ING_CURRENT = `"Datum","Naam / Omschrijving","Rekening","Tegenrekening","Code","Af Bij","Bedrag (EUR)","Mutatiesoort","Mededelingen"
+"20260701","Mw A Voorbeeld","NL74INGB0001029507","NL17INGB0109277198","GT","Af","1,85","Online bankieren","Naam: Mw A Voorbeeld Omschrijving: Flowers IBAN: NL17INGB0109277198"
+"20260701","Rente ING Rood Staan","NL74INGB0001029507","","DV","Af","8,09","Diversen","Periode 01-06-2026"
+"20260630","Werkgever BV","NL74INGB0001029507","NL00WERK0000000001","GT","Bij","2.200,00","Online bankieren","SALARIS JUNI"
+"20260630","Albert Heijn","NL74INGB0001029507","","BA","Af","12,50","Betaalautomaat","AH 1350"
+"20260630","Albert Heijn","NL74INGB0001029507","","BA","Af","12,50","Betaalautomaat","AH 1350"`;
+
+const ING_SAVINGS = `"Datum";"Omschrijving";"Rekening";"Rekening naam";"Tegenrekening";"Af Bij";"Bedrag";"Valuta";"Mutatiesoort";"Mededelingen";"Saldo na mutatie"
+"2026-01-01";"Rente";"V 286-81505";"Oranje Spaarrekening";"";"Bij";"9,20";"EUR";"Rente";"";"1509,20"
+"2025-06-11";"Overboeking naar betaalrekening NL74INGB0001029507";"V 286-81505";"Oranje Spaarrekening";"NL74INGB0001029507";"Af";"1500,00";"EUR";"Opname";"";"0,00"`;
+
+const ING_CREDIT = `"Datum";"Naam / Omschrijving";"Mutatiesoort";"Af Bij";"Bedrag (EUR)";"Mededelingen";"Kaartnummer"
+"2026-07-06";"IKEA s Gravenhage";"Betaling";"Af";"249,18";"Transactiedatum: 05-07-2026";"5248 **** **** 7201"
+"2026-07-04";"AFLOSSING";"Incasso";"Bij";"1.878,52";"";""`;
+
+describe('csv primitives', () => {
+  it('handles quoted fields, doubled quotes and both delimiters', () => {
+    expect(parseCsv('"a";"b;c";"say ""hi"""\n"1";"2";"3"', ';')).toEqual([
+      ['a', 'b;c', 'say "hi"'],
+      ['1', '2', '3'],
+    ]);
+  });
+
+  it('parses EU amounts and both date shapes', () => {
+    expect(euAmountToCents('1.878,52')).toBe(187852);
+    expect(euAmountToCents('36,00')).toBe(3600);
+    expect(euAmountToCents('')).toBeNull();
+    expect(normalizeDate('20260701')).toBe('2026-07-01');
+    expect(normalizeDate('2026-07-01')).toBe('2026-07-01');
+    expect(normalizeDate('01-07-2026')).toBeNull();
+  });
+});
+
+describe('parseStatement — ING current account', () => {
+  it('detects the format and maps signs, ibans and descriptions', () => {
+    const [stmt] = parseStatement(ING_CURRENT);
+    expect(stmt.iban).toBe('NL74INGB0001029507');
+    expect(stmt.accountType).toBe('checking');
+    expect(stmt.entries).toHaveLength(5);
+
+    const salary = stmt.entries.find((e) => e.counterpartyName === 'Werkgever BV')!;
+    expect(salary.amountCents).toBe(220_000); // "Bij" = credit
+    expect(salary.date).toBe('2026-06-30');
+    expect(salary.counterpartyIban).toBe('NL00WERK0000000001');
+
+    const flowers = stmt.entries.find((e) => e.counterpartyName === 'Mw A Voorbeeld')!;
+    expect(flowers.amountCents).toBe(-185); // "Af" = debit
+    expect(flowers.description).toContain('Online bankieren');
+  });
+
+  it('identical same-day rows get distinct, deterministic refs', () => {
+    const [a] = parseStatement(ING_CURRENT);
+    const [b] = parseStatement(ING_CURRENT);
+    const dupes = a.entries.filter((e) => e.counterpartyName === 'Albert Heijn');
+    expect(dupes).toHaveLength(2);
+    expect(dupes[0].ref).not.toBe(dupes[1].ref); // ordinal disambiguates
+    expect(a.entries.map((e) => e.ref)).toEqual(b.entries.map((e) => e.ref)); // stable across parses
+  });
+});
+
+describe('parseStatement — ING savings', () => {
+  it('takes the newest running balance and the account name', () => {
+    const [stmt] = parseStatement(ING_SAVINGS);
+    expect(stmt.accountType).toBe('savings');
+    expect(stmt.accountName).toBe('Oranje Spaarrekening');
+    expect(stmt.iban).toBe('V 286-81505');
+    expect(stmt.closingBalanceCents).toBe(150_920); // newest row's saldo
+    const withdrawal = stmt.entries.find((e) => e.amountCents < 0)!;
+    expect(withdrawal.amountCents).toBe(-150_000);
+    expect(withdrawal.counterpartyIban).toBe('NL74INGB0001029507');
+  });
+});
+
+describe('parseStatement — ING credit card', () => {
+  it('keys the account on the masked card number; charges negative', () => {
+    const [stmt] = parseStatement(ING_CREDIT, 'Creditcard_210034322508_x.csv');
+    expect(stmt.accountType).toBe('credit');
+    expect(stmt.iban).toBe('52487201'); // normalized masked card
+    const charge = stmt.entries.find((e) => e.counterpartyName === 'IKEA s Gravenhage')!;
+    expect(charge.amountCents).toBe(-24_918);
+    const repayment = stmt.entries.find((e) => e.counterpartyName === 'AFLOSSING')!;
+    expect(repayment.amountCents).toBe(187_852);
+  });
+
+  it('falls back to the file name when no row carries the card number', () => {
+    const noCard = ING_CREDIT.split('\n').slice(0, 2).join('\n').replace('"5248 **** **** 7201"', '""');
+    const [stmt] = parseStatement(noCard, 'Creditcard_210034322508_01-05-2025.csv');
+    expect(stmt.iban).toBe('210034322508');
+  });
+});
+
+describe('parseStatement — detection', () => {
+  it('XML routes to CAMT.053, unknown content throws', () => {
+    expect(() => parseStatement('name,amount\nfoo,12')).toThrow('Unsupported statement format');
+    expect(() => parseStatement('<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.02"></Document>')).toThrow(); // camt validates deeper
+  });
+});

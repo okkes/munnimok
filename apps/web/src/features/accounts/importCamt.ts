@@ -1,5 +1,5 @@
 import { v5 as uuidv5 } from 'uuid';
-import type { CamtStatement } from '@/lib/camt053/parse';
+import type { ParsedStatement } from '@/lib/statements/parseStatement';
 import { predictCategory } from '@/domain/predictCategory';
 import { CATEGORY_BY_ID, UNCATEGORIZED_ID } from '@/domain/categories';
 import type { Repo } from '@/db/repo';
@@ -30,12 +30,13 @@ async function createStatementAccount(
   repo: Repo,
   spaceId: string,
   accountId: string,
-  stmt: CamtStatement,
+  stmt: ParsedStatement,
   iban: string,
 ): Promise<void> {
   await repo.upsert('account', spaceId, accountId, {
-    name: `Bank · ${iban.slice(-4)}`,
-    type: 'checking',
+    name: stmt.accountName ?? `Bank · ${iban.slice(-4)}`,
+    // ING CSVs know their account kind; CAMT statements default to checking
+    type: stmt.accountType ?? 'checking',
     source: 'camt053',
     currency: stmt.currency,
     balanceCents: stmt.closingBalanceCents ?? 0,
@@ -50,7 +51,7 @@ async function importEntry(
   spaceId: string,
   accountId: string,
   iban: string,
-  entry: CamtStatement['entries'][number],
+  entry: ParsedStatement['entries'][number],
 ): Promise<boolean> {
   const txId = uuidv5(`tx:${iban}:${entry.ref}`, IMPORT_NS);
   if (await db.transactions.get(txId)) return false;
@@ -78,7 +79,7 @@ export async function importCamtStatements(
   repo: Repo,
   db: MunniDB,
   spaceId: string,
-  statements: CamtStatement[],
+  statements: ParsedStatement[],
 ): Promise<ImportResult> {
   const existing = await db.accounts.where('spaceId').equals(spaceId).filter((a) => a.deleted === 0).toArray();
   const byIban = new Map(existing.flatMap((a) => (a.iban ? [[normalizeIban(a.iban), a] as const] : [])));
