@@ -21,6 +21,7 @@ import { GcCallbackScreen } from '@/features/accounts/BankConnect';
 import { LockScreen } from '@/features/lock/LockScreen';
 import { initLockWatcher, useLock } from '@/features/lock/lock';
 import { UpdateToast } from '@/ui/UpdateToast';
+import { ViewportDebug } from '@/ui/ViewportDebug';
 
 const isGcCallbackPath = window.location.pathname.endsWith('/gc-callback');
 
@@ -56,6 +57,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         <LogtoAppProvider>
           <AppEntry />
           <UpdateToast />
+          <ViewportDebug />
         </LogtoAppProvider>
       </LangProvider>
     </ThemeProvider>
