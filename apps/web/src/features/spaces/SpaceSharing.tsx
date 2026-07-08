@@ -3,6 +3,7 @@ import { useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
 import { useData } from '@/app/data';
 import { apiFetch } from '@/lib/api';
+import { Avatar } from '@/features/profile/ProfileScreen';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 
@@ -20,10 +21,12 @@ interface MemberDto {
   userId: string;
   displayName: string | null;
   role: SpaceRole;
+  picture?: string | null;
 }
 interface FriendDto {
   userId: string;
   displayName: string | null;
+  picture?: string | null;
 }
 
 const short = (id: string) => `${id.slice(0, 8)}…`;
@@ -165,7 +168,7 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
       <div className="overflow-hidden rounded-card border border-line bg-surface">
         {members.map((m) => (
           <div key={m.userId} className="flex items-center gap-3 border-b border-line-2 px-4 py-2.5 last:border-0">
-            <Icon name="account-outline" size={18} color="var(--m-ink-3)" />
+            <Avatar picture={m.picture} size={24} />
             <span className="min-w-0 flex-1 truncate text-[14px] text-ink">
               {m.displayName ?? short(m.userId)}
             </span>

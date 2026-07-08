@@ -74,15 +74,19 @@ export function SpacesScreen() {
                     onClick={() => void setActiveSpace(space.id)}
                     className="m-tap flex min-w-0 flex-1 items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left"
                   >
-                    <span
-                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
-                      style={{
-                        background: active ? (space.color ?? 'var(--m-accent)') + '22' : 'var(--m-bg-2)',
-                        color: space.color ?? (active ? 'var(--m-accent-deep)' : 'var(--m-ink-3)'),
-                      }}
-                    >
-                      <Icon name={space.icon ?? (space.kind === 'shared' ? 'account-group-outline' : 'leaf')} size={20} />
-                    </span>
+                    {space.picture ? (
+                      <img src={space.picture} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover" />
+                    ) : (
+                      <span
+                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
+                        style={{
+                          background: active ? (space.color ?? 'var(--m-accent)') + '22' : 'var(--m-bg-2)',
+                          color: space.color ?? (active ? 'var(--m-accent-deep)' : 'var(--m-ink-3)'),
+                        }}
+                      >
+                        <Icon name={space.icon ?? (space.kind === 'shared' ? 'account-group-outline' : 'leaf')} size={20} />
+                      </span>
+                    )}
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[15px] font-medium text-ink">{space.name}</span>
                       {active && <span className="block text-xs text-accent-deep">{t('space.active')}</span>}

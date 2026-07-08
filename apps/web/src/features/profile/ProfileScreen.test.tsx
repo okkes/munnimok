@@ -7,6 +7,14 @@ import { renderApp } from '@/test/harness';
 // demo identity is fully local: profile edits must not touch the network
 const fetchSpy = vi.fn(() => Promise.reject(new Error('network disabled in test')));
 
+// happy-dom has no canvas — the downscaler is covered by lib/image.test.ts,
+// here we care about the flow around it
+const FAKE_PHOTO = 'data:image/jpeg;base64,ZmFrZQ==';
+vi.mock('@/lib/image', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/image')>()),
+  downscaleImage: vi.fn(async () => FAKE_PHOTO),
+}));
+
 describe('ProfileScreen (demo identity)', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -37,6 +45,27 @@ describe('ProfileScreen (demo identity)', () => {
     renderApp('/settings');
     await waitFor(() => expect(screen.getByTestId('settings-profile-row').textContent).toContain('Okkes'));
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('an uploaded photo replaces the preset, survives a save and renders as an image', async () => {
+    const first = renderApp('/profile');
+    await screen.findByTestId('profile-photo-upload');
+
+    const file = new File(['x'], 'me.png', { type: 'image/png' });
+    fireEvent.change(screen.getByTestId('profile-photo-input'), { target: { files: [file] } });
+    await waitFor(() => {
+      expect((screen.getAllByTestId('profile-avatar')[0] as HTMLImageElement).src).toBe(FAKE_PHOTO);
+    });
+
+    fireEvent.click(screen.getByTestId('profile-save'));
+    await screen.findByText('Saved');
+    first.unmount();
+
+    renderApp('/profile');
+    await waitFor(() => {
+      expect((screen.getAllByTestId('profile-avatar')[0] as HTMLImageElement).src).toBe(FAKE_PHOTO);
+    });
+    expect(fetchSpy).not.toHaveBeenCalled(); // demo: photo stays on the device
   });
 
   it('demo identity shows no user id / email block', async () => {

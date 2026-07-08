@@ -19,6 +19,7 @@ export interface SpaceRow extends SyncEnvelope {
   currency: string; // ISO 4217, e.g. 'EUR'
   periodType: SpacePeriodType;
   periodDay: number; // day of month the budget period starts (month type)
+  /** custom image (small data URL, client-downscaled) — wins over `icon` in lists */
   picture?: string;
   /** MDI icon shown in lists (default 'leaf') */
   icon?: string;

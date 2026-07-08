@@ -7,14 +7,14 @@ namespace Munni.Api.Social;
 
 public sealed record MeResponse(Guid UserId, string? DisplayName, string? Picture);
 public sealed record UpdateMeRequest(string DisplayName, string? Picture = null);
-public sealed record FriendDto(Guid UserId, string? DisplayName);
+public sealed record FriendDto(Guid UserId, string? DisplayName, string? Picture = null);
 public sealed record FriendRequestDto(Guid Id, Guid FromUserId, string? FromName, Guid ToUserId, string? ToName);
 public sealed record FriendsResponse(List<FriendDto> Friends, List<FriendRequestDto> SentPending, List<FriendRequestDto> ReceivedPending);
 public sealed record SendFriendRequest(Guid ToUserId);
 public sealed record SendSpaceInvite(Guid ToUserId, string Role, string? SpaceName);
 public sealed record ChangeRoleRequest(string Role);
 public sealed record SpaceInviteDto(Guid Id, string SpaceId, string? SpaceName, Guid FromUserId, string? FromName, string Role);
-public sealed record MemberDto(Guid UserId, string? DisplayName, string Role);
+public sealed record MemberDto(Guid UserId, string? DisplayName, string Role, string? Picture = null);
 
 public static class SocialEndpoints
 {
@@ -66,8 +66,9 @@ public static class SocialEndpoints
         var me = http.GetUserId();
         var edges = await db.Friendships.Where(f => f.UserAId == me || f.UserBId == me).ToListAsync();
         var otherIds = edges.Select(f => f.UserAId == me ? f.UserBId : f.UserAId).Distinct().ToList();
-        var names = await db.Users.Where(u => otherIds.Contains(u.Id))
-            .ToDictionaryAsync(u => u.Id, u => u.DisplayName);
+        var users = await db.Users.Where(u => otherIds.Contains(u.Id))
+            .ToDictionaryAsync(u => u.Id, u => new { u.DisplayName, u.Picture });
+        var names = users.ToDictionary(kv => kv.Key, kv => kv.Value.DisplayName);
 
         FriendRequestDto Req(Friendship f)
         {
@@ -80,7 +81,7 @@ public static class SocialEndpoints
         return Results.Ok(new FriendsResponse(
             edges.Where(f => f.Status == StatusAccepted)
                 .Select(f => f.UserAId == me ? f.UserBId : f.UserAId)
-                .Select(id => new FriendDto(id, names.GetValueOrDefault(id))).ToList(),
+                .Select(id => new FriendDto(id, names.GetValueOrDefault(id), users.GetValueOrDefault(id)?.Picture)).ToList(),
             edges.Where(f => f.Status == StatusPending && f.RequestedBy == me).Select(Req).ToList(),
             edges.Where(f => f.Status == StatusPending && f.RequestedBy != me).Select(Req).ToList()));
     }
@@ -192,8 +193,13 @@ public static class SocialEndpoints
         if (!await db.SpaceMembers.AnyAsync(m => m.SpaceId == spaceId && m.UserId == me)) return Results.Forbid();
         var members = await db.SpaceMembers.Where(m => m.SpaceId == spaceId).ToListAsync();
         var ids = members.Select(m => m.UserId).ToList();
-        var names = await db.Users.Where(u => ids.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.DisplayName);
-        return Results.Ok(members.Select(m => new MemberDto(m.UserId, names.GetValueOrDefault(m.UserId), SpaceRoles.Normalize(m.Role))).ToList());
+        var users = await db.Users.Where(u => ids.Contains(u.Id))
+            .ToDictionaryAsync(u => u.Id, u => new { u.DisplayName, u.Picture });
+        return Results.Ok(members.Select(m => new MemberDto(
+            m.UserId,
+            users.GetValueOrDefault(m.UserId)?.DisplayName,
+            SpaceRoles.Normalize(m.Role),
+            users.GetValueOrDefault(m.UserId)?.Picture)).ToList());
     }
 
     /// <summary>Owner-only. Also how ownership is transferred (promote to owner).</summary>

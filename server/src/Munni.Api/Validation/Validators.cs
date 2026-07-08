@@ -10,7 +10,9 @@ public sealed class UpdateMeRequestValidator : AbstractValidator<UpdateMeRequest
     public UpdateMeRequestValidator()
     {
         RuleFor(r => r.DisplayName).NotEmpty().MaximumLength(100);
-        RuleFor(r => r.Picture).MaximumLength(64);
+        // preset avatar id ("icon|#color") or a small data URL — the client
+        // downscales uploads to ≤256px JPEG, well under this cap
+        RuleFor(r => r.Picture).MaximumLength(65_536);
     }
 }
 

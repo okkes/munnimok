@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLogto } from '@logto/react';
 import { logtoConfigured } from '@/app/config';
 import { useData } from '@/app/data';
@@ -6,6 +6,7 @@ import { useSession } from '@/app/session';
 import { getOfflineProfile, updateOfflineProfile } from '@/features/auth/offlineProfiles';
 import { useLang } from '@/i18n';
 import { apiFetch } from '@/lib/api';
+import { downscaleImage, isDataImage } from '@/lib/image';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
@@ -18,6 +19,17 @@ export const AVATARS = [
 ];
 
 export function Avatar({ picture, size = 40 }: { picture?: string | null; size?: number }) {
+  if (isDataImage(picture)) {
+    return (
+      <img
+        src={picture!}
+        alt=""
+        className="shrink-0 rounded-full object-cover"
+        style={{ width: size, height: size }}
+        data-testid="profile-avatar"
+      />
+    );
+  }
   const [icon, color] = (picture ?? AVATARS[0]).split('|');
   return (
     <span
@@ -52,6 +64,16 @@ export function ProfileScreen() {
   const [email, setEmail] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const onPhotoPicked = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      setPicture(await downscaleImage(file, 256));
+    } catch {
+      // unreadable file — keep the current avatar
+    }
+  };
 
   // load current values per identity kind
   useEffect(() => {
@@ -113,8 +135,14 @@ export function ProfileScreen() {
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
-        <div className="flex flex-col items-center py-5">
+        <div className="flex flex-col items-center gap-1.5 py-5">
           <Avatar picture={picture} size={72} />
+          {/* the name under the preview gives the selection context */}
+          {name.trim() && (
+            <span className="text-[14px] font-medium text-ink" data-testid="profile-preview-name">
+              {name.trim()}
+            </span>
+          )}
         </div>
 
         <div className="m-cap mb-1 px-1">{t('profile.avatar')}</div>
@@ -132,6 +160,25 @@ export function ProfileScreen() {
             </button>
           ))}
         </div>
+        {/* own photo: downscaled on-device, synced as a tiny data URL */}
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          hidden
+          data-testid="profile-photo-input"
+          onChange={(e) => void onPhotoPicked(e.target.files?.[0])}
+        />
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-2 w-full"
+          data-testid="profile-photo-upload"
+          onClick={() => fileRef.current?.click()}
+        >
+          <Icon name="camera-outline" size={16} />
+          {isDataImage(picture) ? t('profile.photoReplace') : t('profile.photoUpload')}
+        </Button>
 
         <div className="m-cap mt-5 mb-1 px-1">{t('profile.displayName')}</div>
         <input

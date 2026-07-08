@@ -27,6 +27,17 @@ public class ValidationTests
     }
 
     [Fact]
+    public void UpdateMe_accepts_a_small_dataurl_picture_but_caps_it()
+    {
+        // client downscales uploads to ≤256px JPEG (~15-25 KB) — well under the 64 KB cap
+        var small = "data:image/jpeg;base64," + new string('A', 20_000);
+        Assert.True(new UpdateMeRequestValidator().Validate(new UpdateMeRequest("Okkes", small)).IsValid);
+
+        var huge = "data:image/jpeg;base64," + new string('A', 70_000);
+        Assert.False(new UpdateMeRequestValidator().Validate(new UpdateMeRequest("Okkes", huge)).IsValid);
+    }
+
+    [Fact]
     public void FriendRequest_rejects_empty_guid()
     {
         Assert.False(new SendFriendRequestValidator().Validate(new SendFriendRequest(Guid.Empty)).IsValid);

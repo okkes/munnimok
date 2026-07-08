@@ -682,6 +682,8 @@ export const en = {
   'cats.legendDebit': 'money out',
   'cats.legendCredit': 'money in',
   'space.friendRequestSent': 'Friend request sent — you can invite them here once they accept',
+  'profile.photoUpload': 'Use your own photo',
+  'profile.photoReplace': 'Replace photo',
   'tx.emptyList': 'No transactions yet — connect a bank or import a statement and they appear here',
   'tx.emptyFiltered': 'Nothing matches these filters',
   'tx.emptyCta': 'Add an account',

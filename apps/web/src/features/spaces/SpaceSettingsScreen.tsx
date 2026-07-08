@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useParams, useRouter } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
+import { downscaleImage } from '@/lib/image';
 import { useData } from '@/app/data';
 import { useSession } from '@/app/session';
 import { SpaceMembersSection } from './SpaceSharing';
@@ -51,7 +52,9 @@ export function SpaceSettingsScreen() {
   const [periodType, setPeriodType] = useState<SpacePeriodType>('month');
   const [periodDay, setPeriodDay] = useState(1);
   const [historyStart, setHistoryStart] = useState('');
+  const [picture, setPicture] = useState('');
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   // role in this space; local-only identities are always owner
   const [myRole, setMyRole] = useState<SpaceRole>('owner');
   const [loadedFor, setLoadedFor] = useState<string | null>(null);
@@ -69,6 +72,7 @@ export function SpaceSettingsScreen() {
     setPeriodType(space.periodType === 'custom' ? 'month' : space.periodType);
     setPeriodDay(space.periodDay || 1);
     setHistoryStart(space.historyStartDate ?? '');
+    setPicture(space.picture ?? '');
   }
 
   const readOnly = myRole === 'reader';
@@ -83,6 +87,7 @@ export function SpaceSettingsScreen() {
       periodType,
       periodDay,
       historyStartDate: historyStart || undefined,
+      picture, // '' clears a previously set image
     });
     goBack();
   };
@@ -128,7 +133,43 @@ export function SpaceSettingsScreen() {
             />
 
             <div className="m-cap px-1">{t('space.icon')}</div>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              hidden
+              data-testid="space-photo-input"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void downscaleImage(file, 128).then(setPicture).catch(() => undefined);
+              }}
+            />
             <div className="flex gap-2 overflow-x-auto pb-1">
+              {/* own image: shown first, wins over the icon everywhere */}
+              {picture ? (
+                <button
+                  data-testid="space-photo-clear"
+                  disabled={readOnly}
+                  onClick={() => setPicture('')}
+                  title={t('action.delete')}
+                  className="m-tap relative h-10 w-10 shrink-0 overflow-hidden rounded-xl border border-accent"
+                >
+                  <img src={picture} alt="" className="h-full w-full object-cover" />
+                  <span className="absolute inset-0 flex items-center justify-center bg-black/35 text-white">
+                    <Icon name="close" size={14} />
+                  </span>
+                </button>
+              ) : (
+                <button
+                  data-testid="space-photo-upload"
+                  disabled={readOnly}
+                  onClick={() => fileRef.current?.click()}
+                  title={t('profile.photoUpload')}
+                  className="m-tap flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-dashed border-line bg-surface text-ink-3"
+                >
+                  <Icon name="camera-outline" size={17} />
+                </button>
+              )}
               {SPACE_ICONS.map((name_) => (
                 <button
                   key={name_}
