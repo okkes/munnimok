@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import type { Lang } from '@/i18n';
 import { useData } from '@/app/data';
-import { apiFetch } from '@/lib/api';
+import { apiFetch, getApiCapabilities } from '@/lib/api';
 import { COUNTRIES, currencyForCountry } from '@/domain/countries';
+import { BankConnectSheet } from '@/features/accounts/BankConnect';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Logo } from '@/ui/Logo';
@@ -29,13 +30,22 @@ export function OnboardingScreen() {
   const [country, setCountry] = useState('NL');
   const [countryOpen, setCountryOpen] = useState(false);
   const [query, setQuery] = useState('');
+  // step 1 = profile, step 2 = bank (legacy onboarding parity)
+  const [step, setStep] = useState<1 | 2>(1);
+  const [gcAvailable, setGcAvailable] = useState(false);
+  const [connectOpen, setConnectOpen] = useState(false);
+
+  useEffect(() => {
+    void getApiCapabilities().then((caps) => setGcAvailable(caps.gocardless));
+  }, []);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return COUNTRIES.filter((c) => !q || c[lang].toLowerCase().includes(q) || c.native.toLowerCase().includes(q));
   }, [query, lang]);
 
-  const finish = async (save: boolean) => {
+  /** step 1 done: apply the profile, then offer the bank step */
+  const applyProfile = async (save: boolean) => {
     if (save) {
       if (name.trim()) {
         // best-effort: offline is fine, the app never blocks on the API
@@ -43,8 +53,13 @@ export function OnboardingScreen() {
       }
       await repo.upsert('space', spaceId, spaceId, { currency: currencyForCountry(country) });
     }
+    // cleared here: a bank redirect leaves the app and must not loop onboarding
     await db.meta.delete('needsOnboarding');
-    await navigate({ to: '/home' });
+    setStep(2);
+  };
+
+  const finish = async (target: '/home' | '/accounts' = '/home') => {
+    await navigate({ to: target });
   };
 
   return (
@@ -55,37 +70,68 @@ export function OnboardingScreen() {
           <h1 className="m-h2 mt-5 text-ink">{t('onboarding.title')}</h1>
         </div>
 
-        <div className="flex flex-col gap-3">
-          <input
-            data-testid="onboarding-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder={t('login.fullName')}
-            className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
-          />
-          <button
-            data-testid="onboarding-country"
-            onClick={() => setCountryOpen(true)}
-            className="m-tap flex h-12 w-full items-center gap-3 rounded-input border border-line bg-surface px-4 text-left text-[15px] text-ink"
-          >
-            <span className="rounded-md bg-bg-2 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-ink-3">
-              {country}
-            </span>
-            <span className="flex-1">{countryLabel(country, lang)}</span>
-            <Icon name="chevron-down" size={18} color="var(--m-ink-4)" />
-          </button>
-          <p className="px-1 text-[12px] text-ink-3" data-testid="onboarding-currency-hint">
-            {t('onboarding.currencyAuto')} {currencyForCountry(country)}
-          </p>
+        {step === 1 && (
+          <div className="flex flex-col gap-3">
+            <input
+              data-testid="onboarding-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={t('login.fullName')}
+              className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+            />
+            <button
+              data-testid="onboarding-country"
+              onClick={() => setCountryOpen(true)}
+              className="m-tap flex h-12 w-full items-center gap-3 rounded-input border border-line bg-surface px-4 text-left text-[15px] text-ink"
+            >
+              <span className="rounded-md bg-bg-2 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-ink-3">
+                {country}
+              </span>
+              <span className="flex-1">{countryLabel(country, lang)}</span>
+              <Icon name="chevron-down" size={18} color="var(--m-ink-4)" />
+            </button>
+            <p className="px-1 text-[12px] text-ink-3" data-testid="onboarding-currency-hint">
+              {t('onboarding.currencyAuto')} {currencyForCountry(country)}
+            </p>
 
-          <Button data-testid="onboarding-save" onClick={() => void finish(true)}>
-            {t('login.continue')}
-          </Button>
-          <Button variant="ghost" data-testid="onboarding-skip" onClick={() => void finish(false)}>
-            {t('action.skip')}
-          </Button>
-        </div>
+            <Button data-testid="onboarding-save" onClick={() => void applyProfile(true)}>
+              {t('login.continue')}
+            </Button>
+            <Button variant="ghost" data-testid="onboarding-skip" onClick={() => void applyProfile(false)}>
+              {t('action.skip')}
+            </Button>
+          </div>
+        )}
+
+        {step === 2 && (
+          <div className="flex flex-col gap-3" data-testid="onboarding-bank-step">
+            <div className="flex flex-col items-center gap-2 pb-2 text-center">
+              <Icon name="bank-outline" size={36} color="var(--m-accent)" />
+              <h2 className="m-h3 text-ink">{t('onboarding.bankTitle')}</h2>
+              <p className="max-w-[300px] text-[13px] text-ink-3">{t('onboarding.bankSub')}</p>
+            </div>
+            {gcAvailable && (
+              <Button data-testid="onboarding-connect-bank" onClick={() => setConnectOpen(true)}>
+                <Icon name="bank-transfer" size={18} />
+                {t('gc.connect')}
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              data-testid="onboarding-import"
+              onClick={() => void finish('/accounts')}
+            >
+              <Icon name="file-upload-outline" size={17} />
+              {t('onboarding.importInstead')}
+            </Button>
+            <Button variant="ghost" data-testid="onboarding-bank-later" onClick={() => void finish()}>
+              {t('onboarding.later')}
+            </Button>
+          </div>
+        )}
       </div>
+
+      <BankConnectSheet open={connectOpen} onOpenChange={setConnectOpen} />
 
       <Sheet open={countryOpen} onOpenChange={setCountryOpen} title={t('onboarding.country')} height={560}>
         <input

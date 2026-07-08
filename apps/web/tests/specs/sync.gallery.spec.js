@@ -196,6 +196,10 @@ for (const V of VARIANTS) {
     await expect(a.page.locator('[data-testid="onboarding-currency-hint"]')).toContainText('TRY');
     await shot(a.page, k('37-onboarding'));
     await a.page.click('[data-testid="onboarding-save"]');
+    // step 2 (bank connect) — skip it in the e2e stack
+    await a.page.waitForSelector('[data-testid="onboarding-bank-step"]');
+    await shot(a.page, k('37-onboarding') + '--s1');
+    await a.page.click('[data-testid="onboarding-bank-later"]');
     await a.page.waitForSelector('[data-testid="screen-home"]');
     // currency applied to the personal space: home total renders in TRY
     await expect(a.page.locator('[data-testid="home-total-balance"]')).toContainText('TRY');
