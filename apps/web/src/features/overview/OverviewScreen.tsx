@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useParams } from '@tanstack/react-router';
+import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
 import { useData } from '@/app/data';
 import { categoryBreakdown, contributionCents, txsForKind } from '@/domain/overview';
 import type { OverviewKind } from '@/domain/overview';
@@ -35,14 +36,8 @@ export function OverviewScreen() {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   const space = useLiveQuery(() => db.spaces.get(spaceId), [spaceId]);
-  const accounts = useLiveQuery(
-    () => db.accounts.where('spaceId').equals(spaceId).filter((a) => a.deleted === 0).toArray(),
-    [spaceId],
-  );
-  const txs = useLiveQuery(
-    () => db.transactions.where('spaceId').equals(spaceId).filter((tx) => tx.deleted === 0).toArray(),
-    [spaceId],
-  );
+  const accounts = useSpaceAccounts();
+  const txs = useSpaceTransactions();
 
   const periods = useMemo(
     () => periodHistory(space?.periodType ?? 'month', space?.periodDay ?? 1, PERIOD_COUNT),

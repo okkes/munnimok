@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSpaceAccounts } from '@/application/transactions';
 import { parseStatement } from '@/lib/statements/parseStatement';
 import type { ParsedStatement } from '@/lib/statements/parseStatement';
 import { getApiCapabilities } from '@/lib/api';
 import { useSession } from '@/app/session';
 import { importCamtStatements } from './importCamt';
 import type { ImportResult } from './importCamt';
+import { apiFeedGateway } from './feedGateway';
 import { BankConnectSheet } from './BankConnect';
 import { useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
@@ -121,7 +122,10 @@ export function AccountsScreen() {
 
   const runImport = async () => {
     if (!importPreview?.length) return;
-    setImportResult(await importCamtStatements(repo, db, spaceId, importPreview));
+    // syncing identities import into feed spaces (shared-accounts model);
+    // demo/offline keep everything merged in the current space
+    const feeds = identity?.kind === 'user' ? apiFeedGateway(identity.sub) : undefined;
+    setImportResult(await importCamtStatements(repo, db, spaceId, importPreview, feeds));
   };
 
   const closeImport = () => {
@@ -131,10 +135,8 @@ export function AccountsScreen() {
     if (fileRef.current) fileRef.current.value = '';
   };
 
-  const accounts = useLiveQuery(
-    () => db.accounts.where('spaceId').equals(spaceId).filter((a) => a.deleted === 0 && !a.archived).toArray(),
-    [spaceId],
-  );
+  const allAccounts = useSpaceAccounts();
+  const accounts = useMemo(() => allAccounts?.filter((a) => !a.archived), [allAccounts]);
   const assets = (accounts ?? []).filter((a) => !isLiability(a.type));
   const liabilities = (accounts ?? []).filter((a) => isLiability(a.type));
 

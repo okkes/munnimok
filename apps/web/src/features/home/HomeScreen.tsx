@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useNavigate } from '@tanstack/react-router';
+import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
 import { OVERVIEW_KINDS, overviewSummary } from '@/domain/overview';
 import type { OverviewKind, OverviewSummary } from '@/domain/overview';
 import { periodHistory } from '@/domain/periods';
@@ -24,46 +25,22 @@ export function HomeScreen() {
   const navigate = useNavigate();
   const [accountsOpen, setAccountsOpen] = useState(false);
 
-  const accounts = useLiveQuery(
-    () => db.accounts.where('spaceId').equals(spaceId).filter((a) => a.deleted === 0).toArray(),
-    [spaceId],
+  const accounts = useSpaceAccounts();
+  const allTxs = useSpaceTransactions();
+  const recentTxs = useMemo(
+    () => allTxs && [...allTxs].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5),
+    [allTxs],
   );
-  const recentTxs = useLiveQuery(
-    () =>
-      db.transactions
-        .where('[spaceId+date]')
-        .between([spaceId, ''], [spaceId, '￿'])
-        .reverse()
-        .filter((tx) => tx.deleted === 0)
-        .limit(5)
-        .toArray(),
-    [spaceId],
-  );
+  const reviewCount = useMemo(() => allTxs?.filter((tx) => tx.needsReview === 1).length, [allTxs]);
 
   const needsOnboarding = useLiveQuery(() => db.meta.get('needsOnboarding'), []);
   useEffect(() => {
     if (needsOnboarding?.value === true) void navigate({ to: '/onboarding' });
   }, [needsOnboarding, navigate]);
 
-  const reviewCount = useLiveQuery(
-    () =>
-      db.transactions
-        .where('spaceId')
-        .equals(spaceId)
-        .filter((tx) => tx.deleted === 0 && tx.needsReview === 1)
-        .count(),
-    [spaceId],
-  );
-
   const space = useLiveQuery(() => db.spaces.get(spaceId), [spaceId]);
   const totalCents = (accounts ?? []).reduce((sum, a) => sum + a.balanceCents, 0);
   const currency = space?.currency ?? accounts?.[0]?.currency ?? 'EUR';
-
-  // this period's overview (earned / spent / saved / invested)
-  const allTxs = useLiveQuery(
-    () => db.transactions.where('spaceId').equals(spaceId).filter((tx) => tx.deleted === 0).toArray(),
-    [spaceId],
-  );
   const summary = useMemo(() => {
     const [period] = periodHistory(space?.periodType ?? 'month', space?.periodDay ?? 1, 1);
     const accountsById = new Map((accounts ?? []).map((a) => [a.id, a]));

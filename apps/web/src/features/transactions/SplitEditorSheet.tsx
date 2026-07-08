@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
+import { useTxTransform } from '@/application/transactions';
+import type { SpaceTx } from '@/application/transactions';
 import { useLang } from '@/i18n';
-import { useData } from '@/app/data';
 import { fmtCents, parseCents } from '@/lib/money';
 import { balanceLastRow, primaryCatId, splitRemainderCents, validateSplits } from '@/domain/splits';
 import { UNCATEGORIZED_ID } from '@/domain/categories';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { CategoryPicker } from '@/features/categories/CategoryPicker';
-import type { TransactionRow, TxSplit } from '@/db/types';
+import type { TxSplit } from '@/db/types';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
@@ -26,9 +27,9 @@ const toText = (cents: number) => (cents / 100).toFixed(2).replace('.', ',');
 const toSplits = (rows: Row[]): TxSplit[] => rows.map((r) => ({ catId: r.catId, amountCents: parseCents(r.amount) ?? 0 }));
 
 /** Editor partitioning a transaction across categories (must sum exactly). */
-export function SplitEditorSheet({ open, onOpenChange, tx }: { open: boolean; onOpenChange: (open: boolean) => void; tx: TransactionRow }) {
+export function SplitEditorSheet({ open, onOpenChange, tx }: { open: boolean; onOpenChange: (open: boolean) => void; tx: SpaceTx }) {
   const { t, lang } = useLang();
-  const { repo, spaceId } = useData();
+  const transform = useTxTransform();
   const cats = useCategories();
   const [rows, setRows] = useState<Row[]>([]);
   const [pickerFor, setPickerFor] = useState<number | null>(null);
@@ -50,7 +51,7 @@ export function SplitEditorSheet({ open, onOpenChange, tx }: { open: boolean; on
 
   const save = () => {
     if (error) return;
-    void repo.upsert('transaction', spaceId, tx.id, {
+    void transform(tx, {
       splits,
       catId: primaryCatId(splits),
       needsReview: 0,
@@ -59,7 +60,7 @@ export function SplitEditorSheet({ open, onOpenChange, tx }: { open: boolean; on
   };
 
   const clearSplit = () => {
-    void repo.upsert('transaction', spaceId, tx.id, {
+    void transform(tx, {
       splits: null as never, // explicit null clears the field
       catId: primaryCatId(splits) ?? tx.catId,
     });

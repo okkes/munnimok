@@ -1,50 +1,46 @@
 import { useMemo, useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useSpaceTransactions, useTxTransform } from '@/application/transactions';
+import type { SpaceTx } from '@/application/transactions';
 import { useLang } from '@/i18n';
-import { useData } from '@/app/data';
 import { fmtCents, parseCents } from '@/lib/money';
 import { cleanBankText } from '@/lib/text';
 import { clampReimbursement, remainingCents, totalReimbursedCents, withLink } from '@/domain/reimbursement';
-import type { TransactionRow } from '@/db/types';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 
 /**
  * Reimbursement links on an expense: list + unlink, and a picker over
- * recent credit transactions with a clamped amount to link.
+ * recent credit transactions with a clamped amount to link. Candidates
+ * come from what the SPACE sees, so reimbursements can only ever pair
+ * transactions of accounts attached to the same space (user rule).
  */
-export function ReimburseSection({ tx }: { tx: TransactionRow }) {
+export function ReimburseSection({ tx }: { tx: SpaceTx }) {
   const { t, lang } = useLang();
-  const { db, repo, spaceId } = useData();
+  const transform = useTxTransform();
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [chosen, setChosen] = useState<TransactionRow | null>(null);
+  const [chosen, setChosen] = useState<SpaceTx | null>(null);
   const [amount, setAmount] = useState('');
 
+  const allTxs = useSpaceTransactions();
   const linkedIds = useMemo(() => (tx.reimbursements ?? []).map((r) => r.txId), [tx.reimbursements]);
-  const linkedTxs = useLiveQuery(
-    async () => (linkedIds.length ? db.transactions.where('id').anyOf(linkedIds).toArray() : []),
-    [linkedIds.join(',')],
-  );
-  const credits = useLiveQuery(
+  const linkedTxs = useMemo(() => allTxs?.filter((c) => linkedIds.includes(c.id)), [allTxs, linkedIds]);
+  const credits = useMemo(
     () =>
-      db.transactions
-        .where('[spaceId+date]')
-        .between([spaceId, ''], [spaceId, '￿'])
-        .reverse()
-        .filter((c) => c.deleted === 0 && c.amountCents > 0 && c.id !== tx.id && !linkedIds.includes(c.id))
-        .limit(30)
-        .toArray(),
-    [spaceId, tx.id, linkedIds.join(',')],
+      allTxs
+        ?.filter((c) => c.amountCents > 0 && c.id !== tx.id && !linkedIds.includes(c.id))
+        .sort((a, b) => b.date.localeCompare(a.date))
+        .slice(0, 30),
+    [allTxs, tx.id, linkedIds],
   );
 
   if (tx.amountCents >= 0) return null;
   const total = totalReimbursedCents(tx);
 
   const unlink = (txId: string) =>
-    void repo.upsert('transaction', spaceId, tx.id, { reimbursements: withLink(tx.reimbursements, txId, 0) });
+    void transform(tx, { reimbursements: withLink(tx.reimbursements, txId, 0) });
 
-  const choose = (credit: TransactionRow) => {
+  const choose = (credit: SpaceTx) => {
     const prefill = clampReimbursement(tx, credit.amountCents, credit.amountCents);
     setChosen(credit);
     setAmount((prefill / 100).toFixed(2).replace('.', ','));
@@ -54,9 +50,7 @@ export function ReimburseSection({ tx }: { tx: TransactionRow }) {
     if (!chosen) return;
     const cents = clampReimbursement(tx, chosen.amountCents, parseCents(amount) ?? 0);
     if (cents > 0) {
-      void repo.upsert('transaction', spaceId, tx.id, {
-        reimbursements: withLink(tx.reimbursements, chosen.id, cents),
-      });
+      void transform(tx, { reimbursements: withLink(tx.reimbursements, chosen.id, cents) });
     }
     setChosen(null);
     setPickerOpen(false);

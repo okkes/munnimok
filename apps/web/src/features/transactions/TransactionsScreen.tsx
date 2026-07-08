@@ -1,8 +1,7 @@
-import { useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
+import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
 import { useLang } from '@/i18n';
-import { useData } from '@/app/data';
 import type { TransactionRow } from '@/db/types';
 import { filterTxs } from '@/domain/txFilter';
 import { AppBar, IconButton } from '@/ui/AppBar';
@@ -26,28 +25,18 @@ function groupByDate(txs: TransactionRow[]): [string, TransactionRow[]][] {
 
 export function TransactionsScreen() {
   const { t, lang } = useLang();
-  const { db, spaceId } = useData();
   const navigate = useNavigate();
   const [addOpen, setAddOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [accountFilter, setAccountFilter] = useState<string | undefined>();
   const [reviewOnly, setReviewOnly] = useState(false);
 
-  const accounts = useLiveQuery(
-    () => db.accounts.where('spaceId').equals(spaceId).filter((a) => a.deleted === 0).toArray(),
-    [spaceId],
-  );
-
-  const txs = useLiveQuery(
-    () =>
-      db.transactions
-        .where('[spaceId+date]')
-        .between([spaceId, ''], [spaceId, '￿'])
-        .reverse()
-        .filter((tx) => tx.deleted === 0)
-        .limit(200)
-        .toArray(),
-    [spaceId],
+  const accounts = useSpaceAccounts();
+  const allTxs = useSpaceTransactions();
+  // newest first, capped like the old query — the join layer has no index order
+  const txs = useMemo(
+    () => (allTxs ? [...allTxs].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 200) : undefined),
+    [allTxs],
   );
 
   const fmtDay = (iso: string) =>

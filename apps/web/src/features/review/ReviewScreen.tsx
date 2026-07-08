@@ -1,8 +1,7 @@
-import { useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useMemo, useState } from 'react';
+import { useSpaceTransactions, useTxTransform } from '@/application/transactions';
 import { directionOfTx } from '@/domain/categoryRules';
 import { LOCALES, useLang } from '@/i18n';
-import { useData } from '@/app/data';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { fmtCents } from '@/lib/money';
 import { cleanBankText } from '@/lib/text';
@@ -17,29 +16,25 @@ import { CategoryPicker } from '@/features/categories/CategoryPicker';
  */
 export function ReviewScreen() {
   const { t, lang } = useLang();
-  const { db, repo, spaceId } = useData();
   const cats = useCategories();
   const [pickerOpen, setPickerOpen] = useState(false);
+  const allTxs = useSpaceTransactions();
+  const transform = useTxTransform();
 
-  const queue = useLiveQuery(
-    () =>
-      db.transactions
-        .where('spaceId')
-        .equals(spaceId)
-        .filter((tx) => tx.deleted === 0 && tx.needsReview === 1)
-        .sortBy('date'),
-    [spaceId],
+  const queue = useMemo(
+    () => allTxs?.filter((tx) => tx.needsReview === 1).sort((a, b) => a.date.localeCompare(b.date)),
+    [allTxs],
   );
 
   const tx = queue?.[queue.length - 1]; // newest first
 
   const confirm = () => {
-    if (tx) void repo.upsert('transaction', spaceId, tx.id, { needsReview: 0 });
+    if (tx) void transform(tx, { needsReview: 0 });
   };
   const recategorize = (catId: string) => {
     if (!tx) return;
     const txType = cats.byId(catId).txTypes[0] ?? tx.txType;
-    void repo.upsert('transaction', spaceId, tx.id, { catId, txType, needsReview: 0 });
+    void transform(tx, { catId, txType, needsReview: 0 });
   };
 
   const cat = tx ? cats.byId(tx.catId) : null;

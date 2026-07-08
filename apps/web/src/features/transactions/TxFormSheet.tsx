@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useEffect, useMemo, useState } from 'react';
+import { useSpaceAccounts } from '@/application/transactions';
 import { UNCATEGORIZED_ID } from '@/domain/categories';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
@@ -27,7 +27,7 @@ const todayIso = () => new Date().toISOString().slice(0, 10);
  */
 export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
   const { t } = useLang();
-  const { db, repo, spaceId } = useData();
+  const { repo, spaceId } = useData();
   const cats = useCategories();
   const [amount, setAmount] = useState('');
   const [isExpense, setIsExpense] = useState(true);
@@ -38,10 +38,8 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const locked = useSheetStackLock(pickerOpen);
 
-  const accounts = useLiveQuery(
-    () => db.accounts.where('spaceId').equals(spaceId).filter((a) => a.deleted === 0 && !a.archived).toArray(),
-    [spaceId],
-  );
+  const allAccounts = useSpaceAccounts();
+  const accounts = useMemo(() => allAccounts?.filter((a) => !a.archived), [allAccounts]);
 
   // (re)fill when opened
   useEffect(() => {

@@ -14,6 +14,15 @@ const normalizeIban = (iban: string) => iban.replaceAll(/\s/g, '').toUpperCase()
 /** sync-space id of a bank account's feed */
 export const feedSpaceId = (iban: string): string => uuidv5(`feed:${normalizeIban(iban)}`, IMPORT_NS);
 
+/**
+ * Fallback when the deterministic id is already registered by another
+ * user (feed squatting defence, security S1): salted with the owner's
+ * subject the id stays deterministic for THIS user's reconnects but
+ * un-guessable squat-bait no more. Costs only cross-user dedupe.
+ */
+export const personalFeedSpaceId = (iban: string, sub: string): string =>
+  uuidv5(`feed:${normalizeIban(iban)}:${sub}`, IMPORT_NS);
+
 /** per-space overlay row id for a raw transaction */
 export const txMetaId = (spaceId: string, txId: string): string => uuidv5(`meta:${spaceId}:${txId}`, IMPORT_NS);
 

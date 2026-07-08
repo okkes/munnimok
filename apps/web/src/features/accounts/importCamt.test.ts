@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { HlcClock } from '@/sync/hlc';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
+import { feedSpaceId } from '@/domain/feedIds';
+import { visibleTransactions } from '@/db/joined';
 import type { CamtStatement } from '@/lib/camt053/parse';
 import { importCamtStatements } from './importCamt';
 
@@ -134,6 +136,54 @@ describe('importCamtStatements', () => {
       statement({ closingBalanceCents: 9000, balanceAsOf: '2026-07-01', entries: [] }),
     ]);
     expect((await db.accounts.get('acct-manual'))!).toMatchObject({ balanceCents: 9000, balanceAsOf: '2026-07-01' });
+  });
+
+  it('with a feed gateway: raw goes to the feed, overlay + link to the space (idempotent)', async () => {
+    const registered: string[] = [];
+    const attached: string[] = [];
+    const gateway = {
+      register: async (id: string) => {
+        registered.push(id);
+        return id;
+      },
+      attach: async (spaceId: string, feedId: string, accountId: string) => {
+        attached.push(`${spaceId}:${feedId}:${accountId}`);
+      },
+    };
+
+    const result = await importCamtStatements(repo, db, 's1', [statement()], gateway);
+    expect(result.imported).toBe(3);
+    const feedId = registered[0];
+    expect(feedId).toBe(feedSpaceId('NL69INGB0123456789'));
+
+    // raw halves live in the feed space, carrying no opinion
+    const raw = await db.transactions.where('spaceId').equals(feedId).toArray();
+    expect(raw).toHaveLength(3);
+    expect(raw.every((tx) => tx.catId === undefined && tx.needsReview === undefined)).toBe(true);
+    expect(await db.transactions.where('spaceId').equals('s1').count()).toBe(0);
+
+    // the space holds the predicted overlay + the attachment mirror
+    const metas = await db.txMeta.where('spaceId').equals('s1').toArray();
+    expect(metas).toHaveLength(3);
+    expect(metas.some((m) => m.catId !== undefined)).toBe(true); // salary/groceries predicted
+    expect(await db.accountLinks.where('spaceId').equals('s1').count()).toBe(1);
+    expect(attached).toHaveLength(1);
+
+    // the account row sits in the feed with the dated balance
+    const account = (await db.accounts.toArray())[0];
+    expect(account.spaceId).toBe(feedId);
+    expect(account.balanceCents).toBe(123456);
+
+    // …and the join layer serves it all back to the space
+    const visible = await visibleTransactions(db, 's1');
+    expect(visible).toHaveLength(3);
+    expect(visible.every((tx) => tx.feedSpaceId === feedId)).toBe(true);
+
+    // re-import: everything skips, nothing duplicates
+    const again = await importCamtStatements(repo, db, 's1', [statement()], gateway);
+    expect(again).toMatchObject({ imported: 0, skipped: 3 });
+    expect(await db.transactions.count()).toBe(3);
+    expect(await db.txMeta.count()).toBe(3);
   });
 
   it('a manual balance dated after the statement is kept', async () => {

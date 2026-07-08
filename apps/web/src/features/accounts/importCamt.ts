@@ -1,4 +1,5 @@
 import { v5 as uuidv5 } from 'uuid';
+import { accountLinkId, feedSpaceId, txMetaId } from '@/domain/feedIds';
 import type { ParsedStatement } from '@/lib/statements/parseStatement';
 import { predictCategory } from '@/domain/predictCategory';
 import { CATEGORY_BY_ID, UNCATEGORIZED_ID } from '@/domain/categories';
@@ -90,8 +91,35 @@ async function importEntry(
   return true;
 }
 
+/**
+ * Server round-trips of the feed flow, injected so the importer stays
+ * unit-testable and demo/offline identities can pass nothing at all.
+ */
+export interface FeedGateway {
+  /** registers the feed and returns the GRANTED id — the preferred
+   *  deterministic one, or the caller's personal fallback when someone
+   *  else owns it (S1 squatting defence, never blocks the user) */
+  register(preferredFeedId: string, accountRef: string): Promise<string>;
+  /** server-authoritative attachment of the feed to the target space */
+  attach(spaceId: string, feedSpaceId: string, accountId: string): Promise<void>;
+}
+
 /** Match statements to existing accounts by IBAN (creating where needed) and import entries idempotently. */
 export async function importCamtStatements(
+  repo: Repo,
+  db: MunniDB,
+  spaceId: string,
+  statements: ParsedStatement[],
+  feeds?: FeedGateway,
+): Promise<ImportResult> {
+  // demo/offline identities never sync: raw+transformation stay merged
+  // in the current space exactly as before (dual-read handles both)
+  return feeds
+    ? importIntoFeeds(repo, db, spaceId, statements, feeds)
+    : importMerged(repo, db, spaceId, statements);
+}
+
+async function importMerged(
   repo: Repo,
   db: MunniDB,
   spaceId: string,
@@ -135,4 +163,99 @@ export async function importCamtStatements(
   }
 
   return { imported, skipped, accounts };
+}
+
+/**
+ * Feed shape (shared-accounts design): raw facts go ONCE into the
+ * account's feed space, the current space gets the transformation
+ * overlay (txMeta with the predicted category) plus an accountLink, and
+ * the server records the attachment so members derive read access.
+ */
+async function importIntoFeeds(
+  repo: Repo,
+  db: MunniDB,
+  spaceId: string,
+  statements: ParsedStatement[],
+  feeds: FeedGateway,
+): Promise<ImportResult> {
+  let imported = 0;
+  let skipped = 0;
+  const accounts: ImportPlanAccount[] = [];
+
+  for (const stmt of statements) {
+    const iban = normalizeIban(stmt.iban);
+    const feedId = await feeds.register(feedSpaceId(iban), iban);
+    const accountId = uuidv5(`acct:${iban}`, IMPORT_NS);
+
+    const account = await db.accounts.get(accountId);
+    if (account?.spaceId !== feedId) await createStatementAccount(repo, feedId, accountId, stmt, iban);
+    else if (statementBalanceWins(account, stmt))
+      await repo.upsert('account', feedId, accountId, {
+        balanceCents: stmt.closingBalanceCents!,
+        ...(stmt.balanceAsOf ? { balanceAsOf: stmt.balanceAsOf } : {}),
+      });
+
+    let txCount = 0;
+    for (const entry of stmt.entries) {
+      if (await importFeedEntry(repo, db, spaceId, feedId, accountId, iban, entry)) {
+        imported++;
+        txCount++;
+      } else {
+        skipped++;
+      }
+    }
+
+    // attach to the space the user imported from (server first — the
+    // synced link row is the offline mirror of that authoritative fact)
+    await feeds.attach(spaceId, feedId, accountId);
+    await repo.upsert('accountLink', spaceId, accountLinkId(spaceId, feedId), {
+      feedSpaceId: feedId,
+      accountId,
+    });
+
+    accounts.push({
+      iban: stmt.iban,
+      accountId,
+      accountName: account?.name ?? `Bank · ${iban.slice(-4)}`,
+      isNew: !account,
+      txCount,
+    });
+  }
+
+  return { imported, skipped, accounts };
+}
+
+/** raw half into the feed, predicted transformation half into the space's overlay */
+async function importFeedEntry(
+  repo: Repo,
+  db: MunniDB,
+  spaceId: string,
+  feedId: string,
+  accountId: string,
+  iban: string,
+  entry: ParsedStatement['entries'][number],
+): Promise<boolean> {
+  const txId = uuidv5(`tx:${iban}:${entry.ref}`, IMPORT_NS);
+  if (await db.transactions.get(txId)) return false;
+
+  await repo.upsert('transaction', feedId, txId, {
+    accountId,
+    date: entry.date,
+    amountCents: entry.amountCents,
+    currency: entry.currency,
+    merchant: entry.counterpartyName ?? entry.description.slice(0, 40),
+    description: entry.description,
+    importRef: entry.ref,
+  });
+
+  const direction = entry.amountCents < 0 ? 'debit' : 'credit';
+  const catId = predictCategory(`${entry.counterpartyName ?? ''} ${entry.description}`, direction) ?? UNCATEGORIZED_ID;
+  const txType: TxType = CATEGORY_BY_ID.get(catId)?.txTypes[0] ?? (direction === 'credit' ? 'income' : 'expense');
+  await repo.upsert('txMeta', spaceId, txMetaId(spaceId, txId), {
+    txId,
+    catId,
+    txType,
+    needsReview: catId === UNCATEGORIZED_ID ? 1 : 0,
+  });
+  return true;
 }

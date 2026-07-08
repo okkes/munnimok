@@ -1,9 +1,10 @@
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useMemo } from 'react';
+import { useSpaceAccounts, useTxTransform } from '@/application/transactions';
+import type { SpaceTx } from '@/application/transactions';
 import { useLang } from '@/i18n';
-import { useData } from '@/app/data';
 import { ALL_TX_TYPES, applyTypeChange, typeForLinkedAccount } from '@/domain/txType';
 import { useCategories } from '@/features/categories/useCategories';
-import type { TransactionRow, TxType } from '@/db/types';
+import type { TxType } from '@/db/types';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 
@@ -13,20 +14,13 @@ import { Sheet } from '@/ui/Sheet';
  * payment, ...) and locks manual choice; conflicting categories fall back
  * to uncategorized and are flagged for review.
  */
-export function TxTypeSheet({ open, onOpenChange, tx }: { open: boolean; onOpenChange: (open: boolean) => void; tx: TransactionRow }) {
+export function TxTypeSheet({ open, onOpenChange, tx }: { open: boolean; onOpenChange: (open: boolean) => void; tx: SpaceTx }) {
   const { t } = useLang();
-  const { db, repo, spaceId } = useData();
   const cats = useCategories();
+  const transform = useTxTransform();
 
-  const accounts = useLiveQuery(
-    () =>
-      db.accounts
-        .where('spaceId')
-        .equals(spaceId)
-        .filter((a) => a.deleted === 0 && a.id !== tx.accountId)
-        .toArray(),
-    [spaceId, tx.accountId],
-  );
+  const allAccounts = useSpaceAccounts();
+  const accounts = useMemo(() => allAccounts?.filter((a) => a.id !== tx.accountId), [allAccounts, tx.accountId]);
 
   const locked = !!tx.linkedAccountId;
   const catTxTypes = cats.byId(tx.catId).txTypes;
@@ -34,7 +28,7 @@ export function TxTypeSheet({ open, onOpenChange, tx }: { open: boolean; onOpenC
   const save = (nextType: TxType, linkedAccountId: string | null) => {
     const fields = applyTypeChange({ nextType, linkedAccountId, currentCatId: tx.catId, catTxTypes });
     // explicit null clears the link (undefined would be dropped by JSON)
-    void repo.upsert('transaction', spaceId, tx.id, { ...fields, linkedAccountId: linkedAccountId ?? (null as never) });
+    void transform(tx, { ...fields, linkedAccountId: linkedAccountId ?? (null as never) });
   };
 
   const chooseType = (type: TxType) => {

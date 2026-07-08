@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useParams } from '@tanstack/react-router';
+import { useSpaceTransaction, useTxTransform } from '@/application/transactions';
 import { useLang } from '@/i18n';
-import type { TranslationKey } from '@/i18n';
 import { useData } from '@/app/data';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { fmtCents } from '@/lib/money';
@@ -20,14 +20,15 @@ const DATE_FMT: Record<string, string> = { en: 'en-GB', nl: 'nl-NL', tr: 'tr-TR'
 
 export function TxDetailScreen() {
   const { t, lang } = useLang();
-  const { db, repo, spaceId } = useData();
+  const { db } = useData();
   const { txId } = useParams({ strict: false }) as { txId: string };
   const [pickerOpen, setPickerOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [typeOpen, setTypeOpen] = useState(false);
   const [splitOpen, setSplitOpen] = useState(false);
 
-  const tx = useLiveQuery(() => db.transactions.get(txId), [txId]);
+  const tx = useSpaceTransaction(txId);
+  const transform = useTxTransform();
   const account = useLiveQuery(() => (tx ? db.accounts.get(tx.accountId) : undefined), [tx?.accountId]);
   const cats = useCategories();
 
@@ -39,10 +40,10 @@ export function TxDetailScreen() {
 
   const setCategory = (catId: string) => {
     const txType = cats.byId(catId).txTypes[0] ?? tx.txType;
-    void repo.upsert('transaction', spaceId, tx.id, { catId, txType, needsReview: 0 });
+    void transform(tx, { catId, txType, needsReview: 0 });
   };
   const saveNotes = (notes: string) => {
-    if (notes !== (tx.notes ?? '')) void repo.upsert('transaction', spaceId, tx.id, { notes });
+    if (notes !== (tx.notes ?? '')) void transform(tx, { notes });
   };
 
   const fmtDay = new Intl.DateTimeFormat(DATE_FMT[lang], { weekday: 'long', day: 'numeric', month: 'long' });
@@ -129,7 +130,7 @@ export function TxDetailScreen() {
           >
             <Icon name="bank-outline" size={20} color="var(--m-ink-3)" />
             <span className="flex-1 truncate">{account?.name ?? '—'}</span>
-            <span className="text-xs text-ink-4">{t(`tx.type.${tx.txType}` as TranslationKey)}</span>
+            <span className="text-xs text-ink-4">{t(`tx.type.${tx.txType}`)}</span>
             <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
           </button>
           {tx.description && (
