@@ -227,9 +227,9 @@ export function ManageCategoriesScreen() {
         dragStartedRef.current = false;
       }, 0);
       if (!targetId || targetId === dragging.parentId) return;
-      void prepareCategoryEdit(db, repo, dragging, { parentId: targetId }).then((commit) =>
-        setMoveConfirm({ sub: dragging, targetId, commit }),
-      );
+      prepareCategoryEdit(db, repo, dragging, { parentId: targetId })
+        .then((commit) => setMoveConfirm({ sub: dragging, targetId, commit }))
+        .catch(() => undefined); // db closed under us (teardown) — drop the move
     };
     // holding still near an edge must keep scrolling — hence a rAF loop,
     // not just pointermove; it also re-resolves the hovered group while
@@ -307,29 +307,31 @@ export function ManageCategoriesScreen() {
             {t('cats.copyFromPersonal')}
           </button>
         )}
-        {cats.parents.map((parent) =>
-          dragging ? (
+        {cats.parents.map((parent) => {
+          if (dragging) {
             // fold mode: every main collapses into one fat drop row, so
             // even a long list fits a couple of screens while dragging
-            <div
-              key={parent.id}
-              data-cat-group={parent.id}
-              data-testid={`cats-drop-${parent.id}`}
-              className={`mt-2 flex items-center gap-2.5 rounded-card border px-4 py-3.5 transition-colors ${
-                dropTarget === parent.id
-                  ? 'border-accent bg-accent-soft'
-                  : `border-line bg-surface ${parent.id === dragging.parentId ? 'opacity-55' : ''}`
-              }`}
-            >
-              <Icon name={parent.icon} size={17} color={parent.color} />
-              <span className="min-w-0 flex-1 truncate text-[13px] font-medium" style={{ color: parent.color }}>
-                {catName(parent, t)}
-              </span>
-              <span className="rounded bg-bg-2 px-1.5 py-0.5 text-[9px] font-semibold text-ink-3">
-                {t(`tx.type.${parent.txTypes[0]}`)}
-              </span>
-            </div>
-          ) : (
+            let foldClass = 'border-line bg-surface';
+            if (dropTarget === parent.id) foldClass = 'border-accent bg-accent-soft';
+            else if (parent.id === dragging.parentId) foldClass = 'border-line bg-surface opacity-55';
+            return (
+              <div
+                key={parent.id}
+                data-cat-group={parent.id}
+                data-testid={`cats-drop-${parent.id}`}
+                className={`mt-2 flex items-center gap-2.5 rounded-card border px-4 py-3.5 transition-colors ${foldClass}`}
+              >
+                <Icon name={parent.icon} size={17} color={parent.color} />
+                <span className="min-w-0 flex-1 truncate text-[13px] font-medium" style={{ color: parent.color }}>
+                  {catName(parent, t)}
+                </span>
+                <span className="rounded bg-bg-2 px-1.5 py-0.5 text-[9px] font-semibold text-ink-3">
+                  {t(`tx.type.${parent.txTypes[0]}`)}
+                </span>
+              </div>
+            );
+          }
+          return (
             <div key={parent.id} data-cat-group={parent.id}>
               <div className="m-cap mt-5 mb-1 flex items-center gap-1.5 px-1" style={{ color: parent.color }}>
                 <Icon name={parent.icon} size={14} />
@@ -407,8 +409,8 @@ export function ManageCategoriesScreen() {
                 ))}
               </div>
             </div>
-          ),
-        )}
+          );
+        })}
       </div>
 
       {/* the lifted sub floats on a vertical rail above everything */}

@@ -51,12 +51,14 @@ function AttachedAccountsSection({ spaceId }: Readonly<{ spaceId: string }>) {
   const navigate = useNavigate();
 
   const entries = useLiveQuery(async () => {
+    // reads only — a teardown/closed-db rejection must never escape
     const [ownAccounts, links] = await Promise.all([
       db.accounts.filter((a) => a.deleted === 0 && a.spaceId === spaceId).toArray(),
       db.accountLinks.filter((l) => l.deleted === 0 && l.spaceId === spaceId).toArray(),
-    ]);
+    ]).catch(() => [[], []] as const);
     const feedAccounts = new Map<string, AccountRow>();
-    for (const account of await db.accounts.where('id').anyOf(links.map((l) => l.accountId)).toArray()) {
+    const linked = await db.accounts.where('id').anyOf(links.map((l) => l.accountId)).toArray().catch(() => []);
+    for (const account of linked) {
       feedAccounts.set(account.id, account);
     }
     const ibanTail = (iban?: string) => (iban ? `…${iban.slice(-4)}` : undefined);
@@ -142,7 +144,6 @@ export function SpaceSettingsScreen() {
   const goBack = () => router.history.back();
 
   const space = useLiveQuery(() => db.spaces.get(spaceId), [spaceId]);
-  const spaceCount = useLiveQuery(() => db.spaces.filter((s) => s.deleted === 0).count(), []);
 
   const [name, setName] = useState('');
   const [icon, setIcon] = useState(SPACE_ICONS[0]);
@@ -192,13 +193,16 @@ export function SpaceSettingsScreen() {
     goBack();
   };
 
-  const deleteSpace = () => {
+  const deleteSpace = async () => {
     if (!space) return;
     if (space.id === activeSpaceId) {
       setDeleteError(t('space.cannotDeleteActive'));
       return;
     }
-    if ((spaceCount ?? 0) <= 1) {
+    // counted on demand — a liveQuery would read undefined (= "only
+    // space") for a tap that lands before its first emission
+    const count = await db.spaces.filter((s) => s.deleted === 0).count();
+    if (count <= 1) {
       setDeleteError(t('space.cannotDeleteOnly'));
       return;
     }
@@ -206,7 +210,7 @@ export function SpaceSettingsScreen() {
       setConfirmDelete(true); // destructive: second tap confirms
       return;
     }
-    void repo.remove('space', space.id, space.id);
+    await repo.remove('space', space.id, space.id);
     goBack();
   };
 
@@ -404,7 +408,7 @@ export function SpaceSettingsScreen() {
                     {t('space.deleteConfirmNote')}
                   </p>
                 )}
-                <Button variant="danger" data-testid="space-edit-delete" onClick={deleteSpace}>
+                <Button variant="danger" data-testid="space-edit-delete" onClick={() => void deleteSpace()}>
                   {confirmDelete ? t('action.confirm') : t('space.delete')}
                 </Button>
               </div>

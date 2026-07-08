@@ -94,25 +94,25 @@ public static class SocialEndpoints
     {
         var me = http.GetUserId();
         if (request.ToUserId == me) return Results.BadRequest();
-        if (await db.Users.FindAsync(request.ToUserId) is null) return Results.NotFound();
+        if (await db.Users.FindAsync([request.ToUserId], ct) is null) return Results.NotFound();
 
         var (a, b) = me < request.ToUserId ? (me, request.ToUserId) : (request.ToUserId, me);
-        var existing = await db.Friendships.FirstOrDefaultAsync(f => f.UserAId == a && f.UserBId == b);
+        var existing = await db.Friendships.FirstOrDefaultAsync(f => f.UserAId == a && f.UserBId == b, ct);
         if (existing is not null)
         {
             // their pending request to me? -> auto-accept (legacy behavior)
             if (existing.Status == StatusPending && existing.RequestedBy != me)
             {
                 existing.Status = StatusAccepted;
-                await db.SaveChangesAsync();
-                await push.NotifyFriendAcceptedAsync(request.ToUserId, await NameOf(db, me), ct);
+                await db.SaveChangesAsync(ct);
+                await push.NotifyFriendAcceptedAsync(request.ToUserId, await NameOf(db, me, ct), ct);
             }
         }
         else
         {
             db.Friendships.Add(new Friendship { Id = Guid.NewGuid(), UserAId = a, UserBId = b, RequestedBy = me, Status = StatusPending });
-            await db.SaveChangesAsync();
-            await push.NotifyFriendRequestAsync(request.ToUserId, await NameOf(db, me), ct);
+            await db.SaveChangesAsync(ct);
+            await push.NotifyFriendRequestAsync(request.ToUserId, await NameOf(db, me, ct), ct);
         }
         return Results.Ok();
     }
@@ -120,11 +120,11 @@ public static class SocialEndpoints
     private static async Task<IResult> AcceptFriendRequest(Guid id, AppDbContext db, PushNotifier push, HttpContext http, CancellationToken ct)
     {
         var me = http.GetUserId();
-        var f = await db.Friendships.FindAsync(id);
+        var f = await db.Friendships.FindAsync([id], ct);
         if (f is null || (f.UserAId != me && f.UserBId != me) || f.RequestedBy == me) return Results.NotFound();
         f.Status = StatusAccepted;
-        await db.SaveChangesAsync();
-        await push.NotifyFriendAcceptedAsync(f.RequestedBy, await NameOf(db, me), ct);
+        await db.SaveChangesAsync(ct);
+        await push.NotifyFriendAcceptedAsync(f.RequestedBy, await NameOf(db, me, ct), ct);
         return Results.Ok();
     }
 
@@ -146,16 +146,16 @@ public static class SocialEndpoints
     private static async Task<IResult> SendSpaceInviteAsync(string spaceId, SendSpaceInvite request, AppDbContext db, PushNotifier push, HttpContext http, CancellationToken ct)
     {
         var me = http.GetUserId();
-        var membership = await db.SpaceMembers.FirstOrDefaultAsync(m => m.SpaceId == spaceId && m.UserId == me);
+        var membership = await db.SpaceMembers.FirstOrDefaultAsync(m => m.SpaceId == spaceId && m.UserId == me, ct);
         if (membership is null || !SpaceRoles.IsOwner(membership.Role)) return Results.Forbid();
 
         var (a, b) = me < request.ToUserId ? (me, request.ToUserId) : (request.ToUserId, me);
-        var friends = await db.Friendships.AnyAsync(f => f.UserAId == a && f.UserBId == b && f.Status == StatusAccepted);
+        var friends = await db.Friendships.AnyAsync(f => f.UserAId == a && f.UserBId == b && f.Status == StatusAccepted, ct);
         if (!friends) return Results.BadRequest(new { error = "not friends" });
-        if (await db.SpaceMembers.AnyAsync(m => m.SpaceId == spaceId && m.UserId == request.ToUserId))
+        if (await db.SpaceMembers.AnyAsync(m => m.SpaceId == spaceId && m.UserId == request.ToUserId, ct))
             return Results.BadRequest(new { error = "already member" });
 
-        var pending = await db.SpaceInvites.AnyAsync(i => i.SpaceId == spaceId && i.ToUserId == request.ToUserId && i.Status == StatusPending);
+        var pending = await db.SpaceInvites.AnyAsync(i => i.SpaceId == spaceId && i.ToUserId == request.ToUserId && i.Status == StatusPending, ct);
         if (!pending)
         {
             db.SpaceInvites.Add(new SpaceInvite
@@ -168,8 +168,8 @@ public static class SocialEndpoints
                 Status = StatusPending,
                 SpaceName = request.SpaceName,
             });
-            await db.SaveChangesAsync();
-            await push.NotifySpaceInviteAsync(request.ToUserId, await NameOf(db, me), request.SpaceName, ct);
+            await db.SaveChangesAsync(ct);
+            await push.NotifySpaceInviteAsync(request.ToUserId, await NameOf(db, me, ct), request.SpaceName, ct);
         }
         return Results.Ok();
     }
@@ -214,7 +214,7 @@ public static class SocialEndpoints
     private static async Task<IResult> RespondToInvite(Guid id, string action, AppDbContext db, PushNotifier push, HttpContext http, CancellationToken ct)
     {
         var me = http.GetUserId();
-        var invite = await db.SpaceInvites.FindAsync(id);
+        var invite = await db.SpaceInvites.FindAsync([id], ct);
         if (invite is null || invite.ToUserId != me || invite.Status != StatusPending) return Results.NotFound();
         if (action == "accept")
         {
@@ -225,10 +225,10 @@ public static class SocialEndpoints
             await Accounts.AccountEndpoints.ReviveLinksOnJoinAsync(db, invite.SpaceId, me);
         }
         else invite.Status = StatusDeclined;
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(ct);
         if (invite.Status == StatusAccepted)
         {
-            await push.NotifySpaceJoinAsync(invite.FromUserId, await NameOf(db, me), invite.SpaceName, ct);
+            await push.NotifySpaceJoinAsync(invite.FromUserId, await NameOf(db, me, ct), invite.SpaceName, ct);
         }
         return Results.Ok();
     }
@@ -299,6 +299,6 @@ public static class SocialEndpoints
     private static async Task<bool> HasAnotherOwner(AppDbContext db, string spaceId, Guid excludingUserId) =>
         await db.SpaceMembers.AnyAsync(m => m.SpaceId == spaceId && m.UserId != excludingUserId && m.Role == SpaceRoles.Owner);
 
-    private static async Task<string?> NameOf(AppDbContext db, Guid userId) =>
-        (await db.Users.FindAsync(userId))?.DisplayName;
+    private static async Task<string?> NameOf(AppDbContext db, Guid userId, CancellationToken ct) =>
+        (await db.Users.FindAsync([userId], ct))?.DisplayName;
 }

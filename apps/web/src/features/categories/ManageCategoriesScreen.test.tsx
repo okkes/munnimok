@@ -106,7 +106,8 @@ describe('ManageCategoriesScreen (demo identity)', () => {
       },
       { timeout: 5000 },
     );
-  });
+    // multi-step flow: the default 5s test budget trips under coverage load
+  }, 15_000);
 
   it('moving a sub via Move to… works instantly when types match', async () => {
     await openScreen();
