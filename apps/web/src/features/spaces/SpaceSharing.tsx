@@ -95,6 +95,8 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
   const [friends, setFriends] = useState<FriendDto[]>([]);
   const [me, setMe] = useState<string | null>(null);
   const [confirmLeave, setConfirmLeave] = useState(false);
+  const [friendId, setFriendId] = useState('');
+  const [friendRequestSent, setFriendRequestSent] = useState(false);
 
   const reload = useCallback(async () => {
     const [membersRes, friendsRes, meRes] = await Promise.all([
@@ -126,6 +128,16 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
     // inviting someone makes this a shared space: its categories become
     // space-scoped and user-scoped categories stop leaking into it
     await repo.upsert('space', spaceId, spaceId, { kind: 'shared' });
+    await reload();
+  };
+  const addFriend = async () => {
+    const toUserId = friendId.trim();
+    if (!toUserId) return;
+    await apiFetch('/friends/requests', { method: 'POST', body: JSON.stringify({ toUserId }) }).catch(() => null);
+    setFriendId('');
+    setFriendRequestSent(true);
+    // if they had already requested me, the server auto-accepts and the
+    // reload makes them immediately invitable
     await reload();
   };
   const kick = async (userId: string) => {
@@ -189,21 +201,49 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
           </div>
         ))}
       </div>
-      {isOwner && invitable.length > 0 && (
+      {isOwner && (
         <>
           <div className="m-cap mt-3 mb-1 px-1">{t('space.addMember')}</div>
-          <div className="flex flex-wrap gap-2">
-            {invitable.map((f) => (
-              <button
-                key={f.userId}
-                data-testid={`space-invite-${f.userId}`}
-                onClick={() => void invite(f.userId)}
-                className="m-tap rounded-full border border-line bg-surface px-3 py-1.5 text-[13px] text-ink-2"
-              >
-                + {f.displayName ?? short(f.userId)}
-              </button>
-            ))}
+          {invitable.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-2">
+              {invitable.map((f) => (
+                <button
+                  key={f.userId}
+                  data-testid={`space-invite-${f.userId}`}
+                  onClick={() => void invite(f.userId)}
+                  className="m-tap rounded-full border border-line bg-surface px-3 py-1.5 text-[13px] text-ink-2"
+                >
+                  + {f.displayName ?? short(f.userId)}
+                </button>
+              ))}
+            </div>
+          )}
+          {/* global friends stay the invite guard — but adding a new friend
+              must not require leaving the invite flow (user decision) */}
+          <div className="flex gap-2">
+            <input
+              data-testid="space-addfriend-input"
+              value={friendId}
+              onChange={(e) => setFriendId(e.target.value)}
+              placeholder={t('friends.idPlaceholder')}
+              className="h-10 min-w-0 flex-1 rounded-input border border-line bg-surface px-3 font-mono text-[12px] text-ink outline-none placeholder:text-ink-4"
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-10"
+              data-testid="space-addfriend-send"
+              onClick={() => void addFriend()}
+              disabled={!friendId.trim()}
+            >
+              {t('friends.sendRequest')}
+            </Button>
           </div>
+          {friendRequestSent && (
+            <p className="mt-1.5 px-1 text-[12px] text-ink-3" data-testid="space-addfriend-sent">
+              {t('space.friendRequestSent')}
+            </p>
+          )}
         </>
       )}
       {members.length > 1 && (

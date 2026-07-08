@@ -1,11 +1,16 @@
 import { create } from 'zustand';
+import { identityKey, readSessionIdentity, useSession } from '@/app/session';
 
 /**
- * Device-level app lock: WebAuthn platform authenticator (fingerprint /
- * face via the OS) with a hashed PIN fallback, required again after a
- * configurable period out of sight. This is a UI gate in front of the
- * app — IndexedDB itself is not encrypted (no PWA can do that), which is
- * the same trade-off banking PWAs make.
+ * App lock, scoped to the SIGNED-IN identity: WebAuthn platform
+ * authenticator (fingerprint / face via the OS) with a hashed PIN
+ * fallback, required again after a configurable period out of sight.
+ * Signed out -> no lock: the gate protects a person's session, and it
+ * must never brick the login screen for the next user of a shared
+ * machine. The config survives sign-out, so the same person's lock
+ * re-arms when they sign back in. This is a UI gate in front of the
+ * app — IndexedDB itself is not encrypted (no PWA can do that), which
+ * is the same trade-off banking PWAs make.
  */
 
 export interface LockConfig {
@@ -18,11 +23,26 @@ export interface LockConfig {
   timeoutSec: number;
 }
 
-const LS_KEY = 'munni_lock';
+const LEGACY_KEY = 'munni_lock';
+const keyForIdentity = (): string | null => {
+  const identity = readSessionIdentity();
+  return identity ? `munni_lock_${identityKey(identity)}` : null;
+};
 
 export function readLockConfig(): LockConfig | null {
+  const key = keyForIdentity();
+  if (!key) return null; // signed out — never locked
   try {
-    const raw = localStorage.getItem(LS_KEY);
+    let raw = localStorage.getItem(key);
+    // one-time migration: pre-scoping configs were device-global
+    if (!raw) {
+      const legacy = localStorage.getItem(LEGACY_KEY);
+      if (legacy) {
+        localStorage.setItem(key, legacy);
+        localStorage.removeItem(LEGACY_KEY);
+        raw = legacy;
+      }
+    }
     if (!raw) return null;
     const parsed = JSON.parse(raw) as LockConfig;
     return parsed.enabled && parsed.pinHash ? parsed : null;
@@ -32,8 +52,10 @@ export function readLockConfig(): LockConfig | null {
 }
 
 export function writeLockConfig(config: LockConfig | null): void {
-  if (config) localStorage.setItem(LS_KEY, JSON.stringify(config));
-  else localStorage.removeItem(LS_KEY);
+  const key = keyForIdentity();
+  if (!key) return; // lock settings only exist inside a session
+  if (config) localStorage.setItem(key, JSON.stringify(config));
+  else localStorage.removeItem(key);
 }
 
 // ── PIN hashing (SHA-256 with a random salt; local gate, not a vault) ──
@@ -137,6 +159,16 @@ export function initLockWatcher(): void {
     } else if (hiddenAt !== null) {
       if (shouldLock(readLockConfig(), Date.now() - hiddenAt)) useLock.getState().lock();
       hiddenAt = null;
+    }
+  });
+
+  // signing in or out is itself fresh verification — never keep a stale
+  // lock across an identity change (logout must free a shared machine)
+  let lastIdentity = useSession.getState().identity;
+  useSession.subscribe((state) => {
+    if (state.identity !== lastIdentity) {
+      lastIdentity = state.identity;
+      useLock.getState().unlock();
     }
   });
 }

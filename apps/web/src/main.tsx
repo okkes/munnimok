@@ -12,6 +12,7 @@ import '@/ui/styles.css';
 
 import { LangProvider } from '@/i18n';
 import { config } from '@/app/config';
+import { useSession } from '@/app/session';
 import { initPwa } from '@/app/pwa';
 import { ThemeProvider } from '@/app/theme';
 import { router } from '@/app/router';
@@ -38,9 +39,11 @@ initLockWatcher();
 
 // OIDC / bank-consent redirects land outside the hash router
 function AppEntry() {
-  // the app lock gates everything, including login and callbacks
+  // the lock gates a signed-in session (and its callbacks); signed out
+  // there is nothing to protect and login must stay reachable
   const locked = useLock((s) => s.locked);
-  if (locked) return <LockScreen />;
+  const identity = useSession((s) => s.identity);
+  if (identity && locked) return <LockScreen />;
   if (isCallbackPath()) return <CallbackScreen />;
   if (isGcCallbackPath) return <GcCallbackScreen />;
   return <RouterProvider router={router} />;

@@ -91,45 +91,49 @@ export function LoginScreen() {
   };
 
   return (
-    <div className="m-fade flex h-full flex-col items-center overflow-y-auto bg-bg" data-testid="screen-login">
-      {/* constrain to a phone-ish column on desktop */}
-      <div className="flex h-full w-full max-w-[420px] flex-col">
-        {/* hero: brand moment — background art with logo + language overlay */}
-        <div className="relative flex max-h-[min(400px,44vh)] shrink-0 items-end overflow-hidden">
-          <img src={loginBgUrl} alt="" aria-hidden="true" className="block h-auto w-full" />
-          {/* blend the art's white lower edge into the paper background */}
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-b from-transparent to-bg" />
-          <div className="absolute inset-x-0 top-0 flex items-center justify-between px-5 pt-[max(12px,env(safe-area-inset-top))]">
-            <div className="flex items-center gap-2.5">
-              <img src={leafUrl} alt="" className="h-9 w-9 object-contain" />
-              <Logo size={24} />
-            </div>
-            <LangPill />
+    <div className="m-fade relative flex h-full flex-col overflow-y-auto bg-bg md:flex-row md:overflow-hidden" data-testid="screen-login">
+      {/* logo + language: overlays the hero on mobile, spans both panes on desktop */}
+      <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between px-5 pt-[max(12px,env(safe-area-inset-top))] md:px-8 md:pt-6">
+        <div className="flex items-center gap-2.5">
+          <img src={leafUrl} alt="" className="h-9 w-9 object-contain" />
+          <Logo size={24} />
+        </div>
+        <LangPill />
+      </div>
+
+      {/* hero art: top band on mobile, full-height left pane on desktop */}
+      <div className="relative flex max-h-[min(400px,44vh)] shrink-0 items-end overflow-hidden md:h-full md:max-h-none md:w-1/2 md:items-stretch lg:w-3/5">
+        <img src={loginBgUrl} alt="" aria-hidden="true" className="block h-auto w-full md:h-full md:object-cover md:object-left-bottom" />
+        {/* blend the art's edge into the paper background */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-b from-transparent to-bg md:inset-y-0 md:right-0 md:left-auto md:h-auto md:w-24 md:bg-gradient-to-r" />
+      </div>
+
+      {/* form pane */}
+      <div className="flex flex-1 flex-col md:h-full md:items-center md:justify-center">
+        <div className="flex flex-1 flex-col md:max-w-[400px] md:flex-none md:gap-2">
+          <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center md:flex-none md:pb-6">
+            <h1 className="m-h2 text-ink md:text-[32px]">{t('login.welcomeFirst')}</h1>
+            <p className="max-w-[280px] text-sm text-ink-3">{t('login.subtitle')}</p>
           </div>
-        </div>
 
-        <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
-          <h1 className="m-h2 text-ink">{t('login.welcomeFirst')}</h1>
-          <p className="max-w-[280px] text-sm text-ink-3">{t('login.subtitle')}</p>
-        </div>
-
-        <div className="flex flex-col gap-3 px-6 pb-4">
-          {logtoConfigured && <LogtoSignInButton />}
-          {logtoConfigured && (
-            <div className="flex items-center gap-3 py-1">
-              <div className="h-px flex-1 bg-line" />
-              <span className="text-xs text-ink-4">{t('login.or')}</span>
-              <div className="h-px flex-1 bg-line" />
-            </div>
-          )}
-          <Button variant={logtoConfigured ? 'outline' : 'primary'} onClick={enterDemo} data-testid="login-demo-btn">
-            <Icon name="account-eye-outline" size={18} />
-            {t('login.demoUser')}
-          </Button>
-          <Button variant="ghost" onClick={() => setOfflineOpen(true)} data-testid="login-offline-btn">
-            <Icon name="lock-outline" size={16} />
-            {t('offline.loginBtn')}
-          </Button>
+          <div className="flex flex-col gap-3 px-6 pb-4 md:w-[360px] md:px-0">
+            {logtoConfigured && <LogtoSignInButton />}
+            {logtoConfigured && (
+              <div className="flex items-center gap-3 py-1">
+                <div className="h-px flex-1 bg-line" />
+                <span className="text-xs text-ink-4">{t('login.or')}</span>
+                <div className="h-px flex-1 bg-line" />
+              </div>
+            )}
+            <Button variant={logtoConfigured ? 'outline' : 'primary'} onClick={enterDemo} data-testid="login-demo-btn">
+              <Icon name="account-eye-outline" size={18} />
+              {t('login.demoUser')}
+            </Button>
+            <Button variant="ghost" onClick={() => setOfflineOpen(true)} data-testid="login-offline-btn">
+              <Icon name="lock-outline" size={16} />
+              {t('offline.loginBtn')}
+            </Button>
+          </div>
         </div>
 
         {/* offline mode: fully local profiles, zero network */}
@@ -165,7 +169,7 @@ export function LoginScreen() {
           </div>
         </Sheet>
 
-        <p className="px-6 pb-[max(24px,env(safe-area-inset-bottom))] text-center text-[11px] text-ink-4">
+        <p className="px-6 pb-[max(24px,env(safe-area-inset-bottom))] text-center text-[11px] text-ink-4 md:pb-8">
           {t('login.terms')}
         </p>
       </div>

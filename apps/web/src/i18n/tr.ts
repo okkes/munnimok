@@ -683,6 +683,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'acct.balanceNow': 'Güncel bakiye',
   'cats.legendDebit': 'para çıkışı',
   'cats.legendCredit': 'para girişi',
+  'space.friendRequestSent': 'Arkadaşlık isteği gönderildi — kabul ettiklerinde onları buradan davet edebilirsin',
   'tx.emptyList': 'Henüz işlem yok — bir banka bağla veya ekstre içe aktar, işlemler burada görünecek',
   'tx.emptyFiltered': 'Bu filtrelerle eşleşen bir şey yok',
   'tx.emptyCta': 'Hesap ekle',

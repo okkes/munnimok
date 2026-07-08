@@ -122,25 +122,33 @@ for (const V of VARIANTS) {
     await alice.page.click('[data-testid="space-create-save"]');
     await alice.page.waitForTimeout(3000); // push
 
-    // friendship: bob requests, alice accepts
+    // friendship: alice adds bob INLINE from the space members section
+    // (never leaves the invite flow — the friends screen is only where
+    // bob reads his id and accepts)
     const bob = await createPage(browser, V);
     await base(bob.page, V, { userSub: `e2e-member-${run}` });
-    await alice.page.click('[data-testid="tab-settings"]');
-    await alice.page.click('[data-testid="settings-friends-row"]');
-    await expect(alice.page.locator('[data-testid="friends-copy-id"] span')).toHaveText(/^[0-9a-f]{8}-/, { timeout: 10000 });
-    const aliceId = (await alice.page.locator('[data-testid="friends-copy-id"] span').textContent()).trim();
     await bob.page.click('[data-testid="tab-settings"]');
     await bob.page.click('[data-testid="settings-friends-row"]');
-    await bob.page.fill('[data-testid="friends-add-input"]', aliceId);
-    await bob.page.click('[data-testid="friends-add-send"]');
-    await alice.page.click('[data-testid="friends-back"]');
-    await alice.page.click('[data-testid="settings-friends-row"]');
-    await alice.page.locator('[data-testid^="friends-accept-"]').click();
-    await alice.page.waitForTimeout(500);
+    await expect(bob.page.locator('[data-testid="friends-copy-id"] span')).toHaveText(/^[0-9a-f]{8}-/, { timeout: 10000 });
+    const bobId = (await bob.page.locator('[data-testid="friends-copy-id"] span').textContent()).trim();
 
-    // alice invites bob to the shared space via the members section
     await alice.page.click('[data-testid="tab-spaces"]');
     await alice.page.click('[data-testid="screen-spaces"] button:has-text("Shared Home") >> nth=0');
+    await alice.page.locator('[data-testid^="space-edit-"]:right-of(:text("Shared Home"))').first().click();
+    await alice.page.waitForSelector('[data-testid="space-members"]');
+    await alice.page.fill('[data-testid="space-addfriend-input"]', bobId);
+    await alice.page.click('[data-testid="space-addfriend-send"]');
+    await expect(alice.page.locator('[data-testid="space-addfriend-sent"]')).toBeVisible({ timeout: 10000 });
+
+    // bob accepts on his friends screen (re-entered: the screen loads
+    // requests on mount); alice reopens the sheet so the fresh friendship
+    // shows up as an invitable chip
+    await bob.page.click('[data-testid="friends-back"]');
+    await bob.page.click('[data-testid="settings-friends-row"]');
+    await bob.page.locator('[data-testid^="friends-accept-"]').click({ timeout: 10000 });
+    await bob.page.waitForTimeout(500);
+    await alice.page.keyboard.press('Escape');
+    await alice.page.waitForTimeout(700);
     await alice.page.locator('[data-testid^="space-edit-"]:right-of(:text("Shared Home"))').first().click();
     await alice.page.waitForSelector('[data-testid="space-members"]');
     await shot(alice.page, k('33-space-share') + '--s1');

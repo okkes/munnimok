@@ -683,6 +683,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'acct.balanceNow': 'Huidig saldo',
   'cats.legendDebit': 'geld uit',
   'cats.legendCredit': 'geld in',
+  'space.friendRequestSent': 'Vriendschapsverzoek verstuurd — zodra ze accepteren kun je ze hier uitnodigen',
   'tx.emptyList': 'Nog geen transacties — koppel een bank of importeer een afschrift en ze verschijnen hier',
   'tx.emptyFiltered': 'Niets komt overeen met deze filters',
   'tx.emptyCta': 'Account toevoegen',

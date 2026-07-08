@@ -121,10 +121,15 @@
   }
   /* fixed app frame: the document itself can never scroll, so the bottom
      tab bar is always visible (Android URL-bar dance, iOS standalone). All
-     scrolling happens inside designated containers. */
+     scrolling happens inside designated containers. height:100dvh tracks
+     the DYNAMIC viewport — inset:0 alone pins to the layout viewport,
+     which on iOS can be shorter than the screen (collapsed toolbar /
+     standalone), leaving a dead band under the tab bar. */
   #root {
     position: fixed;
     inset: 0;
+    height: 100vh; /* fallback for engines without dvh */
+    height: 100dvh;
   }
   /* prevent iOS zoom-on-focus */
   input,
