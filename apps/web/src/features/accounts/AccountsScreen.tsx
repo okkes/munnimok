@@ -188,6 +188,9 @@ export function AccountsScreen() {
     // demo/offline keep everything merged in the current space
     const feeds = identity?.kind === 'user' ? apiFeedGateway(identity.sub) : undefined;
     setImportResult(await importCamtStatements(repo, db, spaceId, importPreview, feeds));
+    // the import may have registered new feeds — refresh ownership so the
+    // new accounts classify under MINE, not "shared with me"
+    if (feeds) void fetchMyFeedIds().then(setMyFeedIds).catch(() => undefined);
   };
 
   const closeImport = () => {

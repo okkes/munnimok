@@ -1,5 +1,9 @@
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { test, expect } from '@playwright/test';
 import { VARIANTS, createPage, base, shot, teardown, syncApiUp } from '../helpers/base.js';
+
+const CAMT_FIXTURE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../fixtures/camt053-sample.xml');
 
 // Two-device sync e2e against the real API + Postgres
 // (deploy/docker-compose.test.yml). Skips when the stack isn't running.
@@ -237,5 +241,103 @@ for (const V of VARIANTS) {
     await shot(b.page, k('26-sync-single-space'));
     await teardown(b.page, b.ctx, k('26-sync-single-space'));
     await teardown(a.page, a.ctx, k('26-sync-single-space') + '--a');
+  });
+
+  test(`sync-a6 shared bank feed: import, invite, diverge, archive on leave [${V.id}]`, async ({ browser }) => {
+    test.skip(!(await syncApiUp()), 'sync API not running');
+    test.setTimeout(240_000);
+    const run = Date.now();
+
+    // alice: fresh user, creates the shared space (becomes active)
+    const alice = await createPage(browser, V);
+    await base(alice.page, V, { userSub: `e2e-feedowner-${run}` });
+    await alice.page.click('[data-testid="tab-spaces"]');
+    await alice.page.click('[data-testid="spaces-add"]');
+    await alice.page.fill('[data-testid="space-create-name"]', 'Feed Home');
+    await alice.page.click('[data-testid="space-create-save"]');
+    await alice.page.waitForTimeout(3000); // push
+
+    // alice imports a statement — the feed registers on the server and
+    // auto-attaches to the active space
+    await alice.page.click('[data-testid="tab-settings"]');
+    await alice.page.click('[data-testid="settings-accounts-row"]');
+    await alice.page.setInputFiles('[data-testid="accounts-import-input"]', CAMT_FIXTURE);
+    await alice.page.waitForSelector('[data-testid="import-preview"]');
+    await alice.page.click('[data-testid="import-run"]');
+    await alice.page.waitForSelector('[data-testid="import-result"]');
+    await alice.page.click('[data-testid="import-close"]');
+    await expect(alice.page.locator('[data-testid^="account-via-"]').first()).toContainText('Feed Home', { timeout: 10000 });
+    await shot(alice.page, k('61-feed-share') + '--s1');
+    await alice.page.waitForTimeout(4000); // push feed rows + overlay
+
+    // bob: fresh user; alice friends him inline from the members section
+    const bob = await createPage(browser, V);
+    await base(bob.page, V, { userSub: `e2e-feedmember-${run}` });
+    await bob.page.click('[data-testid="tab-settings"]');
+    await bob.page.click('[data-testid="settings-friends-row"]');
+    await expect(bob.page.locator('[data-testid="friends-copy-id"] span')).toHaveText(/^[0-9a-f]{8}-/, { timeout: 10000 });
+    const bobId = (await bob.page.locator('[data-testid="friends-copy-id"] span').textContent()).trim();
+
+    await alice.page.click('[data-testid="tab-spaces"]');
+    await alice.page.locator('[data-testid^="space-edit-"]:right-of(:text("Feed Home"))').first().click();
+    await alice.page.waitForSelector('[data-testid="space-members"]');
+    await alice.page.fill('[data-testid="space-addfriend-input"]', bobId);
+    await alice.page.click('[data-testid="space-addfriend-send"]');
+    await expect(alice.page.locator('[data-testid="space-addfriend-sent"]')).toBeVisible({ timeout: 10000 });
+    await bob.page.click('[data-testid="friends-back"]');
+    await bob.page.click('[data-testid="settings-friends-row"]');
+    await bob.page.locator('[data-testid^="friends-accept-"]').click({ timeout: 10000 });
+    await alice.page.click('[data-testid="spacesettings-back"]');
+    await alice.page.waitForTimeout(700);
+    await alice.page.locator('[data-testid^="space-edit-"]:right-of(:text("Feed Home"))').first().click();
+    await alice.page.waitForSelector('[data-testid="space-members"]');
+    await alice.page.locator('[data-testid^="space-invite-"]').first().click();
+    await alice.page.waitForTimeout(800);
+    await alice.page.click('[data-testid="spacesettings-back"]');
+
+    // bob accepts, makes the shared space active — and sees the FEED's
+    // transactions through derived access (raw + alice's overlay joined)
+    await bob.page.click('[data-testid="tab-spaces"]');
+    await expect(bob.page.locator('[data-testid="space-invites"]')).toContainText('Feed Home', { timeout: 10000 });
+    await bob.page.locator('[data-testid^="space-invite-accept-"]').click();
+    await expect(bob.page.locator('[data-testid="screen-spaces"]')).toContainText('Feed Home', { timeout: 15000 });
+    await bob.page.locator('[data-testid="screen-spaces"] button:has-text("Feed Home")').first().click();
+    await bob.page.waitForTimeout(600); // active-space switch settles
+    await bob.page.click('[data-testid="tab-transactions"]');
+    await bob.page.waitForSelector('[data-testid="screen-transactions"]', { timeout: 10000 });
+    await expect(bob.page.locator('[data-testid="tx-list"]')).toContainText('Jumbo Amsterdam', { timeout: 25000 });
+    await shot(bob.page, k('61-feed-share') + '--s2');
+
+    // bob recategorizes a feed transaction; the shared overlay reaches alice
+    await bob.page.locator('[data-testid="tx-list"] button:has-text("Jumbo Amsterdam")').first().click();
+    await bob.page.click('[data-testid="tx-detail-category-row"]');
+    await bob.page.waitForSelector('[data-testid="catpicker-videoGame"]');
+    await bob.page.click('[data-testid="catpicker-videoGame"]');
+    await bob.page.waitForTimeout(3500); // push
+
+    await alice.page.click('[data-testid="tab-transactions"]');
+    await alice.page.locator('[data-testid="tx-list"] button:has-text("Jumbo Amsterdam")').first().click();
+    await expect(alice.page.locator('[data-testid="tx-detail-category-row"]')).toContainText('Video Game', { timeout: 20000 });
+    await shot(alice.page, k('61-feed-share'));
+
+    // alice (feed owner + attacher) leaves the space: bob keeps the shared
+    // history but the account freezes — the synced mirror row delivers the
+    // archived badge to his accounts screen
+    await alice.page.click('[data-testid="tx-detail-back"]');
+    await alice.page.click('[data-testid="tab-spaces"]');
+    await alice.page.locator('[data-testid^="space-edit-"]:right-of(:text("Feed Home"))').first().click();
+    await alice.page.waitForSelector('[data-testid="space-leave"]');
+    await alice.page.click('[data-testid="space-leave"]');
+    await alice.page.click('[data-testid="space-leave"]');
+    await expect(alice.page.locator('[data-testid="screen-spaces"]')).not.toContainText('Feed Home', { timeout: 10000 });
+
+    await bob.page.click('[data-testid="tx-detail-back"]');
+    await bob.page.click('[data-testid="tab-settings"]');
+    await bob.page.click('[data-testid="settings-accounts-row"]');
+    await expect(bob.page.locator('[data-testid="accounts-shared"]')).toContainText('Archived', { timeout: 25000 });
+    await shot(bob.page, k('62-feed-archive'));
+
+    await teardown(bob.page, bob.ctx, k('61-feed-share') + '--bob');
+    await teardown(alice.page, alice.ctx, k('61-feed-share'));
   });
 }

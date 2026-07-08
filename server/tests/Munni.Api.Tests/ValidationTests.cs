@@ -66,6 +66,15 @@ public class ValidationTests
     }
 
     [Fact]
+    public void Push_accepts_the_overlay_entities()
+    {
+        // the feed import pushes these — a missing whitelist entry strands
+        // the owner's outbox with 400s (found by the sync-a6 e2e)
+        Assert.True(new PushRequestValidator().Validate(new PushRequest("device-1", [Op(entity: "txMeta")])).IsValid);
+        Assert.True(new PushRequestValidator().Validate(new PushRequest("device-1", [Op(entity: "accountLink")])).IsValid);
+    }
+
+    [Fact]
     public void Push_rejects_unknown_entities_and_missing_ids()
     {
         Assert.False(new PushRequestValidator().Validate(new PushRequest("device-1", [Op(entity: "user")])).IsValid);

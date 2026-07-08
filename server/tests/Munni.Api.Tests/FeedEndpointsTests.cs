@@ -155,6 +155,12 @@ public class FeedEndpointsTests : IClassFixture<FeedsApiFactory>
         // link is archived; bob keeps the shared history…
         var links = await bob.GetFromJsonAsync<List<AccountLinkDto>>($"/spaces/{spaceId}/accounts");
         Assert.True(links![0].Archived);
+
+        // …and the SYNCED mirror row carries the archived flag, so bob's
+        // devices render the badge without asking the server
+        var mirror = await bob.GetFromJsonAsync<PullResponse>($"/sync/{spaceId}/pull?since=0");
+        var linkOps = mirror!.Ops.Where(o => o.Entity == "accountLink").ToList();
+        Assert.Contains(linkOps, o => o.Fields.TryGetValue("archived", out var v) && v.GetInt32() == 1);
         var history = await bob.GetFromJsonAsync<PullResponse>($"/sync/{feed}/pull?since=0");
         Assert.Single(history!.Ops);
 

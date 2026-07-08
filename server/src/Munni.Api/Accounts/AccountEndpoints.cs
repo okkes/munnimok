@@ -157,6 +157,9 @@ public static class AccountEndpoints
             link.Archived = true;
             link.ArchivedAtSeq = cursors.GetValueOrDefault(link.FeedSpaceId);
         }
+        // the remaining members' devices learn the state through the synced
+        // mirror row — without this op the archived badge would never render
+        await WriteMirrorOpsAsync(db, spaceId, links, archived: true);
     }
 
     /// <summary>Un-archive on rejoin: a returning member's still-owned feeds reconnect automatically.</summary>
@@ -166,10 +169,32 @@ public static class AccountEndpoints
         var links = await db.SpaceAccountLinks
             .Where(l => l.SpaceId == spaceId && l.Archived && l.AttachedBy == joiningUserId && ownedFeeds.Contains(l.FeedSpaceId))
             .ToListAsync();
+        if (links.Count == 0) return;
         foreach (var link in links)
         {
             link.Archived = false;
             link.ArchivedAtSeq = null;
         }
+        await WriteMirrorOpsAsync(db, spaceId, links, archived: false);
+    }
+
+    private static async Task WriteMirrorOpsAsync(AppDbContext db, string spaceId, List<SpaceAccountLink> links, bool archived)
+    {
+        var space = await db.Spaces.FindAsync(spaceId);
+        if (space is null) return;
+        var counter = 0;
+        var ops = links.Select(link => new Sync.SyncOpDto(
+            GoCardless.ImportIds.OpId($"linkstate:{spaceId}:{link.FeedSpaceId}:{archived}:{DateTime.UtcNow.Ticks}"),
+            spaceId,
+            "accountLink",
+            GoCardless.ImportIds.AccountLinkId(spaceId, link.FeedSpaceId),
+            new Dictionary<string, System.Text.Json.JsonElement>
+            {
+                ["feedSpaceId"] = System.Text.Json.JsonSerializer.SerializeToElement(link.FeedSpaceId),
+                ["accountId"] = System.Text.Json.JsonSerializer.SerializeToElement(link.AccountId),
+                ["archived"] = System.Text.Json.JsonSerializer.SerializeToElement(archived ? 1 : 0),
+            },
+            Sync.ServerHlc.Now(counter++))).ToList();
+        await new Sync.SyncWriter(db).ApplyAsync(space, null, ops);
     }
 }
