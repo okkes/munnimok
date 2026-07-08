@@ -3,6 +3,7 @@ import { useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
 import { DataProvider } from './data';
 import { OfflineBanner } from './OfflineBanner';
+import { useRecurringReminders } from '@/application/recurring';
 import { Icon } from '@/ui/Icon';
 import { Logo } from '@/ui/Logo';
 
@@ -17,9 +18,16 @@ interface TabDef {
 const TABS: TabDef[] = [
   { to: '/home', labelKey: 'tab.home', icon: 'home-variant-outline', iconActive: 'home-variant', testId: 'tab-home' },
   { to: '/transactions', labelKey: 'tab.transactions', icon: 'format-list-bulleted', iconActive: 'format-list-bulleted', testId: 'tab-transactions' },
+  { to: '/recurring', labelKey: 'tab.recurring', icon: 'autorenew', iconActive: 'autorenew', testId: 'tab-recurring' },
   { to: '/spaces', labelKey: 'screen.spaces', icon: 'account-group-outline', iconActive: 'account-group', testId: 'tab-spaces' },
   { to: '/settings', labelKey: 'tab.settings', icon: 'cog-outline', iconActive: 'cog', testId: 'tab-settings' },
 ];
+
+/** headless: fires due-soon reminders once per app open (needs DataProvider) */
+function RecurringReminders() {
+  useRecurringReminders();
+  return null;
+}
 
 export function AppLayout() {
   const { t } = useLang();
@@ -60,6 +68,7 @@ export function AppLayout() {
               <Outlet />
             </div>
             <OfflineBanner />
+            <RecurringReminders />
           </DataProvider>
         </div>
 

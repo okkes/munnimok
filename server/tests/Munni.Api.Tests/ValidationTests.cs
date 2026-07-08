@@ -72,6 +72,9 @@ public class ValidationTests
         // the owner's outbox with 400s (found by the sync-a6 e2e)
         Assert.True(new PushRequestValidator().Validate(new PushRequest("device-1", [Op(entity: "txMeta")])).IsValid);
         Assert.True(new PushRequestValidator().Validate(new PushRequest("device-1", [Op(entity: "accountLink")])).IsValid);
+        // recurring costs + dismissed suggestions sync the same way
+        Assert.True(new PushRequestValidator().Validate(new PushRequest("device-1", [Op(entity: "recurring")])).IsValid);
+        Assert.True(new PushRequestValidator().Validate(new PushRequest("device-1", [Op(entity: "recurringDismiss")])).IsValid);
     }
 
     [Fact]

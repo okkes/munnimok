@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useParams } from '@tanstack/react-router';
 import { useSpaceTransaction, useTxTransform } from '@/application/transactions';
+import { useRecurringOps, useRecurrings } from '@/application/recurring';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { catName, useCategories } from '@/features/categories/useCategories';
@@ -9,6 +10,7 @@ import { fmtCents } from '@/lib/money';
 import { cleanBankText } from '@/lib/text';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
+import { Sheet } from '@/ui/Sheet';
 import { CategoryPicker } from '@/features/categories/CategoryPicker';
 import { netAmountCents, totalReimbursedCents } from '@/domain/reimbursement';
 import { ReimburseSection } from './ReimburseSection';
@@ -26,11 +28,14 @@ export function TxDetailScreen() {
   const [editOpen, setEditOpen] = useState(false);
   const [typeOpen, setTypeOpen] = useState(false);
   const [splitOpen, setSplitOpen] = useState(false);
+  const [recurringOpen, setRecurringOpen] = useState(false);
 
   const tx = useSpaceTransaction(txId);
   const transform = useTxTransform();
   const account = useLiveQuery(() => (tx ? db.accounts.get(tx.accountId) : undefined), [tx?.accountId]);
   const cats = useCategories();
+  const recurrings = useRecurrings();
+  const recurringOps = useRecurringOps();
 
   if (!tx) return <div className="h-full" data-testid="screen-tx-detail" />;
 
@@ -133,6 +138,25 @@ export function TxDetailScreen() {
             <span className="text-xs text-ink-4">{t(`tx.type.${tx.txType}`)}</span>
             <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
           </button>
+          {tx.txType === 'expense' && (
+            <>
+              <div className="mx-4 h-px bg-line-2" />
+              <button
+                data-testid="tx-detail-recurring-row"
+                onClick={() => setRecurringOpen(true)}
+                className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+              >
+                <Icon name="autorenew" size={20} color="var(--m-ink-3)" />
+                <span className="flex-1 truncate">
+                  {tx.recurringId
+                    ? (recurrings?.find((r) => r.id === tx.recurringId)?.name ?? t('recurring.linkTitle'))
+                    : t('recurring.linkTitle')}
+                </span>
+                {!tx.recurringId && <span className="text-xs text-ink-4">{t('recurring.linkNone')}</span>}
+                <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+              </button>
+            </>
+          )}
           {tx.description && (
             <>
               <div className="mx-4 h-px bg-line-2" />
@@ -161,6 +185,42 @@ export function TxDetailScreen() {
       />
       <TxTypeSheet open={typeOpen} onOpenChange={setTypeOpen} tx={tx} />
       <SplitEditorSheet open={splitOpen} onOpenChange={setSplitOpen} tx={tx} />
+
+      {/* attach to a recurring cost */}
+      <Sheet open={recurringOpen} onOpenChange={setRecurringOpen} title={t('recurring.linkTitle')} size="form">
+        <div className="pt-1" data-testid="tx-recurring-list">
+          <button
+            data-testid="tx-recurring-none"
+            onClick={() => {
+              void recurringOps.linkTx(tx, '');
+              setRecurringOpen(false);
+            }}
+            className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-1 py-3 text-left text-[14px] text-ink-2"
+          >
+            <Icon name="close-circle-outline" size={18} color="var(--m-ink-4)" />
+            <span className="min-w-0 flex-1 truncate">{t('recurring.linkNone')}</span>
+            {!tx.recurringId && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
+          </button>
+          {(recurrings ?? [])
+            .filter((r) => r.active === 1)
+            .map((r) => (
+              <button
+                key={r.id}
+                data-testid={`tx-recurring-${r.id}`}
+                onClick={() => {
+                  void recurringOps.linkTx(tx, r.id);
+                  setRecurringOpen(false);
+                }}
+                className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-1 py-3 text-left text-[14px] text-ink last:border-0"
+              >
+                <Icon name={r.icon ?? 'autorenew'} size={18} color="var(--m-ink-3)" />
+                <span className="min-w-0 flex-1 truncate">{r.name}</span>
+                <span className="m-num text-[12px] text-ink-4">{fmtCents(r.amountCents, tx.currency, lang)}</span>
+                {tx.recurringId === r.id && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
+              </button>
+            ))}
+        </div>
+      </Sheet>
     </div>
   );
 }

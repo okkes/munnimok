@@ -2,9 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useNavigate } from '@tanstack/react-router';
 import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
+import { localToday } from '@/application/recurring';
 import { OVERVIEW_KINDS, overviewSummary } from '@/domain/overview';
 import type { OverviewKind, OverviewSummary } from '@/domain/overview';
 import { periodHistory } from '@/domain/periods';
+import { addDays, nextDueDate } from '@/domain/recurring';
+import type { RecurringRow } from '@/db/types';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { fmtCents } from '@/lib/money';
@@ -51,6 +54,22 @@ export function HomeScreen() {
   }, [allTxs, accounts, period]);
   const fmtShort = (iso: string) =>
     new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' });
+
+  // landing-zone block: recurring costs due within a week (user decision:
+  // the home block shows only the upcoming ones; the tab has the rest)
+  const recurrings = useLiveQuery(
+    () => db.recurrings.filter((r) => r.deleted === 0 && r.spaceId === spaceId && r.active === 1).toArray(),
+    [db, spaceId],
+  );
+  const upcoming = useMemo(() => {
+    const today = localToday();
+    const horizon = addDays(today, 7);
+    return (recurrings ?? [])
+      .map((rec) => ({ rec, nextDue: nextDueDate(rec, today) }))
+      .filter((u): u is { rec: RecurringRow; nextDue: string } => u.nextDue !== null && u.nextDue <= horizon)
+      .sort((a, b) => a.nextDue.localeCompare(b.nextDue))
+      .slice(0, 4);
+  }, [recurrings]);
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-home">
@@ -114,6 +133,31 @@ export function HomeScreen() {
             </button>
           ))}
         </div>
+
+        {upcoming.length > 0 && (
+          <>
+            <div className="m-cap mt-5 mb-1 px-1">{t('recurring.upcoming')}</div>
+            <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="home-upcoming">
+              {upcoming.map(({ rec, nextDue }) => (
+                <button
+                  key={rec.id}
+                  data-testid={`home-upcoming-${rec.id}`}
+                  onClick={() => void navigate({ to: '/recurring' })}
+                  className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-2.5 text-left last:border-0"
+                >
+                  <Icon name={rec.icon ?? 'autorenew'} size={16} color="var(--m-ink-3)" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px] font-medium text-ink">{rec.name}</span>
+                    <span className="block text-[11px] text-ink-4">{fmtShort(nextDue)}</span>
+                  </span>
+                  <span className="m-num text-[13px] font-semibold text-ink">
+                    {fmtCents(rec.amountCents, currency, lang)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
 
         <div className="m-cap mt-5 mb-1 px-1">{t('tab.transactions')}</div>
         <div className="rounded-card border border-line bg-surface px-3 py-1">

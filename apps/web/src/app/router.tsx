@@ -22,6 +22,7 @@ import { FriendsScreen } from '@/features/friends/FriendsScreen';
 import { OnboardingScreen } from '@/features/auth/OnboardingScreen';
 import { OverviewScreen } from '@/features/overview/OverviewScreen';
 import { ProfileScreen } from '@/features/profile/ProfileScreen';
+import { RecurringScreen } from '@/features/recurring/RecurringScreen';
 
 const rootRoute = createRootRoute({ component: Outlet });
 
@@ -69,6 +70,7 @@ const txDetailRoute = createRoute({
   path: '/transactions/$txId',
   component: TxDetailScreen,
 });
+const recurringRoute = createRoute({ getParentRoute: () => appRoute, path: '/recurring', component: RecurringScreen });
 const spacesRoute = createRoute({ getParentRoute: () => appRoute, path: '/spaces', component: SpacesScreen });
 const spaceSettingsRoute = createRoute({
   getParentRoute: () => appRoute,
@@ -95,6 +97,7 @@ export const routeTree = rootRoute.addChildren([
     homeRoute,
     transactionsRoute,
     txDetailRoute,
+    recurringRoute,
     spacesRoute,
     spaceSettingsRoute,
     settingsRoute,

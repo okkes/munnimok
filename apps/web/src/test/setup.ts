@@ -12,11 +12,22 @@ configure({ asyncUtilTimeout: 5000 });
  * expected teardown noise in tests (production keeps the db open for
  * the app's lifetime), so it must not fail the run as an unhandled
  * rejection.
+ *
+ * Vitest only reports process-level rejections when its own listener is
+ * the single one registered — a user listener takes responsibility. So
+ * this filter swallows the known teardown noise and rethrows everything
+ * else as an uncaught exception, which vitest still fails the run on.
  */
+const isTeardownNoise = (reason: unknown): boolean =>
+  (reason as { name?: string } | undefined)?.name === 'DatabaseClosedError';
+
+process.on('unhandledRejection', (reason) => {
+  if (isTeardownNoise(reason)) return;
+  throw reason;
+});
+
 if (typeof window !== 'undefined') {
   window.addEventListener('unhandledrejection', (event) => {
-    if ((event.reason as { name?: string } | undefined)?.name === 'DatabaseClosedError') {
-      event.preventDefault();
-    }
+    if (isTeardownNoise(event.reason)) event.preventDefault();
   });
 }

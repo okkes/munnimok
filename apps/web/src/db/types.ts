@@ -115,6 +115,8 @@ export interface TransactionRow extends SyncEnvelope {
   reimbursements?: TxReimbursement[];
   /** counter-account for transfers/savings/debt payments — locks txType */
   linkedAccountId?: string;
+  /** the recurring cost this expense pays (rent, a subscription, …) */
+  recurringId?: string;
 }
 
 /**
@@ -137,6 +139,51 @@ export interface TxMetaRow extends SyncEnvelope {
   splits?: TxSplit[];
   reimbursements?: TxReimbursement[];
   linkedAccountId?: string;
+  recurringId?: string;
+}
+
+export type RecurringKind = 'fixed' | 'subscription';
+export type RecurringEvery = 'month' | 'year';
+
+/**
+ * One recurring cost of a space (rent, Netflix, insurance …). The
+ * amount is the user's estimate until linked transactions rectify it;
+ * merchantKey lets imports auto-link. Scoped per space — shared spaces
+ * share their recurring configuration.
+ */
+export interface RecurringRow extends SyncEnvelope {
+  id: string;
+  spaceId: string;
+  name: string;
+  kind: RecurringKind;
+  /** could be cancelled anytime without real impact (insight label) */
+  luxury?: 0 | 1;
+  /** estimated cost per occurrence, positive minor units */
+  amountCents: number;
+  catId?: string;
+  icon?: string;
+  every: RecurringEvery;
+  /** due day of month 1..31 (clamped to shorter months) */
+  dueDay: number;
+  /** yearly costs: due month 1..12 */
+  dueMonth?: number;
+  since?: string;
+  until?: string;
+  active: 0 | 1;
+  /** remind n days before due; absent/0 = no reminder */
+  notifyDaysBefore?: number;
+  /** normalized merchant (domain/merchantKey) for auto-linking */
+  merchantKey?: string;
+}
+
+/**
+ * A rejected recurring suggestion — the same merchant pattern is never
+ * suggested again (synced: a partner's dismissal counts for the space).
+ */
+export interface RecurringDismissRow extends SyncEnvelope {
+  id: string;
+  spaceId: string;
+  merchantKey: string;
 }
 
 /**
@@ -178,7 +225,15 @@ export interface MetaRow {
   value: unknown;
 }
 
-export type EntityName = 'space' | 'account' | 'category' | 'transaction' | 'txMeta' | 'accountLink';
+export type EntityName =
+  | 'space'
+  | 'account'
+  | 'category'
+  | 'transaction'
+  | 'txMeta'
+  | 'accountLink'
+  | 'recurring'
+  | 'recurringDismiss';
 
 export interface EntityRowMap {
   space: SpaceRow;
@@ -187,4 +242,6 @@ export interface EntityRowMap {
   transaction: TransactionRow;
   txMeta: TxMetaRow;
   accountLink: AccountLinkRow;
+  recurring: RecurringRow;
+  recurringDismiss: RecurringDismissRow;
 }
