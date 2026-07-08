@@ -948,6 +948,21 @@ export const en = {
   'recurring.upcoming': 'Coming up',
   'recurring.linkTitle': 'Recurring cost',
   'recurring.linkNone': 'None',
+  'review.reasonHistory': 'Based on {n} earlier confirmations',
+  'review.reasonAmount': 'Same amount as before',
+  'review.reasonKeyword': 'Suggested by rules',
+  'review.pickPrompt': 'Pick a category',
+  'review.alsoApply': 'Also apply to {n} similar',
+  'review.linkRecurring': 'Link to {name}',
+  'review.skip': 'Skip',
+  'review.confirmAs': 'Confirm — {name}',
+  'review.skippedRemain': '{n} skipped — take another look?',
+  'review.reviewSkipped': 'Review skipped',
+  'recurring.iconTitle': 'Logo',
+  'recurring.iconSearch': 'Search brands (Netflix, Spotify…)',
+  'recurring.iconNone': 'Default icon',
+  'recurring.iconChosen': 'Brand logo',
+  'recurring.iconOnline': 'More results',
 } as const;
 
 export type TranslationKey = keyof typeof en;
