@@ -862,6 +862,16 @@ export const en = {
   'sync.error': 'Sync problem — will retry automatically',
   'sync.lastSync': 'Last sync',
   'sync.never': 'Not synced yet',
+  'overview.income': 'Earned',
+  'overview.expense': 'Spent',
+  'overview.saving': 'Saved',
+  'overview.investment': 'Invested',
+  'overview.thisPeriod': 'This period',
+  'overview.transactions': '{n} transactions',
+  'onboarding.bankTitle': 'Connect your bank',
+  'onboarding.bankSub': 'See your real transactions right away — munni only gets read access, arranged by your own bank',
+  'onboarding.importInstead': 'Import a bank statement instead',
+  'onboarding.later': 'Do this later',
 } as const;
 
 export type TranslationKey = keyof typeof en;
