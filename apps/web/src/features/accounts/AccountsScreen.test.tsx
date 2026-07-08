@@ -18,6 +18,44 @@ describe('AccountsScreen (demo identity)', () => {
     expect(screen.getByTestId('account-row-demo_save')).toBeTruthy();
   });
 
+  it('feed accounts show their attachments and open the attach sheet', async () => {
+    // seed a feed-shaped account (its spaceId has no space row) attached
+    // to the demo space via a link mirror — the global overview must show
+    // "via <space>" and tapping opens attach management, not the editor
+    const first = renderApp('/accounts');
+    await screen.findByTestId('account-row-demo_main');
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { HlcClock } = await import('@/sync/hlc');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(db, new HlcClock('t'), { trackOutbox: false });
+    await repo.upsert('account', 'feed-1', 'feedacct-1', {
+      name: 'ING Betaal',
+      type: 'checking',
+      source: 'gocardless',
+      currency: 'EUR',
+      balanceCents: 5000,
+      iban: 'NL69INGB0123456789',
+    });
+    await repo.upsert('accountLink', 'demo_space', 'link-1', {
+      feedSpaceId: 'feed-1',
+      accountId: 'feedacct-1',
+      attachedByName: 'Okkes',
+    });
+    db.close();
+    first.unmount();
+
+    renderApp('/accounts');
+    const row = await screen.findByTestId('account-row-feedacct-1');
+    expect(screen.getByTestId('account-via-feedacct-1').textContent).toContain('Demo');
+
+    fireEvent.click(row);
+    expect(await screen.findByTestId('attach-spaces')).toBeTruthy();
+    // the demo space renders as attached (checkbox on)
+    expect(screen.getByTestId('attach-space-demo_space')).toBeTruthy();
+    expect(screen.queryByTestId('acctedit-name')).toBeNull(); // not the editor
+  });
+
   it('adds a manual cash account through the type grid', async () => {
     renderApp('/accounts');
     await screen.findByTestId('account-row-demo_main');

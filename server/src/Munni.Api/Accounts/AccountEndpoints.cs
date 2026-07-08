@@ -16,7 +16,8 @@ public sealed record AccountLinkDto(
     string AccountId,
     Guid AttachedBy,
     string? HistoryFrom,
-    bool Archived);
+    bool Archived,
+    string? AttachedByName = null);
 public sealed record MyFeedDto(string FeedSpaceId, string AccountRef);
 
 /// <summary>
@@ -81,10 +82,13 @@ public static class AccountEndpoints
     {
         var me = http.GetUserId();
         if (!await db.SpaceMembers.AnyAsync(m => m.SpaceId == spaceId && m.UserId == me)) return Results.Forbid();
-        var links = await db.SpaceAccountLinks.Where(l => l.SpaceId == spaceId)
-            .Select(l => new AccountLinkDto(l.Id, l.SpaceId, l.FeedSpaceId, l.AccountId, l.AttachedBy, l.HistoryFrom, l.Archived))
-            .ToListAsync();
-        return Results.Ok(links);
+        var links = await db.SpaceAccountLinks.Where(l => l.SpaceId == spaceId).ToListAsync();
+        var attacherIds = links.Select(l => l.AttachedBy).Distinct().ToList();
+        var names = await db.Users.Where(u => attacherIds.Contains(u.Id))
+            .ToDictionaryAsync(u => u.Id, u => u.DisplayName);
+        return Results.Ok(links.Select(l => new AccountLinkDto(
+            l.Id, l.SpaceId, l.FeedSpaceId, l.AccountId, l.AttachedBy, l.HistoryFrom, l.Archived,
+            names.GetValueOrDefault(l.AttachedBy))).ToList());
     }
 
     private static async Task<IResult> Attach(string spaceId, AttachAccountRequest request, AppDbContext db, HttpContext http)

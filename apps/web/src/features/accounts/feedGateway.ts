@@ -35,3 +35,35 @@ export function apiFeedGateway(sub: string): FeedGateway {
     },
   };
 }
+
+/** feeds the signed-in user registered (ownership source of truth) */
+export async function fetchMyFeedIds(): Promise<ReadonlySet<string>> {
+  const res = await apiFetch('/me/feeds');
+  if (!res.ok) return new Set();
+  const feeds = (await res.json()) as { feedSpaceId: string }[];
+  return new Set(feeds.map((f) => f.feedSpaceId));
+}
+
+/** attach with optional history-from; server first, then the synced mirror is the caller's job */
+export async function attachAccount(
+  spaceId: string,
+  feedSpaceId: string,
+  accountId: string,
+  historyFrom?: string,
+): Promise<void> {
+  const res = await apiFetch(`/spaces/${spaceId}/accounts`, {
+    method: 'POST',
+    body: JSON.stringify({ feedSpaceId, accountId, historyFrom: historyFrom || undefined }),
+  });
+  if (!res.ok) throw new Error(`attach failed (${res.status})`);
+}
+
+export async function detachAccount(spaceId: string, serverLinkId: string): Promise<void> {
+  await apiFetch(`/spaces/${spaceId}/accounts/${serverLinkId}`, { method: 'DELETE' });
+}
+
+/** server links of a space (authoritative ids needed for detach) */
+export async function fetchSpaceLinks(spaceId: string): Promise<{ id: string; feedSpaceId: string; accountId: string }[]> {
+  const res = await apiFetch(`/spaces/${spaceId}/accounts`);
+  return res.ok ? ((await res.json()) as { id: string; feedSpaceId: string; accountId: string }[]) : [];
+}

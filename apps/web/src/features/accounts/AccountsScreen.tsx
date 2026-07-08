@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useSpaceAccounts } from '@/application/transactions';
+import { useGlobalAccounts } from '@/application/accounts';
+import type { GlobalAccount } from '@/application/accounts';
 import { parseStatement } from '@/lib/statements/parseStatement';
 import type { ParsedStatement } from '@/lib/statements/parseStatement';
 import { getApiCapabilities } from '@/lib/api';
 import { useSession } from '@/app/session';
 import { importCamtStatements } from './importCamt';
 import type { ImportResult } from './importCamt';
-import { apiFeedGateway } from './feedGateway';
+import { apiFeedGateway, fetchMyFeedIds } from './feedGateway';
+import { AttachSheet } from './AttachSheet';
 import { BankConnectSheet } from './BankConnect';
 import { useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
@@ -32,25 +34,39 @@ const typeDef = (type: AccountType) => TYPES.find((d) => d.type === type) ?? TYP
 const isLiability = (type: AccountType) => !!typeDef(type).liability;
 
 function AccountRowButton({
-  account,
+  entry,
   lang,
-  onEdit,
+  onOpen,
 }: {
-  account: AccountRow;
+  entry: GlobalAccount;
   lang: ReturnType<typeof useLang>['lang'];
-  onEdit: (account: AccountRow) => void;
+  onOpen: (entry: GlobalAccount) => void;
 }) {
+  const { t } = useLang();
+  const { account, feedSpaceId, sharedVia } = entry;
+  const active = sharedVia.filter((v) => !v.archived);
+  const archivedOnly = sharedVia.length > 0 && active.length === 0;
+  let feedSubtitle = t('acct.notAttached');
+  if (active.length > 0) feedSubtitle = `${t('acct.sharedVia')} ${active.map((v) => v.spaceName).join(', ')}`;
+  else if (archivedOnly) feedSubtitle = t('acct.archivedEverywhere');
   return (
     <button
       data-testid={`account-row-${account.id}`}
-      onClick={() => onEdit(account)}
+      onClick={() => onOpen(entry)}
       className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left"
     >
       <Icon name={typeDef(account.type).icon} size={22} color={account.color ?? 'var(--m-ink-3)'} />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[15px] text-ink">{account.name}</span>
-        {account.iban && <span className="block truncate font-mono text-[11px] text-ink-4">{account.iban}</span>}
+        {feedSpaceId ? (
+          <span className="block truncate text-[11px] text-ink-4" data-testid={`account-via-${account.id}`}>
+            {feedSubtitle}
+          </span>
+        ) : (
+          account.iban && <span className="block truncate font-mono text-[11px] text-ink-4">{account.iban}</span>
+        )}
       </span>
+      {archivedOnly && <Icon name="archive-outline" size={16} color="var(--m-warning)" />}
       <span className="m-num text-[15px] font-semibold text-ink">
         {fmtCents(account.balanceCents, account.currency, lang)}
       </span>
@@ -62,24 +78,64 @@ function AccountSection({
   title,
   list,
   lang,
-  onEdit,
+  onOpen,
 }: {
   title: string;
-  list: AccountRow[];
+  list: GlobalAccount[];
   lang: ReturnType<typeof useLang>['lang'];
-  onEdit: (account: AccountRow) => void;
+  onOpen: (entry: GlobalAccount) => void;
 }) {
   if (list.length === 0) return null;
   return (
     <>
       <div className="m-cap mt-5 mb-1 px-1">{title}</div>
       <div className="overflow-hidden rounded-card border border-line bg-surface">
-        {list.map((a, i) => (
-          <div key={a.id}>
+        {list.map((entry, i) => (
+          <div key={entry.account.id}>
             {i > 0 && <div className="mx-4 h-px bg-line-2" />}
-            <AccountRowButton account={a} lang={lang} onEdit={onEdit} />
+            <AccountRowButton entry={entry} lang={lang} onOpen={onOpen} />
           </div>
         ))}
+      </div>
+    </>
+  );
+}
+
+/** accounts other people attached into spaces shared with me (read-only) */
+function SharedWithMeSection({ list, lang }: { list: GlobalAccount[]; lang: ReturnType<typeof useLang>['lang'] }) {
+  const { t } = useLang();
+  if (list.length === 0) return null;
+  return (
+    <>
+      <div className="m-cap mt-5 mb-1 px-1">{t('acct.sharedWithMe')}</div>
+      <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="accounts-shared">
+        {list.map(({ account, sharedVia }, i) => {
+          const active = sharedVia.filter((v) => !v.archived);
+          const first = active[0] ?? sharedVia[0];
+          return (
+            <div key={account.id}>
+              {i > 0 && <div className="mx-4 h-px bg-line-2" />}
+              <div className="flex items-center gap-3 px-4 py-3.5" data-testid={`shared-account-${account.id}`}>
+                <Icon name={typeDef(account.type).icon} size={22} color="var(--m-ink-3)" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[15px] text-ink">{account.name}</span>
+                  <span className="block truncate text-[11px] text-ink-4">
+                    {first?.attachedByName ? `${first.attachedByName} · ` : ''}
+                    {t('acct.sharedVia')} {(active.length ? active : sharedVia).map((v) => v.spaceName).join(', ')}
+                  </span>
+                </span>
+                {active.length === 0 && (
+                  <span className="rounded bg-warning-soft px-1.5 py-0.5 text-[10px] font-semibold text-ink-2">
+                    {t('acct.archived')}
+                  </span>
+                )}
+                <span className="m-num text-[15px] font-semibold text-ink">
+                  {fmtCents(account.balanceCents, account.currency, lang)}
+                </span>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </>
   );
@@ -101,10 +157,16 @@ export function AccountsScreen() {
   const identity = useSession((s) => s.identity);
   const [gcAvailable, setGcAvailable] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
+  const [myFeedIds, setMyFeedIds] = useState<ReadonlySet<string> | undefined>(undefined);
+  const [attaching, setAttaching] = useState<GlobalAccount | null>(null);
 
   useEffect(() => {
     if (identity?.kind !== 'user') return;
     void getApiCapabilities().then((caps) => setGcAvailable(caps.gocardless));
+    // ownership source of truth for the global overview (offline: the
+    // undefined set classifies every local feed as mine, which is right
+    // for a single-user device until the fetch lands)
+    void fetchMyFeedIds().then(setMyFeedIds).catch(() => undefined);
   }, [identity?.kind]);
 
   const onFilePicked = async (file: File | undefined) => {
@@ -135,10 +197,17 @@ export function AccountsScreen() {
     if (fileRef.current) fileRef.current.value = '';
   };
 
-  const allAccounts = useSpaceAccounts();
-  const accounts = useMemo(() => allAccounts?.filter((a) => !a.archived), [allAccounts]);
-  const assets = (accounts ?? []).filter((a) => !isLiability(a.type));
-  const liabilities = (accounts ?? []).filter((a) => isLiability(a.type));
+  // GLOBAL overview (user decision): every account I own across all my
+  // spaces and feeds, plus what others share with me via shared spaces
+  const global = useGlobalAccounts(myFeedIds);
+  const mine = useMemo(() => (global?.mine ?? []).filter((e) => !e.account.archived), [global]);
+  const assets = mine.filter((e) => !isLiability(e.account.type));
+  const liabilities = mine.filter((e) => isLiability(e.account.type));
+
+  const openEntry = (entry: GlobalAccount) => {
+    if (entry.feedSpaceId) setAttaching(entry); // bank feed: manage attachments
+    else openEdit(entry.account); // manual/legacy row: edit name/balance
+  };
 
   const closeAdd = () => {
     setAddOpen(false);
@@ -226,7 +295,7 @@ export function AccountsScreen() {
         onChange={(e) => void onFilePicked(e.target.files?.[0])}
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
-        {accounts?.length === 0 ? (
+        {global && mine.length === 0 && global.sharedWithMe.length === 0 ? (
           <EmptyState
             testId="accounts-empty"
             icon="bank-outline"
@@ -246,11 +315,15 @@ export function AccountsScreen() {
           />
         ) : (
           <>
-            <AccountSection title={t('acct.assets')} list={assets} lang={lang} onEdit={openEdit} />
-            <AccountSection title={t('acct.liabilities')} list={liabilities} lang={lang} onEdit={openEdit} />
+            <AccountSection title={t('acct.assets')} list={assets} lang={lang} onOpen={openEntry} />
+            <AccountSection title={t('acct.liabilities')} list={liabilities} lang={lang} onOpen={openEntry} />
+            <SharedWithMeSection list={global?.sharedWithMe ?? []} lang={lang} />
           </>
         )}
       </div>
+
+      {/* attach one of my feed accounts to/from my spaces */}
+      <AttachSheet open={!!attaching} onOpenChange={(open) => !open && setAttaching(null)} entry={attaching} />
 
       {/* Add account: type grid, then form */}
       <Sheet open={addOpen} onOpenChange={(open) => !open && closeAdd()} title={newType ? t('acct.addAccount') : t('acct.selectType')} size="tall">
@@ -326,7 +399,7 @@ export function AccountsScreen() {
           <div className="flex flex-col gap-3 pt-1" data-testid="import-preview">
             {(importPreview ?? []).map((stmt, i) => {
               const iban = stmt.iban.replace(/\s/g, '').toUpperCase();
-              const match = (accounts ?? []).find((a) => a.iban?.replace(/\s/g, '').toUpperCase() === iban);
+              const match = mine.find((e) => e.account.iban?.replace(/\s/g, '').toUpperCase() === iban)?.account;
               return (
                 // key by index: monthly exports repeat the same IBAN per statement
                 <div key={`${stmt.iban}-${i}`} className="flex items-center gap-3 rounded-card border border-line bg-surface px-4 py-3">
