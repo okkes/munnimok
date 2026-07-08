@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --port 5175",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run"
   },
   "dependencies": {
     "@logto/react": "^4.0.8",
@@ -14,10 +15,14 @@
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
+    "@testing-library/react": "^16.3.2",
     "@types/react": "^19.2.13",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.4",
+    "@vitest/coverage-v8": "^4.1.10",
+    "happy-dom": "^20.10.6",
     "typescript": "^6.0.3",
-    "vite": "npm:rolldown-vite@^8.0.14"
+    "vite": "npm:rolldown-vite@^8.0.14",
+    "vitest": "^4.1.10"
   }
 }
