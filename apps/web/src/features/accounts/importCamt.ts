@@ -1,8 +1,10 @@
 import { v5 as uuidv5 } from 'uuid';
 import { accountLinkId, feedSpaceId, txMetaId } from '@/domain/feedIds';
 import type { ParsedStatement } from '@/lib/statements/parseStatement';
-import { predictCategory } from '@/domain/predictCategory';
-import { CATEGORY_BY_ID, UNCATEGORIZED_ID } from '@/domain/categories';
+import { predictTx, predictionSkipsReview } from '@/domain/predictCategory';
+import type { MerchantMemory } from '@/domain/merchantMemory';
+import { buildSpaceMerchantMemory } from '@/application/prediction';
+import { UNCATEGORIZED_ID } from '@/domain/categories';
 import type { Repo } from '@/db/repo';
 import type { MunniDB } from '@/db/schema';
 import type { TxType } from '@/db/types';
@@ -61,31 +63,50 @@ async function createStatementAccount(
   });
 }
 
-/** returns true when the entry was new (imported), false when it already existed */
-async function importEntry(
-  repo: Repo,
-  db: MunniDB,
-  spaceId: string,
-  accountId: string,
-  iban: string,
+/** predicted transformation of one statement entry (history first, keywords after) */
+function predictEntry(
+  memory: MerchantMemory,
   entry: ParsedStatement['entries'][number],
-): Promise<boolean> {
-  const txId = uuidv5(`tx:${iban}:${entry.ref}`, IMPORT_NS);
-  if (await db.transactions.get(txId)) return false;
+): { catId: string; txType: TxType; needsReview: 0 | 1 } {
+  const prediction = predictTx({
+    memory,
+    merchant: entry.counterpartyName ?? entry.description.slice(0, 40),
+    description: entry.description,
+    amountCents: entry.amountCents,
+  });
+  const fallbackType: TxType = entry.amountCents >= 0 ? 'income' : 'expense';
+  return {
+    catId: prediction?.catId ?? UNCATEGORIZED_ID,
+    txType: prediction?.txType ?? fallbackType,
+    // only merchant history the user confirmed twice skips review —
+    // keyword hits are guesses and review is the teaching loop
+    needsReview: predictionSkipsReview(prediction) ? 0 : 1,
+  };
+}
 
-  const direction = entry.amountCents < 0 ? 'debit' : 'credit';
-  const catId = predictCategory(`${entry.counterpartyName ?? ''} ${entry.description}`, direction) ?? UNCATEGORIZED_ID;
-  const txType: TxType = CATEGORY_BY_ID.get(catId)?.txTypes[0] ?? (direction === 'credit' ? 'income' : 'expense');
-  await repo.upsert('transaction', spaceId, txId, {
-    accountId,
+/** everything one statement's entries share while importing */
+interface EntryContext {
+  repo: Repo;
+  db: MunniDB;
+  spaceId: string;
+  accountId: string;
+  iban: string;
+  memory: MerchantMemory;
+}
+
+/** returns true when the entry was new (imported), false when it already existed */
+async function importEntry(ctx: EntryContext, entry: ParsedStatement['entries'][number]): Promise<boolean> {
+  const txId = uuidv5(`tx:${ctx.iban}:${entry.ref}`, IMPORT_NS);
+  if (await ctx.db.transactions.get(txId)) return false;
+
+  await ctx.repo.upsert('transaction', ctx.spaceId, txId, {
+    accountId: ctx.accountId,
     date: entry.date,
     amountCents: entry.amountCents,
     currency: entry.currency,
     merchant: entry.counterpartyName ?? entry.description.slice(0, 40),
     description: entry.description,
-    catId,
-    txType,
-    needsReview: catId === UNCATEGORIZED_ID ? 1 : 0,
+    ...predictEntry(ctx.memory, entry),
     importRef: entry.ref,
   });
   return true;
@@ -125,6 +146,7 @@ async function importMerged(
   spaceId: string,
   statements: ParsedStatement[],
 ): Promise<ImportResult> {
+  const memory = await buildSpaceMerchantMemory(db, spaceId);
   const existing = await db.accounts.where('spaceId').equals(spaceId).filter((a) => a.deleted === 0).toArray();
   const byIban = new Map(existing.flatMap((a) => (a.iban ? [[normalizeIban(a.iban), a] as const] : [])));
 
@@ -145,7 +167,7 @@ async function importMerged(
 
     let txCount = 0;
     for (const entry of stmt.entries) {
-      if (await importEntry(repo, db, spaceId, accountId, iban, entry)) {
+      if (await importEntry({ repo, db, spaceId, accountId, iban, memory }, entry)) {
         imported++;
         txCount++;
       } else {
@@ -178,6 +200,7 @@ async function importIntoFeeds(
   statements: ParsedStatement[],
   feeds: FeedGateway,
 ): Promise<ImportResult> {
+  const memory = await buildSpaceMerchantMemory(db, spaceId);
   let imported = 0;
   let skipped = 0;
   const accounts: ImportPlanAccount[] = [];
@@ -197,7 +220,7 @@ async function importIntoFeeds(
 
     let txCount = 0;
     for (const entry of stmt.entries) {
-      if (await importFeedEntry(repo, db, spaceId, feedId, accountId, iban, entry)) {
+      if (await importFeedEntry({ repo, db, spaceId, accountId, iban, memory }, feedId, entry)) {
         imported++;
         txCount++;
       } else {
@@ -227,19 +250,15 @@ async function importIntoFeeds(
 
 /** raw half into the feed, predicted transformation half into the space's overlay */
 async function importFeedEntry(
-  repo: Repo,
-  db: MunniDB,
-  spaceId: string,
+  ctx: EntryContext,
   feedId: string,
-  accountId: string,
-  iban: string,
   entry: ParsedStatement['entries'][number],
 ): Promise<boolean> {
-  const txId = uuidv5(`tx:${iban}:${entry.ref}`, IMPORT_NS);
-  if (await db.transactions.get(txId)) return false;
+  const txId = uuidv5(`tx:${ctx.iban}:${entry.ref}`, IMPORT_NS);
+  if (await ctx.db.transactions.get(txId)) return false;
 
-  await repo.upsert('transaction', feedId, txId, {
-    accountId,
+  await ctx.repo.upsert('transaction', feedId, txId, {
+    accountId: ctx.accountId,
     date: entry.date,
     amountCents: entry.amountCents,
     currency: entry.currency,
@@ -248,14 +267,9 @@ async function importFeedEntry(
     importRef: entry.ref,
   });
 
-  const direction = entry.amountCents < 0 ? 'debit' : 'credit';
-  const catId = predictCategory(`${entry.counterpartyName ?? ''} ${entry.description}`, direction) ?? UNCATEGORIZED_ID;
-  const txType: TxType = CATEGORY_BY_ID.get(catId)?.txTypes[0] ?? (direction === 'credit' ? 'income' : 'expense');
-  await repo.upsert('txMeta', spaceId, txMetaId(spaceId, txId), {
+  await ctx.repo.upsert('txMeta', ctx.spaceId, txMetaId(ctx.spaceId, txId), {
     txId,
-    catId,
-    txType,
-    needsReview: catId === UNCATEGORIZED_ID ? 1 : 0,
+    ...predictEntry(ctx.memory, entry),
   });
   return true;
 }

@@ -64,12 +64,36 @@ describe('importCamtStatements', () => {
 
     const txs = await db.transactions.toArray();
     expect(txs).toHaveLength(3);
+    // keyword predictions are guesses: applied, but flagged for review —
+    // only merchant history the user confirmed twice skips the queue
     const grocery = txs.find((t) => t.importRef === 'REF-001')!;
-    expect(grocery).toMatchObject({ catId: 'groceries', needsReview: 0, txType: 'expense' });
+    expect(grocery).toMatchObject({ catId: 'groceries', needsReview: 1, txType: 'expense' });
     const salary = txs.find((t) => t.importRef === 'REF-002')!;
-    expect(salary).toMatchObject({ catId: 'salary', needsReview: 0, txType: 'income' });
+    expect(salary).toMatchObject({ catId: 'salary', needsReview: 1, txType: 'income' });
     const unknown = txs.find((t) => t.importRef === 'REF-003')!;
     expect(unknown).toMatchObject({ catId: 'uncategorized', needsReview: 1 });
+  });
+
+  it('twice-confirmed merchant history overrides keywords and skips review', async () => {
+    await repo.upsert('space', 's1', 's1', { name: 'P', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
+    // the user categorized this merchant twice by hand (reviewed rows)
+    for (const [id, date] of [['h1', '2026-05-01'], ['h2', '2026-06-01']] as const) {
+      await repo.upsert('transaction', 's1', id, {
+        accountId: 'acct-x',
+        date,
+        amountCents: -1500,
+        currency: 'EUR',
+        merchant: 'Albert Heijn 1470',
+        catId: 'sport',
+        txType: 'expense',
+        needsReview: 0,
+      });
+    }
+    await importCamtStatements(repo, db, 's1', [statement()]);
+    // REF-001 is an Albert Heijn debit: history (sport) beats the
+    // groceries keyword, and two confirmations mean no review
+    const tx = (await db.transactions.toArray()).find((t) => t.importRef === 'REF-001')!;
+    expect(tx).toMatchObject({ catId: 'sport', needsReview: 0 });
   });
 
   it('matches an existing account by IBAN (spacing/case-insensitive) and updates its balance', async () => {
