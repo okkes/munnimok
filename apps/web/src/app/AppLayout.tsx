@@ -75,7 +75,10 @@ export function AppLayout() {
         {/* clamp: Android 3-button navigation reports up to ~48px inset,
             iOS home indicator 34px — honor them fully; the 56px ceiling
             guards against Safari's minimized-toolbar env() inflation */}
-        <nav className="flex shrink-0 items-stretch justify-around border-t border-line bg-bg pb-[clamp(0px,env(safe-area-inset-bottom),56px)] md:hidden">
+        <nav
+          data-vpdebug="tabbar"
+          className="flex shrink-0 items-stretch justify-around border-t border-line bg-bg pb-[clamp(0px,env(safe-area-inset-bottom),56px)] md:hidden"
+        >
           {TABS.map((tab) => {
             const active = pathname.startsWith(tab.to);
             return (

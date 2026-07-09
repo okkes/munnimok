@@ -40,15 +40,22 @@ export function ViewportDebug() {
     const svhProbe = document.createElement('div');
     svhProbe.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;height:100svh';
     document.body.appendChild(svhProbe);
+    const lvhProbe = document.createElement('div');
+    lvhProbe.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;height:100lvh';
+    document.body.appendChild(lvhProbe);
 
     const measure = () => {
       const cs = getComputedStyle(probe);
       const root = document.getElementById('root');
+      const rootRect = root?.getBoundingClientRect();
+      const tabbar = document.querySelector('[data-vpdebug="tabbar"]')?.getBoundingClientRect();
+      const vv = window.visualViewport;
       setLines([
         `inner ${window.innerHeight} / outer ${window.outerHeight}`,
-        `visual ${Math.round(window.visualViewport?.height ?? 0)} / screen ${window.screen.height}`,
-        `dvh ${probe.offsetHeight} / svh ${svhProbe.offsetHeight}`,
-        `vvh ${document.documentElement.style.getPropertyValue('--vvh') || '—'} / root ${root?.offsetHeight ?? 0}`,
+        `visual ${Math.round(vv?.height ?? 0)} @${Math.round(vv?.offsetTop ?? 0)}/${Math.round(vv?.pageTop ?? 0)} / screen ${window.screen.height}`,
+        `dvh ${probe.offsetHeight} / svh ${svhProbe.offsetHeight} / lvh ${lvhProbe.offsetHeight}`,
+        `vvh ${document.documentElement.style.getPropertyValue('--vvh') || '—'} / root ${Math.round(rootRect?.top ?? 0)}→${Math.round(rootRect?.bottom ?? 0)}`,
+        `tabbar ${tabbar ? `${Math.round(tabbar.top)}→${Math.round(tabbar.bottom)}` : '—'}`,
         `safe top ${cs.paddingTop} bottom ${cs.paddingBottom}`,
         `standalone ${window.matchMedia('(display-mode: standalone)').matches}`,
       ]);
@@ -59,6 +66,7 @@ export function ViewportDebug() {
       clearInterval(timer);
       probe.remove();
       svhProbe.remove();
+      lvhProbe.remove();
     };
   }, [enabled]);
 
