@@ -97,9 +97,12 @@ export function RecurringFormSheet({ initial, onClose, onDeleted }: Readonly<Rec
   const [form, setForm] = useState<FormState | null>(null);
   const [brandPickerOpen, setBrandPickerOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // free-typed draft so the '1' can be deleted while editing; clamped on blur
+  const [dueDayText, setDueDayText] = useState('1');
 
   useEffect(() => {
     setForm(initial);
+    setDueDayText(String(initial?.dueDay ?? 1));
     setConfirmDelete(false);
   }, [initial]);
 
@@ -213,8 +216,13 @@ export function RecurringFormSheet({ initial, onClose, onDeleted }: Readonly<Rec
                 type="number"
                 min={1}
                 max={31}
-                value={form.dueDay}
-                onChange={(e) => setForm({ ...form, dueDay: Math.min(31, Math.max(1, Number(e.target.value) || 1)) })}
+                value={dueDayText}
+                onChange={(e) => setDueDayText(e.target.value)}
+                onBlur={() => {
+                  const clamped = Math.min(31, Math.max(1, Number(dueDayText) || 1));
+                  setForm({ ...form, dueDay: clamped });
+                  setDueDayText(String(clamped));
+                }}
                 className="h-10 w-20 rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none"
               />
               {form.every === 'year' && (

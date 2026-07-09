@@ -142,16 +142,9 @@
     #root {
       height: var(--vvh, 100dvh);
     }
-    @media (display-mode: standalone) {
-      /* measured on-device (diagnostics overlay): the standalone layout
-         viewport EXCLUDES the status bar (inner 879 on a 926 screen) but
-         env() insets are glass-relative (top 47 + bottom 34 alongside
-         879 cannot all be viewport-relative). The root must add the top
-         inset back or the tab bar floats 47px above the real bottom. */
-      #root {
-        height: calc(var(--vvh, 100dvh) + env(safe-area-inset-top));
-      }
-    }
+    /* standalone no longer needs a special case: without
+       black-translucent (index.html) the webview starts below the status
+       bar and the measured viewport reaches the true glass bottom */
   }
   /* prevent iOS zoom-on-focus */
   input,

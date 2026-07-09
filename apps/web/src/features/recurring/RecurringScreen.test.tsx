@@ -211,6 +211,7 @@ describe('RecurringScreen editing (demo identity)', () => {
     fireEvent.change(screen.getByTestId('recform-dueday'), {
       target: { value: String(Math.min(new Date().getDate(), 28)) },
     });
+    fireEvent.blur(screen.getByTestId('recform-dueday')); // draft commits on blur
     fireEvent.click(screen.getByTestId('recform-notify-7'));
     fireEvent.click(screen.getByTestId('recform-save'));
     await screen.findByText('Rent', {}, { timeout: 5000 });

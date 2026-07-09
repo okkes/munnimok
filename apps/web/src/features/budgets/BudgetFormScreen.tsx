@@ -52,6 +52,8 @@ export function BudgetFormScreen() {
   const [carryOver, setCarryOver] = useState(false);
   const [carryMode, setCarryMode] = useState<BudgetCarryMode>('periods');
   const [carryPeriods, setCarryPeriods] = useState(1);
+  // free-typed draft so the '1' can be deleted while editing; clamped on blur
+  const [carryPeriodsText, setCarryPeriodsText] = useState('1');
   const [carryCap, setCarryCap] = useState('');
   const [notifyAtPct, setNotifyAtPct] = useState(0);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -68,6 +70,7 @@ export function BudgetFormScreen() {
     setCarryOver(editing.carryOver === 1);
     setCarryMode(editing.carryMode ?? 'periods');
     setCarryPeriods(editing.carryPeriods ?? 1);
+    setCarryPeriodsText(String(editing.carryPeriods ?? 1));
     setCarryCap(editing.carryCapCents ? (editing.carryCapCents / 100).toFixed(2) : '');
     setNotifyAtPct(editing.notifyAtPct ?? 0);
     setLoaded(true);
@@ -273,8 +276,13 @@ export function BudgetFormScreen() {
                   type="number"
                   min={1}
                   max={52}
-                  value={carryPeriods}
-                  onChange={(e) => setCarryPeriods(Math.max(1, Number(e.target.value) || 1))}
+                  value={carryPeriodsText}
+                  onChange={(e) => setCarryPeriodsText(e.target.value)}
+                  onBlur={() => {
+                    const clamped = Math.min(52, Math.max(1, Number(carryPeriodsText) || 1));
+                    setCarryPeriods(clamped);
+                    setCarryPeriodsText(String(clamped));
+                  }}
                   className="h-10 w-20 rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none"
                 />
               ) : (

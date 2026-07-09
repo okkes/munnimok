@@ -46,7 +46,10 @@ export default defineConfig(({ mode }) => {
           ],
         },
         injectManifest: {
-          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+          // json matters: the vendored brand SVGs were precached but their
+          // index (brands/index.json) was not — offline installs showed an
+          // empty logo picker
+          globPatterns: ['**/*.{js,css,html,ico,png,svg,json,woff2}'],
           maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         },
       }),

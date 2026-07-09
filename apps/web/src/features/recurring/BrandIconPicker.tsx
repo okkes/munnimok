@@ -131,14 +131,34 @@ export function BrandIconPicker({ open, onOpenChange, onPick, initialQuery = '' 
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title={t('recurring.iconTitle')} size="tall">
       <div className="flex flex-col gap-3 pt-1">
-        <input
-          data-testid="brandpicker-search"
-          value={query}
-          onFocus={onSearchFocus}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={t('recurring.iconSearch')}
-          className="h-11 w-full rounded-input border border-line bg-surface px-4 text-[14px] text-ink outline-none placeholder:text-ink-4"
-        />
+        {/* the field arrives prefilled with the cost's name — the search
+            glyph and the ✕ make it read as an editable search box */}
+        <div className="relative">
+          <span className="pointer-events-none absolute top-0 left-3 flex h-11 items-center">
+            <Icon name="magnify" size={17} color="var(--m-ink-4)" />
+          </span>
+          <input
+            data-testid="brandpicker-search"
+            value={query}
+            onFocus={onSearchFocus}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t('recurring.iconSearch')}
+            className="h-11 w-full rounded-input border border-line bg-surface pr-10 pl-10 text-[14px] text-ink outline-none placeholder:text-ink-4"
+          />
+          {query.length > 0 && (
+            <button
+              aria-label={t('action.dismiss')}
+              data-testid="brandpicker-clear"
+              onClick={() => {
+                prefilled.current = false;
+                setQuery('');
+              }}
+              className="m-tap absolute top-0 right-1 flex h-11 w-9 items-center justify-center border-none bg-transparent"
+            >
+              <Icon name="close-circle" size={16} color="var(--m-ink-4)" />
+            </button>
+          )}
+        </div>
         <button
           data-testid="brandpicker-none"
           onClick={() => pick(null)}
