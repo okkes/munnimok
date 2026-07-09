@@ -35,14 +35,7 @@ public static class StoreProxyEndpoints
             if (method is not ("GET" or "POST")) return Results.BadRequest();
 
             using var client = http.CreateClient(HttpClientName);
-            using var upstreamRequest = new HttpRequestMessage(new HttpMethod(method), new Uri(upstream, request.Path));
-            if (!string.IsNullOrEmpty(request.Authorization))
-                upstreamRequest.Headers.TryAddWithoutValidation("Authorization", request.Authorization);
-            // store APIs gate on their mobile app's user agent
-            upstreamRequest.Headers.TryAddWithoutValidation("User-Agent", string.IsNullOrEmpty(request.UserAgent) ? "Appie/8.22.3" : request.UserAgent);
-            if (request.Body is { } body && method == "POST")
-                upstreamRequest.Content = new StringContent(body.GetRawText(), Encoding.UTF8, "application/json");
-
+            using var upstreamRequest = BuildUpstreamRequest(request, method, upstream);
             try
             {
                 using var response = await client.SendAsync(upstreamRequest, ct);
@@ -54,5 +47,17 @@ public static class StoreProxyEndpoints
                 return Results.StatusCode(StatusCodes.Status502BadGateway);
             }
         }).RequireAuthorization();
+    }
+
+    private static HttpRequestMessage BuildUpstreamRequest(ProxyRequest request, string method, Uri upstream)
+    {
+        var upstreamRequest = new HttpRequestMessage(new HttpMethod(method), new Uri(upstream, request.Path));
+        if (!string.IsNullOrEmpty(request.Authorization))
+            upstreamRequest.Headers.TryAddWithoutValidation("Authorization", request.Authorization);
+        // store APIs gate on their mobile app's user agent
+        upstreamRequest.Headers.TryAddWithoutValidation("User-Agent", string.IsNullOrEmpty(request.UserAgent) ? "Appie/8.22.3" : request.UserAgent);
+        if (request.Body is { } body && method == "POST")
+            upstreamRequest.Content = new StringContent(body.GetRawText(), Encoding.UTF8, "application/json");
+        return upstreamRequest;
     }
 }

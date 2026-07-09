@@ -104,7 +104,7 @@ export function useStoreKeepAlive(): void {
     ran.current = true;
     void (async () => {
       const connection = await db.storeConnections.get('ah');
-      if (!connection || connection.status !== 'ok') return;
+      if (connection?.status !== 'ok') return;
       if (Date.now() - Date.parse(connection.refreshedAt) < KEEP_ALIVE_MS) return;
       await syncAhReceipts(proxyCall, db, repo, spaceId);
     })().catch(() => undefined); // best-effort: a closed db or offline hop must not throw

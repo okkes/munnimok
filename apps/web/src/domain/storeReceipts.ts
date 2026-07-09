@@ -90,16 +90,17 @@ export function mapAhSummary(row: AhReceiptSummary): MatchableReceipt & { storeI
 
 /** the detail's receiptUiItems: keep the products, drop dividers/totals */
 export function mapAhItems(uiItems: readonly AhReceiptUiItem[]): ReceiptItem[] {
-  return uiItems
-    .filter((item) => item.type === 'product' && item.description)
-    .map((item) => {
-      const qty = typeof item.quantity === 'string' ? Number.parseInt(item.quantity, 10) : item.quantity;
-      return {
-        name: item.description!,
-        qty: Number.isFinite(qty) && (qty as number) > 1 ? (qty as number) : undefined,
-        totalCents: euroToCents(item.amount),
-      };
+  const items: ReceiptItem[] = [];
+  for (const item of uiItems) {
+    if (item.type !== 'product' || !item.description) continue;
+    const qty = typeof item.quantity === 'string' ? Number.parseInt(item.quantity, 10) : item.quantity;
+    items.push({
+      name: item.description,
+      qty: qty !== undefined && Number.isFinite(qty) && qty > 1 ? qty : undefined,
+      totalCents: euroToCents(item.amount),
     });
+  }
+  return items;
 }
 
 // ── OCR text → items (photo receipts) ───────────────────────────────────

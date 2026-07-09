@@ -20,7 +20,7 @@ export interface StoreSyncResult {
 
 export async function syncAhReceipts(call: ProxyCall, db: MunniDB, repo: Repo, spaceId: string): Promise<StoreSyncResult> {
   const connection = await db.storeConnections.get('ah');
-  if (!connection || connection.status !== 'ok') return { status: 'error', added: 0 };
+  if (connection?.status !== 'ok') return { status: 'error', added: 0 };
 
   let tokens: StoreTokens = { access: connection.tokens.access, refresh: connection.tokens.refresh };
   let list = await ahFetchReceipts(call, tokens.access);
