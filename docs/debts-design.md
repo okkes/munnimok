@@ -1,6 +1,6 @@
 # Debts — design
 
-Status: **approved 2026-07-09** — ready to build.
+Status: **built 2026-07-09** — overview, projections, payment history, home block shipped.
 Legacy debts screens are the inspiration (overview, payoff progress).
 
 ## The idea

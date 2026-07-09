@@ -1,6 +1,6 @@
 # Events — design
 
-Status: **approved 2026-07-09** — ready to build.
+Status: **built 2026-07-09** — list/detail, attach-all, tx picker, home block shipped.
 
 ## The idea
 

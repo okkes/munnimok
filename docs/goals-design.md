@@ -1,6 +1,6 @@
 # Goals — design
 
-Status: **approved 2026-07-09** — ready to build.
+Status: **built 2026-07-09** — overview header, fund/withdraw trail, home block shipped.
 Legacy `apps/legacy` goals screens are the inspiration (allocation
 rings, per-goal target/date), rebuilt on synced data.
 
