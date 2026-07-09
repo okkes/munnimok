@@ -12,7 +12,39 @@ vi.mock('virtual:pwa-register', () => ({
   }),
 }));
 
-import { initPwa, usePwa } from './pwa';
+import { handleWorkerMessage, initPwa, usePwa } from './pwa';
+import { router } from '@/app/router';
+import { useSession } from './session';
+
+describe('handleWorkerMessage (notification deep-link)', () => {
+  beforeEach(() => {
+    // the app route guard bounces signed-out sessions to /login
+    useSession.getState().login({ kind: 'demo' });
+  });
+
+  it('routes whitelisted hash targets posted by the worker', async () => {
+    handleWorkerMessage({ type: 'NAVIGATE', url: './#/friends' });
+    await vi.waitFor(() => expect(router.state.location.pathname).toBe('/friends'));
+    handleWorkerMessage({ type: 'NAVIGATE', url: './#/spaces' });
+    await vi.waitFor(() => expect(router.state.location.pathname).toBe('/spaces'));
+  });
+
+  it('ignores junk, foreign message types, and off-whitelist routes', async () => {
+    handleWorkerMessage({ type: 'NAVIGATE', url: './#/spaces' });
+    await vi.waitFor(() => expect(router.state.location.pathname).toBe('/spaces'));
+
+    handleWorkerMessage(undefined);
+    handleWorkerMessage('NAVIGATE');
+    handleWorkerMessage({ type: 'SKIP_WAITING' });
+    handleWorkerMessage({ type: 'NAVIGATE' }); // no url
+    handleWorkerMessage({ type: 'NAVIGATE', url: './#/settings' }); // not a notification target
+    handleWorkerMessage({ type: 'NAVIGATE', url: 'https://evil.example/#/friends/../../x' });
+
+    // nothing above may have moved the router
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(router.state.location.pathname).toBe('/spaces');
+  });
+});
 
 describe('pwa update store', () => {
   beforeEach(() => {

@@ -9,7 +9,6 @@ import type { TransactionRow } from '@/db/types';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
-import { useSheetStackLock } from '@/ui/useSheetStackLock';
 import { CategoryPicker } from '@/features/categories/CategoryPicker';
 
 interface TxFormSheetProps {
@@ -36,7 +35,6 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
   const [accountId, setAccountId] = useState<string | null>(null);
   const [catId, setCatId] = useState<string>(UNCATEGORIZED_ID);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const locked = useSheetStackLock(pickerOpen);
 
   const allAccounts = useSpaceAccounts();
   const accounts = useMemo(() => allAccounts?.filter((a) => !a.archived), [allAccounts]);
@@ -90,7 +88,6 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
         onOpenChange={onOpenChange}
         title={tx ? t('txform.editTitle') : t('txform.addTitle')}
         size="tall"
-        locked={locked}
       >
         <div className="flex flex-col gap-3 pt-1">
           {/* direction + amount */}

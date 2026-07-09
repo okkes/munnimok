@@ -73,6 +73,9 @@ export function ManageCategoriesScreen() {
   const pressTimer = useRef<number | null>(null);
   // a drag consumes the trailing click — it must not open the edit sheet
   const dragStartedRef = useRef(false);
+  // live "a drag owns the pointer" flag for the touch blocker (state is
+  // too slow: the blocker runs inside native touchmove dispatch)
+  const dragActiveRef = useRef(false);
 
   // rows for the whole visible scope (needed for editing/moving/copying)
   const customRows = useLiveQuery(
@@ -160,6 +163,7 @@ export function ManageCategoriesScreen() {
 
   const startDrag = (row: CategoryRow, clientY: number) => {
     dragStartedRef.current = true;
+    dragActiveRef.current = true;
     pointerY.current = clientY;
     navigator.vibrate?.(15); // lift feedback where supported
     setDragging(row);
@@ -177,23 +181,33 @@ export function ManageCategoriesScreen() {
         const startX = e.clientX;
         const startY = e.clientY;
         clear();
+        // the touch blocker must exist from GESTURE START: browsers only
+        // honor preventDefault on touchmove for listeners registered
+        // before their scroll takes over. It bites only once the
+        // long-press activates a drag — plain scrolling stays native.
+        const blockTouch = (ev: TouchEvent) => {
+          if (dragActiveRef.current && ev.cancelable) ev.preventDefault();
+        };
+        window.addEventListener('touchmove', blockTouch, { passive: false });
+        const onMove = (ev: PointerEvent) => {
+          if (dragActiveRef.current) return; // the drag owns movement now
+          // finger drifted before the timer fired — it's a scroll, not a lift
+          if (Math.abs(ev.clientX - startX) > 8 || Math.abs(ev.clientY - startY) > 8) endGesture();
+        };
+        const endGesture = () => {
+          clear();
+          window.removeEventListener('pointermove', onMove);
+          window.removeEventListener('pointerup', endGesture);
+          window.removeEventListener('pointercancel', endGesture);
+          window.removeEventListener('touchmove', blockTouch);
+        };
         pressTimer.current = window.setTimeout(() => {
           const row = rowById(cat.id);
           if (row) startDrag(row, startY);
         }, 320);
-        const onMove = (ev: PointerEvent) => {
-          // finger drifted before the timer fired — it's a scroll, not a lift
-          if (Math.abs(ev.clientX - startX) > 8 || Math.abs(ev.clientY - startY) > 8) cancel();
-        };
-        const cancel = () => {
-          clear();
-          window.removeEventListener('pointermove', onMove);
-          window.removeEventListener('pointerup', cancel);
-          window.removeEventListener('pointercancel', cancel);
-        };
         window.addEventListener('pointermove', onMove);
-        window.addEventListener('pointerup', cancel);
-        window.addEventListener('pointercancel', cancel);
+        window.addEventListener('pointerup', endGesture);
+        window.addEventListener('pointercancel', endGesture);
       },
     };
   };
@@ -212,13 +226,16 @@ export function ManageCategoriesScreen() {
       const group = document.elementFromPoint(x, y)?.closest?.('[data-cat-group]');
       return (group as HTMLElement | null)?.dataset.catGroup ?? null;
     };
-    const onMove = (e: PointerEvent) => {
-      pointerY.current = e.clientY;
-      if (ghostRef.current) ghostRef.current.style.top = `${e.clientY}px`;
-      setDropTarget(targetUnderRail());
+    // the ghost is ABSOLUTE inside the scroll container, not fixed:
+    // iOS misplaces fixed elements inside our measured-height app frame,
+    // and content coordinates stay correct while auto-scroll runs
+    const positionGhost = () => {
+      const rect = scroller?.getBoundingClientRect();
+      if (!ghostRef.current || !rect || !scroller) return;
+      ghostRef.current.style.top = `${pointerY.current - rect.top + scroller.scrollTop}px`;
     };
-    const onUp = () => {
-      const targetId = dropTargetRef.current;
+    const endDrag = () => {
+      dragActiveRef.current = false;
       setDragging(null);
       setDropTarget(null);
       // the trailing click (if any) dispatches synchronously after
@@ -226,14 +243,26 @@ export function ManageCategoriesScreen() {
       setTimeout(() => {
         dragStartedRef.current = false;
       }, 0);
+    };
+    const onMove = (e: PointerEvent) => {
+      pointerY.current = e.clientY;
+      positionGhost();
+      setDropTarget(targetUnderRail());
+    };
+    const onUp = () => {
+      const targetId = dropTargetRef.current;
+      endDrag();
       if (!targetId || targetId === dragging.parentId) return;
       prepareCategoryEdit(db, repo, dragging, { parentId: targetId })
         .then((commit) => setMoveConfirm({ sub: dragging, targetId, commit }))
         .catch(() => undefined); // db closed under us (teardown) — drop the move
     };
+    // the browser reclaimed the pointer (Android does this the moment it
+    // decides the gesture is a scroll) — that is a CANCEL, never a drop
+    const onCancel = () => endDrag();
     // holding still near an edge must keep scrolling — hence a rAF loop,
-    // not just pointermove; it also re-resolves the hovered group while
-    // content slides beneath the finger
+    // not just pointermove; it also re-resolves the hovered group and
+    // re-anchors the ghost while content slides beneath the finger
     let raf = requestAnimationFrame(function tick() {
       if (scroller) {
         const rect = scroller.getBoundingClientRect();
@@ -243,24 +272,21 @@ export function ManageCategoriesScreen() {
         else if (pointerY.current > rect.bottom - zone) dy = Math.ceil((pointerY.current - (rect.bottom - zone)) / 6);
         if (dy !== 0) {
           scroller.scrollTop += dy;
+          positionGhost();
           setDropTarget(targetUnderRail());
         }
       }
       raf = requestAnimationFrame(tick);
     });
-    // native touch scrolling never started (the finger held still through
-    // the long-press), so preventing touchmove now keeps it that way
-    const preventTouchScroll = (e: TouchEvent) => e.preventDefault();
-    document.addEventListener('touchmove', preventTouchScroll, { passive: false });
+    positionGhost(); // anchor before the first move
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp, { once: true });
-    window.addEventListener('pointercancel', onUp, { once: true });
+    window.addEventListener('pointercancel', onCancel, { once: true });
     return () => {
       cancelAnimationFrame(raf);
-      document.removeEventListener('touchmove', preventTouchScroll);
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('pointercancel', onUp);
+      window.removeEventListener('pointercancel', onCancel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dragging]);
@@ -290,7 +316,7 @@ export function ManageCategoriesScreen() {
           </IconButton>
         }
       />
-      <div ref={scrollRef} className={`min-h-0 flex-1 overflow-y-auto px-5 pb-6 ${dragging ? 'select-none' : ''}`}>
+      <div ref={scrollRef} className={`relative min-h-0 flex-1 overflow-y-auto px-5 pb-6 ${dragging ? 'select-none' : ''}`}>
         {/* one-line legend: the arrows carry meaning nowhere else explained */}
         <p className="mt-2 flex items-center gap-1 px-1 text-[11px] text-ink-4">
           <Icon name="arrow-up-thin" size={13} /> {t('cats.legendDebit')}
@@ -411,23 +437,24 @@ export function ManageCategoriesScreen() {
             </div>
           );
         })}
-      </div>
 
-      {/* the lifted sub floats on a vertical rail above everything */}
-      {dragging && (
-        <div
-          ref={ghostRef}
-          data-testid="cats-drag-ghost"
-          className="pointer-events-none fixed left-1/2 z-50 w-[80%] max-w-sm -translate-x-1/2 -translate-y-1/2"
-          style={{ top: pointerY.current }}
-        >
-          <div className="flex items-center gap-3 rounded-card border border-accent bg-surface px-4 py-3 shadow-xl">
-            <Icon name={dragging.icon} size={19} color={cats.byId(dragging.parentId ?? '')?.color} />
-            <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-ink">{dragging.name}</span>
-            <Icon name="drag-horizontal-variant" size={18} color="var(--m-ink-4)" />
+        {/* the lifted sub floats on a vertical rail above the list —
+            absolutely positioned in CONTENT coordinates (fixed proved
+            unreliable inside the measured-height app frame on iOS) */}
+        {dragging && (
+          <div
+            ref={ghostRef}
+            data-testid="cats-drag-ghost"
+            className="pointer-events-none absolute inset-x-0 z-30 mx-auto w-[80%] max-w-sm -translate-y-1/2"
+          >
+            <div className="flex items-center gap-3 rounded-card border border-accent bg-surface px-4 py-3 shadow-xl">
+              <Icon name={dragging.icon} size={19} color={cats.byId(dragging.parentId ?? '')?.color} />
+              <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-ink">{dragging.name}</span>
+              <Icon name="drag-horizontal-variant" size={18} color="var(--m-ink-4)" />
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* create / edit */}
       <Sheet open={mode !== null} onOpenChange={(open) => !open && setMode(null)} title={formTitle} size="tall">

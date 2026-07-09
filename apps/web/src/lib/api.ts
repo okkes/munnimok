@@ -55,8 +55,10 @@ export async function getApiCapabilities(): Promise<ApiCapabilities> {
     const res = await fetch(`${config.apiUrl}/health`, { signal: AbortSignal.timeout(3000) });
     const body = (await res.json()) as { capabilities?: ApiCapabilities };
     capabilities = body.capabilities ?? { gocardless: false };
+    return capabilities;
   } catch {
-    capabilities = { gocardless: false };
+    // transient failure (booted offline, radio still asleep): answer "no
+    // features" but do NOT cache it — the next caller gets a fresh try
+    return { gocardless: false };
   }
-  return capabilities;
 }

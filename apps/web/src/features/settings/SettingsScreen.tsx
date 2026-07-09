@@ -13,6 +13,7 @@ import { AppBar } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
+import { setVpdebug, vpdebugEnabled } from '@/ui/ViewportDebug';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Avatar } from '@/features/profile/ProfileScreen';
 import { disablePush, enablePush, getPushSubscription, pushSupported } from '@/lib/push';
@@ -73,7 +74,7 @@ function SyncStatusRow() {
   );
 }
 
-function ProfileHeaderRow({ onClick }: { onClick: () => void }) {
+function ProfileHeaderRow({ onClick }: Readonly<{ onClick: () => void }>) {
   const { t } = useLang();
   const { db } = useData();
   const profile = useLiveQuery(
@@ -123,6 +124,7 @@ export function SettingsScreen() {
   const [lockTimeout, setLockTimeout] = useState(60);
   const [lockBioAvailable, setLockBioAvailable] = useState(false);
   const [lockError, setLockError] = useState<string | null>(null);
+  const [vpdebugOn, setVpdebugOn] = useState(vpdebugEnabled);
 
   useEffect(() => {
     if (identity?.kind !== 'user') return;
@@ -216,6 +218,18 @@ export function SettingsScreen() {
           </div>
         )}
         <div className="overflow-hidden rounded-card border border-line bg-surface">
+          {/* spaces moved here from the tab bar — day-to-day switching
+              happens via the Home avatar, management is a settings task */}
+          <button
+            data-testid="settings-spaces-row"
+            onClick={() => void navigate({ to: '/spaces' })}
+            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+          >
+            <Icon name="account-group-outline" size={20} />
+            <span className="flex-1">{t('screen.spaces')}</span>
+            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+          </button>
+          <div className="mx-4 h-px bg-line-2" />
           <button
             data-testid="settings-accounts-row"
             onClick={() => void navigate({ to: '/accounts' })}
@@ -334,6 +348,31 @@ export function SettingsScreen() {
             <Icon name={theme === 'dark' ? 'weather-night' : 'weather-sunny'} size={20} />
             <span className="flex-1">{t('settings.appearance')}</span>
             <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+          </button>
+          <div className="mx-4 h-px bg-line-2" />
+          {/* installed PWAs have no URL bar to pass ?vpdebug=1 — this is the
+              only way to arm the overlay for a mobile layout bug report */}
+          <button
+            data-testid="settings-vpdebug-toggle"
+            onClick={() => {
+              setVpdebug(!vpdebugOn);
+              setVpdebugOn(!vpdebugOn);
+            }}
+            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+          >
+            <Icon name="cellphone-information" size={20} />
+            <span className="min-w-0 flex-1">
+              <span className="block">{t('settings.vpdebug')}</span>
+              <span className="block text-[11px] text-ink-4">{t('settings.vpdebugSub')}</span>
+            </span>
+            <span
+              className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                vpdebugOn ? 'bg-accent-soft text-accent-deep' : 'bg-bg-2 text-ink-4'
+              }`}
+              data-testid="settings-vpdebug-state"
+            >
+              {vpdebugOn ? 'ON' : 'OFF'}
+            </span>
           </button>
         </div>
 

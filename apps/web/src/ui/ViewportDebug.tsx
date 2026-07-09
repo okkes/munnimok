@@ -1,15 +1,34 @@
 import { useEffect, useState } from 'react';
 
+const VPDEBUG_KEY = 'munni_vpdebug';
+const VPDEBUG_EVENT = 'munni-vpdebug';
+
+export function vpdebugEnabled(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    (window.location.href.includes('vpdebug') || localStorage.getItem(VPDEBUG_KEY) === '1')
+  );
+}
+
+/** flip the overlay from anywhere (Settings row) — the overlay reacts live */
+export function setVpdebug(on: boolean): void {
+  localStorage.setItem(VPDEBUG_KEY, on ? '1' : '0');
+  window.dispatchEvent(new Event(VPDEBUG_EVENT));
+}
+
 /**
- * On-device viewport diagnostics for mobile layout reports: open the app
- * with ?vpdebug=1 (or set localStorage munni_vpdebug=1) and read the
+ * On-device viewport diagnostics for mobile layout reports: toggle it in
+ * Settings (installed PWAs have no URL bar for ?vpdebug=1) and read the
  * numbers off a screenshot. Mobile viewport bugs are unguessable from a
  * desk — this turns the next report into data.
  */
 export function ViewportDebug() {
-  const enabled =
-    typeof window !== 'undefined' &&
-    (window.location.href.includes('vpdebug') || localStorage.getItem('munni_vpdebug') === '1');
+  const [enabled, setEnabled] = useState(vpdebugEnabled);
+  useEffect(() => {
+    const onChange = () => setEnabled(vpdebugEnabled());
+    window.addEventListener(VPDEBUG_EVENT, onChange);
+    return () => window.removeEventListener(VPDEBUG_EVENT, onChange);
+  }, []);
   const [lines, setLines] = useState<string[]>([]);
 
   useEffect(() => {

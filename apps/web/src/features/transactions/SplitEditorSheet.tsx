@@ -11,7 +11,6 @@ import type { TxSplit } from '@/db/types';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
-import { useSheetStackLock } from '@/ui/useSheetStackLock';
 
 interface Row {
   /** stable key for React list rendering (rows have no natural id) */
@@ -33,7 +32,6 @@ export function SplitEditorSheet({ open, onOpenChange, tx }: { open: boolean; on
   const cats = useCategories();
   const [rows, setRows] = useState<Row[]>([]);
   const [pickerFor, setPickerFor] = useState<number | null>(null);
-  const locked = useSheetStackLock(pickerFor !== null);
 
   useEffect(() => {
     if (!open) return;
@@ -79,7 +77,7 @@ export function SplitEditorSheet({ open, onOpenChange, tx }: { open: boolean; on
 
   return (
     <>
-      <Sheet open={open} onOpenChange={onOpenChange} title={t('split.title')} size="tall" locked={locked}>
+      <Sheet open={open} onOpenChange={onOpenChange} title={t('split.title')} size="tall">
         <div className="flex flex-col gap-2 pt-1" data-testid="split-editor">
           {rows.map((row, i) => (
             <div key={row.key} className="flex items-center gap-2">
