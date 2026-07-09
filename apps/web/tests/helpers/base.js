@@ -54,6 +54,14 @@ export async function base(page, variant, opts = {}) {
   await page.waitForSelector(authed ? '[data-testid="tab-home"]' : '[data-testid="screen-login"]');
 }
 
+// Spaces left the tab bar (the Home avatar switches, Settings manages):
+// canonical route to the Spaces screen for tests.
+export async function gotoSpaces(page) {
+  await page.click('[data-testid="tab-settings"]');
+  await page.click('[data-testid="settings-spaces-row"]');
+  await page.waitForSelector('[data-testid="screen-spaces"]');
+}
+
 // True when the docker-compose.test.yml API (header test-auth) is reachable.
 export async function syncApiUp() {
   try {

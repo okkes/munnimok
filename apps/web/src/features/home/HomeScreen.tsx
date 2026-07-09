@@ -7,10 +7,12 @@ import { OVERVIEW_KINDS, overviewSummary } from '@/domain/overview';
 import type { OverviewKind, OverviewSummary } from '@/domain/overview';
 import { periodHistory } from '@/domain/periods';
 import { addDays, nextDueDate } from '@/domain/recurring';
-import { RecurringVisual } from '@/features/recurring/RecurringScreen';
+import { RecurringVisual } from '@/features/recurring/RecurringVisual';
 import type { RecurringRow } from '@/db/types';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
+import { OfflineIndicator } from '@/app/OfflineBanner';
+import { SpaceSwitcher } from '@/features/spaces/SpaceSwitcher';
 import { fmtCents } from '@/lib/money';
 import { AppBar } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
@@ -74,7 +76,16 @@ export function HomeScreen() {
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-home">
-      <AppBar large title={t('tab.home')} />
+      <AppBar
+        large
+        title={t('tab.home')}
+        trailing={
+          <>
+            <OfflineIndicator />
+            <SpaceSwitcher />
+          </>
+        }
+      />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         {/* slim balance band: one line; accounts fold out on tap */}
         <button
@@ -143,7 +154,7 @@ export function HomeScreen() {
                 <button
                   key={rec.id}
                   data-testid={`home-upcoming-${rec.id}`}
-                  onClick={() => void navigate({ to: '/recurring' })}
+                  onClick={() => void navigate({ to: '/recurring/$recId', params: { recId: rec.id } })}
                   className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-2.5 text-left last:border-0"
                 >
                   <RecurringVisual rec={rec} size={16} active={false} />

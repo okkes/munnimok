@@ -1,5 +1,5 @@
 ﻿import { test, expect } from '@playwright/test';
-import { VARIANTS, createPage, base, shot, teardown } from '../helpers/base.js';
+import { VARIANTS, createPage, base, gotoSpaces, shot, teardown } from '../helpers/base.js';
 
 // --- Tests ------------------------------------------------------------------
 
@@ -21,8 +21,8 @@ for (const V of VARIANTS) {
     await page.click('[data-testid="tab-transactions"]');
     await expect(page.locator('[data-testid="screen-transactions"]')).toBeVisible();
     await shot(page, k('02-shell-tabs') + '--s1');
-    await page.click('[data-testid="tab-spaces"]');
-    await expect(page.locator('[data-testid="screen-spaces"]')).toBeVisible();
+    await page.click('[data-testid="tab-recurring"]');
+    await expect(page.locator('[data-testid="screen-recurring"]')).toBeVisible();
     await shot(page, k('02-shell-tabs') + '--s2');
     await page.click('[data-testid="tab-settings"]');
     await expect(page.locator('[data-testid="screen-settings"]')).toBeVisible();
@@ -70,7 +70,7 @@ for (const V of VARIANTS) {
     await page.click('[data-testid="offline-create"]');
     await page.waitForSelector('[data-testid="tab-home"]');
     // personal space carries the profile name
-    await page.click('[data-testid="tab-spaces"]');
+    await gotoSpaces(page);
     await expect(page.locator('[data-testid="screen-spaces"]')).toContainText('Okkes Offline');
     // add a cash account, then a manual transaction (zero network)
     await page.click('[data-testid="tab-settings"]');

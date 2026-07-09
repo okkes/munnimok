@@ -60,4 +60,22 @@ describe('app screens (demo identity)', () => {
     fireEvent.click(screen.getAllByTestId('tab-transactions')[0]);
     expect(await screen.findByTestId('screen-transactions')).toBeTruthy();
   });
+
+  it('spaces left the tab bar: no tab, a settings row opens the screen', async () => {
+    renderApp('/settings');
+    await screen.findByTestId('screen-settings');
+    expect(screen.queryByTestId('tab-spaces')).toBeNull();
+    fireEvent.click(screen.getByTestId('settings-spaces-row'));
+    expect(await screen.findByTestId('screen-spaces')).toBeTruthy();
+  });
+
+  it('home space switcher lists spaces, marks the active one, links to manage', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    fireEvent.click(screen.getByTestId('home-space-switcher'));
+    const active = await screen.findByTestId('space-pick-demo_space');
+    expect(active.textContent).toContain('Active space');
+    fireEvent.click(screen.getByTestId('space-pick-manage'));
+    expect(await screen.findByTestId('screen-spaces')).toBeTruthy();
+  });
 });

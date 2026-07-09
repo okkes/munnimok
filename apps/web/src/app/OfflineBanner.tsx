@@ -44,11 +44,16 @@ export const OFFLINE_REASON_KEYS = {
   unreachable: 'sync.reasonUnreachable',
 } as const;
 
+// sessionStorage so a dismissal lasts for this visit only — closing and
+// reopening the app brings the banner back (the user's requested behavior)
+const DISMISS_KEY = 'munni_offline_banner_dismissed';
+
 /** Slim strip above the tab bar: you are offline, and this is why. */
 export function OfflineBanner() {
   const { t } = useLang();
   const reason = useOfflineReason();
-  if (!reason) return null;
+  const [dismissed, setDismissed] = useState(() => sessionStorage.getItem(DISMISS_KEY) === '1');
+  if (!reason || dismissed) return null;
   return (
     <div
       className="flex shrink-0 items-center gap-2 border-t border-line bg-warning-soft px-4 py-2"
@@ -59,6 +64,35 @@ export function OfflineBanner() {
       <span className="min-w-0 flex-1 text-[12px] leading-snug text-ink-2">
         <span className="font-medium">{t('sync.offlineBanner')}</span> {t(OFFLINE_REASON_KEYS[reason])}
       </span>
+      <button
+        aria-label={t('action.dismiss')}
+        data-testid="offline-banner-dismiss"
+        onClick={() => {
+          sessionStorage.setItem(DISMISS_KEY, '1');
+          setDismissed(true);
+        }}
+        className="m-tap -my-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-none bg-transparent"
+      >
+        <Icon name="close" size={15} color="var(--m-ink-3)" />
+      </button>
     </div>
+  );
+}
+
+/** Quiet pill for the Home app bar: keeps signalling offline after the
+ *  banner was dismissed, without shouting. */
+export function OfflineIndicator() {
+  const { t } = useLang();
+  const reason = useOfflineReason();
+  if (!reason) return null;
+  return (
+    <span
+      data-testid="home-offline-indicator"
+      title={t(OFFLINE_REASON_KEYS[reason])}
+      className="flex items-center gap-1.5 rounded-full bg-warning-soft px-2.5 py-1 text-[11px] font-medium text-ink-2"
+    >
+      <Icon name="wifi-off" size={12} color="var(--m-warning)" />
+      {t('sync.offlineShort')}
+    </span>
   );
 }

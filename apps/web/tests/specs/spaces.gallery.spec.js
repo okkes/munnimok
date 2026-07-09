@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { VARIANTS, createPage, base, shot, teardown } from '../helpers/base.js';
+import { VARIANTS, createPage, base, gotoSpaces, shot, teardown } from '../helpers/base.js';
 
 // --- Tests ------------------------------------------------------------------
 
@@ -9,7 +9,7 @@ for (const V of VARIANTS) {
   test(`spaces-a1 list shows demo space active [${V.id}]`, async ({ browser }) => {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V, { demo: true });
-    await page.click('[data-testid="tab-spaces"]');
+    await gotoSpaces(page);
     await expect(page.locator('[data-testid="space-row-demo_space"]')).toContainText('Demo');
     await expect(page.locator('[data-testid="space-row-demo_space"]')).toContainText('Active space');
     await shot(page, k('22-spaces-list'));
@@ -19,7 +19,7 @@ for (const V of VARIANTS) {
   test(`spaces-a2 create space switches scope; switching back restores data [${V.id}]`, async ({ browser }) => {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V, { demo: true });
-    await page.click('[data-testid="tab-spaces"]');
+    await gotoSpaces(page);
     await page.click('[data-testid="spaces-add"]');
     await page.fill('[data-testid="space-create-name"]', 'Holiday Fund');
     await page.waitForTimeout(400);
@@ -32,7 +32,7 @@ for (const V of VARIANTS) {
     await expect(page.locator('[data-testid="home-total-balance"]')).toContainText('0.00');
     await shot(page, k('23-spaces-create') + '--s2');
     // switch back to Demo: totals return
-    await page.click('[data-testid="tab-spaces"]');
+    await gotoSpaces(page);
     await page.click('[data-testid="space-row-demo_space"]');
     await page.click('[data-testid="tab-home"]');
     await expect(page.locator('[data-testid="home-total-balance"]')).toContainText('11,570.55');
@@ -43,7 +43,7 @@ for (const V of VARIANTS) {
   test(`spaces-a3 rename; delete guards active and last space [${V.id}]`, async ({ browser }) => {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V, { demo: true });
-    await page.click('[data-testid="tab-spaces"]');
+    await gotoSpaces(page);
     // deleting the only/active space is blocked
     await page.click('[data-testid="space-edit-demo_space"]');
     await page.click('[data-testid="space-edit-delete"]');

@@ -90,8 +90,14 @@ self.addEventListener('notificationclick', (event) => {
       const existing = clientList[0];
       // focusing (or opening) the app triggers its start-up sync,
       // pulling the announced transactions immediately
-      if (existing) await existing.focus();
-      else await self.clients.openWindow(url);
+      if (existing) {
+        // a focused client keeps its current screen — post the target so
+        // the app's listener routes there (friend request → friends, …)
+        existing.postMessage({ type: 'NAVIGATE', url });
+        await existing.focus();
+      } else {
+        await self.clients.openWindow(url);
+      }
     })(),
   );
 });
