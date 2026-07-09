@@ -34,9 +34,14 @@
    | `logto.okkes.synology.me:443` | `localhost:3001` |
    | `logto-admin.okkes.synology.me:443` | `localhost:3002` |
    | `glitchtip.okkes.synology.me:443` | `localhost:8092` |
+   | `pgadmin.okkes.synology.me:443` | `localhost:8093` |
 
    For `munni-api` add WebSocket support off, and for all of them enable
-   HTTP/2. Restrict `logto-admin` to LAN in DSM firewall rules.
+   HTTP/2. Restrict `logto-admin` **and `pgadmin`** to LAN in DSM firewall
+   rules — pgAdmin can read every database. First pgAdmin login uses
+   `PGADMIN_EMAIL`/`PGADMIN_PASSWORD` from `.env`; register the server as
+   host `postgres`, user `munni`, the `POSTGRES_PASSWORD` — the munni,
+   logto and glitchtip databases all live in that one instance.
 4. **Logto** (first run): open `https://logto-admin.<domain>`, create the
    admin account, then:
    - Application → *munni* (Single-page app), redirect URI

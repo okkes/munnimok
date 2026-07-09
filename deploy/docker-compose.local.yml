@@ -52,6 +52,20 @@ services:
       postgres:
         condition: service_healthy
 
+  # database inspector: http://localhost:8183 (admin@localhost.local / localtest)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@localhost.local
+      PGADMIN_DEFAULT_PASSWORD: localtest
+    ports:
+      - "8183:80"
+    volumes:
+      - pgadmin_local:/var/lib/pgadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   postgres:
     image: postgres:17-alpine
     environment:
@@ -71,3 +85,4 @@ volumes:
   pgdata_local:
     # fixed name: survives the compose-project rename (pre-existing data)
     name: deploy_pgdata_local
+  pgadmin_local:
