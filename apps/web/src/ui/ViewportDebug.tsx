@@ -49,13 +49,14 @@ export function ViewportDebug() {
       const root = document.getElementById('root');
       const rootRect = root?.getBoundingClientRect();
       const tabbar = document.querySelector('[data-vpdebug="tabbar"]')?.getBoundingClientRect();
+      const tabbarLine = tabbar ? `${Math.round(tabbar.top)}→${Math.round(tabbar.bottom)}` : '—';
       const vv = window.visualViewport;
       setLines([
         `inner ${window.innerHeight} / outer ${window.outerHeight}`,
         `visual ${Math.round(vv?.height ?? 0)} @${Math.round(vv?.offsetTop ?? 0)}/${Math.round(vv?.pageTop ?? 0)} / screen ${window.screen.height}`,
         `dvh ${probe.offsetHeight} / svh ${svhProbe.offsetHeight} / lvh ${lvhProbe.offsetHeight}`,
         `vvh ${document.documentElement.style.getPropertyValue('--vvh') || '—'} / root ${Math.round(rootRect?.top ?? 0)}→${Math.round(rootRect?.bottom ?? 0)}`,
-        `tabbar ${tabbar ? `${Math.round(tabbar.top)}→${Math.round(tabbar.bottom)}` : '—'}`,
+        `tabbar ${tabbarLine}`,
         `safe top ${cs.paddingTop} bottom ${cs.paddingBottom}`,
         `standalone ${window.matchMedia('(display-mode: standalone)').matches}`,
       ]);
