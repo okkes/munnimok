@@ -32,6 +32,10 @@ public static class KeywordPredictor
             .ToList();
     });
 
+    /// <summary>
+    /// Predicts a category id + transaction type from a transaction's text
+    /// by longest-keyword match, or null when nothing matches.
+    /// </summary>
     /// <param name="direction">"credit" (money in) or "debit"</param>
     public static Prediction? Predict(string text, string direction)
     {
