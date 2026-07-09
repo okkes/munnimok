@@ -234,6 +234,16 @@ export function SettingsScreen() {
           </button>
           <div className="mx-4 h-px bg-line-2" />
           <button
+            data-testid="settings-budgets-row"
+            onClick={() => void navigate({ to: '/budgets' })}
+            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+          >
+            <Icon name="wallet-outline" size={20} />
+            <span className="flex-1">{t('budgets.title')}</span>
+            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+          </button>
+          <div className="mx-4 h-px bg-line-2" />
+          <button
             data-testid="settings-accounts-row"
             onClick={() => void navigate({ to: '/accounts' })}
             className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"

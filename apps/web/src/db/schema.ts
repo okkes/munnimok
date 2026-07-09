@@ -3,6 +3,7 @@ import type { Table } from 'dexie';
 import type {
   AccountLinkRow,
   AccountRow,
+  BudgetRow,
   CategoryRow,
   EntityName,
   MetaRow,
@@ -28,6 +29,7 @@ export class MunniDB extends Dexie {
   accountLinks!: Table<AccountLinkRow, string>;
   recurrings!: Table<RecurringRow, string>;
   recurringDismissals!: Table<RecurringDismissRow, string>;
+  budgets!: Table<BudgetRow, string>;
   outbox!: Table<OutboxRow, string>;
   meta!: Table<MetaRow, string>;
 
@@ -51,6 +53,10 @@ export class MunniDB extends Dexie {
       recurrings: 'id, spaceId',
       recurringDismissals: 'id, spaceId',
     });
+    // budgets
+    this.version(4).stores({
+      budgets: 'id, spaceId',
+    });
   }
 
   tableFor<E extends EntityName>(entity: E) {
@@ -71,6 +77,8 @@ export class MunniDB extends Dexie {
         return this.recurrings;
       case 'recurringDismiss':
         return this.recurringDismissals;
+      case 'budget':
+        return this.budgets;
       default:
         throw new Error(`unknown entity: ${entity}`);
     }

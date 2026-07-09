@@ -22,6 +22,9 @@ import { FriendsScreen } from '@/features/friends/FriendsScreen';
 import { OnboardingScreen } from '@/features/auth/OnboardingScreen';
 import { OverviewScreen } from '@/features/overview/OverviewScreen';
 import { CategoryDrillScreen } from '@/features/overview/CategoryDrillScreen';
+import { BudgetsScreen } from '@/features/budgets/BudgetsScreen';
+import { BudgetFormScreen } from '@/features/budgets/BudgetFormScreen';
+import { BudgetDetailScreen } from '@/features/budgets/BudgetDetailScreen';
 import { ProfileScreen } from '@/features/profile/ProfileScreen';
 import { RecurringScreen } from '@/features/recurring/RecurringScreen';
 import { RecurringDetailScreen } from '@/features/recurring/RecurringDetailScreen';
@@ -97,6 +100,11 @@ const friendsRoute = createRoute({ getParentRoute: () => appRoute, path: '/frien
 const onboardingRoute = createRoute({ getParentRoute: () => appRoute, path: '/onboarding', component: OnboardingScreen });
 const profileRoute = createRoute({ getParentRoute: () => appRoute, path: '/profile', component: ProfileScreen });
 const overviewRoute = createRoute({ getParentRoute: () => appRoute, path: '/overview/$kind', component: OverviewScreen });
+const budgetsRoute = createRoute({ getParentRoute: () => appRoute, path: '/budgets', component: BudgetsScreen });
+// static 'new' outranks the $budgetId param in TanStack's ranking
+const budgetNewRoute = createRoute({ getParentRoute: () => appRoute, path: '/budgets/new', component: BudgetFormScreen });
+const budgetDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/budgets/$budgetId', component: BudgetDetailScreen });
+const budgetEditRoute = createRoute({ getParentRoute: () => appRoute, path: '/budgets/$budgetId/edit', component: BudgetFormScreen });
 const categoryDrillRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/overview/$kind/$catId',
@@ -128,6 +136,10 @@ export const routeTree = rootRoute.addChildren([
     profileRoute,
     overviewRoute,
     categoryDrillRoute,
+    budgetsRoute,
+    budgetNewRoute,
+    budgetDetailRoute,
+    budgetEditRoute,
   ]),
 ]);
 

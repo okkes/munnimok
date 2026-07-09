@@ -14,6 +14,8 @@ import { useData } from '@/app/data';
 import { OfflineIndicator } from '@/app/OfflineBanner';
 import { NotificationsBell } from './NotificationsBell';
 import { SpaceSwitcher } from '@/features/spaces/SpaceSwitcher';
+import { useBudgetStatuses } from '@/application/budgets';
+import { budgetColor, ratioPct } from '@/features/budgets/budgetUi';
 import { fmtCents } from '@/lib/money';
 import { AppBar } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
@@ -65,6 +67,9 @@ export function HomeScreen() {
     () => db.recurrings.filter((r) => r.deleted === 0 && r.spaceId === spaceId && r.active === 1).toArray(),
     [db, spaceId],
   );
+  // landing-zone block: the 3 most urgent budgets (approved: 3)
+  const budgetStatuses = useBudgetStatuses();
+  const urgentBudgets = useMemo(() => (budgetStatuses ?? []).slice(0, 3), [budgetStatuses]);
   const upcoming = useMemo(() => {
     const today = localToday();
     const horizon = addDays(today, 7);
@@ -168,6 +173,51 @@ export function HomeScreen() {
             </span>
             <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
           </button>
+        )}
+
+        {/* landing-zone block: the budgets that need attention, worst first */}
+        {urgentBudgets.length > 0 && (
+          <>
+            <div className="m-cap mt-5 mb-1 flex items-baseline justify-between px-1">
+              <span>{t('budgets.title')}</span>
+              <button
+                data-testid="home-budgets-all"
+                onClick={() => void navigate({ to: '/budgets' })}
+                className="m-tap border-none bg-transparent text-[10px] font-medium normal-case text-ink-4"
+              >
+                {t('action.seeAll')}
+              </button>
+            </div>
+            <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="home-budgets">
+              {urgentBudgets.map((status) => {
+                const color = budgetColor(status.ratio);
+                const over = status.ratio > 1;
+                return (
+                  <button
+                    key={status.budget.id}
+                    data-testid={`home-budget-${status.budget.id}`}
+                    onClick={() => void navigate({ to: '/budgets/$budgetId', params: { budgetId: status.budget.id } })}
+                    className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-2.5 text-left last:border-0"
+                  >
+                    <Icon name={status.budget.icon ?? 'wallet-outline'} size={17} color={color} />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-baseline justify-between gap-2">
+                        <span className="truncate text-[13px] font-medium text-ink">{status.budget.name}</span>
+                        <span className="m-num shrink-0 text-[12px] font-semibold" style={{ color }}>
+                          {t(over ? 'budgets.over' : 'budgets.left', {
+                            amount: fmtCents(Math.abs(status.leftCents), currency, lang),
+                          })}
+                        </span>
+                      </span>
+                      <span className="mt-1 block h-1 overflow-hidden rounded-full bg-bg-2">
+                        <span className="block h-full rounded-full" style={{ width: `${ratioPct(status)}%`, background: color }} />
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </>
         )}
 
         {upcoming.length > 0 && (

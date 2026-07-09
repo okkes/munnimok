@@ -188,6 +188,40 @@ export interface RecurringDismissRow extends SyncEnvelope {
   merchantKey: string;
 }
 
+export type BudgetEvery = 'week' | '2weeks' | 'month';
+export type BudgetCarryMode = 'periods' | 'cap';
+
+/**
+ * A space-scoped spending limit over one or more categories, resetting
+ * on its own cadence (anchored at a date, independent of the space
+ * period). Spending and carry-over are computed client-side from the
+ * space's transactions — carry-over is replayed, never stored, so
+ * devices always converge (budgets design doc).
+ */
+export interface BudgetRow extends SyncEnvelope {
+  id: string;
+  spaceId: string;
+  name: string;
+  /** MDI icon */
+  icon?: string;
+  /** the limit per period, positive minor units */
+  amountCents: number;
+  every: BudgetEvery;
+  /** yyyy-mm-dd the cycle counts from */
+  anchor: string;
+  /** main and/or sub category ids; exclusive across a space's budgets */
+  catIds: string[];
+  carryOver?: 0 | 1;
+  carryMode?: BudgetCarryMode;
+  /** carry unused money at most N periods forward (carryMode 'periods') */
+  carryPeriods?: number;
+  /** or accumulate up to this cap (carryMode 'cap') */
+  carryCapCents?: number;
+  /** warn when spending crosses this percentage; absent = quiet */
+  notifyAtPct?: number;
+  active: 0 | 1;
+}
+
 /**
  * Attachment of a financial account (its feed space) to a viewing
  * space. Lives in the viewing space so members render it offline; the
@@ -235,7 +269,8 @@ export type EntityName =
   | 'txMeta'
   | 'accountLink'
   | 'recurring'
-  | 'recurringDismiss';
+  | 'recurringDismiss'
+  | 'budget';
 
 export interface EntityRowMap {
   space: SpaceRow;
@@ -246,4 +281,5 @@ export interface EntityRowMap {
   accountLink: AccountLinkRow;
   recurring: RecurringRow;
   recurringDismiss: RecurringDismissRow;
+  budget: BudgetRow;
 }
