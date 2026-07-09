@@ -18,8 +18,10 @@ const LANGS: readonly Lang[] = ['en', 'nl', 'tr'];
 
 interface BudgetTexts {
   title: string;
-  warn: string; // {name} {pct}
-  over: string; // {name} {amount}
+  /** placeholders: name, pct */
+  warn: string;
+  /** placeholders: name, amount */
+  over: string;
 }
 
 const TEXTS: Record<string, BudgetTexts> = {
