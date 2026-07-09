@@ -66,5 +66,7 @@ amber — the plan got ahead of reality.
 
 1. Goals are per space — a shared "house" goal in a shared space is
    natural. ✓
-2. Linking real transactions as funding evidence stays v2 — pure
-   envelopes first (proposal stood unchallenged).
+2. No transaction linking at all — the savings BALANCE is the only
+   truth. When a withdrawal drops the saved total below what's
+   allocated, **unallocated goes negative** and the user must remove
+   value from goals to rebalance; the app flags it, never auto-fixes. ✓

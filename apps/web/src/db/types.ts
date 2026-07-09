@@ -119,6 +119,8 @@ export interface TransactionRow extends SyncEnvelope {
   linkedAccountId?: string;
   /** the recurring cost this expense pays (rent, a subscription, …) */
   recurringId?: string;
+  /** the event this transaction belongs to (holiday, wedding, …) */
+  eventId?: string;
 }
 
 /**
@@ -142,6 +144,7 @@ export interface TxMetaRow extends SyncEnvelope {
   reimbursements?: TxReimbursement[];
   linkedAccountId?: string;
   recurringId?: string;
+  eventId?: string;
 }
 
 export type RecurringKind = 'fixed' | 'subscription';
@@ -225,6 +228,79 @@ export interface BudgetRow extends SyncEnvelope {
 }
 
 /**
+ * An event groups transactions around a real-world happening (holiday,
+ * wedding, move) to answer what it truly cost. Space-scoped; archiving
+ * is manual (approved events design).
+ */
+export interface EventRow extends SyncEnvelope {
+  id: string;
+  spaceId: string;
+  name: string;
+  icon?: string;
+  color?: string;
+  /** optional date range (yyyy-mm-dd) */
+  from?: string;
+  to?: string;
+  /** optional planning number */
+  budgetCents?: number;
+  archived?: 0 | 1;
+}
+
+/**
+ * A goal partitions the space's SAVINGS BALANCE into named envelopes
+ * (house, car, buffer). No real money moves and no transactions link —
+ * the balance is the only truth; over-allocation is flagged, never
+ * auto-fixed (approved goals design).
+ */
+export interface GoalRow extends SyncEnvelope {
+  id: string;
+  spaceId: string;
+  name: string;
+  icon?: string;
+  color?: string;
+  targetCents: number;
+  targetDate?: string;
+  /** running total, maintained by contributions */
+  allocatedCents: number;
+  archived?: 0 | 1;
+}
+
+/** audit trail of goal funding — separate rows converge without LWW fights */
+export interface GoalContributionRow extends SyncEnvelope {
+  id: string;
+  spaceId: string;
+  goalId: string;
+  /** + fund / − withdraw (back to unallocated) */
+  amountCents: number;
+  date: string;
+  note?: string;
+}
+
+/**
+ * A debt's payoff story on top of a liability account (or manual
+ * numbers): original size, payment rhythm, projection. Per-space,
+ * informational interest only (approved debts design).
+ */
+export interface DebtRow extends SyncEnvelope {
+  id: string;
+  spaceId: string;
+  name: string;
+  icon?: string;
+  /** liability account whose balance is the remaining truth */
+  accountId?: string;
+  originalCents: number;
+  /** manual remaining when no account is linked */
+  remainingCents?: number;
+  /** informational APR, e.g. 3.5 */
+  interestPctYear?: number;
+  paymentCents?: number;
+  paymentDay?: number;
+  /** auto-link payments by merchant (recurring-style) */
+  merchantKey?: string;
+  archived?: 0 | 1;
+}
+
+/**
  * Attachment of a financial account (its feed space) to a viewing
  * space. Lives in the viewing space so members render it offline; the
  * server keeps the authoritative copy for feed access control.
@@ -272,7 +348,11 @@ export type EntityName =
   | 'accountLink'
   | 'recurring'
   | 'recurringDismiss'
-  | 'budget';
+  | 'budget'
+  | 'event'
+  | 'goal'
+  | 'goalContribution'
+  | 'debt';
 
 export interface EntityRowMap {
   space: SpaceRow;
@@ -284,4 +364,8 @@ export interface EntityRowMap {
   recurring: RecurringRow;
   recurringDismiss: RecurringDismissRow;
   budget: BudgetRow;
+  event: EventRow;
+  goal: GoalRow;
+  goalContribution: GoalContributionRow;
+  debt: DebtRow;
 }
