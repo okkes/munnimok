@@ -1,6 +1,6 @@
 # Debts — design
 
-Status: **draft for approval** — nothing here is built yet.
+Status: **approved 2026-07-09** — ready to build.
 Legacy debts screens are the inspiration (overview, payoff progress).
 
 ## The idea
@@ -62,9 +62,9 @@ cycle machinery — the reconciler generalizes).
 - Tests: remaining math both modes, projection amortization, auto-link
   once per cycle.
 
-## Open questions
+## Confirmed rulings (2026-07-09)
 
 1. Interest handling is *informational* (projection), not accounting —
-   we never generate interest transactions. OK?
-2. A debt linked to an account whose feed is shared: the debt story is
-   still per-space (like budgets). Confirmed?
+   no generated interest transactions. ✓
+2. The debt story is per-space (like budgets), even when the linked
+   account's feed is shared. ✓

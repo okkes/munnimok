@@ -1,6 +1,6 @@
 # Goals — design
 
-Status: **draft for approval** — nothing here is built yet.
+Status: **approved 2026-07-09** — ready to build.
 Legacy `apps/legacy` goals screens are the inspiration (allocation
 rings, per-goal target/date), rebuilt on synced data.
 
@@ -62,9 +62,9 @@ amber — the plan got ahead of reality.
 - Tests: allocation arithmetic, over-allocation flag, pace math,
   concurrent contributions converge.
 
-## Open questions
+## Confirmed rulings (2026-07-09)
 
-1. Goals per space (like everything else) — a shared "house" goal in a
-   shared space is then natural. Confirmed?
-2. Should funding optionally LINK a real transaction (a transfer to
-   savings) as evidence? Proposal: v2 — pure envelopes first.
+1. Goals are per space — a shared "house" goal in a shared space is
+   natural. ✓
+2. Linking real transactions as funding evidence stays v2 — pure
+   envelopes first (proposal stood unchallenged).

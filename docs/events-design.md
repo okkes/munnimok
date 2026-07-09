@@ -1,6 +1,6 @@
 # Events — design
 
-Status: **draft for approval** — nothing here is built yet.
+Status: **approved 2026-07-09** — ready to build.
 
 ## The idea
 
@@ -54,8 +54,8 @@ total already answers "what did the last three holidays cost".
 - Tests: totals math, attach/detach round-trip, shared-space sync
   convergence.
 
-## Open questions
+## Confirmed rulings (2026-07-09)
 
-1. One event per transaction (splits handle overlaps) — confirmed?
-2. Should archiving be automatic when `to` passes (my proposal: no —
-   people keep adding late costs; manual archive)?
+1. One event per transaction (splits handle overlaps). ✓
+2. Archiving is **manual** — people keep adding late costs after the
+   date range ends. ✓
