@@ -34,24 +34,7 @@ public sealed partial class GcIngest(AppDbContext db)
         string NextHlc() => ServerHlc.Now(counter++);
 
         // account row in the feed (create or refresh balance — raw bank truth)
-        var balance = balances.FirstOrDefault(b => b.BalanceType is "closingBooked" or "interimBooked")
-                      ?? (balances.Count > 0 ? balances[0] : null);
-        var accountFields = new Dictionary<string, JsonElement>
-        {
-            ["name"] = Json(details.Name ?? $"Bank · {linked.Iban[^4..]}"),
-            ["type"] = Json("checking"),
-            ["source"] = Json("gocardless"),
-            ["currency"] = Json(details.Currency ?? linked.Currency),
-            ["iban"] = Json(linked.Iban),
-        };
-        // the institution id lets clients show the real bank logo
-        var requisition = await db.GcRequisitions.FindAsync(linked.RequisitionId);
-        if (requisition is not null) accountFields["bankId"] = Json(requisition.InstitutionId);
-        if (balance is not null)
-        {
-            accountFields["balanceCents"] = Json(ToCents(balance.BalanceAmount.Amount));
-            accountFields["balanceAsOf"] = Json(DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"));
-        }
+        var accountFields = await BuildAccountFieldsAsync(linked, details, balances);
         accountOps.Add(NewOp(feedSpace.Id, "account", linked.AccountEntityId, accountFields, NextHlc(), $"acct:{linked.GcAccountId}:{DateOnly.FromDateTime(DateTime.UtcNow)}"));
 
         // attachment mirror so offline devices render the link
@@ -104,6 +87,31 @@ public sealed partial class GcIngest(AppDbContext db)
         var (_, accepted) = await writer.ApplyAsync(feedSpace, null, feedOps);
         await writer.ApplyAsync(space, null, spaceOps);
         return accepted;
+    }
+
+    /// <summary>The feed account row's fields: raw bank truth plus the logo hint.</summary>
+    private async Task<Dictionary<string, JsonElement>> BuildAccountFieldsAsync(
+        GcLinkedAccount linked, GcAccountDetails details, IReadOnlyList<GcBalance> balances)
+    {
+        var balance = balances.FirstOrDefault(b => b.BalanceType is "closingBooked" or "interimBooked")
+                      ?? (balances.Count > 0 ? balances[0] : null);
+        var fields = new Dictionary<string, JsonElement>
+        {
+            ["name"] = Json(details.Name ?? $"Bank · {linked.Iban[^4..]}"),
+            ["type"] = Json("checking"),
+            ["source"] = Json("gocardless"),
+            ["currency"] = Json(details.Currency ?? linked.Currency),
+            ["iban"] = Json(linked.Iban),
+        };
+        // the institution id lets clients show the real bank logo
+        var requisition = await db.GcRequisitions.FindAsync(linked.RequisitionId);
+        if (requisition is not null) fields["bankId"] = Json(requisition.InstitutionId);
+        if (balance is not null)
+        {
+            fields["balanceCents"] = Json(ToCents(balance.BalanceAmount.Amount));
+            fields["balanceAsOf"] = Json(DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"));
+        }
+        return fields;
     }
 
     /// <summary>
