@@ -58,6 +58,8 @@ public static class ImportIds
         var namespaceBytes = Namespace.ToByteArray();
         SwapByteOrder(namespaceBytes); // RFC byte order
         var nameBytes = Encoding.UTF8.GetBytes(name);
+        // SHA-1 is what RFC 4122 mandates for name-based v5 UUIDs — this is
+        // deterministic id derivation, not a security hash (sonar S4790: safe)
         var hash = SHA1.HashData([.. namespaceBytes, .. nameBytes]);
 
         var guid = new byte[16];

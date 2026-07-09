@@ -50,45 +50,15 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
             if (_rateLimitedUntil.TryGetValue(linked.GcAccountId, out var until) && DateTimeOffset.UtcNow < until) continue;
             try
             {
-                var space = await db.Spaces.FindAsync([linked.SpaceId], ct);
-                if (space is null) continue;
-
-                // banks budget ~4 calls per endpoint per day — the account
-                // details never change after linking, so only the very first
-                // fetch spends a call on them
-                var details = linked.LastFetchAt is null
-                    ? await gc.GetAccountDetailsAsync(linked.GcAccountId, ct)
-                    : new GcAccountDetails(linked.Iban, null, linked.Currency);
-                var balances = await gc.GetBalancesAsync(linked.GcAccountId, ct);
-                var from = DateOnly.FromDateTime((linked.LastFetchAt?.UtcDateTime ?? DateTime.UtcNow.AddDays(-90)).AddDays(-3));
-                var transactions = await gc.GetTransactionsAsync(linked.GcAccountId, from, ct);
-
-                var accepted = await new GcIngest(db).IngestAccountAsync(space, linked, details, balances, transactions);
-                linked.LastFetchAt = DateTimeOffset.UtcNow;
-                await db.SaveChangesAsync(ct);
-                if (logger.IsEnabled(LogLevel.Information))
-                    logger.LogInformation("gc fetch {Iban}: {Accepted} new ops", linked.Iban, accepted);
-
-                // wake the members' devices: SSE for open apps, push
-                // notification + preload for closed ones. Raw rows land in
-                // the FEED space; the overlay lands in the target space —
-                // publish both so attached members react immediately.
-                if (accepted > 0)
-                {
-                    var events = scope.ServiceProvider.GetRequiredService<Sync.SpaceEventBroadcaster>();
-                    events.Publish(ImportIds.FeedSpaceId(linked.Iban));
-                    events.Publish(linked.SpaceId);
-                    var notifier = scope.ServiceProvider.GetRequiredService<Push.PushNotifier>();
-                    await notifier.NotifyNewTransactionsAsync(linked.SpaceId, accepted, ct);
-                }
-                await Task.Delay(AccountDelay, ct);
+                await FetchAccountAsync(scope.ServiceProvider, db, gc, linked, ct);
             }
             catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
             {
-                // daily quota spent — expected with GoCardless's ~4/day budget;
-                // stand down for 12h instead of hammering the remaining calls
+                // the ~4-calls-per-endpoint daily budget is spent — stand
+                // down for 12h instead of hammering the remaining calls
                 _rateLimitedUntil[linked.GcAccountId] = DateTimeOffset.UtcNow.AddHours(12);
-                logger.LogInformation("gc rate limit for {Iban} — deferring 12h", linked.Iban);
+                if (logger.IsEnabled(LogLevel.Information))
+                    logger.LogInformation(ex, "gc rate limit for {Iban} — deferring 12h", linked.Iban);
             }
             catch (HttpRequestException ex)
             {
@@ -96,5 +66,41 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
                 logger.LogWarning(ex, "gc fetch failed for {Iban}", linked.Iban);
             }
         }
+    }
+
+    private async Task FetchAccountAsync(IServiceProvider services, AppDbContext db, IGoCardlessApi gc, GcLinkedAccount linked, CancellationToken ct)
+    {
+        var space = await db.Spaces.FindAsync([linked.SpaceId], ct);
+        if (space is null) return;
+
+        // banks budget ~4 calls per endpoint per day — the account details
+        // never change after linking, so only the very first fetch spends a
+        // call on them
+        var details = linked.LastFetchAt is null
+            ? await gc.GetAccountDetailsAsync(linked.GcAccountId, ct)
+            : new GcAccountDetails(linked.Iban, null, linked.Currency);
+        var balances = await gc.GetBalancesAsync(linked.GcAccountId, ct);
+        var from = DateOnly.FromDateTime((linked.LastFetchAt?.UtcDateTime ?? DateTime.UtcNow.AddDays(-90)).AddDays(-3));
+        var transactions = await gc.GetTransactionsAsync(linked.GcAccountId, from, ct);
+
+        var accepted = await new GcIngest(db).IngestAccountAsync(space, linked, details, balances, transactions);
+        linked.LastFetchAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(ct);
+        if (logger.IsEnabled(LogLevel.Information))
+            logger.LogInformation("gc fetch {Iban}: {Accepted} new ops", linked.Iban, accepted);
+
+        // wake the members' devices: SSE for open apps, push notification +
+        // preload for closed ones. Raw rows land in the FEED space; the
+        // overlay lands in the target space — publish both so attached
+        // members react immediately.
+        if (accepted > 0)
+        {
+            var events = services.GetRequiredService<Sync.SpaceEventBroadcaster>();
+            events.Publish(ImportIds.FeedSpaceId(linked.Iban));
+            events.Publish(linked.SpaceId);
+            var notifier = services.GetRequiredService<Push.PushNotifier>();
+            await notifier.NotifyNewTransactionsAsync(linked.SpaceId, accepted, ct);
+        }
+        await Task.Delay(AccountDelay, ct);
     }
 }
