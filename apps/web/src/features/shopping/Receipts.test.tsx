@@ -59,6 +59,6 @@ describe('Receipts S1 (demo identity)', () => {
     renderApp('/settings');
     await screen.findByTestId('screen-settings');
     fireEvent.click(screen.getByTestId('settings-shopping-row'));
-    await screen.findByTestId('screen-shopping');
+    expect(await screen.findByTestId('screen-shopping')).toBeTruthy();
   }, 15_000);
 });

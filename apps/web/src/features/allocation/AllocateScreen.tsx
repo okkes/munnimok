@@ -183,7 +183,7 @@ export function AllocateScreen() {
             inputMode="decimal"
             step="0.01"
             disabled={!editable}
-            value={drafts[cat.id] ?? (assigned !== 0 ? (assigned / 100).toFixed(2) : '')}
+            value={drafts[cat.id] ?? (assigned === 0 ? '' : (assigned / 100).toFixed(2))}
             placeholder="0.00"
             onFocus={() => setFocusedCat(cat.id)}
             onChange={(e) => setDrafts((d) => ({ ...d, [cat.id]: e.target.value }))}
