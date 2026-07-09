@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useLogto } from '@logto/react';
 import { LANG_NAMES, LANGS, useLang } from '@/i18n';
@@ -13,14 +13,44 @@ import { addOfflineProfile, listOfflineProfiles } from './offlineProfiles';
 import leafUrl from '@/assets/leaf.png';
 import loginBgUrl from '@/assets/login-bg.png';
 
-/** real OIDC sign-in — only rendered when Logto is configured */
-function LogtoSignInButton() {
+/** live navigator.onLine with event updates */
+function useOnLine(): boolean {
+  const [onLine, setOnLine] = useState(() => navigator.onLine);
+  useEffect(() => {
+    const update = () => setOnLine(navigator.onLine);
+    window.addEventListener('online', update);
+    window.addEventListener('offline', update);
+    return () => {
+      window.removeEventListener('online', update);
+      window.removeEventListener('offline', update);
+    };
+  }, []);
+  return onLine;
+}
+
+/** real OIDC sign-in — only rendered when Logto is configured. Disabled
+ *  without connectivity, with a line saying why (the silent dead button
+ *  cost real head-scratching). */
+function LogtoSignInButton({ onLine }: Readonly<{ onLine: boolean }>) {
   const { t } = useLang();
   const { signIn } = useLogto();
   return (
-    <Button variant="primary" data-testid="login-signin-btn" onClick={() => void signIn(callbackUri())}>
-      {t('login.signIn')}
-    </Button>
+    <>
+      <Button
+        variant="primary"
+        data-testid="login-signin-btn"
+        disabled={!onLine}
+        onClick={() => void signIn(callbackUri())}
+      >
+        {t('login.signIn')}
+      </Button>
+      {!onLine && (
+        <p className="flex items-center justify-center gap-1.5 text-center text-[12px] text-ink-3" data-testid="login-offline-note">
+          <Icon name="wifi-off" size={13} color="var(--m-warning)" />
+          {t('login.offlineNote')}
+        </p>
+      )}
+    </>
   );
 }
 
@@ -71,6 +101,7 @@ export function LoginScreen() {
   const { t } = useLang();
   const { login } = useSession();
   const navigate = useNavigate();
+  const onLine = useOnLine();
   const [offlineOpen, setOfflineOpen] = useState(false);
   const [profileName, setProfileName] = useState('');
   const profiles = listOfflineProfiles();
@@ -117,7 +148,7 @@ export function LoginScreen() {
           </div>
 
           <div className="flex flex-col gap-3 px-6 pb-4 md:w-[360px] md:px-0">
-            {logtoConfigured && <LogtoSignInButton />}
+            {logtoConfigured && <LogtoSignInButton onLine={onLine} />}
             {logtoConfigured && (
               <div className="flex items-center gap-3 py-1">
                 <div className="h-px flex-1 bg-line" />
