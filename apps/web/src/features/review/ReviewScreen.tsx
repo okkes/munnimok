@@ -14,6 +14,8 @@ import { useData } from '@/app/data';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { fmtCents } from '@/lib/money';
 import { cleanBankText } from '@/lib/text';
+import { HelpButton } from '@/features/help/HelpButton';
+import { IntroCard } from '@/features/help/IntroCard';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
@@ -246,6 +248,7 @@ export function ReviewScreen() {
             <Icon name="chevron-left" size={24} />
           </IconButton>
         }
+        trailing={<HelpButton tourId="review" />}
       />
       {/* quiet progress line under the bar */}
       <div className="h-0.5 shrink-0 bg-bg-2">
@@ -253,6 +256,7 @@ export function ReviewScreen() {
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-5 pb-6">
+        <IntroCard tourId="review" />
         {!tx && queue && !emptyBecauseSkipped && (
           <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center" data-testid="review-empty">
             <Icon name="check-circle-outline" size={48} color="var(--m-accent)" />

@@ -12,6 +12,8 @@ import type { RecurringRow } from '@/db/types';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { OfflineIndicator } from '@/app/OfflineBanner';
+import { HelpButton } from '@/features/help/HelpButton';
+import { IntroCard } from '@/features/help/IntroCard';
 import { NotificationsBell } from './NotificationsBell';
 import { HomeCustomizeSheet, resolveHomeBlocks } from './HomeCustomizeSheet';
 import type { HomeBlockId } from './HomeCustomizeSheet';
@@ -152,6 +154,7 @@ export function HomeScreen() {
           <>
             <OfflineIndicator />
             <NotificationsBell />
+            <HelpButton tourId="home" />
             <IconButton label={t('home.customize')} testId="home-customize" onClick={() => setCustomizeOpen(true)}>
               <Icon name="tune-variant" size={19} />
             </IconButton>
@@ -184,6 +187,8 @@ export function HomeScreen() {
             </div>
           )}
         </button>
+
+        <IntroCard tourId="home" />
 
         {layout.filter((entry) => !entry.hidden).map((entry) => (
           <div key={entry.id}>{blockRenderers[entry.id]()}</div>

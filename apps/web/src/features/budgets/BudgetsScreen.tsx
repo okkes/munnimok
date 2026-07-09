@@ -5,6 +5,8 @@ import type { BudgetStatus } from '@/domain/budgets';
 import { fmtCents } from '@/lib/money';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useData } from '@/app/data';
+import { HelpButton } from '@/features/help/HelpButton';
+import { IntroCard } from '@/features/help/IntroCard';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
 import { CADENCE_KEYS, budgetColor, budgetSoft, ratioPct } from './budgetUi';
@@ -77,12 +79,16 @@ export function BudgetsScreen() {
           </IconButton>
         }
         trailing={
-          <IconButton label={t('budgets.new')} testId="budgets-add" onClick={() => void navigate({ to: '/budgets/new' })}>
-            <Icon name="plus" size={22} />
-          </IconButton>
+          <>
+            <HelpButton tourId="budgets" />
+            <IconButton label={t('budgets.new')} testId="budgets-add" onClick={() => void navigate({ to: '/budgets/new' })}>
+              <Icon name="plus" size={22} />
+            </IconButton>
+          </>
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
+        <IntroCard tourId="budgets" />
         <div className="flex flex-col gap-2.5 pt-1">
           {(statuses ?? []).map((status) => (
             <BudgetCard

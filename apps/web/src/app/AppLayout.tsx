@@ -4,6 +4,7 @@ import { useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
 import { DataProvider, useData } from './data';
 import { OfflineBanner } from './OfflineBanner';
+import { HelpProvider } from '@/features/help/HelpContext';
 import { useRecurringReminders } from '@/application/recurring';
 import { collectBudgetAlerts } from '@/sync/swBudgets';
 import { Icon } from '@/ui/Icon';
@@ -90,9 +91,11 @@ export function AppLayout() {
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden pt-[env(safe-area-inset-top)]">
           <DataProvider>
-            <div className="min-h-0 flex-1 overflow-hidden">
-              <Outlet />
-            </div>
+            <HelpProvider>
+              <div className="min-h-0 flex-1 overflow-hidden">
+                <Outlet />
+              </div>
+            </HelpProvider>
             <OfflineBanner />
             <RecurringReminders />
             <BudgetAlerts />
