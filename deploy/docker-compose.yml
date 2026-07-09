@@ -135,7 +135,8 @@ services:
     image: dpage/pgadmin4:latest
     restart: unless-stopped
     environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@localhost.local}
+      # default must be a resolvable-TLD address — pgadmin refuses .local
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@munni.dev}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:?set PGADMIN_PASSWORD in .env}
     ports:
       - "8093:80"

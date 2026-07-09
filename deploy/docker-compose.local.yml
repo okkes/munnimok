@@ -52,11 +52,12 @@ services:
       postgres:
         condition: service_healthy
 
-  # database inspector: http://localhost:8183 (admin@localhost.local / localtest)
+  # database inspector: http://localhost:8183 (admin@munni.dev / localtest)
+  # (pgadmin validates the domain — special-use TLDs like .local are refused)
   pgadmin:
     image: dpage/pgadmin4:latest
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@localhost.local
+      PGADMIN_DEFAULT_EMAIL: admin@munni.dev
       PGADMIN_DEFAULT_PASSWORD: localtest
     ports:
       - "8183:80"
