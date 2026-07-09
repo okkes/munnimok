@@ -919,6 +919,8 @@ export const en = {
   'notif.someone': 'Someone',
   'notif.friendRequest': '{name} sent you a friend request',
   'notif.spaceInvite': '{name} invited you to “{space}”',
+  'overview.payments': 'Payments',
+  'overview.noPayments': 'No payments in this period.',
   'settings.vpdebug': 'Viewport diagnostics',
   'settings.vpdebugSub': 'Overlay with screen measurements for bug reports',
   'sync.reasonNoNetwork': 'No internet connection.',

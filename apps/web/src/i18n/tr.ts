@@ -921,6 +921,8 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'notif.someone': 'Birisi',
   'notif.friendRequest': '{name} sana arkadaşlık isteği gönderdi',
   'notif.spaceInvite': '{name} seni “{space}” alanına davet etti',
+  'overview.payments': 'Ödemeler',
+  'overview.noPayments': 'Bu dönemde ödeme yok.',
   'settings.vpdebug': 'Görüntü alanı tanılama',
   'settings.vpdebugSub': 'Hata bildirimleri için ekran ölçümleri katmanı',
   'sync.reasonNoNetwork': 'İnternet bağlantısı yok.',

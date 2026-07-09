@@ -21,6 +21,7 @@ import { ManageCategoriesScreen } from '@/features/categories/ManageCategoriesSc
 import { FriendsScreen } from '@/features/friends/FriendsScreen';
 import { OnboardingScreen } from '@/features/auth/OnboardingScreen';
 import { OverviewScreen } from '@/features/overview/OverviewScreen';
+import { CategoryDrillScreen } from '@/features/overview/CategoryDrillScreen';
 import { ProfileScreen } from '@/features/profile/ProfileScreen';
 import { RecurringScreen } from '@/features/recurring/RecurringScreen';
 import { RecurringDetailScreen } from '@/features/recurring/RecurringDetailScreen';
@@ -60,12 +61,6 @@ const transactionsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/transactions',
   component: TransactionsScreen,
-  // overview drill-down: category + period land here as search params
-  validateSearch: (search: Record<string, unknown>): { catId?: string; from?: string; to?: string } => ({
-    catId: typeof search.catId === 'string' ? search.catId : undefined,
-    from: typeof search.from === 'string' ? search.from : undefined,
-    to: typeof search.to === 'string' ? search.to : undefined,
-  }),
 });
 const txDetailRoute = createRoute({
   getParentRoute: () => appRoute,
@@ -102,6 +97,15 @@ const friendsRoute = createRoute({ getParentRoute: () => appRoute, path: '/frien
 const onboardingRoute = createRoute({ getParentRoute: () => appRoute, path: '/onboarding', component: OnboardingScreen });
 const profileRoute = createRoute({ getParentRoute: () => appRoute, path: '/profile', component: ProfileScreen });
 const overviewRoute = createRoute({ getParentRoute: () => appRoute, path: '/overview/$kind', component: OverviewScreen });
+const categoryDrillRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/overview/$kind/$catId',
+  component: CategoryDrillScreen,
+  // the overview hands over its selected period
+  validateSearch: (search: Record<string, unknown>): { from?: string } => ({
+    from: typeof search.from === 'string' ? search.from : undefined,
+  }),
+});
 
 export const routeTree = rootRoute.addChildren([
   loginRoute,
@@ -123,6 +127,7 @@ export const routeTree = rootRoute.addChildren([
     onboardingRoute,
     profileRoute,
     overviewRoute,
+    categoryDrillRoute,
   ]),
 ]);
 

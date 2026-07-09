@@ -101,6 +101,25 @@ interface CatalogLookup {
   byId: (id: string | undefined) => { id: string; parentId?: string };
 }
 
+/** one category's transactions in a period (a main matches its whole
+ *  family, a sub only itself — same attribution as categoryBreakdown),
+ *  newest first, with the signed total */
+export function txsForCategory(
+  kind: OverviewKind,
+  txs: TransactionRow[],
+  accountsById: Map<string, AccountRow>,
+  period: Period,
+  catId: string,
+  catalog: CatalogLookup,
+): { txs: TransactionRow[]; totalCents: number } {
+  const matches = txsForKind(kind, txs, accountsById, period).filter((tx) => {
+    const cat = catalog.byId(tx.catId);
+    return cat.id === catId || cat.parentId === catId;
+  });
+  matches.sort((a, b) => b.date.localeCompare(a.date));
+  return { txs: matches, totalCents: matches.reduce((sum, tx) => sum + contributionCents(kind, tx), 0) };
+}
+
 /** groups a kind's transactions by main category, sorted by size */
 export function categoryBreakdown(
   kind: OverviewKind,

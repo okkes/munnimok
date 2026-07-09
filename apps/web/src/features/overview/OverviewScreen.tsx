@@ -68,9 +68,9 @@ export function OverviewScreen() {
   );
 
   const period = periods[periodIndex];
-  // drill into a category's transactions, scoped to the selected period
-  const openTransactions = (catId: string) =>
-    void navigate({ to: '/transactions', search: { catId, from: period.start, to: period.end } });
+  // drill into the category's own screen, keeping the selected period
+  const openCategory = (catId: string) =>
+    void navigate({ to: '/overview/$kind/$catId', params: { kind, catId }, search: { from: period.start } });
   const groups = useMemo(
     () => categoryBreakdown(kind, txs ?? [], accountsById, period, cats),
     [kind, txs, accountsById, period, cats],
@@ -168,7 +168,7 @@ export function OverviewScreen() {
                         the main's transactions */}
                     <button
                       data-testid={`overview-all-${group.catId}`}
-                      onClick={() => openTransactions(group.catId)}
+                      onClick={() => openCategory(group.catId)}
                       className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent py-2.5 text-left"
                     >
                       <Icon name="format-list-bulleted" size={16} color="var(--m-ink-3)" />
@@ -184,7 +184,7 @@ export function OverviewScreen() {
                       <button
                         key={sub.catId}
                         data-testid={`overview-sub-${sub.catId}`}
-                        onClick={() => openTransactions(sub.catId)}
+                        onClick={() => openCategory(sub.catId)}
                         className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent py-2.5 text-left last:border-0"
                       >
                         <Icon name={cats.byId(sub.catId).icon} size={16} color="var(--m-ink-3)" />

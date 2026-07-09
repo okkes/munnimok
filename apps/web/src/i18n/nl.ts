@@ -921,6 +921,8 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'notif.someone': 'Iemand',
   'notif.friendRequest': '{name} heeft je een vriendschapsverzoek gestuurd',
   'notif.spaceInvite': '{name} heeft je uitgenodigd voor “{space}”',
+  'overview.payments': 'Betalingen',
+  'overview.noPayments': 'Geen betalingen in deze periode.',
   'settings.vpdebug': 'Viewport-diagnose',
   'settings.vpdebugSub': 'Overlay met schermafmetingen voor foutmeldingen',
   'sync.reasonNoNetwork': 'Geen internetverbinding.',
