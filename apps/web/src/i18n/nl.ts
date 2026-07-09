@@ -1131,4 +1131,12 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'tour.budgets.3b': 'Groen is prima, oranje komt dichtbij, rood is eroverheen — Thuis toont de drie meest urgente.',
   'tour.budgets.4t': 'Restjes kunnen doorrollen',
   'tour.budgets.4b': 'Doorschuiven neemt ongebruikt geld mee naar de volgende periode, met een plafond als je dat wilt.',
+  'receipt.title': 'Bonnetje',
+  'receipt.takePhoto': 'Foto maken',
+  'receipt.sourcePhoto': 'Foto',
+  'receipt.items': 'artikelen',
+  'shop.title': 'Winkelkoppelingen',
+  'shop.privacy': 'Winkel-logins blijven op dit apparaat — de servers van munni zien je inloggegevens of tokens nooit.',
+  'shop.comingSoon': 'Binnenkort',
+  'shop.photoNote': 'Tot de winkelkoppelingen er zijn: maak een foto van je bonnetje bij een transactie — die synct naar je ruimte.',
 };

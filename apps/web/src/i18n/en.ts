@@ -1129,6 +1129,14 @@ export const en = {
   'tour.budgets.3b': 'Green is fine, amber is getting close, red is over — Home surfaces the three most urgent.',
   'tour.budgets.4t': 'Leftovers can roll',
   'tour.budgets.4b': 'Carry-over moves unused money into the next period, up to a cap if you want one.',
+  'receipt.title': 'Receipt',
+  'receipt.takePhoto': 'Take photo',
+  'receipt.sourcePhoto': 'Photo',
+  'receipt.items': 'items',
+  'shop.title': 'Shopping connections',
+  'shop.privacy': 'Store logins stay on this device — munni’s servers never see your credentials or tokens.',
+  'shop.comingSoon': 'Coming soon',
+  'shop.photoNote': 'Until store connections arrive, snap a receipt photo on any transaction — it syncs to your space.',
 } as const;
 
 export type TranslationKey = keyof typeof en;

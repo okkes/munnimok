@@ -1,6 +1,6 @@
 # Tutorials & in-app help — design
 
-Status: **approved 2026-07-09** — rulings folded in below.
+Status: **built 2026-07-09** (T1–T2 shipped: intro cards, slides, spotlight; content for Home/Review/Budgets).
 
 ## Confirmed rulings
 

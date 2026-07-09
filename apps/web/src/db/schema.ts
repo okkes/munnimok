@@ -9,6 +9,8 @@ import type {
   DebtRow,
   EntityName,
   EventRow,
+  ReceiptRow,
+  StoreConnectionRow,
   GoalContributionRow,
   GoalRow,
   MetaRow,
@@ -40,6 +42,9 @@ export class MunniDB extends Dexie {
   goalContributions!: Table<GoalContributionRow, string>;
   debts!: Table<DebtRow, string>;
   allocations!: Table<AllocationRow, string>;
+  receipts!: Table<ReceiptRow, string>;
+  /** device-only — store tokens never sync (receipts privacy law) */
+  storeConnections!: Table<StoreConnectionRow, string>;
   outbox!: Table<OutboxRow, string>;
   meta!: Table<MetaRow, string>;
 
@@ -78,6 +83,11 @@ export class MunniDB extends Dexie {
     this.version(6).stores({
       allocations: 'id, spaceId, [spaceId+periodStart]',
     });
+    // receipts (synced) + device-only store connections
+    this.version(7).stores({
+      receipts: 'id, spaceId, txId',
+      storeConnections: 'store',
+    });
   }
 
   tableFor<E extends EntityName>(entity: E) {
@@ -110,6 +120,8 @@ export class MunniDB extends Dexie {
         return this.debts;
       case 'allocation':
         return this.allocations;
+      case 'receipt':
+        return this.receipts;
       default:
         throw new Error(`unknown entity: ${entity}`);
     }

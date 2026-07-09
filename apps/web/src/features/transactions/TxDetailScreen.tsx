@@ -15,6 +15,7 @@ import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 import { CategoryPicker } from '@/features/categories/CategoryPicker';
 import { netAmountCents, totalReimbursedCents } from '@/domain/reimbursement';
+import { ReceiptSection } from '@/features/shopping/ReceiptSection';
 import { ReimburseSection } from './ReimburseSection';
 import { SplitEditorSheet } from './SplitEditorSheet';
 import { TxFormSheet } from './TxFormSheet';
@@ -187,6 +188,7 @@ export function TxDetailScreen() {
         </div>
 
         <ReimburseSection tx={tx} />
+        <ReceiptSection tx={tx} />
 
         <div className="m-cap mt-5 mb-1 px-1">{t('tx.notes')}</div>
         <NotesField

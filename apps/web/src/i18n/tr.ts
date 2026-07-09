@@ -1131,4 +1131,12 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'tour.budgets.3b': 'Yeşil iyi, sarı yaklaşıyor, kırmızı aşıldı — Ana sayfa en acil üçünü gösterir.',
   'tour.budgets.4t': 'Kalanlar devredebilir',
   'tour.budgets.4b': 'Devretme, kullanılmayan parayı bir sonraki döneme taşır; istersen bir tavanla.',
+  'receipt.title': 'Fiş',
+  'receipt.takePhoto': 'Fotoğraf çek',
+  'receipt.sourcePhoto': 'Fotoğraf',
+  'receipt.items': 'ürün',
+  'shop.title': 'Mağaza bağlantıları',
+  'shop.privacy': 'Mağaza girişleri bu cihazda kalır — munni sunucuları kimlik bilgilerini veya tokenları asla görmez.',
+  'shop.comingSoon': 'Yakında',
+  'shop.photoNote': 'Mağaza bağlantıları gelene dek herhangi bir işlemde fiş fotoğrafı çek — alanına senkronize edilir.',
 };

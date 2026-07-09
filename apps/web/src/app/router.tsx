@@ -33,6 +33,7 @@ import { DebtsScreen } from '@/features/debts/DebtsScreen';
 import { DebtDetailScreen } from '@/features/debts/DebtDetailScreen';
 import { AllocateScreen } from '@/features/allocation/AllocateScreen';
 import { HelpIndexScreen } from '@/features/help/HelpIndexScreen';
+import { ShoppingConnectionsScreen } from '@/features/shopping/ShoppingConnectionsScreen';
 import { ProfileScreen } from '@/features/profile/ProfileScreen';
 import { RecurringScreen } from '@/features/recurring/RecurringScreen';
 import { RecurringDetailScreen } from '@/features/recurring/RecurringDetailScreen';
@@ -121,6 +122,7 @@ const debtsRoute = createRoute({ getParentRoute: () => appRoute, path: '/debts',
 const debtDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/debts/$debtId', component: DebtDetailScreen });
 const allocateRoute = createRoute({ getParentRoute: () => appRoute, path: '/allocate', component: AllocateScreen });
 const helpRoute = createRoute({ getParentRoute: () => appRoute, path: '/help', component: HelpIndexScreen });
+const shoppingRoute = createRoute({ getParentRoute: () => appRoute, path: '/shopping', component: ShoppingConnectionsScreen });
 const categoryDrillRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/overview/$kind/$catId',
@@ -164,6 +166,7 @@ export const routeTree = rootRoute.addChildren([
     debtDetailRoute,
     allocateRoute,
     helpRoute,
+    shoppingRoute,
   ]),
 ]);
 

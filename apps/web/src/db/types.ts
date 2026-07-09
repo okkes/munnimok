@@ -317,6 +317,44 @@ export interface AllocationRow extends SyncEnvelope {
   assignedCents: number;
 }
 
+export type ReceiptSource = 'photo' | 'ah' | 'jumbo' | 'bol' | 'coolblue' | 'mediamarkt' | 'amazon';
+
+export interface ReceiptItem {
+  name: string;
+  qty?: number;
+  unitCents?: number;
+  totalCents: number;
+}
+
+/**
+ * A transaction's line-item proof (approved receipts design). Photo
+ * receipts carry a downscaled data URL; store receipts carry items.
+ */
+export interface ReceiptRow extends SyncEnvelope {
+  id: string;
+  spaceId: string;
+  /** the transaction it proves — set on capture (photo) or by the matcher */
+  txId?: string;
+  source: ReceiptSource;
+  date: string;
+  totalCents: number;
+  merchant?: string;
+  items?: ReceiptItem[];
+  /** downscaled data URL (photo path) */
+  image?: string;
+}
+
+/**
+ * DEVICE-ONLY store login state — never synced, never on our server
+ * (receipts design privacy law). A new phone reconnects by design.
+ */
+export interface StoreConnectionRow {
+  store: Exclude<ReceiptSource, 'photo'>;
+  tokens: Record<string, string>;
+  refreshedAt: string;
+  status: 'ok' | 'expired';
+}
+
 /**
  * Attachment of a financial account (its feed space) to a viewing
  * space. Lives in the viewing space so members render it offline; the
@@ -370,7 +408,8 @@ export type EntityName =
   | 'goal'
   | 'goalContribution'
   | 'debt'
-  | 'allocation';
+  | 'allocation'
+  | 'receipt';
 
 export interface EntityRowMap {
   space: SpaceRow;
@@ -387,4 +426,5 @@ export interface EntityRowMap {
   goalContribution: GoalContributionRow;
   debt: DebtRow;
   allocation: AllocationRow;
+  receipt: ReceiptRow;
 }

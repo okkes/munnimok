@@ -1,6 +1,6 @@
 # Receipts & shopping integrations — design
 
-Status: **approved 2026-07-09** — rulings folded in below.
+Status: **S1 built 2026-07-09** (photo receipts + tx section + connections skeleton); S2 next: AH adapter, matcher, proxy, OCR container.
 
 ## Confirmed rulings
 

@@ -1,6 +1,6 @@
 # Allocation (zero-based budgeting) — design
 
-Status: **approved 2026-07-09** — rulings folded in below.
+Status: **built 2026-07-09** (A1–A3 shipped: cells, chips, cover-from, home block, Age of Money).
 The YNAB concept, munni-shaped; the legacy sketch is inspiration only.
 
 ## Confirmed rulings
