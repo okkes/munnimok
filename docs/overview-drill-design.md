@@ -1,6 +1,6 @@
 # Overview → category drill-down — design
 
-Status: **draft for approval** — nothing here is built yet.
+Status: **approved 2026-07-09** — ready to build.
 
 ## Problem
 

@@ -1,6 +1,6 @@
 # Budgets — design
 
-Status: **draft for approval** — nothing here is built yet.
+Status: **approved 2026-07-09** — ready to build.
 Legacy `apps/legacy/src/features/budgets` used as inspiration only
 (urgency color ramp, over-budget hatching, carry-over card, category
 exclusivity badges); everything below is designed for the synced,
@@ -61,10 +61,10 @@ the limit; the app warns before the money runs out.
    monthly) + anchor day, category checklist with exclusivity badges,
    carry-over toggle → mode (N periods / cap €) inputs, notify
    threshold chips (off / 80% / 90% / 100%).
-4. **Home block** ("landing zone" pattern): the 2 most urgent budgets
-   (over or closest to their limit), mini progress bars, ordered by
-   urgency; tapping a row → its detail, "See all" → the list. Hidden
-   until the space has budgets.
+4. **Home block** ("landing zone" pattern): the **3** most urgent
+   budgets (over or closest to their limit), mini progress bars,
+   ordered by urgency; tapping a row → its detail, "See all" → the
+   list. Hidden until the space has budgets.
 
 ## The low-budget push notification (app closed)
 
@@ -93,14 +93,10 @@ worker meta like recurring reminders).
 - Tests: convergence (two devices editing a budget), carry-over replay
   determinism, exclusivity picker, crossing-once notification.
 
-## Questions before building
+## Confirmed rulings (2026-07-09)
 
-1. Cadence set `week | 2weeks | month` — is a custom "every N days"
-   needed for v1? (I propose no.)
-2. Carry-over limit: I ship **both** modes behind one toggle (choose
-   "for N periods" *or* "up to €cap") — matches your "configurable how
-   many times or max value". OK?
-3. Home block shows **2** budgets max (design: couple of most urgent) —
-   or 3?
-4. Budget currency follows the space currency (no per-budget currency) —
-   OK?
+1. Cadence stays `week | 2weeks | month` — no custom "every N days". ✓
+2. Carry-over ships **both** modes behind one toggle ("for N periods"
+   *or* "up to € cap"). ✓
+3. Home block shows the **3** most urgent budgets. ✓
+4. Budget currency follows the space currency. ✓
