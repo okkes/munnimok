@@ -10,6 +10,7 @@ import type { ImportResult } from './importCamt';
 import { apiFeedGateway, fetchMyFeedIds } from './feedGateway';
 import { AttachSheet } from './AttachSheet';
 import { BankConnectSheet } from './BankConnect';
+import { useInstitutionLogos } from './useInstitutionLogos';
 import { useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
 import { useData } from '@/app/data';
@@ -43,7 +44,9 @@ function AccountRowButton({
   onOpen: (entry: GlobalAccount) => void;
 }) {
   const { t } = useLang();
+  const logos = useInstitutionLogos();
   const { account, feedSpaceId, sharedVia } = entry;
+  const bankLogo = account.bankId ? logos.get(account.bankId) : undefined;
   const active = sharedVia.filter((v) => !v.archived);
   const archivedOnly = sharedVia.length > 0 && active.length === 0;
   let feedSubtitle = t('acct.notAttached');
@@ -55,7 +58,22 @@ function AccountRowButton({
       onClick={() => onOpen(entry)}
       className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left"
     >
-      <Icon name={typeDef(account.type).icon} size={22} color={account.color ?? 'var(--m-ink-3)'} />
+      {bankLogo ? (
+        <img
+          src={bankLogo}
+          alt=""
+          className="h-7 w-7 shrink-0 rounded-lg object-contain"
+          loading="lazy"
+          data-testid={`account-logo-${account.id}`}
+          onError={(e) => {
+            e.currentTarget.style.display = 'none';
+            e.currentTarget.nextElementSibling?.classList.remove('hidden');
+          }}
+        />
+      ) : null}
+      <span className={bankLogo ? 'hidden' : ''}>
+        <Icon name={typeDef(account.type).icon} size={22} color={account.color ?? 'var(--m-ink-3)'} />
+      </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[15px] text-ink">{account.name}</span>
         {feedSpaceId ? (

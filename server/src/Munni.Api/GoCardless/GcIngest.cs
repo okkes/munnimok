@@ -44,6 +44,9 @@ public sealed partial class GcIngest(AppDbContext db)
             ["currency"] = Json(details.Currency ?? linked.Currency),
             ["iban"] = Json(linked.Iban),
         };
+        // the institution id lets clients show the real bank logo
+        var requisition = await db.GcRequisitions.FindAsync(linked.RequisitionId);
+        if (requisition is not null) accountFields["bankId"] = Json(requisition.InstitutionId);
         if (balance is not null)
         {
             accountFields["balanceCents"] = Json(ToCents(balance.BalanceAmount.Amount));
