@@ -1,9 +1,11 @@
+import { useEffect } from 'react';
 import { Link, Outlet, useRouterState } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
-import { DataProvider } from './data';
+import { DataProvider, useData } from './data';
 import { OfflineBanner } from './OfflineBanner';
 import { useRecurringReminders } from '@/application/recurring';
+import { collectBudgetAlerts } from '@/sync/swBudgets';
 import { Icon } from '@/ui/Icon';
 import { Logo } from '@/ui/Logo';
 
@@ -25,6 +27,31 @@ const TABS: TabDef[] = [
 /** headless: fires due-soon reminders once per app open (needs DataProvider) */
 function RecurringReminders() {
   useRecurringReminders();
+  return null;
+}
+
+/** headless: manually typed spending crosses a budget threshold while
+ *  the app is open — same once-per-period markers as the worker path,
+ *  so the two can never double-fire (budgets design P4) */
+function BudgetAlerts() {
+  const { db, spaceId } = useData();
+  const { lang } = useLang();
+  useEffect(() => {
+    void (async () => {
+      if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+      const registration = await navigator.serviceWorker?.ready.catch(() => undefined);
+      if (!registration) return;
+      for (const alert of await collectBudgetAlerts(db, spaceId, lang)) {
+        await registration.showNotification(alert.title, {
+          body: alert.body,
+          icon: 'icon-192.png',
+          badge: 'icon-192.png',
+          tag: alert.tag,
+          data: { url: alert.url },
+        });
+      }
+    })().catch(() => undefined); // best-effort; a closing db must not throw
+  }, [db, spaceId, lang]);
   return null;
 }
 
@@ -68,6 +95,7 @@ export function AppLayout() {
             </div>
             <OfflineBanner />
             <RecurringReminders />
+            <BudgetAlerts />
           </DataProvider>
         </div>
 

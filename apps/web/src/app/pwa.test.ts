@@ -27,6 +27,9 @@ describe('handleWorkerMessage (notification deep-link)', () => {
     await vi.waitFor(() => expect(router.state.location.pathname).toBe('/friends'));
     handleWorkerMessage({ type: 'NAVIGATE', url: './#/spaces' });
     await vi.waitFor(() => expect(router.state.location.pathname).toBe('/spaces'));
+    // budget alerts land on their detail screen
+    handleWorkerMessage({ type: 'NAVIGATE', url: './#/budgets/b42' });
+    await vi.waitFor(() => expect(router.state.location.pathname).toBe('/budgets/b42'));
   });
 
   it('re-broadcasts worker PUSH messages as a window event', () => {

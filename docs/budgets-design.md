@@ -1,6 +1,6 @@
 # Budgets — design
 
-Status: **approved 2026-07-09** — ready to build.
+Status: **built 2026-07-09** (P1–P4 all shipped).
 Legacy `apps/legacy/src/features/budgets` used as inspiration only
 (urgency color ramp, over-budget hatching, carry-over card, category
 exclusivity badges); everything below is designed for the synced,

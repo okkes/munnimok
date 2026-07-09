@@ -48,7 +48,15 @@ export function handleWorkerMessage(data: unknown): void {
   if (message?.type !== 'NAVIGATE' || typeof message.url !== 'string') return;
   const path = message.url.split('#')[1]; // './#/friends' → '/friends'
   const target = NOTIFICATION_TARGETS.find((route) => route === path);
-  if (target) void router.navigate({ to: target });
+  if (target) {
+    void router.navigate({ to: target });
+    return;
+  }
+  // budget alerts target their detail screen; the id shape is validated
+  const budget = /^\/budgets\/([A-Za-z0-9_-]+)$/.exec(path ?? '');
+  if (budget && budget[1] !== 'new') {
+    void router.navigate({ to: '/budgets/$budgetId', params: { budgetId: budget[1] } });
+  }
 }
 
 function initNotificationNav(): void {

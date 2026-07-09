@@ -7,6 +7,7 @@
 // Runtime glue only — the decisions live in sync/swNotifications (tested).
 import { cleanupOutdatedCaches, precacheAndRoute } from 'workbox-precaching';
 import { backgroundPull, flushOutbox } from '@/sync/swSync';
+import { evaluateBudgetAlertsFromWorker } from '@/sync/swBudgets';
 import { buildNotification, readWorkerLang } from '@/sync/swNotifications';
 import type { PushPayload } from '@/sync/swNotifications';
 
@@ -41,7 +42,8 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     (async () => {
       // the notification first — iOS requires one per push event
-      const notification = buildNotification(payload, await readWorkerLang());
+      const lang = await readWorkerLang();
+      const notification = buildNotification(payload, lang);
       if (!notification) return;
       await self.registration.showNotification(notification.title, {
         body: notification.body,
@@ -61,6 +63,18 @@ self.addEventListener('push', (event) => {
       // Best-effort: an expired mirrored token just skips.
       try {
         await backgroundPull(notification.pullSpaceId);
+        // budgets stay client-side (the server never learns them) — this
+        // wake-up is the moment to warn about limits the new bank
+        // transactions just crossed (budgets design P4)
+        for (const alert of await evaluateBudgetAlertsFromWorker(notification.pullSpaceId, lang)) {
+          await self.registration.showNotification(alert.title, {
+            body: alert.body,
+            icon: 'icon-192.png',
+            badge: 'icon-192.png',
+            tag: alert.tag,
+            data: { url: alert.url },
+          });
+        }
       } catch {
         // offline again / server hiccup — the app syncs on next open
       }
