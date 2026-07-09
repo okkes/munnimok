@@ -44,9 +44,47 @@
      `https://munni.<domain>/`.
    - API resource → `https://munni-api.<domain>` (must equal
      `LOGTO_API_RESOURCE` in the env file).
-5. **GlitchTip** (first run): open `https://glitchtip.<domain>`, create the
-   organization + a project each for `munni-web` and `munni-api`; put the
-   DSNs into the env file (`API_SENTRY_DSN`) and the web build config.
+5. **GlitchTip** — error monitoring. The service is already in the compose
+   stack (`glitchtip` + `glitchtip-worker` + `valkey`, sharing the Postgres
+   instance; the `glitchtip` database is auto-created on first Postgres
+   start). Setup is two parts — the service, then a DSN per app:
+
+   a. **Before starting**, set two values in `.env`:
+      ```sh
+      GLITCHTIP_SECRET_KEY=   # python -c "import secrets; print(secrets.token_hex(32))"
+      GLITCHTIP_EMAIL_URL=    # optional; blank -> mail goes to the container log
+      ```
+      `GLITCHTIP_DOMAIN` is derived from `DOMAIN` automatically. Add the
+      reverse-proxy entry `glitchtip.<domain>:443 → localhost:8092`.
+
+   b. **First run**: open `https://glitchtip.<domain>` and **register the
+      first account immediately** — the first user to sign up becomes
+      superuser (open registration is on by default; turn it off afterwards
+      in *Settings → do not allow open registration*). Create an
+      organization, then **two projects** under it: `munni-web` and
+      `munni-api`. Each project shows a **DSN** like
+      `https://<key>@glitchtip.<domain>/<project-id>`.
+
+   c. **Wire the two DSNs — they go to different places.** The API reads its
+      DSN at *runtime*; the web app bakes its DSN in at *build time*, so
+      they are configured differently:
+      - **API → runtime env.** In `.env`:
+        `API_SENTRY_DSN=<munni-api project DSN>`. It flows into `Sentry__Dsn`;
+        restart the api container — no rebuild.
+      - **Web → build-time, via a GitHub Actions repo Variable.** The web
+        image compiles `VITE_GLITCHTIP_DSN` in during the CI image build
+        (`release-images.yml`), so putting it in `.env` does nothing for the
+        web app. Set it under **GitHub → repo Settings → Secrets and
+        variables → Actions → Variables**, name `VITE_GLITCHTIP_DSN`, value
+        = the `munni-web` project DSN, then trigger a rebuild (push/merge to
+        master) and pull the new image.
+
+   Notes: local/dev builds leave `VITE_GLITCHTIP_DSN` empty and Sentry
+   no-ops when the DSN is unset, so **local dev reports nothing** by design.
+   Even with a real DSN, demo/offline identities send zero events, and
+   signed-in users who lose network queue reports and flush on reconnect
+   (`apps/web/src/main.tsx`). To verify: sign in as a real user, trigger a
+   thrown error, and watch it appear in the project within seconds.
 6. **Backups**: point Hyper Backup at `${BACKUP_DIR}` (nightly SQL dumps,
    14-day retention inside the container, longer retention via Hyper
    Backup). Do one restore drill: `psql -f munni-<date>.sql`.
@@ -161,9 +199,15 @@ locally when you want a quality report:
 2. First time only: log in `admin` / `admin`, set a new password, then
    *My Account → Security → Generate token* and add
    `SONAR_TOKEN=<token>` to `deploy/env/.env.local`.
-3. `./deploy/sonar/analyze.ps1` — runs the web tests with coverage and
-   uploads the `munni-web` analysis (the scanner runs in Docker, nothing
-   to install). The API is analyzed too if `dotnet-sonarscanner` +
-   Java 17 are installed; otherwise CodeQL in CI keeps covering C#.
+3. `./deploy/sonar/analyze.ps1` — analyzes all three projects, each with
+   coverage, entirely through Docker (nothing to install):
+   - `munni-web` and `munni-admin`: vitest coverage → scanner CLI.
+   - `munni-api`: `dotnet test` runs on the host (Testcontainers need
+     Docker), then the opencover report's paths are rewritten to the
+     scanner container's mount so Sonar can match the source files.
+
+   The run fails fast if any project's tests fail. Standing floor: all
+   three projects stay at **85%+ coverage** with **0 open issues**
+   (suppress false positives explicitly in each `sonar-project.properties`).
 4. `docker compose -f deploy/docker-compose.sonar.yml down` when done
    (analysis history survives in the named volumes).
