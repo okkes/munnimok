@@ -6,7 +6,7 @@ import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 
 /** every block the landing zone can show, in default order */
-export const HOME_BLOCK_IDS = ['overview', 'review', 'budgets', 'upcoming', 'transactions'] as const;
+export const HOME_BLOCK_IDS = ['overview', 'review', 'budgets', 'upcoming', 'events', 'goals', 'debts', 'transactions'] as const;
 export type HomeBlockId = (typeof HOME_BLOCK_IDS)[number];
 
 export const HOME_BLOCK_LABELS: Record<HomeBlockId, TranslationKey> = {
@@ -14,6 +14,9 @@ export const HOME_BLOCK_LABELS: Record<HomeBlockId, TranslationKey> = {
   review: 'review.title',
   budgets: 'budgets.title',
   upcoming: 'recurring.upcoming',
+  events: 'events.title',
+  goals: 'goals.title',
+  debts: 'debts.title',
   transactions: 'tab.transactions',
 };
 

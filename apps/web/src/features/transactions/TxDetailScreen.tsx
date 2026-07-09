@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useParams } from '@tanstack/react-router';
 import { useSpaceTransaction, useTxTransform } from '@/application/transactions';
 import { useRecurringOps, useRecurrings } from '@/application/recurring';
+import { useEvents } from '@/application/events';
 import { RecurringVisual } from '@/features/recurring/RecurringVisual';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
@@ -30,6 +31,7 @@ export function TxDetailScreen() {
   const [typeOpen, setTypeOpen] = useState(false);
   const [splitOpen, setSplitOpen] = useState(false);
   const [recurringOpen, setRecurringOpen] = useState(false);
+  const [eventOpen, setEventOpen] = useState(false);
 
   const tx = useSpaceTransaction(txId);
   const transform = useTxTransform();
@@ -37,6 +39,7 @@ export function TxDetailScreen() {
   const cats = useCategories();
   const recurrings = useRecurrings();
   const recurringOps = useRecurringOps();
+  const events = useEvents();
 
   if (!tx) return <div className="h-full" data-testid="screen-tx-detail" />;
 
@@ -158,6 +161,23 @@ export function TxDetailScreen() {
               </button>
             </>
           )}
+          {tx.txType === 'expense' && (
+            <>
+              <div className="mx-4 h-px bg-line-2" />
+              <button
+                data-testid="tx-detail-event-row"
+                onClick={() => setEventOpen(true)}
+                className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+              >
+                <Icon name="party-popper" size={20} color="var(--m-ink-3)" />
+                <span className="flex-1 truncate">
+                  {tx.eventId ? (events?.find((e) => e.id === tx.eventId)?.name ?? t('events.linkTitle')) : t('events.linkTitle')}
+                </span>
+                {!tx.eventId && <span className="text-xs text-ink-4">{t('events.linkNone')}</span>}
+                <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+              </button>
+            </>
+          )}
           {tx.description && (
             <>
               <div className="mx-4 h-px bg-line-2" />
@@ -186,6 +206,41 @@ export function TxDetailScreen() {
       />
       <TxTypeSheet open={typeOpen} onOpenChange={setTypeOpen} tx={tx} />
       <SplitEditorSheet open={splitOpen} onOpenChange={setSplitOpen} tx={tx} />
+
+      {/* attach to an event */}
+      <Sheet open={eventOpen} onOpenChange={setEventOpen} title={t('events.linkTitle')} size="form">
+        <div className="pt-1" data-testid="tx-event-list">
+          <button
+            data-testid="tx-event-none"
+            onClick={() => {
+              void transform(tx, { eventId: '' });
+              setEventOpen(false);
+            }}
+            className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-1 py-3 text-left text-[14px] text-ink-2"
+          >
+            <Icon name="close-circle-outline" size={18} color="var(--m-ink-4)" />
+            <span className="min-w-0 flex-1 truncate">{t('events.linkNone')}</span>
+            {!tx.eventId && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
+          </button>
+          {(events ?? [])
+            .filter((e) => e.archived !== 1)
+            .map((e) => (
+              <button
+                key={e.id}
+                data-testid={`tx-event-${e.id}`}
+                onClick={() => {
+                  void transform(tx, { eventId: e.id });
+                  setEventOpen(false);
+                }}
+                className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-1 py-3 text-left text-[14px] text-ink last:border-0"
+              >
+                <Icon name={e.icon ?? 'party-popper'} size={18} color="var(--m-accent-deep)" />
+                <span className="min-w-0 flex-1 truncate">{e.name}</span>
+                {tx.eventId === e.id && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
+              </button>
+            ))}
+        </div>
+      </Sheet>
 
       {/* attach to a recurring cost */}
       <Sheet open={recurringOpen} onOpenChange={setRecurringOpen} title={t('recurring.linkTitle')} size="form">

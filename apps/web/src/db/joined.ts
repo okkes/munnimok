@@ -38,6 +38,7 @@ function joinTx(raw: TransactionRow, meta: TxMetaRow | undefined, spaceId: strin
     reimbursements: meta?.reimbursements,
     linkedAccountId: meta?.linkedAccountId,
     recurringId: meta?.recurringId,
+    eventId: meta?.eventId,
   };
 }
 
@@ -93,7 +94,7 @@ export async function visibleAccounts(db: MunniDB, spaceId: string): Promise<Spa
 
 /** transformation fields a space may hold an opinion on */
 export type TxTransformFields = Partial<
-  Pick<TxMetaRow, 'catId' | 'txType' | 'needsReview' | 'notes' | 'splits' | 'reimbursements' | 'linkedAccountId' | 'recurringId'>
+  Pick<TxMetaRow, 'catId' | 'txType' | 'needsReview' | 'notes' | 'splits' | 'reimbursements' | 'linkedAccountId' | 'recurringId' | 'eventId'>
 >;
 
 /**

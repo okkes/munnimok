@@ -249,6 +249,36 @@ export function SettingsScreen() {
           </button>
           <div className="mx-4 h-px bg-line-2" />
           <button
+            data-testid="settings-events-row"
+            onClick={() => void navigate({ to: '/events' })}
+            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+          >
+            <Icon name="party-popper" size={20} />
+            <span className="flex-1">{t('events.title')}</span>
+            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+          </button>
+          <div className="mx-4 h-px bg-line-2" />
+          <button
+            data-testid="settings-goals-row"
+            onClick={() => void navigate({ to: '/goals' })}
+            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+          >
+            <Icon name="flag-outline" size={20} />
+            <span className="flex-1">{t('goals.title')}</span>
+            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+          </button>
+          <div className="mx-4 h-px bg-line-2" />
+          <button
+            data-testid="settings-debts-row"
+            onClick={() => void navigate({ to: '/debts' })}
+            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+          >
+            <Icon name="hand-coin-outline" size={20} />
+            <span className="flex-1">{t('debts.title')}</span>
+            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+          </button>
+          <div className="mx-4 h-px bg-line-2" />
+          <button
             data-testid="settings-categories-row"
             onClick={() => void navigate({ to: '/categories' })}
             className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"

@@ -17,6 +17,12 @@ import { HomeCustomizeSheet, resolveHomeBlocks } from './HomeCustomizeSheet';
 import type { HomeBlockId } from './HomeCustomizeSheet';
 import { SpaceSwitcher } from '@/features/spaces/SpaceSwitcher';
 import { useBudgetStatuses, useBudgets } from '@/application/budgets';
+import { useEvents } from '@/application/events';
+import { useGoals } from '@/application/goals';
+import { useDebtStatuses } from '@/application/debts';
+import { eventSpentCents } from '@/domain/events';
+import { goalProgress } from '@/domain/goals';
+import { debtsOverview } from '@/domain/debts';
 import { budgetColor, ratioPct } from '@/features/budgets/budgetUi';
 import { fmtCents } from '@/lib/money';
 import { AppBar, IconButton } from '@/ui/AppBar';
@@ -85,6 +91,30 @@ export function HomeScreen() {
       .slice(0, 4);
   }, [recurrings]);
 
+  // landing-zone blocks that only appear once the feature is in use
+  const events = useEvents();
+  const runningEvents = useMemo(() => {
+    const today = localToday();
+    return (events ?? [])
+      .filter((e) => e.archived !== 1 && e.from && e.from <= today && (!e.to || e.to >= today))
+      .slice(0, 2);
+  }, [events]);
+  const goals = useGoals();
+  const topGoals = useMemo(
+    () =>
+      (goals ?? [])
+        .filter((g) => g.archived !== 1)
+        .sort((a, b) => goalProgress(b) - goalProgress(a))
+        .slice(0, 2),
+    [goals],
+  );
+  const debtStatuses = useDebtStatuses();
+  const activeDebts = useMemo(() => (debtStatuses ?? []).filter((s) => s.debt.archived !== 1), [debtStatuses]);
+  const debtTotals = useMemo(() => {
+    const accountsById = new Map((accounts ?? []).map((a) => [a.id, a]));
+    return debtsOverview(activeDebts.map((s) => s.debt), accountsById);
+  }, [activeDebts, accounts]);
+
   // each landing-zone block renders through this registry so the
   // per-space layout (order + visibility) can rearrange them
   const blockRenderers: Record<HomeBlockId, () => React.ReactNode> = {
@@ -92,6 +122,9 @@ export function HomeScreen() {
     review: renderReviewBlock,
     budgets: renderBudgetsBlock,
     upcoming: renderUpcomingBlock,
+    events: renderEventsBlock,
+    goals: renderGoalsBlock,
+    debts: renderDebtsBlock,
     transactions: renderTransactionsBlock,
   };
   const layout = resolveHomeBlocks(space);
@@ -301,6 +334,107 @@ export function HomeScreen() {
             </button>
           ))}
         </div>
+      </>
+    );
+  }
+
+  function renderEventsBlock() {
+    // only while an event is actually running — the tab has the archive
+    if (runningEvents.length === 0) return null;
+    return (
+      <>
+        <div className="m-cap mt-5 mb-1 px-1">{t('events.title')}</div>
+        <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="home-events">
+          {runningEvents.map((event) => {
+            const spent = eventSpentCents(allTxs ?? [], event.id);
+            return (
+              <button
+                key={event.id}
+                data-testid={`home-event-${event.id}`}
+                onClick={() => void navigate({ to: '/events/$eventId', params: { eventId: event.id } })}
+                className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-2.5 text-left last:border-0"
+              >
+                <Icon name={event.icon ?? 'party-popper'} size={17} color="var(--m-accent-deep)" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] font-medium text-ink">{event.name}</span>
+                  <span className="block text-[11px] text-ink-4">{t('events.runningNow')}</span>
+                </span>
+                <span className="m-num text-[13px] font-semibold text-ink">{fmtCents(spent, currency, lang)}</span>
+              </button>
+            );
+          })}
+        </div>
+      </>
+    );
+  }
+
+  function renderGoalsBlock() {
+    if (topGoals.length === 0) return null;
+    return (
+      <>
+        <div className="m-cap mt-5 mb-1 flex items-baseline justify-between px-1">
+          <span>{t('goals.title')}</span>
+          <button
+            data-testid="home-goals-all"
+            onClick={() => void navigate({ to: '/goals' })}
+            className="m-tap border-none bg-transparent text-[10px] font-medium normal-case text-ink-4"
+          >
+            {t('action.seeAll')}
+          </button>
+        </div>
+        <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="home-goals">
+          {topGoals.map((goal) => {
+            const progress = goalProgress(goal);
+            return (
+              <button
+                key={goal.id}
+                data-testid={`home-goal-${goal.id}`}
+                onClick={() => void navigate({ to: '/goals/$goalId', params: { goalId: goal.id } })}
+                className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-2.5 text-left last:border-0"
+              >
+                <Icon name={goal.icon ?? 'flag-outline'} size={17} color="var(--m-accent-deep)" />
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-baseline justify-between gap-2">
+                    <span className="truncate text-[13px] font-medium text-ink">{goal.name}</span>
+                    <span className="m-num shrink-0 text-[12px] font-semibold text-accent-deep">
+                      {Math.round(progress * 100)}%
+                    </span>
+                  </span>
+                  <span className="mt-1 block h-1 overflow-hidden rounded-full bg-bg-2">
+                    <span className="block h-full rounded-full bg-accent" style={{ width: `${progress * 100}%` }} />
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </>
+    );
+  }
+
+  function renderDebtsBlock() {
+    if (activeDebts.length === 0) return null;
+    return (
+      <>
+        <div className="m-cap mt-5 mb-1 px-1">{t('debts.title')}</div>
+        <button
+          data-testid="home-debts"
+          onClick={() => void navigate({ to: '/debts' })}
+          className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left"
+        >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-negative-soft">
+            <Icon name="hand-coin-outline" size={18} color="var(--m-negative)" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="m-num block text-[15px] font-semibold text-ink">{fmtCents(debtTotals.totalOwedCents, currency, lang)}</span>
+            <span className="block text-[11px] text-ink-4">
+              {debtTotals.totalMonthlyCents > 0
+                ? t('debts.perMonth', { amount: fmtCents(debtTotals.totalMonthlyCents, currency, lang) })
+                : t('debts.count', { n: activeDebts.length })}
+            </span>
+          </span>
+          <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
+        </button>
       </>
     );
   }

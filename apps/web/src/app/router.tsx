@@ -25,6 +25,12 @@ import { CategoryDrillScreen } from '@/features/overview/CategoryDrillScreen';
 import { BudgetsScreen } from '@/features/budgets/BudgetsScreen';
 import { BudgetFormScreen } from '@/features/budgets/BudgetFormScreen';
 import { BudgetDetailScreen } from '@/features/budgets/BudgetDetailScreen';
+import { EventsScreen } from '@/features/events/EventsScreen';
+import { EventDetailScreen } from '@/features/events/EventDetailScreen';
+import { GoalsScreen } from '@/features/goals/GoalsScreen';
+import { GoalDetailScreen } from '@/features/goals/GoalDetailScreen';
+import { DebtsScreen } from '@/features/debts/DebtsScreen';
+import { DebtDetailScreen } from '@/features/debts/DebtDetailScreen';
 import { ProfileScreen } from '@/features/profile/ProfileScreen';
 import { RecurringScreen } from '@/features/recurring/RecurringScreen';
 import { RecurringDetailScreen } from '@/features/recurring/RecurringDetailScreen';
@@ -105,6 +111,12 @@ const budgetsRoute = createRoute({ getParentRoute: () => appRoute, path: '/budge
 const budgetNewRoute = createRoute({ getParentRoute: () => appRoute, path: '/budgets/new', component: BudgetFormScreen });
 const budgetDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/budgets/$budgetId', component: BudgetDetailScreen });
 const budgetEditRoute = createRoute({ getParentRoute: () => appRoute, path: '/budgets/$budgetId/edit', component: BudgetFormScreen });
+const eventsRoute = createRoute({ getParentRoute: () => appRoute, path: '/events', component: EventsScreen });
+const eventDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/events/$eventId', component: EventDetailScreen });
+const goalsRoute = createRoute({ getParentRoute: () => appRoute, path: '/goals', component: GoalsScreen });
+const goalDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/goals/$goalId', component: GoalDetailScreen });
+const debtsRoute = createRoute({ getParentRoute: () => appRoute, path: '/debts', component: DebtsScreen });
+const debtDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/debts/$debtId', component: DebtDetailScreen });
 const categoryDrillRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/overview/$kind/$catId',
@@ -140,6 +152,12 @@ export const routeTree = rootRoute.addChildren([
     budgetNewRoute,
     budgetDetailRoute,
     budgetEditRoute,
+    eventsRoute,
+    eventDetailRoute,
+    goalsRoute,
+    goalDetailRoute,
+    debtsRoute,
+    debtDetailRoute,
   ]),
 ]);
 
