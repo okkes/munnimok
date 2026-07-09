@@ -109,6 +109,8 @@ const LANGS: { code: Lang; labelKey: 'lang.en' | 'lang.nl' | 'lang.tr'; badge: s
 export function SettingsScreen() {
   const { t, lang, setLang } = useLang();
   const { theme, toggle } = useTheme();
+  const { db, spaceId } = useData();
+  const activeSpace = useLiveQuery(() => db.spaces.get(spaceId), [spaceId]);
   const [langSheetOpen, setLangSheetOpen] = useState(false);
   const { identity, logout } = useSession();
   const navigate = useNavigate();
@@ -220,16 +222,19 @@ export function SettingsScreen() {
             <SyncStatusRow />
           </div>
         )}
+        {/* scope split (user feedback): what belongs to THIS space vs the
+            whole app was invisible — the captions make it explicit */}
+        <p className="m-cap mb-1 px-1" data-testid="settings-scope-space">
+          {t('settings.scopeSpace', { name: activeSpace?.name ?? '' })}
+        </p>
         <div className="overflow-hidden rounded-card border border-line bg-surface">
-          {/* spaces moved here from the tab bar — day-to-day switching
-              happens via the Home avatar, management is a settings task */}
           <button
-            data-testid="settings-spaces-row"
-            onClick={() => void navigate({ to: '/spaces' })}
+            data-testid="settings-space-settings-row"
+            onClick={() => void navigate({ to: '/spaces/$spaceId', params: { spaceId } })}
             className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
           >
-            <Icon name="account-group-outline" size={20} />
-            <span className="flex-1">{t('screen.spaces')}</span>
+            <Icon name="cog-outline" size={20} />
+            <span className="flex-1">{t('space.settings')}</span>
             <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
           </button>
           <div className="mx-4 h-px bg-line-2" />
@@ -244,22 +249,39 @@ export function SettingsScreen() {
           </button>
           <div className="mx-4 h-px bg-line-2" />
           <button
-            data-testid="settings-accounts-row"
-            onClick={() => void navigate({ to: '/accounts' })}
-            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
-          >
-            <Icon name="bank-outline" size={20} />
-            <span className="flex-1">{t('acct.financialAccounts')}</span>
-            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-          </button>
-          <div className="mx-4 h-px bg-line-2" />
-          <button
             data-testid="settings-categories-row"
             onClick={() => void navigate({ to: '/categories' })}
             className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
           >
             <Icon name="shape-outline" size={20} />
             <span className="flex-1">{t('screen.categories')}</span>
+            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+          </button>
+        </div>
+
+        <p className="m-cap mt-4 mb-1 px-1" data-testid="settings-scope-global">
+          {t('settings.scopeGlobal')}
+        </p>
+        <div className="overflow-hidden rounded-card border border-line bg-surface">
+          {/* spaces moved here from the tab bar — day-to-day switching
+              happens via the Home avatar, management is a settings task */}
+          <button
+            data-testid="settings-spaces-row"
+            onClick={() => void navigate({ to: '/spaces' })}
+            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+          >
+            <Icon name="account-group-outline" size={20} />
+            <span className="flex-1">{t('screen.spaces')}</span>
+            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+          </button>
+          <div className="mx-4 h-px bg-line-2" />
+          <button
+            data-testid="settings-accounts-row"
+            onClick={() => void navigate({ to: '/accounts' })}
+            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+          >
+            <Icon name="bank-outline" size={20} />
+            <span className="flex-1">{t('acct.financialAccounts')}</span>
             <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
           </button>
           {identity?.kind === 'user' && (

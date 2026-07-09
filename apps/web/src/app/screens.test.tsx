@@ -69,6 +69,29 @@ describe('app screens (demo identity)', () => {
     expect(await screen.findByTestId('screen-spaces')).toBeTruthy();
   });
 
+  it('customize home hides and reorders landing-zone blocks (per space)', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    await screen.findByTestId('home-overview-expense');
+
+    fireEvent.click(screen.getByTestId('home-customize'));
+    await screen.findByTestId('home-customize-list');
+
+    // hide the transactions block: its card leaves Home
+    fireEvent.click(screen.getByTestId('home-block-toggle-transactions'));
+    await waitFor(() => expect(screen.queryByText('Transactions', { selector: '.m-cap' })).toBeNull());
+    fireEvent.click(screen.getByTestId('home-block-toggle-transactions'));
+
+    // move review above overview: the saved order round-trips
+    fireEvent.click(screen.getByTestId('home-block-up-review'));
+    await waitFor(async () => {
+      const db = await import('@/db/schema').then((m) => new m.MunniDB('munni_demo'));
+      const space = await db.spaces.get('demo_space');
+      db.close();
+      expect(space?.homeBlocks?.[0]?.id).toBe('review');
+    });
+  });
+
   it('home space switcher lists spaces, marks the active one, links to manage', async () => {
     renderApp('/home');
     await screen.findByTestId('screen-home');

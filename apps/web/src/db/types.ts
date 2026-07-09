@@ -26,6 +26,8 @@ export interface SpaceRow extends SyncEnvelope {
   color?: string;
   /** default start date (yyyy-mm-dd) for transaction history when accounts get attached */
   historyStartDate?: string;
+  /** landing-zone layout: block order + visibility, per space (synced) */
+  homeBlocks?: { id: string; hidden?: 0 | 1 }[];
 }
 
 export type AccountType = 'checking' | 'savings' | 'cash' | 'brokerage' | 'credit' | 'mortgage' | 'loan';

@@ -13,11 +13,13 @@ import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { OfflineIndicator } from '@/app/OfflineBanner';
 import { NotificationsBell } from './NotificationsBell';
+import { HomeCustomizeSheet, resolveHomeBlocks } from './HomeCustomizeSheet';
+import type { HomeBlockId } from './HomeCustomizeSheet';
 import { SpaceSwitcher } from '@/features/spaces/SpaceSwitcher';
-import { useBudgetStatuses } from '@/application/budgets';
+import { useBudgetStatuses, useBudgets } from '@/application/budgets';
 import { budgetColor, ratioPct } from '@/features/budgets/budgetUi';
 import { fmtCents } from '@/lib/money';
-import { AppBar } from '@/ui/AppBar';
+import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
 import { TxRow } from '@/ui/TxRow';
 
@@ -33,6 +35,7 @@ export function HomeScreen() {
   const { db, spaceId } = useData();
   const navigate = useNavigate();
   const [accountsOpen, setAccountsOpen] = useState(false);
+  const [customizeOpen, setCustomizeOpen] = useState(false);
 
   const accounts = useSpaceAccounts();
   const allTxs = useSpaceTransactions();
@@ -69,7 +72,9 @@ export function HomeScreen() {
   );
   // landing-zone block: the 3 most urgent budgets (approved: 3)
   const budgetStatuses = useBudgetStatuses();
+  const budgets = useBudgets();
   const urgentBudgets = useMemo(() => (budgetStatuses ?? []).slice(0, 3), [budgetStatuses]);
+  const hasBudgets = (budgets?.length ?? 0) > 0;
   const upcoming = useMemo(() => {
     const today = localToday();
     const horizon = addDays(today, 7);
@@ -80,6 +85,17 @@ export function HomeScreen() {
       .slice(0, 4);
   }, [recurrings]);
 
+  // each landing-zone block renders through this registry so the
+  // per-space layout (order + visibility) can rearrange them
+  const blockRenderers: Record<HomeBlockId, () => React.ReactNode> = {
+    overview: renderOverviewBlock,
+    review: renderReviewBlock,
+    budgets: renderBudgetsBlock,
+    upcoming: renderUpcomingBlock,
+    transactions: renderTransactionsBlock,
+  };
+  const layout = resolveHomeBlocks(space);
+
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-home">
       <AppBar
@@ -89,6 +105,9 @@ export function HomeScreen() {
           <>
             <OfflineIndicator />
             <NotificationsBell />
+            <IconButton label={t('home.customize')} testId="home-customize" onClick={() => setCustomizeOpen(true)}>
+              <Icon name="tune-variant" size={19} />
+            </IconButton>
             <SpaceSwitcher />
           </>
         }
@@ -119,8 +138,18 @@ export function HomeScreen() {
           )}
         </button>
 
-        {/* landing-zone block: this period's overview. Future blocks
-            (goals, budgets, events…) follow this same compact pattern. */}
+        {layout.filter((entry) => !entry.hidden).map((entry) => (
+          <div key={entry.id}>{blockRenderers[entry.id]()}</div>
+        ))}
+      </div>
+
+      <HomeCustomizeSheet open={customizeOpen} onOpenChange={setCustomizeOpen} space={space} />
+    </div>
+  );
+
+  function renderOverviewBlock() {
+    return (
+      <>
         <div className="m-cap mt-5 mb-1 flex items-baseline justify-between px-1">
           <span>{t('overview.thisPeriod')}</span>
           <span className="text-[10px] font-medium normal-case text-ink-4" data-testid="home-period-range">
@@ -152,99 +181,133 @@ export function HomeScreen() {
             </button>
           ))}
         </div>
+      </>
+    );
+  }
 
-        {/* review call-to-action: important enough to be its own card —
-            the quiet list row was too easy to scroll past */}
-        {(reviewCount ?? 0) > 0 && (
+  function renderReviewBlock() {
+    // review call-to-action: important enough to be its own card —
+    // the quiet list row was too easy to scroll past
+    if ((reviewCount ?? 0) === 0) return null;
+    return (
+      <button
+        data-testid="home-review-banner"
+        onClick={() => void navigate({ to: '/review' })}
+        className="m-tap mt-5 flex w-full items-center gap-3 rounded-card border border-warning bg-warning-soft px-4 py-3.5 text-left"
+      >
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface">
+          <Icon name="progress-check" size={20} color="var(--m-warning)" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[14px] font-semibold text-ink">{t('review.title')}</span>
+          <span className="block text-[12px] text-ink-3">{t('home.reviewSub', { n: reviewCount ?? 0 })}</span>
+        </span>
+        <span className="flex h-7 min-w-7 items-center justify-center rounded-full bg-warning px-2 text-[12px] font-bold text-white">
+          {reviewCount}
+        </span>
+        <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
+      </button>
+    );
+  }
+
+  function renderBudgetsBlock() {
+    // never made a budget? a quiet get-started teaser instead of silence —
+    // hideable like any block via Customize Home
+    if (!hasBudgets) {
+      return (
+        <button
+          data-testid="home-budgets-teaser"
+          onClick={() => void navigate({ to: '/budgets' })}
+          className="m-tap mt-5 flex w-full items-center gap-3 rounded-card border border-dashed border-line bg-surface px-4 py-3.5 text-left"
+        >
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent-soft">
+            <Icon name="wallet-outline" size={19} color="var(--m-accent-deep)" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[14px] font-semibold text-ink">{t('home.budgetsTeaserTitle')}</span>
+            <span className="block text-[12px] text-ink-3">{t('home.budgetsTeaserSub')}</span>
+          </span>
+          <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
+        </button>
+      );
+    }
+    if (urgentBudgets.length === 0) return null;
+    return (
+      <>
+        <div className="m-cap mt-5 mb-1 flex items-baseline justify-between px-1">
+          <span>{t('budgets.title')}</span>
           <button
-            data-testid="home-review-banner"
-            onClick={() => void navigate({ to: '/review' })}
-            className="m-tap mt-5 flex w-full items-center gap-3 rounded-card border border-warning bg-warning-soft px-4 py-3.5 text-left"
+            data-testid="home-budgets-all"
+            onClick={() => void navigate({ to: '/budgets' })}
+            className="m-tap border-none bg-transparent text-[10px] font-medium normal-case text-ink-4"
           >
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface">
-              <Icon name="progress-check" size={20} color="var(--m-warning)" />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-[14px] font-semibold text-ink">{t('review.title')}</span>
-              <span className="block text-[12px] text-ink-3">{t('home.reviewSub', { n: reviewCount ?? 0 })}</span>
-            </span>
-            <span className="flex h-7 min-w-7 items-center justify-center rounded-full bg-warning px-2 text-[12px] font-bold text-white">
-              {reviewCount}
-            </span>
-            <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
+            {t('action.seeAll')}
           </button>
-        )}
-
-        {/* landing-zone block: the budgets that need attention, worst first */}
-        {urgentBudgets.length > 0 && (
-          <>
-            <div className="m-cap mt-5 mb-1 flex items-baseline justify-between px-1">
-              <span>{t('budgets.title')}</span>
+        </div>
+        <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="home-budgets">
+          {urgentBudgets.map((status) => {
+            const color = budgetColor(status.ratio);
+            const over = status.ratio > 1;
+            return (
               <button
-                data-testid="home-budgets-all"
-                onClick={() => void navigate({ to: '/budgets' })}
-                className="m-tap border-none bg-transparent text-[10px] font-medium normal-case text-ink-4"
+                key={status.budget.id}
+                data-testid={`home-budget-${status.budget.id}`}
+                onClick={() => void navigate({ to: '/budgets/$budgetId', params: { budgetId: status.budget.id } })}
+                className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-2.5 text-left last:border-0"
               >
-                {t('action.seeAll')}
-              </button>
-            </div>
-            <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="home-budgets">
-              {urgentBudgets.map((status) => {
-                const color = budgetColor(status.ratio);
-                const over = status.ratio > 1;
-                return (
-                  <button
-                    key={status.budget.id}
-                    data-testid={`home-budget-${status.budget.id}`}
-                    onClick={() => void navigate({ to: '/budgets/$budgetId', params: { budgetId: status.budget.id } })}
-                    className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-2.5 text-left last:border-0"
-                  >
-                    <Icon name={status.budget.icon ?? 'wallet-outline'} size={17} color={color} />
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-baseline justify-between gap-2">
-                        <span className="truncate text-[13px] font-medium text-ink">{status.budget.name}</span>
-                        <span className="m-num shrink-0 text-[12px] font-semibold" style={{ color }}>
-                          {t(over ? 'budgets.over' : 'budgets.left', {
-                            amount: fmtCents(Math.abs(status.leftCents), currency, lang),
-                          })}
-                        </span>
-                      </span>
-                      <span className="mt-1 block h-1 overflow-hidden rounded-full bg-bg-2">
-                        <span className="block h-full rounded-full" style={{ width: `${ratioPct(status)}%`, background: color }} />
-                      </span>
+                <Icon name={status.budget.icon ?? 'wallet-outline'} size={17} color={color} />
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-baseline justify-between gap-2">
+                    <span className="truncate text-[13px] font-medium text-ink">{status.budget.name}</span>
+                    <span className="m-num shrink-0 text-[12px] font-semibold" style={{ color }}>
+                      {t(over ? 'budgets.over' : 'budgets.left', {
+                        amount: fmtCents(Math.abs(status.leftCents), currency, lang),
+                      })}
                     </span>
-                  </button>
-                );
-              })}
-            </div>
-          </>
-        )}
-
-        {upcoming.length > 0 && (
-          <>
-            <div className="m-cap mt-5 mb-1 px-1">{t('recurring.upcoming')}</div>
-            <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="home-upcoming">
-              {upcoming.map(({ rec, nextDue }) => (
-                <button
-                  key={rec.id}
-                  data-testid={`home-upcoming-${rec.id}`}
-                  onClick={() => void navigate({ to: '/recurring/$recId', params: { recId: rec.id } })}
-                  className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-2.5 text-left last:border-0"
-                >
-                  <RecurringVisual rec={rec} size={16} active={false} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px] font-medium text-ink">{rec.name}</span>
-                    <span className="block text-[11px] text-ink-4">{fmtShort(nextDue)}</span>
                   </span>
-                  <span className="m-num text-[13px] font-semibold text-ink">
-                    {fmtCents(rec.amountCents, currency, lang)}
+                  <span className="mt-1 block h-1 overflow-hidden rounded-full bg-bg-2">
+                    <span className="block h-full rounded-full" style={{ width: `${ratioPct(status)}%`, background: color }} />
                   </span>
-                </button>
-              ))}
-            </div>
-          </>
-        )}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </>
+    );
+  }
 
+  function renderUpcomingBlock() {
+    if (upcoming.length === 0) return null;
+    return (
+      <>
+        <div className="m-cap mt-5 mb-1 px-1">{t('recurring.upcoming')}</div>
+        <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="home-upcoming">
+          {upcoming.map(({ rec, nextDue }) => (
+            <button
+              key={rec.id}
+              data-testid={`home-upcoming-${rec.id}`}
+              onClick={() => void navigate({ to: '/recurring/$recId', params: { recId: rec.id } })}
+              className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-2.5 text-left last:border-0"
+            >
+              <RecurringVisual rec={rec} size={16} active={false} />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13px] font-medium text-ink">{rec.name}</span>
+                <span className="block text-[11px] text-ink-4">{fmtShort(nextDue)}</span>
+              </span>
+              <span className="m-num text-[13px] font-semibold text-ink">
+                {fmtCents(rec.amountCents, currency, lang)}
+              </span>
+            </button>
+          ))}
+        </div>
+      </>
+    );
+  }
+
+  function renderTransactionsBlock() {
+    return (
+      <>
         <div className="m-cap mt-5 mb-1 px-1">{t('tab.transactions')}</div>
         <div className="rounded-card border border-line bg-surface px-3 py-1">
           {(recentTxs ?? []).map((tx) => (
@@ -256,7 +319,7 @@ export function HomeScreen() {
             />
           ))}
         </div>
-      </div>
-    </div>
-  );
+      </>
+    );
+  }
 }
