@@ -7,7 +7,6 @@ import { useSpaceTransactions } from '@/application/transactions';
 import { localToday } from '@/application/recurring';
 import { nextDueDate } from '@/domain/recurring';
 import { fmtCents } from '@/lib/money';
-import { catName, useCategories } from '@/features/categories/useCategories';
 import { RecurringFormSheet, formFromRec } from './RecurringFormSheet';
 import type { FormState } from './RecurringFormSheet';
 import { RecurringVisual } from './RecurringVisual';
@@ -25,7 +24,6 @@ export function RecurringDetailScreen() {
   const { db, spaceId } = useData();
   const { recId } = useParams({ strict: false }) as { recId: string };
   const navigate = useNavigate();
-  const cats = useCategories();
   const [formInitial, setFormInitial] = useState<FormState | null>(null);
 
   // 'loading' sentinel: Dexie's get() yields undefined both while loading
@@ -61,7 +59,6 @@ export function RecurringDetailScreen() {
 
   const nextDue = nextDueDate(rec, localToday());
   const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short', year: 'numeric' });
-  const cat = rec.catId ? cats.byId(rec.catId) : undefined;
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-recurring-detail">
@@ -111,12 +108,6 @@ export function RecurringDetailScreen() {
               </span>
             )}
             {rec.active !== 1 && <span data-testid="recdetail-inactive">{t('recurring.inactive')}</span>}
-            {cat && (
-              <span className="flex items-center gap-1">
-                <Icon name={cat.icon} size={13} color={cats.byId(cat.parentId)?.color ?? cat.color} />
-                {catName(cat, t)}
-              </span>
-            )}
             {(rec.notifyDaysBefore ?? 0) > 0 && (
               <span className="flex items-center gap-1">
                 <Icon name="bell-outline" size={13} />

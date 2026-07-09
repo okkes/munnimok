@@ -54,11 +54,29 @@ interface BrandIconPickerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onPick: (picked: PickedLogo) => void;
+  /** prefill (e.g. the cost's name); the first tap on the field clears it */
+  initialQuery?: string;
 }
 
-export function BrandIconPicker({ open, onOpenChange, onPick }: Readonly<BrandIconPickerProps>) {
+export function BrandIconPicker({ open, onOpenChange, onPick, initialQuery = '' }: Readonly<BrandIconPickerProps>) {
   const { t } = useLang();
   const [query, setQuery] = useState('');
+  const prefilled = useRef(false);
+
+  // search starts from the name the user already typed — usually exactly
+  // the brand they want; one tap on the field starts a fresh query
+  useEffect(() => {
+    if (!open) return;
+    setQuery(initialQuery.trim());
+    prefilled.current = initialQuery.trim().length > 0;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const onSearchFocus = () => {
+    if (!prefilled.current) return;
+    prefilled.current = false;
+    setQuery('');
+  };
   const [index, setIndex] = useState<BrandEntry[]>([]);
   const [remote, setRemote] = useState<RemoteLogo[]>([]);
   // 'unavailable' = offline or server not configured — say so instead of
@@ -116,6 +134,7 @@ export function BrandIconPicker({ open, onOpenChange, onPick }: Readonly<BrandIc
         <input
           data-testid="brandpicker-search"
           value={query}
+          onFocus={onSearchFocus}
           onChange={(e) => setQuery(e.target.value)}
           placeholder={t('recurring.iconSearch')}
           className="h-11 w-full rounded-input border border-line bg-surface px-4 text-[14px] text-ink outline-none placeholder:text-ink-4"

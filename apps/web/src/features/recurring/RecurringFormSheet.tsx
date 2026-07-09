@@ -5,8 +5,6 @@ import type { RecurringSuggestion } from '@/domain/detectRecurring';
 import type { RecurringEvery, RecurringKind, RecurringRow } from '@/db/types';
 import { BrandIconPicker } from './BrandIconPicker';
 import { KIND_ICON } from './RecurringVisual';
-import { CategoryPicker } from '@/features/categories/CategoryPicker';
-import { catName, useCategories } from '@/features/categories/useCategories';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
@@ -18,7 +16,6 @@ export interface FormState {
   name: string;
   kind: RecurringKind;
   amount: string; // major units as typed
-  catId?: string;
   logo?: string;
   every: RecurringEvery;
   dueDay: number;
@@ -47,7 +44,6 @@ export const formFromRec = (rec: RecurringRow): FormState => ({
   name: rec.name,
   kind: rec.kind,
   amount: (rec.amountCents / 100).toFixed(2),
-  catId: rec.catId,
   logo: rec.logo || undefined,
   every: rec.every,
   dueDay: rec.dueDay,
@@ -98,9 +94,7 @@ interface RecurringFormSheetProps {
 export function RecurringFormSheet({ initial, onClose, onDeleted }: Readonly<RecurringFormSheetProps>) {
   const { t, lang } = useLang();
   const ops = useRecurringOps();
-  const cats = useCategories();
   const [form, setForm] = useState<FormState | null>(null);
-  const [catPickerOpen, setCatPickerOpen] = useState(false);
   const [brandPickerOpen, setBrandPickerOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -119,7 +113,6 @@ export function RecurringFormSheet({ initial, onClose, onDeleted }: Readonly<Rec
       kind: form.kind,
       luxury: form.luxury ? 1 : 0,
       amountCents,
-      catId: form.catId,
       icon: KIND_ICON[form.kind],
       logo: form.logo ?? '', // '' clears — an absent field would not sync
 
@@ -201,23 +194,6 @@ export function RecurringFormSheet({ initial, onClose, onDeleted }: Readonly<Rec
               <span className={`min-w-0 flex-1 truncate ${form.logo ? 'text-ink' : 'text-ink-3'}`}>
                 {form.logo ? t('recurring.iconChosen') : t('recurring.iconNone')}
               </span>
-              <Icon name="chevron-down" size={17} color="var(--m-ink-4)" />
-            </button>
-
-            <div className="m-cap px-1">{t('recurring.category')}</div>
-            <button
-              data-testid="recform-cat-open"
-              onClick={() => setCatPickerOpen(true)}
-              className="m-tap flex h-12 w-full items-center gap-3 rounded-input border border-line bg-surface px-4 text-left text-[14px]"
-            >
-              {form.catId ? (
-                <>
-                  <Icon name={cats.byId(form.catId).icon} size={18} color={cats.byId(cats.byId(form.catId).parentId)?.color ?? cats.byId(form.catId).color} />
-                  <span className="min-w-0 flex-1 truncate text-ink">{catName(cats.byId(form.catId), t)}</span>
-                </>
-              ) : (
-                <span className="min-w-0 flex-1 truncate text-ink-3">{t('recurring.pickCategory')}</span>
-              )}
               <Icon name="chevron-down" size={17} color="var(--m-ink-4)" />
             </button>
 
@@ -312,19 +288,10 @@ export function RecurringFormSheet({ initial, onClose, onDeleted }: Readonly<Rec
         )}
       </Sheet>
 
-      <CategoryPicker
-        open={catPickerOpen}
-        onOpenChange={setCatPickerOpen}
-        selectedId={form?.catId}
-        direction="debit"
-        onPick={(catId) => {
-          if (form) setForm({ ...form, catId });
-          setCatPickerOpen(false);
-        }}
-      />
       <BrandIconPicker
         open={brandPickerOpen}
         onOpenChange={setBrandPickerOpen}
+        initialQuery={form?.name ?? ''}
         onPick={({ logo }) => {
           if (form) setForm({ ...form, logo: logo ?? undefined });
         }}

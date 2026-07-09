@@ -8,7 +8,7 @@ import { localToday, useDismissedKeys, useRecurringOps, useRecurrings } from '@/
 import { computeRange, summarize } from '@/domain/recurring';
 import type { RecurringComputed } from '@/domain/recurring';
 import { detectRecurring } from '@/domain/detectRecurring';
-import { periodHistory } from '@/domain/periods';
+import { nextPeriod, periodHistory } from '@/domain/periods';
 import { fmtCents } from '@/lib/money';
 import { RecurringFormSheet, emptyForm } from './RecurringFormSheet';
 import type { FormState } from './RecurringFormSheet';
@@ -26,7 +26,7 @@ export function RecurringScreen() {
   const ops = useRecurringOps();
   const navigate = useNavigate();
 
-  const [view, setView] = useState<'period' | 'year'>('period');
+  const [view, setView] = useState<'period' | 'next' | 'year'>('period');
   const [formInitial, setFormInitial] = useState<FormState | null>(null);
 
   // pick up freshly imported payments the moment the screen opens
@@ -44,7 +44,13 @@ export function RecurringScreen() {
     () => periodHistory(space?.periodType ?? 'month', space?.periodDay || 1, 1)[0],
     [space?.periodType, space?.periodDay],
   );
-  const range = view === 'period' ? period : { start: `${today.slice(0, 4)}-01-01`, end: `${today.slice(0, 4)}-12-31` };
+  const upcoming = useMemo(
+    () => nextPeriod(space?.periodType ?? 'month', space?.periodDay || 1),
+    [space?.periodType, space?.periodDay],
+  );
+  let range = period;
+  if (view === 'next') range = upcoming;
+  else if (view === 'year') range = { start: `${today.slice(0, 4)}-01-01`, end: `${today.slice(0, 4)}-12-31` };
 
   const linkedByRec = useMemo(() => {
     const map = new Map<string, { date: string; amountCents: number }[]>();
@@ -138,9 +144,15 @@ export function RecurringScreen() {
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
-        {/* period / year toggle */}
+        {/* this period / next period / year toggle */}
         <div className="mt-1 flex rounded-xl bg-bg-2 p-0.5">
-          {(['period', 'year'] as const).map((v) => (
+          {(
+            [
+              ['period', 'overview.thisPeriod'],
+              ['next', 'recurring.nextPeriod'],
+              ['year', 'recurring.thisYear'],
+            ] as const
+          ).map(([v, labelKey]) => (
             <button
               key={v}
               data-testid={`recurring-view-${v}`}
@@ -149,7 +161,7 @@ export function RecurringScreen() {
                 view === v ? 'bg-surface font-semibold text-ink shadow-sm' : 'bg-transparent text-ink-3'
               }`}
             >
-              {t(v === 'period' ? 'overview.thisPeriod' : 'recurring.thisYear')}
+              {t(labelKey)}
             </button>
           ))}
         </div>
@@ -194,7 +206,7 @@ export function RecurringScreen() {
             ))}
           </div>
           <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-bg-2">
-            <div className="h-full rounded-full bg-accent transition-[width]" style={{ width: `${progress * 100}%` }} />
+            <div className="m-grow-x h-full origin-left rounded-full bg-accent transition-[width]" style={{ width: `${progress * 100}%` }} />
           </div>
           {summary.luxuryCents > 0 && (
             <div className="mt-3 flex items-center gap-1.5 text-[11px] text-ink-3" data-testid="recurring-luxury-line">

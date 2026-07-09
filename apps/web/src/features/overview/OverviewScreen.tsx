@@ -149,7 +149,10 @@ export function OverviewScreen() {
                     </span>
                     <span className="mt-1.5 flex items-center gap-2">
                       <span className="h-1 flex-1 overflow-hidden rounded-full bg-bg-2">
-                        <span className="block h-full" style={{ width: `${pct}%`, background: colorOf(group.catId, i) }} />
+                        <span
+                          className="m-grow-x block h-full origin-left"
+                          style={{ width: `${pct}%`, background: colorOf(group.catId, i), animationDelay: `${i * 40}ms` }}
+                        />
                       </span>
                       <span className="min-w-[30px] text-right text-[11px] font-medium text-ink-3">{pct.toFixed(0)}%</span>
                     </span>

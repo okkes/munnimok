@@ -57,4 +57,11 @@ export function periodHistory(periodType: SpacePeriodType, periodDay: number, co
   return result;
 }
 
+/** the period immediately after the current one (upcoming views) */
+export function nextPeriod(periodType: SpacePeriodType, periodDay: number, now = new Date()): Period {
+  const current = periodHistory(periodType, periodDay, 1, now)[0];
+  const [y, m, d] = current.end.split('-').map(Number);
+  return periodHistory(periodType, periodDay, 1, new Date(y, m - 1, d + 1))[0];
+}
+
 export const inPeriod = (date: string, period: Period): boolean => date >= period.start && date <= period.end;

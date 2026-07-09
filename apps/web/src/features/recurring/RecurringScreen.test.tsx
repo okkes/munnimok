@@ -83,7 +83,7 @@ describe('RecurringScreen (demo identity)', () => {
     const card = await screen.findByTestId('recsuggest-card-netflix com');
     expect(card.textContent).toContain('NETFLIX.COM');
     // the card carries its evidence: all four matched charges
-    expect(card.querySelectorAll('[data-testid^="recsuggest-tx-"]').length).toBe(4);
+    expect(card.querySelectorAll('[data-testid^="recsuggest-tx-"]')).toHaveLength(4);
 
     fireEvent.click(screen.getByTestId('recurring-dismiss-netflix com'));
     // the demo data may yield suggestions of its own — only Netflix must go
@@ -106,6 +106,9 @@ describe('RecurringScreen (demo identity)', () => {
     fireEvent.change(await screen.findByTestId('recform-name'), { target: { value: 'Netflix' } });
     fireEvent.change(screen.getByTestId('recform-amount'), { target: { value: '13.99' } });
     fireEvent.click(screen.getByTestId('recform-logo-open'));
+    // the search starts prefilled with the cost's name; a tap clears it
+    const search = (await screen.findByTestId('brandpicker-search')) as HTMLInputElement;
+    expect(search.value).toBe('Netflix');
     fireEvent.click(await screen.findByTestId('brandpicker-netflix'));
     // the sheet row reflects the chosen brand logo
     expect(screen.getByTestId('recform-logo-open').textContent).toContain('Brand logo');
@@ -152,7 +155,7 @@ describe('RecurringScreen (demo identity)', () => {
     renderApp(`/recurring/${rec.id}`);
     await screen.findByTestId('screen-recurring-detail');
     const payments = await screen.findByTestId('recdetail-payments', {}, { timeout: 5000 });
-    await waitFor(() => expect(payments.querySelectorAll('[data-testid^="tx-row-"]').length).toBe(4));
+    await waitFor(() => expect(payments.querySelectorAll('[data-testid^="tx-row-"]')).toHaveLength(4));
     expect(screen.getByTestId('recdetail-stats').textContent).toContain('4');
     db.close();
   }, 20_000);
@@ -176,9 +179,11 @@ describe('RecurringScreen editing (demo identity)', () => {
     fireEvent.click(screen.getByTestId('recform-save'));
     const row = await screen.findByText('Gym', {}, { timeout: 5000 });
 
-    // a monthly cost costs 12× per year
+    // a monthly cost costs 12× per year — and shows up next period too
     fireEvent.click(screen.getByTestId('recurring-view-year'));
     await waitFor(() => expect(screen.getByTestId('recurring-summary').textContent).toMatch(/300/));
+    fireEvent.click(screen.getByTestId('recurring-view-next'));
+    await waitFor(() => expect(screen.getByTestId('recurring-summary').textContent).toMatch(/25/));
     fireEvent.click(screen.getByTestId('recurring-view-period'));
 
     // a row now opens the detail screen; editing sits behind the pencil
