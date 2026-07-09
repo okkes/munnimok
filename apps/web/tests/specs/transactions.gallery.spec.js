@@ -95,6 +95,90 @@ for (const V of VARIANTS) {
     await teardown(page, ctx, k('28-tx-edit'));
   });
 
+  test(`tx-a7 link and unlink a reimbursement [${V.id}]`, async ({ browser }) => {
+    const { page, ctx } = await createPage(browser, V);
+    await base(page, V, { demo: true });
+    await openFirstReviewTx(page); // dm100: Amazon.nl -28.99
+    // link the salary credit, capped automatically at the open remainder
+    await page.click('[data-testid="reimb-add"]');
+    await page.waitForSelector('[data-testid="reimb-picker"]');
+    await page.locator('[data-testid^="reimb-pick-"]').first().click();
+    await expect(page.locator('[data-testid="reimb-amount"]')).toHaveValue('28,99'); // clamped prefill
+    await page.fill('[data-testid="reimb-amount"]', '10,00');
+    await page.click('[data-testid="reimb-save"]');
+    await page.waitForTimeout(500);
+    // net −18.99, gross struck through, summary line
+    await expect(page.locator('[data-testid="tx-detail-amount"]')).toContainText('18.99');
+    await expect(page.locator('[data-testid="tx-detail-gross"]')).toContainText('28.99');
+    await expect(page.locator('[data-testid="reimb-summary"]')).toContainText('10.00');
+    await shot(page, k('34-tx-reimburse'));
+    // unlink restores the gross amount
+    await page.locator('[data-testid^="reimb-unlink-"]').click();
+    await expect(page.locator('[data-testid="tx-detail-amount"]')).toContainText('28.99');
+    await expect(page.locator('[data-testid="tx-detail-gross"]')).toHaveCount(0);
+    await teardown(page, ctx, k('34-tx-reimburse'));
+  });
+
+  test(`tx-a8 link counter-account locks type; conflicting category resets [${V.id}]`, async ({ browser }) => {
+    const { page, ctx } = await createPage(browser, V);
+    await base(page, V, { demo: true });
+    await openFirstReviewTx(page); // dm100: hobby expense on demo_main
+    await page.click('[data-testid="tx-detail-type-row"]');
+    await page.waitForSelector('[data-testid="txtype-options"]');
+    // link the savings account -> type becomes Saving, category conflicts -> reset
+    await page.click('[data-testid="txtype-linked-demo_save"]');
+    await page.waitForTimeout(500);
+    await expect(page.locator('[data-testid="tx-detail-type-row"]')).toContainText('Saving');
+    await expect(page.locator('[data-testid="tx-detail-category-row"]')).toContainText('Uncategorized');
+    // reopen: manual types disabled + locked note; unlink restores freedom
+    await page.click('[data-testid="tx-detail-type-row"]');
+    await expect(page.locator('[data-testid="txtype-locked-note"]')).toBeVisible();
+    await expect(page.locator('[data-testid="txtype-expense"]')).toBeDisabled();
+    await shot(page, k('35-tx-type-link'));
+    await page.click('[data-testid="txtype-linked-none"]');
+    await page.waitForTimeout(500);
+    await page.click('[data-testid="tx-detail-type-row"]');
+    await expect(page.locator('[data-testid="txtype-expense"]')).toBeEnabled();
+    await page.click('[data-testid="txtype-expense"]');
+    await page.waitForTimeout(500);
+    await expect(page.locator('[data-testid="tx-detail-type-row"]')).toContainText('Expense');
+    await teardown(page, ctx, k('35-tx-type-link'));
+  });
+
+  test(`tx-a9 split a transaction across two categories [${V.id}]`, async ({ browser }) => {
+    const { page, ctx } = await createPage(browser, V);
+    await base(page, V, { demo: true });
+    await openFirstReviewTx(page); // dm100: -28.99
+    await page.click('[data-testid="tx-detail-split"]');
+    await page.waitForSelector('[data-testid="split-editor"]');
+    // assign 20.00 to the first row; second row is open -> remainder shown
+    await page.fill('[data-testid="split-amount-0"]', '20,00');
+    await expect(page.locator('[data-testid="split-remainder"]')).toContainText('8.99');
+    await expect(page.locator('[data-testid="split-save"]')).toBeDisabled();
+    // pick a category for row 2 and auto-balance via the remainder chip
+    await page.click('[data-testid="split-cat-1"]');
+    await page.waitForSelector('[data-testid="catpicker-search"]');
+    await page.fill('[data-testid="catpicker-search"]', 'gift');
+    await page.click('[data-testid="catpicker-gift"]');
+    await page.waitForTimeout(700);
+    await page.click('[data-testid="split-remainder"]');
+    await expect(page.locator('[data-testid="split-amount-1"]')).toHaveValue('8,99');
+    await shot(page, k('36-tx-split') + '--s1');
+    await page.click('[data-testid="split-save"]');
+    await page.waitForTimeout(500);
+    // breakdown visible; primary category = largest slice (Hobby, 20.00)
+    await expect(page.locator('[data-testid="tx-detail-splits"]')).toContainText('20.00');
+    await expect(page.locator('[data-testid="tx-detail-splits"]')).toContainText('8.99');
+    await expect(page.locator('[data-testid="tx-detail-category-row"]')).toContainText('Hobby');
+    await shot(page, k('36-tx-split'));
+    // clearing restores a single category
+    await page.click('[data-testid="tx-detail-split"]');
+    await page.click('[data-testid="split-clear"]');
+    await page.waitForTimeout(500);
+    await expect(page.locator('[data-testid="tx-detail-splits"]')).toHaveCount(0);
+    await teardown(page, ctx, k('36-tx-split'));
+  });
+
   test(`tx-a4 notes persist [${V.id}]`, async ({ browser }) => {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V, { demo: true });

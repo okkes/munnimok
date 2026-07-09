@@ -1,12 +1,18 @@
 import type { ReactNode } from 'react';
 import { Drawer } from 'vaul';
 
+/** the three sheet heights; per-pixel values stay out of call sites */
+export type SheetSize = 'compact' | 'form' | 'tall';
+const SIZE_PX: Record<SheetSize, number> = { compact: 320, form: 440, tall: 600 };
+
 interface SheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title?: string;
   children: ReactNode;
-  /** Fixed content height in px; sheets must not resize while open. */
+  /** named height — use this for every new sheet */
+  size?: SheetSize;
+  /** escape hatch for truly odd content; prefer `size` */
   height?: number;
   /**
    * Set while a child sheet is stacked on top: interactions inside the
@@ -19,14 +25,15 @@ interface SheetProps {
  * The one shared bottom sheet for the whole app: swipe-to-dismiss and
  * background scroll locking come from vaul. Never build inline overlays.
  */
-export function Sheet({ open, onOpenChange, title, children, height, locked }: SheetProps) {
+export function Sheet({ open, onOpenChange, title, children, size, height, locked }: SheetProps) {
+  const fixedHeight = height ?? (size ? SIZE_PX[size] : undefined);
   return (
     <Drawer.Root open={open} onOpenChange={(next) => (locked && !next ? undefined : onOpenChange(next))} dismissible={!locked}>
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 z-40 bg-black/40" />
         <Drawer.Content
           className="fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[92dvh] w-full max-w-[560px] flex-col rounded-t-[20px] bg-bg outline-none"
-          style={height ? { height } : undefined}
+          style={fixedHeight ? { height: fixedHeight } : undefined}
         >
           {/* full-height drag zone across the title area */}
           <div className="shrink-0 cursor-grab pt-2.5 pb-1">

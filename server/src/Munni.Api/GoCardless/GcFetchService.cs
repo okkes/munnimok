@@ -10,25 +10,28 @@ namespace Munni.Api.GoCardless;
 /// </summary>
 public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<GcFetchService> logger) : BackgroundService
 {
-    protected override async Task ExecuteAsync(CancellationToken ct)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         using var timer = new PeriodicTimer(TimeSpan.FromHours(6));
         // first run shortly after startup, then every 6h
-        await Task.Delay(TimeSpan.FromMinutes(2), ct);
+        await Task.Delay(TimeSpan.FromMinutes(2), stoppingToken);
         do
         {
             try
             {
-                await FetchAllAsync(ct);
+                await FetchAllAsync(stoppingToken);
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "gocardless fetch cycle failed");
             }
-        } while (await timer.WaitForNextTickAsync(ct));
+        } while (await timer.WaitForNextTickAsync(stoppingToken));
     }
 
-    private async Task FetchAllAsync(CancellationToken ct)
+    /// <summary>seconds between account fetches (staggering); tests shrink it</summary>
+    internal TimeSpan AccountDelay { get; set; } = TimeSpan.FromSeconds(5);
+
+    internal async Task FetchAllAsync(CancellationToken ct)
     {
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -52,8 +55,22 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
                 var accepted = await new GcIngest(db).IngestAccountAsync(space, linked, details, balances, transactions);
                 linked.LastFetchAt = DateTimeOffset.UtcNow;
                 await db.SaveChangesAsync(ct);
-                logger.LogInformation("gc fetch {Iban}: {Accepted} new ops", linked.Iban, accepted);
-                await Task.Delay(TimeSpan.FromSeconds(5), ct);
+                if (logger.IsEnabled(LogLevel.Information))
+                    logger.LogInformation("gc fetch {Iban}: {Accepted} new ops", linked.Iban, accepted);
+
+                // wake the members' devices: SSE for open apps, push
+                // notification + preload for closed ones. Raw rows land in
+                // the FEED space; the overlay lands in the target space —
+                // publish both so attached members react immediately.
+                if (accepted > 0)
+                {
+                    var events = scope.ServiceProvider.GetRequiredService<Sync.SpaceEventBroadcaster>();
+                    events.Publish(ImportIds.FeedSpaceId(linked.Iban));
+                    events.Publish(linked.SpaceId);
+                    var notifier = scope.ServiceProvider.GetRequiredService<Push.PushNotifier>();
+                    await notifier.NotifyNewTransactionsAsync(linked.SpaceId, accepted, ct);
+                }
+                await Task.Delay(AccountDelay, ct);
             }
             catch (HttpRequestException ex)
             {

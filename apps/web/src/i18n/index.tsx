@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
+import { mirrorLangForSw } from '@/lib/swBridge';
 import { en } from './en';
 import type { TranslationKey } from './en';
 import { nl } from './nl';
@@ -7,6 +8,13 @@ import { tr } from './tr';
 
 export type Lang = 'en' | 'nl' | 'tr';
 export type { TranslationKey };
+
+/** BCP 47 locale per UI language, for Intl formatting */
+export const LOCALES: Record<Lang, string> = { en: 'en-GB', nl: 'nl-NL', tr: 'tr-TR' };
+
+export const LANGS: Lang[] = ['en', 'nl', 'tr'];
+/** native names — a language picker must be readable in the language it offers */
+export const LANG_NAMES: Record<Lang, string> = { en: 'English', nl: 'Nederlands', tr: 'Türkçe' };
 
 const DICTS: Record<Lang, Partial<Record<TranslationKey, string>>> = { en, nl, tr };
 const LS_KEY = 'munni_lang';
@@ -42,6 +50,8 @@ export function LangProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     document.documentElement.lang = lang;
+    // push notifications (service worker) must speak the app's language
+    mirrorLangForSw(lang);
   }, [lang]);
 
   const t = useCallback<TFunc>(

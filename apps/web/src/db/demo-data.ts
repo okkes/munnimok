@@ -148,4 +148,7 @@ export const DEMO_TXS: DemoTx[] = [
   {"id":"dm98","daysAgo":9,"time":"09:00","merchant":"Savings transfer","desc":"DEMO SPAAROVERBOEKING","cat":"savingDeposit","amountCents":-20000,"account":"demo_main"},
   {"id":"dm99","daysAgo":12,"time":"12:00","merchant":"H&M Nederland","desc":"HM DEMO NETHERLANDS","cat":"clothing","amountCents":-4999,"account":"demo_main","needsReview":true,"confidence":70},
   {"id":"dm100","daysAgo":3,"time":"14:00","merchant":"Amazon.nl","desc":"AMZN DEMO MKTPLC","cat":"hobby","amountCents":-2899,"account":"demo_main","needsReview":true,"confidence":60},
+  // always-today activity: keeps the demo alive and the current budget period non-empty on any date
+  {"id":"dm101","daysAgo":1,"time":"18:10","merchant":"Albert Heijn","desc":"AH DEMO 0001","cat":"groceries","amountCents":-2310,"account":"demo_main"},
+  {"id":"dm102","daysAgo":0,"time":"08:40","merchant":"Koffie ☕","desc":"DEMO COFFEE BAR","cat":"coffee","amountCents":-420,"account":"demo_main"},
 ];

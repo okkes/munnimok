@@ -1,0 +1,43 @@
+# One-off (manual) deployment of the ARCHIVED legacy prototype to GitHub
+# Pages, kept as a living reference of the old app. The legacy code never
+# changes, so this only runs on demand.
+name: Deploy legacy UI to Pages
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      # legacy is not part of the npm workspaces — install + build standalone
+      - run: npm install
+        working-directory: apps/legacy
+      - run: npm run build
+        working-directory: apps/legacy
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: apps/legacy/dist
+
+      - uses: actions/configure-pages@v6
+      - id: deployment
+        uses: actions/deploy-pages@v5

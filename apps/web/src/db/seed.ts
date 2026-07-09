@@ -6,9 +6,11 @@ import { DEMO_ACCOUNTS, DEMO_TXS } from './demo-data';
 export const DEMO_SPACE_ID = 'demo_space';
 const SEED_FLAG = 'seeded_demo_v1';
 
-const isoDaysAgo = (daysAgo: number): string => {
+// local date, matching the local-time period math in domain/periods.ts —
+// a daysAgo:0 row must always fall inside the current local budget period
+export const isoDaysAgo = (daysAgo: number): string => {
   const d = new Date(Date.now() - daysAgo * 86_400_000);
-  return d.toISOString().slice(0, 10);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
 const txTypeFor = (catId: string): TxType => CATEGORY_BY_ID.get(catId)?.txTypes[0] ?? 'expense';
@@ -43,6 +45,40 @@ export async function seedDemoIfNeeded(repo: Repo): Promise<void> {
     });
   }
 
+  // one custom main + sub so the category system is visible in demo:
+  // "Padel Club" (expense main with its locked Other) and a credit-only
+  // sub under the builtin Income parent
+  await repo.upsert('category', DEMO_SPACE_ID, 'demo_cat_padel', {
+    name: 'Padel Club',
+    icon: 'tennis',
+    color: '#1ABC9C',
+    txType: 'expense',
+    isParent: 1,
+    sortOrder: 999,
+    builtin: 0,
+  });
+  await repo.upsert('category', DEMO_SPACE_ID, 'demo_cat_padel_other', {
+    parentId: 'demo_cat_padel',
+    name: 'Other',
+    icon: 'tennis',
+    color: '',
+    txType: 'expense',
+    direction: 'both',
+    isOther: 1,
+    sortOrder: 9999,
+    builtin: 0,
+  });
+  await repo.upsert('category', DEMO_SPACE_ID, 'demo_cat_sidegig', {
+    parentId: 'income',
+    name: 'Side gig',
+    icon: 'laptop',
+    color: '',
+    txType: 'income',
+    direction: 'credit',
+    sortOrder: 999,
+    builtin: 0,
+  });
+
   for (const tx of DEMO_TXS) {
     await repo.upsert('transaction', DEMO_SPACE_ID, tx.id, {
       accountId: tx.account,
@@ -56,7 +92,7 @@ export async function seedDemoIfNeeded(repo: Repo): Promise<void> {
       splits: tx.splits,
       txType: txTypeFor(tx.cat),
       needsReview: tx.needsReview ? 1 : 0,
-      reimbursedByTxIds: tx.reimbursements?.map((r) => r.txId),
+      reimbursements: tx.reimbursements?.map((r) => ({ txId: r.txId, amountCents: r.amountCents })),
     });
   }
 

@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Munni.Api.Auth;
 using Munni.Api.Data;
+using Munni.Api.Validation;
 
 namespace Munni.Api.GoCardless;
 
@@ -9,15 +10,20 @@ public sealed record CreateRequisitionRequest(string SpaceId, string Institution
 public sealed record CreateRequisitionResponse(string Reference, string Link);
 public sealed record CompleteResponse(string Status, int LinkedAccounts, int ImportedTransactions);
 
-public static class GcEndpoints
+public static partial class GcEndpoints
 {
+    [System.Text.RegularExpressions.GeneratedRegex("^[A-Za-z]{2}$")]
+    private static partial System.Text.RegularExpressions.Regex CountryCode();
+
     public static void MapGoCardless(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/gocardless").RequireAuthorization();
+        var group = app.MapGroup("/gocardless").RequireAuthorization().WithSafeRouteParams();
 
         // institution list, cached: it changes rarely and GC rate-limits
         group.MapGet("/institutions", async (string country, IGoCardlessApi gc, IMemoryCache cache) =>
         {
+            if (!CountryCode().IsMatch(country))
+                return Results.BadRequest(new { error = "country must be a 2-letter code" });
             var list = await cache.GetOrCreateAsync($"gc-institutions-{country}", async entry =>
             {
                 entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(24);
@@ -45,11 +51,26 @@ public static class GcEndpoints
             });
             await db.SaveChangesAsync();
             return Results.Ok(new CreateRequisitionResponse(reference.ToString(), created.Link));
-        });
+        }).WithValidation<CreateRequisitionRequest>();
 
         // called by the app after the bank redirects back
-        group.MapPost("/requisitions/{reference:guid}/complete", async (Guid reference, IGoCardlessApi gc, AppDbContext db, HttpContext http) =>
+        group.MapPost("/requisitions/{reference:guid}/complete", CompleteRequisition);
+
+        // connection status for the UI (next scheduled fetch, expiry handling)
+        group.MapGet("/connections", async (AppDbContext db, HttpContext http) =>
         {
+            var userId = http.GetUserId();
+            var spaceIds = await db.SpaceMembers.Where(m => m.UserId == userId).Select(m => m.SpaceId).ToListAsync();
+            var connections = await db.GcLinkedAccounts
+                .Where(a => spaceIds.Contains(a.SpaceId))
+                .Select(a => new { a.GcAccountId, a.SpaceId, a.AccountEntityId, a.Iban, a.LastFetchAt })
+                .ToListAsync();
+            return Results.Ok(connections);
+        });
+    }
+
+    private static async Task<IResult> CompleteRequisition(Guid reference, IGoCardlessApi gc, AppDbContext db, HttpContext http)
+    {
             var userId = http.GetUserId();
             var requisition = await db.GcRequisitions.FindAsync(reference);
             if (requisition is null || requisition.UserId != userId) return Results.NotFound();
@@ -93,18 +114,5 @@ public static class GcEndpoints
             requisition.Status = "linked";
             await db.SaveChangesAsync();
             return Results.Ok(new CompleteResponse(status.Status, linkedCount, imported));
-        });
-
-        // connection status for the UI (next scheduled fetch, expiry handling)
-        group.MapGet("/connections", async (AppDbContext db, HttpContext http) =>
-        {
-            var userId = http.GetUserId();
-            var spaceIds = await db.SpaceMembers.Where(m => m.UserId == userId).Select(m => m.SpaceId).ToListAsync();
-            var connections = await db.GcLinkedAccounts
-                .Where(a => spaceIds.Contains(a.SpaceId))
-                .Select(a => new { a.GcAccountId, a.SpaceId, a.AccountEntityId, a.Iban, a.LastFetchAt })
-                .ToListAsync();
-            return Results.Ok(connections);
-        });
     }
 }

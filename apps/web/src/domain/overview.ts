@@ -1,0 +1,134 @@
+import type { AccountRow, TransactionRow, TxType } from '@/db/types';
+import { inPeriod } from './periods';
+import type { Period } from './periods';
+
+/**
+ * Period overview: how much was earned / spent / saved / invested,
+ * summed by transaction type over the space's period.
+ *
+ * Sign mechanics (from the account-holder's perspective, i.e. the
+ * checking side): a saving-type transaction of -400 on your checking
+ * account means +400 saved; +400 arriving back from savings means
+ * -400 saved in that period. The same reversal applies to investments.
+ * To avoid double counting when BOTH sides of a transfer live in the
+ * space (checking and the savings account itself), the mirror rows on
+ * savings/brokerage accounts are excluded from those buckets.
+ */
+
+export type OverviewKind = 'income' | 'expense' | 'saving' | 'investment';
+
+export const OVERVIEW_KINDS: OverviewKind[] = ['income', 'expense', 'saving', 'investment'];
+
+const MIRROR_ACCOUNT_TYPES: Record<OverviewKind, string[]> = {
+  income: [],
+  expense: [],
+  saving: ['savings'],
+  investment: ['brokerage'],
+};
+
+/** signed contribution of one transaction to a bucket (cents) */
+export function contributionCents(kind: OverviewKind, tx: TransactionRow): number {
+  switch (kind) {
+    case 'income':
+      return tx.amountCents; // income txs are positive by construction
+    case 'expense':
+      return -tx.amountCents; // spent is a positive number; refunds reduce it
+    case 'saving':
+    case 'investment':
+      return -tx.amountCents; // -400 out of checking = +400 put aside
+  }
+}
+
+const KIND_TX_TYPE: Record<OverviewKind, TxType> = {
+  income: 'income',
+  expense: 'expense',
+  saving: 'saving',
+  investment: 'investment',
+};
+
+export function txsForKind(
+  kind: OverviewKind,
+  txs: TransactionRow[],
+  accountsById: Map<string, AccountRow>,
+  period: Period,
+): TransactionRow[] {
+  const excludedAccountTypes = MIRROR_ACCOUNT_TYPES[kind];
+  return txs.filter((tx) => {
+    if (tx.deleted !== 0 || tx.txType !== KIND_TX_TYPE[kind] || !inPeriod(tx.date, period)) return false;
+    const accountType = accountsById.get(tx.accountId)?.type;
+    return !accountType || !excludedAccountTypes.includes(accountType);
+  });
+}
+
+export interface OverviewSummary {
+  incomeCents: number;
+  expenseCents: number;
+  savingCents: number;
+  investmentCents: number;
+}
+
+export function overviewSummary(
+  txs: TransactionRow[],
+  accountsById: Map<string, AccountRow>,
+  period: Period,
+): OverviewSummary {
+  const total = (kind: OverviewKind) =>
+    txsForKind(kind, txs, accountsById, period).reduce((sum, tx) => sum + contributionCents(kind, tx), 0);
+  return {
+    incomeCents: total('income'),
+    expenseCents: total('expense'),
+    savingCents: total('saving'),
+    investmentCents: total('investment'),
+  };
+}
+
+// ── category breakdown (main category → sub categories) ────────────────
+
+export interface CatBreakdownSub {
+  catId: string;
+  totalCents: number;
+  count: number;
+}
+
+export interface CatBreakdownGroup {
+  /** main category id (or the sub's own id when it has no parent) */
+  catId: string;
+  totalCents: number;
+  subs: CatBreakdownSub[];
+}
+
+interface CatalogLookup {
+  byId: (id: string | undefined) => { id: string; parentId?: string };
+}
+
+/** groups a kind's transactions by main category, sorted by size */
+export function categoryBreakdown(
+  kind: OverviewKind,
+  txs: TransactionRow[],
+  accountsById: Map<string, AccountRow>,
+  period: Period,
+  catalog: CatalogLookup,
+): CatBreakdownGroup[] {
+  const groups = new Map<string, CatBreakdownGroup & { subMap: Map<string, CatBreakdownSub> }>();
+  for (const tx of txsForKind(kind, txs, accountsById, period)) {
+    const cat = catalog.byId(tx.catId);
+    const mainId = cat.parentId ?? cat.id;
+    let group = groups.get(mainId);
+    if (!group) {
+      group = { catId: mainId, totalCents: 0, subs: [], subMap: new Map() };
+      groups.set(mainId, group);
+    }
+    const cents = contributionCents(kind, tx);
+    group.totalCents += cents;
+    let sub = group.subMap.get(cat.id);
+    if (!sub) {
+      sub = { catId: cat.id, totalCents: 0, count: 0 };
+      group.subMap.set(cat.id, sub);
+    }
+    sub.totalCents += cents;
+    sub.count += 1;
+  }
+  return [...groups.values()]
+    .map(({ subMap, ...group }) => ({ ...group, subs: [...subMap.values()].sort((a, b) => b.totalCents - a.totalCents) }))
+    .sort((a, b) => b.totalCents - a.totalCents);
+}

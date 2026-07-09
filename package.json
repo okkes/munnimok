@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "workspaces": [
-    "apps/web"
+    "apps/web",
+    "apps/admin"
   ],
   "scripts": {
     "dev": "npm run dev -w @munni/web",

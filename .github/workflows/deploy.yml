@@ -1,10 +1,11 @@
-name: Deploy to GitHub Pages
+# Web CI: unit tests (coverage) + Playwright e2e against the test stack.
+# GitHub Pages is no longer fed from here — the NAS serves the real app;
+# Pages hosts the archived legacy UI (deploy-legacy-pages.yml, one-off).
+name: Web CI
 
 on:
   push:
     branches: [main, master, dev]
-  schedule:
-    - cron: '0 6 * * *'  # daily 6 AM UTC — full test suite + gallery refresh
   workflow_dispatch:
     inputs:
       run_all_tests:
@@ -14,12 +15,6 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: pages
-  cancel-in-progress: false
 
 jobs:
   build:
@@ -48,62 +43,12 @@ jobs:
       - name: Start sync test stack
         run: docker compose -f deploy/docker-compose.test.yml up --build -d --wait
 
-      # Build the app
+      # Build the app (catches build-only breakage: SW, defines, chunks)
       - run: npm run build
         working-directory: apps/web
 
-      # Restore screenshots + videos from cache so partial runs keep the full gallery intact
-      - name: Restore gallery cache
-        uses: actions/cache/restore@v6
-        with:
-          path: |
-            apps/web/tests/screenshots
-            apps/web/tests/videos
-          key: gallery-web-${{ github.run_id }}
-          restore-keys: gallery-web-
-
-      # On push: detect which spec files changed; run only those.
-      # On schedule / manual dispatch: run all tests.
-      # Also force full run if screenshots or videos cache is empty (bootstrap / cache evicted).
-      - name: Detect changed test specs
-        id: tests
-        run: |
-          HAS_SHOTS=$(ls apps/web/tests/screenshots/*.png 2>/dev/null | wc -l)
-          HAS_VIDS=$(ls apps/web/tests/videos/*.webm 2>/dev/null | wc -l)
-          if [ "$HAS_SHOTS" = "0" ] || [ "$HAS_VIDS" = "0" ]; then
-            echo "run_all=true" >> $GITHUB_OUTPUT
-            echo "specs=" >> $GITHUB_OUTPUT
-          elif [ "${{ github.event_name }}" = "schedule" ]; then
-            echo "run_all=true" >> $GITHUB_OUTPUT
-            echo "specs=" >> $GITHUB_OUTPUT
-          elif [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.run_all_tests }}" != "false" ]; then
-            echo "run_all=true" >> $GITHUB_OUTPUT
-            echo "specs=" >> $GITHUB_OUTPUT
-          elif [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
-            echo "run_all=true" >> $GITHUB_OUTPUT
-            echo "specs=" >> $GITHUB_OUTPUT
-          else
-            CHANGED_SPECS=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} -- 'apps/web/tests/specs/*.spec.js' 2>/dev/null | sed 's|apps/web/||' | tr '\n' ' ' || true)
-            SRC_CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} -- 'apps/web/src/' 'apps/web/tests/helpers/' 2>/dev/null | wc -l || true)
-            if [ "$SRC_CHANGED" -gt "0" ]; then
-              echo "run_all=true" >> $GITHUB_OUTPUT
-              echo "specs=" >> $GITHUB_OUTPUT
-            else
-              echo "run_all=false" >> $GITHUB_OUTPUT
-              echo "specs=${CHANGED_SPECS}" >> $GITHUB_OUTPUT
-            fi
-          fi
-
-      # Full run: schedule / manual / first push to branch
-      - name: Run all Playwright tests
-        if: steps.tests.outputs.run_all == 'true'
+      - name: Run Playwright tests
         run: npx playwright test
-        working-directory: apps/web
-
-      # Partial run: only spec files changed in this push
-      - name: Run changed Playwright tests
-        if: steps.tests.outputs.run_all != 'true' && steps.tests.outputs.specs != ''
-        run: npx playwright test ${{ steps.tests.outputs.specs }}
         working-directory: apps/web
 
       # Upload test results (failure screenshots + traces) as downloadable artifact
@@ -114,57 +59,3 @@ jobs:
           name: playwright-results-${{ github.run_id }}
           path: apps/web/tests/results/
           retention-days: 7
-
-      # Save screenshots + videos to cache (always, even if tests failed)
-      - name: Save gallery cache
-        if: always()
-        uses: actions/cache/save@v6
-        with:
-          path: |
-            apps/web/tests/screenshots
-            apps/web/tests/videos
-          key: gallery-web-${{ github.run_id }}
-
-      # Generate gallery HTML using --deploy flag (paths relative to gallery/ folder)
-      - name: Generate gallery HTML
-        working-directory: apps/web
-        run: |
-          if ls tests/screenshots/*.png 1>/dev/null 2>&1; then
-            node tests/generate-gallery.mjs --deploy
-          fi
-          node tests/generate-failures.mjs --deploy
-
-      # Copy gallery assets into dist/gallery/ so Pages serves them at /gallery/
-      - name: Copy gallery to dist
-        working-directory: apps/web
-        run: |
-          mkdir -p dist/gallery/screenshots dist/gallery/videos
-          if [ -f tests/gallery/index.html ]; then
-            cp tests/gallery/index.html dist/gallery/
-          fi
-          if [ -f tests/gallery/failures.html ]; then
-            cp tests/gallery/failures.html dist/gallery/
-          fi
-          if ls tests/screenshots/*.png 1>/dev/null 2>&1; then
-            cp tests/screenshots/*.png dist/gallery/screenshots/
-          fi
-          if ls tests/videos/*.webm 1>/dev/null 2>&1; then
-            cp tests/videos/*.webm dist/gallery/videos/
-          fi
-
-      - uses: actions/upload-pages-artifact@v5
-        with:
-          path: apps/web/dist
-
-  deploy:
-    # Pages (app demo + gallery) only publishes from production
-    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - uses: actions/configure-pages@v6
-      - id: deployment
-        uses: actions/deploy-pages@v5

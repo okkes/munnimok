@@ -5,7 +5,8 @@ const LOCALE: Record<Lang, string> = { en: 'en-IE', nl: 'nl-NL', tr: 'tr-TR' };
 /** Parse a user-entered amount ('1.234,56' / '1234.56') to cents. */
 export function parseCents(input: string): number | null {
   let s = input.trim();
-  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.'); // EU format
+  if (!s) return null; // empty input is not a valid €0.00
+  if (s.includes(',')) s = s.replaceAll('.', '').replace(',', '.'); // EU format
   const value = Number(s);
   return Number.isFinite(value) ? Math.round(value * 100) : null;
 }

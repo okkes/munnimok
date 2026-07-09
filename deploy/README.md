@@ -44,9 +44,47 @@
      `https://munni.<domain>/`.
    - API resource → `https://munni-api.<domain>` (must equal
      `LOGTO_API_RESOURCE` in the env file).
-5. **GlitchTip** (first run): open `https://glitchtip.<domain>`, create the
-   organization + a project each for `munni-web` and `munni-api`; put the
-   DSNs into the env file (`API_SENTRY_DSN`) and the web build config.
+5. **GlitchTip** — error monitoring. The service is already in the compose
+   stack (`glitchtip` + `glitchtip-worker` + `valkey`, sharing the Postgres
+   instance; the `glitchtip` database is auto-created on first Postgres
+   start). Setup is two parts — the service, then a DSN per app:
+
+   a. **Before starting**, set two values in `.env`:
+      ```sh
+      GLITCHTIP_SECRET_KEY=   # python -c "import secrets; print(secrets.token_hex(32))"
+      GLITCHTIP_EMAIL_URL=    # optional; blank -> mail goes to the container log
+      ```
+      `GLITCHTIP_DOMAIN` is derived from `DOMAIN` automatically. Add the
+      reverse-proxy entry `glitchtip.<domain>:443 → localhost:8092`.
+
+   b. **First run**: open `https://glitchtip.<domain>` and **register the
+      first account immediately** — the first user to sign up becomes
+      superuser (open registration is on by default; turn it off afterwards
+      in *Settings → do not allow open registration*). Create an
+      organization, then **two projects** under it: `munni-web` and
+      `munni-api`. Each project shows a **DSN** like
+      `https://<key>@glitchtip.<domain>/<project-id>`.
+
+   c. **Wire the two DSNs — they go to different places.** The API reads its
+      DSN at *runtime*; the web app bakes its DSN in at *build time*, so
+      they are configured differently:
+      - **API → runtime env.** In `.env`:
+        `API_SENTRY_DSN=<munni-api project DSN>`. It flows into `Sentry__Dsn`;
+        restart the api container — no rebuild.
+      - **Web → build-time, via a GitHub Actions repo Variable.** The web
+        image compiles `VITE_GLITCHTIP_DSN` in during the CI image build
+        (`release-images.yml`), so putting it in `.env` does nothing for the
+        web app. Set it under **GitHub → repo Settings → Secrets and
+        variables → Actions → Variables**, name `VITE_GLITCHTIP_DSN`, value
+        = the `munni-web` project DSN, then trigger a rebuild (push/merge to
+        master) and pull the new image.
+
+   Notes: local/dev builds leave `VITE_GLITCHTIP_DSN` empty and Sentry
+   no-ops when the DSN is unset, so **local dev reports nothing** by design.
+   Even with a real DSN, demo/offline identities send zero events, and
+   signed-in users who lose network queue reports and flush on reconnect
+   (`apps/web/src/main.tsx`). To verify: sign in as a real user, trigger a
+   thrown error, and watch it appear in the project within seconds.
 6. **Backups**: point Hyper Backup at `${BACKUP_DIR}` (nightly SQL dumps,
    14-day retention inside the container, longer retention via Hyper
    Backup). Do one restore drill: `psql -f munni-<date>.sql`.
@@ -79,7 +117,12 @@ database, sharing the production Logto/GlitchTip containers:
    sign-out `/`, CORS origin) and an API resource
    `https://munni-test-api.<domain>`; put the app id in the repo's
    Actions **Variables** as `VITE_LOGTO_APP_ID_DEV`.
-3. Start/update: `bash update.sh docker-compose.staging.yml` (own
+3. Copy `.env` to `.env.staging` next to `update.sh` and adjust: its own
+   `POSTGRES_PASSWORD`, same `GHCR_USER`/`GHCR_PAT`/`ADMIN_SUBS`,
+   GoCardless keys optional. `update.sh` picks the env file by compose
+   file (`.env` for production, `.env.staging` for staging), so the two
+   environments never share secrets.
+4. Start/update: `bash update.sh docker-compose.staging.yml` (own
    scheduled task, or run on demand).
 
 Flow: feature work merges into `dev` → verify at munni-test → merge
@@ -124,5 +167,47 @@ auth (`X-User-Sub`) instead of Logto:
 
 ```sh
 docker compose -f deploy/docker-compose.test.yml up --build -d
-curl -H "X-User-Sub: alice" http://localhost:8180/health
+curl -H "X-User-Sub: alice" http://localhost:8181/health
 ```
+
+## Admin console (separate app + container)
+
+The operator console lives in `apps/admin` and ships as its own image
+(`munni-admin`), listed in the production compose on port **8085**.
+One-time setup:
+
+1. Reverse proxy: `munni-admin.<domain>` → `localhost:8085` and
+   **restrict it to LAN** in the DSM firewall.
+2. Logto console: register a *third* SPA app for
+   `https://munni-admin.<domain>` (redirect `/auth-callback`, post
+   sign-out `/`, CORS that origin) and set the repo Actions Variable
+   `VITE_LOGTO_APP_ID_ADMIN` (and `VITE_LOGTO_APP_ID_ADMIN_DEV` if you
+   ever want a staging admin).
+3. Admin authority stays server-side: only subs listed in `ADMIN_SUBS`
+   can use `/admin/*`, regardless of who opens the page.
+
+Local dev: `npm run dev -w @munni/admin` (port 5175) against the local
+API — without Logto configured it shows a test-subject box (test auth).
+
+## SonarQube analysis (local machine only)
+
+SonarQube needs ~2-3 GB RAM, so it never runs on the NAS — spin it up
+locally when you want a quality report:
+
+1. `docker compose -f deploy/docker-compose.sonar.yml up -d` and wait
+   for http://localhost:9000 (first boot takes a minute or two).
+2. First time only: log in `admin` / `admin`, set a new password, then
+   *My Account → Security → Generate token* and add
+   `SONAR_TOKEN=<token>` to `deploy/env/.env.local`.
+3. `./deploy/sonar/analyze.ps1` — analyzes all three projects, each with
+   coverage, entirely through Docker (nothing to install):
+   - `munni-web` and `munni-admin`: vitest coverage → scanner CLI.
+   - `munni-api`: `dotnet test` runs on the host (Testcontainers need
+     Docker), then the opencover report's paths are rewritten to the
+     scanner container's mount so Sonar can match the source files.
+
+   The run fails fast if any project's tests fail. Standing floor: all
+   three projects stay at **85%+ coverage** with **0 open issues**
+   (suppress false positives explicitly in each `sonar-project.properties`).
+4. `docker compose -f deploy/docker-compose.sonar.yml down` when done
+   (analysis history survives in the named volumes).

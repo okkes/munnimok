@@ -31,10 +31,8 @@ let clock: HlcClock | null = null;
 
 /** The one clock for this device. Persisted so restarts never reissue stamps. */
 export function getClock(): HlcClock {
-  if (!clock) {
-    clock = new HlcClock(getDeviceId(), readHlcState(), Date.now, (state) => {
-      localStorage.setItem(HLC_KEY, JSON.stringify(state));
-    });
-  }
+  clock ??= new HlcClock(getDeviceId(), readHlcState(), Date.now, (state) => {
+    localStorage.setItem(HLC_KEY, JSON.stringify(state));
+  });
   return clock;
 }

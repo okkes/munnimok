@@ -8,6 +8,7 @@ public sealed class DesignTimeFactory : IDesignTimeDbContextFactory<AppDbContext
 {
     public AppDbContext CreateDbContext(string[] args) =>
         new(new DbContextOptionsBuilder<AppDbContext>()
-            .UseNpgsql("Host=localhost;Database=munni_design;Username=munni;Password=design")
+            // placeholder for schema generation only — no real database uses it
+            .UseNpgsql("Host=localhost;Database=munni_design;Username=munni;Password=design") // NOSONAR(S2068)
             .Options);
 }

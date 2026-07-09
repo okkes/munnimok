@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { LogtoProvider, useHandleSignInCallback, useLogto } from '@logto/react';
 import { config, logtoConfigured } from '@/app/config';
-import { setAccessTokenGetter, setOidcSignOut } from '@/app/authToken';
+import { setAccessTokenGetter, setOidcSignOut, signalAuthReady } from '@/app/authToken';
 import { useSession } from '@/app/session';
 import { Logo } from '@/ui/Logo';
 
@@ -15,7 +15,10 @@ export const callbackUri = () => `${window.location.origin}/auth-callback`;
 export const isCallbackPath = () => window.location.pathname.endsWith('/auth-callback');
 
 export function LogtoAppProvider({ children }: { children: ReactNode }) {
-  if (!logtoConfigured) return children;
+  if (!logtoConfigured) {
+    signalAuthReady(); // no OIDC in play (test auth / local) — nothing to wait for
+    return children;
+  }
   return (
     <LogtoProvider
       config={{
@@ -32,25 +35,27 @@ export function LogtoAppProvider({ children }: { children: ReactNode }) {
 
 /** exposes Logto access tokens + signOut to non-React code */
 function TokenBridge() {
-  const { getAccessToken, isAuthenticated, signOut } = useLogto();
+  const { getAccessToken, isAuthenticated, isLoading, signOut } = useLogto();
   useEffect(() => {
     setOidcSignOut((uri) => signOut(uri));
     return () => setOidcSignOut(null);
   }, [signOut]);
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (isLoading) return; // session still restoring — keep sync waiting
+    if (isAuthenticated) {
+      setAccessTokenGetter(async () => {
+        try {
+          return (await getAccessToken(config.logto.resource || undefined)) ?? undefined;
+        } catch {
+          return undefined;
+        }
+      });
+    } else {
       setAccessTokenGetter(null);
-      return;
     }
-    setAccessTokenGetter(async () => {
-      try {
-        return (await getAccessToken(config.logto.resource || undefined)) ?? undefined;
-      } catch {
-        return undefined;
-      }
-    });
+    signalAuthReady(); // restore finished (either outcome) — sync may start
     return () => setAccessTokenGetter(null);
-  }, [getAccessToken, isAuthenticated]);
+  }, [getAccessToken, isAuthenticated, isLoading]);
   return null;
 }
 

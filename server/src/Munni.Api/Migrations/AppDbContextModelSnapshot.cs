@@ -22,6 +22,71 @@ namespace Munni.Api.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Munni.Api.Accounts.FeedSpace", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("text");
+
+                    b.Property<string>("AccountRef")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("OwnerUserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerUserId");
+
+                    b.ToTable("FeedSpaces");
+                });
+
+            modelBuilder.Entity("Munni.Api.Accounts.SpaceAccountLink", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AccountId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<bool>("Archived")
+                        .HasColumnType("boolean");
+
+                    b.Property<long?>("ArchivedAtSeq")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("AttachedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("FeedSpaceId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("HistoryFrom")
+                        .HasColumnType("text");
+
+                    b.Property<string>("SpaceId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FeedSpaceId");
+
+                    b.HasIndex("SpaceId", "FeedSpaceId", "AccountId")
+                        .IsUnique();
+
+                    b.ToTable("SpaceAccountLinks");
+                });
+
             modelBuilder.Entity("Munni.Api.Data.EntityRow", b =>
                 {
                     b.Property<string>("SpaceId")
@@ -154,6 +219,9 @@ namespace Munni.Api.Migrations
                     b.Property<string>("Email")
                         .HasColumnType("text");
 
+                    b.Property<string>("Picture")
+                        .HasColumnType("text");
+
                     b.Property<string>("Sub")
                         .IsRequired()
                         .HasColumnType("text");
@@ -231,6 +299,40 @@ namespace Munni.Api.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("GcRequisitions");
+                });
+
+            modelBuilder.Entity("Munni.Api.Push.PushSubscriptionRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Auth")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Endpoint")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("P256dh")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Endpoint")
+                        .IsUnique();
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("PushSubscriptions");
                 });
 
             modelBuilder.Entity("Munni.Api.Social.Friendship", b =>

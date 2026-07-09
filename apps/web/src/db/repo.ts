@@ -38,7 +38,7 @@ export class Repo {
     entityId: string,
     fields: Partial<Omit<EntityRowMap[E], keyof SyncEnvelope | 'id' | 'spaceId'>>,
   ): Promise<void> {
-    await this.write(entity, spaceId, entityId, fields as Record<string, unknown>, false);
+    await this.write(entity, spaceId, entityId, fields, false);
   }
 
   /** Tombstone a row. It stays in the table and is filtered from queries. */
@@ -67,7 +67,8 @@ export class Repo {
       const local = ((await table.get(entityId)) ?? null) as (Record<string, unknown> & SyncEnvelope) | null;
       const { row, changed } = applyOp(local, op);
       if (!changed) return;
-      await table.put({ ...row, id: entityId, spaceId } as never);
+      // dexie's union table intersects all row types — the cast is required
+      await table.put({ ...row, id: entityId, spaceId } as never); // NOSONAR(S4325)
       if (this.options.trackOutbox) await this.db.outbox.add(op);
     });
     this.options.onWrite?.();
@@ -86,7 +87,8 @@ export class Repo {
         const local = ((await table.get(op.entityId)) ?? null) as (Record<string, unknown> & SyncEnvelope) | null;
         const { row, changed } = applyOp(local, op);
         if (changed) {
-          await table.put({ ...row, id: op.entityId, spaceId: op.spaceId } as never);
+          // same union-table cast as in write()
+          await table.put({ ...row, id: op.entityId, spaceId: op.spaceId } as never); // NOSONAR(S4325)
         }
       }
     });

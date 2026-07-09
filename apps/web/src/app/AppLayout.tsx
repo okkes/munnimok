@@ -2,6 +2,8 @@ import { Link, Outlet, useRouterState } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
 import { DataProvider } from './data';
+import { OfflineBanner } from './OfflineBanner';
+import { useRecurringReminders } from '@/application/recurring';
 import { Icon } from '@/ui/Icon';
 import { Logo } from '@/ui/Logo';
 
@@ -16,9 +18,16 @@ interface TabDef {
 const TABS: TabDef[] = [
   { to: '/home', labelKey: 'tab.home', icon: 'home-variant-outline', iconActive: 'home-variant', testId: 'tab-home' },
   { to: '/transactions', labelKey: 'tab.transactions', icon: 'format-list-bulleted', iconActive: 'format-list-bulleted', testId: 'tab-transactions' },
+  { to: '/recurring', labelKey: 'tab.recurring', icon: 'autorenew', iconActive: 'autorenew', testId: 'tab-recurring' },
   { to: '/spaces', labelKey: 'screen.spaces', icon: 'account-group-outline', iconActive: 'account-group', testId: 'tab-spaces' },
   { to: '/settings', labelKey: 'tab.settings', icon: 'cog-outline', iconActive: 'cog', testId: 'tab-settings' },
 ];
+
+/** headless: fires due-soon reminders once per app open (needs DataProvider) */
+function RecurringReminders() {
+  useRecurringReminders();
+  return null;
+}
 
 export function AppLayout() {
   const { t } = useLang();
@@ -53,14 +62,21 @@ export function AppLayout() {
 
       {/* Content */}
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <div className="min-h-0 flex-1 overflow-hidden pt-[env(safe-area-inset-top)]">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden pt-[env(safe-area-inset-top)]">
           <DataProvider>
-            <Outlet />
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <Outlet />
+            </div>
+            <OfflineBanner />
+            <RecurringReminders />
           </DataProvider>
         </div>
 
         {/* Mobile bottom tab bar */}
-        <nav className="flex shrink-0 items-stretch justify-around border-t border-line bg-bg pb-[env(safe-area-inset-bottom)] md:hidden">
+        {/* clamp: Android 3-button navigation reports up to ~48px inset,
+            iOS home indicator 34px — honor them fully; the 56px ceiling
+            guards against Safari's minimized-toolbar env() inflation */}
+        <nav className="flex shrink-0 items-stretch justify-around border-t border-line bg-bg pb-[clamp(0px,env(safe-area-inset-bottom),56px)] md:hidden">
           {TABS.map((tab) => {
             const active = pathname.startsWith(tab.to);
             return (

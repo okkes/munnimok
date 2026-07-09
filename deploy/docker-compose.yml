@@ -3,6 +3,7 @@
 # DSM reverse proxy terminates HTTPS on *.okkes.synology.me and forwards:
 #   munni.        -> web:80
 #   munni-api.    -> api:8080
+#   munni-admin.  -> admin:80      (restrict to LAN in DSM firewall)
 #   logto.        -> logto:3001
 #   logto-admin.  -> logto:3002   (restrict to LAN in DSM firewall)
 #   glitchtip.    -> glitchtip:8000
@@ -14,6 +15,13 @@ services:
     ports:
       - "8090:80"
 
+  # operator console (munni-admin.) — keep the reverse-proxy entry LAN-only
+  admin:
+    image: ${REGISTRY:-ghcr.io/okkes}/munni-admin:${TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "8085:80"
+
   api:
     image: ${REGISTRY:-ghcr.io/okkes}/munni-api:${TAG:-latest}
     restart: unless-stopped
@@ -24,8 +32,15 @@ services:
       Auth__Authority: https://logto.${DOMAIN}/oidc
       Auth__Audience: ${LOGTO_API_RESOURCE}
       Cors__Origins__0: https://munni.${DOMAIN}
+      Cors__Origins__1: https://munni-admin.${DOMAIN}
       GoCardless__SecretId: ${GOCARDLESS_SECRET_ID}
       GoCardless__SecretKey: ${GOCARDLESS_SECRET_KEY}
+      Push__VapidPublicKey: ${PUSH_VAPID_PUBLIC_KEY:-}
+      Push__VapidPrivateKey: ${PUSH_VAPID_PRIVATE_KEY:-}
+      Push__Subject: ${PUSH_VAPID_SUBJECT:-mailto:admin@localhost}
+      # logo.dev brand search for recurring costs (optional)
+      Logos__SecretKey: ${LOGODEV_SECRET_KEY:-}
+      Logos__PublicToken: ${LOGODEV_PUBLIC_TOKEN:-}
       # comma-separated OIDC subs that may open the in-app admin area
       Admin__Subs: ${ADMIN_SUBS:-}
       Sentry__Dsn: ${API_SENTRY_DSN:-}

@@ -54,13 +54,10 @@ public static class LwwMerge
             }
         }
 
-        if (op.Deleted)
+        if (op.Deleted && (!versions.TryGetValue(DeletedField, out var tombstone) || string.CompareOrdinal(op.Hlc, tombstone) > 0))
         {
-            if (!versions.TryGetValue(DeletedField, out var current) || string.CompareOrdinal(op.Hlc, current) > 0)
-            {
-                versions[DeletedField] = op.Hlc;
-                applied++;
-            }
+            versions[DeletedField] = op.Hlc;
+            applied++;
         }
 
         if (local is not null && applied == 0) return (local, false);

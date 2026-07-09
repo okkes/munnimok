@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
+using Munni.Api.Accounts;
 using Munni.Api.GoCardless;
+using Munni.Api.Push;
 using Munni.Api.Social;
 
 namespace Munni.Api.Data;
@@ -15,42 +17,62 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<GcLinkedAccount> GcLinkedAccounts => Set<GcLinkedAccount>();
     public DbSet<Friendship> Friendships => Set<Friendship>();
     public DbSet<SpaceInvite> SpaceInvites => Set<SpaceInvite>();
+    public DbSet<PushSubscriptionRow> PushSubscriptions => Set<PushSubscriptionRow>();
+    public DbSet<FeedSpace> FeedSpaces => Set<FeedSpace>();
+    public DbSet<SpaceAccountLink> SpaceAccountLinks => Set<SpaceAccountLink>();
 
-    protected override void OnModelCreating(ModelBuilder b)
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        b.Entity<User>(e =>
+        modelBuilder.Entity<User>(e =>
         {
             e.HasKey(x => x.Id);
             e.HasIndex(x => x.Sub).IsUnique();
         });
-        b.Entity<Space>(e => e.HasKey(x => x.Id));
-        b.Entity<SpaceMember>(e =>
+        modelBuilder.Entity<Space>(e => e.HasKey(x => x.Id));
+        modelBuilder.Entity<SpaceMember>(e =>
         {
             e.HasKey(x => new { x.SpaceId, x.UserId });
             e.HasIndex(x => x.UserId);
         });
-        b.Entity<SyncOpRow>(e =>
+        modelBuilder.Entity<SyncOpRow>(e =>
         {
             e.HasKey(x => x.Id);
             e.HasIndex(x => new { x.SpaceId, x.Seq }).IsUnique();
             e.HasIndex(x => new { x.SpaceId, x.OpId }).IsUnique();
         });
-        b.Entity<EntityRow>(e => e.HasKey(x => new { x.SpaceId, x.Entity, x.EntityId }));
-        b.Entity<GcRequisition>(e => e.HasKey(x => x.Id));
-        b.Entity<GcLinkedAccount>(e =>
+        modelBuilder.Entity<EntityRow>(e => e.HasKey(x => new { x.SpaceId, x.Entity, x.EntityId }));
+        modelBuilder.Entity<GcRequisition>(e => e.HasKey(x => x.Id));
+        modelBuilder.Entity<GcLinkedAccount>(e =>
         {
             e.HasKey(x => x.GcAccountId);
             e.HasIndex(x => x.SpaceId);
         });
-        b.Entity<Friendship>(e =>
+        modelBuilder.Entity<Friendship>(e =>
         {
             e.HasKey(x => x.Id);
             e.HasIndex(x => new { x.UserAId, x.UserBId }).IsUnique();
         });
-        b.Entity<SpaceInvite>(e =>
+        modelBuilder.Entity<SpaceInvite>(e =>
         {
             e.HasKey(x => x.Id);
             e.HasIndex(x => x.ToUserId);
+        });
+        modelBuilder.Entity<PushSubscriptionRow>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.Endpoint).IsUnique();
+            e.HasIndex(x => x.UserId);
+        });
+        modelBuilder.Entity<FeedSpace>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.OwnerUserId);
+        });
+        modelBuilder.Entity<SpaceAccountLink>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.SpaceId, x.FeedSpaceId, x.AccountId }).IsUnique();
+            e.HasIndex(x => x.FeedSpaceId);
         });
     }
 }
@@ -63,6 +85,8 @@ public class User
     public string? Email { get; set; }
     /// <summary>shown to friends/space members; set by the client after login</summary>
     public string? DisplayName { get; set; }
+    /// <summary>avatar preset id ("icon|color"), chosen on the profile screen</summary>
+    public string? Picture { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 

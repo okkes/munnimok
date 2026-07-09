@@ -19,7 +19,7 @@ function readStoredTheme(): Theme {
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>(readStoredTheme);
+  const [theme, setThemeState] = useState<Theme>(readStoredTheme); // NOSONAR(S6754) public setTheme wraps this setter to persist the choice
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;

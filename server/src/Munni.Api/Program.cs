@@ -1,9 +1,16 @@
+using System.Threading.RateLimiting;
+using FluentValidation;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Scalar.AspNetCore;
+using Munni.Api.Accounts;
 using Munni.Api.Auth;
 using Munni.Api.Data;
 using Munni.Api.Admin;
 using Munni.Api.GoCardless;
+using Munni.Api.Logos;
+using Munni.Api.Push;
 using Munni.Api.Social;
 using Munni.Api.Sync;
 
@@ -13,18 +20,51 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Db")));
 
 builder.Services.AddMemoryCache();
+// request-body validators (Validation/Validators.cs) — UI input is never trusted
+builder.Services.AddValidatorsFromAssemblyContaining<Program>(ServiceLifetime.Singleton);
+// SSE fan-out for near-real-time sync
+builder.Services.AddSingleton<SpaceEventBroadcaster>();
+
+// OpenAPI document + Scalar reference UI at /scalar
+builder.Services.AddOpenApi();
+
+// web push: enabled when a VAPID key pair is configured
+var pushEnabled = !string.IsNullOrEmpty(builder.Configuration["Push:VapidPublicKey"])
+                  && !string.IsNullOrEmpty(builder.Configuration["Push:VapidPrivateKey"]);
+if (pushEnabled) builder.Services.AddSingleton<IPushSender, WebPushSender>();
+builder.Services.AddScoped(sp => new PushNotifier(
+    sp.GetRequiredService<AppDbContext>(),
+    sp.GetService<IPushSender>() ?? new NoopPushSender(),
+    sp.GetRequiredService<ILogger<PushNotifier>>()));
+
 if (!string.IsNullOrEmpty(builder.Configuration["GoCardless:SecretId"]))
 {
+    // fixed vendor endpoint, overridable for tests/self-hosted proxies
+    var gcBaseUrl = builder.Configuration["GoCardless:BaseUrl"] ?? "https://bankaccountdata.gocardless.com/api/v2/"; // NOSONAR(S1075) vendor API base
     builder.Services.AddHttpClient<IGoCardlessApi, GoCardlessApi>(client =>
-        client.BaseAddress = new Uri("https://bankaccountdata.gocardless.com/api/v2/"));
+        client.BaseAddress = new Uri(gcBaseUrl));
     builder.Services.AddHostedService<GcFetchService>();
+}
+
+// brand-logo search (logo.dev) — enabled when both keys are configured
+var logosEnabled = !string.IsNullOrEmpty(builder.Configuration["Logos:SecretKey"])
+                   && !string.IsNullOrEmpty(builder.Configuration["Logos:PublicToken"]);
+if (logosEnabled)
+{
+    builder.Services.AddHttpClient(LogoEndpoints.HttpClientName, client =>
+    {
+        client.BaseAddress = new Uri("https://api.logo.dev/"); // NOSONAR(S1075) vendor API base
+        client.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", builder.Configuration["Logos:SecretKey"]);
+        client.Timeout = TimeSpan.FromSeconds(5);
+    });
 }
 
 if (builder.Configuration.GetValue<bool>("Auth:TestMode"))
 {
     builder.Services
-        .AddAuthentication(TestAuthHandler.Scheme)
-        .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(TestAuthHandler.Scheme, null);
+        .AddAuthentication(TestAuthHandler.SchemeName)
+        .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(TestAuthHandler.SchemeName, null);
 }
 else
 {
@@ -51,6 +91,44 @@ var corsOrigins = builder.Configuration.GetSection("Cors:Origins").Get<string[]>
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
     p.WithOrigins(corsOrigins).AllowAnyHeader().AllowAnyMethod()));
 
+// abuse guard, partitioned per user (per IP before auth). The global
+// bucket is sized for the sync engine polling every ten seconds across
+// many spaces; the social-mutations policy throttles writes that reach
+// OTHER people (invites, friend requests, role changes) much harder.
+// Functional tests run with TestMode and get effectively-unlimited
+// defaults unless a test sets RateLimits keys explicitly (RateLimitTests).
+static string RateLimitKey(HttpContext http) =>
+    http.User.FindFirst("sub")?.Value ?? http.Connection.RemoteIpAddress?.ToString() ?? "anon";
+var unlimitedForTests = builder.Configuration.GetValue<bool>("Auth:TestMode") ? int.MaxValue : (int?)null;
+var globalTokens = builder.Configuration.GetValue<int?>("RateLimits:GlobalTokens") ?? unlimitedForTests ?? 600;
+var globalRefillPer10S = builder.Configuration.GetValue<int?>("RateLimits:GlobalRefillPer10s") ?? unlimitedForTests ?? 60;
+var socialPerMinute = builder.Configuration.GetValue<int?>("RateLimits:SocialPerMinute") ?? unlimitedForTests ?? 30;
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = (ctx, _) =>
+    {
+        ctx.HttpContext.Response.Headers.RetryAfter = "10";
+        return ValueTask.CompletedTask;
+    };
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(http =>
+        RateLimitPartition.GetTokenBucketLimiter(RateLimitKey(http), _ => new TokenBucketRateLimiterOptions
+        {
+            TokenLimit = globalTokens, // burst headroom (bootstrap pulls, imports)
+            TokensPerPeriod = globalRefillPer10S,
+            ReplenishmentPeriod = TimeSpan.FromSeconds(10), // 60/10s = 360 requests/min sustained
+            QueueLimit = 0,
+            AutoReplenishment = true,
+        }));
+    options.AddPolicy(Munni.Api.Social.SocialEndpoints.MutationsPolicy, http =>
+        RateLimitPartition.GetFixedWindowLimiter(RateLimitKey(http), _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = socialPerMinute,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        }));
+});
+
 var app = builder.Build();
 
 if (app.Configuration.GetValue<bool>("Db:AutoMigrate"))
@@ -70,6 +148,8 @@ app.UseExceptionHandler(errorApp => errorApp.Run(async http =>
 
 app.UseCors();
 app.UseAuthentication();
+// after authentication so the partition key is the OIDC sub, not the IP
+app.UseRateLimiter();
 app.UseAuthorization();
 app.Use(async (http, next) =>
 {
@@ -77,18 +157,30 @@ app.Use(async (http, next) =>
     await UserResolution.ResolveUser(http, db, () => next(http));
 });
 
+// interactive API reference (Scalar) backed by the generated OpenAPI doc
+app.MapOpenApi();
+app.MapScalarApiReference(options => options.WithTitle("munni API"));
+
 var gcEnabled = !string.IsNullOrEmpty(app.Configuration["GoCardless:SecretId"]);
 app.MapGet("/health", () => Results.Ok(new
 {
     status = "ok",
     build = Environment.GetEnvironmentVariable("BUILD_NUMBER") ?? "dev",
-    capabilities = new { gocardless = gcEnabled, testAuth = app.Configuration.GetValue<bool>("Auth:TestMode") },
+    capabilities = new
+    {
+        gocardless = gcEnabled,
+        testAuth = app.Configuration.GetValue<bool>("Auth:TestMode"),
+        push = pushEnabled,
+        vapidPublicKey = app.Configuration["Push:VapidPublicKey"] ?? "",
+        logos = logosEnabled,
+    },
 }));
 app.MapSync();
 app.MapSocial();
+app.MapPush();
+app.MapLogos(app.Configuration);
+app.MapAccounts();
 app.MapAdmin(gcEnabled);
 if (gcEnabled) app.MapGoCardless();
 
-app.Run();
-
-public partial class Program;
+await app.RunAsync();

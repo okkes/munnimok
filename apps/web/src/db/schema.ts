@@ -1,13 +1,17 @@
 import Dexie from 'dexie';
 import type { Table } from 'dexie';
 import type {
+  AccountLinkRow,
   AccountRow,
   CategoryRow,
   EntityName,
   MetaRow,
   OutboxRow,
+  RecurringDismissRow,
+  RecurringRow,
   SpaceRow,
   TransactionRow,
+  TxMetaRow,
 } from './types';
 
 /**
@@ -20,6 +24,10 @@ export class MunniDB extends Dexie {
   accounts!: Table<AccountRow, string>;
   categories!: Table<CategoryRow, string>;
   transactions!: Table<TransactionRow, string>;
+  txMeta!: Table<TxMetaRow, string>;
+  accountLinks!: Table<AccountLinkRow, string>;
+  recurrings!: Table<RecurringRow, string>;
+  recurringDismissals!: Table<RecurringDismissRow, string>;
   outbox!: Table<OutboxRow, string>;
   meta!: Table<MetaRow, string>;
 
@@ -33,6 +41,16 @@ export class MunniDB extends Dexie {
       outbox: 'opId, spaceId, hlc',
       meta: 'key',
     });
+    // feature B: per-space transformation overlay + account attachments
+    this.version(2).stores({
+      txMeta: 'id, spaceId, txId, [spaceId+txId]',
+      accountLinks: 'id, spaceId, feedSpaceId, accountId',
+    });
+    // recurring costs + dismissed suggestions
+    this.version(3).stores({
+      recurrings: 'id, spaceId',
+      recurringDismissals: 'id, spaceId',
+    });
   }
 
   tableFor<E extends EntityName>(entity: E) {
@@ -45,6 +63,14 @@ export class MunniDB extends Dexie {
         return this.categories;
       case 'transaction':
         return this.transactions;
+      case 'txMeta':
+        return this.txMeta;
+      case 'accountLink':
+        return this.accountLinks;
+      case 'recurring':
+        return this.recurrings;
+      case 'recurringDismiss':
+        return this.recurringDismissals;
       default:
         throw new Error(`unknown entity: ${entity}`);
     }

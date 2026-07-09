@@ -1,5 +1,8 @@
 import { CATEGORY_BY_ID } from './categories';
 import { KEYWORD_RULES } from './keyword-categories';
+import { predictFromMemory } from './merchantMemory';
+import type { MerchantMemory } from './merchantMemory';
+import type { TxType } from '@/db/types';
 
 /**
  * Keyword-based category prediction for imported bank transactions, ported
@@ -29,3 +32,52 @@ export function predictCategory(text: string, direction: 'credit' | 'debit'): st
   }
   return null;
 }
+
+export interface TxPrediction {
+  catId: string;
+  txType: TxType;
+  source: 'history' | 'history-amount' | 'keyword';
+  /** history occurrences backing the prediction (history sources only) */
+  evidence?: number;
+}
+
+export interface PredictInput {
+  memory?: MerchantMemory;
+  merchant: string;
+  description?: string;
+  amountCents: number;
+}
+
+/**
+ * Layered prediction: the user's own history for this merchant first
+ * (same-amount occurrences boosted — subscription behavior), keyword
+ * rules as the cold-start fallback. History also carries the learned
+ * transaction TYPE (a DEGIRO transfer the user marked as saving stays
+ * saving), keywords derive it from the category.
+ */
+export function predictTx(input: PredictInput): TxPrediction | null {
+  if (input.memory) {
+    const hit = predictFromMemory(input.memory, input.merchant, input.amountCents);
+    if (hit) {
+      return {
+        catId: hit.catId,
+        txType: hit.txType,
+        source: hit.amountMatch ? 'history-amount' : 'history',
+        evidence: hit.evidence,
+      };
+    }
+  }
+  const direction = input.amountCents >= 0 ? 'credit' : 'debit';
+  const catId = predictCategory(`${input.merchant} ${input.description ?? ''}`, direction);
+  if (!catId) return null;
+  const txType = CATEGORY_BY_ID.get(catId)?.txTypes[0] ?? (direction === 'credit' ? 'income' : 'expense');
+  return { catId, txType, source: 'keyword' };
+}
+
+/**
+ * Only predictions the user effectively taught the app skip review:
+ * a merchant they confirmed at least twice. Keyword hits and first-time
+ * history are applied but flagged — review is the teaching loop.
+ */
+export const predictionSkipsReview = (prediction: TxPrediction | null): boolean =>
+  prediction !== null && prediction.source !== 'keyword' && (prediction.evidence ?? 0) >= 2;

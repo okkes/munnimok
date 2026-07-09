@@ -58,6 +58,28 @@ export const GROUPS = [
         desc: 'Manual transactions get a pencil in the detail header; amount, name, date, account and category are editable. Bank-imported rows stay read-only (their data is the bank’s truth).',
         tags: ['state', 'edge-case'],
       },
+      {
+        key: '34-tx-reimburse',
+        title: 'Link a reimbursement',
+        desc: 'Expenses can link credit transactions as (partial) reimbursements: amounts are clamped to what is possible, the hero shows the net cost with the gross struck through, and unlinking restores it.',
+        tags: ['state'],
+      },
+      {
+        key: '35-tx-type-link',
+        title: 'Counter-account locks the type',
+        desc: 'Linking a counter-account derives the type from what that account is (savings → Saving, credit → Debt Payment); manual type choice locks, conflicting categories reset to Uncategorized for review, and unlinking restores free typing.',
+        tags: ['state', 'edge-case'],
+      },
+      {
+        key: '36-tx-split',
+        title: 'Split across categories',
+        desc: 'The split editor partitions a transaction across categories — amounts must sum exactly (remainder chip auto-balances), the largest slice becomes the primary category, and clearing restores a single category.',
+        tags: ['state'],
+        steps: [
+          'Balanced split editor',
+          'Detail with breakdown',
+        ],
+      },
     ],
   },
 ];

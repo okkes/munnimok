@@ -85,6 +85,92 @@ describe('parseCamt053', () => {
   });
 });
 
+// ASN-style export: multiple statements, POS entries with an empty
+// <TxDtls/> whose merchant lives in AddtlNtryInf, NtryRef as only ref,
+// and a DBIT (negative) closing balance.
+const ASN_FIXTURE = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.02">
+  <BkToCstmrStmt>
+    <GrpHdr><MsgId>CAMT053ASN1</MsgId><CreDtTm>2026-07-07T15:33:03+02:00</CreDtTm></GrpHdr>
+    <Stmt>
+      <Id>S1</Id>
+      <Acct><Id><IBAN>NL00ASNB0000000001</IBAN></Id><Ccy>EUR</Ccy></Acct>
+      <Bal>
+        <Tp><CdOrPrtry><Cd>CLBD</Cd></CdOrPrtry></Tp>
+        <Amt Ccy="EUR">627.63</Amt><CdtDbtInd>DBIT</CdtDbtInd>
+      </Bal>
+      <Ntry>
+        <NtryRef>20260402-3613500</NtryRef>
+        <Amt Ccy="EUR">34.36</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2026-04-02</Dt></BookgDt>
+        <NtryDtls><TxDtls/></NtryDtls>
+        <AddtlNtryInf>Albert Heijn 1842     &gt;S-GRAVENH 2.04.2026 21U15 KV007 MCC:5411 Apple Pay betaling   NLNEDERLAND</AddtlNtryInf>
+      </Ntry>
+      <Ntry>
+        <NtryRef>20260430-9999001</NtryRef>
+        <Amt Ccy="EUR">4.00</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2026-04-30</Dt></BookgDt>
+        <AddtlNtryInf>Kosten gebruik betaalrekening</AddtlNtryInf>
+      </Ntry>
+    </Stmt>
+    <Stmt>
+      <Id>S2</Id>
+      <Acct><Id><IBAN>NL00ASNB0000000002</IBAN></Id><Ccy>EUR</Ccy></Acct>
+      <Ntry>
+        <NtryRef>20260401-1602412</NtryRef>
+        <Amt Ccy="EUR">200.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2026-04-01</Dt></BookgDt>
+        <NtryDtls><TxDtls>
+          <Refs><InstrId>INNDNL2U1</InstrId><TxId>CPU3Y3KC1</TxId></Refs>
+          <RltdPties><Dbtr><Nm>Mw E Voorbeeld</Nm></Dbtr></RltdPties>
+          <RmtInf><Ustrd>Grocery money</Ustrd></RmtInf>
+        </TxDtls></NtryDtls>
+        <AddtlNtryInf>NL00INGB0000000009-Mw E Voorbeeld-Grocery money</AddtlNtryInf>
+      </Ntry>
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>`;
+
+describe('parseCamt053 — ASN-style exports', () => {
+  it('parses multiple statements and a negative (DBIT) closing balance', () => {
+    const stmts = parseCamt053(ASN_FIXTURE);
+    expect(stmts).toHaveLength(2);
+    expect(stmts[0].closingBalanceCents).toBe(-62763);
+    expect(stmts[1].iban).toBe('NL00ASNB0000000002');
+  });
+
+  it('POS entries take the merchant from AddtlNtryInf before the ">" column', () => {
+    const [s1] = parseCamt053(ASN_FIXTURE);
+    const pos = s1.entries[0];
+    expect(pos.counterpartyName).toBe('Albert Heijn 1842');
+    expect(pos.amountCents).toBe(-3436);
+    expect(pos.ref).toBe('20260402-3613500');
+  });
+
+  it('fee entries without any party keep the description; NtryRef is the ref', () => {
+    const [s1] = parseCamt053(ASN_FIXTURE);
+    const fee = s1.entries[1];
+    expect(fee.counterpartyName).toBeUndefined();
+    expect(fee.description).toBe('Kosten gebruik betaalrekening');
+    expect(fee.ref).toBe('20260430-9999001');
+  });
+
+  it('SEPA entries prefer human remittance over the machine summary line', () => {
+    const [, s2] = parseCamt053(ASN_FIXTURE);
+    const sepa = s2.entries[0];
+    expect(sepa.counterpartyName).toBe('Mw E Voorbeeld');
+    expect(sepa.description).toBe('Grocery money');
+    // no AcctSvcrRef/EndToEndId: NtryRef wins over TxId
+    expect(sepa.ref).toBe('20260401-1602412');
+  });
+});
+
 describe('predictCategory on parsed entries', () => {
   it('categorizes a Dutch grocery debit', () => {
     const [stmt] = parseCamt053(FIXTURE);
