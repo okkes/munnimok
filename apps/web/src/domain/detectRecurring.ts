@@ -9,6 +9,8 @@ import type { RecurringEvery, TxType } from '@/db/types';
  */
 
 export interface DetectInput {
+  /** present when the caller wants the suggestion to carry its evidence */
+  id?: string;
   merchant: string;
   date: string; // yyyy-mm-dd
   amountCents: number;
@@ -27,6 +29,8 @@ export interface RecurringSuggestion {
   count: number;
   confidence: number; // 65..95
   lastDate: string;
+  /** the charges that formed the pattern, oldest → newest */
+  txIds: string[];
 }
 
 const DAY_MS = 86_400_000;
@@ -88,6 +92,7 @@ function suggestionFor(key: string, group: DetectInput[], today: string): Recurr
     count: byDate.length,
     confidence,
     lastDate: last.date,
+    txIds: byDate.flatMap((t) => (t.id ? [t.id] : [])),
   };
 }
 

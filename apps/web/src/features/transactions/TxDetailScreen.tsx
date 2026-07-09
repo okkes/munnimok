@@ -3,7 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useParams } from '@tanstack/react-router';
 import { useSpaceTransaction, useTxTransform } from '@/application/transactions';
 import { useRecurringOps, useRecurrings } from '@/application/recurring';
-import { RecurringVisual } from '@/features/recurring/RecurringScreen';
+import { RecurringVisual } from '@/features/recurring/RecurringVisual';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { catName, useCategories } from '@/features/categories/useCategories';

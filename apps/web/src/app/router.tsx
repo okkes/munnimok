@@ -23,6 +23,8 @@ import { OnboardingScreen } from '@/features/auth/OnboardingScreen';
 import { OverviewScreen } from '@/features/overview/OverviewScreen';
 import { ProfileScreen } from '@/features/profile/ProfileScreen';
 import { RecurringScreen } from '@/features/recurring/RecurringScreen';
+import { RecurringDetailScreen } from '@/features/recurring/RecurringDetailScreen';
+import { RecurringSuggestionsScreen } from '@/features/recurring/RecurringSuggestionsScreen';
 
 const rootRoute = createRootRoute({ component: Outlet });
 
@@ -71,6 +73,17 @@ const txDetailRoute = createRoute({
   component: TxDetailScreen,
 });
 const recurringRoute = createRoute({ getParentRoute: () => appRoute, path: '/recurring', component: RecurringScreen });
+// static beats the $recId param in TanStack's ranking — order here is cosmetic
+const recurringSuggestionsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/recurring/suggestions',
+  component: RecurringSuggestionsScreen,
+});
+const recurringDetailRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/recurring/$recId',
+  component: RecurringDetailScreen,
+});
 const spacesRoute = createRoute({ getParentRoute: () => appRoute, path: '/spaces', component: SpacesScreen });
 const spaceSettingsRoute = createRoute({
   getParentRoute: () => appRoute,
@@ -98,6 +111,8 @@ export const routeTree = rootRoute.addChildren([
     transactionsRoute,
     txDetailRoute,
     recurringRoute,
+    recurringSuggestionsRoute,
+    recurringDetailRoute,
     spacesRoute,
     spaceSettingsRoute,
     settingsRoute,
