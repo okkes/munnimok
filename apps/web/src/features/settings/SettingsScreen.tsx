@@ -50,13 +50,10 @@ function SyncStatusRow() {
   // exactly two lines, always — the row used to grow/shrink as the status
   // flipped (idle → syncing → idle, reason appearing), which made the
   // whole settings list jump
-  const subLine = offlineReason
-    ? t(OFFLINE_REASON_KEYS[offlineReason])
-    : `${t('sync.lastSync')}: ${
-        lastSync
-          ? new Date(lastSync).toLocaleString(LOCALES[lang], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
-          : t('sync.never')
-      }`;
+  const lastSyncLabel = lastSync
+    ? new Date(lastSync).toLocaleString(LOCALES[lang], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+    : t('sync.never');
+  const subLine = offlineReason ? t(OFFLINE_REASON_KEYS[offlineReason]) : `${t('sync.lastSync')}: ${lastSyncLabel}`;
   return (
     <div className="flex w-full items-center gap-3 px-4 py-3.5 text-left text-[15px] text-ink" data-testid="settings-sync-row">
       <Icon

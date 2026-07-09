@@ -11,7 +11,7 @@ export function initPressFeedback(): void {
 
   const clear = () => {
     clearTimeout(timer);
-    pressed?.removeAttribute('data-pressed');
+    if (pressed) delete pressed.dataset.pressed;
     pressed = null;
   };
 
@@ -26,7 +26,7 @@ export function initPressFeedback(): void {
       // a finger that actually rests gets the pressed look
       timer = window.setTimeout(() => {
         pressed = target;
-        target.setAttribute('data-pressed', '');
+        target.dataset.pressed = '';
       }, 60);
     },
     { passive: true },
