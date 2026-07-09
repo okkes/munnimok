@@ -22,6 +22,10 @@ precacheAndRoute(self.__WB_MANIFEST, { ignoreURLParametersMatching: [/.*/] });
 
 // UpdateToast's reload button posts SKIP_WAITING (registerSW prompt mode)
 self.addEventListener('message', (event) => {
+  // defense-in-depth: only act on messages from same-origin clients (a
+  // worker only ever receives them from pages it controls, but verify
+  // the origin explicitly rather than trust it)
+  if (event.origin && event.origin !== self.location.origin) return;
   if ((event.data as { type?: string } | undefined)?.type === 'SKIP_WAITING') void self.skipWaiting();
 });
 

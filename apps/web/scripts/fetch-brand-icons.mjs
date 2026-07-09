@@ -139,10 +139,15 @@ const BRANDS = [
   ['burgerking', 'Burger King'], ['kfc', 'KFC'], ['dominos', "Domino's"], ['subway', 'Subway'],
 ];
 
+// Dev-only vendoring: fetches from the fixed simpleicons CDN and returns
+// the body ONLY when it is actually an SVG, so an error/HTML page can
+// never be written to disk as a .svg (the filename itself comes from the
+// hardcoded BRANDS allowlist, never from the network).
 async function fetchIcon(slug) {
   const res = await fetch(`https://cdn.simpleicons.org/${slug}`);
   if (!res.ok) return null;
-  return res.text();
+  const body = await res.text();
+  return body.trimStart().startsWith('<svg') ? body : null;
 }
 
 const existing = new Set(await readdir(OUT).catch(() => []));
