@@ -23,6 +23,9 @@ async function fund(kind: 'goaldetail-fund' | 'goaldetail-withdraw', amount: str
   const input = await screen.findByTestId('goalfund-amount');
   fireEvent.change(input, { target: { value: amount } });
   fireEvent.click(screen.getByTestId('goalfund-save'));
+  // the input resets in the same batch as the sheet close — once it's
+  // empty, the stale close can no longer race the next open
+  await waitFor(() => expect((screen.getByTestId('goalfund-amount') as HTMLInputElement).value).toBe(''));
   await waitFor(() => expect(screen.getByTestId('goaldetail-allocated').textContent).toMatch(expected), { timeout: 5000 });
 }
 

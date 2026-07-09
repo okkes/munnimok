@@ -68,6 +68,9 @@ describe('Debts (demo identity)', () => {
     await waitFor(() => expect((screen.getByTestId('debtform-name') as HTMLInputElement).value).toBe('Student loan'));
     fireEvent.change(screen.getByTestId('debtform-payment'), { target: { value: '1000' } });
     fireEvent.click(screen.getByTestId('debtform-save'));
+    // the sheet's onClose commits after the async save — reopening before
+    // it lands would get shut by the stale close (CI-only race)
+    await waitFor(() => expect(screen.queryByTestId('debtform-delete')).toBeNull());
     await waitFor(() => expect(screen.getByTestId('debtdetail-projection')).toBeTruthy());
 
     // two-tap delete: the orphaned detail hands back to the list
