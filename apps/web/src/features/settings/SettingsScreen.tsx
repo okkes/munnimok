@@ -47,6 +47,16 @@ function SyncStatusRow() {
 
   if (!engine) return null;
   const healthy = status === 'idle' || status === 'syncing';
+  // exactly two lines, always — the row used to grow/shrink as the status
+  // flipped (idle → syncing → idle, reason appearing), which made the
+  // whole settings list jump
+  const subLine = offlineReason
+    ? t(OFFLINE_REASON_KEYS[offlineReason])
+    : `${t('sync.lastSync')}: ${
+        lastSync
+          ? new Date(lastSync).toLocaleString(LOCALES[lang], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+          : t('sync.never')
+      }`;
   return (
     <div className="flex w-full items-center gap-3 px-4 py-3.5 text-left text-[15px] text-ink" data-testid="settings-sync-row">
       <Icon
@@ -55,20 +65,16 @@ function SyncStatusRow() {
         color={healthy ? 'var(--m-accent)' : 'var(--m-warning)'}
       />
       <span className="min-w-0 flex-1">
-        <span className="block" data-testid="settings-sync-status">
+        <span className="block truncate" data-testid="settings-sync-status">
           {t(SYNC_STATUS_KEYS[status])}
         </span>
-        <span className="block text-[11px] text-ink-4">
-          {t('sync.lastSync')}:{' '}
-          {lastSync
-            ? new Date(lastSync).toLocaleString(LOCALES[lang], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
-            : t('sync.never')}
+        <span
+          className="block truncate text-[11px]"
+          style={{ color: offlineReason ? 'var(--m-warning)' : 'var(--m-ink-4)' }}
+          data-testid={offlineReason ? 'settings-sync-reason' : 'settings-sync-last'}
+        >
+          {subLine}
         </span>
-        {offlineReason && (
-          <span className="block text-[11px]" style={{ color: 'var(--m-warning)' }} data-testid="settings-sync-reason">
-            {t(OFFLINE_REASON_KEYS[offlineReason])}
-          </span>
-        )}
       </span>
     </div>
   );

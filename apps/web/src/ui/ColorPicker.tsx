@@ -106,9 +106,16 @@ function ColorWheelSheet({ open, onOpenChange, initial, onApply }: Readonly<Colo
   };
 
   const onWheelPointerDown = (e: React.PointerEvent) => {
+    // the gesture belongs to the wheel: without this, dragging downward
+    // from the ring reads as a swipe-to-dismiss on the sheet
+    e.stopPropagation();
     (e.target as Element).setPointerCapture?.(e.pointerId);
     hueFromEvent(e);
   };
+
+  // same for the sliders — a vertical wobble while sliding must not drag
+  // the sheet
+  const keepGesture = (e: React.PointerEvent) => e.stopPropagation();
 
   const applyHexDraft = (raw: string) => {
     setHexDraft(raw);
@@ -165,6 +172,7 @@ function ColorWheelSheet({ open, onOpenChange, initial, onApply }: Readonly<Colo
             type="range"
             min={0}
             max={100}
+            onPointerDown={keepGesture}
             value={Math.round(s)}
             onChange={(e) => {
               setS(Number(e.target.value));
@@ -181,6 +189,7 @@ function ColorWheelSheet({ open, onOpenChange, initial, onApply }: Readonly<Colo
             type="range"
             min={5}
             max={95}
+            onPointerDown={keepGesture}
             value={Math.round(l)}
             onChange={(e) => {
               setL(Number(e.target.value));

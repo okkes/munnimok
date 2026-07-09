@@ -6,6 +6,12 @@ import { Drawer } from 'vaul';
 export type SheetSize = 'compact' | 'form' | 'tall';
 const SIZE_PX: Record<SheetSize, number> = { compact: 320, form: 440, tall: 600 };
 
+// Android resizes the layout viewport itself for the keyboard (see the
+// interactive-widget viewport meta) — vaul's own input repositioning on
+// top of that left the sheet squeezed after the keyboard closed without
+// a blur (tap outside / auto-hide). iOS still needs vaul's handling.
+const IS_ANDROID = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
+
 // ── sheet stack ──────────────────────────────────────────────────────────
 // Only the TOP sheet may dismiss. Without this, opening a picker sheet on
 // top of a form sheet made every tap inside the picker count as an
@@ -80,7 +86,12 @@ export function Sheet({ open, onOpenChange, title, children, size, height }: Rea
   const fixedHeight = height ?? (size ? SIZE_PX[size] : undefined);
   const isLocked = !useSheetStack(open);
   return (
-    <Drawer.Root open={open} onOpenChange={(next) => (isLocked && !next ? undefined : onOpenChange(next))} dismissible={!isLocked}>
+    <Drawer.Root
+      open={open}
+      onOpenChange={(next) => (isLocked && !next ? undefined : onOpenChange(next))}
+      dismissible={!isLocked}
+      repositionInputs={!IS_ANDROID}
+    >
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 z-40 bg-black/40" />
         <Drawer.Content

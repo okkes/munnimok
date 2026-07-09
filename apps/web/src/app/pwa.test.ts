@@ -29,6 +29,14 @@ describe('handleWorkerMessage (notification deep-link)', () => {
     await vi.waitFor(() => expect(router.state.location.pathname).toBe('/spaces'));
   });
 
+  it('re-broadcasts worker PUSH messages as a window event', () => {
+    const seen = vi.fn();
+    window.addEventListener('munni-push', seen);
+    handleWorkerMessage({ type: 'PUSH', payloadType: 'friend-request' });
+    expect(seen).toHaveBeenCalledTimes(1);
+    window.removeEventListener('munni-push', seen);
+  });
+
   it('ignores junk, foreign message types, and off-whitelist routes', async () => {
     handleWorkerMessage({ type: 'NAVIGATE', url: './#/spaces' });
     await vi.waitFor(() => expect(router.state.location.pathname).toBe('/spaces'));

@@ -29,13 +29,22 @@ export function initPwa(): void {
 // worker message from steering the router anywhere else
 const NOTIFICATION_TARGETS = ['/transactions', '/friends', '/spaces'] as const;
 
+/** window event re-broadcast when the worker receives a push while the
+ *  app is open — screens with server-backed lists refresh on it */
+export const PUSH_EVENT = 'munni-push';
+
 /**
- * Deep-link notification clicks while the app is already open: the
- * worker can only focus an existing client, not re-point its URL, so it
- * posts the target route and this listener navigates. Exported for tests.
+ * Worker → app messages. NAVIGATE deep-links notification clicks while
+ * the app is already open (the worker can only focus a client, not
+ * re-point its URL); PUSH re-broadcasts an incoming push as a window
+ * event. Exported for tests.
  */
 export function handleWorkerMessage(data: unknown): void {
   const message = data as { type?: string; url?: string } | undefined;
+  if (message?.type === 'PUSH') {
+    window.dispatchEvent(new Event(PUSH_EVENT));
+    return;
+  }
   if (message?.type !== 'NAVIGATE' || typeof message.url !== 'string') return;
   const path = message.url.split('#')[1]; // './#/friends' → '/friends'
   const target = NOTIFICATION_TARGETS.find((route) => route === path);
@@ -61,20 +70,11 @@ function initNotificationNav(): void {
  */
 function initViewportHeightVar(): void {
   const apply = () => {
-    let height = Math.max(window.innerHeight, document.documentElement.clientHeight || 0);
-    // iPhone standalone: with black-translucent + viewport-fit=cover the
-    // installed app covers the entire screen, so in portrait screen.height
-    // IS the truth — innerHeight sometimes never settles after launch (it
-    // keeps the launch-screen size and fires no resize), leaving a dead
-    // band under the tab bar. Guarded to iPhone: iPad PWAs can run in
-    // resizable windows where screen.height overshoots.
-    if (
-      /iPhone/.test(navigator.userAgent) &&
-      window.matchMedia('(display-mode: standalone)').matches &&
-      window.matchMedia('(orientation: portrait)').matches
-    ) {
-      height = Math.max(height, window.screen.height);
-    }
+    // measured on-device (iPhone standalone, via the Settings diagnostics
+    // overlay): inner = dvh = svh = visual < screen.height — the webview
+    // does NOT cover the status bar band, so a screen.height fallback
+    // overshoots and clips the tab bar. innerHeight is the truth.
+    const height = Math.max(window.innerHeight, document.documentElement.clientHeight || 0);
     document.documentElement.style.setProperty('--vvh', `${height}px`);
   };
   apply();
