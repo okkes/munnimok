@@ -2,7 +2,7 @@
 import 'fake-indexeddb/auto';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { renderApp } from '@/test/harness';
+import { USER_TEST_DB, renderApp, renderAppAsUser } from '@/test/harness';
 
 // happy-dom has no canvas — the downscaler is covered by lib/image.test.ts
 const FAKE_PHOTO = 'data:image/jpeg;base64,ZmFrZQ==';
@@ -27,6 +27,7 @@ describe('Receipts S1 (demo identity)', () => {
     localStorage.clear();
     sessionStorage.clear();
     indexedDB.deleteDatabase('munni_demo');
+    indexedDB.deleteDatabase(USER_TEST_DB);
   });
 
   it('a photo attaches to the transaction and the delete two-tap removes it', async () => {
@@ -44,7 +45,7 @@ describe('Receipts S1 (demo identity)', () => {
     await screen.findByTestId('receipt-empty');
   }, 15_000);
 
-  it('the connections door lists the six stores with their coming-soon status', async () => {
+  it('the connections door lists the six stores; demo cannot connect', async () => {
     await openFirstTx();
     fireEvent.click(screen.getByTestId('receipt-connections'));
     await screen.findByTestId('screen-shopping');
@@ -53,6 +54,33 @@ describe('Receipts S1 (demo identity)', () => {
       expect(screen.getByTestId(`shopping-store-${store}`)).toBeTruthy();
     }
     expect(screen.getByTestId('shopping-photo-note')).toBeTruthy();
+    // demo identity: zero network — no connect affordance, just the note
+    expect(screen.getByTestId('shopping-signin-note')).toBeTruthy();
+    expect(screen.queryByTestId('shop-ah-connect')).toBeNull();
+  }, 15_000);
+
+  it('a signed-in user connects AH by pasting the redirect address', async () => {
+    renderAppAsUser('/shopping', {
+      api: {
+        'POST /shop/proxy/ah-api': (body) => {
+          const request = body as { path: string };
+          if (request.path === '/mobile-auth/v1/auth/token') return { access_token: 'acc-1', refresh_token: 'ref-1' };
+          if (request.path === '/mobile-services/v2/receipts') return [];
+          return {};
+        },
+      },
+    });
+    await screen.findByTestId('screen-shopping');
+    expect(screen.queryByTestId('shopping-signin-note')).toBeNull();
+
+    fireEvent.click(await screen.findByTestId('shop-ah-connect'));
+    fireEvent.change(await screen.findByTestId('shop-ah-paste'), {
+      target: { value: 'appie://login-exit?code=abc-12345' },
+    });
+    fireEvent.click(screen.getByTestId('shop-ah-submit'));
+    // connected state: sync/disconnect appear, the paste sheet retires
+    await screen.findByTestId('shop-ah-sync', {}, { timeout: 5000 });
+    expect(screen.getByTestId('shop-ah-disconnect')).toBeTruthy();
   }, 15_000);
 
   it('settings reaches shopping connections', async () => {

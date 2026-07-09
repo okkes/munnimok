@@ -353,6 +353,21 @@ export interface StoreConnectionRow {
   tokens: Record<string, string>;
   refreshedAt: string;
   status: 'ok' | 'expired';
+  /** newest store receipt already ingested (dedupe cursor) */
+  lastReceiptId?: string;
+}
+
+/**
+ * SYNCED, secret-free connection marker (ruling #1 softener): the space
+ * remembers a store was connected, so a device without a local token
+ * shows "reconnect on this device" instead of silently doing nothing.
+ */
+export interface StoreMarkerRow extends SyncEnvelope {
+  id: string;
+  spaceId: string;
+  store: Exclude<ReceiptSource, 'photo'>;
+  status: 'connected' | 'expired';
+  connectedAt: string;
 }
 
 /**
@@ -409,7 +424,8 @@ export type EntityName =
   | 'goalContribution'
   | 'debt'
   | 'allocation'
-  | 'receipt';
+  | 'receipt'
+  | 'storeMarker';
 
 export interface EntityRowMap {
   space: SpaceRow;
@@ -427,4 +443,5 @@ export interface EntityRowMap {
   debt: DebtRow;
   allocation: AllocationRow;
   receipt: ReceiptRow;
+  storeMarker: StoreMarkerRow;
 }

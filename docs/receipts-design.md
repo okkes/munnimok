@@ -1,6 +1,6 @@
 # Receipts & shopping integrations — design
 
-Status: **S1 built 2026-07-09** (photo receipts + tx section + connections skeleton); S2 next: AH adapter, matcher, proxy, OCR container.
+Status: **S2 built 2026-07-09** — AH adapter (paste-the-redirect login, device-only tokens), matcher + unmatched list, pass-through proxy, OCR container + read-items, synced reconnect markers, keep-alive. ⚠ The AH endpoints follow the community recipe and need one real-account login to confirm; S3 = Jumbo.
 
 ## Confirmed rulings
 

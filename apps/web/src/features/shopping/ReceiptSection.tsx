@@ -2,7 +2,10 @@ import { useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import { useReceiptOps, useTxReceipt } from '@/application/receipts';
+import { storesAvailable } from '@/application/stores';
+import { parseReceiptText } from '@/domain/storeReceipts';
 import type { SpaceTx } from '@/db/joined';
+import { apiFetch } from '@/lib/api';
 import { fmtCents } from '@/lib/money';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
@@ -22,6 +25,7 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
   const [viewOpen, setViewOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [ocrState, setOcrState] = useState<'idle' | 'busy' | 'failed'>('idle');
 
   const onFile = async (file: File | undefined) => {
     if (!file) return;
@@ -30,6 +34,29 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
       await ops.attachPhoto(tx, file);
     } finally {
       setBusy(false);
+    }
+  };
+
+  // OCR via the NAS sidecar (signed-in users only — demo stays offline)
+  const readItems = async () => {
+    if (!receipt?.image) return;
+    setOcrState('busy');
+    try {
+      const response = await apiFetch('/ocr/receipt', { method: 'POST', body: JSON.stringify({ image: receipt.image }) });
+      if (!response.ok) {
+        setOcrState('failed');
+        return;
+      }
+      const { text } = (await response.json()) as { text: string };
+      const items = parseReceiptText(text);
+      if (items.length === 0) {
+        setOcrState('failed');
+        return;
+      }
+      await ops.setItems(receipt.id, items);
+      setOcrState('idle');
+    } catch {
+      setOcrState('failed');
     }
   };
 
@@ -102,6 +129,18 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
               </div>
             ))}
           </div>
+        )}
+        {receipt?.source === 'photo' && !receipt.items?.length && storesAvailable() && (
+          <>
+            <Button variant="outline" className="mt-3 w-full" data-testid="receipt-read-items" disabled={ocrState === 'busy'} onClick={() => void readItems()}>
+              {t('receipt.readItems')}
+            </Button>
+            {ocrState === 'failed' && (
+              <p className="mt-1 text-center text-[12px] text-ink-4" data-testid="receipt-read-failed">
+                {t('receipt.readFailed')}
+              </p>
+            )}
+          </>
         )}
         <Button variant="danger" className="mt-3 w-full" data-testid="receipt-delete" onClick={() => void removeReceipt()}>
           {confirmDelete ? t('action.confirm') : t('action.delete')}

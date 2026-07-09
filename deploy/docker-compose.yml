@@ -45,11 +45,18 @@ services:
       Admin__Subs: ${ADMIN_SUBS:-}
       Sentry__Dsn: ${API_SENTRY_DSN:-}
       BUILD_NUMBER: ${TAG:-latest}
+      Ocr__BaseUrl: http://ocr:8884
     ports:
       - "8091:8080"
     depends_on:
       postgres:
         condition: service_healthy
+
+  # receipt-photo OCR sidecar (receipts design): internal-only — no port
+  # mapping, only the api reaches it; stateless, stores nothing
+  ocr:
+    image: hertzg/tesseract-server:latest
+    restart: unless-stopped
 
   postgres:
     image: postgres:17-alpine

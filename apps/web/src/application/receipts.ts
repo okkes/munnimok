@@ -21,6 +21,8 @@ export interface ReceiptOps {
   /** photo path: downscale on-device, attach to the transaction */
   attachPhoto: (tx: Pick<SpaceTx, 'id' | 'date' | 'merchant' | 'amountCents'>, file: Blob) => Promise<void>;
   remove: (id: string) => Promise<void>;
+  /** OCR result: line items extracted from the photo (S2) */
+  setItems: (id: string, items: ReceiptRow['items']) => Promise<void>;
 }
 
 export function useReceiptOps(): ReceiptOps {
@@ -39,5 +41,8 @@ export function useReceiptOps(): ReceiptOps {
       });
     },
     remove: (id) => repo.remove('receipt', spaceId, id),
+    setItems: async (id, items) => {
+      await repo.upsert('receipt', spaceId, id, { items });
+    },
   };
 }

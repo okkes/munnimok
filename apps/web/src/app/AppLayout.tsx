@@ -6,6 +6,7 @@ import { DataProvider, useData } from './data';
 import { OfflineBanner } from './OfflineBanner';
 import { HelpProvider } from '@/features/help/HelpContext';
 import { useRecurringReminders } from '@/application/recurring';
+import { useStoreKeepAlive } from '@/application/stores';
 import { collectBudgetAlerts } from '@/sync/swBudgets';
 import { Icon } from '@/ui/Icon';
 import { Logo } from '@/ui/Logo';
@@ -28,6 +29,12 @@ const TABS: TabDef[] = [
 /** headless: fires due-soon reminders once per app open (needs DataProvider) */
 function RecurringReminders() {
   useRecurringReminders();
+  return null;
+}
+
+/** headless: store-connection keep-alive + receipt pull (signed-in only) */
+function StoreKeepAlive() {
+  useStoreKeepAlive();
   return null;
 }
 
@@ -98,6 +105,7 @@ export function AppLayout() {
             </HelpProvider>
             <OfflineBanner />
             <RecurringReminders />
+            <StoreKeepAlive />
             <BudgetAlerts />
           </DataProvider>
         </div>

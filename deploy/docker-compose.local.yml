@@ -29,6 +29,7 @@ services:
       Logos__SecretKey: ${LOGODEV_SECRET_KEY:-}
       Logos__PublicToken: ${LOGODEV_PUBLIC_TOKEN:-}
       Admin__Subs: ${ADMIN_SUBS:-}
+      Ocr__BaseUrl: http://ocr:8884
     ports:
       - "8180:8080"
     depends_on:
@@ -36,6 +37,11 @@ services:
         condition: service_healthy
       logto:
         condition: service_started
+
+  # receipt-photo OCR sidecar (receipts design): internal-only, stateless
+  ocr:
+    image: hertzg/tesseract-server:latest
+    restart: unless-stopped
 
   logto:
     image: svhd/logto:1.24
