@@ -6,7 +6,7 @@ import type { TranslationKey } from '@/i18n';
  * Adding a feature's tour = one entry here + i18n strings ×3.
  */
 
-export type TourId = 'home' | 'review' | 'budgets';
+export type TourId = 'home' | 'review' | 'budgets' | 'events' | 'goals' | 'debts' | 'allocation';
 
 export interface TourStep {
   titleKey: TranslationKey;
@@ -63,6 +63,51 @@ export const TOURS: Tour[] = [
       { titleKey: 'tour.budgets.2t', bodyKey: 'tour.budgets.2b', illustration: '➕', anchor: 'budgets-add' },
       { titleKey: 'tour.budgets.3t', bodyKey: 'tour.budgets.3b', illustration: '🚦' },
       { titleKey: 'tour.budgets.4t', bodyKey: 'tour.budgets.4b', illustration: '♻️' },
+    ],
+  },
+  {
+    id: 'events',
+    titleKey: 'events.title',
+    icon: 'party-popper',
+    screen: '/events',
+    steps: [
+      { titleKey: 'tour.events.1t', bodyKey: 'tour.events.1b', illustration: '🎉' },
+      { titleKey: 'tour.events.2t', bodyKey: 'tour.events.2b', illustration: '➕', anchor: 'events-add' },
+      { titleKey: 'tour.events.3t', bodyKey: 'tour.events.3b', illustration: '🧲' },
+    ],
+  },
+  {
+    id: 'goals',
+    titleKey: 'goals.title',
+    icon: 'flag-outline',
+    screen: '/goals',
+    steps: [
+      { titleKey: 'tour.goals.1t', bodyKey: 'tour.goals.1b', illustration: '🚩' },
+      { titleKey: 'tour.goals.2t', bodyKey: 'tour.goals.2b', illustration: '➕', anchor: 'goals-add' },
+      { titleKey: 'tour.goals.3t', bodyKey: 'tour.goals.3b', illustration: '⚖️' },
+    ],
+  },
+  {
+    id: 'debts',
+    titleKey: 'debts.title',
+    icon: 'hand-coin-outline',
+    screen: '/debts',
+    steps: [
+      { titleKey: 'tour.debts.1t', bodyKey: 'tour.debts.1b', illustration: '⛰️' },
+      { titleKey: 'tour.debts.2t', bodyKey: 'tour.debts.2b', illustration: '➕', anchor: 'debts-add' },
+      { titleKey: 'tour.debts.3t', bodyKey: 'tour.debts.3b', illustration: '📉' },
+    ],
+  },
+  {
+    id: 'allocation',
+    titleKey: 'alloc.title',
+    icon: 'cash-multiple',
+    screen: '/allocate',
+    steps: [
+      { titleKey: 'tour.alloc.1t', bodyKey: 'tour.alloc.1b', illustration: '✉️' },
+      { titleKey: 'tour.alloc.2t', bodyKey: 'tour.alloc.2b', illustration: '🧮', anchor: 'alloc-toallocate' },
+      { titleKey: 'tour.alloc.3t', bodyKey: 'tour.alloc.3b', illustration: '🤝' },
+      { titleKey: 'tour.alloc.4t', bodyKey: 'tour.alloc.4b', illustration: '♻️', anchor: 'alloc-rollover' },
     ],
   },
 ];

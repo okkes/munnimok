@@ -8,6 +8,8 @@ import { useSpaceTransactions } from '@/application/transactions';
 import { eventSpentCents } from '@/domain/events';
 import type { EventRow } from '@/db/types';
 import { fmtCents, parseCents } from '@/lib/money';
+import { HelpButton } from '@/features/help/HelpButton';
+import { IntroCard } from '@/features/help/IntroCard';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
@@ -205,12 +207,16 @@ export function EventsScreen() {
           </IconButton>
         }
         trailing={
-          <IconButton label={t('events.new')} testId="events-add" onClick={() => setFormInitial('new')}>
-            <Icon name="plus" size={22} />
-          </IconButton>
+          <>
+            <HelpButton tourId="events" />
+            <IconButton label={t('events.new')} testId="events-add" onClick={() => setFormInitial('new')}>
+              <Icon name="plus" size={22} />
+            </IconButton>
+          </>
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
+        <IntroCard tourId="events" />
         <div className="flex flex-col gap-2.5 pt-1">{(events ?? []).map(renderCard)}</div>
         {events?.length === 0 && (
           <div className="flex flex-col items-center gap-2 px-6 pt-16 text-center" data-testid="events-empty">

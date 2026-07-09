@@ -10,6 +10,8 @@ import { localToday } from '@/application/recurring';
 import { projectPayoff } from '@/domain/debts';
 import type { DebtRow } from '@/db/types';
 import { fmtCents, parseCents } from '@/lib/money';
+import { HelpButton } from '@/features/help/HelpButton';
+import { IntroCard } from '@/features/help/IntroCard';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
@@ -253,12 +255,16 @@ export function DebtsScreen() {
           </IconButton>
         }
         trailing={
-          <IconButton label={t('debts.new')} testId="debts-add" onClick={() => setFormInitial('new')}>
-            <Icon name="plus" size={22} />
-          </IconButton>
+          <>
+            <HelpButton tourId="debts" />
+            <IconButton label={t('debts.new')} testId="debts-add" onClick={() => setFormInitial('new')}>
+              <Icon name="plus" size={22} />
+            </IconButton>
+          </>
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
+        <IntroCard tourId="debts" />
         {active.length > 0 && (
           <div className="grid grid-cols-2 gap-3 rounded-card border border-line bg-surface p-4" data-testid="debts-overview">
             <div>

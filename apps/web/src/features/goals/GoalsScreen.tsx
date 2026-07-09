@@ -9,6 +9,8 @@ import { localToday } from '@/application/recurring';
 import { goalOverview, goalProgress, paceCentsPerMonth } from '@/domain/goals';
 import type { GoalRow } from '@/db/types';
 import { fmtCents, parseCents } from '@/lib/money';
+import { HelpButton } from '@/features/help/HelpButton';
+import { IntroCard } from '@/features/help/IntroCard';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
@@ -146,12 +148,16 @@ export function GoalsScreen() {
           </IconButton>
         }
         trailing={
-          <IconButton label={t('goals.new')} testId="goals-add" onClick={() => setFormInitial('new')}>
-            <Icon name="plus" size={22} />
-          </IconButton>
+          <>
+            <HelpButton tourId="goals" />
+            <IconButton label={t('goals.new')} testId="goals-add" onClick={() => setFormInitial('new')}>
+              <Icon name="plus" size={22} />
+            </IconButton>
+          </>
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
+        <IntroCard tourId="goals" />
         {/* the honesty header — negative unallocated is the rebalance signal.
             Held back until both sides loaded so it never flashes €0 savings. */}
         {goals && accounts && (
