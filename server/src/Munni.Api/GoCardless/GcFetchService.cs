@@ -4,9 +4,11 @@ using Munni.Api.Data;
 namespace Munni.Api.GoCardless;
 
 /// <summary>
-/// Scheduled transaction fetch. GoCardless allows ~4 account-API calls per
-/// account per day, so we fetch every 6 hours and there is no on-demand
-/// refresh. 429s simply wait for the next cycle.
+/// Scheduled transaction fetch: once a night per account, in the 03:00
+/// hour at the bank's local time (GcSchedule) — one call per endpoint
+/// per day, far inside GoCardless's ~4/day budget. Freshly linked
+/// accounts fetch on the next hourly tick instead of waiting for night.
+/// There is no on-demand refresh; 429s defer the account.
 /// </summary>
 public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<GcFetchService> logger) : BackgroundService
 {
@@ -17,9 +19,10 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromHours(6));
-        // first run shortly after startup, then every 6h
-        await Task.Delay(TimeSpan.FromMinutes(2), stoppingToken);
+        // hourly ticks; GcSchedule decides which accounts are due (the
+        // 03:00 bank-local window, or a brand-new link)
+        using var timer = new PeriodicTimer(TimeSpan.FromHours(1));
+        await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
         do
         {
             try
@@ -45,8 +48,7 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
         var linkedAccounts = await db.GcLinkedAccounts.ToListAsync(ct);
         foreach (var linked in linkedAccounts)
         {
-            // stagger accounts a little; skip if fetched within the last 5h
-            if (linked.LastFetchAt is { } last && DateTimeOffset.UtcNow - last < TimeSpan.FromHours(5)) continue;
+            if (!GcSchedule.IsDue(linked.Iban, linked.LastFetchAt, DateTimeOffset.UtcNow)) continue;
             if (_rateLimitedUntil.TryGetValue(linked.GcAccountId, out var until) && DateTimeOffset.UtcNow < until) continue;
             try
             {
