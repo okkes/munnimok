@@ -1,6 +1,14 @@
 # Tutorials & in-app help — design
 
-Status: **draft for approval** — nothing here is built yet.
+Status: **approved 2026-07-09** — rulings folded in below.
+
+## Confirmed rulings
+
+1. First content: **Home, Review, Budgets**. ✓
+2. First-launch behavior: **intro card only** (no auto-opened tour). ✓
+3. **No empty-state tours.** Slides always use illustrated sample
+   content; interactive steps run on real data when the anchor exists
+   and otherwise show the sample illustration instead of being skipped.
 
 ## The idea
 

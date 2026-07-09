@@ -1,7 +1,16 @@
 # Allocation (zero-based budgeting) — design
 
-Status: **draft for approval** — nothing here is built yet.
+Status: **approved 2026-07-09** — rulings folded in below.
 The YNAB concept, munni-shaped; the legacy sketch is inspiration only.
+
+## Confirmed rulings
+
+1. Allocation at **main-category** level only (subs roll up). ✓
+2. Rollover default **on**, per-space toggle. ✓
+3. Unassigned income **carries** into next period's "to allocate". ✓
+4. Extra YNAB latitude granted — adopted: **Age of Money** stat on the
+   allocate header, and a **quick-fill underfunded** action that tops
+   every envelope up to its budget suggestion where budgets exist.
 
 ## The idea
 

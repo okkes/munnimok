@@ -1,6 +1,19 @@
 # Receipts & shopping integrations — design
 
-Status: **draft for approval** — nothing here is built yet.
+Status: **approved 2026-07-09** — rulings folded in below.
+
+## Confirmed rulings
+
+1. Store tokens are **device-only**; a new phone reconnects by design. ✓
+   Softener: the space syncs a secret-free **connection marker** (store +
+   who connected + status), so a device without a local token shows a
+   "Reconnect to {store}" notice instead of silently doing nothing.
+2. The pass-through proxy is **acceptable** (stores nothing, logs
+   nothing, demo/offline never reach it). ✓
+3. Photos are **downscaled** and synced. ✓ Plus: a free lightweight
+   **OCR container on the NAS** (Tesseract HTTP service) converts photo
+   receipts to text server-side — user identities only, opt-in flow,
+   feeding the same line-item shape store adapters produce.
 
 ## The idea
 
