@@ -3,6 +3,7 @@ import type { Table } from 'dexie';
 import type {
   AccountLinkRow,
   AccountRow,
+  AllocationRow,
   BudgetRow,
   CategoryRow,
   DebtRow,
@@ -38,6 +39,7 @@ export class MunniDB extends Dexie {
   goals!: Table<GoalRow, string>;
   goalContributions!: Table<GoalContributionRow, string>;
   debts!: Table<DebtRow, string>;
+  allocations!: Table<AllocationRow, string>;
   outbox!: Table<OutboxRow, string>;
   meta!: Table<MetaRow, string>;
 
@@ -72,6 +74,10 @@ export class MunniDB extends Dexie {
       goalContributions: 'id, spaceId, goalId',
       debts: 'id, spaceId',
     });
+    // allocation (zero-based budgeting)
+    this.version(6).stores({
+      allocations: 'id, spaceId, [spaceId+periodStart]',
+    });
   }
 
   tableFor<E extends EntityName>(entity: E) {
@@ -102,6 +108,8 @@ export class MunniDB extends Dexie {
         return this.goalContributions;
       case 'debt':
         return this.debts;
+      case 'allocation':
+        return this.allocations;
       default:
         throw new Error(`unknown entity: ${entity}`);
     }

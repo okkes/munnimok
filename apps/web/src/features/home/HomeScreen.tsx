@@ -20,9 +20,11 @@ import { useBudgetStatuses, useBudgets } from '@/application/budgets';
 import { useEvents } from '@/application/events';
 import { useGoals } from '@/application/goals';
 import { useDebtStatuses } from '@/application/debts';
+import { useAllocations } from '@/application/allocation';
 import { eventSpentCents } from '@/domain/events';
 import { goalProgress } from '@/domain/goals';
 import { debtsOverview } from '@/domain/debts';
+import { toAllocateCents } from '@/domain/allocation';
 import { budgetColor, ratioPct } from '@/features/budgets/budgetUi';
 import { fmtCents } from '@/lib/money';
 import { AppBar, IconButton } from '@/ui/AppBar';
@@ -114,6 +116,17 @@ export function HomeScreen() {
     const accountsById = new Map((accounts ?? []).map((a) => [a.id, a]));
     return debtsOverview(activeDebts.map((s) => s.debt), accountsById);
   }, [activeDebts, accounts]);
+  // allocation block: only once the space actually allocates
+  const allocations = useAllocations();
+  const allocLeft = useMemo(() => {
+    if (!allocations?.length) return null;
+    const history = periodHistory(space?.periodType ?? 'month', space?.periodDay ?? 1, 24);
+    const starts = new Set(allocations.map((a) => a.periodStart));
+    const first = history.findIndex((p) => starts.has(p.start));
+    const window = first === -1 ? history.slice(-1) : history.slice(first);
+    const accountsById = new Map((accounts ?? []).map((a) => [a.id, a]));
+    return toAllocateCents(window, allTxs ?? [], accountsById, allocations);
+  }, [allocations, space?.periodType, space?.periodDay, allTxs, accounts]);
 
   // each landing-zone block renders through this registry so the
   // per-space layout (order + visibility) can rearrange them
@@ -121,6 +134,7 @@ export function HomeScreen() {
     overview: renderOverviewBlock,
     review: renderReviewBlock,
     budgets: renderBudgetsBlock,
+    allocation: renderAllocationBlock,
     upcoming: renderUpcomingBlock,
     events: renderEventsBlock,
     goals: renderGoalsBlock,
@@ -334,6 +348,36 @@ export function HomeScreen() {
             </button>
           ))}
         </div>
+      </>
+    );
+  }
+
+  function renderAllocationBlock() {
+    if (allocLeft === null) return null;
+    let color = 'var(--m-warning)';
+    if (allocLeft === 0) color = 'var(--m-accent-deep)';
+    else if (allocLeft < 0) color = 'var(--m-negative)';
+    return (
+      <>
+        <div className="m-cap mt-5 mb-1 px-1">{t('alloc.title')}</div>
+        <button
+          data-testid="home-allocation"
+          onClick={() => void navigate({ to: '/allocate' })}
+          className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left"
+        >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" style={{ background: `color-mix(in srgb, ${color} 14%, transparent)` }}>
+            <Icon name={allocLeft === 0 ? 'check-circle-outline' : 'cash-multiple'} size={18} color={color} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="m-num block text-[15px] font-semibold" style={{ color }}>
+              {fmtCents(allocLeft, currency, lang)}
+            </span>
+            <span className="block text-[11px] text-ink-4">
+              {allocLeft === 0 ? t('alloc.allAssigned') : t('alloc.toAllocate')}
+            </span>
+          </span>
+          <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
+        </button>
       </>
     );
   }

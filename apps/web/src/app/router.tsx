@@ -31,6 +31,7 @@ import { GoalsScreen } from '@/features/goals/GoalsScreen';
 import { GoalDetailScreen } from '@/features/goals/GoalDetailScreen';
 import { DebtsScreen } from '@/features/debts/DebtsScreen';
 import { DebtDetailScreen } from '@/features/debts/DebtDetailScreen';
+import { AllocateScreen } from '@/features/allocation/AllocateScreen';
 import { ProfileScreen } from '@/features/profile/ProfileScreen';
 import { RecurringScreen } from '@/features/recurring/RecurringScreen';
 import { RecurringDetailScreen } from '@/features/recurring/RecurringDetailScreen';
@@ -117,6 +118,7 @@ const goalsRoute = createRoute({ getParentRoute: () => appRoute, path: '/goals',
 const goalDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/goals/$goalId', component: GoalDetailScreen });
 const debtsRoute = createRoute({ getParentRoute: () => appRoute, path: '/debts', component: DebtsScreen });
 const debtDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/debts/$debtId', component: DebtDetailScreen });
+const allocateRoute = createRoute({ getParentRoute: () => appRoute, path: '/allocate', component: AllocateScreen });
 const categoryDrillRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/overview/$kind/$catId',
@@ -158,6 +160,7 @@ export const routeTree = rootRoute.addChildren([
     goalDetailRoute,
     debtsRoute,
     debtDetailRoute,
+    allocateRoute,
   ]),
 ]);
 

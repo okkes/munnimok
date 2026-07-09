@@ -28,6 +28,8 @@ export interface SpaceRow extends SyncEnvelope {
   historyStartDate?: string;
   /** landing-zone layout: block order + visibility, per space (synced) */
   homeBlocks?: { id: string; hidden?: 0 | 1 }[];
+  /** allocation: roll category leftovers into the next period (default on) */
+  allocRollover?: 0 | 1;
 }
 
 export type AccountType = 'checking' | 'savings' | 'cash' | 'brokerage' | 'credit' | 'mortgage' | 'loan';
@@ -301,6 +303,21 @@ export interface DebtRow extends SyncEnvelope {
 }
 
 /**
+ * One allocation cell: what this period assigned to this main category
+ * (approved allocation design). Deterministic id — two devices editing
+ * the same cell converge by LWW instead of duplicating rows.
+ */
+export interface AllocationRow extends SyncEnvelope {
+  id: string;
+  spaceId: string;
+  /** yyyy-mm-dd start of the space period the cell belongs to */
+  periodStart: string;
+  /** main category (subs roll up) */
+  catId: string;
+  assignedCents: number;
+}
+
+/**
  * Attachment of a financial account (its feed space) to a viewing
  * space. Lives in the viewing space so members render it offline; the
  * server keeps the authoritative copy for feed access control.
@@ -352,7 +369,8 @@ export type EntityName =
   | 'event'
   | 'goal'
   | 'goalContribution'
-  | 'debt';
+  | 'debt'
+  | 'allocation';
 
 export interface EntityRowMap {
   space: SpaceRow;
@@ -368,4 +386,5 @@ export interface EntityRowMap {
   goal: GoalRow;
   goalContribution: GoalContributionRow;
   debt: DebtRow;
+  allocation: AllocationRow;
 }

@@ -1078,6 +1078,22 @@ export const en = {
   'debts.count': '{n} debts',
   'debts.emptyTitle': 'No debts tracked',
   'debts.emptyBody': 'Track loans and credit to watch them shrink — and see when you’ll be free.',
+  'alloc.title': 'Allocation',
+  'alloc.toAllocate': 'left to allocate',
+  'alloc.allAssigned': 'All money has a job',
+  'alloc.ageOfMoney': 'Age of money: {n} days',
+  'alloc.evenly': 'Assign evenly',
+  'alloc.fillBudgets': 'Fill to budgets',
+  'alloc.readOnly': 'Past period — read only',
+  'alloc.spentShort': 'spent {amount}',
+  'alloc.chipBudget': '= budget {amount}',
+  'alloc.chipLast': '= last period',
+  'alloc.chipAvg': '= avg spent',
+  'alloc.rollover': 'Roll over leftovers',
+  'alloc.rolloverHint': 'Unused envelope money carries into the next period',
+  'alloc.coverTitle': 'Cover from…',
+  'alloc.coverHint': 'Take money from an envelope with room to cover the overspend.',
+  'alloc.coverNone': 'No envelope has money to spare.',
 } as const;
 
 export type TranslationKey = keyof typeof en;
