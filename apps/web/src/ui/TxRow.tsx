@@ -1,4 +1,4 @@
-import { useLang } from '@/i18n';
+import { LOCALES, useLang } from '@/i18n';
 import { fmtCents } from '@/lib/money';
 import { cleanBankText } from '@/lib/text';
 import type { TransactionRow } from '@/db/types';
@@ -6,7 +6,18 @@ import { catName, useCategories } from '@/features/categories/useCategories';
 import { Highlight } from './Highlight';
 import { Icon } from './Icon';
 
-export function TxRow({ tx, onClick, highlight = '' }: { tx: TransactionRow; onClick?: () => void; highlight?: string }) {
+export function TxRow({
+  tx,
+  onClick,
+  highlight = '',
+  showDate = false,
+}: {
+  tx: TransactionRow;
+  onClick?: () => void;
+  highlight?: string;
+  /** lists without date group headers (Home) show it inline */
+  showDate?: boolean;
+}) {
   const { t, lang } = useLang();
   const cats = useCategories();
   const cat = cats.byId(tx.catId);
@@ -31,6 +42,12 @@ export function TxRow({ tx, onClick, highlight = '' }: { tx: TransactionRow; onC
           <Highlight text={cleanBankText(tx.merchant)} query={highlight} />
         </span>
         <span className="block truncate text-xs text-ink-3">
+          {showDate && (
+            <span className="text-ink-4">
+              {new Date(tx.date).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' })}
+              {' · '}
+            </span>
+          )}
           {catName(cat, t)}
           {tx.needsReview === 1 && (
             <span className="ml-1.5 rounded bg-warning-soft px-1 py-px text-[10px] font-semibold text-warning">

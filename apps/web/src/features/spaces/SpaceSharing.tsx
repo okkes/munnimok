@@ -4,6 +4,7 @@ import type { TranslationKey } from '@/i18n';
 import { useData } from '@/app/data';
 import { adoptUserCategoriesOnShare } from '@/features/categories/categoryOps';
 import { apiFetch } from '@/lib/api';
+import { useServerRefresh } from '@/lib/serverEvents';
 import { Avatar } from '@/features/profile/ProfileScreen';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
@@ -51,6 +52,7 @@ export function SpaceInvitesBanner() {
     if (res?.ok) setInvites((await res.json()) as InviteDto[]);
   }, []);
   useEffect(() => void reload(), [reload]);
+  useServerRefresh(reload);
 
   const respond = async (invite: InviteDto, action: 'accept' | 'decline') => {
     await apiFetch(`/spaces/invites/${invite.id}/${action}`, { method: 'POST' });
@@ -123,6 +125,8 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
     if (outgoingRes?.ok) setOutgoing((await outgoingRes.json()) as OutgoingInviteDto[]);
   }, [spaceId]);
   useEffect(() => void reload(), [reload]);
+  // an accepted invite shows up while you're looking at the member list
+  useServerRefresh(reload);
 
   const myRole = members?.find((m) => m.userId === me)?.role;
   useEffect(() => {

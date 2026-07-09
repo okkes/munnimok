@@ -12,6 +12,7 @@ import type { RecurringRow } from '@/db/types';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { OfflineIndicator } from '@/app/OfflineBanner';
+import { NotificationsBell } from './NotificationsBell';
 import { SpaceSwitcher } from '@/features/spaces/SpaceSwitcher';
 import { fmtCents } from '@/lib/money';
 import { AppBar } from '@/ui/AppBar';
@@ -82,6 +83,7 @@ export function HomeScreen() {
         trailing={
           <>
             <OfflineIndicator />
+            <NotificationsBell />
             <SpaceSwitcher />
           </>
         }
@@ -146,6 +148,28 @@ export function HomeScreen() {
           ))}
         </div>
 
+        {/* review call-to-action: important enough to be its own card —
+            the quiet list row was too easy to scroll past */}
+        {(reviewCount ?? 0) > 0 && (
+          <button
+            data-testid="home-review-banner"
+            onClick={() => void navigate({ to: '/review' })}
+            className="m-tap mt-5 flex w-full items-center gap-3 rounded-card border border-warning bg-warning-soft px-4 py-3.5 text-left"
+          >
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface">
+              <Icon name="progress-check" size={20} color="var(--m-warning)" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[14px] font-semibold text-ink">{t('review.title')}</span>
+              <span className="block text-[12px] text-ink-3">{t('home.reviewSub', { n: reviewCount ?? 0 })}</span>
+            </span>
+            <span className="flex h-7 min-w-7 items-center justify-center rounded-full bg-warning px-2 text-[12px] font-bold text-white">
+              {reviewCount}
+            </span>
+            <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
+          </button>
+        )}
+
         {upcoming.length > 0 && (
           <>
             <div className="m-cap mt-5 mb-1 px-1">{t('recurring.upcoming')}</div>
@@ -173,24 +197,11 @@ export function HomeScreen() {
 
         <div className="m-cap mt-5 mb-1 px-1">{t('tab.transactions')}</div>
         <div className="rounded-card border border-line bg-surface px-3 py-1">
-          {(reviewCount ?? 0) > 0 && (
-            // quiet list row, not a shouting banner — review is a task, not an alarm
-            <button
-              data-testid="home-review-banner"
-              onClick={() => void navigate({ to: '/review' })}
-              className="m-tap -mx-3 flex w-[calc(100%+24px)] items-center gap-3 border-b border-line-2 bg-transparent px-4 py-3 text-left"
-            >
-              <Icon name="progress-check" size={18} color="var(--m-warning)" />
-              <span className="flex-1 text-[13px] font-medium text-ink-2">
-                {t('review.title')} · {reviewCount}
-              </span>
-              <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
-            </button>
-          )}
           {(recentTxs ?? []).map((tx) => (
             <TxRow
               key={tx.id}
               tx={tx}
+              showDate
               onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })}
             />
           ))}

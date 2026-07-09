@@ -50,6 +50,11 @@ self.addEventListener('push', (event) => {
         tag: notification.tag,
         data: { url: notification.url, spaceId: notification.pullSpaceId },
       });
+      // open clients refresh their server-backed lists (notification
+      // bell, members, invites) the moment a push lands
+      const clientList = await self.clients.matchAll({ type: 'window' });
+      for (const client of clientList) client.postMessage({ type: 'PUSH', payloadType: payload.type });
+
       if (!notification.pull) return;
       // …then pre-sync the announced data into IndexedDB while we're
       // awake, so opening the app (or the notification) starts hot.
