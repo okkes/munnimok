@@ -7,6 +7,7 @@ import { apiFetch, getApiCapabilities } from '@/lib/api';
 import { COUNTRIES, currencyForCountry } from '@/domain/countries';
 import { BankConnectSheet } from '@/features/accounts/BankConnect';
 import { Button } from '@/ui/Button';
+import { Highlight } from '@/ui/Highlight';
 import { Icon } from '@/ui/Icon';
 import { Logo } from '@/ui/Logo';
 import { Sheet } from '@/ui/Sheet';
@@ -155,7 +156,9 @@ export function OnboardingScreen() {
             <span className="rounded-md bg-bg-2 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-ink-3">
               {c.code}
             </span>
-            <span className="flex-1">{c[lang]}</span>
+            <span className="flex-1">
+              <Highlight text={c[lang]} query={query} />
+            </span>
             <span className="text-[11px] text-ink-4">{currencyForCountry(c.code)}</span>
           </button>
         ))}

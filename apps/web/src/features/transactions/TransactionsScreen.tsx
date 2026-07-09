@@ -178,6 +178,7 @@ export function TransactionsScreen() {
                 <TxRow
                   key={tx.id}
                   tx={tx}
+                  highlight={query}
                   onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })}
                 />
               ))}

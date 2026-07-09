@@ -2,7 +2,8 @@
 import 'fake-indexeddb/auto';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { renderApp } from '@/test/harness';
+import { USER_TEST_DB, renderApp, renderAppAsUser } from '@/test/harness';
+import { resetApiCapabilitiesCache } from '@/lib/api';
 import { DEMO_SPACE_ID } from '@/db/seed';
 import { reconcileRecurringLinks } from '@/application/recurring';
 import { HlcClock } from '@/sync/hlc';
@@ -69,15 +70,20 @@ describe('RecurringScreen (demo identity)', () => {
     expect(screen.getByTestId('recurring-luxury-line')).toBeTruthy();
   }, 15_000);
 
-  it('detects a monthly pattern; dismissing removes it for good', async () => {
+  it('detects a monthly pattern; the inbox shows its evidence; dismissing removes it for good', async () => {
     const db = new MunniDB('munni_demo');
     // the demo seed only runs once — let the app create it first
     renderApp('/recurring');
     await screen.findByTestId('screen-recurring');
     await seedNetflixPattern(db);
 
-    const suggestions = await screen.findByTestId('recurring-suggestions', {}, { timeout: 5000 });
-    expect(suggestions.textContent).toContain('NETFLIX.COM');
+    // notification-style entry on the tab → the suggestions screen
+    fireEvent.click(await screen.findByTestId('recurring-suggestions-banner', {}, { timeout: 5000 }));
+    await screen.findByTestId('screen-recurring-suggestions');
+    const card = await screen.findByTestId('recsuggest-card-netflix com');
+    expect(card.textContent).toContain('NETFLIX.COM');
+    // the card carries its evidence: all four matched charges
+    expect(card.querySelectorAll('[data-testid^="recsuggest-tx-"]').length).toBe(4);
 
     fireEvent.click(screen.getByTestId('recurring-dismiss-netflix com'));
     // the demo data may yield suggestions of its own — only Netflix must go
@@ -117,14 +123,15 @@ describe('RecurringScreen (demo identity)', () => {
     fetchMock.mockRestore();
   }, 15_000);
 
-  it('accepting a suggestion prefills the sheet and links past payments on save', async () => {
+  it('accepting a suggestion prefills the sheet, links past payments, detail lists them', async () => {
     const db = new MunniDB('munni_demo');
-    renderApp('/recurring');
+    const first = renderApp('/recurring');
     await screen.findByTestId('screen-recurring');
     await seedNetflixPattern(db);
 
-    await screen.findByTestId('recurring-suggestions', {}, { timeout: 5000 });
-    fireEvent.click(screen.getByTestId('recurring-accept-netflix com'));
+    fireEvent.click(await screen.findByTestId('recurring-suggestions-banner', {}, { timeout: 5000 }));
+    await screen.findByTestId('screen-recurring-suggestions');
+    fireEvent.click(await screen.findByTestId('recurring-accept-netflix com'));
     const name = (await screen.findByTestId('recform-name')) as HTMLInputElement;
     expect(name.value).toBe('NETFLIX.COM');
     expect((screen.getByTestId('recform-amount') as HTMLInputElement).value).toBe('13.99');
@@ -138,8 +145,17 @@ describe('RecurringScreen (demo identity)', () => {
       },
       { timeout: 5000 },
     );
+    first.unmount();
+
+    // the detail screen shows the full payment history for the new cost
+    const rec = (await db.recurrings.toArray()).find((r) => r.name === 'NETFLIX.COM')!;
+    renderApp(`/recurring/${rec.id}`);
+    await screen.findByTestId('screen-recurring-detail');
+    const payments = await screen.findByTestId('recdetail-payments', {}, { timeout: 5000 });
+    await waitFor(() => expect(payments.querySelectorAll('[data-testid^="tx-row-"]').length).toBe(4));
+    expect(screen.getByTestId('recdetail-stats').textContent).toContain('4');
     db.close();
-  }, 15_000);
+  }, 20_000);
 });
 
 describe('RecurringScreen editing (demo identity)', () => {
@@ -165,16 +181,18 @@ describe('RecurringScreen editing (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('recurring-summary').textContent).toMatch(/300/));
     fireEvent.click(screen.getByTestId('recurring-view-period'));
 
-    // deactivating moves it into the inactive section
+    // a row now opens the detail screen; editing sits behind the pencil
     fireEvent.click(row.closest('button')!);
+    fireEvent.click(await screen.findByTestId('recdetail-edit'));
     fireEvent.click(await screen.findByTestId('recform-active'));
     fireEvent.click(screen.getByTestId('recform-save'));
-    await waitFor(() => expect(screen.getByText(/Inactive/)).toBeTruthy(), { timeout: 5000 });
+    await screen.findByTestId('recdetail-inactive', {}, { timeout: 5000 });
 
-    // destructive delete: first tap arms, second removes
-    fireEvent.click(screen.getByText('Gym').closest('button')!);
+    // destructive delete: first tap arms, second removes — then back on the list
+    fireEvent.click(screen.getByTestId('recdetail-edit'));
     fireEvent.click(await screen.findByTestId('recform-delete'));
     fireEvent.click(screen.getByTestId('recform-delete'));
+    await screen.findByTestId('screen-recurring', {}, { timeout: 5000 });
     await waitFor(() => expect(screen.queryByText('Gym')).toBeNull(), { timeout: 5000 });
   }, 15_000);
 
@@ -210,6 +228,64 @@ describe('RecurringScreen editing (demo identity)', () => {
     await new Promise((r) => setTimeout(r, 150));
     expect(showNotification).toHaveBeenCalledTimes(1);
   }, 20_000);
+});
+
+describe('brand picker online search (user identity)', () => {
+  const netflixRemote = {
+    name: 'Netflix',
+    domain: 'netflix.com',
+    logoUrl: 'https://img.logo.dev/netflix.com?token=pk',
+  };
+
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase(USER_TEST_DB);
+    resetApiCapabilitiesCache(); // each test scripts its own /health
+  });
+
+  async function openPickerAndSearch(api: Record<string, () => unknown>) {
+    renderAppAsUser('/recurring', {
+      api: {
+        'GET /brands/index.json': () => [{ slug: 'netflix', title: 'Netflix' }],
+        ...api,
+      },
+    });
+    await screen.findByTestId('screen-recurring');
+    fireEvent.click(screen.getByTestId('recurring-add'));
+    await screen.findByTestId('recform-name');
+    fireEvent.click(screen.getByTestId('recform-logo-open'));
+    fireEvent.change(await screen.findByTestId('brandpicker-search'), { target: { value: 'netflix' } });
+  }
+
+  it('shows logo.dev hits first and drops the vendored duplicate', async () => {
+    await openPickerAndSearch({
+      'GET /health': () => ({ capabilities: { gocardless: false, logos: true } }),
+      'GET /logos/search': () => [netflixRemote],
+    });
+
+    const remote = await screen.findByTestId('brandpicker-remote', {}, { timeout: 3000 });
+    expect(screen.getByTestId('brandpicker-remote-netflix.com')).toBeTruthy();
+    // online leads, and its vendored twin is deduped from the grid below
+    const local = screen.getByTestId('brandpicker-local');
+    expect(remote.compareDocumentPosition(local) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByTestId('brandpicker-netflix')).toBeNull();
+    expect(screen.queryByTestId('brandpicker-offline-note')).toBeNull();
+
+    // picking a remote hit stores its logo.dev URL
+    fireEvent.click(screen.getByTestId('brandpicker-remote-netflix.com'));
+    expect(screen.getByTestId('recform-logo-open').textContent).toContain('Brand logo');
+  }, 15_000);
+
+  it('says so when online search is unavailable and keeps the vendored set', async () => {
+    await openPickerAndSearch({
+      'GET /health': () => ({ capabilities: { gocardless: false, logos: false } }),
+    });
+
+    await screen.findByTestId('brandpicker-offline-note', {}, { timeout: 3000 });
+    expect(screen.queryByTestId('brandpicker-remote')).toBeNull();
+    expect(screen.getByTestId('brandpicker-netflix')).toBeTruthy();
+  }, 15_000);
 });
 
 describe('reconcileRecurringLinks', () => {

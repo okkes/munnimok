@@ -4,6 +4,7 @@ import { useLang } from '@/i18n';
 import { config, logtoConfigured } from '@/app/config';
 import { useData } from '@/app/data';
 import { apiFetch } from '@/lib/api';
+import { Highlight } from '@/ui/Highlight';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 
@@ -96,8 +97,14 @@ export function BankConnectSheet({ open, onOpenChange }: { open: boolean; onOpen
             <Icon name="bank-outline" size={22} color="var(--m-ink-3)" />
           )}
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-[14px] font-medium text-ink">{institution.name}</span>
-            {institution.bic && <span className="block font-mono text-[11px] text-ink-4">{institution.bic}</span>}
+            <span className="block truncate text-[14px] font-medium text-ink">
+              <Highlight text={institution.name} query={query} />
+            </span>
+            {institution.bic && (
+              <span className="block font-mono text-[11px] text-ink-4">
+                <Highlight text={institution.bic} query={query} />
+              </span>
+            )}
           </span>
           <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
         </button>

@@ -3,9 +3,10 @@ import { fmtCents } from '@/lib/money';
 import { cleanBankText } from '@/lib/text';
 import type { TransactionRow } from '@/db/types';
 import { catName, useCategories } from '@/features/categories/useCategories';
+import { Highlight } from './Highlight';
 import { Icon } from './Icon';
 
-export function TxRow({ tx, onClick }: { tx: TransactionRow; onClick?: () => void }) {
+export function TxRow({ tx, onClick, highlight = '' }: { tx: TransactionRow; onClick?: () => void; highlight?: string }) {
   const { t, lang } = useLang();
   const cats = useCategories();
   const cat = cats.byId(tx.catId);
@@ -26,7 +27,9 @@ export function TxRow({ tx, onClick }: { tx: TransactionRow; onClick?: () => voi
         <Icon name={cat.icon} size={20} />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[14px] font-medium text-ink">{cleanBankText(tx.merchant)}</span>
+        <span className="block truncate text-[14px] font-medium text-ink">
+          <Highlight text={cleanBankText(tx.merchant)} query={highlight} />
+        </span>
         <span className="block truncate text-xs text-ink-3">
           {catName(cat, t)}
           {tx.needsReview === 1 && (
