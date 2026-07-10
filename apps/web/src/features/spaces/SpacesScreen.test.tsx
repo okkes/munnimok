@@ -159,12 +159,14 @@ describe('SpacesScreen (demo identity)', () => {
     // multi-step flow: the default 5s test budget trips under coverage load
   }, 15_000);
 
-  it('lists the accounts attached to the space in its settings', async () => {
+  it('lists the accounts attached to the space behind its own door', async () => {
     renderApp('/spaces');
     await screen.findByTestId('screen-spaces');
     const id = (await findActiveRow()).getAttribute('data-testid')!.replace('space-row-', '');
 
+    // settings split (user remark): the accounts list is its own screen
     fireEvent.click(screen.getByTestId(`space-edit-${id}`));
+    fireEvent.click(await screen.findByTestId('spacesettings-accounts-row'));
     const section = await screen.findByTestId('space-accounts');
     // the demo space owns its seeded accounts directly
     await waitFor(() => expect(section.textContent).toContain('Demo Savings'), { timeout: 5000 });

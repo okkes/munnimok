@@ -94,7 +94,9 @@ function ProfileHeaderRow({ onClick }: Readonly<{ onClick: () => void }>) {
       <Avatar picture={profile?.picture} size={44} />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[15px] font-semibold text-ink">{profile?.name ?? t('profile.title')}</span>
-        <span className="block text-[12px] text-ink-3">{t('profile.title')}</span>
+        {/* no name yet → the title already says "Profile"; repeating it read
+            as a bug ("Profiel / Profiel") — invite instead (§2L) */}
+        <span className="block text-[12px] text-ink-3">{profile?.name ? t('profile.title') : t('profile.setupHint')}</span>
       </span>
       <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
     </button>
@@ -256,6 +258,10 @@ export function SettingsScreen() {
               capKey: 'settings.groupSetup',
               rows: [
                 { testId: 'settings-space-settings-row', icon: 'cog-outline', labelKey: 'space.settings', to: '/spaces/$spaceId' },
+                // the space's accounts/members moved out of the (already
+                // big) space-settings screen — user remark
+                { testId: 'settings-space-accounts-row', icon: 'bank-outline', labelKey: 'space.financialAccounts', to: '/spaces/$spaceId/accounts' },
+                { testId: 'settings-space-members-row', icon: 'account-multiple-outline', labelKey: 'space.members', to: '/spaces/$spaceId/members', userOnly: true },
                 { testId: 'settings-categories-row', icon: 'shape-outline', labelKey: 'screen.categories', to: '/categories' },
               ],
             },
@@ -266,15 +272,17 @@ export function SettingsScreen() {
               {t(group.capKey)}
             </p>
             <div className="overflow-hidden rounded-card border border-line bg-surface">
-              {group.rows.map((row) => (
-                <Row
-                  key={row.testId}
-                  testId={row.testId}
-                  icon={row.icon}
-                  title={t(row.labelKey)}
-                  onClick={() => void navigate({ to: row.to, params: { spaceId } })}
-                />
-              ))}
+              {group.rows
+                .filter((row) => !('userOnly' in row) || identity?.kind === 'user')
+                .map((row) => (
+                  <Row
+                    key={row.testId}
+                    testId={row.testId}
+                    icon={row.icon}
+                    title={t(row.labelKey)}
+                    onClick={() => void navigate({ to: row.to, params: { spaceId } })}
+                  />
+                ))}
             </div>
           </div>
         ))}

@@ -41,6 +41,32 @@ const short = (id: string) => `${id.slice(0, 8)}…`;
 const ROLES: SpaceRole[] = ['owner', 'contributor', 'reader'];
 const roleKey = (role: string): TranslationKey => `space.role.${role}` as TranslationKey;
 
+/**
+ * The signed-in user's role in a space. Non-synced identities (demo,
+ * offline) own everything they see; while the members call is in
+ * flight — or offline — we optimistically assume owner, matching the
+ * server's enforcement as the real gate.
+ */
+export function useMyRole(spaceId: string | undefined, syncing: boolean): SpaceRole {
+  const [role, setRole] = useState<SpaceRole>('owner');
+  useEffect(() => {
+    setRole('owner');
+    if (!syncing || !spaceId) return;
+    void (async () => {
+      const [membersRes, meRes] = await Promise.all([
+        apiFetch(`/spaces/${spaceId}/members`).catch(() => null),
+        apiFetch('/me').catch(() => null),
+      ]);
+      if (!membersRes?.ok || !meRes?.ok) return;
+      const members = (await membersRes.json()) as MemberDto[];
+      const me = ((await meRes.json()) as { userId: string }).userId;
+      const mine = members.find((m) => m.userId === me)?.role;
+      if (mine) setRole(mine);
+    })();
+  }, [spaceId, syncing]);
+  return role;
+}
+
 /** Pending space invites, shown at the top of the Spaces tab. */
 export function SpaceInvitesBanner() {
   const { t } = useLang();
