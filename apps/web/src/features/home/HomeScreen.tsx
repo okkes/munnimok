@@ -26,6 +26,7 @@ import { useDebtStatuses } from '@/application/debts';
 import { useAllocations } from '@/application/allocation';
 import { usePortfolio } from '@/application/portfolio';
 import { useInsights } from '@/application/insights';
+import { useNewTransactions } from '@/application/newTxs';
 import { eventSpentCents } from '@/domain/events';
 import { goalProgress } from '@/domain/goals';
 import { debtsOverview } from '@/domain/debts';
@@ -52,10 +53,7 @@ export function HomeScreen() {
 
   const accounts = useSpaceAccounts();
   const allTxs = useSpaceTransactions();
-  const recentTxs = useMemo(
-    () => allTxs && [...allTxs].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5),
-    [allTxs],
-  );
+  const { newTxs, ackAll } = useNewTransactions(allTxs);
   const reviewCount = useMemo(() => allTxs?.filter((tx) => tx.needsReview === 1).length, [allTxs]);
 
   const needsOnboarding = useLiveQuery(() => db.meta.get('needsOnboarding'), []);
@@ -403,8 +401,31 @@ export function HomeScreen() {
     );
   }
 
+  // the good features shouldn't hide in settings: unconfigured ones get
+  // a quiet dashed door on the landing zone (hideable like any block)
+  function renderTeaser(testId: string, icon: string, titleKey: Parameters<typeof t>[0], subKey: Parameters<typeof t>[0], to: string) {
+    return (
+      <button
+        data-testid={testId}
+        onClick={() => void navigate({ to })}
+        className="m-tap mt-5 flex w-full items-center gap-3 rounded-card border border-dashed border-line bg-surface px-4 py-3.5 text-left"
+      >
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent-soft">
+          <Icon name={icon} size={19} color="var(--m-accent-deep)" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[14px] font-semibold text-ink">{t(titleKey)}</span>
+          <span className="block text-[12px] text-ink-3">{t(subKey)}</span>
+        </span>
+        <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
+      </button>
+    );
+  }
+
   function renderEventsBlock() {
-    if (!featuredEvent) return null;
+    if (!featuredEvent) {
+      return events ? renderTeaser('home-events-teaser', 'party-popper', 'home.eventsTeaserTitle', 'home.eventsTeaserSub', '/events') : null;
+    }
     const today = localToday();
     const spent = eventSpentCents(allTxs ?? [], featuredEvent.id);
     const running = !!featuredEvent.from && featuredEvent.from <= today && (!featuredEvent.to || featuredEvent.to! >= today);
@@ -434,7 +455,9 @@ export function HomeScreen() {
   }
 
   function renderGoalsBlock() {
-    if (topGoals.length === 0) return null;
+    if (topGoals.length === 0) {
+      return goals ? renderTeaser('home-goals-teaser', 'flag-outline', 'home.goalsTeaserTitle', 'home.goalsTeaserSub', '/goals') : null;
+    }
     return (
       <>
         <div className="m-cap mt-5 mb-1 flex items-baseline justify-between px-1">
@@ -478,7 +501,9 @@ export function HomeScreen() {
   }
 
   function renderDebtsBlock() {
-    if (activeDebts.length === 0) return null;
+    if (activeDebts.length === 0) {
+      return debtStatuses ? renderTeaser('home-debts-teaser', 'hand-coin-outline', 'home.debtsTeaserTitle', 'home.debtsTeaserSub', '/debts') : null;
+    }
     return (
       <>
         <div className="m-cap mt-5 mb-1 px-1">{t('debts.title')}</div>
@@ -531,6 +556,9 @@ export function HomeScreen() {
   }
 
   function renderPortfolioBlock() {
+    if (portfolio && !hasHoldings) {
+      return renderTeaser('home-portfolio-teaser', 'chart-timeline-variant', 'home.portfolioTeaserTitle', 'home.portfolioTeaserSub', '/portfolio');
+    }
     if (!portfolio || !hasHoldings) return null;
     const day = portfolio.totals.dayChangeCents;
     return (
@@ -559,11 +587,28 @@ export function HomeScreen() {
   }
 
   function renderTransactionsBlock() {
+    // only what arrived since the last acknowledgement — the tab has
+    // the full history; seeing all marks everything as seen
+    if (newTxs.length === 0) return null;
     return (
       <>
-        <div className="m-cap mt-5 mb-1 px-1">{t('tab.transactions')}</div>
-        <div className="rounded-card border border-line bg-surface px-3 py-1">
-          {(recentTxs ?? []).map((tx) => (
+        <div className="m-cap mt-5 mb-1 flex items-baseline justify-between px-1">
+          <span>
+            {t('home.newTxs')} · {newTxs.length}
+          </span>
+          <button
+            data-testid="home-newtx-all"
+            onClick={() => {
+              void ackAll();
+              void navigate({ to: '/transactions' });
+            }}
+            className="m-tap border-none bg-transparent text-[10px] font-medium normal-case text-ink-4"
+          >
+            {t('action.seeAll')}
+          </button>
+        </div>
+        <div className="rounded-card border border-line bg-surface px-3 py-1" data-testid="home-newtxs">
+          {newTxs.slice(0, 5).map((tx) => (
             <TxRow
               key={tx.id}
               tx={tx}
