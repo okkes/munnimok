@@ -16,6 +16,11 @@ export default defineConfig(({ mode }) => {
     }
   }
 
+  // staging installs wear the white leaf on brand green so both apps can
+  // live on one home screen; production keeps the dark leaf on cream
+  const staging = process.env.VITE_CHANNEL === 'staging';
+  const icon = (size: number) => (staging ? `icon-staging-${size}.png` : `icon-${size}.png`);
+
   return {
     plugins: [
       react(),
@@ -26,23 +31,23 @@ export default defineConfig(({ mode }) => {
         srcDir: 'src',
         filename: 'sw.ts',
         registerType: 'prompt',
-        includeAssets: ['favicon.ico', 'icon-192.png', 'icon-512.png'],
+        includeAssets: ['favicon.ico', icon(192), icon(512)],
         manifest: {
           name: 'munni — finance app',
           short_name: 'munni',
           description: 'Personal finance made simple',
           theme_color: '#08372B',
-          background_color: '#F7F4EE',
+          background_color: staging ? '#08372B' : '#F7F4EE',
           display: 'standalone',
           orientation: 'portrait',
           start_url: './',
           scope: './',
           id: './',
           icons: [
-            { src: 'icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
-            { src: 'icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
-            { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-            { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+            { src: icon(192), sizes: '192x192', type: 'image/png', purpose: 'any' },
+            { src: icon(192), sizes: '192x192', type: 'image/png', purpose: 'maskable' },
+            { src: icon(512), sizes: '512x512', type: 'image/png', purpose: 'any' },
+            { src: icon(512), sizes: '512x512', type: 'image/png', purpose: 'maskable' },
           ],
         },
         injectManifest: {
@@ -54,6 +59,14 @@ export default defineConfig(({ mode }) => {
           maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         },
       }),
+      {
+        // iOS home-screen installs read apple-touch-icon, not (reliably)
+        // the manifest icons — inject the channel's leaf
+        name: 'munni:apple-touch-icon',
+        transformIndexHtml: () => [
+          { tag: 'link', attrs: { rel: 'apple-touch-icon', sizes: '192x192', href: icon(192) }, injectTo: 'head' as const },
+        ],
+      },
     ],
     resolve: {
       alias: {
