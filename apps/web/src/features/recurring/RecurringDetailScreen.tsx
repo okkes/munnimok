@@ -9,6 +9,7 @@ import { nextDueDate } from '@/domain/recurring';
 import { fmtCents } from '@/lib/money';
 import { RecurringFormSheet, formFromRec } from './RecurringFormSheet';
 import type { FormState } from './RecurringFormSheet';
+import { Pill } from '@/ui/primitives';
 import { RecurringVisual, cadenceLabel } from './RecurringVisual';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
@@ -86,9 +87,9 @@ export function RecurringDetailScreen() {
               <span className="flex items-center gap-1.5">
                 <span className="truncate text-[16px] font-semibold text-ink">{rec.name}</span>
                 {rec.luxury === 1 && (
-                  <span className="shrink-0 rounded-full bg-accent-soft px-1.5 py-0.5 text-[9px] font-bold tracking-wide text-accent-deep uppercase">
+                  <Pill tone="accent" caps>
                     {t('recurring.luxury')}
-                  </span>
+                  </Pill>
                 )}
               </span>
               <span className="block text-[12px] text-ink-3">

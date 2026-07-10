@@ -10,6 +10,7 @@ import { CategoryPicker } from '@/features/categories/CategoryPicker';
 import type { TxSplit } from '@/db/types';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
+import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 
 interface Row {
@@ -122,24 +123,12 @@ export function SplitEditorSheet({ open, onOpenChange, tx }: { open: boolean; on
         <div className="flex flex-col gap-2 pt-1" data-testid="split-editor">
           {/* exact euros for one charge, percentages when the shape repeats */}
           <div className="flex gap-1.5">
-            <button
-              data-testid="split-mode-amount"
-              onClick={() => switchMode('amount')}
-              className={`m-tap flex-1 rounded-full border px-3 py-1.5 text-[12px] ${
-                mode === 'amount' ? 'border-accent bg-accent-soft font-medium text-accent-deep' : 'border-line bg-surface text-ink-2'
-              }`}
-            >
+            <Chip className="flex-1" testId="split-mode-amount" selected={mode === 'amount'} onClick={() => switchMode('amount')}>
               {t('split.modeAmount')}
-            </button>
-            <button
-              data-testid="split-mode-pct"
-              onClick={() => switchMode('pct')}
-              className={`m-tap flex-1 rounded-full border px-3 py-1.5 text-[12px] ${
-                mode === 'pct' ? 'border-accent bg-accent-soft font-medium text-accent-deep' : 'border-line bg-surface text-ink-2'
-              }`}
-            >
+            </Chip>
+            <Chip className="flex-1" testId="split-mode-pct" selected={mode === 'pct'} onClick={() => switchMode('pct')}>
               {t('split.modePct')}
-            </button>
+            </Chip>
           </div>
           {rows.map((row, i) => (
             <div key={row.key} className="flex items-center gap-2">

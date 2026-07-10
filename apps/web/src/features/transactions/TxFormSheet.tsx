@@ -8,6 +8,7 @@ import { parseCents } from '@/lib/money';
 import type { TransactionRow } from '@/db/types';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
+import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { CategoryPicker } from '@/features/categories/CategoryPicker';
 
@@ -137,18 +138,9 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
           {/* account chips */}
           <div className="flex flex-wrap gap-2">
             {(accounts ?? []).map((a) => (
-              <button
-                key={a.id}
-                data-testid={`txform-account-${a.id}`}
-                onClick={() => setAccountId(a.id)}
-                className={`m-tap rounded-full border px-3 py-1.5 text-[13px] ${
-                  effectiveAccount === a.id
-                    ? 'border-accent bg-accent-soft font-medium text-accent-deep'
-                    : 'border-line bg-surface text-ink-2'
-                }`}
-              >
+              <Chip key={a.id} testId={`txform-account-${a.id}`} selected={effectiveAccount === a.id} onClick={() => setAccountId(a.id)}>
                 {a.name}
-              </button>
+              </Chip>
             ))}
           </div>
 

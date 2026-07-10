@@ -125,33 +125,52 @@ export function Pill({
   caps = false,
   children,
   testId,
-}: Readonly<{ tone?: Tone; caps?: boolean; children: ReactNode; testId?: string }>) {
+  className = '',
+}: Readonly<{ tone?: Tone; caps?: boolean; children: ReactNode; testId?: string; className?: string }>) {
   return (
     <span
       data-testid={testId}
       className={`inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
         caps ? 'tracking-wide uppercase' : ''
-      } ${TONE_BG[tone]} ${TONE_TEXT[tone]}`}
+      } ${TONE_BG[tone]} ${TONE_TEXT[tone]} ${className}`}
     >
       {children}
     </span>
   );
 }
 
-/** interactive filter/select chip — full round, accent-soft when on (§2F) */
+/** selected-state look per tone — accent for picking, warning for attention filters */
+const CHIP_ON: Partial<Record<Tone, string>> = {
+  accent: 'border-accent bg-accent-soft font-medium text-accent-deep',
+  warning: 'border-warning bg-warning-soft font-medium text-warning',
+};
+
+/** interactive filter/select chip — full round, tone-soft when on (§2F) */
 export function Chip({
   selected,
   onClick,
   children,
+  tone = 'accent',
+  disabled,
   testId,
-}: Readonly<{ selected: boolean; onClick: () => void; children: ReactNode; testId?: string }>) {
+  className = '',
+}: Readonly<{
+  selected: boolean;
+  onClick: () => void;
+  children: ReactNode;
+  tone?: 'accent' | 'warning';
+  disabled?: boolean;
+  testId?: string;
+  className?: string;
+}>) {
   return (
     <button
       data-testid={testId}
       onClick={onClick}
-      className={`m-tap shrink-0 rounded-full border px-3 py-1.5 text-[12px] ${
-        selected ? 'border-accent bg-accent-soft font-medium text-accent-deep' : 'border-line bg-surface text-ink-2'
-      }`}
+      disabled={disabled}
+      className={`m-tap flex shrink-0 items-center justify-center gap-1.5 rounded-full border px-3 py-1.5 text-[12px] disabled:pointer-events-none disabled:opacity-40 ${
+        selected ? CHIP_ON[tone] : 'border-line bg-surface text-ink-2'
+      } ${className}`}
     >
       {children}
     </button>

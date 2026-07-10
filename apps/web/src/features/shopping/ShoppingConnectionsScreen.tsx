@@ -12,6 +12,7 @@ import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
+import { Pill } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { ReceiptViewSheet } from './ReceiptViewSheet';
 
@@ -178,7 +179,7 @@ export function ShoppingConnectionsScreen() {
             <div key={store.id} className="flex items-center gap-3 border-b border-line-2 px-4 py-3.5 last:border-0" data-testid={`shopping-store-${store.id}`}>
               <Icon name={store.icon} size={20} color="var(--m-ink-3)" />
               <span className="min-w-0 flex-1 text-[15px] text-ink">{store.name}</span>
-              <span className="rounded-full bg-bg-2 px-2 py-0.5 text-[11px] font-medium text-ink-4">{t('shop.comingSoon')}</span>
+              <Pill>{t('shop.comingSoon')}</Pill>
             </div>
           ))}
         </div>

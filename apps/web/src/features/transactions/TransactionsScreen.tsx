@@ -12,6 +12,7 @@ import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { EmptyState } from '@/ui/EmptyState';
 import { Icon } from '@/ui/Icon';
+import { Chip } from '@/ui/primitives';
 import { TxRow } from '@/ui/TxRow';
 import { TxFormSheet } from './TxFormSheet';
 
@@ -100,15 +101,7 @@ export function TransactionsScreen() {
         <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
           {/* accounts/types/categories/dates live in the filter sheet —
               chips per account stopped scaling once feeds multiplied */}
-          <button
-            data-testid="tx-filter-open"
-            onClick={() => setFilterOpen(true)}
-            className={`m-tap flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12px] ${
-              activeCount > 0
-                ? 'border-accent bg-accent-soft font-medium text-accent-deep'
-                : 'border-line bg-surface text-ink-2'
-            }`}
-          >
+          <Chip testId="tx-filter-open" selected={activeCount > 0} onClick={() => setFilterOpen(true)}>
             <Icon name="filter-variant" size={14} />
             {t('tx.filters')}
             {activeCount > 0 && (
@@ -116,16 +109,10 @@ export function TransactionsScreen() {
                 {activeCount}
               </span>
             )}
-          </button>
-          <button
-            data-testid="tx-filter-review"
-            onClick={() => setReviewOnly((v) => !v)}
-            className={`m-tap shrink-0 rounded-full border px-3 py-1.5 text-[12px] ${
-              reviewOnly ? 'border-warning bg-warning-soft font-medium text-warning' : 'border-line bg-surface text-ink-2'
-            }`}
-          >
+          </Chip>
+          <Chip testId="tx-filter-review" tone="warning" selected={reviewOnly} onClick={() => setReviewOnly((v) => !v)}>
             {t('tx.unreviewed')}
-          </button>
+          </Chip>
           {activeCount > 0 && (
             <button
               data-testid="tx-filter-clear"

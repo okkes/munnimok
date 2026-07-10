@@ -7,6 +7,7 @@ import { BrandIconPicker } from './BrandIconPicker';
 import { KIND_ICON } from './RecurringVisual';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
+import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 
 const NOTIFY_CHOICES = [0, 1, 3, 7];
@@ -73,20 +74,6 @@ export const formFromSuggestion = (s: RecurringSuggestion): FormState => ({
   dueDay: s.dueDay,
   merchantKey: s.merchantKey,
 });
-
-function Chip({ selected, onClick, children, testId }: Readonly<{ selected: boolean; onClick: () => void; children: React.ReactNode; testId?: string }>) {
-  return (
-    <button
-      data-testid={testId}
-      onClick={onClick}
-      className={`m-tap shrink-0 rounded-full border px-3 py-1.5 text-[12px] ${
-        selected ? 'border-accent bg-accent-soft font-medium text-accent-deep' : 'border-line bg-surface text-ink-2'
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
 
 interface RecurringFormSheetProps {
   /** non-null opens the sheet with this draft; the sheet owns edits from there */

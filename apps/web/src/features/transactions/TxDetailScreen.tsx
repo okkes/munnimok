@@ -12,6 +12,7 @@ import { fmtCents } from '@/lib/money';
 import { cleanBankText } from '@/lib/text';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
+import { Pill } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { CategoryPicker } from '@/features/categories/CategoryPicker';
 import { netAmountCents, totalReimbursedCents } from '@/domain/reimbursement';
@@ -102,11 +103,7 @@ export function TxDetailScreen() {
             >
               <Icon name={cat.icon} size={20} color={color} />
               <span className="flex-1">{catName(cat, t)}</span>
-              {tx.needsReview === 1 && (
-                <span className="rounded bg-warning-soft px-1.5 py-0.5 text-[10px] font-semibold text-warning">
-                  {t('tx.unreviewed')}
-                </span>
-              )}
+              {tx.needsReview === 1 && <Pill tone="warning">{t('tx.unreviewed')}</Pill>}
               <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
             </button>
             <button

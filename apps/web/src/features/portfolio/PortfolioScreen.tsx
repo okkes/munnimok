@@ -11,6 +11,7 @@ import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
+import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 
 export const ASSET_CLASSES: { id: AssetClass; labelKey: TranslationKey; icon: string }[] = [
@@ -165,17 +166,15 @@ export function HoldingFormSheet({ initial, onClose }: Readonly<{ initial: Holdi
         />
         <div className="flex gap-1.5 overflow-x-auto pb-1">
           {ASSET_CLASSES.map((candidate) => (
-            <button
+            <Chip
               key={candidate.id}
-              data-testid={`pf-class-${candidate.id}`}
+              testId={`pf-class-${candidate.id}`}
+              selected={assetClass === candidate.id}
               onClick={() => setAssetClass(candidate.id)}
-              className={`m-tap flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12px] ${
-                assetClass === candidate.id ? 'border-accent bg-accent-soft text-accent-deep' : 'border-line bg-surface text-ink-2'
-              }`}
             >
               <Icon name={candidate.icon} size={14} />
               {t(candidate.labelKey)}
-            </button>
+            </Chip>
           ))}
         </div>
         {priceKey ? (

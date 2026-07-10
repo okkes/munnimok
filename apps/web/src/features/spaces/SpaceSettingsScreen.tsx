@@ -12,6 +12,7 @@ import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { ColorPicker } from '@/ui/ColorPicker';
 import { Icon } from '@/ui/Icon';
+import { Chip } from '@/ui/primitives';
 
 const SPACE_ICONS = [
   'leaf', 'home-outline', 'account-group-outline', 'briefcase-outline', 'airplane', 'heart-outline',
@@ -318,17 +319,16 @@ export function SpaceSettingsScreen() {
             <div className="m-cap px-1">{t('space.currency')}</div>
             <div className="flex gap-2 overflow-x-auto pb-1">
               {CURRENCIES.map((c) => (
-                <button
+                <Chip
                   key={c}
-                  data-testid={`space-currency-${c}`}
+                  className="font-mono"
+                  testId={`space-currency-${c}`}
                   disabled={readOnly}
+                  selected={currency === c}
                   onClick={() => setCurrency(c)}
-                  className={`m-tap shrink-0 rounded-full border px-3 py-1.5 font-mono text-[12px] ${
-                    currency === c ? 'border-accent bg-accent-soft font-semibold text-accent-deep' : 'border-line bg-surface text-ink-2'
-                  }`}
                 >
                   {c}
-                </button>
+                </Chip>
               ))}
             </div>
 
@@ -336,17 +336,16 @@ export function SpaceSettingsScreen() {
             {/* wrap: NL/TR labels (Tweewekelijks…) must never widen the page */}
             <div className="flex flex-wrap gap-2">
               {PERIODS.map((p) => (
-                <button
+                <Chip
                   key={p}
-                  data-testid={`space-period-${p}`}
+                  className="min-w-[30%] flex-1"
+                  testId={`space-period-${p}`}
                   disabled={readOnly}
+                  selected={periodType === p}
                   onClick={() => setPeriodType(p)}
-                  className={`m-tap min-w-[30%] flex-1 rounded-full border px-3 py-1.5 text-[12px] ${
-                    periodType === p ? 'border-accent bg-accent-soft font-medium text-accent-deep' : 'border-line bg-surface text-ink-2'
-                  }`}
                 >
                   {t(PERIOD_KEYS[p])}
-                </button>
+                </Chip>
               ))}
             </div>
             {periodType === 'month' ? (

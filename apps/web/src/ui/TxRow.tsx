@@ -6,6 +6,7 @@ import type { TransactionRow } from '@/db/types';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { Highlight } from './Highlight';
 import { Icon } from './Icon';
+import { Pill } from './primitives';
 
 export function TxRow({
   tx,
@@ -63,9 +64,9 @@ export function TxRow({
           )}
           {!hideCategory && catName(cat, t)}
           {tx.needsReview === 1 && (
-            <span className={`rounded bg-warning-soft px-1 py-px text-[10px] font-semibold text-warning ${hideCategory && !showDate ? '' : 'ml-1.5'}`}>
+            <Pill tone="warning" className={hideCategory && !showDate ? '' : 'ml-1.5'}>
               {t('tx.unreviewed')}
-            </span>
+            </Pill>
           )}
         </span>
       </span>

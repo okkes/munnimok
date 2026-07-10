@@ -5,6 +5,7 @@ import { catName, useCategories } from '@/features/categories/useCategories';
 import { useLang } from '@/i18n';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
+import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 
 /**
@@ -48,53 +49,48 @@ export function FilterSheet({
   const cats = useCategories();
   const accounts = useSpaceAccounts();
 
-  const chip = (active: boolean) =>
-    `m-tap shrink-0 rounded-full border px-3 py-1.5 text-[12px] ${
-      active ? 'border-accent bg-accent-soft font-medium text-accent-deep' : 'border-line bg-surface text-ink-2'
-    }`;
-
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title={t('tx.filters')} size="tall">
       <div className="flex flex-col gap-3 pb-2">
         <div className="m-cap px-1">{t('acct.financialAccounts')}</div>
         <div className="flex flex-wrap gap-2">
           {(accounts ?? []).map((a) => (
-            <button
+            <Chip
               key={a.id}
-              data-testid={`filter-account-${a.id}`}
+              testId={`filter-account-${a.id}`}
+              selected={value.accountIds.has(a.id)}
               onClick={() => onChange({ ...value, accountIds: toggled(value.accountIds, a.id) })}
-              className={chip(value.accountIds.has(a.id))}
             >
               {a.name}
-            </button>
+            </Chip>
           ))}
         </div>
 
         <div className="m-cap px-1">{t('tx.type')}</div>
         <div className="flex flex-wrap gap-2">
           {ALL_TX_TYPES.map((type) => (
-            <button
+            <Chip
               key={type}
-              data-testid={`filter-type-${type}`}
+              testId={`filter-type-${type}`}
+              selected={value.txTypes.has(type)}
               onClick={() => onChange({ ...value, txTypes: toggled(value.txTypes, type) })}
-              className={chip(value.txTypes.has(type))}
             >
               {t(`tx.type.${type}`)}
-            </button>
+            </Chip>
           ))}
         </div>
 
         <div className="m-cap px-1">{t('screen.categories')}</div>
         <div className="flex flex-wrap gap-2">
           {cats.parents.map((main) => (
-            <button
+            <Chip
               key={main.id}
-              data-testid={`filter-cat-${main.id}`}
+              testId={`filter-cat-${main.id}`}
+              selected={value.mainCatIds.has(main.id)}
               onClick={() => onChange({ ...value, mainCatIds: toggled(value.mainCatIds, main.id) })}
-              className={chip(value.mainCatIds.has(main.id))}
             >
               <Icon name={main.icon} size={13} /> {catName(main, t)}
-            </button>
+            </Chip>
           ))}
         </div>
 
