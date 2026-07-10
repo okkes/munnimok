@@ -9,7 +9,7 @@ import { nextDueDate } from '@/domain/recurring';
 import { fmtCents } from '@/lib/money';
 import { RecurringFormSheet, formFromRec } from './RecurringFormSheet';
 import type { FormState } from './RecurringFormSheet';
-import { Pill, Tile } from '@/ui/primitives';
+import { HeroCard, Pill, Tile } from '@/ui/primitives';
 import { RecurringVisual, cadenceLabel } from './RecurringVisual';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
@@ -78,44 +78,42 @@ export function RecurringDetailScreen() {
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         {/* hero: what this cost is */}
-        <div className="mt-1 rounded-card border border-line bg-surface p-4" data-testid="recdetail-hero">
-          <div className="flex items-center gap-3">
+        <HeroCard
+          className="mt-1"
+          testId="recdetail-hero"
+          tile={
             <Tile size={48} tone={rec.active === 1 ? 'accent' : 'neutral'}>
               <RecurringVisual rec={rec} size={24} active={rec.active === 1} />
             </Tile>
-            <span className="min-w-0 flex-1">
-              <span className="flex items-center gap-1.5">
-                <span className="truncate text-[16px] font-semibold text-ink">{rec.name}</span>
-                {rec.luxury === 1 && (
-                  <Pill tone="accent" caps>
-                    {t('recurring.luxury')}
-                  </Pill>
-                )}
-              </span>
-              <span className="block text-[12px] text-ink-3">
-                {t(rec.kind === 'fixed' ? 'recurring.kindFixed' : 'recurring.kindSub')} · {cadenceLabel(rec, t)}
-              </span>
-            </span>
-            <span className="font-mono text-[18px] font-semibold text-ink" data-testid="recdetail-amount">
-              {money(rec.amountCents)}
-            </span>
-          </div>
-          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-ink-3">
-            {rec.active === 1 && nextDue && (
-              <span className="flex items-center gap-1" data-testid="recdetail-next">
-                <Icon name="calendar-clock" size={13} />
-                {t('recurring.next', { date: fmtDate(nextDue) })}
-              </span>
-            )}
-            {rec.active !== 1 && <span data-testid="recdetail-inactive">{t('recurring.inactive')}</span>}
-            {(rec.notifyDaysBefore ?? 0) > 0 && (
-              <span className="flex items-center gap-1">
-                <Icon name="bell-outline" size={13} />
-                {t('recurring.notifyDays', { n: rec.notifyDaysBefore! })}
-              </span>
-            )}
-          </div>
-        </div>
+          }
+          title={rec.name}
+          titleBadge={
+            rec.luxury === 1 ? (
+              <Pill tone="accent" caps>
+                {t('recurring.luxury')}
+              </Pill>
+            ) : undefined
+          }
+          sub={`${t(rec.kind === 'fixed' ? 'recurring.kindFixed' : 'recurring.kindSub')} · ${cadenceLabel(rec, t)}`}
+          number={<span data-testid="recdetail-amount">{money(rec.amountCents)}</span>}
+          meta={
+            <>
+              {rec.active === 1 && nextDue && (
+                <span className="flex items-center gap-1" data-testid="recdetail-next">
+                  <Icon name="calendar-clock" size={13} />
+                  {t('recurring.next', { date: fmtDate(nextDue) })}
+                </span>
+              )}
+              {rec.active !== 1 && <span data-testid="recdetail-inactive">{t('recurring.inactive')}</span>}
+              {(rec.notifyDaysBefore ?? 0) > 0 && (
+                <span className="flex items-center gap-1">
+                  <Icon name="bell-outline" size={13} />
+                  {t('recurring.notifyDays', { n: rec.notifyDaysBefore! })}
+                </span>
+              )}
+            </>
+          }
+        />
 
         {/* the numbers the payment history adds up to */}
         <div className="mt-3 grid grid-cols-3 gap-3 rounded-card border border-line bg-surface p-4" data-testid="recdetail-stats">

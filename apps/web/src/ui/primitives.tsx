@@ -255,7 +255,9 @@ export function Field({
 interface HeroCardProps {
   /** leading visual — typically a 48 <Tile> */
   tile: ReactNode;
-  title: ReactNode;
+  /** name-led heroes (recurring, holding) put the title here; number-led
+   *  heroes (goal, debt, budget) omit it and lead with the figure */
+  title?: ReactNode;
   /** small pill/badge beside the title */
   titleBadge?: ReactNode;
   sub?: ReactNode;
@@ -267,26 +269,31 @@ interface HeroCardProps {
   /** meta chips/lines under the progress, joined with gap-x-4 */
   meta?: ReactNode;
   testId?: string;
+  className?: string;
 }
 
 /** the detail-screen hero (§2D): tile + number + progress + meta, one anatomy */
-export function HeroCard({ tile, title, titleBadge, sub, number, right, progress, meta, testId }: Readonly<HeroCardProps>) {
+export function HeroCard({ tile, title, titleBadge, sub, number, right, progress, meta, testId, className = '' }: Readonly<HeroCardProps>) {
   return (
-    <div className="rounded-card border border-line bg-surface p-4" data-testid={testId}>
+    <div className={`rounded-card border border-line bg-surface p-4 ${className}`} data-testid={testId}>
       <div className="flex items-center gap-3">
         {tile}
         <span className="min-w-0 flex-1">
-          <span className="flex items-center gap-1.5">
-            <span className="truncate text-[16px] font-semibold text-ink">{title}</span>
-            {titleBadge}
-          </span>
+          {title != null ? (
+            <span className="flex items-center gap-1.5">
+              <span className="truncate text-[16px] font-semibold text-ink">{title}</span>
+              {titleBadge}
+            </span>
+          ) : (
+            <span className="m-num block text-[24px] font-semibold text-ink">{number}</span>
+          )}
           {sub != null && <span className="block truncate text-[12px] text-ink-3">{sub}</span>}
         </span>
-        <span className="m-num shrink-0 text-[24px] text-ink">{number}</span>
+        {title != null && <span className="m-num shrink-0 text-[24px] font-semibold text-ink">{number}</span>}
         {right}
       </div>
       {progress != null && <div className="mt-3">{progress}</div>}
-      {meta != null && <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-ink-3">{meta}</div>}
+      {meta != null && <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-ink-3">{meta}</div>}
     </div>
   );
 }

@@ -12,7 +12,7 @@ import type { DebtRow } from '@/db/types';
 import { fmtCents } from '@/lib/money';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
-import { ProgressBar, Tile } from '@/ui/primitives';
+import { HeroCard, ProgressBar, Tile } from '@/ui/primitives';
 import { TxRow } from '@/ui/TxRow';
 import { DebtFormSheet } from './DebtsScreen';
 
@@ -73,31 +73,28 @@ export function DebtDetailScreen() {
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
-        <div className="rounded-card border border-line bg-surface p-4" data-testid="debtdetail-hero">
-          <div className="flex items-center gap-3">
-            <Tile size={48} tone="negative" icon={debt.icon ?? 'hand-coin-outline'} />
-            <span className="min-w-0 flex-1">
-              <span className="m-num block text-[24px] font-semibold text-ink" data-testid="debtdetail-remaining">
-                {money(remainingCents)}
-              </span>
-              <span className="block text-[12px] text-ink-3">{t('debts.remainingOf', { amount: money(debt.originalCents) })}</span>
-            </span>
-            <span className="m-num shrink-0 text-[14px] font-semibold text-accent-deep">{Math.round(progress * 100)}%</span>
-          </div>
-          <ProgressBar className="mt-3" value={progress} />
-          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-ink-3">
-            {debt.paymentCents && <span>{t('debts.perMonth', { amount: money(debt.paymentCents) })}</span>}
-            {debt.interestPctYear !== undefined && <span>{debt.interestPctYear}% {t('debts.aprShort')}</span>}
-            {projection && (
-              <span data-testid="debtdetail-projection">
-                {t('debts.projection', {
-                  date: new Date(`${projection.endMonth}-01`).toLocaleDateString(LOCALES[lang], { month: 'long', year: 'numeric' }),
-                  interest: money(projection.totalInterestCents),
-                })}
-              </span>
-            )}
-          </div>
-        </div>
+        <HeroCard
+          testId="debtdetail-hero"
+          tile={<Tile size={48} tone="negative" icon={debt.icon ?? 'hand-coin-outline'} />}
+          number={<span data-testid="debtdetail-remaining">{money(remainingCents)}</span>}
+          sub={t('debts.remainingOf', { amount: money(debt.originalCents) })}
+          right={<span className="m-num shrink-0 text-[14px] font-semibold text-accent-deep">{Math.round(progress * 100)}%</span>}
+          progress={<ProgressBar value={progress} />}
+          meta={
+            <>
+              {debt.paymentCents && <span>{t('debts.perMonth', { amount: money(debt.paymentCents) })}</span>}
+              {debt.interestPctYear !== undefined && <span>{debt.interestPctYear}% {t('debts.aprShort')}</span>}
+              {projection && (
+                <span data-testid="debtdetail-projection">
+                  {t('debts.projection', {
+                    date: new Date(`${projection.endMonth}-01`).toLocaleDateString(LOCALES[lang], { month: 'long', year: 'numeric' }),
+                    interest: money(projection.totalInterestCents),
+                  })}
+                </span>
+              )}
+            </>
+          }
+        />
 
         <div className="m-cap mt-5 mb-1 px-1">
           {t('debts.payments')} · {payments.length}
