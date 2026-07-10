@@ -6,7 +6,7 @@ import { quotesAvailable, usePortfolio, usePortfolioOps, useQuoteRefresh } from 
 import type { DegiroImportResult } from '@/application/portfolio';
 import type { AssetClass, HoldingRow } from '@/db/types';
 import { apiFetch } from '@/lib/api';
-import { fmtCents, parseCents } from '@/lib/money';
+import { fmtCents, fmtSignedPct, parseCents } from '@/lib/money';
 import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
@@ -315,8 +315,7 @@ export function PortfolioScreen() {
                 </span>
                 {view.gainPct !== null && (
                   <span className="m-num block text-[11px]" style={{ color: view.gainCents! >= 0 ? 'var(--m-accent-deep)' : 'var(--m-negative)' }}>
-                    {view.gainPct >= 0 ? '+' : ''}
-                    {view.gainPct.toFixed(1)}%
+                    {fmtSignedPct(view.gainPct)}
                   </span>
                 )}
               </span>

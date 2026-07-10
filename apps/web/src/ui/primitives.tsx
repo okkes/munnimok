@@ -85,6 +85,7 @@ interface RowProps {
   trailing?: ReactNode;
   chevron?: boolean;
   onClick?: () => void;
+  disabled?: boolean;
   testId?: string;
   className?: string;
 }
@@ -100,6 +101,7 @@ export function Row({
   trailing,
   chevron,
   onClick,
+  disabled,
   testId,
   className = '',
 }: Readonly<RowProps>) {
@@ -128,7 +130,12 @@ export function Row({
     );
   }
   return (
-    <button data-testid={testId} onClick={onClick} className={`m-tap ${rowCls}`}>
+    <button
+      data-testid={testId}
+      onClick={onClick}
+      disabled={disabled}
+      className={`m-tap disabled:pointer-events-none disabled:opacity-60 ${rowCls}`}
+    >
       {body}
     </button>
   );
