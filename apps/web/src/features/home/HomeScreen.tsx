@@ -15,6 +15,7 @@ import { OfflineIndicator } from '@/app/OfflineBanner';
 import { HelpButton } from '@/features/help/HelpButton';
 import { IntroCard } from '@/features/help/IntroCard';
 import { NotificationsBell } from './NotificationsBell';
+import { eventPicture } from '@/features/events/EventsScreen';
 import { HomeCustomizeSheet, resolveHomeBlocks } from './HomeCustomizeSheet';
 import type { HomeBlockId } from './HomeCustomizeSheet';
 import { SpaceSwitcher } from '@/features/spaces/SpaceSwitcher';
@@ -38,8 +39,8 @@ import { TxRow } from '@/ui/TxRow';
 const TILE_META: Record<OverviewKind, { icon: string; color: string; field: keyof OverviewSummary }> = {
   income: { icon: 'cash-plus', color: 'var(--m-accent)', field: 'incomeCents' },
   expense: { icon: 'cash-remove', color: 'var(--m-negative)', field: 'expenseCents' },
-  saving: { icon: 'piggy-bank-outline', color: '#A8782B', field: 'savingCents' },
-  investment: { icon: 'chart-timeline-variant', color: '#673AB7', field: 'investmentCents' },
+  saving: { icon: 'piggy-bank-outline', color: 'var(--m-warning)', field: 'savingCents' },
+  investment: { icon: 'chart-timeline-variant', color: 'var(--m-special)', field: 'investmentCents' },
 };
 
 export function HomeScreen() {
@@ -97,13 +98,19 @@ export function HomeScreen() {
       .slice(0, 4);
   }, [recurrings]);
 
-  // landing-zone blocks that only appear once the feature is in use
+  // landing-zone blocks that only appear once the feature is in use.
+  // one event only: running now, else the next upcoming, else the latest
   const events = useEvents();
-  const runningEvents = useMemo(() => {
+  const featuredEvent = useMemo(() => {
     const today = localToday();
-    return (events ?? [])
-      .filter((e) => e.archived !== 1 && e.from && e.from <= today && (!e.to || e.to >= today))
-      .slice(0, 2);
+    const active = (events ?? []).filter((e) => e.archived !== 1);
+    const running = active.find((e) => e.from && e.from <= today && (!e.to || e.to >= today));
+    if (running) return running;
+    const upcoming = active
+      .filter((e) => e.from && e.from > today)
+      .sort((a, b) => a.from!.localeCompare(b.from!))[0];
+    if (upcoming) return upcoming;
+    return active[0];
   }, [events]);
   const goals = useGoals();
   const topGoals = useMemo(
@@ -397,31 +404,31 @@ export function HomeScreen() {
   }
 
   function renderEventsBlock() {
-    // only while an event is actually running — the tab has the archive
-    if (runningEvents.length === 0) return null;
+    if (!featuredEvent) return null;
+    const today = localToday();
+    const spent = eventSpentCents(allTxs ?? [], featuredEvent.id);
+    const running = !!featuredEvent.from && featuredEvent.from <= today && (!featuredEvent.to || featuredEvent.to! >= today);
+    const upcoming = !!featuredEvent.from && featuredEvent.from > today;
+    let statusLine = t('events.latest');
+    if (running) statusLine = t('events.runningNow');
+    else if (upcoming) statusLine = t('events.upcoming', { date: fmtShort(featuredEvent.from!) });
     return (
       <>
         <div className="m-cap mt-5 mb-1 px-1">{t('events.title')}</div>
-        <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="home-events">
-          {runningEvents.map((event) => {
-            const spent = eventSpentCents(allTxs ?? [], event.id);
-            return (
-              <button
-                key={event.id}
-                data-testid={`home-event-${event.id}`}
-                onClick={() => void navigate({ to: '/events/$eventId', params: { eventId: event.id } })}
-                className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-2.5 text-left last:border-0"
-              >
-                <Icon name={event.icon ?? 'party-popper'} size={17} color="var(--m-accent-deep)" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px] font-medium text-ink">{event.name}</span>
-                  <span className="block text-[11px] text-ink-4">{t('events.runningNow')}</span>
-                </span>
-                <span className="m-num text-[13px] font-semibold text-ink">{fmtCents(spent, currency, lang)}</span>
-              </button>
-            );
-          })}
-        </div>
+        <button
+          data-testid={`home-event-${featuredEvent.id}`}
+          onClick={() => void navigate({ to: '/events/$eventId', params: { eventId: featuredEvent.id } })}
+          className="m-tap w-full overflow-hidden rounded-card border border-line bg-surface p-0 text-left"
+        >
+          <span className="relative block h-20 w-full" data-testid="home-events">
+            <img src={eventPicture(featuredEvent)} alt="" loading="lazy" className="h-full w-full object-cover" />
+            <span className="absolute inset-x-0 bottom-0 flex items-baseline justify-between bg-gradient-to-t from-black/60 to-transparent px-3 pt-4 pb-1.5">
+              <span className="truncate text-[14px] font-semibold text-white">{featuredEvent.name}</span>
+              <span className="m-num shrink-0 pl-2 text-[13px] font-semibold text-white">{fmtCents(spent, currency, lang)}</span>
+            </span>
+          </span>
+          <span className="block px-3 py-1.5 text-[11px] text-ink-4">{statusLine}</span>
+        </button>
       </>
     );
   }
@@ -534,8 +541,8 @@ export function HomeScreen() {
           onClick={() => void navigate({ to: '/portfolio' })}
           className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left"
         >
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" style={{ background: 'color-mix(in srgb, #673AB7 14%, transparent)' }}>
-            <Icon name="chart-timeline-variant" size={18} color="#673AB7" />
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" style={{ background: 'color-mix(in srgb, var(--m-special) 14%, transparent)' }}>
+            <Icon name="chart-timeline-variant" size={18} color="var(--m-special)" />
           </span>
           <span className="min-w-0 flex-1">
             <span className="m-num block text-[15px] font-semibold text-ink">{fmtCents(portfolio.totals.totalCents, currency, lang)}</span>

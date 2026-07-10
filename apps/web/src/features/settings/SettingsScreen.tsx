@@ -223,101 +223,65 @@ export function SettingsScreen() {
           </div>
         )}
         {/* scope split (user feedback): what belongs to THIS space vs the
-            whole app was invisible — the captions make it explicit */}
+            whole app was invisible — the captions make it explicit. The
+            nine feature doors read as a junk drawer flat, so they group
+            by intent (redesign ruling): Plan / Track / Learn / Setup. */}
         <p className="m-cap mb-1 px-1" data-testid="settings-scope-space">
           {t('settings.scopeSpace', { name: activeSpace?.name ?? '' })}
         </p>
-        <div className="overflow-hidden rounded-card border border-line bg-surface">
-          <button
-            data-testid="settings-space-settings-row"
-            onClick={() => void navigate({ to: '/spaces/$spaceId', params: { spaceId } })}
-            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
-          >
-            <Icon name="cog-outline" size={20} />
-            <span className="flex-1">{t('space.settings')}</span>
-            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-          </button>
-          <div className="mx-4 h-px bg-line-2" />
-          <button
-            data-testid="settings-budgets-row"
-            onClick={() => void navigate({ to: '/budgets' })}
-            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
-          >
-            <Icon name="wallet-outline" size={20} />
-            <span className="flex-1">{t('budgets.title')}</span>
-            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-          </button>
-          <div className="mx-4 h-px bg-line-2" />
-          <button
-            data-testid="settings-allocation-row"
-            onClick={() => void navigate({ to: '/allocate' })}
-            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
-          >
-            <Icon name="cash-multiple" size={20} />
-            <span className="flex-1">{t('alloc.title')}</span>
-            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-          </button>
-          <div className="mx-4 h-px bg-line-2" />
-          <button
-            data-testid="settings-events-row"
-            onClick={() => void navigate({ to: '/events' })}
-            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
-          >
-            <Icon name="party-popper" size={20} />
-            <span className="flex-1">{t('events.title')}</span>
-            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-          </button>
-          <div className="mx-4 h-px bg-line-2" />
-          <button
-            data-testid="settings-goals-row"
-            onClick={() => void navigate({ to: '/goals' })}
-            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
-          >
-            <Icon name="flag-outline" size={20} />
-            <span className="flex-1">{t('goals.title')}</span>
-            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-          </button>
-          <div className="mx-4 h-px bg-line-2" />
-          <button
-            data-testid="settings-debts-row"
-            onClick={() => void navigate({ to: '/debts' })}
-            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
-          >
-            <Icon name="hand-coin-outline" size={20} />
-            <span className="flex-1">{t('debts.title')}</span>
-            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-          </button>
-          <div className="mx-4 h-px bg-line-2" />
-          <button
-            data-testid="settings-portfolio-row"
-            onClick={() => void navigate({ to: '/portfolio' })}
-            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
-          >
-            <Icon name="chart-timeline-variant" size={20} />
-            <span className="flex-1">{t('pf.title')}</span>
-            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-          </button>
-          <div className="mx-4 h-px bg-line-2" />
-          <button
-            data-testid="settings-insights-row"
-            onClick={() => void navigate({ to: '/insights' })}
-            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
-          >
-            <Icon name="lightbulb-outline" size={20} />
-            <span className="flex-1">{t('ins.title')}</span>
-            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-          </button>
-          <div className="mx-4 h-px bg-line-2" />
-          <button
-            data-testid="settings-categories-row"
-            onClick={() => void navigate({ to: '/categories' })}
-            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
-          >
-            <Icon name="shape-outline" size={20} />
-            <span className="flex-1">{t('screen.categories')}</span>
-            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-          </button>
-        </div>
+        {(
+          [
+            {
+              capKey: 'settings.groupPlan',
+              rows: [
+                { testId: 'settings-budgets-row', icon: 'wallet-outline', labelKey: 'budgets.title', to: '/budgets' },
+                { testId: 'settings-allocation-row', icon: 'cash-multiple', labelKey: 'alloc.title', to: '/allocate' },
+              ],
+            },
+            {
+              capKey: 'settings.groupTrack',
+              rows: [
+                { testId: 'settings-events-row', icon: 'party-popper', labelKey: 'events.title', to: '/events' },
+                { testId: 'settings-goals-row', icon: 'flag-outline', labelKey: 'goals.title', to: '/goals' },
+                { testId: 'settings-debts-row', icon: 'hand-coin-outline', labelKey: 'debts.title', to: '/debts' },
+                { testId: 'settings-portfolio-row', icon: 'chart-timeline-variant', labelKey: 'pf.title', to: '/portfolio' },
+              ],
+            },
+            {
+              capKey: 'settings.groupLearn',
+              rows: [{ testId: 'settings-insights-row', icon: 'lightbulb-outline', labelKey: 'ins.title', to: '/insights' }],
+            },
+            {
+              capKey: 'settings.groupSetup',
+              rows: [
+                { testId: 'settings-space-settings-row', icon: 'cog-outline', labelKey: 'space.settings', to: '/spaces/$spaceId' },
+                { testId: 'settings-categories-row', icon: 'shape-outline', labelKey: 'screen.categories', to: '/categories' },
+              ],
+            },
+          ] as const
+        ).map((group, groupIndex) => (
+          <div key={group.capKey}>
+            <p className={`px-1 pb-1 text-[10px] font-semibold tracking-wide text-ink-4 uppercase ${groupIndex === 0 ? '' : 'pt-3'}`}>
+              {t(group.capKey)}
+            </p>
+            <div className="overflow-hidden rounded-card border border-line bg-surface">
+              {group.rows.map((row, rowIndex) => (
+                <div key={row.testId}>
+                  {rowIndex > 0 && <div className="mx-4 h-px bg-line-2" />}
+                  <button
+                    data-testid={row.testId}
+                    onClick={() => void navigate({ to: row.to, params: { spaceId } })}
+                    className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+                  >
+                    <Icon name={row.icon} size={20} />
+                    <span className="flex-1">{t(row.labelKey)}</span>
+                    <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
 
         <p className="m-cap mt-4 mb-1 px-1" data-testid="settings-scope-global">
           {t('settings.scopeGlobal')}

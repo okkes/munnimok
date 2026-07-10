@@ -11,12 +11,15 @@ export function TxRow({
   onClick,
   highlight = '',
   showDate = false,
+  hideCategory = false,
 }: {
   tx: TransactionRow;
   onClick?: () => void;
   highlight?: string;
   /** lists without date group headers (Home) show it inline */
   showDate?: boolean;
+  /** lists already scoped to one category (drill) skip the redundant name */
+  hideCategory?: boolean;
 }) {
   const { t, lang } = useLang();
   const cats = useCategories();
@@ -45,13 +48,13 @@ export function TxRow({
           {showDate && (
             <span className="text-ink-4">
               {new Date(tx.date).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' })}
-              {' · '}
+              {!hideCategory && ' · '}
             </span>
           )}
-          {catName(cat, t)}
+          {!hideCategory && catName(cat, t)}
           {tx.needsReview === 1 && (
-            <span className="ml-1.5 rounded bg-warning-soft px-1 py-px text-[10px] font-semibold text-warning">
-              {t('review.confirm')}
+            <span className={`rounded bg-warning-soft px-1 py-px text-[10px] font-semibold text-warning ${hideCategory && !showDate ? '' : 'ml-1.5'}`}>
+              {t('tx.unreviewed')}
             </span>
           )}
         </span>

@@ -124,7 +124,7 @@ export function TransactionsScreen() {
               reviewOnly ? 'border-warning bg-warning-soft font-medium text-warning' : 'border-line bg-surface text-ink-2'
             }`}
           >
-            {t('review.confirm')}
+            {t('tx.unreviewed')}
           </button>
           {activeCount > 0 && (
             <button

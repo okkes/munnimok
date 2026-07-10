@@ -47,9 +47,15 @@ describe('Events (demo identity)', () => {
     const banner = await screen.findByTestId('eventdetail-suggest');
     expect(banner.textContent).toMatch(/[1-9]/);
 
+    // the picker opens pre-checked; unticking one keeps it out
     fireEvent.click(screen.getByTestId('eventdetail-attach-all'));
+    await screen.findByTestId('eventpick-list');
+    const firstPick = document.querySelector('[data-testid^="eventpick-"]')!;
+    fireEvent.click(firstPick); // exclude one
+    fireEvent.click(screen.getByTestId('eventpick-attach'));
     await waitFor(() => expect(screen.getByTestId('eventdetail-total').textContent).toMatch(/€[1-9]/), { timeout: 8000 });
-    await waitFor(() => expect(screen.queryByTestId('eventdetail-suggest')).toBeNull());
+    // the excluded transaction keeps the banner alive with exactly one left
+    await waitFor(() => expect(screen.getByTestId('eventdetail-suggest').textContent).toMatch(/1 /));
     expect(screen.getByTestId('eventdetail-cats')).toBeTruthy();
     expect(screen.getByTestId('eventdetail-txs')).toBeTruthy();
   }, 20_000);
@@ -60,6 +66,8 @@ describe('Events (demo identity)', () => {
     const card = await createEvent('Rome trip', isoDaysAgo(180), isoDaysAgo(160));
     fireEvent.click(card);
     fireEvent.click(await screen.findByTestId('eventdetail-attach-all'));
+    await screen.findByTestId('eventpick-list');
+    fireEvent.click(screen.getByTestId('eventpick-attach')); // everything pre-checked
     const txList = await screen.findByTestId('eventdetail-txs', {}, { timeout: 8000 });
 
     // into the transaction: the event row names the event, None clears it

@@ -239,6 +239,9 @@ export interface EventRow extends SyncEnvelope {
   spaceId: string;
   name: string;
   icon?: string;
+  /** bundled asset path ('/events/beach.jpg') or a downscaled data URL */
+  picture?: string;
+  note?: string;
   color?: string;
   /** optional date range (yyyy-mm-dd) */
   from?: string;

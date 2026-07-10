@@ -30,10 +30,11 @@ const REASON_KEYS = {
   keyword: 'review.reasonKeyword',
 } as const;
 
-/** progress bar + "n / total" sub line for the app bar */
-function progressState(initial: number | null, queueLen: number | undefined) {
+/** progress bar + "n / total" sub line — skips count as handled too */
+function progressState(initial: number | null, queueLen: number | undefined, skippedCount: number) {
   const total = initial ?? 1;
-  const done = initial === null ? 0 : Math.max(0, initial - (queueLen ?? 0));
+  const confirmed = initial === null ? 0 : Math.max(0, initial - (queueLen ?? 0));
+  const done = confirmed + skippedCount;
   return {
     progress: initial ? done / initial : 0,
     sub: (queueLen ?? 0) > 0 ? `${Math.min(done + 1, total)} / ${total}` : undefined,
@@ -118,7 +119,11 @@ function BulkConfirmSection({
               >
                 {checked && <Icon name="check" size={12} />}
               </span>
-              <span className="min-w-0 flex-1 truncate text-[12px] text-ink-3">{item.date}</span>
+              <span className="min-w-0 flex-1">
+                {/* descriptions differ per charge — they identify; dates stay quiet */}
+                <span className="block truncate text-[12px] text-ink-2">{cleanBankText(item.description) || item.date}</span>
+                <span className="block text-[10px] text-ink-4">{item.date}</span>
+              </span>
               <span className="m-num text-[12px] text-ink-2">{fmtCents(item.amountCents, item.currency, lang)}</span>
             </button>
           );
@@ -234,7 +239,7 @@ export function ReviewScreen() {
     void recurringOps.reconcile().catch(() => undefined);
   };
 
-  const { progress, sub } = progressState(initialCount, queue?.length);
+  const { progress, sub } = progressState(initialCount, queue?.length, skipped.size);
 
   const emptyBecauseSkipped = queue && queue.length > 0 && remaining?.length === 0;
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { LOCALES, useLang } from '@/i18n';
@@ -7,6 +7,7 @@ import { useEventOps, useEvents } from '@/application/events';
 import { useSpaceTransactions } from '@/application/transactions';
 import { eventSpentCents } from '@/domain/events';
 import type { EventRow } from '@/db/types';
+import { downscaleImage } from '@/lib/image';
 import { fmtCents, parseCents } from '@/lib/money';
 import { HelpButton } from '@/features/help/HelpButton';
 import { IntroCard } from '@/features/help/IntroCard';
@@ -15,38 +16,63 @@ import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 
-export const EVENT_ICONS = ['beach', 'airplane', 'ring', 'home-outline', 'party-popper', 'baby-carriage', 'school-outline', 'car-outline'] as const;
+/** bundled, offline-ready defaults (public/events/*.jpg, Unsplash license) */
+export const EVENT_PICTURES = [
+  '/events/beach.jpg',
+  '/events/city.jpg',
+  '/events/wedding.jpg',
+  '/events/party.jpg',
+  '/events/racing.jpg',
+  '/events/winter.jpg',
+  '/events/nature.jpg',
+  '/events/baby.jpg',
+  '/events/dinner.jpg',
+  '/events/concert.jpg',
+] as const;
 
-/** create/edit sheet — small enough to stay a sheet (unlike budgets) */
+/** cover for a card/hero: picked or uploaded picture, first bundle as fallback */
+export const eventPicture = (event: Pick<EventRow, 'picture'>): string => event.picture || EVENT_PICTURES[0];
+
+/** create/edit: the picture carries the character; icons retired */
 export function EventFormSheet({ initial, onClose }: Readonly<{ initial: EventRow | 'new' | null; onClose: () => void }>) {
   const { t } = useLang();
   const ops = useEventOps();
   const editing = initial !== 'new' && initial !== null ? initial : null;
   const [name, setName] = useState('');
-  const [icon, setIcon] = useState<string>(EVENT_ICONS[0]);
+  const [picture, setPicture] = useState<string>(EVENT_PICTURES[0]);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
-  const [budget, setBudget] = useState('');
+  const [estimate, setEstimate] = useState('');
+  const [note, setNote] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const uploadRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setName(editing?.name ?? '');
-    setIcon(editing?.icon ?? EVENT_ICONS[0]);
+    setPicture(editing?.picture ?? EVENT_PICTURES[0]);
     setFrom(editing?.from ?? '');
     setTo(editing?.to ?? '');
-    setBudget(editing?.budgetCents ? (editing.budgetCents / 100).toFixed(2) : '');
+    setEstimate(editing?.budgetCents ? (editing.budgetCents / 100).toFixed(2) : '');
+    setNote(editing?.note ?? '');
     setConfirmDelete(false);
   }, [initial, editing]);
 
+  const onUpload = async (file: File | undefined) => {
+    if (!file) return;
+    // wide enough for the hero, small enough to sync as a field
+    setPicture(await downscaleImage(file, 1080, 0.72));
+  };
+
   const save = async () => {
     if (!name.trim()) return;
-    const budgetCents = parseCents(budget);
+    const budgetCents = parseCents(estimate);
     await ops.save(editing?.id ?? null, {
       name: name.trim(),
-      icon,
+      picture,
       from: from || undefined,
       to: to || undefined,
       budgetCents: budgetCents && budgetCents > 0 ? budgetCents : undefined,
+      note: note.trim() || undefined,
       archived: editing?.archived ?? 0,
     });
     onClose();
@@ -65,20 +91,36 @@ export function EventFormSheet({ initial, onClose }: Readonly<{ initial: EventRo
   return (
     <Sheet open={initial !== null} onOpenChange={(open) => !open && onClose()} title={editing ? t('events.edit') : t('events.new')} size="tall">
       <div className="flex flex-col gap-3 pt-1">
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {EVENT_ICONS.map((candidate) => (
+        {/* the picture defines the event — pick a bundled one or upload */}
+        <div className="flex gap-2 overflow-x-auto pb-1" data-testid="eventform-pictures">
+          <button
+            data-testid="eventform-upload"
+            onClick={() => uploadRef.current?.click()}
+            className="m-tap flex h-16 w-24 shrink-0 flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-line bg-surface text-[10px] text-ink-3"
+          >
+            <Icon name="image-plus" size={18} />
+            {t('events.uploadPicture')}
+          </button>
+          {EVENT_PICTURES.map((candidate) => (
             <button
               key={candidate}
-              data-testid={`eventform-icon-${candidate}`}
-              onClick={() => setIcon(candidate)}
-              className={`m-tap flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${
-                icon === candidate ? 'border-accent bg-accent-soft text-accent-deep' : 'border-line bg-surface text-ink-2'
+              data-testid={`eventform-pic-${candidate.split('/').pop()?.replace('.jpg', '')}`}
+              onClick={() => setPicture(candidate)}
+              className={`m-tap h-16 w-24 shrink-0 overflow-hidden rounded-xl border-2 p-0 ${
+                picture === candidate ? 'border-accent' : 'border-transparent'
               }`}
             >
-              <Icon name={candidate} size={19} />
+              <img src={candidate} alt="" loading="lazy" className="h-full w-full object-cover" />
             </button>
           ))}
         </div>
+        {picture.startsWith('data:') && (
+          <div className="flex items-center gap-2 overflow-hidden rounded-xl border-2 border-accent" data-testid="eventform-uploaded">
+            <img src={picture} alt="" className="h-16 w-full object-cover" />
+          </div>
+        )}
+        <input ref={uploadRef} type="file" accept="image/*" className="hidden" data-testid="eventform-upload-input" onChange={(e) => void onUpload(e.target.files?.[0])} />
+
         <input
           data-testid="eventform-name"
           value={name}
@@ -86,35 +128,52 @@ export function EventFormSheet({ initial, onClose }: Readonly<{ initial: EventRo
           placeholder={t('events.namePlaceholder')}
           className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
         />
-        <div className="flex items-center gap-2 text-[13px] text-ink-2">
-          <input
-            data-testid="eventform-from"
-            type="date"
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
-            className="h-10 min-w-0 flex-1 appearance-none rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none"
-          />
-          <span>–</span>
-          <input
-            data-testid="eventform-to"
-            type="date"
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-            className="h-10 min-w-0 flex-1 appearance-none rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none"
-          />
+        <div className="flex items-end gap-2">
+          <label className="min-w-0 flex-1 text-[12px] text-ink-3">
+            {t('events.from')}
+            <input
+              data-testid="eventform-from"
+              type="date"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+              className="mt-1 h-11 w-full appearance-none rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none"
+            />
+          </label>
+          <label className="min-w-0 flex-1 text-[12px] text-ink-3">
+            {t('events.to')}
+            <input
+              data-testid="eventform-to"
+              type="date"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              className="mt-1 h-11 w-full appearance-none rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none"
+            />
+          </label>
         </div>
-        <div className="m-cap px-1">{t('events.budget')}</div>
-        <input
-          data-testid="eventform-budget"
-          type="number"
-          inputMode="decimal"
-          step="0.01"
-          min="0"
-          value={budget}
-          onChange={(e) => setBudget(e.target.value)}
-          placeholder="0.00"
-          className="h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[15px] text-ink outline-none placeholder:text-ink-4"
-        />
+        <label className="text-[12px] text-ink-3">
+          {t('events.estimate')}
+          <input
+            data-testid="eventform-budget"
+            type="number"
+            inputMode="decimal"
+            step="0.01"
+            min="0"
+            value={estimate}
+            onChange={(e) => setEstimate(e.target.value)}
+            placeholder="0.00"
+            className="mt-1 h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
+          />
+        </label>
+        <label className="text-[12px] text-ink-3">
+          {t('events.note')}
+          <input
+            data-testid="eventform-note"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder={t('events.notePlaceholder')}
+            className="mt-1 h-11 w-full rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none placeholder:text-ink-4"
+          />
+        </label>
         {editing && (
           <button
             data-testid="eventform-archive"
@@ -163,36 +222,36 @@ export function EventsScreen() {
         key={event.id}
         data-testid={`event-card-${event.id}`}
         onClick={() => void navigate({ to: '/events/$eventId', params: { eventId: event.id } })}
-        className={`m-tap w-full rounded-card border border-line bg-surface p-4 text-left ${event.archived === 1 ? 'opacity-60' : ''}`}
+        className={`m-tap w-full overflow-hidden rounded-card border border-line bg-surface p-0 text-left ${event.archived === 1 ? 'opacity-60' : ''}`}
       >
-        <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent-deep">
-            <Icon name={event.icon ?? 'party-popper'} size={19} />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="flex items-baseline justify-between gap-2">
-              <span className="truncate text-[15px] font-semibold text-ink">{event.name}</span>
-              <span className="m-num shrink-0 text-[14px] font-semibold text-ink" data-testid={`event-total-${event.id}`}>
-                {fmtCents(spent, currency, lang)}
-              </span>
-            </span>
-            <span className="block text-[11px] text-ink-4">
-              {fmtRange(event) ?? t('events.undated')}
-              {event.budgetCents ? ` · ${t('budgets.of', { amount: fmtCents(event.budgetCents, currency, lang) })}` : ''}
+        <div className="relative h-24 w-full">
+          <img src={eventPicture(event)} alt="" loading="lazy" className="h-full w-full object-cover" />
+          <span className="absolute right-3 bottom-2 rounded-lg bg-black/45 px-2 py-0.5 backdrop-blur-sm">
+            <span className="m-num text-[14px] font-semibold text-white" data-testid={`event-total-${event.id}`}>
+              {fmtCents(spent, currency, lang)}
             </span>
           </span>
         </div>
-        {!!event.budgetCents && (
-          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-bg-2">
-            <div
-              className="m-grow-x h-full origin-left rounded-full"
-              style={{
-                width: `${Math.min(100, (spent / event.budgetCents) * 100)}%`,
-                background: overBudget ? 'var(--m-negative)' : 'var(--m-accent)',
-              }}
-            />
-          </div>
-        )}
+        <div className="px-4 py-3">
+          <span className="flex items-baseline justify-between gap-2">
+            <span className="truncate text-[15px] font-semibold text-ink">{event.name}</span>
+            {event.budgetCents ? (
+              <span className="shrink-0 text-[11px] text-ink-4">{t('budgets.of', { amount: fmtCents(event.budgetCents, currency, lang) })}</span>
+            ) : null}
+          </span>
+          <span className="block text-[11px] text-ink-4">{fmtRange(event) ?? t('events.undated')}</span>
+          {!!event.budgetCents && (
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-bg-2">
+              <div
+                className="m-grow-x h-full origin-left rounded-full"
+                style={{
+                  width: `${Math.min(100, (spent / event.budgetCents) * 100)}%`,
+                  background: overBudget ? 'var(--m-negative)' : 'var(--m-accent)',
+                }}
+              />
+            </div>
+          )}
+        </div>
       </button>
     );
   };

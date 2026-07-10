@@ -19,8 +19,8 @@ const PERIOD_COUNT = 6;
 const KIND_ACCENT: Record<OverviewKind, string> = {
   income: 'var(--m-accent)',
   expense: 'var(--m-negative)',
-  saving: '#A8782B',
-  investment: '#673AB7',
+  saving: 'var(--m-warning)',
+  investment: 'var(--m-special)',
 };
 
 /**
@@ -123,6 +123,8 @@ export function CategoryDrillScreen() {
                 key={tx.id}
                 tx={tx}
                 showDate
+                // a sub-category drill repeats its own name on every row
+                hideCategory={!!cat.parentId}
                 onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })}
               />
             ))}

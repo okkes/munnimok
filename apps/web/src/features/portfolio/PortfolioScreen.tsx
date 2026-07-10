@@ -23,10 +23,10 @@ export const ASSET_CLASSES: { id: AssetClass; labelKey: TranslationKey; icon: st
 
 export const CLASS_COLORS: Record<AssetClass, string> = {
   stock: 'var(--m-accent)',
-  etf: '#3498DB',
-  crypto: '#F39C12',
-  cash: '#95A5A6',
-  other: '#9B59B6',
+  etf: 'var(--m-info)',
+  crypto: 'var(--m-warning)',
+  cash: 'var(--m-ink-4)',
+  other: 'var(--m-special)',
 };
 
 interface SearchHits {
