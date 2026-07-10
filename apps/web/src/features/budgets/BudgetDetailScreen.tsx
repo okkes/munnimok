@@ -11,6 +11,7 @@ import { catName, useCategories } from '@/features/categories/useCategories';
 import { fmtCents } from '@/lib/money';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
+import { ProgressBar } from '@/ui/primitives';
 import { TxRow } from '@/ui/TxRow';
 import { budgetColor, budgetSoft } from './budgetUi';
 
@@ -117,12 +118,16 @@ export function BudgetDetailScreen() {
               {t(over ? 'budgets.over' : 'budgets.left', { amount: money(Math.abs(limit - spent)) })}
             </span>
           </div>
-          <div className="relative mt-3 h-1.5 overflow-hidden rounded-full bg-bg-2">
-            <div className="m-grow-x h-full origin-left rounded-full" style={{ width: `${Math.min(100, ratio * 100)}%`, background: color }} />
-            {over && (
-              <div className="absolute inset-0" style={{ background: 'repeating-linear-gradient(45deg, transparent 0 4px, rgba(255,255,255,0.35) 4px 8px)' }} />
-            )}
-          </div>
+          <ProgressBar
+            className="mt-3"
+            value={ratio}
+            color={color}
+            overlay={
+              over ? (
+                <div className="absolute inset-0" style={{ background: 'repeating-linear-gradient(45deg, transparent 0 4px, rgba(255,255,255,0.35) 4px 8px)' }} />
+              ) : undefined
+            }
+          />
           {offset === 0 && status.carriedCents > 0 && (
             <p className="mt-2 flex items-center gap-1.5 text-[11px] text-ink-3" data-testid="budgetdetail-carry">
               <Icon name="tray-arrow-down" size={13} />

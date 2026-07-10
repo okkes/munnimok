@@ -14,6 +14,7 @@ import { IntroCard } from '@/features/help/IntroCard';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
+import { ProgressBar } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 
 export const GOAL_ICONS = ['home-outline', 'car-outline', 'airplane', 'shield-check-outline', 'laptop', 'ring', 'sail-boat', 'school-outline'] as const;
@@ -216,12 +217,11 @@ export function GoalsScreen() {
                     <span className="block text-[11px] text-ink-4">{subtitle}</span>
                   </span>
                 </div>
-                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-bg-2">
-                  <div
-                    className="m-grow-x h-full origin-left rounded-full"
-                    style={{ width: `${progress * 100}%`, background: reached ? 'var(--m-accent)' : 'var(--m-accent-deep)' }}
-                  />
-                </div>
+                <ProgressBar
+                  className="mt-3"
+                  value={progress}
+                  color={reached ? 'var(--m-accent)' : 'var(--m-accent-deep)'}
+                />
               </button>
             );
           })}

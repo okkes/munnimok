@@ -11,6 +11,7 @@ import { fmtCents, parseCents } from '@/lib/money';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
+import { ProgressBar } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { GoalFormSheet } from './GoalsScreen';
 
@@ -99,9 +100,7 @@ export function GoalDetailScreen() {
             </span>
             <span className="m-num shrink-0 text-[14px] font-semibold text-accent-deep">{Math.round(progress * 100)}%</span>
           </div>
-          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-bg-2">
-            <div className="m-grow-x h-full origin-left rounded-full bg-accent" style={{ width: `${progress * 100}%` }} />
-          </div>
+          <ProgressBar className="mt-3" value={progress} />
           <p className="mt-2 text-[12px] text-ink-3" data-testid="goaldetail-pace">
             {paceLine}
           </p>

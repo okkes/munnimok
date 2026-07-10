@@ -16,6 +16,7 @@ import { RecurringVisual, cadenceLabel } from './RecurringVisual';
 import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
+import { ProgressBar } from '@/ui/primitives';
 
 export function RecurringScreen() {
   const { t, lang } = useLang();
@@ -226,9 +227,7 @@ export function RecurringScreen() {
               </div>
             ))}
           </div>
-          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-bg-2">
-            <div className="m-grow-x h-full origin-left rounded-full bg-accent transition-[width]" style={{ width: `${progress * 100}%` }} />
-          </div>
+          <ProgressBar className="mt-3" value={progress} />
           {summary.luxuryCents > 0 && (
             <div className="mt-3 flex items-center gap-1.5 text-[11px] text-ink-3" data-testid="recurring-luxury-line">
               <span className="rounded-full bg-accent-soft px-1.5 py-0.5 text-[9px] font-bold tracking-wide text-accent-deep uppercase">

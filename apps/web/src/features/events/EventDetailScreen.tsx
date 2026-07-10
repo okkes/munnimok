@@ -12,6 +12,7 @@ import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
+import { ProgressBar } from '@/ui/primitives';
 import { TxRow } from '@/ui/TxRow';
 import { EventFormSheet, eventPicture } from './EventsScreen';
 import type { EventRow } from '@/db/types';
@@ -126,15 +127,11 @@ export function EventDetailScreen() {
             )}
             {!!event.budgetCents && (
               <>
-                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-bg-2">
-                  <div
-                    className="m-grow-x h-full origin-left rounded-full"
-                    style={{
-                      width: `${Math.min(100, (view.spent / event.budgetCents) * 100)}%`,
-                      background: view.spent > event.budgetCents ? 'var(--m-negative)' : 'var(--m-accent)',
-                    }}
-                  />
-                </div>
+                <ProgressBar
+                  className="mt-2"
+                  value={view.spent / event.budgetCents}
+                  tone={view.spent > event.budgetCents ? 'negative' : 'accent'}
+                />
                 <div className="mt-1.5 text-[11px] text-ink-3">{t('events.estimateOf', { amount: money(event.budgetCents) })}</div>
               </>
             )}

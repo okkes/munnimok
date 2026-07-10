@@ -14,6 +14,7 @@ import { IntroCard } from '@/features/help/IntroCard';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
+import { ProgressBar } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 
 /** bundled, offline-ready defaults (public/events/*.jpg, Unsplash license) */
@@ -241,15 +242,7 @@ export function EventsScreen() {
           </span>
           <span className="block text-[11px] text-ink-4">{fmtRange(event) ?? t('events.undated')}</span>
           {!!event.budgetCents && (
-            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-bg-2">
-              <div
-                className="m-grow-x h-full origin-left rounded-full"
-                style={{
-                  width: `${Math.min(100, (spent / event.budgetCents) * 100)}%`,
-                  background: overBudget ? 'var(--m-negative)' : 'var(--m-accent)',
-                }}
-              />
-            </div>
+            <ProgressBar className="mt-2" value={spent / event.budgetCents} tone={overBudget ? 'negative' : 'accent'} />
           )}
         </div>
       </button>

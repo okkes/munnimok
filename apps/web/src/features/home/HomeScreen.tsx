@@ -36,6 +36,7 @@ import { budgetColor, ratioPct } from '@/features/budgets/budgetUi';
 import { fmtCents } from '@/lib/money';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
+import { ProgressBar } from '@/ui/primitives';
 import { TxRow } from '@/ui/TxRow';
 
 const TILE_META: Record<OverviewKind, { icon: string; color: string; field: keyof OverviewSummary }> = {
@@ -333,9 +334,7 @@ export function HomeScreen() {
                       })}
                     </span>
                   </span>
-                  <span className="mt-1 block h-1 overflow-hidden rounded-full bg-bg-2">
-                    <span className="block h-full rounded-full" style={{ width: `${ratioPct(status)}%`, background: color }} />
-                  </span>
+                  <ProgressBar className="mt-1" size="sm" value={ratioPct(status) / 100} color={color} />
                 </span>
               </button>
             );
@@ -490,9 +489,7 @@ export function HomeScreen() {
                       {Math.round(progress * 100)}%
                     </span>
                   </span>
-                  <span className="mt-1 block h-1 overflow-hidden rounded-full bg-bg-2">
-                    <span className="block h-full rounded-full bg-accent" style={{ width: `${progress * 100}%` }} />
-                  </span>
+                  <ProgressBar className="mt-1" size="sm" value={progress} />
                 </span>
               </button>
             );

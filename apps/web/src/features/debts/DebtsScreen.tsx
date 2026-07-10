@@ -15,6 +15,7 @@ import { IntroCard } from '@/features/help/IntroCard';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
+import { ProgressBar } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 
 export const DEBT_ICONS = ['home-percent-outline', 'credit-card-outline', 'car-outline', 'school-outline', 'hand-coin-outline', 'account-cash-outline'] as const;
@@ -238,9 +239,7 @@ export function DebtsScreen() {
             </span>
           </span>
         </div>
-        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-bg-2">
-          <div className="m-grow-x h-full origin-left rounded-full bg-accent" style={{ width: `${progress * 100}%` }} />
-        </div>
+        <ProgressBar className="mt-3" value={progress} />
       </button>
     );
   };

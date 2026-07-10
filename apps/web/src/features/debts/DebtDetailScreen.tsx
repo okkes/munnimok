@@ -12,6 +12,7 @@ import type { DebtRow } from '@/db/types';
 import { fmtCents } from '@/lib/money';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
+import { ProgressBar } from '@/ui/primitives';
 import { TxRow } from '@/ui/TxRow';
 import { DebtFormSheet } from './DebtsScreen';
 
@@ -85,9 +86,7 @@ export function DebtDetailScreen() {
             </span>
             <span className="m-num shrink-0 text-[14px] font-semibold text-accent-deep">{Math.round(progress * 100)}%</span>
           </div>
-          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-bg-2">
-            <div className="m-grow-x h-full origin-left rounded-full bg-accent" style={{ width: `${progress * 100}%` }} />
-          </div>
+          <ProgressBar className="mt-3" value={progress} />
           <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-ink-3">
             {debt.paymentCents && <span>{t('debts.perMonth', { amount: money(debt.paymentCents) })}</span>}
             {debt.interestPctYear !== undefined && <span>{debt.interestPctYear}% {t('debts.aprShort')}</span>}
