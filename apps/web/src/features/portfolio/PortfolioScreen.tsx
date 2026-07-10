@@ -55,7 +55,7 @@ export function HoldingFormSheet({ initial, onClose }: Readonly<{ initial: Holdi
       liveKey = { source: editing.priceSource, key: editing.priceKey };
     }
     setPriceKey(liveKey);
-    setManualPrice(editing?.manualPriceCents !== undefined ? (editing.manualPriceCents / 100).toFixed(2) : '');
+    setManualPrice(editing?.manualPriceCents === undefined ? '' : (editing.manualPriceCents / 100).toFixed(2));
     setQuery('');
     setHits(null);
     setConfirmDelete(false);
