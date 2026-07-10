@@ -99,7 +99,9 @@ export function AppLayout() {
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden pt-[env(safe-area-inset-top)]">
           <DataProvider>
             <HelpProvider>
-              <div className="min-h-0 flex-1 overflow-hidden">
+              {/* desktop content ceiling (redesign §4.1): the single column
+                  stops feeling lost past ~1080px; gutters stay the screens' */}
+              <div className="min-h-0 w-full flex-1 overflow-hidden md:mx-auto md:max-w-[1080px]">
                 <Outlet />
               </div>
             </HelpProvider>

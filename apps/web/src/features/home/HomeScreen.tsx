@@ -160,6 +160,7 @@ export function HomeScreen() {
     transactions: renderTransactionsBlock,
   };
   const layout = resolveHomeBlocks(space);
+  const visibleBlocks = layout.filter((entry) => !entry.hidden);
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-home">
@@ -206,9 +207,20 @@ export function HomeScreen() {
         <InstallHint />
         <IntroCard tourId="home" />
 
-        {layout.filter((entry) => !entry.hidden).map((entry) => (
-          <div key={entry.id}>{blockRenderers[entry.id]()}</div>
-        ))}
+        {/* desktop ruling (§4.4): strict two-column split of the block
+            order — first half left, second half right, no masonry */}
+        <div className="lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-6">
+          <div className="min-w-0">
+            {visibleBlocks.slice(0, Math.ceil(visibleBlocks.length / 2)).map((entry) => (
+              <div key={entry.id}>{blockRenderers[entry.id]()}</div>
+            ))}
+          </div>
+          <div className="min-w-0">
+            {visibleBlocks.slice(Math.ceil(visibleBlocks.length / 2)).map((entry) => (
+              <div key={entry.id}>{blockRenderers[entry.id]()}</div>
+            ))}
+          </div>
+        </div>
 
         <button
           data-testid="home-customize"

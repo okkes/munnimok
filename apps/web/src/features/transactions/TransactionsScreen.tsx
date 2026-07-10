@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useSpaceTransactions } from '@/application/transactions';
 import { useCategories } from '@/features/categories/useCategories';
@@ -39,6 +39,19 @@ export function TransactionsScreen() {
   const cats = useCategories();
 
   const allTxs = useSpaceTransactions();
+
+  // desktop keyboard (§4.5): `/` jumps to search unless already typing
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) return;
+      e.preventDefault();
+      document.querySelector<HTMLInputElement>('[data-testid="tx-search"]')?.focus();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const fmtDay = (iso: string) =>
     new Intl.DateTimeFormat(DATE_FMT[lang], { weekday: 'short', day: 'numeric', month: 'short' }).format(

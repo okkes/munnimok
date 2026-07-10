@@ -248,6 +248,12 @@ export function ShoppingConnectionsScreen() {
             placeholder="appie://login-exit?code=…"
             className="h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[13px] text-ink outline-none placeholder:text-ink-4"
           />
+          {/* pasted blobs overflow the input silently — echo a glanceable tail (§2L) */}
+          {pasted.trim() && (
+            <p className="truncate px-1 font-mono text-[11px] text-ink-4" data-testid="shop-ah-preview">
+              {pasted.trim()}
+            </p>
+          )}
           {failed && (
             <p className="text-[12px] text-negative" data-testid="shop-ah-failed">
               {t('shop.connectFailed')}
