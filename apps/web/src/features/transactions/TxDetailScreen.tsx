@@ -104,7 +104,7 @@ export function TxDetailScreen() {
               <span className="flex-1">{catName(cat, t)}</span>
               {tx.needsReview === 1 && (
                 <span className="rounded bg-warning-soft px-1.5 py-0.5 text-[10px] font-semibold text-warning">
-                  {t('review.confirm')}
+                  {t('tx.unreviewed')}
                 </span>
               )}
               <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
