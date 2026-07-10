@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { USER_TEST_DB, renderApp, renderAppAsUser } from '@/test/harness';
 
@@ -78,9 +78,36 @@ describe('Receipts S1 (demo identity)', () => {
       target: { value: 'appie://login-exit?code=abc-12345' },
     });
     fireEvent.click(screen.getByTestId('shop-ah-submit'));
-    // connected state: sync/disconnect appear, the paste sheet retires
+    // connected state answers out loud: status line, verified sync result
     await screen.findByTestId('shop-ah-sync', {}, { timeout: 5000 });
     expect(screen.getByTestId('shop-ah-disconnect')).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId('shop-ah-status').textContent).toContain('Connected'));
+    await screen.findByTestId('shop-ah-sync-result');
+  }, 15_000);
+
+  it('the receipts browser lists receipts and opens the full view', async () => {
+    await openFirstTx();
+    const file = new File(['x'], 'bon.jpg', { type: 'image/jpeg' });
+    fireEvent.change(screen.getByTestId('receipt-file'), { target: { files: [file] } });
+    await screen.findByTestId('receipt-card', {}, { timeout: 5000 });
+
+    cleanup();
+    renderApp('/receipts');
+    await screen.findByTestId('screen-receipts');
+    const row = await waitFor(
+      () => {
+        const el = document.querySelector('[data-testid^="receipt-row-"]');
+        expect(el).toBeTruthy();
+        return el!;
+      },
+      { timeout: 5000 },
+    );
+    expect(row.textContent).toMatch(/€[0-9]/);
+
+    fireEvent.click(row);
+    // photo receipts attach on capture → the linked transaction shows
+    await screen.findByTestId('receipt-view-total');
+    await screen.findByTestId('receipt-linked-tx');
   }, 15_000);
 
   it('settings reaches shopping connections', async () => {

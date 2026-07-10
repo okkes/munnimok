@@ -1181,6 +1181,18 @@ export const en = {
   'shop.matchTitle': 'Pick the transaction',
   'receipt.readItems': 'Read items from photo',
   'receipt.readFailed': 'Couldn’t read this photo — items stay off.',
+  'receipts.title': 'Receipts',
+  'receipts.unmatched': 'Unmatched',
+  'receipts.pickTx': 'Link to a transaction',
+  'receipts.emptyTitle': 'No receipts yet',
+  'receipts.emptyBody': 'Snap a photo on any transaction, or connect a store and munni fetches them for you.',
+  'shop.connectedLine': 'Connected · {n} receipts · synced {date}',
+  'shop.expiredNote': 'The connection expired — reconnect to keep receipts flowing.',
+  'shop.syncBusy': 'Syncing receipts…',
+  'shop.syncAdded': '{n} new receipts fetched',
+  'shop.syncNone': 'Up to date — no new receipts',
+  'shop.syncExpired': 'The store session expired — reconnect and try again.',
+  'shop.syncFailed': 'Receipts could not be read — the connection works differently than expected. Try again later.',
 } as const;
 
 export type TranslationKey = keyof typeof en;

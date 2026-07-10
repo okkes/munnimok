@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { useNavigate } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { storesAvailable, useStoreConnections, useStoreMarkers, useStoreOps, useUnmatchedReceipts } from '@/application/stores';
-import { useSpaceTransactions } from '@/application/transactions';
-import { matchCandidates } from '@/domain/storeReceipts';
+import type { StoreSyncResult } from '@/features/shopping/stores/sync';
 import { AH_AUTHORIZE_URL } from './stores/ah';
 import type { ReceiptRow } from '@/db/types';
 import { fmtCents } from '@/lib/money';
@@ -12,7 +12,7 @@ import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
-import { TxRow } from '@/ui/TxRow';
+import { ReceiptViewSheet } from './ReceiptViewSheet';
 
 /** brand names stay brand names — no translation */
 const COMING_SOON = [
@@ -26,45 +26,75 @@ const COMING_SOON = [
 /**
  * Settings → Shopping connections (receipts design S2): Albert Heijn
  * live behind the paste-the-redirect login, the rest honestly labelled.
- * Tokens stay on this device; a synced secret-free marker lets other
- * devices show "reconnect here" instead of silently doing nothing.
+ * The connection state answers "did it actually work?" out loud:
+ * receipt count, last sync, and the result of every sync attempt.
  */
 export function ShoppingConnectionsScreen() {
   const { t, lang } = useLang();
+  const navigate = useNavigate();
   const { db, spaceId } = useData();
   const connections = useStoreConnections();
   const markers = useStoreMarkers();
   const unmatched = useUnmatchedReceipts();
-  const txs = useSpaceTransactions();
   const ops = useStoreOps();
   const space = useLiveQuery(() => db.spaces.get(spaceId), [spaceId]);
+  const receiptCount = useLiveQuery(
+    () => db.receipts.filter((r) => r.deleted === 0 && r.spaceId === spaceId && r.source === 'ah').count(),
+    [db, spaceId],
+  );
   const currency = space?.currency ?? 'EUR';
 
   const [connectOpen, setConnectOpen] = useState(false);
   const [pasted, setPasted] = useState('');
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
-  const [matching, setMatching] = useState<ReceiptRow | null>(null);
+  const [syncState, setSyncState] = useState<'idle' | 'busy' | StoreSyncResult>('idle');
+  const [viewing, setViewing] = useState<ReceiptRow | null>(null);
 
   const signedIn = storesAvailable();
   const ah = connections?.find((c) => c.store === 'ah');
   const ahMarker = markers?.find((m) => m.store === 'ah');
   const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' });
 
+  const runSync = async () => {
+    setSyncState('busy');
+    setSyncState(await ops.syncNow('ah'));
+  };
+
   const submitConnect = async () => {
     setBusy(true);
     setFailed(false);
     try {
       const ok = await ops.connectAh(pasted);
-      if (ok) {
-        setConnectOpen(false);
-        setPasted('');
-      } else {
+      if (!ok) {
         setFailed(true);
+        return;
       }
+      setConnectOpen(false);
+      setPasted('');
+      // verify out loud: pull receipts right away and show the outcome
+      await runSync();
     } finally {
       setBusy(false);
     }
+  };
+
+  const renderSyncResult = () => {
+    if (syncState === 'idle') return null;
+    if (syncState === 'busy')
+      return (
+        <span className="block text-[11px] text-ink-4" data-testid="shop-ah-syncing">
+          {t('shop.syncBusy')}
+        </span>
+      );
+    let text = t('shop.syncFailed');
+    if (syncState.status === 'ok') text = syncState.added > 0 ? t('shop.syncAdded', { n: syncState.added }) : t('shop.syncNone');
+    if (syncState.status === 'expired') text = t('shop.syncExpired');
+    return (
+      <span className={`block text-[11px] ${syncState.status === 'ok' ? 'text-accent-deep' : 'text-negative'}`} data-testid="shop-ah-sync-result">
+        {text}
+      </span>
+    );
   };
 
   const renderAhStatus = () => {
@@ -72,7 +102,7 @@ export function ShoppingConnectionsScreen() {
     if (ah?.status === 'ok')
       return (
         <span className="flex items-center gap-2">
-          <button data-testid="shop-ah-sync" onClick={() => void ops.syncNow('ah')} className="m-tap border-none bg-transparent text-[12px] font-medium text-accent-deep">
+          <button data-testid="shop-ah-sync" onClick={() => void runSync()} className="m-tap border-none bg-transparent text-[12px] font-medium text-accent-deep">
             {t('shop.syncNow')}
           </button>
           <button data-testid="shop-ah-disconnect" onClick={() => void ops.disconnect('ah')} className="m-tap border-none bg-transparent text-[12px] text-ink-4">
@@ -91,17 +121,6 @@ export function ShoppingConnectionsScreen() {
         {t('shop.connect')}
       </Button>
     );
-  };
-
-  const candidatesFor = (receipt: ReceiptRow) => {
-    const all = txs ?? [];
-    const scored = matchCandidates(receipt, all);
-    if (scored.length > 0) return scored.slice(0, 8);
-    // no near-match: offer the latest expenses instead of a dead end
-    return all
-      .filter((tx) => tx.deleted === 0 && tx.txType === 'expense')
-      .sort((a, b) => b.date.localeCompare(a.date))
-      .slice(0, 8);
   };
 
   return (
@@ -130,10 +149,18 @@ export function ShoppingConnectionsScreen() {
           <div className="flex items-center gap-3 border-b border-line-2 px-4 py-3.5" data-testid="shopping-store-ah">
             <Icon name="cart-outline" size={20} color={ah?.status === 'ok' ? 'var(--m-accent-deep)' : 'var(--m-ink-3)'} />
             <span className="min-w-0 flex-1">
-              <span className="block text-[15px] text-ink">Albert Heijn</span>
+              <span className="flex items-center gap-1.5">
+                <span className="text-[15px] text-ink">Albert Heijn</span>
+                {ah?.status === 'ok' && <Icon name="check-circle" size={14} color="var(--m-accent-deep)" />}
+              </span>
               {ah?.status === 'ok' && (
                 <span className="block text-[11px] text-ink-4" data-testid="shop-ah-status">
-                  {t('shop.lastSync', { date: fmtDate(ah.refreshedAt) })}
+                  {t('shop.connectedLine', { n: receiptCount ?? 0, date: fmtDate(ah.refreshedAt) })}
+                </span>
+              )}
+              {ah?.status === 'expired' && (
+                <span className="block text-[11px] text-warning" data-testid="shop-ah-expired-note">
+                  {t('shop.expiredNote')}
                 </span>
               )}
               {!ah && ahMarker && signedIn && (
@@ -141,6 +168,7 @@ export function ShoppingConnectionsScreen() {
                   {t('shop.reconnectNote')}
                 </span>
               )}
+              {renderSyncResult()}
             </span>
             {renderAhStatus()}
           </div>
@@ -153,6 +181,17 @@ export function ShoppingConnectionsScreen() {
           ))}
         </div>
 
+        {/* the browsing door: every receipt, photos included */}
+        <button
+          data-testid="shop-view-receipts"
+          onClick={() => void navigate({ to: '/receipts' })}
+          className="m-tap mt-3 flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3.5 text-left"
+        >
+          <Icon name="receipt-text-outline" size={20} color="var(--m-ink-2)" />
+          <span className="min-w-0 flex-1 text-[15px] text-ink">{t('receipts.title')}</span>
+          <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+        </button>
+
         {(unmatched?.length ?? 0) > 0 && (
           <>
             <div className="m-cap mt-5 mb-1 px-1">
@@ -163,7 +202,7 @@ export function ShoppingConnectionsScreen() {
                 <button
                   key={receipt.id}
                   data-testid={`shop-unmatched-${receipt.id}`}
-                  onClick={() => setMatching(receipt)}
+                  onClick={() => setViewing(receipt)}
                   className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-3 text-left last:border-0"
                 >
                   <Icon name="receipt-text-outline" size={18} color="var(--m-warning)" />
@@ -217,24 +256,7 @@ export function ShoppingConnectionsScreen() {
         </div>
       </Sheet>
 
-      {/* manual match: pick the transaction an ambiguous receipt belongs to */}
-      <Sheet open={matching !== null} onOpenChange={(open) => !open && setMatching(null)} title={t('shop.matchTitle')} size="tall">
-        {matching && (
-          <div data-testid="shop-match-list">
-            {candidatesFor(matching).map((tx) => (
-              <TxRow
-                key={tx.id}
-                tx={tx}
-                showDate
-                onClick={() => {
-                  void ops.attachReceipt(matching.id, tx.id);
-                  setMatching(null);
-                }}
-              />
-            ))}
-          </div>
-        )}
-      </Sheet>
+      <ReceiptViewSheet receipt={viewing} currency={currency} onClose={() => setViewing(null)} />
     </div>
   );
 }

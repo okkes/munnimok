@@ -2,19 +2,16 @@ import { useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import { useReceiptOps, useTxReceipt } from '@/application/receipts';
-import { storesAvailable } from '@/application/stores';
-import { parseReceiptText } from '@/domain/storeReceipts';
 import type { SpaceTx } from '@/db/joined';
-import { apiFetch } from '@/lib/api';
 import { fmtCents } from '@/lib/money';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
-import { Sheet } from '@/ui/Sheet';
+import { ReceiptViewSheet } from './ReceiptViewSheet';
 
 /**
- * The transaction's line-item proof (receipts design S1): a snapped
- * photo — downscaled on-device — or, later, a fetched store receipt
- * with items. Empty state offers the camera and the connections door.
+ * The transaction's line-item proof (receipts design): a snapped photo
+ * — downscaled on-device — or a fetched store receipt with items. The
+ * empty state offers the camera and the connections door.
  */
 export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
   const { t, lang } = useLang();
@@ -23,9 +20,7 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
   const ops = useReceiptOps();
   const fileRef = useRef<HTMLInputElement>(null);
   const [viewOpen, setViewOpen] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [ocrState, setOcrState] = useState<'idle' | 'busy' | 'failed'>('idle');
 
   const onFile = async (file: File | undefined) => {
     if (!file) return;
@@ -35,40 +30,6 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
     } finally {
       setBusy(false);
     }
-  };
-
-  // OCR via the NAS sidecar (signed-in users only — demo stays offline)
-  const readItems = async () => {
-    if (!receipt?.image) return;
-    setOcrState('busy');
-    try {
-      const response = await apiFetch('/ocr/receipt', { method: 'POST', body: JSON.stringify({ image: receipt.image }) });
-      if (!response.ok) {
-        setOcrState('failed');
-        return;
-      }
-      const { text } = (await response.json()) as { text: string };
-      const items = parseReceiptText(text);
-      if (items.length === 0) {
-        setOcrState('failed');
-        return;
-      }
-      await ops.setItems(receipt.id, items);
-      setOcrState('idle');
-    } catch {
-      setOcrState('failed');
-    }
-  };
-
-  const removeReceipt = async () => {
-    if (!receipt) return;
-    if (!confirmDelete) {
-      setConfirmDelete(true);
-      return;
-    }
-    await ops.remove(receipt.id);
-    setConfirmDelete(false);
-    setViewOpen(false);
   };
 
   if (receipt === undefined) return null;
@@ -116,36 +77,7 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
         </button>
       )}
 
-      {/* full view + delete */}
-      <Sheet open={viewOpen} onOpenChange={(open) => !open && setViewOpen(false)} title={t('receipt.title')} size="tall">
-        {receipt?.image && <img src={receipt.image} alt={t('receipt.title')} className="max-h-[50vh] w-full rounded-card object-contain" />}
-        {!!receipt?.items?.length && (
-          <div className="mt-2 rounded-card border border-line bg-surface px-4 py-1" data-testid="receipt-items">
-            {receipt.items.map((item) => (
-              <div key={`${item.name}-${item.totalCents}`} className="flex items-baseline gap-2 border-b border-line-2 py-2 text-[13px] last:border-0">
-                <span className="min-w-0 flex-1 truncate text-ink">{item.name}</span>
-                {item.qty !== undefined && <span className="text-[11px] text-ink-4">×{item.qty}</span>}
-                <span className="m-num text-ink">{fmtCents(item.totalCents, tx.currency, lang)}</span>
-              </div>
-            ))}
-          </div>
-        )}
-        {receipt?.source === 'photo' && !receipt.items?.length && storesAvailable() && (
-          <>
-            <Button variant="outline" className="mt-3 w-full" data-testid="receipt-read-items" disabled={ocrState === 'busy'} onClick={() => void readItems()}>
-              {t('receipt.readItems')}
-            </Button>
-            {ocrState === 'failed' && (
-              <p className="mt-1 text-center text-[12px] text-ink-4" data-testid="receipt-read-failed">
-                {t('receipt.readFailed')}
-              </p>
-            )}
-          </>
-        )}
-        <Button variant="danger" className="mt-3 w-full" data-testid="receipt-delete" onClick={() => void removeReceipt()}>
-          {confirmDelete ? t('action.confirm') : t('action.delete')}
-        </Button>
-      </Sheet>
+      <ReceiptViewSheet receipt={viewOpen ? receipt : null} currency={tx.currency} onClose={() => setViewOpen(false)} />
     </>
   );
 }
