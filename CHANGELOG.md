@@ -1,5 +1,62 @@
 # Changelog
 
+## [1.2.0](https://github.com/okkes/munnimok/compare/v1.1.0...v1.2.0) (2026-07-10)
+
+
+### ✨ Features
+
+* **api,deploy:** GoCardless idle-requisition cleanup + container docs ([8e04ae3](https://github.com/okkes/munnimok/commit/8e04ae39418921127d8eca0d4d40e6c4da074586))
+* **api:** fetch bank data once nightly at 03:00 bank-local time ([fac3270](https://github.com/okkes/munnimok/commit/fac3270828f010ed972e6ba81d4b0a1bd492b8c0))
+* **deploy:** pgadmin console; run glitchtip migrations before boot ([f3fee51](https://github.com/okkes/munnimok/commit/f3fee5149cb9b2c77ce2622fa8bce5492deb5c4a))
+* **web,api:** allocation — zero-based budgeting per the approved design ([4c5c7c4](https://github.com/okkes/munnimok/commit/4c5c7c4685ac2f8b4b030b6fd6aa1502cb968b21))
+* **web,api:** budgets — cadenced limits, carry-over, exclusivity, home block ([66cca3f](https://github.com/okkes/munnimok/commit/66cca3f3ab75e9f9302b202301656ce89c26e5ee))
+* **web,api:** events, goals and debts — entities, sync whitelist, domain math ([f3133f8](https://github.com/okkes/munnimok/commit/f3133f8f993ebe546777e1e47d12617962b8138d))
+* **web,api:** insights — detector engine, six findings, weekly digest ([f74194c](https://github.com/okkes/munnimok/commit/f74194c8131f12da3d98339c2f9ff971416e9b46))
+* **web,api:** portfolio — holdings, lots, delayed quotes, DEGIRO import ([987acb6](https://github.com/okkes/munnimok/commit/987acb650d8accffec640ea8745e4ab6109f17a6))
+* **web,api:** real bank logos on account rows; logo.dev key guard ([2aca0e5](https://github.com/okkes/munnimok/commit/2aca0e522cbf917e3135743b3c5afc1aa5874acd))
+* **web,api:** receipts S1 — photo proof on transactions ([b180277](https://github.com/okkes/munnimok/commit/b18027773df5e34e425c12cc541509cb56f8201b))
+* **web,api:** receipts S2 — Albert Heijn adapter, matcher, proxy, OCR ([3ce4f5a](https://github.com/okkes/munnimok/commit/3ce4f5a609011efebf82270426884707687bbae2))
+* **web:** customizable landing zone; settings grouped by scope ([de39bfd](https://github.com/okkes/munnimok/commit/de39bfd120af5244a4b0e134e7e4deb33b41361b))
+* **web:** events, goals and debts screens with home blocks and settings entry ([0c596d6](https://github.com/okkes/munnimok/commit/0c596d616ac7516b790264ca583b56aef0aedbab))
+* **web:** highlight search matches; logo search leads with logo.dev ([1d67960](https://github.com/okkes/munnimok/commit/1d67960b967af28e7009d02107b566c78d735306))
+* **web:** home intelligence — new-transactions block and feature doors ([2d31058](https://github.com/okkes/munnimok/commit/2d31058d6ca6193da1dbb61e9f7232626d540195))
+* **web:** home refresh — review card, dated rows, notification bell ([77fcc10](https://github.com/okkes/munnimok/commit/77fcc10e0b952065bb7d70396a6edb124f846625))
+* **web:** home space switcher, offline pill, notification deep-links ([5410989](https://github.com/okkes/munnimok/commit/54109892027bb1102bdbf7fbc1e3951da80ca018))
+* **web:** in-context category drill replaces the transactions forward ([9752cfb](https://github.com/okkes/munnimok/commit/9752cfb95249b416a9181f259a9d231d81a92573))
+* **web:** low-budget alerts fire with the app closed (budgets P4) ([47a1a30](https://github.com/okkes/munnimok/commit/47a1a30d0be51f731e95b65f4155cfc170b4a8e6))
+* **web:** offline-aware login, friend-delete confirm, spaces screen polish ([8eab454](https://github.com/okkes/munnimok/commit/8eab454283ab1dcb6e834de3b18fcae50869221c))
+* **web:** PWA install hint + platform install tour ([c6e8ee4](https://github.com/okkes/munnimok/commit/c6e8ee4980ab2008cbbe6e53a0aa4faca62763c6))
+* **web:** receipts browser + loud AH connection state ([5a7abd6](https://github.com/okkes/munnimok/commit/5a7abd617fa787da7a4f977dd10cb43e7319cba8))
+* **web:** recurring custom cadence - every N weeks/months/years ([11bf2eb](https://github.com/okkes/munnimok/commit/11bf2eb8a393a504032428bc3afbc97f2c611c4e))
+* **web:** recurring detail screen + detection inbox ([85f6bfe](https://github.com/okkes/munnimok/commit/85f6bfe203928896fa95bd921c29d2113f3d02db))
+* **web:** recurring polish, press feedback, chart motion ([21bcc21](https://github.com/okkes/munnimok/commit/21bcc21ddaa252769f13b4aa772641ef95d2c1e8))
+* **web:** reimbursements tell both sides; drills show the slice ([528608c](https://github.com/okkes/munnimok/commit/528608cc30cbc11dcd7959cb92bb5d98c98f7264))
+* **web:** remarks batch 1 — events with pictures, clearer review, tokens ([d1bfa5c](https://github.com/okkes/munnimok/commit/d1bfa5c9f1b7f34dfa56d4e415508bc54be36c1d))
+* **web:** review redesign — account-first type, valid categories, % splits ([b2c1110](https://github.com/okkes/munnimok/commit/b2c111038b93d80b13f3ae09c4e79f74bc7fc7ee))
+* **web:** space accounts and members get their own screens + settings rows ([d00b355](https://github.com/okkes/munnimok/commit/d00b355a2ab853cd0a4f26f71e89205205885231))
+* **web:** staging PWA wears the white leaf on brand green ([52252c0](https://github.com/okkes/munnimok/commit/52252c0fb0bf6d1852a3658d9e8d63b1d6d7f594))
+* **web:** tours for every feature ([64462e4](https://github.com/okkes/munnimok/commit/64462e46be895cad76995a7a6124137c84c688ac))
+* **web:** tutorial content for events, goals, debts and allocation ([14bd7a5](https://github.com/okkes/munnimok/commit/14bd7a5a300c7dcb8acfafbe69c4f9fba0446f41))
+* **web:** tutorials — intro cards, slide tours, spotlight walkthroughs ([cddc79d](https://github.com/okkes/munnimok/commit/cddc79d6fe79b7ac2b5bb670cd31de6e85baf9a8))
+* **web:** U4 desktop slice + U5 polish ([2da5749](https://github.com/okkes/munnimok/commit/2da5749e1ef98076e78d0c2ba638ef7831362764))
+
+
+### 🐞 Bug Fixes
+
+* **api:** honor the gocardless daily rate budget ([2bf2ebc](https://github.com/okkes/munnimok/commit/2bf2ebc032c280bdc880c52d99fac1e302383d41))
+* **deploy:** pgadmin refuses .local emails — default to admin@munni.dev ([7b1aa73](https://github.com/okkes/munnimok/commit/7b1aa735cd7968f80f76cf4f03aa604ab9a9203f))
+* **web,api:** 'Betaalautomaat' is a card payment, not a cash withdrawal ([8d8071b](https://github.com/okkes/munnimok/commit/8d8071b14ba0d0f934bcca4deca0765a13334062))
+* **web,api:** sonar findings across the three new arcs + coverage tests ([243b02c](https://github.com/okkes/munnimok/commit/243b02ca5e75c65a879982963f936a24227352e3))
+* **web,api:** sonar findings in the S2 arc ([375c96c](https://github.com/okkes/munnimok/commit/375c96c94b9a38b3512a232454f9465df4201fb6))
+* **web:** AH receipts speak GraphQL, legacy REST as fallback ([588c183](https://github.com/okkes/munnimok/commit/588c1839ae34a7a80bf5164e18315762891a0a93))
+* **web:** device-feedback round — keyboard space, footer, wheel drag, sync row ([a60613f](https://github.com/okkes/munnimok/commit/a60613fe79872bb5521f5f62b5d04481394ec938))
+* **web:** footer status-bar mode + the small-remarks round ([5e0920c](https://github.com/okkes/munnimok/commit/5e0920cc11f91ce1beea72023801f92777788bdf))
+* **web:** ios/android input bugs — sheets, drag, color input, footer ([1316144](https://github.com/okkes/munnimok/commit/13161445c99be70e7c2b50ac9cf2b8488124a5b9))
+* **web:** last negated condition in the holding form ([4e48e8f](https://github.com/okkes/munnimok/commit/4e48e8f3f516c09b74087238ccb49f345e03aef8))
+* **web:** narrow the event date via a local before formatting ([fa8a026](https://github.com/okkes/munnimok/commit/fa8a0264e777dd22191a8c1fe52d5d11a57f0dd4))
+* **web:** sonar findings — negated ternary, missing test assertion ([10b81a6](https://github.com/okkes/munnimok/commit/10b81a6083a58627d9f5248bd425b31724f35188))
+* **web:** standalone root reclaims the status-bar band (footer gap) ([e7560cc](https://github.com/okkes/munnimok/commit/e7560ccc5efd4a73780e4aa6a000a49e3c7a752b))
+
 ## [1.1.0](https://github.com/okkes/munnimok/compare/v1.0.0...v1.1.0) (2026-07-09)
 
 
