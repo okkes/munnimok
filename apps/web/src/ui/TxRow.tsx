@@ -1,6 +1,7 @@
 import { LOCALES, useLang } from '@/i18n';
 import { fmtCents } from '@/lib/money';
 import { cleanBankText } from '@/lib/text';
+import { netAmountCents } from '@/domain/reimbursement';
 import type { TransactionRow } from '@/db/types';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { Highlight } from './Highlight';
@@ -12,6 +13,7 @@ export function TxRow({
   highlight = '',
   showDate = false,
   hideCategory = false,
+  amountOverrideCents,
 }: {
   tx: TransactionRow;
   onClick?: () => void;
@@ -20,13 +22,21 @@ export function TxRow({
   showDate?: boolean;
   /** lists already scoped to one category (drill) skip the redundant name */
   hideCategory?: boolean;
+  /** scoped lists (drill) show their slice as the headline amount */
+  amountOverrideCents?: number;
 }) {
   const { t, lang } = useLang();
   const cats = useCategories();
   const cat = cats.byId(tx.catId);
   const parent = cat.parentId ? cats.byId(cat.parentId) : undefined;
   const color = cat.color ?? parent?.color ?? 'var(--m-ink-3)';
-  const positive = tx.amountCents > 0;
+
+  // reimbursements change what a transaction really cost — lists show
+  // the net truth, with the gross quietly struck through beside it
+  const net = netAmountCents(tx);
+  const display = amountOverrideCents ?? net;
+  const positive = display > 0;
+  const reimbursed = net !== tx.amountCents;
 
   return (
     <button
@@ -59,8 +69,18 @@ export function TxRow({
           )}
         </span>
       </span>
-      <span className={`m-num shrink-0 text-[14px] font-semibold ${positive ? 'text-accent-deep' : 'text-ink'}`}>
-        {fmtCents(tx.amountCents, tx.currency, lang, { sign: true })}
+      <span className="shrink-0 text-right">
+        <span className={`m-num block text-[14px] font-semibold ${positive ? 'text-accent-deep' : 'text-ink'}`}>
+          {fmtCents(display, tx.currency, lang, { sign: true })}
+        </span>
+        {amountOverrideCents === undefined && reimbursed && (
+          <span className="m-num block text-[11px] text-ink-4 line-through">
+            {fmtCents(tx.amountCents, tx.currency, lang, { sign: true })}
+          </span>
+        )}
+        {amountOverrideCents !== undefined && amountOverrideCents !== net && (
+          <span className="m-num block text-[11px] text-ink-4">{fmtCents(net, tx.currency, lang, { sign: true })}</span>
+        )}
       </span>
     </button>
   );

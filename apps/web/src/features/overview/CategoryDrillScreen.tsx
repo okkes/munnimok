@@ -3,7 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
 import { useData } from '@/app/data';
-import { txsForCategory } from '@/domain/overview';
+import { categoryContributionCents, txsForCategory } from '@/domain/overview';
 import type { OverviewKind } from '@/domain/overview';
 import { periodHistory } from '@/domain/periods';
 import { catName, useCategories } from '@/features/categories/useCategories';
@@ -118,16 +118,23 @@ export function CategoryDrillScreen() {
         </div>
         {selected.txs.length > 0 ? (
           <div className="rounded-card border border-line bg-surface px-3 py-1" data-testid="catdrill-list">
-            {selected.txs.map((tx) => (
-              <TxRow
-                key={tx.id}
-                tx={tx}
-                showDate
-                // a sub-category drill repeats its own name on every row
-                hideCategory={!!cat.parentId}
-                onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })}
-              />
-            ))}
+            {selected.txs.map((tx) => {
+              // the headline is what THIS category got (splits partition);
+              // the full net amount stays visible small when they differ
+              const slice = categoryContributionCents(kind, tx, catId, cats);
+              const signed = tx.amountCents < 0 ? -slice : slice;
+              return (
+                <TxRow
+                  key={tx.id}
+                  tx={tx}
+                  showDate
+                  // a sub-category drill repeats its own name on every row
+                  hideCategory={!!cat.parentId}
+                  amountOverrideCents={signed}
+                  onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })}
+                />
+              );
+            })}
           </div>
         ) : (
           <p className="px-1 text-[12px] text-ink-4" data-testid="catdrill-empty">
