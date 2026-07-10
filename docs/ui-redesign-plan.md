@@ -171,13 +171,21 @@ Recommended order: U1 → U2 → U3 → U4 → U5, shipped as separate arcs
 with the usual verify chain; U1+U2 can land in one day and make every
 later feature cheaper.
 
-## 6. Open questions
+### Status (2026-07-10)
 
-1. Settings grouping names — *Plan / Track / Learn / Setup* — keep or
-   rename?
-2. Desktop forms: right-side panels (my pick — keeps context visible)
-   or centered modals?
-3. Desktop density: keep the mobile row heights (comfortable) or a
-   compact 44px data-row mode?
-4. Home on desktop: strict 2-column split of the block order (my
-   pick) or let blocks span (masonry)?
+- **U1 — partially shipped**: raw hex killed in HomeScreen tiles /
+  portfolio class colors / drill accents (tokens per §2A); settings
+  grouped Plan/Track/Learn/Setup (§2I). Still open from U1:
+  `fmtSignedPct` + the full §2J number-typography sweep.
+- **U2, U3 (remainder: app-bar decrowding, intro-card idle rule,
+  allocate empty state, §2L paper cuts), U4, U5 — pending**, to run as
+  their own arcs.
+
+## 6. Open questions — answered (user rulings, 2026-07-09)
+
+1. Settings grouping names: **keep my pick** — *Plan / Track / Learn /
+   Setup* stays (shipped).
+2. Desktop forms: **right-side panels** — keeps context visible.
+3. Desktop density: **comfortable** — keep the mobile row heights.
+4. Home on desktop: **strict 2-column split** of the block order (no
+   masonry).
