@@ -12,6 +12,8 @@ import { fmtCents } from '@/lib/money';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
 import { HeroCard, ProgressBar, Tile } from '@/ui/primitives';
+import { SplitPane } from '@/ui/SplitPane';
+import { BudgetsScreen } from './BudgetsScreen';
 import { TxRow } from '@/ui/TxRow';
 import { budgetColor, budgetSoft } from './budgetUi';
 
@@ -52,7 +54,12 @@ export function BudgetDetailScreen() {
     return { status, period, spent, limit, list, perCat, atStart: shownIndex === 0 };
   }, [budget, txs, cats, today, offset]);
 
-  if (!budget || !view) return <div className="h-full" data-testid="screen-budget-detail" />;
+  if (!budget || !view)
+    return (
+      <SplitPane list={<BudgetsScreen />}>
+        <div className="h-full" data-testid="screen-budget-detail" />
+      </SplitPane>
+    );
 
   const { period, spent, limit, list, perCat, status, atStart } = view;
   const ratio = limit > 0 ? spent / limit : 0;
@@ -63,6 +70,8 @@ export function BudgetDetailScreen() {
   const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' });
 
   return (
+    // §4.2: at lg the budgets list stays beside the detail
+    <SplitPane list={<BudgetsScreen />}>
     <div className="m-fade flex h-full flex-col" data-testid="screen-budget-detail">
       <AppBar
         title={budget.name}
@@ -175,5 +184,6 @@ export function BudgetDetailScreen() {
         )}
       </div>
     </div>
+    </SplitPane>
   );
 }

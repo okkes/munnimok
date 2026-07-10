@@ -15,6 +15,7 @@ export function TxRow({
   showDate = false,
   hideCategory = false,
   amountOverrideCents,
+  selected = false,
 }: {
   tx: TransactionRow;
   onClick?: () => void;
@@ -25,6 +26,8 @@ export function TxRow({
   hideCategory?: boolean;
   /** scoped lists (drill) show their slice as the headline amount */
   amountOverrideCents?: number;
+  /** master–detail panes mark the row whose detail is open (§4.2) */
+  selected?: boolean;
 }) {
   const { t, lang } = useLang();
   const cats = useCategories();
@@ -43,7 +46,9 @@ export function TxRow({
     <button
       onClick={onClick}
       data-testid={`tx-row-${tx.id}`}
-      className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-1 py-2.5 text-left"
+      className={`m-tap flex w-full items-center gap-3 rounded-xl border-none px-1 py-2.5 text-left ${
+        selected ? 'bg-accent-soft/50' : 'bg-transparent'
+      }`}
     >
       <span
         className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"

@@ -1,21 +1,13 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import { Drawer } from 'vaul';
+// desktop ruling (redesign §4.3): sheets become right-side panels at lg,
+// so forms stop covering the context they edit
+import { useLgViewport as usePanelMode } from '@/lib/viewport';
 
 /** the three sheet heights; per-pixel values stay out of call sites */
 export type SheetSize = 'compact' | 'form' | 'tall';
 const SIZE_PX: Record<SheetSize, number> = { compact: 320, form: 440, tall: 600 };
-
-// desktop ruling (redesign §4.3): sheets become right-side panels at lg,
-// so forms stop covering the context they edit. One media query, shared.
-const PANEL_QUERY = '(min-width: 1024px)';
-const subscribePanel = (listener: () => void) => {
-  const mql = typeof window === 'undefined' ? undefined : window.matchMedia?.(PANEL_QUERY);
-  mql?.addEventListener?.('change', listener);
-  return () => mql?.removeEventListener?.('change', listener);
-};
-const readPanel = () => (typeof window === 'undefined' ? false : (window.matchMedia?.(PANEL_QUERY)?.matches ?? false));
-const usePanelMode = (): boolean => useSyncExternalStore(subscribePanel, readPanel, () => false);
 
 // Android resizes the layout viewport itself for the keyboard (see the
 // interactive-widget viewport meta) — vaul's own input repositioning on
