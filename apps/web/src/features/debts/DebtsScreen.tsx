@@ -15,7 +15,7 @@ import { IntroCard } from '@/features/help/IntroCard';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
-import { ProgressBar } from '@/ui/primitives';
+import { ProgressBar, Tile } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 
 export const DEBT_ICONS = ['home-percent-outline', 'credit-card-outline', 'car-outline', 'school-outline', 'hand-coin-outline', 'account-cash-outline'] as const;
@@ -222,9 +222,7 @@ export function DebtsScreen() {
         className={`m-tap w-full rounded-card border border-line bg-surface p-4 text-left ${debt.archived === 1 ? 'opacity-60' : ''}`}
       >
         <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-negative-soft text-negative">
-            <Icon name={debt.icon ?? 'hand-coin-outline'} size={19} />
-          </span>
+          <Tile icon={debt.icon ?? 'hand-coin-outline'} tone="negative" />
           <span className="min-w-0 flex-1">
             <span className="flex items-baseline justify-between gap-2">
               <span className="truncate text-[15px] font-semibold text-ink">{debt.name}</span>

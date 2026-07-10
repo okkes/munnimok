@@ -14,7 +14,7 @@ import { IntroCard } from '@/features/help/IntroCard';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
-import { ProgressBar } from '@/ui/primitives';
+import { ProgressBar, Tile } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 
 export const GOAL_ICONS = ['home-outline', 'car-outline', 'airplane', 'shield-check-outline', 'laptop', 'ring', 'sail-boat', 'school-outline'] as const;
@@ -204,9 +204,7 @@ export function GoalsScreen() {
                 className={`m-tap w-full rounded-card border border-line bg-surface p-4 text-left ${goal.archived === 1 ? 'opacity-60' : ''}`}
               >
                 <div className="flex items-center gap-3">
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent-deep">
-                    <Icon name={goal.icon ?? 'flag-outline'} size={19} />
-                  </span>
+                  <Tile icon={goal.icon ?? 'flag-outline'} />
                   <span className="min-w-0 flex-1">
                     <span className="flex items-baseline justify-between gap-2">
                       <span className="truncate text-[15px] font-semibold text-ink">{goal.name}</span>

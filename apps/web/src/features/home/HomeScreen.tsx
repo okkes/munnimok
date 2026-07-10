@@ -36,7 +36,7 @@ import { budgetColor, ratioPct } from '@/features/budgets/budgetUi';
 import { fmtCents } from '@/lib/money';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
-import { ProgressBar } from '@/ui/primitives';
+import { ProgressBar, Tile } from '@/ui/primitives';
 import { TxRow } from '@/ui/TxRow';
 
 const TILE_META: Record<OverviewKind, { icon: string; color: string; field: keyof OverviewSummary }> = {
@@ -264,9 +264,7 @@ export function HomeScreen() {
         onClick={() => void navigate({ to: '/review' })}
         className="m-tap mt-5 flex w-full items-center gap-3 rounded-card border border-warning bg-warning-soft px-4 py-3.5 text-left"
       >
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface">
-          <Icon name="progress-check" size={20} color="var(--m-warning)" />
-        </span>
+        <Tile icon="progress-check" bg="var(--m-surface)" color="var(--m-warning)" />
         <span className="min-w-0 flex-1">
           <span className="block text-[14px] font-semibold text-ink">{t('review.title')}</span>
           <span className="block text-[12px] text-ink-3">{t('home.reviewSub', { n: reviewCount ?? 0 })}</span>
@@ -289,9 +287,7 @@ export function HomeScreen() {
           onClick={() => void navigate({ to: '/budgets' })}
           className="m-tap mt-5 flex w-full items-center gap-3 rounded-card border border-dashed border-line bg-surface px-4 py-3.5 text-left"
         >
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent-soft">
-            <Icon name="wallet-outline" size={19} color="var(--m-accent-deep)" />
-          </span>
+          <Tile icon="wallet-outline" />
           <span className="min-w-0 flex-1">
             <span className="block text-[14px] font-semibold text-ink">{t('home.budgetsTeaserTitle')}</span>
             <span className="block text-[12px] text-ink-3">{t('home.budgetsTeaserSub')}</span>
@@ -385,9 +381,11 @@ export function HomeScreen() {
           onClick={() => void navigate({ to: '/allocate' })}
           className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left"
         >
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" style={{ background: `color-mix(in srgb, ${color} 14%, transparent)` }}>
-            <Icon name={allocLeft === 0 ? 'check-circle-outline' : 'cash-multiple'} size={18} color={color} />
-          </span>
+          <Tile
+            icon={allocLeft === 0 ? 'check-circle-outline' : 'cash-multiple'}
+            bg={`color-mix(in srgb, ${color} 14%, transparent)`}
+            color={color}
+          />
           <span className="min-w-0 flex-1">
             <span className="m-num block text-[15px] font-semibold" style={{ color }}>
               {fmtCents(allocLeft, currency, lang)}
@@ -411,9 +409,7 @@ export function HomeScreen() {
         onClick={() => void navigate({ to })}
         className="m-tap mt-5 flex w-full items-center gap-3 rounded-card border border-dashed border-line bg-surface px-4 py-3.5 text-left"
       >
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent-soft">
-          <Icon name={icon} size={19} color="var(--m-accent-deep)" />
-        </span>
+        <Tile icon={icon} />
         <span className="min-w-0 flex-1">
           <span className="block text-[14px] font-semibold text-ink">{t(titleKey)}</span>
           <span className="block text-[12px] text-ink-3">{t(subKey)}</span>
@@ -511,9 +507,7 @@ export function HomeScreen() {
           onClick={() => void navigate({ to: '/debts' })}
           className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left"
         >
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-negative-soft">
-            <Icon name="hand-coin-outline" size={18} color="var(--m-negative)" />
-          </span>
+          <Tile icon="hand-coin-outline" tone="negative" />
           <span className="min-w-0 flex-1">
             <span className="m-num block text-[15px] font-semibold text-ink">{fmtCents(debtTotals.totalOwedCents, currency, lang)}</span>
             <span className="block text-[11px] text-ink-4">
@@ -539,9 +533,7 @@ export function HomeScreen() {
           onClick={() => void navigate({ to: '/insights' })}
           className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left"
         >
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-warning-soft">
-            <Icon name={top.icon} size={18} color="var(--m-warning)" />
-          </span>
+          <Tile icon={top.icon} tone="warning" />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-[13px] font-medium text-ink">
               {t(top.titleKey, Object.fromEntries(Object.entries(top.params).map(([k, v]) => [k, typeof v === 'number' && !['n', 'x', 'months'].includes(k) ? fmtCents(v, currency, lang) : v])))}
@@ -568,9 +560,7 @@ export function HomeScreen() {
           onClick={() => void navigate({ to: '/portfolio' })}
           className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left"
         >
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" style={{ background: 'color-mix(in srgb, var(--m-special) 14%, transparent)' }}>
-            <Icon name="chart-timeline-variant" size={18} color="var(--m-special)" />
-          </span>
+          <Tile icon="chart-timeline-variant" tone="special" />
           <span className="min-w-0 flex-1">
             <span className="m-num block text-[15px] font-semibold text-ink">{fmtCents(portfolio.totals.totalCents, currency, lang)}</span>
             {day !== null && (

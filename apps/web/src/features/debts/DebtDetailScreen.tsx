@@ -12,7 +12,7 @@ import type { DebtRow } from '@/db/types';
 import { fmtCents } from '@/lib/money';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
-import { ProgressBar } from '@/ui/primitives';
+import { ProgressBar, Tile } from '@/ui/primitives';
 import { TxRow } from '@/ui/TxRow';
 import { DebtFormSheet } from './DebtsScreen';
 
@@ -75,9 +75,7 @@ export function DebtDetailScreen() {
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <div className="rounded-card border border-line bg-surface p-4" data-testid="debtdetail-hero">
           <div className="flex items-center gap-3">
-            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-negative-soft text-negative">
-              <Icon name={debt.icon ?? 'hand-coin-outline'} size={22} />
-            </span>
+            <Tile size={48} tone="negative" icon={debt.icon ?? 'hand-coin-outline'} />
             <span className="min-w-0 flex-1">
               <span className="m-num block text-[24px] font-semibold text-ink" data-testid="debtdetail-remaining">
                 {money(remainingCents)}

@@ -10,6 +10,7 @@ import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
+import { Tile } from '@/ui/primitives';
 
 const SEVERITY_COLOR: Record<InsightSeverity, string> = {
   leak: 'var(--m-negative)',
@@ -69,9 +70,7 @@ export function InsightsScreen() {
           onClick={() => setOpen(expanded ? null : insight.id)}
           className="m-tap flex w-full items-start gap-3 border-none bg-transparent px-4 py-3.5 text-left"
         >
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl" style={{ background: `color-mix(in srgb, ${color} 13%, transparent)` }}>
-            <Icon name={insight.icon} size={19} color={color} />
-          </span>
+          <Tile icon={insight.icon} bg={`color-mix(in srgb, ${color} 13%, transparent)`} color={color} />
           <span className="min-w-0 flex-1">
             <span className="block text-[14px] font-semibold text-ink">{t(insight.titleKey, withMoney(insight.params))}</span>
             <span className="m-num block text-[12px]" style={{ color }}>

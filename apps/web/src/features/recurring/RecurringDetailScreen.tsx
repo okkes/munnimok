@@ -9,7 +9,7 @@ import { nextDueDate } from '@/domain/recurring';
 import { fmtCents } from '@/lib/money';
 import { RecurringFormSheet, formFromRec } from './RecurringFormSheet';
 import type { FormState } from './RecurringFormSheet';
-import { Pill } from '@/ui/primitives';
+import { Pill, Tile } from '@/ui/primitives';
 import { RecurringVisual, cadenceLabel } from './RecurringVisual';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
@@ -80,9 +80,9 @@ export function RecurringDetailScreen() {
         {/* hero: what this cost is */}
         <div className="mt-1 rounded-card border border-line bg-surface p-4" data-testid="recdetail-hero">
           <div className="flex items-center gap-3">
-            <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${rec.active === 1 ? 'bg-accent-soft' : 'bg-bg-2'}`}>
+            <Tile size={48} tone={rec.active === 1 ? 'accent' : 'neutral'}>
               <RecurringVisual rec={rec} size={24} active={rec.active === 1} />
-            </span>
+            </Tile>
             <span className="min-w-0 flex-1">
               <span className="flex items-center gap-1.5">
                 <span className="truncate text-[16px] font-semibold text-ink">{rec.name}</span>

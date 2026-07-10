@@ -47,11 +47,26 @@ export function Tile({
   tone = 'accent',
   size = 36,
   color,
-}: Readonly<{ icon: string; tone?: Tone; size?: 48 | 36; color?: string }>) {
+  bg,
+  children,
+}: Readonly<{
+  icon?: string;
+  tone?: Tone;
+  size?: 48 | 36;
+  /** icon color override (defaults to the tone's foreground) */
+  color?: string;
+  /** dynamic background (category color-mix, budget urgency) — replaces the tone */
+  bg?: string;
+  /** richer content than an icon (brand logo, picture) */
+  children?: ReactNode;
+}>) {
   const box = size === 48 ? 'h-12 w-12 rounded-2xl' : 'h-9 w-9 rounded-xl';
   return (
-    <span className={`flex shrink-0 items-center justify-center ${box} ${TONE_BG[tone]}`}>
-      <Icon name={icon} size={size === 48 ? 22 : 17} color={color ?? TONE_FG[tone]} />
+    <span
+      className={`flex shrink-0 items-center justify-center ${box} ${bg ? '' : TONE_BG[tone]}`}
+      style={bg ? { background: bg, color: color ?? undefined } : undefined}
+    >
+      {children ?? (icon && <Icon name={icon} size={size === 48 ? 22 : 17} color={color ?? (bg ? 'currentColor' : TONE_FG[tone])} />)}
     </span>
   );
 }

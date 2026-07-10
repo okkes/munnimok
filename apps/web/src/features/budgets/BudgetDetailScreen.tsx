@@ -11,7 +11,7 @@ import { catName, useCategories } from '@/features/categories/useCategories';
 import { fmtCents } from '@/lib/money';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
-import { ProgressBar } from '@/ui/primitives';
+import { ProgressBar, Tile } from '@/ui/primitives';
 import { TxRow } from '@/ui/TxRow';
 import { budgetColor, budgetSoft } from './budgetUi';
 
@@ -105,9 +105,7 @@ export function BudgetDetailScreen() {
         {/* the cycle's numbers */}
         <div className="rounded-card border border-line bg-surface p-4" data-testid="budgetdetail-hero">
           <div className="flex items-center gap-3">
-            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl" style={{ background: budgetSoft(ratio), color }}>
-              <Icon name={budget.icon ?? 'wallet-outline'} size={22} />
-            </span>
+            <Tile size={48} icon={budget.icon ?? 'wallet-outline'} bg={budgetSoft(ratio)} color={color} />
             <span className="min-w-0 flex-1">
               <span className="m-num block text-[24px] font-semibold" style={{ color: over ? color : 'var(--m-ink)' }} data-testid="budgetdetail-spent">
                 {money(spent)}
