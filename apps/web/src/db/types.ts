@@ -370,6 +370,53 @@ export interface StoreMarkerRow extends SyncEnvelope {
   connectedAt: string;
 }
 
+export type AssetClass = 'stock' | 'etf' | 'crypto' | 'cash' | 'other';
+export type PriceSource = 'yahoo' | 'coingecko' | 'manual';
+
+/** A portfolio position's identity (approved investments design). */
+export interface HoldingRow extends SyncEnvelope {
+  id: string;
+  spaceId: string;
+  /** the brokerage account it lives in (optional) */
+  accountId?: string;
+  name: string;
+  symbol?: string;
+  isin?: string;
+  assetClass: AssetClass;
+  currency: string;
+  priceSource?: PriceSource;
+  /** yahoo ticker or coingecko coin id, depending on priceSource */
+  priceKey?: string;
+  /** for unlisted/manual assets — the user's own valuation per unit */
+  manualPriceCents?: number;
+  archived?: 0 | 1;
+}
+
+/** The audit trail behind a holding: buys, sells, dividends, fees. */
+export interface LotRow extends SyncEnvelope {
+  id: string;
+  spaceId: string;
+  holdingId: string;
+  kind: 'buy' | 'sell' | 'dividend' | 'fee';
+  date: string;
+  /** units moved (buy/sell) */
+  quantity?: number;
+  /** per-unit price in cents (buy/sell) */
+  priceCents?: number;
+  /** signed total in cents: buys negative cash, sells/dividends positive */
+  totalCents: number;
+}
+
+/** DEVICE-ONLY delayed-quote cache — prices are never synced data. */
+export interface QuoteCacheRow {
+  /** `{source}:{priceKey}` */
+  key: string;
+  price: number;
+  currency: string;
+  dayChangePct?: number;
+  at: string;
+}
+
 /**
  * Attachment of a financial account (its feed space) to a viewing
  * space. Lives in the viewing space so members render it offline; the
@@ -425,7 +472,9 @@ export type EntityName =
   | 'debt'
   | 'allocation'
   | 'receipt'
-  | 'storeMarker';
+  | 'storeMarker'
+  | 'holding'
+  | 'lot';
 
 export interface EntityRowMap {
   space: SpaceRow;
@@ -444,4 +493,6 @@ export interface EntityRowMap {
   allocation: AllocationRow;
   receipt: ReceiptRow;
   storeMarker: StoreMarkerRow;
+  holding: HoldingRow;
+  lot: LotRow;
 }

@@ -9,6 +9,7 @@ using Munni.Api.Auth;
 using Munni.Api.Data;
 using Munni.Api.Admin;
 using Munni.Api.GoCardless;
+using Munni.Api.Investments;
 using Munni.Api.Logos;
 using Munni.Api.Push;
 using Munni.Api.Shopping;
@@ -62,6 +63,20 @@ if (ocrEnabled)
         client.Timeout = TimeSpan.FromSeconds(30);
     });
 }
+
+// delayed quotes for the portfolio: free vendors, no secrets, always on
+builder.Services.AddHttpClient(QuoteEndpoints.YahooClientName, client =>
+{
+    client.BaseAddress = new Uri("https://query1.finance.yahoo.com"); // NOSONAR(S1075) vendor API base
+    // Yahoo throttles default HttpClient agents
+    client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) munni/1.0");
+    client.Timeout = TimeSpan.FromSeconds(8);
+});
+builder.Services.AddHttpClient(QuoteEndpoints.CoinGeckoClientName, client =>
+{
+    client.BaseAddress = new Uri("https://api.coingecko.com"); // NOSONAR(S1075) vendor API base
+    client.Timeout = TimeSpan.FromSeconds(8);
+});
 
 // brand-logo search (logo.dev) — enabled when both keys are configured
 var logosEnabled = !string.IsNullOrEmpty(builder.Configuration["Logos:SecretKey"])
@@ -192,6 +207,7 @@ app.MapGet("/health", () => Results.Ok(new
         logos = logosEnabled,
         shopProxy = true,
         ocr = ocrEnabled,
+        quotes = true,
     },
 }));
 app.MapSync();
@@ -200,6 +216,7 @@ app.MapPush();
 app.MapLogos(app.Configuration);
 app.MapStoreProxy();
 if (ocrEnabled) app.MapOcr();
+app.MapQuotes();
 app.MapAccounts();
 app.MapAdmin(gcEnabled);
 if (gcEnabled) app.MapGoCardless();

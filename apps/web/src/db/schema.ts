@@ -9,6 +9,9 @@ import type {
   DebtRow,
   EntityName,
   EventRow,
+  HoldingRow,
+  LotRow,
+  QuoteCacheRow,
   ReceiptRow,
   StoreConnectionRow,
   StoreMarkerRow,
@@ -47,6 +50,10 @@ export class MunniDB extends Dexie {
   /** device-only — store tokens never sync (receipts privacy law) */
   storeConnections!: Table<StoreConnectionRow, string>;
   storeMarkers!: Table<StoreMarkerRow, string>;
+  holdings!: Table<HoldingRow, string>;
+  lots!: Table<LotRow, string>;
+  /** device-only — delayed quotes are a cache, not data */
+  quoteCache!: Table<QuoteCacheRow, string>;
   outbox!: Table<OutboxRow, string>;
   meta!: Table<MetaRow, string>;
 
@@ -94,6 +101,12 @@ export class MunniDB extends Dexie {
     this.version(8).stores({
       storeMarkers: 'id, spaceId',
     });
+    // portfolio (investments design) + device-only quote cache
+    this.version(9).stores({
+      holdings: 'id, spaceId',
+      lots: 'id, spaceId, holdingId',
+      quoteCache: 'key',
+    });
   }
 
   tableFor<E extends EntityName>(entity: E) {
@@ -130,6 +143,10 @@ export class MunniDB extends Dexie {
         return this.receipts;
       case 'storeMarker':
         return this.storeMarkers;
+      case 'holding':
+        return this.holdings;
+      case 'lot':
+        return this.lots;
       default:
         throw new Error(`unknown entity: ${entity}`);
     }

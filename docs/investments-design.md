@@ -1,8 +1,11 @@
 # Investments — design
 
-Status: **draft for approval** — nothing here is built yet.
-You said you have little knowledge here, so this doc leads with the
-honest landscape and a recommendation instead of open-ended options.
+Status: **I1–I3 built 2026-07-10** — manual holdings/lots, delayed
+quotes (Yahoo + CoinGecko, USD→EUR bridge), symbol search, DEGIRO CSV
+import, home block. Rulings: both import AND (later, experimental)
+broker logins; stocks+crypto; per space; delayed prices fine. I4
+(experimental DEGIRO session login) stays a later, clearly-labelled
+phase; other Dutch broker CSVs become sibling parsers on request.
 
 ## The honest landscape first
 

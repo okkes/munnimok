@@ -23,6 +23,7 @@ import { useEvents } from '@/application/events';
 import { useGoals } from '@/application/goals';
 import { useDebtStatuses } from '@/application/debts';
 import { useAllocations } from '@/application/allocation';
+import { usePortfolio } from '@/application/portfolio';
 import { eventSpentCents } from '@/domain/events';
 import { goalProgress } from '@/domain/goals';
 import { debtsOverview } from '@/domain/debts';
@@ -118,6 +119,9 @@ export function HomeScreen() {
     const accountsById = new Map((accounts ?? []).map((a) => [a.id, a]));
     return debtsOverview(activeDebts.map((s) => s.debt), accountsById);
   }, [activeDebts, accounts]);
+  // portfolio block: only once holdings exist
+  const portfolio = usePortfolio();
+  const hasHoldings = (portfolio?.views ?? []).some((v) => v.holding.archived !== 1);
   // allocation block: only once the space actually allocates
   const allocations = useAllocations();
   const allocLeft = useMemo(() => {
@@ -141,6 +145,7 @@ export function HomeScreen() {
     events: renderEventsBlock,
     goals: renderGoalsBlock,
     debts: renderDebtsBlock,
+    portfolio: renderPortfolioBlock,
     transactions: renderTransactionsBlock,
   };
   const layout = resolveHomeBlocks(space);
@@ -481,6 +486,34 @@ export function HomeScreen() {
                 ? t('debts.perMonth', { amount: fmtCents(debtTotals.totalMonthlyCents, currency, lang) })
                 : t('debts.count', { n: activeDebts.length })}
             </span>
+          </span>
+          <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
+        </button>
+      </>
+    );
+  }
+
+  function renderPortfolioBlock() {
+    if (!portfolio || !hasHoldings) return null;
+    const day = portfolio.totals.dayChangeCents;
+    return (
+      <>
+        <div className="m-cap mt-5 mb-1 px-1">{t('pf.title')}</div>
+        <button
+          data-testid="home-portfolio"
+          onClick={() => void navigate({ to: '/portfolio' })}
+          className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left"
+        >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" style={{ background: 'color-mix(in srgb, #673AB7 14%, transparent)' }}>
+            <Icon name="chart-timeline-variant" size={18} color="#673AB7" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="m-num block text-[15px] font-semibold text-ink">{fmtCents(portfolio.totals.totalCents, currency, lang)}</span>
+            {day !== null && (
+              <span className="m-num block text-[11px]" style={{ color: day >= 0 ? 'var(--m-accent-deep)' : 'var(--m-negative)' }}>
+                {fmtCents(day, currency, lang, { sign: true })} {t('pf.today')}
+              </span>
+            )}
           </span>
           <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
         </button>
