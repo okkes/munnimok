@@ -275,6 +275,17 @@ export function AllocateScreen() {
           </p>
         )}
 
+        {/* first run: an untouched wall of envelopes explains itself (§2L) */}
+        {editable && model.toAllocate > 0 && rows.every((c) => model.assignedOf(view, c.id) === 0) && (
+          <div className="mt-3 flex items-start gap-3 rounded-card border border-line bg-surface px-4 py-3" data-testid="alloc-firstrun">
+            <Icon name="cash-multiple" size={20} color="var(--m-accent-deep)" />
+            <span className="min-w-0 flex-1 text-[12px] text-ink-3">
+              <span className="block text-[13px] font-medium text-ink">{t('alloc.firstRunTitle')}</span>
+              {t('alloc.firstRunBody')}
+            </span>
+          </div>
+        )}
+
         {/* envelopes */}
         <div className="mt-3 rounded-card border border-line bg-surface" data-testid="alloc-list">
           {rows.map(renderRow)}

@@ -19,7 +19,7 @@ describe('SpaceSharing (user identity, scripted server)', () => {
   it('owner invites a friend: feedback note, pending row, revoke', async () => {
     let outgoing: { id: string; toUserId: string; toName: string; role: string }[] = [];
     const sentBodies: unknown[] = [];
-    renderAppAsUser('/spaces/s-user', {
+    renderAppAsUser('/spaces/s-user/members', {
       api: {
         'GET /me': () => ({ userId: ME, displayName: 'Me' }),
         'GET /me/invites': () => [],
@@ -55,7 +55,7 @@ describe('SpaceSharing (user identity, scripted server)', () => {
     let members = [member(ME, 'Me', 'owner'), member(BOB, 'Bob', 'contributor')];
     const roleChanges: unknown[] = [];
     const friendRequests: unknown[] = [];
-    renderAppAsUser('/spaces/s-user', {
+    renderAppAsUser('/spaces/s-user/members', {
       api: {
         'GET /me': () => ({ userId: ME, displayName: 'Me' }),
         'GET /me/invites': () => [],
@@ -104,8 +104,12 @@ describe('SpaceSharing (user identity, scripted server)', () => {
       },
     });
 
+    // the settings screen learns the role through useMyRole now
     expect(await screen.findByTestId('space-reader-note')).toBeTruthy();
-    expect(screen.queryByTestId('space-addfriend-input')).toBeNull();
+    // members live behind their own door since the settings split
+    fireEvent.click(screen.getByTestId('spacesettings-members-row'));
+    await screen.findByTestId('screen-space-members');
+    await waitFor(() => expect(screen.queryByTestId('space-addfriend-input')).toBeNull());
     // non-owners cannot kick or re-role anyone
     expect(screen.queryByTestId(`space-kick-${BOB}`)).toBeNull();
     expect(screen.queryByTestId(`space-role-${BOB}`)).toBeNull();

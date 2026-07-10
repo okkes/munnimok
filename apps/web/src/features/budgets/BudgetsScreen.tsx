@@ -9,6 +9,7 @@ import { HelpButton } from '@/features/help/HelpButton';
 import { IntroCard } from '@/features/help/IntroCard';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
+import { ProgressBar, Tile } from '@/ui/primitives';
 import { CADENCE_KEYS, budgetColor, budgetSoft, ratioPct } from './budgetUi';
 
 /** One budget card: urgency-colored state, progress, carry-over note. */
@@ -25,9 +26,7 @@ export function BudgetCard({ status, currency, onClick }: Readonly<{ status: Bud
       className="m-tap w-full rounded-card border border-line bg-surface p-4 text-left"
     >
       <div className="flex items-center gap-3">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl" style={{ background: budgetSoft(ratio), color }}>
-          <Icon name={budget.icon ?? 'wallet-outline'} size={19} />
-        </span>
+        <Tile icon={budget.icon ?? 'wallet-outline'} bg={budgetSoft(ratio)} color={color} />
         <span className="min-w-0 flex-1">
           <span className="flex items-baseline justify-between gap-2">
             <span className="truncate text-[15px] font-semibold text-ink">{budget.name}</span>
@@ -41,15 +40,19 @@ export function BudgetCard({ status, currency, onClick }: Readonly<{ status: Bud
           </span>
         </span>
       </div>
-      <div className="relative mt-3 h-1.5 overflow-hidden rounded-full bg-bg-2">
-        <div className="m-grow-x h-full origin-left rounded-full" style={{ width: `${ratioPct(status)}%`, background: color }} />
-        {over && (
-          <div
-            className="absolute inset-0"
-            style={{ background: 'repeating-linear-gradient(45deg, transparent 0 4px, rgba(255,255,255,0.35) 4px 8px)' }}
-          />
-        )}
-      </div>
+      <ProgressBar
+        className="mt-3"
+        value={ratioPct(status) / 100}
+        color={color}
+        overlay={
+          over ? (
+            <div
+              className="absolute inset-0"
+              style={{ background: 'repeating-linear-gradient(45deg, transparent 0 4px, rgba(255,255,255,0.35) 4px 8px)' }}
+            />
+          ) : undefined
+        }
+      />
       <div className="mt-1.5 flex justify-between text-[11px] text-ink-3">
         <span>
           <span className="m-num font-semibold text-ink-2">{fmtCents(spentCents, currency, lang)}</span> {t('budgets.spent')}

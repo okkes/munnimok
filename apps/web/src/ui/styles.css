@@ -244,7 +244,19 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .m-bar-in,
-  .m-grow-x {
+  .m-grow-x,
+  .m-fade {
     animation: none;
   }
+  /* transitions collapse too — width/transform sweeps read as motion */
+  * {
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* keyboard focus (redesign U5): a visible ring for tab users only —
+   touch and mouse never see it */
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--m-accent);
+  outline-offset: 2px;
 }

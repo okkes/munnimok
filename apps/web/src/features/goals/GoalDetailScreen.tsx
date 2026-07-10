@@ -11,6 +11,7 @@ import { fmtCents, parseCents } from '@/lib/money';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
+import { HeroCard, ProgressBar, Tile } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { GoalFormSheet } from './GoalsScreen';
 
@@ -86,26 +87,15 @@ export function GoalDetailScreen() {
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
-        <div className="rounded-card border border-line bg-surface p-4" data-testid="goaldetail-hero">
-          <div className="flex items-center gap-3">
-            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-accent-soft text-accent-deep">
-              <Icon name={goal.icon ?? 'flag-outline'} size={22} />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="m-num block text-[24px] font-semibold text-ink" data-testid="goaldetail-allocated">
-                {money(goal.allocatedCents)}
-              </span>
-              <span className="block text-[12px] text-ink-3">{t('budgets.of', { amount: money(goal.targetCents) })}</span>
-            </span>
-            <span className="m-num shrink-0 text-[14px] font-semibold text-accent-deep">{Math.round(progress * 100)}%</span>
-          </div>
-          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-bg-2">
-            <div className="m-grow-x h-full origin-left rounded-full bg-accent" style={{ width: `${progress * 100}%` }} />
-          </div>
-          <p className="mt-2 text-[12px] text-ink-3" data-testid="goaldetail-pace">
-            {paceLine}
-          </p>
-        </div>
+        <HeroCard
+          testId="goaldetail-hero"
+          tile={<Tile size={48} icon={goal.icon ?? 'flag-outline'} />}
+          number={<span data-testid="goaldetail-allocated">{money(goal.allocatedCents)}</span>}
+          sub={t('budgets.of', { amount: money(goal.targetCents) })}
+          right={<span className="m-num shrink-0 text-[14px] font-semibold text-accent-deep">{Math.round(progress * 100)}%</span>}
+          progress={<ProgressBar value={progress} />}
+          meta={<span data-testid="goaldetail-pace">{paceLine}</span>}
+        />
 
         <div className="mt-3 flex gap-2">
           <Button className="flex-1" data-testid="goaldetail-fund" onClick={() => setFundOpen('fund')}>

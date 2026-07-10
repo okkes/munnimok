@@ -12,6 +12,7 @@ import { useSession } from '@/app/session';
 import { AppBar } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
+import { Pill, Row } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { setVpdebug, vpdebugEnabled } from '@/ui/ViewportDebug';
 import { useLiveQuery } from 'dexie-react-hooks';
@@ -93,7 +94,9 @@ function ProfileHeaderRow({ onClick }: Readonly<{ onClick: () => void }>) {
       <Avatar picture={profile?.picture} size={44} />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[15px] font-semibold text-ink">{profile?.name ?? t('profile.title')}</span>
-        <span className="block text-[12px] text-ink-3">{t('profile.title')}</span>
+        {/* no name yet → the title already says "Profile"; repeating it read
+            as a bug ("Profiel / Profiel") — invite instead (§2L) */}
+        <span className="block text-[12px] text-ink-3">{profile?.name ? t('profile.title') : t('profile.setupHint')}</span>
       </span>
       <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
     </button>
@@ -255,6 +258,10 @@ export function SettingsScreen() {
               capKey: 'settings.groupSetup',
               rows: [
                 { testId: 'settings-space-settings-row', icon: 'cog-outline', labelKey: 'space.settings', to: '/spaces/$spaceId' },
+                // the space's accounts/members moved out of the (already
+                // big) space-settings screen — user remark
+                { testId: 'settings-space-accounts-row', icon: 'bank-outline', labelKey: 'space.financialAccounts', to: '/spaces/$spaceId/accounts' },
+                { testId: 'settings-space-members-row', icon: 'account-multiple-outline', labelKey: 'space.members', to: '/spaces/$spaceId/members', userOnly: true },
                 { testId: 'settings-categories-row', icon: 'shape-outline', labelKey: 'screen.categories', to: '/categories' },
               ],
             },
@@ -265,20 +272,17 @@ export function SettingsScreen() {
               {t(group.capKey)}
             </p>
             <div className="overflow-hidden rounded-card border border-line bg-surface">
-              {group.rows.map((row, rowIndex) => (
-                <div key={row.testId}>
-                  {rowIndex > 0 && <div className="mx-4 h-px bg-line-2" />}
-                  <button
-                    data-testid={row.testId}
+              {group.rows
+                .filter((row) => !('userOnly' in row) || identity?.kind === 'user')
+                .map((row) => (
+                  <Row
+                    key={row.testId}
+                    testId={row.testId}
+                    icon={row.icon}
+                    title={t(row.labelKey)}
                     onClick={() => void navigate({ to: row.to, params: { spaceId } })}
-                    className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
-                  >
-                    <Icon name={row.icon} size={20} />
-                    <span className="flex-1">{t(row.labelKey)}</span>
-                    <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-                  </button>
-                </div>
-              ))}
+                  />
+                ))}
             </div>
           </div>
         ))}
@@ -289,170 +293,84 @@ export function SettingsScreen() {
         <div className="overflow-hidden rounded-card border border-line bg-surface">
           {/* spaces moved here from the tab bar — day-to-day switching
               happens via the Home avatar, management is a settings task */}
-          <button
-            data-testid="settings-spaces-row"
-            onClick={() => void navigate({ to: '/spaces' })}
-            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
-          >
-            <Icon name="account-group-outline" size={20} />
-            <span className="flex-1">{t('screen.spaces')}</span>
-            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-          </button>
-          <div className="mx-4 h-px bg-line-2" />
-          <button
-            data-testid="settings-accounts-row"
-            onClick={() => void navigate({ to: '/accounts' })}
-            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
-          >
-            <Icon name="bank-outline" size={20} />
-            <span className="flex-1">{t('acct.financialAccounts')}</span>
-            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-          </button>
+          <Row testId="settings-spaces-row" icon="account-group-outline" title={t('screen.spaces')} onClick={() => void navigate({ to: '/spaces' })} />
+          <Row testId="settings-accounts-row" icon="bank-outline" title={t('acct.financialAccounts')} onClick={() => void navigate({ to: '/accounts' })} />
           {identity?.kind === 'user' && (
-            <>
-              <div className="mx-4 h-px bg-line-2" />
-              <button
-                data-testid="settings-friends-row"
-                onClick={() => void navigate({ to: '/friends' })}
-                className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
-              >
-                <Icon name="account-multiple-outline" size={20} />
-                <span className="flex-1">{t('settings.friends')}</span>
-                <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-              </button>
-            </>
+            <Row testId="settings-friends-row" icon="account-multiple-outline" title={t('settings.friends')} onClick={() => void navigate({ to: '/friends' })} />
           )}
           {gcAvailable && (
-            <>
-              <div className="mx-4 h-px bg-line-2" />
-              <button
-                data-testid="settings-connections-row"
-                onClick={openConnections}
-                className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
-              >
-                <Icon name="bank-transfer" size={20} />
-                <span className="flex-1">{t('gc.connections')}</span>
-                <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-              </button>
-            </>
+            <Row testId="settings-connections-row" icon="bank-transfer" title={t('gc.connections')} onClick={openConnections} />
           )}
-          <div className="mx-4 h-px bg-line-2" />
-          <button
-            data-testid="settings-language-row"
+          <Row
+            testId="settings-language-row"
+            icon="translate"
+            title={t('settings.language')}
+            trailing={
+              <span className="rounded-md bg-bg-2 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-ink-3">
+                {lang.toUpperCase()}
+              </span>
+            }
             onClick={() => setLangSheetOpen(true)}
-            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
-          >
-            <Icon name="translate" size={20} />
-            <span className="flex-1">{t('settings.language')}</span>
-            <span className="rounded-md bg-bg-2 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-ink-3">
-              {lang.toUpperCase()}
-            </span>
-            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-          </button>
-          <div className="mx-4 h-px bg-line-2" />
-          <button
-            data-testid="settings-shopping-row"
-            onClick={() => void navigate({ to: '/shopping' })}
-            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
-          >
-            <Icon name="storefront-outline" size={20} />
-            <span className="flex-1">{t('shop.title')}</span>
-            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-          </button>
-          <div className="mx-4 h-px bg-line-2" />
-          <button
-            data-testid="settings-help-row"
-            onClick={() => void navigate({ to: '/help' })}
-            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
-          >
-            <Icon name="school-outline" size={20} />
-            <span className="flex-1">{t('help.title')}</span>
-            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-          </button>
+          />
+          <Row testId="settings-shopping-row" icon="storefront-outline" title={t('shop.title')} onClick={() => void navigate({ to: '/shopping' })} />
+          <Row testId="settings-help-row" icon="school-outline" title={t('help.title')} onClick={() => void navigate({ to: '/help' })} />
           {vapidKey && (
-            <>
-              <div className="mx-4 h-px bg-line-2" />
-              <button
-                data-testid="settings-push-toggle"
-                onClick={() => void togglePush()}
-                disabled={pushBusy}
-                className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
-              >
-                <Icon name={pushOn ? 'bell-ring-outline' : 'bell-outline'} size={20} />
-                <span className="min-w-0 flex-1">
-                  <span className="block">{t('settings.notifications')}</span>
-                  <span className="block text-[11px] text-ink-4">
-                    {typeof Notification !== 'undefined' && Notification.permission === 'denied'
-                      ? t('push.denied')
-                      : t('push.sub')}
-                  </span>
-                </span>
-                <span
-                  className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                    pushOn ? 'bg-accent-soft text-accent-deep' : 'bg-bg-2 text-ink-4'
-                  }`}
-                  data-testid="settings-push-state"
-                >
+            <Row
+              testId="settings-push-toggle"
+              icon={pushOn ? 'bell-ring-outline' : 'bell-outline'}
+              title={t('settings.notifications')}
+              sub={
+                typeof Notification !== 'undefined' && Notification.permission === 'denied'
+                  ? t('push.denied')
+                  : t('push.sub')
+              }
+              chevron={false}
+              disabled={pushBusy}
+              trailing={
+                <Pill tone={pushOn ? 'accent' : 'neutral'} testId="settings-push-state">
                   {pushOn ? 'ON' : 'OFF'}
-                </span>
-              </button>
-            </>
+                </Pill>
+              }
+              onClick={() => void togglePush()}
+            />
           )}
-          <div className="mx-4 h-px bg-line-2" />
-          <button
-            data-testid="settings-lock-toggle"
+          <Row
+            testId="settings-lock-toggle"
+            icon={lockOn ? 'lock' : 'lock-open-variant-outline'}
+            title={t('lock.title')}
+            sub={t('lock.sub')}
+            chevron={false}
+            trailing={
+              <Pill tone={lockOn ? 'accent' : 'neutral'} testId="settings-lock-state">
+                {lockOn ? 'ON' : 'OFF'}
+              </Pill>
+            }
             onClick={() => void toggleLock()}
-            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
-          >
-            <Icon name={lockOn ? 'lock' : 'lock-open-variant-outline'} size={20} />
-            <span className="min-w-0 flex-1">
-              <span className="block">{t('lock.title')}</span>
-              <span className="block text-[11px] text-ink-4">{t('lock.sub')}</span>
-            </span>
-            <span
-              className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                lockOn ? 'bg-accent-soft text-accent-deep' : 'bg-bg-2 text-ink-4'
-              }`}
-              data-testid="settings-lock-state"
-            >
-              {lockOn ? 'ON' : 'OFF'}
-            </span>
-          </button>
-          <div className="mx-4 h-px bg-line-2" />
-          <button
-            data-testid="settings-theme-toggle"
+          />
+          <Row
+            testId="settings-theme-toggle"
+            icon={theme === 'dark' ? 'weather-night' : 'weather-sunny'}
+            title={t('settings.appearance')}
             onClick={toggle}
-            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
-          >
-            <Icon name={theme === 'dark' ? 'weather-night' : 'weather-sunny'} size={20} />
-            <span className="flex-1">{t('settings.appearance')}</span>
-            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-          </button>
-          <div className="mx-4 h-px bg-line-2" />
+          />
           {/* installed PWAs have no URL bar to pass ?vpdebug=1 — this is the
               only way to arm the overlay for a mobile layout bug report */}
-          <button
-            data-testid="settings-vpdebug-toggle"
+          <Row
+            testId="settings-vpdebug-toggle"
+            icon="cellphone-information"
+            title={t('settings.vpdebug')}
+            sub={t('settings.vpdebugSub')}
+            chevron={false}
+            trailing={
+              <Pill tone={vpdebugOn ? 'accent' : 'neutral'} testId="settings-vpdebug-state">
+                {vpdebugOn ? 'ON' : 'OFF'}
+              </Pill>
+            }
             onClick={() => {
               setVpdebug(!vpdebugOn);
               setVpdebugOn(!vpdebugOn);
             }}
-            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
-          >
-            <Icon name="cellphone-information" size={20} />
-            <span className="min-w-0 flex-1">
-              <span className="block">{t('settings.vpdebug')}</span>
-              <span className="block text-[11px] text-ink-4">{t('settings.vpdebugSub')}</span>
-            </span>
-            <span
-              className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                vpdebugOn ? 'bg-accent-soft text-accent-deep' : 'bg-bg-2 text-ink-4'
-              }`}
-              data-testid="settings-vpdebug-state"
-            >
-              {vpdebugOn ? 'ON' : 'OFF'}
-            </span>
-          </button>
+          />
         </div>
 
         <div className="mt-4 overflow-hidden rounded-card border border-line bg-surface">

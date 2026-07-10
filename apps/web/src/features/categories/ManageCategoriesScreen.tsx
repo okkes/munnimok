@@ -9,6 +9,7 @@ import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { ColorPicker } from '@/ui/ColorPicker';
 import { Icon } from '@/ui/Icon';
+import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import {
   copyCategoryToSpace,
@@ -484,18 +485,9 @@ export function ManageCategoriesScreen() {
               <div className="m-cap px-1">{t('cats.type')}</div>
               <div className="flex gap-2 overflow-x-auto pb-1">
                 {ALL_TX_TYPES.map((type) => (
-                  <button
-                    key={type}
-                    data-testid={`catform-type-${type}`}
-                    onClick={() => setTxType(type)}
-                    className={`m-tap shrink-0 rounded-full border px-3 py-1.5 text-[12px] ${
-                      txType === type
-                        ? 'border-accent bg-accent-soft font-medium text-accent-deep'
-                        : 'border-line bg-surface text-ink-2'
-                    }`}
-                  >
+                  <Chip key={type} testId={`catform-type-${type}`} selected={txType === type} onClick={() => setTxType(type)}>
                     {t(`tx.type.${type}`)}
-                  </button>
+                  </Chip>
                 ))}
               </div>
               <div className="m-cap px-1">{t('cats.color')}</div>
@@ -515,18 +507,15 @@ export function ManageCategoriesScreen() {
               <div className="m-cap px-1">{t('cats.direction')}</div>
               <div className="flex gap-2">
                 {DIRECTIONS.map((d) => (
-                  <button
+                  <Chip
                     key={d}
-                    data-testid={`catform-direction-${d}`}
+                    className="flex-1"
+                    testId={`catform-direction-${d}`}
+                    selected={direction === d}
                     onClick={() => setDirection(d)}
-                    className={`m-tap flex-1 rounded-full border px-3 py-1.5 text-[12px] ${
-                      direction === d
-                        ? 'border-accent bg-accent-soft font-medium text-accent-deep'
-                        : 'border-line bg-surface text-ink-2'
-                    }`}
                   >
                     {t(`cats.direction.${d}`)}
-                  </button>
+                  </Chip>
                 ))}
               </div>
               {mode?.kind === 'editSub' && (

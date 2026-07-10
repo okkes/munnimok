@@ -22,3 +22,9 @@ export function fmtCents(cents: number, currency: string, lang: Lang, opts?: { s
   if (opts?.sign && cents > 0) return `+${formatted}`;
   return formatted;
 }
+
+/** The one signed-percent format (redesign §2J): '+2.4%' / '-0.8%' / '0.0%'. */
+export function fmtSignedPct(pct: number, decimals = 1): string {
+  const v = pct.toFixed(decimals);
+  return pct > 0 ? `+${v}%` : `${v}%`;
+}

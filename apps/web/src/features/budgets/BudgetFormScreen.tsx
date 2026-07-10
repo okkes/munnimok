@@ -11,21 +11,8 @@ import { catName, useCategories } from '@/features/categories/useCategories';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
+import { Chip } from '@/ui/primitives';
 import { BUDGET_ICONS } from './budgetUi';
-
-function Chip({ selected, onClick, children, testId }: Readonly<{ selected: boolean; onClick: () => void; children: React.ReactNode; testId?: string }>) {
-  return (
-    <button
-      data-testid={testId}
-      onClick={onClick}
-      className={`m-tap shrink-0 rounded-full border px-3 py-1.5 text-[12px] ${
-        selected ? 'border-accent bg-accent-soft font-medium text-accent-deep' : 'border-line bg-surface text-ink-2'
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
 
 /**
  * Create/edit a budget — a full screen, not a sheet: icon, name, amount,

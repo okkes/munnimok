@@ -6,6 +6,17 @@ import { Drawer } from 'vaul';
 export type SheetSize = 'compact' | 'form' | 'tall';
 const SIZE_PX: Record<SheetSize, number> = { compact: 320, form: 440, tall: 600 };
 
+// desktop ruling (redesign §4.3): sheets become right-side panels at lg,
+// so forms stop covering the context they edit. One media query, shared.
+const PANEL_QUERY = '(min-width: 1024px)';
+const subscribePanel = (listener: () => void) => {
+  const mql = typeof window === 'undefined' ? undefined : window.matchMedia?.(PANEL_QUERY);
+  mql?.addEventListener?.('change', listener);
+  return () => mql?.removeEventListener?.('change', listener);
+};
+const readPanel = () => (typeof window === 'undefined' ? false : (window.matchMedia?.(PANEL_QUERY)?.matches ?? false));
+const usePanelMode = (): boolean => useSyncExternalStore(subscribePanel, readPanel, () => false);
+
 // Android resizes the layout viewport itself for the keyboard (see the
 // interactive-widget viewport meta) — vaul's own input repositioning on
 // top of that left the sheet squeezed after the keyboard closed without
@@ -85,22 +96,28 @@ interface SheetProps {
 export function Sheet({ open, onOpenChange, title, children, size, height }: Readonly<SheetProps>) {
   const fixedHeight = height ?? (size ? SIZE_PX[size] : undefined);
   const isLocked = !useSheetStack(open);
+  const panel = usePanelMode();
   return (
     <Drawer.Root
       open={open}
       onOpenChange={(next) => (isLocked && !next ? undefined : onOpenChange(next))}
       dismissible={!isLocked}
       repositionInputs={!IS_ANDROID}
+      direction={panel ? 'right' : 'bottom'}
     >
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 z-40 bg-black/40" />
         <Drawer.Content
-          className="fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[92dvh] w-full max-w-[560px] flex-col rounded-t-[20px] bg-bg outline-none"
-          style={fixedHeight ? { height: fixedHeight } : undefined}
+          className={
+            panel
+              ? 'fixed inset-y-0 right-0 z-50 flex h-full w-[420px] max-w-[92vw] flex-col rounded-l-[20px] bg-bg outline-none'
+              : 'fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[92dvh] w-full max-w-[560px] flex-col rounded-t-[20px] bg-bg outline-none'
+          }
+          style={!panel && fixedHeight ? { height: fixedHeight } : undefined}
         >
-          {/* full-height drag zone across the title area */}
+          {/* full-height drag zone across the title area (panels have no handle) */}
           <div className="shrink-0 cursor-grab pt-2.5 pb-1">
-            <div className="mx-auto h-1.5 w-10 rounded-full bg-line" />
+            {!panel && <div className="mx-auto h-1.5 w-10 rounded-full bg-line" />}
             {title && (
               <Drawer.Title className="m-h3 px-5 pt-3 pb-1 text-ink">{title}</Drawer.Title>
             )}

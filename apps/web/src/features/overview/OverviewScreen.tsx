@@ -13,6 +13,7 @@ import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { BarChart, StackedBar } from '@/ui/charts';
 import { Icon } from '@/ui/Icon';
+import { Tile } from '@/ui/primitives';
 
 const PERIOD_COUNT = 6;
 const FALLBACK_COLORS = ['#27AE60', '#E67E22', '#3498DB', '#9B59B6', '#E74C3C', '#16A085'];
@@ -136,12 +137,7 @@ export function OverviewScreen() {
                   onClick={() => setExpanded((prev) => ({ ...prev, [group.catId]: !isOpen }))}
                   className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left"
                 >
-                  <span
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
-                    style={{ background: `${colorOf(group.catId, i)}22`, color: colorOf(group.catId, i) }}
-                  >
-                    <Icon name={main.icon} size={18} />
-                  </span>
+                  <Tile icon={main.icon} bg={`${colorOf(group.catId, i)}22`} color={colorOf(group.catId, i)} />
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center justify-between">
                       <span className="truncate text-[14px] font-semibold text-ink">{catName(main, t)}</span>

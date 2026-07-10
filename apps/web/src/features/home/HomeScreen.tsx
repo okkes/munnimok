@@ -34,8 +34,9 @@ import { debtsOverview } from '@/domain/debts';
 import { toAllocateCents } from '@/domain/allocation';
 import { budgetColor, ratioPct } from '@/features/budgets/budgetUi';
 import { fmtCents } from '@/lib/money';
-import { AppBar, IconButton } from '@/ui/AppBar';
+import { AppBar } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
+import { ProgressBar, Tile } from '@/ui/primitives';
 import { TxRow } from '@/ui/TxRow';
 
 const TILE_META: Record<OverviewKind, { icon: string; color: string; field: keyof OverviewSummary }> = {
@@ -159,9 +160,12 @@ export function HomeScreen() {
     transactions: renderTransactionsBlock,
   };
   const layout = resolveHomeBlocks(space);
+  const visibleBlocks = layout.filter((entry) => !entry.hidden);
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-home">
+      {/* ≤3 trailing actions (redesign §2H): customize moved to the end of
+          the block list, where the blocks actually live */}
       <AppBar
         large
         title={t('tab.home')}
@@ -170,9 +174,6 @@ export function HomeScreen() {
             <OfflineIndicator />
             <NotificationsBell />
             <HelpButton tourId="home" />
-            <IconButton label={t('home.customize')} testId="home-customize" onClick={() => setCustomizeOpen(true)}>
-              <Icon name="tune-variant" size={19} />
-            </IconButton>
             <SpaceSwitcher />
           </>
         }
@@ -206,9 +207,29 @@ export function HomeScreen() {
         <InstallHint />
         <IntroCard tourId="home" />
 
-        {layout.filter((entry) => !entry.hidden).map((entry) => (
-          <div key={entry.id}>{blockRenderers[entry.id]()}</div>
-        ))}
+        {/* desktop ruling (§4.4): strict two-column split of the block
+            order — first half left, second half right, no masonry */}
+        <div className="lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-6">
+          <div className="min-w-0">
+            {visibleBlocks.slice(0, Math.ceil(visibleBlocks.length / 2)).map((entry) => (
+              <div key={entry.id}>{blockRenderers[entry.id]()}</div>
+            ))}
+          </div>
+          <div className="min-w-0">
+            {visibleBlocks.slice(Math.ceil(visibleBlocks.length / 2)).map((entry) => (
+              <div key={entry.id}>{blockRenderers[entry.id]()}</div>
+            ))}
+          </div>
+        </div>
+
+        <button
+          data-testid="home-customize"
+          onClick={() => setCustomizeOpen(true)}
+          className="m-tap mt-5 flex w-full items-center justify-center gap-2 rounded-card border border-dashed border-line bg-transparent py-3 text-[13px] font-medium text-ink-3"
+        >
+          <Icon name="tune-variant" size={16} />
+          {t('home.customize')}
+        </button>
       </div>
 
       <HomeCustomizeSheet open={customizeOpen} onOpenChange={setCustomizeOpen} space={space} />
@@ -263,9 +284,7 @@ export function HomeScreen() {
         onClick={() => void navigate({ to: '/review' })}
         className="m-tap mt-5 flex w-full items-center gap-3 rounded-card border border-warning bg-warning-soft px-4 py-3.5 text-left"
       >
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface">
-          <Icon name="progress-check" size={20} color="var(--m-warning)" />
-        </span>
+        <Tile icon="progress-check" bg="var(--m-surface)" color="var(--m-warning)" />
         <span className="min-w-0 flex-1">
           <span className="block text-[14px] font-semibold text-ink">{t('review.title')}</span>
           <span className="block text-[12px] text-ink-3">{t('home.reviewSub', { n: reviewCount ?? 0 })}</span>
@@ -288,9 +307,7 @@ export function HomeScreen() {
           onClick={() => void navigate({ to: '/budgets' })}
           className="m-tap mt-5 flex w-full items-center gap-3 rounded-card border border-dashed border-line bg-surface px-4 py-3.5 text-left"
         >
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent-soft">
-            <Icon name="wallet-outline" size={19} color="var(--m-accent-deep)" />
-          </span>
+          <Tile icon="wallet-outline" />
           <span className="min-w-0 flex-1">
             <span className="block text-[14px] font-semibold text-ink">{t('home.budgetsTeaserTitle')}</span>
             <span className="block text-[12px] text-ink-3">{t('home.budgetsTeaserSub')}</span>
@@ -333,9 +350,7 @@ export function HomeScreen() {
                       })}
                     </span>
                   </span>
-                  <span className="mt-1 block h-1 overflow-hidden rounded-full bg-bg-2">
-                    <span className="block h-full rounded-full" style={{ width: `${ratioPct(status)}%`, background: color }} />
-                  </span>
+                  <ProgressBar className="mt-1" size="sm" value={ratioPct(status) / 100} color={color} />
                 </span>
               </button>
             );
@@ -386,9 +401,11 @@ export function HomeScreen() {
           onClick={() => void navigate({ to: '/allocate' })}
           className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left"
         >
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" style={{ background: `color-mix(in srgb, ${color} 14%, transparent)` }}>
-            <Icon name={allocLeft === 0 ? 'check-circle-outline' : 'cash-multiple'} size={18} color={color} />
-          </span>
+          <Tile
+            icon={allocLeft === 0 ? 'check-circle-outline' : 'cash-multiple'}
+            bg={`color-mix(in srgb, ${color} 14%, transparent)`}
+            color={color}
+          />
           <span className="min-w-0 flex-1">
             <span className="m-num block text-[15px] font-semibold" style={{ color }}>
               {fmtCents(allocLeft, currency, lang)}
@@ -412,9 +429,7 @@ export function HomeScreen() {
         onClick={() => void navigate({ to })}
         className="m-tap mt-5 flex w-full items-center gap-3 rounded-card border border-dashed border-line bg-surface px-4 py-3.5 text-left"
       >
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent-soft">
-          <Icon name={icon} size={19} color="var(--m-accent-deep)" />
-        </span>
+        <Tile icon={icon} />
         <span className="min-w-0 flex-1">
           <span className="block text-[14px] font-semibold text-ink">{t(titleKey)}</span>
           <span className="block text-[12px] text-ink-3">{t(subKey)}</span>
@@ -490,9 +505,7 @@ export function HomeScreen() {
                       {Math.round(progress * 100)}%
                     </span>
                   </span>
-                  <span className="mt-1 block h-1 overflow-hidden rounded-full bg-bg-2">
-                    <span className="block h-full rounded-full bg-accent" style={{ width: `${progress * 100}%` }} />
-                  </span>
+                  <ProgressBar className="mt-1" size="sm" value={progress} />
                 </span>
               </button>
             );
@@ -514,9 +527,7 @@ export function HomeScreen() {
           onClick={() => void navigate({ to: '/debts' })}
           className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left"
         >
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-negative-soft">
-            <Icon name="hand-coin-outline" size={18} color="var(--m-negative)" />
-          </span>
+          <Tile icon="hand-coin-outline" tone="negative" />
           <span className="min-w-0 flex-1">
             <span className="m-num block text-[15px] font-semibold text-ink">{fmtCents(debtTotals.totalOwedCents, currency, lang)}</span>
             <span className="block text-[11px] text-ink-4">
@@ -542,9 +553,7 @@ export function HomeScreen() {
           onClick={() => void navigate({ to: '/insights' })}
           className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left"
         >
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-warning-soft">
-            <Icon name={top.icon} size={18} color="var(--m-warning)" />
-          </span>
+          <Tile icon={top.icon} tone="warning" />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-[13px] font-medium text-ink">
               {t(top.titleKey, Object.fromEntries(Object.entries(top.params).map(([k, v]) => [k, typeof v === 'number' && !['n', 'x', 'months'].includes(k) ? fmtCents(v, currency, lang) : v])))}
@@ -571,9 +580,7 @@ export function HomeScreen() {
           onClick={() => void navigate({ to: '/portfolio' })}
           className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left"
         >
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" style={{ background: 'color-mix(in srgb, var(--m-special) 14%, transparent)' }}>
-            <Icon name="chart-timeline-variant" size={18} color="var(--m-special)" />
-          </span>
+          <Tile icon="chart-timeline-variant" tone="special" />
           <span className="min-w-0 flex-1">
             <span className="m-num block text-[15px] font-semibold text-ink">{fmtCents(portfolio.totals.totalCents, currency, lang)}</span>
             {day !== null && (

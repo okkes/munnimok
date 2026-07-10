@@ -10,6 +10,7 @@ import type { FormState } from './RecurringFormSheet';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
+import { Tile } from '@/ui/primitives';
 import { useData } from '@/app/data';
 import { useLiveQuery } from 'dexie-react-hooks';
 
@@ -64,9 +65,7 @@ export function RecurringSuggestionsScreen() {
         {suggestions.map((s) => (
           <div key={s.merchantKey} className="mt-3 overflow-hidden rounded-card border border-line bg-surface" data-testid={`recsuggest-card-${s.merchantKey}`}>
             <div className="flex items-center gap-3 px-4 pt-3.5">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent-soft">
-                <Icon name="autorenew" size={19} color="var(--m-accent-deep)" />
-              </span>
+              <Tile icon="autorenew" />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[15px] font-semibold text-ink">{s.name}</span>
                 <span className="block text-[11px] text-ink-3">

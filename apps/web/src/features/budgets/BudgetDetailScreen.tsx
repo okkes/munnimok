@@ -11,6 +11,7 @@ import { catName, useCategories } from '@/features/categories/useCategories';
 import { fmtCents } from '@/lib/money';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
+import { HeroCard, ProgressBar, Tile } from '@/ui/primitives';
 import { TxRow } from '@/ui/TxRow';
 import { budgetColor, budgetSoft } from './budgetUi';
 
@@ -102,34 +103,40 @@ export function BudgetDetailScreen() {
         )}
 
         {/* the cycle's numbers */}
-        <div className="rounded-card border border-line bg-surface p-4" data-testid="budgetdetail-hero">
-          <div className="flex items-center gap-3">
-            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl" style={{ background: budgetSoft(ratio), color }}>
-              <Icon name={budget.icon ?? 'wallet-outline'} size={22} />
+        <HeroCard
+          testId="budgetdetail-hero"
+          tile={<Tile size={48} icon={budget.icon ?? 'wallet-outline'} bg={budgetSoft(ratio)} color={color} />}
+          number={
+            <span style={{ color: over ? color : undefined }} data-testid="budgetdetail-spent">
+              {money(spent)}
             </span>
-            <span className="min-w-0 flex-1">
-              <span className="m-num block text-[24px] font-semibold" style={{ color: over ? color : 'var(--m-ink)' }} data-testid="budgetdetail-spent">
-                {money(spent)}
-              </span>
-              <span className="block text-[12px] text-ink-3">{t('budgets.of', { amount: money(limit) })}</span>
-            </span>
+          }
+          sub={t('budgets.of', { amount: money(limit) })}
+          right={
             <span className="m-num shrink-0 text-[14px] font-semibold" style={{ color }} data-testid="budgetdetail-left">
               {t(over ? 'budgets.over' : 'budgets.left', { amount: money(Math.abs(limit - spent)) })}
             </span>
-          </div>
-          <div className="relative mt-3 h-1.5 overflow-hidden rounded-full bg-bg-2">
-            <div className="m-grow-x h-full origin-left rounded-full" style={{ width: `${Math.min(100, ratio * 100)}%`, background: color }} />
-            {over && (
-              <div className="absolute inset-0" style={{ background: 'repeating-linear-gradient(45deg, transparent 0 4px, rgba(255,255,255,0.35) 4px 8px)' }} />
-            )}
-          </div>
-          {offset === 0 && status.carriedCents > 0 && (
-            <p className="mt-2 flex items-center gap-1.5 text-[11px] text-ink-3" data-testid="budgetdetail-carry">
-              <Icon name="tray-arrow-down" size={13} />
-              {t('budgets.carryLine', { amount: money(status.carriedCents) })}
-            </p>
-          )}
-        </div>
+          }
+          progress={
+            <ProgressBar
+              value={ratio}
+              color={color}
+              overlay={
+                over ? (
+                  <div className="absolute inset-0" style={{ background: 'repeating-linear-gradient(45deg, transparent 0 4px, rgba(255,255,255,0.35) 4px 8px)' }} />
+                ) : undefined
+              }
+            />
+          }
+          meta={
+            offset === 0 && status.carriedCents > 0 ? (
+              <span className="flex items-center gap-1.5 text-[11px]" data-testid="budgetdetail-carry">
+                <Icon name="tray-arrow-down" size={13} />
+                {t('budgets.carryLine', { amount: money(status.carriedCents) })}
+              </span>
+            ) : undefined
+          }
+        />
 
         {/* per-category spend, tap → the category drill */}
         <div className="m-cap mt-5 mb-1 px-1">{t('screen.categories')}</div>

@@ -5,13 +5,13 @@ import { LOCALES, useLang } from '@/i18n';
 import { downscaleImage } from '@/lib/image';
 import { useData } from '@/app/data';
 import { useSession } from '@/app/session';
-import { SpaceMembersSection } from './SpaceSharing';
-import type { SpaceRole } from './SpaceSharing';
-import type { AccountRow, SpacePeriodType } from '@/db/types';
+import { useMyRole } from './SpaceSharing';
+import type { SpacePeriodType } from '@/db/types';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { ColorPicker } from '@/ui/ColorPicker';
 import { Icon } from '@/ui/Icon';
+import { Chip, Row } from '@/ui/primitives';
 
 const SPACE_ICONS = [
   'leaf', 'home-outline', 'account-group-outline', 'briefcase-outline', 'airplane', 'heart-outline',
@@ -38,104 +38,11 @@ const isoMonthsAgo = (months: number): string => {
 const weekdayName = (weekday: number, lang: keyof typeof LOCALES) =>
   new Intl.DateTimeFormat(LOCALES[lang], { weekday: 'short' }).format(new Date(2020, 0, 5 + weekday));
 
-interface AttachedAccountEntry {
-  key: string;
-  name: string;
-  subtitle: string;
-  archived: boolean;
-}
-
 /**
- * The financial accounts this space sees: manual/imported accounts that
- * live in the space itself plus feed accounts attached via accountLink
- * rows. Pure local data — renders offline for every identity.
- */
-function AttachedAccountsSection({ spaceId }: Readonly<{ spaceId: string }>) {
-  const { t } = useLang();
-  const { db } = useData();
-  const navigate = useNavigate();
-
-  const entries = useLiveQuery(async () => {
-    // reads only — a teardown/closed-db rejection must never escape
-    const [ownAccounts, links] = await Promise.all([
-      db.accounts.filter((a) => a.deleted === 0 && a.spaceId === spaceId).toArray(),
-      db.accountLinks.filter((l) => l.deleted === 0 && l.spaceId === spaceId).toArray(),
-    ]).catch(() => [[], []] as const);
-    const feedAccounts = new Map<string, AccountRow>();
-    const linked = await db.accounts.where('id').anyOf(links.map((l) => l.accountId)).toArray().catch(() => []);
-    for (const account of linked) {
-      feedAccounts.set(account.id, account);
-    }
-    const ibanTail = (iban?: string) => (iban ? `…${iban.slice(-4)}` : undefined);
-    const list: AttachedAccountEntry[] = ownAccounts.map((account) => ({
-      key: account.id,
-      name: account.name,
-      subtitle: [ibanTail(account.iban), t(account.source === 'manual' ? 'acct.manual' : 'acct.automated')]
-        .filter(Boolean)
-        .join(' · '),
-      archived: !!account.archived,
-    }));
-    for (const link of links) {
-      const account = feedAccounts.get(link.accountId);
-      list.push({
-        key: link.id,
-        name: account?.name ?? t('acct.bank'),
-        subtitle: [
-          ibanTail(account?.iban),
-          link.attachedByName ? `${t('space.by')} ${link.attachedByName}` : undefined,
-          link.historyFrom ? `${t('acct.historyFrom')} ${link.historyFrom}` : undefined,
-        ]
-          .filter(Boolean)
-          .join(' · '),
-        archived: !!link.archived,
-      });
-    }
-    list.sort((x, y) => x.name.localeCompare(y.name));
-    return list;
-  }, [db, spaceId]);
-
-  return (
-    <div className="mt-2" data-testid="space-accounts">
-      <div className="m-cap mb-1 px-1">{t('space.financialAccounts')}</div>
-      {entries?.length === 0 && (
-        <p className="px-1 text-[13px] text-ink-4" data-testid="space-accounts-empty">
-          {t('space.noAccounts')}
-        </p>
-      )}
-      {!!entries?.length && (
-        <div className="overflow-hidden rounded-card border border-line bg-surface">
-          {entries.map((entry) => (
-            <div key={entry.key} className="flex items-center gap-3 border-b border-line-2 px-4 py-2.5 last:border-0">
-              <Icon name="bank-outline" size={18} color="var(--m-ink-3)" />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[14px] text-ink">{entry.name}</span>
-                {entry.subtitle && <span className="block truncate text-[12px] text-ink-4">{entry.subtitle}</span>}
-              </span>
-              {entry.archived && (
-                <span className="shrink-0 rounded-full bg-bg-2 px-2 py-0.5 text-[11px] text-ink-3">
-                  {t('acct.archived')}
-                </span>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-      <button
-        data-testid="space-accounts-manage"
-        onClick={() => void navigate({ to: '/accounts' })}
-        className="m-tap mt-1.5 flex items-center gap-1 border-none bg-transparent px-1 text-[13px] text-accent-deep"
-      >
-        {t('space.manageAccounts')}
-        <Icon name="chevron-right" size={15} />
-      </button>
-    </div>
-  );
-}
-
-/**
- * A space's settings as a full screen (was an overloaded sheet):
- * identity (name/icon/color), money (currency/period/history start) and
- * members (roles, ownership, leave). Browser back = route back.
+ * A space's settings as a full screen: identity (name/icon/color) and
+ * money (currency/period/history start). Members and financial accounts
+ * moved to their own screens (user remark) — this screen keeps slim
+ * doors to both. Browser back = route back.
  */
 export function SpaceSettingsScreen() {
   const { t, lang } = useLang();
@@ -146,6 +53,7 @@ export function SpaceSettingsScreen() {
   // router-aware back: window.history only drives the real hash history,
   // not the memory history used by tests
   const router = useRouter();
+  const navigate = useNavigate();
   const goBack = () => router.history.back();
 
   const space = useLiveQuery(() => db.spaces.get(spaceId), [spaceId]);
@@ -164,7 +72,7 @@ export function SpaceSettingsScreen() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   // role in this space; local-only identities are always owner
-  const [myRole, setMyRole] = useState<SpaceRole>('owner');
+  const myRole = useMyRole(spaceId, syncing);
   const [loadedFor, setLoadedFor] = useState<string | null>(null);
 
   // initialize the form once per space DURING render (not an effect): the
@@ -318,17 +226,16 @@ export function SpaceSettingsScreen() {
             <div className="m-cap px-1">{t('space.currency')}</div>
             <div className="flex gap-2 overflow-x-auto pb-1">
               {CURRENCIES.map((c) => (
-                <button
+                <Chip
                   key={c}
-                  data-testid={`space-currency-${c}`}
+                  className="font-mono"
+                  testId={`space-currency-${c}`}
                   disabled={readOnly}
+                  selected={currency === c}
                   onClick={() => setCurrency(c)}
-                  className={`m-tap shrink-0 rounded-full border px-3 py-1.5 font-mono text-[12px] ${
-                    currency === c ? 'border-accent bg-accent-soft font-semibold text-accent-deep' : 'border-line bg-surface text-ink-2'
-                  }`}
                 >
                   {c}
-                </button>
+                </Chip>
               ))}
             </div>
 
@@ -336,17 +243,16 @@ export function SpaceSettingsScreen() {
             {/* wrap: NL/TR labels (Tweewekelijks…) must never widen the page */}
             <div className="flex flex-wrap gap-2">
               {PERIODS.map((p) => (
-                <button
+                <Chip
                   key={p}
-                  data-testid={`space-period-${p}`}
+                  className="min-w-[30%] flex-1"
+                  testId={`space-period-${p}`}
                   disabled={readOnly}
+                  selected={periodType === p}
                   onClick={() => setPeriodType(p)}
-                  className={`m-tap min-w-[30%] flex-1 rounded-full border px-3 py-1.5 text-[12px] ${
-                    periodType === p ? 'border-accent bg-accent-soft font-medium text-accent-deep' : 'border-line bg-surface text-ink-2'
-                  }`}
                 >
                   {t(PERIOD_KEYS[p])}
-                </button>
+                </Chip>
               ))}
             </div>
             {periodType === 'month' ? (
@@ -405,15 +311,25 @@ export function SpaceSettingsScreen() {
                 {t('action.save')}
               </Button>
             )}
-            {syncing && (
-              <SpaceMembersSection
-                spaceId={space.id}
-                spaceName={space.name}
-                onMyRole={setMyRole}
-                onLeft={() => goBack()}
+
+            {/* members and accounts live on their own screens now — the
+                doors stay here so the spaces-list gear still reaches them */}
+            <div className="mt-1 overflow-hidden rounded-card border border-line bg-surface">
+              {syncing && (
+                <Row
+                  testId="spacesettings-members-row"
+                  icon="account-multiple-outline"
+                  title={t('space.members')}
+                  onClick={() => void navigate({ to: '/spaces/$spaceId/members', params: { spaceId } })}
+                />
+              )}
+              <Row
+                testId="spacesettings-accounts-row"
+                icon="bank-outline"
+                title={t('space.financialAccounts')}
+                onClick={() => void navigate({ to: '/spaces/$spaceId/accounts', params: { spaceId } })}
               />
-            )}
-            <AttachedAccountsSection spaceId={space.id} />
+            </div>
             {/* danger zone last: deleting is the one action that must never sit
                 between things people actually come here for */}
             {myRole === 'owner' && (

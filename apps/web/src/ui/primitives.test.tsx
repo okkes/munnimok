@@ -5,6 +5,7 @@ import { AppBar, IconButton } from './AppBar';
 import { Button } from './Button';
 import { Icon } from './Icon';
 import { Logo } from './Logo';
+import { Chip, Field, HeroCard, Pill, ProgressBar, Row, Tile } from './primitives';
 // harness registers RTL cleanup between tests
 import '@/test/harness';
 
@@ -93,5 +94,116 @@ describe('Logo', () => {
     const { container } = render(<Logo size={40} />);
     expect(container.textContent).toBe('munni.');
     expect((container.firstElementChild as HTMLElement).style.fontSize).toBe('40px');
+  });
+});
+
+describe('redesign primitives', () => {
+  it('Tile renders at exactly two sizes with tone-soft backgrounds', () => {
+    const { container } = render(
+      <>
+        <Tile icon="bank" size={48} />
+        <Tile icon="bank" tone="special" />
+      </>,
+    );
+    const [hero, row] = [...container.querySelectorAll('span')].filter((s) => s.querySelector('i'));
+    expect(hero.className).toContain('h-12');
+    expect(hero.className).toContain('bg-accent-soft');
+    expect(row.className).toContain('h-9');
+    expect(row.className).toContain('bg-special-soft');
+  });
+
+  it('Row: nav rows are 15px with a chevron, data rows 13px without', () => {
+    const onClick = vi.fn();
+    const { container } = render(
+      <>
+        <Row title="Budgets" icon="wallet-outline" onClick={onClick} testId="nav-row" />
+        <Row kind="data" title="Receipt" sub="12 items" trailing={<span>€3</span>} testId="data-row" />
+      </>,
+    );
+    const nav = screen.getByTestId('nav-row');
+    expect(nav.className).toContain('py-3.5');
+    expect(nav.querySelector('.mdi-chevron-right')).toBeTruthy();
+    fireEvent.click(nav);
+    expect(onClick).toHaveBeenCalled();
+    const data = screen.getByTestId('data-row');
+    expect(data.tagName).toBe('DIV'); // no onClick -> not a button
+    expect(data.className).toContain('py-2.5');
+    expect(data.querySelector('.mdi-chevron-right')).toBeNull();
+    expect(container.textContent).toContain('12 items');
+  });
+
+  it('Pill and Chip carry their tones', () => {
+    const onClick = vi.fn();
+    render(
+      <>
+        <Pill tone="warning" testId="pill">
+          Unreviewed
+        </Pill>
+        <Chip selected onClick={onClick} testId="chip-on">
+          Monthly
+        </Chip>
+        <Chip selected tone="warning" onClick={onClick} testId="chip-warn">
+          Filter
+        </Chip>
+        <Chip selected={false} onClick={onClick} disabled testId="chip-off">
+          Off
+        </Chip>
+      </>,
+    );
+    expect(screen.getByTestId('pill').className).toContain('bg-warning-soft');
+    expect(screen.getByTestId('chip-on').className).toContain('border-accent');
+    expect(screen.getByTestId('chip-warn').className).toContain('border-warning');
+    expect((screen.getByTestId('chip-off') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByTestId('chip-on'));
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('ProgressBar clamps, sizes and takes an overlay', () => {
+    render(
+      <>
+        <ProgressBar value={1.4} size="sm" testId="bar" overlay={<div data-testid="stripes" />} />
+        <ProgressBar value={-1} size="lg" color="red" testId="bar2" />
+      </>,
+    );
+    const bar = screen.getByTestId('bar');
+    expect(bar.className).toContain('h-1');
+    expect((bar.firstElementChild as HTMLElement).style.width).toBe('100%');
+    expect(screen.getByTestId('stripes')).toBeTruthy();
+    const bar2 = screen.getByTestId('bar2');
+    expect(bar2.className).toContain('h-2');
+    expect((bar2.firstElementChild as HTMLElement).style.width).toBe('0%');
+    expect((bar2.firstElementChild as HTMLElement).style.background).toBe('red');
+  });
+
+  it('Field puts a 12px label above its control', () => {
+    render(
+      <Field label="Name" htmlFor="f">
+        <input id="f" />
+      </Field>,
+    );
+    const label = screen.getByText('Name');
+    expect(label.tagName).toBe('LABEL');
+    expect(label.className).toContain('text-[12px]');
+  });
+
+  it('HeroCard lays out tile, number, progress and meta', () => {
+    render(
+      <HeroCard
+        testId="hero"
+        tile={<Tile icon="flag-outline" size={48} />}
+        title="Emergency fund"
+        titleBadge={<Pill tone="accent">On track</Pill>}
+        sub="Savings"
+        number="€1,200"
+        progress={<ProgressBar value={0.5} testId="hero-bar" />}
+        meta={<span>next €100 · Aug</span>}
+      />,
+    );
+    const hero = screen.getByTestId('hero');
+    expect(hero.textContent).toContain('Emergency fund');
+    expect(hero.textContent).toContain('On track');
+    expect(hero.textContent).toContain('€1,200');
+    expect(screen.getByTestId('hero-bar')).toBeTruthy();
+    expect(hero.textContent).toContain('next €100');
   });
 });

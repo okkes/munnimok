@@ -5,6 +5,7 @@ import { useHelp } from './HelpContext';
 import { TOURS } from './tours';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
+import { Row } from '@/ui/primitives';
 
 /** Settings → Help & tutorials: every tour, rerunnable any time. */
 export function HelpIndexScreen() {
@@ -31,22 +32,22 @@ export function HelpIndexScreen() {
         <p className="px-1 pb-3 text-[12px] text-ink-3">{t('help.indexSub')}</p>
         <div className="overflow-hidden rounded-card border border-line bg-surface">
           {TOURS.map((tour) => (
-            <button
+            <Row
               key={tour.id}
-              data-testid={`help-tour-${tour.id}`}
+              testId={`help-tour-${tour.id}`}
+              icon={tour.icon}
+              iconColor="var(--m-ink-2)"
+              title={t(tour.titleKey)}
+              trailing={
+                seen?.has(tour.id) ? (
+                  <span className="flex items-center gap-1 text-[11px] text-accent-deep">
+                    <Icon name="check" size={14} />
+                    {t('help.seen')}
+                  </span>
+                ) : undefined
+              }
               onClick={() => openSlides(tour.id)}
-              className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-3.5 text-left last:border-0"
-            >
-              <Icon name={tour.icon} size={20} color="var(--m-ink-2)" />
-              <span className="min-w-0 flex-1 text-[15px] text-ink">{t(tour.titleKey)}</span>
-              {seen?.has(tour.id) && (
-                <span className="flex items-center gap-1 text-[11px] text-accent-deep">
-                  <Icon name="check" size={14} />
-                  {t('help.seen')}
-                </span>
-              )}
-              <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-            </button>
+            />
           ))}
         </div>
       </div>

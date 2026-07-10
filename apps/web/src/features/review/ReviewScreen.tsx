@@ -20,6 +20,7 @@ import { IntroCard } from '@/features/help/IntroCard';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
+import { Chip } from '@/ui/primitives';
 import { CategoryPicker } from '@/features/categories/CategoryPicker';
 import { SplitEditorSheet } from '@/features/transactions/SplitEditorSheet';
 import { TxTypeSheet } from '@/features/transactions/TxTypeSheet';
@@ -271,7 +272,8 @@ export function ReviewScreen() {
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-5 pb-6">
-        <IntroCard tourId="review" />
+        {/* teach only when idle — never above a live review queue (§2K) */}
+        <IntroCard tourId="review" idle={!tx} />
         {!tx && queue && !emptyBecauseSkipped && (
           <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center" data-testid="review-empty">
             <Icon name="check-circle-outline" size={48} color="var(--m-accent)" />
@@ -334,16 +336,15 @@ export function ReviewScreen() {
               )}
 
               {recMatch && (
-                <button
-                  data-testid="review-link-recurring"
+                <Chip
+                  className="mt-3"
+                  testId="review-link-recurring"
+                  selected={linkRecurring}
                   onClick={() => setLinkRecurring((v) => !v)}
-                  className={`m-tap mt-3 inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12px] ${
-                    linkRecurring ? 'border-accent bg-accent-soft font-medium text-accent-deep' : 'border-line bg-surface text-ink-3'
-                  }`}
                 >
                   <Icon name={linkRecurring ? 'check' : 'autorenew'} size={13} />
                   {t('review.linkRecurring', { name: recMatch.name })}
-                </button>
+                </Chip>
               )}
 
               {/* quiet secondary actions */}

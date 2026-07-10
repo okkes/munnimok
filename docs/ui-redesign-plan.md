@@ -171,15 +171,27 @@ Recommended order: U1 → U2 → U3 → U4 → U5, shipped as separate arcs
 with the usual verify chain; U1+U2 can land in one day and make every
 later feature cheaper.
 
-### Status (2026-07-10)
+### Status (2026-07-10, evening)
 
-- **U1 — partially shipped**: raw hex killed in HomeScreen tiles /
-  portfolio class colors / drill accents (tokens per §2A); settings
-  grouped Plan/Track/Learn/Setup (§2I). Still open from U1:
-  `fmtSignedPct` + the full §2J number-typography sweep.
-- **U2, U3 (remainder: app-bar decrowding, intro-card idle rule,
-  allocate empty state, §2L paper cuts), U4, U5 — pending**, to run as
-  their own arcs.
+- **U1 — shipped**: tokens per §2A, settings groups (§2I),
+  `fmtSignedPct` (§2J percent unification).
+- **U2 — shipped**: primitives live in `src/ui/primitives.tsx`
+  (Tile 48/36, Row nav/data, Pill, Chip incl. warning tone,
+  ProgressBar sm/md/lg with overlay, Field, HeroCard number-/title-led)
+  and the audited call sites migrated (11 bars, 9 chip families,
+  6 pills, 15 tiles, settings + help rows, 4 detail heroes). Field
+  adoption across the older form sheets continues opportunistically.
+- **U3 — shipped**: home bar ≤3 actions (Customize = dashed row after
+  the blocks), intro cards idle-only (§2K), allocate first-run
+  explainer, profile-card and AH-paste paper cuts (§2L). Bonus: space
+  members/accounts split out of space settings (user remark).
+- **U4 — partially shipped**: 1080px content ceiling (§4.1), sheets as
+  right-side panels at lg (§4.3, ruling), strict 2-col home (§4.4,
+  ruling), `/`-to-search (§4.5). **Open: §4.2 master–detail panes** —
+  the one remaining desktop arc.
+- **U5 — shipped**: reduced-motion covers m-fade + transitions,
+  :focus-visible accent ring; remaining raw hex is palette data and
+  the lock-screen art (deliberate).
 
 ## 6. Open questions — answered (user rulings, 2026-07-09)
 

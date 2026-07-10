@@ -139,21 +139,24 @@ for (const V of VARIANTS) {
     await gotoSpaces(alice.page);
     await alice.page.click('[data-testid="screen-spaces"] button:has-text("Shared Home") >> nth=0');
     await alice.page.locator('[data-testid^="space-edit-"]:right-of(:text("Shared Home"))').first().click();
+    await alice.page.click('[data-testid="spacesettings-members-row"]'); // members live behind their own door now
     await alice.page.waitForSelector('[data-testid="space-members"]');
     await alice.page.fill('[data-testid="space-addfriend-input"]', bobId);
     await alice.page.click('[data-testid="space-addfriend-send"]');
     await expect(alice.page.locator('[data-testid="space-addfriend-sent"]')).toBeVisible({ timeout: 10000 });
 
     // bob accepts on his friends screen (re-entered: the screen loads
-    // requests on mount); alice re-enters the settings screen so the
+    // requests on mount); alice re-enters the members screen so the
     // fresh friendship shows up as an invitable chip
     await bob.page.click('[data-testid="friends-back"]');
     await bob.page.click('[data-testid="settings-friends-row"]');
     await bob.page.locator('[data-testid^="friends-accept-"]').click({ timeout: 10000 });
     await bob.page.waitForTimeout(500);
+    await alice.page.click('[data-testid="spacemembers-back"]');
     await alice.page.click('[data-testid="spacesettings-back"]');
     await alice.page.waitForTimeout(700);
     await alice.page.locator('[data-testid^="space-edit-"]:right-of(:text("Shared Home"))').first().click();
+    await alice.page.click('[data-testid="spacesettings-members-row"]');
     await alice.page.waitForSelector('[data-testid="space-members"]');
     await shot(alice.page, k('33-space-share') + '--s1');
     await alice.page.locator('[data-testid^="space-invite-"]').first().click();
@@ -168,10 +171,12 @@ for (const V of VARIANTS) {
     await shot(bob.page, k('33-space-share'));
 
     // roles: alice (owner) demotes bob to reader, then back to contributor
-    // (re-enter the settings screen so the members list includes bob)
+    // (re-enter the members screen so the list includes bob)
+    await alice.page.click('[data-testid="spacemembers-back"]');
     await alice.page.click('[data-testid="spacesettings-back"]');
     await alice.page.waitForTimeout(700);
     await alice.page.locator('[data-testid^="space-edit-"]:right-of(:text("Shared Home"))').first().click();
+    await alice.page.click('[data-testid="spacesettings-members-row"]');
     await alice.page.waitForSelector('[data-testid^="space-role-"]', { timeout: 10000 });
     await alice.page.locator('[data-testid^="space-role-"]').selectOption('reader');
     await alice.page.waitForTimeout(500);
@@ -182,6 +187,7 @@ for (const V of VARIANTS) {
 
     // bob leaves the space: it disappears from his list, alice keeps it
     await bob.page.locator('[data-testid^="space-edit-"]:right-of(:text("Shared Home"))').first().click();
+    await bob.page.click('[data-testid="spacesettings-members-row"]');
     await bob.page.waitForSelector('[data-testid="space-leave"]');
     await bob.page.click('[data-testid="space-leave"]'); // arm
     await bob.page.click('[data-testid="space-leave"]'); // confirm
@@ -280,6 +286,7 @@ for (const V of VARIANTS) {
 
     await gotoSpaces(alice.page);
     await alice.page.locator('[data-testid^="space-edit-"]:right-of(:text("Feed Home"))').first().click();
+    await alice.page.click('[data-testid="spacesettings-members-row"]');
     await alice.page.waitForSelector('[data-testid="space-members"]');
     await alice.page.fill('[data-testid="space-addfriend-input"]', bobId);
     await alice.page.click('[data-testid="space-addfriend-send"]');
@@ -287,12 +294,15 @@ for (const V of VARIANTS) {
     await bob.page.click('[data-testid="friends-back"]');
     await bob.page.click('[data-testid="settings-friends-row"]');
     await bob.page.locator('[data-testid^="friends-accept-"]').click({ timeout: 10000 });
+    await alice.page.click('[data-testid="spacemembers-back"]');
     await alice.page.click('[data-testid="spacesettings-back"]');
     await alice.page.waitForTimeout(700);
     await alice.page.locator('[data-testid^="space-edit-"]:right-of(:text("Feed Home"))').first().click();
+    await alice.page.click('[data-testid="spacesettings-members-row"]');
     await alice.page.waitForSelector('[data-testid="space-members"]');
     await alice.page.locator('[data-testid^="space-invite-"]').first().click();
     await alice.page.waitForTimeout(800);
+    await alice.page.click('[data-testid="spacemembers-back"]');
     await alice.page.click('[data-testid="spacesettings-back"]');
 
     // bob accepts, makes the shared space active — and sees the FEED's
@@ -326,6 +336,7 @@ for (const V of VARIANTS) {
     await alice.page.click('[data-testid="tx-detail-back"]');
     await gotoSpaces(alice.page);
     await alice.page.locator('[data-testid^="space-edit-"]:right-of(:text("Feed Home"))').first().click();
+    await alice.page.click('[data-testid="spacesettings-members-row"]');
     await alice.page.waitForSelector('[data-testid="space-leave"]');
     await alice.page.click('[data-testid="space-leave"]');
     await alice.page.click('[data-testid="space-leave"]');

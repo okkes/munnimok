@@ -6,11 +6,12 @@ import { quotesAvailable, usePortfolio, usePortfolioOps, useQuoteRefresh } from 
 import type { DegiroImportResult } from '@/application/portfolio';
 import type { AssetClass, HoldingRow } from '@/db/types';
 import { apiFetch } from '@/lib/api';
-import { fmtCents, parseCents } from '@/lib/money';
+import { fmtCents, fmtSignedPct, parseCents } from '@/lib/money';
 import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
+import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 
 export const ASSET_CLASSES: { id: AssetClass; labelKey: TranslationKey; icon: string }[] = [
@@ -165,17 +166,15 @@ export function HoldingFormSheet({ initial, onClose }: Readonly<{ initial: Holdi
         />
         <div className="flex gap-1.5 overflow-x-auto pb-1">
           {ASSET_CLASSES.map((candidate) => (
-            <button
+            <Chip
               key={candidate.id}
-              data-testid={`pf-class-${candidate.id}`}
+              testId={`pf-class-${candidate.id}`}
+              selected={assetClass === candidate.id}
               onClick={() => setAssetClass(candidate.id)}
-              className={`m-tap flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12px] ${
-                assetClass === candidate.id ? 'border-accent bg-accent-soft text-accent-deep' : 'border-line bg-surface text-ink-2'
-              }`}
             >
               <Icon name={candidate.icon} size={14} />
               {t(candidate.labelKey)}
-            </button>
+            </Chip>
           ))}
         </div>
         {priceKey ? (
@@ -316,8 +315,7 @@ export function PortfolioScreen() {
                 </span>
                 {view.gainPct !== null && (
                   <span className="m-num block text-[11px]" style={{ color: view.gainCents! >= 0 ? 'var(--m-accent-deep)' : 'var(--m-negative)' }}>
-                    {view.gainPct >= 0 ? '+' : ''}
-                    {view.gainPct.toFixed(1)}%
+                    {fmtSignedPct(view.gainPct)}
                   </span>
                 )}
               </span>
