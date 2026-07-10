@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/okkes/munnimok/compare/v1.2.0...v1.3.0) (2026-07-10)
+
+
+### ✨ Features
+
+* **web:** U4 master-detail panes — the list stays beside its detail at lg ([5f9a41f](https://github.com/okkes/munnimok/commit/5f9a41f837a9bcb13027a54c184263412de69d7b))
+
 ## [1.2.0](https://github.com/okkes/munnimok/compare/v1.1.0...v1.2.0) (2026-07-10)
 
 
