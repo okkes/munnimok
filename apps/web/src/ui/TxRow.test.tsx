@@ -42,7 +42,7 @@ describe('TxRow', () => {
     const row = await screen.findByTestId('tx-row-t1');
     expect(row.textContent).toContain('Incasso · ING');
     expect(row.textContent).not.toContain('<br>');
-    expect(row.textContent).toContain('Confirm');
+    expect(row.textContent).toContain('Unreviewed');
   });
 
   it('positive amounts render with an explicit plus', async () => {
