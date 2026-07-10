@@ -430,11 +430,11 @@ export function HomeScreen() {
     }
     const today = localToday();
     const spent = eventSpentCents(allTxs ?? [], featuredEvent.id);
-    const running = !!featuredEvent.from && featuredEvent.from <= today && (!featuredEvent.to || featuredEvent.to! >= today);
+    const running = !!featuredEvent.from && featuredEvent.from <= today && (!featuredEvent.to || featuredEvent.to >= today);
     const upcoming = !!featuredEvent.from && featuredEvent.from > today;
     let statusLine = t('events.latest');
     if (running) statusLine = t('events.runningNow');
-    else if (upcoming) statusLine = t('events.upcoming', { date: fmtShort(featuredEvent.from!) });
+    else if (upcoming) statusLine = t('events.upcoming', { date: fmtShort(featuredEvent.from) });
     return (
       <>
         <div className="m-cap mt-5 mb-1 px-1">{t('events.title')}</div>

@@ -175,4 +175,40 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     fireEvent.click(await screen.findByTestId('split-clear'));
     await waitFor(() => expect(screen.queryByTestId('tx-detail-splits')).toBeNull());
   });
+
+  it('percentage mode balances to 100 and stores materialized euro amounts', async () => {
+    renderApp('/transactions/dm6');
+    fireEvent.click(await screen.findByTestId('tx-detail-split'));
+    await screen.findByTestId('split-editor');
+
+    // a third row can be added and removed again
+    fireEvent.click(screen.getByTestId('split-add-row'));
+    fireEvent.click(await screen.findByTestId('split-remove-2'));
+
+    // switch to % — the euro shape carries over (100 / 0)
+    fireEvent.click(screen.getByTestId('split-mode-pct'));
+    expect((screen.getByTestId('split-amount-0') as HTMLInputElement).value).toBe('100');
+
+    // 60% leaves 40% open; auto-balance hands it to the last row
+    fireEvent.change(screen.getByTestId('split-amount-0'), { target: { value: '60' } });
+    const remainder = await screen.findByTestId('split-remainder');
+    expect(remainder.textContent).toContain('40%');
+    expect((screen.getByTestId('split-save') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByTestId('split-cat-1'));
+    fireEvent.click(await screen.findByTestId('catpicker-restaurants'));
+    fireEvent.click(screen.getByTestId('split-remainder'));
+    await waitFor(() => expect((screen.getByTestId('split-save') as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByTestId('split-save'));
+
+    // the detail shows euros: 60/40 of €52.40, exactly partitioned
+    const splitsList = await screen.findByTestId('tx-detail-splits');
+    expect(splitsList.textContent).toContain('€31.44');
+    expect(splitsList.textContent).toContain('€20.96');
+
+    // reopening restores percentage mode with the stored shares
+    fireEvent.click(screen.getByTestId('tx-detail-split'));
+    await screen.findByTestId('split-editor');
+    await waitFor(() => expect((screen.getByTestId('split-amount-0') as HTMLInputElement).value).toBe('60'));
+    expect((screen.getByTestId('split-amount-1') as HTMLInputElement).value).toBe('40');
+  });
 });
