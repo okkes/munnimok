@@ -279,13 +279,13 @@ export function HeroCard({ tile, title, titleBadge, sub, number, right, progress
       <div className="flex items-center gap-3">
         {tile}
         <span className="min-w-0 flex-1">
-          {title != null ? (
+          {title == null ? (
+            <span className="m-num block text-[24px] font-semibold text-ink">{number}</span>
+          ) : (
             <span className="flex items-center gap-1.5">
               <span className="truncate text-[16px] font-semibold text-ink">{title}</span>
               {titleBadge}
             </span>
-          ) : (
-            <span className="m-num block text-[24px] font-semibold text-ink">{number}</span>
           )}
           {sub != null && <span className="block truncate text-[12px] text-ink-3">{sub}</span>}
         </span>

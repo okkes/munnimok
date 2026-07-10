@@ -10,11 +10,11 @@ const SIZE_PX: Record<SheetSize, number> = { compact: 320, form: 440, tall: 600 
 // so forms stop covering the context they edit. One media query, shared.
 const PANEL_QUERY = '(min-width: 1024px)';
 const subscribePanel = (listener: () => void) => {
-  const mql = typeof window !== 'undefined' ? window.matchMedia?.(PANEL_QUERY) : undefined;
+  const mql = typeof window === 'undefined' ? undefined : window.matchMedia?.(PANEL_QUERY);
   mql?.addEventListener?.('change', listener);
   return () => mql?.removeEventListener?.('change', listener);
 };
-const readPanel = () => (typeof window !== 'undefined' ? (window.matchMedia?.(PANEL_QUERY)?.matches ?? false) : false);
+const readPanel = () => (typeof window === 'undefined' ? false : (window.matchMedia?.(PANEL_QUERY)?.matches ?? false));
 const usePanelMode = (): boolean => useSyncExternalStore(subscribePanel, readPanel, () => false);
 
 // Android resizes the layout viewport itself for the keyboard (see the
