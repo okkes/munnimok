@@ -81,6 +81,11 @@ describe('ReviewScreen (demo identity)', () => {
       () => expect(screen.getByTestId('review-bulk').textContent).toContain('2'),
       { timeout: 5000 },
     );
+    // expanding reveals the internally-scrollable list with every similar row
+    fireEvent.click(screen.getByTestId('review-bulk-expand'));
+    const bulkList = await screen.findByTestId('review-bulk-list');
+    expect(bulkList.className).toContain('overflow-y-auto');
+    expect(bulkList.querySelectorAll('[data-testid^="review-bulk-"]')).toHaveLength(2);
     fireEvent.click(screen.getByTestId('review-confirm-btn'));
     await waitFor(
       async () => {

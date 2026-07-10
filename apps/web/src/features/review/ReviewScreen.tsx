@@ -112,32 +112,37 @@ function BulkConfirmSection({
           <Icon name={open ? 'chevron-up' : 'chevron-down'} size={17} />
         </button>
       </div>
-      {open &&
-        similar.map((item) => {
-          const checked = selected.has(item.id);
-          return (
-            <button
-              key={item.id}
-              data-testid={`review-bulk-${item.id}`}
-              onClick={() => toggleOne(item.id)}
-              className="m-tap flex w-full items-center gap-3 border-t border-line-2 px-4 py-2.5 text-left"
-            >
-              <span
-                className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 ${
-                  checked ? 'border-accent bg-accent text-white' : 'border-line bg-surface'
-                }`}
+      {open && (
+        // long merchant histories must scroll INSIDE the card (fixed px per
+        // the sheet rules) so Skip/Confirm stay reachable below
+        <div className="max-h-[300px] overflow-y-auto overscroll-contain" data-testid="review-bulk-list">
+          {similar.map((item) => {
+            const checked = selected.has(item.id);
+            return (
+              <button
+                key={item.id}
+                data-testid={`review-bulk-${item.id}`}
+                onClick={() => toggleOne(item.id)}
+                className="m-tap flex w-full items-center gap-3 border-t border-line-2 px-4 py-2.5 text-left"
               >
-                {checked && <Icon name="check" size={12} />}
-              </span>
-              <span className="min-w-0 flex-1">
-                {/* descriptions differ per charge — they identify; dates stay quiet */}
-                <span className="block truncate text-[12px] text-ink-2">{cleanBankText(item.description) || item.date}</span>
-                <span className="block text-[10px] text-ink-4">{item.date}</span>
-              </span>
-              <span className="m-num text-[12px] text-ink-2">{fmtCents(item.amountCents, item.currency, lang)}</span>
-            </button>
-          );
-        })}
+                <span
+                  className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 ${
+                    checked ? 'border-accent bg-accent text-white' : 'border-line bg-surface'
+                  }`}
+                >
+                  {checked && <Icon name="check" size={12} />}
+                </span>
+                <span className="min-w-0 flex-1">
+                  {/* descriptions differ per charge — they identify; dates stay quiet */}
+                  <span className="block truncate text-[12px] text-ink-2">{cleanBankText(item.description) || item.date}</span>
+                  <span className="block text-[10px] text-ink-4">{item.date}</span>
+                </span>
+                <span className="m-num text-[12px] text-ink-2">{fmtCents(item.amountCents, item.currency, lang)}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
