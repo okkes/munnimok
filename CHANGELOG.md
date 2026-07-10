@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.1](https://github.com/okkes/munnimok/compare/v1.3.0...v1.3.1) (2026-07-10)
+
+
+### 🐞 Bug Fixes
+
+* bulk-confirm list scrolls inside its card ([b70d1fc](https://github.com/okkes/munnimok/commit/b70d1fc688b033f2919418670287306145dbae70))
+* **web:** the bulk-confirm list scrolls inside its card ([e5bab18](https://github.com/okkes/munnimok/commit/e5bab18613d24daaf5388c5000d8ae2d49325618))
+
 ## [1.3.0](https://github.com/okkes/munnimok/compare/v1.2.0...v1.3.0) (2026-07-10)
 
 
