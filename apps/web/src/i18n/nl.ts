@@ -1194,7 +1194,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'shop.syncAdded': '{n} nieuwe bonnetjes opgehaald',
   'shop.syncNone': 'Bijgewerkt — geen nieuwe bonnetjes',
   'shop.syncExpired': 'De winkelsessie is verlopen — koppel opnieuw en probeer nog eens.',
-  'shop.syncFailed': 'Bonnetjes konden niet gelezen worden — de koppeling werkt anders dan verwacht. Probeer het later opnieuw.',
+  'shop.syncFailed': 'Bonnetjes konden niet gelezen worden (HTTP {status}) — de koppeling werkt anders dan verwacht.',
   'pf.title': 'Portefeuille',
   'pf.new': 'Nieuwe positie',
   'pf.edit': 'Positie bewerken',

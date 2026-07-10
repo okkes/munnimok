@@ -16,6 +16,8 @@ export const storeReceiptId = (store: string, storeReceiptId: string): string =>
 export interface StoreSyncResult {
   status: 'ok' | 'expired' | 'error';
   added: number;
+  /** upstream HTTP status when the read failed — the live-debug signal */
+  httpStatus?: number;
 }
 
 export async function syncAhReceipts(call: ProxyCall, db: MunniDB, repo: Repo, spaceId: string): Promise<StoreSyncResult> {
@@ -34,7 +36,7 @@ export async function syncAhReceipts(call: ProxyCall, db: MunniDB, repo: Repo, s
     tokens = refreshed;
     list = await ahFetchReceipts(call, tokens.access);
   }
-  if (list.status !== 200) return { status: 'error', added: 0 };
+  if (list.status !== 200) return { status: 'error', added: 0, httpStatus: list.status };
 
   const [txs, existing] = await Promise.all([
     db.transactions.where('spaceId').equals(spaceId).filter((t) => t.deleted === 0).toArray(),

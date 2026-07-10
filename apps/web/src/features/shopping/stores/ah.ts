@@ -66,19 +66,61 @@ export interface AhListResult {
   receipts: AhReceiptSummary[];
 }
 
+// AH moved receipts to their GraphQL gateway; the mobile-services REST
+// path still answers on some accounts, so it stays as the fallback.
+const RECEIPTS_QUERY =
+  'query FetchPosReceipts($offset: Int!, $limit: Int!) { posReceiptsPage(pagination: {offset: $offset, limit: $limit}) { posReceipts { id dateTime totalAmount { amount } } } }';
+const RECEIPT_DETAILS_QUERY =
+  'query FetchReceipt($id: String!) { posReceiptDetails(id: $id) { id products { quantity name amount { amount } } } }';
+
+interface GraphqlReceipt {
+  id?: string;
+  dateTime?: string;
+  totalAmount?: { amount?: number };
+}
+
+interface GraphqlEnvelope {
+  data?: {
+    posReceiptsPage?: { posReceipts?: GraphqlReceipt[] };
+    posReceiptDetails?: { products?: { quantity?: number | string; name?: string; amount?: { amount?: number } }[] };
+  };
+}
+
+const graphql = (call: ProxyCall, accessToken: string, query: string, variables: Record<string, unknown>) =>
+  call('ah-api', '/graphql', { method: 'POST', body: { query, variables }, authorization: `Bearer ${accessToken}` });
+
 export async function ahFetchReceipts(call: ProxyCall, accessToken: string): Promise<AhListResult> {
-  const { status, json } = await call('ah-api', '/mobile-services/v2/receipts', {
-    authorization: `Bearer ${accessToken}`,
-  });
-  const rows = Array.isArray(json) ? (json as AhReceiptSummary[]) : [];
-  return { status, receipts: rows.filter((r) => r.transactionId && r.transactionMoment) };
+  const { status, json } = await graphql(call, accessToken, RECEIPTS_QUERY, { offset: 0, limit: 100 });
+  const rows = (json as GraphqlEnvelope | null)?.data?.posReceiptsPage?.posReceipts;
+  if (status === 200 && Array.isArray(rows)) {
+    return {
+      status,
+      receipts: rows
+        .filter((r) => r.id && r.dateTime)
+        .map((r) => ({ transactionId: r.id!, transactionMoment: r.dateTime!, total: { amount: { amount: r.totalAmount?.amount } } })),
+    };
+  }
+  if (status === 401) return { status, receipts: [] };
+
+  // legacy REST fallback — also tells us which recipe a live account speaks
+  const legacy = await call('ah-api', '/mobile-services/v2/receipts', { authorization: `Bearer ${accessToken}` });
+  const legacyRows = Array.isArray(legacy.json) ? (legacy.json as AhReceiptSummary[]) : [];
+  return { status: legacy.status, receipts: legacyRows.filter((r) => r.transactionId && r.transactionMoment) };
 }
 
 export async function ahFetchReceiptItems(call: ProxyCall, accessToken: string, transactionId: string): Promise<AhReceiptUiItem[]> {
-  const { status, json } = await call('ah-api', `/mobile-services/v2/receipts/${encodeURIComponent(transactionId)}`, {
+  const { status, json } = await graphql(call, accessToken, RECEIPT_DETAILS_QUERY, { id: transactionId });
+  const products = (json as GraphqlEnvelope | null)?.data?.posReceiptDetails?.products;
+  if (status === 200 && Array.isArray(products)) {
+    return products
+      .filter((p) => p.name)
+      .map((p) => ({ type: 'product', description: p.name, quantity: p.quantity, amount: String(p.amount?.amount ?? '') }));
+  }
+
+  const legacy = await call('ah-api', `/mobile-services/v2/receipts/${encodeURIComponent(transactionId)}`, {
     authorization: `Bearer ${accessToken}`,
   });
-  if (status !== 200) return [];
-  const detail = json as { receiptUiItems?: AhReceiptUiItem[] } | null;
+  if (legacy.status !== 200) return [];
+  const detail = legacy.json as { receiptUiItems?: AhReceiptUiItem[] } | null;
   return detail?.receiptUiItems ?? [];
 }

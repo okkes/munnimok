@@ -1194,7 +1194,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'shop.syncAdded': '{n} yeni fiş alındı',
   'shop.syncNone': 'Güncel — yeni fiş yok',
   'shop.syncExpired': 'Mağaza oturumu doldu — yeniden bağlanıp tekrar dene.',
-  'shop.syncFailed': 'Fişler okunamadı — bağlantı beklenenden farklı çalışıyor. Daha sonra tekrar dene.',
+  'shop.syncFailed': 'Fişler okunamadı (HTTP {status}) — bağlantı beklenenden farklı çalışıyor.',
   'pf.title': 'Portföy',
   'pf.new': 'Yeni pozisyon',
   'pf.edit': 'Pozisyonu düzenle',

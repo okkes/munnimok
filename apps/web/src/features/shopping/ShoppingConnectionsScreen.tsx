@@ -88,7 +88,7 @@ export function ShoppingConnectionsScreen() {
           {t('shop.syncBusy')}
         </span>
       );
-    let text = t('shop.syncFailed');
+    let text = t('shop.syncFailed', { status: syncState.httpStatus ?? '?' });
     if (syncState.status === 'ok') text = syncState.added > 0 ? t('shop.syncAdded', { n: syncState.added }) : t('shop.syncNone');
     if (syncState.status === 'expired') text = t('shop.syncExpired');
     return (

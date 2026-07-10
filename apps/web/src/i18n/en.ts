@@ -1192,7 +1192,7 @@ export const en = {
   'shop.syncAdded': '{n} new receipts fetched',
   'shop.syncNone': 'Up to date — no new receipts',
   'shop.syncExpired': 'The store session expired — reconnect and try again.',
-  'shop.syncFailed': 'Receipts could not be read — the connection works differently than expected. Try again later.',
+  'shop.syncFailed': 'Receipts could not be read (HTTP {status}) — the connection works differently than expected.',
   'pf.title': 'Portfolio',
   'pf.new': 'New holding',
   'pf.edit': 'Edit holding',
