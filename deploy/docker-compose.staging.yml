@@ -35,12 +35,18 @@ services:
       Logos__PublicToken: ${LOGODEV_PUBLIC_TOKEN:-}
       Admin__Subs: ${ADMIN_SUBS:-}
       Sentry__Dsn: ${API_SENTRY_DSN:-}
+      Ocr__BaseUrl: http://ocr:8884
       BUILD_NUMBER: dev
     ports:
       - "8096:8080"
     depends_on:
       postgres:
         condition: service_healthy
+
+  # receipt-photo OCR sidecar — stateless, internal-only (same as production)
+  ocr:
+    image: hertzg/tesseract-server:latest
+    restart: unless-stopped
 
   postgres:
     image: postgres:17-alpine

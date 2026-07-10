@@ -16,6 +16,10 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
     // remaining daily quota on retries (per-process is enough: a restart
     // retries once, then defers again)
     private readonly Dictionary<string, DateTimeOffset> _rateLimitedUntil = new();
+    private DateOnly _lastCleanupDay = DateOnly.MinValue;
+
+    /// <summary>abandoned consent journeys younger than this survive cleanup</summary>
+    internal TimeSpan IdleGraceDays { get; set; } = TimeSpan.FromDays(2);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -28,12 +32,59 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
             try
             {
                 await FetchAllAsync(stoppingToken);
+                var today = DateOnly.FromDateTime(DateTime.UtcNow);
+                if (today != _lastCleanupDay)
+                {
+                    await CleanupIdleRequisitionsAsync(stoppingToken);
+                    _lastCleanupDay = today;
+                }
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "gocardless fetch cycle failed");
             }
         } while (await timer.WaitForNextTickAsync(stoppingToken));
+    }
+
+    /// <summary>
+    /// Frees GoCardless connection slots held by dead weight: local
+    /// requisitions past the grace age with no linked accounts — abandoned
+    /// consent journeys and connections whose accounts were all removed.
+    /// Requisitions GC knows but munni doesn't (possibly another
+    /// environment sharing the GC account) are never touched — those stay
+    /// a manual decision in the admin console.
+    /// </summary>
+    internal async Task CleanupIdleRequisitionsAsync(CancellationToken ct)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var gc = scope.ServiceProvider.GetRequiredService<IGoCardlessApi>();
+
+        var cutoff = DateTimeOffset.UtcNow - IdleGraceDays;
+        var used = await db.GcLinkedAccounts.Select(a => a.RequisitionId).Distinct().ToListAsync(ct);
+        var idle = await db.GcRequisitions
+            .Where(r => r.CreatedAt < cutoff && !used.Contains(r.Id))
+            .ToListAsync(ct);
+        foreach (var requisition in idle)
+        {
+            try
+            {
+                await gc.DeleteRequisitionAsync(requisition.RequisitionId, ct);
+            }
+            catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                // already gone at GC — the slot is free, drop our record too
+            }
+            catch (HttpRequestException ex)
+            {
+                logger.LogWarning(ex, "gc cleanup: delete failed for {RequisitionId} — retrying tomorrow", requisition.RequisitionId);
+                continue;
+            }
+            db.GcRequisitions.Remove(requisition);
+            if (logger.IsEnabled(LogLevel.Information))
+                logger.LogInformation("gc cleanup: removed idle {Institution} requisition from {Created}", requisition.InstitutionId, requisition.CreatedAt);
+        }
+        if (idle.Count > 0) await db.SaveChangesAsync(ct);
     }
 
     /// <summary>seconds between account fetches (staggering); tests shrink it</summary>
