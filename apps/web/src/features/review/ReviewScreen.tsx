@@ -7,6 +7,7 @@ import { useRecurringOps, useRecurrings } from '@/application/recurring';
 import { directionOfTx } from '@/domain/categoryRules';
 import { UNCATEGORIZED_ID } from '@/domain/categories';
 import { merchantKey } from '@/domain/merchantKey';
+import { resolveSplitsFor, splitsArePct } from '@/domain/splits';
 import { predictTx } from '@/domain/predictCategory';
 import { recurringAmountMatches } from '@/domain/recurring';
 import { LOCALES, useLang } from '@/i18n';
@@ -57,7 +58,15 @@ async function writeConfirmation(args: {
     ...(args.recurringId ? { recurringId: args.recurringId } : {}),
   });
   for (const item of args.bulk) {
-    await args.transform(item, { catId: args.catId, txType: args.txType, needsReview: 0 });
+    // the card's split shape travels with the bulk: absolute splits fit
+    // exact twins by the similar-rule; pct splits rescale per item
+    const splits = args.tx.splits?.length ? resolveSplitsFor(item.amountCents, args.tx.splits) : undefined;
+    await args.transform(item, {
+      catId: args.catId,
+      txType: args.txType,
+      needsReview: 0,
+      ...(splits ? { splits } : {}),
+    });
   }
 }
 
@@ -195,12 +204,13 @@ export function ReviewScreen() {
     [tx, recurrings],
   );
 
-  // bulk rule (legacy): plain confirm reaches every same-merchant item;
-  // once the card is split, only exact twins (same amount) qualify
+  // bulk rule: plain confirm reaches every same-merchant item; absolute
+  // splits only fit exact twins (same amount), percentage splits scale
+  // to any amount so the whole merchant group stays eligible
   const similar = useMemo(() => {
     if (!tx || !queue) return [] as SpaceTx[];
     const key = merchantKey(tx.merchant);
-    const mustMatchAmount = !!tx.splits?.length;
+    const mustMatchAmount = !!tx.splits?.length && !splitsArePct(tx.splits);
     return queue.filter(
       (item) =>
         item.id !== tx.id &&
@@ -384,6 +394,7 @@ export function ReviewScreen() {
           setPickerOpen(false);
         }}
         direction={tx && directionOfTx(tx)}
+        txType={tx?.txType}
       />
       {tx && <TxTypeSheet open={typeOpen} onOpenChange={setTypeOpen} tx={tx} />}
       {tx && <SplitEditorSheet open={splitOpen} onOpenChange={setSplitOpen} tx={tx} />}

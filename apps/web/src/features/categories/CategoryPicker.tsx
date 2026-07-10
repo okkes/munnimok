@@ -6,6 +6,8 @@ import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 import { catName, useCategories } from './useCategories';
 
+import type { TxType } from '@/db/types';
+
 interface CategoryPickerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -13,10 +15,12 @@ interface CategoryPickerProps {
   onPick: (catId: string) => void;
   /** the transaction's side — hides categories of the opposite direction */
   direction?: 'debit' | 'credit';
+  /** the transaction's type — a category must support it to be pickable */
+  txType?: TxType;
 }
 
 /** Bottom sheet listing the catalog (built-in + custom) grouped by parent, with search. */
-export function CategoryPicker({ open, onOpenChange, selectedId, onPick, direction }: CategoryPickerProps) {
+export function CategoryPicker({ open, onOpenChange, selectedId, onPick, direction, txType }: CategoryPickerProps) {
   const { t } = useLang();
   const cats = useCategories();
   const [query, setQuery] = useState('');
@@ -29,10 +33,12 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
         children: cats
           .childrenOf(parent.id)
           .filter((c) => !direction || directionAllows(c.direction, direction))
+          // the invariant: a transaction's category must speak its type
+          .filter((c) => !txType || c.txTypes.includes(txType))
           .filter((c) => !q || catName(c, t).toLowerCase().includes(q)),
       }))
       .filter((g) => g.children.length > 0);
-  }, [cats, query, t, direction]);
+  }, [cats, query, t, direction, txType]);
 
   const pick = (catId: string) => {
     onPick(catId);

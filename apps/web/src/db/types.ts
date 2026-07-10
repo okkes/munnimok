@@ -89,6 +89,9 @@ export interface CategoryRow extends SyncEnvelope {
 export interface TxSplit {
   catId: string;
   amountCents: number;
+  /** percentage split (0–100): scales to any amount, so bulk apply
+   *  works across different charges; amountCents stays materialized */
+  pct?: number;
 }
 
 /** money received back against an expense (owned by the expense side) */

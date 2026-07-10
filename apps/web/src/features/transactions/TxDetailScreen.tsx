@@ -205,6 +205,7 @@ export function TxDetailScreen() {
         selectedId={tx.catId}
         onPick={setCategory}
         direction={tx.amountCents < 0 ? 'debit' : 'credit'}
+        txType={tx.txType}
       />
       <TxTypeSheet open={typeOpen} onOpenChange={setTypeOpen} tx={tx} />
       <SplitEditorSheet open={splitOpen} onOpenChange={setSplitOpen} tx={tx} />
