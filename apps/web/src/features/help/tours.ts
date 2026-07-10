@@ -7,6 +7,7 @@ import type { TranslationKey } from '@/i18n';
  */
 
 export type TourId =
+  | 'install'
   | 'home'
   | 'review'
   | 'budgets'
@@ -45,6 +46,20 @@ export interface Tour {
 }
 
 export const TOURS: Tour[] = [
+  {
+    // browsers cap what a tab may keep (iOS clears idle-tab storage);
+    // installed PWAs are exempt — nudging install is data-safety, not vanity
+    id: 'install',
+    titleKey: 'install.tourTitle',
+    icon: 'cellphone-arrow-down',
+    screen: null,
+    steps: [
+      { titleKey: 'tour.install.1t', bodyKey: 'tour.install.1b', illustration: '📱' },
+      { titleKey: 'tour.install.2t', bodyKey: 'tour.install.2b', illustration: '🧭' },
+      { titleKey: 'tour.install.3t', bodyKey: 'tour.install.3b', illustration: '🤖' },
+      { titleKey: 'tour.install.4t', bodyKey: 'tour.install.4b', illustration: '💻' },
+    ],
+  },
   {
     id: 'home',
     titleKey: 'tab.home',

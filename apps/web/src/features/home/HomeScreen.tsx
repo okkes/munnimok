@@ -14,6 +14,7 @@ import { useData } from '@/app/data';
 import { OfflineIndicator } from '@/app/OfflineBanner';
 import { HelpButton } from '@/features/help/HelpButton';
 import { IntroCard } from '@/features/help/IntroCard';
+import { InstallHint } from '@/features/help/InstallHint';
 import { NotificationsBell } from './NotificationsBell';
 import { eventPicture } from '@/features/events/EventsScreen';
 import { HomeCustomizeSheet, resolveHomeBlocks } from './HomeCustomizeSheet';
@@ -202,6 +203,7 @@ export function HomeScreen() {
           )}
         </button>
 
+        <InstallHint />
         <IntroCard tourId="home" />
 
         {layout.filter((entry) => !entry.hidden).map((entry) => (

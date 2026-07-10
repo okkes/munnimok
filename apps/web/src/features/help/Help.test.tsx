@@ -102,6 +102,30 @@ describe('Tutorials (demo identity)', () => {
     await waitFor(() => expect(screen.queryByTestId('spotlight-overlay')).toBeNull());
   }, 15_000);
 
+  it('the install hint opens the install slides and stays dismissed', async () => {
+    renderApp('/home');
+    const hint = await screen.findByTestId('install-hint', {}, { timeout: 5000 });
+    expect(hint.textContent).toContain(en['install.title']);
+
+    // "See how" opens the platform walkthrough (slides only — no spotlight)
+    fireEvent.click(screen.getByTestId('install-hint-how'));
+    await screen.findByTestId('help-slides');
+    expect(screen.getByTestId('help-slide-title').textContent).toBe(en['tour.install.1t']);
+    expect(screen.queryByTestId('help-interactive')).toBeNull();
+    for (let i = 0; i < 3; i++) fireEvent.click(screen.getByTestId('help-next'));
+    await waitFor(() => expect(screen.getByTestId('help-slide-title').textContent).toBe(en['tour.install.4t']));
+    fireEvent.click(screen.getByTestId('help-next')); // Done closes the sheet
+    await waitFor(() => expect(screen.queryByTestId('help-slides')).toBeNull());
+
+    // dismissal is forever (device meta)
+    fireEvent.click(await screen.findByTestId('install-hint-dismiss'));
+    await waitFor(() => expect(screen.queryByTestId('install-hint')).toBeNull());
+    cleanup();
+    renderApp('/home');
+    await screen.findByTestId('home-balance-band');
+    expect(screen.queryByTestId('install-hint')).toBeNull();
+  }, 15_000);
+
   it('settings reaches the index; every tour is listed and opens', async () => {
     renderApp('/settings');
     await screen.findByTestId('screen-settings');
