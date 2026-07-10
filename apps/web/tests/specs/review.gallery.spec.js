@@ -47,7 +47,17 @@ for (const V of VARIANTS) {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V, { demo: true });
     await page.click('[data-testid="home-review-banner"]');
-    for (let i = 0; i < 3; i++) await page.click('[data-testid="review-confirm-btn"]');
+    // each confirm must actually advance the queue — rapid clicks can
+    // land twice on the same card while it swaps (CI-only flake)
+    const card = page.locator('[data-testid="review-card"]');
+    for (let i = 0; i < 3; i++) {
+      const before = await card.textContent();
+      await page.click('[data-testid="review-confirm-btn"]');
+      await expect(async () => {
+        if (await page.locator('[data-testid="review-empty"]').count()) return;
+        expect(await card.textContent()).not.toBe(before);
+      }).toPass();
+    }
     await expect(page.locator('[data-testid="review-empty"]')).toBeVisible();
     await page.click('[data-testid="review-back"]');
     await expect(page.locator('[data-testid="screen-home"]')).toBeVisible();

@@ -48,7 +48,7 @@ describe('Overview (demo identity)', () => {
     expect(document.querySelectorAll(`[data-testid="overview-subs-${catId}"] .m-num`).length).toBeGreaterThan(0);
   });
 
-  it('category rows drill into period-scoped transactions (All + subs)', async () => {
+  it('category rows open the in-context drill with total, bars and payments', async () => {
     renderApp('/overview/expense');
     await screen.findByTestId('screen-overview');
     await waitFor(() => expect(screen.getByTestId('overview-total').textContent).toMatch(/€[1-9]/));
@@ -66,12 +66,26 @@ describe('Overview (demo identity)', () => {
     });
     fireEvent.click(all);
 
-    // lands on transactions, scoped to the category + current period
-    await screen.findByTestId('screen-transactions');
-    expect(await screen.findByTestId('tx-drill-chip')).toBeTruthy();
-    // clearing the chip returns to the unfiltered list
-    fireEvent.click(screen.getByTestId('tx-drill-chip'));
-    await waitFor(() => expect(screen.queryByTestId('tx-drill-chip')).toBeNull());
+    // stays inside the analysis: the category's own screen, not the tab
+    await screen.findByTestId('screen-category-drill');
+    await waitFor(() => expect(screen.getByTestId('catdrill-total').textContent).toMatch(/€[1-9]/));
+    expect(screen.getByTestId('overview-barchart')).toBeTruthy();
+    const list = await screen.findByTestId('catdrill-list');
+    expect(list.querySelectorAll('[data-testid^="tx-row-"]').length).toBeGreaterThan(0);
+
+    // a payment row leads on to the transaction detail
+    fireEvent.click(list.querySelector('[data-testid^="tx-row-"]')!);
+    expect(await screen.findByTestId('screen-tx-detail')).toBeTruthy();
+  });
+
+  it('the drill period selector swaps the list to the chosen period', async () => {
+    renderApp('/overview/expense/groceries');
+    await screen.findByTestId('screen-category-drill');
+    await waitFor(() => expect(screen.getByTestId('catdrill-total').textContent).toMatch(/€/));
+    const label = screen.getByTestId('catdrill-period').textContent;
+
+    fireEvent.click(screen.getByTestId('overview-bar-0')); // oldest period
+    await waitFor(() => expect(screen.getByTestId('catdrill-period').textContent).not.toBe(label));
   });
 
   it('selecting an older period updates the total', async () => {

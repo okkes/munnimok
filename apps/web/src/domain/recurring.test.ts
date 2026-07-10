@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   addDays,
   computeRange,
+  cycleKeyOf,
+  cycleMonths,
   effectiveAmountCents,
   isDueWithin,
   nextDueDate,
@@ -57,6 +59,69 @@ describe('recurring occurrences', () => {
     expect(isDueWithin(rec({ dueDay: 12 }), '2026-07-08', 7)).toBe(true);
     expect(isDueWithin(rec({ dueDay: 20 }), '2026-07-08', 7)).toBe(false);
     expect(addDays('2026-07-28', 7)).toBe('2026-08-04'); // month rollover
+  });
+});
+
+describe('every-N and weekly cadences', () => {
+  it('every 3 months anchors its cycle on `since`', () => {
+    const quarterly = rec({ everyN: 3, since: '2026-02-10', dueDay: 10 });
+    expect(occurrencesBetween(quarterly, '2026-01-01', '2026-12-31')).toEqual([
+      '2026-02-10',
+      '2026-05-10',
+      '2026-08-10',
+      '2026-11-10',
+    ]);
+    expect(nextDueDate(quarterly, '2026-07-09')).toBe('2026-08-10');
+  });
+
+  it('every 2 years skips the odd years', () => {
+    const biennial = rec({ every: 'year', everyN: 2, since: '2024-06-01', dueMonth: 6, dueDay: 1 });
+    expect(occurrencesBetween(biennial, '2024-01-01', '2028-12-31')).toEqual(['2024-06-01', '2026-06-01', '2028-06-01']);
+    expect(occurrencesBetween(biennial, '2025-01-01', '2025-12-31')).toEqual([]);
+    // next cycle can be years out — the scan horizon must reach it
+    expect(nextDueDate(rec({ every: 'year', everyN: 5, since: '2024-03-01', dueMonth: 3, dueDay: 1 }), '2026-07-09')).toBe(
+      '2029-03-01',
+    );
+  });
+
+  it('weekly cadences step in 7×N-day strides from the anchor', () => {
+    const biweekly = rec({ every: 'week', everyN: 2, since: '2026-07-03' });
+    expect(occurrencesBetween(biweekly, '2026-07-01', '2026-08-31')).toEqual([
+      '2026-07-03',
+      '2026-07-17',
+      '2026-07-31',
+      '2026-08-14',
+      '2026-08-28',
+    ]);
+    expect(nextDueDate(biweekly, '2026-07-09')).toBe('2026-07-17');
+    expect(nextDueDate(biweekly, '2026-07-17')).toBe('2026-07-17'); // due today counts
+    // an anchorless weekly cadence has no occurrences at all
+    expect(occurrencesBetween(rec({ every: 'week' }), '2026-07-01', '2026-08-31')).toEqual([]);
+    // until ends the stride
+    expect(
+      occurrencesBetween(rec({ every: 'week', since: '2026-07-03', until: '2026-07-15' }), '2026-07-01', '2026-08-31'),
+    ).toEqual(['2026-07-03', '2026-07-10']);
+  });
+
+  it('cycleKeyOf buckets payments into one slot per billing cycle', () => {
+    const quarterly = rec({ everyN: 3, since: '2026-02-10' });
+    expect(cycleKeyOf(quarterly, '2026-02-12')).toBe(cycleKeyOf(quarterly, '2026-04-30'));
+    expect(cycleKeyOf(quarterly, '2026-05-01')).not.toBe(cycleKeyOf(quarterly, '2026-04-30'));
+
+    const biweekly = rec({ every: 'week', everyN: 2, since: '2026-07-03' });
+    expect(cycleKeyOf(biweekly, '2026-07-04')).toBe(cycleKeyOf(biweekly, '2026-07-16'));
+    expect(cycleKeyOf(biweekly, '2026-07-17')).not.toBe(cycleKeyOf(biweekly, '2026-07-16'));
+
+    // plain cadences keep calendar buckets (existing linking behavior)
+    expect(cycleKeyOf(rec({}), '2026-07-15')).toBe('2026-07');
+    expect(cycleKeyOf(rec({ every: 'year' }), '2026-07-15')).toBe('2026');
+  });
+
+  it('cycleMonths monthlyizes any cadence for insights', () => {
+    expect(cycleMonths(rec({}))).toBe(1);
+    expect(cycleMonths(rec({ everyN: 3 }))).toBe(3);
+    expect(cycleMonths(rec({ every: 'year' }))).toBe(12);
+    expect(cycleMonths(rec({ every: 'week' }))).toBeCloseTo(0.23, 1);
   });
 });
 

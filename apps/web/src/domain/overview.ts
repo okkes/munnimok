@@ -101,7 +101,53 @@ interface CatalogLookup {
   byId: (id: string | undefined) => { id: string; parentId?: string };
 }
 
-/** groups a kind's transactions by main category, sorted by size */
+/** one category's transactions in a period (a main matches its whole
+ *  family, a sub only itself — same attribution as categoryBreakdown),
+ *  newest first, with the signed total */
+/**
+ * What one transaction puts into ONE category (positive cents): split
+ * transactions partition across their slices — several slices under the
+ * same parent sum up instead of double-counting the whole amount.
+ */
+export function categoryContributionCents(
+  kind: OverviewKind,
+  tx: TransactionRow,
+  catId: string,
+  catalog: CatalogLookup,
+): number {
+  if (tx.splits?.length) {
+    let cents = 0;
+    for (const slice of tx.splits) {
+      const cat = catalog.byId(slice.catId);
+      if (cat.id === catId || cat.parentId === catId) cents += slice.amountCents;
+    }
+    return cents;
+  }
+  const cat = catalog.byId(tx.catId);
+  return cat.id === catId || cat.parentId === catId ? contributionCents(kind, tx) : 0;
+}
+
+export function txsForCategory(
+  kind: OverviewKind,
+  txs: TransactionRow[],
+  accountsById: Map<string, AccountRow>,
+  period: Period,
+  catId: string,
+  catalog: CatalogLookup,
+): { txs: TransactionRow[]; totalCents: number } {
+  // split transactions belong to every category their slices touch
+  const matches = txsForKind(kind, txs, accountsById, period).filter(
+    (tx) => categoryContributionCents(kind, tx, catId, catalog) !== 0,
+  );
+  matches.sort((a, b) => b.date.localeCompare(a.date));
+  return {
+    txs: matches,
+    totalCents: matches.reduce((sum, tx) => sum + categoryContributionCents(kind, tx, catId, catalog), 0),
+  };
+}
+
+/** groups a kind's transactions by main category, sorted by size —
+ *  split transactions land per slice, not on their primary category */
 export function categoryBreakdown(
   kind: OverviewKind,
   txs: TransactionRow[],
@@ -110,15 +156,14 @@ export function categoryBreakdown(
   catalog: CatalogLookup,
 ): CatBreakdownGroup[] {
   const groups = new Map<string, CatBreakdownGroup & { subMap: Map<string, CatBreakdownSub> }>();
-  for (const tx of txsForKind(kind, txs, accountsById, period)) {
-    const cat = catalog.byId(tx.catId);
+  const add = (catId: string | undefined, cents: number) => {
+    const cat = catalog.byId(catId);
     const mainId = cat.parentId ?? cat.id;
     let group = groups.get(mainId);
     if (!group) {
       group = { catId: mainId, totalCents: 0, subs: [], subMap: new Map() };
       groups.set(mainId, group);
     }
-    const cents = contributionCents(kind, tx);
     group.totalCents += cents;
     let sub = group.subMap.get(cat.id);
     if (!sub) {
@@ -127,6 +172,13 @@ export function categoryBreakdown(
     }
     sub.totalCents += cents;
     sub.count += 1;
+  };
+  for (const tx of txsForKind(kind, txs, accountsById, period)) {
+    if (tx.splits?.length) {
+      for (const slice of tx.splits) add(slice.catId, slice.amountCents);
+    } else {
+      add(tx.catId, contributionCents(kind, tx));
+    }
   }
   return [...groups.values()]
     .map(({ subMap, ...group }) => ({ ...group, subs: [...subMap.values()].sort((a, b) => b.totalCents - a.totalCents) }))

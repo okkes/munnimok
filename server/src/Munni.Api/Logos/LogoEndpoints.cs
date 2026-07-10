@@ -23,7 +23,17 @@ public static class LogoEndpoints
     public static void MapLogos(this IEndpointRouteBuilder app, IConfiguration config)
     {
         var publicToken = config["Logos:PublicToken"];
-        if (string.IsNullOrEmpty(config["Logos:SecretKey"]) || string.IsNullOrEmpty(publicToken)) return;
+        var secretKey = config["Logos:SecretKey"];
+        if (string.IsNullOrEmpty(secretKey) || string.IsNullOrEmpty(publicToken)) return;
+
+        // the two keys are easy to swap: search auth needs the SECRET key
+        // (sk_…); image URLs carry the PUBLISHABLE key (pk_…). A swap
+        // fails silently upstream (401 → empty results), so refuse loudly.
+        var log = app.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Logos");
+        if (secretKey.StartsWith("pk_", StringComparison.Ordinal))
+            log.LogError("LOGODEV_SECRET_KEY looks like a publishable key (pk_…) — use the SECRET key (sk_…) from logo.dev's Manage Keys; searches will return nothing");
+        if (publicToken.StartsWith("sk_", StringComparison.Ordinal))
+            log.LogError("LOGODEV_PUBLIC_TOKEN looks like a secret key (sk_…) — use the publishable key (pk_…); it is embedded in image URLs sent to clients");
 
         app.MapGet("/logos/search", async (string q, IHttpClientFactory http, CancellationToken ct) =>
         {

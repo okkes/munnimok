@@ -29,8 +29,13 @@ export function BarChart({ values, labels, selected, onSelect, height = 90, acce
             style={{ height: '100%' }}
           >
             <div
-              className="w-full rounded-t-[4px]"
-              style={{ height: barHeight, background: active ? accent : 'var(--m-line)', opacity: active ? 1 : 0.9 }}
+              className="m-bar-in w-full origin-bottom rounded-t-[4px]"
+              style={{
+                height: barHeight,
+                background: active ? accent : 'var(--m-line)',
+                opacity: active ? 1 : 0.9,
+                animationDelay: `${i * 45}ms`,
+              }}
             />
             <span className={`max-w-full truncate text-[9px] ${active ? 'font-semibold text-ink' : 'text-ink-4'}`}>
               {labels[i]}
@@ -53,7 +58,7 @@ export function StackedBar({ segments, height = 10 }: StackedBarProps) {
   const total = positive.reduce((sum, s) => sum + s.value, 0);
   if (total === 0) return <div className="w-full rounded-full bg-bg-2" style={{ height }} data-testid="overview-stackedbar" />;
   return (
-    <div className="flex w-full overflow-hidden rounded-full" style={{ height }} data-testid="overview-stackedbar">
+    <div className="m-grow-x flex w-full origin-left overflow-hidden rounded-full" style={{ height }} data-testid="overview-stackedbar">
       {positive.map((s, i) => (
         // eslint-disable-next-line react/no-array-index-key -- purely visual, order-stable
         <div key={`${s.color}-${i}`} style={{ width: `${(s.value / total) * 100}%`, background: s.color }} />

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { registerSW } from 'virtual:pwa-register';
+import { router } from '@/app/router';
 
 interface PwaState {
   needRefresh: boolean;
@@ -21,6 +22,45 @@ export function initPwa(): void {
     },
   });
   initViewportHeightVar();
+  initNotificationNav();
+}
+
+// only routes a notification may ever target — a whitelist keeps the
+// worker message from steering the router anywhere else
+const NOTIFICATION_TARGETS = ['/transactions', '/friends', '/spaces'] as const;
+
+/** window event re-broadcast when the worker receives a push while the
+ *  app is open — screens with server-backed lists refresh on it */
+export const PUSH_EVENT = 'munni-push';
+
+/**
+ * Worker → app messages. NAVIGATE deep-links notification clicks while
+ * the app is already open (the worker can only focus a client, not
+ * re-point its URL); PUSH re-broadcasts an incoming push as a window
+ * event. Exported for tests.
+ */
+export function handleWorkerMessage(data: unknown): void {
+  const message = data as { type?: string; url?: string } | undefined;
+  if (message?.type === 'PUSH') {
+    window.dispatchEvent(new Event(PUSH_EVENT));
+    return;
+  }
+  if (message?.type !== 'NAVIGATE' || typeof message.url !== 'string') return;
+  const path = message.url.split('#')[1]; // './#/friends' → '/friends'
+  const target = NOTIFICATION_TARGETS.find((route) => route === path);
+  if (target) {
+    void router.navigate({ to: target });
+    return;
+  }
+  // budget alerts target their detail screen; the id shape is validated
+  const budget = /^\/budgets\/([A-Za-z0-9_-]+)$/.exec(path ?? '');
+  if (budget && budget[1] !== 'new') {
+    void router.navigate({ to: '/budgets/$budgetId', params: { budgetId: budget[1] } });
+  }
+}
+
+function initNotificationNav(): void {
+  navigator.serviceWorker?.addEventListener('message', (event) => handleWorkerMessage(event.data));
 }
 
 /**
@@ -38,6 +78,10 @@ export function initPwa(): void {
  */
 function initViewportHeightVar(): void {
   const apply = () => {
+    // measured on-device (iPhone standalone, via the Settings diagnostics
+    // overlay): inner = dvh = svh = visual < screen.height — the webview
+    // does NOT cover the status bar band, so a screen.height fallback
+    // overshoots and clips the tab bar. innerHeight is the truth.
     const height = Math.max(window.innerHeight, document.documentElement.clientHeight || 0);
     document.documentElement.style.setProperty('--vvh', `${height}px`);
   };

@@ -19,21 +19,46 @@ export const addDays = (isoDate: string, n: number): string => {
   return toIso(dt.getFullYear(), dt.getMonth() + 1, dt.getDate());
 };
 
-/** the recurring's occurrence in a given calendar month, or null */
-function occurrenceIn(rec: Pick<RecurringRow, 'every' | 'dueDay' | 'dueMonth'>, y: number, m: number): string | null {
-  if (rec.every === 'year' && m !== (rec.dueMonth ?? 1)) return null;
+type CadenceFields = Pick<RecurringRow, 'every' | 'everyN' | 'dueDay' | 'dueMonth' | 'since' | 'until'>;
+
+const stepN = (rec: Pick<RecurringRow, 'everyN'>): number => Math.max(1, rec.everyN ?? 1);
+
+/** ISO date strings parse as UTC midnights — day diffs come out exact */
+const daysBetween = (a: string, b: string): number => Math.round((Date.parse(b) - Date.parse(a)) / 86_400_000);
+
+/** the recurring's occurrence in a given calendar month, or null.
+ *  every-N cadences (N > 1) anchor their cycle on `since`. */
+function occurrenceIn(rec: CadenceFields, y: number, m: number): string | null {
+  const n = stepN(rec);
+  if (rec.every === 'year') {
+    if (m !== (rec.dueMonth ?? 1)) return null;
+    if (n > 1 && rec.since && (y - parts(rec.since)[0]) % n !== 0) return null;
+  } else if (n > 1 && rec.since) {
+    const [sy, sm] = parts(rec.since);
+    if (((y - sy) * 12 + (m - sm)) % n !== 0) return null;
+  }
   return toIso(y, m, Math.min(rec.dueDay, daysInMonth(y, m)));
 }
 
 const withinLifetime = (rec: Pick<RecurringRow, 'since' | 'until'>, date: string): boolean =>
   (!rec.since || date >= rec.since) && (!rec.until || date <= rec.until);
 
+/** weekly cadences step in exact 7×N-day strides from their anchor */
+function weeklyOccurrencesBetween(rec: CadenceFields, from: string, to: string): string[] {
+  const anchor = rec.since;
+  if (!anchor) return [];
+  const step = 7 * stepN(rec);
+  const k = Math.max(0, Math.ceil(daysBetween(anchor, from) / step));
+  const out: string[] = [];
+  for (let date = addDays(anchor, k * step); date <= to; date = addDays(date, step)) {
+    if (date >= from && withinLifetime(rec, date)) out.push(date);
+  }
+  return out;
+}
+
 /** every occurrence date within [from, to], honoring since/until */
-export function occurrencesBetween(
-  rec: Pick<RecurringRow, 'every' | 'dueDay' | 'dueMonth' | 'since' | 'until'>,
-  from: string,
-  to: string,
-): string[] {
+export function occurrencesBetween(rec: CadenceFields, from: string, to: string): string[] {
+  if (rec.every === 'week') return weeklyOccurrencesBetween(rec, from, to);
   const [fy, fm] = parts(from);
   const [ty, tm] = parts(to);
   const out: string[] = [];
@@ -45,13 +70,16 @@ export function occurrencesBetween(
 }
 
 /** the next occurrence on/after today, or null (inactive / ended) */
-export function nextDueDate(
-  rec: Pick<RecurringRow, 'active' | 'every' | 'dueDay' | 'dueMonth' | 'since' | 'until'>,
-  today: string,
-): string | null {
+export function nextDueDate(rec: Pick<RecurringRow, 'active'> & CadenceFields, today: string): string | null {
   if (rec.active !== 1) return null;
+  if (rec.every === 'week') {
+    const horizon = addDays(today, 7 * stepN(rec) + 7);
+    return weeklyOccurrencesBetween(rec, today, horizon)[0] ?? null;
+  }
   const [y, m] = parts(today);
-  for (let i = 0; i < 24; i++) {
+  // enough months to reach the next cycle even for every-5-years
+  const monthsToScan = Math.max(24, 12 * stepN(rec) + 12);
+  for (let i = 0; i < monthsToScan; i++) {
     const mm = ((m - 1 + i) % 12) + 1;
     const yy = y + Math.floor((m - 1 + i) / 12);
     const date = occurrenceIn(rec, yy, mm);
@@ -61,12 +89,39 @@ export function nextDueDate(
   return null;
 }
 
+/** stable id of the billing cycle containing `date` — caps auto-linking at one payment per cycle */
+export function cycleKeyOf(rec: CadenceFields, date: string): string {
+  const n = stepN(rec);
+  if (rec.every === 'week') {
+    if (!rec.since) return date.slice(0, 7); // anchorless weekly can't cycle — degrade to monthly
+    return `w${Math.floor(daysBetween(rec.since, date) / (7 * n))}`;
+  }
+  if (rec.every === 'year') {
+    if (n > 1 && rec.since) return `y${Math.floor((parts(date)[0] - parts(rec.since)[0]) / n)}`;
+    return date.slice(0, 4);
+  }
+  if (n > 1 && rec.since) {
+    const [sy, sm] = parts(rec.since);
+    const [y, m] = parts(date);
+    return `m${Math.floor(((y - sy) * 12 + (m - sm)) / n)}`;
+  }
+  return date.slice(0, 7);
+}
+
+/** how many months one billing cycle spans (weekly ≈ 4.345 weeks/month) */
+export const cycleMonths = (rec: Pick<RecurringRow, 'every' | 'everyN'>): number => {
+  const n = stepN(rec);
+  if (rec.every === 'year') return 12 * n;
+  if (rec.every === 'week') return n / 4.345;
+  return n;
+};
+
 /** an actual payment within 25% (or €1 for small amounts) of the estimate */
 export const recurringAmountMatches = (rec: Pick<RecurringRow, 'amountCents'>, txAmountCents: number): boolean =>
   Math.abs(Math.abs(txAmountCents) - rec.amountCents) <= Math.max(100, rec.amountCents * 0.25);
 
 export const isDueWithin = (
-  rec: Pick<RecurringRow, 'active' | 'every' | 'dueDay' | 'dueMonth' | 'since' | 'until'>,
+  rec: Pick<RecurringRow, 'active'> & CadenceFields,
   today: string,
   days: number,
 ): boolean => {

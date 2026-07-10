@@ -25,7 +25,11 @@ describe('TransactionsScreen (demo identity)', () => {
       expect(after).toBeGreaterThan(0);
       expect(after).toBeLessThan(before);
     });
-    for (const row of rows()) expect(row.textContent).toContain('Albert Heijn');
+    for (const row of rows()) {
+      expect(row.textContent).toContain('Albert Heijn');
+      // the match itself is marked in the row
+      expect(row.querySelector('mark')?.textContent).toBe('Albert Heijn');
+    }
 
     fireEvent.change(screen.getByTestId('tx-search'), { target: { value: 'zzz-no-such-merchant' } });
     await waitFor(() => expect(rows().length).toBe(0));

@@ -113,7 +113,9 @@ describe('SpacesScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId(`space-edit-${id}`));
     const day = await screen.findByTestId('space-period-day');
     fireEvent.change(day, { target: { value: '40' } });
-    expect((day as HTMLInputElement).value).toBe('28'); // clamped
+    expect((day as HTMLInputElement).value).toBe('40'); // free while typing (deletable '1')
+    fireEvent.blur(day);
+    expect((day as HTMLInputElement).value).toBe('28'); // clamped on blur
 
     fireEvent.click(screen.getByTestId('space-period-biweekly'));
     expect(screen.queryByTestId('space-period-day')).toBeNull();

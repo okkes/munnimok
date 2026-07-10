@@ -2,10 +2,12 @@ import { useCallback, useEffect, useState } from 'react';
 import { useSession } from '@/app/session';
 import { useLang } from '@/i18n';
 import { apiFetch } from '@/lib/api';
+import { useServerRefresh } from '@/lib/serverEvents';
 import { Avatar } from '@/features/profile/ProfileScreen';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
+import { Sheet } from '@/ui/Sheet';
 
 interface FriendDto {
   userId: string;
@@ -66,6 +68,8 @@ export function FriendsScreen() {
   const [data, setData] = useState<FriendsResponse | null>(null);
   const [addId, setAddId] = useState('');
   const [copied, setCopied] = useState(false);
+  // removing a friend is destructive enough for a second look
+  const [confirmRemove, setConfirmRemove] = useState<{ userId: string; name: string } | null>(null);
 
   const reload = useCallback(async () => {
     const res = await apiFetch('/friends');
@@ -77,6 +81,12 @@ export function FriendsScreen() {
     void apiFetch('/me').then(async (res) => res.ok && setMe(await res.json()));
     void reload();
   }, [reload, isUser]);
+  // a request/accept push while the screen is open refreshes the lists
+  // (identity-gated: local-only sessions must stay at zero network)
+  const refresh = useCallback(() => {
+    if (isUser) void reload();
+  }, [isUser, reload]);
+  useServerRefresh(refresh);
 
   const sendRequest = async () => {
     const id = addId.trim();
@@ -180,7 +190,12 @@ export function FriendsScreen() {
         <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="friends-list">
           {(data?.friends ?? []).map((f) => (
             <PersonRow key={f.userId} name={f.displayName ?? short(f.userId)} sub={short(f.userId)} picture={f.picture}>
-              <button aria-label={t('action.delete')} data-testid={`friends-remove-${f.userId}`} onClick={() => void removeFriend(f.userId)} className="m-tap border-none bg-transparent text-ink-4">
+              <button
+                aria-label={t('action.delete')}
+                data-testid={`friends-remove-${f.userId}`}
+                onClick={() => setConfirmRemove({ userId: f.userId, name: f.displayName ?? short(f.userId) })}
+                className="m-tap border-none bg-transparent text-ink-4"
+              >
                 <Icon name="account-remove-outline" size={18} />
               </button>
             </PersonRow>
@@ -191,6 +206,34 @@ export function FriendsScreen() {
         </div>
       </div>
       )}
+
+      {/* deleting a friend needs a second, explicit yes */}
+      <Sheet
+        open={confirmRemove !== null}
+        onOpenChange={(open) => !open && setConfirmRemove(null)}
+        title={t('friends.removeTitle')}
+        size="compact"
+      >
+        <p className="pt-1 pb-4 text-[14px] leading-relaxed text-ink-2" data-testid="friends-remove-text">
+          {t('friends.removeText', { name: confirmRemove?.name ?? '' })}
+        </p>
+        <div className="flex gap-2">
+          <Button variant="outline" className="flex-1" data-testid="friends-remove-cancel" onClick={() => setConfirmRemove(null)}>
+            {t('action.cancel')}
+          </Button>
+          <Button
+            variant="danger"
+            className="flex-1"
+            data-testid="friends-remove-confirm"
+            onClick={() => {
+              if (confirmRemove) void removeFriend(confirmRemove.userId);
+              setConfirmRemove(null);
+            }}
+          >
+            {t('action.delete')}
+          </Button>
+        </div>
+      </Sheet>
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { useLang } from '@/i18n';
 import { config, logtoConfigured } from '@/app/config';
 import { useData } from '@/app/data';
 import { apiFetch } from '@/lib/api';
+import { Highlight } from '@/ui/Highlight';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 
@@ -27,11 +28,19 @@ export function BankConnectSheet({ open, onOpenChange }: { open: boolean; onOpen
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
 
+  const [rateLimited, setRateLimited] = useState(false);
+
   useEffect(() => {
     if (!open || institutions) return;
     void (async () => {
       try {
         const res = await apiFetch('/gocardless/institutions?country=nl');
+        if (res.status === 429 || res.status === 503) {
+          // GoCardless quota spent — a distinct message beats a generic
+          // failure ("try later" is genuinely the right advice here)
+          setRateLimited(true);
+          return;
+        }
         if (!res.ok) throw new Error(String(res.status));
         setInstitutions((await res.json()) as Institution[]);
       } catch {
@@ -74,6 +83,12 @@ export function BankConnectSheet({ open, onOpenChange }: { open: boolean; onOpen
           {t('gc.failed')}
         </div>
       )}
+      {rateLimited && (
+        <div className="mb-2 flex items-center gap-2 rounded-card bg-warning-soft px-4 py-3 text-[13px] text-ink-2" data-testid="gc-rate-limited">
+          <Icon name="clock-alert-outline" size={16} color="var(--m-warning)" />
+          {t('gc.rateLimited')}
+        </div>
+      )}
       <input
         data-testid="gc-bank-search"
         value={query}
@@ -91,13 +106,30 @@ export function BankConnectSheet({ open, onOpenChange }: { open: boolean; onOpen
           className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-1 py-2.5 text-left"
         >
           {institution.logo ? (
-            <img src={institution.logo} alt="" className="h-8 w-8 rounded-lg object-contain" loading="lazy" />
-          ) : (
+            <img
+              src={institution.logo}
+              alt=""
+              className="h-8 w-8 rounded-lg object-contain"
+              loading="lazy"
+              // a blocked/expired CDN image must not leave an empty square
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+                e.currentTarget.nextElementSibling?.classList.remove('hidden');
+              }}
+            />
+          ) : null}
+          <span className={institution.logo ? 'hidden' : ''}>
             <Icon name="bank-outline" size={22} color="var(--m-ink-3)" />
-          )}
+          </span>
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-[14px] font-medium text-ink">{institution.name}</span>
-            {institution.bic && <span className="block font-mono text-[11px] text-ink-4">{institution.bic}</span>}
+            <span className="block truncate text-[14px] font-medium text-ink">
+              <Highlight text={institution.name} query={query} />
+            </span>
+            {institution.bic && (
+              <span className="block font-mono text-[11px] text-ink-4">
+                <Highlight text={institution.bic} query={query} />
+              </span>
+            )}
           </span>
           <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
         </button>

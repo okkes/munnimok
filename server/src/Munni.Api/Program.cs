@@ -9,8 +9,10 @@ using Munni.Api.Auth;
 using Munni.Api.Data;
 using Munni.Api.Admin;
 using Munni.Api.GoCardless;
+using Munni.Api.Investments;
 using Munni.Api.Logos;
 using Munni.Api.Push;
+using Munni.Api.Shopping;
 using Munni.Api.Social;
 using Munni.Api.Sync;
 
@@ -45,6 +47,36 @@ if (!string.IsNullOrEmpty(builder.Configuration["GoCardless:SecretId"]))
         client.BaseAddress = new Uri(gcBaseUrl));
     builder.Services.AddHostedService<GcFetchService>();
 }
+
+// store pass-through proxy (receipts design): no secrets, always on —
+// the client brings its own token; the allowlist lives in the endpoint
+builder.Services.AddHttpClient(StoreProxyEndpoints.HttpClientName,
+    client => client.Timeout = TimeSpan.FromSeconds(15));
+
+// receipt OCR via the Tesseract sidecar — enabled when the container is configured
+var ocrEnabled = !string.IsNullOrEmpty(builder.Configuration["Ocr:BaseUrl"]);
+if (ocrEnabled)
+{
+    builder.Services.AddHttpClient(OcrEndpoints.HttpClientName, client =>
+    {
+        client.BaseAddress = new Uri(builder.Configuration["Ocr:BaseUrl"]!);
+        client.Timeout = TimeSpan.FromSeconds(30);
+    });
+}
+
+// delayed quotes for the portfolio: free vendors, no secrets, always on
+builder.Services.AddHttpClient(QuoteEndpoints.YahooClientName, client =>
+{
+    client.BaseAddress = new Uri("https://query1.finance.yahoo.com"); // NOSONAR(S1075) vendor API base
+    // Yahoo throttles default HttpClient agents
+    client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) munni/1.0");
+    client.Timeout = TimeSpan.FromSeconds(8);
+});
+builder.Services.AddHttpClient(QuoteEndpoints.CoinGeckoClientName, client =>
+{
+    client.BaseAddress = new Uri("https://api.coingecko.com"); // NOSONAR(S1075) vendor API base
+    client.Timeout = TimeSpan.FromSeconds(8);
+});
 
 // brand-logo search (logo.dev) — enabled when both keys are configured
 var logosEnabled = !string.IsNullOrEmpty(builder.Configuration["Logos:SecretKey"])
@@ -173,12 +205,18 @@ app.MapGet("/health", () => Results.Ok(new
         push = pushEnabled,
         vapidPublicKey = app.Configuration["Push:VapidPublicKey"] ?? "",
         logos = logosEnabled,
+        shopProxy = true,
+        ocr = ocrEnabled,
+        quotes = true,
     },
 }));
 app.MapSync();
 app.MapSocial();
 app.MapPush();
 app.MapLogos(app.Configuration);
+app.MapStoreProxy();
+if (ocrEnabled) app.MapOcr();
+app.MapQuotes();
 app.MapAccounts();
 app.MapAdmin(gcEnabled);
 if (gcEnabled) app.MapGoCardless();

@@ -4,18 +4,29 @@ import type { SpaceTx } from '@/application/transactions';
 import { useLang } from '@/i18n';
 import { ALL_TX_TYPES, applyTypeChange, typeForLinkedAccount } from '@/domain/txType';
 import { useCategories } from '@/features/categories/useCategories';
-import type { TxType } from '@/db/types';
+import type { AccountType, TxType } from '@/db/types';
+import { fmtCents } from '@/lib/money';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 
+const ACCOUNT_ICON: Record<AccountType, string> = {
+  checking: 'bank-outline',
+  savings: 'piggy-bank-outline',
+  cash: 'wallet-outline',
+  brokerage: 'chart-line',
+  credit: 'credit-card-outline',
+  mortgage: 'home-percent-outline',
+  loan: 'hand-coin-outline',
+};
+
 /**
- * Type + counter-account editor. Linking a counter-account derives the
- * type from what that account is (savings -> saving, credit -> debt
- * payment, ...) and locks manual choice; conflicting categories fall back
- * to uncategorized and are flagged for review.
+ * Counter-account + type editor, account-first (user feedback): the
+ * account this money moved to or from decides the type, so it leads —
+ * as a real list with icons and balances instead of guess-the-badge.
+ * The manual type list stays for transactions without a counterparty.
  */
 export function TxTypeSheet({ open, onOpenChange, tx }: { open: boolean; onOpenChange: (open: boolean) => void; tx: SpaceTx }) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const cats = useCategories();
   const transform = useTxTransform();
 
@@ -50,6 +61,38 @@ export function TxTypeSheet({ open, onOpenChange, tx }: { open: boolean; onOpenC
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title={t('tx.type')} size="tall">
+      {/* the other side first — it decides the type */}
+      <div className="m-cap mb-1 px-1">{t('tx.counterAccount')}</div>
+      <p className="pb-2 text-[12px] text-ink-3">{t('tx.counterAccountHint')}</p>
+      <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="txtype-accounts">
+        <button
+          data-testid="txtype-linked-none"
+          onClick={() => chooseLinked(null)}
+          className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3 text-left"
+        >
+          <Icon name="close-circle-outline" size={18} color="var(--m-ink-4)" />
+          <span className="min-w-0 flex-1 text-[14px] text-ink-2">{t('tx.linkedAccountNone')}</span>
+          {!tx.linkedAccountId && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
+        </button>
+        {(accounts ?? []).map((account) => (
+          <button
+            key={account.id}
+            data-testid={`txtype-linked-${account.id}`}
+            onClick={() => chooseLinked(account.id)}
+            className="m-tap flex w-full items-center gap-3 border-t border-line-2 px-4 py-3 text-left"
+          >
+            <Icon name={ACCOUNT_ICON[account.type] ?? 'bank-outline'} size={18} color="var(--m-ink-2)" />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[14px] text-ink">{account.name}</span>
+              <span className="block text-[11px] text-ink-4">{t(`tx.type.${typeForLinkedAccount(account.type)}`)}</span>
+            </span>
+            <span className="m-num text-[12px] text-ink-3">{fmtCents(account.balanceCents, account.currency, lang)}</span>
+            {tx.linkedAccountId === account.id && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
+          </button>
+        ))}
+      </div>
+
+      <div className="m-cap mt-4 mb-1 px-1">{t('tx.typeManual')}</div>
       {locked && (
         <p className="pb-2 text-[12px] text-ink-3" data-testid="txtype-locked-note">
           {t('tx.typeLockedByAccount')}
@@ -66,33 +109,6 @@ export function TxTypeSheet({ open, onOpenChange, tx }: { open: boolean; onOpenC
           >
             <span className="flex-1">{t(`tx.type.${type}`)}</span>
             {tx.txType === type && <Icon name="check" size={18} color="var(--m-accent)" />}
-          </button>
-        ))}
-      </div>
-
-      <div className="m-cap mt-4 mb-1 px-1">{t('tx.linkedAccount')}</div>
-      <div className="flex flex-wrap gap-2 pb-2">
-        <button
-          data-testid="txtype-linked-none"
-          onClick={() => chooseLinked(null)}
-          className={`m-tap rounded-full border px-3 py-1.5 text-[12px] ${
-            tx.linkedAccountId ? 'border-line bg-surface text-ink-2' : 'border-accent bg-accent-soft font-medium text-accent-deep'
-          }`}
-        >
-          {t('tx.linkedAccountNone')}
-        </button>
-        {(accounts ?? []).map((a) => (
-          <button
-            key={a.id}
-            data-testid={`txtype-linked-${a.id}`}
-            onClick={() => chooseLinked(a.id)}
-            className={`m-tap rounded-full border px-3 py-1.5 text-[12px] ${
-              tx.linkedAccountId === a.id
-                ? 'border-accent bg-accent-soft font-medium text-accent-deep'
-                : 'border-line bg-surface text-ink-2'
-            }`}
-          >
-            {a.name}
           </button>
         ))}
       </div>

@@ -3,8 +3,21 @@ import type { Table } from 'dexie';
 import type {
   AccountLinkRow,
   AccountRow,
+  AllocationRow,
+  BudgetRow,
   CategoryRow,
+  DebtRow,
   EntityName,
+  EventRow,
+  HoldingRow,
+  InsightDismissRow,
+  LotRow,
+  QuoteCacheRow,
+  ReceiptRow,
+  StoreConnectionRow,
+  StoreMarkerRow,
+  GoalContributionRow,
+  GoalRow,
   MetaRow,
   OutboxRow,
   RecurringDismissRow,
@@ -28,6 +41,21 @@ export class MunniDB extends Dexie {
   accountLinks!: Table<AccountLinkRow, string>;
   recurrings!: Table<RecurringRow, string>;
   recurringDismissals!: Table<RecurringDismissRow, string>;
+  budgets!: Table<BudgetRow, string>;
+  events!: Table<EventRow, string>;
+  goals!: Table<GoalRow, string>;
+  goalContributions!: Table<GoalContributionRow, string>;
+  debts!: Table<DebtRow, string>;
+  allocations!: Table<AllocationRow, string>;
+  receipts!: Table<ReceiptRow, string>;
+  /** device-only — store tokens never sync (receipts privacy law) */
+  storeConnections!: Table<StoreConnectionRow, string>;
+  storeMarkers!: Table<StoreMarkerRow, string>;
+  holdings!: Table<HoldingRow, string>;
+  lots!: Table<LotRow, string>;
+  insightDismissals!: Table<InsightDismissRow, string>;
+  /** device-only — delayed quotes are a cache, not data */
+  quoteCache!: Table<QuoteCacheRow, string>;
   outbox!: Table<OutboxRow, string>;
   meta!: Table<MetaRow, string>;
 
@@ -51,6 +79,40 @@ export class MunniDB extends Dexie {
       recurrings: 'id, spaceId',
       recurringDismissals: 'id, spaceId',
     });
+    // budgets
+    this.version(4).stores({
+      budgets: 'id, spaceId',
+    });
+    // events, goals, debts
+    this.version(5).stores({
+      events: 'id, spaceId',
+      goals: 'id, spaceId',
+      goalContributions: 'id, spaceId, goalId',
+      debts: 'id, spaceId',
+    });
+    // allocation (zero-based budgeting)
+    this.version(6).stores({
+      allocations: 'id, spaceId, [spaceId+periodStart]',
+    });
+    // receipts (synced) + device-only store connections
+    this.version(7).stores({
+      receipts: 'id, spaceId, txId',
+      storeConnections: 'store',
+    });
+    // secret-free synced store markers (reconnect notices)
+    this.version(8).stores({
+      storeMarkers: 'id, spaceId',
+    });
+    // portfolio (investments design) + device-only quote cache
+    this.version(9).stores({
+      holdings: 'id, spaceId',
+      lots: 'id, spaceId, holdingId',
+      quoteCache: 'key',
+    });
+    // insights: synced per-space dismissals
+    this.version(10).stores({
+      insightDismissals: 'id, spaceId',
+    });
   }
 
   tableFor<E extends EntityName>(entity: E) {
@@ -71,6 +133,28 @@ export class MunniDB extends Dexie {
         return this.recurrings;
       case 'recurringDismiss':
         return this.recurringDismissals;
+      case 'budget':
+        return this.budgets;
+      case 'event':
+        return this.events;
+      case 'goal':
+        return this.goals;
+      case 'goalContribution':
+        return this.goalContributions;
+      case 'debt':
+        return this.debts;
+      case 'allocation':
+        return this.allocations;
+      case 'receipt':
+        return this.receipts;
+      case 'storeMarker':
+        return this.storeMarkers;
+      case 'holding':
+        return this.holdings;
+      case 'lot':
+        return this.lots;
+      case 'insightDismiss':
+        return this.insightDismissals;
       default:
         throw new Error(`unknown entity: ${entity}`);
     }

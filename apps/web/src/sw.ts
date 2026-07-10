@@ -7,6 +7,7 @@
 // Runtime glue only — the decisions live in sync/swNotifications (tested).
 import { cleanupOutdatedCaches, precacheAndRoute } from 'workbox-precaching';
 import { backgroundPull, flushOutbox } from '@/sync/swSync';
+import { evaluateBudgetAlertsFromWorker } from '@/sync/swBudgets';
 import { buildNotification, readWorkerLang } from '@/sync/swNotifications';
 import type { PushPayload } from '@/sync/swNotifications';
 
@@ -41,7 +42,8 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     (async () => {
       // the notification first — iOS requires one per push event
-      const notification = buildNotification(payload, await readWorkerLang());
+      const lang = await readWorkerLang();
+      const notification = buildNotification(payload, lang);
       if (!notification) return;
       await self.registration.showNotification(notification.title, {
         body: notification.body,
@@ -50,12 +52,29 @@ self.addEventListener('push', (event) => {
         tag: notification.tag,
         data: { url: notification.url, spaceId: notification.pullSpaceId },
       });
+      // open clients refresh their server-backed lists (notification
+      // bell, members, invites) the moment a push lands
+      const clientList = await self.clients.matchAll({ type: 'window' });
+      for (const client of clientList) client.postMessage({ type: 'PUSH', payloadType: payload.type });
+
       if (!notification.pull) return;
       // …then pre-sync the announced data into IndexedDB while we're
       // awake, so opening the app (or the notification) starts hot.
       // Best-effort: an expired mirrored token just skips.
       try {
         await backgroundPull(notification.pullSpaceId);
+        // budgets stay client-side (the server never learns them) — this
+        // wake-up is the moment to warn about limits the new bank
+        // transactions just crossed (budgets design P4)
+        for (const alert of await evaluateBudgetAlertsFromWorker(notification.pullSpaceId, lang)) {
+          await self.registration.showNotification(alert.title, {
+            body: alert.body,
+            icon: 'icon-192.png',
+            badge: 'icon-192.png',
+            tag: alert.tag,
+            data: { url: alert.url },
+          });
+        }
       } catch {
         // offline again / server hiccup — the app syncs on next open
       }
@@ -90,8 +109,14 @@ self.addEventListener('notificationclick', (event) => {
       const existing = clientList[0];
       // focusing (or opening) the app triggers its start-up sync,
       // pulling the announced transactions immediately
-      if (existing) await existing.focus();
-      else await self.clients.openWindow(url);
+      if (existing) {
+        // a focused client keeps its current screen — post the target so
+        // the app's listener routes there (friend request → friends, …)
+        existing.postMessage({ type: 'NAVIGATE', url });
+        await existing.focus();
+      } else {
+        await self.clients.openWindow(url);
+      }
     })(),
   );
 });

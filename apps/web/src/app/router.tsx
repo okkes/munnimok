@@ -21,8 +21,27 @@ import { ManageCategoriesScreen } from '@/features/categories/ManageCategoriesSc
 import { FriendsScreen } from '@/features/friends/FriendsScreen';
 import { OnboardingScreen } from '@/features/auth/OnboardingScreen';
 import { OverviewScreen } from '@/features/overview/OverviewScreen';
+import { CategoryDrillScreen } from '@/features/overview/CategoryDrillScreen';
+import { BudgetsScreen } from '@/features/budgets/BudgetsScreen';
+import { BudgetFormScreen } from '@/features/budgets/BudgetFormScreen';
+import { BudgetDetailScreen } from '@/features/budgets/BudgetDetailScreen';
+import { EventsScreen } from '@/features/events/EventsScreen';
+import { EventDetailScreen } from '@/features/events/EventDetailScreen';
+import { GoalsScreen } from '@/features/goals/GoalsScreen';
+import { GoalDetailScreen } from '@/features/goals/GoalDetailScreen';
+import { DebtsScreen } from '@/features/debts/DebtsScreen';
+import { DebtDetailScreen } from '@/features/debts/DebtDetailScreen';
+import { AllocateScreen } from '@/features/allocation/AllocateScreen';
+import { HelpIndexScreen } from '@/features/help/HelpIndexScreen';
+import { ShoppingConnectionsScreen } from '@/features/shopping/ShoppingConnectionsScreen';
+import { ReceiptsScreen } from '@/features/shopping/ReceiptsScreen';
+import { PortfolioScreen } from '@/features/portfolio/PortfolioScreen';
+import { HoldingDetailScreen } from '@/features/portfolio/HoldingDetailScreen';
+import { InsightsScreen } from '@/features/insights/InsightsScreen';
 import { ProfileScreen } from '@/features/profile/ProfileScreen';
 import { RecurringScreen } from '@/features/recurring/RecurringScreen';
+import { RecurringDetailScreen } from '@/features/recurring/RecurringDetailScreen';
+import { RecurringSuggestionsScreen } from '@/features/recurring/RecurringSuggestionsScreen';
 
 const rootRoute = createRootRoute({ component: Outlet });
 
@@ -58,12 +77,6 @@ const transactionsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/transactions',
   component: TransactionsScreen,
-  // overview drill-down: category + period land here as search params
-  validateSearch: (search: Record<string, unknown>): { catId?: string; from?: string; to?: string } => ({
-    catId: typeof search.catId === 'string' ? search.catId : undefined,
-    from: typeof search.from === 'string' ? search.from : undefined,
-    to: typeof search.to === 'string' ? search.to : undefined,
-  }),
 });
 const txDetailRoute = createRoute({
   getParentRoute: () => appRoute,
@@ -71,6 +84,17 @@ const txDetailRoute = createRoute({
   component: TxDetailScreen,
 });
 const recurringRoute = createRoute({ getParentRoute: () => appRoute, path: '/recurring', component: RecurringScreen });
+// static beats the $recId param in TanStack's ranking — order here is cosmetic
+const recurringSuggestionsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/recurring/suggestions',
+  component: RecurringSuggestionsScreen,
+});
+const recurringDetailRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/recurring/$recId',
+  component: RecurringDetailScreen,
+});
 const spacesRoute = createRoute({ getParentRoute: () => appRoute, path: '/spaces', component: SpacesScreen });
 const spaceSettingsRoute = createRoute({
   getParentRoute: () => appRoute,
@@ -89,6 +113,33 @@ const friendsRoute = createRoute({ getParentRoute: () => appRoute, path: '/frien
 const onboardingRoute = createRoute({ getParentRoute: () => appRoute, path: '/onboarding', component: OnboardingScreen });
 const profileRoute = createRoute({ getParentRoute: () => appRoute, path: '/profile', component: ProfileScreen });
 const overviewRoute = createRoute({ getParentRoute: () => appRoute, path: '/overview/$kind', component: OverviewScreen });
+const budgetsRoute = createRoute({ getParentRoute: () => appRoute, path: '/budgets', component: BudgetsScreen });
+// static 'new' outranks the $budgetId param in TanStack's ranking
+const budgetNewRoute = createRoute({ getParentRoute: () => appRoute, path: '/budgets/new', component: BudgetFormScreen });
+const budgetDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/budgets/$budgetId', component: BudgetDetailScreen });
+const budgetEditRoute = createRoute({ getParentRoute: () => appRoute, path: '/budgets/$budgetId/edit', component: BudgetFormScreen });
+const eventsRoute = createRoute({ getParentRoute: () => appRoute, path: '/events', component: EventsScreen });
+const eventDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/events/$eventId', component: EventDetailScreen });
+const goalsRoute = createRoute({ getParentRoute: () => appRoute, path: '/goals', component: GoalsScreen });
+const goalDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/goals/$goalId', component: GoalDetailScreen });
+const debtsRoute = createRoute({ getParentRoute: () => appRoute, path: '/debts', component: DebtsScreen });
+const debtDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/debts/$debtId', component: DebtDetailScreen });
+const allocateRoute = createRoute({ getParentRoute: () => appRoute, path: '/allocate', component: AllocateScreen });
+const helpRoute = createRoute({ getParentRoute: () => appRoute, path: '/help', component: HelpIndexScreen });
+const shoppingRoute = createRoute({ getParentRoute: () => appRoute, path: '/shopping', component: ShoppingConnectionsScreen });
+const receiptsRoute = createRoute({ getParentRoute: () => appRoute, path: '/receipts', component: ReceiptsScreen });
+const portfolioRoute = createRoute({ getParentRoute: () => appRoute, path: '/portfolio', component: PortfolioScreen });
+const holdingDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/portfolio/$holdingId', component: HoldingDetailScreen });
+const insightsRoute = createRoute({ getParentRoute: () => appRoute, path: '/insights', component: InsightsScreen });
+const categoryDrillRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/overview/$kind/$catId',
+  component: CategoryDrillScreen,
+  // the overview hands over its selected period
+  validateSearch: (search: Record<string, unknown>): { from?: string } => ({
+    from: typeof search.from === 'string' ? search.from : undefined,
+  }),
+});
 
 export const routeTree = rootRoute.addChildren([
   loginRoute,
@@ -98,6 +149,8 @@ export const routeTree = rootRoute.addChildren([
     transactionsRoute,
     txDetailRoute,
     recurringRoute,
+    recurringSuggestionsRoute,
+    recurringDetailRoute,
     spacesRoute,
     spaceSettingsRoute,
     settingsRoute,
@@ -108,6 +161,24 @@ export const routeTree = rootRoute.addChildren([
     onboardingRoute,
     profileRoute,
     overviewRoute,
+    categoryDrillRoute,
+    budgetsRoute,
+    budgetNewRoute,
+    budgetDetailRoute,
+    budgetEditRoute,
+    eventsRoute,
+    eventDetailRoute,
+    goalsRoute,
+    goalDetailRoute,
+    debtsRoute,
+    debtDetailRoute,
+    allocateRoute,
+    helpRoute,
+    shoppingRoute,
+    receiptsRoute,
+    portfolioRoute,
+    holdingDetailRoute,
+    insightsRoute,
   ]),
 ]);
 

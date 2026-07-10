@@ -3,7 +3,7 @@ import { useTxTransform } from '@/application/transactions';
 import type { SpaceTx } from '@/application/transactions';
 import { useLang } from '@/i18n';
 import { fmtCents, parseCents } from '@/lib/money';
-import { balanceLastRow, primaryCatId, splitRemainderCents, validateSplits } from '@/domain/splits';
+import { balanceLastRow, pctRemainder, primaryCatId, resolveSplitsFor, splitRemainderCents, splitsArePct, validatePctSplits, validateSplits } from '@/domain/splits';
 import { UNCATEGORIZED_ID } from '@/domain/categories';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { CategoryPicker } from '@/features/categories/CategoryPicker';
@@ -11,7 +11,6 @@ import type { TxSplit } from '@/db/types';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
-import { useSheetStackLock } from '@/ui/useSheetStackLock';
 
 interface Row {
   /** stable key for React list rendering (rows have no natural id) */
@@ -24,36 +23,67 @@ let rowCounter = 0;
 const newRow = (catId: string, amount: string): Row => ({ key: `r${rowCounter++}`, catId, amount });
 
 const toText = (cents: number) => (cents / 100).toFixed(2).replace('.', ',');
-const toSplits = (rows: Row[]): TxSplit[] => rows.map((r) => ({ catId: r.catId, amountCents: parseCents(r.amount) ?? 0 }));
+const toPctText = (pct: number) => String(pct).replace('.', ',');
+const parsePct = (text: string): number => {
+  const n = Number.parseFloat(text.replace(',', '.'));
+  return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0;
+};
 
-/** Editor partitioning a transaction across categories (must sum exactly). */
+/** Editor partitioning a transaction across categories — in euros (must
+ *  sum exactly) or percentages (must reach 100, scales to any amount). */
 export function SplitEditorSheet({ open, onOpenChange, tx }: { open: boolean; onOpenChange: (open: boolean) => void; tx: SpaceTx }) {
   const { t, lang } = useLang();
   const transform = useTxTransform();
   const cats = useCategories();
   const [rows, setRows] = useState<Row[]>([]);
+  const [mode, setMode] = useState<'amount' | 'pct'>('amount');
   const [pickerFor, setPickerFor] = useState<number | null>(null);
-  const locked = useSheetStackLock(pickerFor !== null);
 
   useEffect(() => {
     if (!open) return;
     if (tx.splits?.length) {
-      setRows(tx.splits.map((s) => newRow(s.catId, toText(s.amountCents))));
+      const pctMode = splitsArePct(tx.splits);
+      setMode(pctMode ? 'pct' : 'amount');
+      setRows(tx.splits.map((s) => newRow(s.catId, pctMode ? toPctText(s.pct!) : toText(s.amountCents))));
     } else {
+      setMode('amount');
       // start from the current category + an empty second row
       setRows([newRow(tx.catId ?? UNCATEGORIZED_ID, toText(Math.abs(tx.amountCents))), newRow(UNCATEGORIZED_ID, '0,00')]);
     }
   }, [open, tx]);
 
-  const splits = toSplits(rows);
-  const remainder = splitRemainderCents(tx.amountCents, splits);
-  const error = validateSplits(tx.amountCents, splits);
+  const splits: TxSplit[] =
+    mode === 'pct'
+      ? rows.map((r) => ({ catId: r.catId, amountCents: 0, pct: parsePct(r.amount) }))
+      : rows.map((r) => ({ catId: r.catId, amountCents: parseCents(r.amount) ?? 0 }));
+  const remainder = mode === 'pct' ? pctRemainder(splits) : splitRemainderCents(tx.amountCents, splits);
+  const error = mode === 'pct' ? validatePctSplits(splits) : validateSplits(tx.amountCents, splits);
+
+  const switchMode = (next: 'amount' | 'pct') => {
+    if (next === mode) return;
+    setMode(next);
+    const abs = Math.abs(tx.amountCents);
+    if (next === 'pct') {
+      // carry the current euro shape over as rounded percentages
+      setRows((r) =>
+        r.map((row) => {
+          const cents = parseCents(row.amount) ?? 0;
+          return { ...row, amount: abs > 0 ? toPctText(Math.round((cents / abs) * 100)) : '0' };
+        }),
+      );
+    } else {
+      setRows((r) => r.map((row) => ({ ...row, amount: toText(Math.round((abs * parsePct(row.amount)) / 100)) })));
+    }
+  };
 
   const save = () => {
     if (error) return;
+    // pct splits keep their percentages AND a materialized partition, so
+    // every reader (budgets, drills, exports) stays simple
+    const stored = mode === 'pct' ? resolveSplitsFor(tx.amountCents, splits) : splits;
     void transform(tx, {
-      splits,
-      catId: primaryCatId(splits),
+      splits: stored,
+      catId: primaryCatId(stored),
       needsReview: 0,
     });
     onOpenChange(false);
@@ -67,10 +97,19 @@ export function SplitEditorSheet({ open, onOpenChange, tx }: { open: boolean; on
     onOpenChange(false);
   };
 
-  const autoBalance = () =>
-    setRows((r) =>
-      balanceLastRow(tx.amountCents, toSplits(r)).map((s, i) => ({ ...r[i], catId: s.catId, amount: toText(s.amountCents) })),
-    );
+  const autoBalance = () => {
+    if (mode === 'pct') {
+      setRows((r) => {
+        const open = 100 - r.slice(0, -1).reduce((sum, row) => sum + parsePct(row.amount), 0);
+        return r.map((row, i) => (i === r.length - 1 ? { ...row, amount: toPctText(Math.max(0, open)) } : row));
+      });
+      return;
+    }
+    setRows((r) => {
+      const abs = r.map((row) => ({ catId: row.catId, amountCents: parseCents(row.amount) ?? 0 }));
+      return balanceLastRow(tx.amountCents, abs).map((s, i) => ({ ...r[i], catId: s.catId, amount: toText(s.amountCents) }));
+    });
+  };
 
   const setRowAmount = (index: number, amount: string) =>
     setRows((r) => r.map((x, j) => (j === index ? { ...x, amount } : x)));
@@ -79,8 +118,29 @@ export function SplitEditorSheet({ open, onOpenChange, tx }: { open: boolean; on
 
   return (
     <>
-      <Sheet open={open} onOpenChange={onOpenChange} title={t('split.title')} size="tall" locked={locked}>
+      <Sheet open={open} onOpenChange={onOpenChange} title={t('split.title')} size="tall">
         <div className="flex flex-col gap-2 pt-1" data-testid="split-editor">
+          {/* exact euros for one charge, percentages when the shape repeats */}
+          <div className="flex gap-1.5">
+            <button
+              data-testid="split-mode-amount"
+              onClick={() => switchMode('amount')}
+              className={`m-tap flex-1 rounded-full border px-3 py-1.5 text-[12px] ${
+                mode === 'amount' ? 'border-accent bg-accent-soft font-medium text-accent-deep' : 'border-line bg-surface text-ink-2'
+              }`}
+            >
+              {t('split.modeAmount')}
+            </button>
+            <button
+              data-testid="split-mode-pct"
+              onClick={() => switchMode('pct')}
+              className={`m-tap flex-1 rounded-full border px-3 py-1.5 text-[12px] ${
+                mode === 'pct' ? 'border-accent bg-accent-soft font-medium text-accent-deep' : 'border-line bg-surface text-ink-2'
+              }`}
+            >
+              {t('split.modePct')}
+            </button>
+          </div>
           {rows.map((row, i) => (
             <div key={row.key} className="flex items-center gap-2">
               <button
@@ -129,8 +189,8 @@ export function SplitEditorSheet({ open, onOpenChange, tx }: { open: boolean; on
               }`}
             >
               {remainder > 0
-                ? t('split.remaining', { amount: fmtCents(remainder, tx.currency, lang) })
-                : t('split.over', { amount: fmtCents(-remainder, tx.currency, lang) })}
+                ? t('split.remaining', { amount: mode === 'pct' ? `${remainder}%` : fmtCents(remainder, tx.currency, lang) })
+                : t('split.over', { amount: mode === 'pct' ? `${-remainder}%` : fmtCents(-remainder, tx.currency, lang) })}
             </button>
           )}
 
@@ -150,6 +210,7 @@ export function SplitEditorSheet({ open, onOpenChange, tx }: { open: boolean; on
           if (!next) setPickerFor(null);
         }}
         direction={tx.amountCents < 0 ? 'debit' : 'credit'}
+        txType={tx.txType}
         selectedId={pickerFor === null ? undefined : rows[pickerFor]?.catId}
         onPick={(catId) => {
           if (pickerFor !== null) setRows((r) => r.map((x, j) => (j === pickerFor ? { ...x, catId } : x)));

@@ -13,6 +13,7 @@ import { AppBar } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
+import { setVpdebug, vpdebugEnabled } from '@/ui/ViewportDebug';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Avatar } from '@/features/profile/ProfileScreen';
 import { disablePush, enablePush, getPushSubscription, pushSupported } from '@/lib/push';
@@ -46,6 +47,13 @@ function SyncStatusRow() {
 
   if (!engine) return null;
   const healthy = status === 'idle' || status === 'syncing';
+  // exactly two lines, always — the row used to grow/shrink as the status
+  // flipped (idle → syncing → idle, reason appearing), which made the
+  // whole settings list jump
+  const lastSyncLabel = lastSync
+    ? new Date(lastSync).toLocaleString(LOCALES[lang], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+    : t('sync.never');
+  const subLine = offlineReason ? t(OFFLINE_REASON_KEYS[offlineReason]) : `${t('sync.lastSync')}: ${lastSyncLabel}`;
   return (
     <div className="flex w-full items-center gap-3 px-4 py-3.5 text-left text-[15px] text-ink" data-testid="settings-sync-row">
       <Icon
@@ -54,26 +62,22 @@ function SyncStatusRow() {
         color={healthy ? 'var(--m-accent)' : 'var(--m-warning)'}
       />
       <span className="min-w-0 flex-1">
-        <span className="block" data-testid="settings-sync-status">
+        <span className="block truncate" data-testid="settings-sync-status">
           {t(SYNC_STATUS_KEYS[status])}
         </span>
-        <span className="block text-[11px] text-ink-4">
-          {t('sync.lastSync')}:{' '}
-          {lastSync
-            ? new Date(lastSync).toLocaleString(LOCALES[lang], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
-            : t('sync.never')}
+        <span
+          className="block truncate text-[11px]"
+          style={{ color: offlineReason ? 'var(--m-warning)' : 'var(--m-ink-4)' }}
+          data-testid={offlineReason ? 'settings-sync-reason' : 'settings-sync-last'}
+        >
+          {subLine}
         </span>
-        {offlineReason && (
-          <span className="block text-[11px]" style={{ color: 'var(--m-warning)' }} data-testid="settings-sync-reason">
-            {t(OFFLINE_REASON_KEYS[offlineReason])}
-          </span>
-        )}
       </span>
     </div>
   );
 }
 
-function ProfileHeaderRow({ onClick }: { onClick: () => void }) {
+function ProfileHeaderRow({ onClick }: Readonly<{ onClick: () => void }>) {
   const { t } = useLang();
   const { db } = useData();
   const profile = useLiveQuery(
@@ -105,6 +109,8 @@ const LANGS: { code: Lang; labelKey: 'lang.en' | 'lang.nl' | 'lang.tr'; badge: s
 export function SettingsScreen() {
   const { t, lang, setLang } = useLang();
   const { theme, toggle } = useTheme();
+  const { db, spaceId } = useData();
+  const activeSpace = useLiveQuery(() => db.spaces.get(spaceId), [spaceId]);
   const [langSheetOpen, setLangSheetOpen] = useState(false);
   const { identity, logout } = useSession();
   const navigate = useNavigate();
@@ -123,6 +129,7 @@ export function SettingsScreen() {
   const [lockTimeout, setLockTimeout] = useState(60);
   const [lockBioAvailable, setLockBioAvailable] = useState(false);
   const [lockError, setLockError] = useState<string | null>(null);
+  const [vpdebugOn, setVpdebugOn] = useState(vpdebugEnabled);
 
   useEffect(() => {
     if (identity?.kind !== 'user') return;
@@ -215,7 +222,83 @@ export function SettingsScreen() {
             <SyncStatusRow />
           </div>
         )}
+        {/* scope split (user feedback): what belongs to THIS space vs the
+            whole app was invisible — the captions make it explicit. The
+            nine feature doors read as a junk drawer flat, so they group
+            by intent (redesign ruling): Plan / Track / Learn / Setup. */}
+        <p className="m-cap mb-1 px-1" data-testid="settings-scope-space">
+          {t('settings.scopeSpace', { name: activeSpace?.name ?? '' })}
+        </p>
+        {(
+          [
+            {
+              capKey: 'settings.groupPlan',
+              rows: [
+                { testId: 'settings-budgets-row', icon: 'wallet-outline', labelKey: 'budgets.title', to: '/budgets' },
+                { testId: 'settings-allocation-row', icon: 'cash-multiple', labelKey: 'alloc.title', to: '/allocate' },
+              ],
+            },
+            {
+              capKey: 'settings.groupTrack',
+              rows: [
+                { testId: 'settings-events-row', icon: 'party-popper', labelKey: 'events.title', to: '/events' },
+                { testId: 'settings-goals-row', icon: 'flag-outline', labelKey: 'goals.title', to: '/goals' },
+                { testId: 'settings-debts-row', icon: 'hand-coin-outline', labelKey: 'debts.title', to: '/debts' },
+                { testId: 'settings-portfolio-row', icon: 'chart-timeline-variant', labelKey: 'pf.title', to: '/portfolio' },
+              ],
+            },
+            {
+              capKey: 'settings.groupLearn',
+              rows: [{ testId: 'settings-insights-row', icon: 'lightbulb-outline', labelKey: 'ins.title', to: '/insights' }],
+            },
+            {
+              capKey: 'settings.groupSetup',
+              rows: [
+                { testId: 'settings-space-settings-row', icon: 'cog-outline', labelKey: 'space.settings', to: '/spaces/$spaceId' },
+                { testId: 'settings-categories-row', icon: 'shape-outline', labelKey: 'screen.categories', to: '/categories' },
+              ],
+            },
+          ] as const
+        ).map((group, groupIndex) => (
+          <div key={group.capKey}>
+            <p className={`px-1 pb-1 text-[10px] font-semibold tracking-wide text-ink-4 uppercase ${groupIndex === 0 ? '' : 'pt-3'}`}>
+              {t(group.capKey)}
+            </p>
+            <div className="overflow-hidden rounded-card border border-line bg-surface">
+              {group.rows.map((row, rowIndex) => (
+                <div key={row.testId}>
+                  {rowIndex > 0 && <div className="mx-4 h-px bg-line-2" />}
+                  <button
+                    data-testid={row.testId}
+                    onClick={() => void navigate({ to: row.to, params: { spaceId } })}
+                    className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+                  >
+                    <Icon name={row.icon} size={20} />
+                    <span className="flex-1">{t(row.labelKey)}</span>
+                    <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+
+        <p className="m-cap mt-4 mb-1 px-1" data-testid="settings-scope-global">
+          {t('settings.scopeGlobal')}
+        </p>
         <div className="overflow-hidden rounded-card border border-line bg-surface">
+          {/* spaces moved here from the tab bar — day-to-day switching
+              happens via the Home avatar, management is a settings task */}
+          <button
+            data-testid="settings-spaces-row"
+            onClick={() => void navigate({ to: '/spaces' })}
+            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+          >
+            <Icon name="account-group-outline" size={20} />
+            <span className="flex-1">{t('screen.spaces')}</span>
+            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+          </button>
+          <div className="mx-4 h-px bg-line-2" />
           <button
             data-testid="settings-accounts-row"
             onClick={() => void navigate({ to: '/accounts' })}
@@ -223,16 +306,6 @@ export function SettingsScreen() {
           >
             <Icon name="bank-outline" size={20} />
             <span className="flex-1">{t('acct.financialAccounts')}</span>
-            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-          </button>
-          <div className="mx-4 h-px bg-line-2" />
-          <button
-            data-testid="settings-categories-row"
-            onClick={() => void navigate({ to: '/categories' })}
-            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
-          >
-            <Icon name="shape-outline" size={20} />
-            <span className="flex-1">{t('screen.categories')}</span>
             <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
           </button>
           {identity?.kind === 'user' && (
@@ -274,6 +347,26 @@ export function SettingsScreen() {
             <span className="rounded-md bg-bg-2 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-ink-3">
               {lang.toUpperCase()}
             </span>
+            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+          </button>
+          <div className="mx-4 h-px bg-line-2" />
+          <button
+            data-testid="settings-shopping-row"
+            onClick={() => void navigate({ to: '/shopping' })}
+            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+          >
+            <Icon name="storefront-outline" size={20} />
+            <span className="flex-1">{t('shop.title')}</span>
+            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+          </button>
+          <div className="mx-4 h-px bg-line-2" />
+          <button
+            data-testid="settings-help-row"
+            onClick={() => void navigate({ to: '/help' })}
+            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+          >
+            <Icon name="school-outline" size={20} />
+            <span className="flex-1">{t('help.title')}</span>
             <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
           </button>
           {vapidKey && (
@@ -334,6 +427,31 @@ export function SettingsScreen() {
             <Icon name={theme === 'dark' ? 'weather-night' : 'weather-sunny'} size={20} />
             <span className="flex-1">{t('settings.appearance')}</span>
             <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+          </button>
+          <div className="mx-4 h-px bg-line-2" />
+          {/* installed PWAs have no URL bar to pass ?vpdebug=1 — this is the
+              only way to arm the overlay for a mobile layout bug report */}
+          <button
+            data-testid="settings-vpdebug-toggle"
+            onClick={() => {
+              setVpdebug(!vpdebugOn);
+              setVpdebugOn(!vpdebugOn);
+            }}
+            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+          >
+            <Icon name="cellphone-information" size={20} />
+            <span className="min-w-0 flex-1">
+              <span className="block">{t('settings.vpdebug')}</span>
+              <span className="block text-[11px] text-ink-4">{t('settings.vpdebugSub')}</span>
+            </span>
+            <span
+              className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                vpdebugOn ? 'bg-accent-soft text-accent-deep' : 'bg-bg-2 text-ink-4'
+              }`}
+              data-testid="settings-vpdebug-state"
+            >
+              {vpdebugOn ? 'ON' : 'OFF'}
+            </span>
           </button>
         </div>
 

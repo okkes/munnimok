@@ -49,8 +49,10 @@ describe('FriendsScreen', () => {
     await waitFor(() => expect(screen.queryByTestId('friends-received')).toBeNull());
     expect(screen.getByTestId('friends-list').textContent).toContain('Cara');
 
-    // removing Bob shrinks the list
+    // removing Bob asks first, then shrinks the list
     fireEvent.click(screen.getByTestId(`friends-remove-${BOB}`));
+    expect((await screen.findByTestId('friends-remove-text')).textContent).toContain('Bob');
+    fireEvent.click(screen.getByTestId('friends-remove-confirm'));
     await waitFor(() => expect(screen.getByTestId('friends-list').textContent).not.toContain('Bob'));
     expect(calls).toEqual(['accept', 'remove']);
   }, 15_000);

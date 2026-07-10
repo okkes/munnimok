@@ -246,6 +246,63 @@ public class GcEndpointsTests : IClassFixture<GcApiFactory>
     }
 
     [Fact]
+    public async Task Cleanup_frees_idle_requisitions_but_keeps_fresh_and_linked_ones()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var abandonedId = Guid.NewGuid();
+        var freshId = Guid.NewGuid();
+        var linkedId = Guid.NewGuid();
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            // abandoned consent journey, past the grace window → cleaned
+            db.GcRequisitions.Add(new GcRequisition
+            {
+                Id = abandonedId, UserId = Guid.NewGuid(), SpaceId = $"space_cl_{suffix}",
+                InstitutionId = "ING_NL", RequisitionId = $"req-idle-{suffix}", Status = "created",
+                CreatedAt = DateTimeOffset.UtcNow.AddDays(-5),
+            });
+            // just started — the user may still be at the bank → kept
+            db.GcRequisitions.Add(new GcRequisition
+            {
+                Id = freshId, UserId = Guid.NewGuid(), SpaceId = $"space_cl_{suffix}",
+                InstitutionId = "ING_NL", RequisitionId = $"req-fresh-{suffix}", Status = "created",
+            });
+            // old but feeding a linked account → kept
+            db.GcRequisitions.Add(new GcRequisition
+            {
+                Id = linkedId, UserId = Guid.NewGuid(), SpaceId = $"space_cl_{suffix}",
+                InstitutionId = "ING_NL", RequisitionId = $"req-live-{suffix}", Status = "linked",
+                CreatedAt = DateTimeOffset.UtcNow.AddDays(-40),
+            });
+            db.GcLinkedAccounts.Add(new GcLinkedAccount
+            {
+                GcAccountId = $"gc-clean-{suffix}", SpaceId = $"space_cl_{suffix}",
+                AccountEntityId = ImportIds.AccountId("NL10RABO0123456789"),
+                Iban = "NL10RABO0123456789", Currency = "EUR",
+                RequisitionId = linkedId, LastFetchAt = DateTimeOffset.UtcNow,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var service = new GcFetchService(
+            _factory.Services.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<GcFetchService>.Instance);
+        await service.CleanupIdleRequisitionsAsync(CancellationToken.None);
+
+        Assert.Contains($"req-idle-{suffix}", _factory.Gc.DeletedRequisitions);
+        Assert.DoesNotContain($"req-fresh-{suffix}", _factory.Gc.DeletedRequisitions);
+        Assert.DoesNotContain($"req-live-{suffix}", _factory.Gc.DeletedRequisitions);
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            Assert.Null(await db.GcRequisitions.FindAsync(abandonedId));
+            Assert.NotNull(await db.GcRequisitions.FindAsync(freshId));
+            Assert.NotNull(await db.GcRequisitions.FindAsync(linkedId));
+        }
+    }
+
+    [Fact]
     public async Task Logo_search_maps_results_and_survives_upstream_failure()
     {
         var client = ClientFor("gc-logos");

@@ -7,6 +7,7 @@ import { useRecurringOps, useRecurrings } from '@/application/recurring';
 import { directionOfTx } from '@/domain/categoryRules';
 import { UNCATEGORIZED_ID } from '@/domain/categories';
 import { merchantKey } from '@/domain/merchantKey';
+import { resolveSplitsFor, splitsArePct } from '@/domain/splits';
 import { predictTx } from '@/domain/predictCategory';
 import { recurringAmountMatches } from '@/domain/recurring';
 import { LOCALES, useLang } from '@/i18n';
@@ -14,6 +15,8 @@ import { useData } from '@/app/data';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { fmtCents } from '@/lib/money';
 import { cleanBankText } from '@/lib/text';
+import { HelpButton } from '@/features/help/HelpButton';
+import { IntroCard } from '@/features/help/IntroCard';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
@@ -28,10 +31,11 @@ const REASON_KEYS = {
   keyword: 'review.reasonKeyword',
 } as const;
 
-/** progress bar + "n / total" sub line for the app bar */
-function progressState(initial: number | null, queueLen: number | undefined) {
+/** progress bar + "n / total" sub line — skips count as handled too */
+function progressState(initial: number | null, queueLen: number | undefined, skippedCount: number) {
   const total = initial ?? 1;
-  const done = initial === null ? 0 : Math.max(0, initial - (queueLen ?? 0));
+  const confirmed = initial === null ? 0 : Math.max(0, initial - (queueLen ?? 0));
+  const done = confirmed + skippedCount;
   return {
     progress: initial ? done / initial : 0,
     sub: (queueLen ?? 0) > 0 ? `${Math.min(done + 1, total)} / ${total}` : undefined,
@@ -54,7 +58,15 @@ async function writeConfirmation(args: {
     ...(args.recurringId ? { recurringId: args.recurringId } : {}),
   });
   for (const item of args.bulk) {
-    await args.transform(item, { catId: args.catId, txType: args.txType, needsReview: 0 });
+    // the card's split shape travels with the bulk: absolute splits fit
+    // exact twins by the similar-rule; pct splits rescale per item
+    const splits = args.tx.splits?.length ? resolveSplitsFor(item.amountCents, args.tx.splits) : undefined;
+    await args.transform(item, {
+      catId: args.catId,
+      txType: args.txType,
+      needsReview: 0,
+      ...(splits ? { splits } : {}),
+    });
   }
 }
 
@@ -116,7 +128,11 @@ function BulkConfirmSection({
               >
                 {checked && <Icon name="check" size={12} />}
               </span>
-              <span className="min-w-0 flex-1 truncate text-[12px] text-ink-3">{item.date}</span>
+              <span className="min-w-0 flex-1">
+                {/* descriptions differ per charge — they identify; dates stay quiet */}
+                <span className="block truncate text-[12px] text-ink-2">{cleanBankText(item.description) || item.date}</span>
+                <span className="block text-[10px] text-ink-4">{item.date}</span>
+              </span>
               <span className="m-num text-[12px] text-ink-2">{fmtCents(item.amountCents, item.currency, lang)}</span>
             </button>
           );
@@ -188,12 +204,13 @@ export function ReviewScreen() {
     [tx, recurrings],
   );
 
-  // bulk rule (legacy): plain confirm reaches every same-merchant item;
-  // once the card is split, only exact twins (same amount) qualify
+  // bulk rule: plain confirm reaches every same-merchant item; absolute
+  // splits only fit exact twins (same amount), percentage splits scale
+  // to any amount so the whole merchant group stays eligible
   const similar = useMemo(() => {
     if (!tx || !queue) return [] as SpaceTx[];
     const key = merchantKey(tx.merchant);
-    const mustMatchAmount = !!tx.splits?.length;
+    const mustMatchAmount = !!tx.splits?.length && !splitsArePct(tx.splits);
     return queue.filter(
       (item) =>
         item.id !== tx.id &&
@@ -232,7 +249,7 @@ export function ReviewScreen() {
     void recurringOps.reconcile().catch(() => undefined);
   };
 
-  const { progress, sub } = progressState(initialCount, queue?.length);
+  const { progress, sub } = progressState(initialCount, queue?.length, skipped.size);
 
   const emptyBecauseSkipped = queue && queue.length > 0 && remaining?.length === 0;
 
@@ -246,6 +263,7 @@ export function ReviewScreen() {
             <Icon name="chevron-left" size={24} />
           </IconButton>
         }
+        trailing={<HelpButton tourId="review" />}
       />
       {/* quiet progress line under the bar */}
       <div className="h-0.5 shrink-0 bg-bg-2">
@@ -253,6 +271,7 @@ export function ReviewScreen() {
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-5 pb-6">
+        <IntroCard tourId="review" />
         {!tx && queue && !emptyBecauseSkipped && (
           <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center" data-testid="review-empty">
             <Icon name="check-circle-outline" size={48} color="var(--m-accent)" />
@@ -375,6 +394,7 @@ export function ReviewScreen() {
           setPickerOpen(false);
         }}
         direction={tx && directionOfTx(tx)}
+        txType={tx?.txType}
       />
       {tx && <TxTypeSheet open={typeOpen} onOpenChange={setTypeOpen} tx={tx} />}
       {tx && <SplitEditorSheet open={splitOpen} onOpenChange={setSplitOpen} tx={tx} />}

@@ -1,5 +1,21 @@
 # Deploying munni on the Synology NAS
 
+## What runs where (container inventory)
+
+| Stack | File | Services |
+|---|---|---|
+| **Production** (NAS) | `docker-compose.yml` | `web` (nginx, :8090) · `admin` (operator console, :8085, LAN-only) · `api` (:8091) · `ocr` (receipt-photo OCR sidecar, internal-only) · `postgres` (munni + logto + glitchtip DBs) · `logto` (+ console :3002) · `glitchtip` + `glitchtip-worker` + `valkey` (+ one-shot `glitchtip-migrate`) · `pgadmin` (:8093, LAN-only) · `db-backup` (nightly dumps) |
+| **Staging** (NAS, `:dev` images) | `docker-compose.staging.yml` | `web` (:8095) · `api` (:8096) · `ocr` · own `postgres`; shares production Logto/GlitchTip |
+| **Local full stack** | `docker-compose.local.yml` | `api` (:8180) · `ocr` · `logto` (:3001/:3002) · `pgadmin` (:8183) · `postgres` — the web app runs via `npm run dev` (:5173), admin via `npm run dev -w @munni/admin` (:5175) |
+| **Test / e2e** | `docker-compose.test.yml` | `api` (:8181, header auth) · `postgres` — used by CI and by Playwright sync tests (project name `munni-e2e`) |
+| **Sonar** (local only) | `docker-compose.sonar.yml` | `sonarqube` (:9000) |
+
+The `ocr` sidecar (`hertzg/tesseract-server`) powers receipt-photo
+scanning. It is stateless, needs no configuration or volume, and is never
+exposed — the API reaches it via `Ocr__BaseUrl`. Without it the API
+answers receipt scans with "OCR unavailable" and the app falls back to
+manual entry.
+
 ## One-time setup
 
 0. **Images**: GitHub Actions builds and pushes `munni-api` / `munni-web`
@@ -34,9 +50,15 @@
    | `logto.okkes.synology.me:443` | `localhost:3001` |
    | `logto-admin.okkes.synology.me:443` | `localhost:3002` |
    | `glitchtip.okkes.synology.me:443` | `localhost:8092` |
+   | `pgadmin.okkes.synology.me:443` | `localhost:8093` |
+   | `munni-admin.okkes.synology.me:443` | `localhost:8085` (LAN-only) |
 
    For `munni-api` add WebSocket support off, and for all of them enable
-   HTTP/2. Restrict `logto-admin` to LAN in DSM firewall rules.
+   HTTP/2. Restrict `logto-admin` **and `pgadmin`** to LAN in DSM firewall
+   rules — pgAdmin can read every database. First pgAdmin login uses
+   `PGADMIN_EMAIL`/`PGADMIN_PASSWORD` from `.env`; register the server as
+   host `postgres`, user `munni`, the `POSTGRES_PASSWORD` — the munni,
+   logto and glitchtip databases all live in that one instance.
 4. **Logto** (first run): open `https://logto-admin.<domain>`, create the
    admin account, then:
    - Application → *munni* (Single-page app), redirect URI
@@ -170,6 +192,13 @@ docker compose -f deploy/docker-compose.test.yml up --build -d
 curl -H "X-User-Sub: alice" http://localhost:8181/health
 ```
 
+The Playwright suite's sync/friends tests expect this stack under the
+compose project name `munni-e2e` and skip themselves when it's absent:
+
+```sh
+docker compose -p munni-e2e -f deploy/docker-compose.test.yml up --build -d
+```
+
 ## Admin console (separate app + container)
 
 The operator console lives in `apps/admin` and ships as its own image
@@ -188,6 +217,30 @@ One-time setup:
 
 Local dev: `npm run dev -w @munni/admin` (port 5175) against the local
 API — without Logto configured it shows a test-subject box (test auth).
+
+**Using it.** Both sections stay empty ("not on the admin list") until
+the caller's sub is in the API's `Admin__Subs`:
+
+- **Production/staging**: sign in via Logto; your Logto user's *sub*
+  (Logto console → User management → the user → ID) must be one of the
+  comma-separated values in `ADMIN_SUBS` in `.env`.
+- **Local**: put any name in `ADMIN_SUBS` in `deploy/env/.env.local`
+  (e.g. `ADMIN_SUBS=admin`), restart the api container, and type that
+  same name into the test-subject box — it authenticates as that sub.
+
+*Users* lists every provisioned account with its space count. *Bank
+connections* lists everything the GoCardless account knows: rows marked
+**stale** exist at GoCardless but not in this environment's database —
+that's either true leftovers or *the other environment* (staging and
+production share one GC account), so deleting them is a manual,
+informed decision. Select + **Delete** frees GC connection slots (the
+free tier caps these).
+
+**Automatic idle cleanup**: the API now cleans up after itself daily —
+local requisitions older than 2 days with no linked bank accounts
+(abandoned consent journeys, connections whose accounts were removed)
+are deleted at GoCardless and locally. Stale rows from other
+environments are deliberately never auto-deleted.
 
 ## SonarQube analysis (local machine only)
 

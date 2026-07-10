@@ -14,6 +14,7 @@ import { LangProvider } from '@/i18n';
 import { config } from '@/app/config';
 import { useSession } from '@/app/session';
 import { initPwa } from '@/app/pwa';
+import { initPressFeedback } from '@/app/pressFeedback';
 import { ThemeProvider } from '@/app/theme';
 import { router } from '@/app/router';
 import { CallbackScreen, LogtoAppProvider, isCallbackPath } from '@/features/auth/logto';
@@ -57,6 +58,7 @@ if (config.glitchtipDsn) {
 
 initPwa();
 initLockWatcher();
+initPressFeedback();
 
 // OIDC / bank-consent redirects land outside the hash router
 function AppEntry() {

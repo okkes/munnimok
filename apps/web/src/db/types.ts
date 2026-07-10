@@ -26,6 +26,10 @@ export interface SpaceRow extends SyncEnvelope {
   color?: string;
   /** default start date (yyyy-mm-dd) for transaction history when accounts get attached */
   historyStartDate?: string;
+  /** landing-zone layout: block order + visibility, per space (synced) */
+  homeBlocks?: { id: string; hidden?: 0 | 1 }[];
+  /** allocation: roll category leftovers into the next period (default on) */
+  allocRollover?: 0 | 1;
 }
 
 export type AccountType = 'checking' | 'savings' | 'cash' | 'brokerage' | 'credit' | 'mortgage' | 'loan';
@@ -85,6 +89,9 @@ export interface CategoryRow extends SyncEnvelope {
 export interface TxSplit {
   catId: string;
   amountCents: number;
+  /** percentage split (0–100): scales to any amount, so bulk apply
+   *  works across different charges; amountCents stays materialized */
+  pct?: number;
 }
 
 /** money received back against an expense (owned by the expense side) */
@@ -117,6 +124,8 @@ export interface TransactionRow extends SyncEnvelope {
   linkedAccountId?: string;
   /** the recurring cost this expense pays (rent, a subscription, …) */
   recurringId?: string;
+  /** the event this transaction belongs to (holiday, wedding, …) */
+  eventId?: string;
 }
 
 /**
@@ -140,10 +149,11 @@ export interface TxMetaRow extends SyncEnvelope {
   reimbursements?: TxReimbursement[];
   linkedAccountId?: string;
   recurringId?: string;
+  eventId?: string;
 }
 
 export type RecurringKind = 'fixed' | 'subscription';
-export type RecurringEvery = 'month' | 'year';
+export type RecurringEvery = 'week' | 'month' | 'year';
 
 /**
  * One recurring cost of a space (rent, Netflix, insurance …). The
@@ -165,6 +175,9 @@ export interface RecurringRow extends SyncEnvelope {
   /** brand logo: '/brands/{slug}.svg' (vendored, offline) or a logo.dev URL — wins over `icon` */
   logo?: string;
   every: RecurringEvery;
+  /** cadence multiplier: every N weeks/months/years (default 1); N>1 and
+   *  weekly cadences anchor on `since` */
+  everyN?: number;
   /** due day of month 1..31 (clamped to shorter months) */
   dueDay: number;
   /** yearly costs: due month 1..12 */
@@ -186,6 +199,242 @@ export interface RecurringDismissRow extends SyncEnvelope {
   id: string;
   spaceId: string;
   merchantKey: string;
+}
+
+export type BudgetEvery = 'week' | '2weeks' | 'month';
+export type BudgetCarryMode = 'periods' | 'cap';
+
+/**
+ * A space-scoped spending limit over one or more categories, resetting
+ * on its own cadence (anchored at a date, independent of the space
+ * period). Spending and carry-over are computed client-side from the
+ * space's transactions — carry-over is replayed, never stored, so
+ * devices always converge (budgets design doc).
+ */
+export interface BudgetRow extends SyncEnvelope {
+  id: string;
+  spaceId: string;
+  name: string;
+  /** MDI icon */
+  icon?: string;
+  /** the limit per period, positive minor units */
+  amountCents: number;
+  every: BudgetEvery;
+  /** yyyy-mm-dd the cycle counts from */
+  anchor: string;
+  /** main and/or sub category ids; exclusive across a space's budgets */
+  catIds: string[];
+  carryOver?: 0 | 1;
+  carryMode?: BudgetCarryMode;
+  /** carry unused money at most N periods forward (carryMode 'periods') */
+  carryPeriods?: number;
+  /** or accumulate up to this cap (carryMode 'cap') */
+  carryCapCents?: number;
+  /** warn when spending crosses this percentage; absent = quiet */
+  notifyAtPct?: number;
+  active: 0 | 1;
+}
+
+/**
+ * An event groups transactions around a real-world happening (holiday,
+ * wedding, move) to answer what it truly cost. Space-scoped; archiving
+ * is manual (approved events design).
+ */
+export interface EventRow extends SyncEnvelope {
+  id: string;
+  spaceId: string;
+  name: string;
+  icon?: string;
+  /** bundled asset path ('/events/beach.jpg') or a downscaled data URL */
+  picture?: string;
+  note?: string;
+  color?: string;
+  /** optional date range (yyyy-mm-dd) */
+  from?: string;
+  to?: string;
+  /** optional planning number */
+  budgetCents?: number;
+  archived?: 0 | 1;
+}
+
+/**
+ * A goal partitions the space's SAVINGS BALANCE into named envelopes
+ * (house, car, buffer). No real money moves and no transactions link —
+ * the balance is the only truth; over-allocation is flagged, never
+ * auto-fixed (approved goals design).
+ */
+export interface GoalRow extends SyncEnvelope {
+  id: string;
+  spaceId: string;
+  name: string;
+  icon?: string;
+  color?: string;
+  targetCents: number;
+  targetDate?: string;
+  /** running total, maintained by contributions */
+  allocatedCents: number;
+  archived?: 0 | 1;
+}
+
+/** audit trail of goal funding — separate rows converge without LWW fights */
+export interface GoalContributionRow extends SyncEnvelope {
+  id: string;
+  spaceId: string;
+  goalId: string;
+  /** + fund / − withdraw (back to unallocated) */
+  amountCents: number;
+  date: string;
+  note?: string;
+}
+
+/**
+ * A debt's payoff story on top of a liability account (or manual
+ * numbers): original size, payment rhythm, projection. Per-space,
+ * informational interest only (approved debts design).
+ */
+export interface DebtRow extends SyncEnvelope {
+  id: string;
+  spaceId: string;
+  name: string;
+  icon?: string;
+  /** liability account whose balance is the remaining truth */
+  accountId?: string;
+  originalCents: number;
+  /** manual remaining when no account is linked */
+  remainingCents?: number;
+  /** informational APR, e.g. 3.5 */
+  interestPctYear?: number;
+  paymentCents?: number;
+  paymentDay?: number;
+  /** auto-link payments by merchant (recurring-style) */
+  merchantKey?: string;
+  archived?: 0 | 1;
+}
+
+/**
+ * One allocation cell: what this period assigned to this main category
+ * (approved allocation design). Deterministic id — two devices editing
+ * the same cell converge by LWW instead of duplicating rows.
+ */
+export interface AllocationRow extends SyncEnvelope {
+  id: string;
+  spaceId: string;
+  /** yyyy-mm-dd start of the space period the cell belongs to */
+  periodStart: string;
+  /** main category (subs roll up) */
+  catId: string;
+  assignedCents: number;
+}
+
+export type ReceiptSource = 'photo' | 'ah' | 'jumbo' | 'bol' | 'coolblue' | 'mediamarkt' | 'amazon';
+
+export interface ReceiptItem {
+  name: string;
+  qty?: number;
+  unitCents?: number;
+  totalCents: number;
+}
+
+/**
+ * A transaction's line-item proof (approved receipts design). Photo
+ * receipts carry a downscaled data URL; store receipts carry items.
+ */
+export interface ReceiptRow extends SyncEnvelope {
+  id: string;
+  spaceId: string;
+  /** the transaction it proves — set on capture (photo) or by the matcher */
+  txId?: string;
+  source: ReceiptSource;
+  date: string;
+  totalCents: number;
+  merchant?: string;
+  items?: ReceiptItem[];
+  /** downscaled data URL (photo path) */
+  image?: string;
+}
+
+/**
+ * DEVICE-ONLY store login state — never synced, never on our server
+ * (receipts design privacy law). A new phone reconnects by design.
+ */
+export interface StoreConnectionRow {
+  store: Exclude<ReceiptSource, 'photo'>;
+  tokens: Record<string, string>;
+  refreshedAt: string;
+  status: 'ok' | 'expired';
+  /** newest store receipt already ingested (dedupe cursor) */
+  lastReceiptId?: string;
+}
+
+/**
+ * SYNCED, secret-free connection marker (ruling #1 softener): the space
+ * remembers a store was connected, so a device without a local token
+ * shows "reconnect on this device" instead of silently doing nothing.
+ */
+export interface StoreMarkerRow extends SyncEnvelope {
+  id: string;
+  spaceId: string;
+  store: Exclude<ReceiptSource, 'photo'>;
+  status: 'connected' | 'expired';
+  connectedAt: string;
+}
+
+export type AssetClass = 'stock' | 'etf' | 'crypto' | 'cash' | 'other';
+export type PriceSource = 'yahoo' | 'coingecko' | 'manual';
+
+/** A portfolio position's identity (approved investments design). */
+export interface HoldingRow extends SyncEnvelope {
+  id: string;
+  spaceId: string;
+  /** the brokerage account it lives in (optional) */
+  accountId?: string;
+  name: string;
+  symbol?: string;
+  isin?: string;
+  assetClass: AssetClass;
+  currency: string;
+  priceSource?: PriceSource;
+  /** yahoo ticker or coingecko coin id, depending on priceSource */
+  priceKey?: string;
+  /** for unlisted/manual assets — the user's own valuation per unit */
+  manualPriceCents?: number;
+  archived?: 0 | 1;
+}
+
+/** The audit trail behind a holding: buys, sells, dividends, fees. */
+export interface LotRow extends SyncEnvelope {
+  id: string;
+  spaceId: string;
+  holdingId: string;
+  kind: 'buy' | 'sell' | 'dividend' | 'fee';
+  date: string;
+  /** units moved (buy/sell) */
+  quantity?: number;
+  /** per-unit price in cents (buy/sell) */
+  priceCents?: number;
+  /** signed total in cents: buys negative cash, sells/dividends positive */
+  totalCents: number;
+}
+
+/**
+ * SYNCED insight dismissal (insights ruling #1): an insight is about
+ * the space's money — dismissed once, dismissed for every member. The
+ * insight id encodes its subject, so a changed situation resurfaces.
+ */
+export interface InsightDismissRow extends SyncEnvelope {
+  id: string;
+  spaceId: string;
+  insightId: string;
+}
+
+/** DEVICE-ONLY delayed-quote cache — prices are never synced data. */
+export interface QuoteCacheRow {
+  /** `{source}:{priceKey}` */
+  key: string;
+  price: number;
+  currency: string;
+  dayChangePct?: number;
+  at: string;
 }
 
 /**
@@ -235,7 +484,18 @@ export type EntityName =
   | 'txMeta'
   | 'accountLink'
   | 'recurring'
-  | 'recurringDismiss';
+  | 'recurringDismiss'
+  | 'budget'
+  | 'event'
+  | 'goal'
+  | 'goalContribution'
+  | 'debt'
+  | 'allocation'
+  | 'receipt'
+  | 'storeMarker'
+  | 'holding'
+  | 'lot'
+  | 'insightDismiss';
 
 export interface EntityRowMap {
   space: SpaceRow;
@@ -246,4 +506,15 @@ export interface EntityRowMap {
   accountLink: AccountLinkRow;
   recurring: RecurringRow;
   recurringDismiss: RecurringDismissRow;
+  budget: BudgetRow;
+  event: EventRow;
+  goal: GoalRow;
+  goalContribution: GoalContributionRow;
+  debt: DebtRow;
+  allocation: AllocationRow;
+  receipt: ReceiptRow;
+  storeMarker: StoreMarkerRow;
+  holding: HoldingRow;
+  lot: LotRow;
+  insightDismiss: InsightDismissRow;
 }

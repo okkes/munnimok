@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react';
-import { useNavigate, useSearch } from '@tanstack/react-router';
+import { useNavigate } from '@tanstack/react-router';
 import { useSpaceTransactions } from '@/application/transactions';
-import { catName, useCategories } from '@/features/categories/useCategories';
+import { useCategories } from '@/features/categories/useCategories';
 import { EMPTY_FILTERS, FilterSheet, countActive } from './FilterSheet';
 import type { SheetFilters } from './FilterSheet';
 import { useLang } from '@/i18n';
 import type { TransactionRow } from '@/db/types';
 import { filterTxs } from '@/domain/txFilter';
+import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { EmptyState } from '@/ui/EmptyState';
@@ -34,8 +35,6 @@ export function TransactionsScreen() {
   const [reviewOnly, setReviewOnly] = useState(false);
   const [filters, setFilters] = useState<SheetFilters>(EMPTY_FILTERS);
   const [filterOpen, setFilterOpen] = useState(false);
-  // overview drill-down: category + period arrive as search params
-  const { catId, from, to } = useSearch({ strict: false }) as { catId?: string; from?: string; to?: string };
   const cats = useCategories();
 
   const allTxs = useSpaceTransactions();
@@ -45,13 +44,12 @@ export function TransactionsScreen() {
       new Date(iso),
     );
 
-  // a main category matches itself and all of its subs; the drill-down
-  // param wins over the sheet's category picks while active
+  // a main category matches itself and all of its subs
   const catIds = useMemo(() => {
-    const mains = catId ? [catId] : [...filters.mainCatIds];
+    const mains = [...filters.mainCatIds];
     if (mains.length === 0) return undefined;
     return new Set(mains.flatMap((id) => [id, ...cats.childrenOf(id).map((c) => c.id)]));
-  }, [catId, filters.mainCatIds, cats]);
+  }, [filters.mainCatIds, cats]);
 
   // filter FIRST, then newest-first capped at 200 — an old category match
   // must not vanish behind the recency cap
@@ -64,17 +62,16 @@ export function TransactionsScreen() {
       onlyNeedsReview: reviewOnly,
       catIds,
       txTypes: filters.txTypes,
-      from: catId ? from : filters.from,
-      to: catId ? to : filters.to,
+      from: filters.from,
+      to: filters.to,
     });
     matched.sort((a, b) => b.date.localeCompare(a.date));
     return matched.slice(0, 200);
-  }, [allTxs, query, filters, reviewOnly, catIds, catId, from, to]);
+  }, [allTxs, query, filters, reviewOnly, catIds]);
 
   const groups = groupByDate(txs ?? []);
   const activeCount = countActive(filters);
   const filtering = !!query || reviewOnly || !!catIds || activeCount > 0;
-  const drillCat = catId ? cats.byId(catId) : null;
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-transactions">
@@ -82,9 +79,12 @@ export function TransactionsScreen() {
         large
         title={t('tab.transactions')}
         trailing={
-          <IconButton label={t('txform.addTitle')} testId="tx-add" onClick={() => setAddOpen(true)}>
-            <Icon name="plus" size={22} />
-          </IconButton>
+          <>
+            <HelpButton tourId="transactions" />
+            <IconButton label={t('txform.addTitle')} testId="tx-add" onClick={() => setAddOpen(true)}>
+              <Icon name="plus" size={22} />
+            </IconButton>
+          </>
         }
       />
       <TxFormSheet open={addOpen} onOpenChange={setAddOpen} />
@@ -97,21 +97,6 @@ export function TransactionsScreen() {
           placeholder={t('tx.searchPlaceholder')}
           className="h-11 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
         />
-        {/* overview drill-down chip: category + period, one tap to clear */}
-        {drillCat && (
-          <button
-            data-testid="tx-drill-chip"
-            onClick={() => void navigate({ to: '/transactions', search: {} })}
-            className="m-tap mt-2 flex w-full items-center gap-2 rounded-card border border-accent bg-accent-soft px-3 py-2 text-left text-[12px] font-medium text-accent-deep"
-          >
-            <Icon name={drillCat.icon} size={15} />
-            <span className="min-w-0 flex-1 truncate">
-              {catName(drillCat, t)}
-              {from && to && ` · ${from} – ${to}`}
-            </span>
-            <Icon name="close" size={14} />
-          </button>
-        )}
         <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
           {/* accounts/types/categories/dates live in the filter sheet —
               chips per account stopped scaling once feeds multiplied */}
@@ -139,7 +124,7 @@ export function TransactionsScreen() {
               reviewOnly ? 'border-warning bg-warning-soft font-medium text-warning' : 'border-line bg-surface text-ink-2'
             }`}
           >
-            {t('review.confirm')}
+            {t('tx.unreviewed')}
           </button>
           {activeCount > 0 && (
             <button
@@ -178,6 +163,7 @@ export function TransactionsScreen() {
                 <TxRow
                   key={tx.id}
                   tx={tx}
+                  highlight={query}
                   onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })}
                 />
               ))}

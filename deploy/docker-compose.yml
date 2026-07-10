@@ -45,11 +45,18 @@ services:
       Admin__Subs: ${ADMIN_SUBS:-}
       Sentry__Dsn: ${API_SENTRY_DSN:-}
       BUILD_NUMBER: ${TAG:-latest}
+      Ocr__BaseUrl: http://ocr:8884
     ports:
       - "8091:8080"
     depends_on:
       postgres:
         condition: service_healthy
+
+  # receipt-photo OCR sidecar (receipts design): internal-only — no port
+  # mapping, only the api reaches it; stateless, stores nothing
+  ocr:
+    image: hertzg/tesseract-server:latest
+    restart: unless-stopped
 
   postgres:
     image: postgres:17-alpine
@@ -84,9 +91,12 @@ services:
       postgres:
         condition: service_healthy
 
-  glitchtip:
+  # one-shot: creates/updates GlitchTip's schema before web+worker start —
+  # without it every login/beat query fails with "relation ... does not exist"
+  glitchtip-migrate:
     image: glitchtip/glitchtip:latest
-    restart: unless-stopped
+    restart: "no"
+    command: ./bin/run-migrations.sh
     environment: &glitchtip_env
       DATABASE_URL: postgres://munni:${POSTGRES_PASSWORD}@postgres:5432/glitchtip
       REDIS_URL: redis://valkey:6379/0
@@ -94,11 +104,19 @@ services:
       GLITCHTIP_DOMAIN: https://glitchtip.${DOMAIN}
       EMAIL_URL: ${GLITCHTIP_EMAIL_URL:-consolemail://}
       CELERY_WORKER_AUTOSCALE: "1,3"
-    ports:
-      - "8092:8000"
     depends_on:
       postgres:
         condition: service_healthy
+
+  glitchtip:
+    image: glitchtip/glitchtip:latest
+    restart: unless-stopped
+    environment: *glitchtip_env
+    ports:
+      - "8092:8000"
+    depends_on:
+      glitchtip-migrate:
+        condition: service_completed_successfully
       valkey:
         condition: service_started
 
@@ -108,12 +126,32 @@ services:
     command: ./bin/run-celery-with-beat.sh
     environment: *glitchtip_env
     depends_on:
+      glitchtip-migrate:
+        condition: service_completed_successfully
       glitchtip:
         condition: service_started
 
   valkey:
     image: valkey/valkey:8-alpine
     restart: unless-stopped
+
+  # database inspector for the operator. Reverse-proxy pgadmin.<domain>
+  # -> localhost:8093 and RESTRICT TO LAN in the DSM firewall — it can
+  # read every database (munni, logto, glitchtip).
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    restart: unless-stopped
+    environment:
+      # default must be a resolvable-TLD address — pgadmin refuses .local
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@munni.dev}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:?set PGADMIN_PASSWORD in .env}
+    ports:
+      - "8093:80"
+    volumes:
+      - pgadmin:/var/lib/pgadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   # nightly logical backup into a folder Hyper Backup picks up
   db-backup:
@@ -130,3 +168,4 @@ services:
 
 volumes:
   pgdata:
+  pgadmin:

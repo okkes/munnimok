@@ -5,6 +5,7 @@ import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useSession } from '@/app/session';
 import { SpaceInvitesBanner } from './SpaceSharing';
+import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
@@ -45,30 +46,38 @@ export function SpacesScreen() {
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-spaces">
       <AppBar
-        large
         title={t('screen.spaces')}
-        trailing={
-          <IconButton
-            label={t('space.new')}
-            testId="spaces-add"
-            onClick={() => {
-              setName('');
-              setCreateOpen(true);
-            }}
-          >
-            <Icon name="plus" size={22} />
+        leading={
+          <IconButton label={t('action.back')} testId="spaces-back" onClick={() => window.history.back()}>
+            <Icon name="arrow-left" size={22} />
           </IconButton>
+        }
+        trailing={
+          <>
+            <HelpButton tourId="spaces" />
+            <IconButton
+              label={t('space.new')}
+              testId="spaces-add"
+              onClick={() => {
+                setName('');
+                setCreateOpen(true);
+              }}
+            >
+              <Icon name="plus" size={22} />
+            </IconButton>
+          </>
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         {syncing && <SpaceInvitesBanner />}
+        <p className="m-cap mt-1 mb-1 px-1">{t('space.listCaption')}</p>
         <div className="overflow-hidden rounded-card border border-line bg-surface">
           {(spaces ?? []).map((space, i) => {
             const active = space.id === spaceId;
             return (
               <div key={space.id}>
                 {i > 0 && <div className="mx-4 h-px bg-line-2" />}
-                <div className="flex items-center">
+                <div className={`flex items-center ${active ? 'bg-accent-soft/30' : ''}`}>
                   <button
                     data-testid={`space-row-${space.id}`}
                     onClick={() => void setActiveSpace(space.id)}
@@ -80,7 +89,7 @@ export function SpacesScreen() {
                       <span
                         className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
                         style={{
-                          background: active ? (space.color ?? 'var(--m-accent)') + '22' : 'var(--m-bg-2)',
+                          background: `color-mix(in srgb, ${space.color ?? 'var(--m-accent)'} 16%, transparent)`,
                           color: space.color ?? (active ? 'var(--m-accent-deep)' : 'var(--m-ink-3)'),
                         }}
                       >
@@ -89,23 +98,32 @@ export function SpacesScreen() {
                     )}
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[15px] font-medium text-ink">{space.name}</span>
-                      {active && <span className="block text-xs text-accent-deep">{t('space.active')}</span>}
+                      <span className="block truncate text-xs text-ink-4">
+                        {t(space.kind === 'shared' ? 'space.kindShared' : 'space.kindPersonal')}
+                        {active && (
+                          <>
+                            {' · '}
+                            <span className="text-accent-deep">{t('space.active')}</span>
+                          </>
+                        )}
+                      </span>
                     </span>
-                    {active && <Icon name="check" size={18} color="var(--m-accent)" />}
+                    {active && <Icon name="check-circle" size={19} color="var(--m-accent)" />}
                   </button>
                   <button
                     aria-label={t('space.settings')}
                     data-testid={`space-edit-${space.id}`}
                     onClick={() => void navigate({ to: '/spaces/$spaceId', params: { spaceId: space.id } })}
-                    className="m-tap flex h-9 w-9 shrink-0 items-center justify-center border-none bg-transparent text-ink-4"
+                    className="m-tap flex h-11 w-11 shrink-0 items-center justify-center border-none bg-transparent text-ink-4"
                   >
-                    <Icon name="cog-outline" size={18} />
+                    <Icon name="cog-outline" size={19} />
                   </button>
                 </div>
               </div>
             );
           })}
         </div>
+        <p className="mt-2 px-1 text-[11px] leading-snug text-ink-4">{t('space.listHint')}</p>
       </div>
 
       {/* Create space */}

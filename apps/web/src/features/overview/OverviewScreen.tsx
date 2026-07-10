@@ -9,6 +9,7 @@ import { periodHistory } from '@/domain/periods';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { LOCALES, useLang } from '@/i18n';
 import { fmtCents } from '@/lib/money';
+import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { BarChart, StackedBar } from '@/ui/charts';
 import { Icon } from '@/ui/Icon';
@@ -68,9 +69,9 @@ export function OverviewScreen() {
   );
 
   const period = periods[periodIndex];
-  // drill into a category's transactions, scoped to the selected period
-  const openTransactions = (catId: string) =>
-    void navigate({ to: '/transactions', search: { catId, from: period.start, to: period.end } });
+  // drill into the category's own screen, keeping the selected period
+  const openCategory = (catId: string) =>
+    void navigate({ to: '/overview/$kind/$catId', params: { kind, catId }, search: { from: period.start } });
   const groups = useMemo(
     () => categoryBreakdown(kind, txs ?? [], accountsById, period, cats),
     [kind, txs, accountsById, period, cats],
@@ -91,6 +92,7 @@ export function OverviewScreen() {
             <Icon name="chevron-left" size={24} />
           </IconButton>
         }
+        trailing={<HelpButton tourId="overview" />}
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <div className="py-2 text-center">
@@ -149,7 +151,10 @@ export function OverviewScreen() {
                     </span>
                     <span className="mt-1.5 flex items-center gap-2">
                       <span className="h-1 flex-1 overflow-hidden rounded-full bg-bg-2">
-                        <span className="block h-full" style={{ width: `${pct}%`, background: colorOf(group.catId, i) }} />
+                        <span
+                          className="m-grow-x block h-full origin-left"
+                          style={{ width: `${pct}%`, background: colorOf(group.catId, i), animationDelay: `${i * 40}ms` }}
+                        />
                       </span>
                       <span className="min-w-[30px] text-right text-[11px] font-medium text-ink-3">{pct.toFixed(0)}%</span>
                     </span>
@@ -165,7 +170,7 @@ export function OverviewScreen() {
                         the main's transactions */}
                     <button
                       data-testid={`overview-all-${group.catId}`}
-                      onClick={() => openTransactions(group.catId)}
+                      onClick={() => openCategory(group.catId)}
                       className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent py-2.5 text-left"
                     >
                       <Icon name="format-list-bulleted" size={16} color="var(--m-ink-3)" />
@@ -181,7 +186,7 @@ export function OverviewScreen() {
                       <button
                         key={sub.catId}
                         data-testid={`overview-sub-${sub.catId}`}
-                        onClick={() => openTransactions(sub.catId)}
+                        onClick={() => openCategory(sub.catId)}
                         className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent py-2.5 text-left last:border-0"
                       >
                         <Icon name={cats.byId(sub.catId).icon} size={16} color="var(--m-ink-3)" />

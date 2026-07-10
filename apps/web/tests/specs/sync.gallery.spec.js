@@ -1,7 +1,7 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { test, expect } from '@playwright/test';
-import { VARIANTS, createPage, base, shot, teardown, syncApiUp } from '../helpers/base.js';
+import { VARIANTS, createPage, base, gotoSpaces, shot, teardown, syncApiUp } from '../helpers/base.js';
 
 const CAMT_FIXTURE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../fixtures/camt053-sample.xml');
 
@@ -120,7 +120,7 @@ for (const V of VARIANTS) {
     // alice: create a space to share
     const alice = await createPage(browser, V);
     await base(alice.page, V, { userSub: `e2e-owner-${run}` });
-    await alice.page.click('[data-testid="tab-spaces"]');
+    await gotoSpaces(alice.page);
     await alice.page.click('[data-testid="spaces-add"]');
     await alice.page.fill('[data-testid="space-create-name"]', 'Shared Home');
     await alice.page.click('[data-testid="space-create-save"]');
@@ -136,7 +136,7 @@ for (const V of VARIANTS) {
     await expect(bob.page.locator('[data-testid="friends-copy-id"] span')).toHaveText(/^[0-9a-f]{8}-/, { timeout: 10000 });
     const bobId = (await bob.page.locator('[data-testid="friends-copy-id"] span').textContent()).trim();
 
-    await alice.page.click('[data-testid="tab-spaces"]');
+    await gotoSpaces(alice.page);
     await alice.page.click('[data-testid="screen-spaces"] button:has-text("Shared Home") >> nth=0');
     await alice.page.locator('[data-testid^="space-edit-"]:right-of(:text("Shared Home"))').first().click();
     await alice.page.waitForSelector('[data-testid="space-members"]');
@@ -160,7 +160,7 @@ for (const V of VARIANTS) {
     await alice.page.waitForTimeout(800);
 
     // bob: accept the invite banner; the shared space + its data arrive
-    await bob.page.click('[data-testid="tab-spaces"]');
+    await gotoSpaces(bob.page);
     await expect(bob.page.locator('[data-testid="space-invites"]')).toContainText('Shared Home', { timeout: 10000 });
     await shot(bob.page, k('33-space-share') + '--s2');
     await bob.page.locator('[data-testid^="space-invite-accept-"]').click();
@@ -233,7 +233,7 @@ for (const V of VARIANTS) {
     // same user, fresh device: must NOT create a second personal space
     const b = await createPage(browser, V);
     await base(b.page, V, { userSub: sub });
-    await b.page.click('[data-testid="tab-spaces"]');
+    await gotoSpaces(b.page);
     await b.page.waitForTimeout(2000);
     await expect(b.page.locator('[data-testid="screen-spaces"] [data-testid^="space-row-"]')).toHaveCount(1, {
       timeout: 15000,
@@ -251,7 +251,7 @@ for (const V of VARIANTS) {
     // alice: fresh user, creates the shared space (becomes active)
     const alice = await createPage(browser, V);
     await base(alice.page, V, { userSub: `e2e-feedowner-${run}` });
-    await alice.page.click('[data-testid="tab-spaces"]');
+    await gotoSpaces(alice.page);
     await alice.page.click('[data-testid="spaces-add"]');
     await alice.page.fill('[data-testid="space-create-name"]', 'Feed Home');
     await alice.page.click('[data-testid="space-create-save"]');
@@ -278,7 +278,7 @@ for (const V of VARIANTS) {
     await expect(bob.page.locator('[data-testid="friends-copy-id"] span')).toHaveText(/^[0-9a-f]{8}-/, { timeout: 10000 });
     const bobId = (await bob.page.locator('[data-testid="friends-copy-id"] span').textContent()).trim();
 
-    await alice.page.click('[data-testid="tab-spaces"]');
+    await gotoSpaces(alice.page);
     await alice.page.locator('[data-testid^="space-edit-"]:right-of(:text("Feed Home"))').first().click();
     await alice.page.waitForSelector('[data-testid="space-members"]');
     await alice.page.fill('[data-testid="space-addfriend-input"]', bobId);
@@ -297,7 +297,7 @@ for (const V of VARIANTS) {
 
     // bob accepts, makes the shared space active — and sees the FEED's
     // transactions through derived access (raw + alice's overlay joined)
-    await bob.page.click('[data-testid="tab-spaces"]');
+    await gotoSpaces(bob.page);
     await expect(bob.page.locator('[data-testid="space-invites"]')).toContainText('Feed Home', { timeout: 10000 });
     await bob.page.locator('[data-testid^="space-invite-accept-"]').click();
     await expect(bob.page.locator('[data-testid="screen-spaces"]')).toContainText('Feed Home', { timeout: 15000 });
@@ -324,7 +324,7 @@ for (const V of VARIANTS) {
     // history but the account freezes — the synced mirror row delivers the
     // archived badge to his accounts screen
     await alice.page.click('[data-testid="tx-detail-back"]');
-    await alice.page.click('[data-testid="tab-spaces"]');
+    await gotoSpaces(alice.page);
     await alice.page.locator('[data-testid^="space-edit-"]:right-of(:text("Feed Home"))').first().click();
     await alice.page.waitForSelector('[data-testid="space-leave"]');
     await alice.page.click('[data-testid="space-leave"]');

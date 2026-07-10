@@ -5,7 +5,7 @@ import { LOCALES, useLang } from '@/i18n';
 import { visibleTransactions, writeTxTransform } from '@/db/joined';
 import type { SpaceTx } from '@/db/joined';
 import { merchantKey } from '@/domain/merchantKey';
-import { addDays, nextDueDate, recurringAmountMatches } from '@/domain/recurring';
+import { addDays, cycleKeyOf, nextDueDate, recurringAmountMatches } from '@/domain/recurring';
 import { recurringDismissId } from '@/domain/feedIds';
 import type { MunniDB } from '@/db/schema';
 import type { Repo } from '@/db/repo';
@@ -63,9 +63,6 @@ export function useRecurringOps(): RecurringOps {
   };
 }
 
-const cycleOf = (rec: RecurringRow, date: string): string =>
-  rec.every === 'year' ? date.slice(0, 4) : date.slice(0, 7);
-
 /**
  * Auto-link unlinked expenses to active recurrings by merchant pattern:
  * same normalized merchant, amount within 25% of the estimate, at most
@@ -87,7 +84,7 @@ export async function reconcileRecurringLinks(db: MunniDB, repo: Repo, spaceId: 
     const rec = recs.find((r) => r.id === tx.recurringId);
     if (!rec) continue;
     const set = linkedCycles.get(rec.id) ?? new Set();
-    set.add(cycleOf(rec, tx.date));
+    set.add(cycleKeyOf(rec, tx.date));
     linkedCycles.set(rec.id, set);
   }
 
@@ -96,7 +93,7 @@ export async function reconcileRecurringLinks(db: MunniDB, repo: Repo, spaceId: 
     if (tx.recurringId || tx.amountCents >= 0 || tx.txType !== 'expense') continue;
     const rec = byKey.get(merchantKey(tx.merchant));
     if (!rec || !recurringAmountMatches(rec, tx.amountCents)) continue;
-    const cycle = cycleOf(rec, tx.date);
+    const cycle = cycleKeyOf(rec, tx.date);
     const cycles = linkedCycles.get(rec.id) ?? new Set();
     if (cycles.has(cycle)) continue; // one payment per billing cycle
     cycles.add(cycle);

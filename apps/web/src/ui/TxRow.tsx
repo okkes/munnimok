@@ -1,17 +1,42 @@
-import { useLang } from '@/i18n';
+import { LOCALES, useLang } from '@/i18n';
 import { fmtCents } from '@/lib/money';
 import { cleanBankText } from '@/lib/text';
+import { netAmountCents } from '@/domain/reimbursement';
 import type { TransactionRow } from '@/db/types';
 import { catName, useCategories } from '@/features/categories/useCategories';
+import { Highlight } from './Highlight';
 import { Icon } from './Icon';
 
-export function TxRow({ tx, onClick }: { tx: TransactionRow; onClick?: () => void }) {
+export function TxRow({
+  tx,
+  onClick,
+  highlight = '',
+  showDate = false,
+  hideCategory = false,
+  amountOverrideCents,
+}: {
+  tx: TransactionRow;
+  onClick?: () => void;
+  highlight?: string;
+  /** lists without date group headers (Home) show it inline */
+  showDate?: boolean;
+  /** lists already scoped to one category (drill) skip the redundant name */
+  hideCategory?: boolean;
+  /** scoped lists (drill) show their slice as the headline amount */
+  amountOverrideCents?: number;
+}) {
   const { t, lang } = useLang();
   const cats = useCategories();
   const cat = cats.byId(tx.catId);
   const parent = cat.parentId ? cats.byId(cat.parentId) : undefined;
   const color = cat.color ?? parent?.color ?? 'var(--m-ink-3)';
-  const positive = tx.amountCents > 0;
+
+  // reimbursements change what a transaction really cost — lists show
+  // the net truth, with the gross quietly struck through beside it
+  const net = netAmountCents(tx);
+  const display = amountOverrideCents ?? net;
+  const positive = display > 0;
+  const reimbursed = net !== tx.amountCents;
 
   return (
     <button
@@ -26,18 +51,36 @@ export function TxRow({ tx, onClick }: { tx: TransactionRow; onClick?: () => voi
         <Icon name={cat.icon} size={20} />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[14px] font-medium text-ink">{cleanBankText(tx.merchant)}</span>
+        <span className="block truncate text-[14px] font-medium text-ink">
+          <Highlight text={cleanBankText(tx.merchant)} query={highlight} />
+        </span>
         <span className="block truncate text-xs text-ink-3">
-          {catName(cat, t)}
+          {showDate && (
+            <span className="text-ink-4">
+              {new Date(tx.date).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' })}
+              {!hideCategory && ' · '}
+            </span>
+          )}
+          {!hideCategory && catName(cat, t)}
           {tx.needsReview === 1 && (
-            <span className="ml-1.5 rounded bg-warning-soft px-1 py-px text-[10px] font-semibold text-warning">
-              {t('review.confirm')}
+            <span className={`rounded bg-warning-soft px-1 py-px text-[10px] font-semibold text-warning ${hideCategory && !showDate ? '' : 'ml-1.5'}`}>
+              {t('tx.unreviewed')}
             </span>
           )}
         </span>
       </span>
-      <span className={`m-num shrink-0 text-[14px] font-semibold ${positive ? 'text-accent-deep' : 'text-ink'}`}>
-        {fmtCents(tx.amountCents, tx.currency, lang, { sign: true })}
+      <span className="shrink-0 text-right">
+        <span className={`m-num block text-[14px] font-semibold ${positive ? 'text-accent-deep' : 'text-ink'}`}>
+          {fmtCents(display, tx.currency, lang, { sign: true })}
+        </span>
+        {amountOverrideCents === undefined && reimbursed && (
+          <span className="m-num block text-[11px] text-ink-4 line-through">
+            {fmtCents(tx.amountCents, tx.currency, lang, { sign: true })}
+          </span>
+        )}
+        {amountOverrideCents !== undefined && amountOverrideCents !== net && (
+          <span className="m-num block text-[11px] text-ink-4">{fmtCents(net, tx.currency, lang, { sign: true })}</span>
+        )}
       </span>
     </button>
   );

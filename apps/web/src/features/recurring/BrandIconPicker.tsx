@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLang } from '@/i18n';
+import { readSessionIdentity } from '@/app/session';
 import { apiFetch, getApiCapabilities } from '@/lib/api';
+import { Highlight } from '@/ui/Highlight';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 
@@ -52,34 +54,63 @@ interface BrandIconPickerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onPick: (picked: PickedLogo) => void;
+  /** prefill (e.g. the cost's name); the first tap on the field clears it */
+  initialQuery?: string;
 }
 
-export function BrandIconPicker({ open, onOpenChange, onPick }: Readonly<BrandIconPickerProps>) {
+export function BrandIconPicker({ open, onOpenChange, onPick, initialQuery = '' }: Readonly<BrandIconPickerProps>) {
   const { t } = useLang();
   const [query, setQuery] = useState('');
+  const prefilled = useRef(false);
+
+  // search starts from the name the user already typed — usually exactly
+  // the brand they want; one tap on the field starts a fresh query
+  useEffect(() => {
+    if (!open) return;
+    setQuery(initialQuery.trim());
+    prefilled.current = initialQuery.trim().length > 0;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const onSearchFocus = () => {
+    if (!prefilled.current) return;
+    prefilled.current = false;
+    setQuery('');
+  };
   const [index, setIndex] = useState<BrandEntry[]>([]);
   const [remote, setRemote] = useState<RemoteLogo[]>([]);
+  // 'unavailable' = offline or server not configured — say so instead of
+  // silently showing only the vendored set (looked like a broken search)
+  const [remoteState, setRemoteState] = useState<'idle' | 'searching' | 'ok' | 'unavailable'>('idle');
   const searchSeq = useRef(0);
 
   useEffect(() => {
     if (open) void loadBrandIndex().then(setIndex);
   }, [open]);
 
-  // live logo.dev search, debounced; silently absent offline/unconfigured
+  // live logo.dev search, debounced — the primary source when it answers.
+  // Local-only identities skip it entirely (their choice, not an outage,
+  // so no 'unavailable' note either).
   useEffect(() => {
     const q = query.trim();
-    if (!open || q.length < 2) {
+    if (!open || q.length < 2 || readSessionIdentity()?.kind !== 'user') {
       setRemote([]);
+      setRemoteState('idle');
       return;
     }
     const seq = ++searchSeq.current;
+    setRemoteState('searching');
     const timer = setTimeout(() => {
       void searchRemoteLogos(q).then((results) => {
-        if (results && seq === searchSeq.current) setRemote(results);
+        if (seq !== searchSeq.current) return;
+        setRemote(results ?? []);
+        setRemoteState(results === null ? 'unavailable' : 'ok');
       });
     }, 300);
     return () => clearTimeout(timer);
   }, [open, query]);
+
+  const remoteShown = remote.slice(0, 12);
 
   const local = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -87,9 +118,9 @@ export function BrandIconPicker({ open, onOpenChange, onPick }: Readonly<BrandIc
     return hits.slice(0, 24);
   }, [index, query]);
 
-  // remote results the vendored set already covers are noise
-  const localSlugs = useMemo(() => new Set(local.map((b) => b.slug)), [local]);
-  const remoteShown = remote.filter((r) => !localSlugs.has(r.domain.split('.')[0])).slice(0, 12);
+  // when the online search answered, drop vendored duplicates of its hits
+  const remoteSlugs = useMemo(() => new Set(remoteShown.map((r) => r.domain.split('.')[0])), [remoteShown]);
+  const localShown = remoteShown.length > 0 ? local.filter((b) => !remoteSlugs.has(b.slug)) : local;
 
   const pick = (logo: string | null) => {
     onPick({ logo });
@@ -100,13 +131,34 @@ export function BrandIconPicker({ open, onOpenChange, onPick }: Readonly<BrandIc
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title={t('recurring.iconTitle')} size="tall">
       <div className="flex flex-col gap-3 pt-1">
-        <input
-          data-testid="brandpicker-search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={t('recurring.iconSearch')}
-          className="h-11 w-full rounded-input border border-line bg-surface px-4 text-[14px] text-ink outline-none placeholder:text-ink-4"
-        />
+        {/* the field arrives prefilled with the cost's name — the search
+            glyph and the ✕ make it read as an editable search box */}
+        <div className="relative">
+          <span className="pointer-events-none absolute top-0 left-3 flex h-11 items-center">
+            <Icon name="magnify" size={17} color="var(--m-ink-4)" />
+          </span>
+          <input
+            data-testid="brandpicker-search"
+            value={query}
+            onFocus={onSearchFocus}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t('recurring.iconSearch')}
+            className="h-11 w-full rounded-input border border-line bg-surface pr-10 pl-10 text-[14px] text-ink outline-none placeholder:text-ink-4"
+          />
+          {query.length > 0 && (
+            <button
+              aria-label={t('action.dismiss')}
+              data-testid="brandpicker-clear"
+              onClick={() => {
+                prefilled.current = false;
+                setQuery('');
+              }}
+              className="m-tap absolute top-0 right-1 flex h-11 w-9 items-center justify-center border-none bg-transparent"
+            >
+              <Icon name="close-circle" size={16} color="var(--m-ink-4)" />
+            </button>
+          )}
+        </div>
         <button
           data-testid="brandpicker-none"
           onClick={() => pick(null)}
@@ -116,21 +168,13 @@ export function BrandIconPicker({ open, onOpenChange, onPick }: Readonly<BrandIc
           {t('recurring.iconNone')}
         </button>
 
-        <div className="grid grid-cols-4 gap-2" data-testid="brandpicker-local">
-          {local.map((brand) => (
-            <button
-              key={brand.slug}
-              data-testid={`brandpicker-${brand.slug}`}
-              title={brand.title}
-              onClick={() => pick(`brands/${brand.slug}.svg`)}
-              className="m-tap flex flex-col items-center gap-1.5 rounded-xl border border-line bg-surface px-1 py-2.5"
-            >
-              <img src={`brands/${brand.slug}.svg`} alt="" className="h-7 w-7 object-contain" loading="lazy" />
-              <span className="w-full truncate text-center text-[10px] text-ink-3">{brand.title}</span>
-            </button>
-          ))}
-        </div>
+        {remoteState === 'unavailable' && (
+          <p className="px-1 text-[12px] text-ink-3" data-testid="brandpicker-offline-note">
+            {t('recurring.iconOfflineNote')}
+          </p>
+        )}
 
+        {/* online results lead: wider coverage and real brand marks */}
         {remoteShown.length > 0 && (
           <>
             <div className="m-cap px-1">{t('recurring.iconOnline')}</div>
@@ -144,12 +188,32 @@ export function BrandIconPicker({ open, onOpenChange, onPick }: Readonly<BrandIc
                   className="m-tap flex flex-col items-center gap-1.5 rounded-xl border border-line bg-surface px-1 py-2.5"
                 >
                   <img src={r.logoUrl} alt="" className="h-7 w-7 rounded object-contain" loading="lazy" />
-                  <span className="w-full truncate text-center text-[10px] text-ink-3">{r.name}</span>
+                  <span className="w-full truncate text-center text-[10px] text-ink-3">
+                    <Highlight text={r.name} query={query} />
+                  </span>
                 </button>
               ))}
             </div>
+            {localShown.length > 0 && <div className="m-cap px-1">{t('recurring.iconBuiltin')}</div>}
           </>
         )}
+
+        <div className="grid grid-cols-4 gap-2" data-testid="brandpicker-local">
+          {localShown.map((brand) => (
+            <button
+              key={brand.slug}
+              data-testid={`brandpicker-${brand.slug}`}
+              title={brand.title}
+              onClick={() => pick(`brands/${brand.slug}.svg`)}
+              className="m-tap flex flex-col items-center gap-1.5 rounded-xl border border-line bg-surface px-1 py-2.5"
+            >
+              <img src={`brands/${brand.slug}.svg`} alt="" className="h-7 w-7 object-contain" loading="lazy" />
+              <span className="w-full truncate text-center text-[10px] text-ink-3">
+                <Highlight text={brand.title} query={query} />
+              </span>
+            </button>
+          ))}
+        </div>
       </div>
     </Sheet>
   );

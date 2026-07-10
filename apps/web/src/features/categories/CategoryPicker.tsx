@@ -1,9 +1,12 @@
 import { useMemo, useState } from 'react';
 import { directionAllows } from '@/domain/categoryRules';
 import { useLang } from '@/i18n';
+import { Highlight } from '@/ui/Highlight';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 import { catName, useCategories } from './useCategories';
+
+import type { TxType } from '@/db/types';
 
 interface CategoryPickerProps {
   open: boolean;
@@ -12,10 +15,12 @@ interface CategoryPickerProps {
   onPick: (catId: string) => void;
   /** the transaction's side — hides categories of the opposite direction */
   direction?: 'debit' | 'credit';
+  /** the transaction's type — a category must support it to be pickable */
+  txType?: TxType;
 }
 
 /** Bottom sheet listing the catalog (built-in + custom) grouped by parent, with search. */
-export function CategoryPicker({ open, onOpenChange, selectedId, onPick, direction }: CategoryPickerProps) {
+export function CategoryPicker({ open, onOpenChange, selectedId, onPick, direction, txType }: CategoryPickerProps) {
   const { t } = useLang();
   const cats = useCategories();
   const [query, setQuery] = useState('');
@@ -28,10 +33,12 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
         children: cats
           .childrenOf(parent.id)
           .filter((c) => !direction || directionAllows(c.direction, direction))
+          // the invariant: a transaction's category must speak its type
+          .filter((c) => !txType || c.txTypes.includes(txType))
           .filter((c) => !q || catName(c, t).toLowerCase().includes(q)),
       }))
       .filter((g) => g.children.length > 0);
-  }, [cats, query, t, direction]);
+  }, [cats, query, t, direction, txType]);
 
   const pick = (catId: string) => {
     onPick(catId);
@@ -62,7 +69,9 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
               className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-1 py-2.5 text-left text-[14px] text-ink"
             >
               <Icon name={cat.icon} size={19} color={cat.color ?? parent.color} />
-              <span className="flex-1">{catName(cat, t)}</span>
+              <span className="flex-1">
+                <Highlight text={catName(cat, t)} query={query} />
+              </span>
               {selectedId === cat.id && <Icon name="check" size={18} color="var(--m-accent)" />}
             </button>
           ))}

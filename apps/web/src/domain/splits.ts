@@ -37,3 +37,36 @@ export function balanceLastRow(amountCents: number, splits: TxSplit[]): TxSplit[
   const open = Math.abs(amountCents) - splitsTotalCents(head);
   return [...head, { ...last, amountCents: Math.max(0, open) }];
 }
+
+// ── percentage splits (user feature): scale to any amount ───────────────
+
+export const splitsArePct = (splits: readonly TxSplit[] | undefined): boolean =>
+  !!splits && splits.length > 0 && splits.every((s) => s.pct !== undefined);
+
+/** pct splits materialized against an amount — remainder cents go to the
+ *  largest slices so the partition stays exact for every charge */
+export function resolveSplitsFor(amountCents: number, splits: readonly TxSplit[]): TxSplit[] {
+  if (!splitsArePct(splits)) return [...splits];
+  const abs = Math.abs(amountCents);
+  const out = splits.map((s) => ({ ...s, amountCents: Math.floor((abs * s.pct!) / 100) }));
+  let leftover = abs - out.reduce((sum, s) => sum + s.amountCents, 0);
+  const bySize = [...out].sort((a, b) => b.pct! - a.pct!);
+  for (const slice of bySize) {
+    if (leftover <= 0) break;
+    slice.amountCents += 1;
+    leftover -= 1;
+  }
+  return out;
+}
+
+export function validatePctSplits(splits: readonly TxSplit[]): SplitError | null {
+  if (splits.length < 2) return 'tooFew';
+  if (splits.some((s) => (s.pct ?? 0) <= 0)) return 'emptyAmount';
+  if (new Set(splits.map((s) => s.catId)).size !== splits.length) return 'duplicateCategory';
+  if (splits.reduce((sum, s) => sum + (s.pct ?? 0), 0) !== 100) return 'notBalanced';
+  return null;
+}
+
+/** the remaining percentage while editing in % mode */
+export const pctRemainder = (splits: readonly TxSplit[]): number =>
+  100 - splits.reduce((sum, s) => sum + (s.pct ?? 0), 0);

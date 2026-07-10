@@ -74,7 +74,7 @@ export const KEYWORD_RULES: KeywordRule[] = [
   {"lang":"nl","catId":"taxes","keywords":["belastingdienst"]},
   {"lang":"nl","catId":"fee","keywords":["oranjepakket","paspoort","creditcard","dyme"]},
   {"lang":"nl","catId":"familyCare","keywords":["kinderopvang","gastouder","oppas","nanny","au pair","kinderdagverblijf","babysitter"]},
-  {"lang":"nl","catId":"cashWithdraw","keywords":["automaat","geldautomaat","geldopname","geldmaat"]},
+  {"lang":"nl","catId":"cashWithdraw","keywords":["geldautomaat","geldopname","geldmaat"]},
   {"lang":"nl","catId":"fines","keywords":["boete","cjib"]},
   {"lang":"nl","catId":"uncategorized","keywords":["doker","sahin","dufour","betaalverzoek","tikkie"]},
 ];

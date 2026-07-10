@@ -142,6 +142,9 @@
     #root {
       height: var(--vvh, 100dvh);
     }
+    /* standalone no longer needs a special case: without
+       black-translucent (index.html) the webview starts below the status
+       bar and the measured viewport reaches the true glass bottom */
   }
   /* prevent iOS zoom-on-focus */
   input,
@@ -195,7 +198,8 @@
     user-select: none;
     -webkit-user-select: none;
   }
-  .m-tap:active {
+  .m-tap:active,
+  .m-tap[data-pressed] {
     opacity: 0.7;
     transform: scale(0.98);
   }
@@ -213,4 +217,34 @@
 }
 .m-fade {
   animation: m-fade-in 0.28s ease-out both;
+}
+
+/* chart entrances: bars rise, composition/progress bars sweep in */
+@keyframes m-bar-in {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+.m-bar-in {
+  animation: m-bar-in 0.45s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+@keyframes m-grow-x {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+.m-grow-x {
+  animation: m-grow-x 0.5s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .m-bar-in,
+  .m-grow-x {
+    animation: none;
+  }
 }

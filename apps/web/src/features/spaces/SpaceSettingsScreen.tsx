@@ -29,6 +29,11 @@ const PERIOD_KEYS = {
 
 const WEEKDAYS = [1, 2, 3, 4, 5, 6, 7]; // ISO: Monday … Sunday
 const clampWeekday = (day: number) => Math.min(Math.max(day || 1, 1), 7);
+const isoMonthsAgo = (months: number): string => {
+  const d = new Date();
+  d.setMonth(d.getMonth() - months);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 /** localized short weekday name — 5 Jan 2020 + n lands on ISO weekday n */
 const weekdayName = (weekday: number, lang: keyof typeof LOCALES) =>
   new Intl.DateTimeFormat(LOCALES[lang], { weekday: 'short' }).format(new Date(2020, 0, 5 + weekday));
@@ -151,6 +156,8 @@ export function SpaceSettingsScreen() {
   const [currency, setCurrency] = useState('EUR');
   const [periodType, setPeriodType] = useState<SpacePeriodType>('month');
   const [periodDay, setPeriodDay] = useState(1);
+  // free-typed draft so the '1' can be deleted while editing; clamped on blur
+  const [periodDayText, setPeriodDayText] = useState('1');
   const [historyStart, setHistoryStart] = useState('');
   const [picture, setPicture] = useState('');
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -172,7 +179,10 @@ export function SpaceSettingsScreen() {
     setCurrency(space.currency);
     setPeriodType(space.periodType === 'custom' ? 'month' : space.periodType);
     setPeriodDay(space.periodDay || 1);
-    setHistoryStart(space.historyStartDate ?? '');
+    setPeriodDayText(String(space.periodDay || 1));
+    // default 3 months back (approved accounts ruling) — an empty iOS
+    // date input also renders as a blank bar, so it always has a value
+    setHistoryStart(space.historyStartDate ?? isoMonthsAgo(3));
     setPicture(space.picture ?? '');
   }
 
@@ -347,9 +357,14 @@ export function SpaceSettingsScreen() {
                   type="number"
                   min={1}
                   max={28}
-                  value={periodDay}
+                  value={periodDayText}
                   disabled={readOnly}
-                  onChange={(e) => setPeriodDay(Math.min(28, Math.max(1, Number(e.target.value) || 1)))}
+                  onChange={(e) => setPeriodDayText(e.target.value)}
+                  onBlur={() => {
+                    const clamped = Math.min(28, Math.max(1, Number(periodDayText) || 1));
+                    setPeriodDay(clamped);
+                    setPeriodDayText(String(clamped));
+                  }}
                   className="h-10 w-20 rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none"
                 />
               </label>
@@ -382,7 +397,7 @@ export function SpaceSettingsScreen() {
               value={historyStart}
               disabled={readOnly}
               onChange={(e) => setHistoryStart(e.target.value)}
-              className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none"
+              className="h-12 w-full appearance-none rounded-input border border-line bg-surface px-4 text-left text-[15px] text-ink outline-none"
             />
 
             {!readOnly && (
