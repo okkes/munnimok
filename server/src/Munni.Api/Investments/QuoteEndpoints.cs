@@ -99,20 +99,25 @@ public static class QuoteEndpoints
             using var response = await client.GetAsync($"/api/v3/simple/price?ids={ids}&vs_currencies=eur&include_24hr_change=true", ct);
             if (!response.IsSuccessStatusCode) return quotes;
             using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
-            foreach (var coin in missing)
-            {
-                if (!doc.RootElement.TryGetProperty(coin, out var entry) || !entry.TryGetProperty("eur", out var eur)) continue;
-                decimal? change = entry.TryGetProperty("eur_24h_change", out var c) ? Math.Round(c.GetDecimal(), 2) : null;
-                var quote = new Quote($"coingecko:{coin}", eur.GetDecimal(), "EUR", change);
-                cache.Set($"quote:gecko:{coin}", quote, CacheFor);
-                quotes.Add(quote);
-            }
+            CollectGeckoQuotes(doc, missing, cache, quotes);
         }
         catch (Exception e) when (e is HttpRequestException or JsonException)
         {
             // partial results beat none
         }
         return quotes;
+    }
+
+    private static void CollectGeckoQuotes(JsonDocument doc, List<string> missing, IMemoryCache cache, List<Quote> quotes)
+    {
+        foreach (var coin in missing)
+        {
+            if (!doc.RootElement.TryGetProperty(coin, out var entry) || !entry.TryGetProperty("eur", out var eur)) continue;
+            decimal? change = entry.TryGetProperty("eur_24h_change", out var c) ? Math.Round(c.GetDecimal(), 2) : null;
+            var quote = new Quote($"coingecko:{coin}", eur.GetDecimal(), "EUR", change);
+            cache.Set($"quote:gecko:{coin}", quote, CacheFor);
+            quotes.Add(quote);
+        }
     }
 
     private static async Task<IReadOnlyList<StockHit>> YahooSearchAsync(IHttpClientFactory http, string query, CancellationToken ct)
@@ -123,22 +128,27 @@ public static class QuoteEndpoints
             using var response = await client.GetAsync($"/v1/finance/search?q={Uri.EscapeDataString(query)}&quotesCount=8&newsCount=0", ct);
             if (!response.IsSuccessStatusCode) return [];
             using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
-            var hits = new List<StockHit>();
-            foreach (var item in doc.RootElement.GetProperty("quotes").EnumerateArray())
-            {
-                var symbol = item.TryGetProperty("symbol", out var s) ? s.GetString() : null;
-                var type = item.TryGetProperty("quoteType", out var qt) ? qt.GetString() : null;
-                if (symbol is null || type is not ("EQUITY" or "ETF")) continue;
-                var name = item.TryGetProperty("shortname", out var n) ? n.GetString() : null;
-                var exchange = item.TryGetProperty("exchDisp", out var e) ? e.GetString() : null;
-                hits.Add(new StockHit(symbol, name ?? symbol, exchange));
-            }
-            return hits;
+            return MapYahooHits(doc);
         }
         catch (Exception e) when (e is HttpRequestException or JsonException or KeyNotFoundException)
         {
             return [];
         }
+    }
+
+    private static List<StockHit> MapYahooHits(JsonDocument doc)
+    {
+        var hits = new List<StockHit>();
+        foreach (var item in doc.RootElement.GetProperty("quotes").EnumerateArray())
+        {
+            var symbol = item.TryGetProperty("symbol", out var s) ? s.GetString() : null;
+            var type = item.TryGetProperty("quoteType", out var qt) ? qt.GetString() : null;
+            if (symbol is null || type is not ("EQUITY" or "ETF")) continue;
+            var name = item.TryGetProperty("shortname", out var n) ? n.GetString() : null;
+            var exchange = item.TryGetProperty("exchDisp", out var e) ? e.GetString() : null;
+            hits.Add(new StockHit(symbol, name ?? symbol, exchange));
+        }
+        return hits;
     }
 
     private static async Task<IReadOnlyList<CoinHit>> CoinGeckoSearchAsync(IHttpClientFactory http, string query, CancellationToken ct)

@@ -498,8 +498,8 @@ export function HomeScreen() {
   }
 
   function renderInsightsBlock() {
-    const top = insights?.[0];
-    if (!top) return null;
+    if (!insights || insights.length === 0) return null;
+    const top = insights[0];
     return (
       <>
         <div className="m-cap mt-5 mb-1 px-1">{t('ins.title')}</div>
@@ -515,7 +515,7 @@ export function HomeScreen() {
             <span className="block truncate text-[13px] font-medium text-ink">
               {t(top.titleKey, Object.fromEntries(Object.entries(top.params).map(([k, v]) => [k, typeof v === 'number' && !['n', 'x', 'months'].includes(k) ? fmtCents(v, currency, lang) : v])))}
             </span>
-            <span className="block text-[11px] text-ink-4">{t('ins.homeSub', { n: insights!.length })}</span>
+            <span className="block text-[11px] text-ink-4">{t('ins.homeSub', { n: insights.length })}</span>
           </span>
           <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
         </button>

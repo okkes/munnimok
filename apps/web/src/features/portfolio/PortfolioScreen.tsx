@@ -50,11 +50,11 @@ export function HoldingFormSheet({ initial, onClose }: Readonly<{ initial: Holdi
   useEffect(() => {
     setName(editing?.name ?? '');
     setAssetClass(editing?.assetClass ?? 'stock');
-    setPriceKey(
-      editing?.priceSource && editing.priceSource !== 'manual' && editing.priceKey
-        ? { source: editing.priceSource, key: editing.priceKey }
-        : null,
-    );
+    let liveKey: { source: 'yahoo' | 'coingecko'; key: string } | null = null;
+    if (editing?.priceKey && (editing.priceSource === 'yahoo' || editing.priceSource === 'coingecko')) {
+      liveKey = { source: editing.priceSource, key: editing.priceKey };
+    }
+    setPriceKey(liveKey);
     setManualPrice(editing?.manualPriceCents !== undefined ? (editing.manualPriceCents / 100).toFixed(2) : '');
     setQuery('');
     setHits(null);
@@ -308,7 +308,7 @@ export function PortfolioScreen() {
               </span>
               <span className="text-right">
                 <span className="m-num block text-[14px] font-semibold text-ink">
-                  {view.valueCents !== null ? money(view.valueCents) : '—'}
+                  {view.valueCents === null ? '—' : money(view.valueCents)}
                 </span>
                 {view.gainPct !== null && (
                   <span className="m-num block text-[11px]" style={{ color: view.gainCents! >= 0 ? 'var(--m-accent-deep)' : 'var(--m-negative)' }}>

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderApp } from '@/test/harness';
 
 /** a long-running debt makes the acceleration detector fire deterministically */
@@ -23,6 +23,10 @@ describe('Insights (demo identity)', () => {
     localStorage.clear();
     sessionStorage.clear();
     indexedDB.deleteDatabase('munni_demo');
+  });
+
+  afterEach(() => {
+    Reflect.deleteProperty(navigator, 'serviceWorker');
   });
 
   it('a detector finding renders, expands with detail, and dismisses for good', async () => {
@@ -56,6 +60,28 @@ describe('Insights (demo identity)', () => {
     renderApp('/insights');
     await screen.findByTestId('screen-insights');
     await screen.findByTestId('insights-empty', {}, { timeout: 5000 });
+  }, 20_000);
+
+  it('the weekly digest notifies once and the marker holds it back after', async () => {
+    const shown: string[] = [];
+    vi.stubGlobal('Notification', { permission: 'granted' } as unknown as typeof Notification);
+    Object.defineProperty(navigator, 'serviceWorker', {
+      configurable: true,
+      value: { ready: Promise.resolve({ showNotification: (title: string) => { shown.push(title); return Promise.resolve(); } }) },
+    });
+
+    await createBigDebt();
+    cleanup();
+    renderApp('/insights');
+    await screen.findByTestId('screen-insights');
+    await waitFor(() => expect(shown).toHaveLength(1), { timeout: 5000 });
+
+    // same ISO week, fresh mount: quiet
+    cleanup();
+    renderApp('/insights');
+    await screen.findByTestId('screen-insights');
+    await waitFor(() => expect(document.querySelector('[data-testid^="insight-head-"]')).toBeTruthy(), { timeout: 5000 });
+    expect(shown).toHaveLength(1);
   }, 20_000);
 
   it('the home block surfaces the top insight; the settings row reaches the screen', async () => {

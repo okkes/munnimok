@@ -92,7 +92,7 @@ const looksLikeEtf = (name: string): boolean => /\b(etf|ucits|ishares|vanguard|v
 
 /** case-insensitive header lookup across DEGIRO's NL/EN exports */
 function headerIndex(header: readonly string[], ...names: string[]): number {
-  return header.findIndex((h) => names.some((n) => h.trim().toLowerCase() === n));
+  return header.findIndex((h) => names.includes(h.trim().toLowerCase()));
 }
 
 /**
@@ -132,55 +132,67 @@ export function parseDegiroPortfolio(text: string): ParsedHolding[] {
  * …, Transactiekosten…, Order ID. Positive Aantal = buy, negative =
  * sell; the fee column becomes its own lot so costs stay honest.
  */
-export function parseDegiroTransactions(text: string): { holdings: ParsedHolding[]; lots: ParsedLot[] } {
-  const rows = parseCsv(text);
-  if (rows.length < 2) return { holdings: [], lots: [] };
-  const header = rows[0].map((h) => h.toLowerCase());
-  const date = headerIndex(header, 'datum', 'date');
-  const product = headerIndex(header, 'product');
-  const isinCol = headerIndex(header, 'isin');
-  const amount = headerIndex(header, 'aantal', 'quantity', 'number');
-  const value = headerIndex(header, 'waarde', 'value');
-  const fee = header.findIndex((h) => h.includes('transactiekosten') || h.includes('transaction and/or') || h.includes('transaction costs'));
-  const orderId = headerIndex(header, 'order id', 'order-id');
-  if (date === -1 || product === -1 || amount === -1 || value === -1) return { holdings: [], lots: [] };
+interface TxColumns {
+  date: number;
+  product: number;
+  isin: number;
+  amount: number;
+  value: number;
+  fee: number;
+  orderId: number;
+}
 
-  const holdings = new Map<string, ParsedHolding>();
-  const lots: ParsedLot[] = [];
-  for (const [index, row] of rows.slice(1).entries()) {
-    const iso = toIsoDate(row[date] ?? '');
-    const name = row[product]?.trim();
-    const qty = parseDegiroNumber(row[amount] ?? '');
-    const total = parseDegiroNumber(row[value] ?? '');
-    if (!iso || !name || qty === null || total === null || qty === 0) continue;
+function parseTransactionRow(row: readonly string[], index: number, cols: TxColumns): { holding: ParsedHolding; lots: ParsedLot[] } | null {
+  const iso = toIsoDate(row[cols.date] ?? '');
+  const name = row[cols.product]?.trim();
+  const qty = parseDegiroNumber(row[cols.amount] ?? '');
+  const total = parseDegiroNumber(row[cols.value] ?? '');
+  if (!iso || !name || qty === null || total === null || qty === 0) return null;
 
-    const isin = isinCol >= 0 && ISIN.test(row[isinCol]?.trim() ?? '') ? row[isinCol].trim() : undefined;
-    const holdingKey = holdingKeyOf(isin, name);
-    if (!holdings.has(holdingKey)) {
-      holdings.set(holdingKey, { key: holdingKey, name, isin, assetClass: looksLikeEtf(name) ? 'etf' : 'stock' });
-    }
+  const isin = cols.isin >= 0 && ISIN.test(row[cols.isin]?.trim() ?? '') ? row[cols.isin].trim() : undefined;
+  const holdingKey = holdingKeyOf(isin, name);
+  const order = cols.orderId >= 0 ? row[cols.orderId]?.trim() : '';
+  const lotKey = order || `${iso}:${holdingKey}:${qty}:${total}:${index}`;
 
-    const order = orderId >= 0 ? row[orderId]?.trim() : '';
-    const lotKey = order || `${iso}:${holdingKey}:${qty}:${total}:${index}`;
-    lots.push({
+  const lots: ParsedLot[] = [
+    {
       key: `deg:${lotKey}`,
       holdingKey,
       kind: qty > 0 ? 'buy' : 'sell',
       date: iso,
       quantity: Math.abs(qty),
       totalCents: Math.round(total * 100),
-    });
+    },
+  ];
+  const feeValue = cols.fee >= 0 ? parseDegiroNumber(row[cols.fee] ?? '') : null;
+  if (feeValue) {
+    lots.push({ key: `deg:${lotKey}:fee`, holdingKey, kind: 'fee', date: iso, totalCents: Math.round(feeValue * 100) });
+  }
+  return { holding: { key: holdingKey, name, isin, assetClass: looksLikeEtf(name) ? 'etf' : 'stock' }, lots };
+}
 
-    const feeValue = fee >= 0 ? parseDegiroNumber(row[fee] ?? '') : null;
-    if (feeValue) {
-      lots.push({
-        key: `deg:${lotKey}:fee`,
-        holdingKey,
-        kind: 'fee',
-        date: iso,
-        totalCents: Math.round(feeValue * 100),
-      });
-    }
+export function parseDegiroTransactions(text: string): { holdings: ParsedHolding[]; lots: ParsedLot[] } {
+  const rows = parseCsv(text);
+  if (rows.length < 2) return { holdings: [], lots: [] };
+  const header = rows[0].map((h) => h.toLowerCase());
+  const cols: TxColumns = {
+    date: headerIndex(header, 'datum', 'date'),
+    product: headerIndex(header, 'product'),
+    isin: headerIndex(header, 'isin'),
+    amount: headerIndex(header, 'aantal', 'quantity', 'number'),
+    value: headerIndex(header, 'waarde', 'value'),
+    fee: header.findIndex((h) => h.includes('transactiekosten') || h.includes('transaction and/or') || h.includes('transaction costs')),
+    orderId: headerIndex(header, 'order id', 'order-id'),
+  };
+  if (cols.date === -1 || cols.product === -1 || cols.amount === -1 || cols.value === -1) return { holdings: [], lots: [] };
+
+  const holdings = new Map<string, ParsedHolding>();
+  const lots: ParsedLot[] = [];
+  for (const [index, row] of rows.slice(1).entries()) {
+    const parsed = parseTransactionRow(row, index, cols);
+    if (!parsed) continue;
+    if (!holdings.has(parsed.holding.key)) holdings.set(parsed.holding.key, parsed.holding);
+    lots.push(...parsed.lots);
   }
   return { holdings: [...holdings.values()], lots };
 }

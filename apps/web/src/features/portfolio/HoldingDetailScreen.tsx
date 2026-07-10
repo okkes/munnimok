@@ -74,8 +74,8 @@ export function HoldingDetailScreen() {
       <Icon name={LOT_ICON[lot.kind]} size={16} color={lot.kind === 'buy' || lot.kind === 'dividend' ? 'var(--m-accent-deep)' : 'var(--m-ink-3)'} />
       <span className="min-w-0 flex-1">
         <span className="block text-[13px] text-ink">
-          {t(`pf.lot.${lot.kind}` as 'pf.lot.buy')}
-          {lot.quantity !== undefined ? ` · ${lot.quantity}` : ''}
+          {t(`pf.lot.${lot.kind}`)}
+          {lot.quantity === undefined ? '' : ` · ${lot.quantity}`}
         </span>
         <span className="block text-[11px] text-ink-4">{fmtDate(lot.date)}</span>
       </span>
@@ -109,7 +109,7 @@ export function HoldingDetailScreen() {
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <div className="rounded-card border border-line bg-surface p-4" data-testid="pfdetail-hero">
           <div className="m-num text-[24px] font-semibold text-ink" data-testid="pfdetail-value">
-            {view.valueCents !== null ? money(view.valueCents) : t('pf.noPrice')}
+            {view.valueCents === null ? t('pf.noPrice') : money(view.valueCents)}
           </div>
           <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-ink-3">
             <span data-testid="pfdetail-qty">
@@ -160,7 +160,7 @@ export function HoldingDetailScreen() {
                   kind === candidate ? 'border-accent bg-accent-soft text-accent-deep' : 'border-line bg-surface text-ink-2'
                 }`}
               >
-                {t(`pf.lot.${candidate}` as 'pf.lot.buy')}
+                {t(`pf.lot.${candidate}`)}
               </button>
             ))}
           </div>

@@ -60,6 +60,7 @@ export function InsightsScreen() {
   const renderCard = (insight: Insight) => {
     const expanded = open === insight.id;
     const color = SEVERITY_COLOR[insight.severity];
+    const chart = insight.chart ?? [];
     return (
       <div key={insight.id} className="overflow-hidden rounded-card border border-line bg-surface" data-testid={`insight-${insight.id}`}>
         <button
@@ -80,7 +81,7 @@ export function InsightsScreen() {
         </button>
         {expanded && (
           <div className="border-t border-line-2 bg-bg-2/50 px-4 py-3" data-testid={`insight-body-${insight.id}`}>
-            {insight.chart && insight.chart.length > 1 && <MiniBars data={insight.chart} color={color} />}
+            {chart.length > 1 && <MiniBars data={chart} color={color} />}
             <p className="mt-2 text-[13px] leading-relaxed text-ink-2">{t(insight.detailKey, withMoney(insight.params))}</p>
             <div className="mt-3 flex items-center gap-2">
               {insight.actionTo && (
@@ -114,8 +115,8 @@ export function InsightsScreen() {
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <p className="px-1 pb-3 text-[12px] text-ink-3">{t('ins.freshness')}</p>
-        {insights && insights.length > 0 && <div className="flex flex-col gap-2.5">{insights.map(renderCard)}</div>}
-        {insights && insights.length === 0 && (
+        {(insights ?? []).length > 0 && <div className="flex flex-col gap-2.5">{(insights ?? []).map(renderCard)}</div>}
+        {insights?.length === 0 && (
           <div className="flex flex-col items-center gap-2 px-6 pt-16 text-center" data-testid="insights-empty">
             <Icon name="lightbulb-outline" size={34} color="var(--m-ink-4)" />
             <p className="text-[14px] font-medium text-ink-2">{t('ins.emptyTitle')}</p>
