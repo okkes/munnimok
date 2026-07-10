@@ -24,6 +24,7 @@ import { useGoals } from '@/application/goals';
 import { useDebtStatuses } from '@/application/debts';
 import { useAllocations } from '@/application/allocation';
 import { usePortfolio } from '@/application/portfolio';
+import { useInsights } from '@/application/insights';
 import { eventSpentCents } from '@/domain/events';
 import { goalProgress } from '@/domain/goals';
 import { debtsOverview } from '@/domain/debts';
@@ -119,6 +120,8 @@ export function HomeScreen() {
     const accountsById = new Map((accounts ?? []).map((a) => [a.id, a]));
     return debtsOverview(activeDebts.map((s) => s.debt), accountsById);
   }, [activeDebts, accounts]);
+  // insights block: the top undismissed finding
+  const insights = useInsights();
   // portfolio block: only once holdings exist
   const portfolio = usePortfolio();
   const hasHoldings = (portfolio?.views ?? []).some((v) => v.holding.archived !== 1);
@@ -139,6 +142,7 @@ export function HomeScreen() {
   const blockRenderers: Record<HomeBlockId, () => React.ReactNode> = {
     overview: renderOverviewBlock,
     review: renderReviewBlock,
+    insights: renderInsightsBlock,
     budgets: renderBudgetsBlock,
     allocation: renderAllocationBlock,
     upcoming: renderUpcomingBlock,
@@ -486,6 +490,32 @@ export function HomeScreen() {
                 ? t('debts.perMonth', { amount: fmtCents(debtTotals.totalMonthlyCents, currency, lang) })
                 : t('debts.count', { n: activeDebts.length })}
             </span>
+          </span>
+          <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
+        </button>
+      </>
+    );
+  }
+
+  function renderInsightsBlock() {
+    const top = insights?.[0];
+    if (!top) return null;
+    return (
+      <>
+        <div className="m-cap mt-5 mb-1 px-1">{t('ins.title')}</div>
+        <button
+          data-testid="home-insight"
+          onClick={() => void navigate({ to: '/insights' })}
+          className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left"
+        >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-warning-soft">
+            <Icon name={top.icon} size={18} color="var(--m-warning)" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[13px] font-medium text-ink">
+              {t(top.titleKey, Object.fromEntries(Object.entries(top.params).map(([k, v]) => [k, typeof v === 'number' && !['n', 'x', 'months'].includes(k) ? fmtCents(v, currency, lang) : v])))}
+            </span>
+            <span className="block text-[11px] text-ink-4">{t('ins.homeSub', { n: insights!.length })}</span>
           </span>
           <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
         </button>

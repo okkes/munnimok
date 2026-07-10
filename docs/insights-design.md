@@ -1,6 +1,10 @@
 # Insights — design
 
-Status: **draft for approval** — nothing here is built yet.
+Status: **N1 built 2026-07-10** — engine, six detectors (price creep,
+overlap, small habit, weekend, budget reality check, debt
+acceleration), screen + home block, synced per-space dismissals
+(ruling), weekly digest notification (ruling), neutral tone (ruling).
+N2/N3 detectors follow.
 The legacy screen is the blueprint for the *feel*: expandable cards,
 one-line verdict, a small chart and a paragraph that talks like a
 sharp friend, not a bank. This doc turns its five mock cards into an

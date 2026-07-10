@@ -407,6 +407,17 @@ export interface LotRow extends SyncEnvelope {
   totalCents: number;
 }
 
+/**
+ * SYNCED insight dismissal (insights ruling #1): an insight is about
+ * the space's money — dismissed once, dismissed for every member. The
+ * insight id encodes its subject, so a changed situation resurfaces.
+ */
+export interface InsightDismissRow extends SyncEnvelope {
+  id: string;
+  spaceId: string;
+  insightId: string;
+}
+
 /** DEVICE-ONLY delayed-quote cache — prices are never synced data. */
 export interface QuoteCacheRow {
   /** `{source}:{priceKey}` */
@@ -474,7 +485,8 @@ export type EntityName =
   | 'receipt'
   | 'storeMarker'
   | 'holding'
-  | 'lot';
+  | 'lot'
+  | 'insightDismiss';
 
 export interface EntityRowMap {
   space: SpaceRow;
@@ -495,4 +507,5 @@ export interface EntityRowMap {
   storeMarker: StoreMarkerRow;
   holding: HoldingRow;
   lot: LotRow;
+  insightDismiss: InsightDismissRow;
 }

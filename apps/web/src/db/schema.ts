@@ -10,6 +10,7 @@ import type {
   EntityName,
   EventRow,
   HoldingRow,
+  InsightDismissRow,
   LotRow,
   QuoteCacheRow,
   ReceiptRow,
@@ -52,6 +53,7 @@ export class MunniDB extends Dexie {
   storeMarkers!: Table<StoreMarkerRow, string>;
   holdings!: Table<HoldingRow, string>;
   lots!: Table<LotRow, string>;
+  insightDismissals!: Table<InsightDismissRow, string>;
   /** device-only — delayed quotes are a cache, not data */
   quoteCache!: Table<QuoteCacheRow, string>;
   outbox!: Table<OutboxRow, string>;
@@ -107,6 +109,10 @@ export class MunniDB extends Dexie {
       lots: 'id, spaceId, holdingId',
       quoteCache: 'key',
     });
+    // insights: synced per-space dismissals
+    this.version(10).stores({
+      insightDismissals: 'id, spaceId',
+    });
   }
 
   tableFor<E extends EntityName>(entity: E) {
@@ -147,6 +153,8 @@ export class MunniDB extends Dexie {
         return this.holdings;
       case 'lot':
         return this.lots;
+      case 'insightDismiss':
+        return this.insightDismissals;
       default:
         throw new Error(`unknown entity: ${entity}`);
     }
