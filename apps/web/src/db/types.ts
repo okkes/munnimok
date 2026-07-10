@@ -153,7 +153,7 @@ export interface TxMetaRow extends SyncEnvelope {
 }
 
 export type RecurringKind = 'fixed' | 'subscription';
-export type RecurringEvery = 'month' | 'year';
+export type RecurringEvery = 'week' | 'month' | 'year';
 
 /**
  * One recurring cost of a space (rent, Netflix, insurance …). The
@@ -175,6 +175,9 @@ export interface RecurringRow extends SyncEnvelope {
   /** brand logo: '/brands/{slug}.svg' (vendored, offline) or a logo.dev URL — wins over `icon` */
   logo?: string;
   every: RecurringEvery;
+  /** cadence multiplier: every N weeks/months/years (default 1); N>1 and
+   *  weekly cadences anchor on `since` */
+  everyN?: number;
   /** due day of month 1..31 (clamped to shorter months) */
   dueDay: number;
   /** yearly costs: due month 1..12 */

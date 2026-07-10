@@ -12,7 +12,7 @@ import { nextPeriod, periodHistory } from '@/domain/periods';
 import { fmtCents } from '@/lib/money';
 import { RecurringFormSheet, emptyForm } from './RecurringFormSheet';
 import type { FormState } from './RecurringFormSheet';
-import { RecurringVisual } from './RecurringVisual';
+import { RecurringVisual, cadenceLabel } from './RecurringVisual';
 import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
@@ -83,10 +83,27 @@ export function RecurringScreen() {
 
   const subtitleFor = (c: RecurringComputed): string => {
     if (view === 'period' && c.paid) return t('recurring.paidThisPeriod');
-    const parts = [t('recurring.dueDay2', { day: c.rec.dueDay })];
+    // custom cadences say their rhythm; plain monthly/yearly say the due day
+    const custom = c.rec.every === 'week' || (c.rec.everyN ?? 1) > 1;
+    const parts = [custom ? cadenceLabel(c.rec, t) : t('recurring.dueDay2', { day: c.rec.dueDay })];
     if (c.nextDue) parts.push(t('recurring.next', { date: fmtDate(c.nextDue) }));
     if (c.rec.until) parts.push(t('recurring.ends', { date: fmtDate(c.rec.until) }));
     return parts.join(' · ');
+  };
+
+  // the toggle filters by date range — label it with the actual dates,
+  // not the "period" word (cadences are independent of the space period)
+  const rangeLabelFor = (r: { start: string; end: string }): string => {
+    if (r.start.slice(5) === '01-01' && r.end.slice(5) === '12-31' && r.start.slice(0, 4) === r.end.slice(0, 4))
+      return r.start.slice(0, 4);
+    const [y, m] = r.start.split('-').map(Number);
+    const fullMonth =
+      r.start.slice(8) === '01' &&
+      r.end.slice(0, 7) === r.start.slice(0, 7) &&
+      Number(r.end.slice(8)) === new Date(y, m, 0).getDate();
+    if (fullMonth) return new Date(r.start).toLocaleDateString(LOCALES[lang], { month: 'long' });
+    const fmtShort = (iso: string) => new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' });
+    return `${fmtShort(r.start)} – ${fmtShort(r.end)}`;
   };
 
   const renderRow = (c: RecurringComputed) => (
@@ -148,24 +165,24 @@ export function RecurringScreen() {
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
-        {/* this period / next period / year toggle */}
+        {/* date-range filter: current range / next range / calendar year */}
         <div className="mt-1 flex rounded-xl bg-bg-2 p-0.5">
           {(
             [
-              ['period', 'overview.thisPeriod'],
-              ['next', 'recurring.nextPeriod'],
-              ['year', 'recurring.thisYear'],
+              ['period', rangeLabelFor(period)],
+              ['next', rangeLabelFor(upcoming)],
+              ['year', today.slice(0, 4)],
             ] as const
-          ).map(([v, labelKey]) => (
+          ).map(([v, label]) => (
             <button
               key={v}
               data-testid={`recurring-view-${v}`}
               onClick={() => setView(v)}
-              className={`m-tap flex-1 rounded-[10px] border-none py-2 text-[13px] ${
+              className={`m-tap flex-1 rounded-[10px] border-none py-2 text-[12px] whitespace-nowrap ${
                 view === v ? 'bg-surface font-semibold text-ink shadow-sm' : 'bg-transparent text-ink-3'
               }`}
             >
-              {t(labelKey)}
+              {label}
             </button>
           ))}
         </div>

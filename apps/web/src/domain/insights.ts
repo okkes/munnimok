@@ -2,6 +2,7 @@ import type { AccountRow, BudgetRow, DebtRow, RecurringRow, TransactionRow } fro
 import type { TranslationKey } from '@/i18n';
 import { budgetFamily, budgetPeriodAt, budgetSpentCents, cycleIndex } from './budgets';
 import { projectPayoff } from './debts';
+import { cycleMonths } from './recurring';
 import { merchantKey } from './merchantKey';
 import type { Period } from './periods';
 
@@ -60,7 +61,7 @@ export function priceCreep(inputs: InsightInputs): Insight[] {
     if (charges.length < 3) continue;
     const first = -charges[0].amountCents;
     const last = -charges.at(-1)!.amountCents;
-    const deltaMonthly = rec.every === 'year' ? Math.round((last - first) / 12) : last - first;
+    const deltaMonthly = Math.round((last - first) / cycleMonths(rec));
     if (deltaMonthly < 50) continue;
     out.push({
       id: `creep:${rec.id}:${last}`,
@@ -91,7 +92,7 @@ export function subscriptionOverlap(inputs: InsightInputs): Insight[] {
   const out: Insight[] = [];
   for (const [catId, group] of groups) {
     if (group.length < 2) continue;
-    const monthly = group.reduce((sum, rec) => sum + (rec.every === 'year' ? Math.round(rec.amountCents / 12) : rec.amountCents), 0);
+    const monthly = group.reduce((sum, rec) => sum + Math.round(rec.amountCents / cycleMonths(rec)), 0);
     out.push({
       id: `overlap:${catId}:${group.length}`,
       severity: 'leak',

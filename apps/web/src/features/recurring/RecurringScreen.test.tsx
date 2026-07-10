@@ -201,6 +201,36 @@ describe('RecurringScreen editing (demo identity)', () => {
     await waitFor(() => expect(screen.queryByText('Gym')).toBeNull(), { timeout: 5000 });
   }, 15_000);
 
+  it('custom cadence: every 2 weeks needs an anchor date and shows its rhythm', async () => {
+    renderApp('/recurring');
+    await screen.findByTestId('screen-recurring');
+
+    fireEvent.click(screen.getByTestId('recurring-add'));
+    fireEvent.change(await screen.findByTestId('recform-name'), { target: { value: 'Cleaner' } });
+    fireEvent.change(screen.getByTestId('recform-amount'), { target: { value: '45' } });
+    fireEvent.click(screen.getByTestId('recform-every-custom'));
+    fireEvent.change(await screen.findByTestId('recform-everyn'), { target: { value: '2' } });
+    fireEvent.blur(screen.getByTestId('recform-everyn'));
+    fireEvent.change(screen.getByTestId('recform-every-unit'), { target: { value: 'week' } });
+
+    // no first-due date yet → the save button refuses
+    expect((screen.getByTestId('recform-save') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByTestId('recform-firstdue'), { target: { value: iso(new Date()) } });
+    expect((screen.getByTestId('recform-save') as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByTestId('recform-save'));
+
+    // the list row says the rhythm instead of a monthly due day
+    const row = await screen.findByText('Cleaner', {}, { timeout: 5000 });
+    await waitFor(() => expect(row.closest('button')!.textContent).toContain('Every 2 weeks'));
+
+    // reopening the form lands on the custom chip with everything restored
+    fireEvent.click(row.closest('button')!);
+    fireEvent.click(await screen.findByTestId('recdetail-edit'));
+    expect(((await screen.findByTestId('recform-everyn')) as HTMLInputElement).value).toBe('2');
+    expect((screen.getByTestId('recform-every-unit') as HTMLSelectElement).value).toBe('week');
+    expect((screen.getByTestId('recform-firstdue') as HTMLInputElement).value).toBe(iso(new Date()));
+  }, 15_000);
+
   it('fires a local reminder once when a due date enters the notify window', async () => {
     // arrange the recurring first (its own app instance)
     const first = renderApp('/recurring');

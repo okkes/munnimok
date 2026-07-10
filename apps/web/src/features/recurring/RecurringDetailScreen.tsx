@@ -9,7 +9,7 @@ import { nextDueDate } from '@/domain/recurring';
 import { fmtCents } from '@/lib/money';
 import { RecurringFormSheet, formFromRec } from './RecurringFormSheet';
 import type { FormState } from './RecurringFormSheet';
-import { RecurringVisual } from './RecurringVisual';
+import { RecurringVisual, cadenceLabel } from './RecurringVisual';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
 import { TxRow } from '@/ui/TxRow';
@@ -92,8 +92,7 @@ export function RecurringDetailScreen() {
                 )}
               </span>
               <span className="block text-[12px] text-ink-3">
-                {t(rec.kind === 'fixed' ? 'recurring.kindFixed' : 'recurring.kindSub')} ·{' '}
-                {t(rec.every === 'year' ? 'recurring.everyYear' : 'recurring.everyMonth')}
+                {t(rec.kind === 'fixed' ? 'recurring.kindFixed' : 'recurring.kindSub')} · {cadenceLabel(rec, t)}
               </span>
             </span>
             <span className="font-mono text-[18px] font-semibold text-ink" data-testid="recdetail-amount">

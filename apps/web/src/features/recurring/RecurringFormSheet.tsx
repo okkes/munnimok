@@ -18,6 +18,10 @@ export interface FormState {
   amount: string; // major units as typed
   logo?: string;
   every: RecurringEvery;
+  /** custom cadence: repeat every N units, anchored on firstDue */
+  everyN: number;
+  custom: boolean;
+  firstDue: string; // ISO date, '' until picked
   dueDay: number;
   dueMonth: number;
   luxury: boolean;
@@ -32,6 +36,9 @@ export const emptyForm = (): FormState => ({
   kind: 'subscription',
   amount: '',
   every: 'month',
+  everyN: 1,
+  custom: false,
+  firstDue: '',
   dueDay: 1,
   dueMonth: 1,
   luxury: false,
@@ -46,6 +53,9 @@ export const formFromRec = (rec: RecurringRow): FormState => ({
   amount: (rec.amountCents / 100).toFixed(2),
   logo: rec.logo || undefined,
   every: rec.every,
+  everyN: Math.max(1, rec.everyN ?? 1),
+  custom: rec.every === 'week' || (rec.everyN ?? 1) > 1,
+  firstDue: rec.since ?? '',
   dueDay: rec.dueDay,
   dueMonth: rec.dueMonth ?? 1,
   luxury: rec.luxury === 1,
@@ -97,20 +107,41 @@ export function RecurringFormSheet({ initial, onClose, onDeleted }: Readonly<Rec
   const [form, setForm] = useState<FormState | null>(null);
   const [brandPickerOpen, setBrandPickerOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  // free-typed draft so the '1' can be deleted while editing; clamped on blur
+  // free-typed drafts so the '1' can be deleted while editing; clamped on blur
   const [dueDayText, setDueDayText] = useState('1');
+  const [everyNText, setEveryNText] = useState('1');
 
   useEffect(() => {
     setForm(initial);
     setDueDayText(String(initial?.dueDay ?? 1));
+    setEveryNText(String(initial?.everyN ?? 1));
     setConfirmDelete(false);
   }, [initial]);
 
   const save = async () => {
     if (!form?.name.trim()) return;
+    if (form.custom && !form.firstDue) return;
     const amountCents = Math.round(Number.parseFloat(form.amount.replace(',', '.')) * 100);
     if (!Number.isFinite(amountCents) || amountCents <= 0) return;
     const fromSuggestion = form.id === null && !!form.merchantKey;
+    // custom cadences anchor on the first due date; presets keep the
+    // no-auto-`since` rule so a cost added mid-period still counts for
+    // the whole current period (and accepted suggestions own their history)
+    const cadence = form.custom
+      ? {
+          every: form.every,
+          everyN: Math.min(99, Math.max(1, Math.round(form.everyN) || 1)),
+          since: form.firstDue,
+          dueDay: Number(form.firstDue.slice(8, 10)),
+          dueMonth: Number(form.firstDue.slice(5, 7)),
+        }
+      : {
+          every: form.every,
+          everyN: 1, // overwrite a previous custom cadence
+          since: '', // '' clears — an absent field would not sync
+          dueDay: Math.min(31, Math.max(1, form.dueDay || 1)),
+          ...(form.every === 'year' ? { dueMonth: Math.min(12, Math.max(1, form.dueMonth || 1)) } : {}),
+        };
     await ops.save(form.id, {
       name: form.name.trim(),
       kind: form.kind,
@@ -118,15 +149,10 @@ export function RecurringFormSheet({ initial, onClose, onDeleted }: Readonly<Rec
       amountCents,
       icon: KIND_ICON[form.kind],
       logo: form.logo ?? '', // '' clears — an absent field would not sync
-
-      every: form.every,
-      dueDay: Math.min(31, Math.max(1, form.dueDay || 1)),
-      ...(form.every === 'year' ? { dueMonth: Math.min(12, Math.max(1, form.dueMonth || 1)) } : {}),
+      ...cadence,
       active: form.active ? 1 : 0,
       notifyDaysBefore: form.notify || undefined,
       merchantKey: form.merchantKey,
-      // no auto-`since`: a cost added mid-period still counts for the
-      // whole current period (and accepted suggestions own their history)
     });
     onClose();
     // an accepted suggestion should immediately own its past payments
@@ -200,49 +226,103 @@ export function RecurringFormSheet({ initial, onClose, onDeleted }: Readonly<Rec
               <Icon name="chevron-down" size={17} color="var(--m-ink-4)" />
             </button>
 
-            <div className="m-cap px-1">{t('space.periodTitle')}</div>
+            <div className="m-cap px-1">{t('recurring.cadence')}</div>
             <div className="flex flex-wrap items-center gap-2">
-              <Chip testId="recform-every-month" selected={form.every === 'month'} onClick={() => setForm({ ...form, every: 'month' })}>
+              <Chip
+                testId="recform-every-month"
+                selected={!form.custom && form.every === 'month'}
+                onClick={() => setForm({ ...form, custom: false, every: 'month', everyN: 1 })}
+              >
                 {t('recurring.everyMonth')}
               </Chip>
-              <Chip testId="recform-every-year" selected={form.every === 'year'} onClick={() => setForm({ ...form, every: 'year' })}>
+              <Chip
+                testId="recform-every-year"
+                selected={!form.custom && form.every === 'year'}
+                onClick={() => setForm({ ...form, custom: false, every: 'year', everyN: 1 })}
+              >
                 {t('recurring.everyYear')}
               </Chip>
+              <Chip testId="recform-every-custom" selected={form.custom} onClick={() => setForm({ ...form, custom: true })}>
+                {t('recurring.everyCustom')}
+              </Chip>
             </div>
-            <label className="flex items-center gap-3 text-[13px] text-ink-2">
-              {t('recurring.dueDay')}
-              <input
-                data-testid="recform-dueday"
-                type="number"
-                min={1}
-                max={31}
-                value={dueDayText}
-                onChange={(e) => setDueDayText(e.target.value)}
-                onBlur={() => {
-                  const clamped = Math.min(31, Math.max(1, Number(dueDayText) || 1));
-                  setForm({ ...form, dueDay: clamped });
-                  setDueDayText(String(clamped));
-                }}
-                className="h-10 w-20 rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none"
-              />
-              {form.every === 'year' && (
-                <>
-                  {t('recurring.dueMonth')}
+            {form.custom ? (
+              <div className="flex flex-col gap-2">
+                <label className="flex items-center gap-2 text-[13px] text-ink-2">
+                  {t('recurring.everyLabel')}
+                  <input
+                    data-testid="recform-everyn"
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    max={99}
+                    value={everyNText}
+                    onChange={(e) => setEveryNText(e.target.value)}
+                    onBlur={() => {
+                      const clamped = Math.min(99, Math.max(1, Math.round(Number(everyNText)) || 1));
+                      setForm({ ...form, everyN: clamped });
+                      setEveryNText(String(clamped));
+                    }}
+                    className="h-10 w-16 rounded-input border border-line bg-surface px-3 text-center text-[14px] text-ink outline-none"
+                  />
                   <select
-                    data-testid="recform-duemonth"
-                    value={form.dueMonth}
-                    onChange={(e) => setForm({ ...form, dueMonth: Number(e.target.value) })}
+                    data-testid="recform-every-unit"
+                    value={form.every}
+                    onChange={(e) => setForm({ ...form, every: e.target.value as RecurringEvery })}
                     className="h-10 rounded-input border border-line bg-surface px-2 text-[13px] text-ink"
                   >
-                    {Array.from({ length: 12 }, (_, i) => (
-                      <option key={i + 1} value={i + 1}>
-                        {new Date(2026, i, 1).toLocaleDateString(LOCALES[lang], { month: 'short' })}
-                      </option>
-                    ))}
+                    <option value="week">{t('recurring.unitWeeks')}</option>
+                    <option value="month">{t('recurring.unitMonths')}</option>
+                    <option value="year">{t('recurring.unitYears')}</option>
                   </select>
-                </>
-              )}
-            </label>
+                </label>
+                <label className="flex items-center gap-2 text-[13px] text-ink-2">
+                  {t('recurring.firstDue')}
+                  <input
+                    data-testid="recform-firstdue"
+                    type="date"
+                    value={form.firstDue}
+                    onChange={(e) => setForm({ ...form, firstDue: e.target.value })}
+                    className="h-10 rounded-input border border-line bg-surface px-3 text-[13px] text-ink outline-none"
+                  />
+                </label>
+              </div>
+            ) : (
+              <label className="flex items-center gap-3 text-[13px] text-ink-2">
+                {t('recurring.dueDay')}
+                <input
+                  data-testid="recform-dueday"
+                  type="number"
+                  min={1}
+                  max={31}
+                  value={dueDayText}
+                  onChange={(e) => setDueDayText(e.target.value)}
+                  onBlur={() => {
+                    const clamped = Math.min(31, Math.max(1, Number(dueDayText) || 1));
+                    setForm({ ...form, dueDay: clamped });
+                    setDueDayText(String(clamped));
+                  }}
+                  className="h-10 w-20 rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none"
+                />
+                {form.every === 'year' && (
+                  <>
+                    {t('recurring.dueMonth')}
+                    <select
+                      data-testid="recform-duemonth"
+                      value={form.dueMonth}
+                      onChange={(e) => setForm({ ...form, dueMonth: Number(e.target.value) })}
+                      className="h-10 rounded-input border border-line bg-surface px-2 text-[13px] text-ink"
+                    >
+                      {Array.from({ length: 12 }, (_, i) => (
+                        <option key={i + 1} value={i + 1}>
+                          {new Date(2026, i, 1).toLocaleDateString(LOCALES[lang], { month: 'short' })}
+                        </option>
+                      ))}
+                    </select>
+                  </>
+                )}
+              </label>
+            )}
 
             <button
               data-testid="recform-luxury"
@@ -284,7 +364,11 @@ export function RecurringFormSheet({ initial, onClose, onDeleted }: Readonly<Rec
               </button>
             )}
 
-            <Button data-testid="recform-save" onClick={() => void save()} disabled={!form.name.trim() || !form.amount}>
+            <Button
+              data-testid="recform-save"
+              onClick={() => void save()}
+              disabled={!form.name.trim() || !form.amount || (form.custom && !form.firstDue)}
+            >
               {form.id ? t('action.save') : t('action.add')}
             </Button>
             {form.id && (
