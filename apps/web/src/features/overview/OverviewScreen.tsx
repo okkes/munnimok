@@ -9,6 +9,7 @@ import { periodHistory } from '@/domain/periods';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { LOCALES, useLang } from '@/i18n';
 import { fmtCents } from '@/lib/money';
+import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { BarChart, StackedBar } from '@/ui/charts';
 import { Icon } from '@/ui/Icon';
@@ -91,6 +92,7 @@ export function OverviewScreen() {
             <Icon name="chevron-left" size={24} />
           </IconButton>
         }
+        trailing={<HelpButton tourId="overview" />}
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <div className="py-2 text-center">

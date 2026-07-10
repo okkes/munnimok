@@ -13,6 +13,7 @@ import { fmtCents } from '@/lib/money';
 import { RecurringFormSheet, emptyForm } from './RecurringFormSheet';
 import type { FormState } from './RecurringFormSheet';
 import { RecurringVisual } from './RecurringVisual';
+import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
 
@@ -138,9 +139,12 @@ export function RecurringScreen() {
       <AppBar
         title={t('screen.recurring')}
         trailing={
-          <IconButton label={t('recurring.add')} testId="recurring-add" onClick={() => setFormInitial(emptyForm())}>
-            <Icon name="plus" size={22} />
-          </IconButton>
+          <>
+            <HelpButton tourId="recurring" />
+            <IconButton label={t('recurring.add')} testId="recurring-add" onClick={() => setFormInitial(emptyForm())}>
+              <Icon name="plus" size={22} />
+            </IconButton>
+          </>
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">

@@ -6,7 +6,23 @@ import type { TranslationKey } from '@/i18n';
  * Adding a feature's tour = one entry here + i18n strings ×3.
  */
 
-export type TourId = 'home' | 'review' | 'budgets' | 'events' | 'goals' | 'debts' | 'allocation';
+export type TourId =
+  | 'home'
+  | 'review'
+  | 'budgets'
+  | 'events'
+  | 'goals'
+  | 'debts'
+  | 'allocation'
+  | 'transactions'
+  | 'recurring'
+  | 'accounts'
+  | 'spaces'
+  | 'categories'
+  | 'overview'
+  | 'portfolio'
+  | 'insights'
+  | 'shopping';
 
 export interface TourStep {
   titleKey: TranslationKey;
@@ -108,6 +124,108 @@ export const TOURS: Tour[] = [
       { titleKey: 'tour.alloc.2t', bodyKey: 'tour.alloc.2b', illustration: '🧮', anchor: 'alloc-toallocate' },
       { titleKey: 'tour.alloc.3t', bodyKey: 'tour.alloc.3b', illustration: '🤝' },
       { titleKey: 'tour.alloc.4t', bodyKey: 'tour.alloc.4b', illustration: '♻️', anchor: 'alloc-rollover' },
+    ],
+  },
+  {
+    id: 'transactions',
+    titleKey: 'tab.transactions',
+    icon: 'format-list-bulleted',
+    screen: '/transactions',
+    steps: [
+      { titleKey: 'tour.tx.1t', bodyKey: 'tour.tx.1b', illustration: '📒' },
+      { titleKey: 'tour.tx.2t', bodyKey: 'tour.tx.2b', illustration: '🔍', anchor: 'tx-search' },
+      { titleKey: 'tour.tx.3t', bodyKey: 'tour.tx.3b', illustration: '🛠️' },
+      { titleKey: 'tour.tx.4t', bodyKey: 'tour.tx.4b', illustration: '➕', anchor: 'tx-add' },
+    ],
+  },
+  {
+    id: 'recurring',
+    titleKey: 'tab.recurring',
+    icon: 'autorenew',
+    screen: '/recurring',
+    steps: [
+      { titleKey: 'tour.rec.1t', bodyKey: 'tour.rec.1b', illustration: '📆' },
+      { titleKey: 'tour.rec.2t', bodyKey: 'tour.rec.2b', illustration: '🧠' },
+      { titleKey: 'tour.rec.3t', bodyKey: 'tour.rec.3b', illustration: '🔔', anchor: 'recurring-add' },
+    ],
+  },
+  {
+    id: 'accounts',
+    titleKey: 'screen.accounts',
+    icon: 'bank-outline',
+    screen: '/accounts',
+    steps: [
+      { titleKey: 'tour.acct.1t', bodyKey: 'tour.acct.1b', illustration: '🏦' },
+      { titleKey: 'tour.acct.2t', bodyKey: 'tour.acct.2b', illustration: '📄', anchor: 'accounts-import' },
+      { titleKey: 'tour.acct.3t', bodyKey: 'tour.acct.3b', illustration: '⏰' },
+    ],
+  },
+  {
+    id: 'spaces',
+    titleKey: 'screen.spaces',
+    icon: 'account-group-outline',
+    screen: '/spaces',
+    steps: [
+      { titleKey: 'tour.spaces.1t', bodyKey: 'tour.spaces.1b', illustration: '🏠' },
+      { titleKey: 'tour.spaces.2t', bodyKey: 'tour.spaces.2b', illustration: '🤝', anchor: 'spaces-add' },
+      { titleKey: 'tour.spaces.3t', bodyKey: 'tour.spaces.3b', illustration: '⚙️' },
+    ],
+  },
+  {
+    id: 'categories',
+    titleKey: 'screen.categories',
+    icon: 'shape-outline',
+    screen: '/categories',
+    steps: [
+      { titleKey: 'tour.cats.1t', bodyKey: 'tour.cats.1b', illustration: '🗂️' },
+      { titleKey: 'tour.cats.2t', bodyKey: 'tour.cats.2b', illustration: '🎨', anchor: 'cats-add' },
+      { titleKey: 'tour.cats.3t', bodyKey: 'tour.cats.3b', illustration: '🧲' },
+    ],
+  },
+  {
+    id: 'overview',
+    titleKey: 'overview.thisPeriod',
+    icon: 'chart-donut',
+    screen: null,
+    steps: [
+      { titleKey: 'tour.ov.1t', bodyKey: 'tour.ov.1b', illustration: '📊' },
+      { titleKey: 'tour.ov.2t', bodyKey: 'tour.ov.2b', illustration: '⏮️' },
+      { titleKey: 'tour.ov.3t', bodyKey: 'tour.ov.3b', illustration: '🔬' },
+    ],
+  },
+  {
+    id: 'portfolio',
+    titleKey: 'pf.title',
+    icon: 'chart-timeline-variant',
+    screen: '/portfolio',
+    steps: [
+      { titleKey: 'tour.pf.1t', bodyKey: 'tour.pf.1b', illustration: '📈' },
+      { titleKey: 'tour.pf.2t', bodyKey: 'tour.pf.2b', illustration: '➕', anchor: 'pf-add' },
+      { titleKey: 'tour.pf.3t', bodyKey: 'tour.pf.3b', illustration: '📄', anchor: 'pf-import' },
+      { titleKey: 'tour.pf.4t', bodyKey: 'tour.pf.4b', illustration: '⏱️' },
+    ],
+  },
+  {
+    id: 'insights',
+    titleKey: 'ins.title',
+    icon: 'lightbulb-outline',
+    screen: '/insights',
+    steps: [
+      { titleKey: 'tour.ins.1t', bodyKey: 'tour.ins.1b', illustration: '💡' },
+      { titleKey: 'tour.ins.2t', bodyKey: 'tour.ins.2b', illustration: '📐' },
+      { titleKey: 'tour.ins.3t', bodyKey: 'tour.ins.3b', illustration: '🔕' },
+    ],
+  },
+  {
+    id: 'shopping',
+    titleKey: 'shop.title',
+    icon: 'storefront-outline',
+    screen: '/shopping',
+    steps: [
+      { titleKey: 'tour.shop.1t', bodyKey: 'tour.shop.1b', illustration: '🧾' },
+      { titleKey: 'tour.shop.2t', bodyKey: 'tour.shop.2b', illustration: '🔒', anchor: 'shopping-store-ah' },
+      { titleKey: 'tour.shop.3t', bodyKey: 'tour.shop.3b', illustration: '🧲' },
+      { titleKey: 'tour.shop.4t', bodyKey: 'tour.shop.4b', illustration: '🔍' },
     ],
   },
 ];

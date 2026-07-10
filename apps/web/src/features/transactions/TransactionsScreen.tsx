@@ -7,6 +7,7 @@ import type { SheetFilters } from './FilterSheet';
 import { useLang } from '@/i18n';
 import type { TransactionRow } from '@/db/types';
 import { filterTxs } from '@/domain/txFilter';
+import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { EmptyState } from '@/ui/EmptyState';
@@ -78,9 +79,12 @@ export function TransactionsScreen() {
         large
         title={t('tab.transactions')}
         trailing={
-          <IconButton label={t('txform.addTitle')} testId="tx-add" onClick={() => setAddOpen(true)}>
-            <Icon name="plus" size={22} />
-          </IconButton>
+          <>
+            <HelpButton tourId="transactions" />
+            <IconButton label={t('txform.addTitle')} testId="tx-add" onClick={() => setAddOpen(true)}>
+              <Icon name="plus" size={22} />
+            </IconButton>
+          </>
         }
       />
       <TxFormSheet open={addOpen} onOpenChange={setAddOpen} />

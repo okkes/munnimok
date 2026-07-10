@@ -16,6 +16,7 @@ import type { TranslationKey } from '@/i18n';
 import { useData } from '@/app/data';
 import { fmtCents, parseCents } from '@/lib/money';
 import type { AccountRow, AccountType } from '@/db/types';
+import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { EmptyState } from '@/ui/EmptyState';
@@ -294,6 +295,7 @@ export function AccountsScreen() {
         }
         trailing={
           <>
+            <HelpButton tourId="accounts" />
             <IconButton
               label={t('import.statement')}
               testId="accounts-import"

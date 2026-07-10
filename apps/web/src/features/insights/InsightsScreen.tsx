@@ -6,6 +6,7 @@ import { useData } from '@/app/data';
 import { useInsightDigest, useInsightOps, useInsights } from '@/application/insights';
 import type { Insight, InsightSeverity } from '@/domain/insights';
 import { fmtCents } from '@/lib/money';
+import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
@@ -112,6 +113,7 @@ export function InsightsScreen() {
             <Icon name="arrow-left" size={22} />
           </IconButton>
         }
+        trailing={<HelpButton tourId="insights" />}
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <p className="px-1 pb-3 text-[12px] text-ink-3">{t('ins.freshness')}</p>

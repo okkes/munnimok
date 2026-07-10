@@ -5,6 +5,7 @@ import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useSession } from '@/app/session';
 import { SpaceInvitesBanner } from './SpaceSharing';
+import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
@@ -52,16 +53,19 @@ export function SpacesScreen() {
           </IconButton>
         }
         trailing={
-          <IconButton
-            label={t('space.new')}
-            testId="spaces-add"
-            onClick={() => {
-              setName('');
-              setCreateOpen(true);
-            }}
-          >
-            <Icon name="plus" size={22} />
-          </IconButton>
+          <>
+            <HelpButton tourId="spaces" />
+            <IconButton
+              label={t('space.new')}
+              testId="spaces-add"
+              onClick={() => {
+                setName('');
+                setCreateOpen(true);
+              }}
+            >
+              <Icon name="plus" size={22} />
+            </IconButton>
+          </>
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">

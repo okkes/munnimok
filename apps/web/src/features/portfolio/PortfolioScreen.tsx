@@ -7,6 +7,7 @@ import type { DegiroImportResult } from '@/application/portfolio';
 import type { AssetClass, HoldingRow } from '@/db/types';
 import { apiFetch } from '@/lib/api';
 import { fmtCents, parseCents } from '@/lib/money';
+import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
@@ -245,9 +246,12 @@ export function PortfolioScreen() {
           </IconButton>
         }
         trailing={
-          <IconButton label={t('pf.new')} testId="pf-add" onClick={() => setFormInitial('new')}>
-            <Icon name="plus" size={22} />
-          </IconButton>
+          <>
+            <HelpButton tourId="portfolio" />
+            <IconButton label={t('pf.new')} testId="pf-add" onClick={() => setFormInitial('new')}>
+              <Icon name="plus" size={22} />
+            </IconButton>
+          </>
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">

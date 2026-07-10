@@ -4,6 +4,7 @@ import { ALL_TX_TYPES } from '@/domain/txType';
 import type { CategoryRow, CatDirection, TxType } from '@/db/types';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
+import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { ColorPicker } from '@/ui/ColorPicker';
@@ -311,9 +312,12 @@ export function ManageCategoriesScreen() {
           </IconButton>
         }
         trailing={
-          <IconButton label={t('cats.newMain')} testId="cats-add" onClick={openNewMain}>
-            <Icon name="plus" size={22} />
-          </IconButton>
+          <>
+            <HelpButton tourId="categories" />
+            <IconButton label={t('cats.newMain')} testId="cats-add" onClick={openNewMain}>
+              <Icon name="plus" size={22} />
+            </IconButton>
+          </>
         }
       />
       <div ref={scrollRef} className={`relative min-h-0 flex-1 overflow-y-auto px-5 pb-6 ${dragging ? 'select-none' : ''}`}>

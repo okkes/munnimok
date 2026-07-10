@@ -8,6 +8,7 @@ import type { StoreSyncResult } from '@/features/shopping/stores/sync';
 import { AH_AUTHORIZE_URL } from './stores/ah';
 import type { ReceiptRow } from '@/db/types';
 import { fmtCents } from '@/lib/money';
+import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
@@ -132,6 +133,7 @@ export function ShoppingConnectionsScreen() {
             <Icon name="arrow-left" size={22} />
           </IconButton>
         }
+        trailing={<HelpButton tourId="shopping" />}
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <div className="flex items-start gap-3 rounded-card border border-line bg-surface px-4 py-3" data-testid="shopping-privacy">
