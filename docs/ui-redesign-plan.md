@@ -185,10 +185,12 @@ later feature cheaper.
   the blocks), intro cards idle-only (§2K), allocate first-run
   explainer, profile-card and AH-paste paper cuts (§2L). Bonus: space
   members/accounts split out of space settings (user remark).
-- **U4 — partially shipped**: 1080px content ceiling (§4.1), sheets as
-  right-side panels at lg (§4.3, ruling), strict 2-col home (§4.4,
-  ruling), `/`-to-search (§4.5). **Open: §4.2 master–detail panes** —
-  the one remaining desktop arc.
+- **U4 — shipped**: 1080px content ceiling (§4.1), master–detail panes
+  (§4.2: `SplitPane` wraps the tx/budget/recurring/holding details; the
+  list renders beside the open detail at lg with the active row
+  highlighted; unit tests pin a phone viewport so desktop stays
+  opt-in), sheets as right-side panels at lg (§4.3, ruling), strict
+  2-col home (§4.4, ruling), `/`-to-search (§4.5).
 - **U5 — shipped**: reduced-motion covers m-fade + transitions,
   :focus-visible accent ring; remaining raw hex is palette data and
   the lock-screen art (deliberate).

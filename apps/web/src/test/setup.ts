@@ -34,3 +34,15 @@ if (typeof window !== 'undefined') {
     if (isTeardownNoise(event.reason)) event.preventDefault();
   });
 }
+
+// happy-dom's default viewport is 1024×768 — exactly the lg breakpoint,
+// which would silently flip every unit test into desktop mode (side-panel
+// sheets, master–detail panes, duplicate pane testids). Tests run as the
+// phone by default; desktop behavior is opted into per test by stubbing
+// matchMedia. (Domain tests run in node env — no window there.)
+if (typeof window !== 'undefined') {
+  (window as unknown as { happyDOM?: { setViewport?: (v: { width: number; height: number }) => void } }).happyDOM?.setViewport?.({
+    width: 390,
+    height: 844,
+  });
+}

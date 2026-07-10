@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from '@tanstack/react-router';
+import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { useSpaceTransactions } from '@/application/transactions';
 import { useCategories } from '@/features/categories/useCategories';
 import { EMPTY_FILTERS, FilterSheet, countActive } from './FilterSheet';
@@ -39,6 +39,9 @@ export function TransactionsScreen() {
   const cats = useCategories();
 
   const allTxs = useSpaceTransactions();
+  // when embedded as a master pane (§4.2) the open detail's row lights up
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const openTxId = /^\/transactions\/([^/]+)$/.exec(pathname)?.[1];
 
   // desktop keyboard (§4.5): `/` jumps to search unless already typing
   useEffect(() => {
@@ -164,6 +167,7 @@ export function TransactionsScreen() {
                   key={tx.id}
                   tx={tx}
                   highlight={query}
+                  selected={tx.id === openTxId}
                   onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })}
                 />
               ))}

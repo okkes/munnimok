@@ -14,6 +14,8 @@ import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
 import { Pill } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
+import { SplitPane } from '@/ui/SplitPane';
+import { TransactionsScreen } from './TransactionsScreen';
 import { CategoryPicker } from '@/features/categories/CategoryPicker';
 import { netAmountCents, totalReimbursedCents } from '@/domain/reimbursement';
 import { ReceiptSection } from '@/features/shopping/ReceiptSection';
@@ -43,7 +45,12 @@ export function TxDetailScreen() {
   const recurringOps = useRecurringOps();
   const events = useEvents();
 
-  if (!tx) return <div className="h-full" data-testid="screen-tx-detail" />;
+  if (!tx)
+    return (
+      <SplitPane list={<TransactionsScreen />}>
+        <div className="h-full" data-testid="screen-tx-detail" />
+      </SplitPane>
+    );
 
   const cat = cats.byId(tx.catId);
   const parent = cat.parentId ? cats.byId(cat.parentId) : undefined;
@@ -60,6 +67,8 @@ export function TxDetailScreen() {
   const fmtDay = new Intl.DateTimeFormat(DATE_FMT[lang], { weekday: 'long', day: 'numeric', month: 'long' });
 
   return (
+    // §4.2: at lg the transaction list stays beside the detail
+    <SplitPane list={<TransactionsScreen />}>
     <div className="m-fade flex h-full flex-col" data-testid="screen-tx-detail">
       <AppBar
         title={cleanBankText(tx.merchant)}
@@ -278,6 +287,7 @@ export function TxDetailScreen() {
         </div>
       </Sheet>
     </div>
+    </SplitPane>
   );
 }
 

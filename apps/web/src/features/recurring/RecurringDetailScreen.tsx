@@ -10,6 +10,8 @@ import { fmtCents } from '@/lib/money';
 import { RecurringFormSheet, formFromRec } from './RecurringFormSheet';
 import type { FormState } from './RecurringFormSheet';
 import { HeroCard, Pill, Tile } from '@/ui/primitives';
+import { SplitPane } from '@/ui/SplitPane';
+import { RecurringScreen } from './RecurringScreen';
 import { RecurringVisual, cadenceLabel } from './RecurringVisual';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
@@ -56,12 +58,19 @@ export function RecurringDetailScreen() {
     return { yearCents: total, count: payments.length, avgCents: avg };
   }, [payments]);
 
-  if (rec === 'loading' || gone) return <div className="h-full" data-testid="screen-recurring-detail" />;
+  if (rec === 'loading' || gone)
+    return (
+      <SplitPane list={<RecurringScreen />}>
+        <div className="h-full" data-testid="screen-recurring-detail" />
+      </SplitPane>
+    );
 
   const nextDue = nextDueDate(rec, localToday());
   const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short', year: 'numeric' });
 
   return (
+    // §4.2: at lg the recurring list stays beside the detail
+    <SplitPane list={<RecurringScreen />}>
     <div className="m-fade flex h-full flex-col" data-testid="screen-recurring-detail">
       <AppBar
         title={rec.name}
@@ -153,5 +162,6 @@ export function RecurringDetailScreen() {
         onDeleted={() => void navigate({ to: '/recurring', replace: true })}
       />
     </div>
+    </SplitPane>
   );
 }

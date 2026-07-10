@@ -6,6 +6,7 @@ import { Button } from './Button';
 import { Icon } from './Icon';
 import { Logo } from './Logo';
 import { Chip, Field, HeroCard, Pill, ProgressBar, Row, Tile } from './primitives';
+import { SplitPane } from './SplitPane';
 // harness registers RTL cleanup between tests
 import '@/test/harness';
 
@@ -184,6 +185,38 @@ describe('redesign primitives', () => {
     const label = screen.getByText('Name');
     expect(label.tagName).toBe('LABEL');
     expect(label.className).toContain('text-[12px]');
+  });
+
+  it('SplitPane fills the screen below lg and panes the list at lg', () => {
+    const { unmount } = render(
+      <SplitPane list={<div data-testid="pane-list" />}>
+        <div data-testid="pane-detail" />
+      </SplitPane>,
+    );
+    // happy-dom reports a non-lg viewport: detail only, no pane chrome
+    expect(screen.queryByTestId('split-pane')).toBeNull();
+    expect(screen.queryByTestId('pane-list')).toBeNull();
+    expect(screen.getByTestId('pane-detail')).toBeTruthy();
+    unmount();
+
+    const original = window.matchMedia;
+    window.matchMedia = (() => ({
+      matches: true,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    })) as unknown as typeof window.matchMedia;
+    try {
+      render(
+        <SplitPane list={<div data-testid="pane-list" />}>
+          <div data-testid="pane-detail" />
+        </SplitPane>,
+      );
+      expect(screen.getByTestId('split-pane')).toBeTruthy();
+      expect(screen.getByTestId('pane-list')).toBeTruthy();
+      expect(screen.getByTestId('pane-detail')).toBeTruthy();
+    } finally {
+      window.matchMedia = original;
+    }
   });
 
   it('HeroCard lays out tile, number, progress and meta', () => {

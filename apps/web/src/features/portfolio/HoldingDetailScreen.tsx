@@ -10,7 +10,8 @@ import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
-import { HoldingFormSheet } from './PortfolioScreen';
+import { HoldingFormSheet, PortfolioScreen } from './PortfolioScreen';
+import { SplitPane } from '@/ui/SplitPane';
 
 const LOT_KINDS = ['buy', 'sell', 'dividend', 'fee'] as const;
 const LOT_ICON: Record<string, string> = { buy: 'tray-arrow-down', sell: 'tray-arrow-up', dividend: 'cash-plus', fee: 'cash-minus' };
@@ -43,7 +44,12 @@ export function HoldingDetailScreen() {
   useEffect(() => {
     if (model && !view) void navigate({ to: '/portfolio', replace: true });
   }, [model, view, navigate]);
-  if (!view) return <div className="h-full" data-testid="screen-holding-detail" />;
+  if (!view)
+    return (
+      <SplitPane list={<PortfolioScreen />}>
+        <div className="h-full" data-testid="screen-holding-detail" />
+      </SplitPane>
+    );
 
   const money = (cents: number) => fmtCents(cents, 'EUR', lang);
   const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short', year: 'numeric' });
@@ -92,6 +98,8 @@ export function HoldingDetailScreen() {
   );
 
   return (
+    // §4.2: at lg the portfolio stays beside the holding
+    <SplitPane list={<PortfolioScreen />}>
     <div className="m-fade flex h-full flex-col" data-testid="screen-holding-detail">
       <AppBar
         title={view.holding.name}
@@ -203,5 +211,6 @@ export function HoldingDetailScreen() {
 
       <HoldingFormSheet initial={formInitial} onClose={() => setFormInitial(null)} />
     </div>
+    </SplitPane>
   );
 }
