@@ -272,7 +272,8 @@ export function ReviewScreen() {
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-5 pb-6">
-        <IntroCard tourId="review" />
+        {/* teach only when idle — never above a live review queue (§2K) */}
+        <IntroCard tourId="review" idle={!tx} />
         {!tx && queue && !emptyBecauseSkipped && (
           <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center" data-testid="review-empty">
             <Icon name="check-circle-outline" size={48} color="var(--m-accent)" />

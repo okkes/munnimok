@@ -34,7 +34,7 @@ import { debtsOverview } from '@/domain/debts';
 import { toAllocateCents } from '@/domain/allocation';
 import { budgetColor, ratioPct } from '@/features/budgets/budgetUi';
 import { fmtCents } from '@/lib/money';
-import { AppBar, IconButton } from '@/ui/AppBar';
+import { AppBar } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
 import { ProgressBar, Tile } from '@/ui/primitives';
 import { TxRow } from '@/ui/TxRow';
@@ -163,6 +163,8 @@ export function HomeScreen() {
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-home">
+      {/* ≤3 trailing actions (redesign §2H): customize moved to the end of
+          the block list, where the blocks actually live */}
       <AppBar
         large
         title={t('tab.home')}
@@ -171,9 +173,6 @@ export function HomeScreen() {
             <OfflineIndicator />
             <NotificationsBell />
             <HelpButton tourId="home" />
-            <IconButton label={t('home.customize')} testId="home-customize" onClick={() => setCustomizeOpen(true)}>
-              <Icon name="tune-variant" size={19} />
-            </IconButton>
             <SpaceSwitcher />
           </>
         }
@@ -210,6 +209,15 @@ export function HomeScreen() {
         {layout.filter((entry) => !entry.hidden).map((entry) => (
           <div key={entry.id}>{blockRenderers[entry.id]()}</div>
         ))}
+
+        <button
+          data-testid="home-customize"
+          onClick={() => setCustomizeOpen(true)}
+          className="m-tap mt-5 flex w-full items-center justify-center gap-2 rounded-card border border-dashed border-line bg-transparent py-3 text-[13px] font-medium text-ink-3"
+        >
+          <Icon name="tune-variant" size={16} />
+          {t('home.customize')}
+        </button>
       </div>
 
       <HomeCustomizeSheet open={customizeOpen} onOpenChange={setCustomizeOpen} space={space} />
