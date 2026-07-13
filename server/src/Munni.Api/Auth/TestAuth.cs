@@ -56,4 +56,7 @@ public static class UserResolution
 
     public static Guid GetUserId(this HttpContext http) =>
         http.Items[ItemKey] as Guid? ?? throw new InvalidOperationException("no resolved user");
+
+    /// <summary>null on anonymous requests (endpoints that allow them)</summary>
+    public static Guid? TryGetUserId(this HttpContext http) => http.Items[ItemKey] as Guid?;
 }

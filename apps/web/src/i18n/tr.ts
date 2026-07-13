@@ -778,6 +778,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'gc.done': 'Banka bağlandı',
   'gc.failed': 'Banka bağlantısı başarısız — lütfen tekrar deneyin',
   'gc.backToApp': 'munni\'ye geri dön',
+  'gc.closeTabHint': 'Bankan bağlandı. munni telefonunda uygulama olarak yüklüyse bu sekmeyi kapatabilirsin — işlemler oraya kendiliğinden gelir.',
   'import.txCountOne': '1 işlem',
   'gc.connections': 'Banka bağlantıları',
   'gc.lastSync': 'Son senkronizasyon',

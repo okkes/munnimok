@@ -188,6 +188,28 @@ public class GcEndpointsTests : IClassFixture<GcApiFactory>
     }
 
     [Fact]
+    public async Task Complete_works_without_a_session_but_a_foreign_session_is_refused()
+    {
+        // installed-PWA journeys can return from the bank in a plain browser
+        // tab with no app session — the reference GUID is the capability
+        var (client, _, spaceId) = await MemberAsync("anon");
+        var created = await (await client.PostAsJsonAsync("/gocardless/requisitions",
+            new CreateRequisitionRequest(spaceId, "ING_NL", "https://app/gc-callback"))).Content
+            .ReadFromJsonAsync<CreateRequisitionResponse>();
+
+        // a DIFFERENT signed-in user may not complete someone else's journey
+        var stranger = ClientFor("gc-anon-stranger");
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await stranger.PostAsync($"/gocardless/requisitions/{created!.Reference}/complete", null)).StatusCode);
+
+        var anonymous = _factory.CreateClient(); // no X-User-Sub header
+        var complete = await (await anonymous.PostAsync($"/gocardless/requisitions/{created.Reference}/complete", null))
+            .Content.ReadFromJsonAsync<CompleteResponse>();
+        Assert.Equal("LN", complete!.Status);
+        Assert.Equal(1, complete.LinkedAccounts);
+    }
+
+    [Fact]
     public async Task Complete_reports_a_pending_bank_without_ingesting()
     {
         var (client, _, spaceId) = await MemberAsync("pending");

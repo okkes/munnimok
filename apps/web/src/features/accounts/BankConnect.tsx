@@ -212,6 +212,11 @@ function GcCallbackShell({ state }: { state: 'working' | 'done' | 'failed' }) {
         color={state === 'failed' ? 'var(--m-negative)' : 'var(--m-accent)'}
       />
       <div className="m-h3 text-ink">{t(SHELL_TEXT_KEYS[state])}</div>
+      {state === 'done' && (
+        // bank-app detours land this screen in a browser tab, not the
+        // installed app — say out loud that closing the tab is fine
+        <p className="max-w-[280px] text-[13px] text-ink-3">{t('gc.closeTabHint')}</p>
+      )}
       {state !== 'working' && (
         <a href={`${window.location.origin}/#/accounts`} className="m-tap rounded-btn bg-brand px-5 py-3 text-[14px] font-semibold text-on-brand no-underline">
           {t('gc.backToApp')}

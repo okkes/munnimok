@@ -778,6 +778,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'gc.done': 'Bank verbonden',
   'gc.failed': 'Bankverbinding mislukt — probeer het opnieuw',
   'gc.backToApp': 'Terug naar munni',
+  'gc.closeTabHint': 'Je bank is gekoppeld. Staat munni als app op je telefoon, dan kun je dit tabblad gewoon sluiten — de transacties komen daar vanzelf binnen.',
   'import.txCountOne': '1 transactie',
   'gc.connections': 'Bankverbindingen',
   'gc.lastSync': 'Laatste synchronisatie',

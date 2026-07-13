@@ -776,6 +776,7 @@ export const en = {
   'gc.done': 'Bank connected',
   'gc.failed': 'Bank connection failed — please try again',
   'gc.backToApp': 'Back to munni',
+  'gc.closeTabHint': 'Your bank is connected. If munni is installed as an app, you can simply close this tab — the transactions arrive there by themselves.',
   'import.txCountOne': '1 transaction',
   'gc.connections': 'Bank connections',
   'gc.lastSync': 'Last sync',

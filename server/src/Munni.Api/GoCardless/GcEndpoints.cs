@@ -53,8 +53,13 @@ public static partial class GcEndpoints
             return Results.Ok(new CreateRequisitionResponse(reference.ToString(), created.Link));
         }).WithValidation<CreateRequisitionRequest>();
 
-        // called by the app after the bank redirects back
-        group.MapPost("/requisitions/{reference:guid}/complete", CompleteRequisition);
+        // called after the bank redirects back. Installed-PWA journeys can
+        // detour through the bank's NATIVE app, whose return link opens in
+        // a plain browser tab with no app session (user bug report) — so
+        // completion is anonymous-capable: the requisition reference is a
+        // GUID we minted for exactly this journey, i.e. a capability token.
+        // A present session still has to match the requisition's owner.
+        group.MapPost("/requisitions/{reference:guid}/complete", CompleteRequisition).AllowAnonymous();
 
         // connection status for the UI (next scheduled fetch, expiry handling)
         group.MapGet("/connections", async (AppDbContext db, HttpContext http) =>
@@ -71,9 +76,9 @@ public static partial class GcEndpoints
 
     private static async Task<IResult> CompleteRequisition(Guid reference, IGoCardlessApi gc, AppDbContext db, HttpContext http)
     {
-            var userId = http.GetUserId();
+            var userId = http.TryGetUserId();
             var requisition = await db.GcRequisitions.FindAsync(reference);
-            if (requisition is null || requisition.UserId != userId) return Results.NotFound();
+            if (requisition is null || (userId is not null && requisition.UserId != userId)) return Results.NotFound();
 
             var status = await gc.GetRequisitionAsync(requisition.RequisitionId);
             if (status.Status != "LN") return Results.Ok(new CompleteResponse(status.Status, 0, 0));
