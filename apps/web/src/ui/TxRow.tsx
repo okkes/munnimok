@@ -68,6 +68,9 @@ export function TxRow({
             </span>
           )}
           {!hideCategory && catName(cat, t)}
+          {tx.pending === 1 && (
+            <Pill className={hideCategory && !showDate ? '' : 'ml-1.5'}>{t('tx.pendingBadge')}</Pill>
+          )}
           {tx.needsReview === 1 && (
             <Pill tone="warning" className={hideCategory && !showDate ? '' : 'ml-1.5'}>
               {t('tx.unreviewed')}

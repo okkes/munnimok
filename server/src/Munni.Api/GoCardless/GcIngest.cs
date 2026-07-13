@@ -23,7 +23,8 @@ public sealed partial class GcIngest(AppDbContext db)
         GcLinkedAccount linked,
         GcAccountDetails details,
         IReadOnlyList<GcBalance> balances,
-        IReadOnlyList<GcTransaction> transactions)
+        IReadOnlyList<GcTransaction> transactions,
+        IReadOnlyList<GcTransaction>? pending = null)
     {
         var feedSpace = await EnsureFeedAsync(linked, space.Id);
 
@@ -84,6 +85,48 @@ public sealed partial class GcIngest(AppDbContext db)
             };
             spaceOps.Add(NewOp(space.Id, "txMeta", ImportIds.TxMetaId(space.Id, entityId), metaFields, NextHlc(), $"gcmeta:{space.Id}:{entityId}"));
         }
+
+        // pending (reserved) charges: mirrored with a pending flag so the
+        // user sees money that is spoken for (user request). No overlay and
+        // no review — they are replaced by their booked twin later. Rows
+        // that left the bank's pending list get tombstoned.
+        var currentPending = new HashSet<string>();
+        foreach (var tx in pending ?? [])
+        {
+            var reference = tx.TransactionId ?? tx.InternalTransactionId;
+            var date = tx.BookingDate ?? tx.ValueDate;
+            if (reference is null || date is null) continue;
+            var cents = ToCents(tx.TransactionAmount.Amount);
+            var counterparty = CleanBankText(cents < 0 ? tx.CreditorName : tx.DebtorName);
+            var description = CleanBankText(tx.RemittanceInformationUnstructured) ?? "";
+            // 'pending:'-prefixed id: the booked twin gets its own row, so a
+            // pending row is only ever removed, never mutated into booked
+            var entityId = ImportIds.TransactionId(linked.Iban, $"pending:{reference}");
+            currentPending.Add(entityId);
+            var pendingFields = new Dictionary<string, JsonElement>
+            {
+                ["accountId"] = Json(linked.AccountEntityId),
+                ["date"] = Json(date),
+                ["amountCents"] = Json(cents),
+                ["currency"] = Json(tx.TransactionAmount.Currency),
+                ["merchant"] = Json(counterparty ?? Truncate(description, 40)),
+                ["description"] = Json(description),
+                ["pending"] = Json(1),
+            };
+            // content-derived op seed: a pending amount update re-emits
+            feedOps.Add(NewOp(feedSpace.Id, "transaction", entityId, pendingFields, NextHlc(), $"gcpend:{entityId}:{date}:{cents}"));
+        }
+        var tracked = await db.GcPendingTxs.Where(p => p.GcAccountId == linked.GcAccountId).ToListAsync();
+        foreach (var stale in tracked.Where(p => !currentPending.Contains(p.EntityId)))
+        {
+            feedOps.Add(new SyncOpDto(
+                ImportIds.OpId($"gcpendrm:{stale.EntityId}:{DateTime.UtcNow.Ticks}"),
+                feedSpace.Id, "transaction", stale.EntityId, new Dictionary<string, JsonElement>(), NextHlc(), Deleted: true));
+            db.GcPendingTxs.Remove(stale);
+        }
+        var trackedIds = tracked.Select(p => p.EntityId).ToHashSet();
+        foreach (var id in currentPending.Where(id => !trackedIds.Contains(id)))
+            db.GcPendingTxs.Add(new GcPendingTx { GcAccountId = linked.GcAccountId, EntityId = id });
 
         var writer = new SyncWriter(db);
         await writer.ApplyAsync(feedSpace, null, accountOps);

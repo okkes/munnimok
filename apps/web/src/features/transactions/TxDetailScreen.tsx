@@ -118,6 +118,11 @@ export function TxDetailScreen() {
             {fmtDay.format(new Date(tx.date))}
             {tx.time ? ` · ${tx.time}` : ''}
           </div>
+          {tx.pending === 1 && (
+            <div className="mt-2" data-testid="tx-detail-pending">
+              <Pill tone="warning">{t('tx.pendingBadge')}</Pill>
+            </div>
+          )}
         </div>
 
         <div className="overflow-hidden rounded-card border border-line bg-surface">

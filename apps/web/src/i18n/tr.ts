@@ -202,6 +202,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'tx.typeDefaultFromAccount': 'Bağlı hesaba göre önerildi — yine de başka bir tür seçebilirsin.',
   'tx.counterparty': 'Karşı hesap',
   'tx.counterpartySource': 'Kaynak',
+  'tx.pendingBadge': 'Rezerve',
   'home.balance': 'Toplam bakiye',
   'home.period': 'Özet',
   'review.title': 'İşlem inceleme',

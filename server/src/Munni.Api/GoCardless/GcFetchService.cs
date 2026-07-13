@@ -99,7 +99,7 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
         var linkedAccounts = await db.GcLinkedAccounts.ToListAsync(ct);
         foreach (var linked in linkedAccounts)
         {
-            if (!GcSchedule.IsDue(linked.Iban, linked.LastFetchAt, DateTimeOffset.UtcNow)) continue;
+            if (!GcSchedule.IsDue(linked, DateTimeOffset.UtcNow)) continue;
             if (_rateLimitedUntil.TryGetValue(linked.GcAccountId, out var until) && DateTimeOffset.UtcNow < until) continue;
             try
             {
@@ -139,11 +139,18 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
         var from = linked.HistoryBackfilledAt is null
             ? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-90))
             : DateOnly.FromDateTime((linked.LastFetchAt?.UtcDateTime ?? DateTime.UtcNow.AddDays(-90)).AddDays(-3));
-        var transactions = await gc.GetTransactionsAsync(linked.GcAccountId, from, ct);
+        var page = await gc.GetTransactionsAsync(linked.GcAccountId, from, ct);
 
-        var accepted = await new GcIngest(db).IngestAccountAsync(space, linked, details, balances, transactions);
+        var accepted = await new GcIngest(db).IngestAccountAsync(space, linked, details, balances, page.Booked, page.Pending);
         linked.LastFetchAt = DateTimeOffset.UtcNow;
         linked.HistoryBackfilledAt ??= DateTimeOffset.UtcNow;
+        if (page.Rate is { } rate)
+        {
+            // remember the announced budget — the scheduler spreads it
+            linked.DailySuccessLimit = rate.Limit ?? linked.DailySuccessLimit;
+            linked.SuccessRemaining = rate.Remaining;
+            if (rate.ResetSeconds is { } seconds) linked.RateResetAt = DateTimeOffset.UtcNow.AddSeconds(seconds);
+        }
         await db.SaveChangesAsync(ct);
         if (logger.IsEnabled(LogLevel.Information))
             logger.LogInformation("gc fetch {Iban}: {Accepted} new ops", linked.Iban, accepted);

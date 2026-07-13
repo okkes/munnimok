@@ -50,12 +50,16 @@ public sealed class FakeGoCardlessApi : IGoCardlessApi
         Task.FromResult<IReadOnlyList<GcBalance>>([new GcBalance(new GcAmount("1234.56", "EUR"), "closingBooked")]);
 
     public List<DateOnly?> TransactionFroms { get; } = [];
+    public List<GcTransaction> Pending { get; set; } = [];
+    public GcRateInfo? Rate { get; set; }
 
-    public Task<IReadOnlyList<GcTransaction>> GetTransactionsAsync(string gcAccountId, DateOnly? from, CancellationToken ct = default)
+    public Task<GcTransactionsPage> GetTransactionsAsync(string gcAccountId, DateOnly? from, CancellationToken ct = default)
     {
         TransactionFroms.Add(from);
-        return Task.FromResult<IReadOnlyList<GcTransaction>>(
-            [new GcTransaction("BANKREF-1", null, "2026-07-05", null, new GcAmount("-42.10", "EUR"), "Albert Heijn", null, "AH 1350")]);
+        return Task.FromResult(new GcTransactionsPage(
+            [new GcTransaction("BANKREF-1", null, "2026-07-05", null, new GcAmount("-42.10", "EUR"), "Albert Heijn", null, "AH 1350")],
+            Pending,
+            Rate));
     }
 }
 
@@ -301,6 +305,78 @@ public class GcEndpointsTests : IClassFixture<GcApiFactory>
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var linked = await db.GcLinkedAccounts.FindAsync($"gc-bf-{suffix}");
             Assert.NotNull(linked!.HistoryBackfilledAt); // one-time: stamped after the backfill
+        }
+    }
+
+    [Fact]
+    public async Task Pending_transactions_mirror_into_the_feed_and_vanish_when_no_longer_pending()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var spaceId = $"space_pending_{suffix}";
+        var iban = "NL30INGB0009876543";
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.Spaces.Add(new Space { Id = spaceId });
+            db.GcRequisitions.Add(new GcRequisition
+            {
+                Id = Guid.NewGuid(), UserId = Guid.NewGuid(), SpaceId = spaceId,
+                InstitutionId = "ING_NL", RequisitionId = $"req-p-{suffix}", Status = "linked",
+            });
+            db.GcLinkedAccounts.Add(new GcLinkedAccount
+            {
+                GcAccountId = $"gc-p-{suffix}", SpaceId = spaceId,
+                AccountEntityId = ImportIds.AccountId(iban),
+                Iban = iban, Currency = "EUR",
+                RequisitionId = db.GcRequisitions.Local.First().Id,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var service = new GcFetchService(
+            _factory.Services.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<GcFetchService>.Instance)
+        { AccountDelay = TimeSpan.Zero };
+        var pendingEntityId = ImportIds.TransactionId(iban, "pending:PND-1");
+        var feedId = ImportIds.FeedSpaceId(iban);
+
+        async Task FetchOnce()
+        {
+            using var scope = _factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var linked = await db.GcLinkedAccounts.FindAsync($"gc-p-{suffix}");
+            await service.FetchAccountAsync(scope.ServiceProvider, db, _factory.Gc, linked!, CancellationToken.None);
+        }
+
+        _factory.Gc.Pending = [new GcTransaction(null, "PND-1", null, "2026-07-13", new GcAmount("-15.00", "EUR"), "Tikkie", null, "reserved")];
+        try
+        {
+            await FetchOnce();
+            using (var scope = _factory.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var row = await db.EntityRows.FindAsync(feedId, "transaction", pendingEntityId);
+                Assert.NotNull(row);
+                Assert.False(row!.Deleted);
+                Assert.Contains("\"pending\":1", row.DataJson);
+                Assert.True(await db.GcPendingTxs.AnyAsync(p => p.EntityId == pendingEntityId));
+            }
+
+            // next fetch: the charge left the pending list (it booked) — the
+            // mirrored pending row gets tombstoned
+            _factory.Gc.Pending = [];
+            await FetchOnce();
+            using (var scope = _factory.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var row = await db.EntityRows.FindAsync(feedId, "transaction", pendingEntityId);
+                Assert.True(row!.Deleted);
+                Assert.False(await db.GcPendingTxs.AnyAsync(p => p.EntityId == pendingEntityId));
+            }
+        }
+        finally
+        {
+            _factory.Gc.Pending = [];
         }
     }
 

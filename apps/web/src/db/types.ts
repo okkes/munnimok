@@ -117,6 +117,8 @@ export interface TransactionRow extends SyncEnvelope {
   needsReview: 0 | 1;
   notes?: string;
   counterIban?: string;
+  /** bank-reported reserved charge, not yet booked — replaced by its booked twin */
+  pending?: 0 | 1;
   /** deterministic id source for imported rows (bank tx id / CAMT entry ref) */
   importRef?: string;
   reimbursements?: TxReimbursement[];

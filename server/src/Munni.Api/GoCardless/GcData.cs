@@ -34,6 +34,21 @@ public class GcLinkedAccount
     /// before the feed-space migration only ever got deltas there).
     /// </summary>
     public DateTimeOffset? HistoryBackfilledAt { get; set; }
+    /// <summary>per-endpoint daily success budget GoCardless reported (rate headers)</summary>
+    public int? DailySuccessLimit { get; set; }
+    public int? SuccessRemaining { get; set; }
+    public DateTimeOffset? RateResetAt { get; set; }
+}
+
+/// <summary>
+/// Pending (reserved) transactions currently mirrored into the feed —
+/// tracked per account so ones that leave the bank's pending list
+/// (booked or dropped) get tombstoned on the next fetch.
+/// </summary>
+public class GcPendingTx
+{
+    public required string GcAccountId { get; set; }
+    public required string EntityId { get; set; }
 }
 
 /// <summary>

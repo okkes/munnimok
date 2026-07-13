@@ -202,6 +202,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'tx.typeDefaultFromAccount': 'Voorgesteld door de gekoppelde rekening — je kunt nog steeds een ander type kiezen.',
   'tx.counterparty': 'Tegenrekening',
   'tx.counterpartySource': 'Bron',
+  'tx.pendingBadge': 'Gereserveerd',
   'home.balance': 'Totaal saldo',
   'home.period': 'Overzicht',
   'review.title': 'Transacties beoordelen',

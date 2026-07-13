@@ -200,6 +200,7 @@ export const en = {
   'tx.typeDefaultFromAccount': 'Suggested by the linked account — you can still pick another type.',
   'tx.counterparty': 'Counterparty',
   'tx.counterpartySource': 'Source',
+  'tx.pendingBadge': 'Reserved',
   'home.balance': 'Total balance',
   'home.period': 'Overview',
   'review.title': 'Transaction Review',

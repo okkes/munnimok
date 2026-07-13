@@ -60,6 +60,14 @@ public sealed record GcRequisitionListItem(
     [property: JsonPropertyName("reference")] string? Reference,
     [property: JsonPropertyName("accounts")] List<string> Accounts);
 
+/// <summary>the per-account daily success budget GoCardless reports in rate-limit headers</summary>
+public sealed record GcRateInfo(int? Limit, int? Remaining, int? ResetSeconds);
+
+public sealed record GcTransactionsPage(
+    IReadOnlyList<GcTransaction> Booked,
+    IReadOnlyList<GcTransaction> Pending,
+    GcRateInfo? Rate);
+
 public interface IGoCardlessApi
 {
     Task<IReadOnlyList<GcInstitution>> GetInstitutionsAsync(string country, CancellationToken ct = default);
@@ -69,7 +77,7 @@ public interface IGoCardlessApi
     Task DeleteRequisitionAsync(string requisitionId, CancellationToken ct = default);
     Task<GcAccountDetails> GetAccountDetailsAsync(string gcAccountId, CancellationToken ct = default);
     Task<IReadOnlyList<GcBalance>> GetBalancesAsync(string gcAccountId, CancellationToken ct = default);
-    Task<IReadOnlyList<GcTransaction>> GetTransactionsAsync(string gcAccountId, DateOnly? from, CancellationToken ct = default);
+    Task<GcTransactionsPage> GetTransactionsAsync(string gcAccountId, DateOnly? from, CancellationToken ct = default);
 }
 
 public sealed class GoCardlessApi(HttpClient http, IConfiguration config) : IGoCardlessApi
@@ -156,12 +164,38 @@ public sealed class GoCardlessApi(HttpClient http, IConfiguration config) : IGoC
     public async Task<IReadOnlyList<GcBalance>> GetBalancesAsync(string gcAccountId, CancellationToken ct = default) =>
         (await GetAsync<BalancesEnvelope>($"accounts/{gcAccountId}/balances/", ct)).Balances;
 
-    private sealed record TxList([property: JsonPropertyName("booked")] List<GcTransaction> Booked);
+    private sealed record TxList(
+        [property: JsonPropertyName("booked")] List<GcTransaction> Booked,
+        [property: JsonPropertyName("pending")] List<GcTransaction>? Pending);
     private sealed record TxEnvelope([property: JsonPropertyName("transactions")] TxList Transactions);
 
-    public async Task<IReadOnlyList<GcTransaction>> GetTransactionsAsync(string gcAccountId, DateOnly? from, CancellationToken ct = default)
+    public async Task<GcTransactionsPage> GetTransactionsAsync(string gcAccountId, DateOnly? from, CancellationToken ct = default)
     {
         var query = from is null ? "" : $"?date_from={from:yyyy-MM-dd}";
-        return (await GetAsync<TxEnvelope>($"accounts/{gcAccountId}/transactions/{query}", ct)).Transactions.Booked;
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"accounts/{gcAccountId}/transactions/{query}");
+        request.Headers.Authorization = new("Bearer", await GetTokenAsync(ct));
+        var response = await http.SendAsync(request, ct);
+        response.EnsureSuccessStatusCode();
+        var envelope = (await response.Content.ReadFromJsonAsync<TxEnvelope>(ct))!;
+        return new GcTransactionsPage(envelope.Transactions.Booked, envelope.Transactions.Pending ?? [], ParseRate(response.Headers));
+    }
+
+    // GoCardless announces the per-account daily budget in response
+    // headers (bankaccountdata.zendesk.com rate-limit article); the doc
+    // spells the django META names, so both spellings are tried
+    private static GcRateInfo? ParseRate(System.Net.Http.Headers.HttpResponseHeaders headers)
+    {
+        int? Read(params string[] names)
+        {
+            foreach (var name in names)
+            {
+                if (headers.TryGetValues(name, out var values) && int.TryParse(values.FirstOrDefault(), out var n)) return n;
+            }
+            return null;
+        }
+        var limit = Read("x-ratelimit-account-success-limit", "http_x_ratelimit_account_success_limit");
+        var remaining = Read("x-ratelimit-account-success-remaining", "http_x_ratelimit_account_success_remaining");
+        var reset = Read("x-ratelimit-account-success-reset", "http_x_ratelimit_account_success_reset");
+        return limit is null && remaining is null && reset is null ? null : new GcRateInfo(limit, remaining, reset);
     }
 }

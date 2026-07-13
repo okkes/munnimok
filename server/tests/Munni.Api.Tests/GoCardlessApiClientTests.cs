@@ -45,7 +45,16 @@ public class GoCardlessApiClientTests
             else if (path.Contains("/transactions/"))
             {
                 Assert.Contains("date_from=2026-01-15", path);
-                body = """{"transactions":{"booked":[{"transactionId":"T1","transactionAmount":{"amount":"-1.00","currency":"EUR"}}]}}""";
+                var txBody = """{"transactions":{"booked":[{"transactionId":"T1","transactionAmount":{"amount":"-1.00","currency":"EUR"}}],"pending":[{"internalTransactionId":"P1","valueDate":"2026-01-16","transactionAmount":{"amount":"-2.00","currency":"EUR"}}]}}""";
+                var txResponse = new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(txBody, Encoding.UTF8, "application/json"),
+                };
+                // the per-account budget headers the scheduler feeds on
+                txResponse.Headers.Add("x-ratelimit-account-success-limit", "4");
+                txResponse.Headers.Add("x-ratelimit-account-success-remaining", "3");
+                txResponse.Headers.Add("x-ratelimit-account-success-reset", "3600");
+                return txResponse;
             }
             else if (request.Method == HttpMethod.Delete)
             {
@@ -105,7 +114,10 @@ public class GoCardlessApiClientTests
         var (api, _) = Create();
         Assert.Equal("NL69INGB0123456789", (await api.GetAccountDetailsAsync("a1")).Iban);
         Assert.Equal("closingBooked", (await api.GetBalancesAsync("a1"))[0].BalanceType);
-        Assert.Equal("T1", (await api.GetTransactionsAsync("a1", new DateOnly(2026, 1, 15)))[0].TransactionId);
+        var page = await api.GetTransactionsAsync("a1", new DateOnly(2026, 1, 15));
+        Assert.Equal("T1", page.Booked[0].TransactionId);
+        Assert.Equal("P1", page.Pending[0].InternalTransactionId); // reserved charges surface too
+        Assert.Equal(new GcRateInfo(4, 3, 3600), page.Rate); // budget headers parsed
         Assert.Equal("LN", (await api.ListRequisitionsAsync())[0].Status);
         Assert.Equal("https://gc/auth", (await api.CreateRequisitionAsync("ING_NL", "https://app", "ref-1")).Link);
         await api.DeleteRequisitionAsync("req-9"); // 204 is success

@@ -65,6 +65,22 @@ describe('feature B join layer', () => {
     expect(tx.needsReview).toBe(1); // uncategorized until someone decides
   });
 
+  it('a pending (reserved) feed transaction is visible but never review material', async () => {
+    await seedFeed();
+    await repo.upsert('transaction', FEED, 'raw-pending', {
+      accountId: 'acct1',
+      date: '2026-07-02',
+      amountCents: -1500,
+      currency: 'EUR',
+      merchant: 'Tikkie',
+      pending: 1,
+    });
+    const txs = await visibleTransactions(db, SPACE);
+    const pending = txs.find((t) => t.id === 'raw-pending')!;
+    expect(pending.pending).toBe(1);
+    expect(pending.needsReview).toBe(0); // the booked twin replaces it later
+  });
+
   it('transformation is per space: an edit in one space never leaks to another', async () => {
     await seedFeed();
     await repo.upsert('accountLink', OTHER_SPACE, accountLinkId(OTHER_SPACE, FEED), {

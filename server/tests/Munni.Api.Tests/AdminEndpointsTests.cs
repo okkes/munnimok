@@ -39,7 +39,7 @@ public sealed class FakeGoCardless : IGoCardlessApi
         throw new NotImplementedException();
     public Task<IReadOnlyList<GcBalance>> GetBalancesAsync(string gcAccountId, CancellationToken ct = default) =>
         throw new NotImplementedException();
-    public Task<IReadOnlyList<GcTransaction>> GetTransactionsAsync(string gcAccountId, DateOnly? from, CancellationToken ct = default) =>
+    public Task<GcTransactionsPage> GetTransactionsAsync(string gcAccountId, DateOnly? from, CancellationToken ct = default) =>
         throw new NotImplementedException();
 }
 

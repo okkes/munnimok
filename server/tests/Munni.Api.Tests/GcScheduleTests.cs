@@ -43,6 +43,46 @@ public class GcScheduleTests
         Assert.True(GcSchedule.IsDue("IS140159260076545510", staleFetch, outsideWindow));
     }
 
+    private static GcLinkedAccount Linked(DateTimeOffset? lastFetchAt, int? dailyLimit, int? remaining = null, DateTimeOffset? resetAt = null) => new()
+    {
+        GcAccountId = "gc-1",
+        SpaceId = "s1",
+        AccountEntityId = "acct-1",
+        Iban = "NL69INGB0123456789",
+        Currency = "EUR",
+        LastFetchAt = lastFetchAt,
+        DailySuccessLimit = dailyLimit,
+        SuccessRemaining = remaining,
+        RateResetAt = resetAt,
+    };
+
+    [Fact]
+    public void Known_budget_spreads_fetches_across_the_day()
+    {
+        // limit 4 → one call in reserve → 3 fetches/day → every 8h
+        var now = new DateTimeOffset(2026, 7, 9, 14, 0, 0, TimeSpan.Zero); // afternoon, outside 03:00
+        Assert.True(GcSchedule.IsDue(Linked(now.AddHours(-9), dailyLimit: 4), now));
+        Assert.False(GcSchedule.IsDue(Linked(now.AddHours(-2), dailyLimit: 4), now));
+    }
+
+    [Fact]
+    public void Unknown_budget_keeps_the_nightly_window()
+    {
+        var afternoon = new DateTimeOffset(2026, 7, 9, 14, 0, 0, TimeSpan.Zero);
+        Assert.False(GcSchedule.IsDue(Linked(afternoon.AddHours(-30), dailyLimit: null), afternoon));
+        var nightWindow = new DateTimeOffset(2026, 7, 9, 1, 30, 0, TimeSpan.Zero); // 03:30 Amsterdam
+        Assert.True(GcSchedule.IsDue(Linked(nightWindow.AddHours(-30), dailyLimit: null), nightWindow));
+    }
+
+    [Fact]
+    public void A_spent_budget_waits_for_the_bank_side_reset()
+    {
+        var now = new DateTimeOffset(2026, 7, 9, 14, 0, 0, TimeSpan.Zero);
+        var linked = Linked(now.AddHours(-9), dailyLimit: 4, remaining: 0, resetAt: now.AddHours(2));
+        Assert.False(GcSchedule.IsDue(linked, now));
+        Assert.True(GcSchedule.IsDue(linked, now.AddHours(3))); // reset passed
+    }
+
     [Fact]
     public void One_fetch_per_night_even_across_the_whole_3am_hour()
     {

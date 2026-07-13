@@ -105,8 +105,8 @@ public static partial class GcEndpoints
                 }
 
                 var balances = await gc.GetBalancesAsync(gcAccountId);
-                var transactions = await gc.GetTransactionsAsync(gcAccountId, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-90)));
-                imported += await ingest.IngestAccountAsync(space, linked, details, balances, transactions);
+                var page = await gc.GetTransactionsAsync(gcAccountId, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-90)));
+                imported += await ingest.IngestAccountAsync(space, linked, details, balances, page.Booked, page.Pending);
                 linked.LastFetchAt = DateTimeOffset.UtcNow;
                 linked.HistoryBackfilledAt = DateTimeOffset.UtcNow; // this fetch was the full window
                 linkedCount++;
