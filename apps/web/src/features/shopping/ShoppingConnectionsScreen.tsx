@@ -241,6 +241,12 @@ export function ShoppingConnectionsScreen() {
             {t('shop.openLogin')}
           </a>
           <p className="text-[13px] leading-relaxed text-ink-2">{t('shop.connectStep2')}</p>
+          {/* the appie:// landing is a custom-scheme link: a phone WITH the
+              AH app installed hands it straight to that app, so the address
+              is never visible to copy (user report) — say so up front */}
+          <p className="rounded-card bg-bg-2 px-3 py-2 text-[12px] leading-relaxed text-ink-3" data-testid="shop-ah-app-note">
+            {t('shop.connectAppNote')}
+          </p>
           <input
             data-testid="shop-ah-paste"
             value={pasted}

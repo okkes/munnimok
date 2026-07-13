@@ -1240,6 +1240,7 @@ export const en = {
   'shop.connectTitle': 'Connect Albert Heijn',
   'shop.connectStep1': '1. Log in on the Albert Heijn page that opens. Afterwards the browser lands on an address it cannot open — that’s expected.',
   'shop.connectStep2': '2. Copy that address (appie://login-exit?code=…) from the address bar and paste it here.',
+  'shop.connectAppNote': 'Phone with the Albert Heijn app installed? The app will hijack that address before you can copy it. Do this step in a private/incognito window, on a computer, or temporarily disable the AH app’s link handling.',
   'shop.openLogin': 'Open Albert Heijn login',
   'shop.connectFailed': 'That didn’t work — paste the full address you landed on and try again.',
   'shop.signInNote': 'Store connections need a signed-in munni account: receipts sync into your space, and demo mode never talks to the network.',

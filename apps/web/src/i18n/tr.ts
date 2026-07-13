@@ -1242,6 +1242,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'shop.connectTitle': 'Albert Heijn’ı bağla',
   'shop.connectStep1': '1. Açılan Albert Heijn sayfasında giriş yap. Ardından tarayıcı açamadığı bir adrese düşer — bu normaldir.',
   'shop.connectStep2': '2. Adres çubuğundaki adresi (appie://login-exit?code=…) kopyala ve buraya yapıştır.',
+  'shop.connectAppNote': 'Telefonunda Albert Heijn uygulaması yüklü mü? Uygulama o adresi sen kopyalayamadan devralır. Bu adımı gizli pencerede, bilgisayarda yap veya AH uygulamasının bağlantı açmasını geçici olarak kapat.',
   'shop.openLogin': 'Albert Heijn girişini aç',
   'shop.connectFailed': 'Olmadı — indiğin adresin tamamını yapıştırıp tekrar dene.',
   'shop.signInNote': 'Mağaza bağlantıları oturum açmış bir munni hesabı ister: fişler alanına eşitlenir, demo asla ağa çıkmaz.',

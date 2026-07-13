@@ -1242,6 +1242,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'shop.connectTitle': 'Albert Heijn koppelen',
   'shop.connectStep1': '1. Log in op de Albert Heijn-pagina die opent. Daarna komt de browser op een adres dat hij niet kan openen — dat hoort zo.',
   'shop.connectStep2': '2. Kopieer dat adres (appie://login-exit?code=…) uit de adresbalk en plak het hier.',
+  'shop.connectAppNote': 'Staat de Albert Heijn-app op je telefoon? Dan kaapt die app dat adres voordat je het kunt kopiëren. Doe deze stap in een privé-/incognitovenster, op een computer, of schakel tijdelijk het openen van links door de AH-app uit.',
   'shop.openLogin': 'Open Albert Heijn-login',
   'shop.connectFailed': 'Dat lukte niet — plak het volledige adres waar je op uitkwam en probeer opnieuw.',
   'shop.signInNote': 'Winkelkoppelingen vereisen een ingelogd munni-account: bonnetjes syncen naar je ruimte, en de demo praat nooit met het netwerk.',
