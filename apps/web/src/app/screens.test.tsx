@@ -65,7 +65,9 @@ describe('app screens (demo identity)', () => {
     renderApp('/settings');
     await screen.findByTestId('screen-settings');
     expect(screen.queryByTestId('tab-spaces')).toBeNull();
-    fireEvent.click(screen.getByTestId('settings-spaces-row'));
+    // app-wide rows live behind the single Global settings door now
+    fireEvent.click(screen.getByTestId('settings-global-row'));
+    fireEvent.click(await screen.findByTestId('settings-spaces-row'));
     expect(await screen.findByTestId('screen-spaces')).toBeTruthy();
   });
 

@@ -113,7 +113,9 @@ describe('Receipts S1 (demo identity)', () => {
   it('settings reaches shopping connections', async () => {
     renderApp('/settings');
     await screen.findByTestId('screen-settings');
-    fireEvent.click(screen.getByTestId('settings-shopping-row'));
+    // shopping moved behind the Global settings door
+    fireEvent.click(screen.getByTestId('settings-global-row'));
+    fireEvent.click(await screen.findByTestId('settings-shopping-row'));
     expect(await screen.findByTestId('screen-shopping')).toBeTruthy();
   }, 15_000);
 });

@@ -129,7 +129,9 @@ describe('Tutorials (demo identity)', () => {
   it('settings reaches the index; every tour is listed and opens', async () => {
     renderApp('/settings');
     await screen.findByTestId('screen-settings');
-    fireEvent.click(screen.getByTestId('settings-help-row'));
+    // help moved behind the Global settings door
+    fireEvent.click(screen.getByTestId('settings-global-row'));
+    fireEvent.click(await screen.findByTestId('settings-help-row'));
     await screen.findByTestId('screen-help');
     for (const tour of TOURS) expect(screen.getByTestId(`help-tour-${tour.id}`)).toBeTruthy();
     fireEvent.click(screen.getByTestId('help-tour-review'));

@@ -1,7 +1,7 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { test, expect } from '@playwright/test';
-import { VARIANTS, createPage, base, gotoSpaces, shot, teardown, syncApiUp } from '../helpers/base.js';
+import { VARIANTS, createPage, base, gotoGlobalSettings, gotoSpaces, shot, teardown, syncApiUp } from '../helpers/base.js';
 
 const CAMT_FIXTURE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../fixtures/camt053-sample.xml');
 
@@ -22,7 +22,7 @@ async function gotoMembersOf(page, spaceName) {
 }
 
 async function addCashAccount(page, name, balance) {
-  await page.click('[data-testid="tab-settings"]');
+  await gotoGlobalSettings(page);
   await page.click('[data-testid="settings-accounts-row"]');
   await page.click('[data-testid="accounts-add"]');
   await page.click('[data-testid="accttype-cash"]');
@@ -51,7 +51,7 @@ for (const V of VARIANTS) {
     // device B: brand-new context discovers the space and pulls everything
     const b = await createPage(browser, V);
     await base(b.page, V, { userSub: sub });
-    await b.page.click('[data-testid="tab-settings"]');
+    await gotoGlobalSettings(b.page);
     await b.page.click('[data-testid="settings-accounts-row"]');
     await expect(b.page.locator('[data-testid="screen-accounts"]')).toContainText('Sync Wallet', { timeout: 15000 });
     await expect(b.page.locator('[data-testid="screen-accounts"]')).toContainText('12.34');
@@ -65,7 +65,7 @@ for (const V of VARIANTS) {
 
     await a.page.reload();
     await a.page.waitForSelector('[data-testid="tab-home"]');
-    await a.page.click('[data-testid="tab-settings"]');
+    await gotoGlobalSettings(a.page);
     await a.page.click('[data-testid="settings-accounts-row"]');
     await expect(a.page.locator('[data-testid="screen-accounts"]')).toContainText('Renamed on B', { timeout: 15000 });
     await shot(a.page, k('25-sync-devices'));
@@ -144,7 +144,7 @@ for (const V of VARIANTS) {
     // bob reads his id and accepts)
     const bob = await createPage(browser, V);
     await base(bob.page, V, { userSub: `e2e-member-${run}` });
-    await bob.page.click('[data-testid="tab-settings"]');
+    await gotoGlobalSettings(bob.page);
     await bob.page.click('[data-testid="settings-friends-row"]');
     await expect(bob.page.locator('[data-testid="friends-copy-id"] span')).toHaveText(/^[0-9a-f]{8}-/, { timeout: 10000 });
     const bobId = (await bob.page.locator('[data-testid="friends-copy-id"] span').textContent()).trim();
@@ -268,7 +268,7 @@ for (const V of VARIANTS) {
 
     // alice imports a statement — the feed registers on the server and
     // auto-attaches to the active space
-    await alice.page.click('[data-testid="tab-settings"]');
+    await gotoGlobalSettings(alice.page);
     await alice.page.click('[data-testid="settings-accounts-row"]');
     await alice.page.setInputFiles('[data-testid="accounts-import-input"]', CAMT_FIXTURE);
     await alice.page.waitForSelector('[data-testid="import-preview"]');
@@ -282,7 +282,7 @@ for (const V of VARIANTS) {
     // bob: fresh user; alice friends him inline from the members section
     const bob = await createPage(browser, V);
     await base(bob.page, V, { userSub: `e2e-feedmember-${run}` });
-    await bob.page.click('[data-testid="tab-settings"]');
+    await gotoGlobalSettings(bob.page);
     await bob.page.click('[data-testid="settings-friends-row"]');
     await expect(bob.page.locator('[data-testid="friends-copy-id"] span')).toHaveText(/^[0-9a-f]{8}-/, { timeout: 10000 });
     const bobId = (await bob.page.locator('[data-testid="friends-copy-id"] span').textContent()).trim();
@@ -337,7 +337,7 @@ for (const V of VARIANTS) {
     await expect(alice.page.locator('[data-testid="screen-spaces"]')).not.toContainText('Feed Home', { timeout: 10000 });
 
     await bob.page.click('[data-testid="tx-detail-back"]');
-    await bob.page.click('[data-testid="tab-settings"]');
+    await gotoGlobalSettings(bob.page);
     await bob.page.click('[data-testid="settings-accounts-row"]');
     await expect(bob.page.locator('[data-testid="accounts-shared"]')).toContainText('Archived', { timeout: 25000 });
     await shot(bob.page, k('62-feed-archive'));

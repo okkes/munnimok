@@ -1,10 +1,10 @@
 import { test, expect } from '@playwright/test';
-import { VARIANTS, createPage, base, shot, teardown } from '../helpers/base.js';
+import { VARIANTS, createPage, base, gotoGlobalSettings, shot, teardown } from '../helpers/base.js';
 
 // --- Tests ------------------------------------------------------------------
 
 async function goToAccounts(page) {
-  await page.click('[data-testid="tab-settings"]');
+  await gotoGlobalSettings(page);
   await page.click('[data-testid="settings-accounts-row"]');
   await page.waitForSelector('[data-testid="screen-accounts"]');
 }
