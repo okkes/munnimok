@@ -142,7 +142,6 @@ export function SettingsScreen() {
                 { testId: 'settings-events-row', icon: 'party-popper', labelKey: 'events.title', to: '/events' },
                 { testId: 'settings-goals-row', icon: 'flag-outline', labelKey: 'goals.title', to: '/goals' },
                 { testId: 'settings-debts-row', icon: 'hand-coin-outline', labelKey: 'debts.title', to: '/debts' },
-                { testId: 'settings-portfolio-row', icon: 'chart-timeline-variant', labelKey: 'pf.title', to: '/portfolio' },
               ],
             },
             {

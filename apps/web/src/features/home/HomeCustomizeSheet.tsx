@@ -5,22 +5,23 @@ import type { SpaceRow } from '@/db/types';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 
-/** every block the landing zone can show, in default order */
-export const HOME_BLOCK_IDS = ['overview', 'review', 'insights', 'budgets', 'allocation', 'upcoming', 'events', 'goals', 'debts', 'portfolio', 'transactions'] as const;
+/** every block the landing zone can show, in default order (user ruling:
+ *  review → this period → transactions → budgets → coming up → goals →
+ *  debts → events → insights; portfolio left Home for its own tab) */
+export const HOME_BLOCK_IDS = ['review', 'overview', 'transactions', 'budgets', 'allocation', 'upcoming', 'goals', 'debts', 'events', 'insights'] as const;
 export type HomeBlockId = (typeof HOME_BLOCK_IDS)[number];
 
 export const HOME_BLOCK_LABELS: Record<HomeBlockId, TranslationKey> = {
-  overview: 'overview.thisPeriod',
   review: 'review.title',
-  insights: 'ins.title',
+  overview: 'overview.thisPeriod',
+  transactions: 'tab.transactions',
   budgets: 'budgets.title',
   allocation: 'alloc.title',
   upcoming: 'recurring.upcoming',
-  events: 'events.title',
   goals: 'goals.title',
   debts: 'debts.title',
-  portfolio: 'pf.title',
-  transactions: 'tab.transactions',
+  events: 'events.title',
+  insights: 'ins.title',
 };
 
 export interface HomeBlockConfig {

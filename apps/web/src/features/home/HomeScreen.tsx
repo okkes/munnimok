@@ -25,7 +25,6 @@ import { useEvents } from '@/application/events';
 import { useGoals } from '@/application/goals';
 import { useDebtStatuses } from '@/application/debts';
 import { useAllocations } from '@/application/allocation';
-import { usePortfolio } from '@/application/portfolio';
 import { useInsights } from '@/application/insights';
 import { useNewTransactions } from '@/application/newTxs';
 import { eventSpentCents } from '@/domain/events';
@@ -129,9 +128,6 @@ export function HomeScreen() {
   }, [activeDebts, accounts]);
   // insights block: the top undismissed finding
   const insights = useInsights();
-  // portfolio block: only once holdings exist
-  const portfolio = usePortfolio();
-  const hasHoldings = (portfolio?.views ?? []).some((v) => v.holding.archived !== 1);
   // allocation block: only once the space actually allocates
   const allocations = useAllocations();
   const allocLeft = useMemo(() => {
@@ -147,17 +143,16 @@ export function HomeScreen() {
   // each landing-zone block renders through this registry so the
   // per-space layout (order + visibility) can rearrange them
   const blockRenderers: Record<HomeBlockId, () => React.ReactNode> = {
-    overview: renderOverviewBlock,
     review: renderReviewBlock,
-    insights: renderInsightsBlock,
+    overview: renderOverviewBlock,
+    transactions: renderTransactionsBlock,
     budgets: renderBudgetsBlock,
     allocation: renderAllocationBlock,
     upcoming: renderUpcomingBlock,
-    events: renderEventsBlock,
     goals: renderGoalsBlock,
     debts: renderDebtsBlock,
-    portfolio: renderPortfolioBlock,
-    transactions: renderTransactionsBlock,
+    events: renderEventsBlock,
+    insights: renderInsightsBlock,
   };
   const layout = resolveHomeBlocks(space);
   const visibleBlocks = layout.filter((entry) => !entry.hidden);
@@ -559,35 +554,6 @@ export function HomeScreen() {
               {t(top.titleKey, Object.fromEntries(Object.entries(top.params).map(([k, v]) => [k, typeof v === 'number' && !['n', 'x', 'months'].includes(k) ? fmtCents(v, currency, lang) : v])))}
             </span>
             <span className="block text-[11px] text-ink-4">{t('ins.homeSub', { n: insights.length })}</span>
-          </span>
-          <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
-        </button>
-      </>
-    );
-  }
-
-  function renderPortfolioBlock() {
-    if (portfolio && !hasHoldings) {
-      return renderTeaser('home-portfolio-teaser', 'chart-timeline-variant', 'home.portfolioTeaserTitle', 'home.portfolioTeaserSub', '/portfolio');
-    }
-    if (!portfolio || !hasHoldings) return null;
-    const day = portfolio.totals.dayChangeCents;
-    return (
-      <>
-        <div className="m-cap mt-5 mb-1 px-1">{t('pf.title')}</div>
-        <button
-          data-testid="home-portfolio"
-          onClick={() => void navigate({ to: '/portfolio' })}
-          className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left"
-        >
-          <Tile icon="chart-timeline-variant" tone="special" />
-          <span className="min-w-0 flex-1">
-            <span className="m-num block text-[15px] font-semibold text-ink">{fmtCents(portfolio.totals.totalCents, currency, lang)}</span>
-            {day !== null && (
-              <span className="m-num block text-[11px]" style={{ color: day >= 0 ? 'var(--m-accent-deep)' : 'var(--m-negative)' }}>
-                {fmtCents(day, currency, lang, { sign: true })} {t('pf.today')}
-              </span>
-            )}
           </span>
           <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
         </button>
