@@ -133,9 +133,14 @@ function BulkConfirmSection({
                   {checked && <Icon name="check" size={12} />}
                 </span>
                 <span className="min-w-0 flex-1">
-                  {/* descriptions differ per charge — they identify; dates stay quiet */}
-                  <span className="block truncate text-[12px] text-ink-2">{cleanBankText(item.description) || item.date}</span>
-                  <span className="block text-[10px] text-ink-4">{item.date}</span>
+                  {/* the merchant leads: normalization groups charges whose
+                      raw titles differ (dates, branch cities), so the list
+                      must say which is which (user request) */}
+                  <span className="block truncate text-[12px] text-ink-2">{cleanBankText(item.merchant)}</span>
+                  <span className="block truncate text-[10px] text-ink-4">
+                    {item.date}
+                    {item.description ? ` · ${cleanBankText(item.description)}` : ''}
+                  </span>
                 </span>
                 <span className="m-num text-[12px] text-ink-2">{fmtCents(item.amountCents, item.currency, lang)}</span>
               </button>

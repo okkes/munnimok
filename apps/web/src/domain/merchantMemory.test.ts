@@ -25,6 +25,16 @@ describe('merchantKey', () => {
   it('keeps single digits inside brand names', () => {
     expect(merchantKey('Kruidvat 2go')).toContain('2go');
   });
+
+  it('drops trailing branch cities and dates so branches group (user request)', () => {
+    expect(merchantKey('Albert Heijn 10-04-2026')).toBe('albert heijn');
+    expect(merchantKey('Albert Heijn 12-04-2026')).toBe('albert heijn');
+    expect(merchantKey('AH DELFT')).toBe('ah');
+    expect(merchantKey("JUMBO 'S-GRAVENHAGE")).toBe('jumbo');
+    expect(merchantKey('Restaurant Den Haag')).toBe('restaurant');
+    // a merchant that IS a city name keeps its identity
+    expect(merchantKey('Delft')).toBe('delft');
+  });
 });
 
 describe('merchant memory', () => {
