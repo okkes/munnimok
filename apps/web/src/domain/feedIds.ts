@@ -9,7 +9,7 @@ import { v5 as uuidv5 } from 'uuid';
  */
 const IMPORT_NS = '5f3c9a70-0d3e-4e0f-9a57-6d2b3a1c8e42';
 
-const normalizeIban = (iban: string) => iban.replaceAll(/\s/g, '').toUpperCase();
+export const normalizeIban = (iban: string) => iban.replaceAll(/\s/g, '').toUpperCase();
 
 /** sync-space id of a bank account's feed */
 export const feedSpaceId = (iban: string): string => uuidv5(`feed:${normalizeIban(iban)}`, IMPORT_NS);

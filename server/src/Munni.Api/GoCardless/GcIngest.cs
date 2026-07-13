@@ -51,6 +51,7 @@ public sealed partial class GcIngest(AppDbContext db)
             var cents = ToCents(tx.TransactionAmount.Amount);
             var direction = cents < 0 ? "debit" : "credit";
             var counterparty = CleanBankText(cents < 0 ? tx.CreditorName : tx.DebtorName);
+            var counterIban = cents < 0 ? tx.CreditorAccount?.Iban : tx.DebtorAccount?.Iban;
             var description = CleanBankText(tx.RemittanceInformationUnstructured) ?? "";
             var entityId = ImportIds.TransactionId(linked.Iban, reference);
 
@@ -65,6 +66,9 @@ public sealed partial class GcIngest(AppDbContext db)
                 ["description"] = Json(description),
                 ["importRef"] = Json(reference),
             };
+            // the other side's account number, when the bank names it —
+            // clients surface it and join it to known accounts (user request)
+            if (!string.IsNullOrWhiteSpace(counterIban)) rawFields["counterIban"] = Json(ImportIds.Normalize(counterIban));
             // op id derived from the entity id: re-fetching the same tx is a no-op
             feedOps.Add(NewOp(feedSpace.Id, "transaction", entityId, rawFields, NextHlc(), $"gc:{entityId}"));
 

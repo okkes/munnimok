@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { renderApp } from '@/test/harness';
 import { DEMO_SPACE_ID } from '@/db/seed';
@@ -60,6 +60,56 @@ describe('TxDetailScreen (demo identity)', () => {
     fireEvent.click(await screen.findByTestId('tx-recurring-none'));
     await waitFor(async () => expect((await db.transactions.get('dm6'))?.recurringId).toBeFalsy(), { timeout: 5000 });
     db.close();
+  }, 15_000);
+});
+
+describe('counterparty account number on the detail screen', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase('munni_demo');
+  });
+
+  const seedTx = async (counterIban: string, id: string) => {
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(db, new HlcClock('seed-cp'), { trackOutbox: false });
+    await repo.upsert('transaction', DEMO_SPACE_ID, id, {
+      accountId: 'demo_main',
+      date: '2026-07-01',
+      amountCents: -2500,
+      currency: 'EUR',
+      merchant: 'Counterparty Test',
+      catId: 'groceries',
+      txType: 'expense',
+      needsReview: 0,
+      counterIban,
+    });
+    db.close();
+  };
+
+  it('an unknown counterparty IBAN renders as plain text', async () => {
+    renderApp('/home'); // seed first, then navigate via a fresh render
+    await screen.findByTestId('screen-home');
+    await seedTx('NL99ELDR0000000042', 'tx-cp1');
+    cleanup();
+    renderApp('/transactions/tx-cp1');
+    const row = await screen.findByTestId('tx-detail-counterparty');
+    expect(row.textContent).toContain('NL99ELDR0000000042');
+  }, 15_000);
+
+  it('a counterparty matching an own account becomes a door with account info', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    // demo_save's IBAN, spaced differently — the join normalizes
+    await seedTx('NL00DEMO0000000200', 'tx-cp2');
+    cleanup();
+    renderApp('/transactions/tx-cp2');
+    const row = await screen.findByTestId('tx-detail-counterparty-row');
+    expect(row.textContent).toContain('Demo Savings');
+
+    fireEvent.click(row);
+    const sheet = await screen.findByTestId('counterparty-sheet');
+    expect(sheet.textContent).toContain('NL00 DEMO 0000 0002 00'); // the account's own IBAN
   }, 15_000);
 });
 

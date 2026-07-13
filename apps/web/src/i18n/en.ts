@@ -198,6 +198,8 @@ export const en = {
   'tx.linkedAccount': 'Linked Account',
   'tx.linkedAccountNone': 'None — tap to select',
   'tx.typeDefaultFromAccount': 'Suggested by the linked account — you can still pick another type.',
+  'tx.counterparty': 'Counterparty',
+  'tx.counterpartySource': 'Source',
   'home.balance': 'Total balance',
   'home.period': 'Overview',
   'review.title': 'Transaction Review',

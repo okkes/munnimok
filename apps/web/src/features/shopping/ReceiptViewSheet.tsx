@@ -30,7 +30,14 @@ export function ReceiptViewSheet({
   receipt,
   currency,
   onClose,
-}: Readonly<{ receipt: ReceiptRow | null; currency: string; onClose: () => void }>) {
+  contextTxId,
+}: Readonly<{
+  receipt: ReceiptRow | null;
+  currency: string;
+  onClose: () => void;
+  /** the transaction the sheet was opened FROM — its own row is noise there (user bug) */
+  contextTxId?: string;
+}>) {
   const { t, lang } = useLang();
   const navigate = useNavigate();
   const txs = useSpaceTransactions();
@@ -122,12 +129,14 @@ export function ReceiptViewSheet({
             </div>
           )}
 
-          {/* the transaction this receipt proves */}
-          {linkedTx ? (
+          {/* the transaction this receipt proves — hidden when the sheet
+              was opened from that very transaction (self-reference) */}
+          {linkedTx && linkedTx.id !== contextTxId && (
             <div className="rounded-card border border-line bg-surface px-3" data-testid="receipt-linked-tx">
               <TxRow tx={linkedTx} showDate onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: linkedTx.id } })} />
             </div>
-          ) : (
+          )}
+          {!linkedTx && (
             <>
               <Button variant="outline" className="w-full" data-testid="receipt-link-tx" onClick={() => setPicking((v) => !v)}>
                 {t('receipts.pickTx')}

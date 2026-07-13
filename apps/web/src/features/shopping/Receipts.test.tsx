@@ -85,6 +85,21 @@ describe('Receipts S1 (demo identity)', () => {
     await screen.findByTestId('shop-ah-sync-result');
   }, 15_000);
 
+  it('opened from its own transaction, the sheet hides the linked-tx block', async () => {
+    await openFirstTx();
+    const file = new File(['x'], 'bon.jpg', { type: 'image/jpeg' });
+    fireEvent.change(screen.getByTestId('receipt-file'), { target: { files: [file] } });
+    const card = await screen.findByTestId('receipt-card', {}, { timeout: 5000 });
+
+    // the sheet must not point back at the transaction it sits on (user bug)
+    fireEvent.click(card);
+    await screen.findByTestId('receipt-view-total');
+    // once transactions resolve the sheet knows the receipt IS linked:
+    // no link button — and no block pointing back at this very tx
+    await waitFor(() => expect(screen.queryByTestId('receipt-link-tx')).toBeNull());
+    expect(screen.queryByTestId('receipt-linked-tx')).toBeNull();
+  }, 15_000);
+
   it('the receipts browser lists receipts and opens the full view', async () => {
     await openFirstTx();
     const file = new File(['x'], 'bon.jpg', { type: 'image/jpeg' });

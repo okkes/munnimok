@@ -37,6 +37,9 @@ public sealed record GcBalance(
     [property: JsonPropertyName("balanceAmount")] GcAmount BalanceAmount,
     [property: JsonPropertyName("balanceType")] string BalanceType);
 
+public sealed record GcAccountReference(
+    [property: JsonPropertyName("iban")] string? Iban);
+
 public sealed record GcTransaction(
     [property: JsonPropertyName("transactionId")] string? TransactionId,
     [property: JsonPropertyName("internalTransactionId")] string? InternalTransactionId,
@@ -45,7 +48,9 @@ public sealed record GcTransaction(
     [property: JsonPropertyName("transactionAmount")] GcAmount TransactionAmount,
     [property: JsonPropertyName("creditorName")] string? CreditorName,
     [property: JsonPropertyName("debtorName")] string? DebtorName,
-    [property: JsonPropertyName("remittanceInformationUnstructured")] string? RemittanceInformationUnstructured);
+    [property: JsonPropertyName("remittanceInformationUnstructured")] string? RemittanceInformationUnstructured,
+    [property: JsonPropertyName("creditorAccount")] GcAccountReference? CreditorAccount = null,
+    [property: JsonPropertyName("debtorAccount")] GcAccountReference? DebtorAccount = null);
 
 public sealed record GcRequisitionListItem(
     [property: JsonPropertyName("id")] string Id,

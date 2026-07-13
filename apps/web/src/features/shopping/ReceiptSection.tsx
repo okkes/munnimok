@@ -77,7 +77,7 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
         </button>
       )}
 
-      <ReceiptViewSheet receipt={viewOpen ? receipt : null} currency={tx.currency} onClose={() => setViewOpen(false)} />
+      <ReceiptViewSheet receipt={viewOpen ? receipt : null} currency={tx.currency} onClose={() => setViewOpen(false)} contextTxId={tx.id} />
     </>
   );
 }
