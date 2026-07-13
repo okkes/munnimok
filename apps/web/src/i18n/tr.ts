@@ -690,6 +690,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'acct.archivedReconnect': 'Arşivlendi — yeniden bağlamak için dokun',
   'acct.attachSub': 'Bu hesabı görecek alanları seç. O alanların üyeleri işlemleri görür; her alan kendi kategori ve notlarını tutar.',
   'acct.historyFrom': 'Geçmiş başlangıcı',
+  'acct.historyFromHint': 'Boş bırakırsan her alanın kendi geçmiş başlangıcı kullanılır.',
   'tx.emptyList': 'Henüz işlem yok — bir banka bağla veya ekstre içe aktar, işlemler burada görünecek',
   'tx.emptyFiltered': 'Bu filtrelerle eşleşen bir şey yok',
   'tx.emptyCta': 'Hesap ekle',

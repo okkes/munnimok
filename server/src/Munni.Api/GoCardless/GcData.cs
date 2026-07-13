@@ -28,6 +28,12 @@ public class GcLinkedAccount
     public required string Currency { get; set; }
     public Guid RequisitionId { get; set; }
     public DateTimeOffset? LastFetchAt { get; set; }
+    /// <summary>
+    /// when the full 90-day history landed in the account's FEED space —
+    /// null forces a one-time backfill on the next fetch (accounts linked
+    /// before the feed-space migration only ever got deltas there).
+    /// </summary>
+    public DateTimeOffset? HistoryBackfilledAt { get; set; }
 }
 
 /// <summary>

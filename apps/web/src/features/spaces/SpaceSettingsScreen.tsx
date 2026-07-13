@@ -6,6 +6,7 @@ import { downscaleImage } from '@/lib/image';
 import { useData } from '@/app/data';
 import { useSession } from '@/app/session';
 import { useMyRole } from './SpaceSharing';
+import { DEFAULT_HISTORY_MONTHS, isoMonthsAgo } from './spaceDefaults';
 import type { SpacePeriodType } from '@/db/types';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
@@ -29,11 +30,6 @@ const PERIOD_KEYS = {
 
 const WEEKDAYS = [1, 2, 3, 4, 5, 6, 7]; // ISO: Monday … Sunday
 const clampWeekday = (day: number) => Math.min(Math.max(day || 1, 1), 7);
-const isoMonthsAgo = (months: number): string => {
-  const d = new Date();
-  d.setMonth(d.getMonth() - months);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
 /** localized short weekday name — 5 Jan 2020 + n lands on ISO weekday n */
 const weekdayName = (weekday: number, lang: keyof typeof LOCALES) =>
   new Intl.DateTimeFormat(LOCALES[lang], { weekday: 'short' }).format(new Date(2020, 0, 5 + weekday));
@@ -89,7 +85,7 @@ export function SpaceSettingsScreen() {
     setPeriodDayText(String(space.periodDay || 1));
     // default 3 months back (approved accounts ruling) — an empty iOS
     // date input also renders as a blank bar, so it always has a value
-    setHistoryStart(space.historyStartDate ?? isoMonthsAgo(3));
+    setHistoryStart(space.historyStartDate ?? isoMonthsAgo(DEFAULT_HISTORY_MONTHS));
     setPicture(space.picture ?? '');
   }
 

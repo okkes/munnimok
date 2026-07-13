@@ -121,7 +121,7 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
         }
     }
 
-    private async Task FetchAccountAsync(IServiceProvider services, AppDbContext db, IGoCardlessApi gc, GcLinkedAccount linked, CancellationToken ct)
+    internal async Task FetchAccountAsync(IServiceProvider services, AppDbContext db, IGoCardlessApi gc, GcLinkedAccount linked, CancellationToken ct)
     {
         var space = await db.Spaces.FindAsync([linked.SpaceId], ct);
         if (space is null) return;
@@ -133,11 +133,17 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
             ? await gc.GetAccountDetailsAsync(linked.GcAccountId, ct)
             : new GcAccountDetails(linked.Iban, null, linked.Currency);
         var balances = await gc.GetBalancesAsync(linked.GcAccountId, ct);
-        var from = DateOnly.FromDateTime((linked.LastFetchAt?.UtcDateTime ?? DateTime.UtcNow.AddDays(-90)).AddDays(-3));
+        // no backfill marker → fetch the full window regardless of
+        // LastFetchAt: accounts linked before the feed-space migration had
+        // a LastFetchAt but their FEED space only ever received deltas
+        var from = linked.HistoryBackfilledAt is null
+            ? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-90))
+            : DateOnly.FromDateTime((linked.LastFetchAt?.UtcDateTime ?? DateTime.UtcNow.AddDays(-90)).AddDays(-3));
         var transactions = await gc.GetTransactionsAsync(linked.GcAccountId, from, ct);
 
         var accepted = await new GcIngest(db).IngestAccountAsync(space, linked, details, balances, transactions);
         linked.LastFetchAt = DateTimeOffset.UtcNow;
+        linked.HistoryBackfilledAt ??= DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(ct);
         if (logger.IsEnabled(LogLevel.Information))
             logger.LogInformation("gc fetch {Iban}: {Accepted} new ops", linked.Iban, accepted);

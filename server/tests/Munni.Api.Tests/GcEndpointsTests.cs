@@ -49,9 +49,14 @@ public sealed class FakeGoCardlessApi : IGoCardlessApi
     public Task<IReadOnlyList<GcBalance>> GetBalancesAsync(string gcAccountId, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<GcBalance>>([new GcBalance(new GcAmount("1234.56", "EUR"), "closingBooked")]);
 
-    public Task<IReadOnlyList<GcTransaction>> GetTransactionsAsync(string gcAccountId, DateOnly? from, CancellationToken ct = default) =>
-        Task.FromResult<IReadOnlyList<GcTransaction>>(
+    public List<DateOnly?> TransactionFroms { get; } = [];
+
+    public Task<IReadOnlyList<GcTransaction>> GetTransactionsAsync(string gcAccountId, DateOnly? from, CancellationToken ct = default)
+    {
+        TransactionFroms.Add(from);
+        return Task.FromResult<IReadOnlyList<GcTransaction>>(
             [new GcTransaction("BANKREF-1", null, "2026-07-05", null, new GcAmount("-42.10", "EUR"), "Albert Heijn", null, "AH 1350")]);
+    }
 }
 
 /// <summary>logo.dev search stub for the named HttpClient.</summary>
@@ -243,6 +248,60 @@ public class GcEndpointsTests : IClassFixture<GcApiFactory>
         var callsBefore = _factory.Gc.InstitutionCalls; // unrelated counter guard
         await service.FetchAllAsync(CancellationToken.None);
         Assert.Equal(callsBefore, _factory.Gc.InstitutionCalls);
+    }
+
+    [Fact]
+    public async Task FetchService_backfills_full_history_once_for_pre_feed_accounts()
+    {
+        // an account linked BEFORE the feed-space migration: LastFetchAt is
+        // set (so the naive delta would be tiny) but the feed never saw the
+        // 90-day window — HistoryBackfilledAt null must force it (user bug:
+        // attaching such an account showed only ~a week of history)
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var spaceId = $"space_backfill_{suffix}";
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.Spaces.Add(new Space { Id = spaceId });
+            db.GcRequisitions.Add(new GcRequisition
+            {
+                Id = Guid.NewGuid(), UserId = Guid.NewGuid(), SpaceId = spaceId,
+                InstitutionId = "ING_NL", RequisitionId = $"req-bf-{suffix}", Status = "linked",
+            });
+            db.GcLinkedAccounts.Add(new GcLinkedAccount
+            {
+                GcAccountId = $"gc-bf-{suffix}", SpaceId = spaceId,
+                AccountEntityId = ImportIds.AccountId("NL20INGB0001234567"),
+                Iban = "NL20INGB0001234567", Currency = "EUR",
+                RequisitionId = db.GcRequisitions.Local.First().Id,
+                LastFetchAt = DateTimeOffset.UtcNow.AddDays(-2), // stale enough to be due
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var service = new GcFetchService(
+            _factory.Services.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<GcFetchService>.Instance)
+        { AccountDelay = TimeSpan.Zero };
+        var callsBefore = _factory.Gc.TransactionFroms.Count;
+        // FetchAccountAsync directly: FetchAllAsync's IsDue gate only opens
+        // in the bank's 03:00 hour, which would make this test time-of-day
+        // dependent
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var linked = await db.GcLinkedAccounts.FindAsync($"gc-bf-{suffix}");
+            await service.FetchAccountAsync(scope.ServiceProvider, db, _factory.Gc, linked!, CancellationToken.None);
+        }
+
+        var from = _factory.Gc.TransactionFroms[callsBefore];
+        Assert.True(from <= DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-89)), $"expected full-window fetch, got {from}");
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var linked = await db.GcLinkedAccounts.FindAsync($"gc-bf-{suffix}");
+            Assert.NotNull(linked!.HistoryBackfilledAt); // one-time: stamped after the backfill
+        }
     }
 
     [Fact]

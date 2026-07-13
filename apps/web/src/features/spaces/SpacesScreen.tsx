@@ -5,6 +5,7 @@ import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useSession } from '@/app/session';
 import { SpaceInvitesBanner } from './SpaceSharing';
+import { DEFAULT_HISTORY_MONTHS, isoMonthsAgo } from './spaceDefaults';
 import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
@@ -37,6 +38,9 @@ export function SpacesScreen() {
         currency: 'EUR',
         periodType: 'month',
         periodDay: 1,
+        // persisted, not just displayed — attaching an account must see
+        // the same default the settings screen shows (user bug report)
+        historyStartDate: isoMonthsAgo(DEFAULT_HISTORY_MONTHS),
       })
       .then(() => setActiveSpace(id));
     setCreateOpen(false);

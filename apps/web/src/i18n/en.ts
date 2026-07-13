@@ -688,6 +688,7 @@ export const en = {
   'acct.archivedReconnect': 'Archived — tap to reconnect',
   'acct.attachSub': 'Pick the spaces that should see this account. Members of those spaces see its transactions; each space keeps its own categories and notes.',
   'acct.historyFrom': 'History from',
+  'acct.historyFromHint': 'Leave empty to use each space’s own history start.',
   'tx.emptyList': 'No transactions yet — connect a bank or import a statement and they appear here',
   'tx.emptyFiltered': 'Nothing matches these filters',
   'tx.emptyCta': 'Add an account',

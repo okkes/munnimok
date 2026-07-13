@@ -108,6 +108,7 @@ public static partial class GcEndpoints
                 var transactions = await gc.GetTransactionsAsync(gcAccountId, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-90)));
                 imported += await ingest.IngestAccountAsync(space, linked, details, balances, transactions);
                 linked.LastFetchAt = DateTimeOffset.UtcNow;
+                linked.HistoryBackfilledAt = DateTimeOffset.UtcNow; // this fetch was the full window
                 linkedCount++;
             }
 

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { GlobalAccount } from '@/application/accounts';
 import { accountLinkId } from '@/domain/feedIds';
+import { DEFAULT_HISTORY_MONTHS, isoMonthsAgo } from '@/features/spaces/spaceDefaults';
 import { useData } from '@/app/data';
 import { useLang } from '@/i18n';
 import { Icon } from '@/ui/Icon';
@@ -18,26 +19,34 @@ export function AttachSheet({
   open,
   onOpenChange,
   entry,
-}: {
+}: Readonly<{
   open: boolean;
   onOpenChange: (open: boolean) => void;
   entry: GlobalAccount | null;
-}) {
+}>) {
   const { t } = useLang();
   const { db, repo } = useData();
   const [busy, setBusy] = useState<string | null>(null);
   const [historyFrom, setHistoryFrom] = useState('');
 
   const spaces = useLiveQuery(() => db.spaces.filter((s) => s.deleted === 0).toArray(), [db]);
+  // LIVE link rows, not the entry snapshot: the checkboxes must flip the
+  // moment a toggle writes to Dexie (user bug: they only updated after
+  // leaving and re-entering the screen)
+  const accountId = entry?.account.id;
+  const liveLinks = useLiveQuery(
+    () => (accountId ? db.accountLinks.filter((l) => l.deleted === 0 && l.accountId === accountId).toArray() : []),
+    [db, accountId],
+  );
 
-  // prefill from the first space default when opening (editable at attach)
+  // the date input is an OVERRIDE; empty means each space's own default
   useEffect(() => {
-    if (open) setHistoryFrom(spaces?.find((s) => s.historyStartDate)?.historyStartDate ?? '');
-  }, [open, spaces]);
+    if (open) setHistoryFrom('');
+  }, [open]);
 
   if (!entry?.feedSpaceId) return null;
-  const { account, feedSpaceId, sharedVia } = entry;
-  const viaBySpace = new Map(sharedVia.map((v) => [v.spaceId, v]));
+  const { account, feedSpaceId } = entry;
+  const viaBySpace = new Map((liveLinks ?? []).map((l) => [l.spaceId, l]));
 
   const toggle = async (spaceId: string) => {
     if (busy) return;
@@ -48,10 +57,13 @@ export function AttachSheet({
         const serverLinks = await fetchSpaceLinks(spaceId);
         const serverLink = serverLinks.find((l) => l.feedSpaceId === feedSpaceId && l.accountId === account.id);
         if (serverLink) await detachAccount(spaceId, serverLink.id);
-        await repo.remove('accountLink', spaceId, existing.linkRowId);
+        await repo.remove('accountLink', spaceId, existing.id);
       } else {
-        // attach (or revive an archived link — same server action)
-        const from = historyFrom || (await db.spaces.get(spaceId))?.historyStartDate;
+        // attach (or revive an archived link — same server action); the
+        // override wins, then the space's history start, then the app
+        // default — never silently unlimited (user bug report)
+        const from =
+          historyFrom || (await db.spaces.get(spaceId))?.historyStartDate || isoMonthsAgo(DEFAULT_HISTORY_MONTHS);
         await attachAccount(spaceId, feedSpaceId, account.id, from);
         await repo.upsert('accountLink', spaceId, accountLinkId(spaceId, feedSpaceId), {
           feedSpaceId,
@@ -70,7 +82,7 @@ export function AttachSheet({
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title={account.name} size="form">
       <p className="pb-2 text-[13px] text-ink-3">{t('acct.attachSub')}</p>
-      <label className="mb-3 flex items-center gap-3 text-[13px] text-ink-2">
+      <label className="mb-1 flex items-center gap-3 text-[13px] text-ink-2">
         {t('acct.historyFrom')}
         <input
           data-testid="attach-history-from"
@@ -80,6 +92,7 @@ export function AttachSheet({
           className="h-10 flex-1 rounded-input border border-line bg-surface px-3 text-[13px] text-ink outline-none"
         />
       </label>
+      <p className="mb-3 px-1 text-[11px] leading-snug text-ink-4">{t('acct.historyFromHint')}</p>
       <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="attach-spaces">
         {(spaces ?? []).map((space) => {
           const via = viaBySpace.get(space.id);

@@ -690,6 +690,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'acct.archivedReconnect': 'Gearchiveerd — tik om opnieuw te verbinden',
   'acct.attachSub': 'Kies de spaces die deze rekening mogen zien. Leden van die spaces zien de transacties; elke space houdt eigen categorieën en notities.',
   'acct.historyFrom': 'Historie vanaf',
+  'acct.historyFromHint': 'Laat leeg om de eigen historie-start van elke space te gebruiken.',
   'tx.emptyList': 'Nog geen transacties — koppel een bank of importeer een afschrift en ze verschijnen hier',
   'tx.emptyFiltered': 'Niets komt overeen met deze filters',
   'tx.emptyCta': 'Account toevoegen',
