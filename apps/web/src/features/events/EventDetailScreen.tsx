@@ -5,7 +5,7 @@ import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useEvents } from '@/application/events';
 import { useSpaceTransactions, useTxTransform } from '@/application/transactions';
-import { eventCategoryBreakdown, eventPerDayCents, eventSpentCents, suggestableTxs } from '@/domain/events';
+import { eventCategoryBreakdown, eventPerDayCents, eventSpentCents, eventSubcategoryBreakdown, suggestableTxs } from '@/domain/events';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { fmtCents } from '@/lib/money';
 import { AppBar, IconButton } from '@/ui/AppBar';
@@ -36,6 +36,10 @@ export function EventDetailScreen() {
   const [pickOpen, setPickOpen] = useState(false);
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   const [attaching, setAttaching] = useState(false);
+  // category drill (user request): a tapped main filters the payments and
+  // unfolds its subcategories; a tapped sub narrows further
+  const [drillMain, setDrillMain] = useState<string | null>(null);
+  const [drillSub, setDrillSub] = useState<string | null>(null);
 
   const event = events?.find((e) => e.id === eventId);
   // deleted here or on another device: leave the orphaned detail
@@ -66,6 +70,13 @@ export function EventDetailScreen() {
   }, [pickOpen, view?.suggestions]);
 
   if (!event || !view) return <div className="h-full" data-testid="screen-event-detail" />;
+
+  const filteredList = view.list.filter((tx) => {
+    if (!drillMain) return true;
+    const cat = cats.byId(tx.catId);
+    if (drillSub) return cat.id === drillSub;
+    return (cat.parentId ?? cat.id) === drillMain;
+  });
 
   const attachPicked = async () => {
     setAttaching(true);
@@ -157,11 +168,45 @@ export function EventDetailScreen() {
             <div className="rounded-card border border-line bg-surface px-4 py-1" data-testid="eventdetail-cats">
               {view.breakdown.map(({ catId, totalCents }) => {
                 const cat = cats.byId(catId);
+                const active = drillMain === catId;
+                const subs = active ? eventSubcategoryBreakdown(txs ?? [], event.id, cats, catId) : [];
                 return (
-                  <div key={catId} className="flex items-center gap-3 border-b border-line-2 py-2.5 last:border-0">
-                    <Icon name={cat.icon} size={17} color={cat.color ?? 'var(--m-ink-3)'} />
-                    <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{catName(cat, t)}</span>
-                    <span className="m-num text-[14px] font-semibold text-ink">{money(totalCents)}</span>
+                  <div key={catId} className="border-b border-line-2 last:border-0">
+                    <button
+                      data-testid={`eventdetail-cat-${catId}`}
+                      onClick={() => {
+                        setDrillMain(active ? null : catId);
+                        setDrillSub(null);
+                      }}
+                      className={`m-tap flex w-full items-center gap-3 border-none bg-transparent py-2.5 text-left ${
+                        active ? 'text-accent-deep' : ''
+                      }`}
+                    >
+                      <Icon name={cat.icon} size={17} color={cat.color ?? 'var(--m-ink-3)'} />
+                      <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{catName(cat, t)}</span>
+                      <span className="m-num text-[14px] font-semibold text-ink">{money(totalCents)}</span>
+                      <Icon name={active ? 'chevron-up' : 'chevron-down'} size={15} color="var(--m-ink-4)" />
+                    </button>
+                    {active &&
+                      subs.map((sub) => {
+                        const subCat = cats.byId(sub.catId);
+                        const subActive = drillSub === sub.catId;
+                        return (
+                          <button
+                            key={sub.catId}
+                            data-testid={`eventdetail-subcat-${sub.catId}`}
+                            onClick={() => setDrillSub(subActive ? null : sub.catId)}
+                            className={`m-tap flex w-full items-center gap-3 border-none bg-transparent py-2 pl-7 text-left ${
+                              subActive ? 'text-accent-deep' : ''
+                            }`}
+                          >
+                            <Icon name={subCat.icon} size={15} color={subCat.color ?? cat.color ?? 'var(--m-ink-4)'} />
+                            <span className="min-w-0 flex-1 truncate text-[13px] text-ink-2">{catName(subCat, t)}</span>
+                            <span className="m-num text-[13px] text-ink-2">{money(sub.totalCents)}</span>
+                            {subActive && <Icon name="check" size={14} color="var(--m-accent)" />}
+                          </button>
+                        );
+                      })}
                   </div>
                 );
               })}
@@ -169,12 +214,27 @@ export function EventDetailScreen() {
           </>
         )}
 
-        <div className="m-cap mt-5 mb-1 px-1">
-          {t('overview.payments')} · {view.list.length}
+        <div className="m-cap mt-5 mb-1 flex items-center gap-2 px-1">
+          <span>
+            {t('overview.payments')} · {filteredList.length}
+          </span>
+          {drillMain && (
+            <button
+              data-testid="eventdetail-filter-clear"
+              onClick={() => {
+                setDrillMain(null);
+                setDrillSub(null);
+              }}
+              className="m-tap flex items-center gap-1 rounded-full border border-line bg-surface px-2 py-0.5 text-[11px] normal-case"
+            >
+              {catName(cats.byId(drillSub ?? drillMain), t)}
+              <Icon name="close" size={11} />
+            </button>
+          )}
         </div>
-        {view.list.length > 0 ? (
+        {filteredList.length > 0 ? (
           <div className="rounded-card border border-line bg-surface px-3 py-1" data-testid="eventdetail-txs">
-            {view.list.map((tx) => (
+            {filteredList.map((tx) => (
               <TxRow key={tx.id} tx={tx} showDate onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })} />
             ))}
           </div>

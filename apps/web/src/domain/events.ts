@@ -34,6 +34,25 @@ export function eventCategoryBreakdown(
     .sort((a, b) => b.totalCents - a.totalCents);
 }
 
+/** sub-category totals inside one of the event's main categories, largest first */
+export function eventSubcategoryBreakdown(
+  txs: readonly TransactionRow[],
+  eventId: string,
+  catalog: CatalogLookup,
+  mainCatId: string,
+): { catId: string; totalCents: number }[] {
+  const totals = new Map<string, number>();
+  for (const tx of txs) {
+    if (tx.deleted !== 0 || tx.eventId !== eventId || tx.txType !== 'expense') continue;
+    const cat = catalog.byId(tx.catId);
+    if ((cat.parentId ?? cat.id) !== mainCatId) continue;
+    totals.set(cat.id, (totals.get(cat.id) ?? 0) + -tx.amountCents);
+  }
+  return [...totals.entries()]
+    .map(([catId, totalCents]) => ({ catId, totalCents }))
+    .sort((a, b) => b.totalCents - a.totalCents);
+}
+
 /** dated events: average spend per day of the (inclusive) range */
 export function eventPerDayCents(totalCents: number, from?: string, to?: string): number | null {
   if (!from || !to || to < from) return null;

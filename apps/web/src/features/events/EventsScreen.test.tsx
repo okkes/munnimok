@@ -60,6 +60,34 @@ describe('Events (demo identity)', () => {
     expect(screen.getByTestId('eventdetail-txs')).toBeTruthy();
   }, 20_000);
 
+  it('tapping a breakdown category unfolds subs and filters the payments (user request)', async () => {
+    renderApp('/events');
+    await screen.findByTestId('screen-events');
+    const card = await createEvent('Rome trip', isoDaysAgo(180), isoDaysAgo(160));
+    fireEvent.click(card);
+    fireEvent.click(await screen.findByTestId('eventdetail-attach-all'));
+    await screen.findByTestId('eventpick-list');
+    fireEvent.click(screen.getByTestId('eventpick-attach')); // everything pre-checked
+    await screen.findByTestId('eventdetail-txs', {}, { timeout: 8000 });
+
+    const allCount = document.querySelectorAll('[data-testid="eventdetail-txs"] [data-testid^="tx-row-"]').length;
+    const mainRow = document.querySelector('[data-testid^="eventdetail-cat-"]')!;
+    fireEvent.click(mainRow);
+    // subs unfold under the tapped main…
+    await waitFor(() => expect(document.querySelector('[data-testid^="eventdetail-subcat-"]')).toBeTruthy());
+    // …and the payments list narrows to that main (never grows)
+    const filtered = document.querySelectorAll('[data-testid="eventdetail-txs"] [data-testid^="tx-row-"]').length;
+    expect(filtered).toBeGreaterThan(0);
+    expect(filtered).toBeLessThanOrEqual(allCount);
+
+    // the sub narrows further; the clear chip restores everything
+    fireEvent.click(document.querySelector('[data-testid^="eventdetail-subcat-"]')!);
+    fireEvent.click(await screen.findByTestId('eventdetail-filter-clear'));
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-testid="eventdetail-txs"] [data-testid^="tx-row-"]').length).toBe(allCount),
+    );
+  }, 20_000);
+
   it('a transaction can leave the event through the tx-detail picker', async () => {
     renderApp('/events');
     await screen.findByTestId('screen-events');
