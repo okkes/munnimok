@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
@@ -449,5 +450,15 @@ public class GcEndpointsTests : IClassFixture<GcApiFactory>
 
         Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync("/logos/search?q=a")).StatusCode);
         Assert.Empty((await client.GetFromJsonAsync<List<LogoResult>>("/logos/search?q=boom"))!);
+    }
+
+    [Fact]
+    public async Task Logo_health_reports_a_working_configuration()
+    {
+        var client = ClientFor("gc-logos-health");
+        var health = await client.GetFromJsonAsync<JsonElement>("/logos/health");
+        Assert.True(health.GetProperty("configured").GetBoolean());
+        Assert.Equal("ok", health.GetProperty("search").GetString());
+        Assert.False(health.GetProperty("secretLooksSwapped").GetBoolean());
     }
 }
