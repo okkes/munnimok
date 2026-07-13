@@ -197,7 +197,7 @@ export const en = {
   'tx.type.adjustment': 'Adjustment',
   'tx.linkedAccount': 'Linked Account',
   'tx.linkedAccountNone': 'None — tap to select',
-  'tx.typeLockedByAccount': 'Set by linked account',
+  'tx.typeDefaultFromAccount': 'Suggested by the linked account — you can still pick another type.',
   'home.balance': 'Total balance',
   'home.period': 'Overview',
   'review.title': 'Transaction Review',

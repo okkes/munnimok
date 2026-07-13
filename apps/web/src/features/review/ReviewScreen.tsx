@@ -168,6 +168,7 @@ export function ReviewScreen() {
   const [splitOpen, setSplitOpen] = useState(false);
   const [skipped, setSkipped] = useState<ReadonlySet<string>>(new Set());
   const [stagedCat, setStagedCat] = useState<string | null>(null);
+  const [descExpanded, setDescExpanded] = useState(false);
   const [bulkSelected, setBulkSelected] = useState<ReadonlySet<string>>(new Set());
   const [linkRecurring, setLinkRecurring] = useState(true);
   const [initialCount, setInitialCount] = useState<number | null>(null);
@@ -229,6 +230,7 @@ export function ReviewScreen() {
   useEffect(() => {
     setStagedCat(null);
     setLinkRecurring(true);
+    setDescExpanded(false);
   }, [tx?.id]);
   // select every similar item by default — re-selecting when the list
   // itself changes (a sync can add one mid-card) keeps the visible count
@@ -277,8 +279,10 @@ export function ReviewScreen() {
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-5 pb-6">
-        {/* teach only when idle — never above a live review queue (§2K) */}
-        <IntroCard tourId="review" idle={!tx} />
+        {/* the first-time nudge must come BEFORE the user works the deck,
+            not after it (user bug report) — it's one dismissible line and
+            never returns once seen */}
+        <IntroCard tourId="review" />
         {!tx && queue && !emptyBecauseSkipped && (
           <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center" data-testid="review-empty">
             <Icon name="check-circle-outline" size={48} color="var(--m-accent)" />
@@ -304,9 +308,17 @@ export function ReviewScreen() {
               <div className="m-h2 mt-1.5 text-ink">{cleanBankText(tx.merchant)}</div>
               <div className="m-num mt-1 text-[32px] text-ink">{fmtCents(tx.amountCents, tx.currency, lang, { sign: true })}</div>
               {tx.description && (
-                <div className="mx-auto mt-2 line-clamp-2 max-w-[280px] font-mono text-[11px] text-ink-4">
+                // tap to read everything — bank descriptions often carry the
+                // detail that identifies a charge (user request)
+                <button
+                  data-testid="review-description"
+                  onClick={() => setDescExpanded((v) => !v)}
+                  className={`m-tap mx-auto mt-2 block max-w-[280px] border-none bg-transparent text-center font-mono text-[11px] text-ink-4 ${
+                    descExpanded ? '' : 'line-clamp-2'
+                  }`}
+                >
                   {cleanBankText(tx.description)}
-                </div>
+                </button>
               )}
 
               <button

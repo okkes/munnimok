@@ -139,6 +139,61 @@ describe('ReviewScreen (demo identity)', () => {
     db.close();
   }, 15_000);
 
+  it('splitting stays on the card; amounts clear on focus and restore on blur', async () => {
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+
+    // a controlled newest card with a long description
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(db, new HlcClock('seed-split'), { trackOutbox: false });
+    const today = new Date();
+    const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'tx-split', {
+      accountId: 'demo_main',
+      date: iso,
+      amountCents: -1000,
+      currency: 'EUR',
+      merchant: 'SPLITCAFE',
+      description: 'A very long remittance line that identifies this charge beyond two clamped lines of text',
+      catId: 'groceries',
+      txType: 'expense',
+      needsReview: 1,
+    });
+    await waitFor(() => expect(screen.getByTestId('review-card').textContent).toContain('SPLITCAFE'), { timeout: 5000 });
+
+    // the full description shows on tap (clamped by default)
+    const desc = screen.getByTestId('review-description');
+    expect(desc.className).toContain('line-clamp-2');
+    fireEvent.click(desc);
+    expect(screen.getByTestId('review-description').className).not.toContain('line-clamp-2');
+
+    fireEvent.click(screen.getByTestId('review-act-split'));
+    const amount0 = (await screen.findByTestId('split-amount-0')) as HTMLInputElement;
+    expect(amount0.value).toBe('10,00');
+
+    // focus empties the field so typing replaces; blank blur restores
+    fireEvent.focus(amount0);
+    expect(amount0.value).toBe('');
+    fireEvent.blur(amount0);
+    expect(amount0.value).toBe('10,00');
+
+    // 6,00 + auto-balanced 4,00 = a valid split
+    fireEvent.focus(amount0);
+    fireEvent.change(amount0, { target: { value: '6,00' } });
+    fireEvent.blur(amount0);
+    fireEvent.click(await screen.findByTestId('split-remainder'));
+    fireEvent.click(screen.getByTestId('split-save'));
+
+    // saving the split must NOT advance the queue (user request): the card
+    // stays until Confirm, still flagged for review
+    await waitFor(async () => {
+      expect((await db.transactions.get('tx-split'))?.splits).toHaveLength(2);
+    }, { timeout: 5000 });
+    expect(screen.getByTestId('review-card').textContent).toContain('SPLITCAFE');
+    expect((await db.transactions.get('tx-split'))?.needsReview).toBe(1);
+    db.close();
+  }, 15_000);
+
   it('skip moves on and the skipped pile can be revisited', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');

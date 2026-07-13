@@ -199,7 +199,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'tx.type.adjustment': 'Aanpassing',
   'tx.linkedAccount': 'Gekoppelde rekening',
   'tx.linkedAccountNone': 'Geen — tik om te selecteren',
-  'tx.typeLockedByAccount': 'Ingesteld via gekoppelde rekening',
+  'tx.typeDefaultFromAccount': 'Voorgesteld door de gekoppelde rekening — je kunt nog steeds een ander type kiezen.',
   'home.balance': 'Totaal saldo',
   'home.period': 'Overzicht',
   'review.title': 'Transacties beoordelen',

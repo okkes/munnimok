@@ -32,13 +32,16 @@ const parsePct = (text: string): number => {
 
 /** Editor partitioning a transaction across categories — in euros (must
  *  sum exactly) or percentages (must reach 100, scales to any amount). */
-export function SplitEditorSheet({ open, onOpenChange, tx }: { open: boolean; onOpenChange: (open: boolean) => void; tx: SpaceTx }) {
+export function SplitEditorSheet({ open, onOpenChange, tx }: Readonly<{ open: boolean; onOpenChange: (open: boolean) => void; tx: SpaceTx }>) {
   const { t, lang } = useLang();
   const transform = useTxTransform();
   const cats = useCategories();
   const [rows, setRows] = useState<Row[]>([]);
   const [mode, setMode] = useState<'amount' | 'pct'>('amount');
   const [pickerFor, setPickerFor] = useState<number | null>(null);
+  // focusing an amount empties it so typing replaces instead of appending
+  // (user request); blurring an untouched empty field restores the value
+  const [focusStash, setFocusStash] = useState<{ index: number; amount: string } | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -80,12 +83,13 @@ export function SplitEditorSheet({ open, onOpenChange, tx }: { open: boolean; on
   const save = () => {
     if (error) return;
     // pct splits keep their percentages AND a materialized partition, so
-    // every reader (budgets, drills, exports) stays simple
+    // every reader (budgets, drills, exports) stays simple.
+    // needsReview is NOT touched: saving a split mid-review must keep the
+    // card on screen until the user confirms (user request)
     const stored = mode === 'pct' ? resolveSplitsFor(tx.amountCents, splits) : splits;
     void transform(tx, {
       splits: stored,
       catId: primaryCatId(stored),
-      needsReview: 0,
     });
     onOpenChange(false);
   };
@@ -144,6 +148,15 @@ export function SplitEditorSheet({ open, onOpenChange, tx }: { open: boolean; on
                 data-testid={`split-amount-${i}`}
                 value={row.amount}
                 onChange={(e) => setRowAmount(i, e.target.value)}
+                onFocus={() => {
+                  setFocusStash({ index: i, amount: row.amount });
+                  setRowAmount(i, '');
+                }}
+                onBlur={() => {
+                  // left empty = the user clicked away — bring the value back
+                  if (focusStash?.index === i && rows[i]?.amount.trim() === '') setRowAmount(i, focusStash.amount);
+                  setFocusStash(null);
+                }}
                 inputMode="decimal"
                 className="h-11 w-24 rounded-input border border-line bg-surface px-3 text-right text-[14px] text-ink outline-none"
               />

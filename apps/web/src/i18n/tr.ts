@@ -199,7 +199,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'tx.type.adjustment': 'Düzeltme',
   'tx.linkedAccount': 'Bağlı hesap',
   'tx.linkedAccountNone': 'Yok — seçmek için dokunun',
-  'tx.typeLockedByAccount': 'Bağlı hesap tarafından belirlendi',
+  'tx.typeDefaultFromAccount': 'Bağlı hesaba göre önerildi — yine de başka bir tür seçebilirsin.',
   'home.balance': 'Toplam bakiye',
   'home.period': 'Özet',
   'review.title': 'İşlem inceleme',

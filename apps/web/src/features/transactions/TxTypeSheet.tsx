@@ -21,11 +21,12 @@ const ACCOUNT_ICON: Record<AccountType, string> = {
 
 /**
  * Counter-account + type editor, account-first (user feedback): the
- * account this money moved to or from decides the type, so it leads —
+ * account this money moved to or from suggests the type, so it leads —
  * as a real list with icons and balances instead of guess-the-badge.
- * The manual type list stays for transactions without a counterparty.
+ * The account's type is only a DEFAULT (user revision): picking a manual
+ * type keeps the link but overrides the type.
  */
-export function TxTypeSheet({ open, onOpenChange, tx }: { open: boolean; onOpenChange: (open: boolean) => void; tx: SpaceTx }) {
+export function TxTypeSheet({ open, onOpenChange, tx }: Readonly<{ open: boolean; onOpenChange: (open: boolean) => void; tx: SpaceTx }>) {
   const { t, lang } = useLang();
   const cats = useCategories();
   const transform = useTxTransform();
@@ -33,7 +34,6 @@ export function TxTypeSheet({ open, onOpenChange, tx }: { open: boolean; onOpenC
   const allAccounts = useSpaceAccounts();
   const accounts = useMemo(() => allAccounts?.filter((a) => a.id !== tx.accountId), [allAccounts, tx.accountId]);
 
-  const locked = !!tx.linkedAccountId;
   const catTxTypes = cats.byId(tx.catId).txTypes;
 
   const save = (nextType: TxType, linkedAccountId: string | null) => {
@@ -43,8 +43,7 @@ export function TxTypeSheet({ open, onOpenChange, tx }: { open: boolean; onOpenC
   };
 
   const chooseType = (type: TxType) => {
-    if (locked) return;
-    save(type, null);
+    save(type, tx.linkedAccountId ?? null); // the link survives a manual override
     onOpenChange(false);
   };
 
@@ -93,9 +92,9 @@ export function TxTypeSheet({ open, onOpenChange, tx }: { open: boolean; onOpenC
       </div>
 
       <div className="m-cap mt-4 mb-1 px-1">{t('tx.typeManual')}</div>
-      {locked && (
-        <p className="pb-2 text-[12px] text-ink-3" data-testid="txtype-locked-note">
-          {t('tx.typeLockedByAccount')}
+      {!!tx.linkedAccountId && (
+        <p className="pb-2 text-[12px] text-ink-3" data-testid="txtype-default-note">
+          {t('tx.typeDefaultFromAccount')}
         </p>
       )}
       <div className="flex flex-col" data-testid="txtype-options">
@@ -103,9 +102,8 @@ export function TxTypeSheet({ open, onOpenChange, tx }: { open: boolean; onOpenC
           <button
             key={type}
             data-testid={`txtype-${type}`}
-            disabled={locked}
             onClick={() => chooseType(type)}
-            className="m-tap flex items-center gap-3 border-none bg-transparent px-1 py-2.5 text-left text-[14px] text-ink disabled:opacity-40"
+            className="m-tap flex items-center gap-3 border-none bg-transparent px-1 py-2.5 text-left text-[14px] text-ink"
           >
             <span className="flex-1">{t(`tx.type.${type}`)}</span>
             {tx.txType === type && <Icon name="check" size={18} color="var(--m-accent)" />}

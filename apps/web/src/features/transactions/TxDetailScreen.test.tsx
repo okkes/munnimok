@@ -82,21 +82,33 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     });
   });
 
-  it('linking a savings counter-account derives the type and locks it', async () => {
+  it('linking a savings counter-account sets the type as an editable default', async () => {
     renderApp('/transactions/dm6');
     fireEvent.click(await screen.findByTestId('tx-detail-type-row'));
     fireEvent.click(await screen.findByTestId('txtype-linked-demo_save'));
     await waitFor(() => expect(screen.getByTestId('tx-detail-type-row').textContent).toContain('Saving'));
 
-    // reopen: manual type choice is now locked
+    // reopen: the account only SUGGESTS the type (user revision) — the
+    // manual list stays usable and overriding keeps the link
     fireEvent.click(screen.getByTestId('tx-detail-type-row'));
-    expect(await screen.findByTestId('txtype-locked-note')).toBeTruthy();
-    expect((screen.getByTestId('txtype-expense') as HTMLButtonElement).disabled).toBe(true);
+    expect(await screen.findByTestId('txtype-default-note')).toBeTruthy();
+    expect((screen.getByTestId('txtype-expense') as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByTestId('txtype-transfer'));
+    await waitFor(() => expect(screen.getByTestId('tx-detail-type-row').textContent).toContain('Transfer'));
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const tx = await db.transactions.get('dm6');
+      expect(tx?.txType).toBe('transfer');
+      expect(tx?.linkedAccountId).toBe('demo_save'); // link survived
+    });
+    db.close();
 
-    // unlink restores manual choice
-    fireEvent.click(screen.getByTestId('txtype-linked-none'));
-    await waitFor(() => expect(screen.queryByTestId('txtype-locked-note')).toBeNull());
-  });
+    // unlinking clears the suggestion note
+    fireEvent.click(screen.getByTestId('tx-detail-type-row'));
+    fireEvent.click(await screen.findByTestId('txtype-linked-none'));
+    fireEvent.click(screen.getByTestId('tx-detail-type-row'));
+    await waitFor(() => expect(screen.queryByTestId('txtype-default-note')).toBeNull());
+  }, 15_000);
 });
 
 describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
