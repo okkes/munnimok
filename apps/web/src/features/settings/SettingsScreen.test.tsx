@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { USER_TEST_DB, renderApp, renderAppAsUser } from '@/test/harness';
 import { readLockConfig } from '@/features/lock/lock';
@@ -75,6 +75,24 @@ describe('GlobalSettingsScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('settings-accounts-row'));
     expect(await screen.findByTestId('screen-accounts')).toBeTruthy();
   });
+
+  it('hide-tips removes the question marks and nudges everywhere (user request)', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    expect(await screen.findByTestId('help-btn-home')).toBeTruthy();
+
+    cleanup();
+    renderApp('/settings/global');
+    await screen.findByTestId('screen-settings-global');
+    fireEvent.click(screen.getByTestId('settings-tips-toggle'));
+    await waitFor(() => expect(screen.getByTestId('settings-tips-state').textContent).toBe('ON'));
+
+    cleanup();
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    await waitFor(() => expect(screen.queryByTestId('help-btn-home')).toBeNull());
+    expect(screen.queryByTestId('install-hint')).toBeNull();
+  }, 15_000);
 
   it('app lock setup: mismatch is rejected, matching PINs arm the lock, toggle disarms', async () => {
     renderApp('/settings/global');

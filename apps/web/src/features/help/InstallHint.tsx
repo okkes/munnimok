@@ -2,6 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useHelp } from './HelpContext';
+import { useTipsDisabled } from './tipsPref';
 import { Icon } from '@/ui/Icon';
 
 /** true when munni already runs as an installed app */
@@ -22,8 +23,9 @@ export function InstallHint() {
   const { openSlides } = useHelp();
   // null = looked and found nothing; undefined = still loading
   const dismissed = useLiveQuery(async () => (await db.meta.get('installHintDismissed')) ?? null, [db]);
+  const tipsOff = useTipsDisabled();
 
-  if (dismissed === undefined || Boolean(dismissed?.value) || isStandalone()) return null;
+  if (tipsOff || dismissed === undefined || Boolean(dismissed?.value) || isStandalone()) return null;
 
   return (
     <div

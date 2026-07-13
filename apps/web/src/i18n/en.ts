@@ -921,6 +921,8 @@ export const en = {
   'settings.scopeGlobal': 'Everywhere',
   'settings.global': 'Global settings',
   'settings.globalSub': 'Language, appearance, accounts, spaces & more',
+  'settings.hideTips': 'Hide tips',
+  'settings.hideTipsSub': 'No question marks, tutorial pop-ups or hints',
   'notif.title': 'Notifications',
   'notif.empty': 'You’re all caught up.',
   'notif.someone': 'Someone',

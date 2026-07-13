@@ -923,6 +923,8 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'settings.scopeGlobal': 'Her yerde',
   'settings.global': 'Genel ayarlar',
   'settings.globalSub': 'Dil, görünüm, hesaplar, alanlar ve daha fazlası',
+  'settings.hideTips': 'İpuçlarını gizle',
+  'settings.hideTipsSub': 'Soru işaretleri, eğitim pencereleri ve ipuçları görünmez',
   'notif.title': 'Bildirimler',
   'notif.empty': 'Her şey güncel.',
   'notif.someone': 'Birisi',

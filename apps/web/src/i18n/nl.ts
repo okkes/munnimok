@@ -923,6 +923,8 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'settings.scopeGlobal': 'Overal',
   'settings.global': 'Algemene instellingen',
   'settings.globalSub': 'Taal, weergave, rekeningen, ruimtes & meer',
+  'settings.hideTips': 'Tips verbergen',
+  'settings.hideTipsSub': 'Geen vraagtekens, tutorial-pop-ups of hints',
   'notif.title': 'Meldingen',
   'notif.empty': 'Je bent helemaal bij.',
   'notif.someone': 'Iemand',

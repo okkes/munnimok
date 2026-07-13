@@ -4,7 +4,9 @@ import { apiFetch, getApiCapabilities } from '@/lib/api';
 import { LOCALES, useLang } from '@/i18n';
 import type { Lang } from '@/i18n';
 import { useTheme } from '@/app/theme';
+import { useData } from '@/app/data';
 import { useSession } from '@/app/session';
+import { TIPS_DISABLED_KEY, useTipsDisabled } from '@/features/help/tipsPref';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
@@ -35,6 +37,8 @@ const LANGS: { code: Lang; labelKey: 'lang.en' | 'lang.nl' | 'lang.tr'; badge: s
 export function GlobalSettingsScreen() {
   const { t, lang, setLang } = useLang();
   const { theme, toggle } = useTheme();
+  const { db } = useData();
+  const tipsOff = useTipsDisabled();
   const [langSheetOpen, setLangSheetOpen] = useState(false);
   const identity = useSession((s) => s.identity);
   const navigate = useNavigate();
@@ -194,6 +198,19 @@ export function GlobalSettingsScreen() {
             icon={theme === 'dark' ? 'weather-night' : 'weather-sunny'}
             title={t('settings.appearance')}
             onClick={toggle}
+          />
+          <Row
+            testId="settings-tips-toggle"
+            icon={tipsOff ? 'help-circle' : 'help-circle-outline'}
+            title={t('settings.hideTips')}
+            sub={t('settings.hideTipsSub')}
+            chevron={false}
+            trailing={
+              <Pill tone={tipsOff ? 'accent' : 'neutral'} testId="settings-tips-state">
+                {tipsOff ? 'ON' : 'OFF'}
+              </Pill>
+            }
+            onClick={() => void db.meta.put({ key: TIPS_DISABLED_KEY, value: !tipsOff })}
           />
         </div>
       </div>
