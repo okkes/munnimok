@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useNavigate, useParams, useRouter } from '@tanstack/react-router';
+import { useParams, useRouter } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { downscaleImage } from '@/lib/image';
 import { useData } from '@/app/data';
@@ -11,7 +11,7 @@ import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { ColorPicker } from '@/ui/ColorPicker';
 import { Icon } from '@/ui/Icon';
-import { Chip, Row } from '@/ui/primitives';
+import { Chip } from '@/ui/primitives';
 
 const SPACE_ICONS = [
   'leaf', 'home-outline', 'account-group-outline', 'briefcase-outline', 'airplane', 'heart-outline',
@@ -41,8 +41,8 @@ const weekdayName = (weekday: number, lang: keyof typeof LOCALES) =>
 /**
  * A space's settings as a full screen: identity (name/icon/color) and
  * money (currency/period/history start). Members and financial accounts
- * moved to their own screens (user remark) — this screen keeps slim
- * doors to both. Browser back = route back.
+ * live on their own screens, reached from Settings (user remark: the
+ * doors here were redundant). Browser back = route back.
  */
 export function SpaceSettingsScreen() {
   const { t, lang } = useLang();
@@ -53,7 +53,6 @@ export function SpaceSettingsScreen() {
   // router-aware back: window.history only drives the real hash history,
   // not the memory history used by tests
   const router = useRouter();
-  const navigate = useNavigate();
   const goBack = () => router.history.back();
 
   const space = useLiveQuery(() => db.spaces.get(spaceId), [spaceId]);
@@ -312,24 +311,6 @@ export function SpaceSettingsScreen() {
               </Button>
             )}
 
-            {/* members and accounts live on their own screens now — the
-                doors stay here so the spaces-list gear still reaches them */}
-            <div className="mt-1 overflow-hidden rounded-card border border-line bg-surface">
-              {syncing && (
-                <Row
-                  testId="spacesettings-members-row"
-                  icon="account-multiple-outline"
-                  title={t('space.members')}
-                  onClick={() => void navigate({ to: '/spaces/$spaceId/members', params: { spaceId } })}
-                />
-              )}
-              <Row
-                testId="spacesettings-accounts-row"
-                icon="bank-outline"
-                title={t('space.financialAccounts')}
-                onClick={() => void navigate({ to: '/spaces/$spaceId/accounts', params: { spaceId } })}
-              />
-            </div>
             {/* danger zone last: deleting is the one action that must never sit
                 between things people actually come here for */}
             {myRole === 'owner' && (
