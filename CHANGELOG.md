@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.4.0](https://github.com/okkes/munnimok/compare/v1.3.1...v1.4.0) (2026-07-14)
+
+
+### ✨ Features
+
+* alcohol/tobacco split, reachable expected-reimbursement, category-create door ([79a0ee7](https://github.com/okkes/munnimok/commit/79a0ee74d163c3d50da11117ebccd4103a129981))
+* counterparty account number surfaces and joins to own accounts ([433f883](https://github.com/okkes/munnimok/commit/433f883ecbd6fe9784b359a88e939ad92e6483b0))
+* Jumbo receipts connection; AH shows which recipe answered ([6cc6dba](https://github.com/okkes/munnimok/commit/6cc6dba96aa042eaa2babe47824e444adeb9b75b))
+* pluggable bank-data providers with an admin picker; Enable Banking integrated ([f3241f7](https://github.com/okkes/munnimok/commit/f3241f7ff925fc4edf32b275540e26c25f2e1cbe))
+* reserved (pending) bank charges + budget-aware GoCardless cadence ([2f191fa](https://github.com/okkes/munnimok/commit/2f191fa5b0fce1ce30c534d69bced9de091100c9))
+* **server:** /logos/health canary diagnoses the logo.dev configuration ([8add34d](https://github.com/okkes/munnimok/commit/8add34db82ea8aeca1db3f3871fd55911b07afa0))
+* **server:** watch-folder importer for manual CAMT exports ([3ae0425](https://github.com/okkes/munnimok/commit/3ae0425b3c759ba5642aaa881fd286256c9a1ad8))
+* **web:** calmer review interactions ([f042586](https://github.com/okkes/munnimok/commit/f0425866e1c2669b2a93168592768480f7afd2c5))
+* **web:** drop redundant members/accounts doors from space settings ([174437c](https://github.com/okkes/munnimok/commit/174437cbed1b2bebbf763759e32e899422577be6))
+* **web:** event category breakdown drills into subs and filters payments ([7b24bef](https://github.com/okkes/munnimok/commit/7b24bef09aa618546f99dbfecc5426c61113c827))
+* **web:** global settings behind a single door; drop viewport diagnostics ([e24385f](https://github.com/okkes/munnimok/commit/e24385f89a1d04c8c9c441e465e6a7be5e434e95))
+* **web:** illustrated user guide shipped with the app at /guide/ ([fc94c69](https://github.com/okkes/munnimok/commit/fc94c69f0e8a46f99c3e97bcf16bfbe1717c92d9))
+* **web:** in-app release notes ('What's new') ([9e56d49](https://github.com/okkes/munnimok/commit/9e56d49d1a4c77cd056c98ce9721109334df8375))
+* **web:** new Home default order; portfolio becomes its own tab ([39376cc](https://github.com/okkes/munnimok/commit/39376cc675ddf9ddd4aba488d9d932e71843efa8))
+* **web:** one switch hides every tip ([66ba8b6](https://github.com/okkes/munnimok/commit/66ba8b67f556e51f3acc7679ed63efeb688b1be4))
+* **web:** receipts v2 — shared store connections, a real receipts home, matching ladder ([c1d9bfa](https://github.com/okkes/munnimok/commit/c1d9bfa60451fab417f35a85f8977726514cd757))
+* **web:** review works on a staged draft — one write on Confirm ([010a582](https://github.com/okkes/munnimok/commit/010a5822c199730e75630584e6de8afb196cafda))
+* **web:** smarter cross-space category prediction ([e0ced8e](https://github.com/okkes/munnimok/commit/e0ced8e5175b4725840b4128673eb47b377b0a37))
+* **web:** transaction search matches amounts by digit substring ([f922195](https://github.com/okkes/munnimok/commit/f9221953ff301535fd651b627ead88828db6aa78))
+
+
+### 🐞 Bug Fixes
+
+* bank-consent return works from a plain browser tab (PWA journeys) ([362bf9f](https://github.com/okkes/munnimok/commit/362bf9faf6d2c9384dbf46de29a8ebbfbd78d031))
+* **server:** one-time 90-day feed backfill for pre-migration bank accounts ([b2fe3c0](https://github.com/okkes/munnimok/commit/b2fe3c00e36972f9d58ee4a5d43d09fad65511a6))
+* **server:** PayPal-style accounts without an IBAN connect properly ([c07b63a](https://github.com/okkes/munnimok/commit/c07b63af6287ed31fa7803e6604ff9181238a4ce))
+* **web:** attach-sheet checkboxes update live; history start applies at attach ([f6b109c](https://github.com/okkes/munnimok/commit/f6b109cc5a06ad9070ff28549431c18750226dfb))
+
 ## [1.3.1](https://github.com/okkes/munnimok/compare/v1.3.0...v1.3.1) (2026-07-10)
 
 
