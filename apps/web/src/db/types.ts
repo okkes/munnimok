@@ -48,6 +48,8 @@ export interface AccountRow extends SyncEnvelope {
   /** date balanceCents was known true (yyyy-mm-dd): statement balances and
    *  manual edits both stamp it, and only a newer date may overwrite */
   balanceAsOf?: string;
+  /** when this account last heard from its source (ISO; bank fetch or statement import) */
+  lastSyncedAt?: string;
   iban?: string;
   bankId?: string;
   color?: string;

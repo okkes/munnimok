@@ -1,3 +1,20 @@
+import { LOCALES } from '@/i18n';
+import type { Lang } from '@/i18n';
+
+/** "5 minutes ago" / "2 days ago" — localized, coarse on purpose */
+export function fmtTimeAgo(iso: string, lang: Lang, now = Date.now()): string {
+  const ms = now - Date.parse(iso);
+  if (!Number.isFinite(ms)) return '';
+  const rtf = new Intl.RelativeTimeFormat(LOCALES[lang], { numeric: 'auto' });
+  const minutes = Math.round(ms / 60_000);
+  if (minutes < 60) return rtf.format(-Math.max(minutes, 0), 'minute');
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return rtf.format(-hours, 'hour');
+  const days = Math.round(hours / 24);
+  if (days < 31) return rtf.format(-days, 'day');
+  return rtf.format(-Math.round(days / 30), 'month');
+}
+
 /**
  * Bank data hygiene: ING (and others) embed literal "<br>" separators in
  * remittance text. Strip markup-ish noise for display — covers rows that

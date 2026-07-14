@@ -15,6 +15,7 @@ import { useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
 import { useData } from '@/app/data';
 import { fmtCents, parseCents } from '@/lib/money';
+import { fmtTimeAgo } from '@/lib/text';
 import type { AccountRow, AccountType } from '@/db/types';
 import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
@@ -83,6 +84,12 @@ function AccountRowButton({
           </span>
         ) : (
           account.iban && <span className="block truncate font-mono text-[11px] text-ink-4">{account.iban}</span>
+        )}
+        {/* when the account last heard from its bank/statement (user request) */}
+        {account.lastSyncedAt && (
+          <span className="block truncate text-[11px] text-ink-4" data-testid={`account-synced-${account.id}`}>
+            {t('acct.lastSynced', { when: fmtTimeAgo(account.lastSyncedAt, lang) })}
+          </span>
         )}
       </span>
       {archivedOnly && <Icon name="archive-outline" size={16} color="var(--m-warning)" />}

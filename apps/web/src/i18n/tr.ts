@@ -700,6 +700,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'acct.sharedWithMe': 'Benimle paylaşılan',
   'acct.sharedVia': '·',
   'acct.notAttached': 'Hiçbir alana bağlı değil — bağlamak için dokun',
+  'acct.lastSynced': '{when} eşitlendi',
   'acct.archivedEverywhere': 'Arşivlendi — yeniden bağlamak için dokun',
   'acct.archived': 'Arşivlendi',
   'acct.archivedReconnect': 'Arşivlendi — yeniden bağlamak için dokun',

@@ -164,6 +164,7 @@ public sealed class WatchFolderService(IServiceScopeFactory scopeFactory, IConfi
             fields["balanceCents"] = Json(balance);
             if (stmt.BalanceAsOf is not null) fields["balanceAsOf"] = Json(stmt.BalanceAsOf);
         }
+        fields["lastSyncedAt"] = Json(DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"));
         // per-statement seed: a newer statement's balance must not be
         // dropped as an "idempotent retry" of the previous file's op
         var seed = $"camtacct:{iban}:{stmt.BalanceAsOf ?? stmt.ClosingBalanceCents?.ToString() ?? "none"}";

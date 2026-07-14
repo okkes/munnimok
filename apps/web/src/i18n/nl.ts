@@ -700,6 +700,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'acct.sharedWithMe': 'Met mij gedeeld',
   'acct.sharedVia': 'via',
   'acct.notAttached': 'Aan geen enkele space gekoppeld — tik om te koppelen',
+  'acct.lastSynced': 'Gesynct {when}',
   'acct.archivedEverywhere': 'Gearchiveerd — tik om opnieuw te verbinden',
   'acct.archived': 'Gearchiveerd',
   'acct.archivedReconnect': 'Gearchiveerd — tik om opnieuw te verbinden',

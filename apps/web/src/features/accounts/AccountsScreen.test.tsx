@@ -36,6 +36,7 @@ describe('AccountsScreen (demo identity)', () => {
       currency: 'EUR',
       balanceCents: 5000,
       iban: 'NL69INGB0123456789',
+      lastSyncedAt: new Date(Date.now() - 5 * 60_000).toISOString(),
     });
     await repo.upsert('accountLink', 'demo_space', 'link-1', {
       feedSpaceId: 'feed-1',
@@ -48,6 +49,8 @@ describe('AccountsScreen (demo identity)', () => {
     renderApp('/accounts');
     const row = await screen.findByTestId('account-row-feedacct-1');
     expect(screen.getByTestId('account-via-feedacct-1').textContent).toContain('Demo');
+    // when the bank last answered (user request)
+    expect(screen.getByTestId('account-synced-feedacct-1').textContent).toContain('minutes ago');
 
     fireEvent.click(row);
     expect(await screen.findByTestId('attach-spaces')).toBeTruthy();

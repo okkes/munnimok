@@ -698,6 +698,7 @@ export const en = {
   'acct.sharedWithMe': 'Shared with me',
   'acct.sharedVia': 'via',
   'acct.notAttached': 'Not attached to any space — tap to attach',
+  'acct.lastSynced': 'Synced {when}',
   'acct.archivedEverywhere': 'Archived — tap to reconnect',
   'acct.archived': 'Archived',
   'acct.archivedReconnect': 'Archived — tap to reconnect',
