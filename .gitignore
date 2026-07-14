@@ -16,6 +16,8 @@ playwright-report/
 **/env/.env
 **/env/.env.*
 !**/env/.env.example
+# Android upload keystore (lives in repo secrets + this local copy)
+*.keystore
 bin/
 obj/
 **/coverage/

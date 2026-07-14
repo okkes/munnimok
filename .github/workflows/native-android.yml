@@ -1,8 +1,11 @@
-# Native Android build (native-apps design N6). Runs ONLY on merges to
-# master (build minutes are scarce) — dev pushes keep doing the usual
-# container builds. No paths filter: the APK bundles the web app, so
-# every master merge changes the app. A signed release build activates
-# once ANDROID_KEYSTORE_* secrets exist (Play or NAS sideload).
+# Native Android build + publish (native-apps design N6). Runs ONLY on
+# merges to master (build minutes are scarce) — dev pushes keep doing
+# the usual container builds. No paths filter: the APK bundles the web
+# app, so every master merge changes the app.
+#
+# Always: debug APK artifact (sideload).
+# With ANDROID_KEYSTORE_* secrets: signed release .aab artifact.
+# With PLAY_SERVICE_ACCOUNT_JSON too: upload to the Play internal track.
 name: Native Android
 
 on:
@@ -18,6 +21,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # versionCode = commit count
 
       - uses: actions/setup-node@v7
         with:
@@ -41,15 +46,74 @@ jobs:
           VITE_LOGTO_APP_ID: ${{ vars.NATIVE_LOGTO_APP_ID }}
           VITE_LOGTO_RESOURCE: ${{ vars.NATIVE_LOGTO_RESOURCE }}
 
+      - name: Compute version (code = commit count, name = release version)
+        id: version
+        run: |
+          echo "code=$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
+          echo "name=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
       - name: Assemble debug APK
         working-directory: apps/native/android
         # chmod: the repo lives on Windows dev machines — never trust the exec bit
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
+        env:
+          ANDROID_VERSION_CODE: ${{ steps.version.outputs.code }}
+          ANDROID_VERSION_NAME: ${{ steps.version.outputs.name }}
 
       - uses: actions/upload-artifact@v4
         with:
           name: munni-android-debug
           path: apps/native/android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
+
+      # ---- signed release (activates with the keystore secrets) ----
+      - name: Restore the upload keystore
+        if: ${{ github.event_name != 'pull_request' }}
+        id: keystore
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/upload.keystore"
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+
+      - name: Build signed release bundle
+        if: steps.keystore.outputs.present == 'true'
+        working-directory: apps/native/android
+        run: ./gradlew bundleRelease --no-daemon
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/upload.keystore
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_VERSION_CODE: ${{ steps.version.outputs.code }}
+          ANDROID_VERSION_NAME: ${{ steps.version.outputs.name }}
+
+      - name: Upload release bundle artifact
+        if: steps.keystore.outputs.present == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: munni-android-release
+          path: apps/native/android/app/build/outputs/bundle/release/app-release.aab
+          retention-days: 90
+
+      # ---- Play internal track (activates with the service account) ----
+      # Prerequisite (one-time, manual): create the app in Play Console
+      # with package app.munni and upload the FIRST .aab by hand — the
+      # API cannot create apps, only add releases to existing ones.
+      - name: Publish to Play internal track
+        if: ${{ steps.keystore.outputs.present == 'true' && env.PLAY_JSON != '' }}
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: app.munni
+          releaseFiles: apps/native/android/app/build/outputs/bundle/release/app-release.aab
+          track: internal
+          status: completed
+        env:
+          PLAY_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
