@@ -44,6 +44,13 @@ function progressState(initial: number | null, queueLen: number | undefined, ski
   };
 }
 
+/** the draft's value, an explicit null to clear a tx that had one, or nothing */
+function replacing<K extends string, T>(key: K, next: T | undefined, had: boolean): Partial<Record<K, T>> {
+  if (next !== undefined) return { [key]: next } as Partial<Record<K, T>>;
+  // explicit null clears the synced field (undefined would be dropped)
+  return had ? ({ [key]: null } as unknown as Partial<Record<K, T>>) : {};
+}
+
 /** one confirm: the whole DRAFT lands in one write (+ the bulk selection) */
 async function writeConfirmation(args: {
   tx: SpaceTx;
@@ -54,16 +61,8 @@ async function writeConfirmation(args: {
 }): Promise<void> {
   const { draft } = args;
   // draft-cleared fields on a tx that HAD them need an explicit null
-  const splitsField = draft.splits?.length
-    ? { splits: draft.splits }
-    : args.tx.splits?.length
-      ? { splits: null as never }
-      : {};
-  const linkField = draft.linkedAccountId
-    ? { linkedAccountId: draft.linkedAccountId }
-    : args.tx.linkedAccountId
-      ? { linkedAccountId: null as never }
-      : {};
+  const splitsField = replacing('splits', draft.splits?.length ? draft.splits : undefined, !!args.tx.splits?.length);
+  const linkField = replacing('linkedAccountId', draft.linkedAccountId, !!args.tx.linkedAccountId);
   await args.transform(args.tx, {
     catId: draft.catId,
     txType: draft.txType,
@@ -261,6 +260,7 @@ export function ReviewScreen() {
     setBulkSelected(new Set(similar.map((s) => s.id)));
   }, [similar]);
 
+  const draftTypeLabel = draft ? t(`tx.type.${draft.txType}`) : null;
   const showReason = !!tx && !stagedDraft && prediction?.catId === draft?.catId;
   const reasonLine =
     showReason && prediction ? t(REASON_KEYS[prediction.source], { n: prediction.evidence ?? 1 }) : null;
@@ -394,7 +394,7 @@ export function ReviewScreen() {
                 <button data-testid="review-act-type" onClick={() => setTypeOpen(true)} className="m-tap border-none bg-transparent">
                   {/* the staged type is part of the decision — show it */}
                   {t('tx.type')}
-                  {draft ? ` · ${t(`tx.type.${draft.txType}`)}` : ''}
+                  {draftTypeLabel ? ` · ${draftTypeLabel}` : ''}
                 </button>
               </div>
             </div>

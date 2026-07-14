@@ -50,12 +50,9 @@ if (!string.IsNullOrEmpty(builder.Configuration["GoCardless:SecretId"]))
 }
 
 // watch-folder importer (user request): CAMT exports dropped into the
-// mounted folder ingest as raw feed rows for the configured owner
-if (!string.IsNullOrEmpty(builder.Configuration["ImportWatch:Path"]) &&
-    !string.IsNullOrEmpty(builder.Configuration["ImportWatch:OwnerSub"]))
-{
-    builder.Services.AddHostedService<WatchFolderService>();
-}
+// mounted folder ingest as raw feed rows for the configured owner —
+// the service exits immediately when ImportWatch:* is unconfigured
+builder.Services.AddHostedService<WatchFolderService>();
 
 // store pass-through proxy (receipts design): no secrets, always on —
 // the client brings its own token; the allowlist lives in the endpoint

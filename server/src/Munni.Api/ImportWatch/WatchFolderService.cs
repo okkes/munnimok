@@ -27,7 +27,8 @@ public sealed class WatchFolderService(IServiceScopeFactory scopeFactory, IConfi
         var path = config["ImportWatch:Path"];
         var ownerSub = config["ImportWatch:OwnerSub"];
         if (string.IsNullOrEmpty(path) || string.IsNullOrEmpty(ownerSub)) return; // feature off
-        logger.LogInformation("watch-folder importer active on {Path} for {OwnerSub}", path, ownerSub);
+        if (logger.IsEnabled(LogLevel.Information))
+            logger.LogInformation("watch-folder importer active on {Path} for {OwnerSub}", path, ownerSub);
 
         using var timer = new PeriodicTimer(PollInterval);
         do
@@ -57,7 +58,8 @@ public sealed class WatchFolderService(IServiceScopeFactory scopeFactory, IConfi
             {
                 var (accepted, feedIds) = await IngestFileAsync(db, ownerSub, await File.ReadAllTextAsync(file, ct));
                 Move(file, Path.Combine(path, "processed"));
-                logger.LogInformation("watch-folder: imported {File} — {Accepted} new transactions", Path.GetFileName(file), accepted);
+                if (logger.IsEnabled(LogLevel.Information))
+                    logger.LogInformation("watch-folder: imported {File} — {Accepted} new transactions", Path.GetFileName(file), accepted);
                 if (accepted > 0)
                 {
                     var events = scope.ServiceProvider.GetRequiredService<SpaceEventBroadcaster>();
