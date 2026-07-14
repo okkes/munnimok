@@ -31,7 +31,8 @@ public sealed record GcAmount(
 public sealed record GcAccountDetails(
     [property: JsonPropertyName("iban")] string? Iban,
     [property: JsonPropertyName("name")] string? Name,
-    [property: JsonPropertyName("currency")] string? Currency);
+    [property: JsonPropertyName("currency")] string? Currency,
+    [property: JsonPropertyName("ownerName")] string? OwnerName = null);
 
 public sealed record GcBalance(
     [property: JsonPropertyName("balanceAmount")] GcAmount BalanceAmount,

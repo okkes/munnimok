@@ -164,16 +164,22 @@ public sealed partial class GcIngest(AppDbContext db)
     {
         var balance = balances.FirstOrDefault(b => b.BalanceType is "closingBooked" or "interimBooked")
                       ?? (balances.Count > 0 ? balances[0] : null);
+        var requisition = await db.GcRequisitions.FindAsync(linked.RequisitionId);
+        // wallet accounts (PayPal…) hold a pseudo reference, not an IBAN —
+        // they name themselves after the institution and skip the iban field
+        var isRealIban = !linked.Iban.StartsWith("GC:", StringComparison.OrdinalIgnoreCase);
+        var fallbackName = isRealIban
+            ? $"Bank · {linked.Iban[^4..]}"
+            : InstitutionDisplayName(requisition?.InstitutionId) ?? details.OwnerName ?? "Wallet";
         var fields = new Dictionary<string, JsonElement>
         {
-            ["name"] = Json(details.Name ?? $"Bank · {linked.Iban[^4..]}"),
+            ["name"] = Json(details.Name ?? fallbackName),
             ["type"] = Json("checking"),
             ["source"] = Json("gocardless"),
             ["currency"] = Json(details.Currency ?? linked.Currency),
-            ["iban"] = Json(linked.Iban),
         };
+        if (isRealIban) fields["iban"] = Json(linked.Iban);
         // the institution id lets clients show the real bank logo
-        var requisition = await db.GcRequisitions.FindAsync(linked.RequisitionId);
         if (requisition is not null) fields["bankId"] = Json(requisition.InstitutionId);
         if (balance is not null)
         {
@@ -219,6 +225,14 @@ public sealed partial class GcIngest(AppDbContext db)
         }
         await db.SaveChangesAsync();
         return feedSpace;
+    }
+
+    /// <summary>"PAYPAL_PPLXLULL" → "Paypal" — good enough when details carry no name</summary>
+    private static string? InstitutionDisplayName(string? institutionId)
+    {
+        var brand = institutionId?.Split('_')[0];
+        if (string.IsNullOrEmpty(brand)) return null;
+        return char.ToUpperInvariant(brand[0]) + brand[1..].ToLowerInvariant();
     }
 
     private static SyncOpDto NewOp(string spaceId, string entity, string entityId, Dictionary<string, JsonElement> fields, string hlc, string opSeed) =>

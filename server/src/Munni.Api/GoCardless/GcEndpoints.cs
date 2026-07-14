@@ -92,7 +92,11 @@ public static partial class GcEndpoints
             foreach (var gcAccountId in status.Accounts)
             {
                 var details = await gc.GetAccountDetailsAsync(gcAccountId);
-                if (details.Iban is null) continue;
+                // wallet-style accounts (PayPal…) carry no IBAN — a
+                // deterministic per-account reference keeps the whole feed
+                // machinery working (user bug: the consent completed fine
+                // but the connection never appeared)
+                var accountRef = details.Iban ?? $"GC:{gcAccountId}";
 
                 var linked = await db.GcLinkedAccounts.FindAsync(gcAccountId);
                 if (linked is null)
@@ -101,8 +105,8 @@ public static partial class GcEndpoints
                     {
                         GcAccountId = gcAccountId,
                         SpaceId = requisition.SpaceId,
-                        AccountEntityId = ImportIds.AccountId(details.Iban),
-                        Iban = ImportIds.Normalize(details.Iban),
+                        AccountEntityId = ImportIds.AccountId(accountRef),
+                        Iban = ImportIds.Normalize(accountRef),
                         Currency = details.Currency ?? "EUR",
                         RequisitionId = requisition.Id,
                     };

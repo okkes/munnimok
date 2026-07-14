@@ -188,6 +188,40 @@ public class GcEndpointsTests : IClassFixture<GcApiFactory>
     }
 
     [Fact]
+    public async Task Wallet_accounts_without_iban_still_link_and_ingest()
+    {
+        // PayPal-style accounts return no IBAN — they used to be skipped
+        // silently (user bug: consent completed, connection never appeared)
+        var (client, _, spaceId) = await MemberAsync("wallet");
+        _factory.Gc.Details = new GcAccountDetails(null, null, "EUR", "Okkes D");
+        _factory.Gc.Status = new GcRequisitionStatus("gc-req-1", "LN", ["gc-wallet-1"]);
+        try
+        {
+            var created = await (await client.PostAsJsonAsync("/gocardless/requisitions",
+                new CreateRequisitionRequest(spaceId, "PAYPAL_PPLXLULL", "https://app/gc-callback"))).Content
+                .ReadFromJsonAsync<CreateRequisitionResponse>();
+            var complete = await (await client.PostAsync($"/gocardless/requisitions/{created!.Reference}/complete", null))
+                .Content.ReadFromJsonAsync<CompleteResponse>();
+            Assert.Equal(1, complete!.LinkedAccounts);
+
+            using var scope = _factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var linked = await db.GcLinkedAccounts.FindAsync("gc-wallet-1");
+            Assert.StartsWith("GC:", linked!.Iban); // deterministic pseudo reference
+            var feedId = ImportIds.FeedSpaceId(linked.Iban);
+            var account = await db.EntityRows.FindAsync(feedId, "account", linked.AccountEntityId);
+            Assert.NotNull(account);
+            Assert.Contains("\"name\":\"Paypal\"", account!.DataJson); // institution-derived
+            Assert.DoesNotContain("\"iban\"", account.DataJson); // no fake IBAN surfaces
+        }
+        finally
+        {
+            _factory.Gc.Details = new GcAccountDetails("NL69INGB0123456789", "Betaalrekening", "EUR");
+            _factory.Gc.Status = new GcRequisitionStatus("gc-req-1", "LN", ["gc-acc-1"]);
+        }
+    }
+
+    [Fact]
     public async Task Complete_works_without_a_session_but_a_foreign_session_is_refused()
     {
         // installed-PWA journeys can return from the bank in a plain browser
