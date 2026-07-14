@@ -45,46 +45,7 @@ public sealed partial class GcIngest(AppDbContext db)
             ["accountId"] = Json(linked.AccountEntityId),
         }, NextHlc(), $"gclink:{space.Id}:{feedSpace.Id}"));
 
-        foreach (var tx in transactions)
-        {
-            var reference = tx.TransactionId ?? tx.InternalTransactionId;
-            if (reference is null || tx.BookingDate is null) continue;
-            var cents = ToCents(tx.TransactionAmount.Amount);
-            var direction = cents < 0 ? "debit" : "credit";
-            var counterparty = CleanBankText(cents < 0 ? tx.CreditorName : tx.DebtorName);
-            var counterIban = cents < 0 ? tx.CreditorAccount?.Iban : tx.DebtorAccount?.Iban;
-            var description = CleanBankText(tx.RemittanceInformationUnstructured) ?? "";
-            var entityId = ImportIds.TransactionId(linked.Iban, reference);
-
-            // raw half: no opinion, just the bank's facts
-            var rawFields = new Dictionary<string, JsonElement>
-            {
-                ["accountId"] = Json(linked.AccountEntityId),
-                ["date"] = Json(tx.BookingDate),
-                ["amountCents"] = Json(cents),
-                ["currency"] = Json(tx.TransactionAmount.Currency),
-                ["merchant"] = Json(counterparty ?? Truncate(description, 40)),
-                ["description"] = Json(description),
-                ["importRef"] = Json(reference),
-            };
-            // the other side's account number, when the bank names it —
-            // clients surface it and join it to known accounts (user request)
-            if (!string.IsNullOrWhiteSpace(counterIban)) rawFields["counterIban"] = Json(ImportIds.Normalize(counterIban));
-            // op id derived from the entity id: re-fetching the same tx is a no-op
-            feedOps.Add(NewOp(feedSpace.Id, "transaction", entityId, rawFields, NextHlc(), $"gc:{entityId}"));
-
-            // the target space's starting opinion (kept server-side for UX
-            // parity — devices and members refine it from here by LWW)
-            var predicted = KeywordPredictor.Predict($"{counterparty} {description}", direction);
-            var metaFields = new Dictionary<string, JsonElement>
-            {
-                ["txId"] = Json(entityId),
-                ["catId"] = Json(predicted?.CatId ?? "uncategorized"),
-                ["txType"] = Json(predicted?.TxType ?? (direction == "credit" ? "income" : "expense")),
-                ["needsReview"] = Json(predicted is null ? 1 : 0),
-            };
-            spaceOps.Add(NewOp(space.Id, "txMeta", ImportIds.TxMetaId(space.Id, entityId), metaFields, NextHlc(), $"gcmeta:{space.Id}:{entityId}"));
-        }
+        foreach (var tx in transactions) AddBookedOps(space.Id, feedSpace.Id, linked, tx, feedOps, spaceOps, NextHlc);
 
         await MirrorPendingAsync(linked, feedSpace.Id, pending ?? [], feedOps, NextHlc);
 
@@ -94,6 +55,55 @@ public sealed partial class GcIngest(AppDbContext db)
         var (_, accepted) = await writer.ApplyAsync(feedSpace, null, feedOps);
         await writer.ApplyAsync(space, null, spaceOps);
         return accepted;
+    }
+
+    /// <summary>One booked bank transaction → raw feed op + the target space's predicted overlay.</summary>
+    private static void AddBookedOps(
+        string spaceId,
+        string feedSpaceId,
+        GcLinkedAccount linked,
+        GcTransaction tx,
+        List<SyncOpDto> feedOps,
+        List<SyncOpDto> spaceOps,
+        Func<string> nextHlc)
+    {
+        var reference = tx.TransactionId ?? tx.InternalTransactionId;
+        if (reference is null || tx.BookingDate is null) return;
+        var cents = ToCents(tx.TransactionAmount.Amount);
+        var direction = cents < 0 ? "debit" : "credit";
+        var counterparty = CleanBankText(cents < 0 ? tx.CreditorName : tx.DebtorName);
+        var counterIban = cents < 0 ? tx.CreditorAccount?.Iban : tx.DebtorAccount?.Iban;
+        var description = CleanBankText(tx.RemittanceInformationUnstructured) ?? "";
+        var entityId = ImportIds.TransactionId(linked.Iban, reference);
+
+        // raw half: no opinion, just the bank's facts
+        var rawFields = new Dictionary<string, JsonElement>
+        {
+            ["accountId"] = Json(linked.AccountEntityId),
+            ["date"] = Json(tx.BookingDate),
+            ["amountCents"] = Json(cents),
+            ["currency"] = Json(tx.TransactionAmount.Currency),
+            ["merchant"] = Json(counterparty ?? Truncate(description, 40)),
+            ["description"] = Json(description),
+            ["importRef"] = Json(reference),
+        };
+        // the other side's account number, when the bank names it —
+        // clients surface it and join it to known accounts (user request)
+        if (!string.IsNullOrWhiteSpace(counterIban)) rawFields["counterIban"] = Json(ImportIds.Normalize(counterIban));
+        // op id derived from the entity id: re-fetching the same tx is a no-op
+        feedOps.Add(NewOp(feedSpaceId, "transaction", entityId, rawFields, nextHlc(), $"gc:{entityId}"));
+
+        // the target space's starting opinion (kept server-side for UX
+        // parity — devices and members refine it from here by LWW)
+        var predicted = KeywordPredictor.Predict($"{counterparty} {description}", direction);
+        var metaFields = new Dictionary<string, JsonElement>
+        {
+            ["txId"] = Json(entityId),
+            ["catId"] = Json(predicted?.CatId ?? "uncategorized"),
+            ["txType"] = Json(predicted?.TxType ?? (direction == "credit" ? "income" : "expense")),
+            ["needsReview"] = Json(predicted is null ? 1 : 0),
+        };
+        spaceOps.Add(NewOp(spaceId, "txMeta", ImportIds.TxMetaId(spaceId, entityId), metaFields, nextHlc(), $"gcmeta:{spaceId}:{entityId}"));
     }
 
     /// <summary>
