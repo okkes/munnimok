@@ -46,8 +46,14 @@ services:
       Sentry__Dsn: ${API_SENTRY_DSN:-}
       BUILD_NUMBER: ${TAG:-latest}
       Ocr__BaseUrl: http://ocr:8884
+      # watch-folder importer: drop CAMT.053 exports into the mounted
+      # folder and they ingest as the owner's feeds (empty sub = off)
+      ImportWatch__Path: /import-watch
+      ImportWatch__OwnerSub: ${IMPORT_WATCH_OWNER_SUB:-}
     ports:
       - "8091:8080"
+    volumes:
+      - ${IMPORT_WATCH_HOST_DIR:-./import-watch}:/import-watch
     depends_on:
       postgres:
         condition: service_healthy

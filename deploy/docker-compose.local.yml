@@ -30,8 +30,12 @@ services:
       Logos__PublicToken: ${LOGODEV_PUBLIC_TOKEN:-}
       Admin__Subs: ${ADMIN_SUBS:-}
       Ocr__BaseUrl: http://ocr:8884
+      ImportWatch__Path: /import-watch
+      ImportWatch__OwnerSub: ${IMPORT_WATCH_OWNER_SUB:-}
     ports:
       - "8180:8080"
+    volumes:
+      - ${IMPORT_WATCH_HOST_DIR:-./import-watch}:/import-watch
     depends_on:
       postgres:
         condition: service_healthy

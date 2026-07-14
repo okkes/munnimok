@@ -9,6 +9,7 @@ using Munni.Api.Auth;
 using Munni.Api.Data;
 using Munni.Api.Admin;
 using Munni.Api.GoCardless;
+using Munni.Api.ImportWatch;
 using Munni.Api.Investments;
 using Munni.Api.Logos;
 using Munni.Api.Push;
@@ -46,6 +47,14 @@ if (!string.IsNullOrEmpty(builder.Configuration["GoCardless:SecretId"]))
     builder.Services.AddHttpClient<IGoCardlessApi, GoCardlessApi>(client =>
         client.BaseAddress = new Uri(gcBaseUrl));
     builder.Services.AddHostedService<GcFetchService>();
+}
+
+// watch-folder importer (user request): CAMT exports dropped into the
+// mounted folder ingest as raw feed rows for the configured owner
+if (!string.IsNullOrEmpty(builder.Configuration["ImportWatch:Path"]) &&
+    !string.IsNullOrEmpty(builder.Configuration["ImportWatch:OwnerSub"]))
+{
+    builder.Services.AddHostedService<WatchFolderService>();
 }
 
 // store pass-through proxy (receipts design): no secrets, always on —
