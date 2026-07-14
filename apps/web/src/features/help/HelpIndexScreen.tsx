@@ -42,6 +42,14 @@ export function HelpIndexScreen() {
             title={t('whatsnew.title')}
             onClick={() => setWhatsNewOpen(true)}
           />
+          {/* the illustrated guide ships with the app as a static page */}
+          <Row
+            testId="help-guide-row"
+            icon="book-open-page-variant-outline"
+            iconColor="var(--m-accent-deep)"
+            title={t('help.userGuide')}
+            onClick={() => window.open(`${import.meta.env.BASE_URL}guide/`, '_blank', 'noopener')}
+          />
         </div>
         <div className="overflow-hidden rounded-card border border-line bg-surface">
           {TOURS.map((tour) => (

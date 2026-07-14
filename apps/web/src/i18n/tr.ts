@@ -924,6 +924,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'settings.scopeGlobal': 'Her yerde',
   'settings.global': 'Genel ayarlar',
   'settings.globalSub': 'Dil, görünüm, hesaplar, alanlar ve daha fazlası',
+  'help.userGuide': 'Kullanım kılavuzu',
   'whatsnew.title': 'Yenilikler',
   'whatsnew.cardTitle': 'munni v{version} sürümüne güncellendi',
   'whatsnew.see': 'Yenilikleri gör',

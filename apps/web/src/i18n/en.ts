@@ -922,6 +922,7 @@ export const en = {
   'settings.scopeGlobal': 'Everywhere',
   'settings.global': 'Global settings',
   'settings.globalSub': 'Language, appearance, accounts, spaces & more',
+  'help.userGuide': 'User guide',
   'whatsnew.title': 'What’s new',
   'whatsnew.cardTitle': 'munni was updated to v{version}',
   'whatsnew.see': 'See what’s new',

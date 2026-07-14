@@ -924,6 +924,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'settings.scopeGlobal': 'Overal',
   'settings.global': 'Algemene instellingen',
   'settings.globalSub': 'Taal, weergave, rekeningen, ruimtes & meer',
+  'help.userGuide': 'Handleiding',
   'whatsnew.title': 'Wat is er nieuw',
   'whatsnew.cardTitle': 'munni is bijgewerkt naar v{version}',
   'whatsnew.see': 'Bekijk wat er nieuw is',
