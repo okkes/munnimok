@@ -89,14 +89,46 @@ describe('syncAhReceipts', () => {
     const result = await syncAhReceipts(call, db, repo, SPACE);
     expect(result).toEqual({ status: 'ok', added: 2 });
 
-    const matched = await db.receipts.get(storeReceiptId('ah', 't-100'));
+    const matched = await db.receipts.get(storeReceiptId('ah', 't-100', SPACE));
     expect(matched?.txId).toBe('tx-ah');
     expect(matched?.items).toEqual([{ name: 'MELK', qty: undefined, totalCents: 258 }]);
+    expect(matched?.storeRef).toBe('ah:t-100');
     // no €9.99 transaction exists → stays unmatched for the manual pick
-    const unmatched = await db.receipts.get(storeReceiptId('ah', 't-200'));
+    const unmatched = await db.receipts.get(storeReceiptId('ah', 't-200', SPACE));
     expect(unmatched?.txId).toBeUndefined();
 
     // second pass: nothing new, nothing duplicated
+    const again = await syncAhReceipts(call, db, repo, SPACE);
+    expect(again).toEqual({ status: 'ok', added: 0 });
+  });
+
+  it('a shared connection writes receipts into every shared space (user ruling)', async () => {
+    await repo.upsert('space', SPACE, SPACE, { name: 'One', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
+    await repo.upsert('space', 's2', 's2', { name: 'Two', kind: 'shared', currency: 'EUR', periodType: 'month', periodDay: 1 });
+    const connection = (await db.storeConnections.get('ah'))!;
+    await db.storeConnections.put({ ...connection, sharedSpaceIds: [SPACE, 's2'] });
+    // only space One holds the matching transaction
+    await repo.upsert('transaction', SPACE, 'tx-ah', {
+      accountId: 'a1',
+      date: '2026-07-05',
+      amountCents: -2350,
+      currency: 'EUR',
+      merchant: 'Albert Heijn',
+      txType: 'expense',
+      needsReview: 0,
+    });
+
+    const { call, calls } = fakeAh();
+    const result = await syncAhReceipts(call, db, repo, SPACE);
+    expect(result).toEqual({ status: 'ok', added: 4 }); // 2 receipts × 2 spaces
+
+    // each space holds its own copy; matching ran per space
+    expect((await db.receipts.get(storeReceiptId('ah', 't-100', SPACE)))?.txId).toBe('tx-ah');
+    expect((await db.receipts.get(storeReceiptId('ah', 't-100', 's2')))?.txId).toBeUndefined();
+    // …but the item details were fetched only once per receipt
+    expect(calls.filter((p) => p === '/graphql').length).toBeLessThanOrEqual(3); // list + 2 detail calls
+
+    // legacy single-space rows (pre-sharing id shape) never re-ingest
     const again = await syncAhReceipts(call, db, repo, SPACE);
     expect(again).toEqual({ status: 'ok', added: 0 });
   });

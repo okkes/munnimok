@@ -61,6 +61,10 @@ describe('Receipts S1 (demo identity)', () => {
 
   it('a signed-in user connects AH by pasting the redirect address', async () => {
     renderAppAsUser('/shopping', {
+      spaces: [
+        { id: 's-user', name: 'Personal' },
+        { id: 's-two', name: 'Second', kind: 'shared' },
+      ],
       api: {
         'POST /shop/proxy/ah-api': (body) => {
           const request = body as { path: string };
@@ -83,6 +87,23 @@ describe('Receipts S1 (demo identity)', () => {
     expect(screen.getByTestId('shop-ah-disconnect')).toBeTruthy();
     await waitFor(() => expect(screen.getByTestId('shop-ah-status').textContent).toContain('Connected'));
     await screen.findByTestId('shop-ah-sync-result');
+
+    // sharing (user ruling): the connection starts private to exactly the
+    // space that was active at connect time; ticking the other space opts
+    // its members in
+    const rows = [await screen.findByTestId('shop-ah-share-s-user'), await screen.findByTestId('shop-ah-share-s-two')];
+    const checked = rows.filter((row) => row.querySelector('.mdi-checkbox-marked'));
+    expect(checked).toHaveLength(1);
+    const unchecked = rows.find((row) => !row.querySelector('.mdi-checkbox-marked'))!;
+    fireEvent.click(unchecked);
+    await waitFor(() => expect(unchecked.querySelector('.mdi-checkbox-marked')).toBeTruthy());
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB(USER_TEST_DB);
+    await waitFor(async () => {
+      const shared = (await db.storeConnections.get('ah'))?.sharedSpaceIds ?? [];
+      expect([...shared].sort((a, b) => a.localeCompare(b))).toEqual(['s-two', 's-user']);
+    });
+    db.close();
   }, 15_000);
 
   it('opened from its own transaction, the sheet hides the linked-tx block', async () => {
@@ -125,12 +146,59 @@ describe('Receipts S1 (demo identity)', () => {
     await screen.findByTestId('receipt-linked-tx');
   }, 15_000);
 
-  it('settings reaches shopping connections', async () => {
+  it('settings reaches receipts; the stores door reaches connections', async () => {
     renderApp('/settings');
     await screen.findByTestId('screen-settings');
-    // shopping moved behind the Global settings door
+    // receipts are the feature's home (receipts v2); stores live inside it
     fireEvent.click(screen.getByTestId('settings-global-row'));
-    fireEvent.click(await screen.findByTestId('settings-shopping-row'));
+    fireEvent.click(await screen.findByTestId('settings-receipts-row'));
+    await screen.findByTestId('screen-receipts');
+    fireEvent.click(screen.getByTestId('receipts-stores'));
     expect(await screen.findByTestId('screen-shopping')).toBeTruthy();
   }, 15_000);
+
+  it('the receipts browser groups by store and searches names and amounts', async () => {
+    await openFirstTx();
+    const file = new File(['x'], 'bon.jpg', { type: 'image/jpeg' });
+    fireEvent.change(screen.getByTestId('receipt-file'), { target: { files: [file] } });
+    await screen.findByTestId('receipt-card', {}, { timeout: 5000 });
+
+    // seed a store receipt beside the photo one
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { HlcClock } = await import('@/sync/hlc');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(db, new HlcClock('t'), { trackOutbox: false });
+    await repo.upsert('receipt', 'demo_space', 'rcpt:ah:x1@demo_space', {
+      source: 'ah',
+      date: '2026-07-01',
+      totalCents: 2199,
+      merchant: 'Albert Heijn',
+      items: [{ name: 'HALFVOLLE MELK', totalCents: 258 }],
+      storeRef: 'ah:x1',
+    });
+    db.close();
+    cleanup();
+
+    renderApp('/receipts');
+    await screen.findByTestId('screen-receipts');
+    // grouped by source: the AH section and the photo section
+    await screen.findByTestId('receipts-group-ah');
+    await screen.findByTestId('receipts-group-photo');
+
+    // item-name search narrows to the store receipt…
+    fireEvent.change(screen.getByTestId('receipts-search'), { target: { value: 'melk' } });
+    await waitFor(() => expect(screen.queryByTestId('receipts-group-photo')).toBeNull());
+    expect(screen.getByTestId('receipts-group-ah')).toBeTruthy();
+    // …and so does an amount query
+    fireEvent.change(screen.getByTestId('receipts-search'), { target: { value: '21,99' } });
+    await waitFor(() => expect(screen.getByTestId('receipts-group-ah')).toBeTruthy());
+    expect(screen.queryByTestId('receipts-group-photo')).toBeNull();
+
+    // the unlinked filter keeps only the store receipt (the photo is linked)
+    fireEvent.change(screen.getByTestId('receipts-search'), { target: { value: '' } });
+    fireEvent.click(await screen.findByTestId('receipts-filter-unlinked'));
+    await waitFor(() => expect(screen.queryByTestId('receipts-group-photo')).toBeNull());
+    expect(screen.getByTestId('receipts-group-ah')).toBeTruthy();
+  }, 20_000);
 });

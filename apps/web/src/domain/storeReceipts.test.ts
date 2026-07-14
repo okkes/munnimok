@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bestMatch, mapAhItems, mapAhSummary, matchCandidates, parseReceiptText } from './storeReceipts';
+import { bestMatch, candidateLadder, mapAhItems, mapAhSummary, matchCandidates, parseReceiptText } from './storeReceipts';
 import type { MatchableReceipt } from './storeReceipts';
 import type { TransactionRow } from '@/db/types';
 
@@ -49,6 +49,24 @@ describe('receipt ↔ transaction matching', () => {
 
     // already-taken transactions stay out of it
     expect(bestMatch(receipt, clear, new Set(['only']))).toBeNull();
+
+    // rung-1 only (user ruling): a near-but-not-exact amount, or a
+    // merchant that doesn't fingerprint, never auto-attaches
+    expect(bestMatch(receipt, [tx({ id: 'near', amountCents: -2351 })], new Set())).toBeNull();
+    expect(bestMatch(receipt, [tx({ id: 'foreign', merchant: 'Snackbar' })], new Set())).toBeNull();
+  });
+
+  it('the picker ladder widens on demand: near matches, same price, latest', () => {
+    const txs = [
+      tx({ id: 'near', date: '2026-07-05' }),
+      tx({ id: 'same-price-far', date: '2026-06-01' }),
+      tx({ id: 'other-latest', date: '2026-07-04', amountCents: -999 }),
+      tx({ id: 'income', txType: 'income', amountCents: 2350 }),
+    ];
+    const ladder = candidateLadder(receipt, txs);
+    expect(ladder.primary.map((t) => t.id)).toEqual(['near']);
+    // rung 3 (same amount, any date) before rung 4 (latest expenses)
+    expect(ladder.more.map((t) => t.id)).toEqual(['same-price-far', 'other-latest']);
   });
 });
 

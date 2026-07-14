@@ -51,6 +51,8 @@ export interface StoreOps {
   disconnect: (store: 'ah') => Promise<void>;
   syncNow: (store: 'ah') => Promise<StoreSyncResult>;
   attachReceipt: (receiptId: string, txId: string) => Promise<void>;
+  /** which spaces this connection's receipts flow into (user ruling) */
+  setSharedSpaces: (store: 'ah', spaceIds: string[]) => Promise<void>;
 }
 
 export function useStoreOps(): StoreOps {
@@ -66,6 +68,7 @@ export function useStoreOps(): StoreOps {
         tokens: { access: tokens.access, refresh: tokens.refresh },
         refreshedAt: new Date().toISOString(),
         status: 'ok',
+        sharedSpaceIds: [spaceId], // starts private to the connecting space
       });
       await repo.upsert('storeMarker', spaceId, `store:${spaceId}:ah`, {
         store: 'ah',
@@ -76,8 +79,11 @@ export function useStoreOps(): StoreOps {
       return true;
     },
     disconnect: async (store) => {
+      const connection = await db.storeConnections.get(store);
       await db.storeConnections.delete(store);
-      await repo.remove('storeMarker', spaceId, `store:${spaceId}:${store}`);
+      for (const shared of connection?.sharedSpaceIds ?? [spaceId]) {
+        await repo.remove('storeMarker', shared, `store:${shared}:${store}`);
+      }
     },
     syncNow: (store) => {
       void store;
@@ -85,6 +91,25 @@ export function useStoreOps(): StoreOps {
     },
     attachReceipt: async (receiptId, txId) => {
       await repo.upsert('receipt', spaceId, receiptId, { txId });
+    },
+    setSharedSpaces: async (store, spaceIds) => {
+      const connection = await db.storeConnections.get(store);
+      if (!connection) return;
+      const before = new Set(connection.sharedSpaceIds ?? [spaceId]);
+      await db.storeConnections.put({ ...connection, sharedSpaceIds: spaceIds });
+      // markers keep every member's device honest about the connection
+      for (const id of spaceIds.filter((id) => !before.has(id))) {
+        await repo.upsert('storeMarker', id, `store:${id}:${store}`, {
+          store,
+          status: 'connected',
+          connectedAt: new Date().toISOString().slice(0, 10),
+        });
+      }
+      for (const id of [...before].filter((id) => !spaceIds.includes(id))) {
+        await repo.remove('storeMarker', id, `store:${id}:${store}`);
+      }
+      // newly shared spaces receive the backlog right away
+      void syncAhReceipts(proxyCall, db, repo, spaceId).catch(() => undefined);
     },
   };
 }

@@ -353,6 +353,8 @@ export interface ReceiptRow extends SyncEnvelope {
   items?: ReceiptItem[];
   /** downscaled data URL (photo path) */
   image?: string;
+  /** `{store}:{externalId}` — dedupe key across the spaces a connection is shared with */
+  storeRef?: string;
 }
 
 /**
@@ -366,6 +368,12 @@ export interface StoreConnectionRow {
   status: 'ok' | 'expired';
   /** newest store receipt already ingested (dedupe cursor) */
   lastReceiptId?: string;
+  /**
+   * spaces this connection's receipts flow into (user ruling: sharing a
+   * connection with a space lets every member search its receipts) —
+   * defaults to the space that was active at connect time
+   */
+  sharedSpaceIds?: string[];
 }
 
 /**

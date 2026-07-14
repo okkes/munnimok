@@ -40,6 +40,7 @@ export function ShoppingConnectionsScreen() {
   const unmatched = useUnmatchedReceipts();
   const ops = useStoreOps();
   const space = useLiveQuery(() => db.spaces.get(spaceId), [spaceId]);
+  const allSpaces = useLiveQuery(() => db.spaces.filter((s) => s.deleted === 0).toArray(), [db]);
   const receiptCount = useLiveQuery(
     () => db.receipts.filter((r) => r.deleted === 0 && r.spaceId === spaceId && r.source === 'ah').count(),
     [db, spaceId],
@@ -61,6 +62,14 @@ export function ShoppingConnectionsScreen() {
   const runSync = async () => {
     setSyncState('busy');
     setSyncState(await ops.syncNow('ah'));
+  };
+
+  const toggleShare = async (targetSpaceId: string) => {
+    const current = ah?.sharedSpaceIds ?? [spaceId];
+    const next = current.includes(targetSpaceId)
+      ? current.filter((id) => id !== targetSpaceId)
+      : [...current, targetSpaceId];
+    await ops.setSharedSpaces('ah', next);
   };
 
   const submitConnect = async () => {
@@ -183,6 +192,35 @@ export function ShoppingConnectionsScreen() {
             </div>
           ))}
         </div>
+
+        {/* which spaces this connection's receipts flow into (user ruling:
+            sharing lets every member of those spaces search the receipts) */}
+        {ah?.status === 'ok' && (
+          <>
+            <div className="m-cap mt-4 mb-1 px-1">{t('shop.sharedSpaces')}</div>
+            <p className="mb-1 px-1 text-[11px] leading-snug text-ink-4">{t('shop.sharedSpacesSub')}</p>
+            <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="shop-ah-spaces">
+              {(allSpaces ?? []).map((entry) => {
+                const shared = (ah.sharedSpaceIds ?? [spaceId]).includes(entry.id);
+                return (
+                  <button
+                    key={entry.id}
+                    data-testid={`shop-ah-share-${entry.id}`}
+                    onClick={() => void toggleShare(entry.id)}
+                    className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-4 py-3 text-left last:border-0"
+                  >
+                    <Icon
+                      name={shared ? 'checkbox-marked' : 'checkbox-blank-outline'}
+                      size={20}
+                      color={shared ? 'var(--m-accent)' : 'var(--m-ink-4)'}
+                    />
+                    <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{entry.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
 
         {/* the browsing door: every receipt, photos included */}
         <button

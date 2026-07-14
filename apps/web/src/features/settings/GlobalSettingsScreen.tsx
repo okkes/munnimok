@@ -158,7 +158,8 @@ export function GlobalSettingsScreen() {
             }
             onClick={() => setLangSheetOpen(true)}
           />
-          <Row testId="settings-shopping-row" icon="storefront-outline" title={t('shop.title')} onClick={() => void navigate({ to: '/shopping' })} />
+          {/* receipts are the feature's home now; connected stores live inside it */}
+          <Row testId="settings-receipts-row" icon="receipt-text-outline" title={t('receipts.title')} onClick={() => void navigate({ to: '/receipts' })} />
           <Row testId="settings-help-row" icon="school-outline" title={t('help.title')} onClick={() => void navigate({ to: '/help' })} />
           {vapidKey && (
             <Row
