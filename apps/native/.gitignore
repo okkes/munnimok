@@ -5,3 +5,6 @@ android/app/src/main/assets/capacitor.config.json
 android/app/src/main/assets/capacitor.plugins.json
 ios/App/App/public/
 ios/App/App/capacitor.config.json
+
+# IDE state (Android Studio)
+android/.idea/
