@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.5.0](https://github.com/okkes/munnimok/compare/v1.4.0...v1.5.0) (2026-07-14)
+
+
+### ✨ Features
+
+* **accounts:** show when each financial account last synced ([a82f0d7](https://github.com/okkes/munnimok/commit/a82f0d7a5ee8d86f88c46c716a7a15d5f079f8d7))
+* **desktop:** redesign D1-D5 — density, focus review, home columns, keys ([28255af](https://github.com/okkes/munnimok/commit/28255af192f53849728fcc38cfd3782e52dd239f))
+* **help:** extend 1.5.0 notes (desktop overhaul, leave space, sync times); refresh gallery + guide ([c3bb580](https://github.com/okkes/munnimok/commit/c3bb58084f5aa3329834bb52ef03632093e4e68b))
+* **help:** reimbursements line in the 1.5.0 notes ([9f6ec11](https://github.com/okkes/munnimok/commit/9f6ec119d94a2ff56ac985fa48f360c577bca3d9))
+* **native:** master-only app builds; no PWA install nudge in the shell ([c9730c6](https://github.com/okkes/munnimok/commit/c9730c6e634f883bd7fe9cc56c04637cc29c9566))
+* **native:** signed release pipeline — keystore, versioned bundle, Play internal upload ([5b2176a](https://github.com/okkes/munnimok/commit/5b2176a333d49377fc1972f318a18bc24f3ff812))
+* **spaces:** leave a shared space from space settings ([5023103](https://github.com/okkes/munnimok/commit/5023103eb7fd021eb31993084b84b3a3f1b07546))
+* **tx:** reimbursements work from the income side; credits net out; settled self-files ([c30cffe](https://github.com/okkes/munnimok/commit/c30cffedc168db74218cbdecf3d25d49313522e2))
+
+
+### 🐞 Bug Fixes
+
+* **ci:** gradlew executable bit + chmod guard in the android workflow ([ed14792](https://github.com/okkes/munnimok/commit/ed1479209949f0a6b5e93211f22acabd8ced253d))
+* **desktop:** center the review deck; level the Home column tops ([36a6755](https://github.com/okkes/munnimok/commit/36a6755c4bf26a5883c698c9e732a982c0a90cf2))
+* **native:** capacitor config as JSON — the CLI's TS parser dies under TypeScript 7 ([fabb618](https://github.com/okkes/munnimok/commit/fabb618553099e01223416e03b88c714b8746877))
+
 ## [1.4.0](https://github.com/okkes/munnimok/compare/v1.3.1...v1.4.0) (2026-07-14)
 
 
