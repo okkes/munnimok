@@ -207,7 +207,9 @@ export function HomeScreen() {
             </button>
           </div>
 
-          <div className="min-w-0 lg:col-start-2 lg:row-start-1">
+          {/* first nudge loses its own top margin at lg so both column
+              tops sit level with the balance card */}
+          <div className="min-w-0 lg:col-start-2 lg:row-start-1 lg:[&>*:first-child]:mt-0">
             <WhatsNewCard />
             <InstallHint />
             <IntroCard tourId="home" />

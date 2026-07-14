@@ -342,10 +342,11 @@ export function ReviewScreen() {
         )}
         {tx && (
           /* D3 focus layout: at lg the deck becomes a fixed 520px column,
-             vertically centered and LEFT of center — the pickers slide in
-             as right-hand panels, so card and editor are visible together.
-             Skip/Confirm attach under the card instead of the far bottom. */
-          <div className="flex min-h-0 flex-1 flex-col lg:my-auto lg:w-[520px] lg:flex-none lg:pb-10">
+             centered both ways (user: left-anchored read as broken); the
+             pickers slide in as dimmed right-hand panels, so the card
+             stays visible while editing. Skip/Confirm attach under the
+             card instead of the far bottom. */
+          <div className="flex min-h-0 flex-1 flex-col lg:mx-auto lg:my-auto lg:w-[520px] lg:flex-none lg:pb-10">
             <div className="mt-4 rounded-card border border-line bg-surface px-6 py-7 text-center" data-testid="review-card">
               <div className="text-[12px] text-ink-4">
                 {new Intl.DateTimeFormat(LOCALES[lang], { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(tx.date))}
