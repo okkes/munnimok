@@ -1269,6 +1269,8 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'shop.jumboUser': 'E-posta adresi',
   'shop.jumboPass': 'Şifre',
   'shop.jumboNote': 'Jumbo hesabınla giriş yap. Bilgiler doğrudan Jumbo\'ya gider ve asla saklanmaz — munni yalnızca oturum tokenını bu cihazda tutar.',
+  'shop.jumboBlocked': 'Jumbo\'nun sunucuları şu anda kendi uygulaması dışından gelen bağlantıları engelliyor, bu yüzden munni giriş yapamıyor. Jumbo fişlerini yine de fotoğrafla ekleyebilirsin.',
+  'shop.jumboLoginFailed': 'Giriş yapılamadı — e-posta adresini ve şifreni kontrol edip tekrar dene.',
   'shop.connectedShort': 'Bağlı · {date} eşitlendi',
   'shop.sharedSpaces': 'Kullanılabildiği alanlar',
   'shop.sharedSpacesSub': 'Seçili bir alanın üyeleri bu mağazanın fişlerini görebilir ve arayabilir. Seçilmeyen alanlar onları hiç görmez.',

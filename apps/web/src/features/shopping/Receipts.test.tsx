@@ -179,6 +179,29 @@ describe('Receipts S1 (demo identity)', () => {
     db.close();
   }, 15_000);
 
+  it('a tarpitted Jumbo login explains the bot-protection block honestly', async () => {
+    renderAppAsUser('/shopping', {
+      api: {
+        // the api surfaces Akamai hangs as 504 (never a raw 500)
+        'POST /shop/proxy/jumbo': () => new Response('', { status: 504 }),
+      },
+    });
+    await screen.findByTestId('screen-shopping');
+
+    fireEvent.click(await screen.findByTestId('shop-jumbo-connect'));
+    fireEvent.change(await screen.findByTestId('shop-jumbo-user'), { target: { value: 'okkes@example.com' } });
+    fireEvent.change(screen.getByTestId('shop-jumbo-pass'), { target: { value: 'geheim' } });
+    fireEvent.click(screen.getByTestId('shop-jumbo-submit'));
+
+    const failed = await screen.findByTestId('shop-jumbo-failed');
+    expect(failed.textContent).toContain('block connections');
+    // nothing was stored
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB(USER_TEST_DB);
+    expect(await db.storeConnections.get('jumbo')).toBeUndefined();
+    db.close();
+  }, 15_000);
+
   it('settings reaches receipts; the stores door reaches connections', async () => {
     renderApp('/settings');
     await screen.findByTestId('screen-settings');

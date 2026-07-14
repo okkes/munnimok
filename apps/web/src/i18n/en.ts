@@ -1267,6 +1267,8 @@ export const en = {
   'shop.jumboUser': 'Email address',
   'shop.jumboPass': 'Password',
   'shop.jumboNote': 'Log in with your Jumbo account. The credentials go straight to Jumbo and are never stored — munni only keeps the session token on this device.',
+  'shop.jumboBlocked': 'Jumbo’s servers currently block connections from outside their own app, so munni can’t sign in. You can still add Jumbo receipts by photo.',
+  'shop.jumboLoginFailed': 'Signing in didn’t work — check your email address and password, then try again.',
   'shop.connectedShort': 'Connected · synced {date}',
   'shop.sharedSpaces': 'Available in spaces',
   'shop.sharedSpacesSub': 'Members of a selected space can see and search this store’s receipts. Unselected spaces never see them.',

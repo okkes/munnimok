@@ -1269,6 +1269,8 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'shop.jumboUser': 'E-mailadres',
   'shop.jumboPass': 'Wachtwoord',
   'shop.jumboNote': 'Log in met je Jumbo-account. De gegevens gaan rechtstreeks naar Jumbo en worden nooit opgeslagen — munni bewaart alleen het sessietoken op dit apparaat.',
+  'shop.jumboBlocked': 'De servers van Jumbo blokkeren momenteel verbindingen van buiten hun eigen app, dus munni kan niet inloggen. Je kunt Jumbo-bonnetjes wel per foto toevoegen.',
+  'shop.jumboLoginFailed': 'Inloggen is niet gelukt — controleer je e-mailadres en wachtwoord en probeer het opnieuw.',
   'shop.connectedShort': 'Gekoppeld · gesynct {date}',
   'shop.sharedSpaces': 'Beschikbaar in spaces',
   'shop.sharedSpacesSub': 'Leden van een geselecteerde space kunnen de bonnetjes van deze winkel zien en doorzoeken. Niet-geselecteerde spaces zien ze nooit.',

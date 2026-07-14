@@ -50,6 +50,13 @@ public static class StoreProxyEndpoints
             {
                 return Results.StatusCode(StatusCodes.Status502BadGateway);
             }
+            // Akamai-style bot protection (Jumbo) tarpits foreign clients:
+            // the connection hangs until our client timeout. Surface it as
+            // a gateway timeout instead of an unhandled 500.
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                return Results.StatusCode(StatusCodes.Status504GatewayTimeout);
+            }
         }).RequireAuthorization();
     }
 
