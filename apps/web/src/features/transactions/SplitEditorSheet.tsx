@@ -31,8 +31,27 @@ const parsePct = (text: string): number => {
 };
 
 /** Editor partitioning a transaction across categories — in euros (must
- *  sum exactly) or percentages (must reach 100, scales to any amount). */
-export function SplitEditorSheet({ open, onOpenChange, tx }: Readonly<{ open: boolean; onOpenChange: (open: boolean) => void; tx: SpaceTx }>) {
+ *  sum exactly) or percentages (must reach 100, scales to any amount).
+ *  Controlled mode (review draft): `value`+`onApply` make the sheet
+ *  report the partition instead of writing it. */
+export function SplitEditorSheet({
+  open,
+  onOpenChange,
+  tx,
+  value,
+  txType,
+  onApply,
+}: Readonly<{
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  tx: SpaceTx;
+  /** controlled mode: the draft's splits instead of the tx's */
+  value?: TxSplit[];
+  /** controlled mode: the draft's type gates the per-slice category picker */
+  txType?: SpaceTx['txType'];
+  /** controlled mode: null = clear the split */
+  onApply?: (splits: TxSplit[] | null) => void;
+}>) {
   const { t, lang } = useLang();
   const transform = useTxTransform();
   const cats = useCategories();
@@ -43,17 +62,21 @@ export function SplitEditorSheet({ open, onOpenChange, tx }: Readonly<{ open: bo
   // (user request); blurring an untouched empty field restores the value
   const [focusStash, setFocusStash] = useState<{ index: number; amount: string } | null>(null);
 
+  // controlled mode edits the draft's splits; write-through edits the tx's
+  const source = onApply ? value : tx.splits;
   useEffect(() => {
     if (!open) return;
-    if (tx.splits?.length) {
-      const pctMode = splitsArePct(tx.splits);
+    if (source?.length) {
+      const pctMode = splitsArePct(source);
       setMode(pctMode ? 'pct' : 'amount');
-      setRows(tx.splits.map((s) => newRow(s.catId, pctMode ? toPctText(s.pct!) : toText(s.amountCents))));
+      setRows(source.map((s) => newRow(s.catId, pctMode ? toPctText(s.pct!) : toText(s.amountCents))));
     } else {
       setMode('amount');
       // start from the current category + an empty second row
       setRows([newRow(tx.catId ?? UNCATEGORIZED_ID, toText(Math.abs(tx.amountCents))), newRow(UNCATEGORIZED_ID, '0,00')]);
     }
+    // deliberately only on open: the sheet owns its rows while open
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, tx]);
 
   const splits: TxSplit[] =
@@ -87,18 +110,26 @@ export function SplitEditorSheet({ open, onOpenChange, tx }: Readonly<{ open: bo
     // needsReview is NOT touched: saving a split mid-review must keep the
     // card on screen until the user confirms (user request)
     const stored = mode === 'pct' ? resolveSplitsFor(tx.amountCents, splits) : splits;
-    void transform(tx, {
-      splits: stored,
-      catId: primaryCatId(stored),
-    });
+    if (onApply) {
+      onApply(stored);
+    } else {
+      void transform(tx, {
+        splits: stored,
+        catId: primaryCatId(stored),
+      });
+    }
     onOpenChange(false);
   };
 
   const clearSplit = () => {
-    void transform(tx, {
-      splits: null as never, // explicit null clears the field
-      catId: primaryCatId(splits) ?? tx.catId,
-    });
+    if (onApply) {
+      onApply(null);
+    } else {
+      void transform(tx, {
+        splits: null as never, // explicit null clears the field
+        catId: primaryCatId(splits) ?? tx.catId,
+      });
+    }
     onOpenChange(false);
   };
 
@@ -199,7 +230,7 @@ export function SplitEditorSheet({ open, onOpenChange, tx }: Readonly<{ open: bo
           <Button data-testid="split-save" onClick={save} disabled={!!error}>
             {t('action.save')}
           </Button>
-          {!!tx.splits?.length && (
+          {!!source?.length && (
             <Button variant="outline" data-testid="split-clear" onClick={clearSplit}>
               {t('split.clear')}
             </Button>
@@ -212,7 +243,7 @@ export function SplitEditorSheet({ open, onOpenChange, tx }: Readonly<{ open: bo
           if (!next) setPickerFor(null);
         }}
         direction={tx.amountCents < 0 ? 'debit' : 'credit'}
-        txType={tx.txType}
+        txType={txType ?? tx.txType}
         selectedId={pickerFor === null ? undefined : rows[pickerFor]?.catId}
         onPick={(catId) => {
           if (pickerFor !== null) setRows((r) => r.map((x, j) => (j === pickerFor ? { ...x, catId } : x)));

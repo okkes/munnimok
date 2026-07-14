@@ -5,8 +5,9 @@ import type { SpaceTx } from '@/application/transactions';
 import { buildSpaceMerchantMemory } from '@/application/prediction';
 import { useRecurringOps, useRecurrings } from '@/application/recurring';
 import { directionOfTx } from '@/domain/categoryRules';
-import { UNCATEGORIZED_ID } from '@/domain/categories';
 import { merchantKey } from '@/domain/merchantKey';
+import { draftReady, initDraft, withCategory, withLinkedAccount, withSplits, withType } from '@/domain/reviewDraft';
+import type { ReviewDraft } from '@/domain/reviewDraft';
 import { resolveSplitsFor, splitsArePct } from '@/domain/splits';
 import { predictTx } from '@/domain/predictCategory';
 import { recurringAmountMatches } from '@/domain/recurring';
@@ -43,28 +44,41 @@ function progressState(initial: number | null, queueLen: number | undefined, ski
   };
 }
 
-/** one confirm: the card itself (+ optional recurring link) and its bulk selection */
+/** one confirm: the whole DRAFT lands in one write (+ the bulk selection) */
 async function writeConfirmation(args: {
   tx: SpaceTx;
-  catId: string;
-  txType: SpaceTx['txType'];
+  draft: ReviewDraft;
   recurringId: string | undefined;
   bulk: SpaceTx[];
   transform: (tx: SpaceTx, fields: Parameters<ReturnType<typeof useTxTransform>>[1]) => Promise<void>;
 }): Promise<void> {
+  const { draft } = args;
+  // draft-cleared fields on a tx that HAD them need an explicit null
+  const splitsField = draft.splits?.length
+    ? { splits: draft.splits }
+    : args.tx.splits?.length
+      ? { splits: null as never }
+      : {};
+  const linkField = draft.linkedAccountId
+    ? { linkedAccountId: draft.linkedAccountId }
+    : args.tx.linkedAccountId
+      ? { linkedAccountId: null as never }
+      : {};
   await args.transform(args.tx, {
-    catId: args.catId,
-    txType: args.txType,
+    catId: draft.catId,
+    txType: draft.txType,
     needsReview: 0,
+    ...splitsField,
+    ...linkField,
     ...(args.recurringId ? { recurringId: args.recurringId } : {}),
   });
   for (const item of args.bulk) {
-    // the card's split shape travels with the bulk: absolute splits fit
+    // the draft's split shape travels with the bulk: absolute splits fit
     // exact twins by the similar-rule; pct splits rescale per item
-    const splits = args.tx.splits?.length ? resolveSplitsFor(item.amountCents, args.tx.splits) : undefined;
+    const splits = draft.splits?.length ? resolveSplitsFor(item.amountCents, draft.splits) : undefined;
     await args.transform(item, {
-      catId: args.catId,
-      txType: args.txType,
+      catId: draft.catId,
+      txType: draft.txType,
       needsReview: 0,
       ...(splits ? { splits } : {}),
     });
@@ -172,7 +186,9 @@ export function ReviewScreen() {
   const [typeOpen, setTypeOpen] = useState(false);
   const [splitOpen, setSplitOpen] = useState(false);
   const [skipped, setSkipped] = useState<ReadonlySet<string>>(new Set());
-  const [stagedCat, setStagedCat] = useState<string | null>(null);
+  // the card's STAGED decision (review redesign): user edits live here,
+  // only Confirm writes; null = untouched, follow tx + prediction live
+  const [stagedDraft, setStagedDraft] = useState<ReviewDraft | null>(null);
   const [descExpanded, setDescExpanded] = useState(false);
   const [bulkSelected, setBulkSelected] = useState<ReadonlySet<string>>(new Set());
   const [linkRecurring, setLinkRecurring] = useState(true);
@@ -197,9 +213,9 @@ export function ReviewScreen() {
     [tx, memory],
   );
 
-  const effectiveCatId =
-    stagedCat ?? (tx?.catId && tx.catId !== UNCATEGORIZED_ID ? tx.catId : prediction?.catId);
-  const cat = cats.byId(effectiveCatId);
+  // untouched cards follow the tx + the (async) prediction live
+  const draft = stagedDraft ?? (tx ? initDraft(tx, prediction?.catId, cats) : null);
+  const cat = cats.byId(draft?.catId);
   const parentColor = cat.parentId ? cats.byId(cat.parentId).color : cat.color;
 
   const recMatch = useMemo(
@@ -219,21 +235,22 @@ export function ReviewScreen() {
   // bulk rule: plain confirm reaches every same-merchant item; absolute
   // splits only fit exact twins (same amount), percentage splits scale
   // to any amount so the whole merchant group stays eligible
+  const draftSplits = draft?.splits;
   const similar = useMemo(() => {
     if (!tx || !queue) return [] as SpaceTx[];
     const key = merchantKey(tx.merchant);
-    const mustMatchAmount = !!tx.splits?.length && !splitsArePct(tx.splits);
+    const mustMatchAmount = !!draftSplits?.length && !splitsArePct(draftSplits);
     return queue.filter(
       (item) =>
         item.id !== tx.id &&
         merchantKey(item.merchant) === key &&
         (!mustMatchAmount || item.amountCents === tx.amountCents),
     );
-  }, [tx, queue]);
+  }, [tx, queue, draftSplits]);
 
-  // fresh card: reset staged choices and offer the link
+  // fresh card: reset the staged draft and offer the link
   useEffect(() => {
-    setStagedCat(null);
+    setStagedDraft(null);
     setLinkRecurring(true);
     setDescExpanded(false);
   }, [tx?.id]);
@@ -244,16 +261,15 @@ export function ReviewScreen() {
     setBulkSelected(new Set(similar.map((s) => s.id)));
   }, [similar]);
 
-  const showReason = !!tx && !stagedCat && prediction?.catId === effectiveCatId;
+  const showReason = !!tx && !stagedDraft && prediction?.catId === draft?.catId;
   const reasonLine =
     showReason && prediction ? t(REASON_KEYS[prediction.source], { n: prediction.evidence ?? 1 }) : null;
 
   const confirm = async () => {
-    if (!tx || !effectiveCatId) return;
+    if (!tx || !draft || !draftReady(draft)) return;
     await writeConfirmation({
       tx,
-      catId: effectiveCatId,
-      txType: cats.byId(effectiveCatId).txTypes[0] ?? tx.txType,
+      draft,
       recurringId: recMatch && linkRecurring ? recMatch.id : undefined,
       bulk: similar.filter((s) => bulkSelected.has(s.id)),
       transform,
@@ -332,7 +348,7 @@ export function ReviewScreen() {
                 className="m-tap mt-5 inline-flex items-center gap-2 rounded-full border border-line bg-bg px-4 py-2 text-[14px] font-medium text-ink"
               >
                 <Icon name={cat.icon} size={18} color={parentColor ?? 'var(--m-ink-3)'} />
-                {effectiveCatId ? catName(cat, t) : t('review.pickPrompt')}
+                {draft?.catId ? catName(cat, t) : t('review.pickPrompt')}
                 <Icon name="pencil-outline" size={14} color="var(--m-ink-4)" />
               </button>
               {reasonLine && (
@@ -342,9 +358,9 @@ export function ReviewScreen() {
                 </div>
               )}
 
-              {!!tx.splits?.length && (
+              {!!draft?.splits?.length && (
                 <div className="mx-auto mt-3 max-w-[280px] text-left" data-testid="review-splits">
-                  {tx.splits.map((s) => {
+                  {draft.splits.map((s) => {
                     const sc = cats.byId(s.catId);
                     return (
                       <div key={s.catId} className="flex items-center gap-2 py-0.5 text-[12px] text-ink-2">
@@ -376,7 +392,9 @@ export function ReviewScreen() {
                 </button>
                 <span className="text-line">·</span>
                 <button data-testid="review-act-type" onClick={() => setTypeOpen(true)} className="m-tap border-none bg-transparent">
+                  {/* the staged type is part of the decision — show it */}
                   {t('tx.type')}
+                  {draft ? ` · ${t(`tx.type.${draft.txType}`)}` : ''}
                 </button>
               </div>
             </div>
@@ -396,11 +414,11 @@ export function ReviewScreen() {
                 variant="primary"
                 className="min-w-0 flex-1"
                 data-testid="review-confirm-btn"
-                disabled={!effectiveCatId}
+                disabled={!draft || !draftReady(draft)}
                 onClick={() => void confirm()}
               >
                 <span className="truncate">
-                  {effectiveCatId ? t('review.confirmAs', { name: catName(cat, t) }) : t('review.confirm')}
+                  {draft?.catId ? t('review.confirmAs', { name: catName(cat, t) }) : t('review.confirm')}
                 </span>
               </Button>
             </div>
@@ -411,16 +429,34 @@ export function ReviewScreen() {
       <CategoryPicker
         open={pickerOpen}
         onOpenChange={setPickerOpen}
-        selectedId={effectiveCatId}
+        selectedId={draft?.catId}
         onPick={(catId) => {
-          setStagedCat(catId);
+          if (draft) setStagedDraft(withCategory(draft, catId, cats));
           setPickerOpen(false);
         }}
         direction={tx && directionOfTx(tx)}
-        txType={tx?.txType}
+        txType={draft?.txType}
       />
-      {tx && <TxTypeSheet open={typeOpen} onOpenChange={setTypeOpen} tx={tx} />}
-      {tx && <SplitEditorSheet open={splitOpen} onOpenChange={setSplitOpen} tx={tx} />}
+      {tx && draft && (
+        <TxTypeSheet
+          open={typeOpen}
+          onOpenChange={setTypeOpen}
+          tx={tx}
+          value={{ txType: draft.txType, linkedAccountId: draft.linkedAccountId }}
+          onPickType={(nextType) => setStagedDraft(withType(draft, nextType, cats))}
+          onPickLinked={(account) => setStagedDraft(withLinkedAccount(draft, account, cats))}
+        />
+      )}
+      {tx && draft && (
+        <SplitEditorSheet
+          open={splitOpen}
+          onOpenChange={setSplitOpen}
+          tx={tx}
+          value={draft.splits}
+          txType={draft.txType}
+          onApply={(splits) => setStagedDraft(withSplits(draft, splits ?? undefined))}
+        />
+      )}
     </div>
   );
 }
