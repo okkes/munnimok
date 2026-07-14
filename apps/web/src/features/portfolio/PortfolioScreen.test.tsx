@@ -125,20 +125,12 @@ describe('Portfolio (demo identity)', () => {
     expect(screen.getByTestId('pf-day').textContent).toMatch(/\+/);
   }, 20_000);
 
-  it('the home block and the settings row reach the portfolio', async () => {
-    renderApp('/portfolio');
-    await screen.findByTestId('screen-portfolio');
-    await createManualHolding('Garage fund', '50');
-
-    cleanup();
+  it('the tab bar reaches the portfolio (own tab, user ruling)', async () => {
     renderApp('/home');
-    fireEvent.click(await screen.findByTestId('home-portfolio', {}, { timeout: 5000 }));
+    await screen.findByTestId('screen-home');
+    fireEvent.click(screen.getAllByTestId('tab-portfolio')[0]);
     await screen.findByTestId('screen-portfolio');
-
-    cleanup();
-    renderApp('/settings');
-    await screen.findByTestId('screen-settings');
-    fireEvent.click(screen.getByTestId('settings-portfolio-row'));
-    expect(await screen.findByTestId('screen-portfolio')).toBeTruthy();
+    const row = await createManualHolding('Garage fund', '50');
+    expect(row.textContent).toContain('Garage fund');
   }, 15_000);
 });

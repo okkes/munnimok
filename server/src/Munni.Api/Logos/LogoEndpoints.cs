@@ -24,6 +24,12 @@ public static class LogoEndpoints
     {
         var publicToken = config["Logos:PublicToken"];
         var secretKey = config["Logos:SecretKey"];
+
+        // diagnosis endpoint (user request: "is my logo config right?") —
+        // mapped even when unconfigured so the verdict is always reachable
+        app.MapGet("/logos/health", (IHttpClientFactory http, CancellationToken ct) =>
+            LogoHealthAsync(http, secretKey, publicToken, ct)).RequireAuthorization();
+
         if (string.IsNullOrEmpty(secretKey) || string.IsNullOrEmpty(publicToken)) return;
 
         // the two keys are easy to swap: search auth needs the SECRET key
@@ -56,5 +62,28 @@ public static class LogoEndpoints
                 .ToList();
             return Results.Ok(results);
         }).RequireAuthorization();
+    }
+
+    /// <summary>One live canary search + a pk_/sk_ swap check.</summary>
+    private static async Task<IResult> LogoHealthAsync(
+        IHttpClientFactory http, string? secretKey, string? publicToken, CancellationToken ct)
+    {
+        var configured = !string.IsNullOrEmpty(secretKey) && !string.IsNullOrEmpty(publicToken);
+        var secretLooksSwapped = secretKey?.StartsWith("pk_", StringComparison.Ordinal) == true;
+        var publicLooksSwapped = publicToken?.StartsWith("sk_", StringComparison.Ordinal) == true;
+        var search = configured
+            ? await CanarySearchAsync(http, ct)
+            : "unconfigured — set LOGODEV_SECRET_KEY (sk_…) and LOGODEV_PUBLIC_TOKEN (pk_…)";
+        return Results.Ok(new { configured, search, secretLooksSwapped, publicLooksSwapped });
+    }
+
+    private static async Task<string> CanarySearchAsync(IHttpClientFactory http, CancellationToken ct)
+    {
+        using var client = http.CreateClient(HttpClientName);
+        using var response = await client.GetAsync("search?q=netflix", ct);
+        if (response.IsSuccessStatusCode) return "ok";
+        if (response.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+            return "unauthorized — the SECRET key is wrong (or the pk_/sk_ keys are swapped)";
+        return $"upstream error {(int)response.StatusCode}";
     }
 }

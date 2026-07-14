@@ -15,6 +15,7 @@ import { clearSwSession, jwtExpiryMs, mirrorSessionForSw } from '@/lib/swBridge'
 import { getAccessToken, waitForAuthReady } from './authToken';
 import { identityKey, useSession } from './session';
 import type { Identity } from './session';
+import { DEFAULT_HISTORY_MONTHS, isoMonthsAgo } from '@/features/spaces/spaceDefaults';
 
 const ACTIVE_SPACE_KEY = 'activeSpaceId';
 /** id of a personal space this device created during bootstrap (self-heal marker) */
@@ -59,6 +60,7 @@ export async function bootstrapUserSpaces(
       currency: 'EUR',
       periodType: 'month',
       periodDay: 1,
+      historyStartDate: isoMonthsAgo(DEFAULT_HISTORY_MONTHS),
     });
     await db.meta.put({ key: BOOTSTRAP_SPACE_KEY, value: personalId });
     // show the one-time onboarding (this device created the space)
@@ -168,6 +170,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           currency: 'EUR',
           periodType: 'month',
           periodDay: 1,
+          historyStartDate: isoMonthsAgo(DEFAULT_HISTORY_MONTHS),
         });
       }
       if (engine) {

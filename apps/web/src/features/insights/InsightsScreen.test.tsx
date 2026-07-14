@@ -54,12 +54,20 @@ describe('Insights (demo identity)', () => {
     expect(body.textContent).toMatch(/months earlier/);
 
     fireEvent.click(screen.getByTestId('insight-dismiss'));
-    // synced dismissal: gone now, still gone on a fresh mount
+    // synced dismissal: gone now, still gone on a fresh mount. Other
+    // detectors (weekend spending) may legitimately fire depending on how
+    // the demo seed's relative dates land on the calendar — only the
+    // dismissed finding must stay away, not the whole screen.
     await waitFor(() => expect(document.querySelector('[data-testid^="insight-head-debtacc"]')).toBeNull());
     cleanup();
     renderApp('/insights');
     await screen.findByTestId('screen-insights');
-    await screen.findByTestId('insights-empty', {}, { timeout: 5000 });
+    await waitFor(() => {
+      const settled =
+        screen.queryByTestId('insights-empty') ?? document.querySelector('[data-testid^="insight-head-"]');
+      expect(settled).toBeTruthy();
+    }, { timeout: 5000 });
+    expect(document.querySelector('[data-testid^="insight-head-debtacc"]')).toBeNull();
   }, 20_000);
 
   it('the weekly digest notifies once and the marker holds it back after', async () => {
@@ -89,10 +97,16 @@ describe('Insights (demo identity)', () => {
 
     cleanup();
     renderApp('/home');
+    // the TOP insight may be the calendar-dependent weekend detector
+    // instead of the seeded debt — the block just has to surface one
     const block = await screen.findByTestId('home-insight', {}, { timeout: 5000 });
-    expect(block.textContent).toContain('Student loan');
+    expect(block.textContent?.length).toBeGreaterThan(0);
     fireEvent.click(block);
     await screen.findByTestId('screen-insights');
+    // …and the debt finding is on the full screen either way
+    await waitFor(() => expect(document.querySelector('[data-testid^="insight-head-debtacc"]')).toBeTruthy(), {
+      timeout: 5000,
+    });
 
     cleanup();
     renderApp('/settings');

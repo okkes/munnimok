@@ -65,7 +65,9 @@ describe('app screens (demo identity)', () => {
     renderApp('/settings');
     await screen.findByTestId('screen-settings');
     expect(screen.queryByTestId('tab-spaces')).toBeNull();
-    fireEvent.click(screen.getByTestId('settings-spaces-row'));
+    // app-wide rows live behind the single Global settings door now
+    fireEvent.click(screen.getByTestId('settings-global-row'));
+    fireEvent.click(await screen.findByTestId('settings-spaces-row'));
     expect(await screen.findByTestId('screen-spaces')).toBeTruthy();
   });
 
@@ -82,13 +84,13 @@ describe('app screens (demo identity)', () => {
     await waitFor(() => expect(screen.queryByText('Transactions', { selector: '.m-cap' })).toBeNull());
     fireEvent.click(screen.getByTestId('home-block-toggle-transactions'));
 
-    // move review above overview: the saved order round-trips
-    fireEvent.click(screen.getByTestId('home-block-up-review'));
+    // move overview above review (the new default leader): round-trips
+    fireEvent.click(screen.getByTestId('home-block-up-overview'));
     await waitFor(async () => {
       const db = await import('@/db/schema').then((m) => new m.MunniDB('munni_demo'));
       const space = await db.spaces.get('demo_space');
       db.close();
-      expect(space?.homeBlocks?.[0]?.id).toBe('review');
+      expect(space?.homeBlocks?.[0]?.id).toBe('overview');
     });
   });
 

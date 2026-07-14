@@ -31,11 +31,15 @@ public sealed record GcAmount(
 public sealed record GcAccountDetails(
     [property: JsonPropertyName("iban")] string? Iban,
     [property: JsonPropertyName("name")] string? Name,
-    [property: JsonPropertyName("currency")] string? Currency);
+    [property: JsonPropertyName("currency")] string? Currency,
+    [property: JsonPropertyName("ownerName")] string? OwnerName = null);
 
 public sealed record GcBalance(
     [property: JsonPropertyName("balanceAmount")] GcAmount BalanceAmount,
     [property: JsonPropertyName("balanceType")] string BalanceType);
+
+public sealed record GcAccountReference(
+    [property: JsonPropertyName("iban")] string? Iban);
 
 public sealed record GcTransaction(
     [property: JsonPropertyName("transactionId")] string? TransactionId,
@@ -45,7 +49,9 @@ public sealed record GcTransaction(
     [property: JsonPropertyName("transactionAmount")] GcAmount TransactionAmount,
     [property: JsonPropertyName("creditorName")] string? CreditorName,
     [property: JsonPropertyName("debtorName")] string? DebtorName,
-    [property: JsonPropertyName("remittanceInformationUnstructured")] string? RemittanceInformationUnstructured);
+    [property: JsonPropertyName("remittanceInformationUnstructured")] string? RemittanceInformationUnstructured,
+    [property: JsonPropertyName("creditorAccount")] GcAccountReference? CreditorAccount = null,
+    [property: JsonPropertyName("debtorAccount")] GcAccountReference? DebtorAccount = null);
 
 public sealed record GcRequisitionListItem(
     [property: JsonPropertyName("id")] string Id,
@@ -54,6 +60,14 @@ public sealed record GcRequisitionListItem(
     [property: JsonPropertyName("created")] DateTimeOffset? Created,
     [property: JsonPropertyName("reference")] string? Reference,
     [property: JsonPropertyName("accounts")] List<string> Accounts);
+
+/// <summary>the per-account daily success budget GoCardless reports in rate-limit headers</summary>
+public sealed record GcRateInfo(int? Limit, int? Remaining, int? ResetSeconds);
+
+public sealed record GcTransactionsPage(
+    IReadOnlyList<GcTransaction> Booked,
+    IReadOnlyList<GcTransaction> Pending,
+    GcRateInfo? Rate);
 
 public interface IGoCardlessApi
 {
@@ -64,11 +78,13 @@ public interface IGoCardlessApi
     Task DeleteRequisitionAsync(string requisitionId, CancellationToken ct = default);
     Task<GcAccountDetails> GetAccountDetailsAsync(string gcAccountId, CancellationToken ct = default);
     Task<IReadOnlyList<GcBalance>> GetBalancesAsync(string gcAccountId, CancellationToken ct = default);
-    Task<IReadOnlyList<GcTransaction>> GetTransactionsAsync(string gcAccountId, DateOnly? from, CancellationToken ct = default);
+    Task<GcTransactionsPage> GetTransactionsAsync(string gcAccountId, DateOnly? from, CancellationToken ct = default);
 }
 
 public sealed class GoCardlessApi(HttpClient http, IConfiguration config) : IGoCardlessApi
 {
+    private const string BearerScheme = "Bearer";
+
     private string? _accessToken;
     private DateTimeOffset _accessExpires = DateTimeOffset.MinValue;
     private readonly SemaphoreSlim _tokenLock = new(1, 1);
@@ -104,7 +120,7 @@ public sealed class GoCardlessApi(HttpClient http, IConfiguration config) : IGoC
     private async Task<T> GetAsync<T>(string path, CancellationToken ct)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, path);
-        request.Headers.Authorization = new("Bearer", await GetTokenAsync(ct));
+        request.Headers.Authorization = new(BearerScheme, await GetTokenAsync(ct));
         var response = await http.SendAsync(request, ct);
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<T>(ct))!;
@@ -119,7 +135,7 @@ public sealed class GoCardlessApi(HttpClient http, IConfiguration config) : IGoC
         {
             Content = JsonContent.Create(new { redirect, institution_id = institutionId, reference }),
         };
-        request.Headers.Authorization = new("Bearer", await GetTokenAsync(ct));
+        request.Headers.Authorization = new(BearerScheme, await GetTokenAsync(ct));
         var response = await http.SendAsync(request, ct);
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<GcRequisitionCreated>(ct))!;
@@ -136,7 +152,7 @@ public sealed class GoCardlessApi(HttpClient http, IConfiguration config) : IGoC
     public async Task DeleteRequisitionAsync(string requisitionId, CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Delete, $"requisitions/{requisitionId}/");
-        request.Headers.Authorization = new("Bearer", await GetTokenAsync(ct));
+        request.Headers.Authorization = new(BearerScheme, await GetTokenAsync(ct));
         var response = await http.SendAsync(request, ct);
         response.EnsureSuccessStatusCode();
     }
@@ -151,12 +167,38 @@ public sealed class GoCardlessApi(HttpClient http, IConfiguration config) : IGoC
     public async Task<IReadOnlyList<GcBalance>> GetBalancesAsync(string gcAccountId, CancellationToken ct = default) =>
         (await GetAsync<BalancesEnvelope>($"accounts/{gcAccountId}/balances/", ct)).Balances;
 
-    private sealed record TxList([property: JsonPropertyName("booked")] List<GcTransaction> Booked);
+    private sealed record TxList(
+        [property: JsonPropertyName("booked")] List<GcTransaction> Booked,
+        [property: JsonPropertyName("pending")] List<GcTransaction>? Pending);
     private sealed record TxEnvelope([property: JsonPropertyName("transactions")] TxList Transactions);
 
-    public async Task<IReadOnlyList<GcTransaction>> GetTransactionsAsync(string gcAccountId, DateOnly? from, CancellationToken ct = default)
+    public async Task<GcTransactionsPage> GetTransactionsAsync(string gcAccountId, DateOnly? from, CancellationToken ct = default)
     {
         var query = from is null ? "" : $"?date_from={from:yyyy-MM-dd}";
-        return (await GetAsync<TxEnvelope>($"accounts/{gcAccountId}/transactions/{query}", ct)).Transactions.Booked;
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"accounts/{gcAccountId}/transactions/{query}");
+        request.Headers.Authorization = new(BearerScheme, await GetTokenAsync(ct));
+        var response = await http.SendAsync(request, ct);
+        response.EnsureSuccessStatusCode();
+        var envelope = (await response.Content.ReadFromJsonAsync<TxEnvelope>(ct))!;
+        return new GcTransactionsPage(envelope.Transactions.Booked, envelope.Transactions.Pending ?? [], ParseRate(response.Headers));
+    }
+
+    // GoCardless announces the per-account daily budget in response
+    // headers (bankaccountdata.zendesk.com rate-limit article); the doc
+    // spells the django META names, so both spellings are tried
+    private static GcRateInfo? ParseRate(System.Net.Http.Headers.HttpResponseHeaders headers)
+    {
+        int? Read(params string[] names)
+        {
+            foreach (var name in names)
+            {
+                if (headers.TryGetValues(name, out var values) && int.TryParse(values.FirstOrDefault(), out var n)) return n;
+            }
+            return null;
+        }
+        var limit = Read("x-ratelimit-account-success-limit", "http_x_ratelimit_account_success_limit");
+        var remaining = Read("x-ratelimit-account-success-remaining", "http_x_ratelimit_account_success_remaining");
+        var reset = Read("x-ratelimit-account-success-reset", "http_x_ratelimit_account_success_reset");
+        return limit is null && remaining is null && reset is null ? null : new GcRateInfo(limit, remaining, reset);
     }
 }

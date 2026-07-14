@@ -2,6 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useHelp } from './HelpContext';
+import { useTipsDisabled } from './tipsPref';
 import type { TourId } from './tours';
 import { Icon } from '@/ui/Icon';
 
@@ -20,9 +21,10 @@ export function IntroCard({ tourId, idle = true }: Readonly<{ tourId: TourId; id
   const dismissed = useLiveQuery(async () => (await db.meta.get(`introDismissed_${tourId}`)) ?? null, [db, tourId]);
   const seen = useLiveQuery(async () => (await db.meta.get(`tutorialSeen_${tourId}`)) ?? null, [db, tourId]);
 
+  const tipsOff = useTipsDisabled();
   const loaded = dismissed !== undefined && seen !== undefined;
   const hidden = Boolean(dismissed?.value) || Boolean(seen?.value);
-  if (!idle || !loaded || hidden) return null;
+  if (tipsOff || !idle || !loaded || hidden) return null;
 
   return (
     <div

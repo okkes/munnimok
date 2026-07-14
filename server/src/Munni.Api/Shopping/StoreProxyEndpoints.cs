@@ -26,7 +26,7 @@ public static class StoreProxyEndpoints
 
     public static void MapStoreProxy(this IEndpointRouteBuilder app)
     {
-        app.MapPost("/shop/proxy/{store}", async (string store, ProxyRequest request, IHttpClientFactory http, CancellationToken ct) =>
+        app.MapPost("/shop/proxy/{store}", async (string store, ProxyRequest request, HttpContext httpContext, IHttpClientFactory http, CancellationToken ct) =>
         {
             if (!Upstreams.TryGetValue(store, out var upstream)) return Results.NotFound();
             if (string.IsNullOrEmpty(request.Path) || !request.Path.StartsWith('/') || request.Path.Contains("..", StringComparison.Ordinal))
@@ -35,11 +35,15 @@ public static class StoreProxyEndpoints
             if (method is not ("GET" or "POST")) return Results.BadRequest();
 
             using var client = http.CreateClient(HttpClientName);
-            using var upstreamRequest = BuildUpstreamRequest(request, method, upstream);
+            using var upstreamRequest = BuildUpstreamRequest(request, method, upstream, store);
             try
             {
                 using var response = await client.SendAsync(upstreamRequest, ct);
                 var payload = await response.Content.ReadAsStringAsync(ct);
+                // Jumbo's login answers with the session token in a header —
+                // relay it (the CORS policy exposes it to the browser)
+                if (response.Headers.TryGetValues("x-jumbo-token", out var jumboTokens))
+                    httpContext.Response.Headers["x-jumbo-token"] = jumboTokens.First();
                 return Results.Text(payload, "application/json", statusCode: (int)response.StatusCode);
             }
             catch (HttpRequestException)
@@ -49,11 +53,17 @@ public static class StoreProxyEndpoints
         }).RequireAuthorization();
     }
 
-    private static HttpRequestMessage BuildUpstreamRequest(ProxyRequest request, string method, Uri upstream)
+    private static HttpRequestMessage BuildUpstreamRequest(ProxyRequest request, string method, Uri upstream, string store)
     {
         var upstreamRequest = new HttpRequestMessage(new HttpMethod(method), new Uri(upstream, request.Path));
         if (!string.IsNullOrEmpty(request.Authorization))
+        {
             upstreamRequest.Headers.TryAddWithoutValidation("Authorization", request.Authorization);
+            // Jumbo's mobile API authenticates via its own header
+            if (store == "jumbo")
+                upstreamRequest.Headers.TryAddWithoutValidation("x-jumbo-token",
+                    request.Authorization.Replace("Bearer ", "", StringComparison.Ordinal));
+        }
         // store APIs gate on their mobile app's user agent
         upstreamRequest.Headers.TryAddWithoutValidation("User-Agent", string.IsNullOrEmpty(request.UserAgent) ? "Appie/8.22.3" : request.UserAgent);
         if (request.Body is { } body && method == "POST")

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { renderApp } from '@/test/harness';
 import { DEMO_SPACE_ID } from '@/db/seed';
@@ -63,6 +63,56 @@ describe('TxDetailScreen (demo identity)', () => {
   }, 15_000);
 });
 
+describe('counterparty account number on the detail screen', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase('munni_demo');
+  });
+
+  const seedTx = async (counterIban: string, id: string) => {
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(db, new HlcClock('seed-cp'), { trackOutbox: false });
+    await repo.upsert('transaction', DEMO_SPACE_ID, id, {
+      accountId: 'demo_main',
+      date: '2026-07-01',
+      amountCents: -2500,
+      currency: 'EUR',
+      merchant: 'Counterparty Test',
+      catId: 'groceries',
+      txType: 'expense',
+      needsReview: 0,
+      counterIban,
+    });
+    db.close();
+  };
+
+  it('an unknown counterparty IBAN renders as plain text', async () => {
+    renderApp('/home'); // seed first, then navigate via a fresh render
+    await screen.findByTestId('screen-home');
+    await seedTx('NL99ELDR0000000042', 'tx-cp1');
+    cleanup();
+    renderApp('/transactions/tx-cp1');
+    const row = await screen.findByTestId('tx-detail-counterparty');
+    expect(row.textContent).toContain('NL99ELDR0000000042');
+  }, 15_000);
+
+  it('a counterparty matching an own account becomes a door with account info', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    // demo_save's IBAN, spaced differently — the join normalizes
+    await seedTx('NL00DEMO0000000200', 'tx-cp2');
+    cleanup();
+    renderApp('/transactions/tx-cp2');
+    const row = await screen.findByTestId('tx-detail-counterparty-row');
+    expect(row.textContent).toContain('Demo Savings');
+
+    fireEvent.click(row);
+    const sheet = await screen.findByTestId('counterparty-sheet');
+    expect(sheet.textContent).toContain('NL00 DEMO 0000 0002 00'); // the account's own IBAN
+  }, 15_000);
+});
+
 describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -82,21 +132,33 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     });
   });
 
-  it('linking a savings counter-account derives the type and locks it', async () => {
+  it('linking a savings counter-account sets the type as an editable default', async () => {
     renderApp('/transactions/dm6');
     fireEvent.click(await screen.findByTestId('tx-detail-type-row'));
     fireEvent.click(await screen.findByTestId('txtype-linked-demo_save'));
     await waitFor(() => expect(screen.getByTestId('tx-detail-type-row').textContent).toContain('Saving'));
 
-    // reopen: manual type choice is now locked
+    // reopen: the account only SUGGESTS the type (user revision) — the
+    // manual list stays usable and overriding keeps the link
     fireEvent.click(screen.getByTestId('tx-detail-type-row'));
-    expect(await screen.findByTestId('txtype-locked-note')).toBeTruthy();
-    expect((screen.getByTestId('txtype-expense') as HTMLButtonElement).disabled).toBe(true);
+    expect(await screen.findByTestId('txtype-default-note')).toBeTruthy();
+    expect((screen.getByTestId('txtype-expense') as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByTestId('txtype-transfer'));
+    await waitFor(() => expect(screen.getByTestId('tx-detail-type-row').textContent).toContain('Transfer'));
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const tx = await db.transactions.get('dm6');
+      expect(tx?.txType).toBe('transfer');
+      expect(tx?.linkedAccountId).toBe('demo_save'); // link survived
+    });
+    db.close();
 
-    // unlink restores manual choice
-    fireEvent.click(screen.getByTestId('txtype-linked-none'));
-    await waitFor(() => expect(screen.queryByTestId('txtype-locked-note')).toBeNull());
-  });
+    // unlinking clears the suggestion note
+    fireEvent.click(screen.getByTestId('tx-detail-type-row'));
+    fireEvent.click(await screen.findByTestId('txtype-linked-none'));
+    fireEvent.click(screen.getByTestId('tx-detail-type-row'));
+    await waitFor(() => expect(screen.queryByTestId('txtype-default-note')).toBeNull());
+  }, 15_000);
 });
 
 describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {

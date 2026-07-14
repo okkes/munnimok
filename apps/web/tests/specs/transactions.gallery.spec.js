@@ -119,7 +119,7 @@ for (const V of VARIANTS) {
     await teardown(page, ctx, k('34-tx-reimburse'));
   });
 
-  test(`tx-a8 link counter-account locks type; conflicting category resets [${V.id}]`, async ({ browser }) => {
+  test(`tx-a8 link counter-account suggests type; conflicting category resets [${V.id}]`, async ({ browser }) => {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V, { demo: true });
     await openFirstReviewTx(page); // dm100: hobby expense on demo_main
@@ -130,18 +130,16 @@ for (const V of VARIANTS) {
     await page.waitForTimeout(500);
     await expect(page.locator('[data-testid="tx-detail-type-row"]')).toContainText('Saving');
     await expect(page.locator('[data-testid="tx-detail-category-row"]')).toContainText('Uncategorized');
-    // reopen: manual types disabled + locked note; unlink restores freedom
+    // reopen: the account only SUGGESTS (user revision) — manual types stay
+    // usable and an override keeps the link
     await page.click('[data-testid="tx-detail-type-row"]');
-    await expect(page.locator('[data-testid="txtype-locked-note"]')).toBeVisible();
-    await expect(page.locator('[data-testid="txtype-expense"]')).toBeDisabled();
-    await shot(page, k('35-tx-type-link'));
-    await page.click('[data-testid="txtype-linked-none"]');
-    await page.waitForTimeout(500);
-    await page.click('[data-testid="tx-detail-type-row"]');
+    await expect(page.locator('[data-testid="txtype-default-note"]')).toBeVisible();
     await expect(page.locator('[data-testid="txtype-expense"]')).toBeEnabled();
+    await shot(page, k('35-tx-type-link'));
     await page.click('[data-testid="txtype-expense"]');
     await page.waitForTimeout(500);
     await expect(page.locator('[data-testid="tx-detail-type-row"]')).toContainText('Expense');
+    await expect(page.locator('[data-testid="tx-detail-linked-account"]')).toBeVisible(); // link survived
     await teardown(page, ctx, k('35-tx-type-link'));
   });
 

@@ -106,6 +106,7 @@ async function importEntry(ctx: EntryContext, entry: ParsedStatement['entries'][
     currency: entry.currency,
     merchant: entry.counterpartyName ?? entry.description.slice(0, 40),
     description: entry.description,
+    ...(entry.counterpartyIban ? { counterIban: normalizeIban(entry.counterpartyIban) } : {}),
     ...predictEntry(ctx.memory, entry),
     importRef: entry.ref,
   });
@@ -264,6 +265,7 @@ async function importFeedEntry(
     currency: entry.currency,
     merchant: entry.counterpartyName ?? entry.description.slice(0, 40),
     description: entry.description,
+    ...(entry.counterpartyIban ? { counterIban: normalizeIban(entry.counterpartyIban) } : {}),
     importRef: entry.ref,
   });
 

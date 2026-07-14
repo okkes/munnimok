@@ -12,7 +12,8 @@
     "test": "playwright test",
     "gallery": "playwright test && node tests/generate-gallery.mjs && node tests/generate-failures.mjs",
     "gallery:html": "node tests/generate-gallery.mjs",
-    "failures:html": "node tests/generate-failures.mjs"
+    "failures:html": "node tests/generate-failures.mjs",
+    "guide": "node tests/generate-guide.mjs"
   },
   "dependencies": {
     "@fontsource-variable/comfortaa": "^5.2.8",

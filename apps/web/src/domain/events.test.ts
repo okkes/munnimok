@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AccountRow, DebtRow, GoalRow, TransactionRow } from '@/db/types';
-import { eventCategoryBreakdown, eventPerDayCents, eventSpentCents, suggestableTxs } from './events';
+import { eventCategoryBreakdown, eventPerDayCents, eventSpentCents, eventSubcategoryBreakdown, suggestableTxs } from './events';
 import { goalOverview, goalProgress, paceCentsPerMonth, savingsTotalCents } from './goals';
 import { debtProgress, debtRemainingCents, debtsOverview, projectPayoff } from './debts';
 
@@ -58,6 +58,20 @@ describe('events math', () => {
     ]);
     expect(eventPerDayCents(7000, '2026-07-01', '2026-07-07')).toBe(1000);
     expect(eventPerDayCents(7000)).toBeNull();
+  });
+
+  it('drills a main category into its sub totals (user request)', () => {
+    const txs = [
+      tx({ eventId: 'e1', catId: 'restaurants', amountCents: -3000 }),
+      tx({ eventId: 'e1', catId: 'restaurants', amountCents: -500 }),
+      tx({ eventId: 'e1', catId: 'transport', amountCents: -1000 }),
+    ];
+    expect(eventSubcategoryBreakdown(txs, 'e1', catalog, 'food')).toEqual([
+      { catId: 'restaurants', totalCents: 3500 },
+    ]);
+    expect(eventSubcategoryBreakdown(txs, 'e1', catalog, 'transport')).toEqual([
+      { catId: 'transport', totalCents: 1000 },
+    ]);
   });
 
   it('suggests unattached expenses inside the date range', () => {

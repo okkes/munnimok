@@ -3,7 +3,7 @@ import 'fake-indexeddb/auto';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { CAMT_FIXTURE } from '@/test/camt-fixture';
-import { renderApp } from '@/test/harness';
+import { USER_TEST_DB, renderApp, renderAppAsUser } from '@/test/harness';
 
 describe('AccountsScreen (demo identity)', () => {
   beforeEach(() => {
@@ -55,6 +55,44 @@ describe('AccountsScreen (demo identity)', () => {
     expect(screen.getByTestId('attach-space-demo_space')).toBeTruthy();
     expect(screen.queryByTestId('acctedit-name')).toBeNull(); // not the editor
   });
+
+  it('attach checkboxes update live while the sheet stays open', async () => {
+    // user identity: the toggle writes the accountLink mirror to Dexie —
+    // the checkbox must flip immediately (user bug: it only refreshed
+    // after leaving and re-entering)
+    indexedDB.deleteDatabase(USER_TEST_DB);
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { HlcClock } = await import('@/sync/hlc');
+    const db = new MunniDB(USER_TEST_DB);
+    const repo = new Repo(db, new HlcClock('t'), { trackOutbox: false });
+    await repo.upsert('account', 'feed-1', 'feedacct-1', {
+      name: 'ING Betaal',
+      type: 'checking',
+      source: 'gocardless',
+      currency: 'EUR',
+      balanceCents: 5000,
+      iban: 'NL69INGB0123456789',
+    });
+    db.close();
+
+    renderAppAsUser('/accounts', {
+      spaces: [{ id: 's-user', name: 'Personal' }],
+      api: {
+        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false } }),
+        'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
+        'POST /spaces/s-user/accounts': () => ({}),
+      },
+    });
+
+    fireEvent.click(await screen.findByTestId('account-row-feedacct-1'));
+    const row = await screen.findByTestId('attach-space-s-user');
+    expect(row.querySelector('.mdi-checkbox-blank-outline')).toBeTruthy();
+
+    fireEvent.click(row);
+    // no close/reopen: the live link row flips the checkbox in place
+    await waitFor(() => expect(row.querySelector('.mdi-checkbox-marked')).toBeTruthy(), { timeout: 5000 });
+  }, 15_000);
 
   it('adds a manual cash account through the type grid', async () => {
     renderApp('/accounts');

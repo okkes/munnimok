@@ -264,3 +264,20 @@ locally when you want a quality report:
    (suppress false positives explicitly in each `sonar-project.properties`).
 4. `docker compose -f deploy/docker-compose.sonar.yml down` when done
    (analysis history survives in the named volumes).
+
+## Watch-folder import (manual bank exports)
+
+Some accounts (savings, credit cards) never arrive via PSD2. Drop their
+CAMT.053 exports into the watch folder and the api ingests them as raw
+bank feeds — identical deterministic ids to device imports and
+GoCardless, so every path dedupes against the others.
+
+1. Set `IMPORT_WATCH_OWNER_SUB` (your Logto subject — the feeds' owner)
+   and optionally `IMPORT_WATCH_HOST_DIR` (default `./import-watch`) in
+   the env file; recreate the api container.
+2. Drop `*.xml` files into the folder. Every ~30s the api imports them,
+   moving files to `processed/` (or `failed/` with a warning in the api
+   logs). Re-drops are no-ops.
+3. The account appears under Financial accounts on your devices — attach
+   it to spaces as usual. A personal scraper container can target the
+   same folder; munni itself never holds bank credentials.

@@ -32,7 +32,9 @@ function joinTx(raw: TransactionRow, meta: TxMetaRow | undefined, spaceId: strin
     feedSpaceId,
     catId: meta?.catId ?? defaults.catId,
     txType: meta?.txType ?? defaults.txType,
-    needsReview: meta?.needsReview ?? defaults.needsReview,
+    // reserved (pending) charges are not review material: the bank will
+    // replace them with their booked twin
+    needsReview: raw.pending === 1 ? 0 : (meta?.needsReview ?? defaults.needsReview),
     notes: meta?.notes,
     splits: meta?.splits,
     reimbursements: meta?.reimbursements,

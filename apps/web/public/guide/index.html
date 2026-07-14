@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>munni — user guide</title>
+<style>
+  :root { --bg:#faf7f0; --ink:#1d1d1b; --ink2:#5f5c55; --line:#e6e1d5; --accent:#08372B; --card:#fff; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#191714; --ink:#efece4; --ink2:#a8a49a; --line:#33302a; --accent:#7fbfab; --card:#211f1b; }
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bg); color: var(--ink); font: 15px/1.65 system-ui, sans-serif; }
+  main { max-width: 880px; margin: 0 auto; padding: 32px 20px 80px; }
+  h1 { font-size: 28px; letter-spacing: -.02em; }
+  .sub { color: var(--ink2); margin: 4px 0 20px; }
+  nav { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 28px; }
+  nav a { color: var(--accent); text-decoration: none; font-size: 13px; font-weight: 600;
+          border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; background: var(--card); }
+  section { margin-bottom: 44px; }
+  h2 { font-size: 20px; margin-bottom: 8px; }
+  p { color: var(--ink2); max-width: 62ch; }
+  .tips { margin: 10px 0 0 0; padding: 12px 16px 12px 32px; background: var(--card);
+          border: 1px solid var(--line); border-radius: 12px; color: var(--ink2); font-size: 13.5px; }
+  .shots { display: flex; gap: 12px; overflow-x: auto; padding: 14px 2px 6px; }
+  figure { flex: 0 0 auto; }
+  .shots img { width: 220px; border-radius: 14px; border: 1px solid var(--line); display: block; }
+  footer { color: var(--ink2); font-size: 12px; border-top: 1px solid var(--line); padding-top: 14px; }
+  a.back { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>munni — user guide</h1>
+  <p class="sub">How to use the app, screen by screen. <a class="back" href="../">← back to the app</a></p>
+  <nav><a href="#start">Getting started</a>
+<a href="#home">Home is yours</a>
+<a href="#banks">Connecting your bank</a>
+<a href="#review">Reviewing transactions</a>
+<a href="#transactions">Transaction details</a>
+<a href="#spaces">Spaces &amp; sharing</a>
+<a href="#categories">Categories &amp; budgets</a>
+<a href="#devices">Devices &amp; offline</a></nav>
+  
+  <section id="start">
+    <h2>Getting started</h2>
+    <p>munni is local-first: everything lives on your device and works offline; signing in adds sync between your devices. Try the demo from the login screen — it resets itself on sign-out — or create an offline profile that never touches the network.</p>
+    <ul class="tips"><li>Install munni as an app (Help → Install as app): you get a clean full screen and your data is protected from browser cleanups.</li></ul>
+    <div class="shots"><figure><img src="shots/06-demo-login--en-light-mobile.png" alt="Getting started" loading="lazy"></figure>
+<figure><img src="shots/37-onboarding--en-light-mobile.png" alt="Getting started" loading="lazy"></figure>
+<figure><img src="shots/01-shell-home--en-light-mobile.png" alt="Getting started" loading="lazy"></figure></div>
+  </section>
+
+  <section id="home">
+    <h2>Home is yours</h2>
+    <p>Home is a landing zone of blocks: review queue, this period, new transactions, budgets, upcoming costs and more. Reorder or hide blocks with Customize Home at the bottom. The avatar on the top right switches spaces.</p>
+    <ul class="tips"><li>The balance band folds out to show every account.</li>
+<li>Portfolio has its own tab at the bottom.</li></ul>
+    <div class="shots"><figure><img src="shots/01-shell-home--en-light-mobile.png" alt="Home is yours" loading="lazy"></figure>
+<figure><img src="shots/59-overview-home--en-light-mobile.png" alt="Home is yours" loading="lazy"></figure></div>
+  </section>
+
+  <section id="banks">
+    <h2>Connecting your bank</h2>
+    <p>Settings → Global settings → Financial Accounts. Connect a bank (read-only PSD2 access — munni can never move money), import a CAMT.053 statement for accounts your bank won't share, or add cash/savings accounts manually. Bank data lands once per account and every space you attach it to sees the same facts.</p>
+    <ul class="tips"><li>New transactions arrive automatically several times a day.</li>
+<li>Reserved (not yet booked) card payments show with a badge and disappear when the real booking lands.</li></ul>
+    <div class="shots"><figure><img src="shots/16-accounts-list--en-light-mobile.png" alt="Connecting your bank" loading="lazy"></figure>
+<figure><img src="shots/19-import-preview--en-light-mobile.png" alt="Connecting your bank" loading="lazy"></figure>
+<figure><img src="shots/20-import-run--en-light-mobile.png" alt="Connecting your bank" loading="lazy"></figure></div>
+  </section>
+
+  <section id="review">
+    <h2>Reviewing transactions</h2>
+    <p>The review deck shows one transaction at a time with a suggested category and the reason behind it. Everything you change — category, type, splits — stays a draft until you hit Confirm. "Also apply to similar" catches the rest of the same merchant in one go.</p>
+    <ul class="tips"><li>Tap the description to read the full bank text.</li>
+<li>Skip is honest: it leaves no trace and the card returns later.</li></ul>
+    <div class="shots"><figure><img src="shots/13-review-banner--en-light-mobile.png" alt="Reviewing transactions" loading="lazy"></figure>
+<figure><img src="shots/14-review-flow--en-light-mobile.png" alt="Reviewing transactions" loading="lazy"></figure>
+<figure><img src="shots/15-review-done--en-light-mobile.png" alt="Reviewing transactions" loading="lazy"></figure></div>
+  </section>
+
+  <section id="transactions">
+    <h2>Transaction details</h2>
+    <p>Open any transaction to recategorize, split across categories, link the counter-account (which suggests the type — you can still override it), attach receipts, link recurring costs or events, and record reimbursements that show the net cost.</p>
+    <ul class="tips"><li>Search matches amounts too: typing 10 finds 10.99 and 210.15.</li>
+<li>If the counterparty is one of your own accounts, its row becomes tappable.</li></ul>
+    <div class="shots"><figure><img src="shots/09-tx-detail--en-light-mobile.png" alt="Transaction details" loading="lazy"></figure>
+<figure><img src="shots/36-tx-split--en-light-mobile.png" alt="Transaction details" loading="lazy"></figure>
+<figure><img src="shots/34-tx-reimburse--en-light-mobile.png" alt="Transaction details" loading="lazy"></figure>
+<figure><img src="shots/35-tx-type-link--en-light-mobile.png" alt="Transaction details" loading="lazy"></figure></div>
+  </section>
+
+  <section id="spaces">
+    <h2>Spaces &amp; sharing</h2>
+    <p>Spaces are separate bookkeeping areas — personal, household, a trip. Invite friends into a shared space: everyone sees the same transactions but each space keeps its own categories and budgets. Attach a bank account to any number of spaces, each with its own history start.</p>
+    <ul class="tips"><li>Roles: owners manage members, contributors edit, readers only look.</li>
+<li>Leaving a space archives your attached accounts for the others instead of deleting history.</li></ul>
+    <div class="shots"><figure><img src="shots/22-spaces-list--en-light-mobile.png" alt="Spaces &amp; sharing" loading="lazy"></figure>
+<figure><img src="shots/33-space-share--en-light-mobile.png" alt="Spaces &amp; sharing" loading="lazy"></figure>
+<figure><img src="shots/61-feed-share--en-light-mobile.png" alt="Spaces &amp; sharing" loading="lazy"></figure></div>
+  </section>
+
+  <section id="categories">
+    <h2>Categories &amp; budgets</h2>
+    <p>The built-in catalog covers most spending; create your own main or sub categories when it doesn't. Budgets track a limit per category per period, and the overview drills from totals into categories into transactions.</p>
+    <ul class="tips"><li>munni learns from you: confirm a merchant twice and it skips review next time — across all your spaces.</li>
+<li>Can’t find a category while reviewing? The picker offers "create your own" right there.</li></ul>
+    <div class="shots"><figure><img src="shots/29-cats-manage--en-light-mobile.png" alt="Categories &amp; budgets" loading="lazy"></figure>
+<figure><img src="shots/30-cats-create--en-light-mobile.png" alt="Categories &amp; budgets" loading="lazy"></figure>
+<figure><img src="shots/60-overview-expense--en-light-mobile.png" alt="Categories &amp; budgets" loading="lazy"></figure></div>
+  </section>
+
+  <section id="devices">
+    <h2>Devices &amp; offline</h2>
+    <p>Signed in, every device converges on the same data — edits made offline sync when you're back. Two people can edit the same transaction at once; the newer edit per field wins everywhere, identically.</p>
+    <ul class="tips"><li>Push notifications tell you when new bank transactions arrive.</li>
+<li>The sync card at the top of Settings shows the last successful sync.</li></ul>
+    <div class="shots"><figure><img src="shots/25-sync-devices--en-light-mobile.png" alt="Devices &amp; offline" loading="lazy"></figure>
+<figure><img src="shots/58-sync-live--en-light-mobile.png" alt="Devices &amp; offline" loading="lazy"></figure>
+<figure><img src="shots/38-offline--en-light-mobile.png" alt="Devices &amp; offline" loading="lazy"></figure></div>
+  </section>
+  <footer>Generated 2026-07-14 from the app's own test screenshots — always the current UI.</footer>
+</main>
+</body>
+</html>

@@ -6,9 +6,11 @@ using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
 using Munni.Api.Accounts;
 using Munni.Api.Auth;
+using Munni.Api.Banking;
 using Munni.Api.Data;
 using Munni.Api.Admin;
 using Munni.Api.GoCardless;
+using Munni.Api.ImportWatch;
 using Munni.Api.Investments;
 using Munni.Api.Logos;
 using Munni.Api.Push;
@@ -39,14 +41,13 @@ builder.Services.AddScoped(sp => new PushNotifier(
     sp.GetService<IPushSender>() ?? new NoopPushSender(),
     sp.GetRequiredService<ILogger<PushNotifier>>()));
 
-if (!string.IsNullOrEmpty(builder.Configuration["GoCardless:SecretId"]))
-{
-    // fixed vendor endpoint, overridable for tests/self-hosted proxies
-    var gcBaseUrl = builder.Configuration["GoCardless:BaseUrl"] ?? "https://bankaccountdata.gocardless.com/api/v2/"; // NOSONAR(S1075) vendor API base
-    builder.Services.AddHttpClient<IGoCardlessApi, GoCardlessApi>(client =>
-        client.BaseAddress = new Uri(gcBaseUrl));
-    builder.Services.AddHostedService<GcFetchService>();
-}
+// bank-data providers (admin-selectable for new consents)
+var (gcConfigured, bankingEnabled) = BankingSetup.Register(builder.Services, builder.Configuration);
+
+// watch-folder importer (user request): CAMT exports dropped into the
+// mounted folder ingest as raw feed rows for the configured owner —
+// the service exits immediately when ImportWatch:* is unconfigured
+builder.Services.AddHostedService<WatchFolderService>();
 
 // store pass-through proxy (receipts design): no secrets, always on —
 // the client brings its own token; the allowlist lives in the endpoint
@@ -121,7 +122,9 @@ builder.Services.AddAuthorization();
 
 var corsOrigins = builder.Configuration.GetSection("Cors:Origins").Get<string[]>() ?? [];
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
-    p.WithOrigins(corsOrigins).AllowAnyHeader().AllowAnyMethod()));
+    // x-jumbo-token: Jumbo hands its session token back in a response
+    // header, which the store proxy relays and the browser must see
+    p.WithOrigins(corsOrigins).AllowAnyHeader().AllowAnyMethod().WithExposedHeaders("x-jumbo-token")));
 
 // abuse guard, partitioned per user (per IP before auth). The global
 // bucket is sized for the sync engine polling every ten seconds across
@@ -193,7 +196,9 @@ app.Use(async (http, next) =>
 app.MapOpenApi();
 app.MapScalarApiReference(options => options.WithTitle("munni API"));
 
-var gcEnabled = !string.IsNullOrEmpty(app.Configuration["GoCardless:SecretId"]);
+// capabilities.gocardless stays the client's "bank connect available"
+// signal, whichever provider actually serves it
+var gcEnabled = bankingEnabled;
 app.MapGet("/health", () => Results.Ok(new
 {
     status = "ok",
@@ -218,7 +223,7 @@ app.MapStoreProxy();
 if (ocrEnabled) app.MapOcr();
 app.MapQuotes();
 app.MapAccounts();
-app.MapAdmin(gcEnabled);
-if (gcEnabled) app.MapGoCardless();
+app.MapAdmin(gcConfigured, bankingEnabled);
+if (bankingEnabled) app.MapGoCardless();
 
 await app.RunAsync();

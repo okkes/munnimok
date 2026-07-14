@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { USER_TEST_DB, renderApp, renderAppAsUser } from '@/test/harness';
 import { readLockConfig } from '@/features/lock/lock';
@@ -14,31 +14,11 @@ describe('SettingsScreen (demo identity)', () => {
     indexedDB.deleteDatabase('munni_demo');
   });
 
-  it('hides user-only rows for the demo identity', async () => {
+  it('the global door opens the global settings screen', async () => {
     renderApp('/settings');
     await screen.findByTestId('screen-settings');
-    expect(screen.queryByTestId('settings-friends-row')).toBeNull();
-    expect(screen.queryByTestId('settings-connections-row')).toBeNull();
-    expect(screen.queryByTestId('settings-admin-row')).toBeNull();
-  });
-
-  it('theme toggle flips the document theme', async () => {
-    renderApp('/settings');
-    await screen.findByTestId('screen-settings');
-    expect(document.documentElement.dataset.theme).toBe('light');
-    fireEvent.click(screen.getByTestId('settings-theme-toggle'));
-    expect(document.documentElement.dataset.theme).toBe('dark');
-    expect(localStorage.getItem('munni_theme')).toBe('dark');
-  });
-
-  it('language sheet switches the UI language and persists it', async () => {
-    renderApp('/settings');
-    await screen.findByTestId('screen-settings');
-    fireEvent.click(screen.getByTestId('settings-language-row'));
-    fireEvent.click(await screen.findByTestId('lang-option-nl'));
-    expect(localStorage.getItem('munni_lang')).toBe('nl');
-    // the screen title re-renders in Dutch
-    await waitFor(() => expect(screen.getByTestId('screen-settings').textContent).toContain('Instellingen'));
+    fireEvent.click(screen.getByTestId('settings-global-row'));
+    expect(await screen.findByTestId('screen-settings-global')).toBeTruthy();
   });
 
   it('demo sign-out returns to the login screen and wipes the demo db', async () => {
@@ -53,17 +33,70 @@ describe('SettingsScreen (demo identity)', () => {
       expect(dbs.some((d) => d.name === 'munni_demo')).toBe(false);
     });
   });
+});
 
-  it('navigates to accounts and categories from their rows', async () => {
-    renderApp('/settings');
-    await screen.findByTestId('screen-settings');
+describe('GlobalSettingsScreen (demo identity)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase('munni_demo');
+  });
+
+  it('hides user-only rows for the demo identity', async () => {
+    renderApp('/settings/global');
+    await screen.findByTestId('screen-settings-global');
+    expect(screen.queryByTestId('settings-friends-row')).toBeNull();
+    expect(screen.queryByTestId('settings-connections-row')).toBeNull();
+    expect(screen.queryByTestId('settings-admin-row')).toBeNull();
+  });
+
+  it('theme toggle flips the document theme', async () => {
+    renderApp('/settings/global');
+    await screen.findByTestId('screen-settings-global');
+    expect(document.documentElement.dataset.theme).toBe('light');
+    fireEvent.click(screen.getByTestId('settings-theme-toggle'));
+    expect(document.documentElement.dataset.theme).toBe('dark');
+    expect(localStorage.getItem('munni_theme')).toBe('dark');
+  });
+
+  it('language sheet switches the UI language and persists it', async () => {
+    renderApp('/settings/global');
+    await screen.findByTestId('screen-settings-global');
+    fireEvent.click(screen.getByTestId('settings-language-row'));
+    fireEvent.click(await screen.findByTestId('lang-option-nl'));
+    expect(localStorage.getItem('munni_lang')).toBe('nl');
+    // the screen title re-renders in Dutch
+    await waitFor(() => expect(screen.getByTestId('screen-settings-global').textContent).toContain('Algemene instellingen'));
+  });
+
+  it('navigates to accounts from its row', async () => {
+    renderApp('/settings/global');
+    await screen.findByTestId('screen-settings-global');
     fireEvent.click(screen.getByTestId('settings-accounts-row'));
     expect(await screen.findByTestId('screen-accounts')).toBeTruthy();
   });
 
+  it('hide-tips removes the question marks and nudges everywhere (user request)', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    expect(await screen.findByTestId('help-btn-home')).toBeTruthy();
+
+    cleanup();
+    renderApp('/settings/global');
+    await screen.findByTestId('screen-settings-global');
+    fireEvent.click(screen.getByTestId('settings-tips-toggle'));
+    await waitFor(() => expect(screen.getByTestId('settings-tips-state').textContent).toBe('ON'));
+
+    cleanup();
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    await waitFor(() => expect(screen.queryByTestId('help-btn-home')).toBeNull());
+    expect(screen.queryByTestId('install-hint')).toBeNull();
+  }, 15_000);
+
   it('app lock setup: mismatch is rejected, matching PINs arm the lock, toggle disarms', async () => {
-    renderApp('/settings');
-    await screen.findByTestId('screen-settings');
+    renderApp('/settings/global');
+    await screen.findByTestId('screen-settings-global');
 
     fireEvent.click(screen.getByTestId('settings-lock-toggle'));
     fireEvent.change(await screen.findByTestId('lock-setup-pin'), { target: { value: '1234' } });
@@ -86,7 +119,7 @@ describe('SettingsScreen (demo identity)', () => {
   }, 15_000);
 });
 
-describe('SettingsScreen (user identity, scripted server)', () => {
+describe('Settings screens (user identity, scripted server)', () => {
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
@@ -117,16 +150,26 @@ describe('SettingsScreen (user identity, scripted server)', () => {
     return pushManager;
   };
 
-  it('shows the sync card and user rows; the connections sheet lists bank links', async () => {
+  it('shows the sync card on the settings tab', async () => {
     renderAppAsUser('/settings', {
+      api: {
+        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false } }),
+      },
+    });
+    await screen.findByTestId('settings-sync-row');
+    expect(screen.getByTestId('settings-global-row')).toBeTruthy();
+  }, 15_000);
+
+  it('shows user rows; the connections sheet lists bank links', async () => {
+    renderAppAsUser('/settings/global', {
       api: {
         'GET /health': () => ({ status: 'ok', capabilities: { gocardless: true, push: false } }),
         'GET /gocardless/connections': () => [{ gcAccountId: 'g1', iban: 'NL69INGB0123456789', lastFetchAt: null }],
       },
     });
 
-    await screen.findByTestId('settings-sync-row');
-    expect(screen.getByTestId('settings-friends-row')).toBeTruthy();
+    await screen.findByTestId('screen-settings-global');
+    expect(await screen.findByTestId('settings-friends-row')).toBeTruthy();
     fireEvent.click(await screen.findByTestId('settings-connections-row'));
     await waitFor(() => expect(screen.getByText('NL69INGB0123456789')).toBeTruthy());
   }, 15_000);
@@ -134,7 +177,7 @@ describe('SettingsScreen (user identity, scripted server)', () => {
   it('push toggle subscribes with the server VAPID key and registers the endpoint', async () => {
     const pushManager = installPushEnv();
     const registrations: unknown[] = [];
-    renderAppAsUser('/settings', {
+    renderAppAsUser('/settings/global', {
       api: {
         'GET /health': () => ({
           status: 'ok',

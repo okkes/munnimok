@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { directionAllows } from '@/domain/categoryRules';
 import { useLang } from '@/i18n';
 import { Highlight } from '@/ui/Highlight';
@@ -20,9 +21,10 @@ interface CategoryPickerProps {
 }
 
 /** Bottom sheet listing the catalog (built-in + custom) grouped by parent, with search. */
-export function CategoryPicker({ open, onOpenChange, selectedId, onPick, direction, txType }: CategoryPickerProps) {
+export function CategoryPicker({ open, onOpenChange, selectedId, onPick, direction, txType }: Readonly<CategoryPickerProps>) {
   const { t } = useLang();
   const cats = useCategories();
+  const navigate = useNavigate();
   const [query, setQuery] = useState('');
 
   const groups = useMemo(() => {
@@ -77,6 +79,28 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
           ))}
         </div>
       ))}
+      {/* end of the list (or an empty search): the flow must not dead-end —
+          a door to creating a custom category keeps the user moving (user
+          request) */}
+      <div className="mt-3 mb-2 flex flex-col items-center gap-1 rounded-card border border-dashed border-line px-4 py-3 text-center">
+        {groups.length === 0 && (
+          <p className="text-[13px] text-ink-3" data-testid="catpicker-empty">
+            {t('cats.noneFound')}
+          </p>
+        )}
+        <button
+          data-testid="catpicker-create-custom"
+          onClick={() => {
+            onOpenChange(false);
+            setQuery('');
+            void navigate({ to: '/categories' });
+          }}
+          className="m-tap flex items-center gap-1.5 border-none bg-transparent text-[13px] font-semibold text-accent-deep"
+        >
+          <Icon name="plus" size={15} />
+          {t('cats.createCustom')}
+        </button>
+      </div>
     </Sheet>
   );
 }

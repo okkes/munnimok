@@ -36,6 +36,21 @@ describe('filterTxs', () => {
     expect(filterTxs(rows, { query: 'nomatch' })).toHaveLength(0);
   });
 
+  it('a numeric query matches amounts by digit substring (user request)', () => {
+    const priced = [
+      tx({ id: 'p1', merchant: 'Cafe', amountCents: -1099 }), // 10,99
+      tx({ id: 'p2', merchant: 'Store', amountCents: -21015 }), // 210,15
+      tx({ id: 'p3', merchant: 'Bakery', amountCents: -525 }), // 5,25
+      tx({ id: 'p4', merchant: 'Shop 10', amountCents: -300 }), // text hit only
+    ];
+    expect(filterTxs(priced, { query: '10' }).map((t) => t.id)).toEqual(['p1', 'p2', 'p4']);
+    expect(filterTxs(priced, { query: '10,99' }).map((t) => t.id)).toEqual(['p1']);
+    expect(filterTxs(priced, { query: '10.99' }).map((t) => t.id)).toEqual(['p1']);
+    expect(filterTxs(priced, { query: '5,25' }).map((t) => t.id)).toEqual(['p3']);
+    // pure text queries never trip the amount branch
+    expect(filterTxs(priced, { query: 'bakery' }).map((t) => t.id)).toEqual(['p3']);
+  });
+
   it('query sees through bank <br> noise', () => {
     // raw text contains "Incasso<br>ING"; users search the cleaned form
     expect(filterTxs(rows, { query: 'incasso · ing' }).map((t) => t.id)).toEqual(['3']);

@@ -21,11 +21,31 @@ const ACCOUNT_ICON: Record<AccountType, string> = {
 
 /**
  * Counter-account + type editor, account-first (user feedback): the
- * account this money moved to or from decides the type, so it leads —
+ * account this money moved to or from suggests the type, so it leads —
  * as a real list with icons and balances instead of guess-the-badge.
- * The manual type list stays for transactions without a counterparty.
+ * The account's type is only a DEFAULT (user revision): picking a manual
+ * type keeps the link but overrides the type.
+ *
+ * Two modes: write-through (detail screen — edits land immediately) and
+ * CONTROLLED (review draft): with `value`+`onPickType`/`onPickLinked`
+ * the sheet only reports choices and never writes.
  */
-export function TxTypeSheet({ open, onOpenChange, tx }: { open: boolean; onOpenChange: (open: boolean) => void; tx: SpaceTx }) {
+export function TxTypeSheet({
+  open,
+  onOpenChange,
+  tx,
+  value,
+  onPickType,
+  onPickLinked,
+}: Readonly<{
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  tx: SpaceTx;
+  /** controlled mode: what the checkmarks reflect instead of the tx */
+  value?: { txType: TxType; linkedAccountId?: string };
+  onPickType?: (txType: TxType) => void;
+  onPickLinked?: (account: { id: string; type: AccountType } | null) => void;
+}>) {
   const { t, lang } = useLang();
   const cats = useCategories();
   const transform = useTxTransform();
@@ -33,7 +53,8 @@ export function TxTypeSheet({ open, onOpenChange, tx }: { open: boolean; onOpenC
   const allAccounts = useSpaceAccounts();
   const accounts = useMemo(() => allAccounts?.filter((a) => a.id !== tx.accountId), [allAccounts, tx.accountId]);
 
-  const locked = !!tx.linkedAccountId;
+  const controlled = !!onPickType || !!onPickLinked;
+  const current = value ?? { txType: tx.txType, linkedAccountId: tx.linkedAccountId };
   const catTxTypes = cats.byId(tx.catId).txTypes;
 
   const save = (nextType: TxType, linkedAccountId: string | null) => {
@@ -43,18 +64,20 @@ export function TxTypeSheet({ open, onOpenChange, tx }: { open: boolean; onOpenC
   };
 
   const chooseType = (type: TxType) => {
-    if (locked) return;
-    save(type, null);
+    if (controlled) onPickType?.(type);
+    else save(type, tx.linkedAccountId ?? null); // the link survives a manual override
     onOpenChange(false);
   };
 
   const chooseLinked = (accountId: string | null) => {
-    if (accountId === null) {
-      save(tx.txType, null);
+    const account = accountId === null ? null : (accounts?.find((a) => a.id === accountId) ?? null);
+    if (accountId !== null && !account) return;
+    if (controlled) {
+      onPickLinked?.(account && { id: account.id, type: account.type });
+    } else if (account) {
+      save(typeForLinkedAccount(account.type), account.id);
     } else {
-      const account = accounts?.find((a) => a.id === accountId);
-      if (!account) return;
-      save(typeForLinkedAccount(account.type), accountId);
+      save(tx.txType, null);
     }
     onOpenChange(false);
   };
@@ -72,7 +95,7 @@ export function TxTypeSheet({ open, onOpenChange, tx }: { open: boolean; onOpenC
         >
           <Icon name="close-circle-outline" size={18} color="var(--m-ink-4)" />
           <span className="min-w-0 flex-1 text-[14px] text-ink-2">{t('tx.linkedAccountNone')}</span>
-          {!tx.linkedAccountId && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
+          {!current.linkedAccountId && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
         </button>
         {(accounts ?? []).map((account) => (
           <button
@@ -87,15 +110,15 @@ export function TxTypeSheet({ open, onOpenChange, tx }: { open: boolean; onOpenC
               <span className="block text-[11px] text-ink-4">{t(`tx.type.${typeForLinkedAccount(account.type)}`)}</span>
             </span>
             <span className="m-num text-[12px] text-ink-3">{fmtCents(account.balanceCents, account.currency, lang)}</span>
-            {tx.linkedAccountId === account.id && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
+            {current.linkedAccountId === account.id && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
           </button>
         ))}
       </div>
 
       <div className="m-cap mt-4 mb-1 px-1">{t('tx.typeManual')}</div>
-      {locked && (
-        <p className="pb-2 text-[12px] text-ink-3" data-testid="txtype-locked-note">
-          {t('tx.typeLockedByAccount')}
+      {!!current.linkedAccountId && (
+        <p className="pb-2 text-[12px] text-ink-3" data-testid="txtype-default-note">
+          {t('tx.typeDefaultFromAccount')}
         </p>
       )}
       <div className="flex flex-col" data-testid="txtype-options">
@@ -103,12 +126,11 @@ export function TxTypeSheet({ open, onOpenChange, tx }: { open: boolean; onOpenC
           <button
             key={type}
             data-testid={`txtype-${type}`}
-            disabled={locked}
             onClick={() => chooseType(type)}
-            className="m-tap flex items-center gap-3 border-none bg-transparent px-1 py-2.5 text-left text-[14px] text-ink disabled:opacity-40"
+            className="m-tap flex items-center gap-3 border-none bg-transparent px-1 py-2.5 text-left text-[14px] text-ink"
           >
             <span className="flex-1">{t(`tx.type.${type}`)}</span>
-            {tx.txType === type && <Icon name="check" size={18} color="var(--m-accent)" />}
+            {current.txType === type && <Icon name="check" size={18} color="var(--m-accent)" />}
           </button>
         ))}
       </div>

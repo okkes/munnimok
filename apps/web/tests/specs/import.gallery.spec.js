@@ -1,14 +1,14 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { test, expect } from '@playwright/test';
-import { VARIANTS, createPage, base, shot, teardown } from '../helpers/base.js';
+import { VARIANTS, createPage, base, gotoGlobalSettings, shot, teardown } from '../helpers/base.js';
 
 const FIXTURE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../fixtures/camt053-sample.xml');
 
 // --- Tests ------------------------------------------------------------------
 
 async function goToAccounts(page) {
-  await page.click('[data-testid="tab-settings"]');
+  await gotoGlobalSettings(page);
   await page.click('[data-testid="settings-accounts-row"]');
   await page.waitForSelector('[data-testid="screen-accounts"]');
 }
@@ -54,8 +54,7 @@ for (const V of VARIANTS) {
     await expect(page.locator('[data-testid="tx-list"]')).toContainText('Onbekende Winkel XQZ');
     await shot(page, k('20-import-run') + '--s2');
     // re-import the same file: everything is a duplicate
-    await page.click('[data-testid="tab-settings"]');
-    await page.click('[data-testid="settings-accounts-row"]');
+    await goToAccounts(page);
     await pickFixture(page);
     await page.click('[data-testid="import-run"]');
     await expect(page.locator('[data-testid="import-result"]')).toContainText('Imported 0 transactions, skipped 3');

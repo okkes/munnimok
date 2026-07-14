@@ -93,7 +93,7 @@ describe('SpaceSharing (user identity, scripted server)', () => {
     await waitFor(() => expect(screen.queryByTestId(`space-kick-${BOB}`)).toBeNull());
   }, 15_000);
 
-  it('a reader sees the read-only note and no invite tools', async () => {
+  it('a reader sees the read-only note on space settings', async () => {
     renderAppAsUser('/spaces/s-user', {
       api: {
         'GET /me': () => ({ userId: ME, displayName: 'Me' }),
@@ -106,8 +106,20 @@ describe('SpaceSharing (user identity, scripted server)', () => {
 
     // the settings screen learns the role through useMyRole now
     expect(await screen.findByTestId('space-reader-note')).toBeTruthy();
-    // members live behind their own door since the settings split
-    fireEvent.click(screen.getByTestId('spacesettings-members-row'));
+  }, 15_000);
+
+  it('a reader sees no invite tools on the members screen', async () => {
+    // reached from Settings now — the space-settings doors are gone
+    renderAppAsUser('/spaces/s-user/members', {
+      api: {
+        'GET /me': () => ({ userId: ME, displayName: 'Me' }),
+        'GET /me/invites': () => [],
+        'GET /spaces/s-user/members': () => [member(BOB, 'Bob', 'owner'), member(ME, 'Me', 'reader')],
+        'GET /friends': () => ({ friends: [], sentPending: [], receivedPending: [] }),
+        'GET /spaces/s-user/invites': () => new Response('', { status: 403 }), // not an owner
+      },
+    });
+
     await screen.findByTestId('screen-space-members');
     await waitFor(() => expect(screen.queryByTestId('space-addfriend-input')).toBeNull());
     // non-owners cannot kick or re-role anyone

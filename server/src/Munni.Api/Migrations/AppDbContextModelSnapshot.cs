@@ -87,6 +87,20 @@ namespace Munni.Api.Migrations
                     b.ToTable("SpaceAccountLinks");
                 });
 
+            modelBuilder.Entity("Munni.Api.Data.AppSetting", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Key");
+
+                    b.ToTable("AppSettings");
+                });
+
             modelBuilder.Entity("Munni.Api.Data.EntityRow", b =>
                 {
                     b.Property<string>("SpaceId")
@@ -247,11 +261,24 @@ namespace Munni.Api.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<int?>("DailySuccessLimit")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("HistoryBackfilledAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("Iban")
                         .IsRequired()
                         .HasColumnType("text");
 
                     b.Property<DateTimeOffset?>("LastFetchAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("RateResetAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid>("RequisitionId")
@@ -261,11 +288,27 @@ namespace Munni.Api.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<int?>("SuccessRemaining")
+                        .HasColumnType("integer");
+
                     b.HasKey("GcAccountId");
 
                     b.HasIndex("SpaceId");
 
                     b.ToTable("GcLinkedAccounts");
+                });
+
+            modelBuilder.Entity("Munni.Api.GoCardless.GcPendingTx", b =>
+                {
+                    b.Property<string>("GcAccountId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("EntityId")
+                        .HasColumnType("text");
+
+                    b.HasKey("GcAccountId", "EntityId");
+
+                    b.ToTable("GcPendingTxs");
                 });
 
             modelBuilder.Entity("Munni.Api.GoCardless.GcRequisition", b =>
@@ -278,6 +321,10 @@ namespace Munni.Api.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("InstitutionId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Provider")
                         .IsRequired()
                         .HasColumnType("text");
 

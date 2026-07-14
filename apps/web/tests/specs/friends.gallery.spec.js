@@ -1,10 +1,10 @@
 import { test, expect } from '@playwright/test';
-import { VARIANTS, createPage, base, shot, teardown, syncApiUp } from '../helpers/base.js';
+import { VARIANTS, createPage, base, gotoGlobalSettings, shot, teardown, syncApiUp } from '../helpers/base.js';
 
 // Two-user friends flow against the real API (deploy/docker-compose.test.yml).
 
 async function goToFriends(page) {
-  await page.click('[data-testid="tab-settings"]');
+  await gotoGlobalSettings(page);
   await page.click('[data-testid="settings-friends-row"]');
   await page.waitForSelector('[data-testid="screen-friends"]');
 }

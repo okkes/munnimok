@@ -139,6 +139,98 @@ describe('ReviewScreen (demo identity)', () => {
     db.close();
   }, 15_000);
 
+  it('splitting stays on the card; amounts clear on focus and restore on blur', async () => {
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+
+    // a controlled newest card with a long description
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(db, new HlcClock('seed-split'), { trackOutbox: false });
+    const today = new Date();
+    const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'tx-split', {
+      accountId: 'demo_main',
+      date: iso,
+      amountCents: -1000,
+      currency: 'EUR',
+      merchant: 'SPLITCAFE',
+      description: 'A very long remittance line that identifies this charge beyond two clamped lines of text',
+      catId: 'groceries',
+      txType: 'expense',
+      needsReview: 1,
+    });
+    await waitFor(() => expect(screen.getByTestId('review-card').textContent).toContain('SPLITCAFE'), { timeout: 5000 });
+
+    // the full description shows on tap (clamped by default)
+    const desc = screen.getByTestId('review-description');
+    expect(desc.className).toContain('line-clamp-2');
+    fireEvent.click(desc);
+    expect(screen.getByTestId('review-description').className).not.toContain('line-clamp-2');
+
+    fireEvent.click(screen.getByTestId('review-act-split'));
+    const amount0 = (await screen.findByTestId('split-amount-0')) as HTMLInputElement;
+    expect(amount0.value).toBe('10,00');
+
+    // focus empties the field so typing replaces; blank blur restores
+    fireEvent.focus(amount0);
+    expect(amount0.value).toBe('');
+    fireEvent.blur(amount0);
+    expect(amount0.value).toBe('10,00');
+
+    // 6,00 + auto-balanced 4,00 = a valid split
+    fireEvent.focus(amount0);
+    fireEvent.change(amount0, { target: { value: '6,00' } });
+    fireEvent.blur(amount0);
+    fireEvent.click(await screen.findByTestId('split-remainder'));
+    fireEvent.click(screen.getByTestId('split-save'));
+
+    // draft model (review redesign): saving the split STAGES it — the card
+    // previews it, nothing is written, the queue does not advance
+    await screen.findByTestId('review-splits');
+    expect(screen.getByTestId('review-card').textContent).toContain('SPLITCAFE');
+    expect((await db.transactions.get('tx-split'))?.splits).toBeUndefined();
+
+    // Confirm lands the whole draft in one write
+    fireEvent.click(screen.getByTestId('review-confirm-btn'));
+    await waitFor(async () => {
+      const row = await db.transactions.get('tx-split');
+      expect(row?.splits).toHaveLength(2);
+      expect(row?.needsReview).toBe(0);
+    }, { timeout: 5000 });
+    db.close();
+  }, 15_000);
+
+  it('a type change that invalidates the staged category asks again (ruling)', async () => {
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+
+    // stage a deliberate category so the draft is decided
+    fireEvent.click(screen.getByTestId('review-category-chip'));
+    fireEvent.click(await screen.findByTestId('catpicker-coffee'));
+    expect(screen.getByTestId('review-category-chip').textContent).toContain('Coffee');
+    expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false);
+
+    // flip the type to one Coffee does not speak: the chip must ask again
+    fireEvent.click(screen.getByTestId('review-act-type'));
+    await screen.findByTestId('txtype-options');
+    fireEvent.click(screen.getByTestId('txtype-saving'));
+    await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).not.toContain('Coffee'));
+    expect(screen.getByTestId('review-act-type').textContent).toContain('Saving');
+    expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(true);
+
+    // nothing was written mid-flight: the tx still holds its own type
+    const db = new MunniDB('munni_demo');
+    const current = (await db.transactions.filter((t) => t.needsReview === 1).toArray())
+      .sort((a, b) => b.date.localeCompare(a.date))[0];
+    expect(current.txType).not.toBe('saving');
+    db.close();
+
+    // a saving-compatible category re-arms Confirm
+    fireEvent.click(screen.getByTestId('review-category-chip'));
+    fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
+    await waitFor(() => expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false));
+  }, 15_000);
+
   it('skip moves on and the skipped pile can be revisited', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');

@@ -10,9 +10,11 @@ public class GcRequisition
     public Guid UserId { get; set; }
     public required string SpaceId { get; set; }
     public required string InstitutionId { get; set; }
-    /// <summary>GoCardless requisition id.</summary>
+    /// <summary>the provider's consent id (GC requisition / EB session).</summary>
     public required string RequisitionId { get; set; }
     public required string Status { get; set; } // created | linked | expired
+    /// <summary>which bank-data provider owns this consent</summary>
+    public string Provider { get; set; } = "gocardless";
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
@@ -27,7 +29,30 @@ public class GcLinkedAccount
     public required string Iban { get; set; }
     public required string Currency { get; set; }
     public Guid RequisitionId { get; set; }
+    /// <summary>which bank-data provider fetches this account</summary>
+    public string Provider { get; set; } = "gocardless";
     public DateTimeOffset? LastFetchAt { get; set; }
+    /// <summary>
+    /// when the full 90-day history landed in the account's FEED space —
+    /// null forces a one-time backfill on the next fetch (accounts linked
+    /// before the feed-space migration only ever got deltas there).
+    /// </summary>
+    public DateTimeOffset? HistoryBackfilledAt { get; set; }
+    /// <summary>per-endpoint daily success budget GoCardless reported (rate headers)</summary>
+    public int? DailySuccessLimit { get; set; }
+    public int? SuccessRemaining { get; set; }
+    public DateTimeOffset? RateResetAt { get; set; }
+}
+
+/// <summary>
+/// Pending (reserved) transactions currently mirrored into the feed —
+/// tracked per account so ones that leave the bank's pending list
+/// (booked or dropped) get tombstoned on the next fetch.
+/// </summary>
+public class GcPendingTx
+{
+    public required string GcAccountId { get; set; }
+    public required string EntityId { get; set; }
 }
 
 /// <summary>

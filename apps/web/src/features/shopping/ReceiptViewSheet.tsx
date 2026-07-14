@@ -4,11 +4,12 @@ import { LOCALES, useLang } from '@/i18n';
 import { useReceiptOps } from '@/application/receipts';
 import { storesAvailable, useStoreOps } from '@/application/stores';
 import { useSpaceTransactions } from '@/application/transactions';
-import { matchCandidates, parseReceiptText } from '@/domain/storeReceipts';
+import { candidateLadder, parseReceiptText } from '@/domain/storeReceipts';
 import type { ReceiptRow } from '@/db/types';
 import { apiFetch } from '@/lib/api';
 import { fmtCents } from '@/lib/money';
 import { Button } from '@/ui/Button';
+import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 import { TxRow } from '@/ui/TxRow';
 
@@ -30,7 +31,14 @@ export function ReceiptViewSheet({
   receipt,
   currency,
   onClose,
-}: Readonly<{ receipt: ReceiptRow | null; currency: string; onClose: () => void }>) {
+  contextTxId,
+}: Readonly<{
+  receipt: ReceiptRow | null;
+  currency: string;
+  onClose: () => void;
+  /** the transaction the sheet was opened FROM — its own row is noise there (user bug) */
+  contextTxId?: string;
+}>) {
   const { t, lang } = useLang();
   const navigate = useNavigate();
   const txs = useSpaceTransactions();
@@ -38,11 +46,13 @@ export function ReceiptViewSheet({
   const storeOps = useStoreOps();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [picking, setPicking] = useState(false);
+  const [showMore, setShowMore] = useState(false);
   const [ocrState, setOcrState] = useState<'idle' | 'busy' | 'failed'>('idle');
 
   useEffect(() => {
     setConfirmDelete(false);
     setPicking(false);
+    setShowMore(false);
     setOcrState('idle');
   }, [receipt?.id]);
 
@@ -50,17 +60,10 @@ export function ReceiptViewSheet({
   const money = (cents: number) => fmtCents(cents, currency, lang);
   const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short', year: 'numeric' });
 
-  const candidates = () => {
-    if (!receipt) return [];
-    const all = txs ?? [];
-    const scored = matchCandidates(receipt, all);
-    if (scored.length > 0) return scored.slice(0, 8);
-    // no near-match: offer the latest expenses instead of a dead end
-    return all
-      .filter((tx) => tx.deleted === 0 && tx.txType === 'expense')
-      .sort((a, b) => b.date.localeCompare(a.date))
-      .slice(0, 8);
-  };
+  // the matching ladder (receipts v2): near-matches first, same-price
+  // and latest expenses behind "show more" — never a dead end
+  const ladder = receipt ? candidateLadder(receipt, txs ?? []) : { primary: [], more: [] };
+  const candidates = () => (showMore ? [...ladder.primary, ...ladder.more] : ladder.primary);
 
   // OCR via the NAS sidecar (signed-in users only — demo stays offline)
   const readItems = async () => {
@@ -122,12 +125,14 @@ export function ReceiptViewSheet({
             </div>
           )}
 
-          {/* the transaction this receipt proves */}
-          {linkedTx ? (
+          {/* the transaction this receipt proves — hidden when the sheet
+              was opened from that very transaction (self-reference) */}
+          {linkedTx && linkedTx.id !== contextTxId && (
             <div className="rounded-card border border-line bg-surface px-3" data-testid="receipt-linked-tx">
               <TxRow tx={linkedTx} showDate onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: linkedTx.id } })} />
             </div>
-          ) : (
+          )}
+          {!linkedTx && (
             <>
               <Button variant="outline" className="w-full" data-testid="receipt-link-tx" onClick={() => setPicking((v) => !v)}>
                 {t('receipts.pickTx')}
@@ -145,6 +150,16 @@ export function ReceiptViewSheet({
                       }}
                     />
                   ))}
+                  {!showMore && ladder.more.length > 0 && (
+                    <button
+                      data-testid="receipt-show-more"
+                      onClick={() => setShowMore(true)}
+                      className="m-tap flex w-full items-center justify-center gap-1 border-none bg-transparent py-2.5 text-[13px] font-medium text-accent-deep"
+                    >
+                      {t('receipts.showMore', { n: ladder.more.length })}
+                      <Icon name="chevron-down" size={15} />
+                    </button>
+                  )}
                 </div>
               )}
             </>

@@ -23,6 +23,8 @@ const TABS: TabDef[] = [
   { to: '/home', labelKey: 'tab.home', icon: 'home-variant-outline', iconActive: 'home-variant', testId: 'tab-home' },
   { to: '/transactions', labelKey: 'tab.transactions', icon: 'format-list-bulleted', iconActive: 'format-list-bulleted', testId: 'tab-transactions' },
   { to: '/recurring', labelKey: 'tab.recurring', icon: 'autorenew', iconActive: 'autorenew', testId: 'tab-recurring' },
+  // portfolio left the Home landing zone for its own tab (user ruling)
+  { to: '/portfolio', labelKey: 'tab.portfolio', icon: 'chart-timeline-variant', iconActive: 'chart-timeline-variant', testId: 'tab-portfolio' },
   { to: '/settings', labelKey: 'tab.settings', icon: 'cog-outline', iconActive: 'cog', testId: 'tab-settings' },
 ];
 
@@ -116,10 +118,7 @@ export function AppLayout() {
         {/* clamp: Android 3-button navigation reports up to ~48px inset,
             iOS home indicator 34px — honor them fully; the 56px ceiling
             guards against Safari's minimized-toolbar env() inflation */}
-        <nav
-          data-vpdebug="tabbar"
-          className="flex shrink-0 items-stretch justify-around border-t border-line bg-bg pb-[clamp(0px,env(safe-area-inset-bottom),56px)] md:hidden"
-        >
+        <nav className="flex shrink-0 items-stretch justify-around border-t border-line bg-bg pb-[clamp(0px,env(safe-area-inset-bottom),56px)] md:hidden">
           {TABS.map((tab) => {
             const active = pathname.startsWith(tab.to);
             return (

@@ -16,10 +16,10 @@ const CLIENT_ID = 'appie';
 
 /** one proxied call: the server forwards verbatim, stores nothing */
 export type ProxyCall = (
-  store: 'ah-api' | 'ah-login',
+  store: 'ah-api' | 'ah-login' | 'jumbo',
   path: string,
-  init?: { method?: 'GET' | 'POST'; body?: unknown; authorization?: string },
-) => Promise<{ status: number; json: unknown }>;
+  init?: { method?: 'GET' | 'POST'; body?: unknown; authorization?: string; userAgent?: string },
+) => Promise<{ status: number; json: unknown; headers?: { jumboToken?: string } }>;
 
 export interface StoreTokens {
   access: string;
@@ -64,6 +64,8 @@ export async function ahRefresh(call: ProxyCall, refreshToken: string): Promise<
 export interface AhListResult {
   status: number;
   receipts: AhReceiptSummary[];
+  /** which recipe actually answered — the robustness signal the UI shows */
+  via?: 'graphql' | 'rest';
 }
 
 // AH moved receipts to their GraphQL gateway; the mobile-services REST
@@ -95,6 +97,7 @@ export async function ahFetchReceipts(call: ProxyCall, accessToken: string): Pro
   if (status === 200 && Array.isArray(rows)) {
     return {
       status,
+      via: 'graphql',
       receipts: rows
         .filter((r) => r.id && r.dateTime)
         .map((r) => ({ transactionId: r.id!, transactionMoment: r.dateTime!, total: { amount: { amount: r.totalAmount?.amount } } })),
@@ -105,7 +108,7 @@ export async function ahFetchReceipts(call: ProxyCall, accessToken: string): Pro
   // legacy REST fallback — also tells us which recipe a live account speaks
   const legacy = await call('ah-api', '/mobile-services/v2/receipts', { authorization: `Bearer ${accessToken}` });
   const legacyRows = Array.isArray(legacy.json) ? (legacy.json as AhReceiptSummary[]) : [];
-  return { status: legacy.status, receipts: legacyRows.filter((r) => r.transactionId && r.transactionMoment) };
+  return { status: legacy.status, via: 'rest', receipts: legacyRows.filter((r) => r.transactionId && r.transactionMoment) };
 }
 
 export async function ahFetchReceiptItems(call: ProxyCall, accessToken: string, transactionId: string): Promise<AhReceiptUiItem[]> {

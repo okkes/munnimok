@@ -18,6 +18,7 @@ import { SplitPane } from '@/ui/SplitPane';
 import { TransactionsScreen } from './TransactionsScreen';
 import { CategoryPicker } from '@/features/categories/CategoryPicker';
 import { netAmountCents, totalReimbursedCents } from '@/domain/reimbursement';
+import { normalizeIban } from '@/domain/feedIds';
 import { ReceiptSection } from '@/features/shopping/ReceiptSection';
 import { ReimburseSection } from './ReimburseSection';
 import { SplitEditorSheet } from './SplitEditorSheet';
@@ -36,10 +37,26 @@ export function TxDetailScreen() {
   const [splitOpen, setSplitOpen] = useState(false);
   const [recurringOpen, setRecurringOpen] = useState(false);
   const [eventOpen, setEventOpen] = useState(false);
+  const [counterOpen, setCounterOpen] = useState(false);
 
   const tx = useSpaceTransaction(txId);
   const transform = useTxTransform();
   const account = useLiveQuery(() => (tx ? db.accounts.get(tx.accountId) : undefined), [tx?.accountId]);
+  const linkedAccount = useLiveQuery(
+    () => (tx?.linkedAccountId ? db.accounts.get(tx.linkedAccountId) : undefined),
+    [tx?.linkedAccountId],
+  );
+  // read-time join (user request): the moment an account with this IBAN
+  // exists locally — e.g. it was attached to a space later — every
+  // transaction's counterparty upgrades from plain text to a live door
+  const counterIban = tx?.counterIban ? normalizeIban(tx.counterIban) : undefined;
+  const counterAccount = useLiveQuery(
+    () =>
+      counterIban
+        ? db.accounts.filter((a) => a.deleted === 0 && !!a.iban && normalizeIban(a.iban) === counterIban).first()
+        : undefined,
+    [counterIban],
+  );
   const cats = useCategories();
   const recurrings = useRecurrings();
   const recurringOps = useRecurringOps();
@@ -101,6 +118,11 @@ export function TxDetailScreen() {
             {fmtDay.format(new Date(tx.date))}
             {tx.time ? ` · ${tx.time}` : ''}
           </div>
+          {tx.pending === 1 && (
+            <div className="mt-2" data-testid="tx-detail-pending">
+              <Pill tone="warning">{t('tx.pendingBadge')}</Pill>
+            </div>
+          )}
         </div>
 
         <div className="overflow-hidden rounded-card border border-line bg-surface">
@@ -145,10 +167,43 @@ export function TxDetailScreen() {
             className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
           >
             <Icon name="bank-outline" size={20} color="var(--m-ink-3)" />
-            <span className="flex-1 truncate">{account?.name ?? '—'}</span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate">{account?.name ?? '—'}</span>
+              {linkedAccount && (
+                <span className="block truncate text-[11px] text-ink-4" data-testid="tx-detail-linked-account">
+                  → {linkedAccount.name}
+                </span>
+              )}
+            </span>
             <span className="text-xs text-ink-4">{t(`tx.type.${tx.txType}`)}</span>
             <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
           </button>
+          {tx.counterIban && (
+            <>
+              <div className="mx-4 h-px bg-line-2" />
+              {counterAccount ? (
+                <button
+                  data-testid="tx-detail-counterparty-row"
+                  onClick={() => setCounterOpen(true)}
+                  className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+                >
+                  <Icon name="swap-horizontal" size={20} color="var(--m-accent-deep)" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate">{counterAccount.name}</span>
+                    <span className="block truncate font-mono text-[11px] text-ink-4">{tx.counterIban}</span>
+                  </span>
+                  <span className="text-xs text-ink-4">{t('tx.counterparty')}</span>
+                  <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+                </button>
+              ) : (
+                <div className="flex items-center gap-3 px-4 py-3.5" data-testid="tx-detail-counterparty">
+                  <Icon name="swap-horizontal" size={20} color="var(--m-ink-3)" />
+                  <span className="min-w-0 flex-1 truncate font-mono text-[13px] text-ink-2">{tx.counterIban}</span>
+                  <span className="text-xs text-ink-4">{t('tx.counterparty')}</span>
+                </div>
+              )}
+            </>
+          )}
           {tx.txType === 'expense' && (
             <>
               <div className="mx-4 h-px bg-line-2" />
@@ -215,6 +270,26 @@ export function TxDetailScreen() {
       />
       <TxTypeSheet open={typeOpen} onOpenChange={setTypeOpen} tx={tx} />
       <SplitEditorSheet open={splitOpen} onOpenChange={setSplitOpen} tx={tx} />
+
+      {/* the counterparty is one of the user's own accounts — show it */}
+      <Sheet open={counterOpen && !!counterAccount} onOpenChange={setCounterOpen} title={counterAccount?.name ?? ''} size="compact">
+        {counterAccount && (
+          <div className="flex flex-col pt-1" data-testid="counterparty-sheet">
+            <div className="flex items-center justify-between border-b border-line-2 px-1 py-3 text-[14px]">
+              <span className="text-ink-3">{t('tx.counterparty')}</span>
+              <span className="font-mono text-[13px] text-ink">{counterAccount.iban}</span>
+            </div>
+            <div className="flex items-center justify-between border-b border-line-2 px-1 py-3 text-[14px]">
+              <span className="text-ink-3">{t('acct.balanceNow')}</span>
+              <span className="m-num text-ink">{fmtCents(counterAccount.balanceCents, counterAccount.currency, lang)}</span>
+            </div>
+            <div className="flex items-center justify-between px-1 py-3 text-[14px]">
+              <span className="text-ink-3">{t('tx.counterpartySource')}</span>
+              <span className="text-ink">{t(counterAccount.source === 'manual' ? 'acct.manual' : 'acct.automated')}</span>
+            </div>
+          </div>
+        )}
+      </Sheet>
 
       {/* attach to an event */}
       <Sheet open={eventOpen} onOpenChange={setEventOpen} title={t('events.linkTitle')} size="form">
@@ -300,12 +375,12 @@ function NotesField({
   onSave,
   placeholder,
   className,
-}: {
+}: Readonly<{
   value: string;
   onSave: (notes: string) => void;
   placeholder: string;
   className: string;
-}) {
+}>) {
   const [draft, setDraft] = useState(value);
   const ref = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {

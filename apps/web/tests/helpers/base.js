@@ -54,10 +54,18 @@ export async function base(page, variant, opts = {}) {
   await page.waitForSelector(authed ? '[data-testid="tab-home"]' : '[data-testid="screen-login"]');
 }
 
+// App-wide rows live behind the single "Global settings" door on the
+// Settings tab (scope split): canonical route to that screen for tests.
+export async function gotoGlobalSettings(page) {
+  await page.click('[data-testid="tab-settings"]');
+  await page.click('[data-testid="settings-global-row"]');
+  await page.waitForSelector('[data-testid="screen-settings-global"]');
+}
+
 // Spaces left the tab bar (the Home avatar switches, Settings manages):
 // canonical route to the Spaces screen for tests.
 export async function gotoSpaces(page) {
-  await page.click('[data-testid="tab-settings"]');
+  await gotoGlobalSettings(page);
   await page.click('[data-testid="settings-spaces-row"]');
   await page.waitForSelector('[data-testid="screen-spaces"]');
 }

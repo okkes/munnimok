@@ -81,4 +81,20 @@ internal static class GcSchedule
         if (local.Hour != FetchLocalHour) return false;
         return nowUtc - lastFetchAt.Value > TimeSpan.FromHours(20);
     }
+
+    /// <summary>
+    /// Budget-aware cadence (user request: more than one sync a night).
+    /// Once the rate headers told us the per-endpoint daily budget, the
+    /// day is split into that many evenly spaced fetches — one call kept
+    /// in reserve for retries. Unknown budget = the nightly 03:00 window.
+    /// </summary>
+    internal static bool IsDue(GcLinkedAccount linked, DateTimeOffset nowUtc)
+    {
+        if (linked.LastFetchAt is null) return true;
+        var target = Math.Clamp((linked.DailySuccessLimit ?? 1) - 1, 1, 6);
+        if (target <= 1) return IsDue(linked.Iban, linked.LastFetchAt, nowUtc);
+        // budget spent: wait for the bank-side reset instead of burning 429s
+        if (linked.SuccessRemaining is <= 0 && linked.RateResetAt is { } reset && nowUtc < reset) return false;
+        return nowUtc - linked.LastFetchAt.Value >= TimeSpan.FromHours(24.0 / target);
+    }
 }

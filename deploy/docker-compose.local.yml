@@ -23,6 +23,8 @@ services:
       Cors__Origins__1: http://localhost:5175
       GoCardless__SecretId: ${GOCARDLESS_SECRET_ID:-}
       GoCardless__SecretKey: ${GOCARDLESS_SECRET_KEY:-}
+      EnableBanking__ApplicationId: ${ENABLEBANKING_APPLICATION_ID:-}
+      EnableBanking__PrivateKeyPem: ${ENABLEBANKING_PRIVATE_KEY_PEM:-}
       Push__VapidPublicKey: ${PUSH_VAPID_PUBLIC_KEY:-}
       Push__VapidPrivateKey: ${PUSH_VAPID_PRIVATE_KEY:-}
       Push__Subject: ${PUSH_VAPID_SUBJECT:-mailto:admin@localhost}
@@ -30,8 +32,12 @@ services:
       Logos__PublicToken: ${LOGODEV_PUBLIC_TOKEN:-}
       Admin__Subs: ${ADMIN_SUBS:-}
       Ocr__BaseUrl: http://ocr:8884
+      ImportWatch__Path: /import-watch
+      ImportWatch__OwnerSub: ${IMPORT_WATCH_OWNER_SUB:-}
     ports:
       - "8180:8080"
+    volumes:
+      - ${IMPORT_WATCH_HOST_DIR:-./import-watch}:/import-watch
     depends_on:
       postgres:
         condition: service_healthy

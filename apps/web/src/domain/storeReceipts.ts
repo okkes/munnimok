@@ -40,22 +40,49 @@ export function matchCandidates(receipt: MatchableReceipt, txs: readonly Transac
     .sort((a, b) => scoreOf(receipt, b) - scoreOf(receipt, a));
 }
 
+const merchantHit = (source: ReceiptSource, tx: TransactionRow): boolean =>
+  STORE_MERCHANT[source]?.test(tx.merchant ?? '') ?? false;
+
 function scoreOf(receipt: MatchableReceipt, tx: TransactionRow): number {
-  const merchantHit = STORE_MERCHANT[receipt.source]?.test(tx.merchant ?? '') ? 2 : 0;
+  const merchant = merchantHit(receipt.source, tx) ? 2 : 0;
   const exact = -tx.amountCents === receipt.totalCents ? 1 : 0;
-  return merchantHit + exact + (2 - dayDiff(tx.date, receipt.date)) * 0.1;
+  return merchant + exact + (2 - dayDiff(tx.date, receipt.date)) * 0.1;
 }
 
 /**
- * Auto-attach only when the winner is unambiguous; everything else
- * lands in the unmatched list for a manual pick.
+ * Auto-attach policy (user ruling: "rung 1 is enough"): only a rung-1
+ * SINGLE — exact amount, date ±2d, merchant fingerprint — attaches by
+ * itself; everything else stays unlinked for a manual pick.
  */
 export function bestMatch(receipt: MatchableReceipt, txs: readonly TransactionRow[], takenTxIds: ReadonlySet<string>): string | null {
-  const candidates = matchCandidates(receipt, txs).filter((tx) => !takenTxIds.has(tx.id));
-  if (candidates.length === 0) return null;
-  if (candidates.length === 1) return candidates[0].id;
-  const [first, second] = candidates;
-  return scoreOf(receipt, first) > scoreOf(receipt, second) ? first.id : null;
+  const rung1 = matchCandidates(receipt, txs).filter(
+    (tx) => !takenTxIds.has(tx.id) && -tx.amountCents === receipt.totalCents && merchantHit(receipt.source, tx),
+  );
+  return rung1.length === 1 ? rung1[0].id : null;
+}
+
+/**
+ * The manual picker's ladder (approved receipts v2): start at the
+ * near-matches, widen on demand — same price first, then the latest
+ * expenses so the picker never dead-ends.
+ */
+export interface CandidateLadder {
+  /** amount ±2c and date ±2d, best first (rungs 1–2) */
+  primary: TransactionRow[];
+  /** rung 3 (same amount, any date) + rung 4 (latest expenses) behind "show more" */
+  more: TransactionRow[];
+}
+
+export function candidateLadder(receipt: MatchableReceipt, txs: readonly TransactionRow[]): CandidateLadder {
+  const primary = matchCandidates(receipt, txs).slice(0, 8);
+  const seen = new Set(primary.map((tx) => tx.id));
+  const expenses = txs
+    .filter((tx) => tx.deleted === 0 && tx.txType === 'expense' && !seen.has(tx.id))
+    .sort((a, b) => b.date.localeCompare(a.date));
+  const sameAmount = expenses.filter((tx) => -tx.amountCents === receipt.totalCents);
+  const sameAmountIds = new Set(sameAmount.map((tx) => tx.id));
+  const latest = expenses.filter((tx) => !sameAmountIds.has(tx.id));
+  return { primary, more: [...sameAmount, ...latest].slice(0, 12) };
 }
 
 // ── AH payload mapping (mobile-services v2 shapes) ──────────────────────
