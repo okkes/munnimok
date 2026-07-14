@@ -108,6 +108,36 @@ describe('SpaceSharing (user identity, scripted server)', () => {
     expect(await screen.findByTestId('space-reader-note')).toBeTruthy();
   }, 15_000);
 
+  it('a member leaves the space from space settings: server removal, then local purge', async () => {
+    const removals: string[] = [];
+    renderAppAsUser('/spaces/s-user', {
+      api: {
+        'GET /me': () => ({ userId: ME, displayName: 'Me' }),
+        'GET /me/invites': () => [],
+        'GET /spaces/s-user/members': () => [member(BOB, 'Bob', 'owner'), member(ME, 'Me', 'contributor')],
+        'GET /friends': () => ({ friends: [], sentPending: [], receivedPending: [] }),
+        'GET /spaces/s-user/invites': () => new Response('', { status: 403 }),
+        [`DELETE /spaces/s-user/members/${ME}`]: () => {
+          removals.push(ME);
+          return {};
+        },
+      },
+    });
+
+    // two-tap confirm, mirroring delete
+    fireEvent.click(await screen.findByTestId('space-edit-leave'));
+    await screen.findByTestId('space-leave-confirm-note');
+    fireEvent.click(screen.getByTestId('space-edit-leave'));
+
+    await screen.findByTestId('screen-spaces', {}, { timeout: 5000 });
+    expect(removals).toEqual([ME]);
+    // the local copy of the space is gone (feed access ends server-side)
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB(USER_TEST_DB);
+    await waitFor(async () => expect(await db.spaces.get('s-user')).toBeUndefined());
+    db.close();
+  }, 15_000);
+
   it('a reader sees no invite tools on the members screen', async () => {
     // reached from Settings now — the space-settings doors are gone
     renderAppAsUser('/spaces/s-user/members', {

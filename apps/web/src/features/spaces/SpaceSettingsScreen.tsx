@@ -1,11 +1,12 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useParams, useRouter } from '@tanstack/react-router';
+import { useNavigate, useParams, useRouter } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { downscaleImage } from '@/lib/image';
+import { apiFetch } from '@/lib/api';
 import { useData } from '@/app/data';
 import { useSession } from '@/app/session';
-import { useMyRole } from './SpaceSharing';
+import { leaveSpace, useMyRole } from './SpaceSharing';
 import { DEFAULT_HISTORY_MONTHS, isoMonthsAgo } from './spaceDefaults';
 import type { SpacePeriodType } from '@/db/types';
 import { AppBar, IconButton } from '@/ui/AppBar';
@@ -42,7 +43,8 @@ const weekdayName = (weekday: number, lang: keyof typeof LOCALES) =>
  */
 export function SpaceSettingsScreen() {
   const { t, lang } = useLang();
-  const { db, repo, spaceId: activeSpaceId } = useData();
+  const { db, repo, engine, setActiveSpace, spaceId: activeSpaceId } = useData();
+  const navigate = useNavigate();
   const identity = useSession((s) => s.identity);
   const syncing = identity?.kind === 'user';
   const { spaceId } = useParams({ strict: false }) as { spaceId: string };
@@ -65,6 +67,9 @@ export function SpaceSettingsScreen() {
   const [picture, setPicture] = useState('');
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmLeave, setConfirmLeave] = useState(false);
+  // leaving needs someone to stay behind — mirror the members screen rule
+  const [memberCount, setMemberCount] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
   // role in this space; local-only identities are always owner
   const myRole = useMyRole(spaceId, syncing);
@@ -104,6 +109,24 @@ export function SpaceSettingsScreen() {
       picture, // '' clears a previously set image
     });
     goBack();
+  };
+
+  useEffect(() => {
+    if (!syncing) return;
+    void apiFetch(`/spaces/${spaceId}/members`)
+      .then(async (res) => (res.ok ? ((await res.json()) as unknown[]).length : 0))
+      .then(setMemberCount)
+      .catch(() => setMemberCount(0));
+  }, [spaceId, syncing]);
+
+  const leave = async () => {
+    if (!confirmLeave) {
+      setConfirmLeave(true); // destructive: second tap confirms
+      return;
+    }
+    if (await leaveSpace({ db, engine, setActiveSpace, activeSpaceId }, spaceId)) {
+      void navigate({ to: '/spaces' });
+    }
   };
 
   const deleteSpace = async () => {
@@ -309,6 +332,18 @@ export function SpaceSettingsScreen() {
 
             {/* danger zone last: deleting is the one action that must never sit
                 between things people actually come here for */}
+            {syncing && memberCount > 1 && (
+              <div className="mt-4 flex flex-col gap-2">
+                {confirmLeave && (
+                  <p className="px-1 text-[13px] text-ink-3" data-testid="space-leave-confirm-note">
+                    {t('space.leaveConfirm')}
+                  </p>
+                )}
+                <Button variant="outline" data-testid="space-edit-leave" onClick={() => void leave()}>
+                  {confirmLeave ? t('action.confirm') : t('space.leave')}
+                </Button>
+              </div>
+            )}
             {myRole === 'owner' && (
               <div className="mt-4 flex flex-col gap-2">
                 {confirmDelete && (
