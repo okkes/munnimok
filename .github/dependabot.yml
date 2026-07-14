@@ -1,0 +1,40 @@
+# Weekly dependency PRs, grouped so the noise stays reviewable (user
+# request: proper tooling to spot and apply package updates). Local
+# equivalents: `npm run deps:check` (root) and `dotnet outdated` (server).
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/" # root workspaces cover apps/web + apps/admin
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      npm-minor-patch:
+        update-types: [minor, patch]
+    open-pull-requests-limit: 5
+    target-branch: dev
+
+  - package-ecosystem: nuget
+    directory: "/server"
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      nuget-minor-patch:
+        update-types: [minor, patch]
+    open-pull-requests-limit: 5
+    target-branch: dev
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    target-branch: dev
+
+  - package-ecosystem: docker
+    directory: "/deploy"
+    schedule:
+      interval: weekly
+      day: monday
+    target-branch: dev
