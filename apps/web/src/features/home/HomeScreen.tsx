@@ -15,6 +15,7 @@ import { OfflineIndicator } from '@/app/OfflineBanner';
 import { HelpButton } from '@/features/help/HelpButton';
 import { IntroCard } from '@/features/help/IntroCard';
 import { InstallHint } from '@/features/help/InstallHint';
+import { WhatsNewCard } from '@/features/help/WhatsNew';
 import { NotificationsBell } from './NotificationsBell';
 import { eventPicture } from '@/features/events/EventsScreen';
 import { HomeCustomizeSheet, resolveHomeBlocks } from './HomeCustomizeSheet';
@@ -199,6 +200,7 @@ export function HomeScreen() {
           )}
         </button>
 
+        <WhatsNewCard />
         <InstallHint />
         <IntroCard tourId="home" />
 

@@ -126,6 +126,30 @@ describe('Tutorials (demo identity)', () => {
     expect(screen.queryByTestId('install-hint')).toBeNull();
   }, 15_000);
 
+  it('release notes: the home nudge shows once per version, help keeps the door', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    // fresh device: the newest release is unseen → the nudge shows
+    const card = await screen.findByTestId('whatsnew-card');
+    fireEvent.click(screen.getByTestId('whatsnew-open'));
+    expect(await screen.findByTestId('whatsnew-list')).toBeTruthy();
+    expect(card).toBeTruthy();
+
+    // acknowledged: a fresh mount stays quiet
+    cleanup();
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    await screen.findByTestId('home-balance-band');
+    expect(screen.queryByTestId('whatsnew-card')).toBeNull();
+
+    // …but the help index keeps the release notes reachable
+    cleanup();
+    renderApp('/help');
+    await screen.findByTestId('screen-help');
+    fireEvent.click(screen.getByTestId('help-whatsnew-row'));
+    expect(await screen.findByTestId('whatsnew-list')).toBeTruthy();
+  }, 15_000);
+
   it('settings reaches the index; every tour is listed and opens', async () => {
     renderApp('/settings');
     await screen.findByTestId('screen-settings');

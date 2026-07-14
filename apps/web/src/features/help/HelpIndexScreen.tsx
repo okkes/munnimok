@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useHelp } from './HelpContext';
 import { TOURS } from './tours';
+import { WhatsNewSheet } from './WhatsNew';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
 import { Row } from '@/ui/primitives';
@@ -12,6 +14,7 @@ export function HelpIndexScreen() {
   const { t } = useLang();
   const { db } = useData();
   const { openSlides } = useHelp();
+  const [whatsNewOpen, setWhatsNewOpen] = useState(false);
   const seen = useLiveQuery(async () => {
     const keys = TOURS.map((tour) => `tutorialSeen_${tour.id}`);
     const rows = await db.meta.bulkGet(keys);
@@ -30,6 +33,16 @@ export function HelpIndexScreen() {
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <p className="px-1 pb-3 text-[12px] text-ink-3">{t('help.indexSub')}</p>
+        {/* the release notes stay reachable after the Home nudge is gone */}
+        <div className="mb-3 overflow-hidden rounded-card border border-line bg-surface">
+          <Row
+            testId="help-whatsnew-row"
+            icon="bullhorn-variant-outline"
+            iconColor="var(--m-accent-deep)"
+            title={t('whatsnew.title')}
+            onClick={() => setWhatsNewOpen(true)}
+          />
+        </div>
         <div className="overflow-hidden rounded-card border border-line bg-surface">
           {TOURS.map((tour) => (
             <Row
@@ -51,6 +64,7 @@ export function HelpIndexScreen() {
           ))}
         </div>
       </div>
+      <WhatsNewSheet open={whatsNewOpen} onOpenChange={setWhatsNewOpen} />
     </div>
   );
 }
