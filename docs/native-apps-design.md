@@ -1,9 +1,13 @@
-# Native apps — design (ready to implement)
+# Native apps — design
 
-Status: **proposal 2026-07-15, decision made** (user delegated the
-choice). Goal: real installed apps on Android + iOS that never lose
-data and feel stable, while the PWA and the plain web version keep
-working from the same codebase.
+Status: **N1–N4 + N6 built 2026-07-15** (approved; see
+`apps/native/README.md` for the one-time user prerequisites: Logto
+redirect URI, Firebase key, Apple/Play accounts). **N5 (secure storage
++ biometrics) deliberately waits for a real-device session** — it moves
+the store-token storage path and cannot be verified without hardware.
+Goal: real installed apps on Android + iOS that never lose data and
+feel stable, while the PWA and the plain web version keep working from
+the same codebase.
 
 ## The decision: Capacitor shell, not React Native, not Swift/Kotlin
 
