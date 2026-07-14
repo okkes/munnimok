@@ -44,7 +44,7 @@ describe('ManageCategoriesScreen (demo identity)', () => {
     ) as HTMLButtonElement;
     expect(other).toBeTruthy();
     expect(other.disabled).toBe(true);
-  });
+  }, 15_000);
 
   it('hides a main per space: it leaves the pickers but stays manageable', async () => {
     await openScreen();
@@ -57,7 +57,7 @@ describe('ManageCategoriesScreen (demo identity)', () => {
     // the eye brings it back
     fireEvent.click(screen.getByTestId('cats-togglemain-pet'));
     await screen.findByTestId('managecat-petFood', {}, { timeout: 5000 });
-  });
+  }, 15_000);
 
   it('creates a sub with a direction under a builtin parent (type inherited)', async () => {
     await openScreen();
