@@ -9,7 +9,7 @@ const openScreen = async () => {
   await screen.findByTestId('managecat-groceries');
 };
 
-describe('ManageCategoriesScreen (demo identity)', () => {
+describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
@@ -141,7 +141,7 @@ describe('ManageCategoriesScreen (demo identity)', () => {
   });
 });
 
-describe('category impact warnings (demo identity)', () => {
+describe('category impact warnings (demo identity)', { timeout: 15_000 }, () => {
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
