@@ -112,6 +112,32 @@ describe('AdminApp (test-auth mode)', () => {
     expect(screen.getByText('Delete selected (1)')).toBeTruthy();
   });
 
+  it('the bank-provider picker shows the active one and switches it', async () => {
+    let active = 'gocardless';
+    const calls = scriptFetch({
+      'GET /admin/ping': () => ({}),
+      'GET /admin/users': () => ({ body: [] }),
+      'GET /admin/gocardless/requisitions': () => ({ body: [] }),
+      'GET /admin/bank-provider': () => ({ body: { active, configured: ['gocardless', 'enablebanking'] } }),
+      'PUT /admin/bank-provider': (init) => {
+        active = (JSON.parse(String(init?.body)) as { provider: string }).provider;
+        return { body: { active } };
+      },
+    });
+    localStorage.setItem('munni_admin_sub', 'sub-admin');
+    render(<AdminApp config={CONFIG} getToken={null} />);
+
+    const gc = (await screen.findByTestId('admin-provider-gocardless')) as HTMLInputElement;
+    const eb = screen.getByTestId('admin-provider-enablebanking') as HTMLInputElement;
+    expect(gc.checked).toBe(true);
+    expect(eb.checked).toBe(false);
+
+    fireEvent.click(eb);
+    await waitFor(() => expect((screen.getByTestId('admin-provider-enablebanking') as HTMLInputElement).checked).toBe(true));
+    expect(calls).toContain('PUT /admin/bank-provider');
+    expect(active).toBe('enablebanking');
+  });
+
   it('typing a sub persists it and sends it as X-User-Sub', async () => {
     const seenHeaders: (string | null)[] = [];
     vi.stubGlobal(

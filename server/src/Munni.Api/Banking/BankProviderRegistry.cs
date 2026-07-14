@@ -1,6 +1,42 @@
 using Munni.Api.Data;
+using Munni.Api.GoCardless;
 
 namespace Munni.Api.Banking;
+
+/// <summary>
+/// DI wiring for the bank-data providers: the admin picks which one
+/// serves NEW consents; existing accounts keep fetching through the
+/// provider that created them.
+/// </summary>
+public static class BankingSetup
+{
+    public static (bool GcConfigured, bool AnyConfigured) Register(IServiceCollection services, IConfiguration config)
+    {
+        var gcConfigured = !string.IsNullOrEmpty(config["GoCardless:SecretId"]);
+        if (gcConfigured)
+        {
+            // fixed vendor endpoint, overridable for tests/self-hosted proxies
+            var gcBaseUrl = config["GoCardless:BaseUrl"] ?? "https://bankaccountdata.gocardless.com/api/v2/"; // NOSONAR(S1075) vendor API base
+            services.AddHttpClient<IGoCardlessApi, GoCardlessApi>(client => client.BaseAddress = new Uri(gcBaseUrl));
+            services.AddScoped<IBankDataApi>(sp => new GoCardlessBankApi(sp.GetRequiredService<IGoCardlessApi>()));
+        }
+        var ebConfigured = !string.IsNullOrEmpty(config["EnableBanking:ApplicationId"]) &&
+                           !string.IsNullOrEmpty(config["EnableBanking:PrivateKeyPem"]);
+        if (ebConfigured)
+        {
+            var ebBaseUrl = config["EnableBanking:BaseUrl"] ?? "https://api.enablebanking.com/"; // NOSONAR(S1075) vendor API base
+            services.AddHttpClient<EnableBankingApi>(client => client.BaseAddress = new Uri(ebBaseUrl));
+            services.AddScoped<IBankDataApi>(sp => sp.GetRequiredService<EnableBankingApi>());
+        }
+        var anyConfigured = gcConfigured || ebConfigured;
+        if (anyConfigured)
+        {
+            services.AddScoped<BankProviderRegistry>();
+            services.AddHostedService<GcFetchService>();
+        }
+        return (gcConfigured, anyConfigured);
+    }
+}
 
 /// <summary>
 /// The configured bank-data providers and which one is ACTIVE for new

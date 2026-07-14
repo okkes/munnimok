@@ -133,7 +133,10 @@ export function ShoppingConnectionsScreen() {
     if (syncState.status === 'expired') text = t('shop.syncExpired');
     // which recipe answered (user question: "is it the fallback?") —
     // GraphQL is the primary; legacy REST means AH may retire it any day
-    const via = syncState.status === 'ok' && syncState.via ? (syncState.via === 'graphql' ? ' · GraphQL' : ' · REST (fallback)') : '';
+    let via = '';
+    if (syncState.status === 'ok' && syncState.via) {
+      via = syncState.via === 'graphql' ? ' · GraphQL' : ' · REST (fallback)';
+    }
     return (
       <span className={`block text-[11px] ${syncState.status === 'ok' ? 'text-accent-deep' : 'text-negative'}`} data-testid={`shop-${store}-sync-result`}>
         {text}

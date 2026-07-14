@@ -41,31 +41,8 @@ builder.Services.AddScoped(sp => new PushNotifier(
     sp.GetService<IPushSender>() ?? new NoopPushSender(),
     sp.GetRequiredService<ILogger<PushNotifier>>()));
 
-// bank-data providers: the admin picks which one serves NEW consents;
-// existing accounts keep fetching through the provider that created them
-var gcConfigured = !string.IsNullOrEmpty(builder.Configuration["GoCardless:SecretId"]);
-if (gcConfigured)
-{
-    // fixed vendor endpoint, overridable for tests/self-hosted proxies
-    var gcBaseUrl = builder.Configuration["GoCardless:BaseUrl"] ?? "https://bankaccountdata.gocardless.com/api/v2/"; // NOSONAR(S1075) vendor API base
-    builder.Services.AddHttpClient<IGoCardlessApi, GoCardlessApi>(client =>
-        client.BaseAddress = new Uri(gcBaseUrl));
-    builder.Services.AddScoped<IBankDataApi>(sp => new GoCardlessBankApi(sp.GetRequiredService<IGoCardlessApi>()));
-}
-var ebConfigured = !string.IsNullOrEmpty(builder.Configuration["EnableBanking:ApplicationId"]) &&
-                   !string.IsNullOrEmpty(builder.Configuration["EnableBanking:PrivateKeyPem"]);
-if (ebConfigured)
-{
-    var ebBaseUrl = builder.Configuration["EnableBanking:BaseUrl"] ?? "https://api.enablebanking.com/"; // NOSONAR(S1075) vendor API base
-    builder.Services.AddHttpClient<EnableBankingApi>(client => client.BaseAddress = new Uri(ebBaseUrl));
-    builder.Services.AddScoped<IBankDataApi>(sp => sp.GetRequiredService<EnableBankingApi>());
-}
-var bankingEnabled = gcConfigured || ebConfigured;
-if (bankingEnabled)
-{
-    builder.Services.AddScoped<BankProviderRegistry>();
-    builder.Services.AddHostedService<GcFetchService>();
-}
+// bank-data providers (admin-selectable for new consents)
+var (gcConfigured, bankingEnabled) = BankingSetup.Register(builder.Services, builder.Configuration);
 
 // watch-folder importer (user request): CAMT exports dropped into the
 // mounted folder ingest as raw feed rows for the configured owner —
