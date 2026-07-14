@@ -32,25 +32,8 @@ builder.Services.AddSingleton<SpaceEventBroadcaster>();
 // OpenAPI document + Scalar reference UI at /scalar
 builder.Services.AddOpenApi();
 
-// push transports, each enabled by its own config: VAPID keys for the
-// browsers, a Firebase service account for the native shells (N4). The
-// router sends every row through whichever transport its kind has.
-var pushEnabled = !string.IsNullOrEmpty(builder.Configuration["Push:VapidPublicKey"])
-                  && !string.IsNullOrEmpty(builder.Configuration["Push:VapidPrivateKey"]);
-var fcmEnabled = !string.IsNullOrEmpty(builder.Configuration["Fcm:ServiceAccountJson"]);
-if (fcmEnabled) builder.Services.AddHttpClient("fcm", client => client.BaseAddress = new Uri("https://fcm.googleapis.com/"));
-if (pushEnabled || fcmEnabled)
-{
-    builder.Services.AddSingleton<IPushSender>(sp => new RoutingPushSender(
-        pushEnabled ? new WebPushSender(sp.GetRequiredService<IConfiguration>()) : null,
-        fcmEnabled
-            ? new FcmPushSender(sp.GetRequiredService<IHttpClientFactory>().CreateClient("fcm"), sp.GetRequiredService<IConfiguration>())
-            : null));
-}
-builder.Services.AddScoped(sp => new PushNotifier(
-    sp.GetRequiredService<AppDbContext>(),
-    sp.GetService<IPushSender>() ?? new NoopPushSender(),
-    sp.GetRequiredService<ILogger<PushNotifier>>()));
+// push transports (VAPID browsers + FCM native shells), routed per kind
+var pushEnabled = PushSetup.Register(builder.Services, builder.Configuration);
 
 // bank-data providers (admin-selectable for new consents)
 var (gcConfigured, bankingEnabled) = BankingSetup.Register(builder.Services, builder.Configuration);

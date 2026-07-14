@@ -82,7 +82,7 @@ public sealed class FcmPushSender : IPushSender
         });
         var jwt = SignJwt(claims);
 
-        using var response = await _http.PostAsync("https://oauth2.googleapis.com/token", new FormUrlEncodedContent(new Dictionary<string, string>
+        using var response = await _http.PostAsync("https://oauth2.googleapis.com/token", new FormUrlEncodedContent(new Dictionary<string, string> // NOSONAR(S1075) vendor token endpoint
         {
             ["grant_type"] = "urn:ietf:params:oauth:grant-type:jwt-bearer",
             ["assertion"] = jwt,
