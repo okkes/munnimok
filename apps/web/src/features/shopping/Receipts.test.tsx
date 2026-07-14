@@ -146,6 +146,39 @@ describe('Receipts S1 (demo identity)', () => {
     await screen.findByTestId('receipt-linked-tx');
   }, 15_000);
 
+  it('a signed-in user connects Jumbo with username/password (never stored)', async () => {
+    renderAppAsUser('/shopping', {
+      api: {
+        'POST /shop/proxy/jumbo': (body) => {
+          const request = body as { path: string };
+          if (request.path === '/v17/users/login') {
+            return new Response(JSON.stringify({}), { status: 200, headers: { 'x-jumbo-token': 'jt-1' } });
+          }
+          if (request.path === '/v17/users/me/receipts') return { receipts: [] };
+          return {};
+        },
+      },
+    });
+    await screen.findByTestId('screen-shopping');
+
+    fireEvent.click(await screen.findByTestId('shop-jumbo-connect'));
+    fireEvent.change(await screen.findByTestId('shop-jumbo-user'), { target: { value: 'okkes@example.com' } });
+    fireEvent.change(screen.getByTestId('shop-jumbo-pass'), { target: { value: 'geheim' } });
+    fireEvent.click(screen.getByTestId('shop-jumbo-submit'));
+
+    await waitFor(() => expect(screen.getByTestId('shop-jumbo-status').textContent).toContain('Connected'), { timeout: 5000 });
+    expect(screen.getByTestId('shop-jumbo-disconnect')).toBeTruthy();
+    // per-connection sharing renders for jumbo too
+    expect(await screen.findByTestId('shop-jumbo-share-s-user')).toBeTruthy();
+    // only the session token is kept — never the credentials
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB(USER_TEST_DB);
+    const connection = await db.storeConnections.get('jumbo');
+    expect(connection?.tokens).toEqual({ token: 'jt-1' });
+    expect(JSON.stringify(connection)).not.toContain('geheim');
+    db.close();
+  }, 15_000);
+
   it('settings reaches receipts; the stores door reaches connections', async () => {
     renderApp('/settings');
     await screen.findByTestId('screen-settings');

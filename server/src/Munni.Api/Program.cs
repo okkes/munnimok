@@ -127,7 +127,9 @@ builder.Services.AddAuthorization();
 
 var corsOrigins = builder.Configuration.GetSection("Cors:Origins").Get<string[]>() ?? [];
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
-    p.WithOrigins(corsOrigins).AllowAnyHeader().AllowAnyMethod()));
+    // x-jumbo-token: Jumbo hands its session token back in a response
+    // header, which the store proxy relays and the browser must see
+    p.WithOrigins(corsOrigins).AllowAnyHeader().AllowAnyMethod().WithExposedHeaders("x-jumbo-token")));
 
 // abuse guard, partitioned per user (per IP before auth). The global
 // bucket is sized for the sync engine polling every ten seconds across

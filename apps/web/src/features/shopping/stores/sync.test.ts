@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
 import { HlcClock } from '@/sync/hlc';
-import { storeReceiptId, syncAhReceipts } from './sync';
+import { storeReceiptId, syncAhReceipts, syncJumboReceipts } from './sync';
 import type { ProxyCall } from './ah';
 
 const SPACE = 's1';
@@ -87,7 +87,7 @@ describe('syncAhReceipts', () => {
 
     const { call } = fakeAh();
     const result = await syncAhReceipts(call, db, repo, SPACE);
-    expect(result).toEqual({ status: 'ok', added: 2 });
+    expect(result).toMatchObject({ status: 'ok', added: 2 });
 
     const matched = await db.receipts.get(storeReceiptId('ah', 't-100', SPACE));
     expect(matched?.txId).toBe('tx-ah');
@@ -99,7 +99,7 @@ describe('syncAhReceipts', () => {
 
     // second pass: nothing new, nothing duplicated
     const again = await syncAhReceipts(call, db, repo, SPACE);
-    expect(again).toEqual({ status: 'ok', added: 0 });
+    expect(again).toMatchObject({ status: 'ok', added: 0 });
   });
 
   it('a shared connection writes receipts into every shared space (user ruling)', async () => {
@@ -120,7 +120,7 @@ describe('syncAhReceipts', () => {
 
     const { call, calls } = fakeAh();
     const result = await syncAhReceipts(call, db, repo, SPACE);
-    expect(result).toEqual({ status: 'ok', added: 4 }); // 2 receipts × 2 spaces
+    expect(result).toMatchObject({ status: 'ok', added: 4 }); // 2 receipts × 2 spaces
 
     // each space holds its own copy; matching ran per space
     expect((await db.receipts.get(storeReceiptId('ah', 't-100', SPACE)))?.txId).toBe('tx-ah');
@@ -130,7 +130,7 @@ describe('syncAhReceipts', () => {
 
     // legacy single-space rows (pre-sharing id shape) never re-ingest
     const again = await syncAhReceipts(call, db, repo, SPACE);
-    expect(again).toEqual({ status: 'ok', added: 0 });
+    expect(again).toMatchObject({ status: 'ok', added: 0 });
   });
 
   it('refreshes an expired token once and stores the fresh pair', async () => {
@@ -157,5 +157,72 @@ describe('syncAhReceipts', () => {
     expect(result.status).toBe('expired');
     expect((await db.storeConnections.get('ah'))?.status).toBe('expired');
     expect((await db.storeMarkers.get(`store:${SPACE}:ah`))?.status).toBe('expired');
+  });
+});
+
+/** scripts the Jumbo mobile endpoints */
+function fakeJumbo({ authFails = false } = {}) {
+  const call: ProxyCall = async (_store, path, init) => {
+    if (authFails) return { status: 401, json: null };
+    expect(init?.authorization).toBe('Bearer jumbo-token');
+    if (path === '/v17/users/me/receipts') {
+      return {
+        status: 200,
+        json: {
+          receipts: [
+            { transactionId: 'j-1', purchaseEndOn: '2026-07-05T17:31:00Z', total: { amount: 2350 } }, // cents
+            { transactionId: 'j-2', purchaseEndOn: '2026-07-03T09:00:00Z', total: { amount: 999 } },
+          ],
+        },
+      };
+    }
+    if (path.startsWith('/v17/users/me/receipts/')) {
+      return { status: 200, json: { items: [{ name: 'MELK', quantity: 2, price: { amount: 258 } }] } };
+    }
+    throw new Error(`unexpected path ${path}`);
+  };
+  return { call };
+}
+
+describe('syncJumboReceipts', () => {
+  beforeEach(async () => {
+    await db.storeConnections.put({
+      store: 'jumbo',
+      tokens: { token: 'jumbo-token' },
+      refreshedAt: '2026-07-01T00:00:00Z',
+      status: 'ok',
+    });
+  });
+
+  it('ingests new receipts with the matcher, cents amounts as-is', async () => {
+    await repo.upsert('transaction', SPACE, 'tx-jumbo', {
+      accountId: 'a1',
+      date: '2026-07-05',
+      amountCents: -2350,
+      currency: 'EUR',
+      merchant: 'JUMBO 512 AMSTERDAM',
+      txType: 'expense',
+      needsReview: 0,
+    });
+
+    const { call } = fakeJumbo();
+    const result = await syncJumboReceipts(call, db, repo, SPACE);
+    expect(result).toMatchObject({ status: 'ok', added: 2 });
+
+    const matched = await db.receipts.get(storeReceiptId('jumbo', 'j-1', SPACE));
+    expect(matched?.txId).toBe('tx-jumbo');
+    expect(matched?.merchant).toBe('Jumbo');
+    expect(matched?.items).toEqual([{ name: 'MELK', qty: 2, totalCents: 258 }]);
+
+    // second pass: nothing new, nothing duplicated
+    expect(await syncJumboReceipts(call, db, repo, SPACE)).toEqual({ status: 'ok', added: 0 });
+  });
+
+  it('jumbo sessions do not refresh: an auth failure expires the connection', async () => {
+    const { call } = fakeJumbo({ authFails: true });
+    const result = await syncJumboReceipts(call, db, repo, SPACE);
+    expect(result.status).toBe('expired');
+    expect((await db.storeConnections.get('jumbo'))?.status).toBe('expired');
+    expect((await db.storeMarkers.get(`store:${SPACE}:jumbo`))?.status).toBe('expired');
   });
 });

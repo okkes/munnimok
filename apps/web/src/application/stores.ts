@@ -5,7 +5,8 @@ import { readSessionIdentity } from '@/app/session';
 import { apiFetch } from '@/lib/api';
 import { ahExchangeCode, extractAhCode } from '@/features/shopping/stores/ah';
 import type { ProxyCall } from '@/features/shopping/stores/ah';
-import { syncAhReceipts } from '@/features/shopping/stores/sync';
+import { jumboLogin } from '@/features/shopping/stores/jumbo';
+import { syncAhReceipts, syncJumboReceipts } from '@/features/shopping/stores/sync';
 import type { StoreSyncResult } from '@/features/shopping/stores/sync';
 import type { ReceiptRow, StoreConnectionRow, StoreMarkerRow } from '@/db/types';
 
@@ -13,10 +14,18 @@ import type { ReceiptRow, StoreConnectionRow, StoreMarkerRow } from '@/db/types'
 const proxyCall: ProxyCall = async (store, path, init = {}) => {
   const response = await apiFetch(`/shop/proxy/${store}`, {
     method: 'POST',
-    body: JSON.stringify({ path, method: init.method ?? 'GET', body: init.body, authorization: init.authorization }),
+    body: JSON.stringify({
+      path,
+      method: init.method ?? 'GET',
+      body: init.body,
+      authorization: init.authorization,
+      userAgent: init.userAgent,
+    }),
   });
   const json = await response.json().catch(() => null);
-  return { status: response.status, json };
+  // jumbo hands its session token back in a relayed response header
+  const jumboToken = response.headers.get('x-jumbo-token') ?? undefined;
+  return { status: response.status, json, headers: jumboToken ? { jumboToken } : undefined };
 };
 
 /** store connections are a signed-in-user feature: demo/offline make zero network calls */
@@ -45,14 +54,18 @@ export function useUnmatchedReceipts(): ReceiptRow[] | undefined {
   }, [db, spaceId]);
 }
 
+export type ConnectableStore = 'ah' | 'jumbo';
+
 export interface StoreOps {
   /** paste-the-redirect connect flow; resolves false when the code is bad */
   connectAh: (pasted: string) => Promise<boolean>;
-  disconnect: (store: 'ah') => Promise<void>;
-  syncNow: (store: 'ah') => Promise<StoreSyncResult>;
+  /** username/password login — credentials are exchanged, never stored */
+  connectJumbo: (username: string, password: string) => Promise<boolean>;
+  disconnect: (store: ConnectableStore) => Promise<void>;
+  syncNow: (store: ConnectableStore) => Promise<StoreSyncResult>;
   attachReceipt: (receiptId: string, txId: string) => Promise<void>;
   /** which spaces this connection's receipts flow into (user ruling) */
-  setSharedSpaces: (store: 'ah', spaceIds: string[]) => Promise<void>;
+  setSharedSpaces: (store: ConnectableStore, spaceIds: string[]) => Promise<void>;
 }
 
 export function useStoreOps(): StoreOps {
@@ -85,10 +98,26 @@ export function useStoreOps(): StoreOps {
         await repo.remove('storeMarker', shared, `store:${shared}:${store}`);
       }
     },
-    syncNow: (store) => {
-      void store;
-      return syncAhReceipts(proxyCall, db, repo, spaceId);
+    connectJumbo: async (username, password) => {
+      const token = await jumboLogin(proxyCall, username, password);
+      if (!token) return false;
+      await db.storeConnections.put({
+        store: 'jumbo',
+        tokens: { token },
+        refreshedAt: new Date().toISOString(),
+        status: 'ok',
+        sharedSpaceIds: [spaceId], // starts private to the connecting space
+      });
+      await repo.upsert('storeMarker', spaceId, `store:${spaceId}:jumbo`, {
+        store: 'jumbo',
+        status: 'connected',
+        connectedAt: new Date().toISOString().slice(0, 10),
+      });
+      void syncJumboReceipts(proxyCall, db, repo, spaceId);
+      return true;
     },
+    syncNow: (store) =>
+      store === 'jumbo' ? syncJumboReceipts(proxyCall, db, repo, spaceId) : syncAhReceipts(proxyCall, db, repo, spaceId),
     attachReceipt: async (receiptId, txId) => {
       await repo.upsert('receipt', spaceId, receiptId, { txId });
     },
@@ -109,7 +138,8 @@ export function useStoreOps(): StoreOps {
         await repo.remove('storeMarker', id, `store:${id}:${store}`);
       }
       // newly shared spaces receive the backlog right away
-      void syncAhReceipts(proxyCall, db, repo, spaceId).catch(() => undefined);
+      const sync = store === 'jumbo' ? syncJumboReceipts : syncAhReceipts;
+      void sync(proxyCall, db, repo, spaceId).catch(() => undefined);
     },
   };
 }
@@ -128,10 +158,13 @@ export function useStoreKeepAlive(): void {
     if (ran.current || !storesAvailable() || !navigator.onLine) return;
     ran.current = true;
     void (async () => {
-      const connection = await db.storeConnections.get('ah');
-      if (connection?.status !== 'ok') return;
-      if (Date.now() - Date.parse(connection.refreshedAt) < KEEP_ALIVE_MS) return;
-      await syncAhReceipts(proxyCall, db, repo, spaceId);
+      for (const store of ['ah', 'jumbo'] as const) {
+        const connection = await db.storeConnections.get(store);
+        if (connection?.status !== 'ok') continue;
+        if (Date.now() - Date.parse(connection.refreshedAt) < KEEP_ALIVE_MS) continue;
+        const sync = store === 'jumbo' ? syncJumboReceipts : syncAhReceipts;
+        await sync(proxyCall, db, repo, spaceId);
+      }
     })().catch(() => undefined); // best-effort: a closed db or offline hop must not throw
   }, [db, repo, spaceId]);
 }
