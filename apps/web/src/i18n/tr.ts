@@ -1152,6 +1152,8 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'split.modeAmount': 'Tutarlar (€)',
   'split.modePct': 'Yüzdeler (%)',
   'reimb.reimburses': 'Şunu karşılıyor',
+  'reimb.linkOut': 'Gider bağla',
+  'reimb.settled': 'Tamamen karşılandı',
   'reimb.counterpart': 'Bağlı işlem',
   'reimb.linkedFor': '{amount} için bağlı',
   'reimb.openTx': 'İşlemi aç',

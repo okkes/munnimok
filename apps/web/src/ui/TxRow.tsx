@@ -1,7 +1,7 @@
 import { LOCALES, useLang } from '@/i18n';
 import { fmtCents } from '@/lib/money';
 import { cleanBankText } from '@/lib/text';
-import { netAmountCents } from '@/domain/reimbursement';
+import { netAmountCents, netCreditCents } from '@/domain/reimbursement';
 import type { TransactionRow } from '@/db/types';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { Highlight } from './Highlight';
@@ -17,6 +17,7 @@ export function TxRow({
   amountOverrideCents,
   selected = false,
   accountName,
+  givenCents = 0,
 }: {
   tx: TransactionRow;
   onClick?: () => void;
@@ -31,6 +32,8 @@ export function TxRow({
   selected?: boolean;
   /** desktop density (D2): the account surfaces as an md+ column */
   accountName?: string;
+  /** cents this credit gave away as reimbursements (derived by the list) */
+  givenCents?: number;
 }) {
   const { t, lang } = useLang();
   const cats = useCategories();
@@ -39,8 +42,9 @@ export function TxRow({
   const color = cat.color ?? parent?.color ?? 'var(--m-ink-3)';
 
   // reimbursements change what a transaction really cost — lists show
-  // the net truth, with the gross quietly struck through beside it
-  const net = netAmountCents(tx);
+  // the net truth, with the gross quietly struck through beside it;
+  // credits net out what they refunded elsewhere the same way
+  const net = tx.amountCents > 0 ? netCreditCents(tx, givenCents) : netAmountCents(tx);
   const display = amountOverrideCents ?? net;
   const positive = display > 0;
   const reimbursed = net !== tx.amountCents;

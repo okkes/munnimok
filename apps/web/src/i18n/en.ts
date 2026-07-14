@@ -1150,6 +1150,8 @@ export const en = {
   'split.modeAmount': 'Amounts (€)',
   'split.modePct': 'Percentages (%)',
   'reimb.reimburses': 'Reimburses',
+  'reimb.linkOut': 'Link an expense',
+  'reimb.settled': 'Fully reimbursed',
   'reimb.counterpart': 'Linked transaction',
   'reimb.linkedFor': 'linked for {amount}',
   'reimb.openTx': 'Open transaction',

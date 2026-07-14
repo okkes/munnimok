@@ -1152,6 +1152,8 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'split.modeAmount': 'Bedragen (€)',
   'split.modePct': 'Percentages (%)',
   'reimb.reimburses': 'Vergoedt',
+  'reimb.linkOut': 'Uitgave koppelen',
+  'reimb.settled': 'Volledig vergoed',
   'reimb.counterpart': 'Gekoppelde transactie',
   'reimb.linkedFor': 'gekoppeld voor {amount}',
   'reimb.openTx': 'Transactie openen',

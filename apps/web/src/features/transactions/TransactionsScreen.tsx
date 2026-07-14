@@ -42,6 +42,16 @@ export function TransactionsScreen() {
   // desktop density (D2): the account column needs names, one lookup for all rows
   const accounts = useSpaceAccounts();
   const accountNames = useMemo(() => new Map((accounts ?? []).map((a) => [a.id, a.name])), [accounts]);
+  // credits net out what they refunded: one pass over the links for the whole list
+  const givenByCredit = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const item of allTxs ?? []) {
+      for (const link of item.reimbursements ?? []) {
+        map.set(link.txId, (map.get(link.txId) ?? 0) + link.amountCents);
+      }
+    }
+    return map;
+  }, [allTxs]);
   // when embedded as a master pane (§4.2) the open detail's row lights up
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const openTxId = /^\/transactions\/([^/]+)$/.exec(pathname)?.[1];
@@ -173,6 +183,7 @@ export function TransactionsScreen() {
                   highlight={query}
                   selected={tx.id === openTxId}
                   accountName={accountNames.get(tx.accountId)}
+                  givenCents={givenByCredit.get(tx.id) ?? 0}
                   onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })}
                 />
               ))}
