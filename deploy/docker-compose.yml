@@ -42,6 +42,8 @@ services:
       Push__VapidPublicKey: ${PUSH_VAPID_PUBLIC_KEY:-}
       Push__VapidPrivateKey: ${PUSH_VAPID_PRIVATE_KEY:-}
       Push__Subject: ${PUSH_VAPID_SUBJECT:-mailto:admin@localhost}
+      # native shell push (FCM HTTP v1) — the Firebase service-account key file, as one line
+      Fcm__ServiceAccountJson: ${FCM_SERVICE_ACCOUNT_JSON:-}
       # logo.dev brand search for recurring costs (optional)
       Logos__SecretKey: ${LOGODEV_SECRET_KEY:-}
       Logos__PublicToken: ${LOGODEV_PUBLIC_TOKEN:-}

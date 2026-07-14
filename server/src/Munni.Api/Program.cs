@@ -32,10 +32,21 @@ builder.Services.AddSingleton<SpaceEventBroadcaster>();
 // OpenAPI document + Scalar reference UI at /scalar
 builder.Services.AddOpenApi();
 
-// web push: enabled when a VAPID key pair is configured
+// push transports, each enabled by its own config: VAPID keys for the
+// browsers, a Firebase service account for the native shells (N4). The
+// router sends every row through whichever transport its kind has.
 var pushEnabled = !string.IsNullOrEmpty(builder.Configuration["Push:VapidPublicKey"])
                   && !string.IsNullOrEmpty(builder.Configuration["Push:VapidPrivateKey"]);
-if (pushEnabled) builder.Services.AddSingleton<IPushSender, WebPushSender>();
+var fcmEnabled = !string.IsNullOrEmpty(builder.Configuration["Fcm:ServiceAccountJson"]);
+if (fcmEnabled) builder.Services.AddHttpClient("fcm", client => client.BaseAddress = new Uri("https://fcm.googleapis.com/"));
+if (pushEnabled || fcmEnabled)
+{
+    builder.Services.AddSingleton<IPushSender>(sp => new RoutingPushSender(
+        pushEnabled ? new WebPushSender(sp.GetRequiredService<IConfiguration>()) : null,
+        fcmEnabled
+            ? new FcmPushSender(sp.GetRequiredService<IHttpClientFactory>().CreateClient("fcm"), sp.GetRequiredService<IConfiguration>())
+            : null));
+}
 builder.Services.AddScoped(sp => new PushNotifier(
     sp.GetRequiredService<AppDbContext>(),
     sp.GetService<IPushSender>() ?? new NoopPushSender(),

@@ -355,7 +355,6 @@ namespace Munni.Api.Migrations
                         .HasColumnType("uuid");
 
                     b.Property<string>("Auth")
-                        .IsRequired()
                         .HasColumnType("text");
 
                     b.Property<DateTimeOffset>("CreatedAt")
@@ -365,8 +364,11 @@ namespace Munni.Api.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<string>("P256dh")
+                    b.Property<string>("Kind")
                         .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("P256dh")
                         .HasColumnType("text");
 
                     b.Property<Guid>("UserId")

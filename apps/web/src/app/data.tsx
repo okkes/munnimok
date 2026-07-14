@@ -12,6 +12,7 @@ import { SyncEngine } from '@/sync/engine';
 import { config } from './config';
 import { requestOutboxSync } from './pwa';
 import { clearSwSession, jwtExpiryMs, mirrorSessionForSw } from '@/lib/swBridge';
+import { ensurePersistentStorage } from '@/lib/platform';
 import { getAccessToken, waitForAuthReady } from './authToken';
 import { identityKey, useSession } from './session';
 import type { Identity } from './session';
@@ -157,8 +158,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     void (async () => {
       // ask the browser not to evict our data (iOS 7-day ITP wipe etc.);
-      // best-effort — installed PWAs are exempt anyway
-      if (identity.kind !== 'demo') void navigator.storage?.persist?.().catch(() => undefined);
+      // best-effort — installed PWAs are exempt, native storage is app-scoped
+      if (identity.kind !== 'demo') void ensurePersistentStorage();
       if (identity.kind === 'demo') await seedDemoIfNeeded(repo);
       if (identity.kind === 'offline' && (await db.spaces.filter((s) => s.deleted === 0).count()) === 0) {
         // fully local profile: personal space named after the profile

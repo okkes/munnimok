@@ -1,13 +1,18 @@
 import { apiFetch } from './api';
+import { getNativePushToken, isNativeApp } from './platform';
 
 /**
- * Web Push subscription management. Only user identities subscribe —
- * demo/offline have no server to push from. The service worker
- * (src/sw.ts) renders the notifications.
+ * Push subscription management. Only user identities subscribe —
+ * demo/offline have no server to push from. Web/PWA: Web Push, rendered
+ * by the service worker (src/sw.ts). Native shell: FCM/APNs device
+ * tokens through the platform adapter — the server fans out per kind.
  */
 
+/** the native shell remembers its device token so disable can unregister */
+const FCM_TOKEN_KEY = 'munni_fcm_token';
+
 export const pushSupported = (): boolean =>
-  'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  isNativeApp() || ('serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window);
 
 function urlBase64ToUint8Array(base64: string): Uint8Array {
   const padding = '='.repeat((4 - (base64.length % 4)) % 4);
@@ -23,6 +28,16 @@ export async function getPushSubscription(): Promise<PushSubscription | null> {
 
 /** asks permission, subscribes the browser and registers with the API */
 export async function enablePush(vapidPublicKey: string): Promise<boolean> {
+  if (isNativeApp()) {
+    const token = await getNativePushToken();
+    if (!token) return false;
+    const response = await apiFetch('/me/push-subscriptions', {
+      method: 'POST',
+      body: JSON.stringify({ kind: 'fcm', endpoint: token }),
+    });
+    if (response.ok) localStorage.setItem(FCM_TOKEN_KEY, token);
+    return response.ok;
+  }
   if (!pushSupported()) return false;
   const permission = await Notification.requestPermission();
   if (permission !== 'granted') return false;
@@ -44,6 +59,15 @@ export async function enablePush(vapidPublicKey: string): Promise<boolean> {
 }
 
 export async function disablePush(): Promise<void> {
+  if (isNativeApp()) {
+    const token = localStorage.getItem(FCM_TOKEN_KEY);
+    if (!token) return;
+    await apiFetch(`/me/push-subscriptions?endpoint=${encodeURIComponent(token)}`, {
+      method: 'DELETE',
+    }).catch(() => undefined);
+    localStorage.removeItem(FCM_TOKEN_KEY);
+    return;
+  }
   const subscription = await getPushSubscription();
   if (!subscription) return;
   await apiFetch(`/me/push-subscriptions?endpoint=${encodeURIComponent(subscription.endpoint)}`, {

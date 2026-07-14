@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLogto } from '@logto/react';
 import { useLang } from '@/i18n';
-import { config, logtoConfigured } from '@/app/config';
+import { config, logtoConfigured, publicOrigin } from '@/app/config';
 import { useData } from '@/app/data';
 import { apiFetch } from '@/lib/api';
 import { Highlight } from '@/ui/Highlight';
@@ -57,7 +57,10 @@ export function BankConnectSheet({ open, onOpenChange }: { open: boolean; onOpen
         body: JSON.stringify({
           spaceId,
           institutionId,
-          redirectUrl: `${window.location.origin}/gc-callback`,
+          // hosted origin, not window origin: inside the native shell the
+          // window is localhost; the hosted page completes anonymously via
+          // the reference capability token either way
+          redirectUrl: `${publicOrigin()}/gc-callback`,
         }),
       });
       if (!res.ok) throw new Error(String(res.status));

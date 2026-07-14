@@ -5,7 +5,8 @@ using Munni.Api.Validation;
 
 namespace Munni.Api.Push;
 
-public sealed record SubscribeRequest(string Endpoint, string P256dh, string Auth);
+/// <summary>Kind "webpush" (default): endpoint+keys. Kind "fcm": the device token rides Endpoint, keys stay null.</summary>
+public sealed record SubscribeRequest(string Endpoint, string? P256dh = null, string? Auth = null, string Kind = "webpush");
 
 public static class PushEndpoints
 {
@@ -23,6 +24,7 @@ public static class PushEndpoints
                 {
                     Id = Guid.NewGuid(),
                     UserId = me,
+                    Kind = request.Kind,
                     Endpoint = request.Endpoint,
                     P256dh = request.P256dh,
                     Auth = request.Auth,
@@ -32,6 +34,7 @@ public static class PushEndpoints
             {
                 // browser rotated keys for the same endpoint, or device changed hands
                 existing.UserId = me;
+                existing.Kind = request.Kind;
                 existing.P256dh = request.P256dh;
                 existing.Auth = request.Auth;
             }
