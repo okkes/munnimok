@@ -86,12 +86,31 @@ public sealed partial class GcIngest(AppDbContext db)
             spaceOps.Add(NewOp(space.Id, "txMeta", ImportIds.TxMetaId(space.Id, entityId), metaFields, NextHlc(), $"gcmeta:{space.Id}:{entityId}"));
         }
 
-        // pending (reserved) charges: mirrored with a pending flag so the
-        // user sees money that is spoken for (user request). No overlay and
-        // no review — they are replaced by their booked twin later. Rows
-        // that left the bank's pending list get tombstoned.
+        await MirrorPendingAsync(linked, feedSpace.Id, pending ?? [], feedOps, NextHlc);
+
+        var writer = new SyncWriter(db);
+        await writer.ApplyAsync(feedSpace, null, accountOps);
+        // returns NEW raw transactions only (account/overlay refresh not counted)
+        var (_, accepted) = await writer.ApplyAsync(feedSpace, null, feedOps);
+        await writer.ApplyAsync(space, null, spaceOps);
+        return accepted;
+    }
+
+    /// <summary>
+    /// Pending (reserved) charges: mirrored with a pending flag so the user
+    /// sees money that is spoken for (user request). No overlay and no
+    /// review — the booked twin replaces them later. Rows that left the
+    /// bank's pending list get tombstoned.
+    /// </summary>
+    private async Task MirrorPendingAsync(
+        GcLinkedAccount linked,
+        string feedSpaceId,
+        IReadOnlyList<GcTransaction> pending,
+        List<SyncOpDto> feedOps,
+        Func<string> nextHlc)
+    {
         var currentPending = new HashSet<string>();
-        foreach (var tx in pending ?? [])
+        foreach (var tx in pending)
         {
             var reference = tx.TransactionId ?? tx.InternalTransactionId;
             var date = tx.BookingDate ?? tx.ValueDate;
@@ -114,26 +133,19 @@ public sealed partial class GcIngest(AppDbContext db)
                 ["pending"] = Json(1),
             };
             // content-derived op seed: a pending amount update re-emits
-            feedOps.Add(NewOp(feedSpace.Id, "transaction", entityId, pendingFields, NextHlc(), $"gcpend:{entityId}:{date}:{cents}"));
+            feedOps.Add(NewOp(feedSpaceId, "transaction", entityId, pendingFields, nextHlc(), $"gcpend:{entityId}:{date}:{cents}"));
         }
         var tracked = await db.GcPendingTxs.Where(p => p.GcAccountId == linked.GcAccountId).ToListAsync();
         foreach (var stale in tracked.Where(p => !currentPending.Contains(p.EntityId)))
         {
             feedOps.Add(new SyncOpDto(
                 ImportIds.OpId($"gcpendrm:{stale.EntityId}:{DateTime.UtcNow.Ticks}"),
-                feedSpace.Id, "transaction", stale.EntityId, new Dictionary<string, JsonElement>(), NextHlc(), Deleted: true));
+                feedSpaceId, "transaction", stale.EntityId, new Dictionary<string, JsonElement>(), nextHlc(), Deleted: true));
             db.GcPendingTxs.Remove(stale);
         }
         var trackedIds = tracked.Select(p => p.EntityId).ToHashSet();
         foreach (var id in currentPending.Where(id => !trackedIds.Contains(id)))
             db.GcPendingTxs.Add(new GcPendingTx { GcAccountId = linked.GcAccountId, EntityId = id });
-
-        var writer = new SyncWriter(db);
-        await writer.ApplyAsync(feedSpace, null, accountOps);
-        // returns NEW raw transactions only (account/overlay refresh not counted)
-        var (_, accepted) = await writer.ApplyAsync(feedSpace, null, feedOps);
-        await writer.ApplyAsync(space, null, spaceOps);
-        return accepted;
     }
 
     /// <summary>The feed account row's fields: raw bank truth plus the logo hint.</summary>

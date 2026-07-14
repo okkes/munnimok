@@ -82,6 +82,8 @@ public interface IGoCardlessApi
 
 public sealed class GoCardlessApi(HttpClient http, IConfiguration config) : IGoCardlessApi
 {
+    private const string BearerScheme = "Bearer";
+
     private string? _accessToken;
     private DateTimeOffset _accessExpires = DateTimeOffset.MinValue;
     private readonly SemaphoreSlim _tokenLock = new(1, 1);
@@ -117,7 +119,7 @@ public sealed class GoCardlessApi(HttpClient http, IConfiguration config) : IGoC
     private async Task<T> GetAsync<T>(string path, CancellationToken ct)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, path);
-        request.Headers.Authorization = new("Bearer", await GetTokenAsync(ct));
+        request.Headers.Authorization = new(BearerScheme, await GetTokenAsync(ct));
         var response = await http.SendAsync(request, ct);
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<T>(ct))!;
@@ -132,7 +134,7 @@ public sealed class GoCardlessApi(HttpClient http, IConfiguration config) : IGoC
         {
             Content = JsonContent.Create(new { redirect, institution_id = institutionId, reference }),
         };
-        request.Headers.Authorization = new("Bearer", await GetTokenAsync(ct));
+        request.Headers.Authorization = new(BearerScheme, await GetTokenAsync(ct));
         var response = await http.SendAsync(request, ct);
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<GcRequisitionCreated>(ct))!;
@@ -149,7 +151,7 @@ public sealed class GoCardlessApi(HttpClient http, IConfiguration config) : IGoC
     public async Task DeleteRequisitionAsync(string requisitionId, CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Delete, $"requisitions/{requisitionId}/");
-        request.Headers.Authorization = new("Bearer", await GetTokenAsync(ct));
+        request.Headers.Authorization = new(BearerScheme, await GetTokenAsync(ct));
         var response = await http.SendAsync(request, ct);
         response.EnsureSuccessStatusCode();
     }
@@ -173,7 +175,7 @@ public sealed class GoCardlessApi(HttpClient http, IConfiguration config) : IGoC
     {
         var query = from is null ? "" : $"?date_from={from:yyyy-MM-dd}";
         using var request = new HttpRequestMessage(HttpMethod.Get, $"accounts/{gcAccountId}/transactions/{query}");
-        request.Headers.Authorization = new("Bearer", await GetTokenAsync(ct));
+        request.Headers.Authorization = new(BearerScheme, await GetTokenAsync(ct));
         var response = await http.SendAsync(request, ct);
         response.EnsureSuccessStatusCode();
         var envelope = (await response.Content.ReadFromJsonAsync<TxEnvelope>(ct))!;

@@ -15,12 +15,19 @@ export interface TxFilter {
   to?: string;
 }
 
+/** text hit on merchant/description, or — for numeric queries ('10',
+ *  '10,99') — a digit-substring hit on the amount: '10' finds 10,99 and
+ *  210,15 alike (user request) */
+function matchesQuery(tx: TransactionRow, q: string, amountQ: string | null): boolean {
+  const haystack = `${cleanBankText(tx.merchant)} ${cleanBankText(tx.description)}`.toLowerCase();
+  if (haystack.includes(q)) return true;
+  return !!amountQ && String(Math.abs(tx.amountCents)).includes(amountQ);
+}
+
 export function filterTxs(txs: TransactionRow[], filter: TxFilter): TransactionRow[] {
   const q = filter.query?.trim().toLowerCase();
-  // a numeric query ('10', '10,99') also matches amounts by their digit
-  // string — '10' finds 10,99 and 210,15 alike (user request)
-  const amountQ = q?.replaceAll(/[\s.,€-]/g, '');
-  const amountSearch = !!amountQ && /^\d+$/.test(amountQ);
+  const digits = q?.replaceAll(/[\s.,€-]/g, '') ?? '';
+  const amountQ = /^\d+$/.test(digits) ? digits : null;
   return txs.filter((tx) => {
     if (filter.accountIds?.size && !filter.accountIds.has(tx.accountId)) return false;
     if (filter.onlyNeedsReview && tx.needsReview !== 1) return false;
@@ -28,12 +35,7 @@ export function filterTxs(txs: TransactionRow[], filter: TxFilter): TransactionR
     if (filter.txTypes?.size && !filter.txTypes.has(tx.txType)) return false;
     if (filter.from && tx.date < filter.from) return false;
     if (filter.to && tx.date > filter.to) return false;
-    if (q) {
-      const haystack = `${cleanBankText(tx.merchant)} ${cleanBankText(tx.description)}`.toLowerCase();
-      const amountHit = amountSearch && String(Math.abs(tx.amountCents)).includes(amountQ);
-      if (!haystack.includes(q) && !amountHit) return false;
-    }
-    return true;
+    return !q || matchesQuery(tx, q, amountQ);
   });
 }
 
