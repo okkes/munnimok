@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useParams } from '@tanstack/react-router';
+import { useNavigate, useParams } from '@tanstack/react-router';
 import { useSpaceTransaction, useTxTransform } from '@/application/transactions';
 import { useRecurringOps, useRecurrings } from '@/application/recurring';
 import { useEvents } from '@/application/events';
@@ -38,6 +38,18 @@ export function TxDetailScreen() {
   const [recurringOpen, setRecurringOpen] = useState(false);
   const [eventOpen, setEventOpen] = useState(false);
   const [counterOpen, setCounterOpen] = useState(false);
+  const navigate = useNavigate();
+
+  // desktop affordance (D5): Esc closes the detail pane back to the plain
+  // list — but only when no sheet is open (sheets own their own Esc)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || document.querySelector('[role="dialog"]')) return;
+      void navigate({ to: '/transactions' });
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [navigate]);
 
   const tx = useSpaceTransaction(txId);
   const transform = useTxTransform();

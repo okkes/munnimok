@@ -16,6 +16,7 @@ export function TxRow({
   hideCategory = false,
   amountOverrideCents,
   selected = false,
+  accountName,
 }: {
   tx: TransactionRow;
   onClick?: () => void;
@@ -28,6 +29,8 @@ export function TxRow({
   amountOverrideCents?: number;
   /** master–detail panes mark the row whose detail is open (§4.2) */
   selected?: boolean;
+  /** desktop density (D2): the account surfaces as an md+ column */
+  accountName?: string;
 }) {
   const { t, lang } = useLang();
   const cats = useCategories();
@@ -46,7 +49,7 @@ export function TxRow({
     <button
       onClick={onClick}
       data-testid={`tx-row-${tx.id}`}
-      className={`m-tap flex w-full items-center gap-3 rounded-xl border-none px-1 py-2.5 text-left ${
+      className={`m-tap flex w-full items-center gap-3 rounded-xl border-none px-1 py-2.5 text-left md:py-2 ${
         selected ? 'bg-accent-soft/50' : 'bg-transparent'
       }`}
     >
@@ -78,6 +81,11 @@ export function TxRow({
           )}
         </span>
       </span>
+      {accountName && (
+        <span className="hidden max-w-[180px] shrink-0 truncate text-right text-[12px] text-ink-4 md:block">
+          {accountName}
+        </span>
+      )}
       <span className="shrink-0 text-right">
         <span className={`m-num block text-[14px] font-semibold ${positive ? 'text-accent-deep' : 'text-ink'}`}>
           {fmtCents(display, tx.currency, lang, { sign: true })}

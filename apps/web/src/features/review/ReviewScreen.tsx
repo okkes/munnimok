@@ -282,6 +282,26 @@ export function ReviewScreen() {
 
   const emptyBecauseSkipped = queue && queue.length > 0 && remaining?.length === 0;
 
+  // desktop affordances (D5): Enter confirms, ←/→ skips to the next card —
+  // never while a sheet is open or the focus sits in an input
+  useEffect(() => {
+    if (!tx) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (document.querySelector('[role="dialog"]')) return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT')) return;
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        void confirm();
+      } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+        e.preventDefault();
+        setSkipped((prev) => new Set([...prev, tx.id]));
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-review">
       <AppBar
@@ -321,7 +341,11 @@ export function ReviewScreen() {
           </div>
         )}
         {tx && (
-          <>
+          /* D3 focus layout: at lg the deck becomes a fixed 520px column,
+             vertically centered and LEFT of center — the pickers slide in
+             as right-hand panels, so card and editor are visible together.
+             Skip/Confirm attach under the card instead of the far bottom. */
+          <div className="flex min-h-0 flex-1 flex-col lg:my-auto lg:w-[520px] lg:flex-none lg:pb-10">
             <div className="mt-4 rounded-card border border-line bg-surface px-6 py-7 text-center" data-testid="review-card">
               <div className="text-[12px] text-ink-4">
                 {new Intl.DateTimeFormat(LOCALES[lang], { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(tx.date))}
@@ -401,7 +425,8 @@ export function ReviewScreen() {
 
             <BulkConfirmSection key={tx.id} similar={similar} selected={bulkSelected} onChange={setBulkSelected} />
 
-            <div className="mt-auto flex gap-3 pt-4">
+            {/* mobile: pinned to the thumb at the bottom; lg: attached to the card */}
+            <div className="mt-auto flex gap-3 pt-4 lg:mt-0">
               <Button
                 variant="outline"
                 className="w-28"
@@ -422,7 +447,7 @@ export function ReviewScreen() {
                 </span>
               </Button>
             </div>
-          </>
+          </div>
         )}
       </div>
 
