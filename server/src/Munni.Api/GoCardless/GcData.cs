@@ -10,9 +10,11 @@ public class GcRequisition
     public Guid UserId { get; set; }
     public required string SpaceId { get; set; }
     public required string InstitutionId { get; set; }
-    /// <summary>GoCardless requisition id.</summary>
+    /// <summary>the provider's consent id (GC requisition / EB session).</summary>
     public required string RequisitionId { get; set; }
     public required string Status { get; set; } // created | linked | expired
+    /// <summary>which bank-data provider owns this consent</summary>
+    public string Provider { get; set; } = "gocardless";
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
@@ -27,6 +29,8 @@ public class GcLinkedAccount
     public required string Iban { get; set; }
     public required string Currency { get; set; }
     public Guid RequisitionId { get; set; }
+    /// <summary>which bank-data provider fetches this account</summary>
+    public string Provider { get; set; } = "gocardless";
     public DateTimeOffset? LastFetchAt { get; set; }
     /// <summary>
     /// when the full 90-day history landed in the account's FEED space —

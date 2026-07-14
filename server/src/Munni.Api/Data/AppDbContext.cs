@@ -21,6 +21,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<FeedSpace> FeedSpaces => Set<FeedSpace>();
     public DbSet<SpaceAccountLink> SpaceAccountLinks => Set<SpaceAccountLink>();
     public DbSet<GcPendingTx> GcPendingTxs => Set<GcPendingTx>();
+    public DbSet<AppSetting> AppSettings => Set<AppSetting>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -76,7 +77,15 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasIndex(x => x.FeedSpaceId);
         });
         modelBuilder.Entity<GcPendingTx>(e => e.HasKey(x => new { x.GcAccountId, x.EntityId }));
+        modelBuilder.Entity<AppSetting>(e => e.HasKey(x => x.Key));
     }
+}
+
+/// <summary>admin-editable server-wide settings (active bank provider, …)</summary>
+public class AppSetting
+{
+    public required string Key { get; set; }
+    public required string Value { get; set; }
 }
 
 public class User

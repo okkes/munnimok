@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Munni.Api.Banking;
 using Munni.Api.Data;
 
 namespace Munni.Api.GoCardless;
@@ -58,12 +59,15 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
     {
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var gc = scope.ServiceProvider.GetRequiredService<IGoCardlessApi>();
+        // slot cleanup is a GoCardless-specific concern (their free tier
+        // counts connections) — skip entirely when GC isn't configured
+        var gc = scope.ServiceProvider.GetService<IGoCardlessApi>();
+        if (gc is null) return;
 
         var cutoff = DateTimeOffset.UtcNow - IdleGraceDays;
         var used = await db.GcLinkedAccounts.Select(a => a.RequisitionId).Distinct().ToListAsync(ct);
         var idle = await db.GcRequisitions
-            .Where(r => r.CreatedAt < cutoff && !used.Contains(r.Id))
+            .Where(r => r.CreatedAt < cutoff && !used.Contains(r.Id) && r.Provider == GoCardlessBankApi.Id)
             .ToListAsync(ct);
         foreach (var requisition in idle)
         {
@@ -94,7 +98,7 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
     {
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var gc = scope.ServiceProvider.GetRequiredService<IGoCardlessApi>();
+        var registry = scope.ServiceProvider.GetRequiredService<BankProviderRegistry>();
 
         var linkedAccounts = await db.GcLinkedAccounts.ToListAsync(ct);
         foreach (var linked in linkedAccounts)
@@ -103,7 +107,8 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
             if (_rateLimitedUntil.TryGetValue(linked.GcAccountId, out var until) && DateTimeOffset.UtcNow < until) continue;
             try
             {
-                await FetchAccountAsync(scope.ServiceProvider, db, gc, linked, ct);
+                // every account keeps fetching through the provider that created it
+                await FetchAccountAsync(scope.ServiceProvider, db, registry.For(linked.Provider), linked, ct);
             }
             catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
             {
@@ -121,7 +126,7 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
         }
     }
 
-    internal async Task FetchAccountAsync(IServiceProvider services, AppDbContext db, IGoCardlessApi gc, GcLinkedAccount linked, CancellationToken ct)
+    internal async Task FetchAccountAsync(IServiceProvider services, AppDbContext db, IBankDataApi gc, GcLinkedAccount linked, CancellationToken ct)
     {
         var space = await db.Spaces.FindAsync([linked.SpaceId], ct);
         if (space is null) return;

@@ -30,3 +30,7 @@ input[type='text'], input:not([type]) { height: 36px; padding: 0 10px; border: 1
 .btn:disabled { opacity: 0.5; }
 .center { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
 .denied { color: var(--danger); font-weight: 600; }
+
+/* bank-provider picker */
+.hint { color: var(--ink-3, #777); font-size: 12px; margin: 0 0 8px; }
+.radio { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 14px; cursor: pointer; }

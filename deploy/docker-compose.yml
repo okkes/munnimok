@@ -35,6 +35,10 @@ services:
       Cors__Origins__1: https://munni-admin.${DOMAIN}
       GoCardless__SecretId: ${GOCARDLESS_SECRET_ID}
       GoCardless__SecretKey: ${GOCARDLESS_SECRET_KEY}
+      # Enable Banking (free-for-personal alternative; the admin console
+      # picks which provider serves new consents)
+      EnableBanking__ApplicationId: ${ENABLEBANKING_APPLICATION_ID:-}
+      EnableBanking__PrivateKeyPem: ${ENABLEBANKING_PRIVATE_KEY_PEM:-}
       Push__VapidPublicKey: ${PUSH_VAPID_PUBLIC_KEY:-}
       Push__VapidPrivateKey: ${PUSH_VAPID_PRIVATE_KEY:-}
       Push__Subject: ${PUSH_VAPID_SUBJECT:-mailto:admin@localhost}

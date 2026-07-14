@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Munni.Api.Auth;
+using Munni.Api.Banking;
 using Munni.Api.Data;
 using Munni.Api.GoCardless;
 using Munni.Api.Validation;
@@ -7,6 +8,7 @@ using Munni.Api.Validation;
 namespace Munni.Api.Admin;
 
 public sealed record AdminUserDto(Guid Id, string Sub, string? DisplayName, string? Email, DateTimeOffset CreatedAt, int SpaceCount);
+public sealed record BankProviderChoice(string Provider);
 public sealed record AdminRequisitionDto(
     string RequisitionId,
     string Status,
@@ -24,12 +26,33 @@ public sealed record AdminRequisitionDto(
 /// </summary>
 public static class AdminEndpoints
 {
-    public static void MapAdmin(this IEndpointRouteBuilder app, bool goCardlessEnabled)
+    public static void MapAdmin(this IEndpointRouteBuilder app, bool goCardlessEnabled, bool bankingEnabled)
     {
         var group = app.MapGroup("/admin").RequireAuthorization().WithSafeRouteParams();
 
         group.MapGet("/ping", async (HttpContext http, AppDbContext db, IConfiguration config) =>
-            await IsAdminAsync(http, db, config) ? Results.Ok(new { admin = true, gocardless = goCardlessEnabled }) : Results.Forbid());
+            await IsAdminAsync(http, db, config)
+                ? Results.Ok(new { admin = true, gocardless = goCardlessEnabled, banking = bankingEnabled })
+                : Results.Forbid());
+
+        if (bankingEnabled)
+        {
+            // which provider serves NEW bank consents (user request) —
+            // existing accounts keep the provider that created them
+            group.MapGet("/bank-provider", async (HttpContext http, AppDbContext db, IConfiguration config, BankProviderRegistry registry) =>
+            {
+                if (!await IsAdminAsync(http, db, config)) return Results.Forbid();
+                return Results.Ok(new { active = await registry.ActiveIdAsync(db), configured = registry.ConfiguredIds });
+            });
+
+            group.MapPut("/bank-provider", async (BankProviderChoice choice, HttpContext http, AppDbContext db, IConfiguration config, BankProviderRegistry registry) =>
+            {
+                if (!await IsAdminAsync(http, db, config)) return Results.Forbid();
+                return await registry.SetActiveAsync(db, choice.Provider)
+                    ? Results.Ok(new { active = choice.Provider })
+                    : Results.BadRequest(new { error = "provider not configured" });
+            });
+        }
 
         group.MapGet("/users", async (HttpContext http, AppDbContext db, IConfiguration config) =>
         {

@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
 using Munni.Api.Accounts;
 using Munni.Api.Auth;
+using Munni.Api.Banking;
 using Munni.Api.Data;
 using Munni.Api.Admin;
 using Munni.Api.GoCardless;
@@ -40,12 +41,29 @@ builder.Services.AddScoped(sp => new PushNotifier(
     sp.GetService<IPushSender>() ?? new NoopPushSender(),
     sp.GetRequiredService<ILogger<PushNotifier>>()));
 
-if (!string.IsNullOrEmpty(builder.Configuration["GoCardless:SecretId"]))
+// bank-data providers: the admin picks which one serves NEW consents;
+// existing accounts keep fetching through the provider that created them
+var gcConfigured = !string.IsNullOrEmpty(builder.Configuration["GoCardless:SecretId"]);
+if (gcConfigured)
 {
     // fixed vendor endpoint, overridable for tests/self-hosted proxies
     var gcBaseUrl = builder.Configuration["GoCardless:BaseUrl"] ?? "https://bankaccountdata.gocardless.com/api/v2/"; // NOSONAR(S1075) vendor API base
     builder.Services.AddHttpClient<IGoCardlessApi, GoCardlessApi>(client =>
         client.BaseAddress = new Uri(gcBaseUrl));
+    builder.Services.AddScoped<IBankDataApi>(sp => new GoCardlessBankApi(sp.GetRequiredService<IGoCardlessApi>()));
+}
+var ebConfigured = !string.IsNullOrEmpty(builder.Configuration["EnableBanking:ApplicationId"]) &&
+                   !string.IsNullOrEmpty(builder.Configuration["EnableBanking:PrivateKeyPem"]);
+if (ebConfigured)
+{
+    var ebBaseUrl = builder.Configuration["EnableBanking:BaseUrl"] ?? "https://api.enablebanking.com/"; // NOSONAR(S1075) vendor API base
+    builder.Services.AddHttpClient<EnableBankingApi>(client => client.BaseAddress = new Uri(ebBaseUrl));
+    builder.Services.AddScoped<IBankDataApi>(sp => sp.GetRequiredService<EnableBankingApi>());
+}
+var bankingEnabled = gcConfigured || ebConfigured;
+if (bankingEnabled)
+{
+    builder.Services.AddScoped<BankProviderRegistry>();
     builder.Services.AddHostedService<GcFetchService>();
 }
 
@@ -201,7 +219,9 @@ app.Use(async (http, next) =>
 app.MapOpenApi();
 app.MapScalarApiReference(options => options.WithTitle("munni API"));
 
-var gcEnabled = !string.IsNullOrEmpty(app.Configuration["GoCardless:SecretId"]);
+// capabilities.gocardless stays the client's "bank connect available"
+// signal, whichever provider actually serves it
+var gcEnabled = bankingEnabled;
 app.MapGet("/health", () => Results.Ok(new
 {
     status = "ok",
@@ -226,7 +246,7 @@ app.MapStoreProxy();
 if (ocrEnabled) app.MapOcr();
 app.MapQuotes();
 app.MapAccounts();
-app.MapAdmin(gcEnabled);
-if (gcEnabled) app.MapGoCardless();
+app.MapAdmin(gcConfigured, bankingEnabled);
+if (bankingEnabled) app.MapGoCardless();
 
 await app.RunAsync();

@@ -176,8 +176,11 @@ function GcCallbackInner({ bearer }: { bearer: string | null }) {
     if (started.current) return; // StrictMode double-mount guard
     started.current = true;
     void (async () => {
-      const reference =
-        new URLSearchParams(window.location.search).get('ref') ?? sessionStorage.getItem('munni_gc_ref');
+      const params = new URLSearchParams(window.location.search);
+      // Enable Banking puts the reference in `state` and adds a `code`;
+      // GoCardless echoes `ref` and needs no code
+      const reference = params.get('ref') ?? params.get('state') ?? sessionStorage.getItem('munni_gc_ref');
+      const code = params.get('code');
       if (!reference) {
         setState('failed');
         return;
@@ -185,7 +188,8 @@ function GcCallbackInner({ bearer }: { bearer: string | null }) {
       try {
         const headers: Record<string, string> = {};
         if (bearer) headers.Authorization = `Bearer ${bearer}`;
-        const res = await apiFetch(`/gocardless/requisitions/${reference}/complete`, { method: 'POST', headers });
+        const query = code ? `?code=${encodeURIComponent(code)}` : '';
+        const res = await apiFetch(`/gocardless/requisitions/${reference}/complete${query}`, { method: 'POST', headers });
         if (!res.ok) throw new Error(String(res.status));
         sessionStorage.removeItem('munni_gc_ref');
         setState('done');

@@ -24,6 +24,16 @@ const STATUS_LABEL: Record<string, string> = {
   GA: 'authorizing', UA: 'authorizing', GC: 'consenting', SA: 'selecting',
 };
 
+const PROVIDER_LABEL: Record<string, string> = {
+  gocardless: 'GoCardless (Bank Account Data)',
+  enablebanking: 'Enable Banking',
+};
+
+interface BankProviderState {
+  active: string;
+  configured: string[];
+}
+
 interface AdminAppProps {
   config: AdminConfig;
   /** null = test-auth mode (X-User-Sub header from the sub box) */
@@ -40,6 +50,7 @@ export function AdminApp({ config, getToken }: AdminAppProps) {
   const [sub, setSub] = useState(() => localStorage.getItem('munni_admin_sub') ?? '');
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [requisitions, setRequisitions] = useState<AdminRequisition[] | null>(null);
+  const [provider, setProvider] = useState<BankProviderState | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [denied, setDenied] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -63,10 +74,22 @@ export function AdminApp({ config, getToken }: AdminAppProps) {
     const ping = await call('/admin/ping').catch(() => null);
     setDenied(!ping?.ok);
     if (!ping?.ok) return;
-    const [usersRes, reqRes] = await Promise.all([call('/admin/users'), call('/admin/gocardless/requisitions')]);
+    const [usersRes, reqRes, providerRes] = await Promise.all([
+      call('/admin/users'),
+      call('/admin/gocardless/requisitions'),
+      call('/admin/bank-provider'),
+    ]);
     if (usersRes.ok) setUsers((await usersRes.json()) as AdminUser[]);
     if (reqRes.ok) setRequisitions((await reqRes.json()) as AdminRequisition[]);
+    if (providerRes.ok) setProvider((await providerRes.json()) as BankProviderState);
   }, [call]);
+
+  const pickProvider = async (id: string) => {
+    setBusy(true);
+    const res = await call('/admin/bank-provider', { method: 'PUT', body: JSON.stringify({ provider: id }) }).catch(() => null);
+    if (res?.ok) setProvider((prev) => (prev ? { ...prev, active: id } : prev));
+    setBusy(false);
+  };
 
   useEffect(() => {
     if (getToken || sub) void reload();
@@ -108,6 +131,28 @@ export function AdminApp({ config, getToken }: AdminAppProps) {
       </header>
 
       {denied && <p className="denied">This account is not on the admin list (Admin:Subs).</p>}
+
+      {provider && (
+        <section>
+          <h2>Bank-data provider</h2>
+          <p className="hint">New bank consents use the selected provider; existing accounts keep the one that created them.</p>
+          <div data-testid="admin-bank-provider">
+            {provider.configured.map((id) => (
+              <label key={id} className="radio">
+                <input
+                  type="radio"
+                  name="bank-provider"
+                  data-testid={`admin-provider-${id}`}
+                  checked={provider.active === id}
+                  disabled={busy}
+                  onChange={() => void pickProvider(id)}
+                />
+                {PROVIDER_LABEL[id] ?? id}
+              </label>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section>
         <h2>Bank connections (GoCardless)</h2>

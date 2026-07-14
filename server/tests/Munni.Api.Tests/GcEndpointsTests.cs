@@ -352,7 +352,7 @@ public class GcEndpointsTests : IClassFixture<GcApiFactory>
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var linked = await db.GcLinkedAccounts.FindAsync($"gc-bf-{suffix}");
-            await service.FetchAccountAsync(scope.ServiceProvider, db, _factory.Gc, linked!, CancellationToken.None);
+            await service.FetchAccountAsync(scope.ServiceProvider, db, new Munni.Api.Banking.GoCardlessBankApi(_factory.Gc), linked!, CancellationToken.None);
         }
 
         var from = _factory.Gc.TransactionFroms[callsBefore];
@@ -402,7 +402,7 @@ public class GcEndpointsTests : IClassFixture<GcApiFactory>
             using var scope = _factory.Services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var linked = await db.GcLinkedAccounts.FindAsync($"gc-p-{suffix}");
-            await service.FetchAccountAsync(scope.ServiceProvider, db, _factory.Gc, linked!, CancellationToken.None);
+            await service.FetchAccountAsync(scope.ServiceProvider, db, new Munni.Api.Banking.GoCardlessBankApi(_factory.Gc), linked!, CancellationToken.None);
         }
 
         _factory.Gc.Pending = [new GcTransaction(null, "PND-1", null, "2026-07-13", new GcAmount("-15.00", "EUR"), "Tikkie", null, "reserved")];

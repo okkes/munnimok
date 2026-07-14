@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Munni.Api.Auth;
+using Munni.Api.Banking;
 using Munni.Api.Data;
 using Munni.Api.Validation;
 
@@ -19,27 +20,30 @@ public static partial class GcEndpoints
     {
         var group = app.MapGroup("/gocardless").RequireAuthorization().WithSafeRouteParams();
 
-        // institution list, cached: it changes rarely and GC rate-limits
-        group.MapGet("/institutions", async (string country, IGoCardlessApi gc, IMemoryCache cache) =>
+        // institution list, cached per active provider: it changes rarely
+        // and the vendors rate-limit
+        group.MapGet("/institutions", async (string country, BankProviderRegistry registry, AppDbContext db, IMemoryCache cache) =>
         {
             if (!CountryCode().IsMatch(country))
                 return Results.BadRequest(new { error = "country must be a 2-letter code" });
-            var list = await cache.GetOrCreateAsync($"gc-institutions-{country}", async entry =>
+            var api = await registry.ActiveAsync(db);
+            var list = await cache.GetOrCreateAsync($"institutions-{api.ProviderId}-{country}", async entry =>
             {
                 entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(24);
-                return await gc.GetInstitutionsAsync(country);
+                return await api.GetInstitutionsAsync(country);
             });
             return Results.Ok(list);
         });
 
-        group.MapPost("/requisitions", async (CreateRequisitionRequest request, IGoCardlessApi gc, AppDbContext db, HttpContext http) =>
+        group.MapPost("/requisitions", async (CreateRequisitionRequest request, BankProviderRegistry registry, AppDbContext db, HttpContext http) =>
         {
             var userId = http.GetUserId();
             if (!await db.SpaceMembers.AnyAsync(m => m.SpaceId == request.SpaceId && m.UserId == userId))
                 return Results.Forbid();
 
+            var api = await registry.ActiveAsync(db); // the admin's pick decides NEW consents
             var reference = Guid.NewGuid();
-            var created = await gc.CreateRequisitionAsync(request.InstitutionId, request.RedirectUrl, reference.ToString());
+            var created = await api.CreateRequisitionAsync(request.InstitutionId, request.RedirectUrl, reference.ToString());
             db.GcRequisitions.Add(new GcRequisition
             {
                 Id = reference,
@@ -48,6 +52,7 @@ public static partial class GcEndpoints
                 InstitutionId = request.InstitutionId,
                 RequisitionId = created.Id,
                 Status = "created",
+                Provider = api.ProviderId,
             });
             await db.SaveChangesAsync();
             return Results.Ok(new CreateRequisitionResponse(reference.ToString(), created.Link));
@@ -74,14 +79,21 @@ public static partial class GcEndpoints
         });
     }
 
-    private static async Task<IResult> CompleteRequisition(Guid reference, IGoCardlessApi gc, AppDbContext db, HttpContext http)
+    private static async Task<IResult> CompleteRequisition(Guid reference, string? code, BankProviderRegistry registry, AppDbContext db, HttpContext http)
     {
             var userId = http.TryGetUserId();
             var requisition = await db.GcRequisitions.FindAsync(reference);
             if (requisition is null || (userId is not null && requisition.UserId != userId)) return Results.NotFound();
 
-            var status = await gc.GetRequisitionAsync(requisition.RequisitionId);
-            if (status.Status != "LN") return Results.Ok(new CompleteResponse(status.Status, 0, 0));
+            var gc = registry.For(requisition.Provider);
+            var status = await gc.CompleteAuthAsync(requisition.RequisitionId, code);
+            // Enable Banking mints its session id at complete time
+            if (status.Id != requisition.RequisitionId) requisition.RequisitionId = status.Id;
+            if (status.Status != "LN")
+            {
+                await db.SaveChangesAsync();
+                return Results.Ok(new CompleteResponse(status.Status, 0, 0));
+            }
 
             var space = await db.Spaces.FindAsync(requisition.SpaceId);
             if (space is null) return Results.NotFound();
@@ -109,6 +121,7 @@ public static partial class GcEndpoints
                         Iban = ImportIds.Normalize(accountRef),
                         Currency = details.Currency ?? "EUR",
                         RequisitionId = requisition.Id,
+                        Provider = requisition.Provider,
                     };
                     db.GcLinkedAccounts.Add(linked);
                 }
