@@ -83,7 +83,7 @@ export async function collectBudgetAlerts(
     db.spaces.get(spaceId),
   ]);
   const visible = visibleCategoryRows(spaces, categoryRows, spaceId);
-  const catalog = buildCatalog(visible.rows, visible.sharedScope);
+  const catalog = buildCatalog(visible.rows, visible.sharedScope, visible.hiddenMains);
   const currency = space?.currency ?? 'EUR';
 
   const alerts: BudgetAlert[] = [];

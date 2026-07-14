@@ -141,10 +141,63 @@
    "winparts",
    "autodoc",
    "apk",
-   "autoschade",
+   "autoschade"
+  ],
+  "direction": "debit",
+  "txType": "expense"
+ },
+ {
+  "lang": "nl",
+  "catId": "parking",
+  "keywords": [
    "parking",
    "parkeren",
-   "parkmobile"
+   "parkmobile",
+   "q-park",
+   "interparking",
+   "p1 parking",
+   "yellowbrick",
+   "tolvrij",
+   "toll"
+  ],
+  "direction": "debit",
+  "txType": "expense"
+ },
+ {
+  "lang": "nl",
+  "catId": "bikes",
+  "keywords": [
+   "swapfiets",
+   "fietsenmaker",
+   "fietsenwinkel",
+   "fietsverhuur",
+   "gazelle",
+   "vanmoof",
+   "batavus",
+   "fietsservice"
+  ],
+  "direction": "debit",
+  "txType": "expense"
+ },
+ {
+  "lang": "nl",
+  "catId": "telecom",
+  "keywords": [
+   "kpn",
+   "odido",
+   "ziggo",
+   "vodafone",
+   "t-mobile",
+   "youfone",
+   "simyo",
+   "tele2",
+   "lebara",
+   "lycamobile",
+   "hollandsnieuwe",
+   "budget thuis",
+   "online.nl",
+   "caiway",
+   "delta fiber"
   ],
   "direction": "debit",
   "txType": "expense"

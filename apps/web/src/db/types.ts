@@ -30,6 +30,8 @@ export interface SpaceRow extends SyncEnvelope {
   homeBlocks?: { id: string; hidden?: 0 | 1 }[];
   /** allocation: roll category leftovers into the next period (default on) */
   allocRollover?: 0 | 1;
+  /** main categories switched off for this space (picker filtering only — data never blocks) */
+  hiddenMains?: string[];
 }
 
 export type AccountType = 'checking' | 'savings' | 'cash' | 'brokerage' | 'credit' | 'mortgage' | 'loan';
