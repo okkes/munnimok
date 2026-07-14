@@ -55,7 +55,7 @@ export function ShoppingConnectionsScreen() {
   const [jumboUser, setJumboUser] = useState('');
   const [jumboPass, setJumboPass] = useState('');
   const [jumboBusy, setJumboBusy] = useState(false);
-  const [jumboFailed, setJumboFailed] = useState(false);
+  const [jumboFailed, setJumboFailed] = useState<'blocked' | 'failed' | null>(null);
   const [syncStates, setSyncStates] = useState<Record<ConnectableStore, 'idle' | 'busy' | StoreSyncResult>>({
     ah: 'idle',
     jumbo: 'idle',
@@ -103,11 +103,11 @@ export function ShoppingConnectionsScreen() {
 
   const submitJumbo = async () => {
     setJumboBusy(true);
-    setJumboFailed(false);
+    setJumboFailed(null);
     try {
-      const ok = await ops.connectJumbo(jumboUser.trim(), jumboPass);
-      if (!ok) {
-        setJumboFailed(true);
+      const outcome = await ops.connectJumbo(jumboUser.trim(), jumboPass);
+      if (outcome !== 'ok') {
+        setJumboFailed(outcome);
         return;
       }
       setJumboOpen(false);
@@ -408,7 +408,7 @@ export function ShoppingConnectionsScreen() {
           />
           {jumboFailed && (
             <p className="text-[12px] text-negative" data-testid="shop-jumbo-failed">
-              {t('shop.connectFailed')}
+              {t(jumboFailed === 'blocked' ? 'shop.jumboBlocked' : 'shop.jumboLoginFailed')}
             </p>
           )}
           <Button data-testid="shop-jumbo-submit" disabled={jumboBusy || !jumboUser.trim() || !jumboPass} onClick={() => void submitJumbo()}>

@@ -32,14 +32,8 @@ builder.Services.AddSingleton<SpaceEventBroadcaster>();
 // OpenAPI document + Scalar reference UI at /scalar
 builder.Services.AddOpenApi();
 
-// web push: enabled when a VAPID key pair is configured
-var pushEnabled = !string.IsNullOrEmpty(builder.Configuration["Push:VapidPublicKey"])
-                  && !string.IsNullOrEmpty(builder.Configuration["Push:VapidPrivateKey"]);
-if (pushEnabled) builder.Services.AddSingleton<IPushSender, WebPushSender>();
-builder.Services.AddScoped(sp => new PushNotifier(
-    sp.GetRequiredService<AppDbContext>(),
-    sp.GetService<IPushSender>() ?? new NoopPushSender(),
-    sp.GetRequiredService<ILogger<PushNotifier>>()));
+// push transports (VAPID browsers + FCM native shells), routed per kind
+var pushEnabled = PushSetup.Register(builder.Services, builder.Configuration);
 
 // bank-data providers (admin-selectable for new consents)
 var (gcConfigured, bankingEnabled) = BankingSetup.Register(builder.Services, builder.Configuration);

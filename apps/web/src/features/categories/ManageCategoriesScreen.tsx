@@ -163,6 +163,16 @@ export function ManageCategoriesScreen() {
     setMode(null);
   };
 
+  /** per-space main visibility: hidden mains leave every picker but data never blocks */
+  const toggleMainVisibility = async (id: string) => {
+    const space = await db.spaces.get(spaceId);
+    if (!space) return;
+    const next = new Set(space.hiddenMains ?? []);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    await repo.upsert('space', spaceId, spaceId, { hiddenMains: [...next] });
+  };
+
   const startDrag = (row: CategoryRow, clientY: number) => {
     dragStartedRef.current = true;
     dragActiveRef.current = true;
@@ -338,8 +348,10 @@ export function ManageCategoriesScreen() {
             {t('cats.copyFromPersonal')}
           </button>
         )}
-        {cats.parents.map((parent) => {
+        {cats.allParents.map((parent) => {
+          const mainHidden = cats.hiddenMains.has(parent.id);
           if (dragging) {
+            if (mainHidden) return null; // hidden mains take no drops
             // fold mode: every main collapses into one fat drop row, so
             // even a long list fits a couple of screens while dragging
             let foldClass = 'border-line bg-surface';
@@ -363,14 +375,25 @@ export function ManageCategoriesScreen() {
             );
           }
           return (
-            <div key={parent.id} data-cat-group={parent.id}>
+            <div key={parent.id} data-cat-group={parent.id} className={mainHidden ? 'opacity-55' : ''}>
               <div className="m-cap mt-5 mb-1 flex items-center gap-1.5 px-1" style={{ color: parent.color }}>
                 <Icon name={parent.icon} size={14} />
                 <span className="flex-1">{catName(parent, t)}</span>
                 <span className="rounded bg-bg-2 px-1.5 py-0.5 text-[9px] font-semibold normal-case text-ink-3">
                   {t(`tx.type.${parent.txTypes[0]}`)}
                 </span>
-                {parent.custom && (
+                {/* per-space visibility: a hidden main leaves the pickers of
+                    THIS space only; existing transactions keep resolving */}
+                <button
+                  aria-label={t(mainHidden ? 'cats.showMain' : 'cats.hideMain')}
+                  title={t(mainHidden ? 'cats.showMain' : 'cats.hideMain')}
+                  data-testid={`cats-togglemain-${parent.id}`}
+                  onClick={() => void toggleMainVisibility(parent.id)}
+                  className="m-tap border-none bg-transparent p-0.5 text-ink-4"
+                >
+                  <Icon name={mainHidden ? 'eye-off-outline' : 'eye-outline'} size={14} />
+                </button>
+                {parent.custom && !mainHidden && (
                   <button
                     aria-label={t('action.edit')}
                     data-testid={`cats-editmain-${parent.id}`}
@@ -380,16 +403,24 @@ export function ManageCategoriesScreen() {
                     <Icon name="pencil-outline" size={14} />
                   </button>
                 )}
-                <button
-                  aria-label={t('cats.addSub')}
-                  title={t('cats.addSub')}
-                  data-testid={`cats-addsub-${parent.id}`}
-                  onClick={() => openNewSub(parent.id)}
-                  className="m-tap flex h-6 w-6 items-center justify-center rounded-full border border-line bg-surface text-ink-3 shadow-[0_1px_4px_rgba(0,0,0,0.06)]"
-                >
-                  <Icon name="plus" size={14} />
-                </button>
+                {!mainHidden && (
+                  <button
+                    aria-label={t('cats.addSub')}
+                    title={t('cats.addSub')}
+                    data-testid={`cats-addsub-${parent.id}`}
+                    onClick={() => openNewSub(parent.id)}
+                    className="m-tap flex h-6 w-6 items-center justify-center rounded-full border border-line bg-surface text-ink-3 shadow-[0_1px_4px_rgba(0,0,0,0.06)]"
+                  >
+                    <Icon name="plus" size={14} />
+                  </button>
+                )}
               </div>
+              {mainHidden && (
+                <p className="px-1 text-[11px] text-ink-4" data-testid={`cats-hiddennote-${parent.id}`}>
+                  {t('cats.hiddenNote')}
+                </p>
+              )}
+              {!mainHidden && (
               <div className="overflow-hidden rounded-card border border-line bg-surface">
                 {cats.childrenOf(parent.id).map((cat, i) => (
                   <div key={cat.id}>
@@ -439,6 +470,7 @@ export function ManageCategoriesScreen() {
                   </div>
                 ))}
               </div>
+              )}
             </div>
           );
         })}

@@ -24,7 +24,12 @@ export interface Catalog {
   all: Cat[];
   byId: (id: string | undefined) => Cat;
   childrenOf: (parentId: string) => Cat[];
+  /** mains offered in pickers — per-space hidden mains filtered out */
   parents: Cat[];
+  /** every main, hidden-per-space ones included (the manage screen) */
+  allParents: Cat[];
+  /** mains this space switched off (UI filtering only — data never blocks) */
+  hiddenMains: ReadonlySet<string>;
   /** true when managing a shared space's categories (space scope) */
   sharedScope: boolean;
 }
@@ -64,7 +69,7 @@ function toCat(row: CategoryRow, parentById: Map<string, CategoryRow>): Cat {
 
 /** the custom rows visible from `spaceId` (legacy scope rule: personal
  *  spaces share user-scoped categories, shared spaces keep their own) */
-export function visibleCategoryRows(spaces: readonly SpaceRow[], rows: readonly CategoryRow[], spaceId: string): { rows: CategoryRow[]; sharedScope: boolean } {
+export function visibleCategoryRows(spaces: readonly SpaceRow[], rows: readonly CategoryRow[], spaceId: string): { rows: CategoryRow[]; sharedScope: boolean; hiddenMains: string[] } {
   const active = spaces.find((s) => s.id === spaceId);
   const visibleSpaceIds =
     active?.kind === 'shared'
@@ -73,11 +78,12 @@ export function visibleCategoryRows(spaces: readonly SpaceRow[], rows: readonly 
   return {
     rows: rows.filter((c) => c.deleted === 0 && visibleSpaceIds.has(c.spaceId)),
     sharedScope: active?.kind === 'shared',
+    hiddenMains: active?.hiddenMains ?? [],
   };
 }
 
 /** built-in catalog merged with the given custom rows */
-export function buildCatalog(customRows: readonly CategoryRow[], sharedScope: boolean): Catalog {
+export function buildCatalog(customRows: readonly CategoryRow[], sharedScope: boolean, hiddenMains: readonly string[] = []): Catalog {
   const parentById = new Map(customRows.filter((r) => r.isParent === 1).map((r) => [r.id, r]));
   const custom: Cat[] = customRows
     .slice()
@@ -85,11 +91,15 @@ export function buildCatalog(customRows: readonly CategoryRow[], sharedScope: bo
     .map((row) => toCat(row, parentById));
   const all: Cat[] = [...(BUILTIN_CATEGORIES as Cat[]), ...custom];
   const map = new Map(all.map((c) => [c.id, c]));
+  const off = new Set(hiddenMains);
+  const allParents = all.filter((c) => c.isParent && !c.hidden);
   return {
     all,
     byId: (id) => (id && map.get(id)) || FALLBACK,
     childrenOf: (parentId) => all.filter((c) => c.parentId === parentId && !c.hidden),
-    parents: all.filter((c) => c.isParent && !c.hidden),
+    parents: allParents.filter((c) => !off.has(c.id)),
+    allParents,
+    hiddenMains: off,
     sharedScope,
   };
 }

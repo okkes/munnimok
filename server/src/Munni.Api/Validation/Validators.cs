@@ -97,13 +97,18 @@ public sealed class SubscribeRequestValidator : AbstractValidator<Munni.Api.Push
 {
     public SubscribeRequestValidator()
     {
-        RuleFor(r => r.Endpoint)
-            .NotEmpty()
-            .MaximumLength(2048)
-            .Must(url => Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps)
-            .WithMessage("endpoint must be an absolute https URL");
-        RuleFor(r => r.P256dh).NotEmpty().MaximumLength(256);
-        RuleFor(r => r.Auth).NotEmpty().MaximumLength(128);
+        RuleFor(r => r.Kind).Must(k => k is "webpush" or "fcm").WithMessage("kind must be webpush or fcm");
+        RuleFor(r => r.Endpoint).NotEmpty().MaximumLength(4096);
+        // browser subscriptions: a real push-service URL plus its key pair
+        When(r => r.Kind == "webpush", () =>
+        {
+            RuleFor(r => r.Endpoint)
+                .MaximumLength(2048)
+                .Must(url => Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps)
+                .WithMessage("endpoint must be an absolute https URL");
+            RuleFor(r => r.P256dh).NotEmpty().MaximumLength(256);
+            RuleFor(r => r.Auth).NotEmpty().MaximumLength(128);
+        });
     }
 }
 

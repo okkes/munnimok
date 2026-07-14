@@ -18,3 +18,12 @@ export const config = {
 };
 
 export const logtoConfigured = Boolean(config.logto.endpoint && config.logto.appId);
+
+/**
+ * The canonical https origin of the HOSTED web app. Inside the native
+ * shell `window.location.origin` is the local webview (localhost) —
+ * useless as a bank redirect target — so shell builds set
+ * VITE_PUBLIC_ORIGIN. Web/PWA builds fall back to their own origin.
+ */
+export const publicOrigin = (): string =>
+  ((import.meta.env.VITE_PUBLIC_ORIGIN as string | undefined) ?? '') || window.location.origin;

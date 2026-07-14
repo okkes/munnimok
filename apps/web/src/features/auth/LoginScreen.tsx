@@ -12,6 +12,8 @@ import { callbackUri } from './logto';
 import { addOfflineProfile, listOfflineProfiles } from './offlineProfiles';
 import leafUrl from '@/assets/leaf.png';
 import loginBgUrl from '@/assets/login-bg.png';
+// re-encoded from the provided PNG (2.2MB) — the login screen is precached
+import desktopBgUrl from '@/assets/desktop-login-bg.jpg';
 
 /** live navigator.onLine with event updates */
 function useOnLine(): boolean {
@@ -132,16 +134,26 @@ export function LoginScreen() {
         <LangPill />
       </div>
 
-      {/* hero art: top band on mobile, full-height left pane on desktop */}
-      <div className="relative flex max-h-[min(400px,44vh)] shrink-0 items-end overflow-hidden md:h-full md:max-h-none md:w-1/2 md:items-stretch lg:w-3/5">
-        <img src={loginBgUrl} alt="" aria-hidden="true" className="block h-auto w-full md:h-full md:object-cover md:object-left-bottom" />
+      {/* hero art: top band on mobile only — desktop gets the full-bleed backdrop */}
+      <div className="relative flex max-h-[min(400px,44vh)] shrink-0 items-end overflow-hidden md:hidden">
+        <img src={loginBgUrl} alt="" aria-hidden="true" className="block h-auto w-full" />
         {/* blend the art's edge into the paper background */}
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-b from-transparent to-bg md:inset-y-0 md:right-0 md:left-auto md:h-auto md:w-24 md:bg-gradient-to-r" />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-b from-transparent to-bg" />
       </div>
 
+      {/* desktop backdrop: the flat-lay is busy on the left and calm on the
+          right, so the form card floats over the calm side */}
+      <img
+        src={desktopBgUrl}
+        alt=""
+        aria-hidden="true"
+        data-testid="login-desktop-bg"
+        className="pointer-events-none absolute inset-0 hidden h-full w-full object-cover object-left md:block"
+      />
+
       {/* form pane */}
-      <div className="flex flex-1 flex-col md:h-full md:items-center md:justify-center">
-        <div className="flex flex-1 flex-col md:max-w-[400px] md:flex-none md:gap-2">
+      <div className="relative flex flex-1 flex-col md:h-full md:items-end md:justify-center md:pr-[7vw]">
+        <div className="flex flex-1 flex-col md:w-[440px] md:flex-none md:gap-2 md:rounded-3xl md:border md:border-line md:bg-surface/90 md:p-8 md:shadow-[0_16px_56px_rgba(0,0,0,0.14)] md:backdrop-blur-sm">
           <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center md:flex-none md:pb-6">
             <h1 className="m-h2 text-ink md:text-[32px]">{t('login.welcomeFirst')}</h1>
             <p className="max-w-[280px] text-sm text-ink-3">{t('login.subtitle')}</p>
@@ -200,7 +212,7 @@ export function LoginScreen() {
           </div>
         </Sheet>
 
-        <p className="px-6 pb-[max(24px,env(safe-area-inset-bottom))] text-center text-[11px] text-ink-4 md:pb-8">
+        <p className="px-6 pb-[max(24px,env(safe-area-inset-bottom))] text-center text-[11px] text-ink-4 md:w-[440px] md:px-0 md:pt-3 md:pb-0">
           {t('login.terms')}
         </p>
       </div>

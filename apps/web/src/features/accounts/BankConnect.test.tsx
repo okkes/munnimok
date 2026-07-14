@@ -9,6 +9,7 @@ import { GcCallbackScreen } from './BankConnect';
 vi.mock('@/app/config', () => ({
   config: { apiUrl: 'http://localhost:8180', logto: { endpoint: '', appId: '', resource: '' }, glitchtipDsn: '', channel: '' },
   logtoConfigured: false,
+  publicOrigin: () => window.location.origin,
 }));
 
 const ING = { id: 'ING_NL', name: 'ING', bic: 'INGBNL2A' };

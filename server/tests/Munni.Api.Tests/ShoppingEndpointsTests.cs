@@ -21,6 +21,8 @@ internal sealed class FakeStoreHandler : HttpMessageHandler
     {
         Last = request;
         LastBody = request.Content is null ? null : await request.Content.ReadAsStringAsync(ct);
+        if (request.RequestUri!.AbsolutePath == "/tarpit")
+            throw new TaskCanceledException("simulated bot-protection hang");
         if (request.RequestUri!.AbsolutePath == "/fail401")
             return new HttpResponseMessage(HttpStatusCode.Unauthorized) { Content = new StringContent("""{"error":"expired"}""", Encoding.UTF8, "application/json") };
         return new HttpResponseMessage(HttpStatusCode.OK)
@@ -132,6 +134,16 @@ public class ShoppingEndpointsTests : IClassFixture<ShoppingApiFactory>
         var response = await client.PostAsJsonAsync("/shop/proxy/ah-api", new { path = "/fail401" });
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.Contains("expired", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task Proxy_surfaces_an_upstream_hang_as_gateway_timeout()
+    {
+        // Jumbo's edge tarpits non-app clients: the request never answers
+        // and the HttpClient timeout cancels it — 504, never a raw 500
+        var client = Client();
+        var response = await client.PostAsJsonAsync("/shop/proxy/jumbo", new { path = "/tarpit", method = "POST", body = new { username = "x" } });
+        Assert.Equal(HttpStatusCode.GatewayTimeout, response.StatusCode);
     }
 
     [Fact]

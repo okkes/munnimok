@@ -31,5 +31,8 @@ export function useCategories(): Catalog {
     return visibleCategoryRows(spaces, cats, spaceId);
   }, [spaceId]);
 
-  return useMemo(() => buildCatalog(visible?.rows ?? [], visible?.sharedScope ?? false), [visible]);
+  return useMemo(
+    () => buildCatalog(visible?.rows ?? [], visible?.sharedScope ?? false, visible?.hiddenMains ?? []),
+    [visible],
+  );
 }

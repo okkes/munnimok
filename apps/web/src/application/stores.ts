@@ -60,7 +60,7 @@ export interface StoreOps {
   /** paste-the-redirect connect flow; resolves false when the code is bad */
   connectAh: (pasted: string) => Promise<boolean>;
   /** username/password login — credentials are exchanged, never stored */
-  connectJumbo: (username: string, password: string) => Promise<boolean>;
+  connectJumbo: (username: string, password: string) => Promise<'ok' | 'blocked' | 'failed'>;
   disconnect: (store: ConnectableStore) => Promise<void>;
   syncNow: (store: ConnectableStore) => Promise<StoreSyncResult>;
   attachReceipt: (receiptId: string, txId: string) => Promise<void>;
@@ -99,11 +99,11 @@ export function useStoreOps(): StoreOps {
       }
     },
     connectJumbo: async (username, password) => {
-      const token = await jumboLogin(proxyCall, username, password);
-      if (!token) return false;
+      const login = await jumboLogin(proxyCall, username, password);
+      if (!login.token) return login.outcome;
       await db.storeConnections.put({
         store: 'jumbo',
-        tokens: { token },
+        tokens: { token: login.token },
         refreshedAt: new Date().toISOString(),
         status: 'ok',
         sharedSpaceIds: [spaceId], // starts private to the connecting space
@@ -114,7 +114,7 @@ export function useStoreOps(): StoreOps {
         connectedAt: new Date().toISOString().slice(0, 10),
       });
       void syncJumboReceipts(proxyCall, db, repo, spaceId);
-      return true;
+      return 'ok';
     },
     syncNow: (store) =>
       store === 'jumbo' ? syncJumboReceipts(proxyCall, db, repo, spaceId) : syncAhReceipts(proxyCall, db, repo, spaceId),

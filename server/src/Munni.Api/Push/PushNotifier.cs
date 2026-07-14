@@ -5,14 +5,20 @@ using WebPush;
 
 namespace Munni.Api.Push;
 
-/// <summary>One stored browser push subscription of a user (a device).</summary>
+/// <summary>
+/// One stored push subscription of a user (a device). Web Push rows
+/// carry endpoint+keys; native (fcm) rows keep the device token in
+/// Endpoint and leave the keys null.
+/// </summary>
 public class PushSubscriptionRow
 {
     public Guid Id { get; set; }
     public Guid UserId { get; set; }
+    /// <summary>"webpush" (browser) or "fcm" (native shell device token)</summary>
+    public string Kind { get; set; } = "webpush";
     public required string Endpoint { get; set; }
-    public required string P256dh { get; set; }
-    public required string Auth { get; set; }
+    public string? P256dh { get; set; }
+    public string? Auth { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
@@ -43,7 +49,7 @@ public sealed class WebPushSender(IConfiguration config) : IPushSender
         try
         {
             await client.SendNotificationAsync(
-                new PushSubscription(subscription.Endpoint, subscription.P256dh, subscription.Auth),
+                new PushSubscription(subscription.Endpoint, subscription.P256dh!, subscription.Auth!),
                 payload, _vapid, ct);
             return true;
         }

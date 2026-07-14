@@ -46,6 +46,19 @@ describe('ManageCategoriesScreen (demo identity)', () => {
     expect(other.disabled).toBe(true);
   });
 
+  it('hides a main per space: it leaves the pickers but stays manageable', async () => {
+    await openScreen();
+    // hide "pet" for this space
+    fireEvent.click(screen.getByTestId('cats-togglemain-pet'));
+    await screen.findByTestId('cats-hiddennote-pet', {}, { timeout: 5000 });
+    // its subs are folded away and no sub can be added while hidden
+    expect(screen.queryByTestId('managecat-petFood')).toBeNull();
+    expect(screen.queryByTestId('cats-addsub-pet')).toBeNull();
+    // the eye brings it back
+    fireEvent.click(screen.getByTestId('cats-togglemain-pet'));
+    await screen.findByTestId('managecat-petFood', {}, { timeout: 5000 });
+  });
+
   it('creates a sub with a direction under a builtin parent (type inherited)', async () => {
     await openScreen();
     fireEvent.click(screen.getByTestId('cats-addsub-sport'));

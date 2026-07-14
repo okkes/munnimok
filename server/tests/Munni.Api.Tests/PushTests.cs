@@ -60,6 +60,50 @@ public class PushTests : IClassFixture<SyncApiFactory>
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
+    [Fact]
+    public async Task Native_fcm_subscriptions_store_the_device_token_without_keys()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var client = ClientFor($"push-fcm-{suffix}");
+        var token = $"fcm-device-token-{suffix}"; // raw token, not a URL
+
+        var create = await client.PostAsJsonAsync("/me/push-subscriptions",
+            new SubscribeRequest(token, Kind: "fcm"));
+        Assert.True(create.IsSuccessStatusCode);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var row = Assert.Single(await db.PushSubscriptions.Where(s => s.Endpoint == token).ToListAsync());
+        Assert.Equal("fcm", row.Kind);
+        Assert.Null(row.P256dh);
+
+        // webpush rows still demand their key pair; unknown kinds bounce
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/me/push-subscriptions",
+            new SubscribeRequest("https://push.example/nokeys"))).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/me/push-subscriptions",
+            new SubscribeRequest(token, Kind: "carrier-pigeon"))).StatusCode);
+    }
+
+    [Fact]
+    public async Task Routing_sender_picks_the_transport_by_kind_and_tolerates_missing_ones()
+    {
+        var web = new FakeSender();
+        var fcm = new FakeSender();
+        var router = new RoutingPushSender(web, fcm);
+        var webRow = new PushSubscriptionRow { Id = Guid.NewGuid(), UserId = Guid.NewGuid(), Endpoint = "https://p/w", P256dh = "k", Auth = "a" };
+        var fcmRow = new PushSubscriptionRow { Id = Guid.NewGuid(), UserId = Guid.NewGuid(), Kind = "fcm", Endpoint = "tok-1" };
+
+        Assert.True(await router.SendAsync(webRow, "{}", CancellationToken.None));
+        Assert.True(await router.SendAsync(fcmRow, "{}", CancellationToken.None));
+        Assert.Equal(webRow.UserId, Assert.Single(web.Sent).UserId);
+        Assert.Equal(fcmRow.UserId, Assert.Single(fcm.Sent).UserId);
+
+        // no FCM transport configured: the row survives (send "succeeds")
+        var partial = new RoutingPushSender(web, null);
+        Assert.True(await partial.SendAsync(fcmRow, "{}", CancellationToken.None));
+        Assert.Single(fcm.Sent); // untouched
+    }
+
     private sealed class FakeSender : IPushSender
     {
         public List<(Guid UserId, string Payload)> Sent { get; } = [];

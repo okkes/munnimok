@@ -4,7 +4,8 @@
   "private": true,
   "workspaces": [
     "apps/web",
-    "apps/admin"
+    "apps/admin",
+    "apps/native"
   ],
   "scripts": {
     "dev": "npm run dev -w @munni/web",

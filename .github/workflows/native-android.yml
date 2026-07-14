@@ -1,0 +1,53 @@
+# Native Android build (native-apps design N6). Debug APKs build on
+# demand and on native/web changes to master; a signed release build
+# activates once ANDROID_KEYSTORE_* secrets exist (Play or NAS sideload).
+name: Native Android
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - 'apps/native/**'
+      - '.github/workflows/native-android.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Build web bundle and sync the shell
+        run: |
+          npm ci
+          npm run sync -w @munni/native
+        env:
+          # the shell talks to the hosted stack, not localhost
+          VITE_API_URL: ${{ vars.NATIVE_API_URL }}
+          VITE_PUBLIC_ORIGIN: ${{ vars.NATIVE_PUBLIC_ORIGIN }}
+          VITE_LOGTO_ENDPOINT: ${{ vars.NATIVE_LOGTO_ENDPOINT }}
+          VITE_LOGTO_APP_ID: ${{ vars.NATIVE_LOGTO_APP_ID }}
+          VITE_LOGTO_RESOURCE: ${{ vars.NATIVE_LOGTO_RESOURCE }}
+
+      - name: Assemble debug APK
+        working-directory: apps/native/android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: munni-android-debug
+          path: apps/native/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30

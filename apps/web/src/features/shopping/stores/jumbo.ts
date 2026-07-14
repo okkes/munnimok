@@ -15,17 +15,25 @@ import type { ProxyCall } from './ah';
 const JUMBO_UA = 'Jumbo/10.4.1';
 const BASE = '/v17';
 
-export async function jumboLogin(call: ProxyCall, username: string, password: string): Promise<string | null> {
+export type JumboLoginOutcome =
+  | { token: string; outcome: 'ok' }
+  /** blocked = Jumbo's bot protection refuses non-app clients (edge 403 / proxy 502/504) */
+  | { token: null; outcome: 'blocked' | 'failed' };
+
+export async function jumboLogin(call: ProxyCall, username: string, password: string): Promise<JumboLoginOutcome> {
   const { status, json, headers } = await call('jumbo', `${BASE}/users/login`, {
     method: 'POST',
     body: { username, password },
     userAgent: JUMBO_UA,
   });
-  if (status !== 200) return null;
-  // primary recipe: the session token rides a response header; some API
-  // versions have returned it in the body instead
-  const body = json as { token?: string; access_token?: string } | null;
-  return headers?.jumboToken ?? body?.token ?? body?.access_token ?? null;
+  if (status === 200) {
+    // primary recipe: the session token rides a response header; some API
+    // versions have returned it in the body instead
+    const body = json as { token?: string; access_token?: string } | null;
+    const token = headers?.jumboToken ?? body?.token ?? body?.access_token ?? null;
+    return token ? { token, outcome: 'ok' } : { token: null, outcome: 'failed' };
+  }
+  return { token: null, outcome: status === 403 || status === 502 || status === 504 ? 'blocked' : 'failed' };
 }
 
 interface JumboReceiptRow {
