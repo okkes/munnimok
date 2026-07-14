@@ -73,7 +73,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build & push api
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: server
           file: server/src/Munni.Api/Dockerfile
@@ -85,7 +85,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build & push web
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: apps/web/Dockerfile
@@ -107,7 +107,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build & push admin
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: apps/admin/Dockerfile
