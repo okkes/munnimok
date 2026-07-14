@@ -1,15 +1,14 @@
-# Native Android build (native-apps design N6). Debug APKs build on
-# demand and on native/web changes to master; a signed release build
-# activates once ANDROID_KEYSTORE_* secrets exist (Play or NAS sideload).
+# Native Android build (native-apps design N6). Runs ONLY on merges to
+# master (build minutes are scarce) — dev pushes keep doing the usual
+# container builds. No paths filter: the APK bundles the web app, so
+# every master merge changes the app. A signed release build activates
+# once ANDROID_KEYSTORE_* secrets exist (Play or NAS sideload).
 name: Native Android
 
 on:
   workflow_dispatch:
   push:
     branches: [master]
-    paths:
-      - 'apps/native/**'
-      - '.github/workflows/native-android.yml'
 
 permissions:
   contents: read

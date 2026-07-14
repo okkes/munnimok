@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
+import { isNativeApp } from '@/lib/platform';
 import { useHelp } from './HelpContext';
 import { TOURS } from './tours';
 import { WhatsNewSheet } from './WhatsNew';
@@ -52,7 +53,8 @@ export function HelpIndexScreen() {
           />
         </div>
         <div className="overflow-hidden rounded-card border border-line bg-surface">
-          {TOURS.map((tour) => (
+          {/* the install walkthrough is meaningless inside the native shell */}
+          {TOURS.filter((tour) => tour.id !== 'install' || !isNativeApp()).map((tour) => (
             <Row
               key={tour.id}
               testId={`help-tour-${tour.id}`}

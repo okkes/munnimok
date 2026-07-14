@@ -1,6 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
+import { isNativeApp } from '@/lib/platform';
 import { useHelp } from './HelpContext';
 import { useTipsDisabled } from './tipsPref';
 import { Icon } from '@/ui/Icon';
@@ -25,7 +26,8 @@ export function InstallHint() {
   const dismissed = useLiveQuery(async () => (await db.meta.get('installHintDismissed')) ?? null, [db]);
   const tipsOff = useTipsDisabled();
 
-  if (tipsOff || dismissed === undefined || Boolean(dismissed?.value) || isStandalone()) return null;
+  // the native shell IS the installed app — a PWA nudge there is absurd
+  if (isNativeApp() || tipsOff || dismissed === undefined || Boolean(dismissed?.value) || isStandalone()) return null;
 
   return (
     <div

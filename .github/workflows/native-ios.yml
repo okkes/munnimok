@@ -1,0 +1,56 @@
+# Native iOS build (native-apps design N6). macOS runners cost 10x
+# minutes, so this stays OFF until the repository variable
+# IOS_BUILD_ENABLED is set to 'true' (do that once the Apple Developer
+# account + signing certificates exist). Master merges only, like the
+# Android workflow. Without signing secrets it builds an unsigned
+# simulator app as a smoke test; TestFlight upload comes with fastlane
+# once APPLE_* secrets are configured.
+name: Native iOS
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  ios:
+    if: ${{ vars.IOS_BUILD_ENABLED == 'true' }}
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Build web bundle and sync the shell
+        run: |
+          npm ci
+          npm run sync -w @munni/native
+        env:
+          VITE_API_URL: ${{ vars.NATIVE_API_URL }}
+          VITE_PUBLIC_ORIGIN: ${{ vars.NATIVE_PUBLIC_ORIGIN }}
+          VITE_LOGTO_ENDPOINT: ${{ vars.NATIVE_LOGTO_ENDPOINT }}
+          VITE_LOGTO_APP_ID: ${{ vars.NATIVE_LOGTO_APP_ID }}
+          VITE_LOGTO_RESOURCE: ${{ vars.NATIVE_LOGTO_RESOURCE }}
+
+      - name: Install pods
+        working-directory: apps/native/ios/App
+        run: pod install
+
+      - name: Build (unsigned, simulator) as a smoke test
+        working-directory: apps/native/ios/App
+        run: |
+          xcodebuild -workspace App.xcworkspace -scheme App \
+            -sdk iphonesimulator -configuration Debug \
+            -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: munni-ios-simulator
+          path: apps/native/ios/App/build/Build/Products/Debug-iphonesimulator/App.app
+          retention-days: 14
