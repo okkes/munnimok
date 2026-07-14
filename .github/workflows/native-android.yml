@@ -43,7 +43,10 @@ jobs:
 
       - name: Assemble debug APK
         working-directory: apps/native/android
-        run: ./gradlew assembleDebug --no-daemon
+        # chmod: the repo lives on Windows dev machines — never trust the exec bit
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
 
       - uses: actions/upload-artifact@v4
         with:
