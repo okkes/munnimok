@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { clampReimbursement, netAmountCents, remainingCents, totalReimbursedCents, withLink } from './reimbursement';
+import {
+  clampReimbursement,
+  creditRemainingCents,
+  givenCents,
+  netAmountCents,
+  netCreditCents,
+  remainingCents,
+  totalReimbursedCents,
+  withLink,
+} from './reimbursement';
 
 const expense = (amountCents: number, reimbursements?: { txId: string; amountCents: number }[]) => ({
   amountCents,
@@ -23,6 +32,22 @@ describe('reimbursement math', () => {
 
   it('net amount of income/credit rows is untouched', () => {
     expect(netAmountCents(expense(2200))).toBe(2200);
+  });
+
+  it('the credit side derives what it gave and what it is still worth', () => {
+    const all = [
+      expense(-1000, [{ txId: 'credit-1', amountCents: 400 }]),
+      expense(-500, [{ txId: 'credit-1', amountCents: 500 }, { txId: 'other', amountCents: 100 }]),
+      expense(2200), // credits carry no links themselves
+    ];
+    expect(givenCents(all, 'credit-1')).toBe(900);
+    expect(givenCents(all, 'unknown')).toBe(0);
+    // a €10.10 refund that settled €9 of expenses is worth €1.10 now
+    expect(netCreditCents(expense(1010), 900)).toBe(110);
+    expect(netCreditCents(expense(900), 900)).toBe(0);
+    expect(netCreditCents(expense(900), 1200)).toBe(0); // never negative
+    expect(netCreditCents(expense(-500), 0)).toBe(-500); // expenses pass through
+    expect(creditRemainingCents(expense(1010), 900)).toBe(110);
   });
 
   it('remaining shrinks with links and never goes negative', () => {

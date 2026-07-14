@@ -36,7 +36,10 @@ public sealed partial class GcIngest(AppDbContext db)
 
         // account row in the feed (create or refresh balance — raw bank truth)
         var accountFields = await BuildAccountFieldsAsync(linked, details, balances);
-        accountOps.Add(NewOp(feedSpace.Id, "account", linked.AccountEntityId, accountFields, NextHlc(), $"acct:{linked.GcAccountId}:{DateOnly.FromDateTime(DateTime.UtcNow)}"));
+        // minute-grained seed: rate-budgeted accounts sync several times a
+        // day and each fetch must refresh lastSyncedAt (a daily seed would
+        // dedupe the later ones away)
+        accountOps.Add(NewOp(feedSpace.Id, "account", linked.AccountEntityId, accountFields, NextHlc(), $"acct:{linked.GcAccountId}:{DateTime.UtcNow:yyyy-MM-ddTHH:mm}"));
 
         // attachment mirror so offline devices render the link
         spaceOps.Add(NewOp(space.Id, "accountLink", ImportIds.AccountLinkId(space.Id, feedSpace.Id), new Dictionary<string, JsonElement>
@@ -186,6 +189,8 @@ public sealed partial class GcIngest(AppDbContext db)
             fields["balanceCents"] = Json(ToCents(balance.BalanceAmount.Amount));
             fields["balanceAsOf"] = Json(DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd"));
         }
+        // every device shows when this account last heard from the bank
+        fields["lastSyncedAt"] = Json(DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"));
         return fields;
     }
 

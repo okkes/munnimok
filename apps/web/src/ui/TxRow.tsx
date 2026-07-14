@@ -1,7 +1,7 @@
 import { LOCALES, useLang } from '@/i18n';
 import { fmtCents } from '@/lib/money';
 import { cleanBankText } from '@/lib/text';
-import { netAmountCents } from '@/domain/reimbursement';
+import { netAmountCents, netCreditCents } from '@/domain/reimbursement';
 import type { TransactionRow } from '@/db/types';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { Highlight } from './Highlight';
@@ -16,6 +16,8 @@ export function TxRow({
   hideCategory = false,
   amountOverrideCents,
   selected = false,
+  accountName,
+  givenCents = 0,
 }: {
   tx: TransactionRow;
   onClick?: () => void;
@@ -28,6 +30,10 @@ export function TxRow({
   amountOverrideCents?: number;
   /** master–detail panes mark the row whose detail is open (§4.2) */
   selected?: boolean;
+  /** desktop density (D2): the account surfaces as an md+ column */
+  accountName?: string;
+  /** cents this credit gave away as reimbursements (derived by the list) */
+  givenCents?: number;
 }) {
   const { t, lang } = useLang();
   const cats = useCategories();
@@ -36,8 +42,9 @@ export function TxRow({
   const color = cat.color ?? parent?.color ?? 'var(--m-ink-3)';
 
   // reimbursements change what a transaction really cost — lists show
-  // the net truth, with the gross quietly struck through beside it
-  const net = netAmountCents(tx);
+  // the net truth, with the gross quietly struck through beside it;
+  // credits net out what they refunded elsewhere the same way
+  const net = tx.amountCents > 0 ? netCreditCents(tx, givenCents) : netAmountCents(tx);
   const display = amountOverrideCents ?? net;
   const positive = display > 0;
   const reimbursed = net !== tx.amountCents;
@@ -46,7 +53,7 @@ export function TxRow({
     <button
       onClick={onClick}
       data-testid={`tx-row-${tx.id}`}
-      className={`m-tap flex w-full items-center gap-3 rounded-xl border-none px-1 py-2.5 text-left ${
+      className={`m-tap flex w-full items-center gap-3 rounded-xl border-none px-1 py-2.5 text-left md:py-2 ${
         selected ? 'bg-accent-soft/50' : 'bg-transparent'
       }`}
     >
@@ -78,6 +85,11 @@ export function TxRow({
           )}
         </span>
       </span>
+      {accountName && (
+        <span className="hidden max-w-[180px] shrink-0 truncate text-right text-[12px] text-ink-4 md:block">
+          {accountName}
+        </span>
+      )}
       <span className="shrink-0 text-right">
         <span className={`m-num block text-[14px] font-semibold ${positive ? 'text-accent-deep' : 'text-ink'}`}>
           {fmtCents(display, tx.currency, lang, { sign: true })}

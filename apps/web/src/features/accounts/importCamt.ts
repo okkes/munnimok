@@ -60,6 +60,7 @@ async function createStatementAccount(
     balanceCents: stmt.closingBalanceCents ?? 0,
     ...(stmt.balanceAsOf ? { balanceAsOf: stmt.balanceAsOf } : {}),
     iban: stmt.iban,
+    lastSyncedAt: new Date().toISOString(),
   });
 }
 

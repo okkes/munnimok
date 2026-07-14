@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useParams } from '@tanstack/react-router';
-import { useSpaceTransaction, useTxTransform } from '@/application/transactions';
+import { useNavigate, useParams } from '@tanstack/react-router';
+import { useSpaceTransaction, useSpaceTransactions, useTxTransform } from '@/application/transactions';
 import { useRecurringOps, useRecurrings } from '@/application/recurring';
 import { useEvents } from '@/application/events';
 import { RecurringVisual } from '@/features/recurring/RecurringVisual';
@@ -17,7 +17,7 @@ import { Sheet } from '@/ui/Sheet';
 import { SplitPane } from '@/ui/SplitPane';
 import { TransactionsScreen } from './TransactionsScreen';
 import { CategoryPicker } from '@/features/categories/CategoryPicker';
-import { netAmountCents, totalReimbursedCents } from '@/domain/reimbursement';
+import { givenCents, netAmountCents, netCreditCents, totalReimbursedCents } from '@/domain/reimbursement';
 import { normalizeIban } from '@/domain/feedIds';
 import { ReceiptSection } from '@/features/shopping/ReceiptSection';
 import { ReimburseSection } from './ReimburseSection';
@@ -38,6 +38,18 @@ export function TxDetailScreen() {
   const [recurringOpen, setRecurringOpen] = useState(false);
   const [eventOpen, setEventOpen] = useState(false);
   const [counterOpen, setCounterOpen] = useState(false);
+  const navigate = useNavigate();
+
+  // desktop affordance (D5): Esc closes the detail pane back to the plain
+  // list — but only when no sheet is open (sheets own their own Esc)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || document.querySelector('[role="dialog"]')) return;
+      void navigate({ to: '/transactions' });
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [navigate]);
 
   const tx = useSpaceTransaction(txId);
   const transform = useTxTransform();
@@ -61,6 +73,10 @@ export function TxDetailScreen() {
   const recurrings = useRecurrings();
   const recurringOps = useRecurringOps();
   const events = useEvents();
+  // what this credit refunded elsewhere — the expenses own the links,
+  // so the credit's net worth is a derived fact
+  const allTxs = useSpaceTransactions();
+  const givenOut = tx && tx.amountCents > 0 ? givenCents(allTxs ?? [], tx.id) : 0;
 
   if (!tx)
     return (
@@ -106,10 +122,15 @@ export function TxDetailScreen() {
       {!tx.importRef && <TxFormSheet open={editOpen} onOpenChange={setEditOpen} tx={tx} />}
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <div className="flex flex-col items-center py-6 text-center">
+          {/* both directions show the net truth: expenses minus what came
+              back, credits minus what they refunded elsewhere */}
           <div className="m-num text-4xl text-ink" data-testid="tx-detail-amount">
-            {fmtCents(netAmountCents(tx), tx.currency, lang, { sign: true })}
+            {fmtCents(
+              tx.amountCents > 0 ? netCreditCents(tx, givenOut) : netAmountCents(tx),
+              tx.currency, lang, { sign: true },
+            )}
           </div>
-          {totalReimbursedCents(tx) > 0 && (
+          {(totalReimbursedCents(tx) > 0 || givenOut > 0) && (
             <div className="m-num mt-0.5 text-sm text-ink-4 line-through" data-testid="tx-detail-gross">
               {fmtCents(tx.amountCents, tx.currency, lang, { sign: true })}
             </div>

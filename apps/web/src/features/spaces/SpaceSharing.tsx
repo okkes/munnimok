@@ -67,6 +67,34 @@ export function useMyRole(spaceId: string | undefined, syncing: boolean): SpaceR
   return role;
 }
 
+/**
+ * Self-removal from a shared space: the server drops the membership
+ * FIRST (that instantly revokes read access to every financial account
+ * attached through the space — feed access derives from membership),
+ * then the local copy is purged and the active space moves on.
+ */
+export async function leaveSpace(
+  ctx: {
+    db: { spaces: { filter: (fn: (s: { deleted: number; id: string }) => boolean) => { first: () => Promise<{ id: string } | undefined> } } };
+    engine: { purgeSpace: (spaceId: string) => Promise<void> } | null;
+    setActiveSpace: (spaceId: string) => Promise<void> | void;
+    activeSpaceId: string;
+  },
+  spaceId: string,
+): Promise<boolean> {
+  const meRes = await apiFetch('/me').catch(() => null);
+  if (!meRes?.ok) return false;
+  const me = ((await meRes.json()) as { userId: string }).userId;
+  const res = await apiFetch(`/spaces/${spaceId}/members/${me}`, { method: 'DELETE' }).catch(() => null);
+  if (!res?.ok) return false;
+  await ctx.engine?.purgeSpace(spaceId);
+  if (ctx.activeSpaceId === spaceId) {
+    const remaining = await ctx.db.spaces.filter((s) => s.deleted === 0 && s.id !== spaceId).first();
+    if (remaining) await ctx.setActiveSpace(remaining.id);
+  }
+  return true;
+}
+
 /** Pending space invites, shown at the top of the Spaces tab. */
 export function SpaceInvitesBanner() {
   const { t } = useLang();
@@ -206,14 +234,7 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
     await reload();
   };
   const leave = async () => {
-    if (!me) return;
-    await apiFetch(`/spaces/${spaceId}/members/${me}`, { method: 'DELETE' });
-    await engine?.purgeSpace(spaceId);
-    if (activeSpaceId === spaceId) {
-      const remaining = await db.spaces.filter((s) => s.deleted === 0 && s.id !== spaceId).first();
-      if (remaining) await setActiveSpace(remaining.id);
-    }
-    onLeft?.();
+    if (await leaveSpace({ db, engine, setActiveSpace, activeSpaceId }, spaceId)) onLeft?.();
   };
 
   return (

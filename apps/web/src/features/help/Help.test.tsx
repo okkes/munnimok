@@ -29,6 +29,21 @@ describe('Tutorials (demo identity)', () => {
     indexedDB.deleteDatabase('munni_demo');
   });
 
+  it('the native shell shows no PWA install nudge or walkthrough', async () => {
+    (globalThis as { Capacitor?: unknown }).Capacitor = { isNativePlatform: () => true };
+    try {
+      renderApp('/help');
+      await screen.findByTestId('screen-help');
+      expect(screen.queryByTestId('help-tour-install')).toBeNull();
+      cleanup();
+      renderApp('/home');
+      await screen.findByTestId('home-balance-band');
+      expect(screen.queryByTestId('install-hint')).toBeNull();
+    } finally {
+      delete (globalThis as { Capacitor?: unknown }).Capacitor;
+    }
+  }, 15_000);
+
   it('the intro card nudges once and stays dismissed', async () => {
     renderApp('/home');
     const card = await screen.findByTestId('intro-card-home', {}, { timeout: 5000 });

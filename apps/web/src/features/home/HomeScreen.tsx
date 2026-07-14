@@ -175,44 +175,52 @@ export function HomeScreen() {
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
-        {/* slim balance band: one line; accounts fold out on tap */}
-        <button
-          data-testid="home-balance-band"
-          onClick={() => setAccountsOpen((v) => !v)}
-          className="m-tap w-full rounded-card border-none bg-brand px-5 py-4 text-left text-on-brand"
-        >
-          <div className="flex items-baseline justify-between gap-3">
-            <span className="text-xs font-medium tracking-wider uppercase opacity-70">{t('home.balance')}</span>
-            <Icon name={accountsOpen ? 'chevron-up' : 'chevron-down'} size={16} color="currentColor" />
-          </div>
-          <div className="m-num mt-0.5 text-[28px]" data-testid="home-total-balance">
-            {accounts ? fmtCents(totalCents, currency, lang) : '—'}
-          </div>
-          {accountsOpen && (
-            <div className="mt-2 flex flex-col gap-1" data-testid="home-balance-accounts">
-              {(accounts ?? []).map((a) => (
-                <div key={a.id} className="flex items-center justify-between text-[13px] opacity-90">
-                  <span className="truncate">{a.name}</span>
-                  <span className="m-num">{fmtCents(a.balanceCents, a.currency, lang)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </button>
-
-        <WhatsNewCard />
-        <InstallHint />
-        <IntroCard tourId="home" />
-
-        {/* desktop ruling (§4.4): strict two-column split of the block
-            order — first half left, second half right, no masonry */}
+        {/* desktop ruling (§4.4) + D4: strict two-column split — the
+            balance heads the left column (a 1040px band saying one number
+            wasted the width), the nudges head the right; on mobile the
+            grid dissolves and the DOM order is balance → nudges → blocks */}
         <div className="lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-6">
-          <div className="min-w-0">
+          {/* slim balance band: one line; accounts fold out on tap */}
+          <div className="min-w-0 lg:col-start-1 lg:row-start-1">
+            <button
+              data-testid="home-balance-band"
+              onClick={() => setAccountsOpen((v) => !v)}
+              className="m-tap w-full rounded-card border-none bg-brand px-5 py-4 text-left text-on-brand"
+            >
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-xs font-medium tracking-wider uppercase opacity-70">{t('home.balance')}</span>
+                <Icon name={accountsOpen ? 'chevron-up' : 'chevron-down'} size={16} color="currentColor" />
+              </div>
+              <div className="m-num mt-0.5 text-[28px]" data-testid="home-total-balance">
+                {accounts ? fmtCents(totalCents, currency, lang) : '—'}
+              </div>
+              {accountsOpen && (
+                <div className="mt-2 flex flex-col gap-1" data-testid="home-balance-accounts">
+                  {(accounts ?? []).map((a) => (
+                    <div key={a.id} className="flex items-center justify-between text-[13px] opacity-90">
+                      <span className="truncate">{a.name}</span>
+                      <span className="m-num">{fmtCents(a.balanceCents, a.currency, lang)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </button>
+          </div>
+
+          {/* first nudge loses its own top margin at lg so both column
+              tops sit level with the balance card */}
+          <div className="min-w-0 lg:col-start-2 lg:row-start-1 lg:[&>*:first-child]:mt-0">
+            <WhatsNewCard />
+            <InstallHint />
+            <IntroCard tourId="home" />
+          </div>
+
+          <div className="min-w-0 lg:col-start-1 lg:row-start-2">
             {visibleBlocks.slice(0, Math.ceil(visibleBlocks.length / 2)).map((entry) => (
               <div key={entry.id}>{blockRenderers[entry.id]()}</div>
             ))}
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 lg:col-start-2 lg:row-start-2">
             {visibleBlocks.slice(Math.ceil(visibleBlocks.length / 2)).map((entry) => (
               <div key={entry.id}>{blockRenderers[entry.id]()}</div>
             ))}

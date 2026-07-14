@@ -46,3 +46,31 @@ export function withLink(
   const rest = (reimbursements ?? []).filter((r) => r.txId !== txId);
   return amountCents > 0 ? [...rest, { txId, amountCents }] : rest;
 }
+
+/**
+ * Cents a credit has given away as reimbursements. Derived — the
+ * expense rows own the links, the credit carries nothing itself.
+ */
+export function givenCents(
+  allTxs: readonly Pick<TransactionRow, 'reimbursements'>[],
+  creditId: string,
+): number {
+  let sum = 0;
+  for (const tx of allTxs) {
+    for (const link of tx.reimbursements ?? []) {
+      if (link.txId === creditId) sum += link.amountCents;
+    }
+  }
+  return sum;
+}
+
+/** what a credit is still worth after refunding elsewhere (income stays >= 0) */
+export function netCreditCents(tx: Pick<TransactionRow, 'amountCents'>, given: number): number {
+  if (tx.amountCents <= 0) return tx.amountCents;
+  return Math.max(0, tx.amountCents - given);
+}
+
+/** cents of the credit not yet promised to any expense */
+export function creditRemainingCents(tx: Pick<TransactionRow, 'amountCents'>, given: number): number {
+  return Math.max(0, tx.amountCents - given);
+}

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
-import { useSpaceTransactions } from '@/application/transactions';
+import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
 import { useCategories } from '@/features/categories/useCategories';
 import { EMPTY_FILTERS, FilterSheet, countActive } from './FilterSheet';
 import type { SheetFilters } from './FilterSheet';
@@ -39,6 +39,19 @@ export function TransactionsScreen() {
   const cats = useCategories();
 
   const allTxs = useSpaceTransactions();
+  // desktop density (D2): the account column needs names, one lookup for all rows
+  const accounts = useSpaceAccounts();
+  const accountNames = useMemo(() => new Map((accounts ?? []).map((a) => [a.id, a.name])), [accounts]);
+  // credits net out what they refunded: one pass over the links for the whole list
+  const givenByCredit = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const item of allTxs ?? []) {
+      for (const link of item.reimbursements ?? []) {
+        map.set(link.txId, (map.get(link.txId) ?? 0) + link.amountCents);
+      }
+    }
+    return map;
+  }, [allTxs]);
   // when embedded as a master pane (§4.2) the open detail's row lights up
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const openTxId = /^\/transactions\/([^/]+)$/.exec(pathname)?.[1];
@@ -160,7 +173,8 @@ export function TransactionsScreen() {
         )}
         {groups.map(([date, list]) => (
           <div key={date}>
-            <div className="m-cap mt-4 mb-1 px-1">{fmtDay(date)}</div>
+            {/* sticky (D2): the group's date stays readable while its rows scroll */}
+            <div className="m-cap sticky top-0 z-10 -mx-1 mt-4 mb-1 bg-bg px-2 py-1">{fmtDay(date)}</div>
             <div className="rounded-card border border-line bg-surface px-3 py-1">
               {list.map((tx) => (
                 <TxRow
@@ -168,6 +182,8 @@ export function TransactionsScreen() {
                   tx={tx}
                   highlight={query}
                   selected={tx.id === openTxId}
+                  accountName={accountNames.get(tx.accountId)}
+                  givenCents={givenByCredit.get(tx.id) ?? 0}
                   onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })}
                 />
               ))}

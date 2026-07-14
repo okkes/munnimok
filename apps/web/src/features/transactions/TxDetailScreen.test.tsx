@@ -200,6 +200,40 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
       expect(screen.getByTestId('tx-detail-amount').textContent).toContain('-€52.40');
     });
   });
+
+  it('links an expense from the income side: the credit nets out and self-files as Reimbursement', async () => {
+    // strip the salary's category so the self-filing rule may act
+    const first = renderApp('/transactions/dm1');
+    await screen.findByTestId('tx-detail-amount');
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    await db.transactions.update('dm1', { catId: 'uncategorized', needsReview: 1 });
+    db.close();
+    first.unmount();
+
+    renderApp('/transactions/dm1');
+    fireEvent.click(await screen.findByTestId('reimb-add-out'));
+    const picker = await screen.findByTestId('reimb-picker');
+    await waitFor(() => expect(picker.querySelector('[data-testid^="reimb-pick-"]')).toBeTruthy());
+    fireEvent.click(picker.querySelector('[data-testid^="reimb-pick-"]')!);
+    // the prefill is already clamped to the expense's open remainder —
+    // save it as-is (which expense is "most recent" is demo-data detail)
+    await screen.findByTestId('reimb-amount');
+    fireEvent.click(screen.getByTestId('reimb-save'));
+
+    // hero shows what the salary is still worth, gross struck through
+    await waitFor(() => expect(screen.getByTestId('tx-detail-gross').textContent).toContain('+€2,200.00'), { timeout: 5000 });
+    expect(screen.getByTestId('tx-detail-amount').textContent).not.toContain('+€2,200.00');
+    // …and the uncategorized credit filed itself as Reimbursement
+    await waitFor(() => expect(screen.getByTestId('tx-detail-category-row').textContent).toContain('Reimbursement'));
+
+    // unlinking from this side restores the full amount
+    await waitFor(() =>
+      expect(screen.getByTestId('reimb-reverse').querySelector('[data-testid^="reimb-unlink-out-"]')).toBeTruthy(),
+    );
+    fireEvent.click(screen.getByTestId('reimb-reverse').querySelector('[data-testid^="reimb-unlink-out-"]')!);
+    await waitFor(() => expect(screen.getByTestId('tx-detail-amount').textContent).toContain('+€2,200.00'));
+  }, 15_000);
 });
 
 describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
