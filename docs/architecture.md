@@ -223,12 +223,12 @@ whatever screen you're watching refreshes in place.
 | Sync fold/merge (C# twin of the client) | `server/src/Munni.Api/Sync/*` |
 | GoCardless ingest + schedule | `server/src/Munni.Api/GoCardless/*` |
 | Compose stacks + runbook | `deploy/` |
-| Design docs (approved) | `docs/shared-accounts-design.md` · `docs/budgets-design.md` · `docs/overview-drill-design.md` |
+| Active design docs | `docs/` (implemented designs are removed once shipped — recover any from git history) |
 
 The authoritative sync semantics live in code, twice on purpose:
 `apps/web/src/sync/` (TypeScript) and `server/src/Munni.Api/Sync/`
 (C#) implement the same per-field LWW fold, and the convergence test
 suites on both sides keep the twins honest. The accounts ⇄ spaces
-evolution (global accounts, feed attachments, overlays) is designed in
-`docs/shared-accounts-design.md` and builds on exactly the feed-space
-mechanics described in §5.
+evolution (global accounts, feed attachments, overlays) builds on
+exactly the feed-space mechanics described in §5; its original design
+doc (`shared-accounts-design.md`) shipped and lives in git history.
