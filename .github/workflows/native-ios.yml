@@ -128,11 +128,31 @@ jobs:
           echo "code=$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
           echo "name=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
-      # CODE_SIGN_IDENTITY pins the archive to the cloud-managed Apple
-      # Distribution certificate (reusable from any runner). Without it,
-      # every ephemeral runner mints a NEW Apple Development cert (its
-      # keychain dies with the run) until the account hits Apple's cap:
-      # "Choose a certificate to revoke".
+      # Every ephemeral runner mints a NEW Apple Development certificate
+      # during archive (its keychain dies with the run) — left alone they
+      # pile up until Apple's cap: "Choose a certificate to revoke".
+      # Pinning CODE_SIGN_IDENTITY=Apple Distribution does NOT work
+      # (automatic signing rejects a manual identity and the override
+      # drags the Pods targets into signing), so prune the stale dev
+      # certs via the ASC API instead. Safe: nobody develops iOS locally.
+      - name: Prune CI-minted development certificates
+        if: steps.asc.outputs.present == 'true'
+        run: |
+          JWT=$(node .github/scripts/asc-jwt.js)
+          IDS=$(curl -sS -H "Authorization: Bearer $JWT" \
+            "https://api.appstoreconnect.apple.com/v1/certificates?filter%5BcertificateType%5D=DEVELOPMENT,IOS_DEVELOPMENT&limit=200" \
+            | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).data.map(c=>c.id).join(" ")')
+          for id in $IDS; do
+            echo "revoking development certificate $id"
+            curl -sS -X DELETE -H "Authorization: Bearer $JWT" \
+              "https://api.appstoreconnect.apple.com/v1/certificates/$id" -o /dev/null -w "  -> HTTP %{http_code}\n"
+          done
+          [ -z "$IDS" ] && echo "no development certificates to prune" || true
+        env:
+          ASC_KEY_PATH: ${{ runner.temp }}/asc.p8
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+
       - name: Archive (automatic signing via ASC key)
         if: steps.asc.outputs.present == 'true'
         working-directory: apps/native/ios/App
@@ -145,7 +165,6 @@ jobs:
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CODE_SIGN_STYLE=Automatic \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
             CODE_SIGN_ENTITLEMENTS=App/App.entitlements \
             CURRENT_PROJECT_VERSION="${{ steps.version.outputs.code }}" \
             MARKETING_VERSION="${{ steps.version.outputs.name }}"
