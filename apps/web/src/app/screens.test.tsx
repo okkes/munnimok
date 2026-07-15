@@ -84,15 +84,19 @@ describe('app screens (demo identity)', () => {
     await waitFor(() => expect(screen.queryByText('Transactions', { selector: '.m-cap' })).toBeNull());
     fireEvent.click(screen.getByTestId('home-block-toggle-transactions'));
 
-    // move overview to the top (past cashflow AND review): round-trips
-    fireEvent.click(screen.getByTestId('home-block-up-overview'));
-    fireEvent.click(screen.getByTestId('home-block-up-overview'));
-    await waitFor(async () => {
+    // move overview to the top (past cashflow AND review) — the sheet
+    // re-reads the synced layout between steps, so each move must land
+    // before the next
+    const blockAt = async (index: number) => {
       const db = await import('@/db/schema').then((m) => new m.MunniDB('munni_demo'));
       const space = await db.spaces.get('demo_space');
       db.close();
-      expect(space?.homeBlocks?.[0]?.id).toBe('overview');
-    });
+      return space?.homeBlocks?.[index]?.id;
+    };
+    fireEvent.click(screen.getByTestId('home-block-up-overview'));
+    await waitFor(async () => expect(await blockAt(1)).toBe('overview'));
+    fireEvent.click(screen.getByTestId('home-block-up-overview'));
+    await waitFor(async () => expect(await blockAt(0)).toBe('overview'));
   }, 15_000);
 
   it('cash-flow forecast: safe-to-spend block opens the transparent breakdown', async () => {
