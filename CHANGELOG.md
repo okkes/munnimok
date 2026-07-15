@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.0](https://github.com/okkes/munnimok/compare/v1.11.0...v1.12.0) (2026-07-15)
+
+
+### ✨ Features
+
+* **tx:** reimbursements physically rewrite category attribution; device language on first run ([8924c7e](https://github.com/okkes/munnimok/commit/8924c7ee43cec45ba4db3304fce2831bdd3b6dd7))
+
 ## [1.11.0](https://github.com/okkes/munnimok/compare/v1.10.0...v1.11.0) (2026-07-15)
 
 
