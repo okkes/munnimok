@@ -129,11 +129,15 @@ jobs:
           retention-days: 14
 
       # ---- Apple key present: archive, sign automatically, upload to TestFlight ----
-      - name: Compute build number (commit count)
+      - name: Compute build number (commit count; dev gets .1 suffix)
         if: steps.asc.outputs.present == 'true'
         id: version
         run: |
-          echo "code=$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
+          CODE=$(git rev-list --count HEAD)
+          # same sha on both branches (post-merge sync) would otherwise
+          # upload the same build number twice → "Redundant Binary Upload"
+          [ "${{ github.ref_name }}" = "dev" ] && CODE="$CODE.1"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
           echo "name=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
       # Every ephemeral runner mints a NEW Apple Development certificate
