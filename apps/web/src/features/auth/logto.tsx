@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { LogtoProvider, useHandleSignInCallback, useLogto } from '@logto/react';
+import * as Sentry from '@sentry/react';
 import { config, logtoConfigured } from '@/app/config';
 import { NATIVE_CALLBACK_KEY, isNativeApp } from '@/lib/platform';
 import { setAccessTokenGetter, setOidcSignOut, signalAuthReady } from '@/app/authToken';
@@ -83,18 +84,25 @@ function useFinishSignIn(): () => Promise<void> {
   };
 }
 
-function CallbackShell({ failed }: Readonly<{ failed?: boolean }>) {
+function CallbackShell({ failed, detail }: Readonly<{ failed?: boolean; detail?: string }>) {
   return (
     <div className="flex h-dvh flex-col items-center justify-center gap-4 bg-bg" data-testid="screen-auth-callback">
       <Logo size={36} />
       {failed ? (
-        <button
-          data-testid="auth-callback-retry"
-          onClick={() => window.location.replace(window.location.origin)}
-          className="m-tap rounded-full border border-line bg-surface px-4 py-2 text-sm text-ink"
-        >
-          ↺
-        </button>
+        <>
+          <button
+            data-testid="auth-callback-retry"
+            onClick={() => window.location.replace(window.location.origin)}
+            className="m-tap rounded-full border border-line bg-surface px-4 py-2 text-sm text-ink"
+          >
+            ↺
+          </button>
+          {detail ? (
+            <div data-testid="auth-callback-error" className="max-w-[280px] break-words text-center text-[11px] text-ink-3">
+              {detail}
+            </div>
+          ) : null}
+        </>
       ) : (
         <div className="text-sm text-ink-3">…</div>
       )}
@@ -113,7 +121,7 @@ function CallbackShell({ failed }: Readonly<{ failed?: boolean }>) {
  */
 function NativeCallbackScreen({ url }: Readonly<{ url: string }>) {
   const finish = useFinishSignIn();
-  const [failed, setFailed] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
   const ran = useRef(false);
   useEffect(() => {
     if (ran.current) return;
@@ -128,19 +136,22 @@ function NativeCallbackScreen({ url }: Readonly<{ url: string }>) {
       await client.handleSignInCallback(url);
       sessionStorage.removeItem(NATIVE_CALLBACK_KEY);
       await finish();
-    })().catch(() => {
+    })().catch((err: unknown) => {
       sessionStorage.removeItem(NATIVE_CALLBACK_KEY);
-      setFailed(true);
+      // shown on screen AND reported: a native user cannot open devtools
+      Sentry.captureException(err);
+      setFailed(err instanceof Error ? `${err.name}: ${err.message}` : String(err));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  return <CallbackShell failed={failed} />;
+  return <CallbackShell failed={failed !== null} detail={failed ?? undefined} />;
 }
 
 function WebCallbackScreen() {
   const finish = useFinishSignIn();
-  useHandleSignInCallback(() => void finish());
-  return <CallbackShell />;
+  const { error } = useHandleSignInCallback(() => void finish());
+  if (error) Sentry.captureException(error);
+  return <CallbackShell failed={Boolean(error)} detail={error ? `${error.name}: ${error.message}` : undefined} />;
 }
 
 /** rendered at /auth-callback: finishes the OIDC exchange, then re-enters the app */
