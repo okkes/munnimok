@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.8.1](https://github.com/okkes/munnimok/compare/v1.8.0...v1.8.1) (2026-07-15)
+
+
+### 🐞 Bug Fixes
+
+* **deploy:** Synology upload _sid in query string; de-flake review expand assert ([97fd457](https://github.com/okkes/munnimok/commit/97fd45717bb660007a287fdab10372011ebe7081))
+* **native:** revert test-patched google-services.json ([bdd107c](https://github.com/okkes/munnimok/commit/bdd107cde3cd7c5465ea7a57faacba80df6a3deb))
+
 ## [1.8.0](https://github.com/okkes/munnimok/compare/v1.7.0...v1.8.0) (2026-07-15)
 
 
