@@ -3,6 +3,7 @@ import type { TranslationKey } from '@/i18n';
 import { budgetFamily, budgetPeriodAt, budgetSpentCents, cycleIndex } from './budgets';
 import { projectPayoff } from './debts';
 import { cycleMonths } from './recurring';
+import { detectPriceChange } from './recurringPrice';
 import { merchantKey } from './merchantKey';
 import type { Period } from './periods';
 
@@ -50,7 +51,7 @@ export interface InsightInputs {
 
 // ── leaks ───────────────────────────────────────────────────────────────
 
-/** a recurring cost that charges more than it used to (min €0.50/mo) */
+/** a recurring cost that SUSTAINABLY charges more than it used to (min €0.50/mo) */
 export function priceCreep(inputs: InsightInputs): Insight[] {
   const out: Insight[] = [];
   for (const rec of inputs.recurrings) {
@@ -58,19 +59,19 @@ export function priceCreep(inputs: InsightInputs): Insight[] {
     const charges = inputs.txs
       .filter((tx) => tx.deleted === 0 && tx.recurringId === rec.id && tx.amountCents < 0)
       .sort((a, b) => a.date.localeCompare(b.date));
-    if (charges.length < 3) continue;
-    const first = -charges[0].amountCents;
-    const last = -charges.at(-1)!.amountCents;
-    const deltaMonthly = Math.round((last - first) / cycleMonths(rec));
+    // two consecutive charges at the new amount — one-off prorations stay silent
+    const change = detectPriceChange(charges);
+    if (!change || change.toCents <= change.fromCents) continue;
+    const deltaMonthly = Math.round((change.toCents - change.fromCents) / cycleMonths(rec));
     if (deltaMonthly < 50) continue;
     out.push({
-      id: `creep:${rec.id}:${last}`,
+      id: `creep:${rec.id}:${change.toCents}`,
       severity: 'leak',
       impactCents: deltaMonthly * 12,
       icon: 'trending-up',
       titleKey: 'ins.creep.title',
       detailKey: 'ins.creep.detail',
-      params: { name: rec.name, from: first, to: last, year: deltaMonthly * 12 },
+      params: { name: rec.name, from: change.fromCents, to: change.toCents, year: deltaMonthly * 12 },
       chart: charges.slice(-8).map((tx) => -tx.amountCents),
       actionTo: `/recurring/${rec.id}`,
     });

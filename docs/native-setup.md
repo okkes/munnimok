@@ -61,16 +61,33 @@ the repo secrets (`ANDROID_KEYSTORE_*`) and as a local copy at
    repo secret `PLAY_SERVICE_ACCOUNT_JSON`. From then on every master
    merge publishes to the internal track automatically.
 
-## 5. iOS (later, needs money)
+## 5. iOS — enrolled ✓, TestFlight lane is built; four steps left
 
-1. Apple Developer Program — [developer.apple.com](https://developer.apple.com/programs/enroll/),
-   **$99/year**. Without it an iOS build can only run 7 days sideloaded.
-2. Once enrolled, tell me — certificates, provisioning and a TestFlight
-   lane in CI are my job. Then flip the repo variable
-   `IOS_BUILD_ENABLED=true` (off by default; macOS minutes cost 10×).
-3. Push on iOS: Firebase console → Add app → iOS (bundle id
-   `app.munni`) + upload your APNs key from the Apple portal into
-   Firebase → Cloud Messaging.
+The CI lane exists (signed archive + TestFlight upload via an App
+Store Connect API key, automatic signing — no certificates to manage
+by hand). Your remaining steps:
+
+1. **App record**: [App Store Connect](https://appstoreconnect.apple.com)
+   → Apps → **+ New App** → platform iOS, name "munni", bundle ID
+   `app.munni` (register it as an explicit App ID when prompted), SKU
+   `munni`.
+2. **API key**: App Store Connect → Users and Access → **Integrations →
+   App Store Connect API** → Team Keys → generate, role **App
+   Manager**. Note the Key ID + Issuer ID and download the `.p8` (one
+   chance!).
+3. **Repo secrets**: `ASC_KEY_ID` (key id), `ASC_ISSUER_ID` (issuer),
+   `ASC_KEY_P8` (the .p8 file base64-encoded:
+   `base64 -w0 AuthKey_XXXX.p8`), `APPLE_TEAM_ID` (Membership page).
+4. Flip the repo variable **`IOS_BUILD_ENABLED=true`** — the next
+   master merge archives, signs and uploads build N to TestFlight.
+   (With the variable on but no secrets, CI only does a cheap unsigned
+   smoke build.)
+
+Push on iOS additionally needs: Apple portal → Keys → create an
+**APNs key**, upload it in Firebase → Project settings → Cloud
+Messaging → Apple app configuration (add an iOS app with bundle
+`app.munni` there first, and drop its `GoogleService-Info.plist` into
+`apps/native/ios/App/App/` — tell me when it exists and I wire it in).
 
 ## What works today
 

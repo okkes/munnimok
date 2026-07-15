@@ -40,6 +40,52 @@ describe('RecurringScreen (demo identity)', () => {
     indexedDB.deleteDatabase('munni_demo');
   });
 
+  it('a sustained price change badges the row, the detail and the yearly totals', async () => {
+    // seed a recurring with linked charges: 13.99, 13.99, 15.99, 15.99
+    const first = renderApp('/recurring');
+    await screen.findByTestId('screen-recurring');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(db, new HlcClock('seed-price'), { trackOutbox: false });
+    await repo.upsert('recurring', DEMO_SPACE_ID, 'rec_price', {
+      name: 'Streamo',
+      kind: 'subscription',
+      amountCents: 1599,
+      every: 'month',
+      dueDay: 7,
+      active: 1,
+    });
+    for (let i = 0; i < 4; i++) {
+      await repo.upsert('transaction', DEMO_SPACE_ID, `str_${i}`, {
+        accountId: 'demo_main',
+        date: monthsAgo(3 - i, Math.min(new Date().getDate(), 28)),
+        amountCents: i < 2 ? -1399 : -1599,
+        currency: 'EUR',
+        merchant: 'STREAMO',
+        catId: 'subs',
+        txType: 'expense',
+        needsReview: 0,
+        recurringId: 'rec_price',
+      });
+    }
+    first.unmount();
+
+    renderApp('/recurring');
+    await screen.findByTestId('screen-recurring');
+    // the +€2.00 delta wears itself openly on the row (S2)…
+    const badge = await screen.findByTestId('recurring-pricechange-rec_price', {}, { timeout: 5000 });
+    expect(badge.textContent).toContain('2.00');
+    // …the screen carries the honest annual figure (S1)
+    expect(screen.getByTestId('recurring-year-total').textContent).toMatch(/year/);
+
+    // the detail tells the whole story with its yearly impact
+    fireEvent.click(screen.getByTestId('recurring-row-rec_price'));
+    const card = await screen.findByTestId('recdetail-pricechange', {}, { timeout: 5000 });
+    expect(card.textContent).toContain('€13.99');
+    expect(card.textContent).toContain('€15.99');
+    expect(card.textContent).toContain('+€24.00');
+    db.close();
+  }, 20_000);
+
   it('creates a recurring cost from the sheet and shows it with period stats', async () => {
     renderApp('/recurring');
     await screen.findByTestId('screen-recurring');
@@ -156,7 +202,8 @@ describe('RecurringScreen (demo identity)', () => {
     await screen.findByTestId('screen-recurring-detail');
     const payments = await screen.findByTestId('recdetail-payments', {}, { timeout: 5000 });
     await waitFor(() => expect(payments.querySelectorAll('[data-testid^="tx-row-"]')).toHaveLength(4));
-    expect(screen.getByTestId('recdetail-stats').textContent).toContain('4');
+    // stats carry the annualized figure now (subscription intelligence S1)
+    expect(screen.getByTestId('recdetail-stats').textContent).toContain('Per year');
     db.close();
   }, 20_000);
 });

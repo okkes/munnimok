@@ -21,6 +21,12 @@ import { eventPicture } from '@/features/events/EventsScreen';
 import { HomeCustomizeSheet, resolveHomeBlocks } from './HomeCustomizeSheet';
 import type { HomeBlockId } from './HomeCustomizeSheet';
 import { SpaceSwitcher } from '@/features/spaces/SpaceSwitcher';
+import { useCategories } from '@/features/categories/useCategories';
+import { safeToSpend } from '@/domain/cashflow';
+import { minIso, netWorthSeries } from '@/domain/trends';
+import { Line } from '@/ui/charts/Line';
+import { cleanBankText } from '@/lib/text';
+import { Sheet } from '@/ui/Sheet';
 import { useBudgetStatuses, useBudgets } from '@/application/budgets';
 import { useEvents } from '@/application/events';
 import { useGoals } from '@/application/goals';
@@ -55,6 +61,7 @@ export function HomeScreen() {
 
   const accounts = useSpaceAccounts();
   const allTxs = useSpaceTransactions();
+  const cats = useCategories();
   const { newTxs, ackAll } = useNewTransactions(allTxs);
   const reviewCount = useMemo(() => allTxs?.filter((tx) => tx.needsReview === 1).length, [allTxs]);
 
@@ -141,10 +148,27 @@ export function HomeScreen() {
     return toAllocateCents(window, allTxs ?? [], accountsById, allocations);
   }, [allocations, space?.periodType, space?.periodDay, allTxs, accounts]);
 
+  // cash-flow forecast (F1): shows nothing rather than a wrong number
+  const forecast = useMemo(() => {
+    if (!accounts || !allTxs || !recurrings) return null;
+    return safeToSpend({
+      accounts,
+      txs: allTxs,
+      recurrings,
+      allocations,
+      catalog: cats,
+      period,
+      today: localToday(),
+    });
+  }, [accounts, allTxs, recurrings, allocations, cats, period]);
+  const [forecastOpen, setForecastOpen] = useState(false);
+
   // each landing-zone block renders through this registry so the
   // per-space layout (order + visibility) can rearrange them
   const blockRenderers: Record<HomeBlockId, () => React.ReactNode> = {
     review: renderReviewBlock,
+    cashflow: renderCashflowBlock,
+    networth: renderNetworthBlock,
     overview: renderOverviewBlock,
     transactions: renderTransactionsBlock,
     budgets: renderBudgetsBlock,
@@ -238,6 +262,48 @@ export function HomeScreen() {
       </div>
 
       <HomeCustomizeSheet open={customizeOpen} onOpenChange={setCustomizeOpen} space={space} />
+
+      {/* the number must never feel like magic: every part is on the table */}
+      <Sheet open={forecastOpen} onOpenChange={setForecastOpen} title={t('cashflow.title')} size="tall">
+        {forecast && (
+          <div className="flex flex-col gap-1 pt-1" data-testid="cashflow-breakdown">
+            <div className="flex items-baseline justify-between py-1.5 text-[14px]">
+              <span className="text-ink-2">{t('cashflow.liquid')}</span>
+              <span className="m-num font-semibold text-ink">{fmtCents(forecast.liquidCents, currency, lang)}</span>
+            </div>
+            {forecast.upcoming.map(({ rec, due }) => (
+              <button
+                key={rec.id}
+                data-testid={`cashflow-upcoming-${rec.id}`}
+                onClick={() => void navigate({ to: '/recurring/$recId', params: { recId: rec.id } })}
+                className="m-tap flex w-full items-baseline justify-between border-none bg-transparent py-1.5 text-left text-[14px]"
+              >
+                <span className="min-w-0 flex-1 truncate text-ink-3">
+                  − {rec.name} · {new Date(due).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' })}
+                </span>
+                <span className="m-num text-ink-2">{fmtCents(-rec.amountCents, currency, lang, { sign: true })}</span>
+              </button>
+            ))}
+            {forecast.allocationCents > 0 && (
+              <div className="flex items-baseline justify-between py-1.5 text-[14px]" data-testid="cashflow-allocation">
+                <span className="text-ink-3">− {t('cashflow.allocated')}</span>
+                <span className="m-num text-ink-2">{fmtCents(-forecast.allocationCents, currency, lang, { sign: true })}</span>
+              </div>
+            )}
+            <div className="mt-1 flex items-baseline justify-between border-t border-line pt-3 text-[15px]">
+              <span className="font-medium text-ink">
+                {t('cashflow.safeUntil', {
+                  date: new Date(forecast.payday.date).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' }),
+                })}
+              </span>
+              <span className="m-num font-semibold text-ink" data-testid="cashflow-total">
+                {fmtCents(forecast.cents, currency, lang)}
+              </span>
+            </div>
+            <p className="pt-1 text-[11px] text-ink-4">{t('cashflow.paydaySource', { merchant: cleanBankText(forecast.payday.merchant) })}</p>
+          </div>
+        )}
+      </Sheet>
     </div>
   );
 
@@ -275,6 +341,66 @@ export function HomeScreen() {
             </button>
           ))}
         </div>
+      </>
+    );
+  }
+
+  function renderNetworthBlock() {
+    // sparkline over the last 6 period ends; opt-in via Customize Home
+    const periods6 = periodHistory(space?.periodType ?? 'month', space?.periodDay ?? 1, 6);
+    const today = localToday();
+    const series = netWorthSeries(accounts ?? [], allTxs ?? [], periods6.map((p) => minIso(p.end, today)));
+    const nowCents = series.at(-1)?.cents ?? 0;
+    const prevCents = series.at(-2)?.cents ?? nowCents;
+    const delta = nowCents - prevCents;
+    return (
+      <>
+        <div className="m-cap mt-5 mb-1 px-1">{t('trends.viewNetworth')}</div>
+        <button
+          data-testid="home-networth"
+          onClick={() => void navigate({ to: '/trends' })}
+          className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left"
+        >
+          <span className="w-24 shrink-0">
+            <Line values={series.map((point) => point.cents)} height={36} color="var(--m-accent-deep)" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="m-num block text-[15px] font-semibold text-ink">{fmtCents(nowCents, currency, lang)}</span>
+            <span className={`block text-[11px] ${delta >= 0 ? 'text-accent-deep' : 'text-negative'}`}>
+              {fmtCents(delta, currency, lang, { sign: true })}
+            </span>
+          </span>
+          <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
+        </button>
+      </>
+    );
+  }
+
+  function renderCashflowBlock() {
+    if (!forecast) return null; // no salary pattern / no liquid accounts — never guess
+    const fmtPayday = new Date(forecast.payday.date).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' });
+    let color = 'var(--m-accent-deep)';
+    if (forecast.cents < 0) color = 'var(--m-negative)';
+    else if (forecast.perDayCents < 1000) color = 'var(--m-warning)'; // under €10/day gets attention
+    return (
+      <>
+        <div className="m-cap mt-5 mb-1 px-1">{t('cashflow.title')}</div>
+        <button
+          data-testid="home-cashflow"
+          onClick={() => setForecastOpen(true)}
+          className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left"
+        >
+          <Tile icon="calendar-arrow-right" bg={`color-mix(in srgb, ${color} 14%, transparent)`} color={color} />
+          <span className="min-w-0 flex-1">
+            <span className="m-num block text-[15px] font-semibold" style={{ color }} data-testid="home-cashflow-amount">
+              {fmtCents(forecast.cents, currency, lang)}
+            </span>
+            <span className="block text-[11px] text-ink-4">
+              {t('cashflow.untilPayday', { date: fmtPayday, perDay: fmtCents(forecast.perDayCents, currency, lang) })}
+            </span>
+          </span>
+          <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
+        </button>
       </>
     );
   }

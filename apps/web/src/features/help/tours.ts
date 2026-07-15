@@ -23,6 +23,7 @@ export type TourId =
   | 'overview'
   | 'portfolio'
   | 'insights'
+  | 'trends'
   | 'shopping';
 
 export interface TourStep {
@@ -229,6 +230,17 @@ export const TOURS: Tour[] = [
       { titleKey: 'tour.ins.1t', bodyKey: 'tour.ins.1b', illustration: '💡' },
       { titleKey: 'tour.ins.2t', bodyKey: 'tour.ins.2b', illustration: '📐' },
       { titleKey: 'tour.ins.3t', bodyKey: 'tour.ins.3b', illustration: '🔕' },
+    ],
+  },
+  {
+    id: 'trends',
+    titleKey: 'trends.title',
+    icon: 'chart-bar',
+    screen: '/trends',
+    steps: [
+      { titleKey: 'tour.trends.1t', bodyKey: 'tour.trends.1b', illustration: '📊', anchor: 'trends-view-categories' },
+      { titleKey: 'tour.trends.2t', bodyKey: 'tour.trends.2b', illustration: '🌊', anchor: 'trends-view-cashflow' },
+      { titleKey: 'tour.trends.3t', bodyKey: 'tour.trends.3b', illustration: '📈', anchor: 'trends-view-networth' },
     ],
   },
   {

@@ -1,10 +1,15 @@
-# Native iOS build (native-apps design N6). macOS runners cost 10x
-# minutes, so this stays OFF until the repository variable
-# IOS_BUILD_ENABLED is set to 'true' (do that once the Apple Developer
-# account + signing certificates exist). Master merges only, like the
-# Android workflow. Without signing secrets it builds an unsigned
-# simulator app as a smoke test; TestFlight upload comes with fastlane
-# once APPLE_* secrets are configured.
+# Native iOS build + TestFlight (native-apps design N6). macOS runners
+# cost 10x minutes, so the job only runs when the repository variable
+# IOS_BUILD_ENABLED is 'true'. Master merges only, like Android.
+#
+# Without ASC_* secrets: unsigned simulator smoke build (artifact).
+# With them: signed archive via App Store Connect API key (automatic
+# signing, -allowProvisioningUpdates registers the bundle id + push
+# capability) and a direct upload to TestFlight.
+#
+# Required secrets for TestFlight: ASC_KEY_ID, ASC_ISSUER_ID,
+# ASC_KEY_P8 (base64 of the .p8), APPLE_TEAM_ID. The app record
+# (bundle app.munni) must exist in App Store Connect first.
 name: Native iOS
 
 on:
@@ -21,6 +26,8 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # build number = commit count
 
       - uses: actions/setup-node@v7
         with:
@@ -42,15 +49,87 @@ jobs:
         working-directory: apps/native/ios/App
         run: pod install
 
+      - name: Restore the App Store Connect API key
+        id: asc
+        run: |
+          if [ -n "$ASC_KEY_B64" ]; then
+            echo "$ASC_KEY_B64" | base64 -d > "$RUNNER_TEMP/asc.p8"
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          ASC_KEY_B64: ${{ secrets.ASC_KEY_P8 }}
+
+      # ---- no Apple key: unsigned smoke build so CI still guards the shell ----
       - name: Build (unsigned, simulator) as a smoke test
+        if: steps.asc.outputs.present == 'false'
         working-directory: apps/native/ios/App
         run: |
           xcodebuild -workspace App.xcworkspace -scheme App \
             -sdk iphonesimulator -configuration Debug \
             -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload simulator artifact
+        if: steps.asc.outputs.present == 'false'
+        uses: actions/upload-artifact@v4
         with:
           name: munni-ios-simulator
           path: apps/native/ios/App/build/Build/Products/Debug-iphonesimulator/App.app
           retention-days: 14
+
+      # ---- Apple key present: archive, sign automatically, upload to TestFlight ----
+      - name: Compute build number (commit count)
+        if: steps.asc.outputs.present == 'true'
+        id: version
+        run: |
+          echo "code=$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
+          echo "name=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Archive (automatic signing via ASC key)
+        if: steps.asc.outputs.present == 'true'
+        working-directory: apps/native/ios/App
+        run: |
+          xcodebuild -workspace App.xcworkspace -scheme App -configuration Release \
+            -archivePath "$RUNNER_TEMP/App.xcarchive" archive \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/asc.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CODE_SIGN_STYLE=Automatic \
+            CODE_SIGN_ENTITLEMENTS=App/App.entitlements \
+            CURRENT_PROJECT_VERSION="${{ steps.version.outputs.code }}" \
+            MARKETING_VERSION="${{ steps.version.outputs.name }}"
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Export and upload to TestFlight
+        if: steps.asc.outputs.present == 'true'
+        working-directory: apps/native/ios/App
+        run: |
+          cat > "$RUNNER_TEMP/exportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>$APPLE_TEAM_ID</string>
+            <key>uploadSymbols</key><true/>
+          </dict>
+          </plist>
+          PLIST
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/exportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/asc.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}

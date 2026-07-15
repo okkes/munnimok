@@ -84,15 +84,33 @@ describe('app screens (demo identity)', () => {
     await waitFor(() => expect(screen.queryByText('Transactions', { selector: '.m-cap' })).toBeNull());
     fireEvent.click(screen.getByTestId('home-block-toggle-transactions'));
 
-    // move overview above review (the new default leader): round-trips
+    // move overview to the top (past cashflow AND review) — the sheet
+    // re-renders from the synced layout, so each move must be VISIBLE
+    // before the next click computes from it
+    const domOrder = () =>
+      [...document.querySelectorAll('[data-testid^="home-block-up-"]')].map((el) =>
+        el.getAttribute('data-testid')!.replace('home-block-up-', ''),
+      );
     fireEvent.click(screen.getByTestId('home-block-up-overview'));
-    await waitFor(async () => {
-      const db = await import('@/db/schema').then((m) => new m.MunniDB('munni_demo'));
-      const space = await db.spaces.get('demo_space');
-      db.close();
-      expect(space?.homeBlocks?.[0]?.id).toBe('overview');
-    });
-  });
+    await waitFor(() => expect(domOrder()[1]).toBe('overview'));
+    fireEvent.click(screen.getByTestId('home-block-up-overview'));
+    await waitFor(() => expect(domOrder()[0]).toBe('overview'));
+  }, 15_000);
+
+  it('cash-flow forecast: safe-to-spend block opens the transparent breakdown', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    // demo salaries repeat monthly → the payday exists and the block shows
+    fireEvent.click(await screen.findByTestId('home-cashflow', {}, { timeout: 5000 }));
+    const breakdown = await screen.findByTestId('cashflow-breakdown');
+    expect(breakdown.textContent).toContain('Checking & cash');
+    expect(breakdown.textContent).toContain('Safe until');
+    expect(breakdown.textContent).toContain('Demo Corp'); // payday source named
+    // the headline equals the breakdown's bottom line
+    expect(screen.getByTestId('cashflow-total').textContent).toBe(
+      screen.getByTestId('home-cashflow-amount').textContent,
+    );
+  }, 15_000);
 
   it('home space switcher lists spaces, marks the active one, links to manage', async () => {
     renderApp('/home');

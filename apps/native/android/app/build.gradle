@@ -32,7 +32,11 @@ android {
     }
     buildTypes {
         release {
-            minifyEnabled false
+            // R8 shrinks the (small) Java layer and produces the mapping
+            // file Play wants for readable crash reports; the webview JS
+            // is untouched. CI uploads the mapping with every release.
+            minifyEnabled true
+            shrinkResources true
             // AGP 9 dropped 'proguard-android.txt' (it disabled R8 optimization)
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             if (System.getenv('ANDROID_KEYSTORE_PATH')) {

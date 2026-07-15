@@ -7,6 +7,7 @@ import { useSpaceTransactions } from '@/application/transactions';
 import { localToday, useDismissedKeys, useRecurringOps, useRecurrings } from '@/application/recurring';
 import { computeRange, summarize } from '@/domain/recurring';
 import type { RecurringComputed } from '@/domain/recurring';
+import { detectPriceChange, yearlyCents } from '@/domain/recurringPrice';
 import { detectRecurring } from '@/domain/detectRecurring';
 import { nextPeriod, periodHistory } from '@/domain/periods';
 import { fmtCents } from '@/lib/money';
@@ -130,10 +131,25 @@ export function RecurringScreen() {
               {t('recurring.luxury')}
             </Pill>
           )}
+          {/* S2: a sustained price change wears its delta openly */}
+          {(() => {
+            const change = detectPriceChange(linkedByRec.get(c.rec.id) ?? []);
+            if (!change) return null;
+            const up = change.toCents > change.fromCents;
+            return (
+              <Pill tone={up ? 'warning' : 'accent'} testId={`recurring-pricechange-${c.rec.id}`}>
+                {up ? '+' : '−'}
+                {money(Math.abs(change.toCents - change.fromCents))}
+              </Pill>
+            );
+          })()}
         </span>
         <span className="block truncate text-[11px] text-ink-4">{subtitleFor(c)}</span>
       </span>
-      <span className="font-mono text-[14px] font-semibold text-ink">{money(c.effectiveCents)}</span>
+      <span className="text-right">
+        <span className="block font-mono text-[14px] font-semibold text-ink">{money(c.effectiveCents)}</span>
+        <span className="block font-mono text-[10px] text-ink-4">{t('recurring.perYear', { amount: money(yearlyCents(c.rec)) })}</span>
+      </span>
       <Icon name="chevron-right" size={14} color="var(--m-ink-4)" />
     </button>
   );
@@ -228,6 +244,12 @@ export function RecurringScreen() {
             ))}
           </div>
           <ProgressBar className="mt-3" value={progress} />
+          {/* subscription intelligence S1: the honest annual figure */}
+          <div className="mt-3 text-[11px] text-ink-3" data-testid="recurring-year-total">
+            {t('recurring.perYearTotal', {
+              amount: money((recs ?? []).filter((r) => r.active === 1).reduce((sum, r) => sum + yearlyCents(r), 0)),
+            })}
+          </div>
           {summary.luxuryCents > 0 && (
             <div className="mt-3 flex items-center gap-1.5 text-[11px] text-ink-3" data-testid="recurring-luxury-line">
               <Pill tone="accent" caps>

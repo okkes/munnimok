@@ -146,7 +146,10 @@ export function SettingsScreen() {
             },
             {
               capKey: 'settings.groupLearn',
-              rows: [{ testId: 'settings-insights-row', icon: 'lightbulb-outline', labelKey: 'ins.title', to: '/insights' }],
+              rows: [
+                { testId: 'settings-insights-row', icon: 'lightbulb-outline', labelKey: 'ins.title', to: '/insights' },
+                { testId: 'settings-trends-row', icon: 'chart-bar', labelKey: 'trends.title', to: '/trends' },
+              ],
             },
             {
               capKey: 'settings.groupSetup',

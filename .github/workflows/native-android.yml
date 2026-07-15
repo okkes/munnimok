@@ -113,6 +113,7 @@ jobs:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: app.munni
           releaseFiles: apps/native/android/app/build/outputs/bundle/release/app-release.aab
+          mappingFile: apps/native/android/app/build/outputs/mapping/release/mapping.txt
           track: internal
           status: completed
         env:
