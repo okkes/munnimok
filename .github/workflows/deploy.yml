@@ -1,6 +1,5 @@
 # Web CI: unit tests (coverage) + Playwright e2e against the test stack.
-# GitHub Pages is no longer fed from here — the NAS serves the real app;
-# Pages hosts the archived legacy UI (deploy-legacy-pages.yml, one-off).
+# The NAS serves the real app (deploy-nas.yml); Pages is unused.
 name: Web CI
 
 on:

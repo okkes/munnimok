@@ -35,8 +35,8 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
-          # security-extended + apps/legacy exclusion (see the config file);
-          # code quality is owned by SonarQube + ESLint + Roslyn analyzers
+          # security-extended (see the config file); code quality is
+          # owned by SonarQube + ESLint + Roslyn analyzers
           config-file: ./.github/codeql/codeql-config.yml
 
       - uses: github/codeql-action/analyze@v4
