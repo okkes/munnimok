@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.13.0](https://github.com/okkes/munnimok/compare/v1.12.0...v1.13.0) (2026-07-15)
+
+
+### ✨ Features
+
+* **native:** SDK 36; i18n review fixes NL+TR; account-deletion plan ([4ee2959](https://github.com/okkes/munnimok/commit/4ee2959e7915b18e9017f9dc6d85fd355ebcc891))
+
+
+### 🐞 Bug Fixes
+
+* **ci:** prune iOS dev certs by keep-newest-3, not derived age ([220094a](https://github.com/okkes/munnimok/commit/220094aedc0f7f5fc5443f792638939199f41ea7))
+* **deploy:** allow native webview origins in the api CORS lists ([5398666](https://github.com/okkes/munnimok/commit/5398666d8bc60c70a52edfb461f826da3464e69f))
+
 ## [1.12.0](https://github.com/okkes/munnimok/compare/v1.11.0...v1.12.0) (2026-07-15)
 
 
