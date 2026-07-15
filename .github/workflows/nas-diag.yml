@@ -26,7 +26,11 @@ jobs:
           # live dir = parent of the published dir (SYNOLOGY_PATH secret),
           # so no share names are guessed here
           LIVE="${SYNOLOGY_PATH%/*}"
-          bash deploy/nas/download.sh "$LIVE/${{ inputs.file }}" "diag/$(basename "${{ inputs.file }}")"
+          if [ "${{ inputs.file }}" = "list" ]; then
+            bash deploy/nas/download.sh "$LIVE/" "diag/listing.json"
+          else
+            bash deploy/nas/download.sh "$LIVE/${{ inputs.file }}" "diag/$(basename "${{ inputs.file }}")"
+          fi
           # redact anything that looks like a credential before it leaves the runner
           sed -i -E 's/(password|passwd|secret|token|key)=[^ ]*/\1=REDACTED/Ig' diag/* || true
         env:

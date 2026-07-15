@@ -22,14 +22,28 @@ echo "$resp" | grep -q '"success":true' || { echo "Synology login failed: $resp"
 SID=$(echo "$resp" | sed -n 's/.*"sid" *: *"\([^"]*\)".*/\1/p')
 trap 'curl -sS "$URL/webapi/auth.cgi?api=SYNO.API.Auth&version=6&method=logout&session=FileStation&_sid='"$SID"'" >/dev/null || true' EXIT
 
-curl -sS -G "$URL/webapi/entry.cgi" \
-  --data-urlencode "api=SYNO.FileStation.Download" \
-  --data-urlencode "version=2" \
-  --data-urlencode "method=download" \
-  --data-urlencode "path=$REMOTE" \
-  --data-urlencode "mode=download" \
-  --data-urlencode "_sid=$SID" \
-  -o "$LOCAL"
+# a trailing slash lists the folder (names, sizes, mtimes) instead of
+# downloading — used to see what a deploy actually left on the NAS
+if [ "${REMOTE%/}" != "$REMOTE" ]; then
+  FOLDER=$(printf '%s' "$REMOTE" | sed 's:/*$::')
+  curl -sS -G "$URL/webapi/entry.cgi" \
+    --data-urlencode "api=SYNO.FileStation.List" \
+    --data-urlencode "version=2" \
+    --data-urlencode "method=list" \
+    --data-urlencode "folder_path=$FOLDER" \
+    --data-urlencode "additional=[\"size\",\"time\"]" \
+    --data-urlencode "_sid=$SID" \
+    -o "$LOCAL"
+else
+  curl -sS -G "$URL/webapi/entry.cgi" \
+    --data-urlencode "api=SYNO.FileStation.Download" \
+    --data-urlencode "version=2" \
+    --data-urlencode "method=download" \
+    --data-urlencode "path=$REMOTE" \
+    --data-urlencode "mode=download" \
+    --data-urlencode "_sid=$SID" \
+    -o "$LOCAL"
+fi
 
 # a JSON or HTML body instead of file content means the API refused
 # (bad path / permission / DSM 404 page)
