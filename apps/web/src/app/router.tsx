@@ -41,6 +41,7 @@ import { ReceiptsScreen } from '@/features/shopping/ReceiptsScreen';
 import { PortfolioScreen } from '@/features/portfolio/PortfolioScreen';
 import { HoldingDetailScreen } from '@/features/portfolio/HoldingDetailScreen';
 import { InsightsScreen } from '@/features/insights/InsightsScreen';
+import { TrendsScreen } from '@/features/trends/TrendsScreen';
 import { ProfileScreen } from '@/features/profile/ProfileScreen';
 import { RecurringScreen } from '@/features/recurring/RecurringScreen';
 import { RecurringDetailScreen } from '@/features/recurring/RecurringDetailScreen';
@@ -149,6 +150,7 @@ const receiptsRoute = createRoute({ getParentRoute: () => appRoute, path: '/rece
 const portfolioRoute = createRoute({ getParentRoute: () => appRoute, path: '/portfolio', component: PortfolioScreen });
 const holdingDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/portfolio/$holdingId', component: HoldingDetailScreen });
 const insightsRoute = createRoute({ getParentRoute: () => appRoute, path: '/insights', component: InsightsScreen });
+const trendsRoute = createRoute({ getParentRoute: () => appRoute, path: '/trends', component: TrendsScreen });
 const categoryDrillRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/overview/$kind/$catId',
@@ -200,6 +202,7 @@ export const routeTree = rootRoute.addChildren([
     portfolioRoute,
     holdingDetailRoute,
     insightsRoute,
+    trendsRoute,
   ]),
 ]);
 

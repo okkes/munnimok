@@ -23,6 +23,8 @@ import type { HomeBlockId } from './HomeCustomizeSheet';
 import { SpaceSwitcher } from '@/features/spaces/SpaceSwitcher';
 import { useCategories } from '@/features/categories/useCategories';
 import { safeToSpend } from '@/domain/cashflow';
+import { minIso, netWorthSeries } from '@/domain/trends';
+import { Line } from '@/ui/charts/Line';
 import { cleanBankText } from '@/lib/text';
 import { Sheet } from '@/ui/Sheet';
 import { useBudgetStatuses, useBudgets } from '@/application/budgets';
@@ -166,6 +168,7 @@ export function HomeScreen() {
   const blockRenderers: Record<HomeBlockId, () => React.ReactNode> = {
     review: renderReviewBlock,
     cashflow: renderCashflowBlock,
+    networth: renderNetworthBlock,
     overview: renderOverviewBlock,
     transactions: renderTransactionsBlock,
     budgets: renderBudgetsBlock,
@@ -338,6 +341,37 @@ export function HomeScreen() {
             </button>
           ))}
         </div>
+      </>
+    );
+  }
+
+  function renderNetworthBlock() {
+    // sparkline over the last 6 period ends; opt-in via Customize Home
+    const periods6 = periodHistory(space?.periodType ?? 'month', space?.periodDay ?? 1, 6);
+    const today = localToday();
+    const series = netWorthSeries(accounts ?? [], allTxs ?? [], periods6.map((p) => minIso(p.end, today)));
+    const nowCents = series.at(-1)?.cents ?? 0;
+    const prevCents = series.at(-2)?.cents ?? nowCents;
+    const delta = nowCents - prevCents;
+    return (
+      <>
+        <div className="m-cap mt-5 mb-1 px-1">{t('trends.viewNetworth')}</div>
+        <button
+          data-testid="home-networth"
+          onClick={() => void navigate({ to: '/trends' })}
+          className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left"
+        >
+          <span className="w-24 shrink-0">
+            <Line values={series.map((point) => point.cents)} height={36} color="var(--m-accent-deep)" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="m-num block text-[15px] font-semibold text-ink">{fmtCents(nowCents, currency, lang)}</span>
+            <span className={`block text-[11px] ${delta >= 0 ? 'text-accent-deep' : 'text-negative'}`}>
+              {fmtCents(delta, currency, lang, { sign: true })}
+            </span>
+          </span>
+          <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
+        </button>
       </>
     );
   }
