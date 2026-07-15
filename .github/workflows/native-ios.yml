@@ -21,6 +21,12 @@ on:
   push:
     branches: [master, dev] # public repo: standard macOS runners are free
 
+# never two signing runs at once: the cert-prune step of one run would
+# revoke the development certificate the other just minted mid-archive
+concurrency:
+  group: native-ios-signing
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
