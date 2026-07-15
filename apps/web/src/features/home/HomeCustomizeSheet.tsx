@@ -8,11 +8,12 @@ import { Sheet } from '@/ui/Sheet';
 /** every block the landing zone can show, in default order (user ruling:
  *  review → this period → transactions → budgets → coming up → goals →
  *  debts → events → insights; portfolio left Home for its own tab) */
-export const HOME_BLOCK_IDS = ['review', 'overview', 'transactions', 'budgets', 'allocation', 'upcoming', 'goals', 'debts', 'events', 'insights'] as const;
+export const HOME_BLOCK_IDS = ['review', 'cashflow', 'overview', 'transactions', 'budgets', 'allocation', 'upcoming', 'goals', 'debts', 'events', 'insights'] as const;
 export type HomeBlockId = (typeof HOME_BLOCK_IDS)[number];
 
 export const HOME_BLOCK_LABELS: Record<HomeBlockId, TranslationKey> = {
   review: 'review.title',
+  cashflow: 'cashflow.title',
   overview: 'overview.thisPeriod',
   transactions: 'tab.transactions',
   budgets: 'budgets.title',
