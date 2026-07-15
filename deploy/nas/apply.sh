@@ -44,7 +44,6 @@ apply_channel() { # apply_channel STAMP BUNDLE MARKER STACKS...
     log "unpack of $bundle FAILED — leaving stacks untouched"
     return 1
   fi
-  echo "$new" >"$LIVE/$marker"
 
   ok=1
   for compose in "$@"; do
@@ -56,6 +55,16 @@ apply_channel() { # apply_channel STAMP BUNDLE MARKER STACKS...
       ok=0
     fi
   done
+  # the marker records only SUCCESS: a failed update (e.g. a one-shot
+  # migration dying on a transient fault) is retried on the next cycle
+  # instead of being remembered as done. up -d is idempotent, so a
+  # persistently failing bundle just retries every cycle and keeps
+  # logging until a fixed bundle arrives.
+  if [ "$ok" = 1 ]; then
+    echo "$new" >"$LIVE/$marker"
+  else
+    log "$stamp=$new NOT marked applied — will retry next cycle"
+  fi
   [ "$ok" = 1 ]
 }
 
