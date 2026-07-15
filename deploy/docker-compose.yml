@@ -108,7 +108,9 @@ services:
   glitchtip-migrate:
     image: glitchtip/glitchtip:latest
     restart: "no"
-    command: ./bin/run-migrations.sh
+    # manage.py is stable across releases; the bin/ wrapper was renamed
+    # in 2026 (run-migrations.sh -> run-migrate.sh) and broke the stack
+    command: ./manage.py migrate
     environment: &glitchtip_env
       DATABASE_URL: postgres://munni:${POSTGRES_PASSWORD}@postgres:5432/glitchtip
       REDIS_URL: redis://valkey:6379/0

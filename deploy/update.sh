@@ -33,7 +33,9 @@ if [ -n "$GHCR_PAT" ]; then
 fi
 
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d
+# don't die before the status dump below — it captures WHY up failed
+UP_RC=0
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d || UP_RC=$?
 docker image prune -f
 
 # ── post-deploy status dump (survives container recreation; readable via
@@ -43,7 +45,8 @@ sleep 20
   echo "=== status $(date '+%Y-%m-%d %H:%M:%S') $COMPOSE_FILE ==="
   docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" ps
   df -h /volume1 | tail -1
-  # capture recent logs of anything not cleanly running
+  # capture recent logs of anything not cleanly running — and always the
+  # api, whose crash loop shows as "running (n seconds)" between restarts
   docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" ps --format '{{.Service}} {{.State}}' 2>/dev/null \
     | while read -r svc state; do
         case "$state" in
@@ -52,4 +55,7 @@ sleep 20
              docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" logs --tail=60 "$svc" 2>&1 ;;
         esac
       done
+  echo "--- api last 40 log lines ---"
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" logs --tail=40 api 2>&1
 } > "status-$(basename "$COMPOSE_FILE" .yml).log" 2>&1 || true
+exit $UP_RC
