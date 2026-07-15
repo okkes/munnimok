@@ -165,7 +165,8 @@ describe('ReviewScreen (demo identity)', () => {
     const desc = screen.getByTestId('review-description');
     expect(desc.className).toContain('line-clamp-2');
     fireEvent.click(desc);
-    expect(screen.getByTestId('review-description').className).not.toContain('line-clamp-2');
+    // waitFor: under coverage instrumentation the expand re-render can lag the click
+    await waitFor(() => expect(screen.getByTestId('review-description').className).not.toContain('line-clamp-2'));
 
     fireEvent.click(screen.getByTestId('review-act-split'));
     const amount0 = (await screen.findByTestId('split-amount-0')) as HTMLInputElement;

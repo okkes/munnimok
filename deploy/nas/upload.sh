@@ -39,14 +39,15 @@ logout() {
 
 upload_one() {
   local sid="$1" file="$2" resp
-  resp=$(curl -sS "$URL/webapi/entry.cgi" \
+  # _sid must ride the query string: as a multipart field the API answers
+  # error 119 (SID not found)
+  resp=$(curl -sS "$URL/webapi/entry.cgi?_sid=$sid" \
     -F "api=SYNO.FileStation.Upload" \
     -F "version=2" \
     -F "method=upload" \
     -F "path=$SYNOLOGY_PATH" \
     -F "create_parents=true" \
     -F "overwrite=true" \
-    -F "_sid=$sid" \
     -F "file=@$file;filename=$(basename "$file")")
   if ! echo "$resp" | grep -q '"success":true'; then
     echo "upload of $(basename "$file") failed: $resp" >&2
