@@ -5,10 +5,14 @@
 # Two store identities (product flavors):
 #   master → prod flavor: app.munni, scheme munni://, Play app "munni"
 #   dev    → dev  flavor: app.munni.dev, scheme munni-dev://, its own
-#            Play app — ONLY once the repo variable NATIVE_DEV_CHANNEL
-#            is 'true' (needs the Firebase + Play setup in
+#            Play app — ONLY once the variable NATIVE_DEV_CHANNEL is
+#            'true' (needs the Firebase + Play setup in
 #            docs/native-setup.md §6); before that dev builds the prod
 #            flavor and publishes nothing.
+#
+# Stack config (NATIVE_API_URL etc.) comes from the job's GitHub
+# Environment (production/staging by branch); repo-level variables of
+# the same name are the shared defaults.
 name: Native Android
 
 on:
@@ -22,6 +26,9 @@ permissions:
 jobs:
   android:
     runs-on: ubuntu-latest
+    # GitHub Environment resolves NATIVE_* variables per stack (staging
+    # values override repo-level defaults with the SAME name)
+    environment: ${{ github.ref_name == 'dev' && 'staging' || 'production' }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -37,16 +44,12 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - name: Resolve branch, stack and flavor
+      - name: Resolve branch and flavor
         id: env
         run: |
           if [ "${{ github.ref }}" = "refs/heads/master" ]; then
             echo "master=true" >> "$GITHUB_OUTPUT"
             echo "flavor=prod" >> "$GITHUB_OUTPUT"
-            echo "API_URL=${{ vars.NATIVE_API_URL }}" >> "$GITHUB_ENV"
-            echo "PUBLIC_ORIGIN=${{ vars.NATIVE_PUBLIC_ORIGIN }}" >> "$GITHUB_ENV"
-            echo "LOGTO_APP_ID=${{ vars.NATIVE_LOGTO_APP_ID }}" >> "$GITHUB_ENV"
-            echo "LOGTO_RESOURCE=${{ vars.NATIVE_LOGTO_RESOURCE }}" >> "$GITHUB_ENV"
             echo "NATIVE_SCHEME=munni" >> "$GITHUB_ENV"
           else
             echo "master=false" >> "$GITHUB_OUTPUT"
@@ -57,10 +60,6 @@ jobs:
               echo "flavor=prod" >> "$GITHUB_OUTPUT"
               echo "NATIVE_SCHEME=munni" >> "$GITHUB_ENV"
             fi
-            echo "API_URL=${{ vars.NATIVE_API_URL_DEV || vars.NATIVE_API_URL }}" >> "$GITHUB_ENV"
-            echo "PUBLIC_ORIGIN=${{ vars.NATIVE_PUBLIC_ORIGIN_DEV || vars.NATIVE_PUBLIC_ORIGIN }}" >> "$GITHUB_ENV"
-            echo "LOGTO_APP_ID=${{ vars.NATIVE_LOGTO_APP_ID_DEV || vars.NATIVE_LOGTO_APP_ID }}" >> "$GITHUB_ENV"
-            echo "LOGTO_RESOURCE=${{ vars.NATIVE_LOGTO_RESOURCE_DEV || vars.NATIVE_LOGTO_RESOURCE }}" >> "$GITHUB_ENV"
           fi
 
       - name: Capitalized flavor for gradle task/path names
@@ -74,11 +73,11 @@ jobs:
           npm ci
           npm run sync -w @munni/native
         env:
-          VITE_API_URL: ${{ env.API_URL }}
-          VITE_PUBLIC_ORIGIN: ${{ env.PUBLIC_ORIGIN }}
+          VITE_API_URL: ${{ vars.NATIVE_API_URL }}
+          VITE_PUBLIC_ORIGIN: ${{ vars.NATIVE_PUBLIC_ORIGIN }}
           VITE_LOGTO_ENDPOINT: ${{ vars.NATIVE_LOGTO_ENDPOINT }}
-          VITE_LOGTO_APP_ID: ${{ env.LOGTO_APP_ID }}
-          VITE_LOGTO_RESOURCE: ${{ env.LOGTO_RESOURCE }}
+          VITE_LOGTO_APP_ID: ${{ vars.NATIVE_LOGTO_APP_ID }}
+          VITE_LOGTO_RESOURCE: ${{ vars.NATIVE_LOGTO_RESOURCE }}
           VITE_NATIVE_SCHEME: ${{ env.NATIVE_SCHEME }}
           VITE_CHANNEL: ${{ steps.env.outputs.master == 'true' && 'production' || 'staging' }}
 

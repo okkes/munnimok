@@ -7,7 +7,9 @@
 #   munni-test.okkes.synology.me      -> localhost:8095
 #   munni-test-api.okkes.synology.me  -> localhost:8096
 #
-# Same .env as production. Update via:  bash update.sh docker-compose.staging.yml
+# Env: .env.staging (rendered by CI from the staging GitHub Environment;
+# falls back to the production .env when absent).
+# Update via:  bash update.sh docker-compose.staging.yml
 name: munni-staging
 services:
   web:
@@ -31,6 +33,8 @@ services:
       Push__VapidPublicKey: ${PUSH_VAPID_PUBLIC_KEY:-}
       Push__VapidPrivateKey: ${PUSH_VAPID_PRIVATE_KEY:-}
       Push__Subject: ${PUSH_VAPID_SUBJECT:-mailto:admin@localhost}
+      # native pushes for the staging app (app.munni.dev, same Firebase project)
+      Fcm__ServiceAccountJson: ${FCM_SERVICE_ACCOUNT_JSON:-}
       Logos__SecretKey: ${LOGODEV_SECRET_KEY:-}
       Logos__PublicToken: ${LOGODEV_PUBLIC_TOKEN:-}
       Admin__Subs: ${ADMIN_SUBS:-}

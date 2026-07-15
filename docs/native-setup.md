@@ -139,18 +139,22 @@ Do these in order BEFORE flipping the variable:
    in this record.
 4. **Logto** (admin console → the native application): add a second
    redirect URI **`munni-dev://auth-callback`**. (If you later create a
-   separate Logto app for staging, set `NATIVE_LOGTO_APP_ID_DEV`
-   instead — the workflows already prefer the `_DEV` variables on dev.)
-5. Flip the repo variable **`NATIVE_DEV_CHANNEL=true`** — the next dev
-   push builds, signs and publishes app.munni.dev to its own Play
-   internal track + TestFlight app.
+   separate Logto app for staging, put its id in the **staging GitHub
+   Environment** as `NATIVE_LOGTO_APP_ID` — see below.)
+5. Flip the variable **`NATIVE_DEV_CHANNEL=true`** (repo level, or in
+   the staging environment) — the next dev push builds, signs and
+   publishes app.munni.dev to its own Play internal track + TestFlight
+   app.
 
-**Optional — point dev builds at the staging stack**: set repo variables
-`NATIVE_API_URL_DEV`, `NATIVE_PUBLIC_ORIGIN_DEV`,
-`NATIVE_LOGTO_APP_ID_DEV`, `NATIVE_LOGTO_RESOURCE_DEV`. When absent, dev
-builds use the production values. Recommended together with the staging
-apps: `NATIVE_API_URL_DEV=https://munni-test-api.okkes.synology.me`,
-`NATIVE_PUBLIC_ORIGIN_DEV=https://munni-test.okkes.synology.me`.
+**Per-stack configuration lives in GitHub Environments** (Settings →
+Environments → `production` / `staging`): dev-branch jobs run in
+`staging`, master jobs in `production`, and a variable defined there
+overrides the repo-level variable of the SAME name (no more `_DEV`
+suffixes). To point dev builds at the staging stack, define in the
+staging environment: `NATIVE_API_URL=https://munni-test-api.okkes.synology.me`,
+`NATIVE_PUBLIC_ORIGIN=https://munni-test.okkes.synology.me`,
+`NATIVE_LOGTO_RESOURCE=https://munni-test-api.okkes.synology.me`.
+When a name is absent there, the repo-level (production) value applies.
 
 Export compliance: answered once and encoded — Info.plist carries
 `ITSAppUsesNonExemptEncryption=false` ("None of the algorithms": munni

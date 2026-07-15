@@ -25,26 +25,40 @@ FCM_SERVICE_ACCOUNT_JSON='${NAS_FCM_SERVICE_ACCOUNT_JSON}'
 ```
 
 CI renders it with `render-env.sh`: each placeholder is filled from the
-**same-named GitHub repository secret**. Adding a key = add the line to
-the template + create the `NAS_*` secret; no workflow change. The render
-fails the deploy if `NAS_GHCR_PAT` or `NAS_POSTGRES_PASSWORD` are
-missing; other empty secrets just leave their feature off.
+**same-named GitHub secret**, resolved through the job's **GitHub
+Environment** — the deploy job runs in `production` (master) or
+`staging` (dev), so ONE secret name can carry a different value per
+stack, and repo-level secrets act as the shared default for both.
+Master renders `.env`, dev renders `.env.staging` from the same
+template. Adding a key = template line + secret; no workflow change.
+The render fails the deploy if `NAS_GHCR_PAT` or
+`NAS_POSTGRES_PASSWORD` are missing; other empty secrets just leave
+their feature off.
 
-⚠ The rendered `.env` **overwrites** the one on the NAS with every
-master deploy — never edit `.env` on the NAS by hand.
+⚠ The rendered `.env` / `.env.staging` **overwrite** the NAS copies on
+every deploy — never edit them on the NAS by hand.
 
-### NAS_* secrets to create
+### Where each NAS_* secret lives
 
-Required: `NAS_GHCR_PAT`, `NAS_POSTGRES_PASSWORD`.
-Feature secrets (empty = feature off): `NAS_GLITCHTIP_SECRET_KEY`,
-`NAS_GLITCHTIP_EMAIL_URL`, `NAS_API_SENTRY_DSN`,
-`NAS_GOCARDLESS_SECRET_ID`, `NAS_GOCARDLESS_SECRET_KEY`,
-`NAS_ADMIN_SUBS`, `NAS_PGADMIN_PASSWORD`, `NAS_PUSH_VAPID_PUBLIC_KEY`,
-`NAS_PUSH_VAPID_PRIVATE_KEY`, `NAS_FCM_SERVICE_ACCOUNT_JSON` (paste the
-raw one-line JSON, no surrounding quotes — the template quotes it),
+**Repo-level (one value serves both stacks):** `NAS_GHCR_PAT`,
+`NAS_FCM_SERVICE_ACCOUNT_JSON` (raw one-line JSON, no surrounding
+quotes — the template quotes it), `NAS_GOCARDLESS_SECRET_ID`,
+`NAS_GOCARDLESS_SECRET_KEY`, `NAS_ADMIN_SUBS`,
 `NAS_LOGODEV_SECRET_KEY`, `NAS_LOGODEV_PUBLIC_TOKEN`,
-`NAS_IMPORT_WATCH_OWNER_SUB`, `NAS_ENABLEBANKING_APPLICATION_ID`,
-`NAS_ENABLEBANKING_PRIVATE_KEY_PEM`.
+`NAS_API_SENTRY_DSN`, and the prod-only services staging ignores:
+`NAS_GLITCHTIP_SECRET_KEY`, `NAS_GLITCHTIP_EMAIL_URL`,
+`NAS_PGADMIN_PASSWORD`, `NAS_IMPORT_WATCH_OWNER_SUB`,
+`NAS_ENABLEBANKING_APPLICATION_ID`, `NAS_ENABLEBANKING_PRIVATE_KEY_PEM`.
+
+**Environment-scoped (production + staging each get their own):**
+- `NAS_POSTGRES_PASSWORD` — ⚠ postgres only applies a password at
+  first initdb, so both environments must START with the current
+  password (the volumes already exist); diverge them only if you ever
+  recreate the staging volume.
+- `NAS_PUSH_VAPID_PUBLIC_KEY` / `NAS_PUSH_VAPID_PRIVATE_KEY` — one
+  pair per environment (`npx web-push generate-vapid-keys`); replacing
+  a pair kills that environment's existing push subscriptions, so
+  give production the CURRENT pair and mint a fresh one for staging.
 
 ## One-time NAS setup
 

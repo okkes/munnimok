@@ -36,6 +36,9 @@ jobs:
   ios:
     if: ${{ vars.IOS_BUILD_ENABLED == 'true' }}
     runs-on: macos-15
+    # GitHub Environment resolves NATIVE_* variables per stack (staging
+    # values override repo-level defaults with the SAME name)
+    environment: ${{ github.ref_name == 'dev' && 'staging' || 'production' }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -64,12 +67,11 @@ jobs:
           npm ci
           npm run sync -w @munni/native
         env:
-          # dev builds point at the staging stack (same Logto native app)
-          VITE_API_URL: ${{ github.ref_name == 'dev' && vars.NATIVE_API_URL_DEV || vars.NATIVE_API_URL }}
-          VITE_PUBLIC_ORIGIN: ${{ github.ref_name == 'dev' && vars.NATIVE_PUBLIC_ORIGIN_DEV || vars.NATIVE_PUBLIC_ORIGIN }}
+          VITE_API_URL: ${{ vars.NATIVE_API_URL }}
+          VITE_PUBLIC_ORIGIN: ${{ vars.NATIVE_PUBLIC_ORIGIN }}
           VITE_LOGTO_ENDPOINT: ${{ vars.NATIVE_LOGTO_ENDPOINT }}
-          VITE_LOGTO_APP_ID: ${{ github.ref_name == 'dev' && vars.NATIVE_LOGTO_APP_ID_DEV || vars.NATIVE_LOGTO_APP_ID }}
-          VITE_LOGTO_RESOURCE: ${{ github.ref_name == 'dev' && vars.NATIVE_LOGTO_RESOURCE_DEV || vars.NATIVE_LOGTO_RESOURCE }}
+          VITE_LOGTO_APP_ID: ${{ vars.NATIVE_LOGTO_APP_ID }}
+          VITE_LOGTO_RESOURCE: ${{ vars.NATIVE_LOGTO_RESOURCE }}
           VITE_NATIVE_SCHEME: ${{ steps.channel.outputs.scheme }}
           VITE_CHANNEL: ${{ github.ref_name == 'dev' && 'staging' || 'production' }}
 

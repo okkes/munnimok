@@ -9,8 +9,12 @@
 #   dev    → munni-deploy-staging.tgz + VERSION_STAGING (staging only,
 #            so staging tests dev's compose changes before a release)
 #
-# .env is rendered from deploy/env/.env.nas: ${NAS_*} placeholders are
-# filled from same-named repository secrets (deploy/nas/render-env.sh) —
+# Env files are rendered from deploy/env/.env.nas: ${NAS_*} placeholders
+# are filled from same-named secrets (deploy/nas/render-env.sh). The job
+# runs in the production/staging GitHub Environment matching the branch,
+# so one secret NAME can carry a different value per stack (VAPID pair,
+# postgres password); repo-level secrets are the shared defaults. The
+# master channel renders .env, the dev channel renders .env.staging —
 # no whole-.env secret, no manual NAS edits (deploy/nas/README.md).
 #
 # Secrets required (besides the NAS_* env values):
@@ -36,6 +40,7 @@ jobs:
     # only when the image build actually succeeded (or a manual dispatch)
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
+    environment: ${{ (github.event.workflow_run.head_branch || github.ref_name) == 'master' && 'production' || 'staging' }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -59,8 +64,10 @@ jobs:
             echo "bundle=munni-deploy.tgz" >> "$GITHUB_OUTPUT"
             echo "stamp=VERSION" >> "$GITHUB_OUTPUT"
           else
-            # staging channel: only what the staging stack runs from dev
+            # staging channel: only what the staging stack runs from dev,
+            # plus its own env rendered from the staging environment
             cp deploy/docker-compose.staging.yml deploy/update.sh deploy/nas/apply.sh "$STAGE/"
+            bash deploy/nas/render-env.sh deploy/env/.env.nas "$STAGE/.env.staging"
             echo "bundle=munni-deploy-staging.tgz" >> "$GITHUB_OUTPUT"
             echo "stamp=VERSION_STAGING" >> "$GITHUB_OUTPUT"
           fi
