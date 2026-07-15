@@ -72,9 +72,15 @@ by hand). Your remaining steps:
    `app.munni` (register it as an explicit App ID when prompted), SKU
    `munni`.
 2. **API key**: App Store Connect → Users and Access → **Integrations →
-   App Store Connect API** → Team Keys → generate, role **App
-   Manager**. Note the Key ID + Issuer ID and download the `.p8` (one
-   chance!).
+   App Store Connect API** → Team Keys → generate, role **Admin**. Note
+   the Key ID + Issuer ID and download the `.p8` (one chance!).
+   > ⚠ The role must be **Admin**, not App Manager. CI signs the build
+   > with a *cloud-managed distribution certificate*, which only an
+   > Admin key may create — an App Manager key fails the export with
+   > "Cloud signing permission error / No signing certificate 'iOS
+   > Distribution' found" (this is what the first TestFlight run hit).
+   > Also make sure any pending agreements are accepted under
+   > Business / Agreements, Tax, and Banking, or cert creation is blocked.
 3. **Repo secrets**: `ASC_KEY_ID` (key id), `ASC_ISSUER_ID` (issuer),
    `ASC_KEY_P8` (the .p8 file base64-encoded:
    `base64 -w0 AuthKey_XXXX.p8`), `APPLE_TEAM_ID` (Membership page).
