@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.0](https://github.com/okkes/munnimok/compare/v1.9.0...v1.10.0) (2026-07-15)
+
+
+### ✨ Features
+
+* **ui:** brand logos fill their tiles; auth callback failures show the error ([d8d539f](https://github.com/okkes/munnimok/commit/d8d539fb2e73b02bba0a20ca589e670b085d228f))
+
 ## [1.9.0](https://github.com/okkes/munnimok/compare/v1.8.1...v1.9.0) (2026-07-15)
 
 
