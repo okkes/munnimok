@@ -65,10 +65,16 @@ jobs:
           VITE_NATIVE_SCHEME: ${{ steps.channel.outputs.scheme }}
           VITE_CHANNEL: ${{ github.ref_name == 'dev' && 'staging' || 'production' }}
 
+      # NOTE: the bundle id must be patched in the project file, not passed
+      # as an xcodebuild argument — a command-line PRODUCT_BUNDLE_IDENTIFIER
+      # applies to EVERY target (embedded Capacitor frameworks included) and
+      # the upload dies with "CFBundleIdentifier Collision".
       - name: Rebrand the shell for the staging app
         if: steps.channel.outputs.bundle_id == 'app.munni.dev'
         working-directory: apps/native/ios/App
         run: |
+          sed -i '' 's/PRODUCT_BUNDLE_IDENTIFIER = app\.munni;/PRODUCT_BUNDLE_IDENTIFIER = app.munni.dev;/g' App.xcodeproj/project.pbxproj
+          grep -c "app.munni.dev" App.xcodeproj/project.pbxproj
           /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName munni dev" App/Info.plist
           /usr/libexec/PlistBuddy -c "Set :CFBundleURLTypes:0:CFBundleURLName app.munni.dev" App/Info.plist
           /usr/libexec/PlistBuddy -c "Set :CFBundleURLTypes:0:CFBundleURLSchemes:0 munni-dev" App/Info.plist
@@ -135,7 +141,6 @@ jobs:
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CODE_SIGN_STYLE=Automatic \
             CODE_SIGN_ENTITLEMENTS=App/App.entitlements \
-            PRODUCT_BUNDLE_IDENTIFIER="${{ steps.channel.outputs.bundle_id }}" \
             CURRENT_PROJECT_VERSION="${{ steps.version.outputs.code }}" \
             MARKETING_VERSION="${{ steps.version.outputs.name }}"
         env:
