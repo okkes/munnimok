@@ -4,6 +4,7 @@ import {
   creditRemainingCents,
   givenCents,
   netAmountCents,
+  redistributedSplits,
   netCreditCents,
   remainingCents,
   totalReimbursedCents,
@@ -79,5 +80,62 @@ describe('reimbursement math', () => {
     const two = withLink(replaced, 'b', 100);
     expect(two).toHaveLength(2);
     expect(withLink(two, 'a', 0)).toEqual([{ txId: 'b', amountCents: 100 }]);
+  });
+});
+
+describe('redistributedSplits (physical rewrite, user rules)', () => {
+  const names: Record<string, string> = { groceries: 'Groceries', eatingOut: 'Eating out', fun: 'Fun', reimburse: 'Reimbursement', expenseReimburse: 'Expected reimbursement', uncategorized: 'Uncategorized', transferIn: 'Transfer In' };
+  const nameOf = (id: string) => names[id] ?? id;
+
+  it('a non-split credit shrinks to its net value in its own category', () => {
+    const out = redistributedSplits({ amountCents: 10_000, catId: 'transferIn', splits: undefined }, 5_000, nameOf);
+    expect(out).toEqual([{ catId: 'transferIn', amountCents: 5_000 }]);
+  });
+
+  it('consumes reimbursement categories first, then uncategorized, then the largest', () => {
+    const tx = {
+      amountCents: -10_000,
+      catId: 'groceries',
+      splits: [
+        { catId: 'groceries', amountCents: 4_000 },
+        { catId: 'expenseReimburse', amountCents: 2_000 },
+        { catId: 'uncategorized', amountCents: 1_000 },
+        { catId: 'fun', amountCents: 3_000 },
+      ],
+    };
+    // reduce by 3500: 2000 reimb + 1000 uncat + 500 from groceries (largest)
+    const out = redistributedSplits(tx, 6_500, nameOf);
+    expect(out).toEqual([
+      { catId: 'groceries', amountCents: 3_500 },
+      { catId: 'fun', amountCents: 3_000 },
+    ]);
+  });
+
+  it('largest-first with alphabetical tie-break, zeroed slices removed', () => {
+    const tx = {
+      amountCents: -6_000,
+      catId: 'groceries',
+      splits: [
+        { catId: 'fun', amountCents: 3_000 },
+        { catId: 'eatingOut', amountCents: 3_000 },
+      ],
+    };
+    // tie at 3000: "Eating out" < "Fun" alphabetically → consumed first
+    const out = redistributedSplits(tx, 2_000, nameOf);
+    expect(out).toEqual([{ catId: 'fun', amountCents: 2_000 }]);
+  });
+
+  it('keeps a zero slice when fully reimbursed (readers must not fall back to gross)', () => {
+    const out = redistributedSplits({ amountCents: -4_000, catId: 'groceries', splits: undefined }, 0, nameOf);
+    expect(out).toEqual([{ catId: 'groceries', amountCents: 0 }]);
+  });
+
+  it('a removed reimbursement frees value onto uncategorized, never the original category', () => {
+    const tx = { amountCents: 10_000, catId: 'transferIn', splits: [{ catId: 'transferIn', amountCents: 5_000 }] };
+    const out = redistributedSplits(tx, 10_000, nameOf);
+    expect(out).toEqual([
+      { catId: 'transferIn', amountCents: 5_000 },
+      { catId: 'uncategorized', amountCents: 5_000 },
+    ]);
   });
 });

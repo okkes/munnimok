@@ -190,6 +190,16 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
     expect(screen.getByTestId('tx-detail-amount').textContent).toContain('-€32.40');
     expect(screen.getByTestId('tx-detail-gross').textContent).toContain('-€52.40');
 
+    // physical rewrite (user rule): both sides' splits carry the NET truth
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const expense = await db.transactions.get('dm6');
+      const creditId = expense?.reimbursements?.[0]?.txId;
+      const credit = creditId ? await db.transactions.get(creditId) : undefined;
+      expect(expense?.splits?.reduce((s, x) => s + x.amountCents, 0)).toBe(3240);
+      expect(credit?.splits?.reduce((s, x) => s + x.amountCents, 0)).toBe((credit?.amountCents ?? 0) - 2000);
+    });
+
     // unlink restores the original state
     await waitFor(() =>
       expect(screen.getByTestId('reimb-list').querySelector('[data-testid^="reimb-unlink-"]')).toBeTruthy(),
@@ -199,6 +209,13 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
       expect(screen.queryByTestId('reimb-summary')).toBeNull();
       expect(screen.getByTestId('tx-detail-amount').textContent).toContain('-€52.40');
     });
+    // the freed value lands on Uncategorized, not the original category (user rule)
+    await waitFor(async () => {
+      const expense = await db.transactions.get('dm6');
+      expect(expense?.splits?.find((s) => s.catId === 'uncategorized')?.amountCents).toBe(2000);
+      expect(expense?.splits?.reduce((s, x) => s + x.amountCents, 0)).toBe(5240);
+    });
+    db.close();
   });
 
   it('links an expense from the income side: the credit nets out and self-files as Reimbursement', async () => {

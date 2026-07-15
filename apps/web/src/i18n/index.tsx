@@ -32,6 +32,10 @@ const LangContext = createContext<LangContextValue | null>(null);
 function readStoredLang(): Lang {
   const stored = localStorage.getItem(LS_KEY);
   if (stored === 'en' || stored === 'nl' || stored === 'tr') return stored;
+  // first launch: follow the device language when it maps to one we speak
+  // (native-benefits §3). A deliberate pick in Settings wins forever.
+  const device = (navigator.language || '').slice(0, 2).toLowerCase();
+  if (device === 'nl' || device === 'tr') return device;
   return 'en';
 }
 

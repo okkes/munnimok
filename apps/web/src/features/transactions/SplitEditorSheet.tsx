@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { useTxTransform } from '@/application/transactions';
+import { useSpaceTransactions, useTxTransform } from '@/application/transactions';
 import type { SpaceTx } from '@/application/transactions';
 import { useLang } from '@/i18n';
 import { fmtCents, parseCents } from '@/lib/money';
 import { balanceLastRow, pctRemainder, primaryCatId, resolveSplitsFor, splitRemainderCents, splitsArePct, validatePctSplits, validateSplits } from '@/domain/splits';
+import { givenCents, netAmountCents, netCreditCents } from '@/domain/reimbursement';
 import { UNCATEGORIZED_ID } from '@/domain/categories';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { CategoryPicker } from '@/features/categories/CategoryPicker';
@@ -64,6 +65,13 @@ export function SplitEditorSheet({
 
   // controlled mode edits the draft's splits; write-through edits the tx's
   const source = onApply ? value : tx.splits;
+  const allTxs = useSpaceTransactions();
+  // write-through partitions the NET value: reimbursements physically
+  // shrink category attribution (user rule), so the editor must ask for
+  // slices that sum to what the transaction is really worth. Controlled
+  // (review-draft) mode keeps the gross amount — reviews precede links.
+  const netCents = tx.amountCents < 0 ? netAmountCents(tx) : netCreditCents(tx, givenCents(allTxs ?? [], tx.id));
+  const referenceCents = onApply ? tx.amountCents : netCents;
   useEffect(() => {
     if (!open) return;
     if (source?.length) {
@@ -73,7 +81,7 @@ export function SplitEditorSheet({
     } else {
       setMode('amount');
       // start from the current category + an empty second row
-      setRows([newRow(tx.catId ?? UNCATEGORIZED_ID, toText(Math.abs(tx.amountCents))), newRow(UNCATEGORIZED_ID, '0,00')]);
+      setRows([newRow(tx.catId ?? UNCATEGORIZED_ID, toText(Math.abs(referenceCents))), newRow(UNCATEGORIZED_ID, '0,00')]);
     }
     // deliberately only on open: the sheet owns its rows while open
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -83,13 +91,13 @@ export function SplitEditorSheet({
     mode === 'pct'
       ? rows.map((r) => ({ catId: r.catId, amountCents: 0, pct: parsePct(r.amount) }))
       : rows.map((r) => ({ catId: r.catId, amountCents: parseCents(r.amount) ?? 0 }));
-  const remainder = mode === 'pct' ? pctRemainder(splits) : splitRemainderCents(tx.amountCents, splits);
-  const error = mode === 'pct' ? validatePctSplits(splits) : validateSplits(tx.amountCents, splits);
+  const remainder = mode === 'pct' ? pctRemainder(splits) : splitRemainderCents(referenceCents, splits);
+  const error = mode === 'pct' ? validatePctSplits(splits) : validateSplits(referenceCents, splits);
 
   const switchMode = (next: 'amount' | 'pct') => {
     if (next === mode) return;
     setMode(next);
-    const abs = Math.abs(tx.amountCents);
+    const abs = Math.abs(referenceCents);
     if (next === 'pct') {
       // carry the current euro shape over as rounded percentages
       setRows((r) =>
@@ -109,7 +117,7 @@ export function SplitEditorSheet({
     // every reader (budgets, drills, exports) stays simple.
     // needsReview is NOT touched: saving a split mid-review must keep the
     // card on screen until the user confirms (user request)
-    const stored = mode === 'pct' ? resolveSplitsFor(tx.amountCents, splits) : splits;
+    const stored = mode === 'pct' ? resolveSplitsFor(referenceCents, splits) : splits;
     if (onApply) {
       onApply(stored);
     } else {
@@ -143,7 +151,7 @@ export function SplitEditorSheet({
     }
     setRows((r) => {
       const abs = r.map((row) => ({ catId: row.catId, amountCents: parseCents(row.amount) ?? 0 }));
-      return balanceLastRow(tx.amountCents, abs).map((s, i) => ({ ...r[i], catId: s.catId, amount: toText(s.amountCents) }));
+      return balanceLastRow(referenceCents, abs).map((s, i) => ({ ...r[i], catId: s.catId, amount: toText(s.amountCents) }));
     });
   };
 
