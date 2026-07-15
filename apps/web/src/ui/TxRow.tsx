@@ -4,9 +4,34 @@ import { cleanBankText } from '@/lib/text';
 import { netAmountCents, netCreditCents } from '@/domain/reimbursement';
 import type { TransactionRow } from '@/db/types';
 import { catName, useCategories } from '@/features/categories/useCategories';
+import type { TFunc } from '@/i18n';
 import { Highlight } from './Highlight';
 import { Icon } from './Icon';
 import { Pill } from './primitives';
+
+/**
+ * Split-aware row visual: a single category (or one split taking the
+ * full amount) shows that category; several splits under ONE parent
+ * show the parent; splits across different parents show a neutral
+ * "mixed" mark.
+ */
+function txVisual(
+  tx: Pick<TransactionRow, 'catId' | 'splits'>,
+  cats: ReturnType<typeof useCategories>,
+  t: TFunc,
+): { icon: string; color: string; label: string } {
+  const slices = (tx.splits ?? []).filter((s) => s.amountCents !== 0);
+  const distinctCatIds = [...new Set(slices.map((s) => s.catId))];
+  if (distinctCatIds.length > 1) {
+    const parents = [...new Set(distinctCatIds.map((id) => cats.byId(id).parentId ?? id))];
+    if (parents.length > 1) return { icon: 'shape', color: 'var(--m-ink-3)', label: t('tx.splitMixed') };
+    const parentCat = cats.byId(parents[0]);
+    return { icon: parentCat.icon, color: parentCat.color ?? 'var(--m-ink-3)', label: catName(parentCat, t) };
+  }
+  const cat = cats.byId(distinctCatIds.length === 1 ? distinctCatIds[0] : tx.catId);
+  const parent = cat.parentId ? cats.byId(cat.parentId) : undefined;
+  return { icon: cat.icon, color: cat.color ?? parent?.color ?? 'var(--m-ink-3)', label: catName(cat, t) };
+}
 
 export function TxRow({
   tx,
@@ -37,9 +62,7 @@ export function TxRow({
 }) {
   const { t, lang } = useLang();
   const cats = useCategories();
-  const cat = cats.byId(tx.catId);
-  const parent = cat.parentId ? cats.byId(cat.parentId) : undefined;
-  const color = cat.color ?? parent?.color ?? 'var(--m-ink-3)';
+  const { icon: iconName, color, label: categoryLabel } = txVisual(tx, cats, t);
 
   // reimbursements change what a transaction really cost — lists show
   // the net truth, with the gross quietly struck through beside it;
@@ -61,7 +84,7 @@ export function TxRow({
         className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
         style={{ background: `color-mix(in srgb, ${color} 14%, transparent)`, color }}
       >
-        <Icon name={cat.icon} size={20} />
+        <Icon name={iconName} size={20} />
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[14px] font-medium text-ink">
@@ -74,7 +97,7 @@ export function TxRow({
               {!hideCategory && ' · '}
             </span>
           )}
-          {!hideCategory && catName(cat, t)}
+          {!hideCategory && categoryLabel}
           {tx.pending === 1 && (
             <Pill className={hideCategory && !showDate ? '' : 'ml-1.5'}>{t('tx.pendingBadge')}</Pill>
           )}

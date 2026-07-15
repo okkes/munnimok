@@ -81,11 +81,15 @@ describe('ReviewScreen (demo identity)', () => {
       () => expect(screen.getByTestId('review-bulk').textContent).toContain('2'),
       { timeout: 5000 },
     );
-    // expanding reveals the internally-scrollable list with every similar row
+    // "View all" opens the sheet with the internally-scrollable list;
+    // each row can expand into a read-only detail with the description
     fireEvent.click(screen.getByTestId('review-bulk-expand'));
     const bulkList = await screen.findByTestId('review-bulk-list');
     expect(bulkList.className).toContain('overflow-y-auto');
-    expect(bulkList.querySelectorAll('[data-testid^="review-bulk-"]')).toHaveLength(2);
+    expect(screen.getByTestId('review-bulk-bulk1')).toBeTruthy();
+    expect(screen.getByTestId('review-bulk-bulk2')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('review-bulk-open-bulk1'));
+    await screen.findByTestId('review-bulk-detail-bulk1');
     fireEvent.click(screen.getByTestId('review-confirm-btn'));
     await waitFor(
       async () => {
@@ -161,12 +165,14 @@ describe('ReviewScreen (demo identity)', () => {
     });
     await waitFor(() => expect(screen.getByTestId('review-card').textContent).toContain('SPLITCAFE'), { timeout: 5000 });
 
-    // the full description shows on tap (clamped by default)
+    // the full description shows on tap (clamped by default). The clamp
+    // lives on the INNER span: display on the button itself killed
+    // -webkit-box and the toggle never visually worked
     const desc = screen.getByTestId('review-description');
-    expect(desc.className).toContain('line-clamp-2');
+    expect(screen.getByTestId('review-description-text').className).toContain('line-clamp-2');
     fireEvent.click(desc);
     // waitFor: under coverage instrumentation the expand re-render can lag the click
-    await waitFor(() => expect(screen.getByTestId('review-description').className).not.toContain('line-clamp-2'));
+    await waitFor(() => expect(screen.getByTestId('review-description-text').className).not.toContain('line-clamp-2'));
 
     fireEvent.click(screen.getByTestId('review-act-split'));
     const amount0 = (await screen.findByTestId('split-amount-0')) as HTMLInputElement;

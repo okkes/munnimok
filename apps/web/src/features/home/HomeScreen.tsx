@@ -263,35 +263,75 @@ export function HomeScreen() {
 
       <HomeCustomizeSheet open={customizeOpen} onOpenChange={setCustomizeOpen} space={space} />
 
-      {/* the number must never feel like magic: every part is on the table */}
+      {/* the number must never feel like magic: every part is on the table —
+          the bar shows how the balance divides into bills, promises and
+          what is actually free until payday */}
       <Sheet open={forecastOpen} onOpenChange={setForecastOpen} title={t('cashflow.title')} size="tall">
         {forecast && (
           <div className="flex flex-col gap-1 pt-1" data-testid="cashflow-breakdown">
-            <div className="flex items-baseline justify-between py-1.5 text-[14px]">
+            <div className="pb-2 text-center">
+              <div className="m-num text-[30px] font-semibold text-ink" data-testid="cashflow-headline">
+                {fmtCents(forecast.cents, currency, lang)}
+              </div>
+              <div className="text-[12px] text-ink-3">
+                {t('cashflow.untilPayday', {
+                  date: new Date(forecast.payday.date).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' }),
+                  perDay: fmtCents(forecast.perDayCents, currency, lang),
+                })}
+              </div>
+            </div>
+
+            {(() => {
+              const safe = Math.max(0, forecast.cents);
+              const total = Math.max(1, forecast.upcomingCents + forecast.allocationCents + safe);
+              const pct = (part: number) => `${(Math.max(0, part) / total) * 100}%`;
+              return (
+                <div className="flex h-3 w-full gap-px overflow-hidden rounded-full bg-bg-2" data-testid="cashflow-bar" aria-hidden="true">
+                  {forecast.upcomingCents > 0 && <span style={{ width: pct(forecast.upcomingCents), background: 'var(--m-warning)' }} />}
+                  {forecast.allocationCents > 0 && <span style={{ width: pct(forecast.allocationCents), background: 'var(--m-info)' }} />}
+                  {safe > 0 && <span style={{ width: pct(safe), background: 'var(--m-accent)' }} />}
+                </div>
+              );
+            })()}
+
+            <div className="mt-2 flex items-baseline justify-between py-1.5 text-[14px]">
               <span className="text-ink-2">{t('cashflow.liquid')}</span>
               <span className="m-num font-semibold text-ink">{fmtCents(forecast.liquidCents, currency, lang)}</span>
             </div>
+            {forecast.upcoming.length > 0 && (
+              <div className="flex items-baseline justify-between py-1.5 text-[14px]" data-testid="cashflow-bills">
+                <span className="flex items-center gap-2 text-ink-2">
+                  <span className="h-2 w-2 rounded-full" style={{ background: 'var(--m-warning)' }} />
+                  {t('cashflow.bills')}
+                </span>
+                <span className="m-num text-ink-2">{fmtCents(-forecast.upcomingCents, currency, lang, { sign: true })}</span>
+              </div>
+            )}
             {forecast.upcoming.map(({ rec, due }) => (
               <button
                 key={rec.id}
                 data-testid={`cashflow-upcoming-${rec.id}`}
                 onClick={() => void navigate({ to: '/recurring/$recId', params: { recId: rec.id } })}
-                className="m-tap flex w-full items-baseline justify-between border-none bg-transparent py-1.5 text-left text-[14px]"
+                className="m-tap flex w-full items-baseline justify-between border-none bg-transparent py-1 pl-4 text-left text-[13px]"
               >
                 <span className="min-w-0 flex-1 truncate text-ink-3">
-                  − {rec.name} · {new Date(due).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' })}
+                  {rec.name} · {new Date(due).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' })}
                 </span>
-                <span className="m-num text-ink-2">{fmtCents(-rec.amountCents, currency, lang, { sign: true })}</span>
+                <span className="m-num text-ink-3">{fmtCents(-rec.amountCents, currency, lang, { sign: true })}</span>
               </button>
             ))}
             {forecast.allocationCents > 0 && (
               <div className="flex items-baseline justify-between py-1.5 text-[14px]" data-testid="cashflow-allocation">
-                <span className="text-ink-3">− {t('cashflow.allocated')}</span>
+                <span className="flex items-center gap-2 text-ink-2">
+                  <span className="h-2 w-2 rounded-full" style={{ background: 'var(--m-info)' }} />
+                  {t('cashflow.allocated')}
+                </span>
                 <span className="m-num text-ink-2">{fmtCents(-forecast.allocationCents, currency, lang, { sign: true })}</span>
               </div>
             )}
             <div className="mt-1 flex items-baseline justify-between border-t border-line pt-3 text-[15px]">
-              <span className="font-medium text-ink">
+              <span className="flex items-center gap-2 font-medium text-ink">
+                <span className="h-2 w-2 rounded-full" style={{ background: 'var(--m-accent)' }} />
                 {t('cashflow.safeUntil', {
                   date: new Date(forecast.payday.date).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' }),
                 })}

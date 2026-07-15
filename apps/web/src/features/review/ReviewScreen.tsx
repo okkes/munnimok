@@ -22,6 +22,7 @@ import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
+import { Sheet } from '@/ui/Sheet';
 import { CategoryPicker } from '@/features/categories/CategoryPicker';
 import { SplitEditorSheet } from '@/features/transactions/SplitEditorSheet';
 import { TxTypeSheet } from '@/features/transactions/TxTypeSheet';
@@ -84,7 +85,9 @@ async function writeConfirmation(args: {
   }
 }
 
-/** collapsible "also apply to n similar" checkbox list */
+/** "also apply to n similar": a compact summary row on the card; the full
+ *  list lives in a Sheet so long histories never squeeze the card
+ *  (user request), with per-row read-only detail expansion */
 function BulkConfirmSection({
   similar,
   selected,
@@ -92,6 +95,7 @@ function BulkConfirmSection({
 }: Readonly<{ similar: SpaceTx[]; selected: ReadonlySet<string>; onChange: (next: ReadonlySet<string>) => void }>) {
   const { t, lang } = useLang();
   const [open, setOpen] = useState(false);
+  const [detailId, setDetailId] = useState<string | null>(null);
   if (similar.length === 0) return null;
 
   const all = similar.every((s) => selected.has(s.id));
@@ -119,48 +123,67 @@ function BulkConfirmSection({
         <button
           data-testid="review-bulk-expand"
           aria-label={t('review.alsoApply', { n: similar.length })}
-          onClick={() => setOpen((v) => !v)}
-          className="m-tap border-none bg-transparent text-ink-4"
+          onClick={() => setOpen(true)}
+          className="m-tap flex items-center gap-1 border-none bg-transparent text-[12px] text-ink-3"
         >
-          <Icon name={open ? 'chevron-up' : 'chevron-down'} size={17} />
+          {t('review.bulkViewAll')}
+          <Icon name="chevron-right" size={15} />
         </button>
       </div>
-      {open && (
-        // long merchant histories must scroll INSIDE the card (fixed px per
-        // the sheet rules) so Skip/Confirm stay reachable below
-        <div className="max-h-[300px] overflow-y-auto overscroll-contain" data-testid="review-bulk-list">
+
+      <Sheet open={open} onOpenChange={setOpen} title={t('review.alsoApply', { n: selected.size })} size="tall">
+        {/* fixed px so the list scrolls INSIDE the sheet (sheet rules) */}
+        <div className="max-h-[420px] overflow-y-auto overscroll-contain" data-testid="review-bulk-list">
           {similar.map((item) => {
             const checked = selected.has(item.id);
+            const expanded = detailId === item.id;
             return (
-              <button
-                key={item.id}
-                data-testid={`review-bulk-${item.id}`}
-                onClick={() => toggleOne(item.id)}
-                className="m-tap flex w-full items-center gap-3 border-t border-line-2 px-4 py-2.5 text-left"
-              >
-                <span
-                  className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 ${
-                    checked ? 'border-accent bg-accent text-white' : 'border-line bg-surface'
-                  }`}
-                >
-                  {checked && <Icon name="check" size={12} />}
-                </span>
-                <span className="min-w-0 flex-1">
-                  {/* the merchant leads: normalization groups charges whose
-                      raw titles differ (dates, branch cities), so the list
-                      must say which is which (user request) */}
-                  <span className="block truncate text-[12px] text-ink-2">{cleanBankText(item.merchant)}</span>
-                  <span className="block truncate text-[10px] text-ink-4">
-                    {item.date}
-                    {item.description ? ` · ${cleanBankText(item.description)}` : ''}
-                  </span>
-                </span>
-                <span className="m-num text-[12px] text-ink-2">{fmtCents(item.amountCents, item.currency, lang)}</span>
-              </button>
+              <div key={item.id} className="border-b border-line-2 last:border-0">
+                <div className="flex items-center gap-3 py-2.5">
+                  <button
+                    data-testid={`review-bulk-${item.id}`}
+                    aria-label={cleanBankText(item.merchant)}
+                    onClick={() => toggleOne(item.id)}
+                    className={`m-tap flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 ${
+                      checked ? 'border-accent bg-accent text-white' : 'border-line bg-surface'
+                    }`}
+                  >
+                    {checked && <Icon name="check" size={12} />}
+                  </button>
+                  {/* tapping the row body opens the read-only detail */}
+                  <button
+                    data-testid={`review-bulk-open-${item.id}`}
+                    onClick={() => setDetailId(expanded ? null : item.id)}
+                    className="m-tap flex min-w-0 flex-1 items-center gap-3 border-none bg-transparent text-left"
+                  >
+                    <span className="min-w-0 flex-1">
+                      {/* the merchant leads: normalization groups charges whose
+                          raw titles differ (dates, branch cities), so the list
+                          must say which is which (user request) */}
+                      <span className="block truncate text-[13px] text-ink-2">{cleanBankText(item.merchant)}</span>
+                      <span className="block truncate text-[11px] text-ink-4">
+                        {new Date(item.date).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </span>
+                    </span>
+                    <span className="m-num shrink-0 text-[13px] text-ink-2">{fmtCents(item.amountCents, item.currency, lang)}</span>
+                    <Icon name={expanded ? 'chevron-up' : 'chevron-down'} size={15} color="var(--m-ink-4)" />
+                  </button>
+                </div>
+                {expanded && (
+                  <div className="mb-2.5 rounded-xl bg-bg-2 px-3 py-2.5" data-testid={`review-bulk-detail-${item.id}`}>
+                    {item.description && (
+                      <p className="font-mono text-[11px] break-words text-ink-3">{cleanBankText(item.description)}</p>
+                    )}
+                    <p className="mt-1 text-[11px] text-ink-4">
+                      {item.date} · {fmtCents(item.amountCents, item.currency, lang, { sign: true })}
+                    </p>
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>
-      )}
+      </Sheet>
     </div>
   );
 }
@@ -355,15 +378,18 @@ export function ReviewScreen() {
               <div className="m-num mt-1 text-[32px] text-ink">{fmtCents(tx.amountCents, tx.currency, lang, { sign: true })}</div>
               {tx.description && (
                 // tap to read everything — bank descriptions often carry the
-                // detail that identifies a charge (user request)
+                // detail that identifies a charge (user request). The clamp
+                // sits on an INNER span: line-clamp needs display:-webkit-box
+                // and any display on the same element (block/flex) kills it.
                 <button
                   data-testid="review-description"
+                  aria-expanded={descExpanded}
                   onClick={() => setDescExpanded((v) => !v)}
-                  className={`m-tap mx-auto mt-2 block max-w-[280px] border-none bg-transparent text-center font-mono text-[11px] text-ink-4 ${
-                    descExpanded ? '' : 'line-clamp-2'
-                  }`}
+                  className="m-tap mx-auto mt-2 block max-w-[280px] border-none bg-transparent text-center font-mono text-[11px] text-ink-4"
                 >
-                  {cleanBankText(tx.description)}
+                  <span data-testid="review-description-text" className={descExpanded ? '' : 'line-clamp-2'}>
+                    {cleanBankText(tx.description)}
+                  </span>
                 </button>
               )}
 

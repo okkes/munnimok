@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
+import { syncNativeStatusBar } from '@/lib/platform';
 
 export type Theme = 'light' | 'dark';
 const LS_KEY = 'munni_theme';
@@ -30,6 +31,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       return el;
     })();
     meta.setAttribute('content', theme === 'dark' ? '#191714' : '#F7F4EE');
+    syncNativeStatusBar(theme); // native shells: icon color must follow the theme
   }, [theme]);
 
   const setTheme = useCallback((next: Theme) => {

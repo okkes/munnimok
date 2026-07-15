@@ -17,6 +17,9 @@ interface CapacitorGlobal {
       requestPermissions?: () => Promise<{ receive: string }>;
       register?: () => Promise<void>;
     };
+    StatusBar?: {
+      setStyle?: (options: { style: 'LIGHT' | 'DARK' }) => Promise<void>;
+    };
   };
 }
 
@@ -64,6 +67,17 @@ export function initDeepLinks(): void {
     if (path.startsWith('/auth-callback')) sessionStorage.setItem(NATIVE_CALLBACK_KEY, url);
     globalThis.location.assign(path);
   });
+}
+
+/**
+ * Native status bar follows the app theme: without this, Android keeps
+ * light (white) status-bar icons over munni's cream background and the
+ * clock becomes invisible in light mode. The plugin's Style.Light means
+ * "light BACKGROUND" (dark icons) — inverted from our theme name.
+ */
+export function syncNativeStatusBar(theme: 'light' | 'dark'): void {
+  if (!isNativeApp()) return;
+  void capacitor()?.Plugins?.StatusBar?.setStyle?.({ style: theme === 'dark' ? 'DARK' : 'LIGHT' })?.catch(() => undefined);
 }
 
 /**
