@@ -399,15 +399,27 @@ export function ReviewScreen() {
               )}
 
               {recMatch && (
-                <Chip
-                  className="mt-3"
-                  testId="review-link-recurring"
-                  selected={linkRecurring}
-                  onClick={() => setLinkRecurring((v) => !v)}
-                >
-                  <Icon name={linkRecurring ? 'check' : 'autorenew'} size={13} />
-                  {t('review.linkRecurring', { name: recMatch.name })}
-                </Chip>
+                <>
+                  <Chip
+                    className="mt-3"
+                    testId="review-link-recurring"
+                    selected={linkRecurring}
+                    onClick={() => setLinkRecurring((v) => !v)}
+                  >
+                    <Icon name={linkRecurring ? 'check' : 'autorenew'} size={13} />
+                    {t('review.linkRecurring', { name: recMatch.name })}
+                  </Chip>
+                  {/* subscription intelligence S3: this charge differs from
+                      what the subscription usually costs — say so quietly */}
+                  {Math.abs(Math.abs(tx.amountCents) - recMatch.amountCents) >= 50 && (
+                    <div className="mt-1.5 flex items-center justify-center gap-1 text-[11px] text-warning" data-testid="review-rec-delta">
+                      <Icon name={Math.abs(tx.amountCents) > recMatch.amountCents ? 'trending-up' : 'trending-down'} size={12} />
+                      {t(Math.abs(tx.amountCents) > recMatch.amountCents ? 'review.recDeltaMore' : 'review.recDeltaLess', {
+                        amount: fmtCents(Math.abs(Math.abs(tx.amountCents) - recMatch.amountCents), tx.currency, lang),
+                      })}
+                    </div>
+                  )}
+                </>
               )}
 
               {/* quiet secondary actions */}

@@ -6,6 +6,7 @@ import { useData } from '@/app/data';
 import { useSpaceTransactions } from '@/application/transactions';
 import { localToday } from '@/application/recurring';
 import { nextDueDate } from '@/domain/recurring';
+import { detectPriceChange, yearlyCents, yearlyDeltaCents } from '@/domain/recurringPrice';
 import { fmtCents } from '@/lib/money';
 import { RecurringFormSheet, formFromRec } from './RecurringFormSheet';
 import type { FormState } from './RecurringFormSheet';
@@ -47,6 +48,8 @@ export function RecurringDetailScreen() {
     () => (txs ?? []).filter((tx) => tx.recurringId === recId).sort((a, b) => b.date.localeCompare(a.date)),
     [txs, recId],
   );
+
+  const priceChange = useMemo(() => detectPriceChange(payments), [payments]);
 
   const stats = useMemo(() => {
     const year = localToday().slice(0, 4);
@@ -124,12 +127,40 @@ export function RecurringDetailScreen() {
           }
         />
 
+        {/* S2: a sustained price change tells its story + yearly impact */}
+        {priceChange && (
+          <div
+            className="mt-3 flex items-center gap-2.5 rounded-card border border-warning bg-warning-soft px-4 py-3"
+            data-testid="recdetail-pricechange"
+          >
+            <Icon
+              name={priceChange.toCents > priceChange.fromCents ? 'trending-up' : 'trending-down'}
+              size={18}
+              color="var(--m-warning)"
+            />
+            <span className="min-w-0 flex-1 text-[13px] text-ink">
+              <span className="block">
+                {t('recurring.priceHistory', {
+                  from: money(priceChange.fromCents),
+                  to: money(priceChange.toCents),
+                  date: fmtDate(priceChange.sinceDate),
+                })}
+              </span>
+              <span className="block text-[11px] text-ink-3">
+                {t('recurring.priceDelta', {
+                  amount: fmtCents(yearlyDeltaCents(rec, priceChange), currency, lang, { sign: true }),
+                })}
+              </span>
+            </span>
+          </div>
+        )}
+
         {/* the numbers the payment history adds up to */}
         <div className="mt-3 grid grid-cols-3 gap-3 rounded-card border border-line bg-surface p-4" data-testid="recdetail-stats">
           {(
             [
               ['recurring.paidThisYear', money(stats.yearCents)],
-              ['recurring.chargesCount', String(stats.count)],
+              ['recurring.yearlyRate', money(yearlyCents(rec))],
               ['recurring.avgCharge', money(stats.avgCents)],
             ] as const
           ).map(([key, value]) => (

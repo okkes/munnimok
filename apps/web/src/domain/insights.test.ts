@@ -42,15 +42,19 @@ const base = (partial: Partial<InsightInputs>): InsightInputs => ({
 });
 
 describe('insight detectors', () => {
-  it('price creep fires on a grown charge, stays silent under €0.50/mo', () => {
+  it('price creep fires on a SUSTAINED increase, stays silent under €0.50/mo or one-offs', () => {
     const charges = [
       tx({ recurringId: 'r1', amountCents: -1399, date: '2026-03-01' }),
       tx({ recurringId: 'r1', amountCents: -1399, date: '2026-04-01' }),
+      tx({ recurringId: 'r1', amountCents: -1599, date: '2026-06-01' }),
       tx({ recurringId: 'r1', amountCents: -1599, date: '2026-07-01' }),
     ];
     const hits = priceCreep(base({ recurrings: [rec({})], txs: charges }));
     expect(hits).toHaveLength(1);
     expect(hits[0]).toMatchObject({ id: 'creep:r1:1599', severity: 'leak', impactCents: 2400 });
+
+    // a single pricier charge (proration) is not a price change yet
+    expect(priceCreep(base({ recurrings: [rec({})], txs: charges.slice(0, 3) }))).toHaveLength(0);
 
     const tiny = charges.map((c) => ({ ...c, amountCents: c.amountCents === -1599 ? -1420 : c.amountCents }));
     expect(priceCreep(base({ recurrings: [rec({})], txs: tiny }))).toHaveLength(0);
