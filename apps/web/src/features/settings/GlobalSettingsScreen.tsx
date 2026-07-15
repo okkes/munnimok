@@ -13,6 +13,7 @@ import { Icon } from '@/ui/Icon';
 import { Pill, Row } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { disablePush, enablePush, getPushSubscription, pushSupported } from '@/lib/push';
+import { ExportSheet } from './ExportSheet';
 import {
   biometricAvailable,
   hashPin,
@@ -40,6 +41,7 @@ export function GlobalSettingsScreen() {
   const { db } = useData();
   const tipsOff = useTipsDisabled();
   const [langSheetOpen, setLangSheetOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const identity = useSession((s) => s.identity);
   const navigate = useNavigate();
   const router = useRouter();
@@ -160,6 +162,8 @@ export function GlobalSettingsScreen() {
           />
           {/* receipts are the feature's home now; connected stores live inside it */}
           <Row testId="settings-receipts-row" icon="receipt-text-outline" title={t('receipts.title')} onClick={() => void navigate({ to: '/receipts' })} />
+          {/* trust feature: munni reads your banks, so it also lets you leave */}
+          <Row testId="settings-export-row" icon="download-outline" title={t('settings.exportData')} onClick={() => setExportOpen(true)} />
           <Row testId="settings-help-row" icon="school-outline" title={t('help.title')} onClick={() => void navigate({ to: '/help' })} />
           {vapidKey && (
             <Row
@@ -314,6 +318,8 @@ export function GlobalSettingsScreen() {
           ))}
         </div>
       </Sheet>
+
+      <ExportSheet open={exportOpen} onOpenChange={setExportOpen} />
     </div>
   );
 }
