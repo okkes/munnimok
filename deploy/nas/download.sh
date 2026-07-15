@@ -31,9 +31,14 @@ curl -sS -G "$URL/webapi/entry.cgi" \
   --data-urlencode "_sid=$SID" \
   -o "$LOCAL"
 
-# a JSON body instead of file content means the API refused (bad path/perm)
+# a JSON or HTML body instead of file content means the API refused
+# (bad path / permission / DSM 404 page)
 if head -c 1 "$LOCAL" | grep -q '{' && grep -q '"success":false' "$LOCAL" 2>/dev/null; then
   echo "download of $REMOTE failed: $(cat "$LOCAL")" >&2
+  exit 1
+fi
+if head -c 15 "$LOCAL" | grep -qi '<!DOCTYPE\|<html'; then
+  echo "download of $REMOTE returned an HTML error page (path wrong or file missing)" >&2
   exit 1
 fi
 echo "downloaded $REMOTE -> $LOCAL ($(wc -c <"$LOCAL") bytes)"

@@ -6,9 +6,9 @@ name: NAS diagnostics
 on:
   workflow_dispatch:
     inputs:
-      path:
-        description: "FileStation path to fetch"
-        default: "/docker/munni/deploy.log"
+      file:
+        description: "File to fetch, relative to the live dir (SYNOLOGY_PATH's parent)"
+        default: "deploy.log"
         required: true
 
 permissions:
@@ -23,13 +23,17 @@ jobs:
       - name: Download from FileStation
         run: |
           mkdir -p diag
-          bash deploy/nas/download.sh "${{ inputs.path }}" "diag/$(basename "${{ inputs.path }}")"
+          # live dir = parent of the published dir (SYNOLOGY_PATH secret),
+          # so no share names are guessed here
+          LIVE="${SYNOLOGY_PATH%/*}"
+          bash deploy/nas/download.sh "$LIVE/${{ inputs.file }}" "diag/$(basename "${{ inputs.file }}")"
           # redact anything that looks like a credential before it leaves the runner
           sed -i -E 's/(password|passwd|secret|token|key)=[^ ]*/\1=REDACTED/Ig' diag/* || true
         env:
           SYNOLOGY_URL: ${{ secrets.SYNOLOGY_URL }}
           SYNOLOGY_USER: ${{ secrets.SYNOLOGY_USER }}
           SYNOLOGY_PASS: ${{ secrets.SYNOLOGY_PASS }}
+          SYNOLOGY_PATH: ${{ secrets.SYNOLOGY_PATH }}
 
       - uses: actions/upload-artifact@v4
         with:
