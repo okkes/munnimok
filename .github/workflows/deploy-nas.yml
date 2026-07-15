@@ -44,8 +44,9 @@ permissions:
 
 jobs:
   deploy:
-    # only when the image build actually succeeded (or a manual dispatch)
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    # workflow_run: only when the image build actually succeeded;
+    # push (infra-only) and manual dispatch always deploy
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     environment: ${{ (github.event.workflow_run.head_branch || github.ref_name) == 'master' && 'production' || 'staging' }}
     steps:
