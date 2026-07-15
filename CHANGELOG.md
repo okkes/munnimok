@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.0](https://github.com/okkes/munnimok/compare/v1.10.0...v1.11.0) (2026-07-15)
+
+
+### ✨ Features
+
+* **native+ui:** staging Android unblocked; themed status bar; dev icon; split-aware rows; richer forecasts; review bulk sheet ([1596838](https://github.com/okkes/munnimok/commit/1596838d65f68ec6a4be319271d8c31992791b99))
+
 ## [1.10.0](https://github.com/okkes/munnimok/compare/v1.9.0...v1.10.0) (2026-07-15)
 
 
