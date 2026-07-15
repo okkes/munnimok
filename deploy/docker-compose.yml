@@ -33,6 +33,10 @@ services:
       Auth__Audience: ${LOGTO_API_RESOURCE}
       Cors__Origins__0: https://munni.${DOMAIN}
       Cors__Origins__1: https://munni-admin.${DOMAIN}
+      # native shells: the webview origin is not the hosted web origin
+      # (Android WebView / iOS WKWebView respectively)
+      Cors__Origins__2: https://localhost
+      Cors__Origins__3: capacitor://localhost
       GoCardless__SecretId: ${GOCARDLESS_SECRET_ID}
       GoCardless__SecretKey: ${GOCARDLESS_SECRET_KEY}
       # Enable Banking (free-for-personal alternative; the admin console

@@ -28,6 +28,9 @@ services:
       Auth__Authority: https://logto.${DOMAIN}/oidc
       Auth__Audience: https://munni-test-api.${DOMAIN}
       Cors__Origins__0: https://munni-test.${DOMAIN}
+      # native staging shells (app.munni.dev): Android WebView / iOS WKWebView
+      Cors__Origins__1: https://localhost
+      Cors__Origins__2: capacitor://localhost
       GoCardless__SecretId: ${GOCARDLESS_SECRET_ID}
       GoCardless__SecretKey: ${GOCARDLESS_SECRET_KEY}
       Push__VapidPublicKey: ${PUSH_VAPID_PUBLIC_KEY:-}
