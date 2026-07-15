@@ -18,6 +18,22 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // two store identities installable side by side: the production app
+    // (app.munni, munni://) and the staging app fed from the dev branch
+    // (app.munni.dev, munni-dev://). google-services.json must contain a
+    // client for each package (Firebase → add app → re-download).
+    flavorDimensions += 'channel'
+    productFlavors {
+        prod {
+            dimension 'channel'
+            manifestPlaceholders = [munniScheme: 'munni', munniLabel: 'munni']
+        }
+        dev {
+            dimension 'channel'
+            applicationIdSuffix '.dev'
+            manifestPlaceholders = [munniScheme: 'munni-dev', munniLabel: 'munni dev']
+        }
+    }
     // release signing comes from CI env (repo secrets); local builds
     // without the keystore still assemble debug just fine
     signingConfigs {

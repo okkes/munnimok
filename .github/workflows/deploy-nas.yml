@@ -4,14 +4,16 @@
 # picks up the new stamp and runs update.sh.
 #
 # Channels:
-#   master → munni-deploy.tgz + VERSION           (prod + staging infra)
+#   master → munni-deploy.tgz + VERSION           (prod + staging infra,
+#            including the rendered .env)
 #   dev    → munni-deploy-staging.tgz + VERSION_STAGING (staging only,
 #            so staging tests dev's compose changes before a release)
 #
-# Secrets are NOT part of the bundle: .env / .env.staging live only on
-# the NAS, edited by hand when a release adds a key (deploy/nas/README.md).
+# .env is rendered from deploy/env/.env.nas: ${NAS_*} placeholders are
+# filled from same-named repository secrets (deploy/nas/render-env.sh) —
+# no whole-.env secret, no manual NAS edits (deploy/nas/README.md).
 #
-# Secrets required:
+# Secrets required (besides the NAS_* env values):
 #   SYNOLOGY_URL       e.g. https://okkes.synology.me:5001
 #   SYNOLOGY_USER      a dedicated DSM account (FileStation write perm,
 #                      2FA OFF — the login API can't do interactive OTP)
@@ -48,21 +50,24 @@ jobs:
           STAGE="$RUNNER_TEMP/bundle"
           mkdir -p "$STAGE"
           if [ "$BRANCH" = "master" ]; then
-            # prod channel: the full running stack's infra (never .env)
-            cp deploy/docker-compose.yml deploy/docker-compose.staging.yml deploy/update.sh "$STAGE/"
+            # prod channel: the full running stack's infra + rendered .env
+            cp deploy/docker-compose.yml deploy/docker-compose.staging.yml deploy/update.sh deploy/nas/apply.sh "$STAGE/"
             for d in nginx initdb import-watch; do
               [ -d "deploy/$d" ] && cp -r "deploy/$d" "$STAGE/"
             done
+            bash deploy/nas/render-env.sh deploy/env/.env.nas "$STAGE/.env"
             echo "bundle=munni-deploy.tgz" >> "$GITHUB_OUTPUT"
             echo "stamp=VERSION" >> "$GITHUB_OUTPUT"
           else
             # staging channel: only what the staging stack runs from dev
-            cp deploy/docker-compose.staging.yml deploy/update.sh "$STAGE/"
+            cp deploy/docker-compose.staging.yml deploy/update.sh deploy/nas/apply.sh "$STAGE/"
             echo "bundle=munni-deploy-staging.tgz" >> "$GITHUB_OUTPUT"
             echo "stamp=VERSION_STAGING" >> "$GITHUB_OUTPUT"
           fi
           tar -czf "$RUNNER_TEMP/bundle.tgz" -C "$STAGE" .
           echo "${GITHUB_SHA}" > "$RUNNER_TEMP/stamp.txt"
+        env:
+          SECRETS_JSON: ${{ toJSON(secrets) }}
 
       - name: Upload to Synology FileStation (bundle first, stamp last)
         run: |

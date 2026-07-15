@@ -25,6 +25,7 @@ describe('platform seam', () => {
   it('maps munni:// urls onto app paths and rejects foreign urls', () => {
     expect(deepLinkToPath('munni://gc-callback?ref=r-1&code=c-1')).toBe('/gc-callback?ref=r-1&code=c-1');
     expect(deepLinkToPath('munni://auth-callback?code=x')).toBe('/auth-callback?code=x');
+    expect(deepLinkToPath('munni-dev://auth-callback?code=x')).toBe('/auth-callback?code=x'); // staging app scheme
     expect(deepLinkToPath('munni://')).toBe('/');
     expect(deepLinkToPath('https://evil.example/gc-callback')).toBeNull();
     expect(deepLinkToPath('intent://foo')).toBeNull();

@@ -11,10 +11,12 @@ import { Logo } from '@/ui/Logo';
  * OIDC redirect URIs cannot contain fragments, so the callback lands on a
  * real path (/auth-callback) *outside* the hash router; after processing we
  * jump back into the app shell. The native shell signs in via its custom
- * scheme instead (register munni://auth-callback in Logto's redirect URIs);
- * the deep-link handler re-enters /auth-callback with the same params.
+ * scheme instead (register munni://auth-callback — and the staging app's
+ * munni-dev://auth-callback — in Logto's redirect URIs); the deep-link
+ * handler re-enters /auth-callback with the same params.
  */
-export const callbackUri = () => (isNativeApp() ? 'munni://auth-callback' : `${window.location.origin}/auth-callback`);
+export const callbackUri = () =>
+  isNativeApp() ? `${config.nativeScheme}://auth-callback` : `${window.location.origin}/auth-callback`;
 export const isCallbackPath = () => window.location.pathname.endsWith('/auth-callback');
 
 export function LogtoAppProvider({ children }: { children: ReactNode }) {

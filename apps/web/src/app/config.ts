@@ -15,6 +15,9 @@ export const config = {
   glitchtipDsn: (import.meta.env.VITE_GLITCHTIP_DSN as string | undefined) ?? '',
   /** 'production' | 'staging' | '' (local dev) — shown in the Settings footer */
   channel: (import.meta.env.VITE_CHANNEL as string | undefined) ?? '',
+  /** deep-link scheme of the SHELL this bundle ships in: 'munni' for the
+   *  production app, 'munni-dev' for the staging app (app.munni.dev) */
+  nativeScheme: (import.meta.env.VITE_NATIVE_SCHEME as string | undefined) ?? 'munni',
 };
 
 export const logtoConfigured = Boolean(config.logto.endpoint && config.logto.appId);

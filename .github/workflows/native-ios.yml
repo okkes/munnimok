@@ -10,6 +10,10 @@
 # Required secrets for TestFlight: ASC_KEY_ID, ASC_ISSUER_ID,
 # ASC_KEY_P8 (base64 of the .p8), APPLE_TEAM_ID. The app record
 # (bundle app.munni) must exist in App Store Connect first.
+#
+# Two store identities: master → app.munni ("munni", munni://); dev with
+# the repo variable NATIVE_DEV_CHANNEL='true' → app.munni.dev ("munni
+# dev", munni-dev://, its own ASC app record — docs/native-setup.md §6).
 name: Native iOS
 
 on:
@@ -34,6 +38,19 @@ jobs:
           node-version: 24
           cache: npm
 
+      - name: Resolve channel (dev branch + NATIVE_DEV_CHANNEL → staging app)
+        id: channel
+        run: |
+          if [ "${{ github.ref_name }}" = "dev" ] && [ "${{ vars.NATIVE_DEV_CHANNEL }}" = "true" ]; then
+            echo "bundle_id=app.munni.dev" >> "$GITHUB_OUTPUT"
+            echo "scheme=munni-dev" >> "$GITHUB_OUTPUT"
+            echo "display=munni dev" >> "$GITHUB_OUTPUT"
+          else
+            echo "bundle_id=app.munni" >> "$GITHUB_OUTPUT"
+            echo "scheme=munni" >> "$GITHUB_OUTPUT"
+            echo "display=munni" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build web bundle and sync the shell
         run: |
           npm ci
@@ -43,9 +60,18 @@ jobs:
           VITE_API_URL: ${{ github.ref_name == 'dev' && vars.NATIVE_API_URL_DEV || vars.NATIVE_API_URL }}
           VITE_PUBLIC_ORIGIN: ${{ github.ref_name == 'dev' && vars.NATIVE_PUBLIC_ORIGIN_DEV || vars.NATIVE_PUBLIC_ORIGIN }}
           VITE_LOGTO_ENDPOINT: ${{ vars.NATIVE_LOGTO_ENDPOINT }}
-          VITE_LOGTO_APP_ID: ${{ vars.NATIVE_LOGTO_APP_ID }}
-          VITE_LOGTO_RESOURCE: ${{ vars.NATIVE_LOGTO_RESOURCE }}
+          VITE_LOGTO_APP_ID: ${{ github.ref_name == 'dev' && vars.NATIVE_LOGTO_APP_ID_DEV || vars.NATIVE_LOGTO_APP_ID }}
+          VITE_LOGTO_RESOURCE: ${{ github.ref_name == 'dev' && vars.NATIVE_LOGTO_RESOURCE_DEV || vars.NATIVE_LOGTO_RESOURCE }}
+          VITE_NATIVE_SCHEME: ${{ steps.channel.outputs.scheme }}
           VITE_CHANNEL: ${{ github.ref_name == 'dev' && 'staging' || 'production' }}
+
+      - name: Rebrand the shell for the staging app
+        if: steps.channel.outputs.bundle_id == 'app.munni.dev'
+        working-directory: apps/native/ios/App
+        run: |
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName munni dev" App/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleURLTypes:0:CFBundleURLName app.munni.dev" App/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleURLTypes:0:CFBundleURLSchemes:0 munni-dev" App/Info.plist
 
       # Apple requires the iOS 26 SDK for App Store Connect uploads; the
       # runner's default Xcode is older, so pick the newest installed one
@@ -109,6 +135,7 @@ jobs:
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CODE_SIGN_STYLE=Automatic \
             CODE_SIGN_ENTITLEMENTS=App/App.entitlements \
+            PRODUCT_BUNDLE_IDENTIFIER="${{ steps.channel.outputs.bundle_id }}" \
             CURRENT_PROJECT_VERSION="${{ steps.version.outputs.code }}" \
             MARKETING_VERSION="${{ steps.version.outputs.name }}"
         env:

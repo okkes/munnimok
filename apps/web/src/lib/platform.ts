@@ -34,9 +34,10 @@ export async function ensurePersistentStorage(): Promise<void> {
   await navigator.storage?.persist?.().catch(() => undefined);
 }
 
-/** munni://gc-callback?ref=… → /gc-callback?ref=… (null for foreign urls) */
+/** munni://gc-callback?ref=… → /gc-callback?ref=… (null for foreign urls).
+ *  Accepts channel-suffixed schemes too (munni-dev:// in the staging app). */
 export function deepLinkToPath(url: string): string | null {
-  const match = /^munni:\/\/([\w./-]*)(\?[^#]*)?/.exec(url);
+  const match = /^munni(?:-\w+)?:\/\/([\w./-]*)(\?[^#]*)?/.exec(url);
   if (!match) return null;
   const path = match[1].replace(/^\/+/, '');
   return `/${path}${match[2] ?? ''}`;

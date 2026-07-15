@@ -9,13 +9,16 @@ playwright-report/
 **/tests/results/
 **/tests/videos/
 
-# Secrets: real env files never enter git — only *.example templates do.
+# Secrets: real env files never enter git — only templates do
+# (.env.example placeholders, .env.nas = CI-rendered placeholder template).
 .env
 .env.*
 !.env.example
+!.env.nas
 **/env/.env
 **/env/.env.*
 !**/env/.env.example
+!**/env/.env.nas
 # Android upload keystore (lives in repo secrets + this local copy)
 *.keystore
 bin/

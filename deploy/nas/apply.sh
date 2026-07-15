@@ -10,9 +10,14 @@
 # deploy/nas/README.md) — notices a new stamp, unpacks the bundle over
 # the live directory and runs update.sh for the affected stack(s).
 #
-# The bundles NEVER contain .env / .env.staging: secrets live only here
-# on the NAS and are edited by hand (File Station) when a release adds a
-# key. Idempotent: exits in milliseconds when nothing changed.
+# The master bundle includes .env, rendered by CI from the committed
+# template + GitHub secrets — do NOT edit .env on the NAS by hand, the
+# next deploy overwrites it. This script also ships IN the bundle and
+# so updates itself; the scheduler must therefore never execute this
+# file directly (tar would overwrite a running script) — it runs a
+# throwaway copy instead:
+#   cd /volume1/docker/munni && cp apply.sh .apply.run && sh .apply.run
+# Idempotent: exits in milliseconds when nothing changed.
 set -u
 
 LIVE="${MUNNI_LIVE_DIR:-/volume1/docker/munni}"

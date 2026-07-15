@@ -107,30 +107,54 @@ Messaging → Apple app configuration (add an iOS app with bundle
 `app.munni` there first, and drop its `GoogleService-Info.plist` into
 `apps/native/ios/App/App/` — tell me when it exists and I wire it in).
 
-## Dev-branch builds (public repo = free minutes)
+## 6. The dedicated staging apps (`app.munni.dev`) — your checklist
 
-Both native workflows also run on **dev** pushes. What you get per dev
-push, with no extra setup:
+The code side is DONE: an Android `dev` product flavor and an iOS
+bundle-id override build **app.munni.dev** ("munni dev", deep-link
+scheme `munni-dev://`) from every dev push — installable side by side
+with the production app. It all activates with one switch: the repo
+variable **`NATIVE_DEV_CHANNEL=true`**. Until then, dev pushes keep
+building the prod flavor as artifacts and publish nothing.
 
-- **Android**: a debug APK and a signed release `.aab` as downloadable
-  workflow artifacts (versionName `X.Y.Z-dev`). NOT auto-published to
-  Play — a dev build sharing the prod internal track would reach your
-  real testers and could collide on version codes.
-- **iOS**: uploaded to **TestFlight** as a normal build (TestFlight
-  lists every build; the build number = commit count distinguishes dev
-  from master). Marketing version stays numeric per Apple's rule.
+Do these in order BEFORE flipping the variable:
 
-**Optional — point dev builds at a staging stack**: set repo variables
+1. **Firebase** (console → project munni-fb316 → Project settings →
+   Your apps): **Add app → Android**, package name `app.munni.dev`.
+   Then **re-download `google-services.json`** (it now contains both
+   apps) and replace `apps/native/android/app/google-services.json` in
+   the repo (commit it — tell me and I'll do it if you drop the file in
+   the repo root). Without this the dev-flavor Gradle build fails.
+2. **Play Console**: Create app → name **"munni dev"** → this app binds
+   to package `app.munni.dev` on first upload. Then, like last time:
+   download the `munni-android-release` artifact from a dev-branch
+   Actions run (AFTER step 1 + the variable are done — or ask me to
+   dispatch one) and upload it by hand to Internal testing → Create
+   release, enabling Play App Signing. Finally Setup → API access →
+   grant your existing CI service account **Release manager** on this
+   app too (same `PLAY_SERVICE_ACCOUNT_JSON`, no new secret).
+3. **App Store Connect**: Apps → **+ New App** → iOS, name **"munni
+   dev"**, bundle ID `app.munni.dev` (register it as a new explicit App
+   ID when prompted), SKU `munni-dev`. Nothing else — the same ASC API
+   key signs and uploads it; TestFlight builds of the staging app land
+   in this record.
+4. **Logto** (admin console → the native application): add a second
+   redirect URI **`munni-dev://auth-callback`**. (If you later create a
+   separate Logto app for staging, set `NATIVE_LOGTO_APP_ID_DEV`
+   instead — the workflows already prefer the `_DEV` variables on dev.)
+5. Flip the repo variable **`NATIVE_DEV_CHANNEL=true`** — the next dev
+   push builds, signs and publishes app.munni.dev to its own Play
+   internal track + TestFlight app.
+
+**Optional — point dev builds at the staging stack**: set repo variables
 `NATIVE_API_URL_DEV`, `NATIVE_PUBLIC_ORIGIN_DEV`,
 `NATIVE_LOGTO_APP_ID_DEV`, `NATIVE_LOGTO_RESOURCE_DEV`. When absent, dev
-builds use the production values (fine while there's one stack).
+builds use the production values. Recommended together with the staging
+apps: `NATIVE_API_URL_DEV=https://munni-test-api.okkes.synology.me`,
+`NATIVE_PUBLIC_ORIGIN_DEV=https://munni-test.okkes.synology.me`.
 
-**To actually publish a separate Android dev channel** (installable
-side-by-side with prod), it needs its own identity — tell me and I'll
-add a `dev` product flavor with `applicationId app.munni.dev`, its own
-Play app and its own Firebase Android app. That's the only clean way;
-Play won't let two builds of the same package live on different tracks
-for different audiences.
+Export compliance: answered once and encoded — Info.plist carries
+`ITSAppUsesNonExemptEncryption=false` ("None of the algorithms": munni
+only uses the OS's TLS/crypto), so the TestFlight popup won't return.
 
 ## What works today
 
