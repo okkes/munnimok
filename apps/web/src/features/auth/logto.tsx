@@ -1,8 +1,8 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { LogtoProvider, useHandleSignInCallback, useLogto } from '@logto/react';
 import { config, logtoConfigured } from '@/app/config';
-import { isNativeApp } from '@/lib/platform';
+import { NATIVE_CALLBACK_KEY, isNativeApp } from '@/lib/platform';
 import { setAccessTokenGetter, setOidcSignOut, signalAuthReady } from '@/app/authToken';
 import { useSession } from '@/app/session';
 import { Logo } from '@/ui/Logo';
@@ -62,31 +62,87 @@ function TokenBridge() {
   return null;
 }
 
-/** rendered at /auth-callback: finishes the OIDC exchange, then re-enters the app */
-export function CallbackScreen() {
+/** shared post-exchange step: adopt the session, then re-enter the app */
+function useFinishSignIn(): () => Promise<void> {
   const { getIdTokenClaims } = useLogto();
   const login = useSession((s) => s.login);
-
-  const { isLoading } = useHandleSignInCallback(() => {
-    void (async () => {
-      const claims = await getIdTokenClaims();
-      if (claims?.sub) {
-        login({ kind: 'user', sub: claims.sub });
-        // best-effort display name for friends/space members
-        const name = claims.name ?? claims.username ?? claims.email;
-        if (name) {
-          const { apiFetch } = await import('@/lib/api');
-          void apiFetch('/me', { method: 'PUT', body: JSON.stringify({ displayName: name }) }).catch(() => undefined);
-        }
+  return async () => {
+    const claims = await getIdTokenClaims();
+    if (claims?.sub) {
+      login({ kind: 'user', sub: claims.sub });
+      // best-effort display name for friends/space members
+      const name = claims.name ?? claims.username ?? claims.email;
+      if (name) {
+        const { apiFetch } = await import('@/lib/api');
+        void apiFetch('/me', { method: 'PUT', body: JSON.stringify({ displayName: name }) }).catch(() => undefined);
       }
-      window.location.replace(`${window.location.origin}/#/home`);
-    })();
-  });
+    }
+    window.location.replace(`${window.location.origin}/#/home`);
+  };
+}
 
+function CallbackShell({ failed }: Readonly<{ failed?: boolean }>) {
   return (
     <div className="flex h-dvh flex-col items-center justify-center gap-4 bg-bg" data-testid="screen-auth-callback">
       <Logo size={36} />
-      {isLoading && <div className="text-sm text-ink-3">…</div>}
+      {failed ? (
+        <button
+          data-testid="auth-callback-retry"
+          onClick={() => window.location.replace(window.location.origin)}
+          className="m-tap rounded-full border border-line bg-surface px-4 py-2 text-sm text-ink"
+        >
+          ↺
+        </button>
+      ) : (
+        <div className="text-sm text-ink-3">…</div>
+      )}
     </div>
   );
+}
+
+/**
+ * Native shell: the webview lands here as https://localhost/auth-callback,
+ * but the code exchange must present the ORIGINAL munni:// url as its
+ * redirect_uri — the SDK checks that the callback url starts with the
+ * stored redirect_uri, so localhost is rejected (this was the
+ * stuck-at-logo bug). The React hook only ever sees window.location, so
+ * we drive a fresh client with the deep-link url instead; it shares the
+ * sign-in session (localStorage keyed by appId) with the provider.
+ */
+function NativeCallbackScreen({ url }: Readonly<{ url: string }>) {
+  const finish = useFinishSignIn();
+  const [failed, setFailed] = useState(false);
+  const ran = useRef(false);
+  useEffect(() => {
+    if (ran.current) return;
+    ran.current = true;
+    void (async () => {
+      const { default: LogtoClient } = await import('@logto/browser');
+      const client = new LogtoClient({
+        endpoint: config.logto.endpoint,
+        appId: config.logto.appId,
+        resources: config.logto.resource ? [config.logto.resource] : [],
+      });
+      await client.handleSignInCallback(url);
+      sessionStorage.removeItem(NATIVE_CALLBACK_KEY);
+      await finish();
+    })().catch(() => {
+      sessionStorage.removeItem(NATIVE_CALLBACK_KEY);
+      setFailed(true);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return <CallbackShell failed={failed} />;
+}
+
+function WebCallbackScreen() {
+  const finish = useFinishSignIn();
+  useHandleSignInCallback(() => void finish());
+  return <CallbackShell />;
+}
+
+/** rendered at /auth-callback: finishes the OIDC exchange, then re-enters the app */
+export function CallbackScreen() {
+  const nativeUrl = sessionStorage.getItem(NATIVE_CALLBACK_KEY);
+  return nativeUrl ? <NativeCallbackScreen url={nativeUrl} /> : <WebCallbackScreen />;
 }

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { deepLinkToPath, ensurePersistentStorage, getNativePushToken, isNativeApp } from './platform';
+import { NATIVE_CALLBACK_KEY, deepLinkToPath, ensurePersistentStorage, getNativePushToken, initDeepLinks, isNativeApp } from './platform';
 
 type CapacitorStub = {
   isNativePlatform?: () => boolean;
@@ -28,6 +28,28 @@ describe('platform seam', () => {
     expect(deepLinkToPath('munni://')).toBe('/');
     expect(deepLinkToPath('https://evil.example/gc-callback')).toBeNull();
     expect(deepLinkToPath('intent://foo')).toBeNull();
+  });
+
+  it('an auth deep link stashes the RAW munni:// url for the code exchange', () => {
+    sessionStorage.clear();
+    const listeners: Record<string, (data: never) => void> = {};
+    const assign = vi.fn();
+    Object.defineProperty(globalThis, 'location', { value: { assign }, configurable: true });
+    setCapacitor({
+      isNativePlatform: () => true,
+      Plugins: { App: { addListener: (event: string, cb: (data: never) => void) => (listeners[event] = cb) } },
+    });
+    initDeepLinks();
+
+    listeners.appUrlOpen({ url: 'munni://auth-callback?code=abc&state=xyz' } as never);
+    // the localhost translation drives the webview…
+    expect(assign).toHaveBeenCalledWith('/auth-callback?code=abc&state=xyz');
+    // …but the original url is kept so the SDK sees the real redirect_uri
+    expect(sessionStorage.getItem(NATIVE_CALLBACK_KEY)).toBe('munni://auth-callback?code=abc&state=xyz');
+
+    // a bank callback navigates but never stashes
+    listeners.appUrlOpen({ url: 'munni://gc-callback?ref=r1' } as never);
+    expect(assign).toHaveBeenLastCalledWith('/gc-callback?ref=r1');
   });
 
   it('asks the browser to persist storage on web, never on native', async () => {

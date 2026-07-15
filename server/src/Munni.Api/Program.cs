@@ -33,7 +33,7 @@ builder.Services.AddSingleton<SpaceEventBroadcaster>();
 builder.Services.AddOpenApi();
 
 // push transports (VAPID browsers + FCM native shells), routed per kind
-var pushEnabled = PushSetup.Register(builder.Services, builder.Configuration);
+var pushCaps = PushSetup.Register(builder.Services, builder.Configuration);
 
 // bank-data providers (admin-selectable for new consents)
 var (gcConfigured, bankingEnabled) = BankingSetup.Register(builder.Services, builder.Configuration);
@@ -201,7 +201,8 @@ app.MapGet("/health", () => Results.Ok(new
     {
         gocardless = gcEnabled,
         testAuth = app.Configuration.GetValue<bool>("Auth:TestMode"),
-        push = pushEnabled,
+        push = pushCaps.WebPush,
+        fcm = pushCaps.Fcm,
         vapidPublicKey = app.Configuration["Push:VapidPublicKey"] ?? "",
         logos = logosEnabled,
         shopProxy = true,

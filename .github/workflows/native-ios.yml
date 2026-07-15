@@ -15,7 +15,7 @@ name: Native iOS
 on:
   workflow_dispatch:
   push:
-    branches: [master]
+    branches: [master, dev] # public repo: standard macOS runners are free
 
 permissions:
   contents: read
@@ -39,11 +39,13 @@ jobs:
           npm ci
           npm run sync -w @munni/native
         env:
-          VITE_API_URL: ${{ vars.NATIVE_API_URL }}
-          VITE_PUBLIC_ORIGIN: ${{ vars.NATIVE_PUBLIC_ORIGIN }}
+          # dev builds point at the staging stack (same Logto native app)
+          VITE_API_URL: ${{ github.ref_name == 'dev' && vars.NATIVE_API_URL_DEV || vars.NATIVE_API_URL }}
+          VITE_PUBLIC_ORIGIN: ${{ github.ref_name == 'dev' && vars.NATIVE_PUBLIC_ORIGIN_DEV || vars.NATIVE_PUBLIC_ORIGIN }}
           VITE_LOGTO_ENDPOINT: ${{ vars.NATIVE_LOGTO_ENDPOINT }}
           VITE_LOGTO_APP_ID: ${{ vars.NATIVE_LOGTO_APP_ID }}
           VITE_LOGTO_RESOURCE: ${{ vars.NATIVE_LOGTO_RESOURCE }}
+          VITE_CHANNEL: ${{ github.ref_name == 'dev' && 'staging' || 'production' }}
 
       - name: Install pods
         working-directory: apps/native/ios/App
@@ -92,6 +94,7 @@ jobs:
         run: |
           xcodebuild -workspace App.xcworkspace -scheme App -configuration Release \
             -archivePath "$RUNNER_TEMP/App.xcarchive" archive \
+            -destination "generic/platform=iOS" \
             -allowProvisioningUpdates \
             -authenticationKeyPath "$RUNNER_TEMP/asc.p8" \
             -authenticationKeyID "$ASC_KEY_ID" \
