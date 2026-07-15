@@ -1,7 +1,15 @@
 # Push the deploy bundle to the Synology NAS via the FileStation API
-# (user request: no SSH). Runs after the container images are built on a
-# master push. The NAS-side poller (deploy/nas/apply.sh, via the DSM Task
-# Scheduler) picks up the new VERSION and runs update.sh.
+# (user request: no SSH). Runs after the container images are built.
+# The NAS-side poller (deploy/nas/apply.sh, via the DSM Task Scheduler)
+# picks up the new stamp and runs update.sh.
+#
+# Channels:
+#   master → munni-deploy.tgz + VERSION           (prod + staging infra)
+#   dev    → munni-deploy-staging.tgz + VERSION_STAGING (staging only,
+#            so staging tests dev's compose changes before a release)
+#
+# Secrets are NOT part of the bundle: .env / .env.staging live only on
+# the NAS, edited by hand when a release adds a key (deploy/nas/README.md).
 #
 # Secrets required:
 #   SYNOLOGY_URL       e.g. https://okkes.synology.me:5001
@@ -9,8 +17,6 @@
 #                      2FA OFF — the login API can't do interactive OTP)
 #   SYNOLOGY_PASS      that account's password
 #   SYNOLOGY_PATH      target folder, e.g. /docker/munni/published
-#   NAS_ENV_FILE       the FULL production .env contents (all the keys in
-#                      deploy/env/.env.example) — rendered into the bundle
 name: Deploy to NAS
 
 on:
@@ -18,7 +24,7 @@ on:
   workflow_run:
     workflows: ["Build & push images"]
     types: [completed]
-    branches: [master]
+    branches: [master, dev]
 
 permissions:
   contents: read
@@ -30,27 +36,42 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          # bundle the files as they are on the branch that built the images
+          ref: ${{ github.event.workflow_run.head_branch || github.ref_name }}
 
-      - name: Assemble the deploy bundle (.env from the secret + VERSION)
+      - name: Assemble the deploy bundle
+        id: bundle
         run: |
           set -euo pipefail
+          BRANCH="${{ github.event.workflow_run.head_branch || github.ref_name }}"
           STAGE="$RUNNER_TEMP/bundle"
           mkdir -p "$STAGE"
-          # only what the running stack needs — never the local/test/sonar
-          # compose files or example envs
-          cp deploy/docker-compose.yml deploy/docker-compose.staging.yml deploy/update.sh "$STAGE/"
-          cp -r deploy/nginx deploy/initdb deploy/import-watch "$STAGE/" 2>/dev/null || true
-          # the real .env, built at GitHub level from the secret
-          printf '%s\n' "${NAS_ENV_FILE}" > "$STAGE/.env"
-          # a version stamp the NAS poller compares against
-          echo "${GITHUB_SHA}" > "$STAGE/VERSION"
-          tar -czf "$RUNNER_TEMP/munni-deploy.tgz" -C "$STAGE" .
-          cp "$STAGE/VERSION" "$RUNNER_TEMP/VERSION"
-        env:
-          NAS_ENV_FILE: ${{ secrets.NAS_ENV_FILE }}
+          if [ "$BRANCH" = "master" ]; then
+            # prod channel: the full running stack's infra (never .env)
+            cp deploy/docker-compose.yml deploy/docker-compose.staging.yml deploy/update.sh "$STAGE/"
+            for d in nginx initdb import-watch; do
+              [ -d "deploy/$d" ] && cp -r "deploy/$d" "$STAGE/"
+            done
+            echo "bundle=munni-deploy.tgz" >> "$GITHUB_OUTPUT"
+            echo "stamp=VERSION" >> "$GITHUB_OUTPUT"
+          else
+            # staging channel: only what the staging stack runs from dev
+            cp deploy/docker-compose.staging.yml deploy/update.sh "$STAGE/"
+            echo "bundle=munni-deploy-staging.tgz" >> "$GITHUB_OUTPUT"
+            echo "stamp=VERSION_STAGING" >> "$GITHUB_OUTPUT"
+          fi
+          tar -czf "$RUNNER_TEMP/bundle.tgz" -C "$STAGE" .
+          echo "${GITHUB_SHA}" > "$RUNNER_TEMP/stamp.txt"
 
-      - name: Upload to Synology FileStation
-        run: bash deploy/nas/upload.sh "$RUNNER_TEMP/munni-deploy.tgz" "$RUNNER_TEMP/VERSION"
+      - name: Upload to Synology FileStation (bundle first, stamp last)
+        run: |
+          set -euo pipefail
+          cp "$RUNNER_TEMP/bundle.tgz" "$RUNNER_TEMP/${{ steps.bundle.outputs.bundle }}"
+          cp "$RUNNER_TEMP/stamp.txt" "$RUNNER_TEMP/${{ steps.bundle.outputs.stamp }}"
+          bash deploy/nas/upload.sh \
+            "$RUNNER_TEMP/${{ steps.bundle.outputs.bundle }}" \
+            "$RUNNER_TEMP/${{ steps.bundle.outputs.stamp }}"
         env:
           SYNOLOGY_URL: ${{ secrets.SYNOLOGY_URL }}
           SYNOLOGY_USER: ${{ secrets.SYNOLOGY_USER }}

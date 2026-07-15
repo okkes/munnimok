@@ -1,14 +1,19 @@
 #!/bin/sh
 # NAS-side deploy poller (user request: no SSH, no manual pulls).
 #
-# GitHub uploads a fresh bundle to $PUBLISHED via the Synology FileStation
-# API (see .github/workflows/deploy-nas.yml). This script — run every few
-# minutes by the DSM Task Scheduler (see deploy/nas/README.md) — notices a
-# new VERSION, unpacks it over the live directory and runs update.sh.
+# GitHub publishes bundles into $PUBLISHED via the Synology FileStation
+# API (see .github/workflows/deploy-nas.yml):
+#   munni-deploy.tgz + VERSION                  — from master (prod infra,
+#       also refreshes staging so both stacks track a release)
+#   munni-deploy-staging.tgz + VERSION_STAGING  — from dev (staging-only)
+# This script — run every ~5 minutes by the DSM Task Scheduler (see
+# deploy/nas/README.md) — notices a new stamp, unpacks the bundle over
+# the live directory and runs update.sh for the affected stack(s).
 #
-# Idempotent: it exits in milliseconds when nothing changed, so a 5-minute
-# schedule is cheap.
-set -eu
+# The bundles NEVER contain .env / .env.staging: secrets live only here
+# on the NAS and are edited by hand (File Station) when a release adds a
+# key. Idempotent: exits in milliseconds when nothing changed.
+set -u
 
 LIVE="${MUNNI_LIVE_DIR:-/volume1/docker/munni}"
 PUBLISHED="${MUNNI_PUBLISHED_DIR:-$LIVE/published}"
@@ -16,21 +21,44 @@ LOG="$LIVE/deploy.log"
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*" >>"$LOG"; }
 
-[ -f "$PUBLISHED/VERSION" ] || exit 0
-NEW="$(cat "$PUBLISHED/VERSION")"
-OLD="$(cat "$LIVE/.applied_version" 2>/dev/null || echo none)"
-[ "$NEW" = "$OLD" ] && exit 0
-
-log "new deploy $NEW (was $OLD) — unpacking"
-# extract over the live dir; the bundle carries compose files, nginx conf,
-# update.sh and the freshly-rendered .env (built from GitHub secrets)
-tar -xzf "$PUBLISHED/munni-deploy.tgz" -C "$LIVE"
-echo "$NEW" >"$LIVE/.applied_version"
-
-log "running update.sh"
-if sh "$LIVE/update.sh" >>"$LOG" 2>&1; then
-  log "deploy $NEW ok"
-else
-  log "deploy $NEW FAILED (see above) — keeping previous containers running"
-  exit 1
+# never run two applies at once (an image pull can outlast the schedule)
+if command -v flock >/dev/null 2>&1; then
+  exec 9>"$LIVE/.apply.lock"
+  flock -n 9 || exit 0
 fi
+
+apply_channel() { # apply_channel STAMP BUNDLE MARKER STACKS...
+  stamp="$1"; bundle="$2"; marker="$3"; shift 3
+  [ -f "$PUBLISHED/$stamp" ] || return 0
+  new="$(cat "$PUBLISHED/$stamp")"
+  old="$(cat "$LIVE/$marker" 2>/dev/null || echo none)"
+  [ "$new" = "$old" ] && return 0
+
+  log "new deploy $stamp=$new (was $old) — unpacking $bundle"
+  if ! tar -xzf "$PUBLISHED/$bundle" -C "$LIVE"; then
+    log "unpack of $bundle FAILED — leaving stacks untouched"
+    return 1
+  fi
+  echo "$new" >"$LIVE/$marker"
+
+  ok=1
+  for compose in "$@"; do
+    log "updating $compose"
+    if sh "$LIVE/update.sh" "$compose" >>"$LOG" 2>&1; then
+      log "$compose ok"
+    else
+      log "$compose FAILED (see above) — its previous containers keep running"
+      ok=0
+    fi
+  done
+  [ "$ok" = 1 ]
+}
+
+rc=0
+# master bundle refreshes prod AND staging (a release moves both stacks)
+apply_channel VERSION munni-deploy.tgz .applied_version \
+  docker-compose.yml docker-compose.staging.yml || rc=1
+# dev bundle refreshes staging only
+apply_channel VERSION_STAGING munni-deploy-staging.tgz .applied_version_staging \
+  docker-compose.staging.yml || rc=1
+exit $rc

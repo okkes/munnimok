@@ -33,9 +33,18 @@ role as the SPA — without RBAC nothing more is needed.
 `google-services.json` is committed and the shell builds with the FCM
 plugin active. Remaining: put the **service-account key** (Project
 settings → Service accounts → Generate new private key) into the NAS
-env as one line: `FCM_SERVICE_ACCOUNT_JSON=` in `deploy/env/.env`, then
-redeploy the api container. Until then native devices register fine but
-receive no pushes.
+`.env` as ONE line, **wrapped in single quotes** (the JSON contains
+spaces, which otherwise break scripts that read the file):
+
+```
+FCM_SERVICE_ACCOUNT_JSON='{"type": "service_account", "project_id": "munni-fb316", ...}'
+```
+
+Keep the `\n` sequences inside `private_key` exactly as Google exported
+them. Then redeploy the api container and check
+`https://munni-api.<domain>/health` — it reports `"fcm": true` only
+when the key parses (project_id + client_email + private_key present).
+Until then native devices register fine but receive no pushes.
 
 ## 4. Google Play — account exists; three steps left
 
