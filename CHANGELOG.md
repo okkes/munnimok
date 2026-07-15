@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.6.0](https://github.com/okkes/munnimok/compare/v1.5.0...v1.6.0) (2026-07-15)
+
+
+### ✨ Features
+
+* **export:** CSV / JSON export of transactions (csv-export design) ([fb97377](https://github.com/okkes/munnimok/commit/fb97377c335bb817628a0bca8ad1baac634b35e6))
+* **help:** 1.6.0 notes; trends gallery + guide section; retire shipped designs ([78d4636](https://github.com/okkes/munnimok/commit/78d4636385067c5159fa877f41e38e3f0ae3520f))
+* **home:** cash-flow forecast — safe to spend until payday (F1+F2) ([5c4c3f5](https://github.com/okkes/munnimok/commit/5c4c3f5c0302a28a8a32515a9cb148cbc0f70374))
+* **native:** R8 minification + Play mapping upload; TestFlight lane ([bbfeba5](https://github.com/okkes/munnimok/commit/bbfeba5ad3c42403a39294392e36308c3399add5))
+* **recurring:** subscription intelligence — yearly truth, price changes, review hint ([cf18cd2](https://github.com/okkes/munnimok/commit/cf18cd23d278bf15ad1f3afb74b256f9431984eb))
+* **trends:** category bars, cash flow and net worth over time (T1-T3) ([6ebfc2e](https://github.com/okkes/munnimok/commit/6ebfc2e5a8bd49879700a457817f4f8c6aafaa93))
+
 ## [1.5.0](https://github.com/okkes/munnimok/compare/v1.4.0...v1.5.0) (2026-07-14)
 
 
