@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.8.0](https://github.com/okkes/munnimok/compare/v1.7.0...v1.8.0) (2026-07-15)
+
+
+### ✨ Features
+
+* **native:** dedicated staging apps + templated NAS env + self-updating deploy scripts ([b63f792](https://github.com/okkes/munnimok/commit/b63f7927b5bf87f7c15f59da0160e1e5b59f8c66))
+
+
+### 🐞 Bug Fixes
+
+* **ci:** patch iOS bundle id in pbxproj, not via xcodebuild arg ([11a5734](https://github.com/okkes/munnimok/commit/11a573413657ae4c621c3aa6a0f8842d50b18734))
+* **ci:** pin iOS archive to the cloud-managed Apple Distribution cert ([f0ada94](https://github.com/okkes/munnimok/commit/f0ada945324b719be894456ca988e97d436aa67b))
+* **ci:** prune CI-minted Apple Development certs before iOS archive ([47a58a7](https://github.com/okkes/munnimok/commit/47a58a7a44e1732ab3aed47f8b8fc25453e39243))
+* **deploy:** keep .env on the NAS only; staging channel; stop sourcing env file ([22f5130](https://github.com/okkes/munnimok/commit/22f513029fea038e13389b4c460cfeab77455bdb))
+
 ## [1.7.0](https://github.com/okkes/munnimok/compare/v1.6.0...v1.7.0) (2026-07-15)
 
 
