@@ -1,17 +1,21 @@
-# Native Android build + publish (native-apps design N6). Runs ONLY on
-# merges to master (build minutes are scarce) — dev pushes keep doing
-# the usual container builds. No paths filter: the APK bundles the web
-# app, so every master merge changes the app.
+# Native Android build + publish (native-apps design N6). Runs on
+# merges to master AND on dev pushes — public repos get unlimited free
+# runner minutes, so a fresh build per dev push is affordable.
 #
-# Always: debug APK artifact (sideload).
-# With ANDROID_KEYSTORE_* secrets: signed release .aab artifact.
-# With PLAY_SERVICE_ACCOUNT_JSON too: upload to the Play internal track.
+# Every run: debug APK artifact (sideload) + a signed release .aab
+# artifact (with the ANDROID_KEYSTORE_* secrets).
+# Publish to the Play internal track: master only (dev builds would mix
+# with prod testers and risk version-code collisions). See
+# docs/native-setup.md for publishing a dev channel.
+#
+# dev builds get a -dev versionName and, when NATIVE_*_DEV repo variables
+# exist, point at the dev/test stack instead of production.
 name: Native Android
 
 on:
   workflow_dispatch:
   push:
-    branches: [master]
+    branches: [master, dev]
 
 permissions:
   contents: read
@@ -34,23 +38,41 @@ jobs:
           distribution: temurin
           java-version: 21
 
+      - name: Resolve branch + stack (dev vars fall back to production)
+        id: env
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/master" ]; then
+            echo "master=true" >> "$GITHUB_OUTPUT"
+            echo "API_URL=${{ vars.NATIVE_API_URL }}" >> "$GITHUB_ENV"
+            echo "PUBLIC_ORIGIN=${{ vars.NATIVE_PUBLIC_ORIGIN }}" >> "$GITHUB_ENV"
+            echo "LOGTO_APP_ID=${{ vars.NATIVE_LOGTO_APP_ID }}" >> "$GITHUB_ENV"
+            echo "LOGTO_RESOURCE=${{ vars.NATIVE_LOGTO_RESOURCE }}" >> "$GITHUB_ENV"
+          else
+            echo "master=false" >> "$GITHUB_OUTPUT"
+            echo "API_URL=${{ vars.NATIVE_API_URL_DEV || vars.NATIVE_API_URL }}" >> "$GITHUB_ENV"
+            echo "PUBLIC_ORIGIN=${{ vars.NATIVE_PUBLIC_ORIGIN_DEV || vars.NATIVE_PUBLIC_ORIGIN }}" >> "$GITHUB_ENV"
+            echo "LOGTO_APP_ID=${{ vars.NATIVE_LOGTO_APP_ID_DEV || vars.NATIVE_LOGTO_APP_ID }}" >> "$GITHUB_ENV"
+            echo "LOGTO_RESOURCE=${{ vars.NATIVE_LOGTO_RESOURCE_DEV || vars.NATIVE_LOGTO_RESOURCE }}" >> "$GITHUB_ENV"
+          fi
+
       - name: Build web bundle and sync the shell
         run: |
           npm ci
           npm run sync -w @munni/native
         env:
-          # the shell talks to the hosted stack, not localhost
-          VITE_API_URL: ${{ vars.NATIVE_API_URL }}
-          VITE_PUBLIC_ORIGIN: ${{ vars.NATIVE_PUBLIC_ORIGIN }}
+          VITE_API_URL: ${{ env.API_URL }}
+          VITE_PUBLIC_ORIGIN: ${{ env.PUBLIC_ORIGIN }}
           VITE_LOGTO_ENDPOINT: ${{ vars.NATIVE_LOGTO_ENDPOINT }}
-          VITE_LOGTO_APP_ID: ${{ vars.NATIVE_LOGTO_APP_ID }}
-          VITE_LOGTO_RESOURCE: ${{ vars.NATIVE_LOGTO_RESOURCE }}
+          VITE_LOGTO_APP_ID: ${{ env.LOGTO_APP_ID }}
+          VITE_LOGTO_RESOURCE: ${{ env.LOGTO_RESOURCE }}
 
       - name: Compute version (code = commit count, name = release version)
         id: version
         run: |
           echo "code=$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
-          echo "name=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+          NAME=$(node -p "require('./package.json').version")
+          [ "${{ steps.env.outputs.master }}" = "true" ] || NAME="$NAME-dev"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
 
       - name: Assemble debug APK
         working-directory: apps/native/android
@@ -70,7 +92,6 @@ jobs:
 
       # ---- signed release (activates with the keystore secrets) ----
       - name: Restore the upload keystore
-        if: ${{ github.event_name != 'pull_request' }}
         id: keystore
         run: |
           if [ -n "$KEYSTORE_B64" ]; then
@@ -102,12 +123,12 @@ jobs:
           path: apps/native/android/app/build/outputs/bundle/release/app-release.aab
           retention-days: 90
 
-      # ---- Play internal track (activates with the service account) ----
+      # ---- Play internal track (master only) ----
       # Prerequisite (one-time, manual): create the app in Play Console
       # with package app.munni and upload the FIRST .aab by hand — the
       # API cannot create apps, only add releases to existing ones.
       - name: Publish to Play internal track
-        if: ${{ steps.keystore.outputs.present == 'true' && env.PLAY_JSON != '' }}
+        if: ${{ steps.env.outputs.master == 'true' && steps.keystore.outputs.present == 'true' && env.PLAY_JSON != '' }}
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}

@@ -89,6 +89,31 @@ Messaging → Apple app configuration (add an iOS app with bundle
 `app.munni` there first, and drop its `GoogleService-Info.plist` into
 `apps/native/ios/App/App/` — tell me when it exists and I wire it in).
 
+## Dev-branch builds (public repo = free minutes)
+
+Both native workflows also run on **dev** pushes. What you get per dev
+push, with no extra setup:
+
+- **Android**: a debug APK and a signed release `.aab` as downloadable
+  workflow artifacts (versionName `X.Y.Z-dev`). NOT auto-published to
+  Play — a dev build sharing the prod internal track would reach your
+  real testers and could collide on version codes.
+- **iOS**: uploaded to **TestFlight** as a normal build (TestFlight
+  lists every build; the build number = commit count distinguishes dev
+  from master). Marketing version stays numeric per Apple's rule.
+
+**Optional — point dev builds at a staging stack**: set repo variables
+`NATIVE_API_URL_DEV`, `NATIVE_PUBLIC_ORIGIN_DEV`,
+`NATIVE_LOGTO_APP_ID_DEV`, `NATIVE_LOGTO_RESOURCE_DEV`. When absent, dev
+builds use the production values (fine while there's one stack).
+
+**To actually publish a separate Android dev channel** (installable
+side-by-side with prod), it needs its own identity — tell me and I'll
+add a `dev` product flavor with `applicationId app.munni.dev`, its own
+Play app and its own Firebase Android app. That's the only clean way;
+Play won't let two builds of the same package live on different tracks
+for different audiences.
+
 ## What works today
 
 The debug APK runs fully offline (demo/offline identities), keeps data

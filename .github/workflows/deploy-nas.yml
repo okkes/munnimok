@@ -1,0 +1,58 @@
+# Push the deploy bundle to the Synology NAS via the FileStation API
+# (user request: no SSH). Runs after the container images are built on a
+# master push. The NAS-side poller (deploy/nas/apply.sh, via the DSM Task
+# Scheduler) picks up the new VERSION and runs update.sh.
+#
+# Secrets required:
+#   SYNOLOGY_URL       e.g. https://okkes.synology.me:5001
+#   SYNOLOGY_USER      a dedicated DSM account (FileStation write perm,
+#                      2FA OFF — the login API can't do interactive OTP)
+#   SYNOLOGY_PASS      that account's password
+#   SYNOLOGY_PATH      target folder, e.g. /docker/munni/published
+#   NAS_ENV_FILE       the FULL production .env contents (all the keys in
+#                      deploy/env/.env.example) — rendered into the bundle
+name: Deploy to NAS
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Build & push images"]
+    types: [completed]
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    # only when the image build actually succeeded (or a manual dispatch)
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Assemble the deploy bundle (.env from the secret + VERSION)
+        run: |
+          set -euo pipefail
+          STAGE="$RUNNER_TEMP/bundle"
+          mkdir -p "$STAGE"
+          # only what the running stack needs — never the local/test/sonar
+          # compose files or example envs
+          cp deploy/docker-compose.yml deploy/docker-compose.staging.yml deploy/update.sh "$STAGE/"
+          cp -r deploy/nginx deploy/initdb deploy/import-watch "$STAGE/" 2>/dev/null || true
+          # the real .env, built at GitHub level from the secret
+          printf '%s\n' "${NAS_ENV_FILE}" > "$STAGE/.env"
+          # a version stamp the NAS poller compares against
+          echo "${GITHUB_SHA}" > "$STAGE/VERSION"
+          tar -czf "$RUNNER_TEMP/munni-deploy.tgz" -C "$STAGE" .
+          cp "$STAGE/VERSION" "$RUNNER_TEMP/VERSION"
+        env:
+          NAS_ENV_FILE: ${{ secrets.NAS_ENV_FILE }}
+
+      - name: Upload to Synology FileStation
+        run: bash deploy/nas/upload.sh "$RUNNER_TEMP/munni-deploy.tgz" "$RUNNER_TEMP/VERSION"
+        env:
+          SYNOLOGY_URL: ${{ secrets.SYNOLOGY_URL }}
+          SYNOLOGY_USER: ${{ secrets.SYNOLOGY_USER }}
+          SYNOLOGY_PASS: ${{ secrets.SYNOLOGY_PASS }}
+          SYNOLOGY_PATH: ${{ secrets.SYNOLOGY_PATH }}

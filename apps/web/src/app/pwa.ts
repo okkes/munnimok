@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { registerSW } from 'virtual:pwa-register';
 import { router } from '@/app/router';
+import { isNativeApp } from '@/lib/platform';
 
 interface PwaState {
   needRefresh: boolean;
@@ -16,12 +17,17 @@ export const usePwa = create<PwaState>((set) => ({
 }));
 
 export function initPwa(): void {
+  initViewportHeightVar();
+  // the native shell bundles the web assets in the binary — a service
+  // worker there is pointless and its "new version" toast is a lie
+  // (the real update is a store update). Native updates are prompted by
+  // useNativeUpdateCheck instead.
+  if (isNativeApp()) return;
   const updateSW = registerSW({
     onNeedRefresh() {
       usePwa.setState({ needRefresh: true, update: () => void updateSW(true) });
     },
   });
-  initViewportHeightVar();
   initNotificationNav();
 }
 

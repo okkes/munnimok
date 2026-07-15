@@ -42,6 +42,11 @@ export function deepLinkToPath(url: string): string | null {
   return `/${path}${match[2] ?? ''}`;
 }
 
+/** the untouched munni:// callback url — the OIDC code exchange must
+ *  present EXACTLY the redirect_uri that was registered, not the
+ *  webview's localhost translation of it */
+export const NATIVE_CALLBACK_KEY = 'munni_native_callback';
+
 /**
  * Native deep links (N3): bank-consent and auth callbacks arrive as
  * munni:// urls while the app runs. Both callback screens live OUTSIDE
@@ -52,8 +57,11 @@ export function initDeepLinks(): void {
   if (!isNativeApp()) return;
   const app = capacitor()?.Plugins?.App;
   app?.addListener?.('appUrlOpen', (data: { url?: string }) => {
-    const path = deepLinkToPath(data.url ?? '');
-    if (path) globalThis.location.assign(path);
+    const url = data.url ?? '';
+    const path = deepLinkToPath(url);
+    if (!path) return;
+    if (path.startsWith('/auth-callback')) sessionStorage.setItem(NATIVE_CALLBACK_KEY, url);
+    globalThis.location.assign(path);
   });
 }
 

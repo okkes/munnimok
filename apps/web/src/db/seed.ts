@@ -4,7 +4,8 @@ import type { Repo } from './repo';
 import { DEMO_ACCOUNTS, DEMO_TXS } from './demo-data';
 
 export const DEMO_SPACE_ID = 'demo_space';
-const SEED_FLAG = 'seeded_demo_v1';
+// bump when the demo dataset changes so returning demo users reseed
+const SEED_FLAG = 'seeded_demo_v2';
 
 // local date, matching the local-time period math in domain/periods.ts —
 // a daysAgo:0 row must always fall inside the current local budget period
@@ -94,6 +95,16 @@ export async function seedDemoIfNeeded(repo: Repo): Promise<void> {
       needsReview: tx.needsReview ? 1 : 0,
       reimbursements: tx.reimbursements?.map((r) => ({ txId: r.txId, amountCents: r.amountCents })),
     });
+  }
+
+  // every other feature (budgets, goals, debts, events, allocation,
+  // recurring + subscription price history, portfolio) so the demo shows
+  // each surface working — date-relative, wiped on logout. Skipped under
+  // the unit-test runner: feature specs assert against the lean demo and
+  // control their own budgets/goals/etc.; demo-rich.test.ts covers this.
+  if (!import.meta.env.VITEST) {
+    const { seedRichDemo } = await import('./demo-rich');
+    await seedRichDemo(repo);
   }
 
   await repo.db.meta.put({ key: SEED_FLAG, value: Date.now() });
