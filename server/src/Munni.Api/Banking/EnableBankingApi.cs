@@ -32,7 +32,9 @@ public sealed class EnableBankingApi(HttpClient http, IConfiguration config) : I
         if (_key is null)
         {
             var rsa = RSA.Create();
-            rsa.ImportFromPem(config["EnableBanking:PrivateKeyPem"] ?? throw new InvalidOperationException("EnableBanking:PrivateKeyPem missing"));
+            var pem = config["EnableBanking:PrivateKeyPem"] ?? throw new InvalidOperationException("EnableBanking:PrivateKeyPem missing");
+            // env files carry the PEM as one line with \n escapes
+            rsa.ImportFromPem(pem.Replace("\\n", "\n"));
             _key = new RsaSecurityKey(rsa) { KeyId = config["EnableBanking:ApplicationId"] };
         }
         var now = DateTimeOffset.UtcNow;

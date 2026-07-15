@@ -39,9 +39,10 @@ jobs:
   images:
     needs: api-tests
     runs-on: ubuntu-latest
-    # GitHub Environment = single source of per-stack config: the SAME
-    # variable name (VITE_API_URL, …) carries the right value per
-    # environment; repo-level variables act as shared defaults.
+    # GitHub Environment = the single source of per-stack config: the
+    # SAME variable name (VITE_API_URL, …) carries the right value per
+    # environment. No fallbacks — a missing variable fails the guard
+    # below instead of silently building a misconfigured image.
     environment: ${{ github.ref_name == 'dev' && 'staging' || 'production' }}
     steps:
       - uses: actions/checkout@v7
@@ -51,19 +52,28 @@ jobs:
       - name: Compute build number and channel
         id: meta
         run: |
+          for required in VITE_API_URL VITE_LOGTO_ENDPOINT VITE_LOGTO_APP_ID VITE_LOGTO_APP_ID_ADMIN; do
+            if [ -z "$(eval echo "\$$required")" ]; then
+              echo "::error::variable $required is not defined for this environment" && exit 1
+            fi
+          done
           echo "build=$(git rev-list --count HEAD)" >> $GITHUB_OUTPUT
           # master -> latest (production), dev -> dev (staging)
           if [ "${GITHUB_REF_NAME}" = "dev" ]; then
             echo "channel=dev" >> $GITHUB_OUTPUT
             echo "app_channel=staging" >> $GITHUB_OUTPUT
-            echo "api_url=${{ vars.VITE_API_URL || 'https://munni-test-api.okkes.synology.me' }}" >> $GITHUB_OUTPUT
           else
             echo "channel=latest" >> $GITHUB_OUTPUT
             echo "app_channel=production" >> $GITHUB_OUTPUT
-            echo "api_url=${{ vars.VITE_API_URL || 'https://munni-api.okkes.synology.me' }}" >> $GITHUB_OUTPUT
           fi
-          echo "logto_app=${{ vars.VITE_LOGTO_APP_ID || '' }}" >> $GITHUB_OUTPUT
-          echo "logto_app_admin=${{ vars.VITE_LOGTO_APP_ID_ADMIN || '' }}" >> $GITHUB_OUTPUT
+          echo "api_url=$VITE_API_URL" >> $GITHUB_OUTPUT
+          echo "logto_app=$VITE_LOGTO_APP_ID" >> $GITHUB_OUTPUT
+          echo "logto_app_admin=$VITE_LOGTO_APP_ID_ADMIN" >> $GITHUB_OUTPUT
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+          VITE_LOGTO_ENDPOINT: ${{ vars.VITE_LOGTO_ENDPOINT }}
+          VITE_LOGTO_APP_ID: ${{ vars.VITE_LOGTO_APP_ID }}
+          VITE_LOGTO_APP_ID_ADMIN: ${{ vars.VITE_LOGTO_APP_ID_ADMIN }}
 
       - uses: docker/setup-buildx-action@v4
 
@@ -92,15 +102,14 @@ jobs:
           context: .
           file: apps/web/Dockerfile
           push: true
-          # production config from repo Variables (Settings -> Variables);
-          # sensible *.okkes.synology.me defaults until they are set
+          # per-stack config from the job's GitHub Environment
           build-args: |
             BUILD_NUMBER=${{ steps.meta.outputs.build }}
             VITE_API_URL=${{ steps.meta.outputs.api_url }}
-            VITE_LOGTO_ENDPOINT=${{ vars.VITE_LOGTO_ENDPOINT || 'https://logto.okkes.synology.me' }}
+            VITE_LOGTO_ENDPOINT=${{ vars.VITE_LOGTO_ENDPOINT }}
             VITE_LOGTO_APP_ID=${{ steps.meta.outputs.logto_app }}
             VITE_LOGTO_RESOURCE=${{ steps.meta.outputs.api_url }}
-            VITE_GLITCHTIP_DSN=${{ vars.VITE_GLITCHTIP_DSN || '' }}
+            VITE_GLITCHTIP_DSN=${{ vars.VITE_GLITCHTIP_DSN }}
             VITE_CHANNEL=${{ steps.meta.outputs.app_channel }}
           tags: |
             ${{ env.REGISTRY }}/munni-web:${{ steps.meta.outputs.channel }}
@@ -116,7 +125,7 @@ jobs:
           push: true
           build-args: |
             VITE_API_URL=${{ steps.meta.outputs.api_url }}
-            VITE_LOGTO_ENDPOINT=${{ vars.VITE_LOGTO_ENDPOINT || 'https://logto.okkes.synology.me' }}
+            VITE_LOGTO_ENDPOINT=${{ vars.VITE_LOGTO_ENDPOINT }}
             VITE_LOGTO_APP_ID=${{ steps.meta.outputs.logto_app_admin }}
             VITE_LOGTO_RESOURCE=${{ steps.meta.outputs.api_url }}
           tags: |
