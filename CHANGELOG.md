@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.9.0](https://github.com/okkes/munnimok/compare/v1.8.1...v1.9.0) (2026-07-15)
+
+
+### ✨ Features
+
+* **ci:** NAS diag folder listing mode ([0664118](https://github.com/okkes/munnimok/commit/066411840bade316132c7ae02c04562e078ba988))
+* **deploy:** NAS diagnostics without SSH (FileStation download + status dumps) ([f16109d](https://github.com/okkes/munnimok/commit/f16109d8390eec7a195455e4b458b9441f410c0a))
+
+
+### 🐞 Bug Fixes
+
+* **ci:** NAS diag paths derive from SYNOLOGY_PATH; detect HTML error pages ([9258009](https://github.com/okkes/munnimok/commit/9258009e461af465e058a626d4fff8382691a786))
+* **deploy:** create the import-watch mount dir before compose up ([b5718e3](https://github.com/okkes/munnimok/commit/b5718e359dc017c0790c6fdf603160848579b790))
+* **deploy:** failed updates retry next cycle (marker records success only) ([c8ba642](https://github.com/okkes/munnimok/commit/c8ba6420250d7d567943445bb4a8fbfbb70419e3))
+* **deploy:** glitchtip migrate via manage.py; status dump survives up failure ([e9b78bf](https://github.com/okkes/munnimok/commit/e9b78bf1a3cc58c81695323d2895c6d36dc270b3))
+
 ## [1.8.1](https://github.com/okkes/munnimok/compare/v1.8.0...v1.8.1) (2026-07-15)
 
 
