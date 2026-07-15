@@ -58,6 +58,13 @@ export const GUIDE = [
     shots: ['29-cats-manage', '30-cats-create', '60-overview-expense'],
   },
   {
+    id: 'trends',
+    title: 'Trends, forecast & export',
+    body: `Settings → Trends charts your spending per category over the months, income against expenses, and your net worth over time. Home's "Safe to spend" block tells you what is really free until payday — tap it for the full breakdown. And under Global settings → Export data your transactions leave as CSV or a JSON backup, straight from the device.`,
+    tips: ['Subscriptions show their yearly cost, and a sustained price change badges itself with the yearly damage.', 'The net-worth Home block is opt-in via Customize Home.'],
+    shots: ['63-trends-categories', '65-trends-networth'],
+  },
+  {
     id: 'devices',
     title: 'Devices & offline',
     body: `Signed in, every device converges on the same data — edits made offline sync when you're back. Two people can edit the same transaction at once; the newer edit per field wins everywhere, identically.`,
