@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.7.0](https://github.com/okkes/munnimok/compare/v1.6.0...v1.7.0) (2026-07-15)
+
+
+### ✨ Features
+
+* **demo:** rich date-relative profile for every feature ([8a1433e](https://github.com/okkes/munnimok/commit/8a1433e8d25526f5c06c55e958f8949a1d693629))
+* **deploy:** GitHub → Synology auto-deploy over FileStation API (no SSH) ([3ed63ae](https://github.com/okkes/munnimok/commit/3ed63ae681bcb2ba25034adf65733822326d6639))
+
+
+### 🐞 Bug Fixes
+
+* **native:** login redirect, no SW toast, FCM health flag, iOS archive dest ([06b1015](https://github.com/okkes/munnimok/commit/06b1015c622b45ad8cd0580facf721ce6194f7a5))
+
 ## [1.6.0](https://github.com/okkes/munnimok/compare/v1.5.0...v1.6.0) (2026-07-15)
 
 
