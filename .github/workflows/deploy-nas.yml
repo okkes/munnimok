@@ -27,10 +27,17 @@ name: Deploy to NAS
 
 on:
   workflow_dispatch:
+  # after images rebuild…
   workflow_run:
     workflows: ["Build & push images"]
     types: [completed]
     branches: [master, dev]
+  # …and directly for infra-only changes, which never rebuild images
+  push:
+    branches: [master, dev]
+    paths:
+      - 'deploy/**'
+      - '.github/workflows/deploy-nas.yml'
 
 permissions:
   contents: read
