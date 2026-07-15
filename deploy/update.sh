@@ -35,3 +35,21 @@ fi
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d
 docker image prune -f
+
+# ── post-deploy status dump (survives container recreation; readable via
+#    File Station / the NAS-diagnostics workflow) ─────────────────────────
+sleep 20
+{
+  echo "=== status $(date '+%Y-%m-%d %H:%M:%S') $COMPOSE_FILE ==="
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" ps
+  df -h /volume1 | tail -1
+  # capture recent logs of anything not cleanly running
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" ps --format '{{.Service}} {{.State}}' 2>/dev/null \
+    | while read -r svc state; do
+        case "$state" in
+          running|*healthy*) : ;;
+          *) echo "--- $svc ($state) last 60 log lines ---"
+             docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" logs --tail=60 "$svc" 2>&1 ;;
+        esac
+      done
+} > "status-$(basename "$COMPOSE_FILE" .yml).log" 2>&1 || true

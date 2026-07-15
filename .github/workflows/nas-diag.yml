@@ -1,0 +1,38 @@
+# Fetch diagnostics from the NAS without SSH: downloads deploy.log (and
+# the latest status dump update.sh writes) via the FileStation API and
+# attaches them as a short-lived artifact. Dispatch-only.
+name: NAS diagnostics
+
+on:
+  workflow_dispatch:
+    inputs:
+      path:
+        description: "FileStation path to fetch"
+        default: "/docker/munni/deploy.log"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download from FileStation
+        run: |
+          mkdir -p diag
+          bash deploy/nas/download.sh "${{ inputs.path }}" "diag/$(basename "${{ inputs.path }}")"
+          # redact anything that looks like a credential before it leaves the runner
+          sed -i -E 's/(password|passwd|secret|token|key)=[^ ]*/\1=REDACTED/Ig' diag/* || true
+        env:
+          SYNOLOGY_URL: ${{ secrets.SYNOLOGY_URL }}
+          SYNOLOGY_USER: ${{ secrets.SYNOLOGY_USER }}
+          SYNOLOGY_PASS: ${{ secrets.SYNOLOGY_PASS }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nas-diag
+          path: diag/
+          retention-days: 1
