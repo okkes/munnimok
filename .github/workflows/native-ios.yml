@@ -21,10 +21,12 @@ on:
   push:
     branches: [master, dev] # public repo: standard macOS runners are free
 
-# never two signing runs at once: the cert-prune step of one run would
-# revoke the development certificate the other just minted mid-archive
+# per-branch: rapid same-branch pushes collapse to the newest build. NOT
+# a global group — GitHub keeps only the newest pending run per group, so
+# a global group let dev-sync pushes silently cancel queued MASTER builds.
+# Cross-branch cert races are handled inside asc-prune.js (age guard).
 concurrency:
-  group: native-ios-signing
+  group: native-ios-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
@@ -140,20 +142,11 @@ jobs:
       # Pinning CODE_SIGN_IDENTITY=Apple Distribution does NOT work
       # (automatic signing rejects a manual identity and the override
       # drags the Pods targets into signing), so prune the stale dev
-      # certs via the ASC API instead. Safe: nobody develops iOS locally.
+      # certs via the ASC API instead. Safe: nobody develops iOS locally,
+      # and certs young enough to belong to a running build are kept.
       - name: Prune CI-minted development certificates
         if: steps.asc.outputs.present == 'true'
-        run: |
-          JWT=$(node .github/scripts/asc-jwt.js)
-          IDS=$(curl -sS -H "Authorization: Bearer $JWT" \
-            "https://api.appstoreconnect.apple.com/v1/certificates?filter%5BcertificateType%5D=DEVELOPMENT,IOS_DEVELOPMENT&limit=200" \
-            | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).data.map(c=>c.id).join(" ")')
-          for id in $IDS; do
-            echo "revoking development certificate $id"
-            curl -sS -X DELETE -H "Authorization: Bearer $JWT" \
-              "https://api.appstoreconnect.apple.com/v1/certificates/$id" -o /dev/null -w "  -> HTTP %{http_code}\n"
-          done
-          [ -z "$IDS" ] && echo "no development certificates to prune" || true
+        run: node .github/scripts/asc-prune.js
         env:
           ASC_KEY_PATH: ${{ runner.temp }}/asc.p8
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
