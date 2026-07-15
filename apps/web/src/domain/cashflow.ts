@@ -46,7 +46,7 @@ export function nextPayday(txs: readonly TransactionRow[], today: string): Payda
   }
   const candidates = [...groups.values()].filter((group) => group.months.size >= 2);
   if (candidates.length === 0) return null;
-  const salary = candidates.reduce((a, b) => (b.latest.amountCents > a.latest.amountCents ? b : a));
+  const salary = candidates.reduce((a, b) => (b.latest.amountCents > a.latest.amountCents ? b : a), candidates[0]);
 
   // project the latest pay date's day-of-month forward
   const payDay = Number(salary.latest.date.slice(8, 10));

@@ -43,11 +43,8 @@ export function toCsvRows(txs: readonly TransactionRow[], ctx: ExportContext): s
   const accountById = new Map(ctx.accounts.map((a) => [a.id, a]));
   const recurringById = new Map((ctx.recurrings ?? []).map((r) => [r.id, r.name]));
   const eventById = new Map((ctx.events ?? []).map((e) => [e.id, e.name]));
-  const header = [
-    ...(ctx.spaceName !== undefined ? ['space'] : []),
-    ...CSV_COLUMNS,
-    ...(ctx.technical ? TECHNICAL_COLUMNS : []),
-  ];
+  const spaceColumn = ctx.spaceName === undefined ? [] : ['space'];
+  const header = [...spaceColumn, ...CSV_COLUMNS, ...(ctx.technical ? TECHNICAL_COLUMNS : [])];
   const rows: string[][] = [header];
 
   const sorted = [...txs].sort((a, b) => a.date.localeCompare(b.date) || (a.time ?? '').localeCompare(b.time ?? ''));
@@ -56,7 +53,7 @@ export function toCsvRows(txs: readonly TransactionRow[], ctx: ExportContext): s
     const main = cat.parentId ? ctx.catalog.byId(cat.parentId) : cat;
     const net = tx.amountCents > 0 ? netCreditCents(tx, givenCents(txs, tx.id)) : netAmountCents(tx);
     const base = (split: string, catOf: Cat, mainOf: Cat, amount: number): string[] => [
-      ...(ctx.spaceName !== undefined ? [ctx.spaceName] : []),
+      ...(ctx.spaceName === undefined ? [] : [ctx.spaceName]),
       tx.date,
       tx.time ?? '',
       accountById.get(tx.accountId)?.name ?? '',
