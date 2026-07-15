@@ -70,11 +70,14 @@ the repo secrets (`ANDROID_KEYSTORE_*`) and as a local copy at
    repo secret `PLAY_SERVICE_ACCOUNT_JSON`. From then on every master
    merge publishes to the internal track automatically.
 
-## 5. iOS — enrolled ✓, TestFlight lane is built; four steps left
+## 5. iOS — DONE ✓ (TestFlight uploads work end-to-end)
 
-The CI lane exists (signed archive + TestFlight upload via an App
-Store Connect API key, automatic signing — no certificates to manage
-by hand). Your remaining steps:
+Verified 2026-07-15: archive → cloud signing → TestFlight upload all
+green on CI (run 29414308155). Two hard-won requirements are baked into
+the workflow: the ASC key must be **Admin** role (see step 2), and
+uploads must be built with the iOS 26 SDK — the workflow selects the
+newest installed Xcode on the runner because the default is too old.
+The steps below are kept for reference / re-setup:
 
 1. **App record**: [App Store Connect](https://appstoreconnect.apple.com)
    → Apps → **+ New App** → platform iOS, name "munni", bundle ID
