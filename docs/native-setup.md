@@ -160,6 +160,50 @@ Export compliance: answered once and encoded — Info.plist carries
 `ITSAppUsesNonExemptEncryption=false` ("None of the algorithms": munni
 only uses the OS's TLS/crypto), so the TestFlight popup won't return.
 
+## 7. Crash reporting per platform (GlitchTip) — your checklist
+
+CI bakes a GlitchTip DSN into each build, so crashes separate cleanly
+by project. In GlitchTip (org **munni** → Create new project, platform
+"Browser JavaScript" for the clients, ".NET" for the api), create:
+
+| Project | DSN goes into | Scope |
+|---|---|---|
+| `pwa-production` | variable `VITE_GLITCHTIP_DSN` | env production |
+| `pwa-staging` | variable `VITE_GLITCHTIP_DSN` | env staging |
+| `android-production` | variable `NATIVE_GLITCHTIP_DSN_ANDROID` | env production |
+| `android-staging` | variable `NATIVE_GLITCHTIP_DSN_ANDROID` | env staging |
+| `ios-production` | variable `NATIVE_GLITCHTIP_DSN_IOS` | env production |
+| `ios-staging` | variable `NATIVE_GLITCHTIP_DSN_IOS` | env staging |
+| `api-production` | secret `NAS_API_SENTRY_DSN` | env production |
+| `api-staging` | secret `NAS_API_SENTRY_DSN` | env staging |
+
+DSNs are not secret (client ones ship inside public JS bundles), so
+variables are fine; only the api's rides the env render, which reads
+secrets — hence `NAS_API_SENTRY_DSN` stays a secret. If a repo-level
+`NAS_API_SENTRY_DSN` exists, delete it after adding the env-scoped
+ones. Missing/empty DSN = that platform simply doesn't report.
+
+Note the telemetry policy still applies on top: offline/demo identities
+never send anything; signed-in users queue crash reports offline.
+
+## 8. Separate Logto apps per platform — prepared
+
+The workflows now prefer per-platform variables and fall back to the
+shared `NATIVE_LOGTO_APP_ID` until you create the apps:
+
+1. Logto console → Create application → **Native**, name "munni
+   Android", redirect URIs `munni://auth-callback` AND
+   `munni-dev://auth-callback` → its App ID becomes repo variable
+   **`NATIVE_LOGTO_APP_ID_ANDROID`**.
+2. Same again as "munni iOS" → **`NATIVE_LOGTO_APP_ID_IOS`**.
+3. Delete the old shared `NATIVE_LOGTO_APP_ID` variable (and the old
+   shared native app in Logto once no released build still uses it —
+   safest a release cycle later).
+
+Repo-level is fine for these (same app id serves prod + staging;
+scope them per environment only if you later want staging-only Logto
+apps).
+
 ## What works today
 
 The debug APK runs fully offline (demo/offline identities), keeps data

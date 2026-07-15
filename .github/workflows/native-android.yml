@@ -76,8 +76,12 @@ jobs:
           VITE_API_URL: ${{ vars.NATIVE_API_URL }}
           VITE_PUBLIC_ORIGIN: ${{ vars.NATIVE_PUBLIC_ORIGIN }}
           VITE_LOGTO_ENDPOINT: ${{ vars.NATIVE_LOGTO_ENDPOINT }}
-          VITE_LOGTO_APP_ID: ${{ vars.NATIVE_LOGTO_APP_ID }}
+          # per-platform Logto app; falls back to the shared native app
+          # until NATIVE_LOGTO_APP_ID_ANDROID exists (then delete the old var)
+          VITE_LOGTO_APP_ID: ${{ vars.NATIVE_LOGTO_APP_ID_ANDROID || vars.NATIVE_LOGTO_APP_ID }}
           VITE_LOGTO_RESOURCE: ${{ vars.NATIVE_LOGTO_RESOURCE }}
+          # per-platform GlitchTip project (android-prod / android-staging)
+          VITE_GLITCHTIP_DSN: ${{ vars.NATIVE_GLITCHTIP_DSN_ANDROID }}
           VITE_NATIVE_SCHEME: ${{ env.NATIVE_SCHEME }}
           VITE_CHANNEL: ${{ steps.env.outputs.master == 'true' && 'production' || 'staging' }}
 

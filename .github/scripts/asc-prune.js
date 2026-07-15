@@ -8,10 +8,13 @@
 // valid ~1 year). Distribution certificates are never touched.
 //
 // Env: ASC_KEY_PATH, ASC_KEY_ID, ASC_ISSUER_ID.
-const crypto = require('crypto');
-const fs = require('fs');
+const crypto = require('node:crypto');
+const fs = require('node:fs');
 
-const AGE_GUARD_MS = 6 * 3600 * 1000; // no run lives longer than this
+// Runs take ≤30 min; per-branch groups serialize same-branch builds. A
+// long guard backfires: on busy days every cert is "young", nothing gets
+// pruned and Apple's cap fills anyway.
+const AGE_GUARD_MS = 90 * 60 * 1000;
 const VALIDITY_MS = 365 * 24 * 3600 * 1000; // approx dev-cert lifetime
 
 function jwt() {
