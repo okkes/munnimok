@@ -47,6 +47,14 @@ jobs:
           VITE_LOGTO_RESOURCE: ${{ vars.NATIVE_LOGTO_RESOURCE }}
           VITE_CHANNEL: ${{ github.ref_name == 'dev' && 'staging' || 'production' }}
 
+      # Apple requires the iOS 26 SDK for App Store Connect uploads; the
+      # runner's default Xcode is older, so pick the newest installed one
+      - name: Select the newest Xcode
+        run: |
+          LATEST="$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+          sudo xcode-select -s "$LATEST/Contents/Developer"
+          xcodebuild -version
+
       - name: Install pods
         working-directory: apps/native/ios/App
         run: pod install
