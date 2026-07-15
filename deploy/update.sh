@@ -32,6 +32,11 @@ if [ -n "$GHCR_PAT" ]; then
   printf '%s' "$GHCR_PAT" | docker login ghcr.io -u "${GHCR_USER:-okkes}" --password-stdin
 fi
 
+# the api bind-mounts this folder; it is runtime data (gitignored), so
+# bundles never carry it — ensure it exists or the api fails to create
+# with "Bind mount failed"
+mkdir -p import-watch
+
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull
 # don't die before the status dump below — it captures WHY up failed
 UP_RC=0
