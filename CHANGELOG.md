@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.16.0](https://github.com/okkes/munnimok/compare/v1.15.0...v1.16.0) (2026-07-16)
+
+
+### ✨ Features
+
+* **admin:** desktop console redesign - grants, quota, overview (AD1-3) ([e6e1462](https://github.com/okkes/munnimok/commit/e6e14620d3e69175406ee22c6c71b4de535633c6))
+
 ## [1.15.0](https://github.com/okkes/munnimok/compare/v1.14.0...v1.15.0) (2026-07-16)
 
 
