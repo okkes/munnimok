@@ -294,6 +294,77 @@ describe('Splits (SP1)', () => {
     expect(screen.queryByTestId('split-close')).toBeNull();
   });
 
+  it('linking MY event retro-attaches my searched-in expenses locally (SP5)', async () => {
+    // local db: my event + the source tx behind an existing entry
+    const db = new MunniDB(USER_TEST_DB);
+    const repo = new Repo(db, new HlcClock('seed'), { trackOutbox: false });
+    await repo.upsert('event', 's-user', 'ev-rome', { name: 'Rome weekend' });
+    await repo.upsert('transaction', 's-user', 'tx-ah', {
+      accountId: 'a1', date: '2026-07-14', amountCents: -2350, currency: 'EUR',
+      merchant: 'Albert Heijn', txType: 'expense', needsReview: 0,
+    });
+    db.close();
+
+    const attached: unknown[] = [];
+    let eventId: string | null = null;
+    const withSource = () => ({
+      ...DETAIL,
+      attachedEventId: eventId,
+      entries: [{ ...DETAIL.entries[0], sourceTxId: 'tx-ah' }],
+    });
+    renderAppAsUser('/splits/split-1', {
+      api: {
+        'GET /health': () => ({ status: 'ok', capabilities: {} }),
+        'GET /splits/split-1': withSource,
+        'POST /splits/split-1/attach': (body) => {
+          attached.push(body);
+          eventId = (body as { eventId: string | null }).eventId;
+          return { spaceId: 's-user', eventId };
+        },
+      },
+    });
+
+    fireEvent.click(await screen.findByTestId('split-event-row'));
+    fireEvent.click(await screen.findByTestId('split-event-ev-rome'));
+
+    await waitFor(() => expect(attached).toHaveLength(1));
+    expect(attached[0]).toMatchObject({ eventId: 'ev-rome' });
+    // the local transaction joined the event (auto-attach, retroactive)
+    await waitFor(async () => {
+      const check = new MunniDB(USER_TEST_DB);
+      const tx = await check.transactions.get('tx-ah');
+      check.close();
+      expect(tx?.eventId).toBe('ev-rome');
+    });
+    // the row now names the linked event
+    await waitFor(() => expect(screen.getByTestId('split-event-row').textContent).toContain('Rome weekend'));
+  });
+
+  it('the event detail shows my split summary and links into it (SP5)', async () => {
+    const db = new MunniDB(USER_TEST_DB);
+    const repo = new Repo(db, new HlcClock('seed'), { trackOutbox: false });
+    await repo.upsert('event', 's-user', 'ev-rome', { name: 'Rome weekend' });
+    db.close();
+
+    renderAppAsUser('/events/ev-rome', {
+      api: {
+        'GET /health': () => ({ status: 'ok', capabilities: {} }),
+        'GET /splits': () => [
+          { id: 'split-1', name: 'Barcelona', currency: 'EUR', status: 'open', role: 'owner', attachedEventId: 'ev-rome', memberCount: 2, entryCount: 1 },
+        ],
+        'GET /splits/split-1': () => DETAIL,
+      },
+    });
+
+    // I paid €30 of a €15/€15 split → the event card says I'm owed €15
+    const summary = await screen.findByTestId('event-split-summary');
+    expect(summary.textContent).toContain('Barcelona');
+    expect(summary.textContent).toContain('€15.00');
+
+    fireEvent.click(summary);
+    await screen.findByTestId('screen-split-detail');
+  });
+
   it('creates a split from the list and navigates into it', async () => {
     const created: unknown[] = [];
     renderAppAsUser('/splits', {

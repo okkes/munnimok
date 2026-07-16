@@ -48,6 +48,7 @@ interface SplitDetail {
   status: string;
   role: string;
   attachedSpaceId?: string | null;
+  attachedEventId?: string | null;
   members: SplitMember[];
   entries: SplitEntryRow[];
 }
@@ -185,7 +186,7 @@ export function SplitDetailScreen() {
   const { t, lang } = useLang();
   const { splitId } = useParams({ strict: false }) as { splitId: string };
   const { identity } = useSession();
-  const { db, spaceId } = useData();
+  const { db, repo, spaceId } = useData();
   const [detail, setDetail] = useState<SplitDetail | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [description, setDescription] = useState('');
@@ -207,6 +208,9 @@ export function SplitDetailScreen() {
   const [copied, setCopied] = useState(false);
   // SP4: members settle their own debts; only the owner closes (Q3)
   const [closeOpen, setCloseOpen] = useState(false);
+  // SP5: MY event link (per-member, private) + auto-attach of searched txs
+  const [eventOpen, setEventOpen] = useState(false);
+  const [myEvents, setMyEvents] = useState<{ id: string; name: string }[] | null>(null);
 
   const reload = useCallback(async () => {
     const res = await apiFetch(`/splits/${splitId}`).catch(() => null);
@@ -288,8 +292,54 @@ export function SplitDetailScreen() {
     setTxOpen(false);
     setTxSelected(new Set());
     setTxQuery('');
+    // my event link applies to what I just added (design: auto-attach)
+    if (detail.attachedEventId) await autoAttachToEvent(detail.attachedEventId, picked.map((tx) => tx.id));
     await reload();
   };
+
+  // SP5: expenses I picked from search follow MY event link automatically —
+  // retroactively when I link, and for every later addition
+  const autoAttachToEvent = async (eventId: string, txIds: (string | null | undefined)[]) => {
+    for (const txId of txIds) {
+      if (!txId) continue;
+      const tx = await db.transactions.get(txId);
+      if (tx?.deleted === 0 && !tx.eventId) {
+        await repo.upsert('transaction', tx.spaceId, txId, { eventId });
+      }
+    }
+  };
+
+  const linkEvent = async (eventId: string | null) => {
+    setBusy(true);
+    const res = await apiFetch(`/splits/${splitId}/attach`, {
+      method: 'POST',
+      body: JSON.stringify({ eventId }),
+    }).catch(() => null);
+    setBusy(false);
+    if (!res?.ok) return;
+    setEventOpen(false);
+    // the server only ever serialized MY backlinks — exactly the set to attach
+    if (eventId) await autoAttachToEvent(eventId, (detail?.entries ?? []).map((e) => e.sourceTxId));
+    await reload();
+  };
+
+  useEffect(() => {
+    if (!eventOpen) return;
+    void (async () => {
+      const rows = await db.events.where('spaceId').equals(searchSpaceId).toArray();
+      setMyEvents(rows.filter((e) => e.deleted === 0).map((e) => ({ id: e.id, name: e.name })));
+    })();
+  }, [eventOpen, db, searchSpaceId]);
+
+  const [linkedEventName, setLinkedEventName] = useState<string | null>(null);
+  useEffect(() => {
+    const id = detail?.attachedEventId;
+    if (!id) {
+      setLinkedEventName(null);
+      return;
+    }
+    void db.events.get(id).then((event) => setLinkedEventName(event?.name ?? null));
+  }, [detail, db]);
 
   // a settlement is just an entry whose only share holder is the receiver
   // (the ledger math needs no special case — design ruling)
@@ -515,6 +565,28 @@ export function SplitDetailScreen() {
           )}
         </div>
 
+        {/* SP5: MY event link — private wiring, others never see it */}
+        {detail && (
+          <>
+            <div className="m-cap mt-5 mb-1 px-1">{t('splits.eventCap')}</div>
+            <button
+              data-testid="split-event-row"
+              onClick={() => setEventOpen(true)}
+              disabled={detail.status !== 'open' && !detail.attachedEventId}
+              className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left"
+            >
+              <Icon name="calendar-star" size={20} color="var(--m-accent-deep)" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[14px] text-ink">
+                  {linkedEventName ?? t('splits.eventNone')}
+                </span>
+                <span className="block text-[11px] text-ink-4">{t('splits.eventSub')}</span>
+              </span>
+              <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+            </button>
+          </>
+        )}
+
         {detail?.status === 'settled' && (
           <p className="mt-4 text-center text-[12px] text-ink-4" data-testid="split-closed-note">
             {t('splits.closedNote')}
@@ -537,6 +609,38 @@ export function SplitDetailScreen() {
           <Button data-testid="split-close-confirm" disabled={busy} onClick={() => void closeSplit()}>
             {t('splits.close')}
           </Button>
+        </div>
+      </Sheet>
+
+      <Sheet open={eventOpen} onOpenChange={setEventOpen} title={t('splits.eventCap')} size="form">
+        <div className="flex flex-col gap-3 pt-1">
+          <p className="text-[13px] text-ink-2">{t('splits.eventHint')}</p>
+          <div className="overflow-hidden rounded-card border border-line bg-surface">
+            {(myEvents ?? []).map((event) => (
+              <button
+                key={event.id}
+                data-testid={`split-event-${event.id}`}
+                disabled={busy}
+                onClick={() => void linkEvent(event.id)}
+                className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-4 py-3 text-left last:border-0"
+              >
+                <Icon
+                  name={detail?.attachedEventId === event.id ? 'radiobox-marked' : 'radiobox-blank'}
+                  size={20}
+                  color={detail?.attachedEventId === event.id ? 'var(--m-accent-deep)' : 'var(--m-ink-4)'}
+                />
+                <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{event.name}</span>
+              </button>
+            ))}
+            {myEvents !== null && myEvents.length === 0 && (
+              <div className="px-4 py-6 text-center text-[13px] text-ink-4">{t('splits.eventEmpty')}</div>
+            )}
+          </div>
+          {detail?.attachedEventId && (
+            <Button data-testid="split-event-clear" variant="outline" disabled={busy} onClick={() => void linkEvent(null)}>
+              {t('splits.eventClear')}
+            </Button>
+          )}
         </div>
       </Sheet>
 

@@ -15,6 +15,7 @@ import { Sheet } from '@/ui/Sheet';
 import { ProgressBar } from '@/ui/primitives';
 import { TxRow } from '@/ui/TxRow';
 import { EventFormSheet, eventPicture } from './EventsScreen';
+import { SplitEventSummary } from '@/features/splits/SplitEventSummary';
 import type { EventRow } from '@/db/types';
 
 /**
@@ -148,6 +149,9 @@ export function EventDetailScreen() {
             )}
           </div>
         </div>
+
+        {/* SP5: my split wired to this event — who owes whom, one tap away */}
+        <SplitEventSummary eventId={eventId} />
 
         {/* the fast path after a trip: review the date range, attach your picks */}
         {view.suggestions.length > 0 && (

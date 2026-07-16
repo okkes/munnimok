@@ -255,3 +255,62 @@ describe('ReviewScreen (demo identity)', () => {
     expect(await screen.findByTestId('review-card')).toBeTruthy();
   }, 15_000);
 });
+
+// eslint-disable-next-line vitest/no-identical-title -- separate identity
+describe('ReviewScreen (user identity, split settlements)', () => {
+  it('an incoming amount matching an open settlement offers the transfer chip (SP5)', async () => {
+    const { USER_TEST_DB, renderAppAsUser } = await import('@/test/harness');
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase(USER_TEST_DB);
+
+    // my local queue holds an incoming €15.00 needing review
+    const db = new MunniDB(USER_TEST_DB);
+    const repo = new Repo(db, new HlcClock('seed'), { trackOutbox: false });
+    await repo.upsert('transaction', 's-user', 'tx-in', {
+      accountId: 'a1', date: '2026-07-16', amountCents: 1500, currency: 'EUR',
+      merchant: 'A. FRIEND', txType: 'income', needsReview: 1,
+    });
+    db.close();
+
+    const ME = '11111111-1111-1111-1111-111111111111';
+    const ANNA = '22222222-2222-2222-2222-222222222222';
+    renderAppAsUser('/review', {
+      api: {
+        'GET /health': () => ({ status: 'ok', capabilities: {} }),
+        'GET /splits': () => [
+          { id: 'split-1', name: 'Barcelona', currency: 'EUR', status: 'open', role: 'owner', memberCount: 2, entryCount: 1 },
+        ],
+        'GET /splits/split-1': () => ({
+          id: 'split-1', name: 'Barcelona', currency: 'EUR', status: 'open', role: 'owner',
+          members: [
+            { userId: ME, role: 'owner', displayName: 'Me', isMe: true },
+            { userId: ANNA, role: 'member', displayName: 'Anna', isMe: false },
+          ],
+          entries: [{
+            id: 'e-settle', kind: 'settlement', paidByUserId: ANNA, description: 'Settlement',
+            amountCents: 1500, date: '2026-07-16',
+            shares: [{ userId: ME, cents: 1500 }], createdBy: ANNA,
+          }],
+        }),
+      },
+    });
+
+    const chip = await screen.findByTestId('review-settle-match');
+    expect(chip.textContent).toContain('Anna');
+    expect(chip.textContent).toContain('Barcelona');
+
+    fireEvent.click(chip);
+    // the staged draft flips to transfer; confirming persists it
+    await waitFor(() =>
+      expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false),
+    );
+    fireEvent.click(screen.getByTestId('review-confirm-btn'));
+    await waitFor(async () => {
+      const check = new MunniDB(USER_TEST_DB);
+      const tx = await check.transactions.get('tx-in');
+      check.close();
+      expect(tx).toMatchObject({ txType: 'transfer', needsReview: 0 });
+    });
+  }, 15_000);
+});

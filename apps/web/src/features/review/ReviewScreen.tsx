@@ -7,6 +7,9 @@ import { useRecurringOps, useRecurrings } from '@/application/recurring';
 import { directionOfTx } from '@/domain/categoryRules';
 import { merchantKey } from '@/domain/merchantKey';
 import { draftReady, initDraft, withCategory, withLinkedAccount, withSplits, withType } from '@/domain/reviewDraft';
+import { fetchSettlementCandidates } from '@/features/splits/settlementCandidates';
+import type { SettlementCandidate } from '@/features/splits/settlementCandidates';
+import { useSession } from '@/app/session';
 import type { ReviewDraft } from '@/domain/reviewDraft';
 import { resolveSplitsFor, splitsArePct } from '@/domain/splits';
 import { predictTx } from '@/domain/predictCategory';
@@ -254,6 +257,19 @@ export function ReviewScreen() {
     [tx, recurrings],
   );
 
+  // SP5: an incoming amount that exactly matches an open split settlement
+  // to me is very likely that person paying me back — suggest transfer
+  const identity = useSession((s) => s.identity);
+  const [settlements, setSettlements] = useState<SettlementCandidate[]>([]);
+  useEffect(() => {
+    if (identity?.kind !== 'user') return;
+    void fetchSettlementCandidates().then(setSettlements);
+  }, [identity]);
+  const settleMatch = useMemo(
+    () => (tx && tx.amountCents > 0 ? settlements.find((c) => c.cents === tx.amountCents) : undefined),
+    [tx, settlements],
+  );
+
   // bulk rule: plain confirm reaches every same-merchant item; absolute
   // splits only fit exact twins (same amount), percentage splits scale
   // to any amount so the whole merchant group stays eligible
@@ -446,6 +462,27 @@ export function ReviewScreen() {
                     </div>
                   )}
                 </>
+              )}
+
+              {/* SP5: incoming money matching an open split settlement to me */}
+              {settleMatch && draft && (
+                <Chip
+                  className="mt-3"
+                  testId="review-settle-match"
+                  selected={draft.txType === 'transfer'}
+                  onClick={() => {
+                    // transfers carry no spending category; the hidden
+                    // 'uncategorized' builtin keeps the confirm armed
+                    const next = withType(draft, 'transfer', cats);
+                    setStagedDraft(next.catId ? next : withCategory(next, 'uncategorized', cats));
+                  }}
+                >
+                  <Icon name="handshake-outline" size={13} />
+                  {t('review.settleMatch', {
+                    name: settleMatch.fromName ?? t('review.settleSomeone'),
+                    split: settleMatch.splitName,
+                  })}
+                </Chip>
               )}
 
               {/* quiet secondary actions */}
