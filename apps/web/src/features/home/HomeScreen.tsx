@@ -16,6 +16,7 @@ import { HelpButton } from '@/features/help/HelpButton';
 import { IntroCard } from '@/features/help/IntroCard';
 import { InstallHint } from '@/features/help/InstallHint';
 import { WhatsNewCard } from '@/features/help/WhatsNew';
+import { UpdateCard } from './UpdateCard';
 import { NotificationsBell } from './NotificationsBell';
 import { eventPicture } from '@/features/events/EventsScreen';
 import { HomeCustomizeSheet, resolveHomeBlocks } from './HomeCustomizeSheet';
@@ -234,6 +235,7 @@ export function HomeScreen() {
           {/* first nudge loses its own top margin at lg so both column
               tops sit level with the balance card */}
           <div className="min-w-0 lg:col-start-2 lg:row-start-1 lg:[&>*:first-child]:mt-0">
+            <UpdateCard />
             <WhatsNewCard />
             <InstallHint />
             <IntroCard tourId="home" />

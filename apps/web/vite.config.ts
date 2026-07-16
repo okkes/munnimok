@@ -67,6 +67,22 @@ export default defineConfig(({ mode }) => {
           { tag: 'link', attrs: { rel: 'apple-touch-icon', sizes: '192x192', href: icon(192) }, injectTo: 'head' as const },
         ],
       },
+      {
+        // the native shells poll this to learn a newer release shipped:
+        // web deploys and store binaries are stamped with the same git
+        // commit count, so build > shell build ⇒ an update exists
+        name: 'munni:version-json',
+        generateBundle() {
+          this.emitFile({
+            type: 'asset',
+            fileName: 'version.json',
+            source: JSON.stringify({
+              build: buildNumber,
+              version: (JSON.parse(readFileSync(path.resolve(__dirname, 'package.json'), 'utf8')) as { version: string }).version,
+            }),
+          });
+        },
+      },
     ],
     resolve: {
       alias: {

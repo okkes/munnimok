@@ -33,6 +33,12 @@
 	</array>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>NSCameraUsageDescription</key>
+	<string>munni uses the camera to photograph receipts you attach to transactions.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>munni can attach an existing photo from your library to a transaction.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>munni can save receipt photos you take to your library.</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

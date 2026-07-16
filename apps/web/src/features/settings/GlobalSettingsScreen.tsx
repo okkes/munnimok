@@ -36,8 +36,8 @@ const LANGS: { code: Lang; labelKey: 'lang.en' | 'lang.nl' | 'lang.tr'; badge: s
  * space-scoped and app-wide rows in one list was confusing).
  */
 export function GlobalSettingsScreen() {
-  const { t, lang, setLang } = useLang();
-  const { theme, toggle } = useTheme();
+  const { t, lang, setLang, langOverridden, followDeviceLang } = useLang();
+  const { theme, mode: themeMode, setMode: setThemeMode, toggle } = useTheme();
   const { db } = useData();
   const tipsOff = useTipsDisabled();
   const [langSheetOpen, setLangSheetOpen] = useState(false);
@@ -202,6 +202,23 @@ export function GlobalSettingsScreen() {
             testId="settings-theme-toggle"
             icon={theme === 'dark' ? 'weather-night' : 'weather-sunny'}
             title={t('settings.appearance')}
+            sub={themeMode === 'system' ? t('settings.followDevice') : undefined}
+            trailing={
+              // tap the row to pin light/dark; the chip returns to device-tracking
+              <button
+                data-testid="settings-theme-auto"
+                aria-label={t('settings.followDevice')}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setThemeMode('system');
+                }}
+                className={`m-tap rounded-md border-none px-1.5 py-0.5 font-mono text-[11px] font-semibold ${
+                  themeMode === 'system' ? 'bg-accent-soft text-accent-deep' : 'bg-bg-2 text-ink-3'
+                }`}
+              >
+                AUTO
+              </button>
+            }
             onClick={toggle}
           />
           <Row
@@ -299,6 +316,19 @@ export function GlobalSettingsScreen() {
 
       <Sheet open={langSheetOpen} onOpenChange={setLangSheetOpen} title={t('lang.title')}>
         <div className="flex flex-col pt-1">
+          {/* native-benefits §3: no pinned language = track the device */}
+          <button
+            data-testid="lang-option-device"
+            onClick={() => {
+              followDeviceLang();
+              setLangSheetOpen(false);
+            }}
+            className="m-tap flex items-center gap-3 border-b border-line-2 border-none bg-transparent px-1 py-3.5 text-left text-[15px] text-ink"
+          >
+            <Icon name="cellphone-cog" size={18} color="var(--m-ink-3)" />
+            <span className="flex-1">{t('settings.followDevice')}</span>
+            {!langOverridden && <Icon name="check" size={18} color="var(--m-accent)" />}
+          </button>
           {LANGS.map((entry) => (
             <button
               key={entry.code}
@@ -313,7 +343,7 @@ export function GlobalSettingsScreen() {
                 {entry.badge}
               </span>
               <span className="flex-1">{t(entry.labelKey)}</span>
-              {lang === entry.code && <Icon name="check" size={18} color="var(--m-accent)" />}
+              {langOverridden && lang === entry.code && <Icon name="check" size={18} color="var(--m-accent)" />}
             </button>
           ))}
         </div>

@@ -24,19 +24,26 @@ export type TFunc = (key: TranslationKey, vars?: Record<string, string | number>
 interface LangContextValue {
   lang: Lang;
   setLang: (lang: Lang) => void;
+  /** true when the user pinned a language; false = following the device */
+  langOverridden: boolean;
+  /** drop the pinned language and track the device again (native-benefits §3) */
+  followDeviceLang: () => void;
   t: TFunc;
 }
 
 const LangContext = createContext<LangContextValue | null>(null);
+
+function deviceLang(): Lang {
+  const device = (navigator.language || '').slice(0, 2).toLowerCase();
+  return device === 'nl' || device === 'tr' ? device : 'en';
+}
 
 function readStoredLang(): Lang {
   const stored = localStorage.getItem(LS_KEY);
   if (stored === 'en' || stored === 'nl' || stored === 'tr') return stored;
   // first launch: follow the device language when it maps to one we speak
   // (native-benefits §3). A deliberate pick in Settings wins forever.
-  const device = (navigator.language || '').slice(0, 2).toLowerCase();
-  if (device === 'nl' || device === 'tr') return device;
-  return 'en';
+  return deviceLang();
 }
 
 function interpolate(template: string, vars?: Record<string, string | number>): string {
@@ -46,10 +53,18 @@ function interpolate(template: string, vars?: Record<string, string | number>): 
 
 export function LangProvider({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Lang>(readStoredLang);
+  const [langOverridden, setLangOverridden] = useState<boolean>(() => localStorage.getItem(LS_KEY) !== null);
 
   const setLang = useCallback((next: Lang) => {
     localStorage.setItem(LS_KEY, next);
+    setLangOverridden(true);
     setLangState(next);
+  }, []);
+
+  const followDeviceLang = useCallback(() => {
+    localStorage.removeItem(LS_KEY);
+    setLangOverridden(false);
+    setLangState(deviceLang());
   }, []);
 
   useEffect(() => {
@@ -63,7 +78,10 @@ export function LangProvider({ children }: { children: ReactNode }) {
     [lang],
   );
 
-  const value = useMemo(() => ({ lang, setLang, t }), [lang, setLang, t]);
+  const value = useMemo(
+    () => ({ lang, setLang, langOverridden, followDeviceLang, t }),
+    [lang, setLang, langOverridden, followDeviceLang, t],
+  );
   return <LangContext.Provider value={value}>{children}</LangContext.Provider>;
 }
 

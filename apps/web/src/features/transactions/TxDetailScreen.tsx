@@ -182,11 +182,9 @@ export function TxDetailScreen() {
             </div>
           )}
           <div className="mx-4 h-px bg-line-2" />
-          <button
-            data-testid="tx-detail-type-row"
-            onClick={() => setTypeOpen(true)}
-            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
-          >
+          {/* the type was a small right-side label on this row and read as
+              part of the account — invisible (user report). It owns a row now. */}
+          <div className="flex items-center gap-3 px-4 py-3.5 text-[15px] text-ink" data-testid="tx-detail-account-row">
             <Icon name="bank-outline" size={20} color="var(--m-ink-3)" />
             <span className="min-w-0 flex-1">
               <span className="block truncate">{account?.name ?? '—'}</span>
@@ -196,6 +194,16 @@ export function TxDetailScreen() {
                 </span>
               )}
             </span>
+            <span className="text-xs text-ink-4">{t('txform.account')}</span>
+          </div>
+          <div className="mx-4 h-px bg-line-2" />
+          <button
+            data-testid="tx-detail-type-row"
+            onClick={() => setTypeOpen(true)}
+            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+          >
+            <Icon name="swap-vertical" size={20} color="var(--m-ink-3)" />
+            <span className="min-w-0 flex-1 truncate">{t('tx.type')}</span>
             <span className="text-xs text-ink-4">{t(`tx.type.${tx.txType}`)}</span>
             <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
           </button>

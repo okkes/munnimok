@@ -4,6 +4,7 @@ import { useLang } from '@/i18n';
 import { useReceiptOps, useTxReceipt } from '@/application/receipts';
 import type { SpaceTx } from '@/db/joined';
 import { fmtCents } from '@/lib/money';
+import { isNativeApp, takeNativePhoto } from '@/lib/platform';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { ReceiptViewSheet } from './ReceiptViewSheet';
@@ -48,7 +49,17 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
             className="hidden"
             onChange={(e) => void onFile(e.target.files?.[0])}
           />
-          <Button size="sm" data-testid="receipt-take-photo" disabled={busy} onClick={() => fileRef.current?.click()}>
+          <Button
+            size="sm"
+            data-testid="receipt-take-photo"
+            disabled={busy}
+            onClick={() => {
+              // shells use the Camera plugin: the webview <input capture>
+              // path crashed on iOS and offered gallery-only on Android
+              if (isNativeApp()) void takeNativePhoto().then((file) => onFile(file ?? undefined));
+              else fileRef.current?.click();
+            }}
+          >
             <Icon name="camera-outline" size={16} />
             {t('receipt.takePhoto')}
           </Button>

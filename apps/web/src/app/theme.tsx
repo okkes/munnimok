@@ -3,24 +3,40 @@ import type { ReactNode } from 'react';
 import { syncNativeStatusBar } from '@/lib/platform';
 
 export type Theme = 'light' | 'dark';
+/** 'system' follows the device live (native-benefits §3) */
+export type ThemeMode = Theme | 'system';
 const LS_KEY = 'munni_theme';
 
 interface ThemeContextValue {
   theme: Theme;
-  setTheme: (theme: Theme) => void;
+  mode: ThemeMode;
+  setMode: (mode: ThemeMode) => void;
   toggle: () => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
-function readStoredTheme(): Theme {
+const deviceTheme = (): Theme => (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+
+function readStoredMode(): ThemeMode {
   const stored = localStorage.getItem(LS_KEY);
   if (stored === 'light' || stored === 'dark') return stored;
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  return 'system'; // first launch and "follow device" both live here
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>(readStoredTheme); // NOSONAR(S6754) public setTheme wraps this setter to persist the choice
+  const [mode, setModeState] = useState<ThemeMode>(readStoredMode); // NOSONAR(S6754) public setMode wraps this setter to persist the choice
+  const [device, setDevice] = useState<Theme>(deviceTheme);
+  const theme: Theme = mode === 'system' ? device : mode;
+
+  // system mode tracks the OS live (the user may toggle dark mode mid-session)
+  useEffect(() => {
+    if (mode !== 'system') return;
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const onChange = () => setDevice(deviceTheme());
+    mq.addEventListener?.('change', onChange);
+    return () => mq.removeEventListener?.('change', onChange);
+  }, [mode]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -34,20 +50,24 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     syncNativeStatusBar(theme); // native shells: icon color must follow the theme
   }, [theme]);
 
-  const setTheme = useCallback((next: Theme) => {
-    localStorage.setItem(LS_KEY, next);
-    setThemeState(next);
+  const setMode = useCallback((next: ThemeMode) => {
+    if (next === 'system') localStorage.removeItem(LS_KEY);
+    else localStorage.setItem(LS_KEY, next);
+    setModeState(next);
   }, []);
 
+  // the quick toggle keeps its two-state simplicity: it always pins an
+  // explicit theme (leaving "system" is a deliberate act, like entering it)
   const toggle = useCallback(() => {
-    setThemeState((prev) => {
-      const next = prev === 'dark' ? 'light' : 'dark';
+    setModeState((prev) => {
+      const current = prev === 'system' ? deviceTheme() : prev;
+      const next = current === 'dark' ? 'light' : 'dark';
       localStorage.setItem(LS_KEY, next);
       return next;
     });
   }, []);
 
-  const value = useMemo(() => ({ theme, setTheme, toggle }), [theme, setTheme, toggle]);
+  const value = useMemo(() => ({ theme, mode, setMode, toggle }), [theme, mode, setMode, toggle]);
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 

@@ -1,9 +1,22 @@
-# Split sessions — settle-up v2 design (PLAN, awaiting approval)
+# Split sessions — settle-up v2 design (APPROVED 2026-07-16)
 
-Status: proposal 2026-07-16, supersedes-if-approved
-`settleup-design.md` (kept untouched for comparison). Based on the
-user's counter-proposal: **splits are their own scoped object inside a
-space, with their own membership — not a shared space.**
+Approved with answers: guests CAN add manual entries (Q1: yes),
+currency fixed at creation (Q2), members settle / owner closes (Q3).
+Supersedes `settleup-design.md` (kept for comparison).
+
+**Clarified attachment model (user, 2026-07-16):** a split is NOT owned
+by one space. **Each member attaches the split to one of their own
+spaces when joining** ("to which space should this split attach?").
+Consequences, folded into the model below:
+- `splits` loses `spaceId`/`eventId`; per-member attachment lives in
+  `splitAttachments { splitId, userId, spaceId, eventId? }` (synced in
+  the member's own space scope — it's personal wiring, not split data).
+- Transaction search shows ONLY the searcher's attached space's
+  transactions — never another member's.
+- Event link is per member too (an event in THEIR attached space). When
+  a member links their event, transactions THEY added from search are
+  auto-attached to that event if not already linked — including
+  retroactively at link time and for later additions.
 
 ## Why the space-bound model was wrong (agreeing with you)
 

@@ -11,14 +11,25 @@ interface CapacitorPluginListener {
 
 interface CapacitorGlobal {
   isNativePlatform?: () => boolean;
+  getPlatform?: () => string;
   Plugins?: {
-    App?: CapacitorPluginListener & object;
+    App?: CapacitorPluginListener & {
+      getInfo?: () => Promise<{ build?: string; version?: string }>;
+    };
     PushNotifications?: CapacitorPluginListener & {
       requestPermissions?: () => Promise<{ receive: string }>;
       register?: () => Promise<void>;
     };
     StatusBar?: {
       setStyle?: (options: { style: 'LIGHT' | 'DARK' }) => Promise<void>;
+    };
+    Camera?: {
+      getPhoto?: (options: {
+        resultType: string;
+        source: string;
+        quality: number;
+        correctOrientation?: boolean;
+      }) => Promise<{ base64String?: string; format?: string }>;
     };
   };
 }
@@ -78,6 +89,48 @@ export function initDeepLinks(): void {
 export function syncNativeStatusBar(theme: 'light' | 'dark'): void {
   if (!isNativeApp()) return;
   void capacitor()?.Plugins?.StatusBar?.setStyle?.({ style: theme === 'dark' ? 'DARK' : 'LIGHT' })?.catch(() => undefined);
+}
+
+/** 'android' | 'ios' inside the shells, undefined on the web */
+export const nativePlatform = (): string | undefined =>
+  isNativeApp() ? capacitor()?.getPlatform?.() : undefined;
+
+/** the shell binary's build number (git commit count), null on the web */
+export async function getNativeAppBuild(): Promise<number | null> {
+  const app = capacitor()?.Plugins?.App;
+  if (!isNativeApp() || !app?.getInfo) return null;
+  try {
+    const info = await app.getInfo();
+    const build = Number.parseInt(info.build ?? '', 10);
+    return Number.isFinite(build) ? build : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Native camera capture: the webview's <input capture> path crashes on
+ * iOS and offers gallery-only on Android (user report), so the shells
+ * use the Camera plugin instead. Returns a File ready for the existing
+ * attach pipeline, or null when cancelled/unavailable.
+ */
+export async function takeNativePhoto(): Promise<File | null> {
+  const camera = capacitor()?.Plugins?.Camera;
+  if (!isNativeApp() || !camera?.getPhoto) return null;
+  try {
+    const photo = await camera.getPhoto({
+      resultType: 'base64',
+      source: 'CAMERA',
+      quality: 80,
+      correctOrientation: true,
+    });
+    if (!photo.base64String) return null;
+    const bytes = Uint8Array.from(atob(photo.base64String), (c) => c.codePointAt(0) ?? 0);
+    const format = photo.format ?? 'jpeg';
+    return new File([bytes], `receipt.${format}`, { type: `image/${format}` });
+  } catch {
+    return null; // user cancelled or permission denied — the button stays usable
+  }
 }
 
 /**
