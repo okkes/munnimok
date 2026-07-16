@@ -17,7 +17,11 @@ permissions:
 
 jobs:
   mint:
-    runs-on: ubuntu-latest
+    # macOS: its LibreSSL writes p12s Apple's security tool actually
+    # reads, and the same run PROVES the import works before the file
+    # ever becomes a secret (the ubuntu/OpenSSL-3 attempt shipped a p12
+    # that `security import` rejected)
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v6
 
@@ -60,17 +64,19 @@ jobs:
 
       - name: Bundle the encrypted p12 (base64, secret-ready)
         run: |
-          # legacy PBE algorithms: OpenSSL 3's default PBES2/PBKDF2 p12 is
-          # unreadable for Apple's `security import` ("passphrase not correct")
           openssl pkcs12 -export \
             -inkey "$RUNNER_TEMP/dev.key" \
             -in "$RUNNER_TEMP/dev.pem" \
             -name "munni CI Development" \
-            -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1 \
             -passout env:P12_PASSWORD \
             -out "$RUNNER_TEMP/dev.p12"
+          # prove the exact bytes + password open in a keychain BEFORE
+          # they become the secret — no more mint-then-discover cycles
+          security create-keychain -p ci "$RUNNER_TEMP/verify.keychain-db"
+          security import "$RUNNER_TEMP/dev.p12" -k "$RUNNER_TEMP/verify.keychain-db" -P "$P12_PASSWORD" -A -f pkcs12
+          security find-identity -v "$RUNNER_TEMP/verify.keychain-db" || true
           mkdir -p out
-          base64 -w0 "$RUNNER_TEMP/dev.p12" > out/APPLE_DEV_CERT_P12.b64
+          base64 -i "$RUNNER_TEMP/dev.p12" | tr -d '\n' > out/APPLE_DEV_CERT_P12.b64
         env:
           P12_PASSWORD: ${{ secrets.APPLE_DEV_CERT_PASSWORD }}
 
