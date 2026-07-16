@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.19.0](https://github.com/okkes/munnimok/compare/v1.18.0...v1.19.0) (2026-07-16)
+
+
+### ✨ Features
+
+* **native:** real Firebase iOS config for app.munni.dev (staging push) ([0e44b2d](https://github.com/okkes/munnimok/commit/0e44b2d1b146af03da78aa1a2fdfc00e04f64b88))
+* **splits:** SP3 — share-link invites, join screen, guest hardening + tour ([66fa5fe](https://github.com/okkes/munnimok/commit/66fa5fe6ad92a8e95a7ef255bbe301525ebdaae7))
+
 ## [1.18.0](https://github.com/okkes/munnimok/compare/v1.17.0...v1.18.0) (2026-07-16)
 
 
