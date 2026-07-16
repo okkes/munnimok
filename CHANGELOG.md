@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.15.0](https://github.com/okkes/munnimok/compare/v1.14.0...v1.15.0) (2026-07-16)
+
+
+### ✨ Features
+
+* **native:** update card, follow-device pickers, camera receipts, tx type row ([e7598aa](https://github.com/okkes/munnimok/commit/e7598aa8fb437fb50ff3885a858061fe61bf023c))
+
 ## [1.14.0](https://github.com/okkes/munnimok/compare/v1.13.0...v1.14.0) (2026-07-16)
 
 
