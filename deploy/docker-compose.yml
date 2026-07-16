@@ -95,7 +95,7 @@ services:
       retries: 10
 
   logto:
-    image: svhd/logto:1.24
+    image: svhd/logto:1.41
     restart: unless-stopped
     entrypoint: ["sh", "-c", "npm run cli db seed -- --swe && npm start"]
     environment:
