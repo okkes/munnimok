@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.24.0](https://github.com/okkes/munnimok/compare/v1.23.0...v1.24.0) (2026-07-16)
+
+
+### ✨ Features
+
+* **native:** §5 niceties — haptics, share-sheet exports, launcher shortcuts, push-tap routing ([f227fed](https://github.com/okkes/munnimok/commit/f227fedaf89efc753091849a3957f3c81dfbcb96))
+
+
+### 🐞 Bug Fixes
+
+* **ci:** BSD base64 reads stdin only ([4d58dde](https://github.com/okkes/munnimok/commit/4d58dde8f368499d706cb5a35cfa1f1029f2b05e))
+* **ci:** clear existing Development certs before minting the persistent one ([0f2dff5](https://github.com/okkes/munnimok/commit/0f2dff5870685b2eb1601d333236633c8852adb8))
+* **ci:** legacy PBE for the minted p12 — Apple's security tool can't read OpenSSL 3 defaults ([639909f](https://github.com/okkes/munnimok/commit/639909f1f5a188a5ec4a950302c8cac864f5622f))
+* **ci:** mint the p12 on macOS and import-verify it in the same run ([b6a0a43](https://github.com/okkes/munnimok/commit/b6a0a43e8fff86c0dd00c122b13dcb53b4d67b33))
+
 ## [1.23.0](https://github.com/okkes/munnimok/compare/v1.22.0...v1.23.0) (2026-07-16)
 
 
