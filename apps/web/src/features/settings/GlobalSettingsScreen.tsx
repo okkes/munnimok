@@ -213,7 +213,7 @@ export function GlobalSettingsScreen() {
               // may split the DOM) — role+tabIndex keep it keyboardable.
               <span
                 data-testid="settings-theme-auto"
-                role="button" // NOSONAR(S6772,S6819) a real <button> here would nest inside the Row's button — invalid HTML; role+tabIndex+keys make the span equivalent
+                role="button" // NOSONAR — a real <button> here would nest inside the Row's button (invalid HTML); role+tabIndex+keys make the span equivalent
                 tabIndex={0}
                 aria-label={t('settings.followDevice')}
                 onClick={(e) => {
