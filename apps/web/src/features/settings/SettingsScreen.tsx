@@ -5,6 +5,7 @@ import { LOCALES, useLang } from '@/i18n';
 import { destroyIdentityData, useData } from '@/app/data';
 import { OFFLINE_REASON_KEYS, useOfflineReason } from '@/app/OfflineBanner';
 import { oidcSignOut } from '@/app/authToken';
+import { isNativeApp } from '@/lib/platform';
 import { useSession } from '@/app/session';
 import { AppBar } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
@@ -101,7 +102,13 @@ export function SettingsScreen() {
     // offline profiles keep their data too (this device IS the truth) —
     // only the demo resets to its pristine dataset on sign-out
     if (current?.kind === 'user') {
-      if (!current.testAuth && (await oidcSignOut(window.location.origin))) return; // full OIDC logout redirects
+      // native: the end-session round-trip happens in the system browser,
+      // so the post-logout landing must be the app's own deep-link scheme
+      // (register munni://signed-out + munni-dev://signed-out as post
+      // sign-out redirect URIs in the Logto native apps); the webview
+      // origin would dead-end in Safari/Chrome
+      const postLogout = isNativeApp() ? `${config.nativeScheme}://signed-out` : window.location.origin;
+      if (!current.testAuth && (await oidcSignOut(postLogout))) return; // full OIDC logout redirects
       await navigate({ to: '/login' });
       return;
     }

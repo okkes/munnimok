@@ -28,3 +28,15 @@ export function cleanBankText(text: string | undefined): string {
     .replace(/\s+/g, ' ')
     .trim();
 }
+
+/**
+ * Bank feeds carry structured keys like "invoice_number: 123" — humanize
+ * the snake_case labels ("Invoice number: 123") without touching the
+ * values or free-form text around them.
+ */
+export function humanizeBankKeys(text: string): string {
+  return text.replace(/(^|·\s*)([a-z][a-z0-9]*(?:_[a-z0-9]+)+):/g, (_m, prefix: string, key: string) => {
+    const label = key.replaceAll('_', ' ');
+    return `${prefix}${label.charAt(0).toUpperCase()}${label.slice(1)}:`;
+  });
+}

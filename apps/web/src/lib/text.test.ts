@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cleanBankText, fmtTimeAgo } from './text';
+import { cleanBankText, fmtTimeAgo, humanizeBankKeys } from './text';
 
 describe('fmtTimeAgo', () => {
   const now = Date.parse('2026-07-15T12:00:00Z');
@@ -35,5 +35,16 @@ describe('cleanBankText', () => {
   it('handles empty and missing input', () => {
     expect(cleanBankText('')).toBe('');
     expect(cleanBankText(undefined)).toBe('');
+  });
+});
+
+describe('humanizeBankKeys', () => {
+  it('humanizes snake_case keys, leaves values and free text alone', () => {
+    expect(humanizeBankKeys('invoice_number: 475257069427523919')).toBe('Invoice number: 475257069427523919');
+    expect(humanizeBankKeys('a · mandate_reference: X1 · creditor_id: NL99ZZZ')).toBe(
+      'a · Mandate reference: X1 · Creditor id: NL99ZZZ',
+    );
+    // plain words with a colon are not keys (no underscore) — untouched
+    expect(humanizeBankKeys('PAY PAY >3512 MCC:6012 Apple Pay betaling')).toBe('PAY PAY >3512 MCC:6012 Apple Pay betaling');
   });
 });

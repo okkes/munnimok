@@ -1190,6 +1190,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'alloc.coverHint': 'Haal geld uit een envelop met ruimte om het tekort te dekken.',
   'alloc.coverNone': 'Geen enkele envelop heeft geld over.',
   'review.bulkViewAll': 'Bekijk alles',
+  'tx.bankDetails': 'Bankgegevens',
   'tx.splitMixed': 'Meerdere categorieën',
   'tx.unreviewed': 'Niet beoordeeld',
   'tx.counterAccount': 'Naar / van rekening',

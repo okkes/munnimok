@@ -1190,6 +1190,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'alloc.coverHint': 'Aşımı kapatmak için alanı olan bir zarftan para al.',
   'alloc.coverNone': 'Hiçbir zarfta boş para yok.',
   'review.bulkViewAll': 'Tümünü gör',
+  'tx.bankDetails': 'Banka bilgileri',
   'tx.splitMixed': 'Birden fazla kategori',
   'tx.unreviewed': 'İncelenmedi',
   'tx.counterAccount': 'Gittiği / geldiği hesap',

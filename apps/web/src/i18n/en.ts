@@ -1188,6 +1188,7 @@ export const en = {
   'alloc.coverHint': 'Take money from an envelope with room to cover the overspend.',
   'alloc.coverNone': 'No envelope has money to spare.',
   'review.bulkViewAll': 'View all',
+  'tx.bankDetails': 'Bank details',
   'tx.splitMixed': 'Multiple categories',
   'tx.unreviewed': 'Unreviewed',
   'tx.counterAccount': 'Moved to / from',

@@ -9,7 +9,7 @@ import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { fmtCents } from '@/lib/money';
-import { cleanBankText } from '@/lib/text';
+import { cleanBankText, humanizeBankKeys } from '@/lib/text';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
 import { Pill } from '@/ui/primitives';
@@ -264,7 +264,15 @@ export function TxDetailScreen() {
           {tx.description && (
             <>
               <div className="mx-4 h-px bg-line-2" />
-              <div className="px-4 py-3.5 font-mono text-xs text-ink-3">{cleanBankText(tx.description)}</div>
+              {/* framed + labeled so raw bank data reads as reference
+                  material, not as another tappable row (user request) */}
+              <div className="mx-4 my-3 rounded-xl bg-bg-2 px-3 py-2.5" data-testid="tx-detail-bankdata">
+                <div className="mb-1 flex items-center gap-1.5 text-[10px] font-medium tracking-wide text-ink-4 uppercase">
+                  <Icon name="bank-outline" size={12} />
+                  {t('tx.bankDetails')}
+                </div>
+                <div className="font-mono text-xs break-words text-ink-3">{humanizeBankKeys(cleanBankText(tx.description))}</div>
+              </div>
             </>
           )}
         </div>
