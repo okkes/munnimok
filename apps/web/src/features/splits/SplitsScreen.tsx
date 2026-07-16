@@ -200,6 +200,11 @@ export function SplitDetailScreen() {
   const [txSelected, setTxSelected] = useState<ReadonlySet<string>>(new Set());
   const [sharesOpen, setSharesOpen] = useState(false);
   const [shareInputs, setShareInputs] = useState<Record<string, string>>({});
+  // SP3: share-link invites — anyone with the link joins, no friendship
+  // needed, and joining grants ZERO space access (server-enforced)
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const reload = useCallback(async () => {
     const res = await apiFetch(`/splits/${splitId}`).catch(() => null);
@@ -282,6 +287,27 @@ export function SplitDetailScreen() {
     setTxSelected(new Set());
     setTxQuery('');
     await reload();
+  };
+
+  const openInvite = async () => {
+    setInviteOpen(true);
+    setCopied(false);
+    if (inviteLink) return; // one active link per split — reuse this session's
+    const res = await apiFetch(`/splits/${splitId}/invites`, { method: 'POST' }).catch(() => null);
+    if (!res?.ok) return;
+    const { token } = (await res.json()) as { token: string };
+    const base = `${window.location.origin}${window.location.pathname}`;
+    setInviteLink(`${base}#/splits/join/${token}`);
+  };
+
+  const shareInvite = async () => {
+    if (!inviteLink || !detail) return;
+    if (navigator.share) {
+      await navigator.share({ title: detail.name, url: inviteLink }).catch(() => undefined);
+      return;
+    }
+    await navigator.clipboard?.writeText(inviteLink).catch(() => undefined);
+    setCopied(true);
   };
 
   // custom shares: blank input = 0; the sum must match the amount exactly
@@ -423,6 +449,16 @@ export function SplitDetailScreen() {
               {member.role === 'owner' && <span className="text-[11px] text-ink-4">{t('space.permOwner')}</span>}
             </div>
           ))}
+          {detail?.status === 'open' && (
+            <button
+              data-testid="split-invite"
+              onClick={() => void openInvite()}
+              className="m-tap flex w-full items-center gap-3 border-t border-line-2 bg-transparent px-4 py-2.5 text-left"
+            >
+              <Icon name="account-plus-outline" size={18} color="var(--m-accent-deep)" />
+              <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-accent-deep">{t('splits.inviteRow')}</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -574,6 +610,22 @@ export function SplitDetailScreen() {
             {txSelected.size === 1
               ? t('splits.addSelectedOne')
               : t('splits.addSelected', { n: txSelected.size })}
+          </Button>
+        </div>
+      </Sheet>
+
+      <Sheet open={inviteOpen} onOpenChange={setInviteOpen} title={t('splits.inviteRow')} size="compact">
+        <div className="flex flex-col gap-3 pt-1">
+          <p className="text-[13px] text-ink-2">{t('splits.inviteHint')}</p>
+          <div
+            data-testid="split-invite-link"
+            className="w-full overflow-x-auto rounded-input border border-line bg-surface px-4 py-3 font-mono text-[12px] whitespace-nowrap text-ink-2"
+          >
+            {inviteLink ?? '…'}
+          </div>
+          <p className="text-[12px] text-ink-4">{t('splits.linkExpires')}</p>
+          <Button data-testid="split-invite-share" disabled={!inviteLink} onClick={() => void shareInvite()}>
+            {copied ? t('splits.copied') : t('splits.copyLink')}
           </Button>
         </div>
       </Sheet>
