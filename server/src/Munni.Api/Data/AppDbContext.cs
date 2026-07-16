@@ -24,6 +24,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
     public DbSet<AdminGrant> AdminGrants => Set<AdminGrant>();
     public DbSet<ProviderQuota> ProviderQuotas => Set<ProviderQuota>();
+    public DbSet<Split> Splits => Set<Split>();
+    public DbSet<SplitMember> SplitMembers => Set<SplitMember>();
+    public DbSet<SplitEntry> SplitEntries => Set<SplitEntry>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -90,7 +93,68 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasKey(x => x.Id);
             e.HasIndex(x => new { x.Provider, x.Scope }).IsUnique();
         });
+        modelBuilder.Entity<Split>(e => e.HasKey(x => x.Id));
+        modelBuilder.Entity<SplitMember>(e =>
+        {
+            e.HasKey(x => new { x.SplitId, x.UserId });
+            e.HasIndex(x => x.UserId);
+        });
+        modelBuilder.Entity<SplitEntry>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.SplitId);
+        });
     }
+}
+
+/// <summary>
+/// A split session (settleup-splits design): Splitwise-style group
+/// ledger with membership INDEPENDENT of spaces. Server-resident and
+/// online-only by design — guests must never touch space scopes.
+/// </summary>
+public class Split
+{
+    /// <summary>client-generated id (uuidv7)</summary>
+    public required string Id { get; set; }
+    public required string Name { get; set; }
+    /// <summary>fixed at creation (user decision Q2)</summary>
+    public required string Currency { get; set; }
+    public string Status { get; set; } = "open"; // open | settled
+    public Guid CreatedBy { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public class SplitMember
+{
+    public required string SplitId { get; set; }
+    public Guid UserId { get; set; }
+    public required string Role { get; set; } // owner | member
+    /// <summary>the member's OWN space this split is wired to (per-member
+    /// attachment, user clarification) — personal, only ever shown to them</summary>
+    public string? AttachedSpaceId { get; set; }
+    public DateTimeOffset JoinedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public class SplitEntry
+{
+    /// <summary>client-generated id (uuidv7)</summary>
+    public required string Id { get; set; }
+    public required string SplitId { get; set; }
+    public string Kind { get; set; } = "expense"; // expense | settlement
+    public Guid PaidByUserId { get; set; }
+    public required string Description { get; set; }
+    /// <summary>positive cents in the split's currency</summary>
+    public long AmountCents { get; set; }
+    /// <summary>yyyy-mm-dd</summary>
+    public required string Date { get; set; }
+    /// <summary>JSON [{userId,cents}] — ALWAYS materialized at entry
+    /// creation (an equal split is computed over the member set of that
+    /// moment and stored), so later joins never rewrite history</summary>
+    public required string SharesJson { get; set; }
+    /// <summary>backlink to the adder's space transaction (SP2) — only ever shown to the adder</summary>
+    public string? SourceTxId { get; set; }
+    public Guid CreatedBy { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
 /// <summary>

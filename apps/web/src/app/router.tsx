@@ -22,6 +22,7 @@ import { ReviewScreen } from '@/features/review/ReviewScreen';
 import { AccountsScreen } from '@/features/accounts/AccountsScreen';
 import { ManageCategoriesScreen } from '@/features/categories/ManageCategoriesScreen';
 import { FriendsScreen } from '@/features/friends/FriendsScreen';
+import { SplitDetailScreen, SplitsScreen } from '@/features/splits/SplitsScreen';
 import { OnboardingScreen } from '@/features/auth/OnboardingScreen';
 import { OverviewScreen } from '@/features/overview/OverviewScreen';
 import { CategoryDrillScreen } from '@/features/overview/CategoryDrillScreen';
@@ -129,6 +130,8 @@ const categoriesRoute = createRoute({
   component: ManageCategoriesScreen,
 });
 const friendsRoute = createRoute({ getParentRoute: () => appRoute, path: '/friends', component: FriendsScreen });
+const splitsRoute = createRoute({ getParentRoute: () => appRoute, path: '/splits', component: SplitsScreen });
+const splitDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/splits/$splitId', component: SplitDetailScreen });
 const onboardingRoute = createRoute({ getParentRoute: () => appRoute, path: '/onboarding', component: OnboardingScreen });
 const profileRoute = createRoute({ getParentRoute: () => appRoute, path: '/profile', component: ProfileScreen });
 const overviewRoute = createRoute({ getParentRoute: () => appRoute, path: '/overview/$kind', component: OverviewScreen });
@@ -181,6 +184,8 @@ export const routeTree = rootRoute.addChildren([
     accountsRoute,
     categoriesRoute,
     friendsRoute,
+    splitsRoute,
+    splitDetailRoute,
     onboardingRoute,
     profileRoute,
     overviewRoute,

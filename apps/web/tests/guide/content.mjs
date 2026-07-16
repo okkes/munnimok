@@ -51,6 +51,13 @@ export const GUIDE = [
     shots: ['22-spaces-list', '33-space-share', '61-feed-share'],
   },
   {
+    id: 'splits',
+    title: 'Splits — settle up with any group',
+    body: `Settings → Splits creates a shared tab for a trip or a night out. Add who paid what and the ledger works out who owes whom with the fewest possible transfers; shares are locked in when an expense is added, so people joining later never rewrite history. Splits need a connection and a signed-in account.`,
+    tips: ['Members of a split see only the split — never your spaces, accounts or transactions.', 'Coming next: inviting anyone by link and adding expenses straight from your bank transactions.'],
+    shots: ['68-splits-list', '67-split-detail'],
+  },
+  {
     id: 'categories',
     title: 'Categories & budgets',
     body: `The built-in catalog covers most spending; create your own main or sub categories when it doesn't. Budgets track a limit per category per period, and the overview drills from totals into categories into transactions.`,

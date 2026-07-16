@@ -86,6 +86,22 @@ export async function bootstrapUserSpaces(
   await db.meta.delete(BOOTSTRAP_SPACE_KEY);
 }
 
+/** OIDC restore → fail-closed bootstrap → periodic sync (user identities) */
+async function restoreAndSync(
+  db: MunniDB,
+  repo: Repo,
+  engine: SyncEngine,
+  isCancelled: () => boolean,
+  onAttempts: (n: number) => void,
+): Promise<void> {
+  await waitForAuthReady();
+  if (isCancelled()) return;
+  await bootstrapUserSpaces(db, repo, engine, isCancelled, undefined, onAttempts);
+  if (isCancelled()) return;
+  onAttempts(0);
+  engine.start();
+}
+
 interface DataContextValue {
   db: MunniDB;
   repo: Repo;
@@ -117,6 +133,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
       return;
     }
     let cancelled = false;
+    const isCancelled = () => cancelled;
+    const onAttempts = (n: number) => {
+      if (!cancelled) setFailedAttempts(n);
+    };
     const db = new MunniDB(identityDbName(identityKey(identity)));
     const syncing = identity.kind === 'user';
 
@@ -175,15 +195,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
         });
       }
       if (engine) {
-        // wait out the OIDC session restore, then fail-closed bootstrap
-        await waitForAuthReady();
-        if (cancelled) return;
-        await bootstrapUserSpaces(db, repo, engine, () => cancelled, undefined, (n) => {
-          if (!cancelled) setFailedAttempts(n);
-        });
-        if (cancelled) return;
-        setFailedAttempts(0);
-        engine.start();
+        const eng = engine;
+        const finishSync = () => restoreAndSync(db, repo, eng, isCancelled, onAttempts);
+        if ((await db.spaces.filter((s) => s.deleted === 0).count()) > 0) {
+          // returning device: local-first — render from what's stored NOW;
+          // auth restore + first sync catch up in the background. A dead
+          // server or unreachable OIDC endpoint must never block the UI
+          // (it did: a hanging fetch kept users on the connecting screen
+          // despite a fully usable local database).
+          void finishSync().catch(() => undefined);
+        } else {
+          // brand-new device: nothing to show — wait for the server to
+          // confirm the account state (fail-closed bootstrap)
+          await finishSync();
+        }
       }
       const stored = (await db.meta.get(ACTIVE_SPACE_KEY))?.value as string | undefined;
       const spaces = await db.spaces.filter((s) => s.deleted === 0).toArray();

@@ -1,4 +1,19 @@
-# Split sessions — settle-up v2 design (APPROVED 2026-07-16)
+# Split sessions — settle-up v2 design (APPROVED 2026-07-16 · SP1 DELIVERED)
+
+**SP1 shipped** (2026-07-16): server model (splits / splitMembers with
+per-member `attachedSpaceId` / splitEntries with ALWAYS-materialized
+frozen shares), membership-gated REST (`/splits…`, outsiders get 404 —
+existence itself is private), pure `domain/splitLedger.ts` (net
+positions + deterministic greedy netting, one formula covers expenses
+AND settlements), Splits list + detail screens (create, manual
+expenses with payer chips, balances + "A owes B" plan), Settings entry,
+EN/NL/TR. Deviations from the sketch: plain REST + reload instead of a
+`split:{id}` oplog scope (revisit when SP3's invites make live updates
+matter), and per-member attachment stored on the membership row rather
+than a separate synced table. The feature tour ships with SP3 when
+invites complete the story. **Next: SP2 (add from space transactions),
+SP3 (invites + guest hardening), SP4 (settle + review link), SP5
+(event link).**
 
 Approved with answers: guests CAN add manual entries (Q1: yes),
 currency fixed at creation (Q2), members settle / owner closes (Q3).

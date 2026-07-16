@@ -20,7 +20,9 @@ end
 
 target 'App' do
   capacitor_pods
-  # Add your Pods here
+  # FCM on iOS: the server fans out native pushes through Firebase, so the
+  # registration event must carry an FCM token, not the raw APNs one
+  pod 'FirebaseMessaging'
 end
 
 post_install do |installer|

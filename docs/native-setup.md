@@ -46,6 +46,28 @@ them. Then redeploy the api container and check
 when the key parses (project_id + client_email + private_key present).
 Until then native devices register fine but receive no pushes.
 
+## 3b. iOS push (added 2026-07-16) — your checklist
+
+The "enable notifications → hangs → stays off" iOS bug is fixed in code
+(AppDelegate now forwards the APNs registration callbacks the Capacitor
+plugin waits for). For pushes to actually ARRIVE on iOS, Firebase needs
+to know the iOS apps:
+
+1. Firebase console → Project settings → **Add app → iOS**, bundle id
+   **`app.munni`** → download `GoogleService-Info.plist` and replace the
+   committed placeholder at
+   `apps/native/ios/App/App/GoogleService-Info.plist`.
+2. Repeat for **`app.munni.dev`** → save as
+   `apps/native/ios/App/App/GoogleService-Info-Dev.plist` (CI swaps it
+   in for the staging build).
+3. Firebase console → Project settings → **Cloud Messaging → Apple app
+   configuration**: upload an **APNs authentication key** (create at
+   developer.apple.com → Keys → “+” → Apple Push Notifications service;
+   one key covers both apps).
+
+Until 1–3 are done the app degrades gracefully: registration succeeds
+with a raw APNs token, but the server's FCM sender cannot deliver to it.
+
 ## 4. Google Play — account exists; three steps left
 
 Signing is fully handled: an upload keystore was generated, lives in
@@ -106,6 +128,22 @@ Push on iOS additionally needs: Apple portal → Keys → create an
 Messaging → Apple app configuration (add an iOS app with bundle
 `app.munni` there first, and drop its `GoogleService-Info.plist` into
 `apps/native/ios/App/App/` — tell me when it exists and I wire it in).
+
+## 5b. Stop the "certificate revoked" emails (added 2026-07-16)
+
+Each CI run used to mint a fresh Apple Development certificate and a
+cleanup script revoked the old ones — every revocation triggers an
+Apple email. With a persistent certificate in the repo secrets, CI
+reuses it and nothing is minted or revoked anymore:
+
+1. On your Mac: Xcode → Settings → Accounts → Manage Certificates →
+   right-click your **Apple Development** certificate → Export…
+   (choose a password).
+2. `base64 -i cert.p12 | pbcopy` → repo secret **`APPLE_DEV_CERT_P12`**;
+   the password → **`APPLE_DEV_CERT_PASSWORD`**.
+
+Until the secrets exist the workflow falls back to the old
+mint-and-prune behaviour (and its emails).
 
 ## 6. The dedicated staging apps (`app.munni.dev`) — your checklist
 

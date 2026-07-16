@@ -33,8 +33,8 @@ public static class SocialEndpoints
 
         authed.MapGet("/me", GetMe);
         authed.MapPut("/me", UpdateMe).WithValidation<UpdateMeRequest>();
-        // full account deletion (Apple 5.1.1(v) requires an in-app path);
-        // the strict limiter also throttles accidental double-taps
+        // full account deletion — Apple guideline 5.1.1 subsection v wants
+        // an in-app path. The strict limiter also throttles double-taps.
         authed.MapDelete("/me", DeleteMe).RequireRateLimiting(MutationsPolicy);
         authed.MapGet("/friends", GetFriends);
         // writes that reach OTHER people get the stricter limiter (invite spam)
