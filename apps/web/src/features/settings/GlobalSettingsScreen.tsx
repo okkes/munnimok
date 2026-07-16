@@ -211,9 +211,9 @@ export function GlobalSettingsScreen() {
               // tracking. A span, not a button: the Row itself is a button
               // and nested buttons are invalid HTML (React warns, browsers
               // may split the DOM) — role+tabIndex keep it keyboardable.
-              <span
+              <span // NOSONAR — a real <button> here would nest inside the Row's button (invalid HTML); role+tabIndex+keys make the span equivalent
                 data-testid="settings-theme-auto"
-                role="button" // NOSONAR — a real <button> here would nest inside the Row's button (invalid HTML); role+tabIndex+keys make the span equivalent
+                role="button"
                 tabIndex={0}
                 aria-label={t('settings.followDevice')}
                 onClick={(e) => {

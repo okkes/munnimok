@@ -2,6 +2,9 @@
 import 'fake-indexeddb/auto';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { HlcClock } from '@/sync/hlc';
+import { MunniDB } from '@/db/schema';
+import { Repo } from '@/db/repo';
 import { USER_TEST_DB, renderAppAsUser } from '@/test/harness';
 
 const ME = '11111111-1111-1111-1111-111111111111';
@@ -108,6 +111,83 @@ describe('Splits (SP1)', () => {
     await waitFor(() => expect(screen.getByTestId('split-entries').textContent).toContain('Metro'));
     expect(posted).toHaveLength(1);
     expect(posted[0]).toMatchObject({ description: 'Metro', amountCents: 900, paidByUserId: ANNA, kind: 'expense' });
+  });
+
+  it('adds expenses picked from MY space transactions as frozen snapshots (SP2)', async () => {
+    // my attached space's local transactions (other members never see these)
+    const db = new MunniDB(USER_TEST_DB);
+    const repo = new Repo(db, new HlcClock('seed'), { trackOutbox: false });
+    await repo.upsert('transaction', 's-user', 'tx-ah', {
+      accountId: 'a1', date: '2026-07-14', amountCents: -2350, currency: 'EUR',
+      merchant: 'Albert Heijn', txType: 'expense', needsReview: 0,
+    });
+    await repo.upsert('transaction', 's-user', 'tx-salary', {
+      accountId: 'a1', date: '2026-07-01', amountCents: 250000, currency: 'EUR',
+      merchant: 'Salary', txType: 'income', needsReview: 0, // income: never offered
+    });
+    db.close();
+
+    const posted: unknown[] = [];
+    renderAppAsUser('/splits/split-1', {
+      api: {
+        'GET /health': () => ({ status: 'ok', capabilities: {} }),
+        'GET /splits/split-1': () => DETAIL,
+        'POST /splits/split-1/entries': (body) => {
+          posted.push(body);
+          return { id: (body as { id: string }).id };
+        },
+      },
+    });
+
+    fireEvent.click(await screen.findByTestId('split-add-entry'));
+    fireEvent.click(await screen.findByTestId('split-add-from-tx'));
+    // only the expense shows up; income and foreign spaces are filtered out
+    fireEvent.click(await screen.findByTestId('split-tx-tx-ah'));
+    expect(screen.queryByTestId('split-tx-tx-salary')).toBeNull();
+    fireEvent.click(screen.getByTestId('split-tx-add'));
+
+    await waitFor(() => expect(posted).toHaveLength(1));
+    // snapshot copy: merchant/amount/date frozen, private backlink kept
+    expect(posted[0]).toMatchObject({
+      kind: 'expense', description: 'Albert Heijn', amountCents: 2350, date: '2026-07-14',
+      sourceTxId: 'tx-ah', paidByUserId: ME,
+    });
+  });
+
+  it('posts custom shares when adjusted — and blocks until they add up (SP2)', async () => {
+    const posted: unknown[] = [];
+    renderAppAsUser('/splits/split-1', {
+      api: {
+        'GET /health': () => ({ status: 'ok', capabilities: {} }),
+        'GET /splits/split-1': () => DETAIL,
+        'POST /splits/split-1/entries': (body) => {
+          posted.push(body);
+          return { id: (body as { id: string }).id };
+        },
+      },
+    });
+
+    fireEvent.click(await screen.findByTestId('split-add-entry'));
+    fireEvent.change(await screen.findByTestId('split-entry-desc'), { target: { value: 'Dinner' } });
+    fireEvent.change(screen.getByTestId('split-entry-amount'), { target: { value: '10,00' } });
+    fireEvent.click(screen.getByTestId('split-shares-toggle'));
+
+    // 7 of 10 assigned — the save stays disabled and the gap is named
+    fireEvent.change(screen.getByTestId(`split-share-${ME}`), { target: { value: '7,00' } });
+    expect(screen.getByTestId('split-shares-sum').textContent).toContain('3.00');
+    expect((screen.getByTestId('split-entry-save') as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.change(screen.getByTestId(`split-share-${ANNA}`), { target: { value: '3,00' } });
+    fireEvent.click(screen.getByTestId('split-entry-save'));
+
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0]).toMatchObject({
+      amountCents: 1000,
+      shares: [
+        { userId: ME, cents: 700 },
+        { userId: ANNA, cents: 300 },
+      ],
+    });
   });
 
   it('creates a split from the list and navigates into it', async () => {
