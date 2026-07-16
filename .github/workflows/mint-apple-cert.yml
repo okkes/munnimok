@@ -52,10 +52,13 @@ jobs:
 
       - name: Bundle the encrypted p12 (base64, secret-ready)
         run: |
+          # legacy PBE algorithms: OpenSSL 3's default PBES2/PBKDF2 p12 is
+          # unreadable for Apple's `security import` ("passphrase not correct")
           openssl pkcs12 -export \
             -inkey "$RUNNER_TEMP/dev.key" \
             -in "$RUNNER_TEMP/dev.pem" \
             -name "munni CI Development" \
+            -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1 \
             -passout env:P12_PASSWORD \
             -out "$RUNNER_TEMP/dev.p12"
           mkdir -p out
