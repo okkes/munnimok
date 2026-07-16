@@ -16,6 +16,7 @@ using Munni.Api.Logos;
 using Munni.Api.Push;
 using Munni.Api.Shopping;
 using Munni.Api.Social;
+using Munni.Api.Splits;
 using Munni.Api.Sync;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -215,6 +216,7 @@ app.MapGet("/health", () => Results.Ok(new
 }));
 app.MapSync();
 app.MapSocial();
+app.MapSplits();
 app.MapPush();
 app.MapLogos(app.Configuration);
 app.MapStoreProxy();

@@ -146,6 +146,9 @@ export function GlobalSettingsScreen() {
           {identity?.kind === 'user' && (
             <Row testId="settings-friends-row" icon="account-multiple-outline" title={t('settings.friends')} onClick={() => void navigate({ to: '/friends' })} />
           )}
+          {identity?.kind === 'user' && (
+            <Row testId="settings-splits-row" icon="account-cash-outline" title={t('splits.title')} sub={t('splits.settingsSub')} onClick={() => void navigate({ to: '/splits' })} />
+          )}
           {gcAvailable && (
             <Row testId="settings-connections-row" icon="bank-transfer" title={t('gc.connections')} onClick={openConnections} />
           )}
@@ -204,20 +207,32 @@ export function GlobalSettingsScreen() {
             title={t('settings.appearance')}
             sub={themeMode === 'system' ? t('settings.followDevice') : undefined}
             trailing={
-              // tap the row to pin light/dark; the chip returns to device-tracking
-              <button
+              // tap the row to pin light/dark; the chip returns to device-
+              // tracking. A span, not a button: the Row itself is a button
+              // and nested buttons are invalid HTML (React warns, browsers
+              // may split the DOM) — role+tabIndex keep it keyboardable.
+              <span
                 data-testid="settings-theme-auto"
+                role="button" // NOSONAR(S6772,S6819) a real <button> here would nest inside the Row's button — invalid HTML; role+tabIndex+keys make the span equivalent
+                tabIndex={0}
                 aria-label={t('settings.followDevice')}
                 onClick={(e) => {
                   e.stopPropagation();
                   setThemeMode('system');
                 }}
-                className={`m-tap rounded-md border-none px-1.5 py-0.5 font-mono text-[11px] font-semibold ${
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setThemeMode('system');
+                  }
+                }}
+                className={`m-tap inline-block rounded-md px-1.5 py-0.5 font-mono text-[11px] font-semibold ${
                   themeMode === 'system' ? 'bg-accent-soft text-accent-deep' : 'bg-bg-2 text-ink-3'
                 }`}
               >
                 AUTO
-              </button>
+              </span>
             }
             onClick={toggle}
           />
