@@ -243,6 +243,57 @@ describe('Splits (SP1)', () => {
     expect(screen.queryByTestId('split-join-confirm')).toBeNull();
   });
 
+  it('settling my debt posts a settlement entry to the receiver (SP4)', async () => {
+    // Anna paid €30 equally → I owe her €15; the plan offers me Settle
+    const owes = {
+      ...DETAIL,
+      entries: [{ ...DETAIL.entries[0], paidByUserId: ANNA }],
+    };
+    const posted: unknown[] = [];
+    renderAppAsUser('/splits/split-1', {
+      api: {
+        'GET /health': () => ({ status: 'ok', capabilities: {} }),
+        'GET /splits/split-1': () => owes,
+        'POST /splits/split-1/entries': (body) => {
+          posted.push(body);
+          return { id: (body as { id: string }).id };
+        },
+      },
+    });
+
+    fireEvent.click(await screen.findByTestId('split-settle'));
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0]).toMatchObject({
+      kind: 'settlement',
+      paidByUserId: ME,
+      amountCents: 1500,
+      shares: [{ userId: ANNA, cents: 1500 }],
+    });
+  });
+
+  it('only the owner closes; a closed split locks the UI (SP4)', async () => {
+    let status = 'open';
+    renderAppAsUser('/splits/split-1', {
+      api: {
+        'GET /health': () => ({ status: 'ok', capabilities: {} }),
+        'GET /splits/split-1': () => ({ ...DETAIL, status }),
+        'POST /splits/split-1/close': () => {
+          status = 'settled';
+          return { id: 'split-1', status };
+        },
+      },
+    });
+
+    fireEvent.click(await screen.findByTestId('split-close'));
+    fireEvent.click(await screen.findByTestId('split-close-confirm'));
+
+    await screen.findByTestId('split-closed-note');
+    // locked: no add button, no invite row, no close button anymore
+    expect(screen.queryByTestId('split-add-entry')).toBeNull();
+    expect(screen.queryByTestId('split-invite')).toBeNull();
+    expect(screen.queryByTestId('split-close')).toBeNull();
+  });
+
   it('creates a split from the list and navigates into it', async () => {
     const created: unknown[] = [];
     renderAppAsUser('/splits', {

@@ -205,6 +205,8 @@ export function SplitDetailScreen() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  // SP4: members settle their own debts; only the owner closes (Q3)
+  const [closeOpen, setCloseOpen] = useState(false);
 
   const reload = useCallback(async () => {
     const res = await apiFetch(`/splits/${splitId}`).catch(() => null);
@@ -288,6 +290,45 @@ export function SplitDetailScreen() {
     setTxQuery('');
     await reload();
   };
+
+  // a settlement is just an entry whose only share holder is the receiver
+  // (the ledger math needs no special case — design ruling)
+  const settleUp = async (toUserId: string, cents: number) => {
+    if (!me || busy) return;
+    setBusy(true);
+    await apiFetch(`/splits/${splitId}/entries`, {
+      method: 'POST',
+      body: JSON.stringify({
+        id: uuidv7(),
+        kind: 'settlement',
+        paidByUserId: me.userId,
+        description: 'Settlement',
+        amountCents: cents,
+        date: new Date().toISOString().slice(0, 10),
+        shares: [{ userId: toUserId, cents }],
+      }),
+    }).catch(() => null);
+    setBusy(false);
+    await reload();
+  };
+
+  const closeSplit = async () => {
+    setBusy(true);
+    const res = await apiFetch(`/splits/${splitId}/close`, { method: 'POST' }).catch(() => null);
+    setBusy(false);
+    if (res?.ok) {
+      setCloseOpen(false);
+      await reload();
+    }
+  };
+
+  const entryLabel = (entry: SplitEntryRow) =>
+    entry.kind === 'settlement'
+      ? t('splits.settlementLabel', {
+          from: nameOf(entry.paidByUserId),
+          to: nameOf(entry.shares[0]?.userId ?? ''),
+        })
+      : entry.description;
 
   const openInvite = async () => {
     setInviteOpen(true);
@@ -400,11 +441,23 @@ export function SplitDetailScreen() {
                   className="flex items-center gap-2 px-4 py-2.5 text-[13px] text-ink-2"
                 >
                   <Icon name="arrow-right-thin" size={16} color="var(--m-ink-4)" />
-                  {t('splits.owes', {
-                    from: nameOf(transfer.fromUserId),
-                    to: nameOf(transfer.toUserId),
-                    amount: fmtCents(transfer.cents, detail.currency, lang),
-                  })}
+                  <span className="min-w-0 flex-1">
+                    {t('splits.owes', {
+                      from: nameOf(transfer.fromUserId),
+                      to: nameOf(transfer.toUserId),
+                      amount: fmtCents(transfer.cents, detail.currency, lang),
+                    })}
+                  </span>
+                  {detail.status === 'open' && transfer.fromUserId === me?.userId && (
+                    <button
+                      data-testid="split-settle"
+                      disabled={busy}
+                      onClick={() => void settleUp(transfer.toUserId, transfer.cents)}
+                      className="m-tap rounded-full border border-accent bg-accent-soft px-3 py-1 text-[12px] font-semibold text-accent-deep"
+                    >
+                      {t('splits.settle')}
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -417,7 +470,8 @@ export function SplitDetailScreen() {
             <div key={entry.id} className="flex items-center gap-3 border-b border-line-2 px-4 py-3 last:border-0">
               <span className="min-w-0 flex-1">
                 <span className="flex items-center gap-1.5 text-[14px] text-ink">
-                  <span className="truncate">{entry.description}</span>
+                  {entry.kind === 'settlement' && <Icon name="handshake-outline" size={14} color="var(--m-accent-deep)" />}
+                  <span className="truncate">{entryLabel(entry)}</span>
                   {entry.sourceTxId && (
                     <span data-testid="split-entry-linked" className="inline-flex">
                       <Icon name="bank-outline" size={13} color="var(--m-ink-4)" />
@@ -460,7 +514,31 @@ export function SplitDetailScreen() {
             </button>
           )}
         </div>
+
+        {detail?.status === 'settled' && (
+          <p className="mt-4 text-center text-[12px] text-ink-4" data-testid="split-closed-note">
+            {t('splits.closedNote')}
+          </p>
+        )}
+        {detail?.status === 'open' && detail.role === 'owner' && (
+          <button
+            data-testid="split-close"
+            onClick={() => setCloseOpen(true)}
+            className="m-tap mt-6 w-full rounded-card border border-line bg-surface px-4 py-3 text-center text-[14px] font-medium text-ink-2"
+          >
+            {t('splits.close')}
+          </button>
+        )}
       </div>
+
+      <Sheet open={closeOpen} onOpenChange={setCloseOpen} title={t('splits.close')} size="compact">
+        <div className="flex flex-col gap-3 pt-1">
+          <p className="text-[13px] text-ink-2">{t('splits.closeHint')}</p>
+          <Button data-testid="split-close-confirm" disabled={busy} onClick={() => void closeSplit()}>
+            {t('splits.close')}
+          </Button>
+        </div>
+      </Sheet>
 
       <Sheet open={addOpen} onOpenChange={setAddOpen} title={t('splits.addEntry')} size="tall">
         <div className="flex flex-col gap-3 pt-1">
