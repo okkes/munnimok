@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.0](https://github.com/okkes/munnimok/compare/v1.13.0...v1.14.0) (2026-07-16)
+
+
+### ✨ Features
+
+* **ux:** native post-logout deep link; bank-details block; What's New catch-up; splits + admin redesign docs ([b311a4d](https://github.com/okkes/munnimok/commit/b311a4db871c4f461d03f6aedf17cc52d085d58c))
+
 ## [1.13.0](https://github.com/okkes/munnimok/compare/v1.12.0...v1.13.0) (2026-07-15)
 
 
