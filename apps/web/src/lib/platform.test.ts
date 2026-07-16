@@ -51,6 +51,10 @@ describe('platform seam', () => {
     // a bank callback navigates but never stashes
     listeners.appUrlOpen({ url: 'munni://gc-callback?ref=r1' } as never);
     expect(assign).toHaveBeenLastCalledWith('/gc-callback?ref=r1');
+
+    // §5 shortcuts: any other target is a hash route, not a real path
+    listeners.appUrlOpen({ url: 'munni://review' } as never);
+    expect(assign).toHaveBeenLastCalledWith('/#/review');
   });
 
   it('asks the browser to persist storage on web, never on native', async () => {
@@ -95,5 +99,51 @@ describe('platform seam', () => {
       },
     });
     await expect(getNativePushToken()).resolves.toBeNull();
+  });
+});
+
+describe('§5 niceties seam', () => {
+  it('haptics + share are strict no-ops on the web', async () => {
+    setCapacitor(undefined);
+    const { hapticNotify, shareNativeFile } = await import('./platform');
+    expect(() => hapticNotify('SUCCESS')).not.toThrow();
+    expect(await shareNativeFile('x.csv', 'a;b')).toBe(false);
+  });
+
+  it('native share writes to the cache and opens the OS sheet', async () => {
+    const writeFile = vi.fn().mockResolvedValue({ uri: 'file:///cache/x.csv' });
+    const share = vi.fn().mockResolvedValue({});
+    setCapacitor({
+      isNativePlatform: () => true,
+      Plugins: { Filesystem: { writeFile }, Share: { share } },
+    });
+    const { shareNativeFile } = await import('./platform');
+    expect(await shareNativeFile('x.csv', 'a;b')).toBe(true);
+    expect(writeFile).toHaveBeenCalledWith(expect.objectContaining({ path: 'x.csv', directory: 'CACHE' }));
+    expect(share).toHaveBeenCalledWith(expect.objectContaining({ files: ['file:///cache/x.csv'] }));
+
+    share.mockRejectedValue(new Error('dismissed'));
+    expect(await shareNativeFile('x.csv', 'a;b')).toBe(false); // closing the sheet degrades to download
+  });
+
+  it('notification taps hand the PARSED payload to the bridge', async () => {
+    const listeners: Record<string, (data: never) => void> = {};
+    setCapacitor({
+      isNativePlatform: () => true,
+      Plugins: {
+        PushNotifications: { addListener: (event: string, cb: (data: never) => void) => (listeners[event] = cb) },
+      },
+    });
+    const { onNativePushTap } = await import('./platform');
+    const seen: unknown[] = [];
+    onNativePushTap((payload) => seen.push(payload));
+
+    listeners.pushNotificationActionPerformed({
+      notification: { data: { payload: '{"type":"new-transactions","count":3}' } },
+    } as never);
+    expect(seen).toEqual([{ type: 'new-transactions', count: 3 }]);
+
+    listeners.pushNotificationActionPerformed({ notification: { data: { payload: 'not-json' } } } as never);
+    expect(seen).toHaveLength(1); // malformed payloads are ignored
   });
 });

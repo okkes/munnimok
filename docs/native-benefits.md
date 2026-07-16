@@ -14,9 +14,16 @@ webauthn; PIN stays the universal fallback, so no separate 'pin' kind
 was needed); registration on native verifies the prompt once before
 promising it; NSFaceIDUsageDescription added. **Needs your device
 test:** enable the app lock in the native app → OS prompt should appear
-on lock. Keystore-held unlock token deferred to §2 as designed. **NEXT:
-remaining §5 niceties (haptics, share sheet, shortcuts, push
-deep-links), then §2 encryption (last, with security review).**
+on lock. Keystore-held unlock token deferred to §2 as designed. **§5
+DONE** (2026-07-16): haptic ticks on review confirm + budget alerts
+(@capacitor/haptics), exports open the OS share sheet on the shells
+(@capacitor/share + filesystem, browser download stays the web path),
+long-press launcher shortcuts Review/Transactions on both platforms
+(Android res/xml/shortcuts.xml per flavor with NL/TR labels; iOS static
+quick actions through the munni:// bridge — non-callback deep links now
+map to hash routes), and notification taps route through the same
+NAVIGATE bridge as the service worker. **NEXT: §2 encryption at rest
+(last, with security review).**
 
 Status: proposal 2026-07-15. Now that munni ships as a real Capacitor
 app, several things the PWA could only approximate become first-class.

@@ -8,6 +8,7 @@ import { HelpProvider } from '@/features/help/HelpContext';
 import { useRecurringReminders } from '@/application/recurring';
 import { useStoreKeepAlive } from '@/application/stores';
 import { collectBudgetAlerts } from '@/sync/swBudgets';
+import { hapticNotify } from '@/lib/platform';
 import { Icon } from '@/ui/Icon';
 import { Logo } from '@/ui/Logo';
 
@@ -52,6 +53,7 @@ function BudgetAlerts() {
       const registration = await navigator.serviceWorker?.ready.catch(() => undefined);
       if (!registration) return;
       for (const alert of await collectBudgetAlerts(db, spaceId, lang)) {
+        hapticNotify('WARNING'); // §5: over-budget deserves a physical nudge
         await registration.showNotification(alert.title, {
           body: alert.body,
           icon: 'icon-192.png',

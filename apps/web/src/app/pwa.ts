@@ -1,7 +1,9 @@
 import { create } from 'zustand';
 import { registerSW } from 'virtual:pwa-register';
 import { router } from '@/app/router';
-import { isNativeApp } from '@/lib/platform';
+import { isNativeApp, onNativePushTap } from '@/lib/platform';
+import { buildNotification } from '@/sync/swNotifications';
+import type { PushPayload } from '@/sync/swNotifications';
 
 interface PwaState {
   needRefresh: boolean;
@@ -67,6 +69,13 @@ export function handleWorkerMessage(data: unknown): void {
 
 function initNotificationNav(): void {
   navigator.serviceWorker?.addEventListener('message', (event) => handleWorkerMessage(event.data));
+  // §5: the native shell's notification taps ride the same bridge — the
+  // FCM data payload maps to a target url exactly like the sw's clicks
+  onNativePushTap((payload) => {
+    const lang = localStorage.getItem('munni_lang') ?? 'en';
+    const target = buildNotification(payload as PushPayload, lang);
+    if (target?.url) handleWorkerMessage({ type: 'NAVIGATE', url: target.url });
+  });
 }
 
 /**

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
+import { shareNativeFile } from '@/lib/platform';
 import { visibleAccounts, visibleTransactions } from '@/db/joined';
 import { buildCatalog, visibleCategoryRows } from '@/domain/catalog';
 import { delimiterForLang, serializeCsv, toCsvRows } from '@/domain/exportCsv';
@@ -15,8 +16,11 @@ type Scope = 'space' | 'all';
 type Range = 'period' | 'year' | 'all' | 'custom';
 type Format = 'csv' | 'json';
 
-/** Blob download without leaving the page — nothing is uploaded anywhere */
-function download(name: string, content: string, mime: string): void {
+/** Blob download without leaving the page — nothing is uploaded anywhere.
+ * Native shell (§5): the OS share sheet instead, so the export can go
+ * straight to Files/mail; the download stays the web/PWA path. */
+async function download(name: string, content: string, mime: string): Promise<void> {
+  if (await shareNativeFile(name, content)) return;
   const url = URL.createObjectURL(new Blob([content], { type: mime }));
   const a = document.createElement('a');
   a.href = url;
@@ -81,7 +85,7 @@ export function ExportSheet({ open, onOpenChange }: Readonly<{ open: boolean; on
         accounts,
         transactions: txs,
       }));
-      download(`munni-${rangeLabel}-${today}.json`, JSON.stringify(payload, null, 2), 'application/json');
+      await download(`munni-${rangeLabel}-${today}.json`, JSON.stringify(payload, null, 2), 'application/json');
       onOpenChange(false);
       return;
     }
@@ -103,7 +107,7 @@ export function ExportSheet({ open, onOpenChange }: Readonly<{ open: boolean; on
       // one shared header row for the whole file
       rows.push(...(rows.length === 0 ? spaceRows : spaceRows.slice(1)));
     }
-    download(`munni-${rangeLabel}-${today}.csv`, serializeCsv(rows, delimiterForLang(lang)), 'text/csv;charset=utf-8');
+    await download(`munni-${rangeLabel}-${today}.csv`, serializeCsv(rows, delimiterForLang(lang)), 'text/csv;charset=utf-8');
     onOpenChange(false);
   };
 
