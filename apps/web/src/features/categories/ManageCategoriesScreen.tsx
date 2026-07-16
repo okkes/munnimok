@@ -155,15 +155,13 @@ export function ManageCategoriesScreen() {
 
   const save = async () => {
     if (!mode || !name.trim()) return;
+    let candidateParentId: string | undefined;
+    if (mode.kind === 'newSub') candidateParentId = mode.parentId;
+    else if (mode.kind === 'editSub') candidateParentId = moveTo ?? mode.row.parentId;
     const conflict = categoryNameConflict(
       {
         name,
-        parentId:
-          mode.kind === 'newSub'
-            ? mode.parentId
-            : mode.kind === 'editSub'
-              ? (moveTo ?? mode.row.parentId)
-              : undefined,
+        parentId: candidateParentId,
         selfId: mode.kind === 'editMain' || mode.kind === 'editSub' ? mode.row.id : undefined,
       },
       namedCategories(),

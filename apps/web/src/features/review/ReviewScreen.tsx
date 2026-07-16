@@ -14,6 +14,7 @@ import { fetchSettlementCandidates } from '@/features/splits/settlementCandidate
 import type { SettlementCandidate } from '@/features/splits/settlementCandidates';
 import { useSession } from '@/app/session';
 import type { ReviewDraft } from '@/domain/reviewDraft';
+import type { AccountType } from '@/db/types';
 import { resolveSplitsFor, splitsArePct } from '@/domain/splits';
 import { predictTx } from '@/domain/predictCategory';
 import { recurringAmountMatches } from '@/domain/recurring';
@@ -94,6 +95,18 @@ async function writeConfirmation(args: {
 /** "also apply to n similar": a compact summary row on the card; the full
  *  list lives in a Sheet so long histories never squeeze the card
  *  (user request), with per-row read-only detail expansion */
+/** own-account counterparty pre-applies the link + suggested type; the
+ * hidden 'uncategorized' builtin keeps the confirm armed for transfers */
+function applyOwnCounterDefault(
+  baseDraft: ReviewDraft | null,
+  ownCounter: { id: string; type: AccountType } | undefined,
+  cats: ReturnType<typeof useCategories>,
+): ReviewDraft | null {
+  if (!baseDraft || !ownCounter || baseDraft.linkedAccountId) return baseDraft;
+  const linked = withLinkedAccount(baseDraft, { id: ownCounter.id, type: ownCounter.type }, cats);
+  return linked.catId ? linked : withCategory(linked, 'uncategorized', cats);
+}
+
 function BulkConfirmSection({
   similar,
   selected,
@@ -266,13 +279,11 @@ export function ReviewScreen() {
 
   // untouched cards follow the tx + the (async) prediction live
   const baseDraft = tx ? initDraft(tx, prediction?.catId, cats) : null;
-  const ownTransferDraft = useMemo(() => {
-    if (!baseDraft || !ownCounter || baseDraft.linkedAccountId) return baseDraft;
-    const linked = withLinkedAccount(baseDraft, { id: ownCounter.id, type: ownCounter.type }, cats);
-    // transfers carry no spending category — keep the confirm armed
-    return linked.catId ? linked : withCategory(linked, 'uncategorized', cats);
+  const ownTransferDraft = useMemo(
+    () => applyOwnCounterDefault(baseDraft, ownCounter, cats),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tx?.id, ownCounter, prediction?.catId, cats]);
+    [tx?.id, ownCounter, prediction?.catId, cats],
+  );
   const draft = stagedDraft ?? ownTransferDraft;
   const cat = cats.byId(draft?.catId);
   const parentColor = cat.parentId ? cats.byId(cat.parentId).color : cat.color;
