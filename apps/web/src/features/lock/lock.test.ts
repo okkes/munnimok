@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useSession } from '@/app/session';
 import {
   biometricAvailable,
+  effectiveBiometricKind,
   hashPin,
   initLockWatcher,
   randomSalt,
@@ -122,14 +123,44 @@ describe('webauthn wrappers', () => {
       configurable: true,
       value: { create: vi.fn().mockResolvedValue({ rawId }), get: vi.fn().mockResolvedValue({}) },
     });
-    const id = await registerBiometric();
-    expect(id).toBe('AQID-g'); // base64url, unpadded
-    expect(await verifyBiometric(id!)).toBe(true);
+    const registration = await registerBiometric();
+    expect(registration).toEqual({ kind: 'webauthn', credentialId: 'AQID-g' }); // base64url, unpadded
+    expect(await verifyBiometric(registration!)).toBe(true);
 
     (navigator.credentials.create as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('cancelled'));
     expect(await registerBiometric()).toBeNull();
     (navigator.credentials.get as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('no'));
-    expect(await verifyBiometric(id!)).toBe(false);
+    expect(await verifyBiometric(registration!)).toBe(false);
+  });
+
+  it('the native shell path: register verifies once, verify uses the OS prompt (§1)', async () => {
+    vi.stubGlobal('Capacitor', {
+      isNativePlatform: () => true,
+      Plugins: {
+        NativeBiometric: {
+          isAvailable: vi.fn().mockResolvedValue({ isAvailable: true }),
+          verifyIdentity: vi.fn().mockResolvedValue(undefined),
+        },
+      },
+    });
+    try {
+      expect(await registerBiometric()).toEqual({ kind: 'native' });
+      expect(await verifyBiometric({ biometricKind: 'native' })).toBe(true);
+
+      const plugins = (globalThis as unknown as { Capacitor: { Plugins: { NativeBiometric: { verifyIdentity: ReturnType<typeof vi.fn> } } } })
+        .Capacitor.Plugins.NativeBiometric;
+      plugins.verifyIdentity.mockRejectedValue(new Error('cancelled'));
+      expect(await registerBiometric()).toBeNull(); // prompt must work before it becomes the factor
+      expect(await verifyBiometric({ biometricKind: 'native' })).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('pre-§1 configs (credentialId only) still resolve to the webauthn path', () => {
+    expect(effectiveBiometricKind({ credentialId: 'abc' })).toBe('webauthn');
+    expect(effectiveBiometricKind({ biometricKind: 'native' })).toBe('native');
+    expect(effectiveBiometricKind({})).toBeNull();
   });
 });
 

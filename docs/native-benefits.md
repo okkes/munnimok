@@ -6,9 +6,17 @@ the device row in Language). **§4 DONE** (store-aware update card on
 Home: the shell compares its build number against the hosted
 /version.json — both are the git commit count of their release — links
 market:// / App Store, dismiss-per-build, ~daily check). **§5 partly
-done** (themed status bar; native camera for receipts). **NEXT: §1
-native biometrics**, then remaining §5 niceties, then §2 encryption
-(last, with security review).
+done** (themed status bar; native camera for receipts). **§1 DONE**
+(code side, 2026-07-16): `@capgo/capacitor-native-biometric@7` behind
+the seam (`nativeBiometricAvailable/Verify`); lock config gained
+`biometricKind: 'webauthn' | 'native'` (pre-§1 configs resolve to
+webauthn; PIN stays the universal fallback, so no separate 'pin' kind
+was needed); registration on native verifies the prompt once before
+promising it; NSFaceIDUsageDescription added. **Needs your device
+test:** enable the app lock in the native app → OS prompt should appear
+on lock. Keystore-held unlock token deferred to §2 as designed. **NEXT:
+remaining §5 niceties (haptics, share sheet, shortcuts, push
+deep-links), then §2 encryption (last, with security review).**
 
 Status: proposal 2026-07-15. Now that munni ships as a real Capacitor
 app, several things the PWA could only approximate become first-class.

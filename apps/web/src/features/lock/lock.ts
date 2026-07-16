@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { identityKey, readSessionIdentity, useSession } from '@/app/session';
+import { isNativeApp, nativeBiometricAvailable, nativeBiometricVerify } from '@/lib/platform';
 
 /**
  * App lock, scoped to the SIGNED-IN identity: WebAuthn platform
@@ -13,15 +14,28 @@ import { identityKey, readSessionIdentity, useSession } from '@/app/session';
  * is the same trade-off banking PWAs make.
  */
 
+export type BiometricKind = 'webauthn' | 'native';
+
 export interface LockConfig {
   enabled: boolean;
   /** WebAuthn credential id (base64url), when biometrics are set up */
   credentialId?: string;
+  /** which biometric path unlocks (native-benefits §1): 'native' = the
+   * OS prompt via the Capacitor plugin (nothing to store), 'webauthn' =
+   * the platform passkey in credentialId. Pre-§1 configs carry only
+   * credentialId — resolved as 'webauthn' by effectiveBiometricKind. */
+  biometricKind?: BiometricKind;
   pinSalt: string;
   pinHash: string;
   /** seconds hidden before the app locks again (0 = immediately) */
   timeoutSec: number;
 }
+
+/** the config's biometric path, resolving pre-§1 configs (credentialId only) */
+export const effectiveBiometricKind = (config: Pick<LockConfig, 'credentialId' | 'biometricKind'>): BiometricKind | null => {
+  if (config.biometricKind) return config.biometricKind;
+  return config.credentialId ? 'webauthn' : null;
+};
 
 const LEGACY_KEY = 'munni_lock';
 const keyForIdentity = (): string | null => {
@@ -80,6 +94,9 @@ const fromB64url = (value: string) =>
   Uint8Array.from(atob(value.replaceAll('-', '+').replaceAll('_', '/')), (c) => c.codePointAt(0)!);
 
 export async function biometricAvailable(): Promise<boolean> {
+  // native shell: WKWebView has no WebAuthn platform authenticator, so
+  // availability means the OS biometric prompt (native-benefits §1)
+  if (isNativeApp()) return nativeBiometricAvailable();
   try {
     return (
       typeof PublicKeyCredential !== 'undefined' &&
@@ -90,8 +107,25 @@ export async function biometricAvailable(): Promise<boolean> {
   }
 }
 
+export interface BiometricRegistration {
+  kind: BiometricKind;
+  /** present only for 'webauthn' */
+  credentialId?: string;
+}
+
+/** sets up the unlock factor: the OS prompt on native (nothing stored),
+ * a device-bound passkey on web/PWA */
+export async function registerBiometric(): Promise<BiometricRegistration | null> {
+  if (isNativeApp()) {
+    // prove the prompt actually works before promising it as the factor
+    return (await nativeBiometricVerify('munni')) ? { kind: 'native' } : null;
+  }
+  const credentialId = await registerWebauthn();
+  return credentialId ? { kind: 'webauthn', credentialId } : null;
+}
+
 /** creates a device-bound passkey used purely as an unlock factor */
-export async function registerBiometric(): Promise<string | null> {
+async function registerWebauthn(): Promise<string | null> {
   try {
     const credential = (await navigator.credentials.create({
       publicKey: {
@@ -116,13 +150,19 @@ export async function registerBiometric(): Promise<string | null> {
   }
 }
 
-/** OS-level user verification against the stored credential */
-export async function verifyBiometric(credentialId: string): Promise<boolean> {
+/** OS-level user verification along the config's biometric path */
+export async function verifyBiometric(
+  config: Pick<LockConfig, 'credentialId' | 'biometricKind'>,
+  reason = 'munni',
+): Promise<boolean> {
+  const kind = effectiveBiometricKind(config);
+  if (kind === 'native') return nativeBiometricVerify(reason);
+  if (kind !== 'webauthn' || !config.credentialId) return false;
   try {
     const assertion = await navigator.credentials.get({
       publicKey: {
         challenge: crypto.getRandomValues(new Uint8Array(32)),
-        allowCredentials: [{ type: 'public-key', id: fromB64url(credentialId) }],
+        allowCredentials: [{ type: 'public-key', id: fromB64url(config.credentialId) }],
         userVerification: 'required',
         timeout: 60_000,
       },

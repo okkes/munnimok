@@ -3,7 +3,7 @@ import { useLang } from '@/i18n';
 import { Icon } from '@/ui/Icon';
 import { Logo } from '@/ui/Logo';
 import leafUrl from '@/assets/leaf.png';
-import { hashPin, readLockConfig, useLock, verifyBiometric } from './lock';
+import { effectiveBiometricKind, hashPin, readLockConfig, useLock, verifyBiometric } from './lock';
 
 const MAX_PIN = 8;
 const MIN_PIN = 4;
@@ -58,11 +58,11 @@ export function LockScreen() {
   const [error, setError] = useState(false);
   const attempted = useRef(false);
   const config = readLockConfig();
-  const hasBiometric = !!config?.credentialId;
+  const hasBiometric = !!config && effectiveBiometricKind(config) !== null;
 
   const tryBiometric = async () => {
-    if (!config?.credentialId) return;
-    if (await verifyBiometric(config.credentialId)) unlock();
+    if (!config || effectiveBiometricKind(config) === null) return;
+    if (await verifyBiometric(config, t('lock.sub'))) unlock();
   };
 
   // auto-prompt once on mount

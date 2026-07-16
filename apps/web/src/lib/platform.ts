@@ -31,6 +31,10 @@ interface CapacitorGlobal {
         correctOrientation?: boolean;
       }) => Promise<{ base64String?: string; format?: string }>;
     };
+    NativeBiometric?: {
+      isAvailable?: () => Promise<{ isAvailable?: boolean }>;
+      verifyIdentity?: (options: { reason?: string; title?: string }) => Promise<void>;
+    };
   };
 }
 
@@ -154,4 +158,32 @@ export async function getNativePushToken(): Promise<string | null> {
     });
     void push.register?.();
   });
+}
+
+/**
+ * Native biometric gate (native-benefits §1): the OS Face/Touch ID or
+ * fingerprint prompt via the Capacitor plugin. WKWebView has no WebAuthn
+ * platform authenticator, so the native shell uses this path while
+ * web/PWA keeps WebAuthn (both behind the same lock.ts seam).
+ */
+export async function nativeBiometricAvailable(): Promise<boolean> {
+  const biometric = capacitor()?.Plugins?.NativeBiometric;
+  if (!isNativeApp() || !biometric?.isAvailable) return false;
+  try {
+    return (await biometric.isAvailable()).isAvailable === true;
+  } catch {
+    return false;
+  }
+}
+
+/** true when the OS confirmed the user; false on cancel/mismatch/absence */
+export async function nativeBiometricVerify(reason: string): Promise<boolean> {
+  const biometric = capacitor()?.Plugins?.NativeBiometric;
+  if (!biometric?.verifyIdentity) return false;
+  try {
+    await biometric.verifyIdentity({ reason, title: 'munni' });
+    return true;
+  } catch {
+    return false;
+  }
 }
