@@ -138,6 +138,9 @@ public class SplitMember
     /// <summary>the member's OWN space this split is wired to (per-member
     /// attachment, user clarification) — personal, only ever shown to them</summary>
     public string? AttachedSpaceId { get; set; }
+    /// <summary>the member's OWN event (in their attached space) — SP5;
+    /// personal wiring like the space, never shown to other members</summary>
+    public string? AttachedEventId { get; set; }
     public DateTimeOffset JoinedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 

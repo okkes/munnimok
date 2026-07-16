@@ -22,6 +22,15 @@ transfer looks like Anna paying you back") moved into SP5 — it shares
 the reimbursement-candidate mechanics with the event work and deserves
 one integration pass instead of two half ones.
 
+**SP5 shipped** (2026-07-16): per-member event link (`AttachedEventId`
+on the membership row, wired via POST /splits/{id}/attach which also
+lets members re-pick their space). Expenses added from search follow
+the member's event automatically — retroactively at link time and for
+every later addition (local repo writes, synced like any tx edit). The
+event detail shows the "Split · you're owed …" summary row, and review
+offers a transfer chip when an incoming amount exactly matches an open
+settlement to me. **The full splits design is now delivered (SP1–SP5).**
+
 **SP1 shipped** (2026-07-16): server model (splits / splitMembers with
 per-member `attachedSpaceId` / splitEntries with ALWAYS-materialized
 frozen shares), membership-gated REST (`/splits…`, outsiders get 404 —

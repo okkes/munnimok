@@ -54,7 +54,7 @@ export const GUIDE = [
     id: 'splits',
     title: 'Splits — settle up with any group',
     body: `Settings → Splits creates a shared tab for a trip or a night out. Add who paid what — typed in, or picked straight from your own transactions — and the ledger works out who owes whom with the fewest possible transfers. Adjust shares when a split isn't fifty-fifty; shares are locked in when an expense is added, so people joining later never rewrite history. Splits need a connection and a signed-in account.`,
-    tips: ['Invite anyone with one share link — no friendship needed; joiners pick which of their own spaces the split attaches to.', 'Members of a split see only the split — never your spaces, accounts or transactions.'],
+    tips: ['Invite anyone with one share link — no friendship needed; joiners pick which of their own spaces the split attaches to.', 'Link a split to one of your events: searched-in expenses join the event automatically, and the event page shows who owes whom.', 'Members of a split see only the split — never your spaces, accounts or transactions.'],
     shots: ['68-splits-list', '67-split-detail', '69-split-join'],
   },
   {

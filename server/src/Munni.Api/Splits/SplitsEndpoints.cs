@@ -14,11 +14,12 @@ public sealed record SplitEntryDto(
     /// <summary>the adder's private backlink — only serialized for them</summary>
     string? SourceTxId,
     Guid CreatedBy);
-public sealed record SplitSummaryDto(string Id, string Name, string Currency, string Status, string Role, string? AttachedSpaceId, int MemberCount, int EntryCount);
-public sealed record SplitDetailDto(string Id, string Name, string Currency, string Status, string Role, string? AttachedSpaceId, List<SplitMemberDto> Members, List<SplitEntryDto> Entries);
+public sealed record SplitSummaryDto(string Id, string Name, string Currency, string Status, string Role, string? AttachedSpaceId, string? AttachedEventId, int MemberCount, int EntryCount);
+public sealed record SplitDetailDto(string Id, string Name, string Currency, string Status, string Role, string? AttachedSpaceId, string? AttachedEventId, List<SplitMemberDto> Members, List<SplitEntryDto> Entries);
 
 public sealed record CreateSplitRequest(string Id, string Name, string Currency, string? SpaceId);
 public sealed record AcceptInviteRequest(string? SpaceId);
+public sealed record AttachRequest(string? SpaceId, string? EventId);
 public sealed record AddEntryRequest(string Id, string Kind, Guid? PaidByUserId, string Description, long AmountCents, string Date, List<SplitShareDto>? Shares, string? SourceTxId);
 
 /// <summary>
@@ -44,6 +45,22 @@ public static class SplitsEndpoints
         group.MapPost("/invites/{token}/accept", AcceptInvite).RequireRateLimiting(Social.SocialEndpoints.MutationsPolicy);
         // SP4: only the owner closes the session (decision Q3)
         group.MapPost("/{splitId}/close", CloseSplit);
+        // SP5: (re)wire MY OWN attachment — space and/or event
+        group.MapPost("/{splitId}/attach", Attach);
+    }
+
+    /// <summary>per-member wiring: the caller updates only THEIR membership
+    /// row; the server stores the ids blindly — they are meaningful only
+    /// inside the member's own local database</summary>
+    private static async Task<IResult> Attach(string splitId, AttachRequest request, AppDbContext db, HttpContext http)
+    {
+        var me = http.GetUserId();
+        var (split, membership) = await MemberGateAsync(db, splitId, me);
+        if (split is null || membership is null) return Results.NotFound();
+        if (request.SpaceId is not null) membership.AttachedSpaceId = request.SpaceId;
+        membership.AttachedEventId = request.EventId; // null clears the link
+        await db.SaveChangesAsync();
+        return Results.Ok(new { spaceId = membership.AttachedSpaceId, eventId = membership.AttachedEventId });
     }
 
     /// <summary>closing locks the ledger: no new entries, no new invites —
@@ -151,7 +168,8 @@ public static class SplitsEndpoints
             {
                 var membership = memberships.First(m => m.SplitId == s.Id);
                 return new SplitSummaryDto(s.Id, s.Name, s.Currency, s.Status, membership.Role,
-                    membership.AttachedSpaceId, memberCounts.GetValueOrDefault(s.Id), entryCounts.GetValueOrDefault(s.Id));
+                    membership.AttachedSpaceId, membership.AttachedEventId,
+                    memberCounts.GetValueOrDefault(s.Id), entryCounts.GetValueOrDefault(s.Id));
             })
             .ToList());
     }
@@ -178,7 +196,7 @@ public static class SplitsEndpoints
         var names = await db.Users.Where(u => memberIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.DisplayName);
         var entries = await db.SplitEntries.Where(e => e.SplitId == splitId).OrderByDescending(e => e.Date).ToListAsync();
         return Results.Ok(new SplitDetailDto(
-            split.Id, split.Name, split.Currency, split.Status, membership.Role, membership.AttachedSpaceId,
+            split.Id, split.Name, split.Currency, split.Status, membership.Role, membership.AttachedSpaceId, membership.AttachedEventId,
             members.Select(m => new SplitMemberDto(m.UserId, m.Role, names.GetValueOrDefault(m.UserId), m.UserId == me)).ToList(),
             entries.Select(e => new SplitEntryDto(
                 e.Id, e.Kind, e.PaidByUserId, e.Description, e.AmountCents, e.Date,

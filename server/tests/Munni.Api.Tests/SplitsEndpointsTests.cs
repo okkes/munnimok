@@ -133,9 +133,36 @@ public class SplitsEndpointsTests : IClassFixture<AdminApiFactory>
         Assert.Equal(2, detail!.Members.Count);
     }
 
+    [Fact]
+    public async Task EventAttachment_IsPerMember_AndInvisibleToOthers()
+    {
+        var one = await TouchAsync("sp5-one");
+        var two = await TouchAsync("sp5-two");
+        Assert.True((await one.PostAsJsonAsync("/splits",
+            new { id = "split-ev", name = "Wedding", currency = "EUR", spaceId = "s-one" })).IsSuccessStatusCode);
+        await JoinAsync("split-ev", "sp5-two");
+
+        // each member wires their OWN event; re-picking the space also works
+        Assert.True((await one.PostAsJsonAsync("/splits/split-ev/attach", new { eventId = "ev-one" })).IsSuccessStatusCode);
+        Assert.True((await two.PostAsJsonAsync("/splits/split-ev/attach", new { spaceId = "s-two", eventId = "ev-two" })).IsSuccessStatusCode);
+
+        var mine = await one.GetFromJsonAsync<SplitDetailProbe>("/splits/split-ev");
+        var theirs = await two.GetFromJsonAsync<SplitDetailProbe>("/splits/split-ev");
+        Assert.Equal("ev-one", mine!.AttachedEventId);
+        Assert.Equal("s-one", mine.AttachedSpaceId); // untouched by my event-only call
+        Assert.Equal("ev-two", theirs!.AttachedEventId);
+        Assert.Equal("s-two", theirs.AttachedSpaceId);
+
+        // clearing is explicit (null eventId), and outsiders still 404
+        Assert.True((await one.PostAsJsonAsync("/splits/split-ev/attach", new { eventId = (string?)null })).IsSuccessStatusCode);
+        Assert.Null((await one.GetFromJsonAsync<SplitDetailProbe>("/splits/split-ev"))!.AttachedEventId);
+        var outsider = await TouchAsync("sp5-outsider");
+        Assert.Equal(HttpStatusCode.NotFound, (await outsider.PostAsJsonAsync("/splits/split-ev/attach", new { eventId = "ev-x" })).StatusCode);
+    }
+
     private sealed record InviteMinted(string Token);
     private sealed record InvitePeek(string SplitName, string Currency, string? InviterName);
-    private sealed record SplitDetailProbe(string Id, string? AttachedSpaceId, List<MemberProbe> Members);
+    private sealed record SplitDetailProbe(string Id, string? AttachedSpaceId, string? AttachedEventId, List<MemberProbe> Members);
     private sealed record MemberProbe(Guid UserId, string Role);
 
     [Fact]
