@@ -18,6 +18,7 @@ public sealed record SplitSummaryDto(string Id, string Name, string Currency, st
 public sealed record SplitDetailDto(string Id, string Name, string Currency, string Status, string Role, string? AttachedSpaceId, List<SplitMemberDto> Members, List<SplitEntryDto> Entries);
 
 public sealed record CreateSplitRequest(string Id, string Name, string Currency, string? SpaceId);
+public sealed record AcceptInviteRequest(string? SpaceId);
 public sealed record AddEntryRequest(string Id, string Kind, Guid? PaidByUserId, string Description, long AmountCents, string Date, List<SplitShareDto>? Shares, string? SourceTxId);
 
 /// <summary>
@@ -36,6 +37,81 @@ public static class SplitsEndpoints
         group.MapGet("/{splitId}", GetSplit);
         group.MapPost("/{splitId}/entries", AddEntry);
         group.MapDelete("/{splitId}/entries/{entryId}", DeleteEntry);
+        // SP3: share-link invites — the ONLY way in besides creating.
+        // Minting/accepting reach other people → the strict social limiter
+        group.MapPost("/{splitId}/invites", MintInvite).RequireRateLimiting(Social.SocialEndpoints.MutationsPolicy);
+        group.MapGet("/invites/{token}", PeekInvite);
+        group.MapPost("/invites/{token}/accept", AcceptInvite).RequireRateLimiting(Social.SocialEndpoints.MutationsPolicy);
+    }
+
+    /// <summary>any member can mint; a fresh link retires the previous one
+    /// (one active link per split keeps revocation trivial)</summary>
+    private static async Task<IResult> MintInvite(string splitId, AppDbContext db, HttpContext http)
+    {
+        var me = http.GetUserId();
+        var (split, membership) = await MemberGateAsync(db, splitId, me);
+        if (split is null || membership is null) return Results.NotFound();
+        if (split.Status != "open") return Results.BadRequest(new { error = "split settled" });
+        db.SplitInvites.RemoveRange(await db.SplitInvites.Where(i => i.SplitId == splitId).ToListAsync());
+        var invite = new SplitInvite
+        {
+            Token = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(24))
+                .Replace('+', '-').Replace('/', '_').TrimEnd('='),
+            SplitId = splitId,
+            CreatedBy = me,
+            ExpiresAt = DateTimeOffset.UtcNow.AddDays(7),
+        };
+        db.SplitInvites.Add(invite);
+        await db.SaveChangesAsync();
+        return Results.Ok(new { token = invite.Token, expiresAt = invite.ExpiresAt });
+    }
+
+    /// <summary>the join screen shows ONLY the split name + inviter (design:
+    /// an invitee learns nothing else); invalid/expired tokens 404</summary>
+    private static async Task<IResult> PeekInvite(string token, AppDbContext db)
+    {
+        var found = await LiveInviteAsync(db, token);
+        if (found is null) return Results.NotFound();
+        var (invite, split) = found.Value;
+        var inviter = await db.Users.FindAsync(invite.CreatedBy);
+        return Results.Ok(new { splitName = split.Name, currency = split.Currency, inviterName = inviter?.DisplayName });
+    }
+
+    private static async Task<IResult> AcceptInvite(string token, AcceptInviteRequest request, AppDbContext db, HttpContext http)
+    {
+        var me = http.GetUserId();
+        var found = await LiveInviteAsync(db, token);
+        if (found is null) return Results.NotFound();
+        var (invite, split) = found.Value;
+        var existing = await db.SplitMembers.FirstOrDefaultAsync(m => m.SplitId == invite.SplitId && m.UserId == me);
+        if (existing is not null)
+        {
+            // idempotent re-join may still (re)pick the attachment
+            if (request.SpaceId is not null) existing.AttachedSpaceId = request.SpaceId;
+        }
+        else
+        {
+            db.SplitMembers.Add(new SplitMember
+            {
+                SplitId = invite.SplitId,
+                UserId = me,
+                Role = "member",
+                // per-member attachment: THEIR space, never validated against
+                // anyone else's — it's personal wiring the server just stores
+                AttachedSpaceId = request.SpaceId,
+            });
+        }
+        await db.SaveChangesAsync();
+        return Results.Ok(new { splitId = split.Id });
+    }
+
+    private static async Task<(SplitInvite Invite, Split Split)?> LiveInviteAsync(AppDbContext db, string token)
+    {
+        var invite = await db.SplitInvites.FindAsync(token);
+        if (invite is null || invite.ExpiresAt < DateTimeOffset.UtcNow) return null;
+        var split = await db.Splits.FindAsync(invite.SplitId);
+        if (split is null || split.Status != "open") return null;
+        return (invite, split);
     }
 
     private static async Task<IResult> ListSplits(AppDbContext db, HttpContext http)

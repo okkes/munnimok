@@ -24,7 +24,8 @@ export type TourId =
   | 'portfolio'
   | 'insights'
   | 'trends'
-  | 'shopping';
+  | 'shopping'
+  | 'splits';
 
 export interface TourStep {
   titleKey: TranslationKey;
@@ -253,6 +254,18 @@ export const TOURS: Tour[] = [
       { titleKey: 'tour.shop.2t', bodyKey: 'tour.shop.2b', illustration: '🔒', anchor: 'shopping-store-ah' },
       { titleKey: 'tour.shop.3t', bodyKey: 'tour.shop.3b', illustration: '🧲' },
       { titleKey: 'tour.shop.4t', bodyKey: 'tour.shop.4b', illustration: '🔍' },
+    ],
+  },
+  {
+    id: 'splits',
+    titleKey: 'splits.title',
+    icon: 'account-cash-outline',
+    screen: '/splits',
+    steps: [
+      { titleKey: 'tour.splits.1t', bodyKey: 'tour.splits.1b', illustration: '🍽️' },
+      { titleKey: 'tour.splits.2t', bodyKey: 'tour.splits.2b', illustration: '➕', anchor: 'splits-add' },
+      { titleKey: 'tour.splits.3t', bodyKey: 'tour.splits.3b', illustration: '⚖️' },
+      { titleKey: 'tour.splits.4t', bodyKey: 'tour.splits.4b', illustration: '🔗' },
     ],
   },
 ];

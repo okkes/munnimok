@@ -27,6 +27,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Split> Splits => Set<Split>();
     public DbSet<SplitMember> SplitMembers => Set<SplitMember>();
     public DbSet<SplitEntry> SplitEntries => Set<SplitEntry>();
+    public DbSet<SplitInvite> SplitInvites => Set<SplitInvite>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -104,6 +105,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasKey(x => x.Id);
             e.HasIndex(x => x.SplitId);
         });
+        modelBuilder.Entity<SplitInvite>(e =>
+        {
+            e.HasKey(x => x.Token);
+            e.HasIndex(x => x.SplitId);
+        });
     }
 }
 
@@ -155,6 +161,21 @@ public class SplitEntry
     public string? SourceTxId { get; set; }
     public Guid CreatedBy { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+/// <summary>
+/// Share-link invite (SP3): any member can mint one; the link joins
+/// ANYONE — no friendship required, no space access granted. Multi-use
+/// while valid; minting a new link retires the split's previous one.
+/// The token is the whole secret, so it's long and random.
+/// </summary>
+public class SplitInvite
+{
+    public required string Token { get; set; }
+    public required string SplitId { get; set; }
+    public Guid CreatedBy { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset ExpiresAt { get; set; }
 }
 
 /// <summary>

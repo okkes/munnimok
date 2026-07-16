@@ -1,4 +1,17 @@
-# Split sessions — settle-up v2 design (APPROVED 2026-07-16 · SP1 DELIVERED)
+# Split sessions — settle-up v2 design (APPROVED 2026-07-16 · SP1–SP3 DELIVERED)
+
+**SP2 shipped** (2026-07-16, v1.18.0): add-from-space-transactions —
+multi-select search over the member's OWN attached space's LOCAL
+database, copied in as frozen snapshots with a private `sourceTxId`
+backlink — plus the per-expense share editor (custom shares must sum).
+
+**SP3 shipped** (2026-07-16): share-link invites (any member mints; one
+active link per split, 7-day expiry, reminting retires the old link),
+join screen showing ONLY split name + inviter with the per-member
+space-attachment picker, and the guest-hardening server test: split
+membership grants ZERO space-scope access (sync pull/push both 403).
+The splits tour ships with SP3 as planned. Invite by user id was folded
+into the link (one mechanism, same guarantees).
 
 **SP1 shipped** (2026-07-16): server model (splits / splitMembers with
 per-member `attachedSpaceId` / splitEntries with ALWAYS-materialized

@@ -190,6 +190,59 @@ describe('Splits (SP1)', () => {
     });
   });
 
+  it('mints a share link from the members card (SP3)', async () => {
+    renderAppAsUser('/splits/split-1', {
+      api: {
+        'GET /health': () => ({ status: 'ok', capabilities: {} }),
+        'GET /splits/split-1': () => DETAIL,
+        'POST /splits/split-1/invites': () => ({ token: 'tok-abc', expiresAt: '2026-07-23' }),
+      },
+    });
+
+    fireEvent.click(await screen.findByTestId('split-invite'));
+    await waitFor(() => expect(screen.getByTestId('split-invite-link').textContent).toContain('#/splits/join/tok-abc'));
+  });
+
+  it('join screen shows ONLY name + inviter, then accepts with MY chosen space (SP3)', async () => {
+    const accepted: unknown[] = [];
+    renderAppAsUser('/splits/join/tok-abc', {
+      spaces: [
+        { id: 's-user', name: 'Personal' },
+        { id: 's-house', name: 'Household', kind: 'shared' },
+      ],
+      api: {
+        'GET /health': () => ({ status: 'ok', capabilities: {} }),
+        'GET /splits/invites/tok-abc': () => ({ splitName: 'Barcelona', currency: 'EUR', inviterName: 'Anna' }),
+        'POST /splits/invites/tok-abc/accept': (body) => {
+          accepted.push(body);
+          return { splitId: 'split-1' };
+        },
+        'GET /splits/split-1': () => DETAIL,
+      },
+    });
+
+    const card = await screen.findByTestId('split-join-card');
+    expect(card.textContent).toContain('Barcelona');
+    expect(card.textContent).toContain('Anna');
+
+    fireEvent.click(await screen.findByTestId('split-join-space-s-house'));
+    fireEvent.click(screen.getByTestId('split-join-confirm'));
+
+    await screen.findByTestId('screen-split-detail');
+    expect(accepted[0]).toMatchObject({ spaceId: 's-house' });
+  });
+
+  it('a dead invite link says so instead of joining (SP3)', async () => {
+    renderAppAsUser('/splits/join/expired', {
+      api: {
+        'GET /health': () => ({ status: 'ok', capabilities: {} }),
+        'GET /splits/invites/expired': () => new Response(null, { status: 404 }),
+      },
+    });
+    expect(await screen.findByTestId('split-join-invalid')).toBeTruthy();
+    expect(screen.queryByTestId('split-join-confirm')).toBeNull();
+  });
+
   it('creates a split from the list and navigates into it', async () => {
     const created: unknown[] = [];
     renderAppAsUser('/splits', {

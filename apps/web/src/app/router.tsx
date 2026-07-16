@@ -23,6 +23,7 @@ import { AccountsScreen } from '@/features/accounts/AccountsScreen';
 import { ManageCategoriesScreen } from '@/features/categories/ManageCategoriesScreen';
 import { FriendsScreen } from '@/features/friends/FriendsScreen';
 import { SplitDetailScreen, SplitsScreen } from '@/features/splits/SplitsScreen';
+import { SplitJoinScreen } from '@/features/splits/SplitJoinScreen';
 import { OnboardingScreen } from '@/features/auth/OnboardingScreen';
 import { OverviewScreen } from '@/features/overview/OverviewScreen';
 import { CategoryDrillScreen } from '@/features/overview/CategoryDrillScreen';
@@ -131,6 +132,7 @@ const categoriesRoute = createRoute({
 });
 const friendsRoute = createRoute({ getParentRoute: () => appRoute, path: '/friends', component: FriendsScreen });
 const splitsRoute = createRoute({ getParentRoute: () => appRoute, path: '/splits', component: SplitsScreen });
+const splitJoinRoute = createRoute({ getParentRoute: () => appRoute, path: '/splits/join/$token', component: SplitJoinScreen });
 const splitDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/splits/$splitId', component: SplitDetailScreen });
 const onboardingRoute = createRoute({ getParentRoute: () => appRoute, path: '/onboarding', component: OnboardingScreen });
 const profileRoute = createRoute({ getParentRoute: () => appRoute, path: '/profile', component: ProfileScreen });
@@ -185,6 +187,7 @@ export const routeTree = rootRoute.addChildren([
     categoriesRoute,
     friendsRoute,
     splitsRoute,
+    splitJoinRoute,
     splitDetailRoute,
     onboardingRoute,
     profileRoute,

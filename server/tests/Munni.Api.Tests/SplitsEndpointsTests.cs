@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Munni.Api.Data;
+using Munni.Api.Sync;
 
 namespace Munni.Api.Tests;
 
@@ -47,6 +48,55 @@ public class SplitsEndpointsTests : IClassFixture<AdminApiFactory>
         db.SplitMembers.Add(new SplitMember { SplitId = splitId, UserId = userId, Role = "member" });
         await db.SaveChangesAsync();
     }
+
+    [Fact]
+    public async Task InviteLinks_JoinAnyone_ButGuestsNeverTouchSpaceScopes()
+    {
+        var host = await TouchAsync("sp3-host");
+        var guest = await TouchAsync("sp3-guest");
+
+        // the host's split is attached to their space, which also has data
+        Assert.True((await host.PostAsJsonAsync("/splits",
+            new { id = "split-inv", name = "Ski trip", currency = "EUR", spaceId = "s-host" })).IsSuccessStatusCode);
+        Assert.True((await host.PostAsJsonAsync("/sync/s-host/push", new PushRequest("dev1",
+            [new SyncOpDto(Guid.NewGuid().ToString(), "s-host", "space", "s-host",
+                new() { ["name"] = System.Text.Json.JsonSerializer.SerializeToElement("Host home") }, "000000100-0000-dev")]))).IsSuccessStatusCode);
+
+        // outsider can't mint; the member can
+        Assert.Equal(HttpStatusCode.NotFound, (await guest.PostAsync("/splits/split-inv/invites", null)).StatusCode);
+        var mint = await host.PostAsync("/splits/split-inv/invites", null);
+        Assert.True(mint.IsSuccessStatusCode);
+        var token = (await mint.Content.ReadFromJsonAsync<InviteMinted>())!.Token;
+
+        // the peek reveals ONLY name + inviter; garbage tokens 404
+        var peek = await guest.GetFromJsonAsync<InvitePeek>($"/splits/invites/{token}");
+        Assert.Equal("Ski trip", peek!.SplitName);
+        Assert.Equal(HttpStatusCode.NotFound, (await guest.GetAsync("/splits/invites/not-a-token")).StatusCode);
+
+        // accepting joins with the guest's OWN attachment
+        var accept = await guest.PostAsJsonAsync($"/splits/invites/{token}/accept", new { spaceId = "s-guest" });
+        Assert.True(accept.IsSuccessStatusCode);
+        var detail = await guest.GetFromJsonAsync<SplitDetailProbe>("/splits/split-inv");
+        Assert.Equal(2, detail!.Members.Count);
+        Assert.Equal("s-guest", detail.AttachedSpaceId); // mine, not the host's
+
+        // THE hardening rule: split membership grants ZERO space access
+        Assert.Equal(HttpStatusCode.Forbidden, (await guest.GetAsync("/sync/s-host/pull?since=0")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await guest.PostAsJsonAsync("/sync/s-host/push", new PushRequest("dev2",
+            [new SyncOpDto(Guid.NewGuid().ToString(), "s-host", "space", "s-host",
+                new() { ["name"] = System.Text.Json.JsonSerializer.SerializeToElement("pwned") }, "000000200-0000-dev")]))).StatusCode);
+
+        // minting again retires the old link
+        var remint = await host.PostAsync("/splits/split-inv/invites", null);
+        var token2 = (await remint.Content.ReadFromJsonAsync<InviteMinted>())!.Token;
+        Assert.NotEqual(token, token2);
+        Assert.Equal(HttpStatusCode.NotFound, (await guest.GetAsync($"/splits/invites/{token}")).StatusCode);
+    }
+
+    private sealed record InviteMinted(string Token);
+    private sealed record InvitePeek(string SplitName, string Currency, string? InviterName);
+    private sealed record SplitDetailProbe(string Id, string? AttachedSpaceId, List<MemberProbe> Members);
+    private sealed record MemberProbe(Guid UserId, string Role);
 
     [Fact]
     public async Task MembershipGatesEverything_SharesFreezeAtCreation()

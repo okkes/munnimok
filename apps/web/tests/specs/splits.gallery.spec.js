@@ -46,4 +46,44 @@ for (const V of VARIANTS) {
 
     await teardown(page, ctx, k('68-splits-list'));
   });
+
+  test(`sp-a2 invite link: a stranger joins with their own space attachment [${V.id}]`, async ({ browser }) => {
+    test.skip(!(await syncApiUp()), 'sync API not running (docker compose -f deploy/docker-compose.test.yml up -d)');
+    test.setTimeout(120_000);
+    const stamp = Date.now();
+
+    // host creates a split and mints the share link
+    const host = await createPage(browser, V);
+    await base(host.page, V, { userSub: `e2e-split-host-${stamp}` });
+    await gotoGlobalSettings(host.page);
+    await host.page.click('[data-testid="settings-splits-row"]');
+    await host.page.click('[data-testid="splits-add"]');
+    await host.page.fill('[data-testid="split-name"]', 'Ski trip');
+    await host.page.click('[data-testid="split-create"]');
+    await host.page.waitForSelector('[data-testid="screen-split-detail"]');
+    await host.page.click('[data-testid="split-invite"]');
+    const linkBox = host.page.locator('[data-testid="split-invite-link"]');
+    await expect(linkBox).toContainText('#/splits/join/');
+    const joinHash = (await linkBox.textContent()).trim().replace(/^.*#/, '#');
+
+    // a complete stranger (not a friend, no shared space) follows the link
+    const guest = await createPage(browser, V);
+    await base(guest.page, V, { userSub: `e2e-split-guest-${stamp}` });
+    await guest.page.goto(`/${joinHash}`);
+    await guest.page.waitForSelector('[data-testid="split-join-card"]');
+    await expect(guest.page.locator('[data-testid="split-join-card"]')).toContainText('Ski trip');
+    await shot(guest.page, k('69-split-join'));
+    await guest.page.click('[data-testid="split-join-confirm"]');
+    await guest.page.waitForSelector('[data-testid="screen-split-detail"]');
+    await expect(guest.page.locator('[data-testid="split-members"]')).toContainText('Owner');
+
+    // the host sees the new member after reopening
+    await host.page.reload();
+    await host.page.waitForSelector('[data-testid="split-members"]');
+    const memberRows = host.page.locator('[data-testid="split-members"] .mdi-account-outline');
+    await expect(memberRows).toHaveCount(2);
+
+    await teardown(guest.page, guest.ctx, k('69-split-join') + '--guest');
+    await teardown(host.page, host.ctx, k('69-split-join'));
+  });
 }
