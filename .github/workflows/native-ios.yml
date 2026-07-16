@@ -131,7 +131,7 @@ jobs:
 
       - name: Upload simulator artifact
         if: steps.asc.outputs.present == 'false'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: munni-ios-simulator
           path: apps/native/ios/App/build/Build/Products/Debug-iphonesimulator/App.app
