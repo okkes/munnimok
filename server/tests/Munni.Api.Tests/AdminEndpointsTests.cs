@@ -154,3 +154,100 @@ public class AdminEndpointsTests : IClassFixture<AdminApiFactory>
         Assert.Single(after!);
     }
 }
+
+public class AdminGrantsTests : IClassFixture<AdminApiFactory>
+{
+    private readonly AdminApiFactory _factory;
+
+    public AdminGrantsTests(AdminApiFactory factory) => _factory = factory;
+
+    private HttpClient ClientFor(string sub)
+    {
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-User-Sub", sub);
+        return client;
+    }
+
+    private async Task SeedUserAsync(string sub)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        if (!await db.Users.AnyAsync(u => u.Sub == sub))
+        {
+            db.Users.Add(new User { Id = Guid.NewGuid(), Sub = sub });
+            await db.SaveChangesAsync();
+        }
+    }
+
+    [Fact]
+    public async Task PromoteGrantsAccess_RevokeTakesItAway()
+    {
+        await SeedUserAsync("promoted-user");
+        var admin = ClientFor("the-admin");
+        var promoted = ClientFor("promoted-user");
+
+        Assert.Equal(HttpStatusCode.Forbidden, (await promoted.GetAsync("/admin/ping")).StatusCode);
+        Assert.True((await admin.PostAsync("/admin/admins/promoted-user", null)).IsSuccessStatusCode);
+        Assert.True((await promoted.GetAsync("/admin/ping")).IsSuccessStatusCode);
+
+        // the grants list carries both bootstrap and DB admins, flagged
+        var admins = await admin.GetFromJsonAsync<List<AdminGrantDto>>("/admin/admins");
+        Assert.Contains(admins!, a => a.Sub == "the-admin" && a.Bootstrap);
+        Assert.Contains(admins!, a => a.Sub == "promoted-user" && !a.Bootstrap && a.GrantedBySub == "the-admin");
+
+        // a granted admin can grant others (same power) but the revoke path works too
+        Assert.True((await admin.DeleteAsync("/admin/admins/promoted-user")).IsSuccessStatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await promoted.GetAsync("/admin/ping")).StatusCode);
+    }
+
+    [Fact]
+    public async Task GuardsHold_BootstrapAndSelfAndUnknownUsers()
+    {
+        var admin = ClientFor("the-admin");
+        // bootstrap admins cannot be demoted from the console
+        Assert.Equal(HttpStatusCode.BadRequest, (await admin.DeleteAsync("/admin/admins/another-admin")).StatusCode);
+        // you cannot demote yourself
+        Assert.Equal(HttpStatusCode.BadRequest, (await admin.DeleteAsync("/admin/admins/the-admin")).StatusCode);
+        // promoting a sub that has never signed in is refused
+        Assert.Equal(HttpStatusCode.NotFound, (await admin.PostAsync("/admin/admins/ghost-user", null)).StatusCode);
+        // non-admins cannot touch the grants API
+        var user = ClientFor("regular-user-2");
+        Assert.Equal(HttpStatusCode.Forbidden, (await user.GetAsync("/admin/admins")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await user.PostAsync("/admin/admins/regular-user-2", null)).StatusCode);
+    }
+
+    [Fact]
+    public async Task QuotaEndpointReturnsCapturedSnapshots()
+    {
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.ProviderQuotas.Add(new ProviderQuota
+            {
+                Id = Guid.NewGuid(),
+                Provider = "gocardless",
+                Scope = "accounts:transactions",
+                Limit = 4,
+                Remaining = 3,
+                ResetAtUtc = DateTimeOffset.UtcNow.AddHours(20),
+            });
+            await db.SaveChangesAsync();
+        }
+        var admin = ClientFor("the-admin");
+        var quota = await admin.GetFromJsonAsync<List<ProviderQuotaDto>>("/admin/quota");
+        var row = quota!.Single(q => q.Scope == "accounts:transactions");
+        Assert.Equal(4, row.Limit);
+        Assert.Equal(3, row.Remaining);
+    }
+}
+
+public class QuotaCaptureHandlerTests
+{
+    [Theory]
+    [InlineData("https://x/api/v2/requisitions/", "requisitions")]
+    [InlineData("https://x/api/v2/accounts/abc-123/transactions/", "accounts:transactions")]
+    [InlineData("https://x/api/v2/accounts/abc-123/details/", "accounts:details")]
+    [InlineData("https://x/api/v2/token/new/", "token:new")]
+    public void ScopeCollapsesIdsIntoEndpointFamilies(string url, string expected) =>
+        Assert.Equal(expected, QuotaCaptureHandler.ScopeOf(new Uri(url)));
+}

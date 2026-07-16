@@ -1,3 +1,4 @@
+using Munni.Api.Admin;
 using Munni.Api.Data;
 using Munni.Api.GoCardless;
 
@@ -17,7 +18,9 @@ public static class BankingSetup
         {
             // fixed vendor endpoint, overridable for tests/self-hosted proxies
             var gcBaseUrl = config["GoCardless:BaseUrl"] ?? "https://bankaccountdata.gocardless.com/api/v2/"; // NOSONAR(S1075) vendor API base
-            services.AddHttpClient<IGoCardlessApi, GoCardlessApi>(client => client.BaseAddress = new Uri(gcBaseUrl));
+            services.AddHttpClient<IGoCardlessApi, GoCardlessApi>(client => client.BaseAddress = new Uri(gcBaseUrl))
+                // the admin console reads quota from these captured headers (AD3)
+                .AddHttpMessageHandler(sp => new QuotaCaptureHandler(sp.GetRequiredService<IServiceScopeFactory>(), "gocardless"));
             services.AddScoped<IBankDataApi>(sp => new GoCardlessBankApi(sp.GetRequiredService<IGoCardlessApi>()));
         }
         var ebConfigured = !string.IsNullOrEmpty(config["EnableBanking:ApplicationId"]) &&

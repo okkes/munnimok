@@ -22,6 +22,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<SpaceAccountLink> SpaceAccountLinks => Set<SpaceAccountLink>();
     public DbSet<GcPendingTx> GcPendingTxs => Set<GcPendingTx>();
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
+    public DbSet<AdminGrant> AdminGrants => Set<AdminGrant>();
+    public DbSet<ProviderQuota> ProviderQuotas => Set<ProviderQuota>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -78,7 +80,47 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         });
         modelBuilder.Entity<GcPendingTx>(e => e.HasKey(x => new { x.GcAccountId, x.EntityId }));
         modelBuilder.Entity<AppSetting>(e => e.HasKey(x => x.Key));
+        modelBuilder.Entity<AdminGrant>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.Sub).IsUnique();
+        });
+        modelBuilder.Entity<ProviderQuota>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.Provider, x.Scope }).IsUnique();
+        });
     }
+}
+
+/// <summary>
+/// DB-stored admin promotion (admin-redesign AD2): effective admins are
+/// the Admin:Subs env list (bootstrap/emergency, immutable from the UI)
+/// UNION these grants, managed from the admin console.
+/// </summary>
+public class AdminGrant
+{
+    public Guid Id { get; set; }
+    public required string Sub { get; set; }
+    public required string GrantedBySub { get; set; }
+    public DateTimeOffset GrantedAtUtc { get; set; } = DateTimeOffset.UtcNow;
+}
+
+/// <summary>
+/// Latest rate-limit headers seen per provider endpoint scope
+/// (admin-redesign AD3) — captured by piggybacking on normal sync
+/// traffic, never by extra calls. One row per (provider, scope).
+/// </summary>
+public class ProviderQuota
+{
+    public Guid Id { get; set; }
+    public required string Provider { get; set; }
+    /// <summary>endpoint family, e.g. "accounts:transactions" or "requisitions"</summary>
+    public required string Scope { get; set; }
+    public int? Limit { get; set; }
+    public int? Remaining { get; set; }
+    public DateTimeOffset? ResetAtUtc { get; set; }
+    public DateTimeOffset CapturedAtUtc { get; set; } = DateTimeOffset.UtcNow;
 }
 
 /// <summary>admin-editable server-wide settings (active bank provider, …)</summary>

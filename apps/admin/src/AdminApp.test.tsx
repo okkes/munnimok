@@ -7,13 +7,19 @@ import type { AdminConfig } from './main';
 const CONFIG: AdminConfig = { apiUrl: 'http://api.test', logtoEndpoint: '', logtoAppId: '', logtoResource: '' };
 
 const USERS = [
-  { id: 'u1', sub: 'sub-alice', displayName: 'Alice', email: null, createdAt: '2026-01-01T00:00:00Z', spaceCount: 2 },
-  { id: 'u2', sub: 'sub-bob', displayName: null, email: null, createdAt: '2026-02-01T00:00:00Z', spaceCount: 1 },
+  { id: 'u1', sub: 'sub-alice', displayName: 'Alice', email: 'alice@x.nl', createdAt: '2026-01-01T00:00:00Z', spaceCount: 2, isAdmin: true, bootstrap: true },
+  { id: 'u2', sub: 'sub-bob', displayName: null, email: null, createdAt: '2026-02-01T00:00:00Z', spaceCount: 1, isAdmin: false, bootstrap: false },
+  { id: 'u3', sub: 'sub-carol', displayName: 'Carol', email: null, createdAt: '2026-03-01T00:00:00Z', spaceCount: 3, isAdmin: true, bootstrap: false },
 ];
 const REQUISITIONS = [
-  { requisitionId: 'req-live-0001', status: 'LN', institutionId: 'ING_NL', created: '2026-06-01T00:00:00Z', accountCount: 2, stale: false, ownerSub: 'sub-alice' },
+  { requisitionId: 'req-live-0001', status: 'LN', institutionId: 'ING_NL', created: new Date(Date.now() - 80 * 86_400_000).toISOString(), accountCount: 2, stale: false, ownerSub: 'sub-alice' },
   { requisitionId: 'req-stale-0002', status: 'EX', institutionId: 'ASN_NL', created: null, accountCount: 0, stale: true, ownerSub: null },
+  { requisitionId: 'req-fresh-0003', status: 'LN', institutionId: 'RABO_NL', created: new Date(Date.now() - 5 * 86_400_000).toISOString(), accountCount: 1, stale: false, ownerSub: 'sub-bob' },
 ];
+const QUOTA = [
+  { provider: 'gocardless', scope: 'accounts:transactions', limit: 4, remaining: 1, resetAtUtc: '2026-07-17T06:00:00Z', capturedAtUtc: '2026-07-16T06:00:00Z' },
+];
+const HEALTH = { status: 'ok', build: '640', capabilities: { gocardless: true, fcm: true, push: false } };
 
 type Handler = (init?: RequestInit) => { status?: number; body?: unknown };
 
@@ -35,6 +41,20 @@ function scriptFetch(routes: Record<string, Handler>) {
   return calls;
 }
 
+const HAPPY_ROUTES = (): Record<string, Handler> => ({
+  'GET /admin/ping': () => ({}),
+  'GET /admin/users': () => ({ body: USERS }),
+  'GET /admin/gocardless/requisitions': () => ({ body: REQUISITIONS }),
+  'GET /admin/bank-provider': () => ({ body: { active: 'gocardless', configured: ['gocardless', 'enablebanking'] } }),
+  'GET /admin/quota': () => ({ body: QUOTA }),
+  'GET /health': () => ({ body: HEALTH }),
+});
+
+function renderAdmin() {
+  localStorage.setItem('munni_admin_sub', 'sub-alice');
+  render(<AdminApp config={CONFIG} getToken={null} />);
+}
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -48,91 +68,119 @@ describe('AdminApp (test-auth mode)', () => {
     render(<AdminApp config={CONFIG} getToken={null} />);
     fireEvent.change(screen.getByTestId('admin-sub'), { target: { value: 'nobody' } });
     await waitFor(() => expect(screen.getByText(/not on the admin list/)).toBeTruthy());
+    expect(screen.queryByTestId('overview-tiles')).toBeNull();
+  });
+
+  it('overview shows tiles, the quota table with reset time, and capability chips', async () => {
+    scriptFetch(HAPPY_ROUTES());
+    renderAdmin();
+    const tiles = await screen.findByTestId('overview-tiles');
+    expect(tiles.textContent).toContain('Users');
+    expect(tiles.textContent).toContain('3'); // 3 users
+    expect(tiles.textContent).toContain('6'); // 2+1+3 space memberships
+    expect(tiles.textContent).toContain('Linked banks');
+    expect(tiles.textContent).toContain('Expiring ≤14d');
+
+    const quota = screen.getByTestId('overview-quota');
+    expect(quota.textContent).toContain('accounts:transactions');
+    expect(quota.textContent).toContain('1 / 4');
+
+    const caps = screen.getByTestId('overview-capabilities');
+    expect(caps.textContent).toContain('build 640');
+    expect(caps.textContent).toContain('fcm');
+  });
+
+  it('users screen filters by search and shows admin badges', async () => {
+    scriptFetch(HAPPY_ROUTES());
+    renderAdmin();
+    fireEvent.click(await screen.findByTestId('nav-users'));
+
+    const table = await screen.findByTestId('admin-users');
+    expect(table.textContent).toContain('Alice');
+    expect(table.textContent).toContain('bootstrap admin');
+    expect(table.textContent).toContain('sub-bob'); // nameless users fall back to sub
+
+    fireEvent.change(screen.getByTestId('users-search'), { target: { value: 'carol' } });
     expect(screen.getByTestId('admin-users').textContent).not.toContain('Alice');
+    expect(screen.getByTestId('admin-users').textContent).toContain('Carol');
   });
 
-  it('an admin sees users and requisitions, with stale ones marked', async () => {
-    scriptFetch({
-      'GET /admin/ping': () => ({}),
-      'GET /admin/users': () => ({ body: USERS }),
-      'GET /admin/gocardless/requisitions': () => ({ body: REQUISITIONS }),
+  it('promote and demote call the grants API; bootstrap admins have no demote button', async () => {
+    const calls = scriptFetch({
+      ...HAPPY_ROUTES(),
+      'POST /admin/admins/sub-bob': () => ({}),
+      'DELETE /admin/admins/sub-carol': () => ({}),
     });
-    localStorage.setItem('munni_admin_sub', 'sub-admin'); // persisted sub restores
-    render(<AdminApp config={CONFIG} getToken={null} />);
+    renderAdmin();
+    fireEvent.click(await screen.findByTestId('nav-users'));
+    await screen.findByTestId('admin-users');
 
-    await waitFor(() => expect(screen.getByTestId('admin-users').textContent).toContain('Alice'));
-    expect(screen.getByTestId('admin-users').textContent).toContain('2 spaces');
-    expect(screen.getByTestId('admin-users').textContent).toContain('sub-bob'); // nameless users fall back to sub
-    const table = screen.getByTestId('admin-requisitions');
-    expect(table.textContent).toContain('linked'); // LN mapped to a label
-    expect(table.textContent).toContain('stale');
-    expect(table.textContent).toContain('expired');
+    expect(screen.queryByTestId('demote-sub-alice')).toBeNull(); // bootstrap: untouchable
+    fireEvent.click(screen.getByTestId('promote-sub-bob'));
+    await waitFor(() => expect(calls).toContain('POST /admin/admins/sub-bob'));
+    fireEvent.click(screen.getByTestId('demote-sub-carol'));
+    await waitFor(() => expect(calls).toContain('DELETE /admin/admins/sub-carol'));
   });
 
-  it('selected requisitions are deleted one by one, then the list reloads', async () => {
+  it('a failed action surfaces the server error', async () => {
+    scriptFetch({
+      ...HAPPY_ROUTES(),
+      'DELETE /admin/admins/sub-carol': () => ({ status: 400, body: { error: 'cannot demote yourself' } }),
+    });
+    renderAdmin();
+    fireEvent.click(await screen.findByTestId('nav-users'));
+    await screen.findByTestId('admin-users');
+    fireEvent.click(screen.getByTestId('demote-sub-carol'));
+    await waitFor(() => expect(screen.getByTestId('admin-error').textContent).toContain('cannot demote yourself'));
+  });
+
+  it('connections: expiring filter narrows the list; delete removes selected and reloads', async () => {
     let requisitions = [...REQUISITIONS];
     const calls = scriptFetch({
-      'GET /admin/ping': () => ({}),
-      'GET /admin/users': () => ({ body: USERS }),
+      ...HAPPY_ROUTES(),
       'GET /admin/gocardless/requisitions': () => ({ body: requisitions }),
       'DELETE /admin/gocardless/requisitions/req-stale-0002': () => {
         requisitions = requisitions.filter((r) => r.requisitionId !== 'req-stale-0002');
         return {};
       },
     });
-    localStorage.setItem('munni_admin_sub', 'sub-admin');
-    render(<AdminApp config={CONFIG} getToken={null} />);
-    await waitFor(() => expect(screen.getByTestId('admin-requisitions').textContent).toContain('ASN_NL'));
+    renderAdmin();
+    fireEvent.click(await screen.findByTestId('nav-connections'));
+    const table = await screen.findByTestId('admin-requisitions');
+    expect(table.textContent).toContain('ASN_NL');
+    expect(table.textContent).toContain('expiring'); // the 80-day-old linked one
+    expect(table.textContent).toContain('stale');
 
-    // no bulk button until something is selected
+    // expiring-only filter narrows to the ING requisition
+    fireEvent.click(screen.getByTestId('connections-expiring-filter'));
+    expect(screen.getByTestId('admin-requisitions').textContent).not.toContain('RABO_NL');
+    expect(screen.getByTestId('admin-requisitions').textContent).toContain('ING_NL');
+    fireEvent.click(screen.getByTestId('connections-expiring-filter'));
+
+    // select + bulk delete
     expect(screen.queryByText(/Delete selected/)).toBeNull();
-    const checkboxes = screen.getAllByRole('checkbox');
-    fireEvent.click(checkboxes[1]); // the stale ASN requisition
+    const staleRow = screen.getAllByRole('checkbox').find((box) => box.closest('tr')?.textContent?.includes('ASN_NL'))!;
+    fireEvent.click(staleRow);
     fireEvent.click(screen.getByText('Delete selected (1)'));
-
     await waitFor(() => expect(screen.getByTestId('admin-requisitions').textContent).not.toContain('ASN_NL'));
     expect(calls).toContain('DELETE /admin/gocardless/requisitions/req-stale-0002');
     expect(screen.queryByText(/Delete selected/)).toBeNull(); // selection cleared
   });
 
-  it('toggling a selection off removes it from the pending delete', async () => {
-    scriptFetch({
-      'GET /admin/ping': () => ({}),
-      'GET /admin/users': () => ({ body: [] }),
-      'GET /admin/gocardless/requisitions': () => ({ body: REQUISITIONS }),
-    });
-    localStorage.setItem('munni_admin_sub', 'sub-admin');
-    render(<AdminApp config={CONFIG} getToken={null} />);
-    await waitFor(() => expect(screen.getAllByRole('checkbox').length).toBe(2));
-
-    fireEvent.click(screen.getAllByRole('checkbox')[0]);
-    fireEvent.click(screen.getAllByRole('checkbox')[1]);
-    expect(screen.getByText('Delete selected (2)')).toBeTruthy();
-    fireEvent.click(screen.getAllByRole('checkbox')[0]);
-    expect(screen.getByText('Delete selected (1)')).toBeTruthy();
-  });
-
-  it('the bank-provider picker shows the active one and switches it', async () => {
+  it('the bank-provider picker on Overview shows the active one and switches it', async () => {
     let active = 'gocardless';
     const calls = scriptFetch({
-      'GET /admin/ping': () => ({}),
-      'GET /admin/users': () => ({ body: [] }),
-      'GET /admin/gocardless/requisitions': () => ({ body: [] }),
+      ...HAPPY_ROUTES(),
       'GET /admin/bank-provider': () => ({ body: { active, configured: ['gocardless', 'enablebanking'] } }),
       'PUT /admin/bank-provider': (init) => {
         active = (JSON.parse(String(init?.body)) as { provider: string }).provider;
         return { body: { active } };
       },
     });
-    localStorage.setItem('munni_admin_sub', 'sub-admin');
-    render(<AdminApp config={CONFIG} getToken={null} />);
-
+    renderAdmin();
     const gc = (await screen.findByTestId('admin-provider-gocardless')) as HTMLInputElement;
-    const eb = screen.getByTestId('admin-provider-enablebanking') as HTMLInputElement;
     expect(gc.checked).toBe(true);
-    expect(eb.checked).toBe(false);
-
-    fireEvent.click(eb);
+    fireEvent.click(screen.getByTestId('admin-provider-enablebanking'));
     await waitFor(() => expect((screen.getByTestId('admin-provider-enablebanking') as HTMLInputElement).checked).toBe(true));
     expect(calls).toContain('PUT /admin/bank-provider');
     expect(active).toBe('enablebanking');
@@ -142,8 +190,8 @@ describe('AdminApp (test-auth mode)', () => {
     const seenHeaders: (string | null)[] = [];
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-        seenHeaders.push(new Headers(init?.headers).get('X-User-Sub'));
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input).includes('/admin/')) seenHeaders.push(new Headers(init?.headers).get('X-User-Sub'));
         return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
       }),
     );
@@ -160,8 +208,8 @@ describe('AdminApp (OIDC token mode)', () => {
     const seenAuth: (string | null)[] = [];
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-        seenAuth.push(new Headers(init?.headers).get('Authorization'));
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input).includes('/admin/')) seenAuth.push(new Headers(init?.headers).get('Authorization'));
         return new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } });
       }),
     );
