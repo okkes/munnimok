@@ -92,11 +92,12 @@ export function GlobalSettingsScreen() {
       return;
     }
     // biometrics are best-effort: cancelled/unsupported leaves PIN-only
-    const credentialId = lockBioAvailable ? await registerBiometric() : null;
+    const biometric = lockBioAvailable ? await registerBiometric() : null;
     const pinSalt = randomSalt();
     writeLockConfig({
       enabled: true,
-      credentialId: credentialId ?? undefined,
+      credentialId: biometric?.credentialId,
+      biometricKind: biometric?.kind,
       pinSalt,
       pinHash: await hashPin(lockPin, pinSalt),
       timeoutSec: lockTimeout,

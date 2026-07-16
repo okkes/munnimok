@@ -35,6 +35,8 @@
 	<false/>
 	<key>NSCameraUsageDescription</key>
 	<string>munni uses the camera to photograph receipts you attach to transactions.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>munni uses Face ID to unlock the app when the app lock is enabled.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>munni can attach an existing photo from your library to a transaction.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
