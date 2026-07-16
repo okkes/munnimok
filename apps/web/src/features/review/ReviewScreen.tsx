@@ -9,6 +9,7 @@ import { merchantKey } from '@/domain/merchantKey';
 import { draftReady, initDraft, withCategory, withLinkedAccount, withSplits, withType } from '@/domain/reviewDraft';
 import { normalizeIban } from '@/domain/feedIds';
 import { hapticNotify } from '@/lib/platform';
+import { TxRow } from '@/ui/TxRow';
 import { fetchSettlementCandidates } from '@/features/splits/settlementCandidates';
 import type { SettlementCandidate } from '@/features/splits/settlementCandidates';
 import { useSession } from '@/app/session';
@@ -104,6 +105,7 @@ function BulkConfirmSection({
   if (similar.length === 0) return null;
 
   const all = similar.every((s) => selected.has(s.id));
+  const detail = detailId ? similar.find((s) => s.id === detailId) : undefined;
   const toggleOne = (id: string) => {
     const next = new Set(selected);
     if (next.has(id)) next.delete(id);
@@ -136,58 +138,70 @@ function BulkConfirmSection({
         </button>
       </div>
 
-      <Sheet open={open} onOpenChange={setOpen} title={t('review.alsoApply', { n: selected.size })} size="tall">
+      {/* near-max-height sheet styled like the transactions list (user
+          redesign): TxRow rows with a checkbox rail, select/unselect all,
+          and a row tap opens a compact READ-ONLY detail as a stacked sheet */}
+      <Sheet open={open} onOpenChange={setOpen} title={t('review.alsoApply', { n: selected.size })} height={680}>
+        <div className="flex items-center justify-between pb-2">
+          <span className="text-[12px] text-ink-3">{t('review.bulkCount', { n: similar.length })}</span>
+          <button
+            data-testid="review-bulk-select-all"
+            onClick={() => onChange(all ? new Set() : new Set(similar.map((s) => s.id)))}
+            className="m-tap border-none bg-transparent text-[12px] font-semibold text-accent-deep"
+          >
+            {all ? t('review.bulkUnselectAll') : t('review.bulkSelectAll')}
+          </button>
+        </div>
         {/* fixed px so the list scrolls INSIDE the sheet (sheet rules) */}
-        <div className="max-h-[420px] overflow-y-auto overscroll-contain" data-testid="review-bulk-list">
+        <div className="max-h-[540px] overflow-y-auto overscroll-contain" data-testid="review-bulk-list">
           {similar.map((item) => {
             const checked = selected.has(item.id);
-            const expanded = detailId === item.id;
             return (
-              <div key={item.id} className="border-b border-line-2 last:border-0">
-                <div className="flex items-center gap-3 py-2.5">
-                  <button
-                    data-testid={`review-bulk-${item.id}`}
-                    aria-label={cleanBankText(item.merchant)}
-                    onClick={() => toggleOne(item.id)}
-                    className={`m-tap flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 ${
-                      checked ? 'border-accent bg-accent text-white' : 'border-line bg-surface'
-                    }`}
-                  >
-                    {checked && <Icon name="check" size={12} />}
-                  </button>
-                  {/* tapping the row body opens the read-only detail */}
-                  <button
-                    data-testid={`review-bulk-open-${item.id}`}
-                    onClick={() => setDetailId(expanded ? null : item.id)}
-                    className="m-tap flex min-w-0 flex-1 items-center gap-3 border-none bg-transparent text-left"
-                  >
-                    <span className="min-w-0 flex-1">
-                      {/* the merchant leads: normalization groups charges whose
-                          raw titles differ (dates, branch cities), so the list
-                          must say which is which (user request) */}
-                      <span className="block truncate text-[13px] text-ink-2">{cleanBankText(item.merchant)}</span>
-                      <span className="block truncate text-[11px] text-ink-4">
-                        {new Date(item.date).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short', year: 'numeric' })}
-                      </span>
-                    </span>
-                    <span className="m-num shrink-0 text-[13px] text-ink-2">{fmtCents(item.amountCents, item.currency, lang)}</span>
-                    <Icon name={expanded ? 'chevron-up' : 'chevron-down'} size={15} color="var(--m-ink-4)" />
-                  </button>
+              <div key={item.id} className="flex items-center gap-2 border-b border-line-2 last:border-0">
+                <button
+                  data-testid={`review-bulk-${item.id}`}
+                  aria-label={cleanBankText(item.merchant)}
+                  onClick={() => toggleOne(item.id)}
+                  className={`m-tap flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 ${
+                    checked ? 'border-accent bg-accent text-white' : 'border-line bg-surface'
+                  }`}
+                >
+                  {checked && <Icon name="check" size={12} />}
+                </button>
+                <div className="min-w-0 flex-1" data-testid={`review-bulk-open-${item.id}`}>
+                  <TxRow tx={item} showDate onClick={() => setDetailId(item.id)} />
                 </div>
-                {expanded && (
-                  <div className="mb-2.5 rounded-xl bg-bg-2 px-3 py-2.5" data-testid={`review-bulk-detail-${item.id}`}>
-                    {item.description && (
-                      <p className="font-mono text-[11px] break-words text-ink-3">{cleanBankText(item.description)}</p>
-                    )}
-                    <p className="mt-1 text-[11px] text-ink-4">
-                      {item.date} · {fmtCents(item.amountCents, item.currency, lang, { sign: true })}
-                    </p>
-                  </div>
-                )}
               </div>
             );
           })}
         </div>
+      </Sheet>
+
+      {/* compact read-only peek — deliberately smaller than the list sheet */}
+      <Sheet
+        open={detailId !== null}
+        onOpenChange={(next) => !next && setDetailId(null)}
+        title={detail ? cleanBankText(detail.merchant) : ''}
+        size="form"
+      >
+        {detail && (
+          <div className="flex flex-col gap-2 pt-1" data-testid="review-bulk-detail">
+            <div className="m-num text-center text-[26px] text-ink">
+              {fmtCents(detail.amountCents, detail.currency, lang, { sign: true })}
+            </div>
+            <p className="text-center text-[12px] text-ink-4">
+              {new Date(detail.date).toLocaleDateString(LOCALES[lang], { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+            </p>
+            {detail.description && (
+              <p className="rounded-xl bg-bg-2 px-3 py-2.5 font-mono text-[11px] break-words text-ink-3">
+                {cleanBankText(detail.description)}
+              </p>
+            )}
+            {detail.counterIban && (
+              <p className="text-center font-mono text-[11px] text-ink-4">{detail.counterIban}</p>
+            )}
+          </div>
+        )}
       </Sheet>
     </div>
   );
@@ -430,34 +444,46 @@ export function ReviewScreen() {
                 </button>
               )}
 
-              <button
-                data-testid="review-category-chip"
-                onClick={() => setPickerOpen(true)}
-                className="m-tap mt-5 inline-flex items-center gap-2 rounded-full border border-line bg-bg px-4 py-2 text-[14px] font-medium text-ink"
-              >
-                <Icon name={cat.icon} size={18} color={parentColor ?? 'var(--m-ink-3)'} />
-                {draft?.catId ? catName(cat, t) : t('review.pickPrompt')}
-                <Icon name="pencil-outline" size={14} color="var(--m-ink-4)" />
-              </button>
+              {/* ONE category editor (user redesign): the list starts with a
+                  single category and grows via "+ add" — the old separate
+                  Split button and the triple display (chip + split rows +
+                  confirm label) are gone. A single row edits through the
+                  quick picker; any row of a multi-split opens the editor. */}
+              <div className="mx-auto mt-5 w-full max-w-[300px]" data-testid="review-cats">
+                {(draft?.splits?.length ? draft.splits : [null]).map((slice) => {
+                  const sliceCat = slice ? cats.byId(slice.catId) : cat;
+                  const sliceColor = slice
+                    ? (sliceCat.color ?? cats.byId(sliceCat.parentId ?? '').color)
+                    : parentColor;
+                  return (
+                    <button
+                      key={slice?.catId ?? 'single'}
+                      data-testid={slice ? `review-cat-${slice.catId}` : 'review-category-chip'}
+                      onClick={() => (slice ? setSplitOpen(true) : setPickerOpen(true))}
+                      className="m-tap flex w-full items-center gap-2 border-none bg-transparent px-2 py-1.5 text-left text-[14px] font-medium text-ink"
+                    >
+                      <Icon name={sliceCat.icon} size={18} color={sliceColor ?? 'var(--m-ink-3)'} />
+                      <span className="min-w-0 flex-1 truncate">
+                        {slice || draft?.catId ? catName(sliceCat, t) : t('review.pickPrompt')}
+                      </span>
+                      {slice && <span className="m-num text-[13px] text-ink-2">{fmtCents(slice.amountCents, tx.currency, lang)}</span>}
+                      <Icon name="pencil-outline" size={14} color="var(--m-ink-4)" />
+                    </button>
+                  );
+                })}
+                <button
+                  data-testid="review-cat-add"
+                  onClick={() => setSplitOpen(true)}
+                  className="m-tap flex w-full items-center gap-2 border-none bg-transparent px-2 py-1.5 text-left text-[12px] font-medium text-accent-deep"
+                >
+                  <Icon name="plus-circle-outline" size={16} />
+                  {t('review.addCategory')}
+                </button>
+              </div>
               {reasonLine && (
-                <div className="mt-2 flex items-center justify-center gap-1 text-[11px] text-ink-4" data-testid="review-reason">
+                <div className="mt-1 flex items-center justify-center gap-1 text-[11px] text-ink-4" data-testid="review-reason">
                   <Icon name={prediction?.source === 'keyword' ? 'lightbulb-outline' : 'history'} size={12} />
                   {reasonLine}
-                </div>
-              )}
-
-              {!!draft?.splits?.length && (
-                <div className="mx-auto mt-3 max-w-[280px] text-left" data-testid="review-splits">
-                  {draft.splits.map((s) => {
-                    const sc = cats.byId(s.catId);
-                    return (
-                      <div key={s.catId} className="flex items-center gap-2 py-0.5 text-[12px] text-ink-2">
-                        <Icon name={sc.icon} size={13} color={sc.color ?? cats.byId(sc.parentId ?? '').color} />
-                        <span className="flex-1 truncate">{catName(sc, t)}</span>
-                        <span className="m-num">{fmtCents(s.amountCents, tx.currency, lang)}</span>
-                      </div>
-                    );
-                  })}
                 </div>
               )}
 
@@ -520,12 +546,8 @@ export function ReviewScreen() {
                 </Chip>
               )}
 
-              {/* quiet secondary actions */}
-              <div className="mt-5 flex items-center justify-center gap-5 text-[12px] font-medium text-ink-3">
-                <button data-testid="review-act-split" onClick={() => setSplitOpen(true)} className="m-tap border-none bg-transparent">
-                  {t('split.action')}
-                </button>
-                <span className="text-line">·</span>
+              {/* quiet secondary action (split moved into the list above) */}
+              <div className="mt-5 flex items-center justify-center text-[12px] font-medium text-ink-3">
                 <button data-testid="review-act-type" onClick={() => setTypeOpen(true)} className="m-tap border-none bg-transparent">
                   {/* the staged type is part of the decision — show it */}
                   {t('tx.type')}
@@ -554,7 +576,8 @@ export function ReviewScreen() {
                 onClick={() => void confirm()}
               >
                 <span className="truncate">
-                  {draft?.catId ? t('review.confirmAs', { name: catName(cat, t) }) : t('review.confirm')}
+                  {/* multi-category: the list above already says it all */}
+                  {draft?.catId && !draft.splits?.length ? t('review.confirmAs', { name: catName(cat, t) }) : t('review.confirm')}
                 </span>
               </Button>
             </div>
@@ -588,6 +611,8 @@ export function ReviewScreen() {
           open={splitOpen}
           onOpenChange={setSplitOpen}
           tx={tx}
+          // empty value: the editor itself seeds "current category owns the
+          // full amount + one fresh row" — exactly the add-category start
           value={draft.splits}
           txType={draft.txType}
           onApply={(splits) => setStagedDraft(withSplits(draft, splits ?? undefined))}
