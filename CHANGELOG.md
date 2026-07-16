@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.20.0](https://github.com/okkes/munnimok/compare/v1.19.0...v1.20.0) (2026-07-16)
+
+
+### ✨ Features
+
+* **splits:** SP4 — settle in one tap + owner-only close ([fa73b2a](https://github.com/okkes/munnimok/commit/fa73b2aa1b5ebd6c8214c71c614bb147d7881457))
+
 ## [1.19.0](https://github.com/okkes/munnimok/compare/v1.18.0...v1.19.0) (2026-07-16)
 
 
