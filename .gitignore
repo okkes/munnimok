@@ -36,3 +36,4 @@ test-results/
 temporary/
 **/TestResults/
 import-watch/
+*.stackdump
