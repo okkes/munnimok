@@ -207,31 +207,46 @@ export function TxDetailScreen() {
             <span className="text-xs text-ink-4">{t(`tx.type.${tx.txType}`)}</span>
             <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
           </button>
-          {tx.counterIban && (
-            <>
-              <div className="mx-4 h-px bg-line-2" />
-              {counterAccount ? (
-                <button
-                  data-testid="tx-detail-counterparty-row"
-                  onClick={() => setCounterOpen(true)}
-                  className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
-                >
-                  <Icon name="swap-horizontal" size={20} color="var(--m-accent-deep)" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate">{counterAccount.name}</span>
-                    <span className="block truncate font-mono text-[11px] text-ink-4">{tx.counterIban}</span>
+          <div className="mx-4 h-px bg-line-2" />
+          {counterAccount ? (
+            <button
+              data-testid="tx-detail-counterparty-row"
+              onClick={() => setCounterOpen(true)}
+              className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+            >
+              <Icon name="swap-horizontal" size={20} color="var(--m-accent-deep)" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate">{counterAccount.name}</span>
+                <span className="block truncate font-mono text-[11px] text-ink-4">{tx.counterIban}</span>
+              </span>
+              <span className="text-xs text-ink-4">{t('tx.counterparty')}</span>
+              <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+            </button>
+          ) : (
+            // the counterparty is EDITABLE now (user remark: CAMT rows often
+            // ship without one — picking an own account should still work and
+            // suggest the type). Same sheet as the type row; one mechanism.
+            <button
+              data-testid="tx-detail-counterparty-edit"
+              onClick={() => setTypeOpen(true)}
+              className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+            >
+              <Icon name="swap-horizontal" size={20} color={linkedAccount ? 'var(--m-accent-deep)' : 'var(--m-ink-3)'} />
+              <span className="min-w-0 flex-1">
+                {linkedAccount ? (
+                  <span className="block truncate">{linkedAccount.name}</span>
+                ) : (
+                  <span className="block truncate text-ink-3" data-testid="tx-detail-counter-add">
+                    {tx.counterIban ?? t('tx.counterAccountPick')}
                   </span>
-                  <span className="text-xs text-ink-4">{t('tx.counterparty')}</span>
-                  <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-                </button>
-              ) : (
-                <div className="flex items-center gap-3 px-4 py-3.5" data-testid="tx-detail-counterparty">
-                  <Icon name="swap-horizontal" size={20} color="var(--m-ink-3)" />
-                  <span className="min-w-0 flex-1 truncate font-mono text-[13px] text-ink-2">{tx.counterIban}</span>
-                  <span className="text-xs text-ink-4">{t('tx.counterparty')}</span>
-                </div>
-              )}
-            </>
+                )}
+                {tx.counterIban && linkedAccount && (
+                  <span className="block truncate font-mono text-[11px] text-ink-4">{tx.counterIban}</span>
+                )}
+              </span>
+              <span className="text-xs text-ink-4">{t('tx.counterparty')}</span>
+              <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+            </button>
           )}
           {tx.txType === 'expense' && (
             <>

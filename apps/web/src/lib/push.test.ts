@@ -93,3 +93,18 @@ describe('push subscription management', () => {
     expect(apiFetchMock).not.toHaveBeenCalled();
   });
 });
+
+describe('pushEnabled (settings toggle source of truth)', () => {
+  it('native: reads the stored FCM token, not the web subscription', async () => {
+    localStorage.setItem('munni_fcm_token', 'tok-1');
+    (globalThis as { Capacitor?: unknown }).Capacitor = { isNativePlatform: () => true };
+    try {
+      const { pushEnabled } = await import('./push');
+      expect(await pushEnabled()).toBe(true); // survives app kills — no SW involved
+      localStorage.removeItem('munni_fcm_token');
+      expect(await pushEnabled()).toBe(false);
+    } finally {
+      delete (globalThis as { Capacitor?: unknown }).Capacitor;
+    }
+  });
+});

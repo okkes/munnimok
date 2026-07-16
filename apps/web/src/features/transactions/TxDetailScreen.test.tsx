@@ -87,14 +87,17 @@ describe('counterparty account number on the detail screen', () => {
     db.close();
   };
 
-  it('an unknown counterparty IBAN renders as plain text', async () => {
+  it('an unknown counterparty IBAN renders inside the editable row (user rule: pickable)', async () => {
     renderApp('/home'); // seed first, then navigate via a fresh render
     await screen.findByTestId('screen-home');
     await seedTx('NL99ELDR0000000042', 'tx-cp1');
     cleanup();
     renderApp('/transactions/tx-cp1');
-    const row = await screen.findByTestId('tx-detail-counterparty');
+    const row = await screen.findByTestId('tx-detail-counterparty-edit');
     expect(row.textContent).toContain('NL99ELDR0000000042');
+    // tapping opens the counter-account picker (same sheet as the type row)
+    fireEvent.click(row);
+    expect(await screen.findByTestId('txtype-accounts')).toBeTruthy();
   }, 15_000);
 
   it('a counterparty matching an own account becomes a door with account info', async () => {

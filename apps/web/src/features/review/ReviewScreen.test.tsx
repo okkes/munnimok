@@ -351,8 +351,8 @@ describe('ReviewScreen (own-account transfers)', () => {
       const check = new MunniDB(USER_TEST_DB);
       const tx = await check.transactions.get('tx-topup');
       check.close();
-      // credit counter-account: munni's semantics call that a debt payment
-      expect(tx).toMatchObject({ txType: 'debtPayment', linkedAccountId: 'acct-cc', needsReview: 0 });
+      // credit counter-account: a transfer between own accounts (user ruling)
+      expect(tx).toMatchObject({ txType: 'transfer', linkedAccountId: 'acct-cc', needsReview: 0 });
     });
   }, 15_000);
 
