@@ -99,7 +99,9 @@ export function renderAppAsUser(path: string, { spaces = [{ id: 's-user', name: 
     const handler = api[`${method} ${url.pathname}`];
     if (handler) {
       const body = init?.body ? (JSON.parse(init.body as string) as unknown) : undefined;
-      const out = handler(body, url);
+      // awaited so a handler can return a never-resolving promise to
+      // simulate a hanging (down-but-not-refusing) server
+      const out = await handler(body, url);
       return out instanceof Response ? out : json(out);
     }
     if (url.pathname === '/me/spaces') return json(spaces.map((s) => s.id));
