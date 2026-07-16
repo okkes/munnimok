@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { VARIANTS, createPage, base, gotoGlobalSettings, shot, teardown, syncApiUp } from '../helpers/base.js';
+import { VARIANTS, createPage, base, shot, teardown, syncApiUp } from '../helpers/base.js';
 
 // Splits SP1 against the real API: create a split, add manual expenses,
 // read the ledger. Online-only feature — skips when the stack is down.
@@ -15,7 +15,7 @@ for (const V of VARIANTS) {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V, { userSub: sub });
 
-    await gotoGlobalSettings(page);
+    await page.click('[data-testid="tab-settings"]'); // splits live on space Settings now
     await page.click('[data-testid="settings-splits-row"]');
     await page.waitForSelector('[data-testid="screen-splits"]');
     await page.waitForSelector('[data-testid="splits-empty"]');
@@ -55,7 +55,7 @@ for (const V of VARIANTS) {
     // host creates a split and mints the share link
     const host = await createPage(browser, V);
     await base(host.page, V, { userSub: `e2e-split-host-${stamp}` });
-    await gotoGlobalSettings(host.page);
+    await host.page.click('[data-testid="tab-settings"]'); // splits live on space Settings now
     await host.page.click('[data-testid="settings-splits-row"]');
     await host.page.click('[data-testid="splits-add"]');
     await host.page.fill('[data-testid="split-name"]', 'Ski trip');
