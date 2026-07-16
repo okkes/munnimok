@@ -78,7 +78,7 @@ services:
     restart: unless-stopped
 
   postgres:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: munni
@@ -176,7 +176,7 @@ services:
 
   # nightly logical backup into a folder Hyper Backup picks up
   db-backup:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     restart: unless-stopped
     entrypoint: ["sh", "-c", "while true; do pg_dumpall -h postgres -U munni > /backups/munni-$(date +%F).sql && find /backups -name '*.sql' -mtime +14 -delete; sleep 86400; done"]
     environment:
