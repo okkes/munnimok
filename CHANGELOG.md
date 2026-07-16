@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.17.0](https://github.com/okkes/munnimok/compare/v1.16.0...v1.17.0) (2026-07-16)
+
+
+### ✨ Features
+
+* **account:** full account deletion (design delivered) ([5b44921](https://github.com/okkes/munnimok/commit/5b44921b46305c59cfb560736b685764296407d6))
+
 ## [1.16.0](https://github.com/okkes/munnimok/compare/v1.15.0...v1.16.0) (2026-07-16)
 
 
