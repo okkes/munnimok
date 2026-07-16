@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.21.0](https://github.com/okkes/munnimok/compare/v1.20.0...v1.21.0) (2026-07-16)
+
+
+### ✨ Features
+
+* **splits:** SP5 — event link, auto-attach, event summary, settlement review chip ([cc3e61b](https://github.com/okkes/munnimok/commit/cc3e61b5644f1aac97c3a3a19bc9d723effb24c6))
+
 ## [1.20.0](https://github.com/okkes/munnimok/compare/v1.19.0...v1.20.0) (2026-07-16)
 
 
