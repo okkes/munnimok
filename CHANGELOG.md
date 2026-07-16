@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.22.0](https://github.com/okkes/munnimok/compare/v1.21.0...v1.22.0) (2026-07-16)
+
+
+### ✨ Features
+
+* **native:** §1 biometrics — the OS Face ID / fingerprint prompt unlocks the app lock ([7188405](https://github.com/okkes/munnimok/commit/7188405abe1bdd4c5bdac72c03037016f1f66dab))
+
+
+### 🐞 Bug Fixes
+
+* **build:** tolerate a missing patch-package in scoped installs ([f1eb4ce](https://github.com/okkes/munnimok/commit/f1eb4ce73e83fc0feb71976b72bd288862cd9205))
+* **native:** patch the biometric plugin's gradle for AGP 9 ([4d1590e](https://github.com/okkes/munnimok/commit/4d1590e7c7661d387701a9c5f33436abfafe546a))
+
 ## [1.21.0](https://github.com/okkes/munnimok/compare/v1.20.0...v1.21.0) (2026-07-16)
 
 
