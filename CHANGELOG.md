@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.23.0](https://github.com/okkes/munnimok/compare/v1.22.0...v1.23.0) (2026-07-16)
+
+
+### ✨ Features
+
+* **ui+review:** remarks batch — headers, splits placement, Home block, own-transfer detection ([7121c2c](https://github.com/okkes/munnimok/commit/7121c2c9d088f1bec2b70ee35459a9e0241ae76c))
+
 ## [1.22.0](https://github.com/okkes/munnimok/compare/v1.21.0...v1.22.0) (2026-07-16)
 
 
