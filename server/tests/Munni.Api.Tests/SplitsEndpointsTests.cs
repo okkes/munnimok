@@ -93,6 +93,46 @@ public class SplitsEndpointsTests : IClassFixture<AdminApiFactory>
         Assert.Equal(HttpStatusCode.NotFound, (await guest.GetAsync($"/splits/invites/{token}")).StatusCode);
     }
 
+    [Fact]
+    public async Task SettlementsAreEntries_AndOnlyTheOwnerCloses()
+    {
+        var owner = await TouchAsync("sp4-owner");
+        var member = await TouchAsync("sp4-member");
+        Assert.True((await owner.PostAsJsonAsync("/splits",
+            new { id = "split-close", name = "Dinner", currency = "EUR", spaceId = (string?)null })).IsSuccessStatusCode);
+        await JoinAsync("split-close", "sp4-member");
+        var memberId = await UserIdOf("sp4-member");
+        var ownerId = await UserIdOf("sp4-owner");
+
+        // owner paid €20, split equally → member owes 10; the member settles
+        Assert.True((await owner.PostAsJsonAsync("/splits/split-close/entries",
+            new { id = "e-dinner", kind = "expense", description = "Dinner", amountCents = 2000, date = "2026-07-16" })).IsSuccessStatusCode);
+        var settle = await member.PostAsJsonAsync("/splits/split-close/entries", new
+        {
+            id = "e-settle",
+            kind = "settlement",
+            paidByUserId = memberId,
+            description = "Settlement",
+            amountCents = 1000,
+            date = "2026-07-16",
+            shares = new[] { new { userId = ownerId, cents = 1000 } },
+        });
+        Assert.True(settle.IsSuccessStatusCode);
+
+        // a member cannot close; the owner can — twice is fine (idempotent)
+        Assert.Equal(HttpStatusCode.Forbidden, (await member.PostAsync("/splits/split-close/close", null)).StatusCode);
+        Assert.True((await owner.PostAsync("/splits/split-close/close", null)).IsSuccessStatusCode);
+        Assert.True((await owner.PostAsync("/splits/split-close/close", null)).IsSuccessStatusCode);
+
+        // closed = locked: no entries, no invite links
+        Assert.Equal(HttpStatusCode.BadRequest, (await owner.PostAsJsonAsync("/splits/split-close/entries",
+            new { id = "e-late", kind = "expense", description = "late", amountCents = 100, date = "2026-07-16" })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await owner.PostAsync("/splits/split-close/invites", null)).StatusCode);
+
+        var detail = await member.GetFromJsonAsync<SplitDetailProbe>("/splits/split-close");
+        Assert.Equal(2, detail!.Members.Count);
+    }
+
     private sealed record InviteMinted(string Token);
     private sealed record InvitePeek(string SplitName, string Currency, string? InviterName);
     private sealed record SplitDetailProbe(string Id, string? AttachedSpaceId, List<MemberProbe> Members);

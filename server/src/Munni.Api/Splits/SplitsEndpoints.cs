@@ -42,6 +42,25 @@ public static class SplitsEndpoints
         group.MapPost("/{splitId}/invites", MintInvite).RequireRateLimiting(Social.SocialEndpoints.MutationsPolicy);
         group.MapGet("/invites/{token}", PeekInvite);
         group.MapPost("/invites/{token}/accept", AcceptInvite).RequireRateLimiting(Social.SocialEndpoints.MutationsPolicy);
+        // SP4: only the owner closes the session (decision Q3)
+        group.MapPost("/{splitId}/close", CloseSplit);
+    }
+
+    /// <summary>closing locks the ledger: no new entries, no new invites —
+    /// the closed state simply fails the Status=="open" guards everywhere</summary>
+    private static async Task<IResult> CloseSplit(string splitId, AppDbContext db, HttpContext http)
+    {
+        var me = http.GetUserId();
+        var (split, membership) = await MemberGateAsync(db, splitId, me);
+        if (split is null || membership is null) return Results.NotFound();
+        if (membership.Role != "owner") return Results.Forbid();
+        if (split.Status != "settled")
+        {
+            split.Status = "settled";
+            db.SplitInvites.RemoveRange(await db.SplitInvites.Where(i => i.SplitId == splitId).ToListAsync());
+            await db.SaveChangesAsync();
+        }
+        return Results.Ok(new { id = splitId, status = split.Status });
     }
 
     /// <summary>any member can mint; a fresh link retires the previous one

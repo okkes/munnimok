@@ -13,6 +13,15 @@ membership grants ZERO space-scope access (sync pull/push both 403).
 The splits tour ships with SP3 as planned. Invite by user id was folded
 into the link (one mechanism, same guarantees).
 
+**SP4 shipped** (2026-07-16): Settle buttons on the transfer plan (a
+settlement is an ordinary entry whose only share holder is the
+receiver — no ledger special-casing) and owner-only Close (locks
+entries + invites server-side; the client hides every mutating
+affordance). **Deviation:** review transfer-linking ("this incoming
+transfer looks like Anna paying you back") moved into SP5 — it shares
+the reimbursement-candidate mechanics with the event work and deserves
+one integration pass instead of two half ones.
+
 **SP1 shipped** (2026-07-16): server model (splits / splitMembers with
 per-member `attachedSpaceId` / splitEntries with ALWAYS-materialized
 frozen shares), membership-gated REST (`/splits…`, outsiders get 404 —
