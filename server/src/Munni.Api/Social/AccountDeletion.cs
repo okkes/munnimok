@@ -23,64 +23,18 @@ public static class AccountDeletion
     {
         // 1 · revoke bank consents at the provider (GoCardless supports
         //     deletion; Enable Banking sessions expire on their own)
-        var requisitions = await db.GcRequisitions.Where(r => r.UserId == user.Id).ToListAsync();
-        foreach (var requisition in requisitions.Where(r => r.Provider == "gocardless"))
-        {
-            try
-            {
-                if (gc is not null) await gc.DeleteRequisitionAsync(requisition.RequisitionId);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "account deletion: could not revoke requisition {Id}", requisition.RequisitionId);
-            }
-        }
-        var requisitionIds = requisitions.Select(r => r.Id).ToList();
-        db.GcLinkedAccounts.RemoveRange(await db.GcLinkedAccounts.Where(a => requisitionIds.Contains(a.RequisitionId)).ToListAsync());
-        db.GcRequisitions.RemoveRange(requisitions);
+        await RevokeBankConsentsAsync(db, gc, logger, user.Id);
 
         // 2 · push subscriptions — no notification survives its user
         db.PushSubscriptions.RemoveRange(await db.PushSubscriptions.Where(s => s.UserId == user.Id).ToListAsync());
 
         // 3 · spaces: sole member → hard delete; shared → leave-and-archive
         //     (decision ①: other members keep readable history)
-        var memberships = await db.SpaceMembers.Where(m => m.UserId == user.Id).ToListAsync();
-        var survivingSpaceIds = new List<string>();
-        foreach (var membership in memberships)
-        {
-            var others = await db.SpaceMembers
-                .Where(m => m.SpaceId == membership.SpaceId && m.UserId != user.Id)
-                .ToListAsync();
-            if (others.Count == 0)
-            {
-                await DeleteSpaceDataAsync(db, membership.SpaceId);
-            }
-            else
-            {
-                survivingSpaceIds.Add(membership.SpaceId);
-                db.SpaceMembers.Remove(membership);
-                await Accounts.AccountEndpoints.ArchiveLinksOnLeaveAsync(db, membership.SpaceId, user.Id);
-                // never leave a space ownerless (same rule as a manual leave)
-                if (SpaceRoles.IsOwner(membership.Role) && !others.Any(m => m.Role == SpaceRoles.Owner))
-                {
-                    var successor = others.OrderBy(m => m.UserId).First();
-                    successor.Role = SpaceRoles.Owner;
-                }
-            }
-        }
+        var survivingSpaceIds = await LeaveOrDeleteSpacesAsync(db, user.Id);
 
         // 4 · owned bank feeds: keep the ones surviving shared spaces still
         //     read (their archived history stays, decision ①); delete the rest
-        var feedSpaces = await db.FeedSpaces.Where(f => f.OwnerUserId == user.Id).ToListAsync();
-        foreach (var feed in feedSpaces)
-        {
-            var stillRead = await db.SpaceAccountLinks
-                .AnyAsync(l => l.FeedSpaceId == feed.Id && survivingSpaceIds.Contains(l.SpaceId));
-            if (stillRead) continue;
-            db.SpaceAccountLinks.RemoveRange(await db.SpaceAccountLinks.Where(l => l.FeedSpaceId == feed.Id).ToListAsync());
-            await DeleteSpaceDataAsync(db, feed.Id);
-            db.FeedSpaces.Remove(feed);
-        }
+        await PruneOwnedFeedsAsync(db, user.Id, survivingSpaceIds);
 
         // 5 · social graph + grants
         db.Friendships.RemoveRange(await db.Friendships.Where(f => f.UserAId == user.Id || f.UserBId == user.Id).ToListAsync());
@@ -94,6 +48,68 @@ public static class AccountDeletion
         // 7 · the user row last — a retry after any partial failure can re-enter
         db.Users.Remove(user);
         await db.SaveChangesAsync();
+    }
+
+    private static async Task RevokeBankConsentsAsync(AppDbContext db, IGoCardlessApi? gc, ILogger logger, Guid userId)
+    {
+        var requisitions = await db.GcRequisitions.Where(r => r.UserId == userId).ToListAsync();
+        foreach (var requisitionId in requisitions.Where(r => r.Provider == "gocardless").Select(r => r.RequisitionId))
+        {
+            try
+            {
+                if (gc is not null) await gc.DeleteRequisitionAsync(requisitionId);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "account deletion: could not revoke requisition {Id}", requisitionId);
+            }
+        }
+        var requisitionIds = requisitions.Select(r => r.Id).ToList();
+        db.GcLinkedAccounts.RemoveRange(await db.GcLinkedAccounts.Where(a => requisitionIds.Contains(a.RequisitionId)).ToListAsync());
+        db.GcRequisitions.RemoveRange(requisitions);
+    }
+
+    /// <summary>sole-member spaces are erased; shared ones get a leave-and-
+    /// archive plus successor promotion — returns the spaces that live on</summary>
+    private static async Task<List<string>> LeaveOrDeleteSpacesAsync(AppDbContext db, Guid userId)
+    {
+        var memberships = await db.SpaceMembers.Where(m => m.UserId == userId).ToListAsync();
+        var survivingSpaceIds = new List<string>();
+        foreach (var membership in memberships)
+        {
+            var others = await db.SpaceMembers
+                .Where(m => m.SpaceId == membership.SpaceId && m.UserId != userId)
+                .ToListAsync();
+            if (others.Count == 0)
+            {
+                await DeleteSpaceDataAsync(db, membership.SpaceId);
+                continue;
+            }
+            survivingSpaceIds.Add(membership.SpaceId);
+            db.SpaceMembers.Remove(membership);
+            await Accounts.AccountEndpoints.ArchiveLinksOnLeaveAsync(db, membership.SpaceId, userId);
+            // never leave a space ownerless (same rule as a manual leave)
+            if (SpaceRoles.IsOwner(membership.Role) && !others.Any(m => m.Role == SpaceRoles.Owner))
+            {
+                var successor = others.OrderBy(m => m.UserId).First();
+                successor.Role = SpaceRoles.Owner;
+            }
+        }
+        return survivingSpaceIds;
+    }
+
+    private static async Task PruneOwnedFeedsAsync(AppDbContext db, Guid userId, List<string> survivingSpaceIds)
+    {
+        var feedSpaces = await db.FeedSpaces.Where(f => f.OwnerUserId == userId).ToListAsync();
+        foreach (var feed in feedSpaces)
+        {
+            var stillRead = await db.SpaceAccountLinks
+                .AnyAsync(l => l.FeedSpaceId == feed.Id && survivingSpaceIds.Contains(l.SpaceId));
+            if (stillRead) continue;
+            db.SpaceAccountLinks.RemoveRange(await db.SpaceAccountLinks.Where(l => l.FeedSpaceId == feed.Id).ToListAsync());
+            await DeleteSpaceDataAsync(db, feed.Id);
+            db.FeedSpaces.Remove(feed);
+        }
     }
 
     /// <summary>space/feed erasure: state, oplog, invites, links, cursor row</summary>
@@ -121,7 +137,8 @@ public static class AccountDeletion
         var authority = config["Auth:Authority"]; // https://logto.…/oidc
         if (string.IsNullOrEmpty(appId) || string.IsNullOrEmpty(appSecret) || string.IsNullOrEmpty(authority))
         {
-            logger.LogInformation("account deletion: Logto M2M not configured — identity {Sub} left for manual cleanup", sub);
+            if (logger.IsEnabled(LogLevel.Information))
+                logger.LogInformation("account deletion: Logto M2M not configured — identity {Sub} left for manual cleanup", sub);
             return;
         }
         try

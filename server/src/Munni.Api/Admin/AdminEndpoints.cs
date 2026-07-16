@@ -39,82 +39,87 @@ public static class AdminEndpoints
 
         if (bankingEnabled) MapBankProvider(group);
 
-        group.MapGet("/users", async (HttpContext http, AppDbContext db, IConfiguration config) =>
-        {
-            if (!await IsAdminAsync(http, db, config)) return Results.Forbid();
-            var users = await db.Users.ToListAsync();
-            var counts = await db.SpaceMembers.GroupBy(m => m.UserId)
-                .Select(g => new { g.Key, Count = g.Count() }).ToDictionaryAsync(x => x.Key, x => x.Count);
-            var bootstrap = BootstrapSubs(config);
-            var granted = (await db.AdminGrants.Select(g => g.Sub).ToListAsync()).ToHashSet();
-            return Results.Ok(users
-                .OrderBy(u => u.CreatedAt)
-                .Select(u => new AdminUserDto(
-                    u.Id, u.Sub, u.DisplayName, u.Email, u.CreatedAt, counts.GetValueOrDefault(u.Id),
-                    IsAdmin: bootstrap.Contains(u.Sub) || granted.Contains(u.Sub),
-                    Bootstrap: bootstrap.Contains(u.Sub)))
-                .ToList());
-        });
-
+        group.MapGet("/users", ListUsers);
         // operator-initiated removal, same pipeline as the user's own
         // DELETE /me (account-deletion design)
-        group.MapDelete("/users/{sub}", async (
-            string sub,
-            HttpContext http,
-            AppDbContext db,
-            IConfiguration config,
-            IHttpClientFactory httpFactory,
-            ILoggerFactory loggerFactory) =>
-        {
-            if (!await IsAdminAsync(http, db, config)) return Results.Forbid();
-            var target = await db.Users.FirstOrDefaultAsync(u => u.Sub == sub);
-            if (target is null) return Results.NotFound();
-            var self = await db.Users.FindAsync(http.GetUserId());
-            if (self?.Sub == sub) return Results.BadRequest(new { error = "cannot delete yourself here" });
-            var gc = http.RequestServices.GetService<IGoCardlessApi>();
-            await Social.AccountDeletion.DeleteUserAsync(db, gc, httpFactory, config, loggerFactory.CreateLogger("AccountDeletion"), target);
-            return Results.Ok(new { deleted = sub });
-        });
+        group.MapDelete("/users/{sub}", DeleteUser);
 
         MapAdminGrants(group);
         MapQuota(group);
 
         if (!goCardlessEnabled) return;
+        group.MapGet("/gocardless/requisitions", ListRequisitions);
+        group.MapDelete("/gocardless/requisitions/{requisitionId}", DeleteRequisition);
+    }
 
-        group.MapGet("/gocardless/requisitions", async (HttpContext http, AppDbContext db, IConfiguration config, IGoCardlessApi gc) =>
-        {
-            if (!await IsAdminAsync(http, db, config)) return Results.Forbid();
-            var remote = await gc.ListRequisitionsAsync();
-            var local = await db.GcRequisitions.ToListAsync();
-            var owners = await db.Users.ToDictionaryAsync(u => u.Id, u => u.Sub);
-            var localByRemoteId = local.ToDictionary(l => l.RequisitionId);
-            return Results.Ok(remote
-                .OrderByDescending(r => r.Created)
-                .Select(r =>
-                {
-                    var known = localByRemoteId.GetValueOrDefault(r.Id);
-                    return new AdminRequisitionDto(
-                        r.Id, r.Status, r.InstitutionId, r.Created, r.Accounts.Count,
-                        Stale: known is null,
-                        OwnerSub: known is null ? null : owners.GetValueOrDefault(known.UserId));
-                })
-                .ToList());
-        });
+    private static async Task<IResult> ListUsers(HttpContext http, AppDbContext db, IConfiguration config)
+    {
+        if (!await IsAdminAsync(http, db, config)) return Results.Forbid();
+        var users = await db.Users.ToListAsync();
+        var counts = await db.SpaceMembers.GroupBy(m => m.UserId)
+            .Select(g => new { g.Key, Count = g.Count() }).ToDictionaryAsync(x => x.Key, x => x.Count);
+        var bootstrap = BootstrapSubs(config);
+        var granted = (await db.AdminGrants.Select(g => g.Sub).ToListAsync()).ToHashSet();
+        return Results.Ok(users
+            .OrderBy(u => u.CreatedAt)
+            .Select(u => new AdminUserDto(
+                u.Id, u.Sub, u.DisplayName, u.Email, u.CreatedAt, counts.GetValueOrDefault(u.Id),
+                IsAdmin: bootstrap.Contains(u.Sub) || granted.Contains(u.Sub),
+                Bootstrap: bootstrap.Contains(u.Sub)))
+            .ToList());
+    }
 
-        group.MapDelete("/gocardless/requisitions/{requisitionId}", async (string requisitionId, HttpContext http, AppDbContext db, IConfiguration config, IGoCardlessApi gc) =>
-        {
-            if (!await IsAdminAsync(http, db, config)) return Results.Forbid();
-            await gc.DeleteRequisitionAsync(requisitionId); // frees the GC connection slot
-            var local = await db.GcRequisitions.FirstOrDefaultAsync(r => r.RequisitionId == requisitionId);
-            if (local is not null)
+    private static async Task<IResult> DeleteUser(
+        string sub,
+        HttpContext http,
+        AppDbContext db,
+        IConfiguration config,
+        IHttpClientFactory httpFactory,
+        ILoggerFactory loggerFactory)
+    {
+        if (!await IsAdminAsync(http, db, config)) return Results.Forbid();
+        var target = await db.Users.FirstOrDefaultAsync(u => u.Sub == sub);
+        if (target is null) return Results.NotFound();
+        var self = await db.Users.FindAsync(http.GetUserId());
+        if (self?.Sub == sub) return Results.BadRequest(new { error = "cannot delete yourself here" });
+        var gc = http.RequestServices.GetService<IGoCardlessApi>();
+        await Social.AccountDeletion.DeleteUserAsync(db, gc, httpFactory, config, loggerFactory.CreateLogger("AccountDeletion"), target);
+        return Results.Ok(new { deleted = sub });
+    }
+
+    private static async Task<IResult> ListRequisitions(HttpContext http, AppDbContext db, IConfiguration config, IGoCardlessApi gc)
+    {
+        if (!await IsAdminAsync(http, db, config)) return Results.Forbid();
+        var remote = await gc.ListRequisitionsAsync();
+        var local = await db.GcRequisitions.ToListAsync();
+        var owners = await db.Users.ToDictionaryAsync(u => u.Id, u => u.Sub);
+        var localByRemoteId = local.ToDictionary(l => l.RequisitionId);
+        return Results.Ok(remote
+            .OrderByDescending(r => r.Created)
+            .Select(r =>
             {
-                var linked = await db.GcLinkedAccounts.Where(a => a.RequisitionId == local.Id).ToListAsync();
-                db.GcLinkedAccounts.RemoveRange(linked); // stops scheduled fetching
-                db.GcRequisitions.Remove(local);
-                await db.SaveChangesAsync();
-            }
-            return Results.Ok();
-        });
+                var known = localByRemoteId.GetValueOrDefault(r.Id);
+                return new AdminRequisitionDto(
+                    r.Id, r.Status, r.InstitutionId, r.Created, r.Accounts.Count,
+                    Stale: known is null,
+                    OwnerSub: known is null ? null : owners.GetValueOrDefault(known.UserId));
+            })
+            .ToList());
+    }
+
+    private static async Task<IResult> DeleteRequisition(string requisitionId, HttpContext http, AppDbContext db, IConfiguration config, IGoCardlessApi gc)
+    {
+        if (!await IsAdminAsync(http, db, config)) return Results.Forbid();
+        await gc.DeleteRequisitionAsync(requisitionId); // frees the GC connection slot
+        var local = await db.GcRequisitions.FirstOrDefaultAsync(r => r.RequisitionId == requisitionId);
+        if (local is not null)
+        {
+            var linked = await db.GcLinkedAccounts.Where(a => a.RequisitionId == local.Id).ToListAsync();
+            db.GcLinkedAccounts.RemoveRange(linked); // stops scheduled fetching
+            db.GcRequisitions.Remove(local);
+            await db.SaveChangesAsync();
+        }
+        return Results.Ok();
     }
 
     /// <summary>which provider serves NEW bank consents (user request) —
@@ -140,45 +145,49 @@ public static class AdminEndpoints
     /// stays as un-demotable bootstrap; grants live in the database</summary>
     private static void MapAdminGrants(IEndpointRouteBuilder group)
     {
-        group.MapGet("/admins", async (HttpContext http, AppDbContext db, IConfiguration config) =>
-        {
-            if (!await IsAdminAsync(http, db, config)) return Results.Forbid();
-            var grants = await db.AdminGrants.OrderBy(g => g.GrantedAtUtc).ToListAsync();
-            var list = BootstrapSubs(config)
-                .Select(sub => new AdminGrantDto(sub, "env", DateTimeOffset.MinValue, Bootstrap: true))
-                .Concat(grants.Select(g => new AdminGrantDto(g.Sub, g.GrantedBySub, g.GrantedAtUtc, Bootstrap: false)))
-                .ToList();
-            return Results.Ok(list);
-        });
+        group.MapGet("/admins", ListAdmins);
+        group.MapPost("/admins/{sub}", GrantAdmin);
+        group.MapDelete("/admins/{sub}", RevokeAdmin);
+    }
 
-        group.MapPost("/admins/{sub}", async (string sub, HttpContext http, AppDbContext db, IConfiguration config) =>
+    private static async Task<IResult> ListAdmins(HttpContext http, AppDbContext db, IConfiguration config)
+    {
+        if (!await IsAdminAsync(http, db, config)) return Results.Forbid();
+        var grants = await db.AdminGrants.OrderBy(g => g.GrantedAtUtc).ToListAsync();
+        var list = BootstrapSubs(config)
+            .Select(sub => new AdminGrantDto(sub, "env", DateTimeOffset.MinValue, Bootstrap: true))
+            .Concat(grants.Select(g => new AdminGrantDto(g.Sub, g.GrantedBySub, g.GrantedAtUtc, Bootstrap: false)))
+            .ToList();
+        return Results.Ok(list);
+    }
+
+    private static async Task<IResult> GrantAdmin(string sub, HttpContext http, AppDbContext db, IConfiguration config)
+    {
+        if (!await IsAdminAsync(http, db, config)) return Results.Forbid();
+        if (!await db.Users.AnyAsync(u => u.Sub == sub)) return Results.NotFound(new { error = "no such user" });
+        if (BootstrapSubs(config).Contains(sub) || await db.AdminGrants.AnyAsync(g => g.Sub == sub))
+            return Results.Ok(new { granted = sub }); // idempotent
+        var granter = await db.Users.FindAsync(http.GetUserId());
+        db.AdminGrants.Add(new AdminGrant { Id = Guid.NewGuid(), Sub = sub, GrantedBySub = granter?.Sub ?? "unknown" });
+        await db.SaveChangesAsync();
+        return Results.Ok(new { granted = sub });
+    }
+
+    private static async Task<IResult> RevokeAdmin(string sub, HttpContext http, AppDbContext db, IConfiguration config)
+    {
+        if (!await IsAdminAsync(http, db, config)) return Results.Forbid();
+        // env-bootstrap admins are the emergency access — not demotable here
+        if (BootstrapSubs(config).Contains(sub)) return Results.BadRequest(new { error = "bootstrap admin" });
+        var self = await db.Users.FindAsync(http.GetUserId());
+        // you cannot demote yourself: guards against locking the last admin out
+        if (self?.Sub == sub) return Results.BadRequest(new { error = "cannot demote yourself" });
+        var grant = await db.AdminGrants.FirstOrDefaultAsync(g => g.Sub == sub);
+        if (grant is not null)
         {
-            if (!await IsAdminAsync(http, db, config)) return Results.Forbid();
-            if (!await db.Users.AnyAsync(u => u.Sub == sub)) return Results.NotFound(new { error = "no such user" });
-            if (BootstrapSubs(config).Contains(sub) || await db.AdminGrants.AnyAsync(g => g.Sub == sub))
-                return Results.Ok(new { granted = sub }); // idempotent
-            var granter = await db.Users.FindAsync(http.GetUserId());
-            db.AdminGrants.Add(new AdminGrant { Id = Guid.NewGuid(), Sub = sub, GrantedBySub = granter?.Sub ?? "unknown" });
+            db.AdminGrants.Remove(grant);
             await db.SaveChangesAsync();
-            return Results.Ok(new { granted = sub });
-        });
-
-        group.MapDelete("/admins/{sub}", async (string sub, HttpContext http, AppDbContext db, IConfiguration config) =>
-        {
-            if (!await IsAdminAsync(http, db, config)) return Results.Forbid();
-            // env-bootstrap admins are the emergency access — not demotable here
-            if (BootstrapSubs(config).Contains(sub)) return Results.BadRequest(new { error = "bootstrap admin" });
-            var self = await db.Users.FindAsync(http.GetUserId());
-            // you cannot demote yourself: guards against locking the last admin out
-            if (self?.Sub == sub) return Results.BadRequest(new { error = "cannot demote yourself" });
-            var grant = await db.AdminGrants.FirstOrDefaultAsync(g => g.Sub == sub);
-            if (grant is not null)
-            {
-                db.AdminGrants.Remove(grant);
-                await db.SaveChangesAsync();
-            }
-            return Results.Ok(new { revoked = sub });
-        });
+        }
+        return Results.Ok(new { revoked = sub });
     }
 
     /// <summary>latest provider rate-limit snapshots (AD3), captured from

@@ -444,7 +444,7 @@ function ConnectionsScreen({
             data-testid="connections-expiring-filter"
             checked={onlyExpiring}
             onChange={(e) => setOnlyExpiring(e.target.checked)}
-          />
+          />{' '}
           expiring soon only
         </label>
         {selected.size > 0 && (
