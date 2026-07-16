@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.18.0](https://github.com/okkes/munnimok/compare/v1.17.0...v1.18.0) (2026-07-16)
+
+
+### ✨ Features
+
+* **native:** real Firebase iOS config for app.munni (push delivery) ([8b83703](https://github.com/okkes/munnimok/commit/8b83703eba9f8c50e4003840d3ffbfc3e1a9e738))
+* **splits:** SP1 — split sessions with membership-scoped ledger ([00f6ca5](https://github.com/okkes/munnimok/commit/00f6ca526d3067c65a97d53b55fcf54cbb944045))
+* **splits:** SP2 — add expenses from your own transactions + share editor ([89e3025](https://github.com/okkes/munnimok/commit/89e30251a82f355cb060fbe89448f7d1f55f86d9))
+
+
+### 🐞 Bug Fixes
+
+* **app:** local-first startup — never block a returning device on the network ([7e3cabc](https://github.com/okkes/munnimok/commit/7e3cabc2f1b5248e236a101ac2dcbdeb5f38a97a))
+* **native:** iOS push registration + staging icon + persistent signing cert ([1f3cc7b](https://github.com/okkes/munnimok/commit/1f3cc7b11bc5a12397b461027d95c2dd4cdaf258))
+* **ui:** snap the shell back when iOS keyboard focus-scroll displaces it ([30659f6](https://github.com/okkes/munnimok/commit/30659f659c4480bfb62a8af82845321248a6d495))
+
 ## [1.17.0](https://github.com/okkes/munnimok/compare/v1.16.0...v1.17.0) (2026-07-16)
 
 
