@@ -15,7 +15,7 @@
     "deps:check": "npm outdated --workspaces --include-workspace-root",
     "deps:check:server": "cd server && dotnet tool restore && dotnet dotnet-outdated",
     "deps:update": "npx npm-check-updates --workspaces --root -t minor -u && npm install",
-    "postinstall": "patch-package"
+    "postinstall": "patch-package || exit 0"
   },
   "volta": {
     "node": "24.18.0"
