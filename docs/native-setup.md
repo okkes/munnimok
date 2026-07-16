@@ -129,21 +129,22 @@ Messaging → Apple app configuration (add an iOS app with bundle
 `app.munni` there first, and drop its `GoogleService-Info.plist` into
 `apps/native/ios/App/App/` — tell me when it exists and I wire it in).
 
-## 5b. Stop the "certificate revoked" emails (added 2026-07-16)
+## 5b. Stop the "certificate revoked" emails — automated, no Mac (updated 2026-07-16)
 
 Each CI run used to mint a fresh Apple Development certificate and a
 cleanup script revoked the old ones — every revocation triggers an
 Apple email. With a persistent certificate in the repo secrets, CI
-reuses it and nothing is minted or revoked anymore:
+reuses it and nothing is minted or revoked anymore.
 
-1. On your Mac: Xcode → Settings → Accounts → Manage Certificates →
-   right-click your **Apple Development** certificate → Export…
-   (choose a password).
-2. `base64 -i cert.p12 | pbcopy` → repo secret **`APPLE_DEV_CERT_P12`**;
-   the password → **`APPLE_DEV_CERT_PASSWORD`**.
-
-Until the secrets exist the workflow falls back to the old
-mint-and-prune behaviour (and its emails).
+No Mac needed (you don't have one): the **"Mint Apple signing
+certificate"** workflow (`mint-apple-cert.yml`, manual dispatch) makes
+the key + CSR with openssl, has the App Store Connect API sign it, and
+uploads the encrypted `.p12` as a 1-day artifact. The
+`APPLE_DEV_CERT_PASSWORD` secret was generated and set already; after a
+dispatch, the artifact content goes into `APPLE_DEV_CERT_P12`
+(`gh secret set APPLE_DEV_CERT_P12 < APPLE_DEV_CERT_P12.b64`). This was
+run once on 2026-07-16 — rerun it only if the cert ever expires
+(1 year) or gets revoked.
 
 ## 6. The dedicated staging apps (`app.munni.dev`) — your checklist
 

@@ -147,9 +147,6 @@ export function GlobalSettingsScreen() {
           {identity?.kind === 'user' && (
             <Row testId="settings-friends-row" icon="account-multiple-outline" title={t('settings.friends')} onClick={() => void navigate({ to: '/friends' })} />
           )}
-          {identity?.kind === 'user' && (
-            <Row testId="settings-splits-row" icon="account-cash-outline" title={t('splits.title')} sub={t('splits.settingsSub')} onClick={() => void navigate({ to: '/splits' })} />
-          )}
           {gcAvailable && (
             <Row testId="settings-connections-row" icon="bank-transfer" title={t('gc.connections')} onClick={openConnections} />
           )}

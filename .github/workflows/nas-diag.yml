@@ -39,7 +39,7 @@ jobs:
           SYNOLOGY_PASS: ${{ secrets.SYNOLOGY_PASS }}
           SYNOLOGY_PATH: ${{ secrets.SYNOLOGY_PATH }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: nas-diag
           path: diag/

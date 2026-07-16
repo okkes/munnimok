@@ -7,6 +7,7 @@ import { useRecurringOps, useRecurrings } from '@/application/recurring';
 import { directionOfTx } from '@/domain/categoryRules';
 import { merchantKey } from '@/domain/merchantKey';
 import { draftReady, initDraft, withCategory, withLinkedAccount, withSplits, withType } from '@/domain/reviewDraft';
+import { normalizeIban } from '@/domain/feedIds';
 import { fetchSettlementCandidates } from '@/features/splits/settlementCandidates';
 import type { SettlementCandidate } from '@/features/splits/settlementCandidates';
 import { useSession } from '@/app/session';
@@ -238,8 +239,26 @@ export function ReviewScreen() {
     [tx, memory],
   );
 
+  // counterparty IBAN belonging to one of MY OWN accounts = money moving
+  // between my accounts — a transfer by definition, pre-applied (user
+  // report: credit-card top-ups showed up as expense + income pairs)
+  const ownCounter = useLiveQuery(() => {
+    const iban = tx?.counterIban ? normalizeIban(tx.counterIban) : undefined;
+    return iban
+      ? db.accounts.filter((a) => a.deleted === 0 && !!a.iban && normalizeIban(a.iban) === iban).first()
+      : undefined;
+  }, [tx?.counterIban, db]);
+
   // untouched cards follow the tx + the (async) prediction live
-  const draft = stagedDraft ?? (tx ? initDraft(tx, prediction?.catId, cats) : null);
+  const baseDraft = tx ? initDraft(tx, prediction?.catId, cats) : null;
+  const ownTransferDraft = useMemo(() => {
+    if (!baseDraft || !ownCounter || baseDraft.linkedAccountId) return baseDraft;
+    const linked = withLinkedAccount(baseDraft, { id: ownCounter.id, type: ownCounter.type }, cats);
+    // transfers carry no spending category — keep the confirm armed
+    return linked.catId ? linked : withCategory(linked, 'uncategorized', cats);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tx?.id, ownCounter, prediction?.catId, cats]);
+  const draft = stagedDraft ?? ownTransferDraft;
   const cat = cats.byId(draft?.catId);
   const parentColor = cat.parentId ? cats.byId(cat.parentId).color : cat.color;
 
@@ -462,6 +481,20 @@ export function ReviewScreen() {
                     </div>
                   )}
                 </>
+              )}
+
+              {/* money between my own accounts: pre-marked as a transfer,
+                  one tap opts back out */}
+              {ownCounter && draft && draft.linkedAccountId === ownCounter.id && (
+                <Chip
+                  className="mt-3"
+                  testId="review-own-transfer"
+                  selected
+                  onClick={() => setStagedDraft(withLinkedAccount(draft, null, cats))}
+                >
+                  <Icon name="swap-horizontal" size={13} />
+                  {t('review.ownTransfer', { name: ownCounter.name })}
+                </Chip>
               )}
 
               {/* SP5: incoming money matching an open split settlement to me */}

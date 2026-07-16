@@ -39,7 +39,7 @@ jobs:
           node-version: 24
           cache: npm
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 21
@@ -103,7 +103,7 @@ jobs:
           ANDROID_VERSION_CODE: ${{ steps.version.outputs.code }}
           ANDROID_VERSION_NAME: ${{ steps.version.outputs.name }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: munni-android-debug
           path: apps/native/android/app/build/outputs/apk/${{ steps.env.outputs.flavor }}/debug/app-${{ steps.env.outputs.flavor }}-debug.apk
@@ -136,7 +136,7 @@ jobs:
 
       - name: Upload release bundle artifact
         if: steps.keystore.outputs.present == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: munni-android-release
           path: apps/native/android/app/build/outputs/bundle/${{ steps.env.outputs.flavor }}Release/app-${{ steps.env.outputs.flavor }}-release.aab

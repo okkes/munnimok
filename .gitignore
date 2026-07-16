@@ -37,3 +37,4 @@ temporary/
 **/TestResults/
 import-watch/
 *.stackdump
+**/env/sonar-admin-password.txt

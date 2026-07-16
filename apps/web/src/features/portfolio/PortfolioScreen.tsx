@@ -237,13 +237,10 @@ export function PortfolioScreen() {
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-portfolio">
+      {/* a bottom tab like Home — same large left-aligned header, no back */}
       <AppBar
+        large
         title={t('pf.title')}
-        leading={
-          <IconButton label={t('action.back')} testId="pf-back" onClick={() => window.history.back()}>
-            <Icon name="arrow-left" size={22} />
-          </IconButton>
-        }
         trailing={
           <>
             <HelpButton tourId="portfolio" />

@@ -171,6 +171,7 @@ export function RecurringScreen() {
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-recurring">
       <AppBar
+        large
         title={t('screen.recurring')}
         trailing={
           <>
