@@ -208,4 +208,37 @@ describe('Settings screens (user identity, scripted server)', () => {
     const dbs = await indexedDB.databases();
     expect(dbs.some((d) => d.name === USER_TEST_DB)).toBe(true); // data survives
   }, 15_000);
+
+  it('account deletion requires the typed word, calls the api and wipes the device', async () => {
+    let deleted = false;
+    renderAppAsUser('/settings', {
+      api: {
+        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false } }),
+        'DELETE /me': () => {
+          deleted = true;
+          return { deleted: true };
+        },
+      },
+    });
+    await screen.findByTestId('screen-settings');
+    fireEvent.click(screen.getByTestId('settings-delete-account'));
+
+    // the confirm stays disarmed until the exact word is typed
+    const confirm = (await screen.findByTestId('delete-account-confirm')) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    fireEvent.change(screen.getByTestId('delete-account-input'), { target: { value: 'nope' } });
+    expect((screen.getByTestId('delete-account-confirm') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByTestId('delete-account-input'), { target: { value: 'delete' } });
+    expect((screen.getByTestId('delete-account-confirm') as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(screen.getByTestId('delete-account-confirm'));
+    expect(await screen.findByTestId('screen-login')).toBeTruthy();
+    expect(deleted).toBe(true);
+    expect(useSession.getState().identity).toBeNull();
+    // unlike sign-out, deletion FORGETS the device copy
+    await waitFor(async () => {
+      const dbs = await indexedDB.databases();
+      expect(dbs.some((d) => d.name === USER_TEST_DB)).toBe(false);
+    });
+  }, 15_000);
 });

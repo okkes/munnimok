@@ -23,6 +23,10 @@ POSTGRES_PASSWORD=${NAS_POSTGRES_PASSWORD}
 
 # --- logto ----------------------------------------------------------------
 LOGTO_API_RESOURCE=https://munni-api.okkes.synology.me
+# account deletion: a Machine-to-machine Logto app with the Management
+# API role — without it deletions skip the Logto identity (logged)
+LOGTO_M2M_APP_ID=${NAS_LOGTO_M2M_APP_ID}
+LOGTO_M2M_APP_SECRET=${NAS_LOGTO_M2M_APP_SECRET}
 
 # --- glitchtip -------------------------------------------------------------
 GLITCHTIP_SECRET_KEY=${NAS_GLITCHTIP_SECRET_KEY}

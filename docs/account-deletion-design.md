@@ -1,6 +1,14 @@
-# Account deletion — design (PLAN, awaiting approval)
+# Account deletion — design (DELIVERED 2026-07-16)
 
-Status: proposal 2026-07-16. Not implemented.
+Approved decisions: shared spaces leave-and-archive (①), immediate (②),
+Logto M2M ok (③). Implemented: `AccountDeletion.DeleteUserAsync`
+pipeline, `DELETE /me` + `DELETE /admin/users/{sub}`, the Settings
+danger flow with typed confirmation (EN/NL/TR), Logto M2M via
+`Logto:M2mAppId/Secret` (compose + .env.nas template `NAS_LOGTO_M2M_*`;
+unconfigured = server data still erased, identity logged for manual
+cleanup). Differences from the sketch below: synchronous 200 instead of
+202+poll (the pipeline runs in seconds), typed-word confirm instead of
+hold-to-confirm, no feedback questionnaire (kept minimal).
 
 Why now: beyond basic hygiene, **Apple requires in-app account deletion**
 (App Store guideline 5.1.1(v)) for any app with in-app account creation —

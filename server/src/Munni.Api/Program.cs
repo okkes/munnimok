@@ -48,6 +48,9 @@ builder.Services.AddHostedService<WatchFolderService>();
 builder.Services.AddHttpClient(StoreProxyEndpoints.HttpClientName,
     client => client.Timeout = TimeSpan.FromSeconds(15));
 
+// Logto Management API (account deletion): activates with Logto:M2m* config
+builder.Services.AddHttpClient("logto-m2m", client => client.Timeout = TimeSpan.FromSeconds(10));
+
 // receipt OCR via the Tesseract sidecar — enabled when the container is configured
 var ocrEnabled = !string.IsNullOrEmpty(builder.Configuration["Ocr:BaseUrl"]);
 if (ocrEnabled)

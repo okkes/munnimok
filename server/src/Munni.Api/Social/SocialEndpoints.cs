@@ -33,6 +33,9 @@ public static class SocialEndpoints
 
         authed.MapGet("/me", GetMe);
         authed.MapPut("/me", UpdateMe).WithValidation<UpdateMeRequest>();
+        // full account deletion (Apple 5.1.1(v) requires an in-app path);
+        // the strict limiter also throttles accidental double-taps
+        authed.MapDelete("/me", DeleteMe).RequireRateLimiting(MutationsPolicy);
         authed.MapGet("/friends", GetFriends);
         // writes that reach OTHER people get the stricter limiter (invite spam)
         authed.MapPost("/friends/requests", SendFriendRequestAsync).WithValidation<SendFriendRequest>().RequireRateLimiting(MutationsPolicy);
@@ -53,6 +56,20 @@ public static class SocialEndpoints
     {
         var user = await db.Users.FindAsync(http.GetUserId());
         return Results.Ok(new MeResponse(user!.Id, user.DisplayName, user.Picture));
+    }
+
+    private static async Task<IResult> DeleteMe(
+        AppDbContext db,
+        HttpContext http,
+        IHttpClientFactory httpFactory,
+        IConfiguration config,
+        ILoggerFactory loggerFactory)
+    {
+        var user = await db.Users.FindAsync(http.GetUserId());
+        if (user is null) return Results.NotFound();
+        var gc = http.RequestServices.GetService<Munni.Api.GoCardless.IGoCardlessApi>();
+        await AccountDeletion.DeleteUserAsync(db, gc, httpFactory, config, loggerFactory.CreateLogger("AccountDeletion"), user);
+        return Results.Ok(new { deleted = true });
     }
 
     private static async Task<IResult> UpdateMe(UpdateMeRequest request, AppDbContext db, HttpContext http)

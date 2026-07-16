@@ -56,6 +56,26 @@ public static class AdminEndpoints
                 .ToList());
         });
 
+        // operator-initiated removal, same pipeline as the user's own
+        // DELETE /me (account-deletion design)
+        group.MapDelete("/users/{sub}", async (
+            string sub,
+            HttpContext http,
+            AppDbContext db,
+            IConfiguration config,
+            IHttpClientFactory httpFactory,
+            ILoggerFactory loggerFactory) =>
+        {
+            if (!await IsAdminAsync(http, db, config)) return Results.Forbid();
+            var target = await db.Users.FirstOrDefaultAsync(u => u.Sub == sub);
+            if (target is null) return Results.NotFound();
+            var self = await db.Users.FindAsync(http.GetUserId());
+            if (self?.Sub == sub) return Results.BadRequest(new { error = "cannot delete yourself here" });
+            var gc = http.RequestServices.GetService<IGoCardlessApi>();
+            await Social.AccountDeletion.DeleteUserAsync(db, gc, httpFactory, config, loggerFactory.CreateLogger("AccountDeletion"), target);
+            return Results.Ok(new { deleted = sub });
+        });
+
         MapAdminGrants(group);
         MapQuota(group);
 
