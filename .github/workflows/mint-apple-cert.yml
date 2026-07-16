@@ -39,6 +39,14 @@ jobs:
             -subj "/CN=munni CI Development/O=munni" \
             -out "$RUNNER_TEMP/dev.csr"
 
+      - name: Clear existing Development certificates (Apple allows one current)
+        run: node .github/scripts/asc-prune.js
+        env:
+          KEEP_NEWEST: '0'
+          ASC_KEY_PATH: ${{ runner.temp }}/asc.p8
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+
       - name: Ask App Store Connect to sign it
         run: |
           node .github/scripts/asc-mint-cert.js "$RUNNER_TEMP/dev.csr" > "$RUNNER_TEMP/cert.b64"

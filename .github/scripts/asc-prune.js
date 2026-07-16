@@ -15,7 +15,9 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 
-const KEEP_NEWEST = 3; // dev + master in flight + one margin
+// dev + master in flight + one margin; the mint workflow passes 0 to
+// clear the deck before creating the persistent certificate
+const KEEP_NEWEST = Number(process.env.KEEP_NEWEST ?? 3);
 function jwt() {
   const key = fs.readFileSync(process.env.ASC_KEY_PATH, 'utf8');
   const b64url = (buf) => Buffer.from(buf).toString('base64url');
