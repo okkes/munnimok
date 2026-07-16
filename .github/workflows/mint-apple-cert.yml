@@ -54,7 +54,7 @@ jobs:
       - name: Ask App Store Connect to sign it
         run: |
           node .github/scripts/asc-mint-cert.js "$RUNNER_TEMP/dev.csr" > "$RUNNER_TEMP/cert.b64"
-          base64 -d "$RUNNER_TEMP/cert.b64" > "$RUNNER_TEMP/dev.der"
+          base64 -d < "$RUNNER_TEMP/cert.b64" > "$RUNNER_TEMP/dev.der" # BSD base64: stdin only
           openssl x509 -inform DER -in "$RUNNER_TEMP/dev.der" -out "$RUNNER_TEMP/dev.pem"
           openssl x509 -in "$RUNNER_TEMP/dev.pem" -noout -subject -enddate
         env:
