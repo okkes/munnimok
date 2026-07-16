@@ -18,6 +18,17 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.24.0',
+    date: '2026-07-16',
+    items: [
+      {
+        en: 'The Android/iOS apps feel more at home: long-press the app icon for Review or Transactions shortcuts, exports open the system share sheet (straight to Files or mail), a subtle haptic confirms each review, and tapping a notification lands you on the right screen.',
+        nl: 'De Android/iOS-apps voelen meer thuis: houd het app-icoon ingedrukt voor Beoordelen- of Transacties-snelkoppelingen, exports openen het systeemdeelmenu (direct naar Bestanden of mail), een subtiele triltik bevestigt elke beoordeling, en een tik op een melding brengt je naar het juiste scherm.',
+        tr: 'Android/iOS uygulamaları daha yerli hissettiriyor: uygulama simgesine uzun bas ve İncele veya İşlemler kısayollarını aç; dışa aktarmalar sistem paylaşım menüsünü açar (doğrudan Dosyalar veya e-posta), her incelemeyi hafif bir titreşim onaylar ve bildirime dokunmak seni doğru ekrana götürür.',
+      },
+    ],
+  },
+  {
     version: '1.23.0',
     date: '2026-07-16',
     items: [

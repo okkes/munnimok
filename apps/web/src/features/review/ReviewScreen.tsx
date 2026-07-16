@@ -8,6 +8,7 @@ import { directionOfTx } from '@/domain/categoryRules';
 import { merchantKey } from '@/domain/merchantKey';
 import { draftReady, initDraft, withCategory, withLinkedAccount, withSplits, withType } from '@/domain/reviewDraft';
 import { normalizeIban } from '@/domain/feedIds';
+import { hapticNotify } from '@/lib/platform';
 import { fetchSettlementCandidates } from '@/features/splits/settlementCandidates';
 import type { SettlementCandidate } from '@/features/splits/settlementCandidates';
 import { useSession } from '@/app/session';
@@ -334,6 +335,7 @@ export function ReviewScreen() {
     });
     // other billing cycles of a linked recurring pick up their link here
     void recurringOps.reconcile().catch(() => undefined);
+    hapticNotify('SUCCESS'); // §5: a physical tick on the native shells
   };
 
   const { progress, sub } = progressState(initialCount, queue?.length, skipped.size);

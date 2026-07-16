@@ -35,6 +35,20 @@ interface CapacitorGlobal {
       isAvailable?: () => Promise<{ isAvailable?: boolean }>;
       verifyIdentity?: (options: { reason?: string; title?: string }) => Promise<void>;
     };
+    Haptics?: {
+      notification?: (options: { type: 'SUCCESS' | 'WARNING' | 'ERROR' }) => Promise<void>;
+    };
+    Share?: {
+      share?: (options: { title?: string; files?: string[] }) => Promise<unknown>;
+    };
+    Filesystem?: {
+      writeFile?: (options: {
+        path: string;
+        data: string;
+        directory: string;
+        encoding?: string;
+      }) => Promise<{ uri: string }>;
+    };
   };
 }
 
@@ -80,7 +94,10 @@ export function initDeepLinks(): void {
     const path = deepLinkToPath(url);
     if (!path) return;
     if (path.startsWith('/auth-callback')) sessionStorage.setItem(NATIVE_CALLBACK_KEY, url);
-    globalThis.location.assign(path);
+    // callbacks live on real paths outside the hash router; everything
+    // else (app shortcuts like munni://review, §5) is a hash route
+    const realPath = path.startsWith('/auth-callback') || path.startsWith('/gc-callback');
+    globalThis.location.assign(realPath ? path : `/#${path}`);
   });
 }
 
@@ -186,4 +203,59 @@ export async function nativeBiometricVerify(reason: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * §5 niceties — every helper no-ops (or returns false) outside the
+ * native shell so web/PWA behavior is untouched.
+ */
+
+/** OS haptic tick on key confirmations (review confirm, budget alert) */
+export function hapticNotify(type: 'SUCCESS' | 'WARNING' = 'SUCCESS'): void {
+  if (!isNativeApp()) return;
+  void capacitor()?.Plugins?.Haptics?.notification?.({ type })?.catch(() => undefined);
+}
+
+/**
+ * Native share sheet for exports: writes the content to the app cache
+ * and hands the file to the OS sheet (Files/mail/drive). false = not
+ * native or share failed — callers fall back to the browser download.
+ */
+export async function shareNativeFile(fileName: string, content: string): Promise<boolean> {
+  const plugins = capacitor()?.Plugins;
+  if (!isNativeApp() || !plugins?.Filesystem?.writeFile || !plugins.Share?.share) return false;
+  try {
+    const written = await plugins.Filesystem.writeFile({
+      path: fileName,
+      data: content,
+      directory: 'CACHE',
+      encoding: 'utf8',
+    });
+    await plugins.Share.share({ title: fileName, files: [written.uri] });
+    return true;
+  } catch {
+    return false; // user closed the sheet or the OS refused — download instead
+  }
+}
+
+/**
+ * Notification taps (§5): the shell's push plugin reports the tapped
+ * notification; the payload rides FCM's data field as a JSON string.
+ * The callback receives it parsed — pwa.ts routes it through the same
+ * NAVIGATE bridge the service worker uses.
+ */
+export function onNativePushTap(callback: (payload: unknown) => void): void {
+  if (!isNativeApp()) return;
+  capacitor()?.Plugins?.PushNotifications?.addListener?.(
+    'pushNotificationActionPerformed',
+    (action: { notification?: { data?: { payload?: string } } }) => {
+      const raw = action.notification?.data?.payload;
+      if (!raw) return;
+      try {
+        callback(JSON.parse(raw));
+      } catch {
+        // malformed payload — ignore
+      }
+    },
+  );
 }
