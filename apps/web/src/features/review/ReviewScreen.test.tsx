@@ -314,3 +314,70 @@ describe('ReviewScreen (user identity, split settlements)', () => {
     });
   }, 15_000);
 });
+
+describe('ReviewScreen (own-account transfers)', () => {
+  it('a counterparty IBAN that is MY OWN account pre-marks the card as transfer', async () => {
+    const { USER_TEST_DB, renderAppAsUser } = await import('@/test/harness');
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase(USER_TEST_DB);
+
+    const db = new MunniDB(USER_TEST_DB);
+    const repo = new Repo(db, new HlcClock('seed'), { trackOutbox: false });
+    await repo.upsert('account', 's-user', 'acct-cc', {
+      name: 'Credit card', type: 'credit', source: 'manual', currency: 'EUR',
+      iban: 'NL91 ABNA 0417 1643 00',
+    });
+    await repo.upsert('transaction', 's-user', 'tx-topup', {
+      accountId: 'acct-main', date: '2026-07-16', amountCents: -50000, currency: 'EUR',
+      merchant: 'CREDITCARD TOPUP', txType: 'expense', needsReview: 1,
+      counterIban: 'NL91ABNA0417164300', // same IBAN, bank formatting differs
+    });
+    db.close();
+
+    renderAppAsUser('/review', {
+      api: { 'GET /health': () => ({ status: 'ok', capabilities: {} }) },
+    });
+
+    // the chip names my account and the draft is already a transfer
+    const chip = await screen.findByTestId('review-own-transfer');
+    expect(chip.textContent).toContain('Credit card');
+
+    await waitFor(() =>
+      expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false),
+    );
+    fireEvent.click(screen.getByTestId('review-confirm-btn'));
+    await waitFor(async () => {
+      const check = new MunniDB(USER_TEST_DB);
+      const tx = await check.transactions.get('tx-topup');
+      check.close();
+      // credit counter-account: munni's semantics call that a debt payment
+      expect(tx).toMatchObject({ txType: 'debtPayment', linkedAccountId: 'acct-cc', needsReview: 0 });
+    });
+  }, 15_000);
+
+  it('one tap opts back out of the auto-transfer', async () => {
+    const { USER_TEST_DB, renderAppAsUser } = await import('@/test/harness');
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase(USER_TEST_DB);
+
+    const db = new MunniDB(USER_TEST_DB);
+    const repo = new Repo(db, new HlcClock('seed'), { trackOutbox: false });
+    await repo.upsert('account', 's-user', 'acct-cc', {
+      name: 'Credit card', type: 'credit', source: 'manual', currency: 'EUR', iban: 'NL91ABNA0417164300',
+    });
+    await repo.upsert('transaction', 's-user', 'tx-topup', {
+      accountId: 'acct-main', date: '2026-07-16', amountCents: -50000, currency: 'EUR',
+      merchant: 'CREDITCARD TOPUP', txType: 'expense', needsReview: 1, counterIban: 'NL91ABNA0417164300',
+    });
+    db.close();
+
+    renderAppAsUser('/review', {
+      api: { 'GET /health': () => ({ status: 'ok', capabilities: {} }) },
+    });
+
+    fireEvent.click(await screen.findByTestId('review-own-transfer'));
+    await waitFor(() => expect(screen.queryByTestId('review-own-transfer')).toBeNull());
+  }, 15_000);
+});

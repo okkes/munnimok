@@ -365,6 +365,25 @@ describe('Splits (SP1)', () => {
     await screen.findByTestId('screen-split-detail');
   });
 
+  it('the Home block surfaces my current split and jumps into it', async () => {
+    renderAppAsUser('/', {
+      api: {
+        'GET /health': () => ({ status: 'ok', capabilities: {} }),
+        'GET /splits': () => [
+          { id: 'split-1', name: 'Barcelona', currency: 'EUR', status: 'open', role: 'owner', memberCount: 2, entryCount: 1 },
+        ],
+        'GET /splits/split-1': () => DETAIL,
+      },
+    });
+
+    const block = await screen.findByTestId('home-split-top');
+    expect(block.textContent).toContain('Barcelona');
+    expect(block.textContent).toContain('€15.00'); // my net from DETAIL
+
+    fireEvent.click(screen.getByTestId('home-splits-all'));
+    await screen.findByTestId('screen-splits');
+  });
+
   it('creates a split from the list and navigates into it', async () => {
     const created: unknown[] = [];
     renderAppAsUser('/splits', {

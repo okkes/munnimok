@@ -35,7 +35,7 @@ permissions:
 jobs:
   ios:
     if: ${{ vars.IOS_BUILD_ENABLED == 'true' }}
-    runs-on: macos-15
+    runs-on: macos-26
     # GitHub Environment resolves NATIVE_* variables per stack (staging
     # values override repo-level defaults with the SAME name)
     environment: ${{ github.ref_name == 'dev' && 'staging' || 'production' }}
@@ -131,7 +131,7 @@ jobs:
 
       - name: Upload simulator artifact
         if: steps.asc.outputs.present == 'false'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: munni-ios-simulator
           path: apps/native/ios/App/build/Build/Products/Debug-iphonesimulator/App.app

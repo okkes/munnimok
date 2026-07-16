@@ -171,6 +171,10 @@ export function SettingsScreen() {
               capKey: 'settings.groupTrack',
               rows: [
                 { testId: 'settings-events-row', icon: 'party-popper', labelKey: 'events.title', to: '/events' },
+                // splits live here, not in Global (user remark): the group
+                // itself is space-independent, but its attachment and the
+                // transactions you pick from belong to the current space
+                { testId: 'settings-splits-row', icon: 'account-cash-outline', labelKey: 'splits.title', to: '/splits', userOnly: true },
                 { testId: 'settings-goals-row', icon: 'flag-outline', labelKey: 'goals.title', to: '/goals' },
                 { testId: 'settings-debts-row', icon: 'hand-coin-outline', labelKey: 'debts.title', to: '/debts' },
               ],

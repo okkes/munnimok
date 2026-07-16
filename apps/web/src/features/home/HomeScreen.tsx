@@ -10,6 +10,8 @@ import { addDays, nextDueDate } from '@/domain/recurring';
 import { RecurringVisual } from '@/features/recurring/RecurringVisual';
 import type { RecurringRow } from '@/db/types';
 import { LOCALES, useLang } from '@/i18n';
+import { useSession } from '@/app/session';
+import { useTopSplit } from '@/features/splits/useTopSplit';
 import { useData } from '@/app/data';
 import { OfflineIndicator } from '@/app/OfflineBanner';
 import { HelpButton } from '@/features/help/HelpButton';
@@ -57,6 +59,8 @@ export function HomeScreen() {
   const { t, lang } = useLang();
   const { db, spaceId } = useData();
   const navigate = useNavigate();
+  const identity = useSession((s) => s.identity);
+  const topSplit = useTopSplit();
   const [accountsOpen, setAccountsOpen] = useState(false);
   const [customizeOpen, setCustomizeOpen] = useState(false);
 
@@ -178,6 +182,7 @@ export function HomeScreen() {
     goals: renderGoalsBlock,
     debts: renderDebtsBlock,
     events: renderEventsBlock,
+    splits: renderSplitsBlock,
     insights: renderInsightsBlock,
   };
   const layout = resolveHomeBlocks(space);
@@ -609,6 +614,48 @@ export function HomeScreen() {
         </span>
         <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
       </button>
+    );
+  }
+
+  function renderSplitsBlock() {
+    // online-only, signed-in feature: loading and every degraded state
+    // renders nothing; no open split shows the teaser (user request:
+    // reach the current split from Home, or all of them via see-all)
+    if (identity?.kind !== 'user') return null;
+    if (topSplit === undefined) return null;
+    if (topSplit === null) {
+      return renderTeaser('home-splits-teaser', 'account-cash-outline', 'home.splitsTeaserTitle', 'home.splitsTeaserSub', '/splits');
+    }
+    const netLine = () => {
+      if (topSplit.net > 0) return t('splits.summaryOwed', { amount: fmtCents(topSplit.net, topSplit.currency, lang) });
+      if (topSplit.net < 0) return t('splits.summaryOwe', { amount: fmtCents(-topSplit.net, topSplit.currency, lang) });
+      return t('splits.summaryEven');
+    };
+    return (
+      <>
+        <div className="m-cap mt-5 mb-1 flex items-center justify-between px-1">
+          {t('splits.title')}
+          <button
+            data-testid="home-splits-all"
+            onClick={() => void navigate({ to: '/splits' })}
+            className="m-tap border-none bg-transparent text-[11px] font-semibold text-accent-deep"
+          >
+            {t('home.seeAll')}
+          </button>
+        </div>
+        <button
+          data-testid="home-split-top"
+          onClick={() => void navigate({ to: '/splits/$splitId', params: { splitId: topSplit.id } })}
+          className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3.5 text-left"
+        >
+          <Tile icon="account-cash-outline" />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[14px] font-semibold text-ink">{topSplit.name}</span>
+            <span className="block text-[12px] text-ink-3">{netLine()}</span>
+          </span>
+          <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
+        </button>
+      </>
     );
   }
 
