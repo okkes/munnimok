@@ -22,9 +22,9 @@ export const WHATS_NEW: WhatsNewEntry[] = [
     date: '2026-07-16',
     items: [
       {
-        en: 'New: Splits — settle up with any group. Create a split under Settings → Splits, add who paid what, and munni works out who owes whom with the fewest transfers. Inviting others and adding expenses straight from your transactions are coming next.',
-        nl: 'Nieuw: Splits — verreken met elke groep. Maak een split aan onder Instellingen → Splits, voeg toe wie wat betaalde, en munni rekent uit wie wie wat schuldig is met zo min mogelijk overboekingen. Anderen uitnodigen en uitgaven direct uit je transacties toevoegen volgen binnenkort.',
-        tr: 'Yeni: Bölüşmeler — her grupla hesaplaş. Ayarlar → Bölüşmeler altında bir bölüşme oluştur, kimin ne ödediğini ekle; munni en az transferle kimin kime ne borçlu olduğunu hesaplar. Başkalarını davet etme ve harcamaları doğrudan işlemlerinden ekleme sırada.',
+        en: 'New: Splits — settle up with any group. Create a split under Settings → Splits, add who paid what (typed in, or picked straight from your own transactions), adjust shares when a split isn\'t fifty-fifty, and munni works out who owes whom with the fewest transfers. Inviting others is coming next.',
+        nl: 'Nieuw: Splits — verreken met elke groep. Maak een split aan onder Instellingen → Splits, voeg toe wie wat betaalde (getypt of direct uit je eigen transacties gekozen), pas aandelen aan als het niet fifty-fifty is, en munni rekent uit wie wie wat schuldig is met zo min mogelijk overboekingen. Anderen uitnodigen volgt binnenkort.',
+        tr: 'Yeni: Bölüşmeler — her grupla hesaplaş. Ayarlar → Bölüşmeler altında bir bölüşme oluştur, kimin ne ödediğini ekle (elle yaz veya doğrudan kendi işlemlerinden seç), eşit olmayan bölüşmelerde payları ayarla; munni en az transferle kimin kime ne borçlu olduğunu hesaplar. Başkalarını davet etme sırada.',
       },
     ],
   },

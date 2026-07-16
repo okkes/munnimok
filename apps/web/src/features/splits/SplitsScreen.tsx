@@ -8,6 +8,7 @@ import { apiFetch } from '@/lib/api';
 import { fmtCents, parseCents } from '@/lib/money';
 import { netPositions, settlementPlan } from '@/domain/splitLedger';
 import type { LedgerEntry } from '@/domain/splitLedger';
+import type { TransactionRow } from '@/db/types';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
@@ -36,6 +37,8 @@ interface SplitEntryRow {
   amountCents: number;
   date: string;
   shares: { userId: string; cents: number }[];
+  /** the adder's private backlink — the server serializes it only for them */
+  sourceTxId?: string | null;
   createdBy: string;
 }
 interface SplitDetail {
@@ -44,6 +47,7 @@ interface SplitDetail {
   currency: string;
   status: string;
   role: string;
+  attachedSpaceId?: string | null;
   members: SplitMember[];
   entries: SplitEntryRow[];
 }
@@ -181,12 +185,21 @@ export function SplitDetailScreen() {
   const { t, lang } = useLang();
   const { splitId } = useParams({ strict: false }) as { splitId: string };
   const { identity } = useSession();
+  const { db, spaceId } = useData();
   const [detail, setDetail] = useState<SplitDetail | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
   const [paidBy, setPaidBy] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // SP2: pick expenses from MY attached space's transactions (local db —
+  // other members' searches never see them) + optional custom shares
+  const [txOpen, setTxOpen] = useState(false);
+  const [txQuery, setTxQuery] = useState('');
+  const [txResults, setTxResults] = useState<TransactionRow[] | null>(null);
+  const [txSelected, setTxSelected] = useState<ReadonlySet<string>>(new Set());
+  const [sharesOpen, setSharesOpen] = useState(false);
+  const [shareInputs, setShareInputs] = useState<Record<string, string>>({});
 
   const reload = useCallback(async () => {
     const res = await apiFetch(`/splits/${splitId}`).catch(() => null);
@@ -203,6 +216,79 @@ export function SplitDetailScreen() {
     [detail, t],
   );
 
+  // search MY attached space only (per-member attachment ruling); the
+  // creator's attachment may be unset for pre-SP2 splits — active space then
+  const searchSpaceId = detail?.attachedSpaceId ?? spaceId;
+  const alreadyAdded = useMemo(
+    () => new Set((detail?.entries ?? []).map((e) => e.sourceTxId).filter(Boolean) as string[]),
+    [detail],
+  );
+
+  useEffect(() => {
+    if (!txOpen) return;
+    let stale = false;
+    void (async () => {
+      const all = await db.transactions.where('spaceId').equals(searchSpaceId).toArray();
+      const needle = txQuery.trim().toLowerCase();
+      const matches = all
+        .filter((tx) => tx.deleted === 0 && tx.amountCents < 0 && !alreadyAdded.has(tx.id))
+        .filter(
+          (tx) =>
+            !needle ||
+            tx.merchant.toLowerCase().includes(needle) ||
+            (tx.description ?? '').toLowerCase().includes(needle) ||
+            String(Math.abs(tx.amountCents) / 100).includes(needle.replace(',', '.')),
+        )
+        .sort((a, b) => b.date.localeCompare(a.date))
+        .slice(0, 50);
+      if (!stale) setTxResults(matches);
+    })();
+    return () => {
+      stale = true;
+    };
+  }, [txOpen, txQuery, db, searchSpaceId, alreadyAdded]);
+
+  const toggleTx = (id: string) => {
+    setTxSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // snapshot copy (design: the split never holds a live reference — later
+  // edits to the source tx don't rewrite the group's agreed history)
+  const addFromTx = async () => {
+    if (!detail || !me || txSelected.size === 0) return;
+    setBusy(true);
+    const picked = (txResults ?? []).filter((tx) => txSelected.has(tx.id));
+    for (const tx of picked) {
+      await apiFetch(`/splits/${splitId}/entries`, {
+        method: 'POST',
+        body: JSON.stringify({
+          id: uuidv7(),
+          kind: 'expense',
+          paidByUserId: me.userId,
+          description: tx.merchant,
+          amountCents: -tx.amountCents,
+          date: tx.date,
+          sourceTxId: tx.id,
+        }),
+      }).catch(() => null);
+    }
+    setBusy(false);
+    setTxOpen(false);
+    setTxSelected(new Set());
+    setTxQuery('');
+    await reload();
+  };
+
+  // custom shares: blank input = 0; the sum must match the amount exactly
+  const shareCents = (userId: string) => parseCents(shareInputs[userId] ?? '') ?? 0;
+  const sharesSum = (detail?.members ?? []).reduce((sum, m) => sum + shareCents(m.userId), 0);
+  const sharesRemaining = (parseCents(amount) ?? 0) - sharesSum;
+
   const ledger = useMemo(() => {
     if (!detail) return null;
     const entries: LedgerEntry[] = detail.entries.map((e) => ({
@@ -217,6 +303,7 @@ export function SplitDetailScreen() {
   const addEntry = async () => {
     const cents = parseCents(amount) ?? 0;
     if (!description.trim() || cents <= 0 || !detail) return;
+    if (sharesOpen && sharesRemaining !== 0) return;
     setBusy(true);
     const res = await apiFetch(`/splits/${splitId}/entries`, {
       method: 'POST',
@@ -227,6 +314,9 @@ export function SplitDetailScreen() {
         description: description.trim(),
         amountCents: cents,
         date: new Date().toISOString().slice(0, 10),
+        shares: sharesOpen
+          ? detail.members.map((m) => ({ userId: m.userId, cents: shareCents(m.userId) }))
+          : undefined,
       }),
     }).catch(() => null);
     setBusy(false);
@@ -235,6 +325,8 @@ export function SplitDetailScreen() {
     setDescription('');
     setAmount('');
     setPaidBy(null);
+    setSharesOpen(false);
+    setShareInputs({});
     await reload();
   };
 
@@ -298,7 +390,14 @@ export function SplitDetailScreen() {
           {(detail?.entries ?? []).map((entry) => (
             <div key={entry.id} className="flex items-center gap-3 border-b border-line-2 px-4 py-3 last:border-0">
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-[14px] text-ink">{entry.description}</span>
+                <span className="flex items-center gap-1.5 text-[14px] text-ink">
+                  <span className="truncate">{entry.description}</span>
+                  {entry.sourceTxId && (
+                    <span data-testid="split-entry-linked" className="inline-flex">
+                      <Icon name="bank-outline" size={13} color="var(--m-ink-4)" />
+                    </span>
+                  )}
+                </span>
                 <span className="block text-[11px] text-ink-4">
                   {new Date(entry.date).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' })} ·{' '}
                   {t('splits.paidBy', { name: nameOf(entry.paidByUserId) })}
@@ -327,8 +426,28 @@ export function SplitDetailScreen() {
         </div>
       </div>
 
-      <Sheet open={addOpen} onOpenChange={setAddOpen} title={t('splits.addEntry')} size="form">
+      <Sheet open={addOpen} onOpenChange={setAddOpen} title={t('splits.addEntry')} size="tall">
         <div className="flex flex-col gap-3 pt-1">
+          <button
+            data-testid="split-add-from-tx"
+            onClick={() => {
+              setAddOpen(false);
+              setTxOpen(true);
+            }}
+            className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left"
+          >
+            <Icon name="bank-outline" size={20} color="var(--m-accent-deep)" />
+            <span className="min-w-0 flex-1">
+              <span className="block text-[14px] text-ink">{t('splits.fromTx')}</span>
+              <span className="block text-[11px] text-ink-4">{t('splits.fromTxSub')}</span>
+            </span>
+            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+          </button>
+          <div className="flex items-center gap-2">
+            <div className="h-px flex-1 bg-line-2" />
+            <span className="text-[11px] text-ink-4">{t('splits.orManual')}</span>
+            <div className="h-px flex-1 bg-line-2" />
+          </div>
           <input
             data-testid="split-entry-desc"
             value={description}
@@ -363,9 +482,98 @@ export function SplitDetailScreen() {
               ))}
             </div>
           </div>
-          <p className="text-[12px] text-ink-4">{t('splits.equalHint')}</p>
-          <Button data-testid="split-entry-save" disabled={busy || !description.trim() || !(parseCents(amount) ?? 0)} onClick={() => void addEntry()}>
+          {!sharesOpen && <p className="text-[12px] text-ink-4">{t('splits.equalHint')}</p>}
+          <button
+            data-testid="split-shares-toggle"
+            onClick={() => {
+              setSharesOpen((open) => !open);
+              setShareInputs({});
+            }}
+            className={`m-tap self-start rounded-full border px-3 py-1.5 text-[13px] ${
+              sharesOpen ? 'border-accent bg-accent-soft text-accent-deep' : 'border-line bg-surface text-ink-2'
+            }`}
+          >
+            {t('splits.adjustShares')}
+          </button>
+          {sharesOpen && (
+            <div className="flex flex-col gap-2">
+              {(detail?.members ?? []).map((member) => (
+                <div key={member.userId} className="flex items-center gap-3">
+                  <span className="min-w-0 flex-1 truncate text-[13px] text-ink-2">{memberName(member, t('word.you'))}</span>
+                  <input
+                    data-testid={`split-share-${member.userId}`}
+                    value={shareInputs[member.userId] ?? ''}
+                    onChange={(e) => setShareInputs((prev) => ({ ...prev, [member.userId]: e.target.value }))}
+                    inputMode="decimal"
+                    placeholder="0,00"
+                    className="h-10 w-28 rounded-input border border-line bg-surface px-3 text-right text-[14px] text-ink outline-none"
+                  />
+                </div>
+              ))}
+              {sharesRemaining !== 0 && (parseCents(amount) ?? 0) > 0 && (
+                <p className="text-[12px] text-negative" data-testid="split-shares-sum">
+                  {t('splits.sharesRemaining', { amount: fmtCents(sharesRemaining, detail?.currency ?? 'EUR', lang) })}
+                </p>
+              )}
+            </div>
+          )}
+          <Button
+            data-testid="split-entry-save"
+            disabled={busy || !description.trim() || !(parseCents(amount) ?? 0) || (sharesOpen && sharesRemaining !== 0)}
+            onClick={() => void addEntry()}
+          >
             {t('action.save')}
+          </Button>
+        </div>
+      </Sheet>
+
+      {/* SP2: pick expenses from MY attached space's transactions — the
+          list is read from the LOCAL database, never another member's */}
+      <Sheet open={txOpen} onOpenChange={setTxOpen} title={t('splits.fromTx')} size="tall">
+        <div className="flex h-full flex-col gap-3 pt-1">
+          <input
+            data-testid="split-tx-search"
+            value={txQuery}
+            onChange={(e) => setTxQuery(e.target.value)}
+            placeholder={t('splits.searchTx')}
+            className="h-12 w-full shrink-0 rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none"
+          />
+          <div className="min-h-0 flex-1 overflow-y-auto rounded-card border border-line bg-surface">
+            {(txResults ?? []).map((tx) => {
+              const picked = txSelected.has(tx.id);
+              return (
+                <button
+                  key={tx.id}
+                  data-testid={`split-tx-${tx.id}`}
+                  onClick={() => toggleTx(tx.id)}
+                  className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-4 py-3 text-left last:border-0"
+                >
+                  <Icon
+                    name={picked ? 'checkbox-marked-circle' : 'checkbox-blank-circle-outline'}
+                    size={20}
+                    color={picked ? 'var(--m-accent-deep)' : 'var(--m-ink-4)'}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[14px] text-ink">{tx.merchant}</span>
+                    <span className="block text-[11px] text-ink-4">
+                      {new Date(tx.date).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' })}
+                    </span>
+                  </span>
+                  <span className="m-num text-[14px] font-semibold text-ink">
+                    {fmtCents(-tx.amountCents, tx.currency, lang)}
+                  </span>
+                </button>
+              );
+            })}
+            {txResults !== null && txResults.length === 0 && (
+              <div className="px-4 py-6 text-center text-[13px] text-ink-4">{t('splits.noTxFound')}</div>
+            )}
+            {txResults === null && <div className="px-4 py-6 text-center text-[13px] text-ink-4">…</div>}
+          </div>
+          <Button data-testid="split-tx-add" disabled={busy || txSelected.size === 0} onClick={() => void addFromTx()}>
+            {txSelected.size === 1
+              ? t('splits.addSelectedOne')
+              : t('splits.addSelected', { n: txSelected.size })}
           </Button>
         </div>
       </Sheet>
