@@ -95,6 +95,13 @@ async function writeConfirmation(args: {
 /** "also apply to n similar": a compact summary row on the card; the full
  *  list lives in a Sheet so long histories never squeeze the card
  *  (user request), with per-row read-only detail expansion */
+/** transfers carry no spending category — the hidden 'uncategorized'
+ * builtin keeps the confirm armed (settle-match chip) */
+function stageAsTransfer(draft: ReviewDraft, cats: ReturnType<typeof useCategories>): ReviewDraft {
+  const next = withType(draft, 'transfer', cats);
+  return next.catId ? next : withCategory(next, 'uncategorized', cats);
+}
+
 /** own-account counterparty pre-applies the link + suggested type; the
  * hidden 'uncategorized' builtin keeps the confirm armed for transfers */
 function applyOwnCounterDefault(
@@ -542,12 +549,7 @@ export function ReviewScreen() {
                   className="mt-3"
                   testId="review-settle-match"
                   selected={draft.txType === 'transfer'}
-                  onClick={() => {
-                    // transfers carry no spending category; the hidden
-                    // 'uncategorized' builtin keeps the confirm armed
-                    const next = withType(draft, 'transfer', cats);
-                    setStagedDraft(next.catId ? next : withCategory(next, 'uncategorized', cats));
-                  }}
+                  onClick={() => setStagedDraft(stageAsTransfer(draft, cats))}
                 >
                   <Icon name="handshake-outline" size={13} />
                   {t('review.settleMatch', {
