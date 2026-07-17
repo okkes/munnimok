@@ -26,7 +26,7 @@ export function HoldingDetailScreen() {
   const ops = usePortfolioOps();
   const lots = useQuery(store, 
     async () => {
-      const rows = await (await store.allRows('lot')).filter((l) => l.deleted === 0 && l.spaceId === spaceId && l.holdingId === holdingId);
+      const rows = (await store.bySpace('lot', spaceId)).filter((l) => l.deleted === 0 && l.holdingId === holdingId);
       rows.sort((a, b) => b.date.localeCompare(a.date));
       return rows;
     },

@@ -101,7 +101,7 @@ export function ManageCategoriesScreen() {
   const personalCats = useQuery(store, async () => {
     if (!cats.sharedScope) return [];
     const personal = new Set(
-      (await (await store.allRows('space')).filter((s) => s.deleted === 0 && s.kind !== 'shared')).map((s) => s.id),
+      (await store.allRows('space')).filter((s) => s.deleted === 0 && s.kind !== 'shared').map((s) => s.id),
     );
     return (await store.allRows('category')).filter((c) => c.deleted === 0 && personal.has(c.spaceId));
   }, [cats.sharedScope]);

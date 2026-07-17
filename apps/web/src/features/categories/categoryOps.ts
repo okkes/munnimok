@@ -335,11 +335,14 @@ export async function adoptUserCategoriesOnShare(store: StorageBackend, repo: Re
   const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0);
   const personalIds = new Set(spaces.filter((s) => s.kind !== 'shared' && s.id !== spaceId).map((s) => s.id));
 
-  const [txs, metas, cats] = await Promise.all([
-    (await store.allRows('transaction')).filter((t) => t.deleted === 0 && t.spaceId === spaceId),
-    (await store.allRows('txMeta')).filter((m) => m.deleted === 0 && m.spaceId === spaceId),
-    (await store.allRows('category')).filter((c) => c.deleted === 0),
+  const [allTxs, allMetas, allCats] = await Promise.all([
+    store.bySpace('transaction', spaceId),
+    store.bySpace('txMeta', spaceId),
+    store.allRows('category'),
   ]);
+  const txs = allTxs.filter((t) => t.deleted === 0);
+  const metas = allMetas.filter((m) => m.deleted === 0);
+  const cats = allCats.filter((c) => c.deleted === 0);
   const catById = new Map(cats.map((c) => [c.id, c]));
   const userScoped = (id: string | undefined): CategoryRow | undefined => {
     const row = id ? catById.get(id) : undefined;

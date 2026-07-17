@@ -584,7 +584,7 @@ export function ReviewScreen() {
 
               {/* money between my own accounts: pre-marked as a transfer,
                   one tap opts back out */}
-              {ownCounter && draft && draft.linkedAccountId === ownCounter.id && (
+              {ownCounter && draft?.linkedAccountId === ownCounter.id && (
                 <Chip
                   className="mt-3"
                   testId="review-own-transfer"

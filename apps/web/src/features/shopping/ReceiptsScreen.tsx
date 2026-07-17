@@ -55,7 +55,7 @@ export function ReceiptsScreen() {
   const [unlinkedOnly, setUnlinkedOnly] = useState(false);
 
   const receipts = useQuery(store, async () => {
-    const rows = await (await store.allRows('receipt')).filter((r) => r.deleted === 0 && r.spaceId === spaceId);
+    const rows = (await store.bySpace('receipt', spaceId)).filter((r) => r.deleted === 0);
     rows.sort((a, b) => b.date.localeCompare(a.date));
     return rows;
   }, [spaceId]);
