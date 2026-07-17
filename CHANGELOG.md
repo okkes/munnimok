@@ -1,5 +1,27 @@
 # Changelog
 
+## [2.0.0](https://github.com/okkes/munnimok/compare/v1.24.0...v2.0.0) (2026-07-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* **deps:** Capacitor 8 across the shells + valkey 9
+
+### ✨ Features
+
+* **review:** one category editor + transactions-style bulk sheet (user redesign) ([d3fe7c9](https://github.com/okkes/munnimok/commit/d3fe7c9ef259d420e335e02bf46cb35d251e340e))
+* **tx+cats:** remarks batch 2 — editable counterparty + retro-linking, category naming rules, fixes ([3c0661e](https://github.com/okkes/munnimok/commit/3c0661eee577be2bdb2c783915fca90dc7977f3c))
+
+
+### 🐞 Bug Fixes
+
+* **native:** minSdk 24 — Capacitor 8's camera library floor (Android 7) ([a148ede](https://github.com/okkes/munnimok/commit/a148edea04a400465bc5cdcaf8e71236e6256b12))
+
+
+### 🧹 Chores
+
+* **deps:** Capacitor 8 across the shells + valkey 9 ([3c0758b](https://github.com/okkes/munnimok/commit/3c0758b6933c40114052d69ed0a7e8c1dfe5e9f4))
+
 ## [1.24.0](https://github.com/okkes/munnimok/compare/v1.23.0...v1.24.0) (2026-07-16)
 
 
