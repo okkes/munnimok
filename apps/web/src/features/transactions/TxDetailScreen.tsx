@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@/db/useQuery';
 import { useNavigate, useParams } from '@tanstack/react-router';
+import { useLgViewport } from '@/lib/viewport';
 import { useSpaceTransaction, useSpaceTransactions, useTxTransform } from '@/application/transactions';
 import { useRecurringOps, useRecurrings } from '@/application/recurring';
 import { useEvents } from '@/application/events';
 import { RecurringVisual } from '@/features/recurring/RecurringVisual';
 import { useLang } from '@/i18n';
+import type { TFunc } from '@/i18n';
 import { useData } from '@/app/data';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { fmtCents } from '@/lib/money';
@@ -29,6 +31,22 @@ import type { TxType } from '@/db/types';
 
 const DATE_FMT: Record<string, string> = { en: 'en-GB', nl: 'nl-NL', tr: 'tr-TR' };
 
+/** desktop panes get a CLOSE (leave the detail); mobile keeps history-back */
+function DetailBackButton({ panes, onClose, t }: Readonly<{ panes: boolean; onClose: () => void; t: TFunc }>) {
+  if (panes) {
+    return (
+      <IconButton label={t('action.close')} testId="tx-detail-back" onClick={onClose}>
+        <Icon name="close" size={20} />
+      </IconButton>
+    );
+  }
+  return (
+    <IconButton label={t('action.back')} testId="tx-detail-back" onClick={() => window.history.back()}>
+      <Icon name="chevron-left" size={24} />
+    </IconButton>
+  );
+}
+
 export function TxDetailScreen() {
   const { t, lang } = useLang();
   const { store, repo } = useData();
@@ -43,6 +61,7 @@ export function TxDetailScreen() {
   const [bulkOffer, setBulkOffer] = useState<{ catId: string; txType: TxType; count: number } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const navigate = useNavigate();
+  const panes = useLgViewport();
 
   // desktop affordance (D5): Esc closes the detail pane back to the plain
   // list — but only when no sheet is open (sheets own their own Esc)
@@ -139,9 +158,7 @@ export function TxDetailScreen() {
       <AppBar
         title={cleanBankText(tx.merchant)}
         leading={
-          <IconButton label={t('action.back')} testId="tx-detail-back" onClick={() => window.history.back()}>
-            <Icon name="chevron-left" size={24} />
-          </IconButton>
+          <DetailBackButton panes={panes} onClose={() => void navigate({ to: '/transactions', replace: true })} t={t} />
         }
         trailing={
           // bank-imported rows are the bank's truth — only manual txs are editable

@@ -21,6 +21,8 @@ import {
 import type { CategoryChanges, PendingCommit } from './categoryOps';
 import { catName, useCategories } from './useCategories';
 import type { Cat } from './useCategories';
+import type { TFunc } from '@/i18n';
+import { MDI_NAMES } from '@/generated/mdiNames';
 import { categoryNameConflict } from '@/domain/categoryNames';
 import type { CategoryNameConflict, NamedCategory } from '@/domain/categoryNames';
 
@@ -53,13 +55,95 @@ type FormMode =
   | { kind: 'editMain'; row: CategoryRow }
   | { kind: 'editSub'; row: CategoryRow };
 
+/** group header (user redesign 2026-07-17): the whole row is a fold
+ *  toggle; press-and-hold opens the action menu (visibility, edit, add
+ *  sub) that used to crowd the row as tiny 14px icons */
+function GroupHeader({
+  parent,
+  mainHidden,
+  isExpanded,
+  onToggle,
+  onMenu,
+  onAddSub,
+  t,
+}: Readonly<{
+  parent: Cat;
+  mainHidden: boolean;
+  isExpanded: boolean;
+  onToggle: () => void;
+  onMenu: () => void;
+  onAddSub: () => void;
+  t: TFunc;
+}>) {
+  const hold = useRef<{ timer: ReturnType<typeof setTimeout> | null; fired: boolean }>({ timer: null, fired: false });
+  const startHold = () => {
+    hold.current.fired = false;
+    hold.current.timer = setTimeout(() => {
+      hold.current.fired = true;
+      onMenu();
+    }, 450);
+  };
+  const cancelHold = () => {
+    if (hold.current.timer) clearTimeout(hold.current.timer);
+    hold.current.timer = null;
+  };
+  return (
+    <div className="mt-5 mb-1 flex items-center gap-2 px-1">
+      <button
+        data-testid={`cats-group-${parent.id}`}
+        aria-expanded={isExpanded}
+        onPointerDown={startHold}
+        onPointerUp={cancelHold}
+        onPointerLeave={cancelHold}
+        onPointerCancel={cancelHold}
+        onContextMenu={(e) => e.preventDefault()}
+        onClick={() => {
+          if (hold.current.fired) return; // the hold consumed this press
+          onToggle();
+        }}
+        className="m-cap m-tap flex min-w-0 flex-1 select-none items-center gap-2 border-none bg-transparent p-0 text-left"
+        style={{ color: parent.color }}
+      >
+        <Icon name={isExpanded ? 'chevron-down' : 'chevron-right'} size={18} />
+        <Icon name={parent.icon} size={18} />
+        <span className="min-w-0 flex-1 truncate">{catName(parent, t)}</span>
+        <span className="rounded bg-bg-2 px-1.5 py-0.5 text-[9px] font-semibold normal-case text-ink-3">
+          {t(`tx.type.${parent.txTypes[0]}`)}
+        </span>
+      </button>
+      {!mainHidden && (
+        <button
+          aria-label={t('cats.addSub')}
+          title={t('cats.addSub')}
+          data-testid={`cats-addsub-${parent.id}`}
+          onClick={onAddSub}
+          className="m-tap flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-line bg-surface text-ink-3 shadow-[0_1px_4px_rgba(0,0,0,0.06)]"
+        >
+          <Icon name="plus" size={18} />
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function ManageCategoriesScreen() {
+  // fold state (user redesign): everything starts collapsed
+  const [expandedGroups, setExpandedGroups] = useState<ReadonlySet<string>>(new Set());
+  const [groupMenu, setGroupMenu] = useState<Cat | null>(null);
+  const toggleGroup = (id: string) =>
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   const { t } = useLang();
   const { store, repo, spaceId } = useData();
   const cats = useCategories();
   const [mode, setMode] = useState<FormMode | null>(null);
   const [name, setName] = useState('');
   const [icon, setIcon] = useState(ICONS[0]);
+  const [iconQuery, setIconQuery] = useState('');
   const [color, setColor] = useState(COLORS[0]);
   const [txType, setTxType] = useState<TxType>('expense');
   const [direction, setDirection] = useState<CatDirection>('both');
@@ -430,51 +514,21 @@ export function ManageCategoriesScreen() {
           }
           return (
             <div key={parent.id} data-cat-group={parent.id} className={mainHidden ? 'opacity-55' : ''}>
-              <div className="m-cap mt-5 mb-1 flex items-center gap-1.5 px-1" style={{ color: parent.color }}>
-                <Icon name={parent.icon} size={14} />
-                <span className="flex-1">{catName(parent, t)}</span>
-                <span className="rounded bg-bg-2 px-1.5 py-0.5 text-[9px] font-semibold normal-case text-ink-3">
-                  {t(`tx.type.${parent.txTypes[0]}`)}
-                </span>
-                {/* per-space visibility: a hidden main leaves the pickers of
-                    THIS space only; existing transactions keep resolving */}
-                <button
-                  aria-label={t(mainHidden ? 'cats.showMain' : 'cats.hideMain')}
-                  title={t(mainHidden ? 'cats.showMain' : 'cats.hideMain')}
-                  data-testid={`cats-togglemain-${parent.id}`}
-                  onClick={() => void toggleMainVisibility(parent.id)}
-                  className="m-tap border-none bg-transparent p-0.5 text-ink-4"
-                >
-                  <Icon name={mainHidden ? 'eye-off-outline' : 'eye-outline'} size={14} />
-                </button>
-                {parent.custom && !mainHidden && (
-                  <button
-                    aria-label={t('action.edit')}
-                    data-testid={`cats-editmain-${parent.id}`}
-                    onClick={() => openEdit(parent)}
-                    className="m-tap border-none bg-transparent p-0.5 text-ink-4"
-                  >
-                    <Icon name="pencil-outline" size={14} />
-                  </button>
-                )}
-                {!mainHidden && (
-                  <button
-                    aria-label={t('cats.addSub')}
-                    title={t('cats.addSub')}
-                    data-testid={`cats-addsub-${parent.id}`}
-                    onClick={() => openNewSub(parent.id)}
-                    className="m-tap flex h-6 w-6 items-center justify-center rounded-full border border-line bg-surface text-ink-3 shadow-[0_1px_4px_rgba(0,0,0,0.06)]"
-                  >
-                    <Icon name="plus" size={14} />
-                  </button>
-                )}
-              </div>
+              <GroupHeader
+                parent={parent}
+                mainHidden={mainHidden}
+                isExpanded={expandedGroups.has(parent.id)}
+                onToggle={() => toggleGroup(parent.id)}
+                onMenu={() => setGroupMenu(parent)}
+                onAddSub={() => openNewSub(parent.id)}
+                t={t}
+              />
               {mainHidden && (
                 <p className="px-1 text-[11px] text-ink-4" data-testid={`cats-hiddennote-${parent.id}`}>
                   {t('cats.hiddenNote')}
                 </p>
               )}
-              {!mainHidden && (
+              {!mainHidden && expandedGroups.has(parent.id) && (
               <div className="overflow-hidden rounded-card border border-line bg-surface">
                 {cats.childrenOf(parent.id).map((cat, i) => (
                   <div key={cat.id}>
@@ -640,12 +694,24 @@ export function ManageCategoriesScreen() {
             </>
           )}
 
-          {/* icon grid */}
-          <div className="grid grid-cols-6 gap-2">
-            {ICONS.map((name_) => (
+          {/* icon picker: a curated grid by default; searching opens the
+              whole self-hosted font (7k+ glyphs, fully offline) */}
+          <input
+            data-testid="catform-icon-search"
+            value={iconQuery}
+            onChange={(e) => setIconQuery(e.target.value)}
+            placeholder={t('cats.iconSearch')}
+            className="h-10 w-full rounded-input border border-line bg-surface px-3 text-[13px] text-ink outline-none placeholder:text-ink-4"
+          />
+          <div className="grid max-h-56 grid-cols-6 gap-2 overflow-y-auto">
+            {(iconQuery.trim()
+              ? MDI_NAMES.filter((n) => n.includes(iconQuery.trim().toLowerCase())).slice(0, 60)
+              : ICONS
+            ).map((name_) => (
               <button
                 key={name_}
                 data-testid={`catform-icon-${name_}`}
+                title={name_}
                 onClick={() => setIcon(name_)}
                 className={`m-tap flex h-11 items-center justify-center rounded-xl border ${
                   icon === name_ ? 'border-accent bg-accent-soft text-accent-deep' : 'border-line bg-surface text-ink-2'
@@ -654,6 +720,9 @@ export function ManageCategoriesScreen() {
                 <Icon name={name_} size={20} />
               </button>
             ))}
+            {iconQuery.trim() && MDI_NAMES.every((n) => !n.includes(iconQuery.trim().toLowerCase())) && (
+              <p className="col-span-6 py-2 text-center text-[12px] text-ink-4">{t('cats.iconNone')}</p>
+            )}
           </div>
           <Button data-testid="catform-save" onClick={() => void save()} disabled={!name.trim()}>
             {editing ? t('action.save') : t('action.add')}
@@ -791,6 +860,60 @@ export function ManageCategoriesScreen() {
               </div>
             ))}
         </div>
+      </Sheet>
+
+      {/* hold-menu on a group header: the quiet actions live here now */}
+      <Sheet
+        open={!!groupMenu}
+        onOpenChange={(next) => !next && setGroupMenu(null)}
+        title={groupMenu ? catName(groupMenu, t) : ''}
+        size="compact"
+      >
+        {groupMenu && (
+          <div className="flex flex-col pt-1" data-testid="cats-group-menu">
+            <button
+              data-testid={`cats-togglemain-${groupMenu.id}`}
+              onClick={() => {
+                void toggleMainVisibility(groupMenu.id);
+                setGroupMenu(null);
+              }}
+              className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-2 py-3.5 text-left text-[15px] text-ink"
+            >
+              <Icon
+                name={cats.hiddenMains.has(groupMenu.id) ? 'eye-outline' : 'eye-off-outline'}
+                size={20}
+                color="var(--m-ink-3)"
+              />
+              {t(cats.hiddenMains.has(groupMenu.id) ? 'cats.showMain' : 'cats.hideMain')}
+            </button>
+            {groupMenu.custom && (
+              <button
+                data-testid={`cats-editmain-${groupMenu.id}`}
+                onClick={() => {
+                  const row = groupMenu;
+                  setGroupMenu(null);
+                  openEdit(row);
+                }}
+                className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-2 py-3.5 text-left text-[15px] text-ink"
+              >
+                <Icon name="pencil-outline" size={20} color="var(--m-ink-3)" />
+                {t('action.edit')}
+              </button>
+            )}
+            <button
+              data-testid={`cats-menu-addsub-${groupMenu.id}`}
+              onClick={() => {
+                const id = groupMenu.id;
+                setGroupMenu(null);
+                openNewSub(id);
+              }}
+              className="m-tap flex w-full items-center gap-3 bg-transparent px-2 py-3.5 text-left text-[15px] text-ink"
+            >
+              <Icon name="plus" size={20} color="var(--m-ink-3)" />
+              {t('cats.addSub')}
+            </button>
+          </div>
+        )}
       </Sheet>
     </div>
   );

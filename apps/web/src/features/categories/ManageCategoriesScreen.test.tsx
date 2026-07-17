@@ -6,7 +6,18 @@ import { renderApp } from '@/test/harness';
 
 const openScreen = async () => {
   renderApp('/categories');
-  await screen.findByTestId('managecat-groceries');
+  // groups start collapsed (user redesign) — headers are the ready signal
+  await screen.findByTestId('cats-group-consumption');
+};
+
+const expandGroup = (id: string) => fireEvent.click(screen.getByTestId(`cats-group-${id}`));
+
+/** press-and-hold on a group header opens its action menu */
+const openGroupMenu = async (id: string) => {
+  fireEvent.pointerDown(screen.getByTestId(`cats-group-${id}`));
+  await new Promise((resolve) => setTimeout(resolve, 550));
+  fireEvent.pointerUp(screen.getByTestId(`cats-group-${id}`));
+  await screen.findByTestId('cats-group-menu');
 };
 
 describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
@@ -18,7 +29,8 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
 
   it('lists built-in categories as read-only rows', async () => {
     await openScreen();
-    const row = screen.getByTestId('managecat-groceries');
+    expandGroup('consumption');
+    const row = await screen.findByTestId('managecat-groceries');
     expect((row as HTMLButtonElement).disabled).toBe(true);
     expect(row.textContent).not.toContain('Custom');
   });
@@ -37,9 +49,10 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
     await waitFor(() => expect(screen.getByText('Music lessons')).toBeTruthy(), { timeout: 5000 });
     const header = screen.getByText('Music lessons').closest('.m-cap')!;
     expect(header.textContent).toContain('Income');
+    fireEvent.click(header); // groups start collapsed — unfold the new main
     // …and the auto "Other" sub exists but is not editable (it lands in a
     // second write — wait for its own live-query emission)
-    const group = header.parentElement!;
+    const group = header.closest('[data-cat-group]')!;
     await waitFor(() => {
       const other = [...group.querySelectorAll('[data-testid^="managecat-"]')].find((b) =>
         b.textContent?.includes('Other'),
@@ -49,21 +62,26 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
     });
   }, 15_000);
 
-  it('hides a main per space: it leaves the pickers but stays manageable', async () => {
+  it('hides a main per space via the hold menu; it stays manageable', async () => {
     await openScreen();
-    // hide "pet" for this space
+    expandGroup('pet');
+    await screen.findByTestId('managecat-petFood');
+    // hide "pet" for this space (visibility lives in the hold menu now)
+    await openGroupMenu('pet');
     fireEvent.click(screen.getByTestId('cats-togglemain-pet'));
     await screen.findByTestId('cats-hiddennote-pet', {}, { timeout: 5000 });
     // its subs are folded away and no sub can be added while hidden
     expect(screen.queryByTestId('managecat-petFood')).toBeNull();
     expect(screen.queryByTestId('cats-addsub-pet')).toBeNull();
-    // the eye brings it back
+    // the menu brings it back
+    await openGroupMenu('pet');
     fireEvent.click(screen.getByTestId('cats-togglemain-pet'));
     await screen.findByTestId('managecat-petFood', {}, { timeout: 5000 });
   }, 15_000);
 
   it('creates a sub with a direction under a builtin parent (type inherited)', async () => {
     await openScreen();
+    expandGroup('sport');
     fireEvent.click(screen.getByTestId('cats-addsub-sport'));
     expect((await screen.findByTestId('catform-inherited-type')).textContent).toBe('Expense');
     fireEvent.change(screen.getByTestId('catform-name'), { target: { value: 'Padel' } });
@@ -78,6 +96,7 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
 
   it('renames and deletes an unused custom sub without a warning', async () => {
     await openScreen();
+    expandGroup('sport');
     fireEvent.click(screen.getByTestId('cats-addsub-sport'));
     fireEvent.change(await screen.findByTestId('catform-name'), { target: { value: 'Padel' } });
     fireEvent.click(screen.getByTestId('catform-save'));
@@ -95,6 +114,7 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
 
   it('drag-and-drop: lifting a sub folds the mains, dropping asks to confirm, confirming moves it', async () => {
     await openScreen();
+    expandGroup('sport');
     fireEvent.click(screen.getByTestId('cats-addsub-sport'));
     fireEvent.change(await screen.findByTestId('catform-name'), { target: { value: 'Padel' } });
     fireEvent.click(screen.getByTestId('catform-save'));
@@ -115,6 +135,7 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
     // release → visual confirmation sheet → confirm commits the move
     fireEvent.pointerUp(window);
     fireEvent.click(await screen.findByTestId('cats-move-confirm'));
+    expandGroup('entertainment');
     await waitFor(
       () => {
         const moved = screen.getByText('Padel').closest('[data-cat-group]');
@@ -127,6 +148,7 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
 
   it('moving a sub via Move to… works instantly when types match', async () => {
     await openScreen();
+    expandGroup('sport');
     fireEvent.click(screen.getByTestId('cats-addsub-sport'));
     fireEvent.change(await screen.findByTestId('catform-name'), { target: { value: 'Padel' } });
     fireEvent.click(screen.getByTestId('catform-save'));
@@ -137,6 +159,7 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
     fireEvent.click(await screen.findByTestId('catform-move-open'));
     fireEvent.click(await screen.findByTestId('catform-move-entertainment')); // expense -> expense
     fireEvent.click(screen.getByTestId('catform-save'));
+    expandGroup('entertainment');
     await waitFor(() => {
       const moved = screen.getByText('Padel').closest('[data-cat-group]');
       expect(moved?.getAttribute('data-cat-group')).toBe('entertainment');
@@ -153,6 +176,7 @@ describe('category impact warnings (demo identity)', { timeout: 15_000 }, () => 
 
   it('deleting a category that transactions use warns first, then detaches them', async () => {
     await openScreen();
+    expandGroup('consumption');
     // create a sub, assign it to a demo transaction, then delete the sub
     fireEvent.click(screen.getByTestId('cats-addsub-consumption'));
     fireEvent.change(await screen.findByTestId('catform-name'), { target: { value: 'Doomed' } });
@@ -183,6 +207,7 @@ describe('category impact warnings (demo identity)', { timeout: 15_000 }, () => 
 
   it('cancelling the warning keeps everything unchanged', async () => {
     await openScreen();
+    expandGroup('consumption');
     fireEvent.click(screen.getByTestId('cats-addsub-consumption'));
     fireEvent.change(await screen.findByTestId('catform-name'), { target: { value: 'Kept' } });
     fireEvent.click(screen.getByTestId('catform-save'));

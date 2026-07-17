@@ -12,7 +12,7 @@ export function SplitPane({ list, children }: Readonly<{ list: ReactNode; childr
   if (!panes) return <>{children}</>;
   return (
     <div className="flex h-full min-h-0" data-testid="split-pane">
-      <div className="h-full w-[42%] min-w-0 max-w-[440px] border-r border-line">{list}</div>
+      <div className="h-full w-[46%] min-w-0 max-w-[560px] border-r border-line">{list}</div>
       <div className="h-full min-w-0 flex-1">{children}</div>
     </div>
   );

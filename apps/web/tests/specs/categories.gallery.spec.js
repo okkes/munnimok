@@ -16,8 +16,11 @@ for (const V of VARIANTS) {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V, { demo: true });
     await goToManageCats(page);
+    // groups start collapsed (user redesign) — unfold what we inspect
+    await page.click('[data-testid="cats-group-consumption"]');
     await expect(page.locator('[data-testid="managecat-groceries"]')).toBeVisible();
     // demo seed ships a custom main with its locked Other sub
+    await page.click('[data-testid="cats-group-demo_cat_padel"]');
     await expect(page.locator('[data-testid="managecat-demo_cat_padel_other"]')).toBeVisible();
     await shot(page, k('29-cats-manage'));
     await teardown(page, ctx, k('29-cats-manage'));
@@ -27,6 +30,7 @@ for (const V of VARIANTS) {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V, { demo: true });
     await goToManageCats(page);
+    await page.click('[data-testid="cats-group-consumption"]');
     await page.click('[data-testid="cats-addsub-consumption"]');
     await page.waitForSelector('[data-testid="catform-name"]');
     await page.fill('[data-testid="catform-name"]', 'Bubble Tea');
@@ -58,6 +62,7 @@ for (const V of VARIANTS) {
     await base(page, V, { demo: true });
     await goToManageCats(page);
     // create one under Sport
+    await page.click('[data-testid="cats-group-sport"]');
     await page.click('[data-testid="cats-addsub-sport"]');
     await page.fill('[data-testid="catform-name"]', 'Temp Cat');
     await page.click('[data-testid="catform-save"]');
@@ -96,8 +101,12 @@ for (const V of VARIANTS) {
     await expect(page.locator('[data-cat-group]', { hasText: 'Music' })).toContainText('Income');
     await shot(page, k('56-cats-main'));
 
-    // delete the main again (edit pencil on the group header) — the Other sub goes with it
-    await page.locator('[data-cat-group]', { hasText: 'Music' }).locator('[data-testid^="cats-editmain-"]').click();
+    // delete the main again — Edit lives in the header's hold menu now
+    const musicHeader = page.locator('[data-cat-group]', { hasText: 'Music' }).locator('[data-testid^="cats-group-"]');
+    await musicHeader.dispatchEvent('pointerdown');
+    await page.waitForTimeout(600); // the 450ms hold threshold
+    await musicHeader.dispatchEvent('pointerup');
+    await page.locator('[data-testid^="cats-editmain-"]').click();
     await page.click('[data-testid="catform-delete"]');
     await page.waitForTimeout(500);
     await expect(page.locator('[data-testid="screen-manage-cats"]')).not.toContainText('Music');

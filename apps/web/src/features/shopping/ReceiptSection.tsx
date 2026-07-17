@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
+import { useLgViewport } from '@/lib/viewport';
 import { useReceiptOps, useTxReceipt } from '@/application/receipts';
 import type { SpaceTx } from '@/db/joined';
 import { fmtCents } from '@/lib/money';
@@ -16,6 +17,7 @@ import { ReceiptViewSheet } from './ReceiptViewSheet';
  */
 export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
   const { t, lang } = useLang();
+  const panes = useLgViewport();
   const navigate = useNavigate();
   const receipt = useTxReceipt(tx.id);
   const ops = useReceiptOps();
@@ -60,8 +62,8 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
               else fileRef.current?.click();
             }}
           >
-            <Icon name="camera-outline" size={16} />
-            {t('receipt.takePhoto')}
+            <Icon name={panes ? 'upload-outline' : 'camera-outline'} size={16} />
+            {panes ? t('receipt.upload') : t('receipt.takePhoto')}
           </Button>
           <button
             data-testid="receipt-connections"

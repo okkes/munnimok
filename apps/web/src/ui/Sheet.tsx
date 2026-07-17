@@ -1,8 +1,9 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import { Drawer } from 'vaul';
-// desktop ruling (redesign §4.3): sheets become right-side panels at lg,
-// so forms stop covering the context they edit
+// desktop ruling (2026-07-17, replaces §4.3's right panel the user
+// disliked): at lg a sheet renders as a centered dialog — the familiar
+// desktop shape, with the page still visible around it
 import { useLgViewport as usePanelMode } from '@/lib/viewport';
 
 /** the three sheet heights; per-pixel values stay out of call sites */
@@ -95,17 +96,17 @@ export function Sheet({ open, onOpenChange, title, children, size, height }: Rea
       onOpenChange={(next) => (isLocked && !next ? undefined : onOpenChange(next))}
       dismissible={!isLocked}
       repositionInputs={!IS_ANDROID}
-      direction={panel ? 'right' : 'bottom'}
+      direction="bottom"
     >
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 z-40 bg-black/40" />
         <Drawer.Content
           className={
             panel
-              ? 'fixed inset-y-0 right-0 z-50 flex h-full w-[420px] max-w-[92vw] flex-col rounded-l-[20px] bg-bg outline-none'
+              ? 'fixed inset-0 z-50 m-auto flex h-fit max-h-[85dvh] w-[480px] max-w-[92vw] flex-col rounded-[20px] bg-bg shadow-2xl outline-none'
               : 'fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[92dvh] w-full max-w-[560px] flex-col rounded-t-[20px] bg-bg outline-none'
           }
-          style={!panel && fixedHeight ? { height: fixedHeight } : undefined}
+          style={fixedHeight ? { height: fixedHeight } : undefined}
         >
           {/* full-height drag zone across the title area (panels have no handle) */}
           <div className="shrink-0 cursor-grab pt-2.5 pb-1">

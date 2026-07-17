@@ -4,6 +4,7 @@ import { useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
 import { DataProvider, useData } from './data';
 import { OfflineBanner } from './OfflineBanner';
+import { useSession } from './session';
 import { HelpProvider } from '@/features/help/HelpContext';
 import { useRecurringReminders } from '@/application/recurring';
 import { useStoreKeepAlive } from '@/application/stores';
@@ -67,6 +68,36 @@ function BudgetAlerts() {
   return null;
 }
 
+/** unmistakable "this is the demo" marker (user request): a pill next to
+ *  the desktop brand, and a slim strip above the mobile tab bar */
+function DemoBadge() {
+  const identity = useSession((s) => s.identity);
+  if (identity?.kind !== 'demo') return null;
+  return (
+    <span
+      data-testid="demo-badge"
+      className="rounded-md bg-warning-soft px-1.5 py-0.5 font-mono text-[10px] font-bold tracking-wider text-ink-2 uppercase"
+    >
+      DEMO
+    </span>
+  );
+}
+
+function DemoBanner() {
+  const { t } = useLang();
+  const identity = useSession((s) => s.identity);
+  if (identity?.kind !== 'demo') return null;
+  return (
+    <div
+      data-testid="demo-banner"
+      className="flex shrink-0 items-center justify-center gap-2 border-t border-line bg-warning-soft px-4 py-1.5 md:hidden"
+    >
+      <Icon name="test-tube" size={13} color="var(--m-warning)" />
+      <span className="text-[11px] font-medium text-ink-2">{t('demo.banner')}</span>
+    </div>
+  );
+}
+
 export function AppLayout() {
   const { t } = useLang();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -75,8 +106,9 @@ export function AppLayout() {
     <div className="flex h-full flex-row bg-bg text-ink">
       {/* Desktop sidebar */}
       <nav className="hidden w-60 shrink-0 flex-col border-r border-line bg-bg-2 px-4 pt-6 pb-4 md:flex">
-        <div className="px-2 pb-8">
+        <div className="flex items-center gap-2 px-2 pb-8">
           <Logo size={26} />
+          <DemoBadge />
         </div>
         <div className="flex flex-col gap-1">
           {TABS.map((tab) => {
@@ -109,6 +141,7 @@ export function AppLayout() {
                 <Outlet />
               </div>
             </HelpProvider>
+            <DemoBanner />
             <OfflineBanner />
             <RecurringReminders />
             <StoreKeepAlive />

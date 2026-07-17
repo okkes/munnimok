@@ -18,6 +18,22 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.6.0',
+    date: '2026-07-17',
+    items: [
+      {
+        en: 'The category screen breathes: groups start collapsed and unfold with a tap, hold a group for its actions, and the icon picker now searches the entire 7,000+ icon set — fully offline.',
+        nl: 'Het categoriescherm ademt: groepen starten ingeklapt en vouwen open met een tik, houd een groep vast voor de acties, en de icoonkiezer doorzoekt nu de volledige set van 7.000+ iconen — volledig offline.',
+        tr: 'Kategori ekranı ferahladı: gruplar kapalı başlar ve dokununca açılır, işlemler için gruba basılı tut, simge seçici artık 7.000+ simgenin tamamında arama yapıyor — tamamen çevrimdışı.',
+      },
+      {
+        en: 'Desktop feels native now: pop-ups open as centered dialogs instead of side panels, transaction details close with an ✕, the list got wider, and receipts say "Upload" where there is no camera. Demo mode announces itself clearly, and the offline notice is friendlier about why munni is unreachable.',
+        nl: 'Desktop voelt nu native: pop-ups openen als gecentreerde vensters in plaats van zijpanelen, transactiedetails sluiten met een ✕, de lijst werd breder, en bonnen zeggen "Uploaden" waar geen camera is. De demomodus kondigt zichzelf duidelijk aan, en de offline-melding is vriendelijker over waarom munni onbereikbaar is.',
+        tr: 'Masaüstü artık yerli hissettiriyor: pencereler yan panel yerine ortalanmış diyalog olarak açılıyor, işlem detayı ✕ ile kapanıyor, liste genişledi ve kamera olmayan yerde fişler "Yükle" diyor. Demo modu kendini açıkça belli ediyor ve çevrimdışı bildirimi munni’ye neden ulaşılamadığı konusunda daha nazik.',
+      },
+    ],
+  },
+  {
     version: '2.5.0',
     date: '2026-07-17',
     items: [
