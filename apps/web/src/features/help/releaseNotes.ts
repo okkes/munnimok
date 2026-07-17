@@ -18,6 +18,22 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.9.0',
+    date: '2026-07-17',
+    items: [
+      {
+        en: 'App flows return home again: connecting a bank brings you back into the app instead of stranding you in the browser, and signing out lands cleanly on the login screen. The encrypted-storage beta can no longer lock the app out — if it fails to open, munni falls back safely and keeps working.',
+        nl: 'App-stromen komen weer thuis: een bank koppelen brengt je terug in de app in plaats van je in de browser achter te laten, en uitloggen landt netjes op het inlogscherm. De bèta voor versleutelde opslag kan de app niet meer buitensluiten — als openen mislukt, valt munni veilig terug en blijft alles werken.',
+        tr: 'Uygulama akışları eve dönüyor: banka bağlamak seni tarayıcıda bırakmak yerine uygulamaya geri getiriyor ve çıkış yapmak düzgünce giriş ekranına iniyor. Şifreli depolama betası artık uygulamayı kilitleyemez — açılamazsa munni güvenle geri döner ve çalışmaya devam eder.',
+      },
+      {
+        en: 'Review reads better: the type and categories share the same larger text, and the card names the account the money left. Recurring cost payments show their dates.',
+        nl: 'Beoordelen leest prettiger: het type en de categorieën delen dezelfde grotere tekst, en de kaart toont de rekening waar het geld vandaan kwam. Betalingen van terugkerende kosten tonen hun datum.',
+        tr: 'İnceleme daha iyi okunuyor: tür ve kategoriler aynı büyük yazıyı paylaşıyor ve kart paranın çıktığı hesabı gösteriyor. Yinelenen gider ödemeleri tarihlerini gösteriyor.',
+      },
+    ],
+  },
+  {
     version: '2.8.0',
     date: '2026-07-17',
     items: [

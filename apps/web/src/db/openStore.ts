@@ -18,13 +18,24 @@ export const encryptedStoreEnabled = (): boolean =>
 
 export async function openStorageBackend(name: string): Promise<StorageBackend> {
   if (encryptedStoreEnabled()) {
-    const [{ openEncryptedExecutor }, { SqlStorageBackend, initSqlSchema }] = await Promise.all([
-      import('./capacitorSql'),
-      import('./sqlBackend'),
-    ]);
-    const executor = await openEncryptedExecutor(name);
-    await initSqlSchema(executor);
-    return new SqlStorageBackend(executor);
+    // NEVER brick the app on the encrypted path (user report: a plugin
+    // config error left the shell stuck on the connecting screen until
+    // reinstall): any failure reports itself, clears the flag and falls
+    // back to Dexie — the next launch starts clean.
+    try {
+      const [{ openEncryptedExecutor }, { SqlStorageBackend, initSqlSchema }] = await Promise.all([
+        import('./capacitorSql'),
+        import('./sqlBackend'),
+      ]);
+      const executor = await openEncryptedExecutor(name);
+      await initSqlSchema(executor);
+      return new SqlStorageBackend(executor);
+    } catch (err) {
+      console.error('encrypted store failed to open — falling back to Dexie', err);
+      const { captureException } = await import('@sentry/react').catch(() => ({ captureException: () => undefined }));
+      captureException(err);
+      localStorage.removeItem(FLAG_KEY);
+    }
   }
   return new DexieBackend(new MunniDB(name));
 }

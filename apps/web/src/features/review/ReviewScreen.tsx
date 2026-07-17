@@ -312,6 +312,8 @@ export function ReviewScreen() {
   // counterparty IBAN belonging to one of MY OWN accounts = money moving
   // between my accounts — a transfer by definition, pre-applied (user
   // report: credit-card top-ups showed up as expense + income pairs)
+  // the funding account, named on the card (user request)
+  const cardAccount = useQuery(store, async () => (tx ? store.get('account', tx.accountId) : undefined), [tx?.accountId]);
   const ownCounter = useQuery(
     store,
     async () => {
@@ -490,8 +492,9 @@ export function ReviewScreen() {
              card instead of the far bottom. */
           <div className="flex min-h-0 flex-1 flex-col lg:mx-auto lg:my-auto lg:w-[520px] lg:flex-none lg:pb-10">
             <div className="mt-4 rounded-card border border-line bg-surface px-6 py-7 text-center" data-testid="review-card">
-              <div className="text-[12px] text-ink-4">
+              <div className="text-[12px] text-ink-4" data-testid="review-card-meta">
                 {new Intl.DateTimeFormat(LOCALES[lang], { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(tx.date))}
+                {cardAccount && <span> · {cardAccount.name}</span>}
               </div>
               <div className="m-h2 mt-1.5 text-ink">{cleanBankText(tx.merchant)}</div>
               <div className="m-num mt-1 text-[32px] text-ink">{fmtCents(tx.amountCents, tx.currency, lang, { sign: true })}</div>
@@ -518,9 +521,9 @@ export function ReviewScreen() {
                 <button
                   data-testid="review-type-row"
                   onClick={() => setTypeOpen(true)}
-                  className="m-tap flex w-full items-center gap-2 border-none bg-transparent px-2 py-1.5 text-left text-[12px] font-medium text-ink-3"
+                  className="m-tap flex w-full items-center gap-2 border-none bg-transparent px-2 py-1.5 text-left text-[15px] font-medium text-ink-2"
                 >
-                  <Icon name={TX_TYPE_VISUAL[draft?.txType ?? tx.txType].icon} size={16} color={TX_TYPE_VISUAL[draft?.txType ?? tx.txType].color} />
+                  <Icon name={TX_TYPE_VISUAL[draft?.txType ?? tx.txType].icon} size={19} color={TX_TYPE_VISUAL[draft?.txType ?? tx.txType].color} />
                   <span className="min-w-0 flex-1 truncate">{draftTypeLabel ?? t(`tx.type.${tx.txType}`)}</span>
                   <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
                 </button>
@@ -537,9 +540,9 @@ export function ReviewScreen() {
                       key={slice?.catId ?? 'single'}
                       data-testid={slice ? `review-cat-${slice.catId}` : 'review-category-chip'}
                       onClick={() => setSplitOpen(true)}
-                      className="m-tap flex w-full items-center gap-2 border-none bg-transparent px-2 py-1.5 text-left text-[14px] font-medium text-ink"
+                      className="m-tap flex w-full items-center gap-2 border-none bg-transparent px-2 py-1.5 text-left text-[15px] font-medium text-ink"
                     >
-                      <Icon name={sliceCat.icon} size={18} color={sliceColor ?? 'var(--m-ink-3)'} />
+                      <Icon name={sliceCat.icon} size={19} color={sliceColor ?? 'var(--m-ink-3)'} />
                       <span className="min-w-0 flex-1 truncate">
                         {slice || draft?.catId ? catName(sliceCat, t) : t('review.pickPrompt')}
                       </span>

@@ -94,6 +94,12 @@ export function initDeepLinks(): void {
     const path = deepLinkToPath(url);
     if (!path) return;
     if (path.startsWith('/auth-callback')) sessionStorage.setItem(NATIVE_CALLBACK_KEY, url);
+    // the post sign-out landing: session is already cleared locally —
+    // just bring the app to the login screen
+    if (path.startsWith('/signed-out')) {
+      globalThis.location.assign('/#/login');
+      return;
+    }
     // callbacks live on real paths outside the hash router; everything
     // else (app shortcuts like munni://review, §5) is a hash route
     const realPath = path.startsWith('/auth-callback') || path.startsWith('/gc-callback');

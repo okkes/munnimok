@@ -8,6 +8,11 @@
   "plugins": {
     "PushNotifications": {
       "presentationOptions": ["badge", "sound", "alert"]
+    },
+    "CapacitorSQLite": {
+      "iosIsEncryption": true,
+      "iosKeychainPrefix": "munni",
+      "androidIsEncryption": true
     }
   }
 }

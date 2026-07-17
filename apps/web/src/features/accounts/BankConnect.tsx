@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLogto } from '@logto/react';
 import { useLang } from '@/i18n';
 import { config, logtoConfigured, publicOrigin } from '@/app/config';
+import { isNativeApp } from '@/lib/platform';
 import { useData } from '@/app/data';
 import { apiFetch } from '@/lib/api';
 import { Highlight } from '@/ui/Highlight';
@@ -59,8 +60,11 @@ export function BankConnectSheet({ open, onOpenChange }: { open: boolean; onOpen
           institutionId,
           // hosted origin, not window origin: inside the native shell the
           // window is localhost; the hosted page completes anonymously via
-          // the reference capability token either way
-          redirectUrl: `${publicOrigin()}/gc-callback`,
+          // the reference capability token either way. The shell encodes
+          // its deep-link scheme in the PATH (a query param would collide
+          // with the ?ref= the bank provider appends), so the hosted page
+          // can hand the user back to the app when it finishes.
+          redirectUrl: `${publicOrigin()}/gc-callback${isNativeApp() ? `/app-${config.nativeScheme}` : ''}`,
         }),
       });
       if (!res.ok) throw new Error(String(res.status));
@@ -180,6 +184,13 @@ function GcCallbackInner({ bearer }: { bearer: string | null }) {
     started.current = true;
     void (async () => {
       const params = new URLSearchParams(window.location.search);
+      if (params.get('done') === '1') {
+        // the hosted page already completed the requisition — this is
+        // the deep-linked return into the shell
+        sessionStorage.removeItem('munni_gc_ref');
+        setState('done');
+        return;
+      }
       // Enable Banking puts the reference in `state` and adds a `code`;
       // GoCardless echoes `ref` and needs no code
       const reference = params.get('ref') ?? params.get('state') ?? sessionStorage.getItem('munni_gc_ref');
@@ -208,8 +219,27 @@ function GcCallbackInner({ bearer }: { bearer: string | null }) {
 const SHELL_ICONS = { working: 'bank-outline', done: 'check-circle-outline', failed: 'alert-circle-outline' } as const;
 const SHELL_TEXT_KEYS = { working: 'gc.completing', done: 'gc.done', failed: 'gc.failed' } as const;
 
+/** the shell's deep-link scheme when the flow started inside the app —
+ *  encoded in the path as /gc-callback/app-{scheme} (see connect()) */
+function appSchemeFromPath(): string | null {
+  const match = /\/gc-callback\/app-([a-z][a-z0-9+.-]*)/i.exec(window.location.pathname);
+  return match ? match[1] : null;
+}
+
 function GcCallbackShell({ state }: { state: 'working' | 'done' | 'failed' }) {
   const { t } = useLang();
+  const appScheme = appSchemeFromPath();
+
+  // consent started in the native app: the moment the hosted page is
+  // done, hand the user straight back (user report: they were stranded
+  // in the browser). The button below stays as the manual fallback.
+  useEffect(() => {
+    if (state !== 'done' || !appScheme) return;
+    const timer = setTimeout(() => {
+      window.location.href = appScheme + '://gc-callback?done=1';
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [state, appScheme]);
 
   return (
     <div className="flex h-dvh flex-col items-center justify-center gap-4 bg-bg px-6 text-center" data-testid="screen-gc-callback">
@@ -225,7 +255,10 @@ function GcCallbackShell({ state }: { state: 'working' | 'done' | 'failed' }) {
         <p className="max-w-[280px] text-[13px] text-ink-3">{t('gc.closeTabHint')}</p>
       )}
       {state !== 'working' && (
-        <a href={`${window.location.origin}/#/accounts`} className="m-tap rounded-btn bg-brand px-5 py-3 text-[14px] font-semibold text-on-brand no-underline">
+        <a
+          href={appScheme ? appScheme + '://gc-callback?done=1' : `${window.location.origin}/#/accounts`}
+          className="m-tap rounded-btn bg-brand px-5 py-3 text-[14px] font-semibold text-on-brand no-underline"
+        >
           {t('gc.backToApp')}
         </a>
       )}
