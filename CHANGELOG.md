@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.7.0](https://github.com/okkes/munnimok/compare/v2.6.0...v2.7.0) (2026-07-17)
+
+
+### ✨ Features
+
+* **admin:** AC2 — the catalog editor ([8e3a859](https://github.com/okkes/munnimok/commit/8e3a8597fd27c11b66e4d5e4b7412b11b68a860b))
+* **catalog:** AC3 — tombstone detach on devices + baked offline baseline ([c401f8a](https://github.com/okkes/munnimok/commit/c401f8ad169d9b0b3724dab9804b4ac17a5cf2f6))
+
 ## [2.6.0](https://github.com/okkes/munnimok/compare/v2.5.0...v2.6.0) (2026-07-17)
 
 
