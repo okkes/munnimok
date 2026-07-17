@@ -45,7 +45,10 @@ case "$COMPOSE_FILE" in
   *staging*) PG_PROJECT="munni-staging"; PG_OLD="pgdata_staging"; PG_NEW="pgdata18_staging" ;;
   *)         PG_PROJECT="$(basename "$(pwd)")"; PG_OLD="pgdata"; PG_NEW="pgdata18" ;;
 esac
-PG_MARKER="pg18-restored-$(basename "$COMPOSE_FILE" .yml).ok"
+# r2: the r1 attempt restored into the image's TEMPORARY bootstrap
+# server (first-boot init) and died at its shutdown — the versioned
+# name makes r1 markers invalid so those volumes get redone
+PG_MARKER="pg18-restored-r2-$(basename "$COMPOSE_FILE" .yml).ok"
 PG_RESTORE=""
 if docker volume inspect "${PG_PROJECT}_${PG_OLD}" >/dev/null 2>&1 && [ ! -f "$PG_MARKER" ]; then
   echo "postgres 17->18: migrating (old volume present, no completion marker)"
@@ -76,15 +79,30 @@ if [ -n "$PG_RESTORE" ]; then
   # tenant rows disagreeing (the sign-in outage)
   echo "postgres 18: restoring $PG_RESTORE before dependents start"
   docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d postgres
-  PG_READY=""
-  for _ in $(seq 1 60); do
-    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T postgres pg_isready -U munni >/dev/null 2>&1 && PG_READY=yes && break
+  # TCP, not the unix socket: the first-boot entrypoint runs a TEMPORARY
+  # server (socket-only, TCP off) for initdb scripts and then shuts it
+  # down — a socket pg_isready said "ready" and the r1 restore died at
+  # that shutdown. Only the final server answers on TCP; require a few
+  # consecutive OKs so a flapping start can't slip through either.
+  PG_READY=0
+  for _ in $(seq 1 90); do
+    if docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T postgres pg_isready -h 127.0.0.1 -U munni >/dev/null 2>&1; then
+      PG_READY=$((PG_READY + 1))
+      [ "$PG_READY" -ge 3 ] && break
+    else
+      PG_READY=0
+    fi
     sleep 2
   done
-  [ "$PG_READY" = yes ] || { echo "postgres 18 never became ready — aborting" >&2; exit 1; }
-  # initdb pre-created the empty roles/databases — psql rolls past those
-  # "already exists" lines and fills in all the data
-  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T postgres psql -U munni -d postgres < "$PG_RESTORE" > pg18-restore.log 2>&1 || true
+  [ "$PG_READY" -ge 3 ] || { echo "postgres 18 never became ready — aborting" >&2; exit 1; }
+  # psql rolls past benign "already exists" lines but exits non-zero when
+  # the session itself dies (the r1 failure mode) — only a clean run with
+  # actually-restored data earns the marker
+  RESTORE_RC=0
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T postgres psql -U munni -d postgres < "$PG_RESTORE" > pg18-restore.log 2>&1 || RESTORE_RC=$?
+  [ "$RESTORE_RC" -eq 0 ] || { echo "pg restore aborted (rc=$RESTORE_RC) — see pg18-restore.log" >&2; exit 1; }
+  SYNC_TABLES=$(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T postgres psql -U munni -d munni -tAc "select count(*) from information_schema.tables where table_schema='public'" 2>/dev/null | tr -d '[:space:]')
+  [ -n "$SYNC_TABLES" ] && [ "$SYNC_TABLES" -gt 0 ] || { echo "restored munni db has no tables — refusing the marker" >&2; exit 1; }
   date > "$PG_MARKER"
 fi
 
