@@ -18,6 +18,17 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.5.0',
+    date: '2026-07-17',
+    items: [
+      {
+        en: 'The built-in category list and the import prediction rules can now be updated centrally — improvements arrive on your device with the next sync, no app update needed. Nothing changes for you today; your categories and history stay exactly as they are.',
+        nl: 'De ingebouwde categorielijst en de voorspellingsregels voor imports kunnen nu centraal worden bijgewerkt — verbeteringen komen bij de volgende synchronisatie op je apparaat, zonder app-update. Er verandert vandaag niets voor jou; je categorieën en geschiedenis blijven precies zoals ze zijn.',
+        tr: 'Yerleşik kategori listesi ve içe aktarma tahmin kuralları artık merkezi olarak güncellenebiliyor — iyileştirmeler bir sonraki eşitlemeyle cihazına gelir, uygulama güncellemesi gerekmez. Bugün senin için hiçbir şey değişmiyor; kategorilerin ve geçmişin olduğu gibi kalıyor.',
+      },
+    ],
+  },
+  {
     version: '2.4.0',
     date: '2026-07-17',
     items: [
