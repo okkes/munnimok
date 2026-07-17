@@ -3,6 +3,7 @@ import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
+import { DexieBackend } from '@/db/backend';
 import { HlcClock } from '@/sync/hlc';
 import { adoptedCategoryId } from '@/domain/feedIds';
 import { adoptUserCategoriesOnShare } from './categoryOps';
@@ -13,7 +14,7 @@ describe('adoptUserCategoriesOnShare', () => {
 
   beforeEach(async () => {
     db = new MunniDB(`munni_test_adopt_${Math.random().toString(36).slice(2)}`);
-    repo = new Repo(db, new HlcClock('t'), { trackOutbox: false });
+    repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
 
     await repo.upsert('space', 'p1', 'p1', { name: 'Personal', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
     await repo.upsert('space', 'tgt', 'tgt', { name: 'Family', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });

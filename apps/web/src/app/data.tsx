@@ -4,6 +4,8 @@ import { v7 as uuidv7 } from 'uuid';
 import { useLang } from '@/i18n';
 import { Icon } from '@/ui/Icon';
 import { MunniDB, identityDbName } from '@/db/schema';
+import { DexieBackend } from '@/db/backend';
+import type { StorageBackend } from '@/db/backend';
 import { Repo } from '@/db/repo';
 import { getClock, getDeviceId } from '@/db/device';
 import { seedDemoIfNeeded } from '@/db/seed';
@@ -24,6 +26,9 @@ const BOOTSTRAP_SPACE_KEY = 'bootstrapSpaceId';
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** the identity's non-deleted spaces */
+const liveSpaces = async (store: StorageBackend) => (await store.allRows('space')).filter((s) => s.deleted === 0);
+
 /**
  * First-run bootstrap for syncing identities — FAIL CLOSED: a personal
  * space is only ever created after the server CONFIRMED this account has
@@ -32,14 +37,14 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * on a blank copy). Existing local data always loads without a server.
  */
 export async function bootstrapUserSpaces(
-  db: MunniDB,
+  store: StorageBackend,
   repo: Repo,
   engine: SyncEngine,
   isCancelled: () => boolean,
   baseRetryMs = 2_000,
   onAttemptFailed?: (attempt: number) => void,
 ): Promise<void> {
-  const hasLocalSpaces = async () => (await db.spaces.filter((s) => s.deleted === 0).count()) > 0;
+  const hasLocalSpaces = async () => (await liveSpaces(store)).length > 0;
 
   for (let attempt = 0; ; attempt++) {
     await engine.syncAll().catch(() => undefined);
@@ -63,32 +68,32 @@ export async function bootstrapUserSpaces(
       periodDay: 1,
       historyStartDate: isoMonthsAgo(DEFAULT_HISTORY_MONTHS),
     });
-    await db.meta.put({ key: BOOTSTRAP_SPACE_KEY, value: personalId });
+    await store.metaPut(BOOTSTRAP_SPACE_KEY, personalId);
     // show the one-time onboarding (this device created the space)
-    await db.meta.put({ key: 'needsOnboarding', value: true });
+    await store.metaPut('needsOnboarding', true);
     return;
   }
 
   // self-heal: if a bootstrap-created space is still empty while the
   // account's real spaces arrived (pre-fix duplicates), retire it
-  const bootstrapId = (await db.meta.get(BOOTSTRAP_SPACE_KEY))?.value as string | undefined;
+  const bootstrapId = (await store.metaGet(BOOTSTRAP_SPACE_KEY))?.value as string | undefined;
   if (!bootstrapId) return;
-  const others = await db.spaces.filter((s) => s.deleted === 0 && s.id !== bootstrapId).count();
+  const others = (await liveSpaces(store)).filter((s) => s.id !== bootstrapId).length;
   if (others === 0) return;
   const [txs, accounts, cats] = await Promise.all([
-    db.transactions.where('spaceId').equals(bootstrapId).count(),
-    db.accounts.where('spaceId').equals(bootstrapId).count(),
-    db.categories.where('spaceId').equals(bootstrapId).count(),
+    store.countBySpace('transaction', bootstrapId),
+    store.countBySpace('account', bootstrapId),
+    store.countBySpace('category', bootstrapId),
   ]);
   if (txs === 0 && accounts === 0 && cats === 0) {
     await repo.remove('space', bootstrapId, bootstrapId);
   }
-  await db.meta.delete(BOOTSTRAP_SPACE_KEY);
+  await store.metaDelete(BOOTSTRAP_SPACE_KEY);
 }
 
 /** OIDC restore → fail-closed bootstrap → periodic sync (user identities) */
 async function restoreAndSync(
-  db: MunniDB,
+  store: StorageBackend,
   repo: Repo,
   engine: SyncEngine,
   isCancelled: () => boolean,
@@ -96,7 +101,7 @@ async function restoreAndSync(
 ): Promise<void> {
   await waitForAuthReady();
   if (isCancelled()) return;
-  await bootstrapUserSpaces(db, repo, engine, isCancelled, undefined, onAttempts);
+  await bootstrapUserSpaces(store, repo, engine, isCancelled, undefined, onAttempts);
   if (isCancelled()) return;
   onAttempts(0);
   engine.start();
@@ -104,6 +109,8 @@ async function restoreAndSync(
 
 interface DataContextValue {
   db: MunniDB;
+  /** the storage seam (E1) — new code reads through this, not `db` */
+  store: StorageBackend;
   repo: Repo;
   /** the currently active space */
   spaceId: string;
@@ -121,9 +128,13 @@ const DataContext = createContext<DataContextValue | null>(null);
  */
 export function DataProvider({ children }: { children: ReactNode }) {
   const identity = useSession((s) => s.identity);
-  const [state, setState] = useState<{ db: MunniDB; repo: Repo; spaceId: string; engine: SyncEngine | null } | null>(
-    null,
-  );
+  const [state, setState] = useState<{
+    db: MunniDB;
+    store: StorageBackend;
+    repo: Repo;
+    spaceId: string;
+    engine: SyncEngine | null;
+  } | null>(null);
   const [failedAttempts, setFailedAttempts] = useState(0);
 
   useEffect(() => {
@@ -138,10 +149,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (!cancelled) setFailedAttempts(n);
     };
     const db = new MunniDB(identityDbName(identityKey(identity)));
+    const store = new DexieBackend(db);
     const syncing = identity.kind === 'user';
 
     let engine: SyncEngine | null = null;
-    const repo = new Repo(db, getClock(), {
+    const repo = new Repo(store, getClock(), {
       trackOutbox: syncing, // demo/offline never sync — no outbox
       onWrite: () => engine?.nudge(),
     });
@@ -168,7 +180,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           return { bearer };
         },
       });
-      engine = new SyncEngine(db, repo, backend, getDeviceId());
+      engine = new SyncEngine(store, repo, backend, getDeviceId());
       // pushes failing (offline / server away) — arm the background
       // flush so the outbox drains even if the app is killed meanwhile
       engine.onStatus((status) => {
@@ -181,7 +193,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // best-effort — installed PWAs are exempt, native storage is app-scoped
       if (identity.kind !== 'demo') void ensurePersistentStorage();
       if (identity.kind === 'demo') await seedDemoIfNeeded(repo);
-      if (identity.kind === 'offline' && (await db.spaces.filter((s) => s.deleted === 0).count()) === 0) {
+      if (identity.kind === 'offline' && (await liveSpaces(store)).length === 0) {
         // fully local profile: personal space named after the profile
         const { offlineProfileName } = await import('@/features/auth/offlineProfiles');
         const personalId = uuidv7();
@@ -196,8 +208,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       }
       if (engine) {
         const eng = engine;
-        const finishSync = () => restoreAndSync(db, repo, eng, isCancelled, onAttempts);
-        if ((await db.spaces.filter((s) => s.deleted === 0).count()) > 0) {
+        const finishSync = () => restoreAndSync(store, repo, eng, isCancelled, onAttempts);
+        if ((await liveSpaces(store)).length > 0) {
           // returning device: local-first — render from what's stored NOW;
           // auth restore + first sync catch up in the background. A dead
           // server or unreachable OIDC endpoint must never block the UI
@@ -210,11 +222,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
           await finishSync();
         }
       }
-      const stored = (await db.meta.get(ACTIVE_SPACE_KEY))?.value as string | undefined;
-      const spaces = await db.spaces.filter((s) => s.deleted === 0).toArray();
+      const stored = (await store.metaGet(ACTIVE_SPACE_KEY))?.value as string | undefined;
+      const spaces = await liveSpaces(store);
       const spaceId = spaces.find((s) => s.id === stored)?.id ?? spaces[0]?.id;
       if (!spaceId) throw new Error('no space available after seed');
-      if (!cancelled) setState({ db, repo, spaceId, engine });
+      if (!cancelled) setState({ db, store, repo, spaceId, engine });
     })().catch((err) => {
       // StrictMode double-mount closes the first db mid-seed — expected
       if (!cancelled) throw err;
@@ -222,14 +234,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
       engine?.stop();
-      db.close();
+      store.close();
     };
   }, [identity]);
 
   const setActiveSpace = useCallback(
     async (spaceId: string) => {
       if (!state) return;
-      await state.db.meta.put({ key: ACTIVE_SPACE_KEY, value: spaceId });
+      await state.store.metaPut(ACTIVE_SPACE_KEY, spaceId);
       setState((prev) => (prev ? { ...prev, spaceId } : prev));
     },
     [state],
@@ -289,6 +301,6 @@ export function useData(): DataContextValue {
 
 /** Demo logout = wipe the database so next login reseeds pristine state. */
 export async function destroyIdentityData(identity: Identity): Promise<void> {
-  const db = new MunniDB(identityDbName(identityKey(identity)));
-  await db.delete();
+  const store = new DexieBackend(new MunniDB(identityDbName(identityKey(identity))));
+  await store.destroy();
 }

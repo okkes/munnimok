@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { HlcClock } from '@/sync/hlc';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
+import { DexieBackend } from '@/db/backend';
 import { feedSpaceId } from '@/domain/feedIds';
 import { visibleTransactions } from '@/db/joined';
 import type { CamtStatement } from '@/lib/camt053/parse';
@@ -50,7 +51,7 @@ describe('importCamtStatements', () => {
 
   beforeEach(() => {
     db = new MunniDB(`camt_test_${++counter}`);
-    repo = new Repo(db, new HlcClock('dev', undefined, () => ++wall), { trackOutbox: false });
+    repo = new Repo(new DexieBackend(db), new HlcClock('dev', undefined, () => ++wall), { trackOutbox: false });
   });
   afterEach(async () => db.delete());
 

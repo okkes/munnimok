@@ -3,6 +3,7 @@ import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
+import { DexieBackend } from '@/db/backend';
 import { HlcClock } from '@/sync/hlc';
 import { storeReceiptId, syncAhReceipts, syncJumboReceipts } from './sync';
 import type { ProxyCall } from './ah';
@@ -64,7 +65,7 @@ function fakeAh({ expireFirst = false, refreshWorks = true, graphqlDown = false 
 
 beforeEach(async () => {
   db = new MunniDB(`store_sync_test_${++counter}`);
-  repo = new Repo(db, new HlcClock('dev'), { trackOutbox: false });
+  repo = new Repo(new DexieBackend(db), new HlcClock('dev'), { trackOutbox: false });
   await db.storeConnections.put({
     store: 'ah',
     tokens: { access: 'old-access', refresh: 'old-refresh' },

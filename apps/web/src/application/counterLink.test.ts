@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { HlcClock } from '@/sync/hlc';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
+import { DexieBackend } from '@/db/backend';
 import { linkAllCounterparties } from './counterLink';
 
 /**
@@ -14,7 +15,7 @@ import { linkAllCounterparties } from './counterLink';
 describe('linkAllCounterparties', () => {
   const setup = async () => {
     const db = new MunniDB(`counterlink_${Math.random().toString(36).slice(2)}`);
-    const repo = new Repo(db, new HlcClock('t'), { trackOutbox: false });
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
     await repo.upsert('space', 's1', 's1', { name: 'P', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
     await repo.upsert('account', 's1', 'acct-main', { name: 'Checking', type: 'checking', source: 'manual', currency: 'EUR', iban: 'NL01MAIN0000000001' });
     return { db, repo };

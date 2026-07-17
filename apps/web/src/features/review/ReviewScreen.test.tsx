@@ -6,6 +6,7 @@ import { renderApp } from '@/test/harness';
 import { DEMO_SPACE_ID } from '@/db/seed';
 import { HlcClock } from '@/sync/hlc';
 import { Repo } from '@/db/repo';
+import { DexieBackend } from '@/db/backend';
 import { MunniDB } from '@/db/schema';
 
 describe('ReviewScreen (demo identity)', () => {
@@ -67,7 +68,7 @@ describe('ReviewScreen (demo identity)', () => {
     // oldest-first queue: bulk1 (2020) becomes the CURRENT card, bulk2 and
     // the demo row are its "similar" companions
     const db = new MunniDB('munni_demo');
-    const repo = new Repo(db, new HlcClock('seed-rev'), { trackOutbox: false });
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-rev'), { trackOutbox: false });
     const first = (await db.transactions.filter((t) => t.needsReview === 1).toArray())
       .sort((a, b) => a.date.localeCompare(b.date))[0];
     for (const [id, date] of [['bulk1', '2020-01-15'], ['bulk2', '2020-02-15']] as const) {
@@ -121,7 +122,7 @@ describe('ReviewScreen (demo identity)', () => {
 
     // a Netflix subscription + a flagged Netflix charge arrive
     const db = new MunniDB('munni_demo');
-    const repo = new Repo(db, new HlcClock('seed-link'), { trackOutbox: false });
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-link'), { trackOutbox: false });
     await repo.upsert('recurring', DEMO_SPACE_ID, 'rec-nfx', {
       name: 'Netflix',
       kind: 'subscription',
@@ -162,7 +163,7 @@ describe('ReviewScreen (demo identity)', () => {
 
     // a controlled newest card with a long description
     const db = new MunniDB('munni_demo');
-    const repo = new Repo(db, new HlcClock('seed-split'), { trackOutbox: false });
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-split'), { trackOutbox: false });
     const iso = '2020-03-01'; // oldest-first queue: an old date makes this the CURRENT card
     await repo.upsert('transaction', DEMO_SPACE_ID, 'tx-split', {
       accountId: 'demo_main',
@@ -285,7 +286,7 @@ describe('ReviewScreen (user identity, split settlements)', () => {
 
     // my local queue holds an incoming €15.00 needing review
     const db = new MunniDB(USER_TEST_DB);
-    const repo = new Repo(db, new HlcClock('seed'), { trackOutbox: false });
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed'), { trackOutbox: false });
     await repo.upsert('transaction', 's-user', 'tx-in', {
       accountId: 'a1', date: '2026-07-16', amountCents: 1500, currency: 'EUR',
       merchant: 'A. FRIEND', txType: 'income', needsReview: 1,
@@ -342,7 +343,7 @@ describe('ReviewScreen (own-account transfers)', () => {
     indexedDB.deleteDatabase(USER_TEST_DB);
 
     const db = new MunniDB(USER_TEST_DB);
-    const repo = new Repo(db, new HlcClock('seed'), { trackOutbox: false });
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed'), { trackOutbox: false });
     await repo.upsert('account', 's-user', 'acct-cc', {
       name: 'Credit card', type: 'credit', source: 'manual', currency: 'EUR',
       iban: 'NL91 ABNA 0417 1643 00',
@@ -382,7 +383,7 @@ describe('ReviewScreen (own-account transfers)', () => {
     indexedDB.deleteDatabase(USER_TEST_DB);
 
     const db = new MunniDB(USER_TEST_DB);
-    const repo = new Repo(db, new HlcClock('seed'), { trackOutbox: false });
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed'), { trackOutbox: false });
     await repo.upsert('account', 's-user', 'acct-cc', {
       name: 'Credit card', type: 'credit', source: 'manual', currency: 'EUR', iban: 'NL91ABNA0417164300',
     });

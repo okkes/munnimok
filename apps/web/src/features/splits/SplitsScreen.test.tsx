@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { HlcClock } from '@/sync/hlc';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
+import { DexieBackend } from '@/db/backend';
 import { USER_TEST_DB, renderAppAsUser } from '@/test/harness';
 
 const ME = '11111111-1111-1111-1111-111111111111';
@@ -116,7 +117,7 @@ describe('Splits (SP1)', () => {
   it('adds expenses picked from MY space transactions as frozen snapshots (SP2)', async () => {
     // my attached space's local transactions (other members never see these)
     const db = new MunniDB(USER_TEST_DB);
-    const repo = new Repo(db, new HlcClock('seed'), { trackOutbox: false });
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed'), { trackOutbox: false });
     await repo.upsert('transaction', 's-user', 'tx-ah', {
       accountId: 'a1', date: '2026-07-14', amountCents: -2350, currency: 'EUR',
       merchant: 'Albert Heijn', txType: 'expense', needsReview: 0,
@@ -297,7 +298,7 @@ describe('Splits (SP1)', () => {
   it('linking MY event retro-attaches my searched-in expenses locally (SP5)', async () => {
     // local db: my event + the source tx behind an existing entry
     const db = new MunniDB(USER_TEST_DB);
-    const repo = new Repo(db, new HlcClock('seed'), { trackOutbox: false });
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed'), { trackOutbox: false });
     await repo.upsert('event', 's-user', 'ev-rome', { name: 'Rome weekend' });
     await repo.upsert('transaction', 's-user', 'tx-ah', {
       accountId: 'a1', date: '2026-07-14', amountCents: -2350, currency: 'EUR',
@@ -342,7 +343,7 @@ describe('Splits (SP1)', () => {
 
   it('the event detail shows my split summary and links into it (SP5)', async () => {
     const db = new MunniDB(USER_TEST_DB);
-    const repo = new Repo(db, new HlcClock('seed'), { trackOutbox: false });
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed'), { trackOutbox: false });
     await repo.upsert('event', 's-user', 'ev-rome', { name: 'Rome weekend' });
     db.close();
 

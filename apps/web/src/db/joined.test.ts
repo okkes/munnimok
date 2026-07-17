@@ -5,6 +5,7 @@ import { HlcClock } from '@/sync/hlc';
 import { accountLinkId, feedSpaceId, txMetaId } from '@/domain/feedIds';
 import { MunniDB } from './schema';
 import { Repo } from './repo';
+import { DexieBackend } from './backend';
 import { visibleAccounts, visibleTransactions, writeTxTransform } from './joined';
 
 let counter = 0;
@@ -50,7 +51,7 @@ async function seedFeed() {
 describe('feature B join layer', () => {
   beforeEach(() => {
     db = new MunniDB(`joined_test_${++counter}`);
-    repo = new Repo(db, new HlcClock('t'), { trackOutbox: false });
+    repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
   });
 
   it('a space sees feed transactions from its history-from date, with defaults', async () => {

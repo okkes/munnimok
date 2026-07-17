@@ -222,9 +222,10 @@ describe('Receipts S1 (demo identity)', () => {
     // seed a store receipt beside the photo one
     const { MunniDB } = await import('@/db/schema');
     const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
     const { HlcClock } = await import('@/sync/hlc');
     const db = new MunniDB('munni_demo');
-    const repo = new Repo(db, new HlcClock('t'), { trackOutbox: false });
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
     await repo.upsert('receipt', 'demo_space', 'rcpt:ah:x1@demo_space', {
       source: 'ah',
       date: '2026-07-01',

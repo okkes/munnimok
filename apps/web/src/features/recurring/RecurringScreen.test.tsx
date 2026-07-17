@@ -8,6 +8,7 @@ import { DEMO_SPACE_ID } from '@/db/seed';
 import { reconcileRecurringLinks } from '@/application/recurring';
 import { HlcClock } from '@/sync/hlc';
 import { Repo } from '@/db/repo';
+import { DexieBackend } from '@/db/backend';
 import { MunniDB } from '@/db/schema';
 
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -18,7 +19,7 @@ const monthsAgo = (n: number, day = 7) => {
 
 /** four clean monthly Netflix charges ending this month */
 async function seedNetflixPattern(db: MunniDB) {
-  const repo = new Repo(db, new HlcClock('seed-rec'), { trackOutbox: false });
+  const repo = new Repo(new DexieBackend(db), new HlcClock('seed-rec'), { trackOutbox: false });
   for (let i = 0; i < 4; i++) {
     await repo.upsert('transaction', DEMO_SPACE_ID, `nfx_${i}`, {
       accountId: 'demo_main',
@@ -45,7 +46,7 @@ describe('RecurringScreen (demo identity)', () => {
     const first = renderApp('/recurring');
     await screen.findByTestId('screen-recurring');
     const db = new MunniDB('munni_demo');
-    const repo = new Repo(db, new HlcClock('seed-price'), { trackOutbox: false });
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-price'), { trackOutbox: false });
     await repo.upsert('recurring', DEMO_SPACE_ID, 'rec_price', {
       name: 'Streamo',
       kind: 'subscription',
@@ -374,7 +375,7 @@ describe('brand picker online search (user identity)', () => {
 describe('reconcileRecurringLinks', () => {
   it('links matching unlinked expenses at most once per billing cycle', async () => {
     const db = new MunniDB(`munni_test_rec_${Math.random().toString(36).slice(2)}`);
-    const repo = new Repo(db, new HlcClock('t'), { trackOutbox: false });
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
     await repo.upsert('space', 's1', 's1', { name: 'P', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
     await repo.upsert('recurring', 's1', 'rec1', {
       name: 'Gym',

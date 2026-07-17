@@ -92,7 +92,8 @@ describe('service-worker background sync', () => {
     // seed an outbox exactly like the app's repo does
     const db = new MunniDB(identityDbName(SESSION.identityKey));
     const { Repo } = await import('@/db/repo');
-    const repo = new Repo(db, new HlcClock('dev'), { trackOutbox: true });
+    const { DexieBackend } = await import('@/db/backend');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('dev'), { trackOutbox: true });
     await repo.upsert('space', 'sp1', 'sp1', { name: 'Offline edit', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
     await repo.upsert('space', 'sp1', 'sp1', { name: 'Offline edit 2' });
     db.close();

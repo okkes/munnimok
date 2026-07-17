@@ -3,6 +3,7 @@ import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { MunniDB } from './schema';
 import { Repo } from './repo';
+import { DexieBackend } from './backend';
 import { HlcClock } from '@/sync/hlc';
 import { seedDemoIfNeeded } from './seed';
 import { seedRichDemo } from './demo-rich';
@@ -17,7 +18,7 @@ async function freshDemo(): Promise<MunniDB> {
     req.onblocked = () => resolve();
   });
   const db = new MunniDB('munni_demo');
-  const repo = new Repo(db, new HlcClock('demo-test'), { trackOutbox: false });
+  const repo = new Repo(new DexieBackend(db), new HlcClock('demo-test'), { trackOutbox: false });
   await seedDemoIfNeeded(repo);
   await seedRichDemo(repo);
   return db;

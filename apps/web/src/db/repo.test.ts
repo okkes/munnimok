@@ -3,12 +3,13 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { HlcClock } from '@/sync/hlc';
 import { MunniDB } from './schema';
 import { Repo } from './repo';
+import { DexieBackend } from './backend';
 import type { AccountRow } from './types';
 
 let dbCounter = 0;
 
 function makeRepo(deviceId: string, db: MunniDB, wall: () => number, trackOutbox = true) {
-  return new Repo(db, new HlcClock(deviceId, undefined, wall), { trackOutbox });
+  return new Repo(new DexieBackend(db), new HlcClock(deviceId, undefined, wall), { trackOutbox });
 }
 
 describe('Repo', () => {

@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { HlcClock } from '@/sync/hlc';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
+import { DexieBackend } from '@/db/backend';
 import { predictFromMemory } from '@/domain/merchantMemory';
 import { buildSpaceMerchantMemory } from './prediction';
 
@@ -14,7 +15,7 @@ let repo: Repo;
 describe('buildSpaceMerchantMemory (user-scoped cross-space learning)', () => {
   beforeEach(async () => {
     db = new MunniDB(`prediction_test_${++counter}`);
-    repo = new Repo(db, new HlcClock('t'), { trackOutbox: false });
+    repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
     await repo.upsert('space', 'sx', 'sx', { name: 'Personal X', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
     await repo.upsert('space', 'sy', 'sy', { name: 'Shared Y', kind: 'shared', currency: 'EUR', periodType: 'month', periodDay: 1 });
   });

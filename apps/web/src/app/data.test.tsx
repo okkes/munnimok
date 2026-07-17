@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { HlcClock } from '@/sync/hlc';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
+import { DexieBackend } from '@/db/backend';
 import { USER_TEST_DB, renderAppAsUser } from '@/test/harness';
 
 /**
@@ -24,7 +25,7 @@ describe('DataProvider startup (local-first)', () => {
   it('renders the app from local data while every server request hangs forever', async () => {
     // returning device: the identity db already holds a space
     const db = new MunniDB(USER_TEST_DB);
-    const repo = new Repo(db, new HlcClock('seed'), { trackOutbox: false });
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed'), { trackOutbox: false });
     await repo.upsert('space', 's-local', 's-local', {
       name: 'Mine',
       kind: 'personal',

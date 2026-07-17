@@ -23,7 +23,7 @@ const txTypeFor = (catId: string): TxType => CATEGORY_BY_ID.get(catId)?.txTypes[
  * state — demo changes never leave the device.
  */
 export async function seedDemoIfNeeded(repo: Repo): Promise<void> {
-  if (await repo.db.meta.get(SEED_FLAG)) return;
+  if (await repo.store.metaGet(SEED_FLAG)) return;
 
   await repo.upsert('space', DEMO_SPACE_ID, DEMO_SPACE_ID, {
     name: 'Demo',
@@ -107,5 +107,5 @@ export async function seedDemoIfNeeded(repo: Repo): Promise<void> {
     await seedRichDemo(repo);
   }
 
-  await repo.db.meta.put({ key: SEED_FLAG, value: Date.now() });
+  await repo.store.metaPut(SEED_FLAG, Date.now());
 }
