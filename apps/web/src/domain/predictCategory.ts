@@ -51,7 +51,8 @@ export interface PredictInput {
   merchant: string;
   description?: string;
   amountCents: number;
-  /** operator-published keyword rules (catalog document) — replace the bundled set */
+  /** operator-published keyword rules (catalog document) — merged in
+   *  front of the bundled set, so they win ties without erasing it */
   keywordRules?: readonly { catId: string; keywords: string[] }[];
 }
 
@@ -75,7 +76,11 @@ export function predictTx(input: PredictInput): TxPrediction | null {
     }
   }
   const direction = input.amountCents >= 0 ? 'credit' : 'debit';
-  const catId = predictCategory(`${input.merchant} ${input.description ?? ''}`, direction, input.keywordRules ?? KEYWORD_RULES);
+  const catId = predictCategory(
+    `${input.merchant} ${input.description ?? ''}`,
+    direction,
+    input.keywordRules ? [...input.keywordRules, ...KEYWORD_RULES] : KEYWORD_RULES,
+  );
   if (!catId) return null;
   const txType = CATEGORY_BY_ID.get(catId)?.txTypes[0] ?? (direction === 'credit' ? 'income' : 'expense');
   return { catId, txType, source: 'keyword' };

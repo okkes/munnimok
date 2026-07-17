@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildCatalog } from './catalog';
 import { mergedBuiltins, tombstonedIds } from './catalogDoc';
 import type { CatalogDoc } from './catalogDoc';
-import { predictCategory } from './predictCategory';
+import { predictTx } from './predictCategory';
 
 const doc = (over: Partial<CatalogDoc> = {}): CatalogDoc => ({
   version: 3,
@@ -53,10 +53,12 @@ describe('catalog document overlay (admin-catalog AC1)', () => {
     expect(tombstonedIds(d)).toEqual(['gift']);
   });
 
-  it('published keyword rules replace the bundled set for prediction', () => {
+  it('published keyword rules merge in front of the bundled set (predictTx)', () => {
     const rules = [{ catId: 'hobby', keywords: ['padelbaan'] }];
-    expect(predictCategory('PADELBAAN AMSTERDAM', 'debit', rules)).toBe('hobby');
-    // the bundled rule for the same text no longer applies
-    expect(predictCategory('albert heijn', 'debit', rules)).toBeNull();
+    const padel = predictTx({ merchant: 'PADELBAAN AMSTERDAM', amountCents: -1500, keywordRules: rules });
+    expect(padel?.catId).toBe('hobby');
+    // the bundled rules keep working alongside
+    const groceries = predictTx({ merchant: 'albert heijn', amountCents: -1500, keywordRules: rules });
+    expect(groceries?.catId).toBeTruthy();
   });
 });
