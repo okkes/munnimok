@@ -1,5 +1,8 @@
-import { BUILTIN_CATEGORIES, CATEGORY_BY_ID, UNCATEGORIZED_ID } from './categories';
+import { CATEGORY_BY_ID, UNCATEGORIZED_ID } from './categories';
 import type { BuiltinCategory } from './categories';
+import { mergedBuiltins } from './catalogDoc';
+import type { CatalogDoc } from './catalogDoc';
+import type { Lang } from '@/i18n';
 import type { CatDirection, CategoryRow, SpaceRow, TxType } from '@/db/types';
 
 /**
@@ -11,6 +14,8 @@ import type { CatDirection, CategoryRow, SpaceRow, TxType } from '@/db/types';
 /** A category at runtime: built-in (nameKey) or custom (name, synced row). */
 export interface Cat extends Omit<BuiltinCategory, 'nameKey'> {
   nameKey?: string;
+  /** operator-published names (catalog document) — win over nameKey */
+  names?: Record<Lang, string>;
   /** user-entered name for custom categories */
   name?: string;
   custom?: boolean;
@@ -82,14 +87,15 @@ export function visibleCategoryRows(spaces: readonly SpaceRow[], rows: readonly 
   };
 }
 
-/** built-in catalog merged with the given custom rows */
-export function buildCatalog(customRows: readonly CategoryRow[], sharedScope: boolean, hiddenMains: readonly string[] = []): Catalog {
+/** built-in catalog merged with the given custom rows (+ the fetched
+ *  catalog document when the identity has one) */
+export function buildCatalog(customRows: readonly CategoryRow[], sharedScope: boolean, hiddenMains: readonly string[] = [], doc?: CatalogDoc | null): Catalog {
   const parentById = new Map(customRows.filter((r) => r.isParent === 1).map((r) => [r.id, r]));
   const custom: Cat[] = customRows
     .slice()
     .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
     .map((row) => toCat(row, parentById));
-  const all: Cat[] = [...(BUILTIN_CATEGORIES as Cat[]), ...custom];
+  const all: Cat[] = [...(mergedBuiltins(doc) as Cat[]), ...custom];
   const map = new Map(all.map((c) => [c.id, c]));
   const off = new Set(hiddenMains);
   const allParents = all.filter((c) => c.isParent && !c.hidden);

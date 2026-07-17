@@ -191,6 +191,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
         onWrite: () => engine?.nudge(),
       });
       if (syncing) {
+        // operator catalog: cheap ETag revalidation, fire-and-forget
+        void import('@/sync/catalogSync').then(({ refreshCatalog }) => refreshCatalog(store)).catch(() => undefined);
         engine = buildSyncEngine(identity, store, repo);
         // pushes failing (offline / server away) — arm the background
         // flush so the outbox drains even if the app is killed meanwhile

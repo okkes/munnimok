@@ -46,6 +46,13 @@ function readStoredLang(): Lang {
   return deviceLang();
 }
 
+/** the active language for non-React code (catalog names) — kept in
+ *  sync by LangProvider; falls back to the stored/device pick */
+let currentLang: Lang | null = null;
+export function getCurrentLang(): Lang {
+  return currentLang ?? readStoredLang();
+}
+
 function interpolate(template: string, vars?: Record<string, string | number>): string {
   if (!vars) return template;
   return template.replace(/\{(\w+)\}/g, (m, name: string) => (name in vars ? String(vars[name]) : m));
@@ -53,6 +60,7 @@ function interpolate(template: string, vars?: Record<string, string | number>): 
 
 export function LangProvider({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Lang>(readStoredLang);
+  currentLang = lang;
   const [langOverridden, setLangOverridden] = useState<boolean>(() => localStorage.getItem(LS_KEY) !== null);
 
   const setLang = useCallback((next: Lang) => {

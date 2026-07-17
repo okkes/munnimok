@@ -2,6 +2,7 @@ import { v5 as uuidv5 } from 'uuid';
 import { accountLinkId, feedSpaceId, txMetaId } from '@/domain/feedIds';
 import type { ParsedStatement } from '@/lib/statements/parseStatement';
 import { predictTx, predictionSkipsReview } from '@/domain/predictCategory';
+import { cachedCatalog } from '@/sync/catalogSync';
 import type { MerchantMemory } from '@/domain/merchantMemory';
 import { buildSpaceMerchantMemory } from '@/application/prediction';
 import { UNCATEGORIZED_ID } from '@/domain/categories';
@@ -68,12 +69,14 @@ async function createStatementAccount(
 function predictEntry(
   memory: MerchantMemory,
   entry: ParsedStatement['entries'][number],
+  keywordRules?: readonly { catId: string; keywords: string[] }[],
 ): { catId: string; txType: TxType; needsReview: 0 | 1 } {
   const prediction = predictTx({
     memory,
     merchant: entry.counterpartyName ?? entry.description.slice(0, 40),
     description: entry.description,
     amountCents: entry.amountCents,
+    keywordRules,
   });
   const fallbackType: TxType = entry.amountCents >= 0 ? 'income' : 'expense';
   return {
@@ -93,6 +96,7 @@ interface EntryContext {
   accountId: string;
   iban: string;
   memory: MerchantMemory;
+  keywordRules?: readonly { catId: string; keywords: string[] }[];
 }
 
 /** returns true when the entry was new (imported), false when it already existed */
@@ -108,7 +112,7 @@ async function importEntry(ctx: EntryContext, entry: ParsedStatement['entries'][
     merchant: entry.counterpartyName ?? entry.description.slice(0, 40),
     description: entry.description,
     ...(entry.counterpartyIban ? { counterIban: normalizeIban(entry.counterpartyIban) } : {}),
-    ...predictEntry(ctx.memory, entry),
+    ...predictEntry(ctx.memory, entry, ctx.keywordRules),
     importRef: entry.ref,
   });
   return true;
@@ -149,6 +153,7 @@ async function importMerged(
   statements: ParsedStatement[],
 ): Promise<ImportResult> {
   const memory = await buildSpaceMerchantMemory(store, spaceId);
+  const keywordRules = (await cachedCatalog(store))?.keywords;
   const existing = (await store.bySpace('account', spaceId)).filter((a) => a.deleted === 0);
   const byIban = new Map(existing.flatMap((a) => (a.iban ? [[normalizeIban(a.iban), a] as const] : [])));
 
@@ -169,7 +174,7 @@ async function importMerged(
 
     let txCount = 0;
     for (const entry of stmt.entries) {
-      if (await importEntry({ repo, store, spaceId, accountId, iban, memory }, entry)) {
+      if (await importEntry({ repo, store, spaceId, accountId, iban, memory, keywordRules }, entry)) {
         imported++;
         txCount++;
       } else {
@@ -203,6 +208,7 @@ async function importIntoFeeds(
   feeds: FeedGateway,
 ): Promise<ImportResult> {
   const memory = await buildSpaceMerchantMemory(store, spaceId);
+  const keywordRules = (await cachedCatalog(store))?.keywords;
   let imported = 0;
   let skipped = 0;
   const accounts: ImportPlanAccount[] = [];
@@ -222,7 +228,7 @@ async function importIntoFeeds(
 
     let txCount = 0;
     for (const entry of stmt.entries) {
-      if (await importFeedEntry({ repo, store, spaceId, accountId, iban, memory }, feedId, entry)) {
+      if (await importFeedEntry({ repo, store, spaceId, accountId, iban, memory, keywordRules }, feedId, entry)) {
         imported++;
         txCount++;
       } else {
@@ -272,7 +278,7 @@ async function importFeedEntry(
 
   await ctx.repo.upsert('txMeta', ctx.spaceId, txMetaId(ctx.spaceId, txId), {
     txId,
-    ...predictEntry(ctx.memory, entry),
+    ...predictEntry(ctx.memory, entry, ctx.keywordRules),
   });
   return true;
 }
