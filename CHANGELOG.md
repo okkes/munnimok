@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.0](https://github.com/okkes/munnimok/compare/v2.0.0...v2.1.0) (2026-07-17)
+
+
+### ✨ Features
+
+* **review+tx:** the recovered redesign batch — type-first card, one editor, richer bulk, detail bulk-apply ([3b6c1d2](https://github.com/okkes/munnimok/commit/3b6c1d2a4d03157e1bc472d42f1a805e95ec99f4))
+
 ## [2.0.0](https://github.com/okkes/munnimok/compare/v1.24.0...v2.0.0) (2026-07-17)
 
 
