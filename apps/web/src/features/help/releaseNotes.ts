@@ -18,6 +18,22 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.4.0',
+    date: '2026-07-17',
+    items: [
+      {
+        en: 'Manual transactions grew up: set the type, counter account and recurring cost right in the form, and delete a manual transaction when it was a mistake. Automatically synced bank accounts no longer accept manual entries — the bank is their single source of truth.',
+        nl: 'Handmatige transacties zijn volwassen geworden: stel het type, de tegenrekening en de terugkerende kosten direct in het formulier in, en verwijder een handmatige transactie als die een vergissing was. Automatisch gesynchroniseerde bankrekeningen accepteren geen handmatige invoer meer — de bank is hun enige bron van waarheid.',
+        tr: 'Manuel işlemler olgunlaştı: türü, karşı hesabı ve yinelenen gideri doğrudan formda seç, yanlışlıkla eklenen manuel işlemi sil. Otomatik eşitlenen banka hesapları artık manuel giriş kabul etmiyor — tek doğruluk kaynağı banka.',
+      },
+      {
+        en: 'Financial accounts are yours to shape: rename any account, pick your own icon, and see exactly where its data comes from (manual, file import or open banking). Signing out of the apps works cleanly again.',
+        nl: 'Financiële rekeningen zijn van jou: hernoem elke rekening, kies je eigen icoon en zie precies waar de gegevens vandaan komen (handmatig, bestandsimport of open banking). Uitloggen in de apps werkt weer netjes.',
+        tr: 'Finansal hesaplar senin elinde: her hesabı yeniden adlandır, kendi simgeni seç ve verilerin tam olarak nereden geldiğini gör (manuel, dosya içe aktarma veya açık bankacılık). Uygulamalardan çıkış yeniden düzgün çalışıyor.',
+      },
+    ],
+  },
+  {
     version: '2.3.0',
     date: '2026-07-17',
     items: [

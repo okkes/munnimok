@@ -13,6 +13,9 @@ import { Icon } from '@/ui/Icon';
 import { Pill, Row } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { disablePush, enablePush, pushEnabled, pushSupported } from '@/lib/push';
+import { isNativeApp } from '@/lib/platform';
+import { config } from '@/app/config';
+import { FLAG_KEY } from '@/db/openStore';
 import { ExportSheet } from './ExportSheet';
 import {
   biometricAvailable,
@@ -35,6 +38,44 @@ const LANGS: { code: Lang; labelKey: 'lang.en' | 'lang.nl' | 'lang.tr'; badge: s
  * "Global settings" door on the Settings tab (user feedback: mixing
  * space-scoped and app-wide rows in one list was confusing).
  */
+/** E2 dev switch state: the flag is read at db open, so a clean reload applies it */
+function useEncryptedStoreToggle() {
+  const [encryptedOn, setEncryptedOn] = useState(() => localStorage.getItem(FLAG_KEY) === '1');
+  const toggleEncrypted = () => {
+    const next = !encryptedOn;
+    if (next) localStorage.setItem(FLAG_KEY, '1');
+    else localStorage.removeItem(FLAG_KEY);
+    setEncryptedOn(next);
+    window.location.reload();
+  };
+  return { encryptedOn, toggleEncrypted };
+}
+
+/** E2 dev switch: run the native shell on the encrypted SQLCipher store —
+ *  visible only in non-production native builds until E3/E4 make it the
+ *  default. Flipping it relaunches onto an empty store; a signed-in
+ *  identity simply re-syncs. */
+function EncryptedStoreRow() {
+  const { t } = useLang();
+  const { encryptedOn, toggleEncrypted } = useEncryptedStoreToggle();
+  if (!isNativeApp() || config.channel === 'production') return null;
+  return (
+    <Row
+      testId="settings-encrypted-toggle"
+      icon={encryptedOn ? 'shield-lock' : 'shield-lock-open-outline'}
+      title={t('settings.encryptedStore')}
+      sub={t('settings.encryptedStoreSub')}
+      chevron={false}
+      trailing={
+        <Pill tone={encryptedOn ? 'accent' : 'neutral'} testId="settings-encrypted-state">
+          {encryptedOn ? 'ON' : 'OFF'}
+        </Pill>
+      }
+      onClick={toggleEncrypted}
+    />
+  );
+}
+
 export function GlobalSettingsScreen() {
   const { t, lang, setLang, langOverridden, followDeviceLang } = useLang();
   const { theme, mode: themeMode, setMode: setThemeMode, toggle } = useTheme();
@@ -209,6 +250,7 @@ export function GlobalSettingsScreen() {
               onClick={() => void togglePush()}
             />
           )}
+          <EncryptedStoreRow />
           <Row
             testId="settings-lock-toggle"
             icon={lockOn ? 'lock' : 'lock-open-variant-outline'}

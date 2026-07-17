@@ -9,7 +9,8 @@ import { importCamtStatements } from './importCamt';
 import { linkAllCounterparties } from '@/application/counterLink';
 import type { ImportResult } from './importCamt';
 import { apiFeedGateway, fetchMyFeedIds } from './feedGateway';
-import { AttachSheet } from './AttachSheet';
+import { AttachSheet, SOURCE_KEYS } from './AttachSheet';
+import { BrandIconPicker } from '@/features/recurring/BrandIconPicker';
 import { BankConnectSheet } from './BankConnect';
 import { useInstitutionLogos } from './useInstitutionLogos';
 import { useLang } from '@/i18n';
@@ -49,7 +50,8 @@ function AccountRowButton({
   const { t } = useLang();
   const logos = useInstitutionLogos();
   const { account, feedSpaceId, sharedVia } = entry;
-  const bankLogo = account.bankId ? logos.get(account.bankId) : undefined;
+  // the user's own pick wins over the institution logo (user request)
+  const bankLogo = account.logo ?? (account.bankId ? logos.get(account.bankId) : undefined);
   const active = sharedVia.filter((v) => !v.archived);
   const archivedOnly = sharedVia.length > 0 && active.length === 0;
   let feedSubtitle = t('acct.notAttached');
@@ -193,6 +195,7 @@ export function AccountsScreen() {
   const [connectOpen, setConnectOpen] = useState(false);
   const [myFeedIds, setMyFeedIds] = useState<ReadonlySet<string> | undefined>(undefined);
   const [attaching, setAttaching] = useState<GlobalAccount | null>(null);
+  const [editLogoOpen, setEditLogoOpen] = useState(false);
 
   useEffect(() => {
     if (identity?.kind !== 'user') return;
@@ -364,7 +367,12 @@ export function AccountsScreen() {
       </div>
 
       {/* attach one of my feed accounts to/from my spaces */}
-      <AttachSheet open={!!attaching} onOpenChange={(open) => !open && setAttaching(null)} entry={attaching} />
+      <AttachSheet
+        open={!!attaching}
+        onOpenChange={(open) => !open && setAttaching(null)}
+        entry={attaching}
+        canEdit={!!attaching && !global?.sharedWithMe.includes(attaching)}
+      />
 
       {/* Add account: type grid, then form */}
       <Sheet open={addOpen} onOpenChange={(open) => !open && closeAdd()} title={newType ? t('acct.addAccount') : t('acct.selectType')} size="tall">
@@ -427,6 +435,18 @@ export function AccountsScreen() {
       </Sheet>
 
       <BankConnectSheet open={connectOpen} onOpenChange={setConnectOpen} />
+      <BrandIconPicker
+        open={editLogoOpen}
+        onOpenChange={setEditLogoOpen}
+        initialQuery={editing?.name ?? ''}
+        onPick={({ logo }) => {
+          if (editing) {
+            void repo.upsert('account', spaceId, editing.id, { logo: logo ?? (null as never) });
+            setEditing({ ...editing, logo: logo ?? undefined });
+          }
+          setEditLogoOpen(false);
+        }}
+      />
 
       {/* CAMT.053 import: preview then result */}
       <Sheet open={importPreview !== null} onOpenChange={(open) => !open && closeImport()} title={t('import.preview')} size="form">
@@ -494,6 +514,25 @@ export function AccountsScreen() {
             placeholder={`${t('acct.balanceNow')} (${editing?.currency ?? 'EUR'})`}
             className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
           />
+          <button
+            data-testid="acctedit-change-icon"
+            onClick={() => setEditLogoOpen(true)}
+            className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink"
+          >
+            {editing?.logo ? (
+              <img src={editing.logo} alt="" className="h-6 w-6 rounded object-contain" />
+            ) : (
+              <Icon name={editing ? typeDef(editing.type).icon : 'bank-outline'} size={20} color="var(--m-ink-3)" />
+            )}
+            <span className="flex-1">{t('acct.changeIcon')}</span>
+            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+          </button>
+          {editing && (
+            <div className="flex items-center justify-between px-1 text-[12px]" data-testid="acctedit-source">
+              <span className="text-ink-4">{t('acct.source')}</span>
+              <span className="text-ink-2">{t(SOURCE_KEYS[editing.source])}</span>
+            </div>
+          )}
           <Button data-testid="acctedit-save" onClick={saveEdit} disabled={!name.trim()}>
             {t('action.save')}
           </Button>

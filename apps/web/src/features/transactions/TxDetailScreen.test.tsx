@@ -28,6 +28,18 @@ describe('TxDetailScreen (demo identity)', () => {
     expect(screen.getByTestId('tx-detail-type-row')).toBeTruthy();
   });
 
+  it('a manual transaction deletes with a two-tap confirm (user request)', async () => {
+    renderApp('/transactions/dm6'); // demo rows carry no importRef -> deletable
+    await screen.findByTestId('screen-tx-detail');
+    const del = await screen.findByTestId('tx-detail-delete');
+    fireEvent.click(del); // first tap arms
+    await waitFor(() => expect(del.textContent).not.toBe(''));
+    fireEvent.click(screen.getByTestId('tx-detail-delete')); // second tap deletes
+    // back on the list, the row is gone (tombstoned)
+    const list = await screen.findByTestId('tx-list');
+    await waitFor(() => expect(list.querySelector('[data-testid="tx-row-dm6"]')).toBeNull(), { timeout: 5000 });
+  });
+
   it('a bogus tx id does not crash the screen', async () => {
     renderApp('/transactions/does-not-exist');
     // resolves to either the detail shell or a redirect back — must render something

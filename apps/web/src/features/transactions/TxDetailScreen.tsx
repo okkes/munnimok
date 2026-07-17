@@ -31,7 +31,7 @@ const DATE_FMT: Record<string, string> = { en: 'en-GB', nl: 'nl-NL', tr: 'tr-TR'
 
 export function TxDetailScreen() {
   const { t, lang } = useLang();
-  const { store } = useData();
+  const { store, repo } = useData();
   const { txId } = useParams({ strict: false }) as { txId: string };
   const [pickerOpen, setPickerOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -41,6 +41,7 @@ export function TxDetailScreen() {
   const [eventOpen, setEventOpen] = useState(false);
   const [counterOpen, setCounterOpen] = useState(false);
   const [bulkOffer, setBulkOffer] = useState<{ catId: string; txType: TxType; count: number } | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const navigate = useNavigate();
 
   // desktop affordance (D5): Esc closes the detail pane back to the plain
@@ -117,6 +118,16 @@ export function TxDetailScreen() {
   };
   const saveNotes = (notes: string) => {
     if (notes !== (tx.notes ?? '')) void transform(tx, { notes });
+  };
+
+  // two-tap confirm, matching the app's other destructive rows
+  const deleteManualTx = async () => {
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      return;
+    }
+    await repo.remove('transaction', tx.spaceId, tx.id);
+    void navigate({ to: '/transactions' });
   };
 
   const fmtDay = new Intl.DateTimeFormat(DATE_FMT[lang], { weekday: 'long', day: 'numeric', month: 'long' });
@@ -322,6 +333,18 @@ export function TxDetailScreen() {
           placeholder={t('tx.notesPlaceholder')}
           className="w-full resize-none rounded-card border border-line bg-surface px-4 py-3 text-[14px] text-ink outline-none placeholder:text-ink-4"
         />
+
+        {/* manual rows may leave again (user request); bank rows are the
+            bank's truth and only ever tombstone via their feed */}
+        {!tx.importRef && !tx.feedSpaceId && (
+          <button
+            data-testid="tx-detail-delete"
+            onClick={() => void deleteManualTx()}
+            className="m-tap mt-6 w-full rounded-card border border-line bg-surface px-4 py-3 text-center text-[14px] font-medium text-negative"
+          >
+            {confirmDelete ? t('tx.deleteManualConfirm') : t('tx.deleteManual')}
+          </button>
+        )}
       </div>
 
       <CategoryPicker
