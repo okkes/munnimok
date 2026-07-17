@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.6.0](https://github.com/okkes/munnimok/compare/v2.5.0...v2.6.0) (2026-07-17)
+
+
+### ✨ Features
+
+* **ux:** calm categories, honest desktop, visible demo — the review batch ([61ac458](https://github.com/okkes/munnimok/commit/61ac45802107da5aa721f29423ac6822d432cd47))
+
+
+### 🐞 Bug Fixes
+
+* **deploy:** always capture logto logs in the status dump ([76c4fd0](https://github.com/okkes/munnimok/commit/76c4fd03c8697f5c7d69c3c55c0791eb40a80520))
+* **deploy:** restore against the REAL postgres 18, verify before the marker ([1383bd1](https://github.com/okkes/munnimok/commit/1383bd151d35782e491fccda4195a8f3c9e0f7de))
+* **deploy:** restore postgres 18 BEFORE dependents boot; redo raced migrations ([762b8af](https://github.com/okkes/munnimok/commit/762b8af71260a50fc697e77c3906949ae34401ad))
+* **deploy:** run logto alterations BEFORE the seed (restored 1.24 schema) ([c0dea10](https://github.com/okkes/munnimok/commit/c0dea1026306321c3630fba9cc5dfc36a91d1724))
+
 ## [2.5.0](https://github.com/okkes/munnimok/compare/v2.4.0...v2.5.0) (2026-07-17)
 
 
