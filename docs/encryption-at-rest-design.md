@@ -50,12 +50,15 @@ rebuild started. The web/PWA keeps Dexie unchanged.
 
 ## Slices (each shippable, flag-gated)
 
-- **E1**: `StorageBackend` seam extracted, `DexieBackend` passes the
-  entire existing suite (pure refactor, no behavior change). ~the
-  biggest slice; everything else hangs off it.
-- **E2**: `SqlCipherBackend` + key lifecycle behind a
-  `munni_encrypted_store` flag, dev-build only; parity test suite runs
-  against BOTH backends.
+- **E1** ✅ (2.2.0): `StorageBackend` seam extracted, `DexieBackend` passes the
+  entire existing suite (pure refactor, no behavior change).
+- **E2** ✅ (2.3.0): `SqlStorageBackend` over a `SqlExecutor` (db/sqlBackend.ts)
+  with the backend-parity suite (sql.js in memory); native executor on
+  @capacitor-community/sqlite with the plugin-managed Keychain/Keystore
+  passphrase (db/capacitorSql.ts); backend chosen in db/openStore.ts —
+  `localStorage.munni_encrypted_store = '1'` on a native build switches
+  to SQLCipher (empty start + re-sync, the approved migration path).
+  Outstanding: on-device verification (iOS/Android).
 - **E3**: first-run migration (empty-open + re-sync + IndexedDB wipe),
   flag on for staging apps.
 - **E4**: production enable + offline-profile warning + PWA note +
