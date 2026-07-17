@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { config } from '@/app/config';
+import { isNativeApp } from '@/lib/platform';
 import { LOCALES, useLang } from '@/i18n';
 import { destroyIdentityData, useData } from '@/app/data';
 import { OFFLINE_REASON_KEYS, useOfflineReason } from '@/app/OfflineBanner';
@@ -100,13 +101,13 @@ export function SettingsScreen() {
     // offline profiles keep their data too (this device IS the truth) —
     // only the demo resets to its pristine dataset on sign-out
     if (current?.kind === 'user') {
-      // the end-session round-trip runs INSIDE the webview, so the
-      // post-logout landing must be the webview's own origin —
-      // capacitor://localhost (iOS) / https://localhost (Android); a
-      // custom munni:// scheme only deep-links from OUTSIDE the app and
-      // dead-ended on Logto's "Not Found" (user report). Register both
-      // native origins as post sign-out redirect URIs in Logto.
-      const postLogout = window.location.origin;
+      // native: the end-session round-trip opens in the system browser
+      // view (same place sign-in ran — that's where Logto's session
+      // cookie lives), so the landing must be the app's deep-link scheme
+      // (munni://signed-out + munni-dev://signed-out, registered as post
+      // sign-out redirect URIs); the deep-link handler brings the app to
+      // the login screen. Web keeps its own origin.
+      const postLogout = isNativeApp() ? `${config.nativeScheme}://signed-out` : window.location.origin;
       if (!current.testAuth && (await oidcSignOut(postLogout))) return; // full OIDC logout redirects
       await navigate({ to: '/login' });
       return;

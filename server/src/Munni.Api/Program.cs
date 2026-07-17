@@ -225,6 +225,7 @@ app.MapQuotes();
 app.MapAccounts();
 app.MapAdmin(gcConfigured, bankingEnabled);
 app.MapCatalog();
+app.MapStoreSync();
 if (bankingEnabled) app.MapGoCardless();
 
 await app.RunAsync();

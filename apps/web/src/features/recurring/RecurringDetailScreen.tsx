@@ -177,7 +177,7 @@ export function RecurringDetailScreen() {
         {payments.length > 0 ? (
           <div className="rounded-card border border-line bg-surface px-3 py-1" data-testid="recdetail-payments">
             {payments.map((tx) => (
-              <TxRow key={tx.id} tx={tx} onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })} />
+              <TxRow key={tx.id} tx={tx} showDate onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })} />
             ))}
           </div>
         ) : (

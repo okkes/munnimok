@@ -4,6 +4,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { storesAvailable, useStoreConnections, useStoreMarkers, useStoreOps, useUnmatchedReceipts } from '@/application/stores';
+import { StoreSyncCard } from './StoreSyncCard';
 import type { ConnectableStore } from '@/application/stores';
 import type { StoreSyncResult } from '@/features/shopping/stores/sync';
 import { AH_AUTHORIZE_URL } from './stores/ah';
@@ -337,6 +338,7 @@ export function ShoppingConnectionsScreen() {
         <p className="mt-3 px-1 text-[12px] text-ink-4" data-testid="shopping-photo-note">
           {t('shop.photoNote')}
         </p>
+        {signedIn && <StoreSyncCard />}
       </div>
 
       {/* AH connect: open the real login, paste the appie:// landing address */}

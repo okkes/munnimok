@@ -25,7 +25,7 @@ import { LockScreen } from '@/features/lock/LockScreen';
 import { initLockWatcher, useLock } from '@/features/lock/lock';
 import { UpdateToast } from '@/ui/UpdateToast';
 
-const isGcCallbackPath = window.location.pathname.endsWith('/gc-callback');
+const isGcCallbackPath = window.location.pathname.includes('/gc-callback');
 
 // Chosen-offline identities (demo / offline mode) promise ZERO network
 // traffic — not even crash reports. Signed-in users who merely lost
