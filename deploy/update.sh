@@ -37,10 +37,50 @@ fi
 # with "Bind mount failed"
 mkdir -p import-watch
 
+# ── one-shot PostgreSQL 17 → 18 (2026-07-17): a major can't open the old
+#    data directory. Dump everything with a throwaway 17 server reading
+#    the old volume, let 18 initialise the new volume, restore after up.
+#    The old volume stays untouched as the rollback.
+case "$COMPOSE_FILE" in
+  *staging*) PG_PROJECT="munni-staging"; PG_OLD="pgdata_staging"; PG_NEW="pgdata18_staging" ;;
+  *)         PG_PROJECT="$(basename "$(pwd)")"; PG_OLD="pgdata"; PG_NEW="pgdata18" ;;
+esac
+PG_RESTORE=""
+if docker volume inspect "${PG_PROJECT}_${PG_OLD}" >/dev/null 2>&1 \
+   && ! docker volume inspect "${PG_PROJECT}_${PG_NEW}" >/dev/null 2>&1; then
+  echo "postgres 17->18: dumping the old cluster"
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" stop >/dev/null 2>&1 || true
+  docker run -d --name munni-pg17-dump \
+    -v "${PG_PROJECT}_${PG_OLD}":/var/lib/postgresql/data postgres:17-alpine >/dev/null
+  for _ in $(seq 1 30); do
+    docker exec munni-pg17-dump pg_isready -U munni >/dev/null 2>&1 && break
+    sleep 2
+  done
+  PG_RESTORE="pg17-to-18-$(date +%F).sql"
+  # local socket = trust auth on the image's initdb defaults
+  docker exec munni-pg17-dump pg_dumpall -U munni > "$PG_RESTORE"
+  docker rm -f munni-pg17-dump >/dev/null
+  [ -s "$PG_RESTORE" ] || { echo "pg dump came out empty — refusing to continue" >&2; exit 1; }
+fi
+
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull
 # don't die before the status dump below — it captures WHY up failed
 UP_RC=0
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d || UP_RC=$?
+
+if [ -n "$PG_RESTORE" ]; then
+  echo "postgres 18: restoring $PG_RESTORE"
+  for _ in $(seq 1 60); do
+    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T postgres pg_isready -U munni >/dev/null 2>&1 && break
+    sleep 2
+  done
+  # the fresh initdb already created the empty roles/databases — psql
+  # rolls past those "already exists" lines and fills in all the data
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T postgres psql -U munni -d postgres < "$PG_RESTORE" > /dev/null 2>&1 || true
+  # everything that connected before the data landed gets one clean start
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" restart >/dev/null 2>&1 || true
+fi
+
 docker image prune -f
 
 # ── post-deploy status dump (survives container recreation; readable via

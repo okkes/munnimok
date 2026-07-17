@@ -59,14 +59,14 @@ services:
     restart: unless-stopped
 
   postgres:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: munni
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: munni
     volumes:
-      - pgdata_staging:/var/lib/postgresql/data
+      - pgdata18_staging:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U munni"]
       interval: 5s
@@ -75,3 +75,4 @@ services:
 
 volumes:
   pgdata_staging:
+  pgdata18_staging:
