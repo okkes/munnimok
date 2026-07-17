@@ -27,6 +27,11 @@ export const WHATS_NEW: WhatsNewEntry[] = [
         tr: 'Uygulama akışları eve dönüyor: banka bağlamak seni tarayıcıda bırakmak yerine uygulamaya geri getiriyor ve çıkış yapmak düzgünce giriş ekranına iniyor. Şifreli depolama betası artık uygulamayı kilitleyemez — açılamazsa munni güvenle geri döner ve çalışmaya devam eder.',
       },
       {
+        en: 'New: your shop logins (Albert Heijn, Jumbo) can now follow you to your other devices — end-to-end encrypted, so munni’s servers can never read them. Turn it on under Shopping connections; new devices join after you compare a 6-digit code and approve them.',
+        nl: 'Nieuw: je winkellogins (Albert Heijn, Jumbo) kunnen nu meereizen naar je andere apparaten — end-to-end versleuteld, dus de servers van munni kunnen ze nooit lezen. Zet het aan onder Winkelkoppelingen; nieuwe apparaten doen mee nadat je een 6-cijferige code vergelijkt en ze goedkeurt.',
+        tr: 'Yeni: mağaza girişlerin (Albert Heijn, Jumbo) artık diğer cihazlarına da gelebilir — uçtan uca şifreli, yani munni sunucuları onları asla okuyamaz. Alışveriş bağlantıları altından aç; yeni cihazlar 6 haneli kodu karşılaştırıp onaylamanla katılır.',
+      },
+      {
         en: 'Review reads better: the type and categories share the same larger text, and the card names the account the money left. Recurring cost payments show their dates.',
         nl: 'Beoordelen leest prettiger: het type en de categorieën delen dezelfde grotere tekst, en de kaart toont de rekening waar het geld vandaan kwam. Betalingen van terugkerende kosten tonen hun datum.',
         tr: 'İnceleme daha iyi okunuyor: tür ve kategoriler aynı büyük yazıyı paylaşıyor ve kart paranın çıktığı hesabı gösteriyor. Yinelenen gider ödemeleri tarihlerini gösteriyor.',

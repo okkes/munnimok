@@ -210,6 +210,63 @@ whatever screen you're watching refreshes in place.
 - Errors: Sentry-protocol → GlitchTip; demo/offline identities send
   nothing, signed-in users queue crash reports offline and flush later.
 
+## 7b. Store logins on your other devices (E2EE, opt-in)
+
+Store connections (AH/Jumbo tokens) are device-only by default. The
+opt-in sync (store-connection-sync design, SC1–SC3) keeps the privacy
+law intact by making the server **dumb storage for ciphertext**:
+
+- **CSK** — one AES-GCM-256 *Connection Sync Key* per user, minted on
+  the first device that enables the feature. It encrypts every
+  connection row before upload and never leaves a device unwrapped.
+- **Device keys** — each device holds a P-256 ECDH keypair; only the
+  public half is uploaded. The CSK travels between devices ECIES-style:
+  an ephemeral keypair agrees (ECDH → HKDF-SHA256 → AES-GCM) with the
+  *target's* public key, so only the target's private key can unwrap.
+- **Fingerprints** — SHA-256 of the public point, shown as a 6-digit
+  code on both screens during approval. The human comparison is the
+  defence against the server substituting its own key (MITM).
+- **Server surface** (`/me/store-sync/*`): device registry (public key
+  + optional wrap), one ciphertext blob per store, and DELETEs for
+  revocation. No crypto server-side; nothing stored is readable.
+
+### Enrollment & approval
+
+```mermaid
+sequenceDiagram
+    participant P as Phone (enrolled)
+    participant S as Server (dumb storage)
+    participant D as Desktop (new)
+    D->>D: generate P-256 keypair
+    D->>S: register deviceId + publicJwk
+    D-->>D: shows 6-digit fingerprint
+    P->>S: list devices
+    S-->>P: desktop's publicJwk (pending)
+    P-->>P: shows the same fingerprint
+    Note over P,D: human compares the two codes
+    P->>P: wrap CSK to desktop's public key (ECDH+HKDF+AES-GCM)
+    P->>S: store wrappedCsk for desktop
+    D->>S: poll wrap
+    S-->>D: wrappedCsk (opaque to S)
+    D->>D: unwrap with private key → CSK
+    D->>S: fetch connection ciphertext
+    D->>D: decrypt with CSK → tokens work
+```
+
+### Day-to-day flow
+
+```mermaid
+flowchart LR
+    A[connect / refresh a store] -->|encrypt with CSK| B[(server: ciphertext per store)]
+    B -->|pull at app open| C[other device]
+    C -->|newer refreshedAt wins| D[local StoreConnectionRow]
+    E[revoke a device] --> F[server deletes its wrap]
+    F --> G[next token refresh rotates the store tokens]
+```
+
+Loss of *all* devices means the CSK is gone: reconnect the stores once.
+That is deliberate — no escrow, no server-side recovery, no honeypot.
+
 ## 8. Where things live
 
 | Area | Path |

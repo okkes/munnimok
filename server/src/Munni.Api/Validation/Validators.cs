@@ -125,3 +125,29 @@ public sealed class CreateRequisitionRequestValidator : AbstractValidator<Create
             .WithMessage("redirectUrl must be an absolute http(s) URL");
     }
 }
+
+public sealed class RegisterDeviceRequestValidator : AbstractValidator<Shopping.RegisterDeviceRequest>
+{
+    public RegisterDeviceRequestValidator()
+    {
+        RuleFor(r => r.DeviceId).NotEmpty().MaximumLength(64);
+        RuleFor(r => r.PublicJwk).NotEmpty().MaximumLength(2048);
+        RuleFor(r => r.Name).NotEmpty().MaximumLength(80);
+    }
+}
+
+public sealed class WrapRequestValidator : AbstractValidator<Shopping.WrapRequest>
+{
+    public WrapRequestValidator()
+    {
+        RuleFor(r => r.WrappedCsk).NotEmpty().MaximumLength(4096);
+    }
+}
+
+public sealed class ConnectionCipherRequestValidator : AbstractValidator<Shopping.ConnectionCipherRequest>
+{
+    public ConnectionCipherRequestValidator()
+    {
+        RuleFor(r => r.Cipher).NotEmpty().MaximumLength(16384);
+    }
+}

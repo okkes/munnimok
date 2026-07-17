@@ -22,6 +22,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<SpaceAccountLink> SpaceAccountLinks => Set<SpaceAccountLink>();
     public DbSet<GcPendingTx> GcPendingTxs => Set<GcPendingTx>();
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
+    public DbSet<StoreSyncDevice> StoreSyncDevices => Set<StoreSyncDevice>();
+    public DbSet<StoreConnCipher> StoreConnCiphers => Set<StoreConnCipher>();
     public DbSet<AdminGrant> AdminGrants => Set<AdminGrant>();
     public DbSet<ProviderQuota> ProviderQuotas => Set<ProviderQuota>();
     public DbSet<Split> Splits => Set<Split>();
@@ -84,6 +86,16 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         });
         modelBuilder.Entity<GcPendingTx>(e => e.HasKey(x => new { x.GcAccountId, x.EntityId }));
         modelBuilder.Entity<AppSetting>(e => e.HasKey(x => x.Key));
+        modelBuilder.Entity<StoreSyncDevice>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.UserId, x.DeviceId }).IsUnique();
+        });
+        modelBuilder.Entity<StoreConnCipher>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.UserId, x.Store }).IsUnique();
+        });
         modelBuilder.Entity<AdminGrant>(e =>
         {
             e.HasKey(x => x.Id);
@@ -216,6 +228,31 @@ public class AppSetting
 {
     public required string Key { get; set; }
     public required string Value { get; set; }
+}
+
+/// <summary>a device's public key for E2EE store-connection sync (SC1);
+/// WrappedCsk is the sync key encrypted TO this device by another one —
+/// the server can store it but never open it</summary>
+public class StoreSyncDevice
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    public required string DeviceId { get; set; }
+    public required string PublicJwk { get; set; }
+    public required string Name { get; set; }
+    public string? WrappedCsk { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+/// <summary>AES-GCM ciphertext of one store connection's tokens (SC1) —
+/// opaque to the server by design</summary>
+public class StoreConnCipher
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    public required string Store { get; set; }
+    public required string Cipher { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
 }
 
 public class User

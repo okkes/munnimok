@@ -7,6 +7,7 @@ import { ahExchangeCode, extractAhCode } from '@/features/shopping/stores/ah';
 import type { ProxyCall } from '@/features/shopping/stores/ah';
 import { jumboLogin } from '@/features/shopping/stores/jumbo';
 import { syncAhReceipts, syncJumboReceipts } from '@/features/shopping/stores/sync';
+import { pullConnections, pushAllConnections, pushConnection, removeConnectionCipher } from './storeSync';
 import type { StoreSyncResult } from '@/features/shopping/stores/sync';
 import type { ReceiptRow, StoreConnectionRow, StoreMarkerRow } from '@/db/types';
 
@@ -93,12 +94,16 @@ export function useStoreOps(): StoreOps {
         status: 'connected',
         connectedAt: new Date().toISOString().slice(0, 10),
       });
+      // E2EE sync (opt-in): the fresh tokens travel as ciphertext
+      const ahConn = await storage.storeConnGet('ah');
+      if (ahConn) void pushConnection(storage, ahConn).catch(() => undefined);
       void syncAhReceipts(proxyCall, storage, repo, spaceId);
       return true;
     },
     disconnect: async (store) => {
       const connection = await storage.storeConnGet(store);
       await storage.storeConnDelete(store);
+      void removeConnectionCipher(storage, store).catch(() => undefined);
       for (const shared of connection?.sharedSpaceIds ?? [spaceId]) {
         await repo.remove('storeMarker', shared, `store:${shared}:${store}`);
       }
@@ -118,6 +123,8 @@ export function useStoreOps(): StoreOps {
         status: 'connected',
         connectedAt: new Date().toISOString().slice(0, 10),
       });
+      const jumboConn = await storage.storeConnGet('jumbo');
+      if (jumboConn) void pushConnection(storage, jumboConn).catch(() => undefined);
       void syncJumboReceipts(proxyCall, storage, repo, spaceId);
       return 'ok';
     },
@@ -165,6 +172,9 @@ export function useStoreKeepAlive(): void {
     if (ran.current || !storesAvailable() || !navigator.onLine) return;
     ran.current = true;
     void (async () => {
+      // E2EE sync (opt-in): adopt fresher tokens from siblings first,
+      // publish whatever this device refreshed afterwards
+      await pullConnections(storage).catch(() => undefined);
       for (const store of ['ah', 'jumbo'] as const) {
         const connection = await storage.storeConnGet(store);
         if (connection?.status !== 'ok') continue;
@@ -172,6 +182,7 @@ export function useStoreKeepAlive(): void {
         const sync = store === 'jumbo' ? syncJumboReceipts : syncAhReceipts;
         await sync(proxyCall, storage, repo, spaceId);
       }
+      await pushAllConnections(storage).catch(() => undefined);
     })().catch(() => undefined); // best-effort: a closed db or offline hop must not throw
   }, [storage, repo, spaceId]);
 }
