@@ -18,6 +18,27 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.25.0',
+    date: '2026-07-17',
+    items: [
+      {
+        en: 'Counterparties got smarter: set one yourself when the bank left it empty (the account suggests the type — savings → saving, your credit card → transfer), and connecting a new account automatically links every old transaction that pointed at it.',
+        nl: 'Tegenpartijen zijn slimmer: stel er zelf een in wanneer de bank het leeg liet (de rekening stelt het type voor — spaarrekening → sparen, je creditcard → overboeking), en een nieuwe rekening koppelen verbindt automatisch elke oude transactie die ernaar wees.',
+        tr: 'Karşı taraflar akıllandı: banka boş bıraktığında kendin seç (hesap türü öneriyor — birikim → birikim, kredi kartın → transfer) ve yeni bir hesap bağlamak ona işaret eden tüm eski işlemleri otomatik bağlar.',
+      },
+      {
+        en: 'Category names now stay tidy: no duplicate main categories, no subcategory that borrows a main\'s name, and no twins inside one parent — the same rules guard drag & drop. Account deletion moved into Global settings, safely away from Sign out.',
+        nl: 'Categorienamen blijven netjes: geen dubbele hoofdcategorieën, geen subcategorie met de naam van een hoofdcategorie, en geen tweelingen binnen één hoofdcategorie — dezelfde regels gelden bij slepen. Account verwijderen verhuisde naar Algemene instellingen, veilig weg van Uitloggen.',
+        tr: 'Kategori adları düzenli kalıyor: yinelenen ana kategori yok, ana kategori adını alan alt kategori yok, aynı ebeveynde ikiz yok — aynı kurallar sürüklemede de geçerli. Hesap silme, Çıkış yapmadan güvenle uzağa, Genel ayarlara taşındı.',
+      },
+      {
+        en: 'Android fixes: the notification toggle no longer forgets itself after the app is closed, and the user guide opens properly in the app.',
+        nl: 'Android-fixes: de meldingenschakelaar vergeet zichzelf niet meer na het sluiten van de app, en de gebruikersgids opent nu goed in de app.',
+        tr: 'Android düzeltmeleri: bildirim anahtarı uygulama kapatıldıktan sonra artık kendini unutmuyor ve kullanım kılavuzu uygulamada düzgün açılıyor.',
+      },
+    ],
+  },
+  {
     version: '1.24.0',
     date: '2026-07-16',
     items: [

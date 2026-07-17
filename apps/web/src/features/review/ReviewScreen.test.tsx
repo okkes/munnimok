@@ -88,8 +88,11 @@ describe('ReviewScreen (demo identity)', () => {
     expect(bulkList.className).toContain('overflow-y-auto');
     expect(screen.getByTestId('review-bulk-bulk1')).toBeTruthy();
     expect(screen.getByTestId('review-bulk-bulk2')).toBeTruthy();
-    fireEvent.click(screen.getByTestId('review-bulk-open-bulk1'));
-    await screen.findByTestId('review-bulk-detail-bulk1');
+    // row tap (TxRow style now) opens the stacked read-only detail sheet
+    fireEvent.click(screen.getByTestId('tx-row-bulk1'));
+    await screen.findByTestId('review-bulk-detail');
+    // select/unselect all lives inside the sheet
+    expect(screen.getByTestId('review-bulk-select-all')).toBeTruthy();
     fireEvent.click(screen.getByTestId('review-confirm-btn'));
     await waitFor(
       async () => {
@@ -174,7 +177,8 @@ describe('ReviewScreen (demo identity)', () => {
     // waitFor: under coverage instrumentation the expand re-render can lag the click
     await waitFor(() => expect(screen.getByTestId('review-description-text').className).not.toContain('line-clamp-2'));
 
-    fireEvent.click(screen.getByTestId('review-act-split'));
+    // splitting merged into the category list (user redesign): "+ add"
+    fireEvent.click(screen.getByTestId('review-cat-add'));
     const amount0 = (await screen.findByTestId('split-amount-0')) as HTMLInputElement;
     expect(amount0.value).toBe('10,00');
 
@@ -192,8 +196,8 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('split-save'));
 
     // draft model (review redesign): saving the split STAGES it — the card
-    // previews it, nothing is written, the queue does not advance
-    await screen.findByTestId('review-splits');
+    // previews it in the unified category list, nothing is written yet
+    await waitFor(() => expect(screen.getAllByTestId(/^review-cat-/).length).toBeGreaterThanOrEqual(2));
     expect(screen.getByTestId('review-card').textContent).toContain('SPLITCAFE');
     expect((await db.transactions.get('tx-split'))?.splits).toBeUndefined();
 
@@ -351,8 +355,8 @@ describe('ReviewScreen (own-account transfers)', () => {
       const check = new MunniDB(USER_TEST_DB);
       const tx = await check.transactions.get('tx-topup');
       check.close();
-      // credit counter-account: munni's semantics call that a debt payment
-      expect(tx).toMatchObject({ txType: 'debtPayment', linkedAccountId: 'acct-cc', needsReview: 0 });
+      // credit counter-account: a transfer between own accounts (user ruling)
+      expect(tx).toMatchObject({ txType: 'transfer', linkedAccountId: 'acct-cc', needsReview: 0 });
     });
   }, 15_000);
 

@@ -20,6 +20,9 @@ export function typeForLinkedAccount(accountType: AccountType): TxType {
     case 'savings':
       return 'saving';
     case 'credit':
+      // user ruling 2026-07-17: topping up your own credit card is a
+      // transfer between own accounts, not a debt payment
+      return 'transfer';
     case 'mortgage':
     case 'loan':
       return 'debtPayment';

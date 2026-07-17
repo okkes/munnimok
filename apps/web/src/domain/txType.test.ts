@@ -5,7 +5,7 @@ import type { AccountType, TxType } from '@/db/types';
 describe('typeForLinkedAccount', () => {
   const cases: [AccountType, TxType][] = [
     ['savings', 'saving'],
-    ['credit', 'debtPayment'],
+    ['credit', 'transfer'], // user ruling: own credit card = transfer
     ['mortgage', 'debtPayment'],
     ['loan', 'debtPayment'],
     ['brokerage', 'investment'],

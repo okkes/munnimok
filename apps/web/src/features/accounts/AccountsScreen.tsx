@@ -6,6 +6,7 @@ import type { ParsedStatement } from '@/lib/statements/parseStatement';
 import { getApiCapabilities } from '@/lib/api';
 import { useSession } from '@/app/session';
 import { importCamtStatements } from './importCamt';
+import { linkAllCounterparties } from '@/application/counterLink';
 import type { ImportResult } from './importCamt';
 import { apiFeedGateway, fetchMyFeedIds } from './feedGateway';
 import { AttachSheet } from './AttachSheet';
@@ -181,6 +182,13 @@ export function AccountsScreen() {
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [importError, setImportError] = useState(false);
   const identity = useSession((s) => s.identity);
+
+  // GoCardless accounts arrive via sync, so there is no local "account
+  // created" moment to hook — reconcile whenever this screen opens
+  // instead (idempotent; rows with links are skipped)
+  useEffect(() => {
+    void linkAllCounterparties(db, repo, spaceId).catch(() => undefined);
+  }, [db, repo, spaceId]);
   const [gcAvailable, setGcAvailable] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
   const [myFeedIds, setMyFeedIds] = useState<ReadonlySet<string> | undefined>(undefined);
@@ -214,6 +222,9 @@ export function AccountsScreen() {
     // demo/offline keep everything merged in the current space
     const feeds = identity?.kind === 'user' ? apiFeedGateway(identity.sub) : undefined;
     setImportResult(await importCamtStatements(repo, db, spaceId, importPreview, feeds));
+    // a just-imported account may BE the counterparty of older rows
+    // (and vice versa) — retro-link them (user rule)
+    await linkAllCounterparties(db, repo, spaceId).catch(() => undefined);
     // the import may have registered new feeds — refresh ownership so the
     // new accounts classify under MINE, not "shared with me"
     if (feeds) void fetchMyFeedIds().then(setMyFeedIds).catch(() => undefined);

@@ -207,32 +207,14 @@ export function TxDetailScreen() {
             <span className="text-xs text-ink-4">{t(`tx.type.${tx.txType}`)}</span>
             <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
           </button>
-          {tx.counterIban && (
-            <>
-              <div className="mx-4 h-px bg-line-2" />
-              {counterAccount ? (
-                <button
-                  data-testid="tx-detail-counterparty-row"
-                  onClick={() => setCounterOpen(true)}
-                  className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
-                >
-                  <Icon name="swap-horizontal" size={20} color="var(--m-accent-deep)" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate">{counterAccount.name}</span>
-                    <span className="block truncate font-mono text-[11px] text-ink-4">{tx.counterIban}</span>
-                  </span>
-                  <span className="text-xs text-ink-4">{t('tx.counterparty')}</span>
-                  <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-                </button>
-              ) : (
-                <div className="flex items-center gap-3 px-4 py-3.5" data-testid="tx-detail-counterparty">
-                  <Icon name="swap-horizontal" size={20} color="var(--m-ink-3)" />
-                  <span className="min-w-0 flex-1 truncate font-mono text-[13px] text-ink-2">{tx.counterIban}</span>
-                  <span className="text-xs text-ink-4">{t('tx.counterparty')}</span>
-                </div>
-              )}
-            </>
-          )}
+          <div className="mx-4 h-px bg-line-2" />
+          <CounterpartyRow
+            counterIban={tx.counterIban}
+            counterAccountName={counterAccount?.name}
+            linkedAccountName={linkedAccount?.name}
+            onOpenAccount={() => setCounterOpen(true)}
+            onEdit={() => setTypeOpen(true)}
+          />
           {tx.txType === 'expense' && (
             <>
               <div className="mx-4 h-px bg-line-2" />
@@ -434,5 +416,50 @@ function NotesField({
       rows={3}
       className={className}
     />
+  );
+}
+
+/** the counterparty row: a live door when the IBAN matches an own
+ * account, otherwise EDITABLE (user remark: CAMT rows often ship
+ * without one — picking an own account still works and suggests the
+ * type through the same sheet as the type row) */
+function CounterpartyRow({
+  counterIban,
+  counterAccountName,
+  linkedAccountName,
+  onOpenAccount,
+  onEdit,
+}: Readonly<{
+  counterIban?: string;
+  counterAccountName?: string;
+  linkedAccountName?: string;
+  onOpenAccount: () => void;
+  onEdit: () => void;
+}>) {
+  const { t } = useLang();
+  const matched = !!counterAccountName;
+  const primary = counterAccountName ?? linkedAccountName;
+  return (
+    <button
+      data-testid={matched ? 'tx-detail-counterparty-row' : 'tx-detail-counterparty-edit'}
+      onClick={matched ? onOpenAccount : onEdit}
+      className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+    >
+      <Icon name="swap-horizontal" size={20} color={primary ? 'var(--m-accent-deep)' : 'var(--m-ink-3)'} />
+      <span className="min-w-0 flex-1">
+        {primary ? (
+          <span className="block truncate">{primary}</span>
+        ) : (
+          <span className="block truncate text-ink-3" data-testid="tx-detail-counter-add">
+            {counterIban ?? t('tx.counterAccountPick')}
+          </span>
+        )}
+        {counterIban && primary && (
+          <span className="block truncate font-mono text-[11px] text-ink-4">{counterIban}</span>
+        )}
+      </span>
+      <span className="text-xs text-ink-4">{t('tx.counterparty')}</span>
+      <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+    </button>
   );
 }

@@ -49,7 +49,14 @@ export function HelpIndexScreen() {
             icon="book-open-page-variant-outline"
             iconColor="var(--m-accent-deep)"
             title={t('help.userGuide')}
-            onClick={() => window.open(`${import.meta.env.BASE_URL}guide/`, '_blank', 'noopener')}
+            // native: window.open('_blank') renders a blank webview (user
+            // report) — navigate in place instead; the guide's own
+            // "back to the app" link returns here
+            onClick={() =>
+              isNativeApp()
+                ? globalThis.location.assign(`${import.meta.env.BASE_URL}guide/`)
+                : window.open(`${import.meta.env.BASE_URL}guide/`, '_blank', 'noopener')
+            }
           />
         </div>
         <div className="overflow-hidden rounded-card border border-line bg-surface">

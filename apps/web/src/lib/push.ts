@@ -26,6 +26,17 @@ export async function getPushSubscription(): Promise<PushSubscription | null> {
   return registration.pushManager.getSubscription();
 }
 
+/**
+ * The settings toggle's source of truth. The native shell registers an
+ * FCM token (kept in localStorage), NOT a web push subscription — the
+ * old subscription check read OFF after every app kill on Android even
+ * though pushes kept arriving (user report).
+ */
+export async function pushEnabled(): Promise<boolean> {
+  if (isNativeApp()) return !!localStorage.getItem(FCM_TOKEN_KEY);
+  return !!(await getPushSubscription());
+}
+
 /** asks permission, subscribes the browser and registers with the API */
 export async function enablePush(vapidPublicKey: string): Promise<boolean> {
   if (isNativeApp()) {

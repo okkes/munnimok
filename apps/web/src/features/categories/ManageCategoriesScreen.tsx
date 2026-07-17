@@ -21,6 +21,14 @@ import {
 import type { CategoryChanges, PendingCommit } from './categoryOps';
 import { catName, useCategories } from './useCategories';
 import type { Cat } from './useCategories';
+import { categoryNameConflict } from '@/domain/categoryNames';
+import type { CategoryNameConflict, NamedCategory } from '@/domain/categoryNames';
+
+const NAME_ERROR_KEYS = {
+  duplicateParent: 'cats.nameDuplicateParent',
+  subNamedLikeParent: 'cats.nameIsParent',
+  duplicateSub: 'cats.nameDuplicateSub',
+} as const;
 
 // curated MDI icons for custom categories
 const ICONS = [
@@ -67,6 +75,8 @@ export function ManageCategoriesScreen() {
   const [dragging, setDragging] = useState<CategoryRow | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [moveConfirm, setMoveConfirm] = useState<{ sub: CategoryRow; targetId: string; commit: PendingCommit } | null>(null);
+  const [nameError, setNameError] = useState<CategoryNameConflict | null>(null);
+  const [dragError, setDragError] = useState<CategoryNameConflict | null>(null);
   const dropTargetRef = useRef<string | null>(null);
   dropTargetRef.current = dropTarget;
   const ghostRef = useRef<HTMLDivElement>(null);
@@ -134,8 +144,32 @@ export function ManageCategoriesScreen() {
     }
   };
 
+  // naming rules (user rules): resolved names, builtins included
+  const namedCategories = (): NamedCategory[] =>
+    cats.all.map((cat) => ({
+      id: cat.id,
+      name: catName(cat, t),
+      isParent: !!cat.isParent,
+      parentId: cat.parentId,
+    }));
+
   const save = async () => {
     if (!mode || !name.trim()) return;
+    let candidateParentId: string | undefined;
+    if (mode.kind === 'newSub') candidateParentId = mode.parentId;
+    else if (mode.kind === 'editSub') candidateParentId = moveTo ?? mode.row.parentId;
+    const conflict = categoryNameConflict(
+      {
+        name,
+        parentId: candidateParentId,
+        selfId: mode.kind === 'editMain' || mode.kind === 'editSub' ? mode.row.id : undefined,
+      },
+      namedCategories(),
+    );
+    if (conflict) {
+      setNameError(conflict);
+      return;
+    }
     if (mode.kind === 'newMain') {
       await createMainCategory(repo, spaceId, { name: name.trim(), icon, color, txType, otherName: t('cats.other') });
       setMode(null);
@@ -265,6 +299,17 @@ export function ManageCategoriesScreen() {
       const targetId = dropTargetRef.current;
       endDrag();
       if (!targetId || targetId === dragging.parentId) return;
+      // naming rules apply to drags too: the target parent may already
+      // hold a sub with this name (or the name IS a parent's)
+      const conflict = categoryNameConflict(
+        { name: catName(cats.byId(dragging.id), t), parentId: targetId, selfId: dragging.id },
+        namedCategories(),
+      );
+      if (conflict) {
+        setDragError(conflict);
+        setTimeout(() => setDragError(null), 4000);
+        return;
+      }
       prepareCategoryEdit(db, repo, dragging, { parentId: targetId })
         .then((commit) => setMoveConfirm({ sub: dragging, targetId, commit }))
         .catch(() => undefined); // db closed under us (teardown) — drop the move
@@ -332,6 +377,14 @@ export function ManageCategoriesScreen() {
         }
       />
       <div ref={scrollRef} className={`relative min-h-0 flex-1 overflow-y-auto px-5 pb-6 ${dragging ? 'select-none' : ''}`}>
+        {dragError && (
+          <p
+            className="mt-2 rounded-card border border-negative/40 bg-negative/10 px-3 py-2 text-[12px] text-negative"
+            data-testid="cats-drag-error"
+          >
+            {t(NAME_ERROR_KEYS[dragError])}
+          </p>
+        )}
         {/* one-line legend: the arrows carry meaning nowhere else explained */}
         <p className="mt-2 flex items-center gap-1 px-1 text-[11px] text-ink-4">
           <Icon name="arrow-up-thin" size={13} /> {t('cats.legendDebit')}
@@ -506,10 +559,18 @@ export function ManageCategoriesScreen() {
           <input
             data-testid="catform-name"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => {
+              setName(e.target.value);
+              setNameError(null);
+            }}
             placeholder={t('cats.name')}
             className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
           />
+          {nameError && (
+            <p className="text-[12px] text-negative" data-testid="catform-name-error">
+              {t(NAME_ERROR_KEYS[nameError])}
+            </p>
+          )}
 
           {/* main: transaction type + color */}
           {isMainForm && (
