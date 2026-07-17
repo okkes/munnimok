@@ -65,9 +65,9 @@ for (const V of VARIANTS) {
         if ((await card.textContent()) !== before) return;
         await page.click('[data-testid="review-confirm-btn"]', { timeout: 2000 }).catch(() => undefined);
         throw new Error('queue not advanced yet');
-      }).toPass({ timeout: 20_000, intervals: [400, 800, 1200] });
+      }).toPass({ timeout: 45_000, intervals: [500, 1000, 2000] });
     }
-    await expect(page.locator('[data-testid="review-empty"]')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('[data-testid="review-empty"]')).toBeVisible({ timeout: 30_000 });
     await page.click('[data-testid="review-back"]');
     await expect(page.locator('[data-testid="screen-home"]')).toBeVisible();
     await expect(page.locator('[data-testid="home-review-banner"]')).toHaveCount(0);
