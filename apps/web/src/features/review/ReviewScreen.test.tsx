@@ -37,12 +37,16 @@ describe('ReviewScreen (demo identity)', () => {
     await screen.findByTestId('review-card');
     const db = new MunniDB('munni_demo');
     const current = (await db.transactions.filter((t) => t.needsReview === 1).toArray())
-      .sort((a, b) => b.date.localeCompare(a.date))[0];
+      .sort((a, b) => a.date.localeCompare(b.date))[0]; // oldest first (user rule)
 
+    // the row opens the unified editor (user redesign); a single row
+    // saves as a plain category
     fireEvent.click(screen.getByTestId('review-category-chip'));
+    fireEvent.click(await screen.findByTestId('split-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-coffee'));
+    fireEvent.click(screen.getByTestId('split-save'));
     // staged, not yet written — the chip shows the choice
-    expect(screen.getByTestId('review-category-chip').textContent).toContain('Coffee');
+    await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Coffee'));
     expect((await db.transactions.get(current.id))?.catId).not.toBe('coffee');
 
     fireEvent.click(screen.getByTestId('review-confirm-btn'));
@@ -59,18 +63,21 @@ describe('ReviewScreen (demo identity)', () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
 
-    // two more flagged charges from the same merchant as the newest card
+    // two more flagged charges from the same merchant as the first card;
+    // oldest-first queue: bulk1 (2020) becomes the CURRENT card, bulk2 and
+    // the demo row are its "similar" companions
     const db = new MunniDB('munni_demo');
     const repo = new Repo(db, new HlcClock('seed-rev'), { trackOutbox: false });
-    const newest = (await db.transactions.filter((t) => t.needsReview === 1).toArray())
-      .sort((a, b) => b.date.localeCompare(a.date))[0];
-    for (const [id, offset] of [['bulk1', 40], ['bulk2', 70]] as const) {
+    const first = (await db.transactions.filter((t) => t.needsReview === 1).toArray())
+      .sort((a, b) => a.date.localeCompare(b.date))[0];
+    for (const [id, date] of [['bulk1', '2020-01-15'], ['bulk2', '2020-02-15']] as const) {
       await repo.upsert('transaction', DEMO_SPACE_ID, id, {
-        accountId: newest.accountId,
-        date: `2025-0${offset > 50 ? 1 : 2}-15`,
-        amountCents: newest.amountCents,
+        accountId: first.accountId,
+        date,
+        amountCents: first.amountCents,
         currency: 'EUR',
-        merchant: newest.merchant,
+        merchant: first.merchant,
+        catId: first.catId, // bulk1 IS the card — it needs a ready draft
         txType: 'expense',
         needsReview: 1,
       });
@@ -86,13 +93,17 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('review-bulk-expand'));
     const bulkList = await screen.findByTestId('review-bulk-list');
     expect(bulkList.className).toContain('overflow-y-auto');
-    expect(screen.getByTestId('review-bulk-bulk1')).toBeTruthy();
+    // bulk1 IS the card now; bulk2 sits in the similar list
     expect(screen.getByTestId('review-bulk-bulk2')).toBeTruthy();
     // row tap (TxRow style now) opens the stacked read-only detail sheet
-    fireEvent.click(screen.getByTestId('tx-row-bulk1'));
+    fireEvent.click(screen.getByTestId('tx-row-bulk2'));
     await screen.findByTestId('review-bulk-detail');
     // select/unselect all lives inside the sheet
     expect(screen.getByTestId('review-bulk-select-all')).toBeTruthy();
+    // the async prediction arms the confirm — wait before clicking
+    await waitFor(() =>
+      expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false),
+    );
     fireEvent.click(screen.getByTestId('review-confirm-btn'));
     await waitFor(
       async () => {
@@ -120,8 +131,7 @@ describe('ReviewScreen (demo identity)', () => {
       active: 1,
       merchantKey: 'netflix com',
     });
-    const today = new Date();
-    const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const iso = '2020-03-01'; // oldest-first queue: an old date makes this the CURRENT card
     await repo.upsert('transaction', DEMO_SPACE_ID, 'tx-nfx', {
       accountId: 'demo_main',
       date: iso,
@@ -153,8 +163,7 @@ describe('ReviewScreen (demo identity)', () => {
     // a controlled newest card with a long description
     const db = new MunniDB('munni_demo');
     const repo = new Repo(db, new HlcClock('seed-split'), { trackOutbox: false });
-    const today = new Date();
-    const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const iso = '2020-03-01'; // oldest-first queue: an old date makes this the CURRENT card
     await repo.upsert('transaction', DEMO_SPACE_ID, 'tx-split', {
       accountId: 'demo_main',
       date: iso,
@@ -177,8 +186,10 @@ describe('ReviewScreen (demo identity)', () => {
     // waitFor: under coverage instrumentation the expand re-render can lag the click
     await waitFor(() => expect(screen.getByTestId('review-description-text').className).not.toContain('line-clamp-2'));
 
-    // splitting merged into the category list (user redesign): "+ add"
-    fireEvent.click(screen.getByTestId('review-cat-add'));
+    // the category row opens the unified editor with ONE row (user
+    // redesign) — a second row is added explicitly
+    fireEvent.click(screen.getByTestId('review-category-chip'));
+    fireEvent.click(await screen.findByTestId('split-add-row'));
     const amount0 = (await screen.findByTestId('split-amount-0')) as HTMLInputElement;
     expect(amount0.value).toBe('10,00');
 
@@ -215,30 +226,34 @@ describe('ReviewScreen (demo identity)', () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
 
-    // stage a deliberate category so the draft is decided
+    // stage a deliberate category — the row opens the unified editor now
     fireEvent.click(screen.getByTestId('review-category-chip'));
+    fireEvent.click(await screen.findByTestId('split-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-coffee'));
-    expect(screen.getByTestId('review-category-chip').textContent).toContain('Coffee');
+    fireEvent.click(screen.getByTestId('split-save'));
+    await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Coffee'));
     expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false);
 
     // flip the type to one Coffee does not speak: the chip must ask again
-    fireEvent.click(screen.getByTestId('review-act-type'));
+    fireEvent.click(screen.getByTestId('review-type-row'));
     await screen.findByTestId('txtype-options');
     fireEvent.click(screen.getByTestId('txtype-saving'));
     await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).not.toContain('Coffee'));
-    expect(screen.getByTestId('review-act-type').textContent).toContain('Saving');
+    expect(screen.getByTestId('review-type-row').textContent).toContain('Saving');
     expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(true);
 
     // nothing was written mid-flight: the tx still holds its own type
     const db = new MunniDB('munni_demo');
     const current = (await db.transactions.filter((t) => t.needsReview === 1).toArray())
-      .sort((a, b) => b.date.localeCompare(a.date))[0];
+      .sort((a, b) => a.date.localeCompare(b.date))[0]; // oldest first (user rule)
     expect(current.txType).not.toBe('saving');
     db.close();
 
     // a saving-compatible category re-arms Confirm
     fireEvent.click(screen.getByTestId('review-category-chip'));
+    fireEvent.click(await screen.findByTestId('split-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
+    fireEvent.click(screen.getByTestId('split-save'));
     await waitFor(() => expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false));
   }, 15_000);
 

@@ -95,8 +95,10 @@ describe('counterparty account number on the detail screen', () => {
     renderApp('/transactions/tx-cp1');
     const row = await screen.findByTestId('tx-detail-counterparty-edit');
     expect(row.textContent).toContain('NL99ELDR0000000042');
-    // tapping opens the counter-account picker (same sheet as the type row)
+    // tapping opens the Type sheet; the account picker stacks behind
+    // its counterparty row (user redesign)
     fireEvent.click(row);
+    fireEvent.click(await screen.findByTestId('txtype-counter-row'));
     expect(await screen.findByTestId('txtype-accounts')).toBeTruthy();
   }, 15_000);
 
@@ -138,6 +140,8 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
   it('linking a savings counter-account sets the type as an editable default', async () => {
     renderApp('/transactions/dm6');
     fireEvent.click(await screen.findByTestId('tx-detail-type-row'));
+    // the account list stacks behind the counterparty row now
+    fireEvent.click(await screen.findByTestId('txtype-counter-row'));
     fireEvent.click(await screen.findByTestId('txtype-linked-demo_save'));
     await waitFor(() => expect(screen.getByTestId('tx-detail-type-row').textContent).toContain('Saving'));
 
@@ -158,6 +162,7 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
 
     // unlinking clears the suggestion note
     fireEvent.click(screen.getByTestId('tx-detail-type-row'));
+    fireEvent.click(await screen.findByTestId('txtype-counter-row'));
     fireEvent.click(await screen.findByTestId('txtype-linked-none'));
     fireEvent.click(screen.getByTestId('tx-detail-type-row'));
     await waitFor(() => expect(screen.queryByTestId('txtype-default-note')).toBeNull());
@@ -327,4 +332,41 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     await waitFor(() => expect((screen.getByTestId('split-amount-0') as HTMLInputElement).value).toBe('60'));
     expect((screen.getByTestId('split-amount-1') as HTMLInputElement).value).toBe('40');
   });
+});
+
+describe('bulk apply from the detail (user request)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase('munni_demo');
+  });
+
+  it('recategorizing offers to reach every same-merchant transaction, reviewed included', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(db, new HlcClock('seed-bulk'), { trackOutbox: false });
+    for (const [id, needsReview] of [['blk-a', 0], ['blk-b', 1]] as const) {
+      await repo.upsert('transaction', DEMO_SPACE_ID, id, {
+        accountId: 'demo_main', date: '2026-06-01', amountCents: -900, currency: 'EUR',
+        merchant: 'BULKSHOP BV', catId: 'groceries', txType: 'expense', needsReview,
+      });
+    }
+    cleanup();
+
+    renderApp('/transactions/blk-a');
+    fireEvent.click(await screen.findByTestId('tx-detail-category-row'));
+    fireEvent.click(await screen.findByTestId('catpicker-hobby'));
+
+    // the offer names the ONE other BULKSHOP row (reviewed or not)
+    const offer = await screen.findByTestId('tx-detail-bulk-offer');
+    expect(offer.textContent).toContain('1');
+    fireEvent.click(screen.getByTestId('tx-detail-bulk-apply'));
+
+    await waitFor(async () => {
+      expect(await db.transactions.get('blk-b')).toMatchObject({ catId: 'hobby', needsReview: 0 });
+    });
+    expect(screen.queryByTestId('tx-detail-bulk-offer')).toBeNull(); // offer consumed
+    db.close();
+  }, 15_000);
 });

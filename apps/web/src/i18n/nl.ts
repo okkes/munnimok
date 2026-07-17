@@ -1209,6 +1209,8 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'cats.nameDuplicateParent': 'Er bestaat al een hoofdcategorie met deze naam.',
   'cats.nameIsParent': 'Deze naam is van een hoofdcategorie — kies een andere naam voor de subcategorie.',
   'cats.nameDuplicateSub': 'Deze hoofdcategorie heeft al een subcategorie met deze naam.',
+  'tx.bulkOffer': 'Ook toepassen op {n} andere transacties van deze winkel?',
+  'tx.bulkApply': 'Toepassen',
   'tx.counterAccountPick': 'Tegenrekening instellen…',
   'review.addCategory': 'Categorie toevoegen',
   'review.bulkCount': '{n} vergelijkbare transacties',

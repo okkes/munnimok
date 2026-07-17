@@ -1207,6 +1207,8 @@ export const en = {
   'cats.nameDuplicateParent': 'A main category with this name already exists.',
   'cats.nameIsParent': 'This name belongs to a main category — pick a different one for the subcategory.',
   'cats.nameDuplicateSub': 'This parent already has a subcategory with this name.',
+  'tx.bulkOffer': 'Also apply to {n} other transactions of this merchant?',
+  'tx.bulkApply': 'Apply',
   'tx.counterAccountPick': 'Set counter account…',
   'review.addCategory': 'Add category',
   'review.bulkCount': '{n} similar transactions',

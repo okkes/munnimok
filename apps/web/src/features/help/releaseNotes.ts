@@ -18,6 +18,22 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.1.0',
+    date: '2026-07-17',
+    items: [
+      {
+        en: 'The review card got its final shape: the type sits on top with its own color, every category edits through one editor (add, remove or split right there), the "why this suggestion" hides behind a small ⓘ, and the queue now runs oldest-to-newest. Transaction types wear icons and colors everywhere.',
+        nl: 'De beoordelingskaart kreeg zijn definitieve vorm: het type staat bovenaan met een eigen kleur, elke categorie bewerk je via één editor (toevoegen, verwijderen of splitsen ter plekke), het "waarom deze suggestie" zit achter een kleine ⓘ, en de wachtrij loopt nu van oud naar nieuw. Transactietypes dragen overal iconen en kleuren.',
+        tr: 'İnceleme kartı son halini aldı: tür kendi rengiyle üstte, her kategori tek bir düzenleyiciden geçiyor (ekle, kaldır veya orada böl), "neden bu öneri" küçük bir ⓘ arkasında ve kuyruk artık eskiden yeniye akıyor. İşlem türleri her yerde simge ve renk taşıyor.',
+      },
+      {
+        en: 'Changing a category from the transaction detail now offers to apply it to every other transaction of that merchant — reviewed ones included. Recurring cost logos fill their whole tile, and the bulk-review sheets grew taller with a richer read-only preview.',
+        nl: 'Een categorie wijzigen vanuit de transactiedetails biedt nu aan die toe te passen op elke andere transactie van die winkel — ook beoordeelde. Logo\'s van terugkerende kosten vullen hun hele tegel, en de bulkbeoordelingsvellen werden hoger met een rijker alleen-lezen voorbeeld.',
+        tr: 'İşlem detayından kategori değiştirmek artık o satıcının diğer tüm işlemlerine uygulamayı öneriyor — incelenmişler dahil. Yinelenen gider logoları karelerini tamamen dolduruyor ve toplu inceleme sayfaları daha uzun, daha zengin bir önizlemeyle geldi.',
+      },
+    ],
+  },
+  {
     version: '2.0.0',
     date: '2026-07-17',
     items: [

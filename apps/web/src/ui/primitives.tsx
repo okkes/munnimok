@@ -63,7 +63,7 @@ export function Tile({
   const box = size === 48 ? 'h-12 w-12 rounded-2xl' : 'h-9 w-9 rounded-xl';
   return (
     <span
-      className={`flex shrink-0 items-center justify-center ${box} ${bg ? '' : TONE_BG[tone]}`}
+      className={`relative flex shrink-0 items-center justify-center ${box} ${bg ? '' : TONE_BG[tone]}`}
       style={bg ? { background: bg, color: color ?? undefined } : undefined}
     >
       {children ?? (icon && <Icon name={icon} size={size === 48 ? 22 : 17} color={color ?? (bg ? 'currentColor' : TONE_FG[tone])} />)}
