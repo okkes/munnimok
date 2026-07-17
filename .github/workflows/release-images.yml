@@ -75,6 +75,14 @@ jobs:
           VITE_LOGTO_APP_ID: ${{ vars.VITE_LOGTO_APP_ID }}
           VITE_LOGTO_APP_ID_ADMIN: ${{ vars.VITE_LOGTO_APP_ID_ADMIN }}
 
+      # AC3: bake the published catalog into the web bundle as the offline
+      # baseline (edits the checkout before it becomes the build context;
+      # any fetch failure keeps the committed null default)
+      - name: Bake catalog baseline
+        run: node apps/web/scripts/bake-catalog.mjs
+        env:
+          CATALOG_URL: ${{ steps.meta.outputs.api_url }}/catalog
+
       - uses: docker/setup-buildx-action@v4
 
       - name: Login to GHCR

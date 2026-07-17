@@ -68,6 +68,11 @@ jobs:
           F="${{ steps.env.outputs.flavor }}"
           echo "cap=$(echo "${F:0:1}" | tr a-z A-Z)${F:1}" >> "$GITHUB_OUTPUT"
 
+      - name: Bake catalog baseline (AC3)
+        run: node apps/web/scripts/bake-catalog.mjs
+        env:
+          CATALOG_URL: ${{ vars.NATIVE_API_URL }}/catalog
+
       - name: Build web bundle and sync the shell
         run: |
           npm ci

@@ -48,7 +48,27 @@ interface BankProviderState {
   configured: string[];
 }
 
-type Screen = 'overview' | 'users' | 'connections';
+type Screen = 'overview' | 'users' | 'connections' | 'catalog';
+
+/** the operator-published catalog document (admin-catalog design AC2) */
+interface CatalogCategory {
+  id: string;
+  parentId?: string;
+  names: { en: string; nl: string; tr: string };
+  icon: string;
+  txTypes?: string[];
+  deleted?: boolean;
+}
+interface CatalogKeywordRule {
+  catId: string;
+  keywords: string[];
+}
+interface CatalogDoc {
+  version: number;
+  categories: CatalogCategory[];
+  keywords: CatalogKeywordRule[];
+}
+const EMPTY_CATALOG: CatalogDoc = { version: 0, categories: [], keywords: [] };
 
 /** GC consents run ~90 days; flag the ones inside the final 14 */
 const expiresSoon = (r: AdminRequisition): boolean =>
@@ -74,6 +94,7 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
   const [provider, setProvider] = useState<BankProviderState | null>(null);
   const [quota, setQuota] = useState<ProviderQuota[]>([]);
   const [health, setHealth] = useState<HealthInfo | null>(null);
+  const [catalog, setCatalog] = useState<CatalogDoc | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [denied, setDenied] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -110,6 +131,9 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
     if (providerRes.ok) setProvider((await providerRes.json()) as BankProviderState);
     if (quotaRes.ok) setQuota((await quotaRes.json()) as ProviderQuota[]);
     if (healthRes?.ok) setHealth((await healthRes.json()) as HealthInfo);
+    const catalogRes = await call('/catalog').catch(() => null);
+    if (catalogRes?.status === 204) setCatalog(EMPTY_CATALOG);
+    else if (catalogRes?.ok) setCatalog((await catalogRes.json()) as CatalogDoc);
   }, [call, config.apiUrl]);
 
   useEffect(() => {
@@ -129,6 +153,8 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
   };
 
   const pickProvider = (id: string) => act(() => call('/admin/bank-provider', { method: 'PUT', body: JSON.stringify({ provider: id }) }));
+  const publishCatalog = (categories: CatalogCategory[], keywords: CatalogKeywordRule[]) =>
+    act(() => call('/admin/catalog', { method: 'PUT', body: JSON.stringify({ categories, keywords }) }));
   const promote = (userSub: string) => act(() => call(`/admin/admins/${encodeURIComponent(userSub)}`, { method: 'POST' }));
   const demote = (userSub: string) => act(() => call(`/admin/admins/${encodeURIComponent(userSub)}`, { method: 'DELETE' }));
 
@@ -154,6 +180,7 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
               ['overview', 'Overview'],
               ['users', 'Users'],
               ['connections', 'Bank connections'],
+              ['catalog', 'Catalog'],
             ] as [Screen, string][]
           ).map(([id, label]) => (
             <button
@@ -198,6 +225,9 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
             busy={busy}
             onPickProvider={pickProvider}
           />
+        )}
+        {!denied && screen === 'catalog' && catalog && (
+          <CatalogScreen key={catalog.version} doc={catalog} busy={busy} onPublish={publishCatalog} />
         )}
         {!denied && screen === 'users' && (
           <UsersScreen users={users} busy={busy} onPromote={promote} onDemote={demote} />
@@ -491,5 +521,222 @@ function ConnectionsScreen({
         </table>
       </section>
     </>
+  );
+}
+
+const TX_TYPES = ['expense', 'income', 'saving', 'transfer', 'debtPayment', 'investment', 'adjustment'];
+
+/**
+ * Catalog editor (AC2): edits the OVERLAY document, not the app bundle —
+ * entries here rename, add or retire built-in categories and extend the
+ * prediction keywords. Publishing bumps the server-owned version; every
+ * client picks it up on its next sync.
+ */
+function CatalogScreen({
+  doc,
+  busy,
+  onPublish,
+}: Readonly<{
+  doc: CatalogDoc;
+  busy: boolean;
+  onPublish: (categories: CatalogCategory[], keywords: CatalogKeywordRule[]) => void;
+}>) {
+  const [categories, setCategories] = useState<CatalogCategory[]>(doc.categories);
+  const [keywords, setKeywords] = useState<CatalogKeywordRule[]>(doc.keywords);
+  const [confirmDelete, setConfirmDelete] = useState<{ id: string; typed: string } | null>(null);
+  const [draft, setDraft] = useState({ id: '', parentId: '', en: '', nl: '', tr: '', icon: '', txType: 'expense' });
+  const [keywordDraft, setKeywordDraft] = useState({ catId: '', words: '' });
+  const dirty =
+    JSON.stringify(categories) !== JSON.stringify(doc.categories) ||
+    JSON.stringify(keywords) !== JSON.stringify(doc.keywords);
+
+  const addCategory = () => {
+    const id = draft.id.trim();
+    if (!id || !draft.en.trim() || !draft.nl.trim() || !draft.tr.trim() || !draft.icon.trim()) return;
+    if (categories.some((c) => c.id === id)) return;
+    setCategories([
+      ...categories,
+      {
+        id,
+        parentId: draft.parentId.trim() || undefined,
+        names: { en: draft.en.trim(), nl: draft.nl.trim(), tr: draft.tr.trim() },
+        icon: draft.icon.trim(),
+        txTypes: [draft.txType],
+      },
+    ]);
+    setDraft({ id: '', parentId: '', en: '', nl: '', tr: '', icon: '', txType: 'expense' });
+  };
+
+  const toggleTombstone = (id: string) => {
+    setCategories(categories.map((c) => (c.id === id ? { ...c, deleted: !c.deleted } : c)));
+    setConfirmDelete(null);
+  };
+
+  const addKeywordRule = () => {
+    const catId = keywordDraft.catId.trim();
+    const words = keywordDraft.words
+      .split(',')
+      .map((w) => w.trim().toLowerCase())
+      .filter(Boolean);
+    if (!catId || words.length === 0) return;
+    setKeywords([...keywords, { catId, keywords: words }]);
+    setKeywordDraft({ catId: '', words: '' });
+  };
+
+  return (
+    <>
+      <h1>Catalog</h1>
+      <p className="sub">
+        Version {doc.version} — overlay entries rename, add or retire built-in categories and extend the import
+        prediction keywords. Devices apply a published version on their next sync; offline profiles keep the
+        baseline they installed.
+      </p>
+
+      <section className="card">
+        <h2>Category overlays</h2>
+        {categories.length === 0 && <p className="sub">No overlay entries yet — the bundled catalog applies as-is.</p>}
+        {categories.length > 0 && (
+          <table data-testid="catalog-categories">
+            <thead>
+              <tr>
+                <th>id</th><th>parent</th><th>EN</th><th>NL</th><th>TR</th><th>icon</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {categories.map((c) => (
+                <tr
+                  key={c.id}
+                  data-testid={'catalog-cat-' + c.id}
+                  style={c.deleted ? { textDecoration: 'line-through', opacity: 0.6 } : undefined}
+                >
+                  <td>{c.id}</td>
+                  <td>{c.parentId ?? '—'}</td>
+                  <td>{c.names.en}</td>
+                  <td>{c.names.nl}</td>
+                  <td>{c.names.tr}</td>
+                  <td>{c.icon}</td>
+                  <td>
+                    <CatalogRowAction
+                      cat={c}
+                      busy={busy}
+                      confirm={confirmDelete?.id === c.id ? confirmDelete : null}
+                      onArm={() => setConfirmDelete({ id: c.id, typed: '' })}
+                      onType={(typed) => setConfirmDelete({ id: c.id, typed })}
+                      onToggle={() => toggleTombstone(c.id)}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <div className="form-row">
+          <input data-testid="catalog-new-id" placeholder="id" value={draft.id} onChange={(e) => setDraft({ ...draft, id: e.target.value })} />
+          <input data-testid="catalog-new-parent" placeholder="parentId (optional)" value={draft.parentId} onChange={(e) => setDraft({ ...draft, parentId: e.target.value })} />
+          <input data-testid="catalog-new-en" placeholder="EN" value={draft.en} onChange={(e) => setDraft({ ...draft, en: e.target.value })} />
+          <input data-testid="catalog-new-nl" placeholder="NL" value={draft.nl} onChange={(e) => setDraft({ ...draft, nl: e.target.value })} />
+          <input data-testid="catalog-new-tr" placeholder="TR" value={draft.tr} onChange={(e) => setDraft({ ...draft, tr: e.target.value })} />
+          <input data-testid="catalog-new-icon" placeholder="mdi icon" value={draft.icon} onChange={(e) => setDraft({ ...draft, icon: e.target.value })} />
+          <select data-testid="catalog-new-type" value={draft.txType} onChange={(e) => setDraft({ ...draft, txType: e.target.value })}>
+            {TX_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+          <button data-testid="catalog-add-category" disabled={busy} onClick={addCategory}>
+            Add entry
+          </button>
+        </div>
+        <p className="sub">
+          Use an EXISTING built-in id to rename it (all three languages required); a new id adds a category.
+          Retiring hides a category from every picker — transactions detach to Uncategorized on the devices.
+          Custom categories users created are never touched.
+        </p>
+      </section>
+
+      <section className="card">
+        <h2>Prediction keywords</h2>
+        {keywords.length > 0 && (
+          <table data-testid="catalog-keywords">
+            <thead>
+              <tr>
+                <th>category</th><th>keywords</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {keywords.map((rule, i) => (
+                <tr key={rule.catId + '-' + i}>
+                  <td>{rule.catId}</td>
+                  <td>{rule.keywords.join(', ')}</td>
+                  <td>
+                    <button data-testid={'catalog-kw-remove-' + i} disabled={busy} onClick={() => setKeywords(keywords.filter((_, j) => j !== i))}>
+                      remove
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <div className="form-row">
+          <input data-testid="catalog-kw-cat" placeholder="catId" value={keywordDraft.catId} onChange={(e) => setKeywordDraft({ ...keywordDraft, catId: e.target.value })} />
+          <input data-testid="catalog-kw-words" placeholder="keywords, comma, separated" value={keywordDraft.words} onChange={(e) => setKeywordDraft({ ...keywordDraft, words: e.target.value })} />
+          <button data-testid="catalog-add-keyword" disabled={busy} onClick={addKeywordRule}>
+            Add rule
+          </button>
+        </div>
+        <p className="sub">Published rules win ties against the bundled ones; the bundled set keeps working alongside.</p>
+      </section>
+
+      <button data-testid="catalog-publish" className="primary" disabled={busy || !dirty} onClick={() => onPublish(categories, keywords)}>
+        Publish version {doc.version + 1}
+      </button>
+    </>
+  );
+}
+
+/** retire flow: typing the exact id arms the button (mistake-proof) */
+function CatalogRowAction({
+  cat,
+  busy,
+  confirm,
+  onArm,
+  onType,
+  onToggle,
+}: Readonly<{
+  cat: CatalogCategory;
+  busy: boolean;
+  confirm: { id: string; typed: string } | null;
+  onArm: () => void;
+  onType: (typed: string) => void;
+  onToggle: () => void;
+}>) {
+  if (cat.deleted) {
+    return (
+      <button data-testid={'catalog-restore-' + cat.id} disabled={busy} onClick={onToggle}>
+        restore
+      </button>
+    );
+  }
+  if (confirm) {
+    return (
+      <span className="confirm-delete">
+        <input
+          data-testid="catalog-delete-typed"
+          placeholder={'type ' + cat.id}
+          value={confirm.typed}
+          onChange={(e) => onType(e.target.value)}
+        />
+        <button data-testid="catalog-delete-confirm" disabled={confirm.typed !== cat.id} onClick={onToggle}>
+          retire
+        </button>
+      </span>
+    );
+  }
+  return (
+    <button data-testid={'catalog-delete-' + cat.id} disabled={busy} onClick={onArm}>
+      retire…
+    </button>
   );
 }

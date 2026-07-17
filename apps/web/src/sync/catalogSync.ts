@@ -1,6 +1,7 @@
 import { apiFetch } from '@/lib/api';
 import type { StorageBackend } from '@/db/backend';
 import type { CatalogDoc } from '@/domain/catalogDoc';
+import { CATALOG_BASELINE } from '@/generated/catalogBaseline';
 
 /**
  * Opportunistic catalog refresh (admin-catalog AC1): fetch the
@@ -28,7 +29,8 @@ export async function refreshCatalog(store: StorageBackend): Promise<void> {
   if (nextEtag) await store.metaPut(ETAG_META_KEY, nextEtag);
 }
 
-/** the cached document, for non-hook callers (imports, review, workers) */
+/** the effective document: fetched copy first, then the baseline the
+ *  build baked in (AC3) — offline profiles live on that baseline forever */
 export async function cachedCatalog(store: StorageBackend): Promise<CatalogDoc | null> {
-  return ((await store.metaGet(CATALOG_META_KEY))?.value as CatalogDoc | undefined) ?? null;
+  return ((await store.metaGet(CATALOG_META_KEY))?.value as CatalogDoc | undefined) ?? CATALOG_BASELINE;
 }

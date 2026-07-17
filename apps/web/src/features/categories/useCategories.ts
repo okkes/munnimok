@@ -3,6 +3,7 @@ import { useQuery } from '@/db/useQuery';
 import { buildCatalog, visibleCategoryRows } from '@/domain/catalog';
 import type { Cat, Catalog } from '@/domain/catalog';
 import type { CatalogDoc } from '@/domain/catalogDoc';
+import { CATALOG_BASELINE } from '@/generated/catalogBaseline';
 import { getCurrentLang } from '@/i18n';
 import type { TFunc, TranslationKey } from '@/i18n';
 import { useData } from '@/app/data';
@@ -31,7 +32,7 @@ export function useCategories(): Catalog {
   const visible = useQuery(store, async () => {
     const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0);
     const cats = (await store.allRows('category')).filter((c) => c.deleted === 0);
-    const doc = ((await store.metaGet('catalog'))?.value as CatalogDoc | undefined) ?? null;
+    const doc = ((await store.metaGet('catalog'))?.value as CatalogDoc | undefined) ?? CATALOG_BASELINE;
     return { ...visibleCategoryRows(spaces, cats, spaceId), doc };
   }, [spaceId]);
 

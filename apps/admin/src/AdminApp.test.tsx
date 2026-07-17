@@ -41,7 +41,16 @@ function scriptFetch(routes: Record<string, Handler>) {
   return calls;
 }
 
+const CATALOG = {
+  version: 2,
+  categories: [
+    { id: 'groceries', names: { en: 'Food shops', nl: 'Eten', tr: 'Gida' }, icon: 'cart' },
+  ],
+  keywords: [{ catId: 'hobby', keywords: ['padel'] }],
+};
+
 const HAPPY_ROUTES = (): Record<string, Handler> => ({
+  'GET /catalog': () => ({ body: CATALOG }),
   'GET /admin/ping': () => ({}),
   'GET /admin/users': () => ({ body: USERS }),
   'GET /admin/gocardless/requisitions': () => ({ body: REQUISITIONS }),
@@ -217,5 +226,60 @@ describe('AdminApp (OIDC token mode)', () => {
     expect(screen.queryByTestId('admin-sub')).toBeNull();
     await waitFor(() => expect(seenAuth.length).toBeGreaterThan(0));
     expect(seenAuth.every((h) => h === 'Bearer tok-abc')).toBe(true);
+  });
+
+  it('catalog: shows the published document and retires with a typed-id gate', async () => {
+    scriptFetch(HAPPY_ROUTES());
+    renderAdmin();
+    fireEvent.click(await screen.findByTestId('nav-catalog'));
+    // the published overlay renders
+    await screen.findByTestId('catalog-cat-groceries');
+    expect(screen.getByTestId('catalog-categories').textContent).toContain('Food shops');
+
+    // retiring demands the exact id before the button arms
+    fireEvent.click(screen.getByTestId('catalog-delete-groceries'));
+    const confirmBtn = screen.getByTestId('catalog-delete-confirm') as HTMLButtonElement;
+    expect(confirmBtn.disabled).toBe(true);
+    fireEvent.change(screen.getByTestId('catalog-delete-typed'), { target: { value: 'grocery' } });
+    expect((screen.getByTestId('catalog-delete-confirm') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByTestId('catalog-delete-typed'), { target: { value: 'groceries' } });
+    fireEvent.click(screen.getByTestId('catalog-delete-confirm'));
+    // tombstoned: struck through with a restore action
+    expect(screen.getByTestId('catalog-restore-groceries')).toBeTruthy();
+  });
+
+  it('catalog: adding entries and publishing PUTs the document', async () => {
+    let published: unknown = null;
+    scriptFetch({
+      ...HAPPY_ROUTES(),
+      'PUT /admin/catalog': (init) => {
+        published = JSON.parse(String(init?.body));
+        return { body: { version: 3 } };
+      },
+    });
+    renderAdmin();
+    fireEvent.click(await screen.findByTestId('nav-catalog'));
+    await screen.findByTestId('catalog-cat-groceries');
+
+    // a new category entry (all three languages required)
+    fireEvent.change(screen.getByTestId('catalog-new-id'), { target: { value: 'padelClub' } });
+    fireEvent.change(screen.getByTestId('catalog-new-parent'), { target: { value: 'hobby' } });
+    fireEvent.change(screen.getByTestId('catalog-new-en'), { target: { value: 'Padel' } });
+    fireEvent.change(screen.getByTestId('catalog-new-nl'), { target: { value: 'Padel' } });
+    fireEvent.change(screen.getByTestId('catalog-new-tr'), { target: { value: 'Padel' } });
+    fireEvent.change(screen.getByTestId('catalog-new-icon'), { target: { value: 'tennis' } });
+    fireEvent.click(screen.getByTestId('catalog-add-category'));
+    await screen.findByTestId('catalog-cat-padelClub');
+
+    // a keyword rule
+    fireEvent.change(screen.getByTestId('catalog-kw-cat'), { target: { value: 'padelClub' } });
+    fireEvent.change(screen.getByTestId('catalog-kw-words'), { target: { value: 'Padelbaan, PADEL CLUB' } });
+    fireEvent.click(screen.getByTestId('catalog-add-keyword'));
+
+    fireEvent.click(screen.getByTestId('catalog-publish'));
+    await waitFor(() => expect(published).not.toBeNull());
+    const doc = published as { categories: { id: string }[]; keywords: { catId: string; keywords: string[] }[] };
+    expect(doc.categories.map((c) => c.id)).toEqual(['groceries', 'padelClub']);
+    expect(doc.keywords.at(-1)).toEqual({ catId: 'padelClub', keywords: ['padelbaan', 'padel club'] });
   });
 });
