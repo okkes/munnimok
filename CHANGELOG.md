@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.5.0](https://github.com/okkes/munnimok/compare/v2.4.0...v2.5.0) (2026-07-17)
+
+
+### ✨ Features
+
+* **catalog:** AC1 — operator-published catalog document, end to end ([c5aead6](https://github.com/okkes/munnimok/commit/c5aead608d41c5e2e2ad9e4da1ea2edc24910bb2))
+
+
+### 🐞 Bug Fixes
+
+* **catalog:** published keyword rules merge in front of the bundled set ([3caa2f6](https://github.com/okkes/munnimok/commit/3caa2f63a241d7adaeb25ccf370f6a38aef6b0dd))
+
 ## [2.4.0](https://github.com/okkes/munnimok/compare/v2.3.0...v2.4.0) (2026-07-17)
 
 
