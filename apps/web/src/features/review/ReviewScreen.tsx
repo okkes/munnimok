@@ -7,6 +7,7 @@ import { useRecurringOps, useRecurrings } from '@/application/recurring';
 import { merchantKey } from '@/domain/merchantKey';
 import { draftReady, initDraft, withCategory, withLinkedAccount, withSplits, withType } from '@/domain/reviewDraft';
 import { normalizeIban } from '@/domain/feedIds';
+import { isPaypalAccount, isPaypalFunding } from '@/domain/paypal';
 import { hapticNotify } from '@/lib/platform';
 import { TxRow } from '@/ui/TxRow';
 import { fetchSettlementCandidates } from '@/features/splits/settlementCandidates';
@@ -314,11 +315,20 @@ export function ReviewScreen() {
   const ownCounter = useQuery(
     store,
     async () => {
+      const accounts = await store.allRows('account');
       const iban = tx?.counterIban ? normalizeIban(tx.counterIban) : undefined;
-      if (!iban) return undefined;
-      return (await store.allRows('account')).find((a) => a.deleted === 0 && !!a.iban && normalizeIban(a.iban) === iban);
+      const byIban = iban
+        ? accounts.find((a) => a.deleted === 0 && !!a.iban && normalizeIban(a.iban) === iban)
+        : undefined;
+      if (byIban) return byIban;
+      // PP1 rung 3: a PayPal-funding debit defaults to the PayPal account
+      // (shared collection IBAN never matches — the name pattern does)
+      if (tx && tx.amountCents < 0 && isPaypalFunding(tx)) {
+        return accounts.find((a) => a.deleted === 0 && isPaypalAccount(a));
+      }
+      return undefined;
     },
-    [tx?.counterIban],
+    [tx?.counterIban, tx?.id],
   );
 
   // untouched cards follow the tx + the (async) prediction live
