@@ -18,6 +18,17 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.8.0',
+    date: '2026-07-17',
+    items: [
+      {
+        en: 'PayPal purchases no longer count twice: when your PayPal account and the bank account that funds it are both connected, the funding debits automatically become transfers and the real purchase is counted once, on the PayPal side. Unmatched PayPal charges pre-select the PayPal counterparty on the review card — one tap confirms.',
+        nl: 'PayPal-aankopen tellen niet langer dubbel: wanneer je PayPal-rekening en de bankrekening die haar voedt beide gekoppeld zijn, worden de afschrijvingen automatisch overboekingen en telt de echte aankoop één keer, aan de PayPal-kant. Niet-gematchte PayPal-afschrijvingen krijgen de PayPal-tegenpartij alvast voorgeselecteerd op de beoordelingskaart — één tik bevestigt.',
+        tr: 'PayPal alışverişleri artık iki kez sayılmıyor: PayPal hesabın ve onu besleyen banka hesabın ikisi de bağlıyken, besleme çekimleri otomatik olarak transfere dönüşür ve gerçek alışveriş bir kez, PayPal tarafında sayılır. Eşleşmeyen PayPal çekimleri inceleme kartında PayPal karşı tarafını önceden seçili getirir — tek dokunuş onaylar.',
+      },
+    ],
+  },
+  {
     version: '2.7.0',
     date: '2026-07-17',
     items: [

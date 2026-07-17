@@ -1,6 +1,6 @@
 # PayPal ↔ bank auto-linking — what the data allows (design proposal)
 
-Status: PROPOSAL 2026-07-17 (user question: "does the PayPal account
+Status: APPROVED + PP1 SHIPPED 2026-07-17 (any funding account — ING was only the example; count-once-on-the-PayPal-side confirmed) (user question: "does the PayPal account
 from GoCardless have a bank account number, and can the algorithm
 auto-label ING→PayPal charges as transfers with the PayPal account as
 counterparty?").

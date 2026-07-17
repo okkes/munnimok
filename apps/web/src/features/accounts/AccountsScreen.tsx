@@ -7,6 +7,7 @@ import { getApiCapabilities } from '@/lib/api';
 import { useSession } from '@/app/session';
 import { importCamtStatements } from './importCamt';
 import { linkAllCounterparties } from '@/application/counterLink';
+import { linkPaypalFunding } from '@/application/paypalLink';
 import type { ImportResult } from './importCamt';
 import { apiFeedGateway, fetchMyFeedIds } from './feedGateway';
 import { AttachSheet, SOURCE_KEYS } from './AttachSheet';
@@ -190,6 +191,7 @@ export function AccountsScreen() {
   // instead (idempotent; rows with links are skipped)
   useEffect(() => {
     void linkAllCounterparties(store, repo, spaceId).catch(() => undefined);
+    void linkPaypalFunding(store, repo, spaceId).catch(() => undefined);
   }, [store, repo, spaceId]);
   const [gcAvailable, setGcAvailable] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
@@ -228,6 +230,7 @@ export function AccountsScreen() {
     // a just-imported account may BE the counterparty of older rows
     // (and vice versa) — retro-link them (user rule)
     await linkAllCounterparties(store, repo, spaceId).catch(() => undefined);
+    await linkPaypalFunding(store, repo, spaceId).catch(() => undefined);
     // the import may have registered new feeds — refresh ownership so the
     // new accounts classify under MINE, not "shared with me"
     if (feeds) void fetchMyFeedIds().then(setMyFeedIds).catch(() => undefined);
