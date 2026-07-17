@@ -18,6 +18,17 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.7.0',
+    date: '2026-07-17',
+    items: [
+      {
+        en: 'The central category list is now fully manageable: when a built-in category is retired, its transactions quietly return to review as Uncategorized instead of pointing nowhere. Fresh installs ship with the latest category improvements baked in — offline profiles included.',
+        nl: 'De centrale categorielijst is nu volledig beheerbaar: wanneer een ingebouwde categorie wordt uitgefaseerd, keren de transacties netjes terug naar beoordeling als Ongecategoriseerd in plaats van nergens naar te wijzen. Nieuwe installaties bevatten de nieuwste categorieverbeteringen — ook offline profielen.',
+        tr: 'Merkezi kategori listesi artık tamamen yönetilebilir: yerleşik bir kategori emekli edildiğinde işlemleri hiçliğe işaret etmek yerine sessizce Kategorisiz olarak incelemeye döner. Yeni kurulumlar en güncel kategori iyileştirmeleriyle gelir — çevrimdışı profiller dahil.',
+      },
+    ],
+  },
+  {
     version: '2.6.0',
     date: '2026-07-17',
     items: [

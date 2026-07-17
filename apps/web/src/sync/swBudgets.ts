@@ -88,7 +88,7 @@ export async function collectBudgetAlerts(
   const categoryRows = allCategories.filter((c) => c.deleted === 0);
   const txs = spaceTxs.filter((t) => t.deleted === 0);
   const visible = visibleCategoryRows(spaces, categoryRows, spaceId);
-  const doc = ((await store.metaGet('catalog'))?.value as import('@/domain/catalogDoc').CatalogDoc | undefined) ?? null;
+  const doc = ((await store.metaGet('catalog'))?.value as import('@/domain/catalogDoc').CatalogDoc | undefined) ?? (await import('@/generated/catalogBaseline')).CATALOG_BASELINE;
   const catalog = buildCatalog(visible.rows, visible.sharedScope, visible.hiddenMains, doc);
   const currency = space?.currency ?? 'EUR';
 
