@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.4.0](https://github.com/okkes/munnimok/compare/v2.3.0...v2.4.0) (2026-07-17)
+
+
+### ✨ Features
+
+* **deploy:** logto 1.41 + postgres 18 with a self-migrating update path ([5a23b29](https://github.com/okkes/munnimok/commit/5a23b29000d33a04d58c1695903cdca59e145c81))
+* **tx+acct:** manual-transaction upgrades, account identity controls, clean native sign-out ([798d5a7](https://github.com/okkes/munnimok/commit/798d5a7abdb33909d7bd289edb5399a8f079faa1))
+
 ## [2.3.0](https://github.com/okkes/munnimok/compare/v2.2.0...v2.3.0) (2026-07-17)
 
 
