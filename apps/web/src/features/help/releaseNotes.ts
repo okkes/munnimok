@@ -18,6 +18,17 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.2.0',
+    date: '2026-07-17',
+    items: [
+      {
+        en: 'Under the hood: the entire local database now runs behind one storage layer — the groundwork for fully encrypted storage in the iOS and Android apps. Everything works exactly as before, just future-proof.',
+        nl: 'Onder de motorkap: de hele lokale database draait nu achter één opslaglaag — het fundament voor volledig versleutelde opslag in de iOS- en Android-apps. Alles werkt precies zoals eerst, maar klaar voor de toekomst.',
+        tr: 'Kaputun altında: tüm yerel veritabanı artık tek bir depolama katmanının arkasında çalışıyor — iOS ve Android uygulamalarında tamamen şifreli depolamanın temeli. Her şey eskisi gibi çalışıyor, sadece geleceğe hazır.',
+      },
+    ],
+  },
+  {
     version: '2.1.0',
     date: '2026-07-17',
     items: [
