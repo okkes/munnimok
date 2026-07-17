@@ -39,6 +39,7 @@ export function TxRow({
   highlight = '',
   showDate = false,
   hideCategory = false,
+  hideUnreviewed = false,
   amountOverrideCents,
   selected = false,
   accountName,
@@ -51,6 +52,8 @@ export function TxRow({
   showDate?: boolean;
   /** lists already scoped to one category (drill) skip the redundant name */
   hideCategory?: boolean;
+  /** bulk review sheet: every row is unreviewed — the badge is noise */
+  hideUnreviewed?: boolean;
   /** scoped lists (drill) show their slice as the headline amount */
   amountOverrideCents?: number;
   /** master–detail panes mark the row whose detail is open (§4.2) */
@@ -101,7 +104,7 @@ export function TxRow({
           {tx.pending === 1 && (
             <Pill className={hideCategory && !showDate ? '' : 'ml-1.5'}>{t('tx.pendingBadge')}</Pill>
           )}
-          {tx.needsReview === 1 && (
+          {tx.needsReview === 1 && !hideUnreviewed && (
             <Pill tone="warning" className={hideCategory && !showDate ? '' : 'ml-1.5'}>
               {t('tx.unreviewed')}
             </Pill>

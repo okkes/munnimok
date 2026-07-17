@@ -1209,6 +1209,8 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'cats.nameDuplicateParent': 'Bu adla bir ana kategori zaten var.',
   'cats.nameIsParent': 'Bu ad bir ana kategoriye ait — alt kategori için farklı bir ad seç.',
   'cats.nameDuplicateSub': 'Bu ana kategoride aynı adla bir alt kategori zaten var.',
+  'tx.bulkOffer': 'Bu satıcının diğer {n} işlemine de uygulansın mı?',
+  'tx.bulkApply': 'Uygula',
   'tx.counterAccountPick': 'Karşı hesap seç…',
   'review.addCategory': 'Kategori ekle',
   'review.bulkCount': '{n} benzer işlem',

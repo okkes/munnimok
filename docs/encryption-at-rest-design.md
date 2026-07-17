@@ -1,62 +1,68 @@
-# Encryption at rest (native-benefits §2) — design for review
+# Encryption at rest (native-benefits §2) — APPROVED 2026-07-17
 
-Status: PROPOSAL 2026-07-16 — the one remaining native-benefits item.
-Deliberately the last arc, and deliberately not implemented without
-your review: key management mistakes are silent until they lock real
-people out of real financial data.
+Decisions (your answers):
+1. **Full SQLCipher** on the native shells — not field-level.
+2. **Key loss = forced re-sync** from the server; **offline profiles
+   are NOT supported** on the encrypted store (they keep plaintext
+   IndexedDB + a warning in their settings, since they explicitly chose
+   no-server and a lost key would mean lost data).
+3. The PWA shows an honest **"encrypted at rest: only in the apps"**
+   note in settings.
 
-## What we're protecting, from whom
+## What full SQLCipher means (scope honesty)
 
-The WebView's IndexedDB lives as plaintext SQLite/LevelDB files inside
-the app sandbox. On a non-rooted, screen-locked device the OS already
-encrypts the disk and the sandbox blocks other apps — the residual
-threats are: device backups landing somewhere readable, forensic access
-to an unlocked/rooted device, and "handed my unlocked phone to someone"
-(already mitigated by the app lock). So this is defense-in-depth, not a
-gap-closer, and it must NEVER risk data loss to add it.
+The webview cannot encrypt IndexedDB, so choosing SQLCipher means the
+native shells move their entire local database from
+IndexedDB/Dexie to **SQLite with SQLCipher** via
+`@capacitor-community/sqlite` (ships SQLCipher on both platforms).
+That is a storage-engine replacement — the biggest arc since the
+rebuild started. The web/PWA keeps Dexie unchanged.
 
-## Approach: keystore-wrapped field encryption, not full-DB
+## Architecture
 
-Full-database encryption in a WebView means either moving off IndexedDB
-(SQLCipher via a native plugin — a full storage rewrite, months) or
-encrypting every row through a wrapper. The proportionate version:
+1. **Storage abstraction first**: today every read/write goes through
+   `MunniDB` (Dexie) + `Repo`. Introduce a `StorageBackend` interface
+   at exactly that seam (tables, indexes on spaceId/date, transactions
+   as batch writes) with two implementations: `DexieBackend` (today's
+   code, unchanged behavior) and `SqlCipherBackend` (native). The
+   ~40 query call sites go through the seam, NOT through Dexie
+   directly — `useLiveQuery` reactivity is the hard part; the SQL
+   backend emits change events per table that a small `liveQuery`
+   shim subscribes to.
+2. **Key lifecycle**: 32-byte key minted on first native run, held in
+   the **iOS Keychain / Android Keystore**
+   (`kSecAttrAccessibleWhenUnlockedThisDeviceOnly` / hardware-backed,
+   no backup flag — a restored backup on a new device gets a NEW key
+   and re-syncs, per decision 2). The db opens after the app-lock gate
+   (§1's biometric moment). Key rotation = re-encrypt via SQLCipher's
+   `PRAGMA rekey` behind a settings action.
+3. **Migration**: on first launch after the update, the native app
+   OPENS the encrypted db empty and re-syncs from the server (decision
+   2 makes this the universal recovery path, so it is also the
+   migration path — no risky in-place IndexedDB→SQLite copy). The old
+   IndexedDB is wiped after the first successful full sync. Users see
+   the normal first-sync screen once.
+4. **Offline profiles on native**: creation of NEW offline profiles in
+   the shells gets a warning ("no encryption without an account — the
+   apps encrypt account data only"); existing ones keep working on
+   Dexie plaintext. (Decision 2.)
+5. **PWA**: unchanged storage + the settings note (decision 3).
 
-1. **A per-identity data key (32 bytes)**, generated on first native
-   run, stored in the **iOS Keychain / Android Keystore** via the
-   already-installed biometric plugin's credential storage (or
-   @capacitor/preferences + Keystore-backed encryption). Web/PWA: no
-   change — the browser cannot hold hardware-backed keys; the PWA keeps
-   today's model (documented trade-off, same as banking PWAs).
-2. **Encrypt the sensitive columns only** at the Repo seam (the single
-   write/read chokepoint): transaction merchant/description/notes,
-   account names/IBANs, receipt blobs. Amounts and dates stay plain so
-   indexes, sorting and range queries keep working (they identify
-   nothing by themselves without the descriptions).
-3. **AES-GCM via WebCrypto** with the keystore-held key imported per
-   session after the biometric/app-lock gate — the same unlock moment
-   §1 built. Key never touches localStorage/IndexedDB.
-4. **Migration**: lazy, per-row on write + a background sweep, with a
-   `cryptoVersion` marker per row. Decryption failures fall back to
-   plaintext read (pre-migration rows) — the sweep converges, nothing
-   breaks mid-way, and a restore from an OS backup on a new device
-   (new keystore = key gone) still has the SERVER as source of truth:
-   a full re-sync rebuilds the local db, so key loss costs a re-sync,
-   never data.
+## Slices (each shippable, flag-gated)
 
-## Slices
+- **E1**: `StorageBackend` seam extracted, `DexieBackend` passes the
+  entire existing suite (pure refactor, no behavior change). ~the
+  biggest slice; everything else hangs off it.
+- **E2**: `SqlCipherBackend` + key lifecycle behind a
+  `munni_encrypted_store` flag, dev-build only; parity test suite runs
+  against BOTH backends.
+- **E3**: first-run migration (empty-open + re-sync + IndexedDB wipe),
+  flag on for staging apps.
+- **E4**: production enable + offline-profile warning + PWA note +
+  security review checklist (key handling, backup exclusion, log
+  hygiene) before the release.
 
-- **E1**: key lifecycle (mint/hold/drop on logout) behind the platform
-  seam + Repo encrypt/decrypt hooks, feature-flagged off.
-- **E2**: sensitive-column migration sweep + flag on for native.
-- **E3**: receipts (blobs) + the security review checklist pass.
+## Review gate
 
-## Review questions for you
-
-1. Field-level (proposed) vs full-DB SQLCipher rewrite — agree with
-   field-level?
-2. Is "key loss = forced re-sync from server" acceptable? (Offline
-   profiles have no server; proposal: offline identities keep plaintext
-   + a warning in their settings, since they explicitly chose
-   no-server.)
-3. Should the PWA show an honest "encrypted at rest: only in the apps"
-   note in settings?
+E4 ships only after a dedicated security-review pass; E1 can start any
+time — it is a pure refactor that also pays down storage-layer debt.

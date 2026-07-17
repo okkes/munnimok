@@ -116,7 +116,7 @@ export function RecurringScreen() {
       className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-3 text-left last:border-0"
     >
       <span className={`relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${c.paid && view === 'period' ? 'bg-accent-soft' : 'bg-bg-2'}`}>
-        <RecurringVisual rec={c.rec} active={c.paid && view === 'period'} />
+        <RecurringVisual rec={c.rec} active={c.paid && view === 'period'} fill />
         {c.paid && view === 'period' && (
           <span className="absolute -right-1 -bottom-1 flex h-4 w-4 items-center justify-center rounded-full bg-accent text-white ring-2 ring-surface">
             <Icon name="check" size={9} />

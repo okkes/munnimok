@@ -24,6 +24,8 @@ import { ReimburseSection } from './ReimburseSection';
 import { SplitEditorSheet } from './SplitEditorSheet';
 import { TxFormSheet } from './TxFormSheet';
 import { TxTypeSheet } from './TxTypeSheet';
+import { merchantKey } from '@/domain/merchantKey';
+import type { TxType } from '@/db/types';
 
 const DATE_FMT: Record<string, string> = { en: 'en-GB', nl: 'nl-NL', tr: 'tr-TR' };
 
@@ -38,6 +40,7 @@ export function TxDetailScreen() {
   const [recurringOpen, setRecurringOpen] = useState(false);
   const [eventOpen, setEventOpen] = useState(false);
   const [counterOpen, setCounterOpen] = useState(false);
+  const [bulkOffer, setBulkOffer] = useState<{ catId: string; txType: TxType; count: number } | null>(null);
   const navigate = useNavigate();
 
   // desktop affordance (D5): Esc closes the detail pane back to the plain
@@ -92,6 +95,23 @@ export function TxDetailScreen() {
   const setCategory = (catId: string) => {
     const txType = cats.byId(catId).txTypes[0] ?? tx.txType;
     void transform(tx, { catId, txType, needsReview: 0 });
+    // bulk mechanism from the detail too (user request) — unlike review
+    // it reaches EVERYTHING of this merchant, reviewed included
+    const similar = (allTxs ?? []).filter(
+      (item) => item.id !== tx.id && merchantKey(item.merchant) === merchantKey(tx.merchant) && item.catId !== catId,
+    );
+    setBulkOffer(similar.length > 0 ? { catId, txType, count: similar.length } : null);
+  };
+
+  const applyBulk = async () => {
+    if (!bulkOffer) return;
+    const targets = (allTxs ?? []).filter(
+      (item) => item.id !== tx.id && merchantKey(item.merchant) === merchantKey(tx.merchant) && item.catId !== bulkOffer.catId,
+    );
+    for (const item of targets) {
+      await transform(item, { catId: bulkOffer.catId, txType: bulkOffer.txType, needsReview: 0 });
+    }
+    setBulkOffer(null);
   };
   const saveNotes = (notes: string) => {
     if (notes !== (tx.notes ?? '')) void transform(tx, { notes });
@@ -167,6 +187,29 @@ export function TxDetailScreen() {
               <Icon name="call-split" size={17} />
             </button>
           </div>
+          {bulkOffer && (
+            <div className="flex items-center gap-3 border-t border-line-2 bg-accent-soft/30 px-4 py-2.5" data-testid="tx-detail-bulk-offer">
+              <Icon name="content-copy" size={16} color="var(--m-accent-deep)" />
+              <span className="min-w-0 flex-1 text-[13px] text-ink-2">
+                {t('tx.bulkOffer', { n: bulkOffer.count })}
+              </span>
+              <button
+                data-testid="tx-detail-bulk-apply"
+                onClick={() => void applyBulk()}
+                className="m-tap border-none bg-transparent text-[13px] font-semibold text-accent-deep"
+              >
+                {t('tx.bulkApply')}
+              </button>
+              <button
+                data-testid="tx-detail-bulk-dismiss"
+                aria-label={t('action.dismiss')}
+                onClick={() => setBulkOffer(null)}
+                className="m-tap border-none bg-transparent text-ink-4"
+              >
+                <Icon name="close" size={16} />
+              </button>
+            </div>
+          )}
           {!!tx.splits?.length && (
             <div className="px-4 pb-3" data-testid="tx-detail-splits">
               {tx.splits.map((s) => {

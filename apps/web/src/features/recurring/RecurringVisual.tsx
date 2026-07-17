@@ -15,11 +15,18 @@ export function cadenceLabel(rec: Pick<RecurringRow, 'every' | 'everyN'>, t: TFu
   return n === 1 ? t('recurring.everyMonth') : t('recurring.everyNMonths', { n });
 }
 
-/** brand logo when set, the kind's MDI icon otherwise. Logo artwork
- *  renders larger than the glyph size — a 17px image looks lost in the
- *  36px tile that a 17px icon fills optically. */
-export function RecurringVisual({ rec, size = 17, active = true }: Readonly<{ rec: Pick<RecurringRow, 'logo' | 'icon' | 'kind'>; size?: number; active?: boolean }>) {
+/** brand logo when set, the kind's MDI icon otherwise. With `fill`, the
+ *  logo COVERS the parent tile edge to edge (user request: no colored
+ *  padding around the artwork — a slight crop is fine); the parent must
+ *  be a relative rounded tile. Bare rows keep the contained thumbnail. */
+export function RecurringVisual({
+  rec,
+  size = 17,
+  active = true,
+  fill = false,
+}: Readonly<{ rec: Pick<RecurringRow, 'logo' | 'icon' | 'kind'>; size?: number; active?: boolean; fill?: boolean }>) {
   if (rec.logo) {
+    if (fill) return <img src={rec.logo} alt="" className="absolute inset-0 h-full w-full rounded-[inherit] object-cover" />;
     const logoSize = Math.round(size * 1.75);
     return <img src={rec.logo} alt="" className="rounded-md object-contain" style={{ width: logoSize, height: logoSize }} />;
   }

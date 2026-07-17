@@ -14,6 +14,19 @@ import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 
+/** one row in the unified editor = a plain category, always valid */
+function sheetError(options: {
+  seedSingle: boolean;
+  rowCount: number;
+  mode: 'amount' | 'pct';
+  referenceCents: number;
+  splits: TxSplit[];
+}): ReturnType<typeof validateSplits> {
+  if (options.seedSingle && options.rowCount === 1) return null;
+  if (options.mode === 'pct') return validatePctSplits(options.splits);
+  return validateSplits(options.referenceCents, options.splits);
+}
+
 interface Row {
   /** stable key for React list rendering (rows have no natural id) */
   key: string;
@@ -42,6 +55,8 @@ export function SplitEditorSheet({
   value,
   txType,
   onApply,
+  seedSingle = false,
+  onApplySingle,
 }: Readonly<{
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -52,6 +67,11 @@ export function SplitEditorSheet({
   txType?: SpaceTx['txType'];
   /** controlled mode: null = clear the split */
   onApply?: (splits: TxSplit[] | null) => void;
+  /** empty start seeds ONE row (current category, full amount) instead
+   *  of the classic two — the review card's unified editor */
+  seedSingle?: boolean;
+  /** seedSingle mode: saving with one row reports the plain category */
+  onApplySingle?: (catId: string) => void;
 }>) {
   const { t, lang } = useLang();
   const transform = useTxTransform();
@@ -78,6 +98,11 @@ export function SplitEditorSheet({
       const pctMode = splitsArePct(source);
       setMode(pctMode ? 'pct' : 'amount');
       setRows(source.map((s) => newRow(s.catId, pctMode ? toPctText(s.pct!) : toText(s.amountCents))));
+    } else if (seedSingle) {
+      // review's unified editor (user redesign): open on JUST the current
+      // category owning the full amount — rows are added explicitly
+      setMode('amount');
+      setRows([newRow(tx.catId ?? UNCATEGORIZED_ID, toText(Math.abs(referenceCents)))]);
     } else {
       setMode('amount');
       // start from the current category + an empty second row
@@ -92,7 +117,7 @@ export function SplitEditorSheet({
       ? rows.map((r) => ({ catId: r.catId, amountCents: 0, pct: parsePct(r.amount) }))
       : rows.map((r) => ({ catId: r.catId, amountCents: parseCents(r.amount) ?? 0 }));
   const remainder = mode === 'pct' ? pctRemainder(splits) : splitRemainderCents(referenceCents, splits);
-  const error = mode === 'pct' ? validatePctSplits(splits) : validateSplits(referenceCents, splits);
+  const error = sheetError({ seedSingle, rowCount: rows.length, mode, referenceCents, splits });
 
   const switchMode = (next: 'amount' | 'pct') => {
     if (next === mode) return;
@@ -113,6 +138,13 @@ export function SplitEditorSheet({
 
   const save = () => {
     if (error) return;
+    // a lone row in the unified editor means "just this category" — no
+    // split is stored, the category rides through onApplySingle
+    if (seedSingle && rows.length === 1) {
+      onApplySingle?.(rows[0].catId);
+      onOpenChange(false);
+      return;
+    }
     // pct splits keep their percentages AND a materialized partition, so
     // every reader (budgets, drills, exports) stays simple.
     // needsReview is NOT touched: saving a split mid-review must keep the

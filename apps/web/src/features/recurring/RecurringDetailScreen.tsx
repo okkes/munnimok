@@ -95,7 +95,7 @@ export function RecurringDetailScreen() {
           testId="recdetail-hero"
           tile={
             <Tile size={48} tone={rec.active === 1 ? 'accent' : 'neutral'}>
-              <RecurringVisual rec={rec} size={24} active={rec.active === 1} />
+              <RecurringVisual rec={rec} size={24} active={rec.active === 1} fill />
             </Tile>
           }
           title={rec.name}

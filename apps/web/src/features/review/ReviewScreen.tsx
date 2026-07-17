@@ -4,7 +4,6 @@ import { useSpaceTransactions, useTxTransform } from '@/application/transactions
 import type { SpaceTx } from '@/application/transactions';
 import { buildSpaceMerchantMemory } from '@/application/prediction';
 import { useRecurringOps, useRecurrings } from '@/application/recurring';
-import { directionOfTx } from '@/domain/categoryRules';
 import { merchantKey } from '@/domain/merchantKey';
 import { draftReady, initDraft, withCategory, withLinkedAccount, withSplits, withType } from '@/domain/reviewDraft';
 import { normalizeIban } from '@/domain/feedIds';
@@ -30,9 +29,8 @@ import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
-import { CategoryPicker } from '@/features/categories/CategoryPicker';
 import { SplitEditorSheet } from '@/features/transactions/SplitEditorSheet';
-import { TxTypeSheet } from '@/features/transactions/TxTypeSheet';
+import { TX_TYPE_VISUAL, TxTypeSheet } from '@/features/transactions/TxTypeSheet';
 
 /** why the shown category was suggested, per prediction source */
 const REASON_KEYS = {
@@ -114,12 +112,52 @@ function applyOwnCounterDefault(
   return linked.catId ? linked : withCategory(linked, 'uncategorized', cats);
 }
 
+/** the bulk sheet's read-only transaction peek: (almost) the detail
+ * screen's facts — amount, date, category, type, account, counterparty,
+ * bank text — without any of its edit affordances (user request) */
+function BulkTxPeek({ tx }: Readonly<{ tx: SpaceTx }>) {
+  const { t, lang } = useLang();
+  const cats = useCategories();
+  const { db } = useData();
+  const account = useLiveQuery(() => db.accounts.get(tx.accountId), [tx.accountId]);
+  const cat = cats.byId(tx.catId);
+  const catColor = cat.color ?? cats.byId(cat.parentId ?? '').color;
+  const factRow = (label: string, value: string, icon: string, color?: string) => (
+    <div className="flex items-center gap-3 border-b border-line-2 px-4 py-2.5 last:border-0">
+      <Icon name={icon} size={18} color={color ?? 'var(--m-ink-3)'} />
+      <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{value}</span>
+      <span className="text-xs text-ink-4">{label}</span>
+    </div>
+  );
+  return (
+    <div className="flex flex-col gap-3 pt-1" data-testid="review-bulk-detail">
+      <div className="m-num text-center text-[26px] text-ink">
+        {fmtCents(tx.amountCents, tx.currency, lang, { sign: true })}
+      </div>
+      <p className="text-center text-[12px] text-ink-4">
+        {new Date(tx.date).toLocaleDateString(LOCALES[lang], { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+      </p>
+      <div className="overflow-hidden rounded-card border border-line bg-surface">
+        {factRow(t('screen.categories'), catName(cat, t), cat.icon, catColor)}
+        {factRow(t('tx.type'), t(`tx.type.${tx.txType}`), TX_TYPE_VISUAL[tx.txType].icon, TX_TYPE_VISUAL[tx.txType].color)}
+        {account && factRow(t('txform.account'), account.name, 'bank-outline')}
+        {tx.counterIban && factRow(t('tx.counterparty'), tx.counterIban, 'swap-horizontal')}
+      </div>
+      {tx.description && (
+        <p className="rounded-xl bg-bg-2 px-3 py-2.5 font-mono text-[11px] break-words text-ink-3">
+          {cleanBankText(tx.description)}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function BulkConfirmSection({
   similar,
   selected,
   onChange,
 }: Readonly<{ similar: SpaceTx[]; selected: ReadonlySet<string>; onChange: (next: ReadonlySet<string>) => void }>) {
-  const { t, lang } = useLang();
+  const { t } = useLang();
   const [open, setOpen] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
   if (similar.length === 0) return null;
@@ -161,7 +199,7 @@ function BulkConfirmSection({
       {/* near-max-height sheet styled like the transactions list (user
           redesign): TxRow rows with a checkbox rail, select/unselect all,
           and a row tap opens a compact READ-ONLY detail as a stacked sheet */}
-      <Sheet open={open} onOpenChange={setOpen} title={t('review.alsoApply', { n: selected.size })} height={680}>
+      <Sheet open={open} onOpenChange={setOpen} title={t('review.alsoApply', { n: selected.size })} height={760}>
         <div className="flex items-center justify-between pb-2">
           <span className="text-[12px] text-ink-3">{t('review.bulkCount', { n: similar.length })}</span>
           <button
@@ -173,7 +211,7 @@ function BulkConfirmSection({
           </button>
         </div>
         {/* fixed px so the list scrolls INSIDE the sheet (sheet rules) */}
-        <div className="max-h-[540px] overflow-y-auto overscroll-contain" data-testid="review-bulk-list">
+        <div className="max-h-[620px] overflow-y-auto overscroll-contain" data-testid="review-bulk-list">
           {similar.map((item) => {
             const checked = selected.has(item.id);
             return (
@@ -189,7 +227,8 @@ function BulkConfirmSection({
                   {checked && <Icon name="check" size={12} />}
                 </button>
                 <div className="min-w-0 flex-1" data-testid={`review-bulk-open-${item.id}`}>
-                  <TxRow tx={item} showDate onClick={() => setDetailId(item.id)} />
+                  {/* every row here is unreviewed by definition — the badge is noise */}
+                  <TxRow tx={item} showDate hideUnreviewed onClick={() => setDetailId(item.id)} />
                 </div>
               </div>
             );
@@ -197,31 +236,16 @@ function BulkConfirmSection({
         </div>
       </Sheet>
 
-      {/* compact read-only peek — deliberately smaller than the list sheet */}
+      {/* read-only peek — taller now (user request), still clearly SHORTER
+          than the list sheet so its top edge stays visible against the
+          parent behind it (the stacked-sheet cue) */}
       <Sheet
         open={detailId !== null}
         onOpenChange={(next) => !next && setDetailId(null)}
         title={detail ? cleanBankText(detail.merchant) : ''}
-        size="form"
+        height={600}
       >
-        {detail && (
-          <div className="flex flex-col gap-2 pt-1" data-testid="review-bulk-detail">
-            <div className="m-num text-center text-[26px] text-ink">
-              {fmtCents(detail.amountCents, detail.currency, lang, { sign: true })}
-            </div>
-            <p className="text-center text-[12px] text-ink-4">
-              {new Date(detail.date).toLocaleDateString(LOCALES[lang], { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-            </p>
-            {detail.description && (
-              <p className="rounded-xl bg-bg-2 px-3 py-2.5 font-mono text-[11px] break-words text-ink-3">
-                {cleanBankText(detail.description)}
-              </p>
-            )}
-            {detail.counterIban && (
-              <p className="text-center font-mono text-[11px] text-ink-4">{detail.counterIban}</p>
-            )}
-          </div>
-        )}
+        {detail && <BulkTxPeek tx={detail} />}
       </Sheet>
     </div>
   );
@@ -243,7 +267,6 @@ export function ReviewScreen() {
   const recurrings = useRecurrings();
   const recurringOps = useRecurringOps();
 
-  const [pickerOpen, setPickerOpen] = useState(false);
   const [typeOpen, setTypeOpen] = useState(false);
   const [splitOpen, setSplitOpen] = useState(false);
   const [skipped, setSkipped] = useState<ReadonlySet<string>>(new Set());
@@ -251,6 +274,7 @@ export function ReviewScreen() {
   // only Confirm writes; null = untouched, follow tx + prediction live
   const [stagedDraft, setStagedDraft] = useState<ReviewDraft | null>(null);
   const [descExpanded, setDescExpanded] = useState(false);
+  const [reasonOpen, setReasonOpen] = useState(false);
   const [bulkSelected, setBulkSelected] = useState<ReadonlySet<string>>(new Set());
   const [linkRecurring, setLinkRecurring] = useState(true);
   const [initialCount, setInitialCount] = useState<number | null>(null);
@@ -259,7 +283,8 @@ export function ReviewScreen() {
   const memory = useLiveQuery(() => buildSpaceMerchantMemory(db, spaceId), [db, spaceId]);
 
   const queue = useMemo(
-    () => allTxs?.filter((item) => item.needsReview === 1).sort((a, b) => b.date.localeCompare(a.date)),
+    // oldest first (user request): work through the backlog chronologically
+    () => allTxs?.filter((item) => item.needsReview === 1).sort((a, b) => a.date.localeCompare(b.date)),
     [allTxs],
   );
   useEffect(() => {
@@ -462,12 +487,21 @@ export function ReviewScreen() {
                 </button>
               )}
 
-              {/* ONE category editor (user redesign): the list starts with a
-                  single category and grows via "+ add" — the old separate
-                  Split button and the triple display (chip + split rows +
-                  confirm label) are gone. A single row edits through the
-                  quick picker; any row of a multi-split opens the editor. */}
+              {/* type leads (user redesign): it decides what the categories
+                  may be — tapping opens the Type sheet */}
               <div className="mx-auto mt-5 w-full max-w-[300px]" data-testid="review-cats">
+                <button
+                  data-testid="review-type-row"
+                  onClick={() => setTypeOpen(true)}
+                  className="m-tap flex w-full items-center gap-2 border-none bg-transparent px-2 py-1.5 text-left text-[12px] font-medium text-ink-3"
+                >
+                  <Icon name={TX_TYPE_VISUAL[draft?.txType ?? tx.txType].icon} size={16} color={TX_TYPE_VISUAL[draft?.txType ?? tx.txType].color} />
+                  <span className="min-w-0 flex-1 truncate">{draftTypeLabel ?? t(`tx.type.${tx.txType}`)}</span>
+                  <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+                </button>
+
+                {/* the category list: every pencil opens the ONE editor
+                    sheet (add/remove/split rows live there — user redesign) */}
                 {(draft?.splits?.length ? draft.splits : [null]).map((slice) => {
                   const sliceCat = slice ? cats.byId(slice.catId) : cat;
                   const sliceColor = slice
@@ -477,7 +511,7 @@ export function ReviewScreen() {
                     <button
                       key={slice?.catId ?? 'single'}
                       data-testid={slice ? `review-cat-${slice.catId}` : 'review-category-chip'}
-                      onClick={() => (slice ? setSplitOpen(true) : setPickerOpen(true))}
+                      onClick={() => setSplitOpen(true)}
                       className="m-tap flex w-full items-center gap-2 border-none bg-transparent px-2 py-1.5 text-left text-[14px] font-medium text-ink"
                     >
                       <Icon name={sliceCat.icon} size={18} color={sliceColor ?? 'var(--m-ink-3)'} />
@@ -486,24 +520,40 @@ export function ReviewScreen() {
                       </span>
                       {slice && <span className="m-num text-[13px] text-ink-2">{fmtCents(slice.amountCents, tx.currency, lang)}</span>}
                       <Icon name="pencil-outline" size={14} color="var(--m-ink-4)" />
+                      {/* the reason hides behind an (i) — a full row was too
+                          much space for it (user request) */}
+                      {!slice && reasonLine && (
+                        <span // NOSONAR — sits inside the row button; a nested <button> is invalid HTML
+                          data-testid="review-reason-info"
+                          role="button"
+                          tabIndex={0}
+                          aria-label={reasonLine}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setReasonOpen((v) => !v);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setReasonOpen((v) => !v);
+                            }
+                          }}
+                          className="m-tap inline-flex"
+                        >
+                          <Icon name="information-outline" size={15} color="var(--m-ink-4)" />
+                        </span>
+                      )}
                     </button>
                   );
                 })}
-                <button
-                  data-testid="review-cat-add"
-                  onClick={() => setSplitOpen(true)}
-                  className="m-tap flex w-full items-center gap-2 border-none bg-transparent px-2 py-1.5 text-left text-[12px] font-medium text-accent-deep"
-                >
-                  <Icon name="plus-circle-outline" size={16} />
-                  {t('review.addCategory')}
-                </button>
+                {reasonOpen && reasonLine && (
+                  <div className="mt-1 flex items-center justify-center gap-1 rounded-xl bg-bg-2 px-3 py-1.5 text-[11px] text-ink-3" data-testid="review-reason">
+                    <Icon name={prediction?.source === 'keyword' ? 'lightbulb-outline' : 'history'} size={12} />
+                    {reasonLine}
+                  </div>
+                )}
               </div>
-              {reasonLine && (
-                <div className="mt-1 flex items-center justify-center gap-1 text-[11px] text-ink-4" data-testid="review-reason">
-                  <Icon name={prediction?.source === 'keyword' ? 'lightbulb-outline' : 'history'} size={12} />
-                  {reasonLine}
-                </div>
-              )}
 
               {recMatch && (
                 <>
@@ -559,14 +609,9 @@ export function ReviewScreen() {
                 </Chip>
               )}
 
-              {/* quiet secondary action (split moved into the list above) */}
-              <div className="mt-5 flex items-center justify-center text-[12px] font-medium text-ink-3">
-                <button data-testid="review-act-type" onClick={() => setTypeOpen(true)} className="m-tap border-none bg-transparent">
-                  {/* the staged type is part of the decision — show it */}
-                  {t('tx.type')}
-                  {draftTypeLabel ? ` · ${draftTypeLabel}` : ''}
-                </button>
-              </div>
+              {/* type moved ABOVE the categories (user redesign); keep the
+                  old testid alive as an invisible alias for muscle memory in
+                  specs is unnecessary — tests updated instead */}
             </div>
 
             <BulkConfirmSection key={tx.id} similar={similar} selected={bulkSelected} onChange={setBulkSelected} />
@@ -598,17 +643,8 @@ export function ReviewScreen() {
         )}
       </div>
 
-      <CategoryPicker
-        open={pickerOpen}
-        onOpenChange={setPickerOpen}
-        selectedId={draft?.catId}
-        onPick={(catId) => {
-          if (draft) setStagedDraft(withCategory(draft, catId, cats));
-          setPickerOpen(false);
-        }}
-        direction={tx && directionOfTx(tx)}
-        txType={draft?.txType}
-      />
+      {/* the quick picker is gone (user redesign): every category edit
+          goes through the unified split editor's per-row pickers */}
       {tx && draft && (
         <TxTypeSheet
           open={typeOpen}
@@ -628,7 +664,9 @@ export function ReviewScreen() {
           // full amount + one fresh row" — exactly the add-category start
           value={draft.splits}
           txType={draft.txType}
+          seedSingle
           onApply={(splits) => setStagedDraft(withSplits(draft, splits ?? undefined))}
+          onApplySingle={(catId) => setStagedDraft(withCategory(withSplits(draft, undefined), catId, cats))}
         />
       )}
     </div>
