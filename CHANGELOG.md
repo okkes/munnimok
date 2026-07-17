@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.8.0](https://github.com/okkes/munnimok/compare/v2.7.0...v2.8.0) (2026-07-17)
+
+
+### ✨ Features
+
+* **paypal:** PP1 — funding debits become transfers, purchases count once ([9f1f4c5](https://github.com/okkes/munnimok/commit/9f1f4c5a71e86a4ec5e4a5d6259c29e6ab2f393b))
+
 ## [2.7.0](https://github.com/okkes/munnimok/compare/v2.6.0...v2.7.0) (2026-07-17)
 
 
