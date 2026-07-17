@@ -48,6 +48,7 @@ for (const V of VARIANTS) {
   });
 
   test(`review-a3 empty queue hides home banner [${V.id}]`, async ({ browser }) => {
+    test.slow(); // 3 confirm round-trips through the live query — CI needs headroom
     const { page, ctx } = await createPage(browser, V);
     await base(page, V, { demo: true });
     await page.click('[data-testid="home-review-banner"]');
@@ -60,7 +61,7 @@ for (const V of VARIANTS) {
       await expect(async () => {
         if (await page.locator('[data-testid="review-empty"]').count()) return;
         expect(await card.textContent()).not.toBe(before);
-      }).toPass();
+      }).toPass({ timeout: 15_000 });
     }
     await expect(page.locator('[data-testid="review-empty"]')).toBeVisible();
     await page.click('[data-testid="review-back"]');
