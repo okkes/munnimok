@@ -209,6 +209,10 @@ public static class AdminEndpoints
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .ToHashSet();
 
+    /// <summary>catalog endpoints live in their own file but share this gate</summary>
+    internal static Task<bool> IsAdminForCatalogAsync(HttpContext http, AppDbContext db, IConfiguration config)
+        => IsAdminAsync(http, db, config);
+
     private static async Task<bool> IsAdminAsync(HttpContext http, AppDbContext db, IConfiguration config)
     {
         var user = await db.Users.FindAsync(http.GetUserId());

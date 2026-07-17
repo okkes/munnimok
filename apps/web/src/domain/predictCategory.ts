@@ -13,13 +13,18 @@ import type { TxType } from '@/db/types';
  * whole word. Longest keyword wins. Rules are filtered by money direction
  * so e.g. income keywords never fire on a debit.
  */
-export function predictCategory(text: string, direction: 'credit' | 'debit'): string | null {
+export function predictCategory(
+  text: string,
+  direction: 'credit' | 'debit',
+  rules: readonly { catId: string; keywords: string[] }[] = KEYWORD_RULES,
+  catById: { get: (id: string) => { direction: 'credit' | 'debit' | 'both' } | undefined } = CATEGORY_BY_ID,
+): string | null {
   const haystack = text.toLowerCase();
   const words = new Set(haystack.split(/\s+/));
 
   const candidates: { keyword: string; catId: string }[] = [];
-  for (const rule of KEYWORD_RULES) {
-    const cat = CATEGORY_BY_ID.get(rule.catId);
+  for (const rule of rules) {
+    const cat = catById.get(rule.catId);
     if (!cat) continue;
     if (cat.direction !== 'both' && cat.direction !== direction) continue;
     for (const keyword of rule.keywords) candidates.push({ keyword, catId: rule.catId });
@@ -46,6 +51,8 @@ export interface PredictInput {
   merchant: string;
   description?: string;
   amountCents: number;
+  /** operator-published keyword rules (catalog document) — replace the bundled set */
+  keywordRules?: readonly { catId: string; keywords: string[] }[];
 }
 
 /**
@@ -68,7 +75,7 @@ export function predictTx(input: PredictInput): TxPrediction | null {
     }
   }
   const direction = input.amountCents >= 0 ? 'credit' : 'debit';
-  const catId = predictCategory(`${input.merchant} ${input.description ?? ''}`, direction);
+  const catId = predictCategory(`${input.merchant} ${input.description ?? ''}`, direction, input.keywordRules ?? KEYWORD_RULES);
   if (!catId) return null;
   const txType = CATEGORY_BY_ID.get(catId)?.txTypes[0] ?? (direction === 'credit' ? 'income' : 'expense');
   return { catId, txType, source: 'keyword' };

@@ -2,6 +2,8 @@ import { useMemo } from 'react';
 import { useQuery } from '@/db/useQuery';
 import { buildCatalog, visibleCategoryRows } from '@/domain/catalog';
 import type { Cat, Catalog } from '@/domain/catalog';
+import type { CatalogDoc } from '@/domain/catalogDoc';
+import { getCurrentLang } from '@/i18n';
 import type { TFunc, TranslationKey } from '@/i18n';
 import { useData } from '@/app/data';
 
@@ -11,7 +13,8 @@ export type { Cat, Catalog } from '@/domain/catalog';
 
 /** display name for either kind */
 export function catName(cat: Cat, t: TFunc): string {
-  return cat.name ?? (cat.nameKey ? t(cat.nameKey as TranslationKey) : cat.id);
+  // operator-published names (catalog document) win over the bundled key
+  return cat.names?.[getCurrentLang()] ?? cat.name ?? (cat.nameKey ? t(cat.nameKey as TranslationKey) : cat.id);
 }
 
 /**
@@ -28,11 +31,12 @@ export function useCategories(): Catalog {
   const visible = useQuery(store, async () => {
     const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0);
     const cats = (await store.allRows('category')).filter((c) => c.deleted === 0);
-    return visibleCategoryRows(spaces, cats, spaceId);
+    const doc = ((await store.metaGet('catalog'))?.value as CatalogDoc | undefined) ?? null;
+    return { ...visibleCategoryRows(spaces, cats, spaceId), doc };
   }, [spaceId]);
 
   return useMemo(
-    () => buildCatalog(visible?.rows ?? [], visible?.sharedScope ?? false, visible?.hiddenMains ?? []),
+    () => buildCatalog(visible?.rows ?? [], visible?.sharedScope ?? false, visible?.hiddenMains ?? [], visible?.doc),
     [visible],
   );
 }

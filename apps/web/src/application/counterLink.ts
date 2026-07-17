@@ -4,6 +4,7 @@ import type { Repo } from '@/db/repo';
 import { normalizeIban } from '@/domain/feedIds';
 import { applyTypeChange, typeForLinkedAccount } from '@/domain/txType';
 import { buildCatalog, visibleCategoryRows } from '@/domain/catalog';
+import { cachedCatalog } from '@/sync/catalogSync';
 
 /**
  * Retroactive counterparty linking (user rule 2026-07-17): the moment a
@@ -28,7 +29,7 @@ export async function linkAllCounterparties(store: StorageBackend, repo: Repo, s
   const allSpaces = (await store.allRows('space')).filter((s) => s.deleted === 0);
   const allCats = (await store.allRows('category')).filter((c) => c.deleted === 0);
   const visible = visibleCategoryRows(allSpaces, allCats, spaceId);
-  const catalog = buildCatalog(visible.rows, visible.sharedScope, visible.hiddenMains);
+  const catalog = buildCatalog(visible.rows, visible.sharedScope, visible.hiddenMains, await cachedCatalog(store));
 
   let linked = 0;
   for (const tx of await visibleTransactions(store, spaceId)) {

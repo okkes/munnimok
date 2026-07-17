@@ -224,6 +224,7 @@ if (ocrEnabled) app.MapOcr();
 app.MapQuotes();
 app.MapAccounts();
 app.MapAdmin(gcConfigured, bankingEnabled);
+app.MapCatalog();
 if (bankingEnabled) app.MapGoCardless();
 
 await app.RunAsync();
