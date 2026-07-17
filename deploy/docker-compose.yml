@@ -97,7 +97,7 @@ services:
   logto:
     image: svhd/logto:1.41
     restart: unless-stopped
-    entrypoint: ["sh", "-c", "npm run cli db seed -- --swe && npm run alteration deploy latest && npm start"]
+    entrypoint: ["sh", "-c", "npm run alteration deploy latest || true; npm run cli db seed -- --swe && npm run alteration deploy latest && npm start"]
     environment:
       TRUST_PROXY_HEADER: "1"
       DB_URL: postgres://munni:${POSTGRES_PASSWORD}@postgres:5432/logto

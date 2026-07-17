@@ -51,7 +51,7 @@ services:
 
   logto:
     image: svhd/logto:1.41
-    entrypoint: ["sh", "-c", "npm run cli db seed -- --swe && npm run alteration deploy latest && npm start"]
+    entrypoint: ["sh", "-c", "npm run alteration deploy latest || true; npm run cli db seed -- --swe && npm run alteration deploy latest && npm start"]
     environment:
       TRUST_PROXY_HEADER: "0"
       DB_URL: postgres://munni:localtest@postgres:5432/logto
