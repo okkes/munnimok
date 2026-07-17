@@ -64,7 +64,7 @@ export function BankConnectSheet({ open, onOpenChange }: { open: boolean; onOpen
           // its deep-link scheme in the PATH (a query param would collide
           // with the ?ref= the bank provider appends), so the hosted page
           // can hand the user back to the app when it finishes.
-          redirectUrl: `${publicOrigin()}/gc-callback${isNativeApp() ? `/app-${config.nativeScheme}` : ''}`,
+          redirectUrl: publicOrigin() + '/gc-callback' + (isNativeApp() ? '/app-' + config.nativeScheme : ''),
         }),
       });
       if (!res.ok) throw new Error(String(res.status));
