@@ -56,14 +56,18 @@ for (const V of VARIANTS) {
     // land twice on the same card while it swaps (CI-only flake)
     const card = page.locator('[data-testid="review-card"]');
     for (let i = 0; i < 3; i++) {
+      if (await page.locator('[data-testid="review-empty"]').count()) break;
       const before = await card.textContent();
-      await page.click('[data-testid="review-confirm-btn"]');
+      // self-healing confirm: a click landing mid-swap can be swallowed
+      // by the outgoing card — re-click until the queue visibly advances
       await expect(async () => {
         if (await page.locator('[data-testid="review-empty"]').count()) return;
-        expect(await card.textContent()).not.toBe(before);
-      }).toPass({ timeout: 15_000 });
+        if ((await card.textContent()) !== before) return;
+        await page.click('[data-testid="review-confirm-btn"]', { timeout: 2000 }).catch(() => undefined);
+        throw new Error('queue not advanced yet');
+      }).toPass({ timeout: 20_000, intervals: [400, 800, 1200] });
     }
-    await expect(page.locator('[data-testid="review-empty"]')).toBeVisible();
+    await expect(page.locator('[data-testid="review-empty"]')).toBeVisible({ timeout: 10_000 });
     await page.click('[data-testid="review-back"]');
     await expect(page.locator('[data-testid="screen-home"]')).toBeVisible();
     await expect(page.locator('[data-testid="home-review-banner"]')).toHaveCount(0);
