@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useQuery } from '@/db/useQuery';
 import { ALL_TX_TYPES } from '@/domain/txType';
 import type { CategoryRow, CatDirection, TxType } from '@/db/types';
 import { useLang } from '@/i18n';
@@ -55,7 +55,7 @@ type FormMode =
 
 export function ManageCategoriesScreen() {
   const { t } = useLang();
-  const { db, repo, spaceId } = useData();
+  const { store, repo, spaceId } = useData();
   const cats = useCategories();
   const [mode, setMode] = useState<FormMode | null>(null);
   const [name, setName] = useState('');
@@ -90,19 +90,20 @@ export function ManageCategoriesScreen() {
   const dragActiveRef = useRef(false);
 
   // rows for the whole visible scope (needed for editing/moving/copying)
-  const customRows = useLiveQuery(
-    () => db.categories.filter((c) => c.deleted === 0).toArray(),
+  const customRows = useQuery(
+    store,
+    async () => (await store.allRows('category')).filter((c) => c.deleted === 0),
     [],
   );
   const rowById = (id: string) => customRows?.find((r) => r.id === id);
 
   // personal cats offered for copying while managing a shared space
-  const personalCats = useLiveQuery(async () => {
+  const personalCats = useQuery(store, async () => {
     if (!cats.sharedScope) return [];
     const personal = new Set(
-      (await db.spaces.filter((s) => s.deleted === 0 && s.kind !== 'shared').toArray()).map((s) => s.id),
+      (await (await store.allRows('space')).filter((s) => s.deleted === 0 && s.kind !== 'shared')).map((s) => s.id),
     );
-    return db.categories.filter((c) => c.deleted === 0 && personal.has(c.spaceId)).toArray();
+    return (await store.allRows('category')).filter((c) => c.deleted === 0 && personal.has(c.spaceId));
   }, [cats.sharedScope]);
 
   const openNewMain = () => {
@@ -174,20 +175,20 @@ export function ManageCategoriesScreen() {
       await createMainCategory(repo, spaceId, { name: name.trim(), icon, color, txType, otherName: t('cats.other') });
       setMode(null);
     } else if (mode.kind === 'newSub') {
-      await createSubCategory(db, repo, spaceId, { parentId: mode.parentId, name: name.trim(), icon, direction });
+      await createSubCategory(store, repo, spaceId, { parentId: mode.parentId, name: name.trim(), icon, direction });
       setMode(null);
     } else {
       const changes: CategoryChanges =
         mode.kind === 'editMain'
           ? { name: name.trim(), icon, color, txType }
           : { name: name.trim(), icon, direction, ...(moveTo ? { parentId: moveTo } : {}) };
-      await runGuarded(await prepareCategoryEdit(db, repo, mode.row, changes), 'edit');
+      await runGuarded(await prepareCategoryEdit(store, repo, mode.row, changes), 'edit');
     }
   };
 
   const remove = async () => {
     if (!mode || (mode.kind !== 'editMain' && mode.kind !== 'editSub')) return;
-    await runGuarded(await prepareCategoryDelete(db, repo, mode.row), 'delete');
+    await runGuarded(await prepareCategoryDelete(store, repo, mode.row), 'delete');
   };
 
   const confirmPending = async () => {
@@ -199,7 +200,7 @@ export function ManageCategoriesScreen() {
 
   /** per-space main visibility: hidden mains leave every picker but data never blocks */
   const toggleMainVisibility = async (id: string) => {
-    const space = await db.spaces.get(spaceId);
+    const space = await store.get('space', spaceId);
     if (!space) return;
     const next = new Set(space.hiddenMains ?? []);
     if (next.has(id)) next.delete(id);
@@ -310,7 +311,7 @@ export function ManageCategoriesScreen() {
         setTimeout(() => setDragError(null), 4000);
         return;
       }
-      prepareCategoryEdit(db, repo, dragging, { parentId: targetId })
+      prepareCategoryEdit(store, repo, dragging, { parentId: targetId })
         .then((commit) => setMoveConfirm({ sub: dragging, targetId, commit }))
         .catch(() => undefined); // db closed under us (teardown) — drop the move
     };
@@ -783,7 +784,7 @@ export function ManageCategoriesScreen() {
                 <Button
                   size="sm"
                   data-testid={`cats-copy-${r.id}`}
-                  onClick={() => void copyCategoryToSpace(db, repo, spaceId, r)}
+                  onClick={() => void copyCategoryToSpace(store, repo, spaceId, r)}
                 >
                   {t('action.add')}
                 </Button>

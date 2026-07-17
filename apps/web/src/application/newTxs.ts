@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
 import { useData } from '@/app/data';
+import { useQuery } from '@/db/useQuery';
 import type { SpaceTx } from '@/db/joined';
 
 const META_KEY = 'txSeen';
@@ -18,8 +18,8 @@ interface SeenMarker {
  * what my phone has shown me is not a property of the space.
  */
 export function useNewTransactions(txs: SpaceTx[] | undefined): { newTxs: SpaceTx[]; ackAll: () => Promise<void> } {
-  const { db } = useData();
-  const marker = useLiveQuery(async () => ((await db.meta.get(META_KEY))?.value as SeenMarker | undefined) ?? null, [db]);
+  const { store } = useData();
+  const marker = useQuery(store, async () => ((await store.metaGet(META_KEY))?.value as SeenMarker | undefined) ?? null, []);
 
   const newTxs = useMemo(() => {
     if (!txs || marker === undefined) return [];
@@ -32,13 +32,13 @@ export function useNewTransactions(txs: SpaceTx[] | undefined): { newTxs: SpaceT
 
   // seed on first sight — everything current counts as already seen
   if (marker === null && txs) {
-    void db.meta.put({ key: META_KEY, value: { ids: txs.slice(0, KNOWN_CAP).map((t) => t.id) } }).catch(() => undefined);
+    void store.metaPut(META_KEY, { ids: txs.slice(0, KNOWN_CAP).map((t) => t.id) }).catch(() => undefined);
   }
 
   const ackAll = async () => {
     if (!txs) return;
     const ids = [...new Set([...(marker?.ids ?? []), ...txs.map((t) => t.id)])].slice(-KNOWN_CAP);
-    await db.meta.put({ key: META_KEY, value: { ids } });
+    await store.metaPut(META_KEY, { ids });
   };
 
   return { newTxs, ackAll };

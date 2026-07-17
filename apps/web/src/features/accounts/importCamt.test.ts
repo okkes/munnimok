@@ -56,7 +56,7 @@ describe('importCamtStatements', () => {
   afterEach(async () => db.delete());
 
   it('creates an account from an unknown IBAN and imports categorized txs', async () => {
-    const result = await importCamtStatements(repo, db, 's1', [statement()]);
+    const result = await importCamtStatements(repo, new DexieBackend(db), 's1', [statement()]);
     expect(result).toMatchObject({ imported: 3, skipped: 0 });
     expect(result.accounts[0]).toMatchObject({ isNew: true, txCount: 3 });
 
@@ -90,7 +90,7 @@ describe('importCamtStatements', () => {
         needsReview: 0,
       });
     }
-    await importCamtStatements(repo, db, 's1', [statement()]);
+    await importCamtStatements(repo, new DexieBackend(db), 's1', [statement()]);
     // REF-001 is an Albert Heijn debit: history (sport) beats the
     // groceries keyword, and two confirmations mean no review
     const tx = (await db.transactions.toArray()).find((t) => t.importRef === 'REF-001')!;
@@ -106,43 +106,43 @@ describe('importCamtStatements', () => {
       balanceCents: 1,
       iban: 'nl69 ingb 0123 4567 89',
     });
-    const result = await importCamtStatements(repo, db, 's1', [statement()]);
+    const result = await importCamtStatements(repo, new DexieBackend(db), 's1', [statement()]);
     expect(result.accounts[0]).toMatchObject({ accountId: 'acct-existing', isNew: false });
     expect((await db.accounts.get('acct-existing'))!.balanceCents).toBe(123456);
     expect((await db.accounts.count())).toBe(1); // no duplicate account
   });
 
   it('re-import skips every already-imported transaction', async () => {
-    await importCamtStatements(repo, db, 's1', [statement()]);
-    const again = await importCamtStatements(repo, db, 's1', [statement()]);
+    await importCamtStatements(repo, new DexieBackend(db), 's1', [statement()]);
+    const again = await importCamtStatements(repo, new DexieBackend(db), 's1', [statement()]);
     expect(again).toMatchObject({ imported: 0, skipped: 3 });
     expect(await db.transactions.count()).toBe(3);
   });
 
   it('null closing balance leaves an existing balance untouched', async () => {
-    await importCamtStatements(repo, db, 's1', [statement()]);
+    await importCamtStatements(repo, new DexieBackend(db), 's1', [statement()]);
     const accountId = (await db.accounts.toArray())[0].id;
-    await importCamtStatements(repo, db, 's1', [
+    await importCamtStatements(repo, new DexieBackend(db), 's1', [
       statement({ closingBalanceCents: null, entries: [] }),
     ]);
     expect((await db.accounts.get(accountId))!.balanceCents).toBe(123456);
   });
 
   it('a dated statement balance overwrites only when it is not older', async () => {
-    await importCamtStatements(repo, db, 's1', [
+    await importCamtStatements(repo, new DexieBackend(db), 's1', [
       statement({ closingBalanceCents: 5000, balanceAsOf: '2026-07-05', entries: [] }),
     ]);
     const accountId = (await db.accounts.toArray())[0].id;
     expect((await db.accounts.get(accountId))!).toMatchObject({ balanceCents: 5000, balanceAsOf: '2026-07-05' });
 
     // an OLDER statement (re-importing last month's file) must not regress the balance
-    await importCamtStatements(repo, db, 's1', [
+    await importCamtStatements(repo, new DexieBackend(db), 's1', [
       statement({ closingBalanceCents: 1111, balanceAsOf: '2026-06-01', entries: [] }),
     ]);
     expect((await db.accounts.get(accountId))!).toMatchObject({ balanceCents: 5000, balanceAsOf: '2026-07-05' });
 
     // a newer one wins
-    await importCamtStatements(repo, db, 's1', [
+    await importCamtStatements(repo, new DexieBackend(db), 's1', [
       statement({ closingBalanceCents: 7777, balanceAsOf: '2026-07-06', entries: [] }),
     ]);
     expect((await db.accounts.get(accountId))!).toMatchObject({ balanceCents: 7777, balanceAsOf: '2026-07-06' });
@@ -157,7 +157,7 @@ describe('importCamtStatements', () => {
       balanceCents: 42,
       iban: 'NL69INGB0123456789',
     });
-    await importCamtStatements(repo, db, 's1', [
+    await importCamtStatements(repo, new DexieBackend(db), 's1', [
       statement({ closingBalanceCents: 9000, balanceAsOf: '2026-07-01', entries: [] }),
     ]);
     expect((await db.accounts.get('acct-manual'))!).toMatchObject({ balanceCents: 9000, balanceAsOf: '2026-07-01' });
@@ -176,7 +176,7 @@ describe('importCamtStatements', () => {
       },
     };
 
-    const result = await importCamtStatements(repo, db, 's1', [statement()], gateway);
+    const result = await importCamtStatements(repo, new DexieBackend(db), 's1', [statement()], gateway);
     expect(result.imported).toBe(3);
     const feedId = registered[0];
     expect(feedId).toBe(feedSpaceId('NL69INGB0123456789'));
@@ -200,12 +200,12 @@ describe('importCamtStatements', () => {
     expect(account.balanceCents).toBe(123456);
 
     // …and the join layer serves it all back to the space
-    const visible = await visibleTransactions(db, 's1');
+    const visible = await visibleTransactions(new DexieBackend(db), 's1');
     expect(visible).toHaveLength(3);
     expect(visible.every((tx) => tx.feedSpaceId === feedId)).toBe(true);
 
     // re-import: everything skips, nothing duplicates
-    const again = await importCamtStatements(repo, db, 's1', [statement()], gateway);
+    const again = await importCamtStatements(repo, new DexieBackend(db), 's1', [statement()], gateway);
     expect(again).toMatchObject({ imported: 0, skipped: 3 });
     expect(await db.transactions.count()).toBe(3);
     expect(await db.txMeta.count()).toBe(3);
@@ -221,7 +221,7 @@ describe('importCamtStatements', () => {
       balanceAsOf: '2026-07-08', // user corrected it today
       iban: 'NL69INGB0123456789',
     });
-    await importCamtStatements(repo, db, 's1', [
+    await importCamtStatements(repo, new DexieBackend(db), 's1', [
       statement({ closingBalanceCents: 9000, balanceAsOf: '2026-07-01', entries: [] }),
     ]);
     expect((await db.accounts.get('acct-manual'))!).toMatchObject({ balanceCents: 42, balanceAsOf: '2026-07-08' });

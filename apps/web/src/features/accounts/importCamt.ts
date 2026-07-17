@@ -6,7 +6,7 @@ import type { MerchantMemory } from '@/domain/merchantMemory';
 import { buildSpaceMerchantMemory } from '@/application/prediction';
 import { UNCATEGORIZED_ID } from '@/domain/categories';
 import type { Repo } from '@/db/repo';
-import type { MunniDB } from '@/db/schema';
+import type { StorageBackend } from '@/db/backend';
 import type { TxType } from '@/db/types';
 
 // Fixed namespace so the same bank entry always yields the same tx id —
@@ -88,7 +88,7 @@ function predictEntry(
 /** everything one statement's entries share while importing */
 interface EntryContext {
   repo: Repo;
-  db: MunniDB;
+  store: StorageBackend;
   spaceId: string;
   accountId: string;
   iban: string;
@@ -98,7 +98,7 @@ interface EntryContext {
 /** returns true when the entry was new (imported), false when it already existed */
 async function importEntry(ctx: EntryContext, entry: ParsedStatement['entries'][number]): Promise<boolean> {
   const txId = uuidv5(`tx:${ctx.iban}:${entry.ref}`, IMPORT_NS);
-  if (await ctx.db.transactions.get(txId)) return false;
+  if (await ctx.store.get('transaction', txId)) return false;
 
   await ctx.repo.upsert('transaction', ctx.spaceId, txId, {
     accountId: ctx.accountId,
@@ -130,7 +130,7 @@ export interface FeedGateway {
 /** Match statements to existing accounts by IBAN (creating where needed) and import entries idempotently. */
 export async function importCamtStatements(
   repo: Repo,
-  db: MunniDB,
+  store: StorageBackend,
   spaceId: string,
   statements: ParsedStatement[],
   feeds?: FeedGateway,
@@ -138,18 +138,18 @@ export async function importCamtStatements(
   // demo/offline identities never sync: raw+transformation stay merged
   // in the current space exactly as before (dual-read handles both)
   return feeds
-    ? importIntoFeeds(repo, db, spaceId, statements, feeds)
-    : importMerged(repo, db, spaceId, statements);
+    ? importIntoFeeds(repo, store, spaceId, statements, feeds)
+    : importMerged(repo, store, spaceId, statements);
 }
 
 async function importMerged(
   repo: Repo,
-  db: MunniDB,
+  store: StorageBackend,
   spaceId: string,
   statements: ParsedStatement[],
 ): Promise<ImportResult> {
-  const memory = await buildSpaceMerchantMemory(db, spaceId);
-  const existing = await db.accounts.where('spaceId').equals(spaceId).filter((a) => a.deleted === 0).toArray();
+  const memory = await buildSpaceMerchantMemory(store, spaceId);
+  const existing = (await store.bySpace('account', spaceId)).filter((a) => a.deleted === 0);
   const byIban = new Map(existing.flatMap((a) => (a.iban ? [[normalizeIban(a.iban), a] as const] : [])));
 
   let imported = 0;
@@ -169,7 +169,7 @@ async function importMerged(
 
     let txCount = 0;
     for (const entry of stmt.entries) {
-      if (await importEntry({ repo, db, spaceId, accountId, iban, memory }, entry)) {
+      if (await importEntry({ repo, store, spaceId, accountId, iban, memory }, entry)) {
         imported++;
         txCount++;
       } else {
@@ -197,12 +197,12 @@ async function importMerged(
  */
 async function importIntoFeeds(
   repo: Repo,
-  db: MunniDB,
+  store: StorageBackend,
   spaceId: string,
   statements: ParsedStatement[],
   feeds: FeedGateway,
 ): Promise<ImportResult> {
-  const memory = await buildSpaceMerchantMemory(db, spaceId);
+  const memory = await buildSpaceMerchantMemory(store, spaceId);
   let imported = 0;
   let skipped = 0;
   const accounts: ImportPlanAccount[] = [];
@@ -212,7 +212,7 @@ async function importIntoFeeds(
     const feedId = await feeds.register(feedSpaceId(iban), iban);
     const accountId = uuidv5(`acct:${iban}`, IMPORT_NS);
 
-    const account = await db.accounts.get(accountId);
+    const account = await store.get('account', accountId);
     if (account?.spaceId !== feedId) await createStatementAccount(repo, feedId, accountId, stmt, iban);
     else if (statementBalanceWins(account, stmt))
       await repo.upsert('account', feedId, accountId, {
@@ -222,7 +222,7 @@ async function importIntoFeeds(
 
     let txCount = 0;
     for (const entry of stmt.entries) {
-      if (await importFeedEntry({ repo, db, spaceId, accountId, iban, memory }, feedId, entry)) {
+      if (await importFeedEntry({ repo, store, spaceId, accountId, iban, memory }, feedId, entry)) {
         imported++;
         txCount++;
       } else {
@@ -257,7 +257,7 @@ async function importFeedEntry(
   entry: ParsedStatement['entries'][number],
 ): Promise<boolean> {
   const txId = uuidv5(`tx:${ctx.iban}:${entry.ref}`, IMPORT_NS);
-  if (await ctx.db.transactions.get(txId)) return false;
+  if (await ctx.store.get('transaction', txId)) return false;
 
   await ctx.repo.upsert('transaction', feedId, txId, {
     accountId: ctx.accountId,

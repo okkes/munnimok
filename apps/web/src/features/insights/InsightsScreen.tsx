@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useQuery } from '@/db/useQuery';
 import { useNavigate } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
@@ -42,11 +42,11 @@ function MiniBars({ data, color }: Readonly<{ data: number[]; color: string }>) 
 export function InsightsScreen() {
   const { t, lang } = useLang();
   const navigate = useNavigate();
-  const { db, spaceId } = useData();
+  const { store, spaceId } = useData();
   const insights = useInsights();
   const ops = useInsightOps();
   useInsightDigest(insights);
-  const space = useLiveQuery(() => db.spaces.get(spaceId), [spaceId]);
+  const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const currency = space?.currency ?? 'EUR';
   const [open, setOpen] = useState<string | null>(null);
 

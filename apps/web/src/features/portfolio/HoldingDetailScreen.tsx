@@ -3,7 +3,7 @@ import { useNavigate, useParams } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { usePortfolio, usePortfolioOps } from '@/application/portfolio';
 import { useData } from '@/app/data';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useQuery } from '@/db/useQuery';
 import type { HoldingRow, LotRow } from '@/db/types';
 import { fmtCents, parseCents } from '@/lib/money';
 import { AppBar, IconButton } from '@/ui/AppBar';
@@ -20,17 +20,17 @@ const LOT_ICON: Record<string, string> = { buy: 'tray-arrow-down', sell: 'tray-a
 export function HoldingDetailScreen() {
   const { t, lang } = useLang();
   const navigate = useNavigate();
-  const { db, spaceId } = useData();
+  const { store, spaceId } = useData();
   const { holdingId } = useParams({ strict: false }) as { holdingId: string };
   const model = usePortfolio();
   const ops = usePortfolioOps();
-  const lots = useLiveQuery(
+  const lots = useQuery(store, 
     async () => {
-      const rows = await db.lots.filter((l) => l.deleted === 0 && l.spaceId === spaceId && l.holdingId === holdingId).toArray();
+      const rows = await (await store.allRows('lot')).filter((l) => l.deleted === 0 && l.spaceId === spaceId && l.holdingId === holdingId);
       rows.sort((a, b) => b.date.localeCompare(a.date));
       return rows;
     },
-    [db, spaceId, holdingId],
+    [spaceId, holdingId],
   );
   const [formInitial, setFormInitial] = useState<HoldingRow | 'new' | null>(null);
   const [lotOpen, setLotOpen] = useState(false);

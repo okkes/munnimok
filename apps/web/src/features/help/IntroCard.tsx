@@ -1,4 +1,4 @@
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useQuery } from '@/db/useQuery';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useHelp } from './HelpContext';
@@ -15,11 +15,11 @@ import { Icon } from '@/ui/Icon';
  */
 export function IntroCard({ tourId, idle = true }: Readonly<{ tourId: TourId; idle?: boolean }>) {
   const { t } = useLang();
-  const { db } = useData();
+  const { store } = useData();
   const { openSlides } = useHelp();
   // null = looked and found nothing; undefined = still loading
-  const dismissed = useLiveQuery(async () => (await db.meta.get(`introDismissed_${tourId}`)) ?? null, [db, tourId]);
-  const seen = useLiveQuery(async () => (await db.meta.get(`tutorialSeen_${tourId}`)) ?? null, [db, tourId]);
+  const dismissed = useQuery(store, async () => (await store.metaGet(`introDismissed_${tourId}`)) ?? null, [tourId]);
+  const seen = useQuery(store, async () => (await store.metaGet(`tutorialSeen_${tourId}`)) ?? null, [tourId]);
 
   const tipsOff = useTipsDisabled();
   const loaded = dismissed !== undefined && seen !== undefined;
@@ -43,7 +43,7 @@ export function IntroCard({ tourId, idle = true }: Readonly<{ tourId: TourId; id
       <button
         aria-label={t('action.dismiss')}
         data-testid="intro-dismiss"
-        onClick={() => void db.meta.put({ key: `introDismissed_${tourId}`, value: true })}
+        onClick={() => void store.metaPut(`introDismissed_${tourId}`, true)}
         className="m-tap flex h-7 w-7 items-center justify-center rounded-full border-none bg-transparent"
       >
         <Icon name="close" size={16} color="var(--m-ink-4)" />

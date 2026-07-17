@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useQuery } from '@/db/useQuery';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useDebtOps, useDebtStatuses } from '@/application/debts';
@@ -196,9 +196,9 @@ export function DebtFormSheet({ initial, onClose }: Readonly<{ initial: DebtRow 
 export function DebtsScreen() {
   const { t, lang } = useLang();
   const navigate = useNavigate();
-  const { db, spaceId } = useData();
+  const { store, spaceId } = useData();
   const statuses = useDebtStatuses();
-  const space = useLiveQuery(() => db.spaces.get(spaceId), [spaceId]);
+  const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const currency = space?.currency ?? 'EUR';
   const [formInitial, setFormInitial] = useState<DebtRow | 'new' | null>(null);
 

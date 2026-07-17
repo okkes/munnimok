@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useQuery } from '@/db/useQuery';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
@@ -20,11 +20,11 @@ import { DebtFormSheet } from './DebtsScreen';
 export function DebtDetailScreen() {
   const { t, lang } = useLang();
   const navigate = useNavigate();
-  const { db, spaceId } = useData();
+  const { store, spaceId } = useData();
   const { debtId } = useParams({ strict: false }) as { debtId: string };
   const statuses = useDebtStatuses();
   const txs = useSpaceTransactions();
-  const space = useLiveQuery(() => db.spaces.get(spaceId), [spaceId]);
+  const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const [formInitial, setFormInitial] = useState<DebtRow | 'new' | null>(null);
 
   const status = statuses?.find((s) => s.debt.id === debtId);

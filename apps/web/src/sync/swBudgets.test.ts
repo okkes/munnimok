@@ -43,31 +43,31 @@ describe('collectBudgetAlerts (budgets design P4)', () => {
     const db = new MunniDB(DB);
     await seed(db, { spentCents: 8500, notifyAtPct: 80 });
 
-    const first = await collectBudgetAlerts(db, SPACE, 'en');
+    const first = await collectBudgetAlerts(new DexieBackend(db), SPACE, 'en');
     expect(first).toHaveLength(1);
     expect(first[0].body).toBe('Groceries: 85% of the budget used');
     expect(first[0].url).toBe('./#/budgets/b1');
 
     // the marker holds — same period stays quiet
-    expect(await collectBudgetAlerts(db, SPACE, 'en')).toHaveLength(0);
+    expect(await collectBudgetAlerts(new DexieBackend(db), SPACE, 'en')).toHaveLength(0);
     db.close();
   });
 
   it('stays quiet below the threshold and without a configured threshold', async () => {
     const db = new MunniDB(DB);
     await seed(db, { spentCents: 5000, notifyAtPct: 80 });
-    expect(await collectBudgetAlerts(db, SPACE, 'en')).toHaveLength(0);
+    expect(await collectBudgetAlerts(new DexieBackend(db), SPACE, 'en')).toHaveLength(0);
 
     const repo = new Repo(new DexieBackend(db), new HlcClock('t2'), { trackOutbox: false });
     await repo.upsert('budget', SPACE, 'b1', { notifyAtPct: undefined });
-    expect(await collectBudgetAlerts(db, SPACE, 'en')).toHaveLength(0);
+    expect(await collectBudgetAlerts(new DexieBackend(db), SPACE, 'en')).toHaveLength(0);
     db.close();
   });
 
   it('over-budget wording carries the overshoot amount (dutch)', async () => {
     const db = new MunniDB(DB);
     await seed(db, { spentCents: 12_000, notifyAtPct: 100 });
-    const alerts = await collectBudgetAlerts(db, SPACE, 'nl');
+    const alerts = await collectBudgetAlerts(new DexieBackend(db), SPACE, 'nl');
     expect(alerts).toHaveLength(1);
     expect(alerts[0].body).toContain('Groceries is');
     expect(alerts[0].body).toContain('over het budget');

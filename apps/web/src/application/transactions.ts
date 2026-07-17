@@ -1,6 +1,6 @@
-import { useLiveQuery } from 'dexie-react-hooks';
 import { visibleAccounts, visibleTransactions, writeTxTransform } from '@/db/joined';
 import type { SpaceAccount, SpaceTx, TxTransformFields } from '@/db/joined';
+import { useQuery } from '@/db/useQuery';
 import { useData } from '@/app/data';
 
 export type { SpaceAccount, SpaceTx, TxTransformFields };
@@ -15,20 +15,20 @@ export type { SpaceAccount, SpaceTx, TxTransformFields };
 
 /** every transaction the active space sees (legacy + attached feeds), unsorted */
 export function useSpaceTransactions(): SpaceTx[] | undefined {
-  const { db, spaceId } = useData();
-  return useLiveQuery(() => visibleTransactions(db, spaceId), [db, spaceId]);
+  const { store, spaceId } = useData();
+  return useQuery(store, async () => visibleTransactions(store, spaceId), [spaceId]);
 }
 
 /** every account the active space sees (legacy + attached), with link info */
 export function useSpaceAccounts(): SpaceAccount[] | undefined {
-  const { db, spaceId } = useData();
-  return useLiveQuery(() => visibleAccounts(db, spaceId), [db, spaceId]);
+  const { store, spaceId } = useData();
+  return useQuery(store, async () => visibleAccounts(store, spaceId), [spaceId]);
 }
 
 /** one visible transaction by id (detail screens) */
 export function useSpaceTransaction(txId: string): SpaceTx | undefined {
-  const { db, spaceId } = useData();
-  const txs = useLiveQuery(() => visibleTransactions(db, spaceId), [db, spaceId]);
+  const { store, spaceId } = useData();
+  const txs = useQuery(store, async () => visibleTransactions(store, spaceId), [spaceId]);
   return txs?.find((t) => t.id === txId);
 }
 

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useQuery } from '@/db/useQuery';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
@@ -25,16 +25,16 @@ import { TxRow } from '@/ui/TxRow';
  */
 export function RecurringDetailScreen() {
   const { t, lang } = useLang();
-  const { db, spaceId } = useData();
+  const { store, spaceId } = useData();
   const { recId } = useParams({ strict: false }) as { recId: string };
   const navigate = useNavigate();
   const [formInitial, setFormInitial] = useState<FormState | null>(null);
 
   // 'loading' sentinel: Dexie's get() yields undefined both while loading
   // and for a missing row — only the latter should bounce the screen
-  const rec = useLiveQuery(() => db.recurrings.get(recId), [db, recId], 'loading' as const);
+  const rec = useQuery(store, async () => store.get('recurring', recId), [recId], 'loading' as const);
   const txs = useSpaceTransactions();
-  const space = useLiveQuery(() => db.spaces.get(spaceId), [spaceId]);
+  const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const currency = space?.currency ?? 'EUR';
   const money = (cents: number) => fmtCents(cents, currency, lang);
 

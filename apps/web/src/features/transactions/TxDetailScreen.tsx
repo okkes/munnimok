@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useQuery } from '@/db/useQuery';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { useSpaceTransaction, useSpaceTransactions, useTxTransform } from '@/application/transactions';
 import { useRecurringOps, useRecurrings } from '@/application/recurring';
@@ -31,7 +31,7 @@ const DATE_FMT: Record<string, string> = { en: 'en-GB', nl: 'nl-NL', tr: 'tr-TR'
 
 export function TxDetailScreen() {
   const { t, lang } = useLang();
-  const { db } = useData();
+  const { store } = useData();
   const { txId } = useParams({ strict: false }) as { txId: string };
   const [pickerOpen, setPickerOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -56,19 +56,21 @@ export function TxDetailScreen() {
 
   const tx = useSpaceTransaction(txId);
   const transform = useTxTransform();
-  const account = useLiveQuery(() => (tx ? db.accounts.get(tx.accountId) : undefined), [tx?.accountId]);
-  const linkedAccount = useLiveQuery(
-    () => (tx?.linkedAccountId ? db.accounts.get(tx.linkedAccountId) : undefined),
+  const account = useQuery(store, async () => (tx ? store.get('account', tx.accountId) : undefined), [tx?.accountId]);
+  const linkedAccount = useQuery(
+    store,
+    async () => (tx?.linkedAccountId ? store.get('account', tx.linkedAccountId) : undefined),
     [tx?.linkedAccountId],
   );
   // read-time join (user request): the moment an account with this IBAN
   // exists locally — e.g. it was attached to a space later — every
   // transaction's counterparty upgrades from plain text to a live door
   const counterIban = tx?.counterIban ? normalizeIban(tx.counterIban) : undefined;
-  const counterAccount = useLiveQuery(
-    () =>
+  const counterAccount = useQuery(
+    store,
+    async () =>
       counterIban
-        ? db.accounts.filter((a) => a.deleted === 0 && !!a.iban && normalizeIban(a.iban) === counterIban).first()
+        ? (await store.allRows('account')).find((a) => a.deleted === 0 && !!a.iban && normalizeIban(a.iban) === counterIban)
         : undefined,
     [counterIban],
   );

@@ -37,13 +37,16 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
     await waitFor(() => expect(screen.getByText('Music lessons')).toBeTruthy(), { timeout: 5000 });
     const header = screen.getByText('Music lessons').closest('.m-cap')!;
     expect(header.textContent).toContain('Income');
-    // …and the auto "Other" sub exists but is not editable
+    // …and the auto "Other" sub exists but is not editable (it lands in a
+    // second write — wait for its own live-query emission)
     const group = header.parentElement!;
-    const other = [...group.querySelectorAll('[data-testid^="managecat-"]')].find((b) =>
-      b.textContent?.includes('Other'),
-    ) as HTMLButtonElement;
-    expect(other).toBeTruthy();
-    expect(other.disabled).toBe(true);
+    await waitFor(() => {
+      const other = [...group.querySelectorAll('[data-testid^="managecat-"]')].find((b) =>
+        b.textContent?.includes('Other'),
+      ) as HTMLButtonElement;
+      expect(other).toBeTruthy();
+      expect(other.disabled).toBe(true);
+    });
   }, 15_000);
 
   it('hides a main per space: it leaves the pickers but stays manageable', async () => {

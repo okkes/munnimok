@@ -1,4 +1,4 @@
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useQuery } from '@/db/useQuery';
 import { useData } from '@/app/data';
 import type { Lang } from '@/i18n';
 
@@ -311,17 +311,17 @@ export const latestWhatsNewVersion = (): string | undefined => WHATS_NEW[0]?.ver
 
 /** true while the newest entry hasn't been acknowledged on this device */
 export function useWhatsNewUnseen(): boolean {
-  const { db } = useData();
-  const seen = useLiveQuery(async () => (await db.meta.get(SEEN_KEY)) ?? null, [db]);
+  const { store } = useData();
+  const seen = useQuery(store, async () => (await store.metaGet(SEEN_KEY)) ?? null, []);
   if (seen === undefined) return false; // still loading — don't flash
   const latest = latestWhatsNewVersion();
   return !!latest && seen?.value !== latest;
 }
 
 export function useMarkWhatsNewSeen(): () => void {
-  const { db } = useData();
+  const { store } = useData();
   return () => {
     const latest = latestWhatsNewVersion();
-    if (latest) void db.meta.put({ key: SEEN_KEY, value: latest });
+    if (latest) void store.metaPut(SEEN_KEY, latest);
   };
 }

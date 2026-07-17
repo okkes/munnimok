@@ -1,4 +1,4 @@
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useQuery } from '@/db/useQuery';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { isNativeApp } from '@/lib/platform';
@@ -20,10 +20,10 @@ const isStandalone = (): boolean =>
  */
 export function InstallHint() {
   const { t } = useLang();
-  const { db } = useData();
+  const { store } = useData();
   const { openSlides } = useHelp();
   // null = looked and found nothing; undefined = still loading
-  const dismissed = useLiveQuery(async () => (await db.meta.get('installHintDismissed')) ?? null, [db]);
+  const dismissed = useQuery(store, async () => (await store.metaGet('installHintDismissed')) ?? null, []);
   const tipsOff = useTipsDisabled();
 
   // the native shell IS the installed app — a PWA nudge there is absurd
@@ -49,7 +49,7 @@ export function InstallHint() {
       <button
         aria-label={t('action.dismiss')}
         data-testid="install-hint-dismiss"
-        onClick={() => void db.meta.put({ key: 'installHintDismissed', value: true })}
+        onClick={() => void store.metaPut('installHintDismissed', true)}
         className="m-tap flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-none bg-transparent"
       >
         <Icon name="close" size={16} color="var(--m-ink-4)" />

@@ -32,7 +32,7 @@ async function download(name: string, content: string, mime: string): Promise<vo
 /** Global settings → Export data (csv-export design): fully client-side. */
 export function ExportSheet({ open, onOpenChange }: Readonly<{ open: boolean; onOpenChange: (open: boolean) => void }>) {
   const { t, lang } = useLang();
-  const { db, spaceId } = useData();
+  const { store, spaceId } = useData();
   const [scope, setScope] = useState<Scope>('space');
   const [range, setRange] = useState<Range>('year');
   const [from, setFrom] = useState('');
@@ -46,7 +46,7 @@ export function ExportSheet({ open, onOpenChange }: Readonly<{ open: boolean; on
     if (range === 'all') return null;
     if (range === 'year') return { from: `${today.slice(0, 4)}-01-01`, to: today };
     if (range === 'custom') return from && to ? { from, to } : null;
-    const space = await db.spaces.get(spaceId);
+    const space = await store.get('space', spaceId);
     const period = periodHistory(space?.periodType ?? 'month', space?.periodDay ?? 1, 1)[0];
     return { from: period.start, to: period.end };
   };
@@ -54,23 +54,23 @@ export function ExportSheet({ open, onOpenChange }: Readonly<{ open: boolean; on
   const run = async () => {
     setEmpty(false);
     const spaces = scope === 'all'
-      ? await db.spaces.filter((s) => s.deleted === 0).toArray()
-      : [(await db.spaces.get(spaceId))!].filter(Boolean);
+      ? (await store.allRows('space')).filter((s) => s.deleted === 0)
+      : [(await store.get('space', spaceId))!].filter(Boolean);
     const window = await bounds();
     const today = localToday();
     const rangeLabel = window ? `${window.from}--${window.to}` : 'all';
 
-    const allSpaces = await db.spaces.filter((s) => s.deleted === 0).toArray();
-    const allCats = await db.categories.filter((c) => c.deleted === 0).toArray();
+    const allSpaces = (await store.allRows('space')).filter((s) => s.deleted === 0);
+    const allCats = (await store.allRows('category')).filter((c) => c.deleted === 0);
 
     const perSpace = await Promise.all(
       spaces.map(async (space) => {
-        const txs = (await visibleTransactions(db, space.id)).filter(
+        const txs = (await visibleTransactions(store, space.id)).filter(
           (item) => !window || (item.date >= window.from && item.date <= window.to),
         );
-        const accounts = await visibleAccounts(db, space.id);
-        const recurrings = await db.recurrings.filter((r) => r.deleted === 0 && r.spaceId === space.id).toArray();
-        const events = await db.events.filter((e) => e.deleted === 0 && e.spaceId === space.id).toArray();
+        const accounts = await visibleAccounts(store, space.id);
+        const recurrings = (await store.bySpace('recurring', space.id)).filter((r) => r.deleted === 0);
+        const events = (await store.bySpace('event', space.id)).filter((e) => e.deleted === 0);
         return { space, txs, accounts, recurrings, events };
       }),
     );

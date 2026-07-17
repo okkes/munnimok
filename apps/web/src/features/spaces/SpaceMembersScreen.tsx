@@ -1,4 +1,4 @@
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useQuery } from '@/db/useQuery';
 import { useNavigate, useParams, useRouter } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
@@ -14,13 +14,13 @@ import { Icon } from '@/ui/Icon';
  */
 export function SpaceMembersScreen() {
   const { t } = useLang();
-  const { db } = useData();
+  const { store } = useData();
   const navigate = useNavigate();
   const router = useRouter();
   const identity = useSession((s) => s.identity);
   const syncing = identity?.kind === 'user';
   const { spaceId } = useParams({ strict: false }) as { spaceId: string };
-  const space = useLiveQuery(() => db.spaces.get(spaceId), [spaceId]);
+  const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-space-members">

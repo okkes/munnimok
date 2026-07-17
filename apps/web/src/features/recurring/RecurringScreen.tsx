@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useQuery } from '@/db/useQuery';
 import { useNavigate } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
@@ -21,8 +21,8 @@ import { Pill, ProgressBar } from '@/ui/primitives';
 
 export function RecurringScreen() {
   const { t, lang } = useLang();
-  const { db, spaceId } = useData();
-  const space = useLiveQuery(() => db.spaces.get(spaceId), [spaceId]);
+  const { store, spaceId } = useData();
+  const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const recs = useRecurrings();
   const dismissed = useDismissedKeys();
   const txs = useSpaceTransactions();

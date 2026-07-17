@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useQuery } from '@/db/useQuery';
 import { useSpaceTransactions, useTxTransform } from '@/application/transactions';
 import type { SpaceTx } from '@/application/transactions';
 import { buildSpaceMerchantMemory } from '@/application/prediction';
@@ -118,8 +118,8 @@ function applyOwnCounterDefault(
 function BulkTxPeek({ tx }: Readonly<{ tx: SpaceTx }>) {
   const { t, lang } = useLang();
   const cats = useCategories();
-  const { db } = useData();
-  const account = useLiveQuery(() => db.accounts.get(tx.accountId), [tx.accountId]);
+  const { store } = useData();
+  const account = useQuery(store, async () => store.get('account', tx.accountId), [tx.accountId]);
   const cat = cats.byId(tx.catId);
   const catColor = cat.color ?? cats.byId(cat.parentId ?? '').color;
   const factRow = (label: string, value: string, icon: string, color?: string) => (
@@ -260,7 +260,7 @@ function BulkConfirmSection({
  */
 export function ReviewScreen() {
   const { t, lang } = useLang();
-  const { db, spaceId } = useData();
+  const { store, spaceId } = useData();
   const cats = useCategories();
   const allTxs = useSpaceTransactions();
   const transform = useTxTransform();
@@ -280,7 +280,7 @@ export function ReviewScreen() {
   const [initialCount, setInitialCount] = useState<number | null>(null);
 
   // teaching data: what this space (or the user's personal spaces) confirmed before
-  const memory = useLiveQuery(() => buildSpaceMerchantMemory(db, spaceId), [db, spaceId]);
+  const memory = useQuery(store, async () => buildSpaceMerchantMemory(store, spaceId), [spaceId]);
 
   const queue = useMemo(
     // oldest first (user request): work through the backlog chronologically
@@ -302,12 +302,15 @@ export function ReviewScreen() {
   // counterparty IBAN belonging to one of MY OWN accounts = money moving
   // between my accounts — a transfer by definition, pre-applied (user
   // report: credit-card top-ups showed up as expense + income pairs)
-  const ownCounter = useLiveQuery(() => {
-    const iban = tx?.counterIban ? normalizeIban(tx.counterIban) : undefined;
-    return iban
-      ? db.accounts.filter((a) => a.deleted === 0 && !!a.iban && normalizeIban(a.iban) === iban).first()
-      : undefined;
-  }, [tx?.counterIban, db]);
+  const ownCounter = useQuery(
+    store,
+    async () => {
+      const iban = tx?.counterIban ? normalizeIban(tx.counterIban) : undefined;
+      if (!iban) return undefined;
+      return (await store.allRows('account')).find((a) => a.deleted === 0 && !!a.iban && normalizeIban(a.iban) === iban);
+    },
+    [tx?.counterIban],
+  );
 
   // untouched cards follow the tx + the (async) prediction live
   const baseDraft = tx ? initDraft(tx, prediction?.catId, cats) : null;

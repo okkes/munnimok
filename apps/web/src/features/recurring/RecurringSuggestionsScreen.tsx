@@ -12,7 +12,7 @@ import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Tile } from '@/ui/primitives';
 import { useData } from '@/app/data';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useQuery } from '@/db/useQuery';
 
 /**
  * Detection inbox: every suspected recurring cost with its evidence —
@@ -22,12 +22,12 @@ import { useLiveQuery } from 'dexie-react-hooks';
  */
 export function RecurringSuggestionsScreen() {
   const { t, lang } = useLang();
-  const { db, spaceId } = useData();
+  const { store, spaceId } = useData();
   const recs = useRecurrings();
   const dismissed = useDismissedKeys();
   const txs = useSpaceTransactions();
   const ops = useRecurringOps();
-  const space = useLiveQuery(() => db.spaces.get(spaceId), [spaceId]);
+  const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const [formInitial, setFormInitial] = useState<FormState | null>(null);
 
   const today = localToday();

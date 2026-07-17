@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useQuery } from '@/db/useQuery';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
@@ -22,12 +22,12 @@ import { BUDGET_ICONS } from './budgetUi';
 export function BudgetFormScreen() {
   const { t } = useLang();
   const navigate = useNavigate();
-  const { db, spaceId } = useData();
+  const { store, spaceId } = useData();
   const { budgetId } = useParams({ strict: false }) as { budgetId?: string };
   const budgets = useBudgets();
   const ops = useBudgetOps();
   const cats = useCategories();
-  const space = useLiveQuery(() => db.spaces.get(spaceId), [spaceId]);
+  const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
 
   const editing = budgets?.find((b) => b.id === budgetId);
   const [name, setName] = useState('');

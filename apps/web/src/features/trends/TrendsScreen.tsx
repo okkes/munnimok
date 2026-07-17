@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useQuery } from '@/db/useQuery';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
@@ -24,7 +24,7 @@ const PERIOD_COUNT = 12;
  */
 export function TrendsScreen() {
   const { t, lang } = useLang();
-  const { db, spaceId } = useData();
+  const { store, spaceId } = useData();
   const [view, setView] = useState<View>('categories');
   const [catId, setCatId] = useState<string | undefined>(undefined);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -32,7 +32,7 @@ export function TrendsScreen() {
   const txs = useSpaceTransactions();
   const accounts = useSpaceAccounts();
   const cats = useCategories();
-  const space = useLiveQuery(() => db.spaces.get(spaceId), [spaceId]);
+  const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const currency = space?.currency ?? 'EUR';
   const today = localToday();
 

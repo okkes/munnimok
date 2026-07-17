@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useQuery } from '@/db/useQuery';
 import { useNavigate, useParams, useRouter } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { downscaleImage } from '@/lib/image';
@@ -43,7 +43,7 @@ const weekdayName = (weekday: number, lang: keyof typeof LOCALES) =>
  */
 export function SpaceSettingsScreen() {
   const { t, lang } = useLang();
-  const { db, repo, engine, setActiveSpace, spaceId: activeSpaceId } = useData();
+  const { store, repo, engine, setActiveSpace, spaceId: activeSpaceId } = useData();
   const navigate = useNavigate();
   const identity = useSession((s) => s.identity);
   const syncing = identity?.kind === 'user';
@@ -53,7 +53,7 @@ export function SpaceSettingsScreen() {
   const router = useRouter();
   const goBack = () => router.history.back();
 
-  const space = useLiveQuery(() => db.spaces.get(spaceId), [spaceId]);
+  const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
 
   const [name, setName] = useState('');
   const [icon, setIcon] = useState(SPACE_ICONS[0]);
@@ -124,7 +124,7 @@ export function SpaceSettingsScreen() {
       setConfirmLeave(true); // destructive: second tap confirms
       return;
     }
-    if (await leaveSpace({ db, engine, setActiveSpace, activeSpaceId }, spaceId)) {
+    if (await leaveSpace({ store, engine, setActiveSpace, activeSpaceId }, spaceId)) {
       void navigate({ to: '/spaces' });
     }
   };
@@ -137,7 +137,7 @@ export function SpaceSettingsScreen() {
     }
     // counted on demand — a liveQuery would read undefined (= "only
     // space") for a tap that lands before its first emission
-    const count = await db.spaces.filter((s) => s.deleted === 0).count();
+    const count = await (await store.allRows('space')).filter((s) => s.deleted === 0).length;
     if (count <= 1) {
       setDeleteError(t('space.cannotDeleteOnly'));
       return;

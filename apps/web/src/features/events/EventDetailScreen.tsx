@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useQuery } from '@/db/useQuery';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
@@ -26,13 +26,13 @@ import type { EventRow } from '@/db/types';
 export function EventDetailScreen() {
   const { t, lang } = useLang();
   const navigate = useNavigate();
-  const { db, spaceId } = useData();
+  const { store, spaceId } = useData();
   const { eventId } = useParams({ strict: false }) as { eventId: string };
   const events = useEvents();
   const txs = useSpaceTransactions();
   const transform = useTxTransform();
   const cats = useCategories();
-  const space = useLiveQuery(() => db.spaces.get(spaceId), [spaceId]);
+  const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const [formInitial, setFormInitial] = useState<EventRow | 'new' | null>(null);
   const [pickOpen, setPickOpen] = useState(false);
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());

@@ -43,7 +43,7 @@ describe('linkAllCounterparties', () => {
 
     // the card arrives later — the sweep runs
     await repo.upsert('account', 's1', 'acct-cc', { name: 'Card', type: 'credit', source: 'manual', currency: 'EUR', iban: 'NL91ABNA0417164300' });
-    expect(await linkAllCounterparties(db, repo, 's1')).toBe(2);
+    expect(await linkAllCounterparties(new DexieBackend(db), repo, 's1')).toBe(2);
 
     const topup = await db.transactions.get('tx-topup');
     expect(topup).toMatchObject({ linkedAccountId: 'acct-cc', txType: 'transfer' }); // credit = transfer (user ruling)
@@ -53,7 +53,7 @@ describe('linkAllCounterparties', () => {
     expect((await db.transactions.get('tx-foreign'))?.linkedAccountId).toBeUndefined();
 
     // idempotent: a second pass changes nothing
-    expect(await linkAllCounterparties(db, repo, 's1')).toBe(0);
+    expect(await linkAllCounterparties(new DexieBackend(db), repo, 's1')).toBe(0);
     db.close();
   });
 
@@ -64,7 +64,7 @@ describe('linkAllCounterparties', () => {
       amountCents: -10000, merchant: 'TO SAVINGS', txType: 'expense', counterIban: 'NL02SAVE0000000002',
     });
     await repo.upsert('account', 's1', 'acct-save', { name: 'Buffer', type: 'savings', source: 'manual', currency: 'EUR', iban: 'NL02 SAVE 0000 0000 02' });
-    await linkAllCounterparties(db, repo, 's1');
+    await linkAllCounterparties(new DexieBackend(db), repo, 's1');
     expect(await db.transactions.get('tx-save')).toMatchObject({ linkedAccountId: 'acct-save', txType: 'saving' });
     db.close();
   });

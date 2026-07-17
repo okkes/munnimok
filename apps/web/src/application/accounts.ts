@@ -1,5 +1,5 @@
-import { useLiveQuery } from 'dexie-react-hooks';
 import { useData } from '@/app/data';
+import { useQuery } from '@/db/useQuery';
 import type { AccountRow } from '@/db/types';
 
 /**
@@ -39,13 +39,16 @@ export interface GlobalAccounts {
 }
 
 export function useGlobalAccounts(myFeedIds: ReadonlySet<string> | undefined): GlobalAccounts | undefined {
-  const { db } = useData();
-  return useLiveQuery(async () => {
-    const [spaces, accounts, links] = await Promise.all([
-      db.spaces.filter((s) => s.deleted === 0).toArray(),
-      db.accounts.filter((a) => a.deleted === 0).toArray(),
-      db.accountLinks.filter((l) => l.deleted === 0).toArray(),
+  const { store } = useData();
+  return useQuery(store, async () => {
+    const [allSpaces, allAccounts, allLinks] = await Promise.all([
+      store.allRows('space'),
+      store.allRows('account'),
+      store.allRows('accountLink'),
     ]);
+    const spaces = allSpaces.filter((s) => s.deleted === 0);
+    const accounts = allAccounts.filter((a) => a.deleted === 0);
+    const links = allLinks.filter((l) => l.deleted === 0);
     const spaceNames = new Map(spaces.map((s) => [s.id, s.name]));
     const memberSpaceIds = new Set(spaces.map((s) => s.id));
 
@@ -77,5 +80,5 @@ export function useGlobalAccounts(myFeedIds: ReadonlySet<string> | undefined): G
       else sharedWithMe.push(entry);
     }
     return { mine, sharedWithMe };
-  }, [db, myFeedIds]);
+  }, [myFeedIds]);
 }

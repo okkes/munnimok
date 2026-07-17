@@ -1,5 +1,5 @@
 import { txMetaId } from '@/domain/feedIds';
-import type { MunniDB } from './schema';
+import type { StorageBackend } from './backend';
 import type { Repo } from './repo';
 import type { AccountLinkRow, AccountRow, TransactionRow, TxMetaRow } from './types';
 
@@ -45,31 +45,28 @@ function joinTx(raw: TransactionRow, meta: TxMetaRow | undefined, spaceId: strin
 }
 
 /** attachments of a space (non-deleted; archived ones still serve history) */
-export async function spaceAccountLinks(db: MunniDB, spaceId: string): Promise<AccountLinkRow[]> {
-  return db.accountLinks.where('spaceId').equals(spaceId).filter((l) => l.deleted === 0).toArray();
+export async function spaceAccountLinks(store: StorageBackend, spaceId: string): Promise<AccountLinkRow[]> {
+  return (await store.bySpace('accountLink', spaceId)).filter((l) => l.deleted === 0);
 }
 
 /** every transaction the space sees: legacy merged rows + joined feed rows */
-export async function visibleTransactions(db: MunniDB, spaceId: string): Promise<SpaceTx[]> {
-  const [legacy, links, metas] = await Promise.all([
-    db.transactions.where('spaceId').equals(spaceId).filter((t) => t.deleted === 0).toArray(),
-    spaceAccountLinks(db, spaceId),
-    db.txMeta.where('spaceId').equals(spaceId).filter((m) => m.deleted === 0).toArray(),
+export async function visibleTransactions(store: StorageBackend, spaceId: string): Promise<SpaceTx[]> {
+  const [own, links, metas] = await Promise.all([
+    store.bySpace('transaction', spaceId),
+    spaceAccountLinks(store, spaceId),
+    store.bySpace('txMeta', spaceId),
   ]);
-  const metaByTx = new Map(metas.map((m) => [m.txId, m]));
+  const legacy = own.filter((t) => t.deleted === 0);
+  const metaByTx = new Map(metas.filter((m) => m.deleted === 0).map((m) => [m.txId, m]));
 
   const out: SpaceTx[] = [...legacy];
   for (const link of links) {
-    const feedTxs = await db.transactions
-      .where('spaceId')
-      .equals(link.feedSpaceId)
-      .filter(
-        (t) =>
-          t.deleted === 0 &&
-          t.accountId === link.accountId &&
-          (!link.historyFrom || t.date >= link.historyFrom),
-      )
-      .toArray();
+    const feedTxs = (await store.bySpace('transaction', link.feedSpaceId)).filter(
+      (t) =>
+        t.deleted === 0 &&
+        t.accountId === link.accountId &&
+        (!link.historyFrom || t.date >= link.historyFrom),
+    );
     for (const raw of feedTxs) out.push(joinTx(raw, metaByTx.get(raw.id), spaceId, link.feedSpaceId));
   }
   return out;
@@ -81,14 +78,11 @@ export interface SpaceAccount extends AccountRow {
 }
 
 /** every account the space sees: legacy in-space rows + attached feed accounts */
-export async function visibleAccounts(db: MunniDB, spaceId: string): Promise<SpaceAccount[]> {
-  const [legacy, links] = await Promise.all([
-    db.accounts.where('spaceId').equals(spaceId).filter((a) => a.deleted === 0).toArray(),
-    spaceAccountLinks(db, spaceId),
-  ]);
-  const out: SpaceAccount[] = [...legacy];
+export async function visibleAccounts(store: StorageBackend, spaceId: string): Promise<SpaceAccount[]> {
+  const [own, links] = await Promise.all([store.bySpace('account', spaceId), spaceAccountLinks(store, spaceId)]);
+  const out: SpaceAccount[] = own.filter((a) => a.deleted === 0);
   for (const link of links) {
-    const account = await db.accounts.get(link.accountId);
+    const account = await store.get('account', link.accountId);
     if (account?.deleted === 0) out.push({ ...account, link });
   }
   return out;

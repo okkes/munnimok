@@ -405,13 +405,13 @@ describe('reconcileRecurringLinks', () => {
       });
     }
 
-    expect(await reconcileRecurringLinks(db, repo, 's1')).toBe(2); // g1 + g3
+    expect(await reconcileRecurringLinks(new DexieBackend(db), repo, 's1')).toBe(2); // g1 + g3
     expect((await db.transactions.get('g1'))?.recurringId).toBe('rec1');
     expect((await db.transactions.get('g2'))?.recurringId).toBeUndefined();
     expect((await db.transactions.get('g3'))?.recurringId).toBe('rec1');
     expect((await db.transactions.get('g4'))?.recurringId).toBeUndefined();
     // idempotent
-    expect(await reconcileRecurringLinks(db, repo, 's1')).toBe(0);
+    expect(await reconcileRecurringLinks(new DexieBackend(db), repo, 's1')).toBe(0);
     db.close();
   });
 });

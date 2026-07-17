@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useQuery } from '@/db/useQuery';
 import { useNavigate } from '@tanstack/react-router';
 import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
 import { localToday } from '@/application/recurring';
@@ -57,7 +57,7 @@ const TILE_META: Record<OverviewKind, { icon: string; color: string; field: keyo
 
 export function HomeScreen() {
   const { t, lang } = useLang();
-  const { db, spaceId } = useData();
+  const { store, spaceId } = useData();
   const navigate = useNavigate();
   const identity = useSession((s) => s.identity);
   const topSplit = useTopSplit();
@@ -70,12 +70,12 @@ export function HomeScreen() {
   const { newTxs, ackAll } = useNewTransactions(allTxs);
   const reviewCount = useMemo(() => allTxs?.filter((tx) => tx.needsReview === 1).length, [allTxs]);
 
-  const needsOnboarding = useLiveQuery(() => db.meta.get('needsOnboarding'), []);
+  const needsOnboarding = useQuery(store, async () => store.metaGet('needsOnboarding'), []);
   useEffect(() => {
     if (needsOnboarding?.value === true) void navigate({ to: '/onboarding' });
   }, [needsOnboarding, navigate]);
 
-  const space = useLiveQuery(() => db.spaces.get(spaceId), [spaceId]);
+  const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const totalCents = (accounts ?? []).reduce((sum, a) => sum + a.balanceCents, 0);
   const currency = space?.currency ?? accounts?.[0]?.currency ?? 'EUR';
   const period = useMemo(
@@ -91,9 +91,10 @@ export function HomeScreen() {
 
   // landing-zone block: recurring costs due within a week (user decision:
   // the home block shows only the upcoming ones; the tab has the rest)
-  const recurrings = useLiveQuery(
-    () => db.recurrings.filter((r) => r.deleted === 0 && r.spaceId === spaceId && r.active === 1).toArray(),
-    [db, spaceId],
+  const recurrings = useQuery(
+    store,
+    async () => (await store.bySpace('recurring', spaceId)).filter((r) => r.deleted === 0 && r.active === 1),
+    [spaceId],
   );
   // landing-zone block: the 3 most urgent budgets (approved: 3)
   const budgetStatuses = useBudgetStatuses();

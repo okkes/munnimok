@@ -56,7 +56,7 @@ interface LocalProfile {
  */
 export function ProfileScreen() {
   const { t } = useLang();
-  const { db } = useData();
+  const { store } = useData();
   const identity = useSession((s) => s.identity);
   const [name, setName] = useState('');
   const [picture, setPicture] = useState(AVATARS[0]);
@@ -92,7 +92,7 @@ export function ProfileScreen() {
         setName(profile?.name ?? '');
         if (profile?.picture) setPicture(profile.picture);
       } else {
-        const stored = (await db.meta.get(PROFILE_META_KEY))?.value as LocalProfile | undefined;
+        const stored = (await store.metaGet(PROFILE_META_KEY))?.value as LocalProfile | undefined;
         setName(stored?.name ?? 'Demo');
         if (stored?.picture) setPicture(stored.picture);
       }
@@ -100,7 +100,7 @@ export function ProfileScreen() {
     return () => {
       cancelled = true;
     };
-  }, [identity, db]);
+  }, [identity, store]);
 
   const save = async () => {
     if (!name.trim()) return;
@@ -112,7 +112,7 @@ export function ProfileScreen() {
       updateOfflineProfile(identity.profileId, { name: name.trim(), picture });
     }
     // local copy for instant display everywhere (all identity kinds)
-    await db.meta.put({ key: PROFILE_META_KEY, value: { name: name.trim(), picture } satisfies LocalProfile });
+    await store.metaPut(PROFILE_META_KEY, { name: name.trim(), picture } satisfies LocalProfile);
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
   };

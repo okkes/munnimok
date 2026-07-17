@@ -37,7 +37,7 @@ describe('adoptUserCategoriesOnShare', () => {
   });
 
   it('copies used units into the space and rewrites every reference', async () => {
-    await adoptUserCategoriesOnShare(db, repo, 'tgt');
+    await adoptUserCategoriesOnShare(new DexieBackend(db), repo, 'tgt');
 
     const newMain = adoptedCategoryId('tgt', 'main1');
     const newSub1 = adoptedCategoryId('tgt', 'sub1');
@@ -69,9 +69,9 @@ describe('adoptUserCategoriesOnShare', () => {
   });
 
   it('is idempotent — a second run copies nothing new', async () => {
-    await adoptUserCategoriesOnShare(db, repo, 'tgt');
+    await adoptUserCategoriesOnShare(new DexieBackend(db), repo, 'tgt');
     const after1 = await db.categories.filter((c) => c.spaceId === 'tgt' && c.deleted === 0).count();
-    await adoptUserCategoriesOnShare(db, repo, 'tgt');
+    await adoptUserCategoriesOnShare(new DexieBackend(db), repo, 'tgt');
     expect(await db.categories.filter((c) => c.spaceId === 'tgt' && c.deleted === 0).count()).toBe(after1);
   });
 
@@ -79,7 +79,7 @@ describe('adoptUserCategoriesOnShare', () => {
     await repo.upsert('transaction', 'tgt', 'tx1', { catId: 'groceries' });
     await repo.upsert('transaction', 'tgt', 'tx2', { catId: 'groceries', splits: undefined });
     await repo.upsert('txMeta', 'tgt', 'meta1', { catId: 'restaurants' });
-    await adoptUserCategoriesOnShare(db, repo, 'tgt');
+    await adoptUserCategoriesOnShare(new DexieBackend(db), repo, 'tgt');
     expect(await db.categories.filter((c) => c.spaceId === 'tgt').count()).toBe(0);
   });
 });

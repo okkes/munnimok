@@ -7,8 +7,15 @@ import type { StorageBackend } from './backend';
  * result, re-emitted on every relevant data change. Errors rethrow into
  * the render so boundaries see them — same contract as useLiveQuery.
  */
-export function useQuery<T>(backend: StorageBackend, query: () => Promise<T>, deps: unknown[]): T | undefined {
-  const [state, setState] = useState<{ value?: T; error?: unknown }>({});
+export function useQuery<T>(backend: StorageBackend, query: () => Promise<T>, deps: unknown[]): T | undefined;
+export function useQuery<T, I>(backend: StorageBackend, query: () => Promise<T>, deps: unknown[], initial: I): T | I;
+export function useQuery<T, I>(
+  backend: StorageBackend,
+  query: () => Promise<T>,
+  deps: unknown[],
+  initial?: I,
+): T | I | undefined {
+  const [state, setState] = useState<{ value?: T | I; error?: unknown }>({ value: initial });
   useEffect(
     () =>
       backend.subscribe(

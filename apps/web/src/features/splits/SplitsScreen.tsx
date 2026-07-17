@@ -186,7 +186,7 @@ export function SplitDetailScreen() {
   const { t, lang } = useLang();
   const { splitId } = useParams({ strict: false }) as { splitId: string };
   const { identity } = useSession();
-  const { db, repo, spaceId } = useData();
+  const { store, repo, spaceId } = useData();
   const [detail, setDetail] = useState<SplitDetail | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [description, setDescription] = useState('');
@@ -239,7 +239,7 @@ export function SplitDetailScreen() {
     if (!txOpen) return;
     let stale = false;
     void (async () => {
-      const all = await db.transactions.where('spaceId').equals(searchSpaceId).toArray();
+      const all = await store.bySpace('transaction', searchSpaceId);
       const needle = txQuery.trim().toLowerCase();
       const matches = all
         .filter((tx) => tx.deleted === 0 && tx.amountCents < 0 && !alreadyAdded.has(tx.id))
@@ -257,7 +257,7 @@ export function SplitDetailScreen() {
     return () => {
       stale = true;
     };
-  }, [txOpen, txQuery, db, searchSpaceId, alreadyAdded]);
+  }, [txOpen, txQuery, store, searchSpaceId, alreadyAdded]);
 
   const toggleTx = (id: string) => {
     setTxSelected((prev) => {
@@ -302,7 +302,7 @@ export function SplitDetailScreen() {
   const autoAttachToEvent = async (eventId: string, txIds: (string | null | undefined)[]) => {
     for (const txId of txIds) {
       if (!txId) continue;
-      const tx = await db.transactions.get(txId);
+      const tx = await store.get('transaction', txId);
       if (tx?.deleted === 0 && !tx.eventId) {
         await repo.upsert('transaction', tx.spaceId, txId, { eventId });
       }
@@ -326,10 +326,10 @@ export function SplitDetailScreen() {
   useEffect(() => {
     if (!eventOpen) return;
     void (async () => {
-      const rows = await db.events.where('spaceId').equals(searchSpaceId).toArray();
+      const rows = await store.bySpace('event', searchSpaceId);
       setMyEvents(rows.filter((e) => e.deleted === 0).map((e) => ({ id: e.id, name: e.name })));
     })();
-  }, [eventOpen, db, searchSpaceId]);
+  }, [eventOpen, store, searchSpaceId]);
 
   const [linkedEventName, setLinkedEventName] = useState<string | null>(null);
   useEffect(() => {
@@ -338,8 +338,8 @@ export function SplitDetailScreen() {
       setLinkedEventName(null);
       return;
     }
-    void db.events.get(id).then((event) => setLinkedEventName(event?.name ?? null));
-  }, [detail, db]);
+    void store.get('event', id).then((event) => setLinkedEventName(event?.name ?? null));
+  }, [detail, store]);
 
   // a settlement is just an entry whose only share holder is the receiver
   // (the ledger math needs no special case — design ruling)

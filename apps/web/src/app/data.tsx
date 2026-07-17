@@ -108,8 +108,7 @@ async function restoreAndSync(
 }
 
 interface DataContextValue {
-  db: MunniDB;
-  /** the storage seam (E1) — new code reads through this, not `db` */
+  /** the storage seam (E1) — all reads/writes go through this */
   store: StorageBackend;
   repo: Repo;
   /** the currently active space */
@@ -129,7 +128,6 @@ const DataContext = createContext<DataContextValue | null>(null);
 export function DataProvider({ children }: { children: ReactNode }) {
   const identity = useSession((s) => s.identity);
   const [state, setState] = useState<{
-    db: MunniDB;
     store: StorageBackend;
     repo: Repo;
     spaceId: string;
@@ -148,8 +146,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const onAttempts = (n: number) => {
       if (!cancelled) setFailedAttempts(n);
     };
-    const db = new MunniDB(identityDbName(identityKey(identity)));
-    const store = new DexieBackend(db);
+    const store = new DexieBackend(new MunniDB(identityDbName(identityKey(identity))));
     const syncing = identity.kind === 'user';
 
     let engine: SyncEngine | null = null;
@@ -226,7 +223,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       const spaces = await liveSpaces(store);
       const spaceId = spaces.find((s) => s.id === stored)?.id ?? spaces[0]?.id;
       if (!spaceId) throw new Error('no space available after seed');
-      if (!cancelled) setState({ db, store, repo, spaceId, engine });
+      if (!cancelled) setState({ store, repo, spaceId, engine });
     })().catch((err) => {
       // StrictMode double-mount closes the first db mid-seed — expected
       if (!cancelled) throw err;

@@ -7,7 +7,7 @@ import {
 } from '@/domain/categoryRules';
 import { adoptedCategoryId } from '@/domain/feedIds';
 import type { CategoryRow, CatDirection, TransactionRow, TxSplit, TxType } from '@/db/types';
-import type { MunniDB } from '@/db/schema';
+import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
 
 /**
@@ -34,22 +34,22 @@ export interface PendingCommit {
 }
 
 /** spaces whose transactions can reference this category (its visibility) */
-async function visibleSpaceIds(db: MunniDB, row: CategoryRow): Promise<string[]> {
-  const spaces = await db.spaces.filter((s) => s.deleted === 0).toArray();
+async function visibleSpaceIds(store: StorageBackend, row: CategoryRow): Promise<string[]> {
+  const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0);
   const home = spaces.find((s) => s.id === row.spaceId);
   if (home?.kind === 'shared') return [row.spaceId];
   return spaces.filter((s) => s.kind !== 'shared').map((s) => s.id);
 }
 
-async function txsInSpaces(db: MunniDB, spaceIds: string[]): Promise<TransactionRow[]> {
+async function txsInSpaces(store: StorageBackend, spaceIds: string[]): Promise<TransactionRow[]> {
   const ids = new Set(spaceIds);
-  return db.transactions.filter((t) => t.deleted === 0 && ids.has(t.spaceId)).toArray();
+  return (await store.allRows('transaction')).filter((t) => t.deleted === 0 && ids.has(t.spaceId));
 }
 
-const parentTypeOf = async (db: MunniDB, parentId: string): Promise<TxType> => {
+const parentTypeOf = async (store: StorageBackend, parentId: string): Promise<TxType> => {
   const builtin = CATEGORY_BY_ID.get(parentId);
   if (builtin) return builtin.txTypes[0];
-  const custom = await db.categories.get(parentId);
+  const custom = await store.get('category', parentId);
   return custom?.txType ?? 'expense';
 };
 
@@ -60,8 +60,8 @@ async function detachAll(repo: Repo, affected: TransactionRow[], catIds: Set<str
 }
 
 /** subs of a custom parent (non-deleted, same space) */
-export async function subsOf(db: MunniDB, parent: CategoryRow): Promise<CategoryRow[]> {
-  return db.categories.filter((c) => c.deleted === 0 && c.parentId === parent.id).toArray();
+export async function subsOf(store: StorageBackend, parent: CategoryRow): Promise<CategoryRow[]> {
+  return (await store.allRows('category')).filter((c) => c.deleted === 0 && c.parentId === parent.id);
 }
 
 interface EditImpact {
@@ -92,9 +92,9 @@ const directionChangeImpact = (impact: EditImpact, txs: TransactionRow[], row: C
 };
 
 /** rule 3: moving a sub under a parent of another type breaks differently-typed txs */
-const moveImpact = async (impact: EditImpact, db: MunniDB, txs: TransactionRow[], row: CategoryRow, changes: CategoryChanges) => {
+const moveImpact = async (impact: EditImpact, store: StorageBackend, txs: TransactionRow[], row: CategoryRow, changes: CategoryChanges) => {
   if (row.isParent === 1 || !changes.parentId || changes.parentId === row.parentId) return;
-  impact.movedType = await parentTypeOf(db, changes.parentId);
+  impact.movedType = await parentTypeOf(store, changes.parentId);
   if (impact.movedType === row.txType) return;
   addBroken(impact, affectedByTypeChange(txs, new Set([row.id]), impact.movedType), [row.id]);
 };
@@ -105,19 +105,19 @@ const moveImpact = async (impact: EditImpact, db: MunniDB, txs: TransactionRow[]
  * parent propagate the stored txType to its subs for consistency).
  */
 export async function prepareCategoryEdit(
-  db: MunniDB,
+  store: StorageBackend,
   repo: Repo,
   row: CategoryRow,
   changes: CategoryChanges,
 ): Promise<PendingCommit> {
-  const txs = await txsInSpaces(db, await visibleSpaceIds(db, row));
-  const subs = row.isParent === 1 ? await subsOf(db, row) : [];
+  const txs = await txsInSpaces(store, await visibleSpaceIds(store, row));
+  const subs = row.isParent === 1 ? await subsOf(store, row) : [];
   const subtree = new Set([row.id, ...subs.map((s) => s.id)]);
 
   const impact: EditImpact = { affected: [], detachIds: new Set() };
   typeChangeImpact(impact, txs, row, changes, subtree);
   directionChangeImpact(impact, txs, row, changes);
-  await moveImpact(impact, db, txs, row, changes);
+  await moveImpact(impact, store, txs, row, changes);
 
   return {
     affected: impact.affected,
@@ -137,10 +137,10 @@ export async function prepareCategoryEdit(
 }
 
 /** Prepare a delete: parents cascade to their subs; users get detached. */
-export async function prepareCategoryDelete(db: MunniDB, repo: Repo, row: CategoryRow): Promise<PendingCommit> {
-  const subs = row.isParent === 1 ? await subsOf(db, row) : [];
+export async function prepareCategoryDelete(store: StorageBackend, repo: Repo, row: CategoryRow): Promise<PendingCommit> {
+  const subs = row.isParent === 1 ? await subsOf(store, row) : [];
   const subtree = new Set([row.id, ...subs.map((s) => s.id)]);
-  const txs = await txsInSpaces(db, await visibleSpaceIds(db, row));
+  const txs = await txsInSpaces(store, await visibleSpaceIds(store, row));
   const affected = affectedByDelete(txs, subtree);
   return {
     affected,
@@ -184,7 +184,7 @@ export async function createMainCategory(
 
 /** Create a custom sub under any parent (type inherited from the parent). */
 export async function createSubCategory(
-  db: MunniDB,
+  store: StorageBackend,
   repo: Repo,
   spaceId: string,
   input: { parentId: string; name: string; icon: string; direction: CatDirection },
@@ -195,7 +195,7 @@ export async function createSubCategory(
     name: input.name,
     icon: input.icon,
     color: '',
-    txType: await parentTypeOf(db, input.parentId),
+    txType: await parentTypeOf(store, input.parentId),
     direction: input.direction,
     sortOrder: 999,
     builtin: 0,
@@ -224,7 +224,7 @@ const categoryCopyFields = (r: CategoryRow, overrides: Partial<CategoryRow>): Re
  * copied alone. Transactions are not touched.
  */
 export async function copyCategoryToSpace(
-  db: MunniDB,
+  store: StorageBackend,
   repo: Repo,
   targetSpaceId: string,
   row: CategoryRow,
@@ -232,7 +232,7 @@ export async function copyCategoryToSpace(
   if (row.isParent === 1) {
     const newParentId = repo.newId();
     await repo.upsert('category', targetSpaceId, newParentId, categoryCopyFields(row, { parentId: undefined }));
-    for (const sub of await subsOf(db, row)) {
+    for (const sub of await subsOf(store, row)) {
       await repo.upsert('category', targetSpaceId, repo.newId(), categoryCopyFields(sub, { parentId: newParentId }));
     }
   } else {
@@ -282,7 +282,7 @@ const planCopyUnits = (used: Set<string>, catById: Map<string, CategoryRow>, per
 };
 
 async function copyUnitsIntoSpace(
-  db: MunniDB,
+  store: StorageBackend,
   repo: Repo,
   spaceId: string,
   parentUnits: Map<string, CategoryRow>,
@@ -297,7 +297,7 @@ async function copyUnitsIntoSpace(
   };
   for (const parent of parentUnits.values()) {
     const newParentId = await copy(parent, { parentId: undefined });
-    for (const sub of await subsOf(db, parent)) await copy(sub, { parentId: newParentId });
+    for (const sub of await subsOf(store, parent)) await copy(sub, { parentId: newParentId });
   }
   for (const sub of loneSubs) await copy(sub, {});
   return idMap;
@@ -331,14 +331,14 @@ async function rewriteReferences(
  * Idempotent: after adoption the references point at space-local rows,
  * so a second run finds nothing user-scoped in use.
  */
-export async function adoptUserCategoriesOnShare(db: MunniDB, repo: Repo, spaceId: string): Promise<void> {
-  const spaces = await db.spaces.filter((s) => s.deleted === 0).toArray();
+export async function adoptUserCategoriesOnShare(store: StorageBackend, repo: Repo, spaceId: string): Promise<void> {
+  const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0);
   const personalIds = new Set(spaces.filter((s) => s.kind !== 'shared' && s.id !== spaceId).map((s) => s.id));
 
   const [txs, metas, cats] = await Promise.all([
-    db.transactions.filter((t) => t.deleted === 0 && t.spaceId === spaceId).toArray(),
-    db.txMeta.filter((m) => m.deleted === 0 && m.spaceId === spaceId).toArray(),
-    db.categories.filter((c) => c.deleted === 0).toArray(),
+    (await store.allRows('transaction')).filter((t) => t.deleted === 0 && t.spaceId === spaceId),
+    (await store.allRows('txMeta')).filter((m) => m.deleted === 0 && m.spaceId === spaceId),
+    (await store.allRows('category')).filter((c) => c.deleted === 0),
   ]);
   const catById = new Map(cats.map((c) => [c.id, c]));
   const userScoped = (id: string | undefined): CategoryRow | undefined => {
@@ -350,7 +350,7 @@ export async function adoptUserCategoriesOnShare(db: MunniDB, repo: Repo, spaceI
   if (used.size === 0) return;
 
   const { parentUnits, loneSubs } = planCopyUnits(used, catById, personalIds);
-  const idMap = await copyUnitsIntoSpace(db, repo, spaceId, parentUnits, loneSubs);
+  const idMap = await copyUnitsIntoSpace(store, repo, spaceId, parentUnits, loneSubs);
   await rewriteReferences(repo, 'transaction', spaceId, txs, idMap);
   await rewriteReferences(repo, 'txMeta', spaceId, metas, idMap);
 }

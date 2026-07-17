@@ -38,7 +38,7 @@ const LANGS: { code: Lang; labelKey: 'lang.en' | 'lang.nl' | 'lang.tr'; badge: s
 export function GlobalSettingsScreen() {
   const { t, lang, setLang, langOverridden, followDeviceLang } = useLang();
   const { theme, mode: themeMode, setMode: setThemeMode, toggle } = useTheme();
-  const { db } = useData();
+  const { store } = useData();
   const tipsOff = useTipsDisabled();
   const [langSheetOpen, setLangSheetOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -268,7 +268,7 @@ export function GlobalSettingsScreen() {
                 {tipsOff ? 'ON' : 'OFF'}
               </Pill>
             }
-            onClick={() => void db.meta.put({ key: TIPS_DISABLED_KEY, value: !tipsOff })}
+            onClick={() => void store.metaPut(TIPS_DISABLED_KEY, !tipsOff)}
           />
         </div>
 
