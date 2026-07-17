@@ -53,6 +53,9 @@ export interface AccountRow extends SyncEnvelope {
   iban?: string;
   bankId?: string;
   color?: string;
+  /** user-chosen icon override: '/brands/{slug}.svg' or a logo.dev URL —
+   *  wins over the institution logo derived from bankId */
+  logo?: string;
   archived?: 0 | 1;
 }
 

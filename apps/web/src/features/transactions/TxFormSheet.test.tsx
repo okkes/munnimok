@@ -60,6 +60,42 @@ describe('TxFormSheet (demo identity)', () => {
     );
   });
 
+  it('type follows the category until explicitly set; counter account suggests it', async () => {
+    await openForm();
+    // demo has several accounts -> the counter row is offered
+    fireEvent.click(screen.getByTestId('txform-counter'));
+    await screen.findByTestId('txform-counter-options');
+    fireEvent.click(screen.getByTestId('txform-counter-demo_save'));
+    // the savings counterparty suggests Saving (same rule as the detail)
+    await waitFor(() => expect(screen.getByTestId('txform-type').textContent).toContain('Saving'));
+    // an explicit pick overrides the suggestion
+    fireEvent.click(screen.getByTestId('txform-type'));
+    await screen.findByTestId('txform-type-options');
+    fireEvent.click(screen.getByTestId('txform-type-adjustment'));
+    await waitFor(() => expect(screen.getByTestId('txform-type').textContent).toContain('Adjustment'));
+  });
+
+  it('a fully synced (open banking) account is never offered for manual rows', async () => {
+    renderApp('/transactions');
+    await screen.findByTestId('tx-list');
+    // make the demo checking account look bank-synced
+    const [{ MunniDB }, { DexieBackend }, { Repo }, { HlcClock }] = await Promise.all([
+      import('@/db/schema'),
+      import('@/db/backend'),
+      import('@/db/repo'),
+      import('@/sync/hlc'),
+    ]);
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('gc'), { trackOutbox: false });
+    await repo.upsert('account', 'demo_space', 'demo_main', { source: 'gocardless' });
+    db.close();
+
+    fireEvent.click(screen.getByTestId('tx-add'));
+    await screen.findByTestId('txform-save');
+    await screen.findByTestId('txform-account-demo_save'); // the manual ones stay
+    expect(screen.queryByTestId('txform-account-demo_main')).toBeNull();
+  });
+
   it('the income toggle stores a positive amount', async () => {
     await openForm();
     fireEvent.click(screen.getByTestId('txform-income'));

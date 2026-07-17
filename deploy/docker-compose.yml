@@ -78,14 +78,14 @@ services:
     restart: unless-stopped
 
   postgres:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: munni
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: munni
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - pgdata18:/var/lib/postgresql
       # creates the logto + glitchtip databases on first start
       - ./initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
@@ -95,9 +95,9 @@ services:
       retries: 10
 
   logto:
-    image: svhd/logto:1.24
+    image: svhd/logto:1.41
     restart: unless-stopped
-    entrypoint: ["sh", "-c", "npm run cli db seed -- --swe && npm start"]
+    entrypoint: ["sh", "-c", "npm run cli db seed -- --swe && npm run alteration deploy latest && npm start"]
     environment:
       TRUST_PROXY_HEADER: "1"
       DB_URL: postgres://munni:${POSTGRES_PASSWORD}@postgres:5432/logto
@@ -185,7 +185,7 @@ services:
 
   # nightly logical backup into a folder Hyper Backup picks up
   db-backup:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     restart: unless-stopped
     entrypoint: ["sh", "-c", "while true; do pg_dumpall -h postgres -U munni > /backups/munni-$(date +%F).sql && find /backups -name '*.sql' -mtime +14 -delete; sleep 86400; done"]
     environment:
@@ -197,5 +197,7 @@ services:
         condition: service_healthy
 
 volumes:
+  # pg 17 data, kept as the 17->18 rollback (update.sh migrated 2026-07-17)
   pgdata:
+  pgdata18:
   pgadmin:
