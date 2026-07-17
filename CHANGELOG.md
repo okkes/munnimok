@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.2.0](https://github.com/okkes/munnimok/compare/v2.1.0...v2.2.0) (2026-07-17)
+
+
+### ✨ Features
+
+* **db:** E2 groundwork — SQL storage backend with backend-parity suite ([16ac565](https://github.com/okkes/munnimok/commit/16ac5658789e8a2180c31e75a7a70841a9a1a900))
+
+
+### 🐞 Bug Fixes
+
+* **deps:** commit the workspace lockfile for the sql.js/dexie-react-hooks swap ([899ffef](https://github.com/okkes/munnimok/commit/899ffef1c8cf30eeed339d9b56698e6384f3929c))
+* **review:** reset the fresh-card state during render, not in a late effect ([85a2d8c](https://github.com/okkes/munnimok/commit/85a2d8c86db7245bb5acd65d0135d2b49e8e0f7d))
+
 ## [2.1.0](https://github.com/okkes/munnimok/compare/v2.0.0...v2.1.0) (2026-07-17)
 
 
