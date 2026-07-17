@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { HlcClock } from '@/sync/hlc';
 import { MunniDB } from './schema';
 import { Repo } from './repo';
+import { DexieBackend } from './backend';
 import { DEMO_SPACE_ID, seedDemoIfNeeded } from './seed';
 import { DEMO_ACCOUNTS, DEMO_TXS } from './demo-data';
 
@@ -15,7 +16,7 @@ describe('seedDemoIfNeeded', () => {
 
   beforeEach(() => {
     db = new MunniDB(`seed_test_${++counter}`);
-    repo = new Repo(db, new HlcClock('dev', undefined, () => ++wall), { trackOutbox: false });
+    repo = new Repo(new DexieBackend(db), new HlcClock('dev', undefined, () => ++wall), { trackOutbox: false });
   });
   afterEach(async () => db.delete());
 

@@ -7,6 +7,7 @@ import { SyncHttpError } from '@/sync/backend';
 import { SyncEngine } from '@/sync/engine';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
+import { DexieBackend } from '@/db/backend';
 import { bootstrapUserSpaces } from './data';
 
 /**
@@ -51,9 +52,9 @@ class FlakyServer implements SyncBackend {
 let counter = 0;
 const setup = () => {
   const db = new MunniDB(`bootstrap_test_${++counter}`);
-  const repo = new Repo(db, new HlcClock('t'), { trackOutbox: true });
+  const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: true });
   const server = new FlakyServer();
-  const engine = new SyncEngine(db, repo, server, 't');
+  const engine = new SyncEngine(new DexieBackend(db), repo, server, 't');
   return { db, repo, server, engine };
 };
 
@@ -65,7 +66,7 @@ describe('bootstrapUserSpaces (fail closed)', () => {
     const { db, repo, server, engine } = setup();
     server.failuresLeft = 2;
 
-    await bootstrapUserSpaces(db, repo, engine, () => false, FAST_RETRY_MS);
+    await bootstrapUserSpaces(new DexieBackend(db), repo, engine, () => false, FAST_RETRY_MS);
 
     // exactly ONE personal space, created only after the server said "none"
     const spaces = await db.spaces.filter((s) => s.deleted === 0).toArray();
@@ -80,7 +81,7 @@ describe('bootstrapUserSpaces (fail closed)', () => {
     await repo.upsert('space', 's1', 's1', { name: 'Mine', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
     server.failuresLeft = Number.MAX_SAFE_INTEGER; // permanently offline
 
-    await bootstrapUserSpaces(db, repo, engine, () => false, FAST_RETRY_MS);
+    await bootstrapUserSpaces(new DexieBackend(db), repo, engine, () => false, FAST_RETRY_MS);
 
     const spaces = await db.spaces.filter((s) => s.deleted === 0).toArray();
     expect(spaces.map((s) => s.id)).toEqual(['s1']); // untouched, no duplicate
@@ -96,7 +97,7 @@ describe('bootstrapUserSpaces (fail closed)', () => {
       cancelled = true;
     }, 30);
 
-    await bootstrapUserSpaces(db, repo, engine, () => cancelled, FAST_RETRY_MS);
+    await bootstrapUserSpaces(new DexieBackend(db), repo, engine, () => cancelled, FAST_RETRY_MS);
 
     expect(await db.spaces.count()).toBe(0);
     db.close();
@@ -107,7 +108,7 @@ describe('bootstrapUserSpaces (fail closed)', () => {
     server.failuresLeft = 3;
     const reported: number[] = [];
 
-    await bootstrapUserSpaces(db, repo, engine, () => false, FAST_RETRY_MS, (n) => reported.push(n));
+    await bootstrapUserSpaces(new DexieBackend(db), repo, engine, () => false, FAST_RETRY_MS, (n) => reported.push(n));
 
     expect(reported).toEqual([1, 2, 3]); // one per failed round, then success
     expect((await db.spaces.filter((s) => s.deleted === 0).toArray())).toHaveLength(1);
@@ -122,7 +123,7 @@ describe('bootstrapUserSpaces (fail closed)', () => {
     // the server knows the real space
     server.serverSpaces = ['real'];
 
-    await bootstrapUserSpaces(db, repo, engine, () => false, FAST_RETRY_MS);
+    await bootstrapUserSpaces(new DexieBackend(db), repo, engine, () => false, FAST_RETRY_MS);
 
     const spaces = await db.spaces.filter((s) => s.deleted === 0).toArray();
     expect(spaces.map((s) => s.id)).toEqual(['real']); // empty duplicate retired

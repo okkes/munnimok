@@ -25,7 +25,7 @@ const countryLabel = (code: string, lang: Lang) => {
  */
 export function OnboardingScreen() {
   const { t, lang } = useLang();
-  const { db, repo, spaceId } = useData();
+  const { store, repo, spaceId } = useData();
   const navigate = useNavigate();
   const [name, setName] = useState('');
   const [country, setCountry] = useState('NL');
@@ -55,7 +55,7 @@ export function OnboardingScreen() {
       await repo.upsert('space', spaceId, spaceId, { currency: currencyForCountry(country) });
     }
     // cleared here: a bank redirect leaves the app and must not loop onboarding
-    await db.meta.delete('needsOnboarding');
+    await store.metaDelete('needsOnboarding');
     setStep(2);
   };
 

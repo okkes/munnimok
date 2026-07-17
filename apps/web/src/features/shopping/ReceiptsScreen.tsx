@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useQuery } from '@/db/useQuery';
 import { useNavigate } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
@@ -49,17 +49,17 @@ function receiptMatches(receipt: ReceiptRow, q: string, amountQ: string | null):
 export function ReceiptsScreen() {
   const { t, lang } = useLang();
   const navigate = useNavigate();
-  const { db, spaceId } = useData();
+  const { store, spaceId } = useData();
   const [selected, setSelected] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [unlinkedOnly, setUnlinkedOnly] = useState(false);
 
-  const receipts = useLiveQuery(async () => {
-    const rows = await db.receipts.filter((r) => r.deleted === 0 && r.spaceId === spaceId).toArray();
+  const receipts = useQuery(store, async () => {
+    const rows = await (await store.allRows('receipt')).filter((r) => r.deleted === 0 && r.spaceId === spaceId);
     rows.sort((a, b) => b.date.localeCompare(a.date));
     return rows;
-  }, [db, spaceId]);
-  const space = useLiveQuery(() => db.spaces.get(spaceId), [spaceId]);
+  }, [spaceId]);
+  const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const currency = space?.currency ?? 'EUR';
 
   const groups = useMemo(() => {

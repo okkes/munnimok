@@ -1,4 +1,4 @@
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useQuery } from '@/db/useQuery';
 import { useNavigate, useParams, useRouter } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
@@ -22,22 +22,25 @@ interface AttachedAccountEntry {
  */
 export function SpaceAccountsScreen() {
   const { t } = useLang();
-  const { db } = useData();
+  const { store } = useData();
   const navigate = useNavigate();
   const router = useRouter();
   const { spaceId } = useParams({ strict: false }) as { spaceId: string };
-  const space = useLiveQuery(() => db.spaces.get(spaceId), [spaceId]);
+  const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
 
-  const entries = useLiveQuery(async () => {
+  const entries = useQuery(store, async () => {
     // reads only — a teardown/closed-db rejection must never escape
-    const [ownAccounts, links] = await Promise.all([
-      db.accounts.filter((a) => a.deleted === 0 && a.spaceId === spaceId).toArray(),
-      db.accountLinks.filter((l) => l.deleted === 0 && l.spaceId === spaceId).toArray(),
+    const [allAccounts, allLinks] = await Promise.all([
+      store.bySpace('account', spaceId),
+      store.bySpace('accountLink', spaceId),
     ]).catch(() => [[], []] as const);
+    const ownAccounts = allAccounts.filter((a) => a.deleted === 0);
+    const links = allLinks.filter((l) => l.deleted === 0);
     const feedAccounts = new Map<string, AccountRow>();
-    const linked = await db.accounts.where('id').anyOf(links.map((l) => l.accountId)).toArray().catch(() => []);
+    const linkedIds = new Set(links.map((l) => l.accountId));
+    const linked = await Promise.all([...linkedIds].map((id) => store.get('account', id))).catch(() => []);
     for (const account of linked) {
-      feedAccounts.set(account.id, account);
+      if (account) feedAccounts.set(account.id, account);
     }
     const ibanTail = (iban?: string) => (iban ? `…${iban.slice(-4)}` : undefined);
     const list: AttachedAccountEntry[] = ownAccounts.map((account) => ({
@@ -65,7 +68,7 @@ export function SpaceAccountsScreen() {
     }
     list.sort((x, y) => x.name.localeCompare(y.name));
     return list;
-  }, [db, spaceId]);
+  }, [spaceId]);
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-space-accounts">

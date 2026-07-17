@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useQuery } from '@/db/useQuery';
 import type { GlobalAccount } from '@/application/accounts';
 import { accountLinkId } from '@/domain/feedIds';
 import { DEFAULT_HISTORY_MONTHS, isoMonthsAgo } from '@/features/spaces/spaceDefaults';
@@ -25,18 +25,20 @@ export function AttachSheet({
   entry: GlobalAccount | null;
 }>) {
   const { t } = useLang();
-  const { db, repo } = useData();
+  const { store, repo } = useData();
   const [busy, setBusy] = useState<string | null>(null);
   const [historyFrom, setHistoryFrom] = useState('');
 
-  const spaces = useLiveQuery(() => db.spaces.filter((s) => s.deleted === 0).toArray(), [db]);
+  const spaces = useQuery(store, async () => (await store.allRows('space')).filter((s) => s.deleted === 0), []);
   // LIVE link rows, not the entry snapshot: the checkboxes must flip the
   // moment a toggle writes to Dexie (user bug: they only updated after
   // leaving and re-entering the screen)
   const accountId = entry?.account.id;
-  const liveLinks = useLiveQuery(
-    () => (accountId ? db.accountLinks.filter((l) => l.deleted === 0 && l.accountId === accountId).toArray() : []),
-    [db, accountId],
+  const liveLinks = useQuery(
+    store,
+    async () =>
+      accountId ? (await store.allRows('accountLink')).filter((l) => l.deleted === 0 && l.accountId === accountId) : [],
+    [accountId],
   );
 
   // the date input is an OVERRIDE; empty means each space's own default
@@ -63,7 +65,7 @@ export function AttachSheet({
         // override wins, then the space's history start, then the app
         // default — never silently unlimited (user bug report)
         const from =
-          historyFrom || (await db.spaces.get(spaceId))?.historyStartDate || isoMonthsAgo(DEFAULT_HISTORY_MONTHS);
+          historyFrom || (await store.get('space', spaceId))?.historyStartDate || isoMonthsAgo(DEFAULT_HISTORY_MONTHS);
         await attachAccount(spaceId, feedSpaceId, account.id, from);
         await repo.upsert('accountLink', spaceId, accountLinkId(spaceId, feedSpaceId), {
           feedSpaceId,

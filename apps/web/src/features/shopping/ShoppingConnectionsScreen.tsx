@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useQuery } from '@/db/useQuery';
 import { useNavigate } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
@@ -34,16 +34,17 @@ const COMING_SOON = [
 export function ShoppingConnectionsScreen() {
   const { t, lang } = useLang();
   const navigate = useNavigate();
-  const { db, spaceId } = useData();
+  const { store, spaceId } = useData();
   const connections = useStoreConnections();
   const markers = useStoreMarkers();
   const unmatched = useUnmatchedReceipts();
   const ops = useStoreOps();
-  const space = useLiveQuery(() => db.spaces.get(spaceId), [spaceId]);
-  const allSpaces = useLiveQuery(() => db.spaces.filter((s) => s.deleted === 0).toArray(), [db]);
-  const receiptCount = useLiveQuery(
-    () => db.receipts.filter((r) => r.deleted === 0 && r.spaceId === spaceId && r.source === 'ah').count(),
-    [db, spaceId],
+  const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
+  const allSpaces = useQuery(store, async () => (await store.allRows('space')).filter((s) => s.deleted === 0), []);
+  const receiptCount = useQuery(
+    store,
+    async () => (await store.bySpace('receipt', spaceId)).filter((r) => r.deleted === 0 && r.source === 'ah').length,
+    [spaceId],
   );
   const currency = space?.currency ?? 'EUR';
 

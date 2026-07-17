@@ -1,5 +1,5 @@
 import { visibleAccounts, visibleTransactions, writeTxTransform } from '@/db/joined';
-import type { MunniDB } from '@/db/schema';
+import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
 import { normalizeIban } from '@/domain/feedIds';
 import { applyTypeChange, typeForLinkedAccount } from '@/domain/txType';
@@ -17,21 +17,21 @@ import { buildCatalog, visibleCategoryRows } from '@/domain/catalog';
  * types survive). Category conflicts resolve exactly like a manual link
  * (applyTypeChange). Returns how many rows were linked.
  */
-export async function linkAllCounterparties(db: MunniDB, repo: Repo, spaceId: string): Promise<number> {
-  const accounts = await visibleAccounts(db, spaceId);
+export async function linkAllCounterparties(store: StorageBackend, repo: Repo, spaceId: string): Promise<number> {
+  const accounts = await visibleAccounts(store, spaceId);
   const byIban = new Map<string, (typeof accounts)[number]>();
   for (const account of accounts) {
     if (account.iban) byIban.set(normalizeIban(account.iban), account);
   }
   if (byIban.size === 0) return 0;
 
-  const allSpaces = await db.spaces.filter((s) => s.deleted === 0).toArray();
-  const allCats = await db.categories.filter((c) => c.deleted === 0).toArray();
+  const allSpaces = (await store.allRows('space')).filter((s) => s.deleted === 0);
+  const allCats = (await store.allRows('category')).filter((c) => c.deleted === 0);
   const visible = visibleCategoryRows(allSpaces, allCats, spaceId);
   const catalog = buildCatalog(visible.rows, visible.sharedScope, visible.hiddenMains);
 
   let linked = 0;
-  for (const tx of await visibleTransactions(db, spaceId)) {
+  for (const tx of await visibleTransactions(store, spaceId)) {
     if (!tx.counterIban || tx.linkedAccountId) continue;
     const account = byIban.get(normalizeIban(tx.counterIban));
     if (!account || account.id === tx.accountId) continue;

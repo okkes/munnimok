@@ -1,14 +1,15 @@
-import { useLiveQuery } from 'dexie-react-hooks';
 import { useData } from '@/app/data';
+import { useQuery } from '@/db/useQuery';
 import { allocationId } from '@/domain/allocation';
 import type { AllocationRow } from '@/db/types';
 
 /** every allocation cell of the space (small table — periods × mains) */
 export function useAllocations(): AllocationRow[] | undefined {
-  const { db, spaceId } = useData();
-  return useLiveQuery(
-    () => db.allocations.filter((a) => a.deleted === 0 && a.spaceId === spaceId).toArray(),
-    [db, spaceId],
+  const { store, spaceId } = useData();
+  return useQuery(
+    store,
+    async () => (await store.bySpace('allocation', spaceId)).filter((a) => a.deleted === 0),
+    [spaceId],
   );
 }
 

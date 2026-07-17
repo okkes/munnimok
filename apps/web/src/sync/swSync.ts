@@ -1,4 +1,5 @@
 import { MunniDB, identityDbName } from '@/db/schema';
+import { DexieBackend } from '@/db/backend';
 import { Repo } from '@/db/repo';
 import { HlcClock } from './hlc';
 import { ApiSyncBackend } from './backend';
@@ -86,20 +87,20 @@ export async function backgroundPull(spaceId?: string, deps: SwSyncDeps = {}): P
       getAuth: async () => (session.testSub ? { testSub: session.testSub } : { bearer: session.bearer! }),
     });
 
-  const db = new MunniDB(identityDbName(session.identityKey));
-  const repo = new Repo(db, new HlcClock('sw'), { trackOutbox: false });
+  const store = new DexieBackend(new MunniDB(identityDbName(session.identityKey)));
+  const repo = new Repo(store, new HlcClock('sw'), { trackOutbox: false });
   let applied = 0;
   try {
     const spaces = spaceId ? [spaceId] : await backend.listSpaces();
     for (const id of spaces) {
-      const since = ((await db.meta.get(cursorKey(id)))?.value as number | undefined) ?? 0;
+      const since = ((await store.metaGet(cursorKey(id)))?.value as number | undefined) ?? 0;
       const { ops, latestSeq } = await backend.pull(id, since);
       if (ops.length > 0) await repo.applyRemoteOps(ops);
-      if (latestSeq !== since) await db.meta.put({ key: cursorKey(id), value: latestSeq });
+      if (latestSeq !== since) await store.metaPut(cursorKey(id), latestSeq);
       applied += ops.length;
     }
   } finally {
-    db.close();
+    store.close();
   }
   return applied;
 }
@@ -120,10 +121,10 @@ export async function flushOutbox(deps: SwSyncDeps = {}): Promise<number> {
       getAuth: async () => (session.testSub ? { testSub: session.testSub } : { bearer: session.bearer! }),
     });
 
-  const db = new MunniDB(identityDbName(session.identityKey));
+  const store = new DexieBackend(new MunniDB(identityDbName(session.identityKey)));
   let pushed = 0;
   try {
-    const outbox = await db.outbox.toArray();
+    const outbox = await store.outboxAll();
     const bySpace = new Map<string, typeof outbox>();
     for (const op of outbox) {
       const list = bySpace.get(op.spaceId) ?? [];
@@ -133,11 +134,11 @@ export async function flushOutbox(deps: SwSyncDeps = {}): Promise<number> {
     for (const [spaceId, ops] of bySpace) {
       ops.sort((a, b) => a.hlc.localeCompare(b.hlc));
       await backend.push(spaceId, 'sw-bgsync', ops);
-      await db.outbox.bulkDelete(ops.map((o) => o.opId));
+      await store.outboxDelete(ops.map((o) => o.opId));
       pushed += ops.length;
     }
   } finally {
-    db.close();
+    store.close();
   }
   return pushed;
 }

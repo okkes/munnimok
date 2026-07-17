@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useQuery } from '@/db/useQuery';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
@@ -25,13 +25,13 @@ export function SplitJoinScreen() {
   const navigate = useNavigate();
   const { token } = useParams({ strict: false }) as { token: string };
   const { identity } = useSession();
-  const { db, spaceId: activeSpaceId } = useData();
+  const { store, spaceId: activeSpaceId } = useData();
   const [peek, setPeek] = useState<InvitePeek | null>(null);
   const [invalid, setInvalid] = useState(false);
   const [picked, setPicked] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const spaces = useLiveQuery(async () => db.spaces.filter((s) => s.deleted === 0).toArray(), [db]);
+  const spaces = useQuery(store, async () => (await store.allRows('space')).filter((s) => s.deleted === 0), []);
 
   const load = useCallback(async () => {
     const res = await apiFetch(`/splits/invites/${token}`).catch(() => null);

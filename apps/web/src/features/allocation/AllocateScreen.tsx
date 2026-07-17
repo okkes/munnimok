@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useQuery } from '@/db/useQuery';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useAllocationOps, useAllocations } from '@/application/allocation';
@@ -28,8 +28,8 @@ const WINDOW = 24; // periods of history the math replays
  */
 export function AllocateScreen() {
   const { t, lang } = useLang();
-  const { db, repo, spaceId } = useData();
-  const space = useLiveQuery(() => db.spaces.get(spaceId), [spaceId]);
+  const { store, repo, spaceId } = useData();
+  const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const txs = useSpaceTransactions();
   const accounts = useSpaceAccounts();
   const allocations = useAllocations();

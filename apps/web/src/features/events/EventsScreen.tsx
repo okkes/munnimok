@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useQuery } from '@/db/useQuery';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useEventOps, useEvents } from '@/application/events';
@@ -202,10 +202,10 @@ export function EventFormSheet({ initial, onClose }: Readonly<{ initial: EventRo
 export function EventsScreen() {
   const { t, lang } = useLang();
   const navigate = useNavigate();
-  const { db, spaceId } = useData();
+  const { store, spaceId } = useData();
   const events = useEvents();
   const txs = useSpaceTransactions();
-  const space = useLiveQuery(() => db.spaces.get(spaceId), [spaceId]);
+  const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const currency = space?.currency ?? 'EUR';
   const [formInitial, setFormInitial] = useState<EventRow | 'new' | null>(null);
 

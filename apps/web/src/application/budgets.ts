@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
 import { useData } from '@/app/data';
+import { useQuery } from '@/db/useQuery';
 import { useSpaceTransactions } from './transactions';
 import { localToday } from './recurring';
 import { budgetStatus, sortByUrgency } from '@/domain/budgets';
@@ -10,12 +10,16 @@ import type { BudgetRow } from '@/db/types';
 
 /** the active space's budgets, alphabetical */
 export function useBudgets(): BudgetRow[] | undefined {
-  const { db, spaceId } = useData();
-  return useLiveQuery(async () => {
-    const rows = await db.budgets.filter((b) => b.deleted === 0 && b.spaceId === spaceId).toArray();
-    rows.sort((a, b) => a.name.localeCompare(b.name));
-    return rows;
-  }, [db, spaceId]);
+  const { store, spaceId } = useData();
+  return useQuery(
+    store,
+    async () => {
+      const rows = (await store.bySpace('budget', spaceId)).filter((b) => b.deleted === 0);
+      rows.sort((a, b) => a.name.localeCompare(b.name));
+      return rows;
+    },
+    [spaceId],
+  );
 }
 
 /** live per-budget numbers for the current cycle, most urgent first */

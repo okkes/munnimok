@@ -2,7 +2,7 @@ import { v7 as uuidv7 } from 'uuid';
 import type { HlcClock } from '@/sync/hlc';
 import { applyOp } from '@/sync/merge';
 import type { Op, SyncEnvelope } from '@/sync/merge';
-import type { MunniDB } from './schema';
+import type { StorageBackend } from './backend';
 import type { EntityName, EntityRowMap, OutboxRow } from './types';
 
 export interface RepoOptions {
@@ -22,7 +22,7 @@ export interface RepoOptions {
  */
 export class Repo {
   constructor(
-    readonly db: MunniDB,
+    readonly store: StorageBackend,
     private readonly clock: HlcClock,
     private readonly options: RepoOptions,
   ) {}
@@ -53,7 +53,6 @@ export class Repo {
     fields: Record<string, unknown>,
     deleted: boolean,
   ): Promise<void> {
-    const table = this.db.tableFor(entity);
     const op = {
       opId: uuidv7(),
       spaceId,
@@ -63,13 +62,14 @@ export class Repo {
       hlc: this.clock.now(),
       ...(deleted ? { deleted: true } : {}),
     } satisfies OutboxRow;
-    await this.db.transaction('rw', table, this.db.outbox, async () => {
-      const local = ((await table.get(entityId)) ?? null) as (Record<string, unknown> & SyncEnvelope) | null;
+    await this.store.transact([entity, 'outbox'], async () => {
+      const local = ((await this.store.get(entity, entityId)) ?? null) as
+        | (Record<string, unknown> & SyncEnvelope)
+        | null;
       const { row, changed } = applyOp(local, op);
       if (!changed) return;
-      // dexie's union table intersects all row types — the cast is required
-      await table.put({ ...row, id: entityId, spaceId } as never); // NOSONAR(S4325)
-      if (this.options.trackOutbox) await this.db.outbox.add(op);
+      await this.store.put(entity, { ...row, id: entityId, spaceId });
+      if (this.options.trackOutbox) await this.store.outboxAdd(op);
     });
     this.options.onWrite?.();
   }
@@ -80,15 +80,15 @@ export class Repo {
    */
   async applyRemoteOps(ops: Op[]): Promise<void> {
     if (ops.length === 0) return;
-    const tables = [...new Set(ops.map((op) => this.db.tableFor(op.entity as EntityName)))];
-    await this.db.transaction('rw', tables, async () => {
+    const entities = [...new Set(ops.map((op) => op.entity as EntityName))];
+    await this.store.transact(entities, async () => {
       for (const op of ops) {
-        const table = this.db.tableFor(op.entity as EntityName);
-        const local = ((await table.get(op.entityId)) ?? null) as (Record<string, unknown> & SyncEnvelope) | null;
+        const local = ((await this.store.get(op.entity as EntityName, op.entityId)) ?? null) as
+          | (Record<string, unknown> & SyncEnvelope)
+          | null;
         const { row, changed } = applyOp(local, op);
         if (changed) {
-          // same union-table cast as in write()
-          await table.put({ ...row, id: op.entityId, spaceId: op.spaceId } as never); // NOSONAR(S4325)
+          await this.store.put(op.entity as EntityName, { ...row, id: op.entityId, spaceId: op.spaceId });
         }
       }
     });

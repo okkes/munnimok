@@ -8,6 +8,7 @@ import { SyncHttpError } from './backend';
 import { SyncEngine } from './engine';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
+import { DexieBackend } from '@/db/backend';
 import type { AccountRow } from '@/db/types';
 
 /** Minimal in-memory server with the same semantics as Munni.Api. */
@@ -45,8 +46,8 @@ let dbCounter = 0;
 
 function device(name: string, wall: () => number, server: InMemoryServer) {
   const db = new MunniDB(`engine_test_${name}_${dbCounter}`);
-  const repo = new Repo(db, new HlcClock(name, undefined, wall), { trackOutbox: true });
-  const engine = new SyncEngine(db, repo, server, name);
+  const repo = new Repo(new DexieBackend(db), new HlcClock(name, undefined, wall), { trackOutbox: true });
+  const engine = new SyncEngine(new DexieBackend(db), repo, server, name);
   return { db, repo, engine };
 }
 

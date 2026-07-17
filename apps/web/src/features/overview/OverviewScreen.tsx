@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useQuery } from '@/db/useQuery';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
 import { useData } from '@/app/data';
@@ -32,13 +32,13 @@ const KIND_ACCENT: Record<OverviewKind, string> = {
  */
 export function OverviewScreen() {
   const { t, lang } = useLang();
-  const { db, spaceId } = useData();
+  const { store, spaceId } = useData();
   const { kind } = useParams({ strict: false }) as { kind: OverviewKind };
   const navigate = useNavigate();
   const cats = useCategories();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
-  const space = useLiveQuery(() => db.spaces.get(spaceId), [spaceId]);
+  const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const accounts = useSpaceAccounts();
   const txs = useSpaceTransactions();
 

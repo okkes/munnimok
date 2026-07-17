@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useQuery } from '@/db/useQuery';
 import { useNavigate } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
@@ -18,11 +18,11 @@ function avatarIcon(space: SpaceRow): string {
  */
 export function SpaceSwitcher() {
   const { t } = useLang();
-  const { db, spaceId, setActiveSpace } = useData();
+  const { store, spaceId, setActiveSpace } = useData();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
 
-  const spaces = useLiveQuery(() => db.spaces.filter((s) => s.deleted === 0).toArray(), []);
+  const spaces = useQuery(store, async () => (await store.allRows('space')).filter((s) => s.deleted === 0), []);
   const active = spaces?.find((s) => s.id === spaceId);
 
   return (

@@ -2,7 +2,7 @@ import { visibleTransactions } from '@/db/joined';
 import { buildMerchantMemory } from '@/domain/merchantMemory';
 import type { MerchantMemory } from '@/domain/merchantMemory';
 import { CATEGORY_BY_ID } from '@/domain/categories';
-import type { MunniDB } from '@/db/schema';
+import type { StorageBackend } from '@/db/backend';
 
 /**
  * Merchant memory is user-scoped and LOCAL-ONLY (user ruling): every
@@ -13,11 +13,11 @@ import type { MunniDB } from '@/db/schema';
  * The prediction itself renders only on this user's device; only the
  * category the user then CONFIRMS syncs to co-members.
  */
-export async function buildSpaceMerchantMemory(db: MunniDB, spaceId: string): Promise<MerchantMemory> {
-  const spaces = await db.spaces.filter((s) => s.deleted === 0).toArray();
+export async function buildSpaceMerchantMemory(store: StorageBackend, spaceId: string): Promise<MerchantMemory> {
+  const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0);
   const rows = [];
   for (const space of spaces) {
-    const txs = await visibleTransactions(db, space.id);
+    const txs = await visibleTransactions(store, space.id);
     rows.push(...(space.id === spaceId ? txs : txs.filter((t) => CATEGORY_BY_ID.has(t.catId ?? ''))));
   }
   return buildMerchantMemory(rows);

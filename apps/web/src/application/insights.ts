@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
 import { useData } from '@/app/data';
+import { useQuery } from '@/db/useQuery';
 import { useLang } from '@/i18n';
 import { useBudgets } from './budgets';
 import { useRecurrings } from './recurring';
@@ -14,17 +14,22 @@ const PERIOD_WINDOW = 6;
 
 /** the space's live insights, dismissed ones filtered out */
 export function useInsights(): Insight[] | undefined {
-  const { db, spaceId } = useData();
-  const space = useLiveQuery(() => db.spaces.get(spaceId), [spaceId]);
+  const { store, spaceId } = useData();
+  const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const txs = useSpaceTransactions();
   const accounts = useSpaceAccounts();
   const recurrings = useRecurrings();
   const budgets = useBudgets();
   const catalog = useCategories();
-  const debts = useLiveQuery(() => db.debts.filter((d) => d.deleted === 0 && d.spaceId === spaceId).toArray(), [db, spaceId]);
-  const dismissals = useLiveQuery(
-    () => db.insightDismissals.filter((d) => d.deleted === 0 && d.spaceId === spaceId).toArray(),
-    [db, spaceId],
+  const debts = useQuery(
+    store,
+    async () => (await store.bySpace('debt', spaceId)).filter((d) => d.deleted === 0),
+    [spaceId],
+  );
+  const dismissals = useQuery(
+    store,
+    async () => (await store.bySpace('insightDismiss', spaceId)).filter((d) => d.deleted === 0),
+    [spaceId],
   );
 
   return useMemo(() => {
@@ -72,7 +77,7 @@ const isoWeek = (date: Date): string => {
  * links into the screen. Marker in device meta — never nags twice.
  */
 export function useInsightDigest(insights: Insight[] | undefined): void {
-  const { db } = useData();
+  const { store } = useData();
   const { t } = useLang();
   const fired = useRef(false);
   useEffect(() => {
@@ -81,7 +86,7 @@ export function useInsightDigest(insights: Insight[] | undefined): void {
     fired.current = true;
     void (async () => {
       const markerKey = `insightDigest_${isoWeek(new Date())}`;
-      if (await db.meta.get(markerKey)) return;
+      if (await store.metaGet(markerKey)) return;
       const registration = await navigator.serviceWorker?.ready.catch(() => undefined);
       if (!registration) return;
       await registration.showNotification(t('ins.digestTitle'), {
@@ -91,7 +96,7 @@ export function useInsightDigest(insights: Insight[] | undefined): void {
         tag: markerKey,
         data: { url: '/insights' },
       });
-      await db.meta.put({ key: markerKey, value: true });
+      await store.metaPut(markerKey, true);
     })().catch(() => undefined); // best-effort; a closing db must not throw
-  }, [insights, db, t]);
+  }, [insights, store, t]);
 }

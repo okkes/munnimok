@@ -3,6 +3,7 @@ import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
+import { DexieBackend } from '@/db/backend';
 import { HlcClock } from '@/sync/hlc';
 import { adoptedCategoryId } from '@/domain/feedIds';
 import { adoptUserCategoriesOnShare } from './categoryOps';
@@ -13,7 +14,7 @@ describe('adoptUserCategoriesOnShare', () => {
 
   beforeEach(async () => {
     db = new MunniDB(`munni_test_adopt_${Math.random().toString(36).slice(2)}`);
-    repo = new Repo(db, new HlcClock('t'), { trackOutbox: false });
+    repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
 
     await repo.upsert('space', 'p1', 'p1', { name: 'Personal', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
     await repo.upsert('space', 'tgt', 'tgt', { name: 'Family', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
@@ -36,7 +37,7 @@ describe('adoptUserCategoriesOnShare', () => {
   });
 
   it('copies used units into the space and rewrites every reference', async () => {
-    await adoptUserCategoriesOnShare(db, repo, 'tgt');
+    await adoptUserCategoriesOnShare(new DexieBackend(db), repo, 'tgt');
 
     const newMain = adoptedCategoryId('tgt', 'main1');
     const newSub1 = adoptedCategoryId('tgt', 'sub1');
@@ -68,9 +69,9 @@ describe('adoptUserCategoriesOnShare', () => {
   });
 
   it('is idempotent — a second run copies nothing new', async () => {
-    await adoptUserCategoriesOnShare(db, repo, 'tgt');
+    await adoptUserCategoriesOnShare(new DexieBackend(db), repo, 'tgt');
     const after1 = await db.categories.filter((c) => c.spaceId === 'tgt' && c.deleted === 0).count();
-    await adoptUserCategoriesOnShare(db, repo, 'tgt');
+    await adoptUserCategoriesOnShare(new DexieBackend(db), repo, 'tgt');
     expect(await db.categories.filter((c) => c.spaceId === 'tgt' && c.deleted === 0).count()).toBe(after1);
   });
 
@@ -78,7 +79,7 @@ describe('adoptUserCategoriesOnShare', () => {
     await repo.upsert('transaction', 'tgt', 'tx1', { catId: 'groceries' });
     await repo.upsert('transaction', 'tgt', 'tx2', { catId: 'groceries', splits: undefined });
     await repo.upsert('txMeta', 'tgt', 'meta1', { catId: 'restaurants' });
-    await adoptUserCategoriesOnShare(db, repo, 'tgt');
+    await adoptUserCategoriesOnShare(new DexieBackend(db), repo, 'tgt');
     expect(await db.categories.filter((c) => c.spaceId === 'tgt').count()).toBe(0);
   });
 });

@@ -5,6 +5,7 @@ import { HlcClock } from '@/sync/hlc';
 import { accountLinkId, feedSpaceId, txMetaId } from '@/domain/feedIds';
 import { MunniDB } from './schema';
 import { Repo } from './repo';
+import { DexieBackend } from './backend';
 import { visibleAccounts, visibleTransactions, writeTxTransform } from './joined';
 
 let counter = 0;
@@ -50,12 +51,12 @@ async function seedFeed() {
 describe('feature B join layer', () => {
   beforeEach(() => {
     db = new MunniDB(`joined_test_${++counter}`);
-    repo = new Repo(db, new HlcClock('t'), { trackOutbox: false });
+    repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
   });
 
   it('a space sees feed transactions from its history-from date, with defaults', async () => {
     await seedFeed();
-    const txs = await visibleTransactions(db, SPACE);
+    const txs = await visibleTransactions(new DexieBackend(db), SPACE);
     expect(txs.map((t) => t.id)).toEqual(['raw1']); // raw2 is before historyFrom
     const [tx] = txs;
     expect(tx.spaceId).toBe(SPACE); // viewed through the space
@@ -75,7 +76,7 @@ describe('feature B join layer', () => {
       merchant: 'Tikkie',
       pending: 1,
     });
-    const txs = await visibleTransactions(db, SPACE);
+    const txs = await visibleTransactions(new DexieBackend(db), SPACE);
     const pending = txs.find((t) => t.id === 'raw-pending')!;
     expect(pending.pending).toBe(1);
     expect(pending.needsReview).toBe(0); // the booked twin replaces it later
@@ -88,21 +89,21 @@ describe('feature B join layer', () => {
       accountId: 'acct1',
     });
 
-    const [txInA] = await visibleTransactions(db, SPACE);
+    const [txInA] = await visibleTransactions(new DexieBackend(db), SPACE);
     await writeTxTransform(repo, txInA, { catId: 'groceries', needsReview: 0 });
 
-    const [againInA] = await visibleTransactions(db, SPACE);
+    const [againInA] = await visibleTransactions(new DexieBackend(db), SPACE);
     expect(againInA.catId).toBe('groceries');
     expect(againInA.needsReview).toBe(0);
 
-    const inB = (await visibleTransactions(db, OTHER_SPACE)).find((t) => t.id === 'raw1');
+    const inB = (await visibleTransactions(new DexieBackend(db), OTHER_SPACE)).find((t) => t.id === 'raw1');
     expect(inB?.catId).toBeUndefined(); // space B holds its own opinion
     expect(inB?.needsReview).toBe(1);
   });
 
   it('overlay ids are deterministic — concurrent edits converge on one row', async () => {
     await seedFeed();
-    const [tx] = await visibleTransactions(db, SPACE);
+    const [tx] = await visibleTransactions(new DexieBackend(db), SPACE);
     await writeTxTransform(repo, tx, { catId: 'groceries' });
     await writeTxTransform(repo, tx, { notes: 'weekly shop' });
     const metas = await db.txMeta.where('spaceId').equals(SPACE).toArray();
@@ -123,7 +124,7 @@ describe('feature B join layer', () => {
       txType: 'expense',
       needsReview: 0,
     });
-    const txs = await visibleTransactions(db, SPACE);
+    const txs = await visibleTransactions(new DexieBackend(db), SPACE);
     const legacy = txs.find((t) => t.id === 'legacy1')!;
     expect(legacy.feedSpaceId).toBeUndefined();
     expect(legacy.catId).toBe('groceries');
@@ -135,7 +136,7 @@ describe('feature B join layer', () => {
 
   it('visibleAccounts includes attached feed accounts with their link info', async () => {
     await seedFeed();
-    const accounts = await visibleAccounts(db, SPACE);
+    const accounts = await visibleAccounts(new DexieBackend(db), SPACE);
     const attached = accounts.find((a) => a.id === 'acct1')!;
     expect(attached.link?.feedSpaceId).toBe(FEED);
     expect(attached.balanceCents).toBe(10_000); // balance is raw — same everywhere

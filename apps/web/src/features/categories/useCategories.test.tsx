@@ -10,7 +10,7 @@ import type { Catalog } from './useCategories';
 import { catName, useCategories } from './useCategories';
 
 let latest: Catalog | null = null;
-let db: ReturnType<typeof useData>['db'] | null = null;
+let store: ReturnType<typeof useData>['store'] | null = null;
 let spaceId = '';
 
 function Probe() {
@@ -18,15 +18,19 @@ function Probe() {
   const cats = useCategories();
   const { t } = useLang();
   latest = cats;
-  db = data.db;
+  store = data.store;
   spaceId = data.spaceId;
   return <div data-testid="probe">{catName(cats.byId('groceries'), t)}</div>;
+}
+
+async function putAll(rows: (Record<string, unknown> & { id: string })[]) {
+  for (const row of rows) await store!.put('category', row);
 }
 
 describe('useCategories', () => {
   beforeEach(async () => {
     latest = null;
-    db = null;
+    store = null;
     localStorage.clear();
     sessionStorage.clear();
     await new Promise<void>((resolve, reject) => {
@@ -51,7 +55,7 @@ describe('useCategories', () => {
   it('merges custom space categories into the catalog', async () => {
     renderWithData(<Probe />);
     await screen.findByTestId('probe');
-    await db!.categories.add({
+    await store!.put('category', {
       id: 'cat_custom1',
       spaceId,
       name: 'Padel',
@@ -76,7 +80,7 @@ describe('useCategories', () => {
   it('custom mains carry their type; subs inherit it and default to both directions', async () => {
     renderWithData(<Probe />);
     await screen.findByTestId('probe');
-    await db!.categories.bulkAdd([
+    await putAll([
       {
         id: 'main1',
         spaceId,
@@ -114,7 +118,7 @@ describe('useCategories', () => {
         deleted: 0,
         fieldVersions: {},
       },
-    ] as never[]);
+    ]);
     await waitFor(() => {
       const main = latest!.byId('main1');
       expect(main.isParent).toBe(true);

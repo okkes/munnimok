@@ -3,6 +3,7 @@ import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
+import { DexieBackend } from '@/db/backend';
 import { HlcClock } from '@/sync/hlc';
 import { storeReceiptId, syncAhReceipts, syncJumboReceipts } from './sync';
 import type { ProxyCall } from './ah';
@@ -64,7 +65,7 @@ function fakeAh({ expireFirst = false, refreshWorks = true, graphqlDown = false 
 
 beforeEach(async () => {
   db = new MunniDB(`store_sync_test_${++counter}`);
-  repo = new Repo(db, new HlcClock('dev'), { trackOutbox: false });
+  repo = new Repo(new DexieBackend(db), new HlcClock('dev'), { trackOutbox: false });
   await db.storeConnections.put({
     store: 'ah',
     tokens: { access: 'old-access', refresh: 'old-refresh' },
@@ -86,7 +87,7 @@ describe('syncAhReceipts', () => {
     });
 
     const { call } = fakeAh();
-    const result = await syncAhReceipts(call, db, repo, SPACE);
+    const result = await syncAhReceipts(call, new DexieBackend(db), repo, SPACE);
     expect(result).toMatchObject({ status: 'ok', added: 2 });
 
     const matched = await db.receipts.get(storeReceiptId('ah', 't-100', SPACE));
@@ -98,7 +99,7 @@ describe('syncAhReceipts', () => {
     expect(unmatched?.txId).toBeUndefined();
 
     // second pass: nothing new, nothing duplicated
-    const again = await syncAhReceipts(call, db, repo, SPACE);
+    const again = await syncAhReceipts(call, new DexieBackend(db), repo, SPACE);
     expect(again).toMatchObject({ status: 'ok', added: 0 });
   });
 
@@ -119,7 +120,7 @@ describe('syncAhReceipts', () => {
     });
 
     const { call, calls } = fakeAh();
-    const result = await syncAhReceipts(call, db, repo, SPACE);
+    const result = await syncAhReceipts(call, new DexieBackend(db), repo, SPACE);
     expect(result).toMatchObject({ status: 'ok', added: 4 }); // 2 receipts × 2 spaces
 
     // each space holds its own copy; matching ran per space
@@ -129,13 +130,13 @@ describe('syncAhReceipts', () => {
     expect(calls.filter((p) => p === '/graphql').length).toBeLessThanOrEqual(3); // list + 2 detail calls
 
     // legacy single-space rows (pre-sharing id shape) never re-ingest
-    const again = await syncAhReceipts(call, db, repo, SPACE);
+    const again = await syncAhReceipts(call, new DexieBackend(db), repo, SPACE);
     expect(again).toMatchObject({ status: 'ok', added: 0 });
   });
 
   it('refreshes an expired token once and stores the fresh pair', async () => {
     const { call } = fakeAh({ expireFirst: true });
-    const result = await syncAhReceipts(call, db, repo, SPACE);
+    const result = await syncAhReceipts(call, new DexieBackend(db), repo, SPACE);
     expect(result.status).toBe('ok');
     const connection = await db.storeConnections.get('ah');
     expect(connection?.tokens.access).toBe('fresh-access');
@@ -144,7 +145,7 @@ describe('syncAhReceipts', () => {
 
   it('falls back to the legacy REST receipts when GraphQL is gone', async () => {
     const { call, calls } = fakeAh({ graphqlDown: true });
-    const result = await syncAhReceipts(call, db, repo, SPACE);
+    const result = await syncAhReceipts(call, new DexieBackend(db), repo, SPACE);
     expect(result.status).toBe('ok');
     expect(result.added).toBe(1);
     expect(calls).toContain('/graphql');
@@ -153,7 +154,7 @@ describe('syncAhReceipts', () => {
 
   it('a dead refresh token expires the connection and flags the synced marker', async () => {
     const { call } = fakeAh({ expireFirst: true, refreshWorks: false });
-    const result = await syncAhReceipts(call, db, repo, SPACE);
+    const result = await syncAhReceipts(call, new DexieBackend(db), repo, SPACE);
     expect(result.status).toBe('expired');
     expect((await db.storeConnections.get('ah'))?.status).toBe('expired');
     expect((await db.storeMarkers.get(`store:${SPACE}:ah`))?.status).toBe('expired');
@@ -206,7 +207,7 @@ describe('syncJumboReceipts', () => {
     });
 
     const { call } = fakeJumbo();
-    const result = await syncJumboReceipts(call, db, repo, SPACE);
+    const result = await syncJumboReceipts(call, new DexieBackend(db), repo, SPACE);
     expect(result).toMatchObject({ status: 'ok', added: 2 });
 
     const matched = await db.receipts.get(storeReceiptId('jumbo', 'j-1', SPACE));
@@ -215,12 +216,12 @@ describe('syncJumboReceipts', () => {
     expect(matched?.items).toEqual([{ name: 'MELK', qty: 2, totalCents: 258 }]);
 
     // second pass: nothing new, nothing duplicated
-    expect(await syncJumboReceipts(call, db, repo, SPACE)).toEqual({ status: 'ok', added: 0 });
+    expect(await syncJumboReceipts(call, new DexieBackend(db), repo, SPACE)).toEqual({ status: 'ok', added: 0 });
   });
 
   it('jumbo sessions do not refresh: an auth failure expires the connection', async () => {
     const { call } = fakeJumbo({ authFails: true });
-    const result = await syncJumboReceipts(call, db, repo, SPACE);
+    const result = await syncJumboReceipts(call, new DexieBackend(db), repo, SPACE);
     expect(result.status).toBe('expired');
     expect((await db.storeConnections.get('jumbo'))?.status).toBe('expired');
     expect((await db.storeMarkers.get(`store:${SPACE}:jumbo`))?.status).toBe('expired');

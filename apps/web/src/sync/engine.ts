@@ -1,4 +1,4 @@
-import type { MunniDB } from '@/db/schema';
+import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
 import type { SyncBackend } from './backend';
 import { SyncHttpError } from './backend';
@@ -29,7 +29,7 @@ export class SyncEngine {
   private eventDebounce: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
-    private readonly db: MunniDB,
+    private readonly store: StorageBackend,
     private readonly repo: Repo,
     private readonly backend: SyncBackend,
     private readonly clientId: string,
@@ -108,14 +108,14 @@ export class SyncEngine {
     this.running = true;
     this.setStatus('syncing');
     try {
-      const spaces = await this.db.spaces.filter((s) => s.deleted === 0).toArray();
+      const spaces = (await this.store.allRows('space')).filter((s) => s.deleted === 0);
       // also flush outbox ops for spaces we no longer have rows for
-      const outboxSpaces = (await this.db.outbox.toArray()).map((o) => o.spaceId);
+      const outboxSpaces = (await this.store.outboxAll()).map((o) => o.spaceId);
       // and pull spaces the server knows us to be in (fresh device / new invite)
       const serverSpaces = await this.backend.listSpaces();
       const spaceIds = [...new Set([...spaces.map((s) => s.id), ...outboxSpaces, ...serverSpaces])];
       for (const spaceId of spaceIds) await this.syncSpace(spaceId);
-      await this.db.meta.put({ key: LAST_SYNC_KEY, value: Date.now() });
+      await this.store.metaPut(LAST_SYNC_KEY, Date.now());
       this.setStatus('idle');
     } catch (err) {
       this.setStatus(err instanceof TypeError ? 'offline' : 'error'); // fetch network errors are TypeError
@@ -127,17 +127,17 @@ export class SyncEngine {
   async syncSpace(spaceId: string): Promise<void> {
     try {
       // 1. push queued local ops (ordered by HLC)
-      const outbox = await this.db.outbox.where('spaceId').equals(spaceId).sortBy('hlc');
+      const outbox = await this.store.outboxBySpace(spaceId);
       if (outbox.length > 0) {
         await this.backend.push(spaceId, this.clientId, outbox);
-        await this.db.outbox.bulkDelete(outbox.map((o) => o.opId));
+        await this.store.outboxDelete(outbox.map((o) => o.opId));
       }
 
       // 2. pull everything after our cursor and merge (own ops no-op)
-      const since = ((await this.db.meta.get(cursorKey(spaceId)))?.value as number | undefined) ?? 0;
+      const since = ((await this.store.metaGet(cursorKey(spaceId)))?.value as number | undefined) ?? 0;
       const { ops, latestSeq } = await this.backend.pull(spaceId, since);
       if (ops.length > 0) await this.repo.applyRemoteOps(ops);
-      if (latestSeq !== since) await this.db.meta.put({ key: cursorKey(spaceId), value: latestSeq });
+      if (latestSeq !== since) await this.store.metaPut(cursorKey(spaceId), latestSeq);
     } catch (err) {
       if (err instanceof SyncHttpError && err.status === 403) {
         await this.purgeSpace(spaceId);
@@ -149,14 +149,14 @@ export class SyncEngine {
 
   /** membership revoked (403) or explicitly left: remove all local data of the space */
   async purgeSpace(spaceId: string): Promise<void> {
-    const scoped = [this.db.accounts, this.db.categories, this.db.transactions, this.db.txMeta, this.db.accountLinks];
-    await this.db.transaction('rw', [this.db.spaces, ...scoped, this.db.outbox, this.db.meta], async () => {
-      await this.db.spaces.delete(spaceId);
-      for (const table of scoped) {
-        await table.where('spaceId').equals(spaceId).delete();
+    const scoped = ['account', 'category', 'transaction', 'txMeta', 'accountLink'] as const;
+    await this.store.transact(['space', ...scoped, 'outbox', 'meta'], async () => {
+      await this.store.deleteRow('space', spaceId);
+      for (const entity of scoped) {
+        await this.store.deleteBySpace(entity, spaceId);
       }
-      await this.db.outbox.where('spaceId').equals(spaceId).delete();
-      await this.db.meta.delete(cursorKey(spaceId));
+      await this.store.outboxDeleteBySpace(spaceId);
+      await this.store.metaDelete(cursorKey(spaceId));
     });
   }
 }

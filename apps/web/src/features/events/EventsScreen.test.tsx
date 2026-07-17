@@ -69,6 +69,9 @@ describe('Events (demo identity)', () => {
     await screen.findByTestId('eventpick-list');
     fireEvent.click(screen.getByTestId('eventpick-attach')); // everything pre-checked
     await screen.findByTestId('eventdetail-txs', {}, { timeout: 8000 });
+    // attach-all writes one tx at a time — sample the count only once the
+    // suggestion banner is gone (everything in range has been adopted)
+    await waitFor(() => expect(screen.queryByTestId('eventdetail-suggest')).toBeNull(), { timeout: 8000 });
 
     const allCount = document.querySelectorAll('[data-testid="eventdetail-txs"] [data-testid^="tx-row-"]').length;
     const mainRow = document.querySelector('[data-testid^="eventdetail-cat-"]')!;

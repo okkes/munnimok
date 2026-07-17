@@ -171,7 +171,7 @@ function SharedWithMeSection({ list, lang }: { list: GlobalAccount[]; lang: Retu
 
 export function AccountsScreen() {
   const { t, lang } = useLang();
-  const { db, repo, spaceId } = useData();
+  const { store, repo, spaceId } = useData();
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<AccountRow | null>(null);
   const [newType, setNewType] = useState<AccountType | null>(null);
@@ -187,8 +187,8 @@ export function AccountsScreen() {
   // created" moment to hook — reconcile whenever this screen opens
   // instead (idempotent; rows with links are skipped)
   useEffect(() => {
-    void linkAllCounterparties(db, repo, spaceId).catch(() => undefined);
-  }, [db, repo, spaceId]);
+    void linkAllCounterparties(store, repo, spaceId).catch(() => undefined);
+  }, [store, repo, spaceId]);
   const [gcAvailable, setGcAvailable] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
   const [myFeedIds, setMyFeedIds] = useState<ReadonlySet<string> | undefined>(undefined);
@@ -221,10 +221,10 @@ export function AccountsScreen() {
     // syncing identities import into feed spaces (shared-accounts model);
     // demo/offline keep everything merged in the current space
     const feeds = identity?.kind === 'user' ? apiFeedGateway(identity.sub) : undefined;
-    setImportResult(await importCamtStatements(repo, db, spaceId, importPreview, feeds));
+    setImportResult(await importCamtStatements(repo, store, spaceId, importPreview, feeds));
     // a just-imported account may BE the counterparty of older rows
     // (and vice versa) — retro-link them (user rule)
-    await linkAllCounterparties(db, repo, spaceId).catch(() => undefined);
+    await linkAllCounterparties(store, repo, spaceId).catch(() => undefined);
     // the import may have registered new feeds — refresh ownership so the
     // new accounts classify under MINE, not "shared with me"
     if (feeds) void fetchMyFeedIds().then(setMyFeedIds).catch(() => undefined);

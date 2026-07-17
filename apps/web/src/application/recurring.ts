@@ -1,5 +1,4 @@
 import { useEffect } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
 import { useData } from '@/app/data';
 import { LOCALES, useLang } from '@/i18n';
 import { visibleTransactions, writeTxTransform } from '@/db/joined';
@@ -7,7 +6,8 @@ import type { SpaceTx } from '@/db/joined';
 import { merchantKey } from '@/domain/merchantKey';
 import { addDays, cycleKeyOf, nextDueDate, recurringAmountMatches } from '@/domain/recurring';
 import { recurringDismissId } from '@/domain/feedIds';
-import type { MunniDB } from '@/db/schema';
+import type { StorageBackend } from '@/db/backend';
+import { useQuery } from '@/db/useQuery';
 import type { Repo } from '@/db/repo';
 import type { RecurringRow } from '@/db/types';
 
@@ -21,21 +21,29 @@ export const localToday = (): string => {
 
 /** the active space's recurring rows, alphabetical */
 export function useRecurrings(): RecurringRow[] | undefined {
-  const { db, spaceId } = useData();
-  return useLiveQuery(async () => {
-    const rows = await db.recurrings.filter((r) => r.deleted === 0 && r.spaceId === spaceId).toArray();
-    rows.sort((a, b) => a.name.localeCompare(b.name));
-    return rows;
-  }, [db, spaceId]);
+  const { store, spaceId } = useData();
+  return useQuery(
+    store,
+    async () => {
+      const rows = (await store.bySpace('recurring', spaceId)).filter((r) => r.deleted === 0);
+      rows.sort((a, b) => a.name.localeCompare(b.name));
+      return rows;
+    },
+    [spaceId],
+  );
 }
 
 /** merchant patterns this space already rejected as suggestions */
 export function useDismissedKeys(): ReadonlySet<string> | undefined {
-  const { db, spaceId } = useData();
-  return useLiveQuery(async () => {
-    const rows = await db.recurringDismissals.filter((r) => r.deleted === 0 && r.spaceId === spaceId).toArray();
-    return new Set(rows.map((r) => r.merchantKey));
-  }, [db, spaceId]);
+  const { store, spaceId } = useData();
+  return useQuery(
+    store,
+    async () => {
+      const rows = (await store.bySpace('recurringDismiss', spaceId)).filter((r) => r.deleted === 0);
+      return new Set(rows.map((r) => r.merchantKey));
+    },
+    [spaceId],
+  );
 }
 
 export interface RecurringOps {
@@ -48,7 +56,7 @@ export interface RecurringOps {
 }
 
 export function useRecurringOps(): RecurringOps {
-  const { db, repo, spaceId } = useData();
+  const { store, repo, spaceId } = useData();
   return {
     save: async (id, fields) => {
       const rowId = id ?? repo.newId();
@@ -59,7 +67,7 @@ export function useRecurringOps(): RecurringOps {
     dismissSuggestion: (key) =>
       repo.upsert('recurringDismiss', spaceId, recurringDismissId(spaceId, key), { merchantKey: key }),
     linkTx: (tx, recurringId) => writeTxTransform(repo, tx, { recurringId }),
-    reconcile: () => reconcileRecurringLinks(db, repo, spaceId),
+    reconcile: () => reconcileRecurringLinks(store, repo, spaceId),
   };
 }
 
@@ -69,13 +77,13 @@ export function useRecurringOps(): RecurringOps {
  * one transaction per billing cycle. Idempotent — runs after imports
  * and on opening the Recurring screen.
  */
-export async function reconcileRecurringLinks(db: MunniDB, repo: Repo, spaceId: string): Promise<number> {
-  const recs = await db.recurrings
-    .filter((r) => r.deleted === 0 && r.spaceId === spaceId && r.active === 1 && !!r.merchantKey)
-    .toArray();
+export async function reconcileRecurringLinks(store: StorageBackend, repo: Repo, spaceId: string): Promise<number> {
+  const recs = (await store.bySpace('recurring', spaceId)).filter(
+    (r) => r.deleted === 0 && r.active === 1 && !!r.merchantKey,
+  );
   if (recs.length === 0) return 0;
 
-  const txs = await visibleTransactions(db, spaceId);
+  const txs = await visibleTransactions(store, spaceId);
   const byKey = new Map(recs.map((r) => [r.merchantKey!, r]));
 
   const linkedCycles = new Map<string, Set<string>>();
@@ -111,7 +119,7 @@ export async function reconcileRecurringLinks(db: MunniDB, repo: Repo, spaceId: 
  * need server-side scheduling, which recurring data deliberately avoids.
  */
 export function useRecurringReminders(): void {
-  const { db } = useData();
+  const { store } = useData();
   const { t, lang } = useLang();
   useEffect(() => {
     void (async () => {
@@ -120,15 +128,15 @@ export function useRecurringReminders(): void {
       if (!registration) return;
 
       const today = localToday();
-      const recs = await db.recurrings
-        .filter((r) => r.deleted === 0 && r.active === 1 && (r.notifyDaysBefore ?? 0) > 0)
-        .toArray();
+      const recs = (await store.allRows('recurring')).filter(
+        (r) => r.deleted === 0 && r.active === 1 && (r.notifyDaysBefore ?? 0) > 0,
+      );
       for (const rec of recs) {
         const next = nextDueDate(rec, today);
         if (!next || next > addDays(today, rec.notifyDaysBefore ?? 0)) continue;
         const key = `recNotified_${rec.id}_${next}`;
-        if (await db.meta.get(key)) continue; // one reminder per due date
-        await db.meta.put({ key, value: Date.now() });
+        if (await store.metaGet(key)) continue; // one reminder per due date
+        await store.metaPut(key, Date.now());
         const date = new Date(next).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' });
         await registration.showNotification('munni', {
           body: t('recurring.reminderBody', { name: rec.name, date }),
@@ -139,5 +147,5 @@ export function useRecurringReminders(): void {
         });
       }
     })().catch(() => undefined); // reminders are best-effort; a closing db must not throw
-  }, [db, t, lang]);
+  }, [store, t, lang]);
 }

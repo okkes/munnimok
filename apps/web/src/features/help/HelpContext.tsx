@@ -19,14 +19,14 @@ export const useHelp = (): HelpApi => useContext(HelpContext);
 
 /** hosts the two tutorial renderers above every screen */
 export function HelpProvider({ children }: Readonly<{ children: ReactNode }>) {
-  const { db } = useData();
+  const { store } = useData();
   const navigate = useNavigate();
   const [slidesFor, setSlidesFor] = useState<TourId | null>(null);
   const [spotlight, setSpotlight] = useState<{ tourId: TourId; step: number } | null>(null);
 
   const markSeen = useCallback(
-    (tourId: TourId) => void db.meta.put({ key: `tutorialSeen_${tourId}`, value: true }).catch(() => undefined),
-    [db],
+    (tourId: TourId) => void store.metaPut(`tutorialSeen_${tourId}`, true).catch(() => undefined),
+    [store],
   );
 
   const openSlides = useCallback((tourId: TourId) => setSlidesFor(tourId), []);

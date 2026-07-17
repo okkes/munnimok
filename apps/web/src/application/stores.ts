@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
 import { useData } from '@/app/data';
+import { useQuery } from '@/db/useQuery';
 import { readSessionIdentity } from '@/app/session';
 import { apiFetch } from '@/lib/api';
 import { ahExchangeCode, extractAhCode } from '@/features/shopping/stores/ah';
@@ -32,26 +32,31 @@ const proxyCall: ProxyCall = async (store, path, init = {}) => {
 export const storesAvailable = (): boolean => readSessionIdentity()?.kind === 'user';
 
 export function useStoreConnections(): StoreConnectionRow[] | undefined {
-  const { db } = useData();
-  return useLiveQuery(() => db.storeConnections.toArray(), [db]);
+  const { store } = useData();
+  return useQuery(store, async () => store.storeConnAll(), []);
 }
 
 export function useStoreMarkers(): StoreMarkerRow[] | undefined {
-  const { db, spaceId } = useData();
-  return useLiveQuery(
-    () => db.storeMarkers.filter((m) => m.deleted === 0 && m.spaceId === spaceId).toArray(),
-    [db, spaceId],
+  const { store, spaceId } = useData();
+  return useQuery(
+    store,
+    async () => (await store.bySpace('storeMarker', spaceId)).filter((m) => m.deleted === 0),
+    [spaceId],
   );
 }
 
 /** receipts that arrived without an unambiguous transaction match */
 export function useUnmatchedReceipts(): ReceiptRow[] | undefined {
-  const { db, spaceId } = useData();
-  return useLiveQuery(async () => {
-    const rows = await db.receipts.filter((r) => r.deleted === 0 && r.spaceId === spaceId && !r.txId).toArray();
-    rows.sort((a, b) => b.date.localeCompare(a.date));
-    return rows;
-  }, [db, spaceId]);
+  const { store, spaceId } = useData();
+  return useQuery(
+    store,
+    async () => {
+      const rows = (await store.bySpace('receipt', spaceId)).filter((r) => r.deleted === 0 && !r.txId);
+      rows.sort((a, b) => b.date.localeCompare(a.date));
+      return rows;
+    },
+    [spaceId],
+  );
 }
 
 export type ConnectableStore = 'ah' | 'jumbo';
@@ -69,14 +74,14 @@ export interface StoreOps {
 }
 
 export function useStoreOps(): StoreOps {
-  const { db, repo, spaceId } = useData();
+  const { store: storage, repo, spaceId } = useData();
   return {
     connectAh: async (pasted) => {
       const code = extractAhCode(pasted);
       if (!code) return false;
       const tokens = await ahExchangeCode(proxyCall, code);
       if (!tokens) return false;
-      await db.storeConnections.put({
+      await storage.storeConnPut({
         store: 'ah',
         tokens: { access: tokens.access, refresh: tokens.refresh },
         refreshedAt: new Date().toISOString(),
@@ -88,12 +93,12 @@ export function useStoreOps(): StoreOps {
         status: 'connected',
         connectedAt: new Date().toISOString().slice(0, 10),
       });
-      void syncAhReceipts(proxyCall, db, repo, spaceId);
+      void syncAhReceipts(proxyCall, storage, repo, spaceId);
       return true;
     },
     disconnect: async (store) => {
-      const connection = await db.storeConnections.get(store);
-      await db.storeConnections.delete(store);
+      const connection = await storage.storeConnGet(store);
+      await storage.storeConnDelete(store);
       for (const shared of connection?.sharedSpaceIds ?? [spaceId]) {
         await repo.remove('storeMarker', shared, `store:${shared}:${store}`);
       }
@@ -101,7 +106,7 @@ export function useStoreOps(): StoreOps {
     connectJumbo: async (username, password) => {
       const login = await jumboLogin(proxyCall, username, password);
       if (!login.token) return login.outcome;
-      await db.storeConnections.put({
+      await storage.storeConnPut({
         store: 'jumbo',
         tokens: { token: login.token },
         refreshedAt: new Date().toISOString(),
@@ -113,19 +118,21 @@ export function useStoreOps(): StoreOps {
         status: 'connected',
         connectedAt: new Date().toISOString().slice(0, 10),
       });
-      void syncJumboReceipts(proxyCall, db, repo, spaceId);
+      void syncJumboReceipts(proxyCall, storage, repo, spaceId);
       return 'ok';
     },
     syncNow: (store) =>
-      store === 'jumbo' ? syncJumboReceipts(proxyCall, db, repo, spaceId) : syncAhReceipts(proxyCall, db, repo, spaceId),
+      store === 'jumbo'
+        ? syncJumboReceipts(proxyCall, storage, repo, spaceId)
+        : syncAhReceipts(proxyCall, storage, repo, spaceId),
     attachReceipt: async (receiptId, txId) => {
       await repo.upsert('receipt', spaceId, receiptId, { txId });
     },
     setSharedSpaces: async (store, spaceIds) => {
-      const connection = await db.storeConnections.get(store);
+      const connection = await storage.storeConnGet(store);
       if (!connection) return;
       const before = new Set(connection.sharedSpaceIds ?? [spaceId]);
-      await db.storeConnections.put({ ...connection, sharedSpaceIds: spaceIds });
+      await storage.storeConnPut({ ...connection, sharedSpaceIds: spaceIds });
       // markers keep every member's device honest about the connection
       for (const id of spaceIds.filter((id) => !before.has(id))) {
         await repo.upsert('storeMarker', id, `store:${id}:${store}`, {
@@ -139,7 +146,7 @@ export function useStoreOps(): StoreOps {
       }
       // newly shared spaces receive the backlog right away
       const sync = store === 'jumbo' ? syncJumboReceipts : syncAhReceipts;
-      void sync(proxyCall, db, repo, spaceId).catch(() => undefined);
+      void sync(proxyCall, storage, repo, spaceId).catch(() => undefined);
     },
   };
 }
@@ -152,19 +159,19 @@ const KEEP_ALIVE_MS = 12 * 60 * 60 * 1000;
  * design promises so connections don't silently rot.
  */
 export function useStoreKeepAlive(): void {
-  const { db, repo, spaceId } = useData();
+  const { store: storage, repo, spaceId } = useData();
   const ran = useRef(false);
   useEffect(() => {
     if (ran.current || !storesAvailable() || !navigator.onLine) return;
     ran.current = true;
     void (async () => {
       for (const store of ['ah', 'jumbo'] as const) {
-        const connection = await db.storeConnections.get(store);
+        const connection = await storage.storeConnGet(store);
         if (connection?.status !== 'ok') continue;
         if (Date.now() - Date.parse(connection.refreshedAt) < KEEP_ALIVE_MS) continue;
         const sync = store === 'jumbo' ? syncJumboReceipts : syncAhReceipts;
-        await sync(proxyCall, db, repo, spaceId);
+        await sync(proxyCall, storage, repo, spaceId);
       }
     })().catch(() => undefined); // best-effort: a closed db or offline hop must not throw
-  }, [db, repo, spaceId]);
+  }, [storage, repo, spaceId]);
 }

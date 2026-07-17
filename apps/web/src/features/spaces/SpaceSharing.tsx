@@ -75,7 +75,7 @@ export function useMyRole(spaceId: string | undefined, syncing: boolean): SpaceR
  */
 export async function leaveSpace(
   ctx: {
-    db: { spaces: { filter: (fn: (s: { deleted: number; id: string }) => boolean) => { first: () => Promise<{ id: string } | undefined> } } };
+    store: { allRows: (entity: 'space') => Promise<{ deleted: number; id: string }[]> };
     engine: { purgeSpace: (spaceId: string) => Promise<void> } | null;
     setActiveSpace: (spaceId: string) => Promise<void> | void;
     activeSpaceId: string;
@@ -89,7 +89,7 @@ export async function leaveSpace(
   if (!res?.ok) return false;
   await ctx.engine?.purgeSpace(spaceId);
   if (ctx.activeSpaceId === spaceId) {
-    const remaining = await ctx.db.spaces.filter((s) => s.deleted === 0 && s.id !== spaceId).first();
+    const remaining = (await ctx.store.allRows('space')).find((s) => s.deleted === 0 && s.id !== spaceId);
     if (remaining) await ctx.setActiveSpace(remaining.id);
   }
   return true;
@@ -156,7 +156,7 @@ interface SpaceMembersSectionProps {
 /** Members, roles + invite-a-friend for the space settings sheet (user identities). */
 export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: SpaceMembersSectionProps) {
   const { t } = useLang();
-  const { db, repo, engine, setActiveSpace, spaceId: activeSpaceId } = useData();
+  const { store, repo, engine, setActiveSpace, spaceId: activeSpaceId } = useData();
   const [members, setMembers] = useState<MemberDto[] | null>(null);
   const [friends, setFriends] = useState<FriendDto[]>([]);
   const [outgoing, setOutgoing] = useState<OutgoingInviteDto[]>([]);
@@ -203,9 +203,9 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
     // space-scoped and user-scoped categories stop leaking into it — so
     // the user-scoped ones its transactions already use are adopted
     // (copied in + references rewritten) BEFORE the flip
-    const space = await db.spaces.get(spaceId);
+    const space = await store.get('space', spaceId);
     if (space && space.kind !== 'shared') {
-      await adoptUserCategoriesOnShare(db, repo, spaceId);
+      await adoptUserCategoriesOnShare(store, repo, spaceId);
       await repo.upsert('space', spaceId, spaceId, { kind: 'shared' });
     }
     await reload();
@@ -234,7 +234,7 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
     await reload();
   };
   const leave = async () => {
-    if (await leaveSpace({ db, engine, setActiveSpace, activeSpaceId }, spaceId)) onLeft?.();
+    if (await leaveSpace({ store, engine, setActiveSpace, activeSpaceId }, spaceId)) onLeft?.();
   };
 
   return (

@@ -1,5 +1,5 @@
-import { useLiveQuery } from 'dexie-react-hooks';
 import { useData } from '@/app/data';
+import { useQuery } from '@/db/useQuery';
 import { localToday } from './recurring';
 import type { GoalRow } from '@/db/types';
 
@@ -10,20 +10,26 @@ import type { GoalRow } from '@/db/types';
  * display snapshot but never trusted.
  */
 export function useGoals(): GoalRow[] | undefined {
-  const { db, spaceId } = useData();
-  return useLiveQuery(async () => {
-    const [rows, contributions] = await Promise.all([
-      db.goals.filter((g) => g.deleted === 0 && g.spaceId === spaceId).toArray(),
-      db.goalContributions.filter((c) => c.deleted === 0 && c.spaceId === spaceId).toArray(),
-    ]);
-    const allocated = new Map<string, number>();
-    for (const contribution of contributions) {
-      allocated.set(contribution.goalId, (allocated.get(contribution.goalId) ?? 0) + contribution.amountCents);
-    }
-    const goals = rows.map((g) => ({ ...g, allocatedCents: allocated.get(g.id) ?? 0 }));
-    goals.sort((a, b) => (a.archived ?? 0) - (b.archived ?? 0) || a.name.localeCompare(b.name));
-    return goals;
-  }, [db, spaceId]);
+  const { store, spaceId } = useData();
+  return useQuery(
+    store,
+    async () => {
+      const [allGoals, allContributions] = await Promise.all([
+        store.bySpace('goal', spaceId),
+        store.bySpace('goalContribution', spaceId),
+      ]);
+      const rows = allGoals.filter((g) => g.deleted === 0);
+      const contributions = allContributions.filter((c) => c.deleted === 0);
+      const allocated = new Map<string, number>();
+      for (const contribution of contributions) {
+        allocated.set(contribution.goalId, (allocated.get(contribution.goalId) ?? 0) + contribution.amountCents);
+      }
+      const goals = rows.map((g) => ({ ...g, allocatedCents: allocated.get(g.id) ?? 0 }));
+      goals.sort((a, b) => (a.archived ?? 0) - (b.archived ?? 0) || a.name.localeCompare(b.name));
+      return goals;
+    },
+    [spaceId],
+  );
 }
 
 export interface GoalOps {
@@ -34,7 +40,7 @@ export interface GoalOps {
 }
 
 export function useGoalOps(): GoalOps {
-  const { db, repo, spaceId } = useData();
+  const { store, repo, spaceId } = useData();
   return {
     save: async (id, fields) => {
       const rowId = id ?? repo.newId();
@@ -50,9 +56,9 @@ export function useGoalOps(): GoalOps {
         note,
       });
       // display snapshot only — the derived sum is the truth
-      const contributions = await db.goalContributions
-        .filter((c) => c.deleted === 0 && c.spaceId === spaceId && c.goalId === goalId)
-        .toArray();
+      const contributions = (await store.bySpace('goalContribution', spaceId)).filter(
+        (c) => c.deleted === 0 && c.goalId === goalId,
+      );
       const total = contributions.reduce((sum, c) => sum + c.amountCents, 0);
       await repo.upsert('goal', spaceId, goalId, { allocatedCents: total });
     },

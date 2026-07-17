@@ -6,6 +6,7 @@ import { renderApp } from '@/test/harness';
 import { DEMO_SPACE_ID } from '@/db/seed';
 import { HlcClock } from '@/sync/hlc';
 import { Repo } from '@/db/repo';
+import { DexieBackend } from '@/db/backend';
 import { MunniDB } from '@/db/schema';
 
 describe('TxDetailScreen (demo identity)', () => {
@@ -38,7 +39,7 @@ describe('TxDetailScreen (demo identity)', () => {
     await screen.findByTestId('screen-tx-detail');
 
     const db = new MunniDB('munni_demo');
-    const repo = new Repo(db, new HlcClock('seed-att'), { trackOutbox: false });
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-att'), { trackOutbox: false });
     await repo.upsert('recurring', DEMO_SPACE_ID, 'rec-gym', {
       name: 'Gym',
       kind: 'subscription',
@@ -72,7 +73,7 @@ describe('counterparty account number on the detail screen', () => {
 
   const seedTx = async (counterIban: string, id: string) => {
     const db = new MunniDB('munni_demo');
-    const repo = new Repo(db, new HlcClock('seed-cp'), { trackOutbox: false });
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-cp'), { trackOutbox: false });
     await repo.upsert('transaction', DEMO_SPACE_ID, id, {
       accountId: 'demo_main',
       date: '2026-07-01',
@@ -345,7 +346,7 @@ describe('bulk apply from the detail (user request)', () => {
     renderApp('/home');
     await screen.findByTestId('screen-home');
     const db = new MunniDB('munni_demo');
-    const repo = new Repo(db, new HlcClock('seed-bulk'), { trackOutbox: false });
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-bulk'), { trackOutbox: false });
     for (const [id, needsReview] of [['blk-a', 0], ['blk-b', 1]] as const) {
       await repo.upsert('transaction', DEMO_SPACE_ID, id, {
         accountId: 'demo_main', date: '2026-06-01', amountCents: -900, currency: 'EUR',

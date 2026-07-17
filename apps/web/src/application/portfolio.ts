@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
 import { useData } from '@/app/data';
+import { useQuery } from '@/db/useQuery';
 import { readSessionIdentity } from '@/app/session';
 import { holdingView, portfolioTotals, quoteKey } from '@/domain/portfolio';
 import type { HoldingView, PortfolioTotals } from '@/domain/portfolio';
@@ -20,18 +20,23 @@ export interface PortfolioModel {
 }
 
 export function usePortfolio(): PortfolioModel | undefined {
-  const { db, spaceId } = useData();
-  const space = useLiveQuery(() => db.spaces.get(spaceId), [spaceId]);
-  const holdings = useLiveQuery(
+  const { store, spaceId } = useData();
+  const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
+  const holdings = useQuery(
+    store,
     async () => {
-      const rows = await db.holdings.filter((h) => h.deleted === 0 && h.spaceId === spaceId).toArray();
+      const rows = (await store.bySpace('holding', spaceId)).filter((h) => h.deleted === 0);
       rows.sort((a, b) => (a.archived ?? 0) - (b.archived ?? 0) || a.name.localeCompare(b.name));
       return rows;
     },
-    [db, spaceId],
+    [spaceId],
   );
-  const lots = useLiveQuery(() => db.lots.filter((l) => l.deleted === 0 && l.spaceId === spaceId).toArray(), [db, spaceId]);
-  const quotes = useLiveQuery(() => db.quoteCache.toArray(), [db]);
+  const lots = useQuery(
+    store,
+    async () => (await store.bySpace('lot', spaceId)).filter((l) => l.deleted === 0),
+    [spaceId],
+  );
+  const quotes = useQuery(store, async () => store.quoteCacheAll(), []);
 
   return useMemo(() => {
     if (!holdings || !lots || !quotes) return undefined;
@@ -57,22 +62,22 @@ interface QuotePayload {
 
 /** once per screen open: refresh stale quotes for the live-priced holdings */
 export function useQuoteRefresh(): void {
-  const { db, spaceId } = useData();
+  const { store, spaceId } = useData();
   const ran = useRef(false);
   useEffect(() => {
     if (ran.current || !quotesAvailable() || !navigator.onLine) return;
     ran.current = true;
     void (async () => {
-      const holdings = await db.holdings.filter((h) => h.deleted === 0 && h.spaceId === spaceId).toArray();
+      const holdings = (await store.bySpace('holding', spaceId)).filter((h) => h.deleted === 0);
       const keys = new Set(holdings.map(quoteKey).filter((k): k is string => k !== null));
       if (keys.size === 0) return;
       const anyUsdCandidate = [...keys].some((k) => k.startsWith('yahoo:'));
       if (anyUsdCandidate) keys.add(USD_BRIDGE);
 
       const now = Date.now();
-      const cached = await db.quoteCache.bulkGet([...keys]);
-      const stale = [...keys].filter((_, i) => {
-        const hit = cached[i];
+      const cached = new Map((await store.quoteCacheAll()).map((q) => [q.key, q]));
+      const stale = [...keys].filter((key) => {
+        const hit = cached.get(key);
         return !hit || now - Date.parse(hit.at) > QUOTE_STALE_MS;
       });
       if (stale.length === 0) return;
@@ -86,9 +91,9 @@ export function useQuoteRefresh(): void {
       if (!response.ok) return;
       const payload = (await response.json()) as QuotePayload;
       const at = new Date().toISOString();
-      await db.quoteCache.bulkPut(payload.quotes.map((q) => ({ key: q.key, price: q.price, currency: q.currency, dayChangePct: q.dayChangePct, at })));
+      await store.quoteCachePutAll(payload.quotes.map((q) => ({ key: q.key, price: q.price, currency: q.currency, dayChangePct: q.dayChangePct, at })));
     })().catch(() => undefined); // quotes are decoration; failures stay silent
-  }, [db, spaceId]);
+  }, [store, spaceId]);
 }
 
 export interface DegiroImportResult {
@@ -106,10 +111,10 @@ export interface PortfolioOps {
 }
 
 export function usePortfolioOps(): PortfolioOps {
-  const { db, repo, spaceId } = useData();
+  const { store, repo, spaceId } = useData();
 
   const upsertHolding = async (parsed: { key: string; name: string; isin?: string; assetClass: HoldingRow['assetClass'] }): Promise<number> => {
-    if (await db.holdings.get(parsed.key)) return 0;
+    if (await store.get('holding', parsed.key)) return 0;
     await repo.upsert('holding', spaceId, parsed.key, {
       name: parsed.name,
       isin: parsed.isin,
@@ -126,7 +131,7 @@ export function usePortfolioOps(): PortfolioOps {
     let lotCount = 0;
     for (const parsed of holdings) holdingCount += await upsertHolding(parsed);
     for (const parsed of lots) {
-      if (await db.lots.get(parsed.key)) continue;
+      if (await store.get('lot', parsed.key)) continue;
       await repo.upsert('lot', spaceId, parsed.key, {
         holdingId: parsed.holdingKey,
         kind: parsed.kind,
@@ -146,8 +151,10 @@ export function usePortfolioOps(): PortfolioOps {
       holdingCount += await upsertHolding(parsed);
       // a position without transaction history opens at unknown cost
       const openKey = `deg:open:${parsed.key}`;
-      const hasLots = await db.lots.where('holdingId').equals(parsed.key).filter((l) => l.deleted === 0).count();
-      if (parsed.quantity && hasLots === 0 && !(await db.lots.get(openKey))) {
+      const hasLots = (await store.bySpace('lot', spaceId)).some(
+        (l) => l.holdingId === parsed.key && l.deleted === 0,
+      );
+      if (parsed.quantity && !hasLots && !(await store.get('lot', openKey))) {
         await repo.upsert('lot', spaceId, openKey, {
           holdingId: parsed.key,
           kind: 'buy',
@@ -180,7 +187,7 @@ export function usePortfolioOps(): PortfolioOps {
     },
     removeHolding: async (id) => {
       await repo.remove('holding', spaceId, id);
-      const lots = await db.lots.where('holdingId').equals(id).filter((l) => l.deleted === 0).toArray();
+      const lots = (await store.bySpace('lot', spaceId)).filter((l) => l.holdingId === id && l.deleted === 0);
       for (const lot of lots) await repo.remove('lot', spaceId, lot.id);
     },
     addLot: async (holdingId, fields) => {

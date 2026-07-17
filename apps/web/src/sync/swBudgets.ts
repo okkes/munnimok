@@ -1,4 +1,6 @@
 import { MunniDB, identityDbName } from '@/db/schema';
+import { DexieBackend } from '@/db/backend';
+import type { StorageBackend } from '@/db/backend';
 import { readSwSession } from './swSync';
 import { budgetStatus } from '@/domain/budgets';
 import { buildCatalog, visibleCategoryRows } from '@/domain/catalog';
@@ -64,24 +66,27 @@ const markerKey = (budgetId: string, periodStart: string) => `budgetNotified_${b
  * announced this period yet. Stamps the marker for everything returned.
  */
 export async function collectBudgetAlerts(
-  db: MunniDB,
+  store: StorageBackend,
   spaceId: string,
   lang: string,
   today = localToday(),
 ): Promise<BudgetAlert[]> {
   const safeLang: Lang = LANGS.find((known) => known === lang) ?? 'en';
   const texts = TEXTS[safeLang];
-  const budgets = await db.budgets
-    .filter((b) => b.deleted === 0 && b.spaceId === spaceId && b.active === 1 && (b.notifyAtPct ?? 0) > 0)
-    .toArray();
+  const budgets = (await store.bySpace('budget', spaceId)).filter(
+    (b) => b.deleted === 0 && b.active === 1 && (b.notifyAtPct ?? 0) > 0,
+  );
   if (budgets.length === 0) return [];
 
-  const [spaces, categoryRows, txs, space] = await Promise.all([
-    db.spaces.filter((s) => s.deleted === 0).toArray(),
-    db.categories.filter((c) => c.deleted === 0).toArray(),
-    db.transactions.filter((t) => t.deleted === 0 && t.spaceId === spaceId).toArray(),
-    db.spaces.get(spaceId),
+  const [allSpaces, allCategories, spaceTxs, space] = await Promise.all([
+    store.allRows('space'),
+    store.allRows('category'),
+    store.bySpace('transaction', spaceId),
+    store.get('space', spaceId),
   ]);
+  const spaces = allSpaces.filter((s) => s.deleted === 0);
+  const categoryRows = allCategories.filter((c) => c.deleted === 0);
+  const txs = spaceTxs.filter((t) => t.deleted === 0);
   const visible = visibleCategoryRows(spaces, categoryRows, spaceId);
   const catalog = buildCatalog(visible.rows, visible.sharedScope, visible.hiddenMains);
   const currency = space?.currency ?? 'EUR';
@@ -91,8 +96,8 @@ export async function collectBudgetAlerts(
     const status = budgetStatus(budget, txs, catalog, today);
     if (status.ratio * 100 < (budget.notifyAtPct ?? 0)) continue;
     const key = markerKey(budget.id, status.period.start);
-    if (await db.meta.get(key)) continue; // one alert per budget per period
-    await db.meta.put({ key, value: Date.now() });
+    if (await store.metaGet(key)) continue; // one alert per budget per period
+    await store.metaPut(key, Date.now());
     const over = status.ratio > 1;
     const body = over
       ? texts.over.replace('{name}', budget.name).replace('{amount}', fmtCents(-status.leftCents, currency, safeLang))
@@ -112,10 +117,10 @@ export async function evaluateBudgetAlertsFromWorker(spaceId: string | undefined
   if (!spaceId) return [];
   const session = await readSwSession();
   if (!session) return [];
-  const db = new MunniDB(identityDbName(session.identityKey));
+  const store = new DexieBackend(new MunniDB(identityDbName(session.identityKey)));
   try {
-    return await collectBudgetAlerts(db, spaceId, lang);
+    return await collectBudgetAlerts(store, spaceId, lang);
   } finally {
-    db.close();
+    store.close();
   }
 }

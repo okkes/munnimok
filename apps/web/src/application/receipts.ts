@@ -1,19 +1,20 @@
-import { useLiveQuery } from 'dexie-react-hooks';
 import { useData } from '@/app/data';
+import { useQuery } from '@/db/useQuery';
 import { downscaleImage } from '@/lib/image';
 import type { ReceiptRow } from '@/db/types';
 import type { SpaceTx } from '@/db/joined';
 
 /** the receipt attached to one transaction (photo or store) */
 export function useTxReceipt(txId: string | undefined): ReceiptRow | null | undefined {
-  const { db, spaceId } = useData();
-  return useLiveQuery(
+  const { store, spaceId } = useData();
+  return useQuery(
+    store,
     async () => {
       if (!txId) return null;
-      const rows = await db.receipts.where('txId').equals(txId).filter((r) => r.deleted === 0 && r.spaceId === spaceId).toArray();
-      return rows[0] ?? null;
+      const row = (await store.bySpace('receipt', spaceId)).find((r) => r.deleted === 0 && r.txId === txId);
+      return row ?? null;
     },
-    [db, spaceId, txId],
+    [spaceId, txId],
   );
 }
 

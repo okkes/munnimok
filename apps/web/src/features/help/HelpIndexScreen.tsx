@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useQuery } from '@/db/useQuery';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { isNativeApp } from '@/lib/platform';
@@ -13,14 +13,14 @@ import { Row } from '@/ui/primitives';
 /** Settings → Help & tutorials: every tour, rerunnable any time. */
 export function HelpIndexScreen() {
   const { t } = useLang();
-  const { db } = useData();
+  const { store } = useData();
   const { openSlides } = useHelp();
   const [whatsNewOpen, setWhatsNewOpen] = useState(false);
-  const seen = useLiveQuery(async () => {
+  const seen = useQuery(store, async () => {
     const keys = TOURS.map((tour) => `tutorialSeen_${tour.id}`);
-    const rows = await db.meta.bulkGet(keys);
+    const rows = await Promise.all(keys.map((key) => store.metaGet(key)));
     return new Set(TOURS.filter((_, i) => Boolean(rows[i]?.value)).map((tour) => tour.id));
-  }, [db]);
+  }, []);
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-help">

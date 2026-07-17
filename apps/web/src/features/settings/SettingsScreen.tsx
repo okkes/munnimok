@@ -10,7 +10,7 @@ import { useSession } from '@/app/session';
 import { AppBar } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
 import { Row } from '@/ui/primitives';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useQuery } from '@/db/useQuery';
 import { Avatar } from '@/features/profile/ProfileScreen';
 import { LAST_SYNC_KEY } from '@/sync/engine';
 import type { SyncStatus } from '@/sync/engine';
@@ -25,10 +25,10 @@ const SYNC_STATUS_KEYS = {
 /** live sync state + last successful sync — silent failures can't hide */
 function SyncStatusRow() {
   const { t, lang } = useLang();
-  const { db, engine } = useData();
+  const { store, engine } = useData();
   const [status, setStatus] = useState<SyncStatus>(engine?.getStatus() ?? 'idle');
   useEffect(() => engine?.onStatus(setStatus), [engine]);
-  const lastSync = useLiveQuery(async () => (await db.meta.get(LAST_SYNC_KEY))?.value as number | undefined, []);
+  const lastSync = useQuery(store, async () => (await store.metaGet(LAST_SYNC_KEY))?.value as number | undefined, []);
   const offlineReason = useOfflineReason();
 
   if (!engine) return null;
@@ -65,9 +65,9 @@ function SyncStatusRow() {
 
 function ProfileHeaderRow({ onClick }: Readonly<{ onClick: () => void }>) {
   const { t } = useLang();
-  const { db } = useData();
-  const profile = useLiveQuery(
-    async () => (await db.meta.get('profile'))?.value as { name?: string; picture?: string } | undefined,
+  const { store } = useData();
+  const profile = useQuery(store, 
+    async () => (await store.metaGet('profile'))?.value as { name?: string; picture?: string } | undefined,
     [],
   );
   return (
@@ -90,8 +90,8 @@ function ProfileHeaderRow({ onClick }: Readonly<{ onClick: () => void }>) {
 
 export function SettingsScreen() {
   const { t } = useLang();
-  const { db, spaceId } = useData();
-  const activeSpace = useLiveQuery(() => db.spaces.get(spaceId), [spaceId]);
+  const { store, spaceId } = useData();
+  const activeSpace = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const { identity, logout } = useSession();
   const navigate = useNavigate();
   const signOut = async () => {

@@ -3,7 +3,7 @@ import { useLang } from '@/i18n';
 import { useBudgetStatuses } from '@/application/budgets';
 import type { BudgetStatus } from '@/domain/budgets';
 import { fmtCents } from '@/lib/money';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useQuery } from '@/db/useQuery';
 import { useData } from '@/app/data';
 import { HelpButton } from '@/features/help/HelpButton';
 import { IntroCard } from '@/features/help/IntroCard';
@@ -67,9 +67,9 @@ export function BudgetCard({ status, currency, onClick }: Readonly<{ status: Bud
 export function BudgetsScreen() {
   const { t } = useLang();
   const navigate = useNavigate();
-  const { db, spaceId } = useData();
+  const { store, spaceId } = useData();
   const statuses = useBudgetStatuses();
-  const space = useLiveQuery(() => db.spaces.get(spaceId), [spaceId]);
+  const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const currency = space?.currency ?? 'EUR';
 
   return (

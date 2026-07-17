@@ -45,14 +45,14 @@ function StoreKeepAlive() {
  *  the app is open — same once-per-period markers as the worker path,
  *  so the two can never double-fire (budgets design P4) */
 function BudgetAlerts() {
-  const { db, spaceId } = useData();
+  const { store, spaceId } = useData();
   const { lang } = useLang();
   useEffect(() => {
     void (async () => {
       if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
       const registration = await navigator.serviceWorker?.ready.catch(() => undefined);
       if (!registration) return;
-      for (const alert of await collectBudgetAlerts(db, spaceId, lang)) {
+      for (const alert of await collectBudgetAlerts(store, spaceId, lang)) {
         hapticNotify('WARNING'); // §5: over-budget deserves a physical nudge
         await registration.showNotification(alert.title, {
           body: alert.body,
@@ -63,7 +63,7 @@ function BudgetAlerts() {
         });
       }
     })().catch(() => undefined); // best-effort; a closing db must not throw
-  }, [db, spaceId, lang]);
+  }, [spaceId, lang]);
   return null;
 }
 

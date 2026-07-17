@@ -1,4 +1,4 @@
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useQuery } from '@/db/useQuery';
 import { useData } from '@/app/data';
 
 /**
@@ -11,6 +11,6 @@ import { useData } from '@/app/data';
 export const TIPS_DISABLED_KEY = 'tipsDisabled';
 
 export function useTipsDisabled(): boolean {
-  const { db } = useData();
-  return !!useLiveQuery(async () => (await db.meta.get(TIPS_DISABLED_KEY))?.value, [db]);
+  const { store } = useData();
+  return !!useQuery(store, async () => (await store.metaGet(TIPS_DISABLED_KEY))?.value, []);
 }

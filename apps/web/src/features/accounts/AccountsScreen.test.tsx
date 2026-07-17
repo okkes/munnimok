@@ -26,9 +26,10 @@ describe('AccountsScreen (demo identity)', () => {
     await screen.findByTestId('account-row-demo_main');
     const { MunniDB } = await import('@/db/schema');
     const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
     const { HlcClock } = await import('@/sync/hlc');
     const db = new MunniDB('munni_demo');
-    const repo = new Repo(db, new HlcClock('t'), { trackOutbox: false });
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
     await repo.upsert('account', 'feed-1', 'feedacct-1', {
       name: 'ING Betaal',
       type: 'checking',
@@ -66,9 +67,10 @@ describe('AccountsScreen (demo identity)', () => {
     indexedDB.deleteDatabase(USER_TEST_DB);
     const { MunniDB } = await import('@/db/schema');
     const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
     const { HlcClock } = await import('@/sync/hlc');
     const db = new MunniDB(USER_TEST_DB);
-    const repo = new Repo(db, new HlcClock('t'), { trackOutbox: false });
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
     await repo.upsert('account', 'feed-1', 'feedacct-1', {
       name: 'ING Betaal',
       type: 'checking',

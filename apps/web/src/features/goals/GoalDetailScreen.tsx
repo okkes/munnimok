@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useQuery } from '@/db/useQuery';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
@@ -19,18 +19,18 @@ import { GoalFormSheet } from './GoalsScreen';
 export function GoalDetailScreen() {
   const { t, lang } = useLang();
   const navigate = useNavigate();
-  const { db, spaceId } = useData();
+  const { store, spaceId } = useData();
   const { goalId } = useParams({ strict: false }) as { goalId: string };
   const goals = useGoals();
   const ops = useGoalOps();
-  const space = useLiveQuery(() => db.spaces.get(spaceId), [spaceId]);
-  const contributions = useLiveQuery(
+  const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
+  const contributions = useQuery(store, 
     async () => {
-      const rows = await db.goalContributions.filter((c) => c.deleted === 0 && c.spaceId === spaceId && c.goalId === goalId).toArray();
+      const rows = await (await store.allRows('goalContribution')).filter((c) => c.deleted === 0 && c.spaceId === spaceId && c.goalId === goalId);
       rows.sort((a, b) => b.date.localeCompare(a.date));
       return rows;
     },
-    [db, spaceId, goalId],
+    [spaceId, goalId],
   );
   const [formInitial, setFormInitial] = useState<GoalRow | 'new' | null>(null);
   const [fundOpen, setFundOpen] = useState<'fund' | 'withdraw' | null>(null);

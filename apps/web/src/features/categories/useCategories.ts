@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useQuery } from '@/db/useQuery';
 import { buildCatalog, visibleCategoryRows } from '@/domain/catalog';
 import type { Cat, Catalog } from '@/domain/catalog';
 import type { TFunc, TranslationKey } from '@/i18n';
@@ -23,11 +23,11 @@ export function catName(cat: Cat, t: TFunc): string {
  * only. Custom rows are ordinary synced data either way.
  */
 export function useCategories(): Catalog {
-  const { db, spaceId } = useData();
+  const { store, spaceId } = useData();
 
-  const visible = useLiveQuery(async () => {
-    const spaces = await db.spaces.filter((s) => s.deleted === 0).toArray();
-    const cats = await db.categories.filter((c) => c.deleted === 0).toArray();
+  const visible = useQuery(store, async () => {
+    const spaces = await (await store.allRows('space')).filter((s) => s.deleted === 0);
+    const cats = await (await store.allRows('category')).filter((c) => c.deleted === 0);
     return visibleCategoryRows(spaces, cats, spaceId);
   }, [spaceId]);
 

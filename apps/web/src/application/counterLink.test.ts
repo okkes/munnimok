@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { HlcClock } from '@/sync/hlc';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
+import { DexieBackend } from '@/db/backend';
 import { linkAllCounterparties } from './counterLink';
 
 /**
@@ -14,7 +15,7 @@ import { linkAllCounterparties } from './counterLink';
 describe('linkAllCounterparties', () => {
   const setup = async () => {
     const db = new MunniDB(`counterlink_${Math.random().toString(36).slice(2)}`);
-    const repo = new Repo(db, new HlcClock('t'), { trackOutbox: false });
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
     await repo.upsert('space', 's1', 's1', { name: 'P', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
     await repo.upsert('account', 's1', 'acct-main', { name: 'Checking', type: 'checking', source: 'manual', currency: 'EUR', iban: 'NL01MAIN0000000001' });
     return { db, repo };
@@ -42,7 +43,7 @@ describe('linkAllCounterparties', () => {
 
     // the card arrives later — the sweep runs
     await repo.upsert('account', 's1', 'acct-cc', { name: 'Card', type: 'credit', source: 'manual', currency: 'EUR', iban: 'NL91ABNA0417164300' });
-    expect(await linkAllCounterparties(db, repo, 's1')).toBe(2);
+    expect(await linkAllCounterparties(new DexieBackend(db), repo, 's1')).toBe(2);
 
     const topup = await db.transactions.get('tx-topup');
     expect(topup).toMatchObject({ linkedAccountId: 'acct-cc', txType: 'transfer' }); // credit = transfer (user ruling)
@@ -52,7 +53,7 @@ describe('linkAllCounterparties', () => {
     expect((await db.transactions.get('tx-foreign'))?.linkedAccountId).toBeUndefined();
 
     // idempotent: a second pass changes nothing
-    expect(await linkAllCounterparties(db, repo, 's1')).toBe(0);
+    expect(await linkAllCounterparties(new DexieBackend(db), repo, 's1')).toBe(0);
     db.close();
   });
 
@@ -63,7 +64,7 @@ describe('linkAllCounterparties', () => {
       amountCents: -10000, merchant: 'TO SAVINGS', txType: 'expense', counterIban: 'NL02SAVE0000000002',
     });
     await repo.upsert('account', 's1', 'acct-save', { name: 'Buffer', type: 'savings', source: 'manual', currency: 'EUR', iban: 'NL02 SAVE 0000 0000 02' });
-    await linkAllCounterparties(db, repo, 's1');
+    await linkAllCounterparties(new DexieBackend(db), repo, 's1');
     expect(await db.transactions.get('tx-save')).toMatchObject({ linkedAccountId: 'acct-save', txType: 'saving' });
     db.close();
   });

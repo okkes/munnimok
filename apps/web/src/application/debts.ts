@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
 import { useData } from '@/app/data';
+import { useQuery } from '@/db/useQuery';
 import { useSpaceAccounts } from './transactions';
 import { debtProgress, debtRemainingCents } from '@/domain/debts';
 import type { DebtRow } from '@/db/types';
@@ -13,13 +13,17 @@ export interface DebtStatus {
 
 /** the space's debts joined with their live remaining balances */
 export function useDebtStatuses(): DebtStatus[] | undefined {
-  const { db, spaceId } = useData();
+  const { store, spaceId } = useData();
   const accounts = useSpaceAccounts();
-  const debts = useLiveQuery(async () => {
-    const rows = await db.debts.filter((d) => d.deleted === 0 && d.spaceId === spaceId).toArray();
-    rows.sort((a, b) => (a.archived ?? 0) - (b.archived ?? 0) || a.name.localeCompare(b.name));
-    return rows;
-  }, [db, spaceId]);
+  const debts = useQuery(
+    store,
+    async () => {
+      const rows = (await store.bySpace('debt', spaceId)).filter((d) => d.deleted === 0);
+      rows.sort((a, b) => (a.archived ?? 0) - (b.archived ?? 0) || a.name.localeCompare(b.name));
+      return rows;
+    },
+    [spaceId],
+  );
   return useMemo(() => {
     if (!debts || !accounts) return undefined;
     const accountsById = new Map(accounts.map((a) => [a.id, a]));
