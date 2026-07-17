@@ -137,7 +137,7 @@ export function SpaceSettingsScreen() {
     }
     // counted on demand — a liveQuery would read undefined (= "only
     // space") for a tap that lands before its first emission
-    const count = await (await store.allRows('space')).filter((s) => s.deleted === 0).length;
+    const count = (await store.allRows('space')).filter((s) => s.deleted === 0).length;
     if (count <= 1) {
       setDeleteError(t('space.cannotDeleteOnly'));
       return;

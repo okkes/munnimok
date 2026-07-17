@@ -26,8 +26,8 @@ export function useCategories(): Catalog {
   const { store, spaceId } = useData();
 
   const visible = useQuery(store, async () => {
-    const spaces = await (await store.allRows('space')).filter((s) => s.deleted === 0);
-    const cats = await (await store.allRows('category')).filter((c) => c.deleted === 0);
+    const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0);
+    const cats = (await store.allRows('category')).filter((c) => c.deleted === 0);
     return visibleCategoryRows(spaces, cats, spaceId);
   }, [spaceId]);
 

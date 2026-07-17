@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@/db/useQuery';
 import { useSpaceTransactions, useTxTransform } from '@/application/transactions';
 import type { SpaceTx } from '@/application/transactions';
@@ -366,12 +366,17 @@ export function ReviewScreen() {
     );
   }, [tx, queue, draftSplits]);
 
-  // fresh card: reset the staged draft and offer the link
-  useEffect(() => {
+  // fresh card: reset the staged draft and offer the link. This runs
+  // DURING render (previous-id ref pattern), not in an effect — a late
+  // effect flush could undo user input that landed right after the card
+  // swap (a real race under coverage instrumentation)
+  const lastTxId = useRef(tx?.id);
+  if (tx?.id !== lastTxId.current) {
+    lastTxId.current = tx?.id;
     setStagedDraft(null);
     setLinkRecurring(true);
     setDescExpanded(false);
-  }, [tx?.id]);
+  }
   // select every similar item by default — re-selecting when the list
   // itself changes (a sync can add one mid-card) keeps the visible count
   // honest about what confirm will actually touch
@@ -584,7 +589,7 @@ export function ReviewScreen() {
 
               {/* money between my own accounts: pre-marked as a transfer,
                   one tap opts back out */}
-              {ownCounter && draft && draft.linkedAccountId === ownCounter.id && (
+              {ownCounter && draft?.linkedAccountId === ownCounter.id && (
                 <Chip
                   className="mt-3"
                   testId="review-own-transfer"

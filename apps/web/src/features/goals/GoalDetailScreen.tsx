@@ -26,7 +26,7 @@ export function GoalDetailScreen() {
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const contributions = useQuery(store, 
     async () => {
-      const rows = await (await store.allRows('goalContribution')).filter((c) => c.deleted === 0 && c.spaceId === spaceId && c.goalId === goalId);
+      const rows = (await store.bySpace('goalContribution', spaceId)).filter((c) => c.deleted === 0 && c.goalId === goalId);
       rows.sort((a, b) => b.date.localeCompare(a.date));
       return rows;
     },

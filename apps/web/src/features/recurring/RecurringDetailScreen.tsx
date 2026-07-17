@@ -39,7 +39,7 @@ export function RecurringDetailScreen() {
   const money = (cents: number) => fmtCents(cents, currency, lang);
 
   // deleted elsewhere (other device, or via the edit sheet) — leave
-  const gone = rec !== 'loading' && (rec === undefined || rec.deleted !== 0 || rec.spaceId !== spaceId);
+  const gone = rec !== 'loading' && (rec?.deleted !== 0 || rec?.spaceId !== spaceId);
   useEffect(() => {
     if (gone) void navigate({ to: '/recurring', replace: true });
   }, [gone, navigate]);
