@@ -18,7 +18,7 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
-    version: '1.25.0',
+    version: '2.0.0',
     date: '2026-07-17',
     items: [
       {
