@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.3.0](https://github.com/okkes/munnimok/compare/v2.2.0...v2.3.0) (2026-07-17)
+
+
+### ✨ Features
+
+* **db:** E2 — SQLCipher store live behind the native dev flag ([9244c76](https://github.com/okkes/munnimok/commit/9244c76d581eb531e44487b887ea0d413065fa33))
+
+
+### 🐞 Bug Fixes
+
+* **deploy:** pin logto's self-fetch to the host gateway (admin console 403) ([71b4cc0](https://github.com/okkes/munnimok/commit/71b4cc0a2e4230b2f34243dded33c522568da1f1))
+* **push:** guard the webview's phantom serviceWorker; drop pure network noise from telemetry ([9d4e926](https://github.com/okkes/munnimok/commit/9d4e926692bab7d8acb7d1c34cc6e5f7902b4196))
+
 ## [2.2.0](https://github.com/okkes/munnimok/compare/v2.1.0...v2.2.0) (2026-07-17)
 
 
