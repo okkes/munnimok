@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.9.0](https://github.com/okkes/munnimok/compare/v2.8.0...v2.9.0) (2026-07-17)
+
+
+### ✨ Features
+
+* **shopsync:** E2EE store-connection sync — SC1-SC3 complete ([8c173bb](https://github.com/okkes/munnimok/commit/8c173bb1915336ad7a9873bfd825c8822b57cd8b))
+
+
+### 🐞 Bug Fixes
+
+* **native:** flows return to the app — GC consent, sign-out, encrypted-store safety ([b9522fc](https://github.com/okkes/munnimok/commit/b9522fc612f6ca1c1870e9d366814131b66b31f8))
+
 ## [2.8.0](https://github.com/okkes/munnimok/compare/v2.7.0...v2.8.0) (2026-07-17)
 
 
