@@ -112,5 +112,9 @@ sleep 20
       done
   echo "--- api last 40 log lines ---"
   docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" logs --tail=40 api 2>&1
+  # logto restarts fast enough to look "running" at sample time — same
+  # trick as the api: always capture it (absent in staging: harmless)
+  echo "--- logto last 40 log lines ---"
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" logs --tail=40 logto 2>&1
 } > "status-$(basename "$COMPOSE_FILE" .yml).log" 2>&1 || true
 exit $UP_RC
