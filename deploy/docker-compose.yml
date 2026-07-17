@@ -103,6 +103,15 @@ services:
       DB_URL: postgres://munni:${POSTGRES_PASSWORD}@postgres:5432/logto
       ENDPOINT: https://logto.${DOMAIN}
       ADMIN_ENDPOINT: https://logto-admin.${DOMAIN}
+    # core validates admin-console tokens by fetching its own
+    # ADMIN_ENDPOINT well-known. Pin those hostnames to the host gateway
+    # so the request reaches DSM nginx from the stable docker bridge
+    # range (172.16.0.0/12 — allow it in the access profile) instead of
+    # a hairpinned public IP that rotates out of the allow list (broke
+    # the admin console with 403→500 on 2026-07-17).
+    extra_hosts:
+      - "logto.${DOMAIN}:host-gateway"
+      - "logto-admin.${DOMAIN}:host-gateway"
     ports:
       - "3001:3001"
       - "3002:3002"

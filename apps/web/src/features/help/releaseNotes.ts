@@ -18,6 +18,17 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.3.0',
+    date: '2026-07-17',
+    items: [
+      {
+        en: 'iOS stability: two startup crash sources in the app are fixed, and harmless "no connection" hiccups no longer count as errors. The encrypted database engine is now built into the apps for testing.',
+        nl: 'iOS-stabiliteit: twee crashbronnen bij het opstarten van de app zijn verholpen, en onschuldige "geen verbinding"-haperingen tellen niet langer als fouten. De versleutelde database-engine zit nu ter test in de apps ingebouwd.',
+        tr: 'iOS kararlılığı: uygulamadaki iki açılış çökme kaynağı düzeltildi ve zararsız "bağlantı yok" takılmaları artık hata sayılmıyor. Şifreli veritabanı motoru test için uygulamalara eklendi.',
+      },
+    ],
+  },
+  {
     version: '2.2.0',
     date: '2026-07-17',
     items: [

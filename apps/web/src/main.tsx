@@ -53,6 +53,10 @@ if (config.glitchtipDsn) {
     // the offline transport reads OfflineTransportOptions, which the init
     // options type doesn't surface — hence the widened literal
     transportOptions: { flushAtStartup: true } as Partial<Parameters<typeof Sentry.makeFetchTransport>[0]>,
+    // pure connectivity noise, not bugs: the browser's generic fetch
+    // network errors (WebKit / Chromium / Firefox wording) fire whenever
+    // the API or IdP is unreachable — offline is a supported state here
+    ignoreErrors: ['Load failed', 'Failed to fetch', 'NetworkError when attempting to fetch resource'],
     beforeSend: (event) => (isZeroNetworkIdentity() ? null : event),
   });
 }

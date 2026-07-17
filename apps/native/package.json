@@ -9,6 +9,7 @@
     "open:ios": "npx cap open ios"
   },
   "dependencies": {
+    "@capacitor-community/sqlite": "^8.1.0",
     "@capacitor/android": "^8.4.2",
     "@capacitor/app": "^8.1.1",
     "@capacitor/camera": "^8.2.1",

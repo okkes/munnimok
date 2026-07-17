@@ -3,9 +3,9 @@ import type { ReactNode } from 'react';
 import { v7 as uuidv7 } from 'uuid';
 import { useLang } from '@/i18n';
 import { Icon } from '@/ui/Icon';
-import { MunniDB, identityDbName } from '@/db/schema';
-import { DexieBackend } from '@/db/backend';
+import { identityDbName } from '@/db/schema';
 import type { StorageBackend } from '@/db/backend';
+import { destroyStorage, openStorageBackend } from '@/db/openStore';
 import { Repo } from '@/db/repo';
 import { getClock, getDeviceId } from '@/db/device';
 import { seedDemoIfNeeded } from '@/db/seed';
@@ -107,6 +107,33 @@ async function restoreAndSync(
   engine.start();
 }
 
+/** the sync stack of a signed-in user identity (token mirroring included) */
+function buildSyncEngine(identity: Extract<Identity, { kind: 'user' }>, store: StorageBackend, repo: Repo): SyncEngine {
+  const key = identityKey(identity);
+  const backend = new ApiSyncBackend({
+    baseUrl: config.apiUrl,
+    getAuth: async () => {
+      if (identity.testAuth) {
+        mirrorSessionForSw({ apiUrl: config.apiUrl, identityKey: key, testSub: identity.sub });
+        return { testSub: identity.sub };
+      }
+      const bearer = await getAccessToken();
+      // mirror the fresh token for the worker's background sync
+      // (push-triggered pull + Android outbox flush, app killed)
+      if (bearer) {
+        mirrorSessionForSw({
+          apiUrl: config.apiUrl,
+          identityKey: key,
+          bearer,
+          expiresAt: jwtExpiryMs(bearer) ?? Date.now() + 10 * 60_000,
+        });
+      }
+      return { bearer };
+    },
+  });
+  return new SyncEngine(store, repo, backend, getDeviceId());
+}
+
 interface DataContextValue {
   /** the storage seam (E1) — all reads/writes go through this */
   store: StorageBackend;
@@ -146,46 +173,32 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const onAttempts = (n: number) => {
       if (!cancelled) setFailedAttempts(n);
     };
-    const store = new DexieBackend(new MunniDB(identityDbName(identityKey(identity))));
-    const syncing = identity.kind === 'user';
-
     let engine: SyncEngine | null = null;
-    const repo = new Repo(store, getClock(), {
-      trackOutbox: syncing, // demo/offline never sync — no outbox
-      onWrite: () => engine?.nudge(),
-    });
-    if (syncing) {
-      const key = identityKey(identity);
-      const backend = new ApiSyncBackend({
-        baseUrl: config.apiUrl,
-        getAuth: async () => {
-          if (identity.testAuth) {
-            mirrorSessionForSw({ apiUrl: config.apiUrl, identityKey: key, testSub: identity.sub });
-            return { testSub: identity.sub };
-          }
-          const bearer = await getAccessToken();
-          // mirror the fresh token for the worker's background sync
-          // (push-triggered pull + Android outbox flush, app killed)
-          if (bearer) {
-            mirrorSessionForSw({
-              apiUrl: config.apiUrl,
-              identityKey: key,
-              bearer,
-              expiresAt: jwtExpiryMs(bearer) ?? Date.now() + 10 * 60_000,
-            });
-          }
-          return { bearer };
-        },
-      });
-      engine = new SyncEngine(store, repo, backend, getDeviceId());
-      // pushes failing (offline / server away) — arm the background
-      // flush so the outbox drains even if the app is killed meanwhile
-      engine.onStatus((status) => {
-        if (status === 'offline' || status === 'error') requestOutboxSync();
-      });
-    }
+    let openedStore: StorageBackend | null = null;
 
     void (async () => {
+      // E2: the backend is chosen here — Dexie, or SQLCipher when the
+      // native dev flag is on (openStore.ts) — hence the async open
+      const store = await openStorageBackend(identityDbName(identityKey(identity)));
+      if (cancelled) {
+        store.close();
+        return;
+      }
+      openedStore = store;
+      const syncing = identity.kind === 'user';
+      const repo = new Repo(store, getClock(), {
+        trackOutbox: syncing, // demo/offline never sync — no outbox
+        onWrite: () => engine?.nudge(),
+      });
+      if (syncing) {
+        engine = buildSyncEngine(identity, store, repo);
+        // pushes failing (offline / server away) — arm the background
+        // flush so the outbox drains even if the app is killed meanwhile
+        engine.onStatus((status) => {
+          if (status === 'offline' || status === 'error') requestOutboxSync();
+        });
+      }
+
       // ask the browser not to evict our data (iOS 7-day ITP wipe etc.);
       // best-effort — installed PWAs are exempt, native storage is app-scoped
       if (identity.kind !== 'demo') void ensurePersistentStorage();
@@ -231,7 +244,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
       engine?.stop();
-      store.close();
+      openedStore?.close();
     };
   }, [identity]);
 
@@ -298,6 +311,5 @@ export function useData(): DataContextValue {
 
 /** Demo logout = wipe the database so next login reseeds pristine state. */
 export async function destroyIdentityData(identity: Identity): Promise<void> {
-  const store = new DexieBackend(new MunniDB(identityDbName(identityKey(identity))));
-  await store.destroy();
+  await destroyStorage(identityDbName(identityKey(identity)));
 }

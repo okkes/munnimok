@@ -11,8 +11,11 @@ import { getNativePushToken, isNativeApp } from './platform';
 /** the native shell remembers its device token so disable can unregister */
 const FCM_TOKEN_KEY = 'munni_fcm_token';
 
+// truthiness, not `in`: WebKit exposes the serviceWorker interface with
+// an undefined getter inside the capacitor:// webview (GlitchTip iOS
+// crash: "undefined is not an object (evaluating 'navigator.serviceWorker.ready')")
 export const pushSupported = (): boolean =>
-  isNativeApp() || ('serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window);
+  isNativeApp() || (!!navigator.serviceWorker && 'PushManager' in window && 'Notification' in window);
 
 function urlBase64ToUint8Array(base64: string): Uint8Array {
   const padding = '='.repeat((4 - (base64.length % 4)) % 4);
@@ -21,7 +24,8 @@ function urlBase64ToUint8Array(base64: string): Uint8Array {
 }
 
 export async function getPushSubscription(): Promise<PushSubscription | null> {
-  if (!pushSupported()) return null;
+  // native has FCM/APNs tokens, never a web push subscription
+  if (isNativeApp() || !navigator.serviceWorker || !pushSupported()) return null;
   const registration = await navigator.serviceWorker.ready;
   return registration.pushManager.getSubscription();
 }
@@ -49,7 +53,7 @@ export async function enablePush(vapidPublicKey: string): Promise<boolean> {
     if (response.ok) localStorage.setItem(FCM_TOKEN_KEY, token);
     return response.ok;
   }
-  if (!pushSupported()) return false;
+  if (!pushSupported() || !navigator.serviceWorker) return false;
   const permission = await Notification.requestPermission();
   if (permission !== 'granted') return false;
 

@@ -39,6 +39,15 @@ const REASON_KEYS = {
   keyword: 'review.reasonKeyword',
 } as const;
 
+/** render-time reset when the card underneath changes (prev-id ref pattern) */
+function useFreshCardReset(txId: string | undefined, reset: () => void) {
+  const lastTxId = useRef(txId);
+  if (txId !== lastTxId.current) {
+    lastTxId.current = txId;
+    reset();
+  }
+}
+
 /** progress bar + "n / total" sub line — skips count as handled too */
 function progressState(initial: number | null, queueLen: number | undefined, skippedCount: number) {
   const total = initial ?? 1;
@@ -370,13 +379,11 @@ export function ReviewScreen() {
   // DURING render (previous-id ref pattern), not in an effect — a late
   // effect flush could undo user input that landed right after the card
   // swap (a real race under coverage instrumentation)
-  const lastTxId = useRef(tx?.id);
-  if (tx?.id !== lastTxId.current) {
-    lastTxId.current = tx?.id;
+  useFreshCardReset(tx?.id, () => {
     setStagedDraft(null);
     setLinkRecurring(true);
     setDescExpanded(false);
-  }
+  });
   // select every similar item by default — re-selecting when the list
   // itself changes (a sync can add one mid-card) keeps the visible count
   // honest about what confirm will actually touch
