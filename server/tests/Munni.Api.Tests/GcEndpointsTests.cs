@@ -26,7 +26,7 @@ public sealed class FakeGoCardlessApi : IGoCardlessApi
     public Task<IReadOnlyList<GcInstitution>> GetInstitutionsAsync(string country, CancellationToken ct = default)
     {
         InstitutionCalls++;
-        return Task.FromResult<IReadOnlyList<GcInstitution>>([new GcInstitution("ING_NL", "ING", "INGBNL2A", "730", null)]);
+        return Task.FromResult<IReadOnlyList<GcInstitution>>([new GcInstitution("ING_NL", "ING", "INGBNL2A", "730", "https://cdn.example.test/ing.png")]);
     }
 
     public Task<GcRequisitionCreated> CreateRequisitionAsync(string institutionId, string redirect, string reference, CancellationToken ct = default) =>
@@ -156,6 +156,34 @@ public class GcEndpointsTests : IClassFixture<GcApiFactory>
         Assert.Equal("ING_NL", Assert.Single(list!).Id);
         await client.GetAsync("/gocardless/institutions?country=nl");
         Assert.Equal(before + 1, _factory.Gc.InstitutionCalls); // second hit served from cache
+    }
+
+    [Fact]
+    public async Task Institution_logos_are_vendored_and_served_from_our_own_table()
+    {
+        var client = ClientFor("gc-logo");
+        // a fresh cache entry runs the upsert that records the CDN url
+        var list = await client.GetFromJsonAsync<List<GcInstitution>>("/gocardless/institutions?country=de");
+        Assert.Equal("/gocardless/institutions/ING_NL/logo", Assert.Single(list!).Logo);
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var row = await db.GcInstitutionLogos.FindAsync("ING_NL");
+            Assert.Equal("https://cdn.example.test/ing.png", row!.LogoUrl);
+            row.Bytes = [1, 2, 3];
+            row.ContentType = "image/png";
+            await db.SaveChangesAsync();
+        }
+
+        // anonymous serve (a plain <img> carries no bearer)
+        var anonymous = _factory.CreateClient();
+        var res = await anonymous.GetAsync("/gocardless/institutions/ING_NL/logo");
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+        Assert.Equal("image/png", res.Content.Headers.ContentType!.ToString());
+        Assert.Equal([1, 2, 3], await res.Content.ReadAsByteArrayAsync());
+
+        Assert.Equal(HttpStatusCode.NotFound, (await anonymous.GetAsync("/gocardless/institutions/NOPE/logo")).StatusCode);
     }
 
     [Fact]

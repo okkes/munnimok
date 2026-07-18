@@ -16,6 +16,60 @@ public static partial class GcEndpoints
     [System.Text.RegularExpressions.GeneratedRegex("^[A-Za-z]{2}$")]
     private static partial System.Text.RegularExpressions.Regex CountryCode();
 
+    /// <summary>remember every logo URL so the logo endpoint can vendor
+    /// the bytes — the app never hotlinks the provider CDN</summary>
+    private static async Task RecordLogoUrlsAsync(AppDbContext db, IReadOnlyList<GcInstitution> fetched)
+    {
+        var withLogo = fetched.Where(i => !string.IsNullOrEmpty(i.Logo)).ToList();
+        var known = await db.GcInstitutionLogos
+            .Where(l => withLogo.Select(i => i.Id).Contains(l.InstitutionId))
+            .ToDictionaryAsync(l => l.InstitutionId);
+        foreach (var institution in withLogo)
+        {
+            if (known.TryGetValue(institution.Id, out var row))
+            {
+                if (row.LogoUrl != institution.Logo)
+                {
+                    row.LogoUrl = institution.Logo!;
+                    row.Bytes = null; // stale artwork refetches on next serve
+                }
+            }
+            else
+            {
+                db.GcInstitutionLogos.Add(new GcInstitutionLogo { InstitutionId = institution.Id, LogoUrl = institution.Logo! });
+            }
+        }
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task<IResult> ServeLogoAsync(string institutionId, AppDbContext db, IHttpClientFactory httpFactory, HttpContext http)
+    {
+        var row = await db.GcInstitutionLogos.FindAsync(institutionId);
+        if (row is null) return Results.NotFound();
+        if (row.Bytes is null)
+        {
+            try
+            {
+                using var client = httpFactory.CreateClient();
+                client.Timeout = TimeSpan.FromSeconds(10);
+                var res = await client.GetAsync(row.LogoUrl);
+                if (!res.IsSuccessStatusCode) return Results.NotFound();
+                var bytes = await res.Content.ReadAsByteArrayAsync();
+                if (bytes.Length is 0 or > 1024 * 1024) return Results.NotFound();
+                row.Bytes = bytes;
+                row.ContentType = res.Content.Headers.ContentType?.ToString() ?? "image/png";
+                row.FetchedAt = DateTimeOffset.UtcNow;
+                await db.SaveChangesAsync();
+            }
+            catch (Exception)
+            {
+                return Results.NotFound(); // CDN down: the app shows its icon fallback
+            }
+        }
+        http.Response.Headers.CacheControl = "public, max-age=2592000, immutable";
+        return Results.File(row.Bytes, row.ContentType ?? "image/png");
+    }
+
     public static void MapGoCardless(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/gocardless").RequireAuthorization().WithSafeRouteParams();
@@ -30,10 +84,20 @@ public static partial class GcEndpoints
             var list = await cache.GetOrCreateAsync($"institutions-{api.ProviderId}-{country}", async entry =>
             {
                 entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(24);
-                return await api.GetInstitutionsAsync(country);
+                var fetched = await api.GetInstitutionsAsync(country);
+                await RecordLogoUrlsAsync(db, fetched);
+                return fetched;
             });
-            return Results.Ok(list);
+            // relative logo path: the client prefixes its API origin
+            return Results.Ok(list!.Select(i => i with
+            {
+                Logo = string.IsNullOrEmpty(i.Logo) ? i.Logo : $"/gocardless/institutions/{Uri.EscapeDataString(i.Id)}/logo",
+            }));
         });
+
+        // the vendored logo bytes — anonymous (public artwork) so a plain
+        // <img> tag can load it; fetched from the recorded URL exactly once
+        app.MapGet("/gocardless/institutions/{institutionId}/logo", ServeLogoAsync).AllowAnonymous();
 
         group.MapPost("/requisitions", async (CreateRequisitionRequest request, BankProviderRegistry registry, AppDbContext db, HttpContext http) =>
         {

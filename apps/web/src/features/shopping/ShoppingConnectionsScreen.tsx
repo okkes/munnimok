@@ -3,20 +3,18 @@ import { useQuery } from '@/db/useQuery';
 import { useNavigate } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
-import { storesAvailable, useStoreConnections, useStoreMarkers, useStoreOps, useUnmatchedReceipts } from '@/application/stores';
+import { storesAvailable, useStoreConnections, useStoreMarkers, useStoreOps } from '@/application/stores';
 import { StoreSyncCard } from './StoreSyncCard';
 import type { ConnectableStore } from '@/application/stores';
 import type { StoreSyncResult } from '@/features/shopping/stores/sync';
 import { AH_AUTHORIZE_URL } from './stores/ah';
-import type { ReceiptRow, StoreConnectionRow } from '@/db/types';
-import { fmtCents } from '@/lib/money';
+import type { StoreConnectionRow } from '@/db/types';
 import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Pill } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
-import { ReceiptViewSheet } from './ReceiptViewSheet';
 
 /** brand names stay brand names — no translation */
 const COMING_SOON = [
@@ -38,16 +36,13 @@ export function ShoppingConnectionsScreen() {
   const { store, spaceId } = useData();
   const connections = useStoreConnections();
   const markers = useStoreMarkers();
-  const unmatched = useUnmatchedReceipts();
   const ops = useStoreOps();
-  const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const allSpaces = useQuery(store, async () => (await store.allRows('space')).filter((s) => s.deleted === 0), []);
   const receiptCount = useQuery(
     store,
     async () => (await store.bySpace('receipt', spaceId)).filter((r) => r.deleted === 0 && r.source === 'ah').length,
     [spaceId],
   );
-  const currency = space?.currency ?? 'EUR';
 
   const [connectOpen, setConnectOpen] = useState(false);
   const [pasted, setPasted] = useState('');
@@ -62,7 +57,6 @@ export function ShoppingConnectionsScreen() {
     ah: 'idle',
     jumbo: 'idle',
   });
-  const [viewing, setViewing] = useState<ReceiptRow | null>(null);
 
   const signedIn = storesAvailable();
   const ah = connections?.find((c) => c.store === 'ah');
@@ -309,32 +303,6 @@ export function ShoppingConnectionsScreen() {
           <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
         </button>
 
-        {(unmatched?.length ?? 0) > 0 && (
-          <>
-            <div className="m-cap mt-5 mb-1 px-1">
-              {t('shop.unmatched')} · {unmatched!.length}
-            </div>
-            <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="shop-unmatched">
-              {unmatched!.map((receipt) => (
-                <button
-                  key={receipt.id}
-                  data-testid={`shop-unmatched-${receipt.id}`}
-                  onClick={() => setViewing(receipt)}
-                  className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-3 text-left last:border-0"
-                >
-                  <Icon name="receipt-text-outline" size={18} color="var(--m-warning)" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px] font-medium text-ink">{receipt.merchant ?? receipt.source}</span>
-                    <span className="block text-[11px] text-ink-4">{fmtDate(receipt.date)}</span>
-                  </span>
-                  <span className="m-num text-[13px] font-semibold text-ink">{fmtCents(receipt.totalCents, currency, lang)}</span>
-                </button>
-              ))}
-            </div>
-            <p className="mt-1 px-1 text-[11px] text-ink-4">{t('shop.unmatchedSub')}</p>
-          </>
-        )}
-
         <p className="mt-3 px-1 text-[12px] text-ink-4" data-testid="shopping-photo-note">
           {t('shop.photoNote')}
         </p>
@@ -420,7 +388,6 @@ export function ShoppingConnectionsScreen() {
         </div>
       </Sheet>
 
-      <ReceiptViewSheet receipt={viewing} currency={currency} onClose={() => setViewing(null)} />
     </div>
   );
 }

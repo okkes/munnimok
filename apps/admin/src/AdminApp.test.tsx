@@ -248,6 +248,38 @@ describe('AdminApp (OIDC token mode)', () => {
     expect(screen.getByTestId('catalog-restore-groceries')).toBeTruthy();
   });
 
+  it('catalog tree: search filters, bundled rows retire via synthetic tombstones, restore removes them again', async () => {
+    scriptFetch(HAPPY_ROUTES());
+    renderAdmin();
+    fireEvent.click(await screen.findByTestId('nav-catalog'));
+    await screen.findByTestId('catalog-cat-groceries');
+
+    // the merged tree shows bundled mains; search narrows it
+    expect(screen.getByTestId('catalog-row-transport')).toBeTruthy();
+    fireEvent.change(screen.getByTestId('catalog-search'), { target: { value: 'transport' } });
+    expect(screen.queryByTestId('catalog-row-housing')).toBeNull();
+    expect(screen.getByTestId('catalog-row-transport')).toBeTruthy();
+    fireEvent.change(screen.getByTestId('catalog-search'), { target: { value: '' } });
+
+    // a bundled-only category retires through a synthesized tombstone…
+    fireEvent.click(screen.getByTestId('catalog-delete-transport'));
+    fireEvent.change(screen.getByTestId('catalog-delete-typed'), { target: { value: 'transport' } });
+    fireEvent.click(screen.getByTestId('catalog-delete-confirm'));
+    expect(screen.getByTestId('catalog-cat-transport').className).toContain('retired');
+
+    // …and restoring it removes the synthetic entry (back to bundled-only)
+    fireEvent.click(screen.getByTestId('catalog-restore-transport'));
+    expect(screen.queryByTestId('catalog-cat-transport')).toBeNull();
+    expect(screen.getByTestId('catalog-row-transport')).toBeTruthy();
+
+    // "+ sub" pre-fills the editor with the parent; rename pre-fills the id
+    fireEvent.click(screen.getByTestId('catalog-addsub-transport'));
+    expect((screen.getByTestId('catalog-new-parent') as HTMLInputElement).value).toBe('transport');
+    fireEvent.click(screen.getByTestId('catalog-editor-cancel'));
+    fireEvent.click(screen.getByTestId('catalog-prefill-transport'));
+    expect((screen.getByTestId('catalog-new-id') as HTMLInputElement).value).toBe('transport');
+  });
+
   it('catalog: adding entries and publishing PUTs the document', async () => {
     let published: unknown = null;
     scriptFetch({
@@ -261,7 +293,9 @@ describe('AdminApp (OIDC token mode)', () => {
     fireEvent.click(await screen.findByTestId('nav-catalog'));
     await screen.findByTestId('catalog-cat-groceries');
 
-    // a new category entry (all three languages required)
+    // a new category entry (all three languages required) — the editor
+    // panel opens from the tree toolbar (catalog redesign)
+    fireEvent.click(screen.getByTestId('catalog-add-main'));
     fireEvent.change(screen.getByTestId('catalog-new-id'), { target: { value: 'padelClub' } });
     fireEvent.change(screen.getByTestId('catalog-new-parent'), { target: { value: 'hobby' } });
     fireEvent.change(screen.getByTestId('catalog-new-en'), { target: { value: 'Padel' } });

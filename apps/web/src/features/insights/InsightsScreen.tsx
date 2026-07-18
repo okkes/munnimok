@@ -9,6 +9,7 @@ import { fmtCents } from '@/lib/money';
 import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
+import { Collapse } from '@/ui/Collapse';
 import { Icon } from '@/ui/Icon';
 import { Tile } from '@/ui/primitives';
 
@@ -79,7 +80,7 @@ export function InsightsScreen() {
           </span>
           <Icon name={expanded ? 'chevron-up' : 'chevron-down'} size={16} color="var(--m-ink-4)" />
         </button>
-        {expanded && (
+        <Collapse open={expanded}>
           <div className="border-t border-line-2 bg-bg-2/50 px-4 py-3" data-testid={`insight-body-${insight.id}`}>
             {chart.length > 1 && <MiniBars data={chart} color={color} />}
             <p className="mt-2 text-[13px] leading-relaxed text-ink-2">{t(insight.detailKey, withMoney(insight.params))}</p>
@@ -98,7 +99,7 @@ export function InsightsScreen() {
               </button>
             </div>
           </div>
-        )}
+        </Collapse>
       </div>
     );
   };

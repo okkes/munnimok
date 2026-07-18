@@ -21,6 +21,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<FeedSpace> FeedSpaces => Set<FeedSpace>();
     public DbSet<SpaceAccountLink> SpaceAccountLinks => Set<SpaceAccountLink>();
     public DbSet<GcPendingTx> GcPendingTxs => Set<GcPendingTx>();
+    public DbSet<GcInstitutionLogo> GcInstitutionLogos => Set<GcInstitutionLogo>();
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
     public DbSet<StoreSyncDevice> StoreSyncDevices => Set<StoreSyncDevice>();
     public DbSet<StoreConnCipher> StoreConnCiphers => Set<StoreConnCipher>();
@@ -52,6 +53,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         });
         modelBuilder.Entity<EntityRow>(e => e.HasKey(x => new { x.SpaceId, x.Entity, x.EntityId }));
         modelBuilder.Entity<GcRequisition>(e => e.HasKey(x => x.Id));
+        modelBuilder.Entity<GcInstitutionLogo>(e => e.HasKey(x => x.InstitutionId));
         modelBuilder.Entity<GcLinkedAccount>(e =>
         {
             e.HasKey(x => x.GcAccountId);

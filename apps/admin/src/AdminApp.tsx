@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import type { AdminConfig } from './main';
 import bundledCatalog from './generated/bundledCatalog.json';
 
@@ -551,6 +551,47 @@ const TX_TYPES = ['expense', 'income', 'saving', 'transfer', 'debtPayment', 'inv
 /** what every app ships with — the baseline the overlay edits against */
 const BUNDLED = bundledCatalog as { categories: BundledCategory[]; keywords: BundledKeywordRule[] };
 
+/** one merged row of the tree: what ships + what the overlay says */
+interface TreeRow {
+  id: string;
+  parentId?: string;
+  icon?: string;
+  txTypes: string[];
+  bundled: boolean;
+  overlay?: CatalogCategory;
+}
+
+/** synthesized tombstones mark themselves by naming all languages the id */
+const isSyntheticTombstone = (c: CatalogCategory) =>
+  !!c.deleted && c.names.en === c.id && c.names.nl === c.id && c.names.tr === c.id;
+
+function buildTree(categories: CatalogCategory[]): { mains: TreeRow[]; childrenOf: (id: string) => TreeRow[] } {
+  const rows = new Map<string, TreeRow>();
+  for (const b of BUNDLED.categories) {
+    rows.set(b.id, { id: b.id, parentId: b.parentId, icon: b.icon, txTypes: b.txTypes, bundled: true });
+  }
+  for (const o of categories) {
+    const existing = rows.get(o.id);
+    if (existing) existing.overlay = o;
+    else rows.set(o.id, { id: o.id, parentId: o.parentId, icon: o.icon, txTypes: o.txTypes ?? [], bundled: false, overlay: o });
+  }
+  const all = [...rows.values()];
+  return {
+    mains: all.filter((r) => !r.parentId),
+    childrenOf: (id: string) => all.filter((r) => r.parentId === id),
+  };
+}
+
+const rowLabel = (row: TreeRow) =>
+  row.overlay && !isSyntheticTombstone(row.overlay) ? row.overlay.names.en : row.id;
+
+function rowBadge(row: TreeRow): { text: string; cls: string } | null {
+  if (row.overlay?.deleted) return { text: 'retired', cls: 'chip danger-chip' };
+  if (row.overlay && !row.bundled) return { text: 'new', cls: 'chip ok-chip' };
+  if (row.overlay) return { text: 'renamed', cls: 'chip warn-chip' };
+  return null;
+}
+
 function CatalogScreen({
   doc,
   busy,
@@ -563,18 +604,30 @@ function CatalogScreen({
   const [categories, setCategories] = useState<CatalogCategory[]>(doc.categories);
   const [keywords, setKeywords] = useState<CatalogKeywordRule[]>(doc.keywords);
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; typed: string } | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
+  const [search, setSearch] = useState('');
   const [draft, setDraft] = useState({ id: '', parentId: '', en: '', nl: '', tr: '', icon: '', txType: 'expense' });
   const [keywordDraft, setKeywordDraft] = useState({ catId: '', words: '' });
   const dirty =
     JSON.stringify(categories) !== JSON.stringify(doc.categories) ||
     JSON.stringify(keywords) !== JSON.stringify(doc.keywords);
 
+  const tree = buildTree(categories);
+  const matches = (row: TreeRow) => {
+    const q = search.trim().toLowerCase();
+    return !q || row.id.toLowerCase().includes(q) || rowLabel(row).toLowerCase().includes(q);
+  };
+
+  const openForm = (prefill: Partial<typeof draft>) => {
+    setDraft({ id: '', parentId: '', en: '', nl: '', tr: '', icon: '', txType: 'expense', ...prefill });
+    setFormOpen(true);
+  };
+
   const addCategory = () => {
     const id = draft.id.trim();
     if (!id || !draft.en.trim() || !draft.nl.trim() || !draft.tr.trim() || !draft.icon.trim()) return;
-    if (categories.some((c) => c.id === id)) return;
     setCategories([
-      ...categories,
+      ...categories.filter((c) => c.id !== id), // re-editing an override replaces it
       {
         id,
         parentId: draft.parentId.trim() || undefined,
@@ -583,12 +636,32 @@ function CatalogScreen({
         txTypes: [draft.txType],
       },
     ]);
-    setDraft({ id: '', parentId: '', en: '', nl: '', tr: '', icon: '', txType: 'expense' });
+    setFormOpen(false);
   };
 
-  const toggleTombstone = (id: string) => {
-    setCategories(categories.map((c) => (c.id === id ? { ...c, deleted: !c.deleted } : c)));
+  /** retire/restore straight from the tree: bundled rows without an
+   *  overlay get a synthesized tombstone; restoring one removes it again */
+  const toggleRow = (row: TreeRow) => {
     setConfirmDelete(null);
+    if (!row.overlay) {
+      setCategories([
+        ...categories,
+        {
+          id: row.id,
+          parentId: row.parentId,
+          names: { en: row.id, nl: row.id, tr: row.id },
+          icon: row.icon ?? 'shape',
+          txTypes: row.txTypes,
+          deleted: true,
+        },
+      ]);
+      return;
+    }
+    if (isSyntheticTombstone(row.overlay)) {
+      setCategories(categories.filter((c) => c.id !== row.id));
+      return;
+    }
+    setCategories(categories.map((c) => (c.id === row.id ? { ...c, deleted: !c.deleted } : c)));
   };
 
   const addKeywordRule = () => {
@@ -602,105 +675,153 @@ function CatalogScreen({
     setKeywordDraft({ catId: '', words: '' });
   };
 
+  const renderRow = (row: TreeRow, sub: boolean) => {
+    const badge = rowBadge(row);
+    return (
+      <div
+        key={row.id}
+        className={'tree-row' + (sub ? ' tree-sub' : '') + (row.overlay?.deleted ? ' retired' : '')}
+        data-testid={row.overlay ? 'catalog-cat-' + row.id : 'catalog-row-' + row.id}
+      >
+        <span className="tree-label">
+          <span className="tree-name">{rowLabel(row)}</span>
+          <code className="tree-id">{row.id}</code>
+          {row.icon && <code className="tree-icon">{row.icon}</code>}
+          {badge && <span className={badge.cls}>{badge.text}</span>}
+        </span>
+        <span className="tree-actions">
+          {!sub && !row.overlay?.deleted && (
+            <button
+              data-testid={'catalog-addsub-' + row.id}
+              disabled={busy}
+              onClick={() => openForm({ parentId: row.id, txType: row.txTypes[0] ?? 'expense' })}
+            >
+              + sub
+            </button>
+          )}
+          {!row.overlay?.deleted && (
+            <button
+              data-testid={'catalog-prefill-' + row.id}
+              disabled={busy}
+              onClick={() =>
+                openForm({
+                  id: row.id,
+                  parentId: row.parentId ?? '',
+                  icon: row.overlay?.icon ?? row.icon ?? '',
+                  txType: row.overlay?.txTypes?.[0] ?? row.txTypes[0] ?? 'expense',
+                  en: row.overlay && !isSyntheticTombstone(row.overlay) ? row.overlay.names.en : '',
+                  nl: row.overlay && !isSyntheticTombstone(row.overlay) ? row.overlay.names.nl : '',
+                  tr: row.overlay && !isSyntheticTombstone(row.overlay) ? row.overlay.names.tr : '',
+                })
+              }
+            >
+              rename
+            </button>
+          )}
+          <CatalogRowAction
+            cat={row.overlay ?? { id: row.id, names: { en: row.id, nl: row.id, tr: row.id }, icon: row.icon ?? '', txTypes: row.txTypes }}
+            busy={busy}
+            confirm={confirmDelete?.id === row.id ? confirmDelete : null}
+            onArm={() => setConfirmDelete({ id: row.id, typed: '' })}
+            onType={(typed) => setConfirmDelete({ id: row.id, typed })}
+            onToggle={() => toggleRow(row)}
+          />
+        </span>
+      </div>
+    );
+  };
+
   return (
     <>
-      <h1>Catalog</h1>
-      <p className="sub">
-        Version {doc.version} — overlay entries rename, add or retire built-in categories and extend the import
-        prediction keywords. Devices apply a published version on their next sync; offline profiles keep the
-        baseline they installed.
-      </p>
+      <div className="page-head">
+        <div>
+          <h1>Catalog</h1>
+          <p className="sub">
+            The category tree every device ships with, plus this overlay on top — rename, add or retire here and
+            publish; clients apply the new version on their next sync. Retired categories detach their
+            transactions to Uncategorized; user-created categories are never touched.
+          </p>
+        </div>
+        <span className="chip">v{doc.version}</span>
+      </div>
 
       <section className="card">
-        <h2>Category overlays</h2>
-        <details data-testid="catalog-bundled">
-          <summary className="sub" style={{ cursor: 'pointer' }}>
-            Bundled baseline: {BUNDLED.categories.length} categories — click to browse; reuse an id below to override it
-          </summary>
-          <table>
-            <thead>
-              <tr><th>id</th><th>parent</th><th>icon</th><th>types</th><th></th></tr>
-            </thead>
-            <tbody>
-              {BUNDLED.categories.map((c) => (
-                <tr key={c.id} style={categories.some((o) => o.id === c.id) ? { opacity: 0.5 } : undefined}>
-                  <td>{c.id}</td>
-                  <td>{c.parentId ?? '—'}</td>
-                  <td>{c.icon}</td>
-                  <td>{c.txTypes.join(', ')}</td>
-                  <td>
-                    <button data-testid={'catalog-prefill-' + c.id} onClick={() => setDraft({ ...draft, id: c.id, parentId: c.parentId ?? '', icon: c.icon, txType: c.txTypes[0] ?? 'expense' })}>
-                      override…
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </details>
-        {categories.length === 0 && <p className="sub">No overlay entries yet — the bundled catalog applies as-is.</p>}
-        {categories.length > 0 && (
-          <table data-testid="catalog-categories">
-            <thead>
-              <tr>
-                <th>id</th><th>parent</th><th>EN</th><th>NL</th><th>TR</th><th>icon</th><th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {categories.map((c) => (
-                <tr
-                  key={c.id}
-                  data-testid={'catalog-cat-' + c.id}
-                  style={c.deleted ? { textDecoration: 'line-through', opacity: 0.6 } : undefined}
-                >
-                  <td>{c.id}</td>
-                  <td>{c.parentId ?? '—'}</td>
-                  <td>{c.names.en}</td>
-                  <td>{c.names.nl}</td>
-                  <td>{c.names.tr}</td>
-                  <td>{c.icon}</td>
-                  <td>
-                    <CatalogRowAction
-                      cat={c}
-                      busy={busy}
-                      confirm={confirmDelete?.id === c.id ? confirmDelete : null}
-                      onArm={() => setConfirmDelete({ id: c.id, typed: '' })}
-                      onType={(typed) => setConfirmDelete({ id: c.id, typed })}
-                      onToggle={() => toggleTombstone(c.id)}
-                    />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-        <div className="form-row">
-          <input data-testid="catalog-new-id" placeholder="id" value={draft.id} onChange={(e) => setDraft({ ...draft, id: e.target.value })} />
-          <input data-testid="catalog-new-parent" placeholder="parentId (optional)" value={draft.parentId} onChange={(e) => setDraft({ ...draft, parentId: e.target.value })} />
-          <input data-testid="catalog-new-en" placeholder="EN" value={draft.en} onChange={(e) => setDraft({ ...draft, en: e.target.value })} />
-          <input data-testid="catalog-new-nl" placeholder="NL" value={draft.nl} onChange={(e) => setDraft({ ...draft, nl: e.target.value })} />
-          <input data-testid="catalog-new-tr" placeholder="TR" value={draft.tr} onChange={(e) => setDraft({ ...draft, tr: e.target.value })} />
-          <input data-testid="catalog-new-icon" placeholder="mdi icon" value={draft.icon} onChange={(e) => setDraft({ ...draft, icon: e.target.value })} />
-          <select data-testid="catalog-new-type" value={draft.txType} onChange={(e) => setDraft({ ...draft, txType: e.target.value })}>
-            {TX_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-          <button data-testid="catalog-add-category" disabled={busy} onClick={addCategory}>
-            Add entry
-          </button>
+        <div className="card-head">
+          <h2>Categories</h2>
+          <span className="card-tools">
+            <input
+              data-testid="catalog-search"
+              className="search"
+              placeholder="filter…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            <button data-testid="catalog-add-main" disabled={busy} onClick={() => openForm({})}>
+              + main category
+            </button>
+          </span>
         </div>
-        <p className="sub">
-          Use an EXISTING built-in id to rename it (all three languages required); a new id adds a category.
-          Retiring hides a category from every picker — transactions detach to Uncategorized on the devices.
-          Custom categories users created are never touched.
-        </p>
+
+        {formOpen && (
+          <div className="editor" data-testid="catalog-editor">
+            <div className="editor-grid">
+              <input data-testid="catalog-new-id" placeholder="id" value={draft.id} onChange={(e) => setDraft({ ...draft, id: e.target.value })} />
+              <input data-testid="catalog-new-parent" placeholder="parentId (empty = main)" value={draft.parentId} onChange={(e) => setDraft({ ...draft, parentId: e.target.value })} />
+              <input data-testid="catalog-new-en" placeholder="EN" value={draft.en} onChange={(e) => setDraft({ ...draft, en: e.target.value })} />
+              <input data-testid="catalog-new-nl" placeholder="NL" value={draft.nl} onChange={(e) => setDraft({ ...draft, nl: e.target.value })} />
+              <input data-testid="catalog-new-tr" placeholder="TR" value={draft.tr} onChange={(e) => setDraft({ ...draft, tr: e.target.value })} />
+              <input data-testid="catalog-new-icon" placeholder="mdi icon" value={draft.icon} onChange={(e) => setDraft({ ...draft, icon: e.target.value })} />
+              <select data-testid="catalog-new-type" value={draft.txType} onChange={(e) => setDraft({ ...draft, txType: e.target.value })}>
+                {TX_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="editor-actions">
+              <span className="sub">An EXISTING id renames/overrides; a new id adds. All three languages required.</span>
+              <span>
+                <button data-testid="catalog-editor-cancel" onClick={() => setFormOpen(false)}>
+                  cancel
+                </button>
+                <button data-testid="catalog-add-category" className="primary" disabled={busy} onClick={addCategory}>
+                  Save entry
+                </button>
+              </span>
+            </div>
+          </div>
+        )}
+
+        <div className="tree" data-testid="catalog-categories">
+          {tree.mains.map((main) => {
+            const subs = tree.childrenOf(main.id);
+            const visible = matches(main) || subs.some(matches);
+            if (!visible) return null;
+            return (
+              <div key={main.id} className="tree-group">
+                {renderRow(main, false)}
+                {subs
+                  .filter((row) => matches(row) || matches(main))
+                  .map((row) => (
+                    <Fragment key={row.id}>
+                      {renderRow(row, true)}
+                      {/* overlay additions may nest under a sub (padel
+                          under hobby) — render that third level too */}
+                      {tree.childrenOf(row.id).map((leaf) => renderRow(leaf, true))}
+                    </Fragment>
+                  ))}
+              </div>
+            );
+          })}
+        </div>
       </section>
 
       <section className="card">
-        <h2>Prediction keywords</h2>
+        <div className="card-head">
+          <h2>Prediction keywords</h2>
+          <span className="sub">published rules win ties against the bundled set</span>
+        </div>
         {keywords.length > 0 && (
           <table data-testid="catalog-keywords">
             <thead>
@@ -711,9 +832,9 @@ function CatalogScreen({
             <tbody>
               {keywords.map((rule, i) => (
                 <tr key={rule.catId + '-' + i}>
-                  <td>{rule.catId}</td>
+                  <td><code>{rule.catId}</code></td>
                   <td>{rule.keywords.join(', ')}</td>
-                  <td>
+                  <td className="cell-actions">
                     <button data-testid={'catalog-kw-remove-' + i} disabled={busy} onClick={() => setKeywords(keywords.filter((_, j) => j !== i))}>
                       remove
                     </button>
@@ -740,19 +861,21 @@ function CatalogScreen({
               {BUNDLED.keywords.map((rule, i) => (
                 <tr key={rule.catId + '-' + i}>
                   <td>{rule.lang}</td>
-                  <td>{rule.catId}</td>
+                  <td><code>{rule.catId}</code></td>
                   <td>{rule.keywords.join(', ')}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </details>
-        <p className="sub">Published rules win ties against the bundled ones; the bundled set keeps working alongside.</p>
       </section>
 
-      <button data-testid="catalog-publish" className="primary" disabled={busy || !dirty} onClick={() => onPublish(categories, keywords)}>
-        Publish version {doc.version + 1}
-      </button>
+      <div className={'pubbar' + (dirty ? ' show' : '')}>
+        <span className="sub">{dirty ? 'Unpublished changes' : 'Everything published'}</span>
+        <button data-testid="catalog-publish" className="primary" disabled={busy || !dirty} onClick={() => onPublish(categories, keywords)}>
+          Publish version {doc.version + 1}
+        </button>
+      </div>
     </>
   );
 }

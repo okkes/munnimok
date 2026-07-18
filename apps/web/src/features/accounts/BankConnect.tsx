@@ -21,13 +21,23 @@ interface Institution {
  * approve read-only access, return via /gc-callback. Only offered for
  * syncing (user) identities when the server has GoCardless enabled.
  */
-export function BankConnectSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+/** "title: detail" from an RFC7807 Problem body, else the bare status */
+async function problemLine(res: Response): Promise<string> {
+  const problem = (await res.json().catch(() => null)) as { title?: string; detail?: string } | null;
+  const line = [problem?.title, problem?.detail].filter(Boolean).join(': ');
+  return line || String(res.status);
+}
+
+export function BankConnectSheet({ open, onOpenChange }: Readonly<{ open: boolean; onOpenChange: (open: boolean) => void }>) {
   const { t } = useLang();
   const { spaceId } = useData();
   const [institutions, setInstitutions] = useState<Institution[] | null>(null);
   const [query, setQuery] = useState('');
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
+  // the server's Problem body names WHICH provider refused and why —
+  // without it every failure read as the same dead end (user report)
+  const [failDetail, setFailDetail] = useState<string | null>(null);
 
   const [rateLimited, setRateLimited] = useState(false);
 
@@ -42,9 +52,10 @@ export function BankConnectSheet({ open, onOpenChange }: { open: boolean; onOpen
           setRateLimited(true);
           return;
         }
-        if (!res.ok) throw new Error(String(res.status));
+        if (!res.ok) throw new Error(await problemLine(res));
         setInstitutions((await res.json()) as Institution[]);
-      } catch {
+      } catch (err) {
+        setFailDetail(err instanceof Error && err.message ? err.message : null);
         setFailed(true);
       }
     })();
@@ -69,11 +80,12 @@ export function BankConnectSheet({ open, onOpenChange }: { open: boolean; onOpen
           appScheme: isNativeApp() ? config.nativeScheme : null,
         }),
       });
-      if (!res.ok) throw new Error(String(res.status));
+      if (!res.ok) throw new Error(await problemLine(res));
       const { reference, link } = (await res.json()) as { reference: string; link: string };
       sessionStorage.setItem('munni_gc_ref', reference);
       window.location.href = link; // off to the bank
-    } catch {
+    } catch (err) {
+      setFailDetail(err instanceof Error && err.message ? err.message : null);
       setFailed(true);
       setBusy(false);
     }
@@ -87,9 +99,16 @@ export function BankConnectSheet({ open, onOpenChange }: { open: boolean; onOpen
     <Sheet open={open} onOpenChange={onOpenChange} title={t('gc.connect')} size="tall">
       <p className="pb-2 text-[12px] text-ink-3">{t('gc.connectSub')}</p>
       {failed && (
-        <div className="mb-2 flex items-center gap-2 rounded-card bg-negative-soft px-4 py-3 text-[13px] text-negative" data-testid="gc-error">
-          <Icon name="alert-circle-outline" size={16} />
-          {t('gc.failed')}
+        <div className="mb-2 rounded-card bg-negative-soft px-4 py-3 text-[13px] text-negative" data-testid="gc-error">
+          <span className="flex items-center gap-2">
+            <Icon name="alert-circle-outline" size={16} />
+            {t('gc.failed')}
+          </span>
+          {failDetail && (
+            <span className="mt-1 block font-mono text-[11px] text-negative/80" data-testid="gc-connect-error-detail">
+              {failDetail}
+            </span>
+          )}
         </div>
       )}
       {rateLimited && (
@@ -116,7 +135,8 @@ export function BankConnectSheet({ open, onOpenChange }: { open: boolean; onOpen
         >
           {institution.logo ? (
             <img
-              src={institution.logo}
+              // relative path = the server's vendored copy (no CDN hotlink)
+              src={institution.logo.startsWith('http') ? institution.logo : config.apiUrl + institution.logo}
               alt=""
               className="h-8 w-8 rounded-lg object-contain"
               loading="lazy"

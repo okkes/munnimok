@@ -8,6 +8,7 @@ import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { ColorPicker } from '@/ui/ColorPicker';
+import { Collapse } from '@/ui/Collapse';
 import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
@@ -105,13 +106,13 @@ function GroupHeader({
           if (hold.current.fired) return; // the hold consumed this press
           onToggle();
         }}
-        className={`m-cap m-tap relative isolate flex min-w-0 flex-1 select-none items-center gap-2 border-none bg-transparent p-0 text-left ${holding ? 'm-holding' : ''}`}
+        className={`m-tap relative isolate flex h-8 min-w-0 flex-1 select-none items-center gap-2.5 border-none bg-transparent p-0 text-left text-[14px] font-semibold ${holding ? 'm-holding' : ''}`}
         style={{ color: parent.color }}
       >
-        <Icon name={isExpanded ? 'chevron-down' : 'chevron-right'} size={18} />
-        <Icon name={parent.icon} size={18} />
+        <Icon name={isExpanded ? 'chevron-down' : 'chevron-right'} size={20} />
+        <Icon name={parent.icon} size={20} />
         <span className="min-w-0 flex-1 truncate">{catName(parent, t)}</span>
-        <span className="rounded bg-bg-2 px-1.5 py-0.5 text-[9px] font-semibold normal-case text-ink-3">
+        <span className="rounded-md bg-bg-2 px-2 py-0.5 text-[10px] font-semibold text-ink-3">
           {t(`tx.type.${parent.txTypes[0]}`)}
         </span>
       </button>
@@ -532,7 +533,8 @@ export function ManageCategoriesScreen() {
                   {t('cats.hiddenNote')}
                 </p>
               )}
-              {!mainHidden && expandedGroups.has(parent.id) && (
+              {!mainHidden && (
+              <Collapse open={expandedGroups.has(parent.id)}>
               <div className="overflow-hidden rounded-card border border-line bg-surface">
                 {cats.childrenOf(parent.id).map((cat, i) => (
                   <div key={cat.id}>
@@ -582,6 +584,7 @@ export function ManageCategoriesScreen() {
                   </div>
                 ))}
               </div>
+              </Collapse>
               )}
             </div>
           );

@@ -585,12 +585,13 @@ export function ReviewScreen() {
             {leavingHtml && (
               <div
                 aria-hidden
-                className="m-card-out pointer-events-none absolute inset-x-0 top-0 z-10 mt-4 rounded-card border border-line bg-surface px-6 py-7 text-center"
+                className="m-card-out pointer-events-none absolute inset-x-0 top-0 z-10"
                 // our own just-rendered markup, snapshotted for the exit flight
                 dangerouslySetInnerHTML={{ __html: leavingHtml }} // NOSONAR
               />
             )}
-            <div key={`card-${tx.id}`} ref={cardRef} className="m-card-in mt-4 rounded-card border border-line bg-surface px-6 py-7 text-center" data-testid="review-card">
+            <div key={`card-${tx.id}`} ref={cardRef} className="m-card-in">
+            <div className="mt-4 rounded-card border border-line bg-surface px-6 py-7 text-center" data-testid="review-card">
               <div className="text-[12px] text-ink-4" data-testid="review-card-meta">
                 {new Intl.DateTimeFormat(LOCALES[lang], { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(tx.date))}
                 {cardAccount && <span> · {cardAccount.name}</span>}
@@ -717,7 +718,8 @@ export function ReviewScreen() {
                   specs is unnecessary — tests updated instead */}
             </div>
 
-            <BulkConfirmSection key={tx.id} similar={similar} selected={bulkSelected} onChange={setBulkSelected} />
+            <BulkConfirmSection similar={similar} selected={bulkSelected} onChange={setBulkSelected} />
+            </div>
 
             {/* mobile: pinned to the thumb at the bottom; lg: attached to the card */}
             <div className="mt-auto flex gap-3 pt-4 lg:mt-0">

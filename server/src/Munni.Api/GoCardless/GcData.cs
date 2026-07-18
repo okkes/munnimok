@@ -60,6 +60,20 @@ public class GcPendingTx
 }
 
 /// <summary>
+/// Vendored copy of a bank's logo (user rule: the app must not hotlink
+/// the provider CDN). The institutions list records each logo URL; the
+/// bytes are fetched once on first serve and kept forever.
+/// </summary>
+public class GcInstitutionLogo
+{
+    public required string InstitutionId { get; set; }
+    public required string LogoUrl { get; set; }
+    public string? ContentType { get; set; }
+    public byte[]? Bytes { get; set; }
+    public DateTimeOffset? FetchedAt { get; set; }
+}
+
+/// <summary>
 /// RFC 4122 v5 (SHA-1, name-based) UUIDs with the same namespace as the
 /// client importer (apps/web/src/features/accounts/importCamt.ts), so a
 /// GoCardless account/transaction and a CAMT import of the same bank data

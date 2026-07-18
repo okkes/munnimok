@@ -18,6 +18,27 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.11.0',
+    date: '2026-07-18',
+    items: [
+      {
+        en: 'Everything unfolds smoothly now: category groups, spending drill-downs and insights animate open instead of snapping, and on desktop the list gently slides aside for the detail pane instead of the page rebuilding. In review, the "also apply" bar flies along with the card.',
+        nl: 'Alles klapt nu soepel uit: categoriegroepen, uitgaven-details en inzichten openen met een animatie in plaats van te knippen, en op desktop schuift de lijst rustig opzij voor het detailpaneel in plaats van dat de pagina opnieuw opbouwt. Bij beoordelen vliegt de "ook toepassen"-balk mee met de kaart.',
+        tr: 'Artık her şey akıcı açılıyor: kategori grupları, harcama detayları ve içgörüler aniden değil animasyonla açılıyor; masaüstünde liste, sayfa yeniden kurulmak yerine detay paneli için usulca kenara kayıyor. İncelemede "şunlara da uygula" çubuğu kartla birlikte uçuyor.',
+      },
+      {
+        en: 'Review will not let an "Uncategorized" slip through anymore — Confirm stays off until a real category is picked (transfers excepted). Bank logos in the connect list now come from munni\'s own server, so they load reliably, and a failed bank connection finally tells you the provider\'s actual reason.',
+        nl: 'Beoordelen laat "Ongecategoriseerd" niet meer door — Bevestigen blijft uit tot een echte categorie is gekozen (behalve bij overboekingen). Banklogo\'s in de koppellijst komen nu van munni\'s eigen server en laden dus betrouwbaar, en een mislukte bankkoppeling vertelt eindelijk de echte reden van de aanbieder.',
+        tr: 'İnceleme artık "Kategorisiz" olanı geçirmiyor — gerçek bir kategori seçilene kadar Onayla kapalı kalıyor (transferler hariç). Bağlantı listesindeki banka logoları artık munni\'nin kendi sunucusundan geliyor ve güvenilir yükleniyor; başarısız bir banka bağlantısı da sonunda sağlayıcının gerçek nedenini söylüyor.',
+      },
+      {
+        en: 'The encrypted-storage beta on iPhone is fixed — a data-format quirk froze the first sync at "connecting"; it now completes. Shop logins got their own door under Settings, and category headers grew to a comfortable size.',
+        nl: 'De bèta voor versleutelde opslag op iPhone is gerepareerd — een dataformaat-eigenaardigheid bevroor de eerste synchronisatie bij "verbinden"; die rondt nu af. Winkellogins kregen hun eigen ingang onder Instellingen, en categoriekoppen kregen een comfortabel formaat.',
+        tr: 'iPhone\'daki şifreli depolama betası düzeltildi — bir veri biçimi tuhaflığı ilk eşitlemeyi "bağlanıyor"da donduruyordu; artık tamamlanıyor. Mağaza girişleri Ayarlar altında kendi kapısına kavuştu ve kategori başlıkları rahat bir boyuta büyüdü.',
+      },
+    ],
+  },
+  {
     version: '2.10.0',
     date: '2026-07-18',
     items: [

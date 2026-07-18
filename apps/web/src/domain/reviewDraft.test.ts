@@ -23,6 +23,22 @@ describe('reviewDraft', () => {
     expect(draftReady(initDraft(expenseTx, undefined, catalog))).toBe(false);
   });
 
+  it('Uncategorized never confirms — except as the transfer placeholder (user rule)', () => {
+    const uncategorized = { ...initDraft(expenseTx, undefined, catalog), catId: 'uncategorized' };
+    expect(draftReady(uncategorized)).toBe(false);
+    // transfers carry no spending category: the hidden builtin stays confirmable
+    expect(draftReady({ ...uncategorized, txType: 'transfer' as TxType })).toBe(true);
+    // a split with an uncategorized slice blocks too
+    const withUncatSlice = {
+      ...initDraft(expenseTx, 'groceries', catalog),
+      splits: [
+        { catId: 'groceries', amountCents: 600 },
+        { catId: 'uncategorized', amountCents: 400 },
+      ],
+    };
+    expect(draftReady(withUncatSlice)).toBe(false);
+  });
+
   it('a category that does not speak the current type pulls the type along', () => {
     const draft = withCategory(initDraft(expenseTx, undefined, catalog), 'savingDeposit', catalog);
     expect(draft).toMatchObject({ catId: 'savingDeposit', txType: 'saving' });

@@ -61,7 +61,7 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
     // the new main appears as a group header with its type badge…
     // (generous timeout: coverage instrumentation slows the live query)
     await waitFor(() => expect(screen.getByText('Music lessons')).toBeTruthy(), { timeout: 5000 });
-    const header = screen.getByText('Music lessons').closest('.m-cap')!;
+    const header = screen.getByText('Music lessons').closest('button')!;
     expect(header.textContent).toContain('Income');
     fireEvent.click(header); // groups start collapsed — unfold the new main
     // …and the auto "Other" sub exists but is not editable (it lands in a

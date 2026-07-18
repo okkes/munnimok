@@ -6,6 +6,7 @@ import {
   createRouter,
   redirect,
 } from '@tanstack/react-router';
+import { MasterDetailLayout } from '@/ui/SplitPane';
 import { AppLayout } from './AppLayout';
 import { readSessionIdentity } from './session';
 import { LoginScreen } from '@/features/auth/LoginScreen';
@@ -79,17 +80,23 @@ const indexRoute = createRoute({
 });
 
 const homeRoute = createRoute({ getParentRoute: () => appRoute, path: '/home', component: HomeScreen });
+// list routes render the master-detail layout: the list stays mounted
+// while a detail child slides in beside it at lg (animated, §4.2)
 const transactionsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/transactions',
-  component: TransactionsScreen,
+  component: () => <MasterDetailLayout list={<TransactionsScreen />} />,
 });
 const txDetailRoute = createRoute({
-  getParentRoute: () => appRoute,
-  path: '/transactions/$txId',
+  getParentRoute: () => transactionsRoute,
+  path: '$txId',
   component: TxDetailScreen,
 });
-const recurringRoute = createRoute({ getParentRoute: () => appRoute, path: '/recurring', component: RecurringScreen });
+const recurringRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/recurring',
+  component: () => <MasterDetailLayout list={<RecurringScreen />} />,
+});
 // static beats the $recId param in TanStack's ranking — order here is cosmetic
 const recurringSuggestionsRoute = createRoute({
   getParentRoute: () => appRoute,
@@ -97,8 +104,8 @@ const recurringSuggestionsRoute = createRoute({
   component: RecurringSuggestionsScreen,
 });
 const recurringDetailRoute = createRoute({
-  getParentRoute: () => appRoute,
-  path: '/recurring/$recId',
+  getParentRoute: () => recurringRoute,
+  path: '$recId',
   component: RecurringDetailScreen,
 });
 const spacesRoute = createRoute({ getParentRoute: () => appRoute, path: '/spaces', component: SpacesScreen });
@@ -137,10 +144,14 @@ const splitDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/s
 const onboardingRoute = createRoute({ getParentRoute: () => appRoute, path: '/onboarding', component: OnboardingScreen });
 const profileRoute = createRoute({ getParentRoute: () => appRoute, path: '/profile', component: ProfileScreen });
 const overviewRoute = createRoute({ getParentRoute: () => appRoute, path: '/overview/$kind', component: OverviewScreen });
-const budgetsRoute = createRoute({ getParentRoute: () => appRoute, path: '/budgets', component: BudgetsScreen });
+const budgetsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/budgets',
+  component: () => <MasterDetailLayout list={<BudgetsScreen />} />,
+});
 // static 'new' outranks the $budgetId param in TanStack's ranking
 const budgetNewRoute = createRoute({ getParentRoute: () => appRoute, path: '/budgets/new', component: BudgetFormScreen });
-const budgetDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/budgets/$budgetId', component: BudgetDetailScreen });
+const budgetDetailRoute = createRoute({ getParentRoute: () => budgetsRoute, path: '$budgetId', component: BudgetDetailScreen });
 const budgetEditRoute = createRoute({ getParentRoute: () => appRoute, path: '/budgets/$budgetId/edit', component: BudgetFormScreen });
 const eventsRoute = createRoute({ getParentRoute: () => appRoute, path: '/events', component: EventsScreen });
 const eventDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/events/$eventId', component: EventDetailScreen });
@@ -152,8 +163,12 @@ const allocateRoute = createRoute({ getParentRoute: () => appRoute, path: '/allo
 const helpRoute = createRoute({ getParentRoute: () => appRoute, path: '/help', component: HelpIndexScreen });
 const shoppingRoute = createRoute({ getParentRoute: () => appRoute, path: '/shopping', component: ShoppingConnectionsScreen });
 const receiptsRoute = createRoute({ getParentRoute: () => appRoute, path: '/receipts', component: ReceiptsScreen });
-const portfolioRoute = createRoute({ getParentRoute: () => appRoute, path: '/portfolio', component: PortfolioScreen });
-const holdingDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/portfolio/$holdingId', component: HoldingDetailScreen });
+const portfolioRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/portfolio',
+  component: () => <MasterDetailLayout list={<PortfolioScreen />} />,
+});
+const holdingDetailRoute = createRoute({ getParentRoute: () => portfolioRoute, path: '$holdingId', component: HoldingDetailScreen });
 const insightsRoute = createRoute({ getParentRoute: () => appRoute, path: '/insights', component: InsightsScreen });
 const trendsRoute = createRoute({ getParentRoute: () => appRoute, path: '/trends', component: TrendsScreen });
 const categoryDrillRoute = createRoute({
@@ -171,11 +186,9 @@ export const routeTree = rootRoute.addChildren([
   appRoute.addChildren([
     indexRoute,
     homeRoute,
-    transactionsRoute,
-    txDetailRoute,
-    recurringRoute,
+    transactionsRoute.addChildren([txDetailRoute]),
+    recurringRoute.addChildren([recurringDetailRoute]),
     recurringSuggestionsRoute,
-    recurringDetailRoute,
     spacesRoute,
     spaceSettingsRoute,
     spaceMembersRoute,
@@ -193,9 +206,8 @@ export const routeTree = rootRoute.addChildren([
     profileRoute,
     overviewRoute,
     categoryDrillRoute,
-    budgetsRoute,
+    budgetsRoute.addChildren([budgetDetailRoute]),
     budgetNewRoute,
-    budgetDetailRoute,
     budgetEditRoute,
     eventsRoute,
     eventDetailRoute,
@@ -207,8 +219,7 @@ export const routeTree = rootRoute.addChildren([
     helpRoute,
     shoppingRoute,
     receiptsRoute,
-    portfolioRoute,
-    holdingDetailRoute,
+    portfolioRoute.addChildren([holdingDetailRoute]),
     insightsRoute,
     trendsRoute,
   ]),

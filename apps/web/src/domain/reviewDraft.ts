@@ -73,5 +73,13 @@ export function withSplits(draft: ReviewDraft, splits: TxSplit[] | undefined): R
   return { ...draft, splits, catId: primaryCatId(splits) };
 }
 
-/** Confirm is only offered once a category is decided */
-export const draftReady = (draft: ReviewDraft): boolean => !!draft.catId;
+/** Confirm is only offered once a REAL category is decided (user rule:
+ *  never confirm Uncategorized — that's what review exists to fix).
+ *  Transfers are the one exception: they carry no spending category and
+ *  use the hidden 'uncategorized' builtin as a by-design placeholder. */
+export const draftReady = (draft: ReviewDraft): boolean => {
+  if (!draft.catId) return false;
+  if (draft.txType === 'transfer') return true;
+  if (draft.catId === 'uncategorized') return false;
+  return !draft.splits?.some((slice) => slice.catId === 'uncategorized');
+};

@@ -274,6 +274,10 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.change(amount0, { target: { value: '6,00' } });
     fireEvent.blur(amount0);
     fireEvent.click(await screen.findByTestId('split-remainder'));
+    // the fresh row starts Uncategorized — confirm refuses that (user
+    // rule), so the slice gets a real category before saving
+    fireEvent.click(screen.getByTestId('split-cat-1'));
+    fireEvent.click(await screen.findByTestId('catpicker-coffee'));
     fireEvent.click(screen.getByTestId('split-save'));
 
     // draft model (review redesign): saving the split STAGES it — the card

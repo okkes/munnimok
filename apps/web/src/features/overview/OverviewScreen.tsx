@@ -12,6 +12,7 @@ import { fmtCents } from '@/lib/money';
 import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { BarChart, StackedBar } from '@/ui/charts';
+import { Collapse } from '@/ui/Collapse';
 import { Icon } from '@/ui/Icon';
 import { Tile } from '@/ui/primitives';
 
@@ -159,7 +160,8 @@ export function OverviewScreen() {
                     <Icon name={isOpen ? 'chevron-up' : 'chevron-down'} size={16} color="var(--m-ink-4)" />
                   )}
                 </button>
-                {isOpen && group.subs.length > 0 && (
+                {group.subs.length > 0 && (
+                <Collapse open={isOpen}>
                   <div className="bg-bg-2 px-4 py-1" data-testid={`overview-subs-${group.catId}`}>
                     {/* whole main category first (legacy 'All'): the header
                         row folds/unfolds, so this is how you reach ALL of
@@ -197,6 +199,7 @@ export function OverviewScreen() {
                       </button>
                     ))}
                   </div>
+                </Collapse>
                 )}
               </div>
             );

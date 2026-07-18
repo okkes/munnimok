@@ -66,7 +66,13 @@ export async function openEncryptedExecutor(database: string): Promise<SqlExecut
     },
     async query(statement, params = []) {
       const result = await plugin.query({ database, statement, values: params });
-      return result.values ?? [];
+      const rows = result.values ?? [];
+      // raw-plugin quirk: on iOS the FIRST row is {"ios_columns":[...]}.
+      // The plugin's JS wrapper strips it; we talk to the plugin directly,
+      // so strip it here — reading .json off it gave undefined and
+      // JSON.parse(undefined) broke the whole first sync ("Unexpected
+      // identifier 'undefined'", the E2 connect loop).
+      return rows[0] && 'ios_columns' in rows[0] ? rows.slice(1) : rows;
     },
     async transaction(fn) {
       await plugin.beginTransaction({ database });

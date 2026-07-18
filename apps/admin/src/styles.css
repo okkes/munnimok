@@ -176,3 +176,33 @@ em { color: var(--warn); font-style: normal; font-size: 11px; font-weight: 700; 
   .sidebar-foot input { min-width: 150px; }
   .content { padding: 18px 14px 60px; }
 }
+
+/* catalog redesign: merged tree + sticky publish bar */
+.page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.page-head .chip { margin-top: 10px; }
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.card-head h2 { margin: 0; }
+.card-tools { display: flex; gap: 8px; align-items: center; }
+.card-tools .search { min-width: 180px; width: 180px; }
+.tree { display: flex; flex-direction: column; gap: 2px; }
+.tree-group { border-bottom: 1px solid var(--line); padding: 4px 0; }
+.tree-group:last-child { border-bottom: none; }
+.tree-row { display: flex; align-items: center; gap: 10px; padding: 5px 8px; border-radius: 8px; }
+.tree-row:hover { background: var(--accent-soft); }
+.tree-sub { margin-left: 26px; }
+.tree-row.retired .tree-name, .tree-row.retired .tree-id { text-decoration: line-through; opacity: 0.55; }
+.tree-label { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
+.tree-name { font-weight: 600; }
+.tree-sub .tree-name { font-weight: 400; }
+.tree-id, .tree-icon { font-size: 11px; color: var(--ink3); background: none; }
+.tree-icon::before { content: '· '; }
+.tree-actions { display: flex; gap: 6px; opacity: 0; transition: opacity 0.12s; }
+.tree-row:hover .tree-actions, .tree-actions:focus-within { opacity: 1; }
+.editor { border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 12px; background: var(--bg); }
+.editor-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.editor-actions { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; gap: 12px; }
+.editor-actions > span:last-child { display: flex; gap: 8px; }
+.ok-chip { background: var(--accent-soft); color: var(--accent); }
+.danger-chip { background: var(--warn-soft); color: var(--danger); }
+.pubbar { position: sticky; bottom: 0; display: flex; align-items: center; justify-content: flex-end; gap: 14px;
+  padding: 10px 0; background: linear-gradient(to top, var(--bg) 70%, transparent); }

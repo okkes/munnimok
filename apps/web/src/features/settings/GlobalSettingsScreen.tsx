@@ -225,8 +225,9 @@ export function GlobalSettingsScreen() {
             }
             onClick={() => setLangSheetOpen(true)}
           />
-          {/* receipts are the feature's home now; connected stores live inside it */}
           <Row testId="settings-receipts-row" icon="receipt-text-outline" title={t('receipts.title')} onClick={() => void navigate({ to: '/receipts' })} />
+          {/* store logins were hidden behind receipts (user report) */}
+          <Row testId="settings-shopping-row" icon="storefront-outline" title={t('shop.title')} onClick={() => void navigate({ to: '/shopping' })} />
           {/* trust feature: munni reads your banks, so it also lets you leave */}
           <Row testId="settings-export-row" icon="download-outline" title={t('settings.exportData')} onClick={() => setExportOpen(true)} />
           <Row testId="settings-help-row" icon="school-outline" title={t('help.title')} onClick={() => void navigate({ to: '/help' })} />

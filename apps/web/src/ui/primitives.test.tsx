@@ -6,9 +6,18 @@ import { Button } from './Button';
 import { Icon } from './Icon';
 import { Logo } from './Logo';
 import { Chip, Field, HeroCard, Pill, ProgressBar, Row, Tile } from './primitives';
-import { SplitPane } from './SplitPane';
+import { MasterDetailLayout } from './SplitPane';
 // harness registers RTL cleanup between tests
 import '@/test/harness';
+
+// the layout reads its detail from the router — stub the two hooks so
+// the primitive can be exercised without mounting a real route tree
+const routerStub = vi.hoisted(() => ({ childMatches: [] as unknown[] }));
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  useChildMatches: () => routerStub.childMatches,
+  Outlet: () => <div data-testid="pane-detail" />,
+}));
 
 describe('Button', () => {
   it('renders each variant/size with the mapped classes', () => {
@@ -187,17 +196,22 @@ describe('redesign primitives', () => {
     expect(label.className).toContain('text-[12px]');
   });
 
-  it('SplitPane fills the screen below lg and panes the list at lg', () => {
-    const { unmount } = render(
-      <SplitPane list={<div data-testid="pane-list" />}>
-        <div data-testid="pane-detail" />
-      </SplitPane>,
-    );
-    // happy-dom reports a non-lg viewport: detail only, no pane chrome
+  it('MasterDetailLayout: detail replaces the list below lg, panes beside it at lg', () => {
+    // no detail child: the list owns the screen (any viewport)
+    routerStub.childMatches = [];
+    const { unmount } = render(<MasterDetailLayout list={<div data-testid="pane-list" />} />);
+    expect(screen.queryByTestId('split-pane')).toBeNull();
+    expect(screen.getByTestId('pane-list')).toBeTruthy();
+    expect(screen.queryByTestId('pane-detail')).toBeNull();
+    unmount();
+
+    // happy-dom reports a non-lg viewport: a matched detail fills the screen
+    routerStub.childMatches = [{}];
+    const second = render(<MasterDetailLayout list={<div data-testid="pane-list" />} />);
     expect(screen.queryByTestId('split-pane')).toBeNull();
     expect(screen.queryByTestId('pane-list')).toBeNull();
     expect(screen.getByTestId('pane-detail')).toBeTruthy();
-    unmount();
+    second.unmount();
 
     const original = window.matchMedia;
     window.matchMedia = (() => ({
@@ -206,11 +220,7 @@ describe('redesign primitives', () => {
       removeEventListener: () => {},
     })) as unknown as typeof window.matchMedia;
     try {
-      render(
-        <SplitPane list={<div data-testid="pane-list" />}>
-          <div data-testid="pane-detail" />
-        </SplitPane>,
-      );
+      render(<MasterDetailLayout list={<div data-testid="pane-list" />} />);
       expect(screen.getByTestId('split-pane')).toBeTruthy();
       expect(screen.getByTestId('pane-list')).toBeTruthy();
       expect(screen.getByTestId('pane-detail')).toBeTruthy();
