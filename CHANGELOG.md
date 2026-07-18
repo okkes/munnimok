@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.14.0](https://github.com/okkes/munnimok/compare/v2.13.1...v2.14.0) (2026-07-18)
+
+
+### ✨ Features
+
+* **review:** the review workbench — every decision editable on a compact card, with create-and-return flow ([13762f0](https://github.com/okkes/munnimok/commit/13762f0114fd4789eb0e20ad0ac92e41a4f541d1))
+
 ## [2.13.1](https://github.com/okkes/munnimok/compare/v2.13.0...v2.13.1) (2026-07-18)
 
 
