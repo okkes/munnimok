@@ -511,6 +511,14 @@ export function TxDetailScreen() {
             <span className="text-xs text-ink-4">{t('txform.account')}</span>
           </div>
           <div className="mx-4 h-px bg-line-2" />
+          <CounterpartyRow
+            counterIban={tx.counterIban}
+            counterAccountName={counterAccount?.name}
+            linkedAccountName={linkedAccount?.name}
+            onOpenAccount={() => setCounterOpen(true)}
+            onEdit={() => setTypeOpen(true)}
+          />
+          <div className="mx-4 h-px bg-line-2" />
           <button
             data-testid="tx-detail-type-row"
             onClick={() => setTypeOpen(true)}
@@ -521,14 +529,6 @@ export function TxDetailScreen() {
             <span className="text-xs text-ink-4">{t('tx.type')}</span>
             <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
           </button>
-          <div className="mx-4 h-px bg-line-2" />
-          <CounterpartyRow
-            counterIban={tx.counterIban}
-            counterAccountName={counterAccount?.name}
-            linkedAccountName={linkedAccount?.name}
-            onOpenAccount={() => setCounterOpen(true)}
-            onEdit={() => setTypeOpen(true)}
-          />
         </div>
 
         {/* block: categories — ONE edit affordance for the whole block

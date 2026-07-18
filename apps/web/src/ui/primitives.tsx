@@ -213,6 +213,7 @@ export function ProgressBar({
   overlay,
   className = '',
   testId,
+  animateKey,
 }: Readonly<{
   value: number;
   tone?: Tone;
@@ -222,11 +223,14 @@ export function ProgressBar({
   overlay?: ReactNode;
   className?: string;
   testId?: string;
+  /** remounts the fill so the grow animation replays (period switches) */
+  animateKey?: string | number;
 }>) {
   const pct = Math.max(0, Math.min(1, value)) * 100;
   return (
     <div data-testid={testId} className={`relative ${BAR_H[size]} overflow-hidden rounded-full bg-bg-2 ${className}`}>
       <div
+        key={animateKey}
         className="m-grow-x h-full origin-left rounded-full transition-[width]"
         style={{ width: `${pct}%`, background: color ?? BAR_FILL[tone] }}
       />

@@ -33,7 +33,7 @@ export const GUIDE = [
     id: 'review',
     title: 'Reviewing transactions',
     body: `The review deck shows one transaction at a time with a suggested category and the reason behind it. Everything you change — category, type, splits — stays a draft until you hit Confirm. "Also apply to similar" catches the rest of the same merchant in one go.`,
-    tips: ['Tap the description to read the full bank text.', 'Skip is honest: it leaves no trace and the card returns later.', 'No auto-detected subscription? "Link a recurring cost" attaches one by hand.'],
+    tips: ['Tap the description to read the full bank text.', 'Skip is honest: it leaves no trace and the card returns later.', 'Every decision is a row on the card now: counterparty, type, categories, recurring and events.', 'Missing a category, recurring cost or event? Create it right from the picker — the card keeps your place.'],
     shots: ['13-review-banner', '14-review-flow', '15-review-done'],
   },
   {

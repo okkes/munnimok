@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { renderApp } from '@/test/harness';
 import { DEMO_SPACE_ID } from '@/db/seed';
@@ -144,10 +144,9 @@ describe('ReviewScreen (demo identity)', () => {
       needsReview: 1,
     });
 
-    // the newest card is the Netflix charge, with the link chip pre-enabled
+    // the newest card is the Netflix charge; the recurring ROW pre-links it
     await waitFor(() => expect(screen.getByTestId('review-card').textContent).toContain('NETFLIX.COM'), { timeout: 5000 });
-    const chip = await screen.findByTestId('review-link-recurring');
-    expect(chip.textContent).toContain('Netflix');
+    await waitFor(() => expect(screen.getByTestId('review-recurring-row').textContent).toContain('Netflix'), { timeout: 5000 });
 
     fireEvent.click(screen.getByTestId('review-confirm-btn'));
     await waitFor(
@@ -175,15 +174,15 @@ describe('ReviewScreen (demo identity)', () => {
     });
     db.close();
 
-    fireEvent.click(await screen.findByTestId('review-link-recurring-manual', {}, { timeout: 5000 }));
+    fireEvent.click(await screen.findByTestId('review-recurring-row', {}, { timeout: 5000 }));
     await screen.findByTestId('recpick-list');
-    fireEvent.click(screen.getByTestId('recpick-rec-spotify'));
-    await waitFor(() => expect(screen.getByTestId('review-link-recurring-manual').textContent).toContain('Spotify'), { timeout: 5000 });
+    fireEvent.click(await screen.findByTestId('recpick-rec-spotify', {}, { timeout: 5000 }));
+    await waitFor(() => expect(screen.getByTestId('review-recurring-row').textContent).toContain('Spotify'), { timeout: 5000 });
 
-    // …and unpick it: the chip returns to its idle label
-    fireEvent.click(screen.getByTestId('review-link-recurring-manual'));
+    // …and unpick it: the row returns to None
+    fireEvent.click(screen.getByTestId('review-recurring-row'));
     fireEvent.click(await screen.findByTestId('recpick-none'));
-    await waitFor(() => expect(screen.getByTestId('review-link-recurring-manual').textContent).not.toContain('Spotify'), { timeout: 5000 });
+    await waitFor(() => expect(screen.getByTestId('review-recurring-row').textContent).not.toContain('Spotify'), { timeout: 5000 });
   }, 15_000);
 
   it('ArrowRight skips the current card from the keyboard', async () => {
@@ -192,6 +191,54 @@ describe('ReviewScreen (demo identity)', () => {
     const before = screen.getByTestId('review-card').textContent;
     fireEvent.keyDown(window, { key: 'ArrowRight' });
     await waitFor(() => expect(screen.getByTestId('review-card').textContent).not.toBe(before), { timeout: 5000 });
+  }, 15_000);
+
+  it('an event is staged on the card and confirm carries EVERYTHING to the bulk siblings', async () => {
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-event'), { trackOutbox: false });
+    await repo.upsert('event', DEMO_SPACE_ID, 'ev-trip', { name: 'Ski trip', icon: 'party-popper' });
+    for (const [id, day] of [['evt-a', '01'], ['evt-b', '02']] as const) {
+      await repo.upsert('transaction', DEMO_SPACE_ID, id, {
+        accountId: 'demo_main', date: `2020-01-${day}`, amountCents: -2000, currency: 'EUR',
+        merchant: 'APRES SKI BAR', catId: 'entertainment', txType: 'expense', needsReview: 1,
+      });
+    }
+    await waitFor(() => expect(screen.getByTestId('review-card').textContent).toContain('APRES SKI BAR'), { timeout: 5000 });
+
+    // pick the event on the card (staged, not yet written)
+    fireEvent.click(screen.getByTestId('review-event-row'));
+    fireEvent.click(await screen.findByTestId('review-event-ev-trip'));
+    await waitFor(() => expect(screen.getByTestId('review-event-row').textContent).toContain('Ski trip'));
+    expect((await db.transactions.get('evt-a'))?.eventId).toBeUndefined();
+
+    // confirm: the event reaches the card AND the selected sibling (user
+    // rule: bulk carries the whole decision, not just the category)
+    fireEvent.click(screen.getByTestId('review-confirm-btn'));
+    await waitFor(async () => {
+      expect((await db.transactions.get('evt-a'))?.eventId).toBe('ev-trip');
+      expect((await db.transactions.get('evt-b'))?.eventId).toBe('ev-trip');
+      expect((await db.transactions.get('evt-b'))?.needsReview).toBe(0);
+    }, { timeout: 5000 });
+    db.close();
+  }, 15_000);
+
+  it('skips survive leaving the screen: the queue resumes where the user left off', async () => {
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    const first = screen.getByTestId('review-card').textContent;
+
+    fireEvent.click(screen.getByTestId('review-skip-btn'));
+    await waitFor(() => expect(screen.getByTestId('review-card').textContent).not.toBe(first), { timeout: 5000 });
+    const second = screen.getByTestId('review-card').textContent;
+
+    // leave (create a category, say) and come back — same card, not the start
+    cleanup();
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    await waitFor(() => expect(screen.getByTestId('review-card').textContent).toBe(second), { timeout: 5000 });
   }, 15_000);
 
   it('no auto-match: the manual chip opens the picker and confirm links the choice', async () => {
@@ -213,10 +260,10 @@ describe('ReviewScreen (demo identity)', () => {
     const current = (await db.transactions.filter((t) => t.needsReview === 1).toArray())
       .sort((a, b) => a.date.localeCompare(b.date))[0];
 
-    // the manual chip appears (no auto-detected match on this merchant)
-    fireEvent.click(await screen.findByTestId('review-link-recurring-manual'));
-    fireEvent.click(await screen.findByTestId('recpick-rec-gym'));
-    await waitFor(() => expect(screen.getByTestId('review-link-recurring-manual').textContent).toContain('Gym'), { timeout: 5000 });
+    // the recurring row starts at None (no auto-detected match here)
+    fireEvent.click(await screen.findByTestId('review-recurring-row'));
+    fireEvent.click(await screen.findByTestId('recpick-rec-gym', {}, { timeout: 5000 }));
+    await waitFor(() => expect(screen.getByTestId('review-recurring-row').textContent).toContain('Gym'), { timeout: 5000 });
 
     fireEvent.click(screen.getByTestId('review-confirm-btn'));
     await waitFor(

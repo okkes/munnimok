@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { LogtoProvider, useHandleSignInCallback, useLogto } from '@logto/react';
 import * as Sentry from '@sentry/react';
-import { config, logtoConfigured } from '@/app/config';
+import { config, logtoConfigured, publicOrigin } from '@/app/config';
 import { NATIVE_CALLBACK_KEY, isNativeApp } from '@/lib/platform';
 import { setAccessTokenGetter, setOidcSignOut, signalAuthReady } from '@/app/authToken';
 import { useSession } from '@/app/session';
@@ -18,7 +18,9 @@ import { Logo } from '@/ui/Logo';
  * handler re-enters /auth-callback with the same params.
  */
 export const callbackUri = () =>
-  isNativeApp() ? `${config.nativeScheme}://auth-callback` : `${window.location.origin}/auth-callback`;
+  // native uses the UNIVERSAL LINK return (no "Open in munni?" popup);
+  // the hosted /native-auth page scheme-bounces when the link fails
+  isNativeApp() ? `${publicOrigin()}/native-auth` : `${window.location.origin}/auth-callback`;
 export const isCallbackPath = () => window.location.pathname.endsWith('/auth-callback');
 
 export function LogtoAppProvider({ children }: { children: ReactNode }) {
@@ -134,7 +136,9 @@ function NativeCallbackScreen({ url }: Readonly<{ url: string }>) {
         appId: config.logto.appId,
         resources: config.logto.resource ? [config.logto.resource] : [],
       });
-      await client.handleSignInCallback(url);
+      // scheme-bounced fallback stored only the path — re-anchor it on
+      // the public origin so it matches the registered redirect_uri
+      await client.handleSignInCallback(url.startsWith('/') ? `${publicOrigin()}${url}` : url);
       sessionStorage.removeItem(NATIVE_CALLBACK_KEY);
       await finish();
     })().catch((err: unknown) => {

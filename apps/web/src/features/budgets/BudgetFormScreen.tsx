@@ -10,6 +10,7 @@ import type { BudgetCarryMode, BudgetEvery, BudgetRow } from '@/db/types';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
+import { Collapse } from '@/ui/Collapse';
 import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
 import { BUDGET_ICONS } from './budgetUi';
@@ -36,6 +37,9 @@ export function BudgetFormScreen() {
   const [every, setEvery] = useState<BudgetEvery>('month');
   const [anchor, setAnchor] = useState(localToday());
   const [catIds, setCatIds] = useState<string[]>([]);
+  // long list tamed (user request): search + fold, mains start collapsed
+  const [catQuery, setCatQuery] = useState('');
+  const [openCats, setOpenCats] = useState<ReadonlySet<string>>(new Set());
   const [carryOver, setCarryOver] = useState(false);
   const [carryMode, setCarryMode] = useState<BudgetCarryMode>('periods');
   const [carryPeriods, setCarryPeriods] = useState(1);
@@ -226,13 +230,48 @@ export function BudgetFormScreen() {
           <div className="m-cap px-1">
             {t('screen.categories')} · {catIds.length}
           </div>
+          <input
+            data-testid="budgetform-cat-search"
+            value={catQuery}
+            onChange={(e) => setCatQuery(e.target.value)}
+            placeholder={t('cats.searchPlaceholder')}
+            className="h-10 w-full rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none placeholder:text-ink-4"
+          />
           <div className="rounded-card border border-line bg-surface px-3 py-1" data-testid="budgetform-cats">
-            {expenseParents.map((parent) => (
-              <div key={parent.id}>
-                {renderCatRow(parent.id, false)}
-                {cats.childrenOf(parent.id).map((sub) => renderCatRow(sub.id, true))}
-              </div>
-            ))}
+            {expenseParents.map((parent) => {
+              const q = catQuery.trim().toLowerCase();
+              const subs = cats.childrenOf(parent.id);
+              const matches = (id: string) => !q || catName(cats.byId(id), t).toLowerCase().includes(q);
+              const anySub = subs.some((sub) => matches(sub.id));
+              if (q && !matches(parent.id) && !anySub) return null;
+              // searching unfolds the hits; otherwise the fold state rules
+              const open = q ? true : openCats.has(parent.id);
+              return (
+                <div key={parent.id}>
+                  <div className="flex items-center">
+                    <button
+                      data-testid={`budgetform-fold-${parent.id}`}
+                      aria-expanded={open}
+                      onClick={() =>
+                        setOpenCats((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(parent.id)) next.delete(parent.id);
+                          else next.add(parent.id);
+                          return next;
+                        })
+                      }
+                      className="m-tap flex h-9 w-7 shrink-0 items-center justify-center border-none bg-transparent text-ink-4"
+                    >
+                      <Icon name={open ? 'chevron-down' : 'chevron-right'} size={16} />
+                    </button>
+                    <div className="min-w-0 flex-1">{renderCatRow(parent.id, false)}</div>
+                  </div>
+                  <Collapse open={open}>
+                    <div>{subs.filter((sub) => matches(sub.id) || matches(parent.id)).map((sub) => renderCatRow(sub.id, true))}</div>
+                  </Collapse>
+                </div>
+              );
+            })}
           </div>
 
           {/* carry-over */}

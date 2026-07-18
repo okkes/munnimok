@@ -4,6 +4,9 @@ import { useSpaceTransactions, useTxTransform } from '@/application/transactions
 import type { SpaceTx } from '@/application/transactions';
 import { buildSpaceMerchantMemory } from '@/application/prediction';
 import { useRecurringOps, useRecurrings } from '@/application/recurring';
+import { useEvents } from '@/application/events';
+import { EventFormSheet } from '@/features/events/EventsScreen';
+import { RecurringFormSheet, emptyForm } from '@/features/recurring/RecurringFormSheet';
 import { merchantKey } from '@/domain/merchantKey';
 import { draftReady, initDraft, withCategory, withLinkedAccount, withSplits, withType } from '@/domain/reviewDraft';
 import { normalizeIban } from '@/domain/feedIds';
@@ -73,6 +76,7 @@ async function writeConfirmation(args: {
   tx: SpaceTx;
   draft: ReviewDraft;
   recurringId: string | undefined;
+  eventId: string | undefined;
   bulk: SpaceTx[];
   transform: (tx: SpaceTx, fields: Parameters<ReturnType<typeof useTxTransform>>[1]) => Promise<void>;
 }): Promise<void> {
@@ -87,16 +91,22 @@ async function writeConfirmation(args: {
     ...splitsField,
     ...linkField,
     ...(args.recurringId ? { recurringId: args.recurringId } : {}),
+    ...(args.eventId ? { eventId: args.eventId } : {}),
   });
   for (const item of args.bulk) {
     // the draft's split shape travels with the bulk: absolute splits fit
-    // exact twins by the similar-rule; pct splits rescale per item
+    // exact twins by the similar-rule; pct splits rescale per item —
+    // and the WHOLE decision rides along: type, counterparty, recurring
+    // and event reach every selected sibling too (user rule)
     const splits = draft.splits?.length ? resolveSplitsFor(item.amountCents, draft.splits) : undefined;
     await args.transform(item, {
       catId: draft.catId,
       txType: draft.txType,
       needsReview: 0,
       ...(splits ? { splits } : {}),
+      ...(draft.linkedAccountId ? { linkedAccountId: draft.linkedAccountId } : {}),
+      ...(args.recurringId ? { recurringId: args.recurringId } : {}),
+      ...(args.eventId ? { eventId: args.eventId } : {}),
     });
   }
 }
@@ -265,22 +275,23 @@ function BulkConfirmSection({
   );
 }
 
+/** the recurring row's display label: linked name or "None" */
+function recurringRowLabel(
+  recMatch: RecurringRow | undefined,
+  linkRecurring: boolean,
+  manualRec: RecurringRow | undefined,
+  t: ReturnType<typeof useLang>['t'],
+): string {
+  const linked = recMatch && linkRecurring ? recMatch : manualRec;
+  if (!chosenRecurringId(recMatch, linkRecurring, manualRec?.id ?? null)) return t('recurring.linkNone');
+  return linked?.name ?? t('recurring.linkTitle');
+}
+
 /** which recurring the confirm links: the auto-match wins (unless the
  *  user un-ticked it); otherwise whatever was picked by hand */
 function chosenRecurringId(recMatch: RecurringRow | undefined, linkRecurring: boolean, manualRecId: string | null): string | undefined {
   if (recMatch) return linkRecurring ? recMatch.id : undefined;
   return manualRecId ?? undefined;
-}
-
-/** the "link a recurring cost by hand" chip (no auto-match on this card) */
-function ManualRecurringChip({ rec, onOpen }: Readonly<{ rec: RecurringRow | undefined; onOpen: () => void }>) {
-  const { t } = useLang();
-  return (
-    <Chip className="mt-3" testId="review-link-recurring-manual" selected={!!rec} onClick={onOpen}>
-      <Icon name={rec ? 'check' : 'autorenew'} size={13} />
-      {rec ? t('review.linkRecurring', { name: rec.name }) : t('review.linkRecurringPick')}
-    </Chip>
-  );
 }
 
 /** stacked picker for the manual recurring link: every active recurring
@@ -293,6 +304,7 @@ function RecurringPickSheet({
   selectedId,
   currency,
   onPick,
+  onCreate,
 }: Readonly<{
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -300,6 +312,8 @@ function RecurringPickSheet({
   selectedId: string | null;
   currency: string;
   onPick: (id: string | null) => void;
+  /** create-and-return door: opens the recurring form, auto-attaches */
+  onCreate: () => void;
 }>) {
   const { t, lang } = useLang();
   return (
@@ -330,6 +344,14 @@ function RecurringPickSheet({
             {selectedId === rec.id && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
           </button>
         ))}
+        <button
+          data-testid="recpick-create"
+          onClick={onCreate}
+          className="m-tap flex w-full items-center gap-3 border-t border-line-2 px-4 py-3 text-left text-[14px] font-medium text-accent-deep"
+        >
+          <Icon name="plus" size={18} />
+          {t('recurring.add')}
+        </button>
       </div>
     </Sheet>
   );
@@ -353,7 +375,23 @@ export function ReviewScreen() {
 
   const [typeOpen, setTypeOpen] = useState(false);
   const [splitOpen, setSplitOpen] = useState(false);
-  const [skipped, setSkipped] = useState<ReadonlySet<string>>(new Set());
+  const skippedKey = `munni_review_skipped:${spaceId}`;
+  const [skipped, setSkipped] = useState<ReadonlySet<string>>(() => {
+    try {
+      return new Set(JSON.parse(sessionStorage.getItem(skippedKey) ?? '[]') as string[]);
+    } catch {
+      return new Set();
+    }
+  });
+  // persisted so navigating away (create a category / recurring / event)
+  // and coming back resumes at the same card (user request)
+  const updateSkipped = (update: (prev: ReadonlySet<string>) => ReadonlySet<string>) => {
+    setSkipped((prev) => {
+      const next = update(prev);
+      sessionStorage.setItem(skippedKey, JSON.stringify([...next]));
+      return next;
+    });
+  };
   // the card's STAGED decision (review redesign): user edits live here,
   // only Confirm writes; null = untouched, follow tx + prediction live
   const [stagedDraft, setStagedDraft] = useState<ReviewDraft | null>(null);
@@ -373,6 +411,12 @@ export function ReviewScreen() {
   // no auto-match? the user can still link a recurring by hand (user request)
   const [manualRecId, setManualRecId] = useState<string | null>(null);
   const [recPickOpen, setRecPickOpen] = useState(false);
+  // events join the review card (user redesign): staged, written on confirm
+  const [eventPick, setEventPick] = useState<string | null>(null);
+  const [eventPickOpen, setEventPickOpen] = useState(false);
+  // create-and-return doors: snapshot ids, diff on close, auto-attach
+  const [recCreating, setRecCreating] = useState<ReadonlySet<string> | null>(null);
+  const [eventCreating, setEventCreating] = useState<ReadonlySet<string> | null>(null);
   const [initialCount, setInitialCount] = useState<number | null>(null);
 
   // teaching data: what this space (or the user's personal spaces) confirmed before
@@ -427,6 +471,14 @@ export function ReviewScreen() {
     [tx?.id, ownCounter, prediction?.catId, cats],
   );
   const draft = stagedDraft ?? ownTransferDraft;
+  const draftCounter = useQuery(
+    store,
+    async () => (draft?.linkedAccountId ? store.get('account', draft.linkedAccountId) : undefined),
+    [draft?.linkedAccountId],
+  );
+  const events = useEvents();
+  const activeEvents = useMemo(() => (events ?? []).filter((e) => e.archived !== 1), [events]);
+  const pickedEvent = activeEvents.find((e) => e.id === eventPick);
   const cat = cats.byId(draft?.catId);
   const parentColor = cat.parentId ? cats.byId(cat.parentId).color : cat.color;
 
@@ -483,6 +535,7 @@ export function ReviewScreen() {
     setStagedDraft(null);
     setLinkRecurring(true);
     setManualRecId(null);
+    setEventPick(null);
     setDescExpanded(false);
   });
   // select every similar item by default — re-selecting when the list
@@ -504,6 +557,7 @@ export function ReviewScreen() {
       tx,
       draft,
       recurringId: chosenRecurringId(recMatch, linkRecurring, manualRecId),
+      eventId: eventPick ?? undefined,
       bulk: similar.filter((s) => bulkSelected.has(s.id)),
       transform,
     });
@@ -530,7 +584,7 @@ export function ReviewScreen() {
       } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
         e.preventDefault();
         captureLeaving();
-        setSkipped((prev) => new Set([...prev, tx.id]));
+        updateSkipped((prev) => new Set([...prev, tx.id]));
       }
     };
     window.addEventListener('keydown', onKey);
@@ -570,7 +624,7 @@ export function ReviewScreen() {
           <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center" data-testid="review-skipped-note">
             <Icon name="debug-step-over" size={40} color="var(--m-warning)" />
             <p className="max-w-[260px] text-sm text-ink-2">{t('review.skippedRemain', { n: skipped.size })}</p>
-            <Button variant="outline" data-testid="review-reset-skipped" onClick={() => setSkipped(new Set())}>
+            <Button variant="outline" data-testid="review-reset-skipped" onClick={() => updateSkipped(() => new Set())}>
               {t('review.reviewSkipped')}
             </Button>
           </div>
@@ -591,45 +645,59 @@ export function ReviewScreen() {
               />
             )}
             <div key={`card-${tx.id}`} ref={cardRef} className="m-card-in">
-            <div className="mt-4 rounded-card border border-line bg-surface px-6 py-7 text-center" data-testid="review-card">
-              <div className="text-[12px] text-ink-4" data-testid="review-card-meta">
-                {new Intl.DateTimeFormat(LOCALES[lang], { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(tx.date))}
-                {cardAccount && <span> · {cardAccount.name}</span>}
+            <div className="mt-4 overflow-hidden rounded-card border border-line bg-surface" data-testid="review-card">
+              {/* compact header (user: title + amount were too huge once
+                  the card carries every editable row) */}
+              <div className="px-4 pt-3 pb-2.5">
+                <div className="text-[11px] text-ink-4" data-testid="review-card-meta">
+                  {new Intl.DateTimeFormat(LOCALES[lang], { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(tx.date))}
+                  {cardAccount && <span> · {cardAccount.name}</span>}
+                </div>
+                <div className="mt-0.5 flex items-baseline justify-between gap-3">
+                  <span className="min-w-0 flex-1 truncate text-[16px] font-semibold text-ink">{txTitle(tx)}</span>
+                  <span className="m-num shrink-0 text-[18px] text-ink">{fmtCents(tx.amountCents, tx.currency, lang, { sign: true })}</span>
+                </div>
+                {tx.description && (
+                  // tap to read everything — the clamp sits on an INNER
+                  // span (display on the button kills -webkit-box)
+                  <button
+                    data-testid="review-description"
+                    aria-expanded={descExpanded}
+                    onClick={() => setDescExpanded((v) => !v)}
+                    className="m-tap mt-1 block w-full border-none bg-transparent p-0 text-left font-mono text-[11px] text-ink-4"
+                  >
+                    <span data-testid="review-description-text" className={descExpanded ? '' : 'line-clamp-2'}>
+                      {cleanBankText(tx.description)}
+                    </span>
+                  </button>
+                )}
               </div>
-              <div className="m-h2 mt-1.5 text-ink">{txTitle(tx)}</div>
-              <div className="m-num mt-1 text-[32px] text-ink">{fmtCents(tx.amountCents, tx.currency, lang, { sign: true })}</div>
-              {tx.description && (
-                // tap to read everything — bank descriptions often carry the
-                // detail that identifies a charge (user request). The clamp
-                // sits on an INNER span: line-clamp needs display:-webkit-box
-                // and any display on the same element (block/flex) kills it.
-                <button
-                  data-testid="review-description"
-                  aria-expanded={descExpanded}
-                  onClick={() => setDescExpanded((v) => !v)}
-                  className="m-tap mx-auto mt-2 block max-w-[280px] border-none bg-transparent text-center font-mono text-[11px] text-ink-4"
-                >
-                  <span data-testid="review-description-text" className={descExpanded ? '' : 'line-clamp-2'}>
-                    {cleanBankText(tx.description)}
-                  </span>
-                </button>
-              )}
+              <div className="mx-4 h-px bg-line-2" />
 
-              {/* type leads (user redesign): it decides what the categories
-                  may be — tapping opens the Type sheet */}
-              <div className="mx-auto mt-5 w-full max-w-[300px]" data-testid="review-cats">
+              {/* every decision is a row now (user redesign): counterparty,
+                  type, categories, recurring, event */}
+              <div data-testid="review-cats">
+                <button
+                  data-testid="review-counter-row"
+                  onClick={() => setTypeOpen(true)}
+                  className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
+                >
+                  <Icon name="swap-horizontal" size={18} color="var(--m-ink-3)" />
+                  <span className="min-w-0 flex-1 truncate">{draftCounter?.name ?? t('tx.linkedAccountNone')}</span>
+                  <span className="text-[11px] text-ink-4">{t('tx.counterAccount')}</span>
+                  <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+                </button>
                 <button
                   data-testid="review-type-row"
                   onClick={() => setTypeOpen(true)}
-                  className="m-tap flex w-full items-center gap-2 border-none bg-transparent px-2 py-1.5 text-left text-[15px] font-medium text-ink-2"
+                  className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
                 >
-                  <Icon name={TX_TYPE_VISUAL[draft?.txType ?? tx.txType].icon} size={19} color={TX_TYPE_VISUAL[draft?.txType ?? tx.txType].color} />
+                  <Icon name={TX_TYPE_VISUAL[draft?.txType ?? tx.txType].icon} size={18} color={TX_TYPE_VISUAL[draft?.txType ?? tx.txType].color} />
                   <span className="min-w-0 flex-1 truncate">{draftTypeLabel ?? t(`tx.type.${tx.txType}`)}</span>
+                  <span className="text-[11px] text-ink-4">{t('tx.type')}</span>
                   <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
                 </button>
 
-                {/* the category list: every pencil opens the ONE editor
-                    sheet (add/remove/split rows live there — user redesign) */}
                 {(draft?.splits?.length ? draft.splits : [null]).map((slice) => {
                   const sliceCat = slice ? cats.byId(slice.catId) : cat;
                   const sliceColor = slice
@@ -640,82 +708,77 @@ export function ReviewScreen() {
                       key={slice?.catId ?? 'single'}
                       data-testid={slice ? `review-cat-${slice.catId}` : 'review-category-chip'}
                       onClick={() => setSplitOpen(true)}
-                      className="m-tap flex w-full items-center gap-2 border-none bg-transparent px-2 py-1.5 text-left text-[15px] font-medium text-ink"
+                      className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] font-medium text-ink"
                     >
-                      <Icon name={sliceCat.icon} size={19} color={sliceColor ?? 'var(--m-ink-3)'} />
+                      <Icon name={sliceCat.icon} size={18} color={sliceColor ?? 'var(--m-ink-3)'} />
                       <span className="min-w-0 flex-1 truncate">
                         {slice || draft?.catId ? catName(sliceCat, t) : t('review.pickPrompt')}
                       </span>
-                      {slice && <span className="m-num text-[13px] text-ink-2">{fmtCents(slice.amountCents, tx.currency, lang)}</span>}
-                      <Icon name="pencil-outline" size={14} color="var(--m-ink-4)" />
+                      {slice && <span className="m-num text-[12px] text-ink-2">{fmtCents(slice.amountCents, tx.currency, lang)}</span>}
+                      <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
                     </button>
                   );
                 })}
+
+                <button
+                  data-testid="review-recurring-row"
+                  onClick={() => setRecPickOpen(true)}
+                  className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
+                >
+                  <Icon name="autorenew" size={18} color="var(--m-ink-3)" />
+                  <span className="min-w-0 flex-1 truncate">{recurringRowLabel(recMatch, linkRecurring, manualRec, t)}</span>
+                  <span className="text-[11px] text-ink-4">{t('recurring.linkTitle')}</span>
+                  <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+                </button>
+                {recMatch && linkRecurring && Math.abs(Math.abs(tx.amountCents) - recMatch.amountCents) >= 50 && (
+                  <div className="flex items-center gap-1 px-4 pb-1 text-[11px] text-warning" data-testid="review-rec-delta">
+                    <Icon name={Math.abs(tx.amountCents) > recMatch.amountCents ? 'trending-up' : 'trending-down'} size={12} />
+                    {t(Math.abs(tx.amountCents) > recMatch.amountCents ? 'review.recDeltaMore' : 'review.recDeltaLess', {
+                      amount: fmtCents(Math.abs(Math.abs(tx.amountCents) - recMatch.amountCents), tx.currency, lang),
+                    })}
+                  </div>
+                )}
+
+                <button
+                  data-testid="review-event-row"
+                  onClick={() => setEventPickOpen(true)}
+                  className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
+                >
+                  <Icon name="party-popper" size={18} color="var(--m-ink-3)" />
+                  <span className="min-w-0 flex-1 truncate">{pickedEvent?.name ?? t('events.linkNone')}</span>
+                  <span className="text-[11px] text-ink-4">{t('events.linkTitle')}</span>
+                  <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+                </button>
               </div>
 
-              {recMatch && (
-                <>
-                  <Chip
-                    className="mt-3"
-                    testId="review-link-recurring"
-                    selected={linkRecurring}
-                    onClick={() => setLinkRecurring((v) => !v)}
-                  >
-                    <Icon name={linkRecurring ? 'check' : 'autorenew'} size={13} />
-                    {t('review.linkRecurring', { name: recMatch.name })}
-                  </Chip>
-                  {/* subscription intelligence S3: this charge differs from
-                      what the subscription usually costs — say so quietly */}
-                  {Math.abs(Math.abs(tx.amountCents) - recMatch.amountCents) >= 50 && (
-                    <div className="mt-1.5 flex items-center justify-center gap-1 text-[11px] text-warning" data-testid="review-rec-delta">
-                      <Icon name={Math.abs(tx.amountCents) > recMatch.amountCents ? 'trending-up' : 'trending-down'} size={12} />
-                      {t(Math.abs(tx.amountCents) > recMatch.amountCents ? 'review.recDeltaMore' : 'review.recDeltaLess', {
-                        amount: fmtCents(Math.abs(Math.abs(tx.amountCents) - recMatch.amountCents), tx.currency, lang),
-                      })}
-                    </div>
-                  )}
-                </>
-              )}
-
-              {/* no auto-detected match: the link can still be made by hand
-                  (user request) — the chip opens a picker over the actives */}
-              {!recMatch && activeRecs.length > 0 && (
-                <ManualRecurringChip rec={manualRec} onOpen={() => setRecPickOpen(true)} />
-              )}
-
-              {/* money between my own accounts: pre-marked as a transfer,
-                  one tap opts back out */}
+              {/* contextual offers keep their chip shape under the rows */}
               {ownCounter && draft?.linkedAccountId === ownCounter.id && (
-                <Chip
-                  className="mt-3"
-                  testId="review-own-transfer"
-                  selected
-                  onClick={() => setStagedDraft(withLinkedAccount(draft, null, cats))}
-                >
-                  <Icon name="swap-horizontal" size={13} />
-                  {t('review.ownTransfer', { name: ownCounter.name })}
-                </Chip>
+                <div className="px-4 pb-3">
+                  <Chip
+                    testId="review-own-transfer"
+                    selected
+                    onClick={() => setStagedDraft(withLinkedAccount(draft, null, cats))}
+                  >
+                    <Icon name="swap-horizontal" size={13} />
+                    {t('review.ownTransfer', { name: ownCounter.name })}
+                  </Chip>
+                </div>
               )}
-
-              {/* SP5: incoming money matching an open split settlement to me */}
               {settleMatch && draft && (
-                <Chip
-                  className="mt-3"
-                  testId="review-settle-match"
-                  selected={draft.txType === 'transfer'}
-                  onClick={() => setStagedDraft(stageAsTransfer(draft, cats))}
-                >
-                  <Icon name="handshake-outline" size={13} />
-                  {t('review.settleMatch', {
-                    name: settleMatch.fromName ?? t('review.settleSomeone'),
-                    split: settleMatch.splitName,
-                  })}
-                </Chip>
+                <div className="px-4 pb-3">
+                  <Chip
+                    testId="review-settle-match"
+                    selected={draft.txType === 'transfer'}
+                    onClick={() => setStagedDraft(stageAsTransfer(draft, cats))}
+                  >
+                    <Icon name="handshake-outline" size={13} />
+                    {t('review.settleMatch', {
+                      name: settleMatch.fromName ?? t('review.settleSomeone'),
+                      split: settleMatch.splitName,
+                    })}
+                  </Chip>
+                </div>
               )}
-
-              {/* type moved ABOVE the categories (user redesign); keep the
-                  old testid alive as an invisible alias for muscle memory in
-                  specs is unnecessary — tests updated instead */}
             </div>
 
             <BulkConfirmSection similar={similar} selected={bulkSelected} onChange={setBulkSelected} />
@@ -729,7 +792,7 @@ export function ReviewScreen() {
                 data-testid="review-skip-btn"
                 onClick={() => {
                   captureLeaving();
-                  setSkipped((prev) => new Set([...prev, tx.id]));
+                  updateSkipped((prev) => new Set([...prev, tx.id]));
                 }}
               >
                 {t('review.skip')}
@@ -783,11 +846,91 @@ export function ReviewScreen() {
           open={recPickOpen}
           onOpenChange={setRecPickOpen}
           recurrings={activeRecs}
-          selectedId={manualRecId}
+          selectedId={chosenRecurringId(recMatch, linkRecurring, manualRecId) ?? null}
           currency={tx.currency}
           onPick={(id) => {
-            setManualRecId(id);
+            // the auto-match keeps its toggle semantics: picking it re-arms
+            // the link, "no link" disarms; anything else is a manual pick
+            if (id !== null && id === recMatch?.id) {
+              setLinkRecurring(true);
+              setManualRecId(null);
+            } else {
+              if (recMatch) setLinkRecurring(false);
+              setManualRecId(id);
+            }
             setRecPickOpen(false);
+          }}
+          onCreate={() => {
+            setRecCreating(new Set((recurrings ?? []).map((r) => r.id)));
+            setRecPickOpen(false);
+          }}
+        />
+      )}
+      {/* create-and-return: a fresh recurring auto-attaches to this card */}
+      {recCreating && (
+        <RecurringFormSheet
+          initial={emptyForm()}
+          onClose={() => {
+            const created = (recurrings ?? []).find((r) => !recCreating.has(r.id));
+            if (created) {
+              if (recMatch) setLinkRecurring(false);
+              setManualRecId(created.id);
+            }
+            setRecCreating(null);
+          }}
+        />
+      )}
+      {tx && (
+        <Sheet open={eventPickOpen} onOpenChange={setEventPickOpen} title={t('events.linkTitle')} size="form">
+          <div className="pt-1" data-testid="review-event-list">
+            <button
+              data-testid="review-event-none"
+              onClick={() => {
+                setEventPick(null);
+                setEventPickOpen(false);
+              }}
+              className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-1 py-3 text-left text-[14px] text-ink-2"
+            >
+              <Icon name="close-circle-outline" size={18} color="var(--m-ink-4)" />
+              <span className="min-w-0 flex-1 truncate">{t('events.linkNone')}</span>
+              {!eventPick && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
+            </button>
+            {activeEvents.map((event) => (
+              <button
+                key={event.id}
+                data-testid={`review-event-${event.id}`}
+                onClick={() => {
+                  setEventPick(event.id);
+                  setEventPickOpen(false);
+                }}
+                className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-1 py-3 text-left text-[14px] text-ink"
+              >
+                <Icon name={event.icon ?? 'party-popper'} size={18} color="var(--m-accent-deep)" />
+                <span className="min-w-0 flex-1 truncate">{event.name}</span>
+                {eventPick === event.id && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
+              </button>
+            ))}
+            <button
+              data-testid="review-event-create"
+              onClick={() => {
+                setEventCreating(new Set(activeEvents.map((e) => e.id)));
+                setEventPickOpen(false);
+              }}
+              className="m-tap flex w-full items-center gap-3 px-1 py-3 text-left text-[14px] font-medium text-accent-deep"
+            >
+              <Icon name="plus" size={18} />
+              {t('events.new')}
+            </button>
+          </div>
+        </Sheet>
+      )}
+      {eventCreating && (
+        <EventFormSheet
+          initial="new"
+          onClose={() => {
+            const created = activeEvents.find((e) => !eventCreating.has(e.id));
+            if (created) setEventPick(created.id);
+            setEventCreating(null);
           }}
         />
       )}

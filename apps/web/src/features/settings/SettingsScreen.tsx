@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { config } from '@/app/config';
+import { config, publicOrigin } from '@/app/config';
 import { isNativeApp } from '@/lib/platform';
 import { LOCALES, useLang } from '@/i18n';
 import { destroyIdentityData, useData } from '@/app/data';
@@ -107,7 +107,7 @@ export function SettingsScreen() {
       // (munni://signed-out + munni-dev://signed-out, registered as post
       // sign-out redirect URIs); the deep-link handler brings the app to
       // the login screen. Web keeps its own origin.
-      const postLogout = isNativeApp() ? `${config.nativeScheme}://signed-out` : window.location.origin;
+      const postLogout = isNativeApp() ? `${publicOrigin()}/native-signed-out` : window.location.origin;
       if (!current.testAuth && (await oidcSignOut(postLogout))) return; // full OIDC logout redirects
       await navigate({ to: '/login' });
       return;

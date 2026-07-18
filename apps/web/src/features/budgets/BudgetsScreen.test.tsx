@@ -15,6 +15,8 @@ async function createBudget(name: string, amount: string, catTestId = 'budget-ca
   fireEvent.change(screen.getByTestId('budgetform-anchor'), {
     target: { value: `${past.getFullYear()}-${String(past.getMonth() + 1).padStart(2, '0')}-01` },
   });
+  // mains start collapsed now (user request) — unfold before picking
+  fireEvent.click(await screen.findByTestId('budgetform-fold-consumption'));
   fireEvent.click(await screen.findByTestId(catTestId));
   fireEvent.click(screen.getByTestId('budgetform-save'));
   await screen.findByTestId('screen-budgets');
@@ -51,6 +53,7 @@ describe('Budgets (demo identity)', () => {
 
     fireEvent.click(screen.getByTestId('budgets-add'));
     await screen.findByTestId('screen-budget-form');
+    fireEvent.click(await screen.findByTestId('budgetform-fold-consumption'));
     const conflict = await screen.findByTestId('budget-cat-conflict-groceries');
     expect(conflict.textContent).toContain('Food');
     expect((screen.getByTestId('budget-cat-groceries') as HTMLButtonElement).disabled).toBe(true);

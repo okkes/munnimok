@@ -38,6 +38,8 @@
                 <data android:scheme="https" android:host="${munniHost}" />
                 <data android:pathPrefix="/gc-callback" />
                 <data android:pathPrefix="/splits/join/" />
+                <data android:pathPrefix="/native-auth" />
+                <data android:pathPrefix="/native-signed-out" />
             </intent-filter>
 
             <!-- §5: long-press launcher shortcuts (Review / Transactions) -->

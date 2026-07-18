@@ -403,7 +403,16 @@ export function HomeScreen() {
     const delta = nowCents - prevCents;
     return (
       <>
-        <div className="m-cap mt-5 mb-1 px-1">{t('trends.viewNetworth')}</div>
+        <div className="m-cap mt-5 mb-1 flex items-baseline justify-between px-1">
+          <span>{t('trends.viewNetworth')}</span>
+          <button
+            data-testid="home-seeall-networth"
+            onClick={() => void navigate({ to: '/trends' })}
+            className="m-tap border-none bg-transparent text-[11px] font-semibold text-accent-deep"
+          >
+            {t('action.seeAll')}
+          </button>
+        </div>
         <button
           data-testid="home-networth"
           onClick={() => void navigate({ to: '/trends' })}
@@ -543,7 +552,16 @@ export function HomeScreen() {
     if (upcoming.length === 0) return null;
     return (
       <>
-        <div className="m-cap mt-5 mb-1 px-1">{t('recurring.upcoming')}</div>
+        <div className="m-cap mt-5 mb-1 flex items-baseline justify-between px-1">
+          <span>{t('recurring.upcoming')}</span>
+          <button
+            data-testid="home-seeall-upcoming"
+            onClick={() => void navigate({ to: '/recurring' })}
+            className="m-tap border-none bg-transparent text-[11px] font-semibold text-accent-deep"
+          >
+            {t('action.seeAll')}
+          </button>
+        </div>
         <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="home-upcoming">
           {upcoming.map(({ rec, nextDue }) => (
             <button
@@ -574,7 +592,16 @@ export function HomeScreen() {
     else if (allocLeft < 0) color = 'var(--m-negative)';
     return (
       <>
-        <div className="m-cap mt-5 mb-1 px-1">{t('alloc.title')}</div>
+        <div className="m-cap mt-5 mb-1 flex items-baseline justify-between px-1">
+          <span>{t('alloc.title')}</span>
+          <button
+            data-testid="home-seeall-alloc"
+            onClick={() => void navigate({ to: '/allocate' })}
+            className="m-tap border-none bg-transparent text-[11px] font-semibold text-accent-deep"
+          >
+            {t('action.seeAll')}
+          </button>
+        </div>
         <button
           data-testid="home-allocation"
           onClick={() => void navigate({ to: '/allocate' })}
@@ -673,7 +700,16 @@ export function HomeScreen() {
     else if (from && from > today) statusLine = t('events.upcoming', { date: fmtShort(from) });
     return (
       <>
-        <div className="m-cap mt-5 mb-1 px-1">{t('events.title')}</div>
+        <div className="m-cap mt-5 mb-1 flex items-baseline justify-between px-1">
+          <span>{t('events.title')}</span>
+          <button
+            data-testid="home-seeall-events"
+            onClick={() => void navigate({ to: '/events' })}
+            className="m-tap border-none bg-transparent text-[11px] font-semibold text-accent-deep"
+          >
+            {t('action.seeAll')}
+          </button>
+        </div>
         <button
           data-testid={`home-event-${featuredEvent.id}`}
           onClick={() => void navigate({ to: '/events/$eventId', params: { eventId: featuredEvent.id } })}
@@ -742,7 +778,16 @@ export function HomeScreen() {
     }
     return (
       <>
-        <div className="m-cap mt-5 mb-1 px-1">{t('debts.title')}</div>
+        <div className="m-cap mt-5 mb-1 flex items-baseline justify-between px-1">
+          <span>{t('debts.title')}</span>
+          <button
+            data-testid="home-seeall-debts"
+            onClick={() => void navigate({ to: '/debts' })}
+            className="m-tap border-none bg-transparent text-[11px] font-semibold text-accent-deep"
+          >
+            {t('action.seeAll')}
+          </button>
+        </div>
         <button
           data-testid="home-debts"
           onClick={() => void navigate({ to: '/debts' })}
@@ -768,7 +813,16 @@ export function HomeScreen() {
     const top = insights[0];
     return (
       <>
-        <div className="m-cap mt-5 mb-1 px-1">{t('ins.title')}</div>
+        <div className="m-cap mt-5 mb-1 flex items-baseline justify-between px-1">
+          <span>{t('ins.title')}</span>
+          <button
+            data-testid="home-seeall-insights"
+            onClick={() => void navigate({ to: '/insights' })}
+            className="m-tap border-none bg-transparent text-[11px] font-semibold text-accent-deep"
+          >
+            {t('action.seeAll')}
+          </button>
+        </div>
         <button
           data-testid="home-insight"
           onClick={() => void navigate({ to: '/insights' })}

@@ -18,6 +18,27 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.14.0',
+    date: '2026-07-18',
+    items: [
+      {
+        en: 'Review became a full workbench: every decision — counterparty, type, categories, recurring cost and now events — is an editable row on a calmer, compact card. Missing something? Create a category, recurring cost or event straight from its picker; the deck keeps your place, even when you wander off mid-review. And "also apply to similar" now carries the whole decision to the siblings, not just the category.',
+        nl: 'Beoordelen werd een volwaardige werkbank: elke beslissing — tegenpartij, type, categorieën, terugkerende kosten en nu ook evenementen — is een bewerkbare rij op een rustigere, compacte kaart. Mis je iets? Maak een categorie, terugkerende kostenpost of evenement direct vanuit de kiezer; het dek onthoudt je plek, ook als je tussendoor wegloopt. En "ook toepassen op vergelijkbare" neemt nu de hele beslissing mee naar de broertjes, niet alleen de categorie.',
+        tr: 'İnceleme tam bir çalışma tezgahı oldu: her karar — karşı taraf, tür, kategoriler, düzenli ödeme ve artık etkinlikler — daha sakin, kompakt bir kartta düzenlenebilir bir satır. Bir şey mi eksik? Kategoriyi, düzenli ödemeyi veya etkinliği doğrudan seçicisinden oluştur; desteden ayrılsan bile kaldığın yer korunur. "Benzerlere de uygula" artık yalnızca kategoriyi değil kararın tamamını kardeşlere taşıyor.',
+      },
+      {
+        en: 'Native sign-in loses its last popup: login and logout return through verified https links on the new builds. Also: budget category picking got search and folded groups, progress bars animate again when you switch periods, the budget back-arrow stops at your first cycle, and every Home block has a "See all".',
+        nl: 'Native inloggen verliest zijn laatste popup: in- en uitloggen keren terug via geverifieerde https-links op de nieuwe builds. Verder: budgetcategorieën kiezen kreeg zoeken en ingeklapte groepen, voortgangsbalken animeren weer bij periodewissels, de terugpijl van budgetten stopt bij je eerste cyclus, en elk Home-blok heeft een "Bekijk alles".',
+        tr: 'Yerel giriş son penceresini de kaybetti: yeni sürümlerde giriş ve çıkış doğrulanmış https bağlantılarıyla dönüyor. Ayrıca: bütçe kategorisi seçimine arama ve katlanmış gruplar geldi, ilerleme çubukları dönem değişiminde yeniden animasyonlu, bütçenin geri oku ilk döngünde duruyor ve her Ana sayfa bloğunda "Tümünü gör" var.',
+      },
+      {
+        en: 'Transaction detail: the counterparty row moved above the type row, matching how you read a transfer.',
+        nl: 'Transactiedetail: de tegenpartijrij staat nu boven de typerij, zoals je een overboeking leest.',
+        tr: 'İşlem detayı: karşı taraf satırı, bir transferi okuma sırana uyacak şekilde tür satırının üstüne taşındı.',
+      },
+    ],
+  },
+  {
     version: '2.13.1',
     date: '2026-07-18',
     items: [

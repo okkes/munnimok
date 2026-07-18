@@ -85,8 +85,11 @@ export function BudgetDetailScreen() {
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         {/* period nav */}
         <div className="flex items-center justify-center gap-3 pt-1 pb-3">
-          <IconButton label="‹" testId="budgetdetail-prev" onClick={() => setOffset((o) => o - 1)}>
-            <Icon name="chevron-left" size={20} />
+          {/* HARD stop at the first cycle: the offset used to keep
+              decrementing past it, so "back ×3 too far" needed "forward
+              ×3" to recover (user report) */}
+          <IconButton label="‹" testId="budgetdetail-prev" onClick={() => setOffset((o) => (atStart ? o : o - 1))}>
+            <Icon name="chevron-left" size={20} color={atStart ? 'var(--m-ink-4)' : undefined} />
           </IconButton>
           <span className="min-w-[150px] text-center text-[13px] font-semibold text-ink" data-testid="budgetdetail-period">
             {fmtDate(period.start)} – {fmtDate(period.end)}
@@ -120,6 +123,7 @@ export function BudgetDetailScreen() {
           }
           progress={
             <ProgressBar
+              animateKey={offset}
               value={ratio}
               color={color}
               overlay={
