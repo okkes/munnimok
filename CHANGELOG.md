@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.11.0](https://github.com/okkes/munnimok/compare/v2.10.0...v2.11.0) (2026-07-18)
+
+
+### ✨ Features
+
+* **app:** motion + control batch — animated folds and panes, uncategorized gate, vendored bank logos ([683f068](https://github.com/okkes/munnimok/commit/683f068a08c11925c2df11f3c10d38e14e23e904))
+
 ## [2.10.0](https://github.com/okkes/munnimok/compare/v2.9.0...v2.10.0) (2026-07-18)
 
 
