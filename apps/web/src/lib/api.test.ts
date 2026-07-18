@@ -77,6 +77,7 @@ describe('dead-session handling (401 → retry → re-login)', () => {
     const { useSession } = await import('@/app/session');
     // apiFetch reads the persisted identity, not the store snapshot
     localStorage.setItem('munni_session', JSON.stringify({ kind: 'user', sub: 'stale-user' }));
+    localStorage.setItem('logto:app-id:idToken', 'stale'); // dead SDK state must be shed too
     useSession.setState({ identity: { kind: 'user', sub: 'stale-user' } });
     const calls: string[] = [];
     vi.stubGlobal('fetch', vi.fn(async () => {
@@ -92,6 +93,7 @@ describe('dead-session handling (401 → retry → re-login)', () => {
     expect(res.status).toBe(401);
     expect(calls.length).toBe(2); // original + fresh-token retry
     expect(useSession.getState().identity).toBeNull(); // session cleared
+    expect(localStorage.getItem('logto:app-id:idToken')).toBeNull(); // fresh sign-in guaranteed
     expect(assignSpy).toHaveBeenCalledWith('/#/login');
 
     // a second 401 in the same page load must not loop the navigation

@@ -18,6 +18,17 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.12.1',
+    date: '2026-07-18',
+    items: [
+      {
+        en: 'Changing your password on one device no longer traps other devices in a sign-in loop: a failed sign-in now cleans up after itself, so the next attempt starts fresh — no more deleting the app or clearing the browser to recover.',
+        nl: 'Je wachtwoord wijzigen op één apparaat zet andere apparaten niet langer vast in een inloglus: een mislukte aanmelding ruimt nu zichzelf op, zodat de volgende poging schoon begint — nooit meer de app verwijderen of de browser wissen om te herstellen.',
+        tr: 'Bir cihazda şifreni değiştirmek diğer cihazları artık giriş döngüsüne hapsetmiyor: başarısız bir giriş artık kendini temizliyor, böylece sonraki deneme temiz başlıyor — kurtarmak için uygulamayı silmek ya da tarayıcıyı temizlemek yok.',
+      },
+    ],
+  },
+  {
     version: '2.12.0',
     date: '2026-07-18',
     items: [

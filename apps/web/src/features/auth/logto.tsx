@@ -1,3 +1,4 @@
+import { clearStaleLogtoState } from '@/lib/authState';
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { LogtoProvider, useHandleSignInCallback, useLogto } from '@logto/react';
@@ -140,6 +141,9 @@ function NativeCallbackScreen({ url }: Readonly<{ url: string }>) {
       sessionStorage.removeItem(NATIVE_CALLBACK_KEY);
       // shown on screen AND reported: a native user cannot open devtools
       Sentry.captureException(err);
+      // a failed exchange leaves poisoned SDK state behind — clear it so
+      // the retry starts a fresh sign-in (password-change loop fix)
+      clearStaleLogtoState();
       setFailed(err instanceof Error ? `${err.name}: ${err.message}` : String(err));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -150,7 +154,10 @@ function NativeCallbackScreen({ url }: Readonly<{ url: string }>) {
 function WebCallbackScreen() {
   const finish = useFinishSignIn();
   const { error } = useHandleSignInCallback(() => void finish());
-  if (error) Sentry.captureException(error);
+  if (error) {
+    Sentry.captureException(error);
+    clearStaleLogtoState(); // poisoned exchange state must not survive into the retry
+  }
   return <CallbackShell failed={Boolean(error)} detail={error ? `${error.name}: ${error.message}` : undefined} />;
 }
 
