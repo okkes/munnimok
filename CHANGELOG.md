@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.16.0](https://github.com/okkes/munnimok/compare/v2.15.0...v2.16.0) (2026-07-18)
+
+
+### ✨ Features
+
+* **app:** quota-proof bank linking with consent healer, token single-flight, goal covers ([8277889](https://github.com/okkes/munnimok/commit/82778894732d3fa920e231a0c2fede1f3227e13f))
+
 ## [2.15.0](https://github.com/okkes/munnimok/compare/v2.14.0...v2.15.0) (2026-07-18)
 
 
