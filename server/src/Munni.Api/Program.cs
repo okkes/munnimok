@@ -1,4 +1,5 @@
 using System.Threading.RateLimiting;
+using Sentry.AspNetCore;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.RateLimiting;
@@ -20,6 +21,18 @@ using Munni.Api.Splits;
 using Munni.Api.Sync;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// GlitchTip: every unhandled exception + explicit CaptureException calls.
+// Sentry__Dsn env feeds Sentry:Dsn; an empty DSN (local/dev) disables the
+// SDK entirely — the compose file was already passing the DSN, but the
+// SDK was never wired, so the API was invisible while prod broke.
+builder.WebHost.UseSentry((SentryAspNetCoreOptions options) =>
+{
+    // explicit empty string = SDK disabled (unset would throw at boot)
+    options.Dsn = builder.Configuration["Sentry:Dsn"] ?? string.Empty;
+    options.TracesSampleRate = 0; // errors only, no performance tracing
+    options.SendDefaultPii = false;
+});
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Db")));

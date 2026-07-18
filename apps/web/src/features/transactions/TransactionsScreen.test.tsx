@@ -3,6 +3,11 @@ import 'fake-indexeddb/auto';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { renderApp } from '@/test/harness';
+import { DEMO_SPACE_ID } from '@/db/seed';
+import { HlcClock } from '@/sync/hlc';
+import { Repo } from '@/db/repo';
+import { DexieBackend } from '@/db/backend';
+import { MunniDB } from '@/db/schema';
 
 const rows = () => screen.getByTestId('tx-list').querySelectorAll('[data-testid^="tx-row-"]');
 
@@ -35,15 +40,29 @@ describe('TransactionsScreen (demo identity)', () => {
     await waitFor(() => expect(rows().length).toBe(0));
   });
 
-  it('review chip filters to flagged transactions only', async () => {
+  it('the quick chip narrows to uncategorized transactions (user request: unreviewed lives on Home)', async () => {
     renderApp('/transactions');
     await screen.findByTestId('tx-list');
     await waitFor(() => expect(rows().length).toBeGreaterThan(3));
 
-    fireEvent.click(screen.getByTestId('tx-filter-review'));
-    // demo seed flags exactly 3 transactions for review
-    await waitFor(() => expect(rows().length).toBe(3));
-    fireEvent.click(screen.getByTestId('tx-filter-review'));
+    // one uncategorized expense + one categoryless transfer (excluded by design)
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-uncat'), { trackOutbox: false });
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'uncat-1', {
+      accountId: 'demo_main', date: '2026-06-20', amountCents: -1250, currency: 'EUR',
+      merchant: 'MYSTERY SHOP', catId: 'uncategorized', txType: 'expense', needsReview: 0,
+    });
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'uncat-2', {
+      accountId: 'demo_main', date: '2026-06-21', amountCents: -5000, currency: 'EUR',
+      merchant: 'OWN SAVINGS', catId: 'uncategorized', txType: 'transfer', needsReview: 0,
+    });
+    db.close();
+    await waitFor(() => expect(screen.queryByText('MYSTERY SHOP')).toBeTruthy(), { timeout: 5000 });
+
+    fireEvent.click(screen.getByTestId('tx-filter-uncat'));
+    await waitFor(() => expect(rows().length).toBe(1), { timeout: 5000 });
+    expect(screen.getByText('MYSTERY SHOP')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('tx-filter-uncat'));
     await waitFor(() => expect(rows().length).toBeGreaterThan(3));
   });
 

@@ -1,3 +1,4 @@
+import { reportError } from '@/lib/report';
 import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
 import type { SyncBackend } from './backend';
@@ -122,7 +123,9 @@ export class SyncEngine {
       this.setStatus('idle');
     } catch (err) {
       this.lastError = String(err); // surfaced on the connecting screen
-      this.setStatus(err instanceof TypeError ? 'offline' : 'error'); // fetch network errors are TypeError
+      const offline = err instanceof TypeError; // fetch network errors are TypeError
+      if (!offline) reportError('sync', err); // real faults, not connectivity
+      this.setStatus(offline ? 'offline' : 'error');
     } finally {
       this.running = false;
     }

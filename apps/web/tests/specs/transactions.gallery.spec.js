@@ -31,10 +31,14 @@ for (const V of VARIANTS) {
     await base(page, V, { demo: true });
     await openFirstReviewTx(page);
     await page.click('[data-testid="tx-detail-category-row"]');
+    await page.waitForSelector('[data-testid="split-editor"]'); // ONE unified flow (user request)
+    await page.click('[data-testid="split-cat-0"]');
     await page.waitForSelector('[data-testid="catpicker-videoGame"]');
     await page.waitForTimeout(500); // sheet slide-in
     await shot(page, k('10-tx-recat') + '--s1');
     await page.click('[data-testid="catpicker-videoGame"]');
+    await page.waitForTimeout(400);
+    await page.click('[data-testid="split-save"]');
     await page.waitForTimeout(500); // sheet slide-out
     await expect(page.locator('[data-testid="tx-detail-category-row"]')).toContainText('Video Game');
     // review badge cleared by explicit categorization
@@ -48,6 +52,8 @@ for (const V of VARIANTS) {
     await base(page, V, { demo: true });
     await openFirstReviewTx(page);
     await page.click('[data-testid="tx-detail-category-row"]');
+    await page.waitForSelector('[data-testid="split-editor"]');
+    await page.click('[data-testid="split-cat-0"]');
     await page.waitForSelector('[data-testid="catpicker-search"]');
     await page.fill('[data-testid="catpicker-search"]', 'groc');
     await expect(page.locator('[data-testid="catpicker-groceries"]')).toBeVisible();
@@ -149,8 +155,9 @@ for (const V of VARIANTS) {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V, { demo: true });
     await openFirstReviewTx(page); // dm100: -28.99
-    await page.click('[data-testid="tx-detail-split"]');
+    await page.click('[data-testid="tx-detail-category-row"]');
     await page.waitForSelector('[data-testid="split-editor"]');
+    await page.click('[data-testid="split-add-row"]');
     // assign 20.00 to the first row; second row is open -> remainder shown
     await page.fill('[data-testid="split-amount-0"]', '20,00');
     await expect(page.locator('[data-testid="split-remainder"]')).toContainText('8.99');
@@ -167,15 +174,15 @@ for (const V of VARIANTS) {
     await page.click('[data-testid="split-save"]');
     await page.waitForTimeout(500);
     // breakdown visible; primary category = largest slice (Hobby, 20.00)
-    await expect(page.locator('[data-testid="tx-detail-splits"]')).toContainText('20.00');
-    await expect(page.locator('[data-testid="tx-detail-splits"]')).toContainText('8.99');
+    await expect(page.locator('[data-testid="tx-detail-categories"]')).toContainText('20.00');
+    await expect(page.locator('[data-testid="tx-detail-categories"]')).toContainText('8.99');
     await expect(page.locator('[data-testid="tx-detail-category-row"]')).toContainText('Hobby');
     await shot(page, k('36-tx-split'));
     // clearing restores a single category
-    await page.click('[data-testid="tx-detail-split"]');
+    await page.click('[data-testid="tx-detail-category-row"]');
     await page.click('[data-testid="split-clear"]');
     await page.waitForTimeout(500);
-    await expect(page.locator('[data-testid="tx-detail-splits"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid^="tx-detail-cat-"]')).toHaveCount(0);
     await teardown(page, ctx, k('36-tx-split'));
   });
 

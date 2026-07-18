@@ -7,6 +7,7 @@ import { getApiCapabilities } from '@/lib/api';
 import { useSession } from '@/app/session';
 import { importCamtStatements } from './importCamt';
 import { linkAllCounterparties } from '@/application/counterLink';
+import { applyTitleMemory } from '@/application/titleMemory';
 import { linkPaypalFunding } from '@/application/paypalLink';
 import type { ImportResult } from './importCamt';
 import { apiFeedGateway, fetchMyFeedIds } from './feedGateway';
@@ -192,6 +193,7 @@ export function AccountsScreen() {
   useEffect(() => {
     void linkAllCounterparties(store, repo, spaceId).catch(() => undefined);
     void linkPaypalFunding(store, repo, spaceId).catch(() => undefined);
+    void applyTitleMemory(store, repo, spaceId).catch(() => undefined);
   }, [store, repo, spaceId]);
   const [gcAvailable, setGcAvailable] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
@@ -231,6 +233,7 @@ export function AccountsScreen() {
     // (and vice versa) — retro-link them (user rule)
     await linkAllCounterparties(store, repo, spaceId).catch(() => undefined);
     await linkPaypalFunding(store, repo, spaceId).catch(() => undefined);
+    await applyTitleMemory(store, repo, spaceId).catch(() => undefined);
     // the import may have registered new feeds — refresh ownership so the
     // new accounts classify under MINE, not "shared with me"
     if (feeds) void fetchMyFeedIds().then(setMyFeedIds).catch(() => undefined);

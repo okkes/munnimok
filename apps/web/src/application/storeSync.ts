@@ -1,3 +1,4 @@
+import { reportError } from '@/lib/report';
 import { apiFetch } from '@/lib/api';
 import type { StorageBackend } from '@/db/backend';
 import type { StoreConnectionRow } from '@/db/types';
@@ -124,8 +125,10 @@ export async function pullConnections(store: StorageBackend): Promise<number> {
         await store.storeConnPut(remote);
         adopted++;
       }
-    } catch {
-      // undecryptable blob (rotated CSK?) — never break the pull loop
+    } catch (err) {
+      // undecryptable blob (rotated CSK?) — never break the pull loop,
+      // but DO tell GlitchTip: silent decrypt failures hid real bugs
+      reportError('storesync', err);
     }
   }
   return adopted;

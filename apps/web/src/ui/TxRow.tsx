@@ -1,6 +1,6 @@
 import { LOCALES, useLang } from '@/i18n';
 import { fmtCents } from '@/lib/money';
-import { cleanBankText } from '@/lib/text';
+import { txTitle } from '@/lib/text';
 import { netAmountCents, netCreditCents } from '@/domain/reimbursement';
 import type { TransactionRow } from '@/db/types';
 import { catName, useCategories } from '@/features/categories/useCategories';
@@ -91,7 +91,7 @@ export function TxRow({
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[14px] font-medium text-ink">
-          <Highlight text={cleanBankText(tx.merchant)} query={highlight} />
+          <Highlight text={txTitle(tx)} query={highlight} />
         </span>
         <span className="block truncate text-xs text-ink-3">
           {showDate && (

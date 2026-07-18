@@ -102,8 +102,11 @@ for (const V of VARIANTS) {
 
     // DIFFERENT fields in parallel: A picks a category, B writes a note
     await a.page.click('[data-testid="tx-detail-category-row"]');
+    await a.page.waitForSelector('[data-testid="split-editor"]');
+    await a.page.click('[data-testid="split-cat-0"]');
     await a.page.waitForSelector('[data-testid="catpicker-search"]');
     await a.page.click('[data-testid="catpicker-coffee"]');
+    await a.page.click('[data-testid="split-save"]');
     await b.page.fill('[data-testid="tx-detail-notes"]', 'note from B');
     await b.page.locator('[data-testid="tx-detail-notes"]').blur();
 
@@ -317,8 +320,11 @@ for (const V of VARIANTS) {
     // bob recategorizes a feed transaction; the shared overlay reaches alice
     await bob.page.locator('[data-testid="tx-list"] button:has-text("Jumbo Amsterdam")').first().click();
     await bob.page.click('[data-testid="tx-detail-category-row"]');
+    await bob.page.waitForSelector('[data-testid="split-editor"]');
+    await bob.page.click('[data-testid="split-cat-0"]');
     await bob.page.waitForSelector('[data-testid="catpicker-videoGame"]');
     await bob.page.click('[data-testid="catpicker-videoGame"]');
+    await bob.page.click('[data-testid="split-save"]');
     await bob.page.waitForTimeout(3500); // push
 
     await alice.page.click('[data-testid="tab-transactions"]');

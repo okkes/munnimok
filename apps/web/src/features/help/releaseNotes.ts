@@ -18,6 +18,27 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.12.0',
+    date: '2026-07-18',
+    items: [
+      {
+        en: 'Bank connections are reliable again: a completed consent could be processed twice behind the scenes, which burned the bank\'s daily quota and made connecting look broken — it now completes exactly once, and any failure tells you the provider\'s actual reason.',
+        nl: 'Bankkoppelingen zijn weer betrouwbaar: een afgeronde toestemming kon achter de schermen dubbel verwerkt worden, wat het daglimiet van de bank opbrandde en koppelen kapot deed lijken — het rondt nu precies één keer af, en elke fout vertelt de echte reden van de aanbieder.',
+        tr: 'Banka bağlantıları yeniden güvenilir: tamamlanan bir onay arka planda iki kez işlenebiliyordu; bu, bankanın günlük kotasını tüketip bağlantıyı bozuk gösteriyordu — artık tam olarak bir kez tamamlanıyor ve her hata sağlayıcının gerçek nedenini söylüyor.',
+      },
+      {
+        en: 'Give transactions your own names: rename any transaction in its detail — apply it to similar ones in one go, and munni remembers, renaming future arrivals of that merchant automatically. The bank\'s original always stays visible under Details, and predictions read your names too.',
+        nl: 'Geef transacties je eigen namen: hernoem elke transactie in het detail — pas het in één keer toe op vergelijkbare, en munni onthoudt het en hernoemt toekomstige transacties van die winkel automatisch. Het origineel van de bank blijft altijd zichtbaar onder Details, en voorspellingen lezen jouw namen ook.',
+        tr: 'İşlemlere kendi adlarını ver: herhangi bir işlemi detayında yeniden adlandır — benzerlerine tek seferde uygula; munni bunu hatırlar ve o satıcının gelecekteki işlemlerini otomatik yeniden adlandırır. Bankanın orijinali her zaman Detaylar altında görünür kalır ve tahminler senin adlarını da okur.',
+      },
+      {
+        en: 'The transaction detail reorganized into calm blocks: account & type, categories (edited through the same split flow as review, starting from one category), actions, and a details block with the original amount, original title and bank data. The transactions tab\'s quick filter now surfaces Uncategorized instead of Unreviewed.',
+        nl: 'De transactiedetails zijn gereorganiseerd in rustige blokken: rekening & type, categorieën (bewerkt via dezelfde splitsstroom als beoordelen, beginnend met één categorie), acties, en een detailblok met het oorspronkelijke bedrag, de oorspronkelijke titel en bankgegevens. De sneltoets in het transactietabblad toont nu Ongecategoriseerd in plaats van Onbeoordeeld.',
+        tr: 'İşlem detayı sakin bloklara yeniden düzenlendi: hesap ve tür, kategoriler (incelemedeki bölüşme akışıyla, tek kategoriden başlayarak düzenlenir), işlemler ve orijinal tutar, orijinal başlık ile banka verilerini içeren detay bloğu. İşlemler sekmesindeki hızlı filtre artık İncelenmemiş yerine Kategorisiz gösteriyor.',
+      },
+    ],
+  },
+  {
     version: '2.11.0',
     date: '2026-07-18',
     items: [

@@ -283,8 +283,11 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
 
   it('splits across two categories with auto-balance, then clears the split', async () => {
     renderApp('/transactions/dm6');
-    fireEvent.click(await screen.findByTestId('tx-detail-split'));
+    // ONE unified flow (user request): the category row opens the split
+    // editor seeded with a single row; a second row is added explicitly
+    fireEvent.click(await screen.findByTestId('tx-detail-category-row'));
     await screen.findByTestId('split-editor');
+    fireEvent.click(screen.getByTestId('split-add-row'));
 
     // shrink the first row: a remainder appears and blocks saving
     fireEvent.change(screen.getByTestId('split-amount-0'), { target: { value: '30,00' } });
@@ -299,21 +302,23 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     await waitFor(() => expect((screen.getByTestId('split-save') as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByTestId('split-save'));
 
-    // detail shows the split breakdown
-    const splitsList = await screen.findByTestId('tx-detail-splits');
-    expect(splitsList.textContent).toContain('€30.00');
-    expect(splitsList.textContent).toContain('€22.40');
+    // the categories block shows one row per slice
+    const catBlock = await screen.findByTestId('tx-detail-categories');
+    await waitFor(() => expect(catBlock.textContent).toContain('€30.00'));
+    expect(catBlock.textContent).toContain('€22.40');
+    await screen.findByTestId('tx-detail-cat-restaurants');
 
     // clear the split again
-    fireEvent.click(screen.getByTestId('tx-detail-split'));
+    fireEvent.click(screen.getByTestId('tx-detail-category-row'));
     fireEvent.click(await screen.findByTestId('split-clear'));
-    await waitFor(() => expect(screen.queryByTestId('tx-detail-splits')).toBeNull());
+    await waitFor(() => expect(screen.queryByTestId('tx-detail-cat-restaurants')).toBeNull());
   });
 
   it('percentage mode balances to 100 and stores materialized euro amounts', async () => {
     renderApp('/transactions/dm6');
-    fireEvent.click(await screen.findByTestId('tx-detail-split'));
+    fireEvent.click(await screen.findByTestId('tx-detail-category-row'));
     await screen.findByTestId('split-editor');
+    fireEvent.click(screen.getByTestId('split-add-row'));
 
     // a third row can be added and removed again
     fireEvent.click(screen.getByTestId('split-add-row'));
@@ -335,12 +340,12 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     fireEvent.click(screen.getByTestId('split-save'));
 
     // the detail shows euros: 60/40 of €52.40, exactly partitioned
-    const splitsList = await screen.findByTestId('tx-detail-splits');
-    expect(splitsList.textContent).toContain('€31.44');
-    expect(splitsList.textContent).toContain('€20.96');
+    const catBlock = await screen.findByTestId('tx-detail-categories');
+    await waitFor(() => expect(catBlock.textContent).toContain('€31.44'));
+    expect(catBlock.textContent).toContain('€20.96');
 
     // reopening restores percentage mode with the stored shares
-    fireEvent.click(screen.getByTestId('tx-detail-split'));
+    fireEvent.click(screen.getByTestId('tx-detail-category-row'));
     await screen.findByTestId('split-editor');
     await waitFor(() => expect((screen.getByTestId('split-amount-0') as HTMLInputElement).value).toBe('60'));
     expect((screen.getByTestId('split-amount-1') as HTMLInputElement).value).toBe('40');
@@ -369,7 +374,9 @@ describe('bulk apply from the detail (user request)', () => {
 
     renderApp('/transactions/blk-a');
     fireEvent.click(await screen.findByTestId('tx-detail-category-row'));
+    fireEvent.click(await screen.findByTestId('split-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-hobby'));
+    fireEvent.click(screen.getByTestId('split-save'));
 
     // the offer names the ONE other BULKSHOP row (reviewed or not)
     const offer = await screen.findByTestId('tx-detail-bulk-offer');
@@ -398,7 +405,9 @@ describe('bulk apply from the detail (user request)', () => {
 
     renderApp('/transactions/sel-a');
     fireEvent.click(await screen.findByTestId('tx-detail-category-row'));
+    fireEvent.click(await screen.findByTestId('split-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-hobby'));
+    fireEvent.click(screen.getByTestId('split-save'));
 
     // open the selection sheet from the bar, uncheck one target
     fireEvent.click(await screen.findByTestId('tx-detail-bulk-expand'));
@@ -414,6 +423,46 @@ describe('bulk apply from the detail (user request)', () => {
       expect((await db.transactions.get('sel-c'))?.catId).toBe('hobby');
     });
     expect((await db.transactions.get('sel-b'))?.catId).toBe('groceries'); // unchecked stays
+    db.close();
+  }, 15_000);
+});
+
+describe('title rename (user request)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase('munni_demo');
+  });
+
+  it('renames the title, keeps the original visible, and bulk-applies to similar rows', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-title'), { trackOutbox: false });
+    for (const id of ['ttl-a', 'ttl-b']) {
+      await repo.upsert('transaction', DEMO_SPACE_ID, id, {
+        accountId: 'demo_main', date: '2026-06-01', amountCents: -900, currency: 'EUR',
+        merchant: 'ODIDO NETHERLANDS B.V.', catId: 'telecom', txType: 'expense', needsReview: 0,
+        importRef: `bank-${id}`, // imported rows get the rename pencil
+      });
+    }
+    cleanup();
+
+    renderApp('/transactions/ttl-a');
+    fireEvent.click(await screen.findByTestId('tx-detail-rename'));
+    fireEvent.change(await screen.findByTestId('tx-rename-input'), { target: { value: 'Odido' } });
+    fireEvent.click(screen.getByTestId('tx-rename-save'));
+
+    // the details block keeps the bank's original in sight
+    await waitFor(() => expect(screen.getByTestId('tx-detail-original-title').textContent).toContain('ODIDO NETHERLANDS'));
+
+    // the bulk bar offers the sibling; applying renames it too
+    await screen.findByTestId('tx-detail-title-bulk');
+    fireEvent.click(screen.getByTestId('tx-detail-bulk-apply'));
+    await waitFor(async () => {
+      expect((await db.transactions.get('ttl-b'))?.titleOverride).toBe('Odido');
+    });
+    expect((await db.transactions.get('ttl-a'))?.titleOverride).toBe('Odido');
     db.close();
   }, 15_000);
 });

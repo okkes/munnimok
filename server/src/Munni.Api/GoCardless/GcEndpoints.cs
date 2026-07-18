@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Sentry;
 using Microsoft.Extensions.Caching.Memory;
 using Munni.Api.Auth;
 using Munni.Api.Banking;
@@ -161,7 +162,19 @@ public static partial class GcEndpoints
             var requisition = await db.GcRequisitions.FindAsync(reference);
             if (requisition is null || (userId is not null && requisition.UserId != userId)) return Results.NotFound();
 
+            // IDEMPOTENT: callbacks re-fire (page reload, hosted page AND
+            // in-app, retries) — a second complete must not re-run the
+            // ingest: it burns the provider's per-account daily quota and
+            // the resulting 429 surfaced as a bare 500 (outage 2026-07-18)
+            if (requisition.Status == "linked")
+            {
+                var alreadyLinked = await db.GcLinkedAccounts.CountAsync(a => a.RequisitionId == requisition.Id);
+                return Results.Ok(new CompleteResponse("LN", alreadyLinked, 0, requisition.AppScheme));
+            }
+
             var gc = registry.For(requisition.Provider);
+            try
+            {
             var status = await gc.CompleteAuthAsync(requisition.RequisitionId, code);
             // Enable Banking mints its session id at complete time
             if (status.Id != requisition.RequisitionId) requisition.RequisitionId = status.Id;
@@ -213,5 +226,14 @@ public static partial class GcEndpoints
             requisition.Status = "linked";
             await db.SaveChangesAsync();
             return Results.Ok(new CompleteResponse(status.Status, linkedCount, imported, requisition.AppScheme));
+            }
+            catch (Exception ex)
+            {
+                // name the provider and its reason — the app relays this
+                // (self-diagnosing rule); SentrySdk sees it via the logger
+                SentrySdk.CaptureException(ex);
+                var detail = ex.Message.Length > 300 ? ex.Message[..300] : ex.Message;
+                return Results.Problem(title: $"{requisition.Provider} completion failed", detail: detail, statusCode: 502);
+            }
     }
 }

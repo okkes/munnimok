@@ -119,6 +119,8 @@ export interface TransactionRow extends SyncEnvelope {
   amountCents: number; // negative = money out
   currency: string;
   merchant: string;
+  /** user-chosen display title; the bank's merchant stays untouched */
+  titleOverride?: string;
   description?: string;
   catId?: string;
   splits?: TxSplit[];
@@ -156,6 +158,8 @@ export interface TxMetaRow extends SyncEnvelope {
   txType: TxType;
   needsReview: 0 | 1;
   notes?: string;
+  /** user-chosen display title; the bank's merchant stays untouched */
+  titleOverride?: string;
   splits?: TxSplit[];
   reimbursements?: TxReimbursement[];
   linkedAccountId?: string;

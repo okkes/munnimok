@@ -1,3 +1,4 @@
+import { reportError } from '@/lib/report';
 import { useEffect, useRef, useState } from 'react';
 import { useLogto } from '@logto/react';
 import { useLang } from '@/i18n';
@@ -55,6 +56,7 @@ export function BankConnectSheet({ open, onOpenChange }: Readonly<{ open: boolea
         if (!res.ok) throw new Error(await problemLine(res));
         setInstitutions((await res.json()) as Institution[]);
       } catch (err) {
+        reportError('openbanking', err);
         setFailDetail(err instanceof Error && err.message ? err.message : null);
         setFailed(true);
       }
@@ -85,6 +87,7 @@ export function BankConnectSheet({ open, onOpenChange }: Readonly<{ open: boolea
       sessionStorage.setItem('munni_gc_ref', reference);
       window.location.href = link; // off to the bank
     } catch (err) {
+      reportError('openbanking', err);
       setFailDetail(err instanceof Error && err.message ? err.message : null);
       setFailed(true);
       setBusy(false);
@@ -197,8 +200,9 @@ function GcCallbackWithLogto() {
   return <GcCallbackInner bearer={bearer} />;
 }
 
-function GcCallbackInner({ bearer }: { bearer: string | null }) {
+function GcCallbackInner({ bearer }: Readonly<{ bearer: string | null }>) {
   const [state, setState] = useState<'working' | 'done' | 'failed'>('working');
+  const [detail, setDetail] = useState<string | null>(null);
   const [appScheme, setAppScheme] = useState<string | null>(null);
   const started = useRef(false);
 
@@ -227,24 +231,31 @@ function GcCallbackInner({ bearer }: { bearer: string | null }) {
         if (bearer) headers.Authorization = `Bearer ${bearer}`;
         const query = code ? `?code=${encodeURIComponent(code)}` : '';
         const res = await apiFetch(`/gocardless/requisitions/${reference}/complete${query}`, { method: 'POST', headers });
-        if (!res.ok) throw new Error(String(res.status));
+        if (!res.ok) throw new Error(await problemLine(res));
         const payload = (await res.json().catch(() => null)) as { appScheme?: string | null } | null;
         if (payload?.appScheme) setAppScheme(payload.appScheme);
         sessionStorage.removeItem('munni_gc_ref');
         setState('done');
-      } catch {
+      } catch (err) {
+        reportError('openbanking', err);
+        // the server names WHICH provider refused and why (self-diagnosing)
+        setDetail(err instanceof Error && err.message ? err.message : null);
         setState('failed');
       }
     })();
   }, [bearer]);
 
-  return <GcCallbackShell state={state} appScheme={appScheme} />;
+  return <GcCallbackShell state={state} appScheme={appScheme} detail={detail} />;
 }
 
 const SHELL_ICONS = { working: 'bank-outline', done: 'check-circle-outline', failed: 'alert-circle-outline' } as const;
 const SHELL_TEXT_KEYS = { working: 'gc.completing', done: 'gc.done', failed: 'gc.failed' } as const;
 
-function GcCallbackShell({ state, appScheme }: { state: 'working' | 'done' | 'failed'; appScheme?: string | null }) {
+function GcCallbackShell({
+  state,
+  appScheme,
+  detail,
+}: Readonly<{ state: 'working' | 'done' | 'failed'; appScheme?: string | null; detail?: string | null }>) {
   const { t } = useLang();
 
   // consent started in the native app: the moment the hosted page is
@@ -266,6 +277,11 @@ function GcCallbackShell({ state, appScheme }: { state: 'working' | 'done' | 'fa
         color={state === 'failed' ? 'var(--m-negative)' : 'var(--m-accent)'}
       />
       <div className="m-h3 text-ink">{t(SHELL_TEXT_KEYS[state])}</div>
+      {state === 'failed' && detail && (
+        <p className="max-w-[300px] font-mono text-[11px] text-ink-4" data-testid="gc-complete-error-detail">
+          {detail}
+        </p>
+      )}
       {state === 'done' && (
         // bank-app detours land this screen in a browser tab, not the
         // installed app — say out loud that closing the tab is fine

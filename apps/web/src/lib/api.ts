@@ -48,6 +48,8 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
       // login screen instead of sitting on "server unreachable" until a
       // manual sign-out (user report).
       handlingAuthExpiry = true;
+      const { reportError } = await import('@/lib/report');
+      reportError('auth', new Error('refresh token dead: forced re-login after double 401'));
       const { useSession } = await import('@/app/session');
       useSession.getState().logout();
       globalThis.location.assign('/#/login');

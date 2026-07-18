@@ -33,7 +33,7 @@ export function TransactionsScreen() {
   const navigate = useNavigate();
   const [addOpen, setAddOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [reviewOnly, setReviewOnly] = useState(false);
+  const [uncatOnly, setUncatOnly] = useState(false);
   const [filters, setFilters] = useState<SheetFilters>(EMPTY_FILTERS);
   const [filterOpen, setFilterOpen] = useState(false);
   const cats = useCategories();
@@ -89,7 +89,7 @@ export function TransactionsScreen() {
     const matched = filterTxs(allTxs, {
       query,
       accountIds: filters.accountIds,
-      onlyNeedsReview: reviewOnly,
+      onlyUncategorized: uncatOnly,
       catIds,
       txTypes: filters.txTypes,
       from: filters.from,
@@ -97,11 +97,11 @@ export function TransactionsScreen() {
     });
     matched.sort((a, b) => b.date.localeCompare(a.date));
     return matched.slice(0, 200);
-  }, [allTxs, query, filters, reviewOnly, catIds]);
+  }, [allTxs, query, filters, uncatOnly, catIds]);
 
   const groups = groupByDate(txs ?? []);
   const activeCount = countActive(filters);
-  const filtering = !!query || reviewOnly || !!catIds || activeCount > 0;
+  const filtering = !!query || uncatOnly || !!catIds || activeCount > 0;
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-transactions">
@@ -139,8 +139,8 @@ export function TransactionsScreen() {
               </span>
             )}
           </Chip>
-          <Chip testId="tx-filter-review" tone="warning" selected={reviewOnly} onClick={() => setReviewOnly((v) => !v)}>
-            {t('tx.unreviewed')}
+          <Chip testId="tx-filter-uncat" tone="warning" selected={uncatOnly} onClick={() => setUncatOnly((v) => !v)}>
+            {t('tx.uncategorizedFilter')}
           </Chip>
           {activeCount > 0 && (
             <button

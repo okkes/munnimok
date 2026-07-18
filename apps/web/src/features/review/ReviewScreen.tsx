@@ -22,7 +22,7 @@ import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { fmtCents } from '@/lib/money';
-import { cleanBankText } from '@/lib/text';
+import { cleanBankText, txTitle } from '@/lib/text';
 import { HelpButton } from '@/features/help/HelpButton';
 import { IntroCard } from '@/features/help/IntroCard';
 import { AppBar, IconButton } from '@/ui/AppBar';
@@ -391,7 +391,7 @@ export function ReviewScreen() {
   const tx = remaining?.[0];
 
   const prediction = useMemo(
-    () => (tx && memory ? predictTx({ memory, merchant: tx.merchant, description: tx.description, amountCents: tx.amountCents }) : null),
+    () => (tx && memory ? predictTx({ memory, merchant: tx.merchant, titleOverride: tx.titleOverride, description: tx.description, amountCents: tx.amountCents }) : null),
     [tx, memory],
   );
 
@@ -596,7 +596,7 @@ export function ReviewScreen() {
                 {new Intl.DateTimeFormat(LOCALES[lang], { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(tx.date))}
                 {cardAccount && <span> · {cardAccount.name}</span>}
               </div>
-              <div className="m-h2 mt-1.5 text-ink">{cleanBankText(tx.merchant)}</div>
+              <div className="m-h2 mt-1.5 text-ink">{txTitle(tx)}</div>
               <div className="m-num mt-1 text-[32px] text-ink">{fmtCents(tx.amountCents, tx.currency, lang, { sign: true })}</div>
               {tx.description && (
                 // tap to read everything — bank descriptions often carry the

@@ -49,6 +49,8 @@ export interface TxPrediction {
 export interface PredictInput {
   memory?: MerchantMemory;
   merchant: string;
+  /** the user's rename — keyword matching reads it too (user request) */
+  titleOverride?: string;
   description?: string;
   amountCents: number;
   /** operator-published keyword rules (catalog document) — merged in
@@ -77,7 +79,7 @@ export function predictTx(input: PredictInput): TxPrediction | null {
   }
   const direction = input.amountCents >= 0 ? 'credit' : 'debit';
   const catId = predictCategory(
-    `${input.merchant} ${input.description ?? ''}`,
+    `${input.merchant} ${input.titleOverride ?? ''} ${input.description ?? ''}`,
     direction,
     input.keywordRules ? [...input.keywordRules, ...KEYWORD_RULES] : KEYWORD_RULES,
   );

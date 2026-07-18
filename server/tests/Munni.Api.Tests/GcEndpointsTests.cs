@@ -213,6 +213,17 @@ public class GcEndpointsTests : IClassFixture<GcApiFactory>
         var connections = await client.GetFromJsonAsync<List<Dictionary<string, object?>>>("/gocardless/connections");
         Assert.Contains(connections!, c => (c["iban"]?.ToString() ?? "") == "NL69INGB0123456789");
         Assert.Empty((await outsider.GetFromJsonAsync<List<Dictionary<string, object?>>>("/gocardless/connections"))!);
+
+        // IDEMPOTENT: a re-fired callback (reload / hosted + in-app race)
+        // answers from our own table without touching the provider again —
+        // re-ingesting burned the daily quota and 500ed (outage 2026-07-18)
+        var froms = _factory.Gc.TransactionFroms.Count;
+        var again = await (await client.PostAsync($"/gocardless/requisitions/{created.Reference}/complete", null))
+            .Content.ReadFromJsonAsync<CompleteResponse>();
+        Assert.Equal("LN", again!.Status);
+        Assert.Equal(1, again.LinkedAccounts);
+        Assert.Equal(0, again.ImportedTransactions);
+        Assert.Equal(froms, _factory.Gc.TransactionFroms.Count); // no new provider calls
     }
 
     [Fact]

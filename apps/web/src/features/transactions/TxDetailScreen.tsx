@@ -12,12 +12,12 @@ import type { TFunc } from '@/i18n';
 import { useData } from '@/app/data';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { fmtCents } from '@/lib/money';
-import { cleanBankText, humanizeBankKeys } from '@/lib/text';
+import { cleanBankText, humanizeBankKeys, txTitle } from '@/lib/text';
 import { AppBar, IconButton } from '@/ui/AppBar';
+import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Pill } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
-import { CategoryPicker } from '@/features/categories/CategoryPicker';
 import { givenCents, netAmountCents, netCreditCents, totalReimbursedCents } from '@/domain/reimbursement';
 import { normalizeIban } from '@/domain/feedIds';
 import { ReceiptSection } from '@/features/shopping/ReceiptSection';
@@ -33,6 +33,94 @@ import type { SpaceTx } from '@/application/transactions';
 import type { TxType } from '@/db/types';
 
 const DATE_FMT: Record<string, string> = { en: 'en-GB', nl: 'nl-NL', tr: 'tr-TR' };
+
+/** the categories block's rows: one per slice (or the single category),
+ *  every pencil opening the ONE unified split editor (review parity) */
+function CategorySlices({
+  tx,
+  cats,
+  fallbackCat,
+  fallbackColor,
+  onEdit,
+}: Readonly<{
+  tx: SpaceTx;
+  cats: ReturnType<typeof useCategories>;
+  fallbackCat: ReturnType<ReturnType<typeof useCategories>['byId']>;
+  fallbackColor: string;
+  onEdit: () => void;
+}>) {
+  const { t, lang } = useLang();
+  return (
+    <>
+      {(tx.splits?.length ? tx.splits : [null]).map((slice, i) => {
+        const rowCat = slice ? cats.byId(slice.catId) : fallbackCat;
+        const rowColor = slice ? (rowCat.color ?? cats.byId(rowCat.parentId ?? '').color) : fallbackColor;
+        const parentName = rowCat.parentId ? catName(cats.byId(rowCat.parentId), t) : t(`tx.type.${tx.txType}`);
+        return (
+          <button
+            key={slice?.catId ?? 'single'}
+            data-testid={i === 0 ? 'tx-detail-category-row' : `tx-detail-cat-${slice?.catId}`}
+            onClick={onEdit}
+            className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-4 py-3.5 text-left last:border-0"
+          >
+            <Icon name={rowCat.icon} size={20} color={rowColor ?? 'var(--m-ink-3)'} />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[15px] text-ink">{catName(rowCat, t)}</span>
+              <span className="block text-[11px] text-ink-4">{parentName}</span>
+            </span>
+            {i === 0 && tx.needsReview === 1 && <Pill tone="warning">{t('tx.unreviewed')}</Pill>}
+            {slice && <span className="m-num text-[13px] text-ink-2">{fmtCents(slice.amountCents, tx.currency, lang)}</span>}
+            <Icon name="pencil-outline" size={16} color="var(--m-ink-4)" />
+          </button>
+        );
+      })}
+    </>
+  );
+}
+
+/** the DETAILS block: the facts underneath the user's edits — the
+ *  original amount (reimbursements shrank it), the bank's original
+ *  title (renamed), and the raw bank data */
+function DetailFacts({ tx, givenOut }: Readonly<{ tx: SpaceTx; givenOut: number }>) {
+  const { t, lang } = useLang();
+  if (!(totalReimbursedCents(tx) > 0 || givenOut > 0 || tx.titleOverride || tx.description)) return null;
+  return (
+    <>
+      <div className="m-cap mt-5 mb-1 px-1">{t('tx.detailsSection')}</div>
+      <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="tx-detail-facts">
+        {(totalReimbursedCents(tx) > 0 || givenOut > 0) && (
+          <div className="flex items-center justify-between border-b border-line-2 px-4 py-3 text-[14px] last:border-0">
+            <span className="text-ink-3">{t('tx.originalAmount')}</span>
+            <span className="m-num text-ink" data-testid="tx-detail-original-amount">
+              {fmtCents(tx.amountCents, tx.currency, lang, { sign: true })}
+            </span>
+          </div>
+        )}
+        {!!tx.titleOverride && (
+          <div className="flex items-center justify-between gap-3 border-b border-line-2 px-4 py-3 text-[14px] last:border-0">
+            <span className="shrink-0 text-ink-3">{t('tx.originalTitle')}</span>
+            <span className="min-w-0 truncate text-ink" data-testid="tx-detail-original-title">
+              {cleanBankText(tx.merchant)}
+            </span>
+          </div>
+        )}
+        {tx.description && (
+          <div className="mx-4 my-3 rounded-xl bg-bg-2 px-3 py-2.5" data-testid="tx-detail-bankdata">
+            <div className="mb-1 flex items-center gap-1.5 text-[10px] font-medium tracking-wide text-ink-4 uppercase">
+              <Icon name="bank-outline" size={12} />
+              {t('tx.bankDetails')}
+            </div>
+            <div className="font-mono text-xs break-words text-ink-3">{humanizeBankKeys(cleanBankText(tx.description))}</div>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+/** every other transaction of this merchant that still differs */
+const similarTo = (allTxs: SpaceTx[] | undefined, tx: SpaceTx, differs: (item: SpaceTx) => boolean): SpaceTx[] =>
+  (allTxs ?? []).filter((item) => item.id !== tx.id && merchantKey(item.merchant) === merchantKey(tx.merchant) && differs(item));
 
 /** desktop panes get a CLOSE (leave the detail); mobile keeps history-back */
 function DetailBackButton({ panes, onClose, t }: Readonly<{ panes: boolean; onClose: () => void; t: TFunc }>) {
@@ -158,12 +246,77 @@ function DetailBulkBar({
   );
 }
 
+/**
+ * Rename a transaction's display title (user request). The bank's
+ * merchant is shown underneath and never changes — clearing the field
+ * (or typing the original) removes the override again.
+ */
+function RenameTitleSheet({
+  open,
+  onOpenChange,
+  original,
+  value,
+  onSave,
+}: Readonly<{
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  original: string;
+  value: string;
+  onSave: (title: string) => void;
+}>) {
+  const { t } = useLang();
+  const [draft, setDraft] = useState(value);
+  const last = useRef(open);
+  if (open && !last.current) setDraft(value); // fresh open re-seeds
+  last.current = open;
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange} title={t('tx.renameTitle')} size="compact">
+      <input
+        data-testid="tx-rename-input"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        placeholder={original}
+        className="h-11 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+      />
+      <p className="mt-2 text-[12px] text-ink-4">{t('tx.renameOriginal', { name: original })}</p>
+      <div className="mt-4 flex gap-2">
+        <Button
+          variant="outline"
+          data-testid="tx-rename-reset"
+          onClick={() => {
+            onSave('');
+            onOpenChange(false);
+          }}
+        >
+          {t('tx.renameReset')}
+        </Button>
+        <Button
+          variant="primary"
+          className="min-w-0 flex-1"
+          data-testid="tx-rename-save"
+          onClick={() => {
+            onSave(draft);
+            onOpenChange(false);
+          }}
+        >
+          {t('action.save')}
+        </Button>
+      </div>
+    </Sheet>
+  );
+}
+
 export function TxDetailScreen() {
   const { t, lang } = useLang();
   const { store, repo, spaceId } = useData();
   const { txId } = useParams({ strict: false }) as { txId: string };
-  const [pickerOpen, setPickerOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
+  // title bulk (user request): renaming offers the same pick-and-apply
+  // flow as categories, and the memory teaches future arrivals
+  const [titleBulk, setTitleBulk] = useState<{ title: string } | null>(null);
+  const [titleSelected, setTitleSelected] = useState<ReadonlySet<string>>(new Set());
   const [typeOpen, setTypeOpen] = useState(false);
   const [splitOpen, setSplitOpen] = useState(false);
   const [recurringOpen, setRecurringOpen] = useState(false);
@@ -231,18 +384,32 @@ export function TxDetailScreen() {
     void transform(tx, { catId, txType, needsReview: 0 });
     // bulk mechanism from the detail too (user request) — unlike review
     // it reaches EVERYTHING of this merchant, reviewed included
-    const similar = (allTxs ?? []).filter(
-      (item) => item.id !== tx.id && merchantKey(item.merchant) === merchantKey(tx.merchant) && item.catId !== catId,
-    );
+    const similar = similarTo(allTxs, tx, (item) => item.catId !== catId);
     setBulkOffer(similar.length > 0 ? { catId, txType, count: similar.length } : null);
     setBulkSelected(new Set(similar.map((item) => item.id)));
   };
 
-  const bulkTargets = bulkOffer
-    ? (allTxs ?? []).filter(
-        (item) => item.id !== tx.id && merchantKey(item.merchant) === merchantKey(tx.merchant) && item.catId !== bulkOffer.catId,
-      )
-    : [];
+  const bulkTargets = bulkOffer ? similarTo(allTxs, tx, (item) => item.catId !== bulkOffer.catId) : [];
+
+  /** rename: '' clears the override (LWW needs the explicit value) */
+  const renameTitle = (raw: string) => {
+    const title = raw.trim();
+    const next = title && title !== cleanBankText(tx.merchant) ? title : '';
+    void transform(tx, { titleOverride: next });
+    const similar = similarTo(allTxs, tx, (item) => (item.titleOverride ?? '') !== next);
+    setTitleBulk(next && similar.length > 0 ? { title: next } : null);
+    setTitleSelected(new Set(similar.map((item) => item.id)));
+  };
+
+  const titleTargets = titleBulk ? similarTo(allTxs, tx, (item) => (item.titleOverride ?? '') !== titleBulk.title) : [];
+
+  const applyTitleBulk = async () => {
+    if (!titleBulk) return;
+    for (const item of titleTargets.filter((target) => titleSelected.has(target.id))) {
+      await transform(item, { titleOverride: titleBulk.title });
+    }
+    setTitleBulk(null);
+  };
 
   const applyBulk = async () => {
     if (!bulkOffer) return;
@@ -270,13 +437,18 @@ export function TxDetailScreen() {
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-tx-detail">
       <AppBar
-        title={cleanBankText(tx.merchant)}
+        title={txTitle(tx)}
         leading={
           <DetailBackButton panes={panes} onClose={() => void navigate({ to: '/transactions', replace: true })} t={t} />
         }
         trailing={
-          // bank-imported rows are the bank's truth — only manual txs are editable
-          tx.importRef ? undefined : (
+          // manual rows edit everything via the form; bank rows are the
+          // bank's truth — but the display TITLE is the user's (rename)
+          tx.importRef ? (
+            <IconButton label={t('tx.renameTitle')} testId="tx-detail-rename" onClick={() => setRenameOpen(true)}>
+              <Icon name="pencil-outline" size={20} />
+            </IconButton>
+          ) : (
             <IconButton label={t('action.edit')} testId="tx-detail-edit" onClick={() => setEditOpen(true)}>
               <Icon name="pencil-outline" size={20} />
             </IconButton>
@@ -310,53 +482,22 @@ export function TxDetailScreen() {
           )}
         </div>
 
-        <div className="overflow-hidden rounded-card border border-line bg-surface">
-          <div className="flex items-center">
-            <button
-              data-testid="tx-detail-category-row"
-              onClick={() => setPickerOpen(true)}
-              className="m-tap flex min-w-0 flex-1 items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
-            >
-              <Icon name={cat.icon} size={20} color={color} />
-              <span className="flex-1">{catName(cat, t)}</span>
-              {tx.needsReview === 1 && <Pill tone="warning">{t('tx.unreviewed')}</Pill>}
-              <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-            </button>
-            <button
-              data-testid="tx-detail-split"
-              aria-label={t('split.action')}
-              onClick={() => setSplitOpen(true)}
-              className="m-tap mr-3 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-none bg-bg-2 text-ink-3"
-            >
-              <Icon name="call-split" size={17} />
-            </button>
-          </div>
-          {bulkOffer && (
+        {/* title bulk: right under the header so a rename's reach is
+            the first thing on screen */}
+        {titleBulk && (
+          <div className="mb-3 overflow-hidden rounded-card border border-line bg-surface" data-testid="tx-detail-title-bulk">
             <DetailBulkBar
-              targets={bulkTargets}
-              selected={bulkSelected}
-              onChange={setBulkSelected}
-              onApply={() => void applyBulk()}
-              onDismiss={() => setBulkOffer(null)}
+              targets={titleTargets}
+              selected={titleSelected}
+              onChange={setTitleSelected}
+              onApply={() => void applyTitleBulk()}
+              onDismiss={() => setTitleBulk(null)}
             />
-          )}
-          {!!tx.splits?.length && (
-            <div className="px-4 pb-3" data-testid="tx-detail-splits">
-              {tx.splits.map((s) => {
-                const sc = cats.byId(s.catId);
-                return (
-                  <div key={s.catId} className="flex items-center gap-2 py-1 text-[13px] text-ink-2">
-                    <Icon name={sc.icon} size={15} color={sc.color ?? cats.byId(sc.parentId ?? '').color} />
-                    <span className="flex-1 truncate">{catName(sc, t)}</span>
-                    <span className="m-num">{fmtCents(s.amountCents, tx.currency, lang)}</span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-          <div className="mx-4 h-px bg-line-2" />
-          {/* the type was a small right-side label on this row and read as
-              part of the account — invisible (user report). It owns a row now. */}
+          </div>
+        )}
+
+        {/* block: account · type · counterparty */}
+        <div className="overflow-hidden rounded-card border border-line bg-surface">
           <div className="flex items-center gap-3 px-4 py-3.5 text-[15px] text-ink" data-testid="tx-detail-account-row">
             <Icon name="bank-outline" size={20} color="var(--m-ink-3)" />
             <span className="min-w-0 flex-1">
@@ -388,9 +529,29 @@ export function TxDetailScreen() {
             onOpenAccount={() => setCounterOpen(true)}
             onEdit={() => setTypeOpen(true)}
           />
-          {tx.txType === 'expense' && (
-            <>
-              <div className="mx-4 h-px bg-line-2" />
+        </div>
+
+        {/* block: categories — one row per slice, every pencil opens the
+            unified split editor (review parity, user request) */}
+        <div className="m-cap mt-5 mb-1 px-1">{t('screen.categories')}</div>
+        <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="tx-detail-categories">
+          <CategorySlices tx={tx} cats={cats} fallbackCat={cat} fallbackColor={color} onEdit={() => setSplitOpen(true)} />
+          {bulkOffer && (
+            <DetailBulkBar
+              targets={bulkTargets}
+              selected={bulkSelected}
+              onChange={setBulkSelected}
+              onApply={() => void applyBulk()}
+              onDismiss={() => setBulkOffer(null)}
+            />
+          )}
+        </div>
+
+        {/* block: actions — recurring + event links */}
+        {tx.txType === 'expense' && (
+          <>
+            <div className="m-cap mt-5 mb-1 px-1">{t('tx.actionsSection')}</div>
+            <div className="overflow-hidden rounded-card border border-line bg-surface">
               <button
                 data-testid="tx-detail-recurring-row"
                 onClick={() => setRecurringOpen(true)}
@@ -405,10 +566,6 @@ export function TxDetailScreen() {
                 {!tx.recurringId && <span className="text-xs text-ink-4">{t('recurring.linkNone')}</span>}
                 <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
               </button>
-            </>
-          )}
-          {tx.txType === 'expense' && (
-            <>
               <div className="mx-4 h-px bg-line-2" />
               <button
                 data-testid="tx-detail-event-row"
@@ -422,23 +579,12 @@ export function TxDetailScreen() {
                 {!tx.eventId && <span className="text-xs text-ink-4">{t('events.linkNone')}</span>}
                 <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
               </button>
-            </>
-          )}
-          {tx.description && (
-            <>
-              <div className="mx-4 h-px bg-line-2" />
-              {/* framed + labeled so raw bank data reads as reference
-                  material, not as another tappable row (user request) */}
-              <div className="mx-4 my-3 rounded-xl bg-bg-2 px-3 py-2.5" data-testid="tx-detail-bankdata">
-                <div className="mb-1 flex items-center gap-1.5 text-[10px] font-medium tracking-wide text-ink-4 uppercase">
-                  <Icon name="bank-outline" size={12} />
-                  {t('tx.bankDetails')}
-                </div>
-                <div className="font-mono text-xs break-words text-ink-3">{humanizeBankKeys(cleanBankText(tx.description))}</div>
-              </div>
-            </>
-          )}
-        </div>
+            </div>
+          </>
+        )}
+
+        {/* block: details — the facts underneath the user's edits */}
+        <DetailFacts tx={tx} givenOut={givenOut} />
 
         {/* the sections below the details card follow the space's saved
             order/visibility (user request — same mechanics as Home) */}
@@ -485,16 +631,18 @@ export function TxDetailScreen() {
         )}
       </div>
 
-      <CategoryPicker
-        open={pickerOpen}
-        onOpenChange={setPickerOpen}
-        selectedId={tx.catId}
-        onPick={setCategory}
-        direction={tx.amountCents < 0 ? 'debit' : 'credit'}
-        txType={tx.txType}
-      />
       <TxTypeSheet open={typeOpen} onOpenChange={setTypeOpen} tx={tx} />
-      <SplitEditorSheet open={splitOpen} onOpenChange={setSplitOpen} tx={tx} />
+      {/* ONE category flow (review parity): a single row edits the plain
+          category through setCategory (which arms the bulk offer);
+          added rows store a split write-through */}
+      <SplitEditorSheet open={splitOpen} onOpenChange={setSplitOpen} tx={tx} seedSingle onApplySingle={setCategory} />
+      <RenameTitleSheet
+        open={renameOpen}
+        onOpenChange={setRenameOpen}
+        original={cleanBankText(tx.merchant)}
+        value={txTitle(tx)}
+        onSave={renameTitle}
+      />
       <TxDetailCustomizeSheet open={customizeOpen} onOpenChange={setCustomizeOpen} space={space} />
 
       {/* the counterparty is one of the user's own accounts — show it */}

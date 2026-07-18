@@ -29,6 +29,11 @@ export function cleanBankText(text: string | undefined): string {
     .trim();
 }
 
+/** the display title everywhere: the user's rename wins over the bank's */
+export function txTitle(tx: { merchant: string; titleOverride?: string }): string {
+  return tx.titleOverride?.trim() || cleanBankText(tx.merchant);
+}
+
 /**
  * Bank feeds carry structured keys like "invoice_number: 123" — humanize
  * the snake_case labels ("Invoice number: 123") without touching the
