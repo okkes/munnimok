@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useQuery } from '@/db/useQuery';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { useLgViewport } from '@/lib/viewport';
@@ -27,6 +28,10 @@ import { SplitEditorSheet } from './SplitEditorSheet';
 import { TxFormSheet } from './TxFormSheet';
 import { TxTypeSheet } from './TxTypeSheet';
 import { merchantKey } from '@/domain/merchantKey';
+import { TxDetailCustomizeSheet, resolveTxDetailBlocks } from './TxDetailCustomizeSheet';
+import type { TxDetailBlockId } from './TxDetailCustomizeSheet';
+import { TxRow } from '@/ui/TxRow';
+import type { SpaceTx } from '@/application/transactions';
 import type { TxType } from '@/db/types';
 
 const DATE_FMT: Record<string, string> = { en: 'en-GB', nl: 'nl-NL', tr: 'tr-TR' };
@@ -47,9 +52,117 @@ function DetailBackButton({ panes, onClose, t }: Readonly<{ panes: boolean; onCl
   );
 }
 
+/**
+ * The bulk offer after a category change: the bar itself opens a
+ * selection sheet (user request — see and pick the transactions instead
+ * of a blind apply-all); Apply touches only the checked rows.
+ */
+function DetailBulkBar({
+  targets,
+  selected,
+  onChange,
+  onApply,
+  onDismiss,
+}: Readonly<{
+  targets: SpaceTx[];
+  selected: ReadonlySet<string>;
+  onChange: (next: ReadonlySet<string>) => void;
+  onApply: () => void;
+  onDismiss: () => void;
+}>) {
+  const { t } = useLang();
+  const [open, setOpen] = useState(false);
+  const all = targets.length > 0 && targets.every((item) => selected.has(item.id));
+  const toggleOne = (id: string) => {
+    const next = new Set(selected);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    onChange(next);
+  };
+
+  return (
+    <div className="border-t border-line-2 bg-accent-soft/30" data-testid="tx-detail-bulk-offer">
+      <div className="flex items-center gap-3 px-4 py-2.5">
+        <button
+          data-testid="tx-detail-bulk-expand"
+          onClick={() => setOpen(true)}
+          className="m-tap flex min-w-0 flex-1 items-center gap-3 border-none bg-transparent p-0 text-left"
+        >
+          <Icon name="content-copy" size={16} color="var(--m-accent-deep)" />
+          <span className="min-w-0 flex-1 text-[13px] text-ink-2">{t('tx.bulkOffer', { n: selected.size })}</span>
+        </button>
+        <button
+          data-testid="tx-detail-bulk-apply"
+          onClick={onApply}
+          disabled={selected.size === 0}
+          className="m-tap border-none bg-transparent text-[13px] font-semibold text-accent-deep disabled:opacity-40"
+        >
+          {t('tx.bulkApply')}
+        </button>
+        <button
+          data-testid="tx-detail-bulk-dismiss"
+          aria-label={t('action.dismiss')}
+          onClick={onDismiss}
+          className="m-tap border-none bg-transparent text-ink-4"
+        >
+          <Icon name="close" size={16} />
+        </button>
+      </div>
+
+      {/* selection sheet, same mechanics as the review bulk list */}
+      <Sheet open={open} onOpenChange={setOpen} title={t('tx.bulkOffer', { n: selected.size })} height={760}>
+        <div className="flex items-center justify-between pb-2">
+          <span className="text-[12px] text-ink-3">{t('review.bulkCount', { n: targets.length })}</span>
+          <button
+            data-testid="tx-detail-bulk-select-all"
+            onClick={() => onChange(all ? new Set() : new Set(targets.map((item) => item.id)))}
+            className="m-tap border-none bg-transparent text-[12px] font-semibold text-accent-deep"
+          >
+            {all ? t('review.bulkUnselectAll') : t('review.bulkSelectAll')}
+          </button>
+        </div>
+        {/* fixed px so the list scrolls INSIDE the sheet (sheet rules) */}
+        <div className="max-h-[560px] overflow-y-auto overscroll-contain" data-testid="tx-detail-bulk-list">
+          {targets.map((item) => {
+            const checked = selected.has(item.id);
+            return (
+              <div key={item.id} className="flex items-center gap-2 border-b border-line-2 last:border-0">
+                <button
+                  data-testid={`tx-detail-bulk-${item.id}`}
+                  aria-label={cleanBankText(item.merchant)}
+                  onClick={() => toggleOne(item.id)}
+                  className={`m-tap flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 ${
+                    checked ? 'border-accent bg-accent text-white' : 'border-line bg-surface'
+                  }`}
+                >
+                  {checked && <Icon name="check" size={12} />}
+                </button>
+                <div className="min-w-0 flex-1">
+                  <TxRow tx={item} showDate onClick={() => toggleOne(item.id)} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <button
+          data-testid="tx-detail-bulk-apply-sheet"
+          onClick={() => {
+            setOpen(false);
+            onApply();
+          }}
+          disabled={selected.size === 0}
+          className="m-tap mt-3 w-full rounded-card border-none bg-accent py-3 text-[14px] font-semibold text-white disabled:opacity-40"
+        >
+          {t('tx.bulkApply')}
+        </button>
+      </Sheet>
+    </div>
+  );
+}
+
 export function TxDetailScreen() {
   const { t, lang } = useLang();
-  const { store, repo } = useData();
+  const { store, repo, spaceId } = useData();
   const { txId } = useParams({ strict: false }) as { txId: string };
   const [pickerOpen, setPickerOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -59,6 +172,10 @@ export function TxDetailScreen() {
   const [eventOpen, setEventOpen] = useState(false);
   const [counterOpen, setCounterOpen] = useState(false);
   const [bulkOffer, setBulkOffer] = useState<{ catId: string; txType: TxType; count: number } | null>(null);
+  // which of the similar transactions the bulk apply will touch (user
+  // request: see and pick them, not a blind apply-all)
+  const [bulkSelected, setBulkSelected] = useState<ReadonlySet<string>>(new Set());
+  const [customizeOpen, setCustomizeOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const navigate = useNavigate();
   const panes = useLgViewport();
@@ -67,7 +184,7 @@ export function TxDetailScreen() {
   // list — but only when no sheet is open (sheets own their own Esc)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || document.querySelector('[role="dialog"]')) return;
+      if (e.key !== 'Escape' || document.querySelector('dialog[open], [role="dialog"]')) return;
       void navigate({ to: '/transactions' });
     };
     window.addEventListener('keydown', onKey);
@@ -76,6 +193,7 @@ export function TxDetailScreen() {
 
   const tx = useSpaceTransaction(txId);
   const transform = useTxTransform();
+  const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const account = useQuery(store, async () => (tx ? store.get('account', tx.accountId) : undefined), [tx?.accountId]);
   const linkedAccount = useQuery(
     store,
@@ -123,14 +241,18 @@ export function TxDetailScreen() {
       (item) => item.id !== tx.id && merchantKey(item.merchant) === merchantKey(tx.merchant) && item.catId !== catId,
     );
     setBulkOffer(similar.length > 0 ? { catId, txType, count: similar.length } : null);
+    setBulkSelected(new Set(similar.map((item) => item.id)));
   };
+
+  const bulkTargets = bulkOffer
+    ? (allTxs ?? []).filter(
+        (item) => item.id !== tx.id && merchantKey(item.merchant) === merchantKey(tx.merchant) && item.catId !== bulkOffer.catId,
+      )
+    : [];
 
   const applyBulk = async () => {
     if (!bulkOffer) return;
-    const targets = (allTxs ?? []).filter(
-      (item) => item.id !== tx.id && merchantKey(item.merchant) === merchantKey(tx.merchant) && item.catId !== bulkOffer.catId,
-    );
-    for (const item of targets) {
+    for (const item of bulkTargets.filter((target) => bulkSelected.has(target.id))) {
       await transform(item, { catId: bulkOffer.catId, txType: bulkOffer.txType, needsReview: 0 });
     }
     setBulkOffer(null);
@@ -218,27 +340,13 @@ export function TxDetailScreen() {
             </button>
           </div>
           {bulkOffer && (
-            <div className="flex items-center gap-3 border-t border-line-2 bg-accent-soft/30 px-4 py-2.5" data-testid="tx-detail-bulk-offer">
-              <Icon name="content-copy" size={16} color="var(--m-accent-deep)" />
-              <span className="min-w-0 flex-1 text-[13px] text-ink-2">
-                {t('tx.bulkOffer', { n: bulkOffer.count })}
-              </span>
-              <button
-                data-testid="tx-detail-bulk-apply"
-                onClick={() => void applyBulk()}
-                className="m-tap border-none bg-transparent text-[13px] font-semibold text-accent-deep"
-              >
-                {t('tx.bulkApply')}
-              </button>
-              <button
-                data-testid="tx-detail-bulk-dismiss"
-                aria-label={t('action.dismiss')}
-                onClick={() => setBulkOffer(null)}
-                className="m-tap border-none bg-transparent text-ink-4"
-              >
-                <Icon name="close" size={16} />
-              </button>
-            </div>
+            <DetailBulkBar
+              targets={bulkTargets}
+              selected={bulkSelected}
+              onChange={setBulkSelected}
+              onApply={() => void applyBulk()}
+              onDismiss={() => setBulkOffer(null)}
+            />
           )}
           {!!tx.splits?.length && (
             <div className="px-4 pb-3" data-testid="tx-detail-splits">
@@ -340,16 +448,37 @@ export function TxDetailScreen() {
           )}
         </div>
 
-        <ReimburseSection tx={tx} />
-        <ReceiptSection tx={tx} />
+        {/* the sections below the details card follow the space's saved
+            order/visibility (user request — same mechanics as Home) */}
+        {resolveTxDetailBlocks(space)
+          .filter((entry) => !entry.hidden)
+          .map((entry) => {
+            const section: Record<TxDetailBlockId, ReactNode> = {
+              reimburse: <ReimburseSection tx={tx} />,
+              receipts: <ReceiptSection tx={tx} />,
+              notes: (
+                <>
+                  <div className="m-cap mt-5 mb-1 px-1">{t('tx.notes')}</div>
+                  <NotesField
+                    value={tx.notes ?? ''}
+                    onSave={saveNotes}
+                    placeholder={t('tx.notesPlaceholder')}
+                    className="w-full resize-none rounded-card border border-line bg-surface px-4 py-3 text-[14px] text-ink outline-none placeholder:text-ink-4"
+                  />
+                </>
+              ),
+            };
+            return <div key={entry.id}>{section[entry.id]}</div>;
+          })}
 
-        <div className="m-cap mt-5 mb-1 px-1">{t('tx.notes')}</div>
-        <NotesField
-          value={tx.notes ?? ''}
-          onSave={saveNotes}
-          placeholder={t('tx.notesPlaceholder')}
-          className="w-full resize-none rounded-card border border-line bg-surface px-4 py-3 text-[14px] text-ink outline-none placeholder:text-ink-4"
-        />
+        <button
+          data-testid="tx-detail-customize"
+          onClick={() => setCustomizeOpen(true)}
+          className="m-tap mt-5 flex w-full items-center justify-center gap-2 rounded-card border border-dashed border-line bg-transparent py-2.5 text-[13px] font-medium text-ink-3"
+        >
+          <Icon name="tune-variant" size={16} />
+          {t('tx.customize')}
+        </button>
 
         {/* manual rows may leave again (user request); bank rows are the
             bank's truth and only ever tombstone via their feed */}
@@ -374,6 +503,7 @@ export function TxDetailScreen() {
       />
       <TxTypeSheet open={typeOpen} onOpenChange={setTypeOpen} tx={tx} />
       <SplitEditorSheet open={splitOpen} onOpenChange={setSplitOpen} tx={tx} />
+      <TxDetailCustomizeSheet open={customizeOpen} onOpenChange={setCustomizeOpen} space={space} />
 
       {/* the counterparty is one of the user's own accounts — show it */}
       <Sheet open={counterOpen && !!counterAccount} onOpenChange={setCounterOpen} title={counterAccount?.name ?? ''} size="compact">

@@ -28,6 +28,8 @@ export interface SpaceRow extends SyncEnvelope {
   historyStartDate?: string;
   /** landing-zone layout: block order + visibility, per space (synced) */
   homeBlocks?: { id: string; hidden?: 0 | 1 }[];
+  /** tx-detail layout: section order + visibility under the fixed details block */
+  txDetailBlocks?: { id: string; hidden?: 0 | 1 }[];
   /** allocation: roll category leftovers into the next period (default on) */
   allocRollover?: 0 | 1;
   /** main categories switched off for this space (picker filtering only — data never blocks) */

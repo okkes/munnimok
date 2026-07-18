@@ -18,6 +18,27 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.10.0',
+    date: '2026-07-18',
+    items: [
+      {
+        en: 'Review feels alive: confirmed and skipped cards fly off while the next slides in, the prediction reason sits right inside the category editor, and the whole "also apply" bar is tappable. No auto-detected subscription? Link any recurring cost to the card by hand.',
+        nl: 'Beoordelen voelt levendig: bevestigde en overgeslagen kaarten vliegen weg terwijl de volgende binnenschuift, de voorspellingsreden staat direct in de categorie-editor, en de hele "ook toepassen"-balk is tikbaar. Geen automatisch herkend abonnement? Koppel elke terugkerende kostenpost handmatig aan de kaart.',
+        tr: 'İnceleme canlı hissettiriyor: onaylanan ve atlanan kartlar uçup giderken sıradaki içeri kayıyor, tahmin gerekçesi doğrudan kategori düzenleyicide duruyor ve "şunlara da uygula" çubuğunun tamamı dokunulabilir. Otomatik algılanan abonelik yok mu? Herhangi bir düzenli ödemeyi karta elle bağla.',
+      },
+      {
+        en: 'The transaction detail listens to you: a bulk recategorize now shows the affected transactions so you pick exactly which ones change, and "Customize this view" reorders or hides the reimbursement, receipt and notes sections per space.',
+        nl: 'De transactiedetails luisteren naar je: bulk-hercategoriseren toont nu de geraakte transacties zodat je precies kiest welke veranderen, en "Deze weergave aanpassen" sorteert of verbergt de secties voor terugbetalingen, bonnen en notities per space.',
+        tr: 'İşlem detayı seni dinliyor: toplu yeniden kategorileme artık etkilenen işlemleri gösteriyor, böylece tam olarak hangilerinin değişeceğini seçiyorsun; "Bu görünümü özelleştir" ise geri ödeme, fiş ve not bölümlerini alan başına sıralıyor veya gizliyor.',
+      },
+      {
+        en: 'Sign-up now lets you pick your currency (the country only suggests one), split invites share as a normal https link that opens anywhere, category rows glow while you hold them, and the app heals itself after a long sleep instead of asking you to sign in again.',
+        nl: 'Bij aanmelden kies je nu je valuta (het land stelt er alleen één voor), split-uitnodigingen delen als een gewone https-link die overal opent, categorierijen lichten op terwijl je ze vasthoudt, en de app herstelt zichzelf na een lange slaap in plaats van je opnieuw te laten inloggen.',
+        tr: 'Kayıt olurken artık para birimini sen seçiyorsun (ülke yalnızca öneriyor), bölüşme davetleri her yerde açılan normal bir https bağlantısı olarak paylaşılıyor, kategori satırları basılı tutarken parlıyor ve uygulama uzun uykudan sonra tekrar giriş istemek yerine kendini onarıyor.',
+      },
+    ],
+  },
+  {
     version: '2.9.0',
     date: '2026-07-17',
     items: [

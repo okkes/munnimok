@@ -33,14 +33,14 @@ export const GUIDE = [
     id: 'review',
     title: 'Reviewing transactions',
     body: `The review deck shows one transaction at a time with a suggested category and the reason behind it. Everything you change — category, type, splits — stays a draft until you hit Confirm. "Also apply to similar" catches the rest of the same merchant in one go.`,
-    tips: ['Tap the description to read the full bank text.', 'Skip is honest: it leaves no trace and the card returns later.'],
+    tips: ['Tap the description to read the full bank text.', 'Skip is honest: it leaves no trace and the card returns later.', 'No auto-detected subscription? "Link a recurring cost" attaches one by hand.'],
     shots: ['13-review-banner', '14-review-flow', '15-review-done'],
   },
   {
     id: 'transactions',
     title: 'Transaction details',
     body: `Open any transaction to recategorize, split across categories, link the counter-account (which suggests the type — you can still override it), attach receipts, link recurring costs or events, and record reimbursements that show the net cost.`,
-    tips: ['Search matches amounts too: typing 10 finds 10.99 and 210.15.', 'If the counterparty is one of your own accounts, its row becomes tappable.'],
+    tips: ['Search matches amounts too: typing 10 finds 10.99 and 210.15.', 'If the counterparty is one of your own accounts, its row becomes tappable.', 'Recategorizing offers a bulk apply — tap the bar to pick exactly which transactions it touches.', '"Customize this view" reorders or hides the sections below the details.'],
     shots: ['09-tx-detail', '36-tx-split', '34-tx-reimburse', '35-tx-type-link'],
   },
   {

@@ -382,4 +382,70 @@ describe('bulk apply from the detail (user request)', () => {
     expect(screen.queryByTestId('tx-detail-bulk-offer')).toBeNull(); // offer consumed
     db.close();
   }, 15_000);
+
+  it('the bar opens a selection sheet and apply skips unchecked rows', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-bulk-sel'), { trackOutbox: false });
+    for (const id of ['sel-a', 'sel-b', 'sel-c']) {
+      await repo.upsert('transaction', DEMO_SPACE_ID, id, {
+        accountId: 'demo_main', date: '2026-06-01', amountCents: -700, currency: 'EUR',
+        merchant: 'SELECTSHOP BV', catId: 'groceries', txType: 'expense', needsReview: 0,
+      });
+    }
+    cleanup();
+
+    renderApp('/transactions/sel-a');
+    fireEvent.click(await screen.findByTestId('tx-detail-category-row'));
+    fireEvent.click(await screen.findByTestId('catpicker-hobby'));
+
+    // open the selection sheet from the bar, uncheck one target
+    fireEvent.click(await screen.findByTestId('tx-detail-bulk-expand'));
+    await screen.findByTestId('tx-detail-bulk-list');
+    // select-all toggles the whole set: none → apply disarms, all → rearms
+    fireEvent.click(screen.getByTestId('tx-detail-bulk-select-all'));
+    expect((screen.getByTestId('tx-detail-bulk-apply-sheet') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByTestId('tx-detail-bulk-select-all'));
+    fireEvent.click(screen.getByTestId('tx-detail-bulk-sel-b'));
+    fireEvent.click(screen.getByTestId('tx-detail-bulk-apply-sheet'));
+
+    await waitFor(async () => {
+      expect((await db.transactions.get('sel-c'))?.catId).toBe('hobby');
+    });
+    expect((await db.transactions.get('sel-b'))?.catId).toBe('groceries'); // unchecked stays
+    db.close();
+  }, 15_000);
+});
+
+describe('detail sections customize (user request)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase('munni_demo');
+  });
+
+  it('hiding notes removes the section; the toggle brings it back', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-custom'), { trackOutbox: false });
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'cust-a', {
+      accountId: 'demo_main', date: '2026-06-01', amountCents: -500, currency: 'EUR',
+      merchant: 'CUSTOMSHOP', catId: 'groceries', txType: 'expense', needsReview: 0,
+    });
+    cleanup();
+
+    renderApp('/transactions/cust-a');
+    await screen.findByTestId('tx-detail-notes');
+
+    fireEvent.click(screen.getByTestId('tx-detail-customize'));
+    await screen.findByTestId('tx-customize-list');
+    fireEvent.click(screen.getByTestId('tx-block-toggle-notes'));
+    await waitFor(() => expect(screen.queryByTestId('tx-detail-notes')).toBeNull());
+
+    fireEvent.click(screen.getByTestId('tx-block-toggle-notes'));
+    await screen.findByTestId('tx-detail-notes');
+    db.close();
+  }, 15_000);
 });

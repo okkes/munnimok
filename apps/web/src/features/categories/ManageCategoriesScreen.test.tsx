@@ -35,6 +35,20 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
     expect(row.textContent).not.toContain('Custom');
   });
 
+  it('a quick tap cancels the hold: no menu, the group just toggles', async () => {
+    await openScreen();
+    const header = screen.getByTestId('cats-group-consumption');
+    // press shorter than the 450ms hold window (arms the grow highlight,
+    // then cancels it) — the trailing click must still expand the group
+    fireEvent.pointerDown(header);
+    expect(header.className).toContain('m-holding');
+    fireEvent.pointerUp(header);
+    expect(header.className).not.toContain('m-holding');
+    fireEvent.click(header);
+    await screen.findByTestId('managecat-groceries');
+    expect(screen.queryByTestId('cats-group-menu')).toBeNull();
+  });
+
   it('creates a custom MAIN category with type, color and a locked Other sub', async () => {
     await openScreen();
     fireEvent.click(screen.getByTestId('cats-add'));

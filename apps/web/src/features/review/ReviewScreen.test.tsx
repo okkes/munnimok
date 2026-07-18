@@ -157,6 +157,75 @@ describe('ReviewScreen (demo identity)', () => {
     db.close();
   }, 15_000);
 
+  it('the manual picker clears again via "no link", and ArrowRight skips by keyboard', async () => {
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+
+    // an active recurring with a non-matching merchant arms the manual chip
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-manual-2'), { trackOutbox: false });
+    await repo.upsert('recurring', DEMO_SPACE_ID, 'rec-spotify', {
+      name: 'Spotify',
+      kind: 'subscription',
+      amountCents: 1099,
+      every: 'month',
+      dueDay: 5,
+      active: 1,
+      merchantKey: 'spotify',
+    });
+    db.close();
+
+    fireEvent.click(await screen.findByTestId('review-link-recurring-manual', {}, { timeout: 5000 }));
+    await screen.findByTestId('recpick-list');
+    fireEvent.click(screen.getByTestId('recpick-rec-spotify'));
+    await waitFor(() => expect(screen.getByTestId('review-link-recurring-manual').textContent).toContain('Spotify'), { timeout: 5000 });
+
+    // …and unpick it: the chip returns to its idle label
+    fireEvent.click(screen.getByTestId('review-link-recurring-manual'));
+    fireEvent.click(await screen.findByTestId('recpick-none'));
+    await waitFor(() => expect(screen.getByTestId('review-link-recurring-manual').textContent).not.toContain('Spotify'), { timeout: 5000 });
+  }, 15_000);
+
+  it('ArrowRight skips the current card from the keyboard', async () => {
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    const before = screen.getByTestId('review-card').textContent;
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    await waitFor(() => expect(screen.getByTestId('review-card').textContent).not.toBe(before), { timeout: 5000 });
+  }, 15_000);
+
+  it('no auto-match: the manual chip opens the picker and confirm links the choice', async () => {
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+
+    // a gym membership whose merchantKey does NOT match the current card
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-manual'), { trackOutbox: false });
+    await repo.upsert('recurring', DEMO_SPACE_ID, 'rec-gym', {
+      name: 'Gym',
+      kind: 'fixed',
+      amountCents: 2999,
+      every: 'month',
+      dueDay: 1,
+      active: 1,
+      merchantKey: 'basic fit',
+    });
+    const current = (await db.transactions.filter((t) => t.needsReview === 1).toArray())
+      .sort((a, b) => a.date.localeCompare(b.date))[0];
+
+    // the manual chip appears (no auto-detected match on this merchant)
+    fireEvent.click(await screen.findByTestId('review-link-recurring-manual'));
+    fireEvent.click(await screen.findByTestId('recpick-rec-gym'));
+    await waitFor(() => expect(screen.getByTestId('review-link-recurring-manual').textContent).toContain('Gym'), { timeout: 5000 });
+
+    fireEvent.click(screen.getByTestId('review-confirm-btn'));
+    await waitFor(
+      async () => expect((await db.transactions.get(current.id))?.recurringId).toBe('rec-gym'),
+      { timeout: 5000 },
+    );
+    db.close();
+  }, 15_000);
+
   it('splitting stays on the card; amounts clear on focus and restore on blur', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');

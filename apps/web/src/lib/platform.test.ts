@@ -146,4 +146,74 @@ describe('§5 niceties seam', () => {
     listeners.pushNotificationActionPerformed({ notification: { data: { payload: 'not-json' } } } as never);
     expect(seen).toHaveLength(1); // malformed payloads are ignored
   });
+
+  it('the shell build number parses from App.getInfo and fails soft', async () => {
+    const { getNativeAppBuild, nativePlatform } = await import('./platform');
+    expect(await getNativeAppBuild()).toBeNull(); // web: no shell
+    expect(nativePlatform()).toBeUndefined();
+
+    setCapacitor({
+      isNativePlatform: () => true,
+      getPlatform: () => 'ios',
+      Plugins: { App: { getInfo: () => Promise.resolve({ build: '412' }) } },
+    } as never);
+    expect(await getNativeAppBuild()).toBe(412);
+    expect(nativePlatform()).toBe('ios');
+
+    setCapacitor({
+      isNativePlatform: () => true,
+      Plugins: { App: { getInfo: () => Promise.resolve({ build: 'not-a-number' }) } },
+    });
+    expect(await getNativeAppBuild()).toBeNull();
+
+    setCapacitor({
+      isNativePlatform: () => true,
+      Plugins: { App: { getInfo: () => Promise.reject(new Error('boom')) } },
+    });
+    expect(await getNativeAppBuild()).toBeNull();
+  });
+
+  it('native photo capture returns a File and degrades to null', async () => {
+    const { takeNativePhoto } = await import('./platform');
+    expect(await takeNativePhoto()).toBeNull(); // web: input capture path
+
+    setCapacitor({
+      isNativePlatform: () => true,
+      Plugins: {
+        Camera: { getPhoto: () => Promise.resolve({ base64String: btoa('img-bytes'), format: 'png' }) },
+      },
+    });
+    const file = await takeNativePhoto();
+    expect(file?.name).toBe('receipt.png');
+    expect(file?.type).toBe('image/png');
+
+    setCapacitor({
+      isNativePlatform: () => true,
+      Plugins: { Camera: { getPhoto: () => Promise.reject(new Error('cancelled')) } },
+    });
+    expect(await takeNativePhoto()).toBeNull();
+
+    setCapacitor({
+      isNativePlatform: () => true,
+      Plugins: { Camera: { getPhoto: () => Promise.resolve({}) } },
+    });
+    expect(await takeNativePhoto()).toBeNull(); // no bytes returned
+  });
+
+  it('biometric availability reflects the plugin and fails closed', async () => {
+    const { nativeBiometricAvailable } = await import('./platform');
+    expect(await nativeBiometricAvailable()).toBe(false); // web
+
+    setCapacitor({
+      isNativePlatform: () => true,
+      Plugins: { NativeBiometric: { isAvailable: () => Promise.resolve({ isAvailable: true }) } },
+    });
+    expect(await nativeBiometricAvailable()).toBe(true);
+
+    setCapacitor({
+      isNativePlatform: () => true,
+      Plugins: { NativeBiometric: { isAvailable: () => Promise.reject(new Error('no hw')) } },
+    });
+    expect(await nativeBiometricAvailable()).toBe(false);
+  });
 });

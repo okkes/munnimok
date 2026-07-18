@@ -57,6 +57,7 @@ export function SplitEditorSheet({
   onApply,
   seedSingle = false,
   onApplySingle,
+  reason,
 }: Readonly<{
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -72,6 +73,8 @@ export function SplitEditorSheet({
   seedSingle?: boolean;
   /** seedSingle mode: saving with one row reports the plain category */
   onApplySingle?: (catId: string) => void;
+  /** why the current category was suggested (review card) — shown inline */
+  reason?: string | null;
 }>) {
   const { t, lang } = useLang();
   const transform = useTxTransform();
@@ -196,6 +199,14 @@ export function SplitEditorSheet({
     <>
       <Sheet open={open} onOpenChange={onOpenChange} title={t('split.title')} size="tall">
         <div className="flex flex-col gap-2 pt-1" data-testid="split-editor">
+          {/* the prediction's provenance, shown in the open (user request:
+              no more hiding it behind an info button) */}
+          {reason && (
+            <div className="flex items-center gap-1.5 rounded-xl bg-bg-2 px-3 py-2 text-[12px] text-ink-3" data-testid="split-reason">
+              <Icon name="lightbulb-outline" size={14} color="var(--m-ink-4)" />
+              {reason}
+            </div>
+          )}
           {/* exact euros for one charge, percentages when the shape repeats */}
           <div className="flex gap-1.5">
             <Chip className="flex-1" testId="split-mode-amount" selected={mode === 'amount'} onClick={() => switchMode('amount')}>

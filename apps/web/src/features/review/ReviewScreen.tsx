@@ -14,7 +14,7 @@ import { fetchSettlementCandidates } from '@/features/splits/settlementCandidate
 import type { SettlementCandidate } from '@/features/splits/settlementCandidates';
 import { useSession } from '@/app/session';
 import type { ReviewDraft } from '@/domain/reviewDraft';
-import type { AccountType } from '@/db/types';
+import type { AccountType, RecurringRow } from '@/db/types';
 import { resolveSplitsFor, splitsArePct } from '@/domain/splits';
 import { predictTx } from '@/domain/predictCategory';
 import { recurringAmountMatches } from '@/domain/recurring';
@@ -31,6 +31,7 @@ import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { SplitEditorSheet } from '@/features/transactions/SplitEditorSheet';
+import { RecurringVisual, cadenceLabel } from '@/features/recurring/RecurringVisual';
 import { TX_TYPE_VISUAL, TxTypeSheet } from '@/features/transactions/TxTypeSheet';
 
 /** why the shown category was suggested, per prediction source */
@@ -183,6 +184,8 @@ function BulkConfirmSection({
 
   return (
     <div className="mt-3 overflow-hidden rounded-card border border-line bg-surface" data-testid="review-bulk">
+      {/* the WHOLE bar opens the sheet (user request); the checkbox is
+          the one carve-out — two sibling buttons, no nesting */}
       <div className="flex items-center gap-3 px-4 py-3">
         <button
           data-testid="review-bulk-toggle"
@@ -194,15 +197,16 @@ function BulkConfirmSection({
         >
           {all && <Icon name="check" size={12} />}
         </button>
-        <span className="min-w-0 flex-1 truncate text-[13px] text-ink-2">{t('review.alsoApply', { n: selected.size })}</span>
         <button
           data-testid="review-bulk-expand"
-          aria-label={t('review.alsoApply', { n: similar.length })}
           onClick={() => setOpen(true)}
-          className="m-tap flex items-center gap-1 border-none bg-transparent text-[12px] text-ink-3"
+          className="m-tap flex min-w-0 flex-1 items-center gap-3 border-none bg-transparent p-0 text-left"
         >
-          {t('review.bulkViewAll')}
-          <Icon name="chevron-right" size={15} />
+          <span className="min-w-0 flex-1 truncate text-[13px] text-ink-2">{t('review.alsoApply', { n: selected.size })}</span>
+          <span className="flex items-center gap-1 text-[12px] text-ink-3">
+            {t('review.bulkViewAll')}
+            <Icon name="chevron-right" size={15} />
+          </span>
         </button>
       </div>
 
@@ -261,6 +265,76 @@ function BulkConfirmSection({
   );
 }
 
+/** which recurring the confirm links: the auto-match wins (unless the
+ *  user un-ticked it); otherwise whatever was picked by hand */
+function chosenRecurringId(recMatch: RecurringRow | undefined, linkRecurring: boolean, manualRecId: string | null): string | undefined {
+  if (recMatch) return linkRecurring ? recMatch.id : undefined;
+  return manualRecId ?? undefined;
+}
+
+/** the "link a recurring cost by hand" chip (no auto-match on this card) */
+function ManualRecurringChip({ rec, onOpen }: Readonly<{ rec: RecurringRow | undefined; onOpen: () => void }>) {
+  const { t } = useLang();
+  return (
+    <Chip className="mt-3" testId="review-link-recurring-manual" selected={!!rec} onClick={onOpen}>
+      <Icon name={rec ? 'check' : 'autorenew'} size={13} />
+      {rec ? t('review.linkRecurring', { name: rec.name }) : t('review.linkRecurringPick')}
+    </Chip>
+  );
+}
+
+/** stacked picker for the manual recurring link: every active recurring
+ *  plus an explicit "no link" row (user request — auto-detection alone
+ *  missed renamed merchants) */
+function RecurringPickSheet({
+  open,
+  onOpenChange,
+  recurrings,
+  selectedId,
+  currency,
+  onPick,
+}: Readonly<{
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  recurrings: RecurringRow[];
+  selectedId: string | null;
+  currency: string;
+  onPick: (id: string | null) => void;
+}>) {
+  const { t, lang } = useLang();
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange} title={t('review.linkRecurringPick')} size="form">
+      <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="recpick-list">
+        <button
+          data-testid="recpick-none"
+          onClick={() => onPick(null)}
+          className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3 text-left"
+        >
+          <Icon name="close-circle-outline" size={18} color="var(--m-ink-4)" />
+          <span className="min-w-0 flex-1 text-[14px] text-ink-2">{t('review.recNone')}</span>
+          {!selectedId && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
+        </button>
+        {recurrings.map((rec) => (
+          <button
+            key={rec.id}
+            data-testid={`recpick-${rec.id}`}
+            onClick={() => onPick(rec.id)}
+            className="m-tap flex w-full items-center gap-3 border-t border-line-2 px-4 py-3 text-left"
+          >
+            <RecurringVisual rec={rec} size={18} />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[14px] text-ink">{rec.name}</span>
+              <span className="block text-[11px] text-ink-4">{cadenceLabel(rec, t)}</span>
+            </span>
+            <span className="m-num text-[13px] text-ink-2">{fmtCents(rec.amountCents, currency, lang)}</span>
+            {selectedId === rec.id && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
+          </button>
+        ))}
+      </div>
+    </Sheet>
+  );
+}
+
 /**
  * Review queue, rebuilt around the legacy mechanics with a calmer face:
  * one card at a time, the prediction pre-applied WITH its reason, bulk
@@ -284,9 +358,21 @@ export function ReviewScreen() {
   // only Confirm writes; null = untouched, follow tx + prediction live
   const [stagedDraft, setStagedDraft] = useState<ReviewDraft | null>(null);
   const [descExpanded, setDescExpanded] = useState(false);
-  const [reasonOpen, setReasonOpen] = useState(false);
   const [bulkSelected, setBulkSelected] = useState<ReadonlySet<string>>(new Set());
+  // deck animation (user request): keep the outgoing card's markup as a
+  // ghost that flies out left while the next card slides in from the right
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const [leavingHtml, setLeavingHtml] = useState<string | null>(null);
+  const captureLeaving = () => {
+    if (!cardRef.current) return;
+    // strip testids so the decorative ghost never doubles a live element
+    setLeavingHtml(cardRef.current.innerHTML.replaceAll(/data-testid="[^"]*"/g, ''));
+    setTimeout(() => setLeavingHtml(null), 260);
+  };
   const [linkRecurring, setLinkRecurring] = useState(true);
+  // no auto-match? the user can still link a recurring by hand (user request)
+  const [manualRecId, setManualRecId] = useState<string | null>(null);
+  const [recPickOpen, setRecPickOpen] = useState(false);
   const [initialCount, setInitialCount] = useState<number | null>(null);
 
   // teaching data: what this space (or the user's personal spaces) confirmed before
@@ -357,6 +443,8 @@ export function ReviewScreen() {
         : undefined,
     [tx, recurrings],
   );
+  const activeRecs = useMemo(() => (recurrings ?? []).filter((r) => r.active === 1), [recurrings]);
+  const manualRec = activeRecs.find((r) => r.id === manualRecId);
 
   // SP5: an incoming amount that exactly matches an open split settlement
   // to me is very likely that person paying me back — suggest transfer
@@ -394,6 +482,7 @@ export function ReviewScreen() {
   useFreshCardReset(tx?.id, () => {
     setStagedDraft(null);
     setLinkRecurring(true);
+    setManualRecId(null);
     setDescExpanded(false);
   });
   // select every similar item by default — re-selecting when the list
@@ -409,11 +498,12 @@ export function ReviewScreen() {
     showReason && prediction ? t(REASON_KEYS[prediction.source], { n: prediction.evidence ?? 1 }) : null;
 
   const confirm = async () => {
+    captureLeaving();
     if (!tx || !draft || !draftReady(draft)) return;
     await writeConfirmation({
       tx,
       draft,
-      recurringId: recMatch && linkRecurring ? recMatch.id : undefined,
+      recurringId: chosenRecurringId(recMatch, linkRecurring, manualRecId),
       bulk: similar.filter((s) => bulkSelected.has(s.id)),
       transform,
     });
@@ -431,7 +521,7 @@ export function ReviewScreen() {
   useEffect(() => {
     if (!tx) return;
     const onKey = (e: KeyboardEvent) => {
-      if (document.querySelector('[role="dialog"]')) return;
+      if (document.querySelector('dialog[open], [role="dialog"]')) return;
       const el = e.target as HTMLElement | null;
       if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT')) return;
       if (e.key === 'Enter') {
@@ -439,6 +529,7 @@ export function ReviewScreen() {
         void confirm();
       } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
         e.preventDefault();
+        captureLeaving();
         setSkipped((prev) => new Set([...prev, tx.id]));
       }
     };
@@ -490,8 +581,16 @@ export function ReviewScreen() {
              pickers slide in as dimmed right-hand panels, so the card
              stays visible while editing. Skip/Confirm attach under the
              card instead of the far bottom. */
-          <div className="flex min-h-0 flex-1 flex-col lg:mx-auto lg:my-auto lg:w-[520px] lg:flex-none lg:pb-10">
-            <div className="mt-4 rounded-card border border-line bg-surface px-6 py-7 text-center" data-testid="review-card">
+          <div className="relative flex min-h-0 flex-1 flex-col lg:mx-auto lg:my-auto lg:w-[520px] lg:flex-none lg:pb-10">
+            {leavingHtml && (
+              <div
+                aria-hidden
+                className="m-card-out pointer-events-none absolute inset-x-0 top-0 z-10 mt-4 rounded-card border border-line bg-surface px-6 py-7 text-center"
+                // our own just-rendered markup, snapshotted for the exit flight
+                dangerouslySetInnerHTML={{ __html: leavingHtml }} // NOSONAR
+              />
+            )}
+            <div key={`card-${tx.id}`} ref={cardRef} className="m-card-in mt-4 rounded-card border border-line bg-surface px-6 py-7 text-center" data-testid="review-card">
               <div className="text-[12px] text-ink-4" data-testid="review-card-meta">
                 {new Intl.DateTimeFormat(LOCALES[lang], { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(tx.date))}
                 {cardAccount && <span> · {cardAccount.name}</span>}
@@ -548,39 +647,9 @@ export function ReviewScreen() {
                       </span>
                       {slice && <span className="m-num text-[13px] text-ink-2">{fmtCents(slice.amountCents, tx.currency, lang)}</span>}
                       <Icon name="pencil-outline" size={14} color="var(--m-ink-4)" />
-                      {/* the reason hides behind an (i) — a full row was too
-                          much space for it (user request) */}
-                      {!slice && reasonLine && (
-                        <span // NOSONAR — sits inside the row button; a nested <button> is invalid HTML
-                          data-testid="review-reason-info"
-                          role="button"
-                          tabIndex={0}
-                          aria-label={reasonLine}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setReasonOpen((v) => !v);
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              setReasonOpen((v) => !v);
-                            }
-                          }}
-                          className="m-tap inline-flex"
-                        >
-                          <Icon name="information-outline" size={15} color="var(--m-ink-4)" />
-                        </span>
-                      )}
                     </button>
                   );
                 })}
-                {reasonOpen && reasonLine && (
-                  <div className="mt-1 flex items-center justify-center gap-1 rounded-xl bg-bg-2 px-3 py-1.5 text-[11px] text-ink-3" data-testid="review-reason">
-                    <Icon name={prediction?.source === 'keyword' ? 'lightbulb-outline' : 'history'} size={12} />
-                    {reasonLine}
-                  </div>
-                )}
               </div>
 
               {recMatch && (
@@ -605,6 +674,12 @@ export function ReviewScreen() {
                     </div>
                   )}
                 </>
+              )}
+
+              {/* no auto-detected match: the link can still be made by hand
+                  (user request) — the chip opens a picker over the actives */}
+              {!recMatch && activeRecs.length > 0 && (
+                <ManualRecurringChip rec={manualRec} onOpen={() => setRecPickOpen(true)} />
               )}
 
               {/* money between my own accounts: pre-marked as a transfer,
@@ -650,7 +725,10 @@ export function ReviewScreen() {
                 variant="outline"
                 className="w-28"
                 data-testid="review-skip-btn"
-                onClick={() => setSkipped((prev) => new Set([...prev, tx.id]))}
+                onClick={() => {
+                  captureLeaving();
+                  setSkipped((prev) => new Set([...prev, tx.id]));
+                }}
               >
                 {t('review.skip')}
               </Button>
@@ -695,6 +773,20 @@ export function ReviewScreen() {
           seedSingle
           onApply={(splits) => setStagedDraft(withSplits(draft, splits ?? undefined))}
           onApplySingle={(catId) => setStagedDraft(withCategory(withSplits(draft, undefined), catId, cats))}
+          reason={reasonLine}
+        />
+      )}
+      {tx && (
+        <RecurringPickSheet
+          open={recPickOpen}
+          onOpenChange={setRecPickOpen}
+          recurrings={activeRecs}
+          selectedId={manualRecId}
+          currency={tx.currency}
+          onPick={(id) => {
+            setManualRecId(id);
+            setRecPickOpen(false);
+          }}
         />
       )}
     </div>

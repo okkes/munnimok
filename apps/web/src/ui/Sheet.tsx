@@ -106,22 +106,23 @@ export function Sheet({ open, onOpenChange, title, children, size, height }: Rea
   if (panel) {
     if (!open) return null;
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-6" role="presentation">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
         <button
           aria-label="close"
           tabIndex={-1}
           onClick={() => !isLocked && onOpenChange(false)}
           className="absolute inset-0 cursor-default border-none bg-black/40"
         />
-        <div
-          role="dialog"
+        {/* a real <dialog> (a11y): UA border/padding/color neutralized */}
+        <dialog
+          open
           aria-modal="true"
-          className="relative z-10 flex w-[480px] max-w-[92vw] flex-col rounded-[20px] bg-bg shadow-2xl outline-none"
+          className="relative z-10 m-0 flex w-[480px] max-w-[92vw] flex-col rounded-[20px] border-none bg-bg p-0 text-ink shadow-2xl outline-none"
           style={{ height: fixedHeight, maxHeight: '85dvh' }}
         >
           {title && <div className="m-h3 shrink-0 px-5 pt-5 pb-1 text-ink">{title}</div>}
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pt-2 pb-5">{children}</div>
-        </div>
+        </dialog>
       </div>
     );
   }

@@ -76,16 +76,20 @@ function GroupHeader({
   t: TFunc;
 }>) {
   const hold = useRef<{ timer: ReturnType<typeof setTimeout> | null; fired: boolean }>({ timer: null, fired: false });
+  const [holding, setHolding] = useState(false);
   const startHold = () => {
     hold.current.fired = false;
+    setHolding(true); // the growing highlight (user request)
     hold.current.timer = setTimeout(() => {
       hold.current.fired = true;
+      setHolding(false);
       onMenu();
     }, 450);
   };
   const cancelHold = () => {
     if (hold.current.timer) clearTimeout(hold.current.timer);
     hold.current.timer = null;
+    setHolding(false);
   };
   return (
     <div className="mt-5 mb-1 flex items-center gap-2 px-1">
@@ -101,7 +105,7 @@ function GroupHeader({
           if (hold.current.fired) return; // the hold consumed this press
           onToggle();
         }}
-        className="m-cap m-tap flex min-w-0 flex-1 select-none items-center gap-2 border-none bg-transparent p-0 text-left"
+        className={`m-cap m-tap relative isolate flex min-w-0 flex-1 select-none items-center gap-2 border-none bg-transparent p-0 text-left ${holding ? 'm-holding' : ''}`}
         style={{ color: parent.color }}
       >
         <Icon name={isExpanded ? 'chevron-down' : 'chevron-right'} size={18} />

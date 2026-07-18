@@ -260,3 +260,32 @@
   outline: 2px solid var(--m-accent);
   outline-offset: 2px;
 }
+
+/* review deck (user request): the confirmed/skipped card exits left,
+   the next one slides in from the right */
+@keyframes m-card-out {
+  to { transform: translateX(-120%) rotate(-4deg); opacity: 0; }
+}
+@keyframes m-card-in {
+  from { transform: translateX(110%); opacity: 0.4; }
+  to { transform: translateX(0); opacity: 1; }
+}
+.m-card-out { animation: m-card-out 0.22s ease-in forwards; }
+.m-card-in { animation: m-card-in 0.24s ease-out; }
+
+/* press-and-hold affordance: a highlight grows under the finger while
+   the hold timer runs (450ms, matching the menu threshold) */
+@keyframes m-hold-grow {
+  from { transform: scaleX(0); opacity: 0.55; }
+  to { transform: scaleX(1); opacity: 1; }
+}
+.m-holding::before {
+  content: '';
+  position: absolute;
+  inset: -4px -8px;
+  border-radius: 12px;
+  background: var(--m-bg-2);
+  transform-origin: left center;
+  animation: m-hold-grow 0.45s linear forwards;
+  z-index: -1;
+}
