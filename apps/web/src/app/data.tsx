@@ -203,6 +203,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
           const { applyCatalogTombstones } = await import('@/application/catalogMaintenance');
           await applyCatalogTombstones(store, repo);
         })().catch(() => undefined);
+        // reinstall gap: the Settings avatar reads the local profile copy —
+        // hydrate it from /me when missing (fire-and-forget)
+        void (async () => {
+          const { hydrateProfileMeta } = await import('@/application/profileHydrate');
+          await hydrateProfileMeta(store);
+        })().catch(() => undefined);
         engine = buildSyncEngine(identity, store, repo);
         // pushes failing (offline / server away) — arm the background
         // flush so the outbox drains even if the app is killed meanwhile

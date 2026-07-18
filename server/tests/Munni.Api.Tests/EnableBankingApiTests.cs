@@ -97,6 +97,25 @@ public class EnableBankingApiTests
     }
 
     [Fact]
+    public async Task Signing_survives_earlier_instances_going_away()
+    {
+        // REGRESSION (outage 2026-07-18): the transient typed client used
+        // to be IDisposable and killed its RSA at request end - but
+        // IdentityModel's global provider cache kept serving that first,
+        // now-dead key ("Cannot access a disposed object: RSAOpenSsl").
+        // The signing state is process-wide now and nothing may dispose it.
+        Assert.False(typeof(IDisposable).IsAssignableFrom(typeof(EnableBankingApi)));
+
+        // two instances (fresh DI scopes) sign back to back; the handler
+        // itself asserts every call carries a well-formed signed JWT
+        var (first, _) = Create();
+        await first.GetInstitutionsAsync("nl");
+        var (second, secondHandler) = Create();
+        await second.GetInstitutionsAsync("nl");
+        Assert.Single(secondHandler.Paths);
+    }
+
+    [Fact]
     public async Task Institutions_consent_and_session_map_to_the_shared_shapes()
     {
         var (api, _) = Create();

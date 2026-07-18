@@ -44,6 +44,26 @@ export function Avatar({ picture, size = 40 }: { picture?: string | null; size?:
 
 const PROFILE_META_KEY = 'profile';
 
+/** the Settings-header copy of a /me payload; null when there is nothing worth storing */
+function profileMetaCopy(me: { displayName: string | null; picture: string | null }): LocalProfile | null {
+  if (!me.displayName && !me.picture) return null;
+  return { name: me.displayName ?? '', picture: me.picture ?? undefined };
+}
+
+/** /me → screen state, refreshing the local Settings-header copy on the way */
+async function fetchUserProfile(
+  store: ReturnType<typeof useData>['store'],
+): Promise<{ name: string; picture: string | null; userId: string } | null> {
+  const res = await apiFetch('/me').catch(() => null);
+  if (!res?.ok) return null;
+  const me = (await res.json()) as { userId: string; displayName: string | null; picture: string | null };
+  // keep the local copy in step with the server — an avatar changed on
+  // another device or a reinstall lands here
+  const copy = profileMetaCopy(me);
+  if (copy) await store.metaPut(PROFILE_META_KEY, copy);
+  return { name: me.displayName ?? '', picture: me.picture, userId: me.userId };
+}
+
 interface LocalProfile {
   name?: string;
   picture?: string;
@@ -80,12 +100,11 @@ export function ProfileScreen() {
     let cancelled = false;
     void (async () => {
       if (identity?.kind === 'user') {
-        const res = await apiFetch('/me').catch(() => null);
-        if (res?.ok && !cancelled) {
-          const me = (await res.json()) as { userId: string; displayName: string | null; picture: string | null };
-          setName(me.displayName ?? '');
-          if (me.picture) setPicture(me.picture);
-          setUserId(me.userId);
+        const loaded = await fetchUserProfile(store);
+        if (loaded && !cancelled) {
+          setName(loaded.name);
+          if (loaded.picture) setPicture(loaded.picture);
+          setUserId(loaded.userId);
         }
       } else if (identity?.kind === 'offline') {
         const profile = getOfflineProfile(identity.profileId);

@@ -16,37 +16,53 @@ namespace Munni.Api.Banking;
 /// is session-based: /auth starts the journey, the bank redirect brings
 /// a `code`, POST /sessions exchanges it and lists the account uids.
 /// </summary>
-public sealed class EnableBankingApi(HttpClient http, IConfiguration config) : IBankDataApi, IDisposable
+public sealed class EnableBankingApi(HttpClient http, IConfiguration config) : IBankDataApi
 {
     public const string Id = "enablebanking";
     public string ProviderId => Id;
 
-    private RsaSecurityKey? _key;
-    private string? _cachedJwt;
-    private DateTimeOffset _jwtExpires = DateTimeOffset.MinValue;
+    // PROCESS-WIDE signing state, never disposed. The instance is a
+    // transient typed client, and IdentityModel's global signature-
+    // provider cache keys RsaSecurityKey(RSA) instances by an EMPTY
+    // InternalId — so the FIRST instance's provider was cached forever
+    // and, once that instance's Dispose() killed its RSA, every later
+    // request signed with a dead key ("Cannot access a disposed object:
+    // RSAOpenSsl", user outage 2026-07-18). One static key ends both
+    // the disposal race and the per-request PEM re-import.
+    private static readonly object JwtGate = new();
+    private static RsaSecurityKey? _key;
+    private static string? _cachedJwt;
+    private static DateTimeOffset _jwtExpires = DateTimeOffset.MinValue;
 
     // ── auth ────────────────────────────────────────────────────────────
-    private string GetJwt()
+    private string GetJwt() =>
+        GetOrMintJwt(
+            config["EnableBanking:PrivateKeyPem"] ?? throw new InvalidOperationException("EnableBanking:PrivateKeyPem missing"),
+            config["EnableBanking:ApplicationId"]);
+
+    private static string GetOrMintJwt(string pem, string? applicationId)
     {
-        if (_cachedJwt is not null && DateTimeOffset.UtcNow < _jwtExpires) return _cachedJwt;
-        if (_key is null)
+        lock (JwtGate)
         {
-            var rsa = RSA.Create();
-            var pem = config["EnableBanking:PrivateKeyPem"] ?? throw new InvalidOperationException("EnableBanking:PrivateKeyPem missing");
-            // env files carry the PEM as one line with \n escapes
-            rsa.ImportFromPem(pem.Replace("\\n", "\n"));
-            _key = new RsaSecurityKey(rsa) { KeyId = config["EnableBanking:ApplicationId"] };
+            if (_cachedJwt is not null && DateTimeOffset.UtcNow < _jwtExpires) return _cachedJwt;
+            if (_key is null)
+            {
+                var rsa = RSA.Create();
+                // env files carry the PEM as one line with \n escapes
+                rsa.ImportFromPem(pem.Replace("\\n", "\n"));
+                _key = new RsaSecurityKey(rsa) { KeyId = applicationId };
+            }
+            var now = DateTimeOffset.UtcNow;
+            var token = new JwtSecurityToken(
+                issuer: "enablebanking.com",
+                audience: "api.enablebanking.com",
+                claims: [new Claim(JwtRegisteredClaimNames.Iat, now.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64)],
+                expires: now.AddHours(1).UtcDateTime,
+                signingCredentials: new SigningCredentials(_key, SecurityAlgorithms.RsaSha256));
+            _cachedJwt = new JwtSecurityTokenHandler().WriteToken(token);
+            _jwtExpires = now.AddMinutes(55);
+            return _cachedJwt;
         }
-        var now = DateTimeOffset.UtcNow;
-        var token = new JwtSecurityToken(
-            issuer: "enablebanking.com",
-            audience: "api.enablebanking.com",
-            claims: [new Claim(JwtRegisteredClaimNames.Iat, now.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64)],
-            expires: now.AddHours(1).UtcDateTime,
-            signingCredentials: new SigningCredentials(_key, SecurityAlgorithms.RsaSha256));
-        _cachedJwt = new JwtSecurityTokenHandler().WriteToken(token);
-        _jwtExpires = now.AddMinutes(55);
-        return _cachedJwt;
     }
 
     private async Task<T> SendAsync<T>(HttpMethod method, string path, object? body, CancellationToken ct)
@@ -220,5 +236,4 @@ public sealed class EnableBankingApi(HttpClient http, IConfiguration config) : I
             new GcAccountReference(tx.DebtorAccount?.Iban));
     }
 
-    public void Dispose() => _key?.Rsa?.Dispose();
 }

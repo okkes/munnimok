@@ -18,6 +18,17 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.12.2',
+    date: '2026-07-18',
+    items: [
+      {
+        en: 'Enable Banking connections work again: a low-level key-handling bug made every bank list request after the first one fail — fixed for good, with the failure reason on screen if anything else ever goes wrong. And your profile picture now survives a reinstall: the Settings header fetches it from your account instead of waiting for a re-save.',
+        nl: 'Enable Banking-koppelingen werken weer: een laag-niveau sleutelfout liet elk banklijst-verzoek na het eerste mislukken — definitief opgelost, met de foutreden in beeld als er ooit iets anders misgaat. En je profielfoto overleeft nu een herinstallatie: de Instellingen-kop haalt hem uit je account in plaats van te wachten op opnieuw opslaan.',
+        tr: 'Enable Banking bağlantıları yeniden çalışıyor: düşük seviyeli bir anahtar hatası ilkinden sonraki her banka listesi isteğini başarısız kılıyordu — kalıcı olarak düzeltildi; başka bir şey ters giderse nedeni ekranda. Profil fotoğrafın da artık yeniden kurulumdan sağ çıkıyor: Ayarlar başlığı yeniden kaydetmeyi beklemek yerine onu hesabından alıyor.',
+      },
+    ],
+  },
+  {
     version: '2.12.1',
     date: '2026-07-18',
     items: [
