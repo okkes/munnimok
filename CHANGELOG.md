@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.10.0](https://github.com/okkes/munnimok/compare/v2.9.0...v2.10.0) (2026-07-18)
+
+
+### ✨ Features
+
+* **app:** reported-bugs batch, part 2 — review deck + detail control ([0401e11](https://github.com/okkes/munnimok/commit/0401e113a9c018b9db813b4833cf27cc4441e39f))
+
+
+### 🐞 Bug Fixes
+
+* **app:** the reported-bugs batch, part 1 ([a6ddd17](https://github.com/okkes/munnimok/commit/a6ddd1772afca2be92dbdeecd18db9a27056a00f))
+
 ## [2.9.0](https://github.com/okkes/munnimok/compare/v2.8.0...v2.9.0) (2026-07-17)
 
 
