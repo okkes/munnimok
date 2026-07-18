@@ -37,6 +37,18 @@ function Root() {
   );
 }
 
+// Single-flight token fetch: reload() fires several /admin/* calls in
+// parallel and Logto ROTATES refresh tokens — concurrent refreshes race and
+// the loser's consumed token gets the whole grant revoked (the "invalid
+// token, sign in again" loop). One in-flight fetch serves all callers.
+let tokenInflight: Promise<string | undefined> | null = null;
+function singleFlight(fetchToken: () => Promise<string | undefined>): Promise<string | undefined> {
+  tokenInflight ??= fetchToken().finally(() => {
+    tokenInflight = null;
+  });
+  return tokenInflight;
+}
+
 function LogtoGate() {
   const { isAuthenticated, isLoading, signIn, getAccessToken } = useLogto();
   const isCallback = window.location.pathname.endsWith('/auth-callback');
@@ -51,7 +63,7 @@ function LogtoGate() {
       </div>
     );
   }
-  return <AdminApp config={config} getToken={() => getAccessToken(config.logtoResource || undefined)} />;
+  return <AdminApp config={config} getToken={() => singleFlight(() => getAccessToken(config.logtoResource || undefined))} />;
 }
 
 function Callback() {

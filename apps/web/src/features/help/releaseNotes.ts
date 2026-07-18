@@ -18,6 +18,22 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.16.0',
+    date: '2026-07-18',
+    items: [
+      {
+        en: 'Bank connections no longer get lost half-way: when your bank\'s daily data budget runs out mid-link, the connection is saved anyway and munni finishes the job automatically once the budget resets — approved consents can\'t float in limbo anymore. Signing in also got steadier: parallel token refreshes no longer race each other into a forced re-login.',
+        nl: 'Bankkoppelingen raken niet langer halverwege zoek: raakt het dagelijkse databudget van je bank op tijdens het koppelen, dan wordt de verbinding toch bewaard en maakt munni het werk automatisch af zodra het budget herstelt — goedgekeurde toestemmingen kunnen niet meer in het luchtledige zweven. Inloggen werd ook stabieler: parallelle tokenverversingen jagen elkaar niet langer een gedwongen herlogin in.',
+        tr: 'Banka bağlantıları artık yarı yolda kaybolmuyor: bankanın günlük veri bütçesi bağlantı sırasında biterse bağlantı yine de kaydediliyor ve bütçe yenilenince munni işi otomatik tamamlıyor — onaylanmış rızalar artık boşlukta süzülemez. Giriş de sağlamlaştı: paralel jeton yenilemeleri artık birbirini zorla yeniden girişe sürüklemiyor.',
+      },
+      {
+        en: 'Goals got their own cover pictures — houses, cars, travel, savings and more saving-for themes instead of borrowed event scenes.',
+        nl: 'Doelen kregen hun eigen omslagfoto\'s — huizen, auto\'s, reizen, sparen en meer spaarthema\'s in plaats van geleende evenementbeelden.',
+        tr: 'Hedefler kendi kapak resimlerine kavuştu — ödünç etkinlik sahneleri yerine ev, araba, seyahat, birikim ve daha fazla biriktirme teması.',
+      },
+    ],
+  },
+  {
     version: '2.15.0',
     date: '2026-07-18',
     items: [

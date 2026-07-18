@@ -12,7 +12,7 @@ public class GcRequisition
     public required string InstitutionId { get; set; }
     /// <summary>the provider's consent id (GC requisition / EB session).</summary>
     public required string RequisitionId { get; set; }
-    public required string Status { get; set; } // created | linked | expired
+    public required string Status { get; set; } // created | approved (consented, ingest pending) | linked | expired
     /// <summary>which bank-data provider owns this consent</summary>
     public string Provider { get; set; } = "gocardless";
     /// <summary>deep-link scheme when the consent started in a native

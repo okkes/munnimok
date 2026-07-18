@@ -111,7 +111,16 @@ interface AdminAppProps {
  * deliberately shares no code with the member app.
  */
 export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
-  const [screen, setScreen] = useState<Screen>('overview');
+  // survives the full page reload a Logto re-auth causes (else every token
+  // hiccup dumps the operator back on Overview mid-task)
+  const [screen, setScreen] = useState<Screen>(() => {
+    const saved = sessionStorage.getItem('munni_admin_screen');
+    return saved === 'users' || saved === 'connections' || saved === 'catalog' ? saved : 'overview';
+  });
+  const openScreen = (next: Screen) => {
+    sessionStorage.setItem('munni_admin_screen', next);
+    setScreen(next);
+  };
   const [sub, setSub] = useState(() => localStorage.getItem('munni_admin_sub') ?? '');
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [requisitions, setRequisitions] = useState<AdminRequisition[] | null>(null);
@@ -211,7 +220,7 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
               key={id}
               data-testid={`nav-${id}`}
               className={screen === id ? 'active' : ''}
-              onClick={() => setScreen(id)}
+              onClick={() => openScreen(id)}
             >
               {label}
             </button>
@@ -260,8 +269,12 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
             onPromote={promote}
             onDemote={demote}
             onDiagnose={async (sub) => {
-              const res = await call(`/admin/users/${encodeURIComponent(sub)}/diagnosis`);
-              return res.ok ? ((await res.json()) as UserDiagnosis) : null;
+              const res = await call(`/admin/users/${encodeURIComponent(sub)}/diagnosis`).catch(() => null);
+              if (!res?.ok) {
+                const reason = res ? `HTTP ${res.status}` : 'network';
+                return `request failed (${reason}) — reload and retry`;
+              }
+              return (await res.json()) as UserDiagnosis;
             }}
           />
         )}
@@ -414,10 +427,11 @@ function UsersScreen({
   busy: boolean;
   onPromote: (sub: string) => void;
   onDemote: (sub: string) => void;
-  onDiagnose: (sub: string) => Promise<UserDiagnosis | null>;
+  /** resolves to the diagnosis, or a human-readable failure line */
+  onDiagnose: (sub: string) => Promise<UserDiagnosis | string>;
 }>) {
   const [query, setQuery] = useState('');
-  const [diag, setDiag] = useState<{ sub: string; data: UserDiagnosis | null } | null>(null);
+  const [diag, setDiag] = useState<{ sub: string; data: UserDiagnosis | string | null } | null>(null);
   const toggleDiagnosis = (sub: string) => {
     if (diag?.sub === sub) {
       setDiag(null);
@@ -496,7 +510,8 @@ function UsersScreen({
               <tr data-testid="user-diagnosis">
                 <td colSpan={5}>
                   {!diag.data && <span className="sub">loading…</span>}
-                  {diag.data && (
+                  {typeof diag.data === 'string' && <span className="sub">{diag.data}</span>}
+                  {diag.data && typeof diag.data !== 'string' && (
                     <div className="diag">
                       <div><strong>member spaces</strong> · {diag.data.memberSpaces.length === 0 ? 'NONE' : diag.data.memberSpaces.join(', ')}</div>
                       <div>

@@ -1,4 +1,3 @@
-import { EVENT_PICTURES } from '@/features/events/EventsScreen';
 import { downscaleImage } from '@/lib/image';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
@@ -20,6 +19,20 @@ import { ProgressBar, Tile } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 
 export const GOAL_ICONS = ['home-outline', 'car-outline', 'airplane', 'shield-check-outline', 'laptop', 'ring', 'sail-boat', 'school-outline'] as const;
+
+/** bundled, offline-ready goal covers (public/goals/*.jpg, Unsplash license) — saving-for themes, not event scenes */
+export const GOAL_PICTURES = [
+  '/goals/house.jpg',
+  '/goals/car.jpg',
+  '/goals/travel.jpg',
+  '/goals/savings.jpg',
+  '/goals/education.jpg',
+  '/goals/wedding-fund.jpg',
+  '/goals/gadget.jpg',
+  '/goals/retirement.jpg',
+  '/goals/renovation.jpg',
+  '/goals/bike.jpg',
+] as const;
 
 /** create/edit sheet */
 export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow | 'new' | null; onClose: () => void }>) {
@@ -99,7 +112,7 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
             <Icon name="image-plus" size={16} />
             {t('events.uploadPicture')}
           </button>
-          {EVENT_PICTURES.map((candidate) => (
+          {GOAL_PICTURES.map((candidate) => (
             <button
               key={candidate}
               data-testid={`goalform-pic-${candidate.split('/').pop()?.replace('.jpg', '')}`}

@@ -41,6 +41,11 @@ describe('Goals (demo identity)', () => {
     await screen.findByTestId('screen-goals');
     await screen.findByTestId('goals-empty');
 
+    // the form offers the goal-themed covers, not the event scenes
+    fireEvent.click(await screen.findByTestId('goals-add'));
+    await screen.findByTestId('goalform-pic-house');
+    expect(screen.queryByTestId('goalform-pic-beach')).toBeNull();
+
     const card = await createGoal('New car', '1000');
     expect(card.textContent).toContain('New car');
     // demo savings account holds €8,150 — saved and unallocated show it

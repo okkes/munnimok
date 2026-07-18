@@ -190,54 +190,24 @@ public static partial class GcEndpoints
             try
             {
             var status = await gc.CompleteAuthAsync(requisition.RequisitionId, code);
-            // Enable Banking mints its session id at complete time
-            if (status.Id != requisition.RequisitionId) requisition.RequisitionId = status.Id;
-            if (status.Status != "LN")
+            // Enable Banking mints its session id at complete time — persist
+            // it BEFORE ingesting: the auth code is single-use, so if the
+            // ingest dies below the retry must still find the session
+            if (status.Id != requisition.RequisitionId)
             {
+                requisition.RequisitionId = status.Id;
                 await db.SaveChangesAsync();
-                return Results.Ok(new CompleteResponse(status.Status, 0, 0, requisition.AppScheme));
             }
+            if (status.Status != "LN")
+                return Results.Ok(new CompleteResponse(status.Status, 0, 0, requisition.AppScheme));
 
             var space = await db.Spaces.FindAsync(requisition.SpaceId);
             if (space is null) return Results.NotFound();
 
-            var ingest = new GcIngest(db);
-            var linkedCount = 0;
-            var imported = 0;
-            foreach (var gcAccountId in status.Accounts)
-            {
-                var details = await gc.GetAccountDetailsAsync(gcAccountId);
-                // wallet-style accounts (PayPal…) carry no IBAN — a
-                // deterministic per-account reference keeps the whole feed
-                // machinery working (user bug: the consent completed fine
-                // but the connection never appeared)
-                var accountRef = details.Iban ?? $"GC:{gcAccountId}";
-
-                var linked = await db.GcLinkedAccounts.FindAsync(gcAccountId);
-                if (linked is null)
-                {
-                    linked = new GcLinkedAccount
-                    {
-                        GcAccountId = gcAccountId,
-                        SpaceId = requisition.SpaceId,
-                        AccountEntityId = ImportIds.AccountId(accountRef),
-                        Iban = ImportIds.Normalize(accountRef),
-                        Currency = details.Currency ?? "EUR",
-                        RequisitionId = requisition.Id,
-                        Provider = requisition.Provider,
-                    };
-                    db.GcLinkedAccounts.Add(linked);
-                }
-
-                var balances = await gc.GetBalancesAsync(gcAccountId);
-                var page = await gc.GetTransactionsAsync(gcAccountId, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-90)));
-                imported += await ingest.IngestAccountAsync(space, linked, details, balances, page.Booked, page.Pending);
-                linked.LastFetchAt = DateTimeOffset.UtcNow;
-                linked.HistoryBackfilledAt = DateTimeOffset.UtcNow; // this fetch was the full window
-                linkedCount++;
-            }
-
-            requisition.Status = "linked";
+            var (linkedCount, imported, deferred) = await IngestApprovedAccountsAsync(gc, db, requisition, space, status.Accounts);
+            // 'approved' = consented at the bank but not fully ingested —
+            // the scheduled healer finishes it when the quota resets
+            requisition.Status = deferred == 0 ? "linked" : "approved";
             await db.SaveChangesAsync();
             return Results.Ok(new CompleteResponse(status.Status, linkedCount, imported, requisition.AppScheme));
             }
@@ -249,5 +219,87 @@ public static partial class GcEndpoints
                 var detail = ex.Message.Length > 300 ? ex.Message[..300] : ex.Message;
                 return Results.Problem(title: $"{requisition.Provider} completion failed", detail: detail, statusCode: 502);
             }
+    }
+
+    /// <summary>
+    /// Links the consented accounts while tolerating the bank's ~4-calls-
+    /// per-endpoint-per-day budget. Retried consent journeys used to burn
+    /// it and the resulting 429 aborted completion half-way: the consent
+    /// stayed approved at the provider but attached to nothing — the
+    /// "floating connection" outage (2026-07-18). Now a 429 degrades
+    /// instead of aborting: on details the account is deferred to the
+    /// scheduled healer (identity unknown until the budget resets), on
+    /// balances/transactions the account still links with empty data and
+    /// LastFetchAt stays null so the first scheduled fetch backfills the
+    /// full window.
+    /// </summary>
+    internal static async Task<(int Linked, int Imported, int Deferred)> IngestApprovedAccountsAsync(
+        IBankDataApi gc, AppDbContext db, GcRequisition requisition, Space space, IReadOnlyList<string> accounts)
+    {
+        var ingest = new GcIngest(db);
+        var linkedCount = 0;
+        var imported = 0;
+        var deferred = 0;
+        foreach (var gcAccountId in accounts)
+        {
+            var linked = await db.GcLinkedAccounts.FindAsync(gcAccountId);
+            GcAccountDetails details;
+            try
+            {
+                details = await gc.GetAccountDetailsAsync(gcAccountId);
+            }
+            catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+            {
+                if (linked is null)
+                {
+                    deferred++;
+                    continue;
+                }
+                // a previous attempt stored the identity — reuse it
+                var isRealIban = !linked.Iban.StartsWith("GC:", StringComparison.OrdinalIgnoreCase);
+                details = new GcAccountDetails(isRealIban ? linked.Iban : null, null, linked.Currency);
+            }
+            // wallet-style accounts (PayPal…) carry no IBAN — a
+            // deterministic per-account reference keeps the whole feed
+            // machinery working (user bug: the consent completed fine
+            // but the connection never appeared)
+            var accountRef = details.Iban ?? $"GC:{gcAccountId}";
+
+            if (linked is null)
+            {
+                linked = new GcLinkedAccount
+                {
+                    GcAccountId = gcAccountId,
+                    SpaceId = requisition.SpaceId,
+                    AccountEntityId = ImportIds.AccountId(accountRef),
+                    Iban = ImportIds.Normalize(accountRef),
+                    Currency = details.Currency ?? "EUR",
+                    RequisitionId = requisition.Id,
+                    Provider = requisition.Provider,
+                };
+                db.GcLinkedAccounts.Add(linked);
+            }
+
+            IReadOnlyList<GcBalance> balances = [];
+            GcTransactionsPage? page = null;
+            try
+            {
+                balances = await gc.GetBalancesAsync(gcAccountId);
+                page = await gc.GetTransactionsAsync(gcAccountId, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-90)));
+            }
+            catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+            {
+                // budget spent — the feed still gets created/attached so the
+                // link shows up everywhere; data follows on the next fetch
+            }
+            imported += await ingest.IngestAccountAsync(space, linked, details, balances, page?.Booked ?? [], page?.Pending);
+            if (page is not null)
+            {
+                linked.LastFetchAt = DateTimeOffset.UtcNow;
+                linked.HistoryBackfilledAt = DateTimeOffset.UtcNow; // this fetch was the full window
+            }
+            linkedCount++;
+        }
+        return (linkedCount, imported, deferred);
     }
 }

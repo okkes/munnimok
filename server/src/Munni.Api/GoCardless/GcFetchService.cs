@@ -17,6 +17,9 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
     // remaining daily quota on retries (per-process is enough: a restart
     // retries once, then defers again)
     private readonly Dictionary<string, DateTimeOffset> _rateLimitedUntil = new();
+    // consent healing paces itself: a handful of checks per day per consent
+    // stays far inside the shared requisitions budget
+    private readonly Dictionary<Guid, DateTimeOffset> _healBackoff = new();
     private DateOnly _lastCleanupDay = DateOnly.MinValue;
 
     /// <summary>abandoned consent journeys younger than this survive cleanup</summary>
@@ -67,7 +70,9 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
         var cutoff = DateTimeOffset.UtcNow - IdleGraceDays;
         var used = await db.GcLinkedAccounts.Select(a => a.RequisitionId).Distinct().ToListAsync(ct);
         var idle = await db.GcRequisitions
-            .Where(r => r.CreatedAt < cutoff && !used.Contains(r.Id) && r.Provider == GoCardlessBankApi.Id)
+            // 'approved' = bank consent given, ingest pending on quota —
+            // the healer owns those, cleanup must not cut them loose
+            .Where(r => r.CreatedAt < cutoff && !used.Contains(r.Id) && r.Provider == GoCardlessBankApi.Id && r.Status != "approved")
             .ToListAsync(ct);
         foreach (var requisition in idle)
         {
@@ -100,6 +105,8 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var registry = scope.ServiceProvider.GetRequiredService<BankProviderRegistry>();
 
+        await HealPendingConsentsAsync(scope.ServiceProvider, db, registry, ct);
+
         var linkedAccounts = await db.GcLinkedAccounts.ToListAsync(ct);
         foreach (var linked in linkedAccounts)
         {
@@ -124,6 +131,64 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
                 logger.LogWarning(ex, "gc fetch failed for {Iban}", linked.Iban);
             }
         }
+    }
+
+    /// <summary>
+    /// Finishes consents the user approved at the bank but whose /complete
+    /// never fully ran — the redirect broke, or the daily quota 429'd it
+    /// half-way. Those consents used to float (linked at the provider,
+    /// attached nowhere) until the idle cleanup deleted them; now every
+    /// hourly tick re-checks and ingests them once the budget allows.
+    /// GC consents are re-checkable from 'created' (state lives at GC);
+    /// Enable Banking only from 'approved' (a session must already exist —
+    /// the auth code is single-use and gone).
+    /// </summary>
+    internal async Task HealPendingConsentsAsync(IServiceProvider services, AppDbContext db, BankProviderRegistry registry, CancellationToken ct)
+    {
+        var cutoff = DateTimeOffset.UtcNow.AddDays(-30);
+        // journeys younger than the grace are still in the user's hands —
+        // /complete owns those; the healer picks up whatever it dropped
+        var grace = DateTimeOffset.UtcNow.AddMinutes(-10);
+        var pending = await db.GcRequisitions
+            .Where(r => r.CreatedAt > cutoff && r.CreatedAt < grace
+                && (r.Status == "approved" || (r.Status == "created" && r.Provider == GoCardlessBankApi.Id)))
+            .ToListAsync(ct);
+        foreach (var requisition in pending)
+        {
+            if (_healBackoff.TryGetValue(requisition.Id, out var until) && DateTimeOffset.UtcNow < until) continue;
+            _healBackoff[requisition.Id] = DateTimeOffset.UtcNow.AddHours(6);
+            try
+            {
+                await HealConsentAsync(services, db, registry, requisition, ct);
+            }
+            catch (HttpRequestException ex)
+            {
+                // expired/abandoned journeys answer 4xx — the idle cleanup owns those
+                if (logger.IsEnabled(LogLevel.Debug))
+                    logger.LogDebug(ex, "consent heal skipped for {Id}", requisition.Id);
+            }
+        }
+    }
+
+    private async Task HealConsentAsync(IServiceProvider services, AppDbContext db, BankProviderRegistry registry, GcRequisition requisition, CancellationToken ct)
+    {
+        var gc = registry.For(requisition.Provider);
+        var status = await gc.CompleteAuthAsync(requisition.RequisitionId, null, ct);
+        if (status.Status != "LN") return; // not (yet) approved at the bank — nothing to heal
+        var space = await db.Spaces.FindAsync([requisition.SpaceId], ct);
+        if (space is null) return;
+
+        var (linkedCount, imported, deferred) = await GcEndpoints.IngestApprovedAccountsAsync(gc, db, requisition, space, status.Accounts);
+        if (deferred == 0) requisition.Status = "linked";
+        else if (requisition.Status == "created") requisition.Status = "approved";
+        await db.SaveChangesAsync(ct);
+        if (linkedCount == 0) return;
+
+        if (logger.IsEnabled(LogLevel.Information))
+            logger.LogInformation("consent heal: {Institution} linked {Linked} account(s), {Imported} tx", requisition.InstitutionId, linkedCount, imported);
+        services.GetRequiredService<Sync.SpaceEventBroadcaster>().Publish(requisition.SpaceId);
+        if (imported > 0)
+            await services.GetRequiredService<Push.PushNotifier>().NotifyNewTransactionsAsync(requisition.SpaceId, imported, ct);
     }
 
     internal async Task FetchAccountAsync(IServiceProvider services, AppDbContext db, IBankDataApi gc, GcLinkedAccount linked, CancellationToken ct)

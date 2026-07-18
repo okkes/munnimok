@@ -30,8 +30,18 @@ export function waitForAuthReady(): Promise<void> {
   return authReadyPromise;
 }
 
+// Single-flight: Logto ROTATES refresh tokens, so two concurrent refreshes
+// race — the loser presents the already-consumed token and Logto revokes the
+// whole grant family (dead refresh token → double 401 → forced re-login).
+// Serializing concurrent callers onto one in-flight fetch removes the race.
+let inflight: Promise<string | undefined> | null = null;
+
 export async function getAccessToken(): Promise<string | undefined> {
-  return getter ? await getter() : undefined;
+  if (!getter) return undefined;
+  inflight ??= getter().finally(() => {
+    inflight = null;
+  });
+  return inflight;
 }
 
 /** Logto's signOut, registered by the provider (no-op when unconfigured). */

@@ -44,11 +44,34 @@ public sealed class FakeGoCardlessApi : IGoCardlessApi
         return Task.CompletedTask;
     }
 
-    public Task<GcAccountDetails> GetAccountDetailsAsync(string gcAccountId, CancellationToken ct = default) =>
-        Task.FromResult(Details);
+    /// <summary>while &gt; 0, details calls throw 429 (per-account daily budget spent)</summary>
+    public int Details429Remaining;
 
-    public Task<IReadOnlyList<GcBalance>> GetBalancesAsync(string gcAccountId, CancellationToken ct = default) =>
-        Task.FromResult<IReadOnlyList<GcBalance>>([new GcBalance(new GcAmount("1234.56", "EUR"), "closingBooked")]);
+    /// <summary>while &gt; 0, balances/transactions calls throw 429</summary>
+    public int Data429Remaining;
+
+    private static HttpRequestException Quota429() =>
+        new("429 Too Many Requests", null, HttpStatusCode.TooManyRequests);
+
+    public Task<GcAccountDetails> GetAccountDetailsAsync(string gcAccountId, CancellationToken ct = default)
+    {
+        if (Details429Remaining > 0)
+        {
+            Details429Remaining--;
+            throw Quota429();
+        }
+        return Task.FromResult(Details);
+    }
+
+    public Task<IReadOnlyList<GcBalance>> GetBalancesAsync(string gcAccountId, CancellationToken ct = default)
+    {
+        if (Data429Remaining > 0)
+        {
+            Data429Remaining--;
+            throw Quota429();
+        }
+        return Task.FromResult<IReadOnlyList<GcBalance>>([new GcBalance(new GcAmount("1234.56", "EUR"), "closingBooked")]);
+    }
 
     public List<DateOnly?> TransactionFroms { get; } = [];
     public List<GcTransaction> Pending { get; set; } = [];
@@ -300,6 +323,183 @@ public class GcEndpointsTests : IClassFixture<GcApiFactory>
         }
         finally
         {
+            _factory.Gc.Status = new GcRequisitionStatus("gc-req-1", "LN", ["gc-acc-1"]);
+        }
+    }
+
+    [Fact]
+    public async Task Quota_429_on_details_defers_the_link_and_the_healer_finishes_it()
+    {
+        // the floating-connection outage: a 429 mid-complete used to abort
+        // with a 502, leaving the consent approved at GC but attached to
+        // nothing — and the idempotency guard kept it that way forever
+        var (client, _, spaceId) = await MemberAsync("heal");
+        _factory.Gc.Status = new GcRequisitionStatus("gc-req-1", "LN", ["gc-heal-1"]);
+        // own IBAN: feed ops are deterministic per (iban, ref) — reusing the
+        // shared NL69 feed would eat Requisition_flow's first-ingest assert
+        _factory.Gc.Details = new GcAccountDetails("NL10HEAL0000000001", "Heal 1", "EUR");
+        _factory.Gc.Details429Remaining = 1;
+        try
+        {
+            var created = await (await client.PostAsJsonAsync("/gocardless/requisitions",
+                new CreateRequisitionRequest(spaceId, "ING_NL", "https://app/gc-callback"))).Content
+                .ReadFromJsonAsync<CreateRequisitionResponse>();
+            var complete = await (await client.PostAsync($"/gocardless/requisitions/{created!.Reference}/complete", null))
+                .Content.ReadFromJsonAsync<CompleteResponse>();
+            Assert.Equal("LN", complete!.Status); // approved — NOT a 502
+            Assert.Equal(0, complete.LinkedAccounts); // identity unknown until the budget resets
+
+            using (var scope = _factory.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var row = await db.GcRequisitions.FindAsync(Guid.Parse(created.Reference));
+                Assert.Equal("approved", row!.Status);
+                row.CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-30); // past the healer's fresh-journey grace
+                await db.SaveChangesAsync();
+            }
+
+            var service = new GcFetchService(
+                _factory.Services.GetRequiredService<IServiceScopeFactory>(),
+                NullLogger<GcFetchService>.Instance)
+            { AccountDelay = TimeSpan.Zero };
+            await service.FetchAllAsync(CancellationToken.None);
+
+            using (var scope = _factory.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var row = await db.GcRequisitions.FindAsync(Guid.Parse(created.Reference));
+                Assert.Equal("linked", row!.Status);
+                var linked = await db.GcLinkedAccounts.FindAsync("gc-heal-1");
+                Assert.NotNull(linked);
+                var feedId = ImportIds.FeedSpaceId(linked!.Iban);
+                // attached to the target space — floating no more
+                Assert.True(await db.SpaceAccountLinks.AnyAsync(l => l.SpaceId == spaceId && l.FeedSpaceId == feedId));
+            }
+        }
+        finally
+        {
+            _factory.Gc.Details429Remaining = 0;
+            _factory.Gc.Details = new GcAccountDetails("NL69INGB0123456789", "Betaalrekening", "EUR");
+            _factory.Gc.Status = new GcRequisitionStatus("gc-req-1", "LN", ["gc-acc-1"]);
+        }
+    }
+
+    [Fact]
+    public async Task Healer_reuses_the_stored_identity_when_details_are_throttled_again()
+    {
+        // an earlier attempt already stored the account identity — a healer
+        // pass that hits the details throttle again must not lose it
+        var (client, userId, spaceId) = await MemberAsync("heal3");
+        Guid reqId;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            reqId = Guid.NewGuid();
+            db.GcRequisitions.Add(new GcRequisition
+            {
+                Id = reqId, UserId = userId, SpaceId = spaceId, InstitutionId = "ING_NL",
+                RequisitionId = "gc-req-1", Status = "approved",
+                CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-30),
+            });
+            db.GcLinkedAccounts.Add(new GcLinkedAccount
+            {
+                GcAccountId = "gc-heal-3", SpaceId = spaceId,
+                AccountEntityId = ImportIds.AccountId("NL30HEAL0000000003"),
+                Iban = "NL30HEAL0000000003", Currency = "EUR", RequisitionId = reqId,
+            });
+            await db.SaveChangesAsync();
+        }
+        _factory.Gc.Status = new GcRequisitionStatus("gc-req-1", "LN", ["gc-heal-3"]);
+        _factory.Gc.Details429Remaining = 1;
+        try
+        {
+            var service = new GcFetchService(
+                _factory.Services.GetRequiredService<IServiceScopeFactory>(),
+                NullLogger<GcFetchService>.Instance)
+            { AccountDelay = TimeSpan.Zero };
+            await service.FetchAllAsync(CancellationToken.None);
+
+            using var scope = _factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            Assert.Equal("linked", (await db.GcRequisitions.FindAsync(reqId))!.Status);
+            var linked = await db.GcLinkedAccounts.FindAsync("gc-heal-3");
+            Assert.Equal("NL30HEAL0000000003", linked!.Iban); // identity kept, not degraded to GC:
+            Assert.NotNull(linked.LastFetchAt); // balances/transactions came through
+        }
+        finally
+        {
+            _factory.Gc.Details429Remaining = 0;
+            _factory.Gc.Status = new GcRequisitionStatus("gc-req-1", "LN", ["gc-acc-1"]);
+        }
+    }
+
+    [Fact]
+    public async Task Healer_leaves_unapproved_journeys_alone_and_backs_off_between_checks()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        Guid reqId;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            reqId = Guid.NewGuid();
+            db.Spaces.Add(new Space { Id = $"space_cr_{suffix}" });
+            db.GcRequisitions.Add(new GcRequisition
+            {
+                Id = reqId, UserId = Guid.NewGuid(), SpaceId = $"space_cr_{suffix}", InstitutionId = "ING_NL",
+                RequisitionId = "gc-req-1", Status = "created",
+                CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-30),
+            });
+            await db.SaveChangesAsync();
+        }
+        _factory.Gc.Status = new GcRequisitionStatus("gc-req-1", "CR", []);
+        try
+        {
+            var service = new GcFetchService(
+                _factory.Services.GetRequiredService<IServiceScopeFactory>(),
+                NullLogger<GcFetchService>.Instance)
+            { AccountDelay = TimeSpan.Zero };
+            await service.FetchAllAsync(CancellationToken.None); // bank says CR — nothing to heal
+            await service.FetchAllAsync(CancellationToken.None); // second tick: 6h backoff skips it
+
+            using var scope = _factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            Assert.Equal("created", (await db.GcRequisitions.FindAsync(reqId))!.Status);
+        }
+        finally
+        {
+            _factory.Gc.Status = new GcRequisitionStatus("gc-req-1", "LN", ["gc-acc-1"]);
+        }
+    }
+
+    [Fact]
+    public async Task Quota_429_on_data_fetch_still_links_and_attaches_the_account()
+    {
+        var (client, _, spaceId) = await MemberAsync("heal2");
+        _factory.Gc.Status = new GcRequisitionStatus("gc-req-1", "LN", ["gc-heal-2"]);
+        _factory.Gc.Details = new GcAccountDetails("NL20HEAL0000000002", "Heal 2", "EUR");
+        _factory.Gc.Data429Remaining = 1;
+        try
+        {
+            var created = await (await client.PostAsJsonAsync("/gocardless/requisitions",
+                new CreateRequisitionRequest(spaceId, "ING_NL", "https://app/gc-callback"))).Content
+                .ReadFromJsonAsync<CreateRequisitionResponse>();
+            var complete = await (await client.PostAsync($"/gocardless/requisitions/{created!.Reference}/complete", null))
+                .Content.ReadFromJsonAsync<CompleteResponse>();
+            Assert.Equal(1, complete!.LinkedAccounts); // linked with empty data
+
+            using var scope = _factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var row = await db.GcRequisitions.FindAsync(Guid.Parse(created.Reference));
+            Assert.Equal("linked", row!.Status);
+            var linked = await db.GcLinkedAccounts.FindAsync("gc-heal-2");
+            Assert.Null(linked!.LastFetchAt); // first scheduled fetch backfills the full window
+            var feedId = ImportIds.FeedSpaceId(linked.Iban);
+            Assert.True(await db.SpaceAccountLinks.AnyAsync(l => l.SpaceId == spaceId && l.FeedSpaceId == feedId));
+        }
+        finally
+        {
+            _factory.Gc.Data429Remaining = 0;
+            _factory.Gc.Details = new GcAccountDetails("NL69INGB0123456789", "Betaalrekening", "EUR");
             _factory.Gc.Status = new GcRequisitionStatus("gc-req-1", "LN", ["gc-acc-1"]);
         }
     }

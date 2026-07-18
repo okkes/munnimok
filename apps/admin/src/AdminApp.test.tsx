@@ -70,7 +70,10 @@ afterEach(() => {
 });
 
 describe('AdminApp (test-auth mode)', () => {
-  beforeEach(() => localStorage.clear());
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear(); // the persisted screen must not leak between tests
+  });
 
   it('a sub that is not on the admin list sees the denied note and no data', async () => {
     scriptFetch({ 'GET /admin/ping': () => ({ status: 403 }) });
@@ -112,6 +115,42 @@ describe('AdminApp (test-auth mode)', () => {
     fireEvent.change(screen.getByTestId('users-search'), { target: { value: 'carol' } });
     expect(screen.getByTestId('admin-users').textContent).not.toContain('Alice');
     expect(screen.getByTestId('admin-users').textContent).toContain('Carol');
+  });
+
+  it('diagnose shows the sync chain; failures show a message; the screen survives a reload', async () => {
+    scriptFetch({
+      ...HAPPY_ROUTES(),
+      'GET /admin/users/sub-bob/diagnosis': () => ({
+        body: {
+          userId: 'u2',
+          memberSpaces: ['space-main'],
+          ownedFeeds: [{ feedSpaceId: 'feed12345678', maxSeq: 42 }],
+          attachments: [],
+          gcLinks: [{ gcAccountId: 'gc-1', spaceId: 'space-dead-1', accountEntityId: 'a1', iban: 'NL69INGB0123456789', provider: 'gocardless', lastFetchAt: null }],
+        },
+      }),
+      'GET /admin/users/sub-carol/diagnosis': () => ({ status: 500 }),
+    });
+    renderAdmin();
+    fireEvent.click(await screen.findByTestId('nav-users'));
+    await screen.findByTestId('admin-users');
+
+    fireEvent.click(screen.getByTestId('diagnose-sub-bob'));
+    const panel = await screen.findByTestId('user-diagnosis');
+    await waitFor(() => expect(panel.textContent).toContain('space-main'));
+    expect(panel.textContent).toContain('ops 42');
+    expect(panel.textContent).toContain('NONE — feeds never attached');
+    expect(panel.textContent).toContain('fetched never');
+
+    // a dead call must not spin forever — it says what went wrong
+    fireEvent.click(screen.getByTestId('diagnose-sub-carol'));
+    await waitFor(() => expect(screen.getByTestId('user-diagnosis').textContent).toContain('HTTP 500'));
+
+    // the active screen survives the page reload a Logto re-auth causes
+    expect(sessionStorage.getItem('munni_admin_screen')).toBe('users');
+    cleanup();
+    renderAdmin();
+    await screen.findByTestId('admin-users');
   });
 
   it('promote and demote call the grants API; bootstrap admins have no demote button', async () => {
@@ -213,6 +252,8 @@ describe('AdminApp (test-auth mode)', () => {
 });
 
 describe('AdminApp (OIDC token mode)', () => {
+  beforeEach(() => sessionStorage.clear()); // persisted screen must not leak in
+
   it('uses the bearer token and hides the sub box', async () => {
     const seenAuth: (string | null)[] = [];
     vi.stubGlobal(

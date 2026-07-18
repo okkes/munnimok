@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLogto } from '@logto/react';
 import { useLang } from '@/i18n';
 import { config, logtoConfigured, publicOrigin } from '@/app/config';
+import { getAccessToken as getBridgeToken } from '@/app/authToken';
 import { isNativeApp } from '@/lib/platform';
 import { useData } from '@/app/data';
 import { apiFetch } from '@/lib/api';
@@ -184,7 +185,7 @@ export function GcCallbackScreen() {
 const PENDING = Symbol('pending');
 
 function GcCallbackWithLogto() {
-  const { isLoading, isAuthenticated, getAccessToken } = useLogto();
+  const { isLoading, isAuthenticated } = useLogto();
   const [bearer, setBearer] = useState<string | null | typeof PENDING>(PENDING);
 
   useEffect(() => {
@@ -193,8 +194,10 @@ function GcCallbackWithLogto() {
       setBearer(null); // no session — inner screen will fail gracefully
       return;
     }
-    void getAccessToken(config.logto.resource || undefined).then((token) => setBearer(token ?? null));
-  }, [isLoading, isAuthenticated, getAccessToken]);
+    // via the single-flight bridge: a parallel SDK call here could race the
+    // sync engine's refresh and burn the rotated refresh token
+    void getBridgeToken().then((token) => setBearer(token ?? null));
+  }, [isLoading, isAuthenticated]);
 
   if (bearer === PENDING) return <GcCallbackShell state="working" />;
   return <GcCallbackInner bearer={bearer} />;
