@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.17.0](https://github.com/okkes/munnimok/compare/v2.16.0...v2.17.0) (2026-07-18)
+
+
+### ✨ Features
+
+* **app:** revive the service worker, visible native pushes, steadier sheets and review ([c31715e](https://github.com/okkes/munnimok/commit/c31715ed228be8bd0362cc2add18738b973a856e))
+
 ## [2.16.0](https://github.com/okkes/munnimok/compare/v2.15.0...v2.16.0) (2026-07-18)
 
 
