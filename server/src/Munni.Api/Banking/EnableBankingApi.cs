@@ -71,7 +71,15 @@ public sealed class EnableBankingApi(HttpClient http, IConfiguration config) : I
         request.Headers.Authorization = new("Bearer", GetJwt());
         if (body is not null) request.Content = JsonContent.Create(body);
         var response = await http.SendAsync(request, ct);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            // surface Enable Banking's OWN error text (they explain 403s:
+            // inactive application, unregistered redirect, IP allowlist…)
+            var detail = await response.Content.ReadAsStringAsync(ct);
+            if (detail.Length > 200) detail = detail[..200];
+            throw new HttpRequestException(
+                $"{(int)response.StatusCode} {response.StatusCode} from {path}: {detail}", null, response.StatusCode);
+        }
         return (await response.Content.ReadFromJsonAsync<T>(ct))!;
     }
 

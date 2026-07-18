@@ -17,11 +17,20 @@ public class EnableBankingApiTests
     private sealed class ScriptedHandler : HttpMessageHandler
     {
         public List<string> Paths { get; } = [];
+        /// <summary>when set, every request answers 403 with this body</summary>
+        public string? ForbidWith { get; set; }
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
             var path = request.RequestUri!.PathAndQuery;
             Paths.Add(path);
+            if (ForbidWith is not null)
+            {
+                return new HttpResponseMessage(System.Net.HttpStatusCode.Forbidden)
+                {
+                    Content = new StringContent(ForbidWith),
+                };
+            }
             // every call must carry the signed application JWT
             Assert.Equal(3, request.Headers.Authorization?.Parameter?.Split('.').Length);
 
@@ -94,6 +103,18 @@ public class EnableBankingApiTests
             })
             .Build();
         return (new EnableBankingApi(http, config), handler);
+    }
+
+    [Fact]
+    public async Task Provider_errors_carry_enable_bankings_own_words()
+    {
+        // a 403 means the JWT VERIFIED but the application is refused —
+        // Enable Banking explains why in the body; the app must relay it
+        var (api, handler) = Create();
+        handler.ForbidWith = "{\"message\":\"Application is not active\"}";
+        var thrown = await Assert.ThrowsAsync<HttpRequestException>(() => api.GetInstitutionsAsync("nl"));
+        Assert.Contains("403", thrown.Message);
+        Assert.Contains("Application is not active", thrown.Message);
     }
 
     [Fact]

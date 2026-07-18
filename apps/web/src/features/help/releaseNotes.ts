@@ -18,6 +18,17 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.13.1',
+    date: '2026-07-18',
+    items: [
+      {
+        en: 'Renaming a transaction no longer sends the sheet flying off-screen when the keyboard opens, and a refused bank connection now shows the provider\'s own words — so a "forbidden" tells you exactly what to fix in their portal.',
+        nl: 'Een transactie hernoemen laat het paneel niet langer van het scherm vliegen wanneer het toetsenbord opent, en een geweigerde bankkoppeling toont nu de eigen woorden van de aanbieder — een "forbidden" vertelt je precies wat je in hun portaal moet aanpassen.',
+        tr: 'Bir işlemi yeniden adlandırmak, klavye açıldığında paneli artık ekran dışına uçurmuyor; reddedilen bir banka bağlantısı da artık sağlayıcının kendi ifadesini gösteriyor — bir "forbidden" onların panelinde tam olarak neyi düzelteceğini söylüyor.',
+      },
+    ],
+  },
+  {
     version: '2.13.0',
     date: '2026-07-18',
     items: [
