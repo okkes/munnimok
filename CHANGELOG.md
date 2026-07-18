@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.13.1](https://github.com/okkes/munnimok/compare/v2.13.0...v2.13.1) (2026-07-18)
+
+
+### 🐞 Bug Fixes
+
+* **banking:** relay Enable Banking's own error text; rename sheet stays on screen under the iOS keyboard ([e1254f9](https://github.com/okkes/munnimok/commit/e1254f900e70ddce45b1977de41bd942580aac69))
+
 ## [2.13.0](https://github.com/okkes/munnimok/compare/v2.12.2...v2.13.0) (2026-07-18)
 
 
