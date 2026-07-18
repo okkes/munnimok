@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.13.0](https://github.com/okkes/munnimok/compare/v2.12.2...v2.13.0) (2026-07-18)
+
+
+### ✨ Features
+
+* **app:** universal links + detail/categories polish ([b00347d](https://github.com/okkes/munnimok/commit/b00347d6cddb7b7ce84d89d893fea966754e9df7))
+
 ## [2.12.2](https://github.com/okkes/munnimok/compare/v2.12.1...v2.12.2) (2026-07-18)
 
 
