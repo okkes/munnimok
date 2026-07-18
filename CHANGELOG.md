@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.12.0](https://github.com/okkes/munnimok/compare/v2.11.0...v2.12.0) (2026-07-18)
+
+
+### ✨ Features
+
+* **app:** observability + transaction-detail batch — GC complete idempotency, API Sentry, title renames with memory ([2956d00](https://github.com/okkes/munnimok/commit/2956d0069d13d3490c6cb7f7bceabab038654aaa))
+
 ## [2.11.0](https://github.com/okkes/munnimok/compare/v2.10.0...v2.11.0) (2026-07-18)
 
 
