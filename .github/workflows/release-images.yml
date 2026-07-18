@@ -136,6 +136,7 @@ jobs:
             VITE_LOGTO_ENDPOINT=${{ vars.VITE_LOGTO_ENDPOINT }}
             VITE_LOGTO_APP_ID=${{ steps.meta.outputs.logto_app_admin }}
             VITE_LOGTO_RESOURCE=${{ steps.meta.outputs.api_url }}
+            VITE_GLITCHTIP_DSN=${{ vars.VITE_GLITCHTIP_DSN_ADMIN }}
           tags: |
             ${{ env.REGISTRY }}/munni-admin:${{ steps.meta.outputs.channel }}
             ${{ env.REGISTRY }}/munni-admin:${{ steps.meta.outputs.channel }}-${{ steps.meta.outputs.build }}

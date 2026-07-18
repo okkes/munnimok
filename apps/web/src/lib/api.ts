@@ -13,20 +13,47 @@ function assertNetworkAllowed(): void {
   }
 }
 
+// one guard for the whole page: a dead session must trigger exactly one
+// return to the login screen, however many background calls hit the 401
+let handlingAuthExpiry = false;
+
+/** test seam */
+export function resetAuthExpiryGuard(): void {
+  handlingAuthExpiry = false;
+}
+
 /** Authenticated fetch to the munni API for the current user identity. */
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
   assertNetworkAllowed();
   const identity = readSessionIdentity();
-  const headers = new Headers(init.headers);
-  headers.set('Content-Type', 'application/json');
-  if (identity?.kind === 'user') {
-    if (identity.testAuth) headers.set('X-User-Sub', identity.sub);
-    else {
-      const token = await getAccessToken();
-      if (token) headers.set('Authorization', `Bearer ${token}`);
+  const attempt = async (): Promise<Response> => {
+    const headers = new Headers(init.headers);
+    headers.set('Content-Type', 'application/json');
+    if (identity?.kind === 'user') {
+      if (identity.testAuth) headers.set('X-User-Sub', identity.sub);
+      else {
+        const token = await getAccessToken();
+        if (token) headers.set('Authorization', `Bearer ${token}`);
+      }
+    }
+    return fetch(`${config.apiUrl}${path}`, { ...init, headers });
+  };
+  let response = await attempt();
+  if (response.status === 401 && identity?.kind === 'user' && !identity.testAuth) {
+    // maybe just an expired access token — the SDK mints a fresh one
+    response = await attempt();
+    if (response.status === 401 && !handlingAuthExpiry) {
+      // the refresh token is dead too (IdP restart, revocation): no
+      // amount of retrying helps. Clear the session and return to the
+      // login screen instead of sitting on "server unreachable" until a
+      // manual sign-out (user report).
+      handlingAuthExpiry = true;
+      const { useSession } = await import('@/app/session');
+      useSession.getState().logout();
+      globalThis.location.assign('/#/login');
     }
   }
-  return fetch(`${config.apiUrl}${path}`, { ...init, headers });
+  return response;
 }
 
 export interface ApiCapabilities {

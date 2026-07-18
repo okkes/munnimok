@@ -90,6 +90,42 @@ export function Sheet({ open, onOpenChange, title, children, size, height }: Rea
   const fixedHeight = height ?? (size ? SIZE_PX[size] : undefined);
   const isLocked = !useSheetStack(open);
   const panel = usePanelMode();
+
+  // ESC closes the TOP desktop dialog only
+  useEffect(() => {
+    if (!panel || !open || isLocked) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onOpenChange(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [panel, open, isLocked, onOpenChange]);
+
+  // desktop (2026-07-18 fix): a plain centered dialog — vaul's drawer
+  // transforms fought the centered layout and pinned it to the top
+  if (panel) {
+    if (!open) return null;
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-6" role="presentation">
+        <button
+          aria-label="close"
+          tabIndex={-1}
+          onClick={() => !isLocked && onOpenChange(false)}
+          className="absolute inset-0 cursor-default border-none bg-black/40"
+        />
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="relative z-10 flex w-[480px] max-w-[92vw] flex-col rounded-[20px] bg-bg shadow-2xl outline-none"
+          style={{ height: fixedHeight, maxHeight: '85dvh' }}
+        >
+          {title && <div className="m-h3 shrink-0 px-5 pt-5 pb-1 text-ink">{title}</div>}
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pt-2 pb-5">{children}</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <Drawer.Root
       open={open}
@@ -101,16 +137,12 @@ export function Sheet({ open, onOpenChange, title, children, size, height }: Rea
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 z-40 bg-black/40" />
         <Drawer.Content
-          className={
-            panel
-              ? 'fixed inset-0 z-50 m-auto flex h-fit max-h-[85dvh] w-[480px] max-w-[92vw] flex-col rounded-[20px] bg-bg shadow-2xl outline-none'
-              : 'fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[92dvh] w-full max-w-[560px] flex-col rounded-t-[20px] bg-bg outline-none'
-          }
+          className="fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[92dvh] w-full max-w-[560px] flex-col rounded-t-[20px] bg-bg outline-none"
           style={fixedHeight ? { height: fixedHeight } : undefined}
         >
-          {/* full-height drag zone across the title area (panels have no handle) */}
+          {/* full-height drag zone across the title area */}
           <div className="shrink-0 cursor-grab pt-2.5 pb-1">
-            {!panel && <div className="mx-auto h-1.5 w-10 rounded-full bg-line" />}
+            <div className="mx-auto h-1.5 w-10 rounded-full bg-line" />
             {title && (
               <Drawer.Title className="m-h3 px-5 pt-3 pb-1 text-ink">{title}</Drawer.Title>
             )}

@@ -7,9 +7,9 @@ using Munni.Api.Validation;
 
 namespace Munni.Api.GoCardless;
 
-public sealed record CreateRequisitionRequest(string SpaceId, string InstitutionId, string RedirectUrl);
+public sealed record CreateRequisitionRequest(string SpaceId, string InstitutionId, string RedirectUrl, string? AppScheme = null);
 public sealed record CreateRequisitionResponse(string Reference, string Link);
-public sealed record CompleteResponse(string Status, int LinkedAccounts, int ImportedTransactions);
+public sealed record CompleteResponse(string Status, int LinkedAccounts, int ImportedTransactions, string? AppScheme = null);
 
 public static partial class GcEndpoints
 {
@@ -43,7 +43,18 @@ public static partial class GcEndpoints
 
             var api = await registry.ActiveAsync(db); // the admin's pick decides NEW consents
             var reference = Guid.NewGuid();
-            var created = await api.CreateRequisitionAsync(request.InstitutionId, request.RedirectUrl, reference.ToString());
+            GcRequisitionCreated created;
+            try
+            {
+                created = await api.CreateRequisitionAsync(request.InstitutionId, request.RedirectUrl, reference.ToString());
+            }
+            catch (Exception ex)
+            {
+                // surface WHICH provider failed and why (sans secrets): the
+                // admin switched providers and the app only said "failed"
+                var detail = ex.Message.Length > 300 ? ex.Message[..300] : ex.Message;
+                return Results.Problem(title: $"{api.ProviderId} requisition failed", detail: detail, statusCode: 502);
+            }
             db.GcRequisitions.Add(new GcRequisition
             {
                 Id = reference,
@@ -53,6 +64,7 @@ public static partial class GcEndpoints
                 RequisitionId = created.Id,
                 Status = "created",
                 Provider = api.ProviderId,
+                AppScheme = request.AppScheme,
             });
             await db.SaveChangesAsync();
             return Results.Ok(new CreateRequisitionResponse(reference.ToString(), created.Link));
@@ -92,7 +104,7 @@ public static partial class GcEndpoints
             if (status.Status != "LN")
             {
                 await db.SaveChangesAsync();
-                return Results.Ok(new CompleteResponse(status.Status, 0, 0));
+                return Results.Ok(new CompleteResponse(status.Status, 0, 0, requisition.AppScheme));
             }
 
             var space = await db.Spaces.FindAsync(requisition.SpaceId);
@@ -136,6 +148,6 @@ public static partial class GcEndpoints
 
             requisition.Status = "linked";
             await db.SaveChangesAsync();
-            return Results.Ok(new CompleteResponse(status.Status, linkedCount, imported));
+            return Results.Ok(new CompleteResponse(status.Status, linkedCount, imported, requisition.AppScheme));
     }
 }

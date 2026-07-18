@@ -45,6 +45,9 @@ export class SyncEngine {
     for (const l of this.listeners) l(status);
   }
 
+  /** the most recent sync failure, for diagnostics UI */
+  lastError: string | null = null;
+
   getStatus(): SyncStatus {
     return this.status;
   }
@@ -118,6 +121,7 @@ export class SyncEngine {
       await this.store.metaPut(LAST_SYNC_KEY, Date.now());
       this.setStatus('idle');
     } catch (err) {
+      this.lastError = String(err); // surfaced on the connecting screen
       this.setStatus(err instanceof TypeError ? 'offline' : 'error'); // fetch network errors are TypeError
     } finally {
       this.running = false;

@@ -60,11 +60,13 @@ export function BankConnectSheet({ open, onOpenChange }: { open: boolean; onOpen
           institutionId,
           // hosted origin, not window origin: inside the native shell the
           // window is localhost; the hosted page completes anonymously via
-          // the reference capability token either way. The shell encodes
-          // its deep-link scheme in the PATH (a query param would collide
-          // with the ?ref= the bank provider appends), so the hosted page
-          // can hand the user back to the app when it finishes.
-          redirectUrl: publicOrigin() + '/gc-callback' + (isNativeApp() ? '/app-' + config.nativeScheme : ''),
+          // the reference capability token either way
+          redirectUrl: publicOrigin() + '/gc-callback',
+          // native journeys record their deep-link scheme SERVER-SIDE on
+          // the requisition (a path marker broke the relative-base asset
+          // urls; a query marker collides with the provider's ?ref=) —
+          // the hosted page reads it from the complete response
+          appScheme: isNativeApp() ? config.nativeScheme : null,
         }),
       });
       if (!res.ok) throw new Error(String(res.status));
@@ -177,6 +179,7 @@ function GcCallbackWithLogto() {
 
 function GcCallbackInner({ bearer }: { bearer: string | null }) {
   const [state, setState] = useState<'working' | 'done' | 'failed'>('working');
+  const [appScheme, setAppScheme] = useState<string | null>(null);
   const started = useRef(false);
 
   useEffect(() => {
@@ -205,6 +208,8 @@ function GcCallbackInner({ bearer }: { bearer: string | null }) {
         const query = code ? `?code=${encodeURIComponent(code)}` : '';
         const res = await apiFetch(`/gocardless/requisitions/${reference}/complete${query}`, { method: 'POST', headers });
         if (!res.ok) throw new Error(String(res.status));
+        const payload = (await res.json().catch(() => null)) as { appScheme?: string | null } | null;
+        if (payload?.appScheme) setAppScheme(payload.appScheme);
         sessionStorage.removeItem('munni_gc_ref');
         setState('done');
       } catch {
@@ -213,22 +218,14 @@ function GcCallbackInner({ bearer }: { bearer: string | null }) {
     })();
   }, [bearer]);
 
-  return <GcCallbackShell state={state} />;
+  return <GcCallbackShell state={state} appScheme={appScheme} />;
 }
 
 const SHELL_ICONS = { working: 'bank-outline', done: 'check-circle-outline', failed: 'alert-circle-outline' } as const;
 const SHELL_TEXT_KEYS = { working: 'gc.completing', done: 'gc.done', failed: 'gc.failed' } as const;
 
-/** the shell's deep-link scheme when the flow started inside the app —
- *  encoded in the path as /gc-callback/app-{scheme} (see connect()) */
-function appSchemeFromPath(): string | null {
-  const match = /\/gc-callback\/app-([a-z][a-z0-9+.-]*)/i.exec(window.location.pathname);
-  return match ? match[1] : null;
-}
-
-function GcCallbackShell({ state }: { state: 'working' | 'done' | 'failed' }) {
+function GcCallbackShell({ state, appScheme }: { state: 'working' | 'done' | 'failed'; appScheme?: string | null }) {
   const { t } = useLang();
-  const appScheme = appSchemeFromPath();
 
   // consent started in the native app: the moment the hosted page is
   // done, hand the user straight back (user report: they were stranded

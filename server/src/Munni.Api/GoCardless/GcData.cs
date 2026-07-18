@@ -15,6 +15,10 @@ public class GcRequisition
     public required string Status { get; set; } // created | linked | expired
     /// <summary>which bank-data provider owns this consent</summary>
     public string Provider { get; set; } = "gocardless";
+    /// <summary>deep-link scheme when the consent started in a native
+    /// shell — the hosted callback page reads it from the complete
+    /// response to hand the user back into the app</summary>
+    public string? AppScheme { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 

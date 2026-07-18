@@ -161,6 +161,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     engine: SyncEngine | null;
   } | null>(null);
   const [failedAttempts, setFailedAttempts] = useState(0);
+  const [connectError, setConnectError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!identity) {
@@ -171,7 +172,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     const isCancelled = () => cancelled;
     const onAttempts = (n: number) => {
-      if (!cancelled) setFailedAttempts(n);
+      if (!cancelled) {
+        setFailedAttempts(n);
+        setConnectError(engine?.lastError ?? null);
+      }
     };
     let engine: SyncEngine | null = null;
     let openedStore: StorageBackend | null = null;
@@ -268,7 +272,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const value = useMemo(() => (state ? { ...state, setActiveSpace } : null), [state, setActiveSpace]);
 
   if (!identity) return null;
-  if (!value) return <ConnectingScreen failedAttempts={failedAttempts} />;
+  if (!value) return <ConnectingScreen failedAttempts={failedAttempts} errorDetail={connectError} />;
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 }
 
@@ -279,7 +283,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
  * failed rounds the screen names the problem (broken API/proxy is a
  * config error, not a loading state) and offers a way out.
  */
-function ConnectingScreen({ failedAttempts = 0 }: { failedAttempts?: number }) {
+function ConnectingScreen({ failedAttempts = 0, errorDetail }: { failedAttempts?: number; errorDetail?: string | null }) {
   const { t } = useLang();
   const logout = useSession((s) => s.logout);
   const [slow, setSlow] = useState(false);
@@ -296,6 +300,11 @@ function ConnectingScreen({ failedAttempts = 0 }: { failedAttempts?: number }) {
           <p className="max-w-[280px] text-center text-[13px]" data-testid={unreachable ? 'connect-error' : undefined}>
             {unreachable ? t('sync.serverUnreachable') : t('sync.connecting')}
           </p>
+          {unreachable && errorDetail && (
+            <p className="max-w-[280px] text-center font-mono text-[10px] break-words text-ink-4" data-testid="connect-error-detail">
+              {errorDetail}
+            </p>
+          )}
           {unreachable && (
             <button
               onClick={() => void logout()}

@@ -69,3 +69,33 @@ describe('getApiCapabilities', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('dead-session handling (401 → retry → re-login)', () => {
+  it('retries once with a fresh token, then clears the session and returns to login', async () => {
+    const { resetAuthExpiryGuard } = await import('./api');
+    resetAuthExpiryGuard();
+    const { useSession } = await import('@/app/session');
+    // apiFetch reads the persisted identity, not the store snapshot
+    localStorage.setItem('munni_session', JSON.stringify({ kind: 'user', sub: 'stale-user' }));
+    useSession.setState({ identity: { kind: 'user', sub: 'stale-user' } });
+    const calls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      calls.push('call');
+      return new Response('{}', { status: 401 });
+    }));
+    const assignSpy = vi.fn();
+    const original = globalThis.location;
+    vi.stubGlobal('location', { ...original, assign: assignSpy });
+
+    const { apiFetch } = await import('./api');
+    const res = await apiFetch('/me/spaces');
+    expect(res.status).toBe(401);
+    expect(calls.length).toBe(2); // original + fresh-token retry
+    expect(useSession.getState().identity).toBeNull(); // session cleared
+    expect(assignSpy).toHaveBeenCalledWith('/#/login');
+
+    // a second 401 in the same page load must not loop the navigation
+    await apiFetch('/me/spaces');
+    expect(assignSpy).toHaveBeenCalledTimes(1);
+  });
+});

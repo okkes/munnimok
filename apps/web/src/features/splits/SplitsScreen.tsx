@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { publicOrigin } from '@/app/config';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { v7 as uuidv7 } from 'uuid';
 import { useLang, LOCALES } from '@/i18n';
@@ -387,7 +388,9 @@ export function SplitDetailScreen() {
     const res = await apiFetch(`/splits/${splitId}/invites`, { method: 'POST' }).catch(() => null);
     if (!res?.ok) return;
     const { token } = (await res.json()) as { token: string };
-    const base = `${window.location.origin}${window.location.pathname}`;
+    // the hosted https origin, never capacitor://localhost — the link
+    // must open for people on any platform (user report)
+    const base = `${publicOrigin()}/`;
     setInviteLink(`${base}#/splits/join/${token}`);
   };
 

@@ -5,6 +5,9 @@ import type { Lang } from '@/i18n';
 import { useData } from '@/app/data';
 import { apiFetch, getApiCapabilities } from '@/lib/api';
 import { COUNTRIES, currencyForCountry } from '@/domain/countries';
+
+/** the pickable currencies: everything a supported country maps to */
+const CURRENCY_CHOICES = [...new Set(COUNTRIES.map((c) => currencyForCountry(c.code)))].sort((a, b) => a.localeCompare(b));
 import { BankConnectSheet } from '@/features/accounts/BankConnect';
 import { Button } from '@/ui/Button';
 import { Highlight } from '@/ui/Highlight';
@@ -29,6 +32,9 @@ export function OnboardingScreen() {
   const navigate = useNavigate();
   const [name, setName] = useState('');
   const [country, setCountry] = useState('NL');
+  // the country suggests the currency; an explicit pick wins (user request)
+  const [currencyOverride, setCurrencyOverride] = useState<string | null>(null);
+  const currency = currencyOverride ?? currencyForCountry(country);
   const [countryOpen, setCountryOpen] = useState(false);
   const [query, setQuery] = useState('');
   // step 1 = profile, step 2 = bank (legacy onboarding parity)
@@ -52,7 +58,7 @@ export function OnboardingScreen() {
         // best-effort: offline is fine, the app never blocks on the API
         void apiFetch('/me', { method: 'PUT', body: JSON.stringify({ displayName: name.trim() }) }).catch(() => undefined);
       }
-      await repo.upsert('space', spaceId, spaceId, { currency: currencyForCountry(country) });
+      await repo.upsert('space', spaceId, spaceId, { currency });
     }
     // cleared here: a bank redirect leaves the app and must not loop onboarding
     await store.metaDelete('needsOnboarding');
@@ -91,9 +97,21 @@ export function OnboardingScreen() {
               <span className="flex-1">{countryLabel(country, lang)}</span>
               <Icon name="chevron-down" size={18} color="var(--m-ink-4)" />
             </button>
-            <p className="px-1 text-[12px] text-ink-3" data-testid="onboarding-currency-hint">
-              {t('onboarding.currencyAuto')} {currencyForCountry(country)}
-            </p>
+            <div className="flex items-center gap-2 px-1" data-testid="onboarding-currency-hint">
+              <span className="text-[12px] text-ink-3">{t('onboarding.currencyAuto')}</span>
+              <select
+                data-testid="onboarding-currency"
+                value={currency}
+                onChange={(e) => setCurrencyOverride(e.target.value)}
+                className="rounded-md border border-line bg-surface px-2 py-1 font-mono text-[12px] font-semibold text-ink outline-none"
+              >
+                {CURRENCY_CHOICES.map((code) => (
+                  <option key={code} value={code}>
+                    {code}
+                  </option>
+                ))}
+              </select>
+            </div>
 
             <Button data-testid="onboarding-save" onClick={() => void applyProfile(true)}>
               {t('login.continue')}

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { AdminConfig } from './main';
+import bundledCatalog from './generated/bundledCatalog.json';
 
 interface AdminUser {
   id: string;
@@ -69,6 +70,21 @@ interface CatalogDoc {
   keywords: CatalogKeywordRule[];
 }
 const EMPTY_CATALOG: CatalogDoc = { version: 0, categories: [], keywords: [] };
+
+interface BundledCategory {
+  id: string;
+  parentId?: string;
+  nameKey: string;
+  icon: string;
+  isParent?: boolean;
+  hidden?: boolean;
+  txTypes: string[];
+}
+interface BundledKeywordRule {
+  lang: string;
+  catId: string;
+  keywords: string[];
+}
 
 /** GC consents run ~90 days; flag the ones inside the final 14 */
 const expiresSoon = (r: AdminRequisition): boolean =>
@@ -532,6 +548,9 @@ const TX_TYPES = ['expense', 'income', 'saving', 'transfer', 'debtPayment', 'inv
  * prediction keywords. Publishing bumps the server-owned version; every
  * client picks it up on its next sync.
  */
+/** what every app ships with — the baseline the overlay edits against */
+const BUNDLED = bundledCatalog as { categories: BundledCategory[]; keywords: BundledKeywordRule[] };
+
 function CatalogScreen({
   doc,
   busy,
@@ -594,6 +613,31 @@ function CatalogScreen({
 
       <section className="card">
         <h2>Category overlays</h2>
+        <details data-testid="catalog-bundled">
+          <summary className="sub" style={{ cursor: 'pointer' }}>
+            Bundled baseline: {BUNDLED.categories.length} categories — click to browse; reuse an id below to override it
+          </summary>
+          <table>
+            <thead>
+              <tr><th>id</th><th>parent</th><th>icon</th><th>types</th><th></th></tr>
+            </thead>
+            <tbody>
+              {BUNDLED.categories.map((c) => (
+                <tr key={c.id} style={categories.some((o) => o.id === c.id) ? { opacity: 0.5 } : undefined}>
+                  <td>{c.id}</td>
+                  <td>{c.parentId ?? '—'}</td>
+                  <td>{c.icon}</td>
+                  <td>{c.txTypes.join(', ')}</td>
+                  <td>
+                    <button data-testid={'catalog-prefill-' + c.id} onClick={() => setDraft({ ...draft, id: c.id, parentId: c.parentId ?? '', icon: c.icon, txType: c.txTypes[0] ?? 'expense' })}>
+                      override…
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
         {categories.length === 0 && <p className="sub">No overlay entries yet — the bundled catalog applies as-is.</p>}
         {categories.length > 0 && (
           <table data-testid="catalog-categories">
@@ -686,6 +730,23 @@ function CatalogScreen({
             Add rule
           </button>
         </div>
+        <details>
+          <summary className="sub" style={{ cursor: 'pointer' }}>
+            Bundled baseline: {BUNDLED.keywords.length} keyword rules — click to browse
+          </summary>
+          <table>
+            <thead><tr><th>lang</th><th>category</th><th>keywords</th></tr></thead>
+            <tbody>
+              {BUNDLED.keywords.map((rule, i) => (
+                <tr key={rule.catId + '-' + i}>
+                  <td>{rule.lang}</td>
+                  <td>{rule.catId}</td>
+                  <td>{rule.keywords.join(', ')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
         <p className="sub">Published rules win ties against the bundled ones; the bundled set keeps working alongside.</p>
       </section>
 
