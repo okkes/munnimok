@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.15.0](https://github.com/okkes/munnimok/compare/v2.14.0...v2.15.0) (2026-07-18)
+
+
+### ✨ Features
+
+* **app:** goal pictures, admin sync-chain diagnosis, event date-input fix, TestFlight update link ([8011e42](https://github.com/okkes/munnimok/commit/8011e4268271d78e373ae5e84260613da091bfa1))
+
 ## [2.14.0](https://github.com/okkes/munnimok/compare/v2.13.1...v2.14.0) (2026-07-18)
 
 
