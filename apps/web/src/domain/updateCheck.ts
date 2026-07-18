@@ -25,6 +25,9 @@ export function updateAvailable(appBuild: number, remoteBuild: number, dismissed
 export function nativeStoreUrl(platform: string | undefined, channel: string): string | null {
   const appId = channel === 'staging' ? 'app.munni.dev' : 'app.munni';
   if (platform === 'android') return `market://details?id=${appId}`;
-  if (platform === 'ios') return channel === 'staging' ? null : 'https://apps.apple.com/app/id6791102793';
+  // both iOS channels ship via TestFlight today — the deep link opens the
+  // TestFlight app where the update sits. Swap the production branch to
+  // https://apps.apple.com/app/id6791102793 at public App Store launch.
+  if (platform === 'ios') return 'itms-beta://';
   return null;
 }

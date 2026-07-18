@@ -18,6 +18,17 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.15.0',
+    date: '2026-07-18',
+    items: [
+      {
+        en: 'Goals can carry a picture now, just like events — pick a bundled cover or upload your own, shown on the list and the goal itself. The event form\'s date fields render reliably on every device, and the "update available" note on iPhone now opens TestFlight directly.',
+        nl: 'Doelen kunnen nu een afbeelding dragen, net als evenementen — kies een meegeleverde omslag of upload je eigen, getoond in de lijst en op het doel zelf. De datumvelden van het evenementformulier renderen betrouwbaar op elk apparaat, en de "update beschikbaar"-melding op iPhone opent nu direct TestFlight.',
+        tr: 'Hedefler artık etkinlikler gibi resim taşıyabiliyor — hazır bir kapak seç ya da kendininkini yükle; listede ve hedefin kendisinde görünür. Etkinlik formunun tarih alanları her cihazda güvenilir görüntüleniyor ve iPhone\'daki "güncelleme var" notu artık doğrudan TestFlight\'ı açıyor.',
+      },
+    ],
+  },
+  {
     version: '2.14.0',
     date: '2026-07-18',
     items: [

@@ -21,8 +21,8 @@ describe('update check (native-benefits §4)', () => {
   it('links the right store per platform and channel', () => {
     expect(nativeStoreUrl('android', 'production')).toBe('market://details?id=app.munni');
     expect(nativeStoreUrl('android', 'staging')).toBe('market://details?id=app.munni.dev');
-    expect(nativeStoreUrl('ios', 'production')).toContain('apps.apple.com');
-    expect(nativeStoreUrl('ios', 'staging')).toBeNull(); // TestFlight has no store page
+    expect(nativeStoreUrl('ios', 'production')).toBe('itms-beta://'); // TestFlight until the App Store launch
+    expect(nativeStoreUrl('ios', 'staging')).toBe('itms-beta://'); // TestFlight has no store page
     expect(nativeStoreUrl(undefined, 'production')).toBeNull();
   });
 });

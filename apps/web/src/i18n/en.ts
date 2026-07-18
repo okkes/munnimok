@@ -1144,6 +1144,7 @@ export const en = {
   'events.linkNone': 'None',
   'events.runningNow': 'Happening now',
   'goals.new': 'New goal',
+  'goals.noPicture': 'No picture',
   'goals.edit': 'Edit goal',
   'goals.namePlaceholder': 'Name (e.g. New car)',
   'goals.target': 'Target amount',

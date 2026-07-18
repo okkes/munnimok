@@ -130,24 +130,24 @@ export function EventFormSheet({ initial, onClose }: Readonly<{ initial: EventRo
           className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
         />
         <div className="flex items-end gap-2">
-          <label className="min-w-0 flex-1 text-[12px] text-ink-3">
+          <label className="relative min-w-0 flex-1 text-[12px] text-ink-3">
             {t('events.from')}
             <input
               data-testid="eventform-from"
               type="date"
               value={from}
               onChange={(e) => setFrom(e.target.value)}
-              className="mt-1 h-11 w-full appearance-none rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none"
+              className="mt-1 h-12 w-full appearance-none rounded-input border border-line bg-surface px-3 pr-8 text-[14px] text-ink outline-none [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-date-and-time-value]:text-left"
             />
           </label>
-          <label className="min-w-0 flex-1 text-[12px] text-ink-3">
+          <label className="relative min-w-0 flex-1 text-[12px] text-ink-3">
             {t('events.to')}
             <input
               data-testid="eventform-to"
               type="date"
               value={to}
               onChange={(e) => setTo(e.target.value)}
-              className="mt-1 h-11 w-full appearance-none rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none"
+              className="mt-1 h-12 w-full appearance-none rounded-input border border-line bg-surface px-3 pr-8 text-[14px] text-ink outline-none [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-date-and-time-value]:text-left"
             />
           </label>
         </div>

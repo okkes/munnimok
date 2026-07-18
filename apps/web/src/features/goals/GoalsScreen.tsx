@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react';
+import { EVENT_PICTURES } from '@/features/events/EventsScreen';
+import { downscaleImage } from '@/lib/image';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@/db/useQuery';
 import { useLang } from '@/i18n';
@@ -26,6 +28,7 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
   const editing = initial !== 'new' && initial !== null ? initial : null;
   const [name, setName] = useState('');
   const [icon, setIcon] = useState<string>(GOAL_ICONS[0]);
+  const [picture, setPicture] = useState<string | null>(null);
   const [target, setTarget] = useState('');
   const [targetDate, setTargetDate] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -33,10 +36,18 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
   useEffect(() => {
     setName(editing?.name ?? '');
     setIcon(editing?.icon ?? GOAL_ICONS[0]);
+    setPicture(editing?.picture ?? null);
     setTarget(editing?.targetCents ? (editing.targetCents / 100).toFixed(2) : '');
     setTargetDate(editing?.targetDate ?? '');
     setConfirmDelete(false);
   }, [initial, editing]);
+
+  const uploadRef = useRef<HTMLInputElement>(null);
+  const onUpload = async (file: File | undefined) => {
+    if (!file) return;
+    // wide enough for the hero, small enough to sync as a field
+    setPicture(await downscaleImage(file, 1080, 0.72));
+  };
 
   const targetCents = parseCents(target);
   const valid = name.trim().length > 0 && targetCents !== null && targetCents > 0;
@@ -46,6 +57,7 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
     await ops.save(editing?.id ?? null, {
       name: name.trim(),
       icon,
+      picture: picture ?? undefined,
       targetCents,
       targetDate: targetDate || undefined,
       allocatedCents: editing?.allocatedCents ?? 0,
@@ -67,6 +79,46 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
   return (
     <Sheet open={initial !== null} onOpenChange={(open) => !open && onClose()} title={editing ? t('goals.edit') : t('goals.new')} size="tall">
       <div className="flex flex-col gap-3 pt-1">
+        {/* optional cover, same mechanics as events (user request) */}
+        <div className="flex gap-2 overflow-x-auto pb-1" data-testid="goalform-pictures">
+          <button
+            data-testid="goalform-pic-none"
+            onClick={() => setPicture(null)}
+            className={`m-tap flex h-14 w-20 shrink-0 flex-col items-center justify-center gap-1 rounded-xl border text-[10px] ${
+              picture === null ? 'border-accent bg-accent-soft text-accent-deep' : 'border-line bg-surface text-ink-3'
+            }`}
+          >
+            <Icon name="image-off-outline" size={16} />
+            {t('goals.noPicture')}
+          </button>
+          <button
+            data-testid="goalform-upload"
+            onClick={() => uploadRef.current?.click()}
+            className="m-tap flex h-14 w-20 shrink-0 flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-line bg-surface text-[10px] text-ink-3"
+          >
+            <Icon name="image-plus" size={16} />
+            {t('events.uploadPicture')}
+          </button>
+          {EVENT_PICTURES.map((candidate) => (
+            <button
+              key={candidate}
+              data-testid={`goalform-pic-${candidate.split('/').pop()?.replace('.jpg', '')}`}
+              onClick={() => setPicture(candidate)}
+              className={`m-tap h-14 w-20 shrink-0 overflow-hidden rounded-xl border-2 p-0 ${
+                picture === candidate ? 'border-accent' : 'border-transparent'
+              }`}
+            >
+              <img src={candidate} alt="" loading="lazy" className="h-full w-full object-cover" />
+            </button>
+          ))}
+        </div>
+        {picture?.startsWith('data:') && (
+          <div className="overflow-hidden rounded-xl border-2 border-accent" data-testid="goalform-uploaded">
+            <img src={picture} alt="" className="h-16 w-full object-cover" />
+          </div>
+        )}
+        <input ref={uploadRef} type="file" accept="image/*" className="hidden" data-testid="goalform-upload-input" onChange={(e) => void onUpload(e.target.files?.[0])} />
+
         <div className="flex gap-2 overflow-x-auto pb-1">
           {GOAL_ICONS.map((candidate) => (
             <button
@@ -204,7 +256,11 @@ export function GoalsScreen() {
                 className={`m-tap w-full rounded-card border border-line bg-surface p-4 text-left ${goal.archived === 1 ? 'opacity-60' : ''}`}
               >
                 <div className="flex items-center gap-3">
-                  <Tile icon={goal.icon ?? 'flag-outline'} />
+                  {goal.picture ? (
+                    <img src={goal.picture} alt="" className="h-10 w-10 shrink-0 rounded-xl object-cover" />
+                  ) : (
+                    <Tile icon={goal.icon ?? 'flag-outline'} />
+                  )}
                   <span className="min-w-0 flex-1">
                     <span className="flex items-baseline justify-between gap-2">
                       <span className="truncate text-[15px] font-semibold text-ink">{goal.name}</span>

@@ -1146,6 +1146,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'events.linkNone': 'Yok',
   'events.runningNow': 'Şu anda sürüyor',
   'goals.new': 'Yeni hedef',
+  'goals.noPicture': 'Resim yok',
   'goals.edit': 'Hedefi düzenle',
   'goals.namePlaceholder': 'Ad (örn. Yeni araba)',
   'goals.target': 'Hedef tutar',

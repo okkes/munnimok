@@ -8,6 +8,15 @@ using Munni.Api.Validation;
 namespace Munni.Api.Admin;
 
 public sealed record AdminUserDto(Guid Id, string Sub, string? DisplayName, string? Email, DateTimeOffset CreatedAt, int SpaceCount, bool IsAdmin, bool Bootstrap);
+public sealed record AdminFeedDto(string FeedSpaceId, long MaxSeq);
+public sealed record AdminAttachmentDto(string SpaceId, string FeedSpaceId, string AccountId);
+public sealed record AdminGcLinkDto(string GcAccountId, string SpaceId, string AccountEntityId, string Iban, string Provider, DateTimeOffset? LastFetchAt);
+public sealed record AdminUserDiagnosisDto(
+    Guid UserId,
+    List<string> MemberSpaces,
+    List<AdminFeedDto> OwnedFeeds,
+    List<AdminAttachmentDto> Attachments,
+    List<AdminGcLinkDto> GcLinks);
 public sealed record BankProviderChoice(string Provider);
 public sealed record AdminGrantDto(string Sub, string GrantedBySub, DateTimeOffset GrantedAtUtc, bool Bootstrap);
 public sealed record ProviderQuotaDto(string Provider, string Scope, int? Limit, int? Remaining, DateTimeOffset? ResetAtUtc, DateTimeOffset CapturedAtUtc);
@@ -43,6 +52,7 @@ public static class AdminEndpoints
         // operator-initiated removal, same pipeline as the user's own
         // DELETE /me (account-deletion design)
         group.MapDelete("/users/{sub}", DeleteUser);
+        group.MapGet("/users/{sub}/diagnosis", UserDiagnosis);
 
         MapAdminGrants(group);
         MapQuota(group);
@@ -67,6 +77,37 @@ public static class AdminEndpoints
                 IsAdmin: bootstrap.Contains(u.Sub) || granted.Contains(u.Sub),
                 Bootstrap: bootstrap.Contains(u.Sub)))
             .ToList());
+    }
+
+    /// <summary>the whole account→app chain for one user: memberships,
+    /// owned feeds (+ op high-water mark), attachments, gc links —
+    /// diagnosing "the consent linked but the app shows nothing"</summary>
+    private static async Task<IResult> UserDiagnosis(string sub, AppDbContext db)
+    {
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Sub == sub);
+        if (user is null) return Results.NotFound();
+        var memberSpaces = await db.SpaceMembers.Where(m => m.UserId == user.Id).Select(m => m.SpaceId).ToListAsync();
+        var ownedFeedIds = await db.FeedSpaces.Where(f => f.OwnerUserId == user.Id).Select(f => f.Id).ToListAsync();
+        var maxSeqs = await db.SyncOps
+            .Where(o => ownedFeedIds.Contains(o.SpaceId))
+            .GroupBy(o => o.SpaceId)
+            .Select(g => new { g.Key, Max = g.Max(o => o.Seq) })
+            .ToDictionaryAsync(g => g.Key, g => g.Max);
+        var attachments = await db.SpaceAccountLinks
+            .Where(l => memberSpaces.Contains(l.SpaceId))
+            .Select(l => new AdminAttachmentDto(l.SpaceId, l.FeedSpaceId, l.AccountId))
+            .ToListAsync();
+        var gcLinks = await db.GcRequisitions
+            .Where(r => r.UserId == user.Id)
+            .Join(db.GcLinkedAccounts, r => r.Id, a => a.RequisitionId,
+                (r, a) => new AdminGcLinkDto(a.GcAccountId, a.SpaceId, a.AccountEntityId, a.Iban, a.Provider, a.LastFetchAt))
+            .ToListAsync();
+        return Results.Ok(new AdminUserDiagnosisDto(
+            user.Id,
+            memberSpaces,
+            ownedFeedIds.Select(id => new AdminFeedDto(id, maxSeqs.GetValueOrDefault(id))).ToList(),
+            attachments,
+            gcLinks));
     }
 
     private static async Task<IResult> DeleteUser(

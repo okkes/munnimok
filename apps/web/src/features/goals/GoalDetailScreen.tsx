@@ -89,7 +89,13 @@ export function GoalDetailScreen() {
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <HeroCard
           testId="goaldetail-hero"
-          tile={<Tile size={48} icon={goal.icon ?? 'flag-outline'} />}
+          tile={
+            goal.picture ? (
+              <img src={goal.picture} alt="" className="h-12 w-12 shrink-0 rounded-2xl object-cover" data-testid="goal-cover" />
+            ) : (
+              <Tile size={48} icon={goal.icon ?? 'flag-outline'} />
+            )
+          }
           number={<span data-testid="goaldetail-allocated">{money(goal.allocatedCents)}</span>}
           sub={t('budgets.of', { amount: money(goal.targetCents) })}
           right={<span className="m-num shrink-0 text-[14px] font-semibold text-accent-deep">{Math.round(progress * 100)}%</span>}

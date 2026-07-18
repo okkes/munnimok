@@ -2,6 +2,14 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import type { AdminConfig } from './main';
 import bundledCatalog from './generated/bundledCatalog.json';
 
+interface UserDiagnosis {
+  userId: string;
+  memberSpaces: string[];
+  ownedFeeds: { feedSpaceId: string; maxSeq: number }[];
+  attachments: { spaceId: string; feedSpaceId: string; accountId: string }[];
+  gcLinks: { gcAccountId: string; spaceId: string; accountEntityId: string; iban: string; provider: string; lastFetchAt: string | null }[];
+}
+
 interface AdminUser {
   id: string;
   sub: string;
@@ -246,7 +254,16 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
           <CatalogScreen key={catalog.version} doc={catalog} busy={busy} onPublish={publishCatalog} />
         )}
         {!denied && screen === 'users' && (
-          <UsersScreen users={users} busy={busy} onPromote={promote} onDemote={demote} />
+          <UsersScreen
+            users={users}
+            busy={busy}
+            onPromote={promote}
+            onDemote={demote}
+            onDiagnose={async (sub) => {
+              const res = await call(`/admin/users/${encodeURIComponent(sub)}/diagnosis`);
+              return res.ok ? ((await res.json()) as UserDiagnosis) : null;
+            }}
+          />
         )}
         {!denied && screen === 'connections' && (
           <ConnectionsScreen
@@ -391,8 +408,24 @@ function UsersScreen({
   busy,
   onPromote,
   onDemote,
-}: Readonly<{ users: AdminUser[]; busy: boolean; onPromote: (sub: string) => void; onDemote: (sub: string) => void }>) {
+  onDiagnose,
+}: Readonly<{
+  users: AdminUser[];
+  busy: boolean;
+  onPromote: (sub: string) => void;
+  onDemote: (sub: string) => void;
+  onDiagnose: (sub: string) => Promise<UserDiagnosis | null>;
+}>) {
   const [query, setQuery] = useState('');
+  const [diag, setDiag] = useState<{ sub: string; data: UserDiagnosis | null } | null>(null);
+  const toggleDiagnosis = (sub: string) => {
+    if (diag?.sub === sub) {
+      setDiag(null);
+      return;
+    }
+    setDiag({ sub, data: null });
+    void onDiagnose(sub).then((data) => setDiag((prev) => (prev?.sub === sub ? { sub, data } : prev)));
+  };
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return users;
@@ -449,9 +482,48 @@ function UsersScreen({
                       Demote
                     </button>
                   )}
+                  <button
+                    data-testid={`diagnose-${u.sub}`}
+                    className="btn"
+                    onClick={() => toggleDiagnosis(u.sub)}
+                  >
+                    {diag?.sub === u.sub ? 'Hide' : 'Diagnose'}
+                  </button>
                 </td>
               </tr>
             ))}
+            {diag && (
+              <tr data-testid="user-diagnosis">
+                <td colSpan={5}>
+                  {!diag.data && <span className="sub">loading…</span>}
+                  {diag.data && (
+                    <div className="diag">
+                      <div><strong>member spaces</strong> · {diag.data.memberSpaces.length === 0 ? 'NONE' : diag.data.memberSpaces.join(', ')}</div>
+                      <div>
+                        <strong>owned feeds</strong> ·{' '}
+                        {diag.data.ownedFeeds.length === 0
+                          ? 'NONE'
+                          : diag.data.ownedFeeds.map((f) => `${f.feedSpaceId.slice(0, 8)}… (ops ${f.maxSeq})`).join(', ')}
+                      </div>
+                      <div>
+                        <strong>attachments</strong> ·{' '}
+                        {diag.data.attachments.length === 0
+                          ? 'NONE — feeds never attached to a space the user sees'
+                          : diag.data.attachments.map((l) => `${l.feedSpaceId.slice(0, 8)}… → ${l.spaceId.slice(0, 12)}…`).join(', ')}
+                      </div>
+                      <div>
+                        <strong>gc links</strong> ·{' '}
+                        {diag.data.gcLinks.length === 0
+                          ? 'NONE'
+                          : diag.data.gcLinks
+                              .map((g) => `${g.provider}:${g.iban.slice(-4)} → space ${g.spaceId.slice(0, 12)}… (fetched ${g.lastFetchAt ? new Date(g.lastFetchAt).toLocaleString() : 'never'})`)
+                              .join(' | ')}
+                      </div>
+                    </div>
+                  )}
+                </td>
+              </tr>
+            )}
             {filtered.length === 0 && (
               <tr>
                 <td colSpan={5}>—</td>

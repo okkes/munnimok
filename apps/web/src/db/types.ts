@@ -284,6 +284,8 @@ export interface GoalRow extends SyncEnvelope {
   name: string;
   icon?: string;
   color?: string;
+  /** cover image like events: bundled path or uploaded data url */
+  picture?: string;
   targetCents: number;
   targetDate?: string;
   /** running total, maintained by contributions */

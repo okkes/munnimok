@@ -1146,6 +1146,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'events.linkNone': 'Geen',
   'events.runningNow': 'Nu bezig',
   'goals.new': 'Nieuw doel',
+  'goals.noPicture': 'Geen afbeelding',
   'goals.edit': 'Doel bewerken',
   'goals.namePlaceholder': 'Naam (bijv. Nieuwe auto)',
   'goals.target': 'Doelbedrag',

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Net;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -78,6 +79,37 @@ public class AdminEndpointsTests : IClassFixture<AdminApiFactory>
     private readonly AdminApiFactory _factory;
 
     public AdminEndpointsTests(AdminApiFactory factory) => _factory = factory;
+
+    [Fact]
+    public async Task User_diagnosis_exposes_the_whole_sync_chain()
+    {
+        var admin = ClientFor("the-admin");
+        var user = ClientFor("diag-user");
+        await user.GetAsync("/me"); // materialize
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var userId = (await db.Users.FirstAsync(u => u.Sub == "diag-user")).Id;
+            db.Spaces.Add(new Space { Id = "space-diag" });
+            db.SpaceMembers.Add(new SpaceMember { SpaceId = "space-diag", UserId = userId, Role = Social.SpaceRoles.Owner });
+            db.FeedSpaces.Add(new Accounts.FeedSpace { Id = "feed-diag", OwnerUserId = userId, AccountRef = "NL01TEST" });
+            db.SpaceAccountLinks.Add(new Accounts.SpaceAccountLink
+            {
+                Id = Guid.NewGuid(), SpaceId = "space-diag", FeedSpaceId = "feed-diag", AccountId = "acct-1", AttachedBy = userId,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var res = await admin.GetAsync("/admin/users/diag-user/diagnosis");
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+        var body = JsonDocument.Parse(await res.Content.ReadAsStringAsync()).RootElement;
+        Assert.Contains("space-diag", body.GetProperty("memberSpaces").EnumerateArray().Select(e => e.GetString()));
+        Assert.Equal("feed-diag", body.GetProperty("ownedFeeds")[0].GetProperty("feedSpaceId").GetString());
+        Assert.Equal("feed-diag", body.GetProperty("attachments")[0].GetProperty("feedSpaceId").GetString());
+
+        Assert.Equal(HttpStatusCode.NotFound, (await admin.GetAsync("/admin/users/nobody/diagnosis")).StatusCode);
+    }
 
     private HttpClient ClientFor(string sub)
     {
