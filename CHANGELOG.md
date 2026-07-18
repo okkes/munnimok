@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.12.1](https://github.com/okkes/munnimok/compare/v2.12.0...v2.12.1) (2026-07-18)
+
+
+### 🐞 Bug Fixes
+
+* **auth:** self-heal the password-change sign-in loop ([a60266a](https://github.com/okkes/munnimok/commit/a60266a8a010b43ec2fd7cc399f2ce3c39b8de85))
+* **observability:** institutions failures self-diagnose; sync stops reporting identity states ([ec8be18](https://github.com/okkes/munnimok/commit/ec8be1801dee63e4f79a0966ab7efcd366103003))
+
 ## [2.12.0](https://github.com/okkes/munnimok/compare/v2.11.0...v2.12.0) (2026-07-18)
 
 
