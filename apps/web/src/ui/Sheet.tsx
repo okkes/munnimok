@@ -5,16 +5,21 @@ import { Drawer } from 'vaul';
 // disliked): at lg a sheet renders as a centered dialog — the familiar
 // desktop shape, with the page still visible around it
 import { useLgViewport as usePanelMode } from '@/lib/viewport';
+import { isNativeApp } from '@/lib/platform';
 
 /** the three sheet heights; per-pixel values stay out of call sites */
 export type SheetSize = 'compact' | 'form' | 'tall';
 const SIZE_PX: Record<SheetSize, number> = { compact: 320, form: 440, tall: 600 };
 
-// Android resizes the layout viewport itself for the keyboard (see the
-// interactive-widget viewport meta) — vaul's own input repositioning on
-// top of that left the sheet squeezed after the keyboard closed without
-// a blur (tap outside / auto-hide). iOS still needs vaul's handling.
+// Vaul's own input repositioning (translating the sheet up by the
+// keyboard height) is only for environments where the viewport does NOT
+// resize for the keyboard — plain iOS Safari. Everywhere the viewport
+// resizes it stacks on top and strands sheets past the status bar with a
+// keyboard-sized gap at the bottom (user ss 2026-07-19):
+//  - Android: the interactive-widget viewport meta resizes the layout
+//  - native shells: @capacitor/keyboard resize:"native" shrinks the webview
 const IS_ANDROID = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
+const VIEWPORT_RESIZES = IS_ANDROID || isNativeApp();
 
 // ── sheet stack ──────────────────────────────────────────────────────────
 // Only the TOP sheet may dismiss. Without this, opening a picker sheet on
@@ -132,7 +137,7 @@ export function Sheet({ open, onOpenChange, title, children, size, height }: Rea
       open={open}
       onOpenChange={(next) => (isLocked && !next ? undefined : onOpenChange(next))}
       dismissible={!isLocked}
-      repositionInputs={!IS_ANDROID}
+      repositionInputs={!VIEWPORT_RESIZES}
       direction="bottom"
     >
       <Drawer.Portal>

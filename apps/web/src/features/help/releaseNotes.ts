@@ -18,6 +18,22 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.17.0',
+    date: '2026-07-19',
+    items: [
+      {
+        en: 'Notifications now actually reach your phone: friend requests, space invites and new-transaction alerts show up even when munni is closed, in your own language. Under the hood the web app\'s offline worker was silently broken — repaired, so installed web apps cache and push again.',
+        nl: 'Meldingen bereiken je telefoon nu echt: vriendschapsverzoeken, ruimte-uitnodigingen en nieuwe-transactiemeldingen verschijnen ook als munni dicht is, in je eigen taal. Onder de motorkap was de offline-worker van de webapp stilletjes kapot — gerepareerd, dus geïnstalleerde webapps cachen en pushen weer.',
+        tr: 'Bildirimler artık telefonuna gerçekten ulaşıyor: arkadaşlık istekleri, alan davetleri ve yeni işlem uyarıları munni kapalıyken bile kendi dilinde görünüyor. Kaputun altında web uygulamasının çevrimdışı çalışanı sessizce bozulmuştu — onarıldı; kurulu web uygulamaları yeniden önbelleğe alıp bildirim gösteriyor.',
+      },
+      {
+        en: 'Review starts fresh every visit — skipped cards return to the top of the deck when you come back later. Drilling into a category from a past period now keeps that period instead of snapping back to today, and bottom sheets no longer get stranded halfway up the screen when the keyboard closes on iPhone.',
+        nl: 'Beoordelen begint elk bezoek opnieuw — overgeslagen kaarten liggen weer bovenop als je later terugkomt. Doorklikken naar een categorie vanuit een eerdere periode houdt nu die periode vast in plaats van terug te springen naar vandaag, en panelen blijven niet langer halverwege het scherm hangen wanneer het toetsenbord sluit op iPhone.',
+        tr: 'İnceleme her ziyarette baştan başlıyor — atlanan kartlar sonra döndüğünde yeniden destenin üstünde. Geçmiş bir dönemden kategoriye inmek artık o dönemi koruyor, bugüne geri fırlamıyor; iPhone\'da klavye kapandığında alt paneller de ekranın ortasında asılı kalmıyor.',
+      },
+    ],
+  },
+  {
     version: '2.16.0',
     date: '2026-07-18',
     items: [

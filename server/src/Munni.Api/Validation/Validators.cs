@@ -98,6 +98,7 @@ public sealed class SubscribeRequestValidator : AbstractValidator<Munni.Api.Push
     public SubscribeRequestValidator()
     {
         RuleFor(r => r.Kind).Must(k => k is "webpush" or "fcm").WithMessage("kind must be webpush or fcm");
+        RuleFor(r => r.Lang).Must(l => l is null or "en" or "nl" or "tr").WithMessage("lang must be en, nl or tr");
         RuleFor(r => r.Endpoint).NotEmpty().MaximumLength(4096);
         // browser subscriptions: a real push-service URL plus its key pair
         When(r => r.Kind == "webpush", () =>

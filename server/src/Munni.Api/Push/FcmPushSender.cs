@@ -20,13 +20,61 @@ public sealed class RoutingPushSender(IPushSender? webPush, IPushSender? fcm) : 
 }
 
 /// <summary>
+/// Visible notification text for native pushes, per device language —
+/// the server-side twin of sw.ts/swNotifications (iOS displays NOTHING
+/// for data-only messages while the app is closed, so unlike web push
+/// the localization cannot happen on-device; user report: friend
+/// requests never showed on iPhone).
+/// </summary>
+public static class FcmTexts
+{
+    private sealed record Texts(string One, string Many, string FriendRequest, string FriendAccept, string SpaceInvite, string SpaceJoin, string Someone, string ASpace);
+
+    private static readonly Dictionary<string, Texts> All = new()
+    {
+        ["en"] = new("1 new transaction arrived", "{n} new transactions arrived", "{name} sent you a friend request", "{name} accepted your friend request", "{name} invited you to \"{space}\"", "{name} joined \"{space}\"", "Someone", "a space"),
+        ["nl"] = new("1 nieuwe transactie ontvangen", "{n} nieuwe transacties ontvangen", "{name} heeft je een vriendschapsverzoek gestuurd", "{name} heeft je vriendschapsverzoek geaccepteerd", "{name} heeft je uitgenodigd voor \"{space}\"", "{name} doet nu mee in \"{space}\"", "Iemand", "een ruimte"),
+        ["tr"] = new("1 yeni işlem geldi", "{n} yeni işlem geldi", "{name} sana arkadaşlık isteği gönderdi", "{name} arkadaşlık isteğini kabul etti", "{name} seni \"{space}\" alanına davet etti", "{name} \"{space}\" alanına katıldı", "Birisi", "bir alan"),
+    };
+
+    /// <summary>title+body for a payload, or null for types with no visible text</summary>
+    public static (string Title, string Body)? Build(JsonElement payload, string lang)
+    {
+        var texts = All.GetValueOrDefault(lang) ?? All["en"];
+        var type = payload.TryGetProperty("type", out var t) ? t.GetString() : null;
+        string Str(string name, string fallback) =>
+            payload.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? fallback : fallback;
+        string Social(string template) =>
+            template.Replace("{name}", Str("fromName", texts.Someone)).Replace("{space}", Str("spaceName", texts.ASpace));
+
+        var body = type switch
+        {
+            "new-transactions" when payload.TryGetProperty("count", out var c) && c.TryGetInt32(out var n) && n != 1 =>
+                texts.Many.Replace("{n}", n.ToString()),
+            "new-transactions" => texts.One,
+            "friend-request" => Social(texts.FriendRequest),
+            "friend-accept" => Social(texts.FriendAccept),
+            "space-invite" => Social(texts.SpaceInvite),
+            "space-join" => Social(texts.SpaceJoin),
+            _ => null,
+        };
+        return body is null ? null : ("munni", body);
+    }
+}
+
+/// <summary>
 /// FCM HTTP v1 (native-apps design N4): a service-account JWT buys a
-/// short-lived OAuth token; messages go out data-only so the app layer
-/// localizes the visible text, exactly like the web push path.
+/// short-lived OAuth token. Messages carry the data payload for in-app
+/// handling PLUS a notification block localized per device (FcmTexts) —
+/// without it, closed iOS apps never display anything.
 /// Configured via Fcm:ServiceAccountJson (the downloaded key file).
 /// </summary>
 public sealed class FcmPushSender : IPushSender
 {
+    // omit the notification field entirely when a payload type has no
+    // visible text — FCM treats an explicit null as a malformed message
+    private static readonly JsonSerializerOptions JsonOptions = new() { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull };
+
     private readonly HttpClient _http;
     private readonly string _projectId;
     private readonly string _clientEmail;
@@ -47,6 +95,8 @@ public sealed class FcmPushSender : IPushSender
     public async Task<bool> SendAsync(PushSubscriptionRow subscription, string payload, CancellationToken ct)
     {
         var token = await GetAccessTokenAsync(ct);
+        using var doc = JsonDocument.Parse(payload);
+        var visible = FcmTexts.Build(doc.RootElement, subscription.Lang);
         using var request = new HttpRequestMessage(HttpMethod.Post, $"v1/projects/{_projectId}/messages:send");
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
         request.Content = new StringContent(JsonSerializer.Serialize(new
@@ -54,11 +104,15 @@ public sealed class FcmPushSender : IPushSender
             message = new
             {
                 token = subscription.Endpoint,
-                // data-only: the app renders + localizes, matching sw.ts
+                // data for the in-app handlers (routing, refresh) …
                 data = new { payload },
+                // … and the OS-rendered notification: closed iOS apps show
+                // nothing for data-only messages (user report)
+                notification = visible is null ? null : new { title = visible.Value.Title, body = visible.Value.Body },
                 android = new { priority = "high" },
+                apns = new { headers = new Dictionary<string, string> { ["apns-priority"] = "10" }, payload = new { aps = new { sound = "default" } } },
             },
-        }), Encoding.UTF8, "application/json");
+        }, JsonOptions), Encoding.UTF8, "application/json");
 
         using var response = await _http.SendAsync(request, ct);
         if (response.StatusCode is System.Net.HttpStatusCode.NotFound or System.Net.HttpStatusCode.Gone)

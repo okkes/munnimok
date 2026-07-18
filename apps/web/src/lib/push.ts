@@ -1,4 +1,5 @@
 import { apiFetch } from './api';
+import { getCurrentLang } from '@/i18n';
 import { getNativePushToken, isNativeApp } from './platform';
 
 /**
@@ -48,7 +49,9 @@ export async function enablePush(vapidPublicKey: string): Promise<boolean> {
     if (!token) return false;
     const response = await apiFetch('/me/push-subscriptions', {
       method: 'POST',
-      body: JSON.stringify({ kind: 'fcm', endpoint: token }),
+      // lang: the server localizes the native notification text per
+      // device (iOS shows nothing for data-only pushes when closed)
+      body: JSON.stringify({ kind: 'fcm', endpoint: token, lang: getCurrentLang() }),
     });
     if (response.ok) localStorage.setItem(FCM_TOKEN_KEY, token);
     return response.ok;
@@ -68,7 +71,7 @@ export async function enablePush(vapidPublicKey: string): Promise<boolean> {
   const json = subscription.toJSON();
   const response = await apiFetch('/me/push-subscriptions', {
     method: 'POST',
-    body: JSON.stringify({ endpoint: subscription.endpoint, p256dh: json.keys?.p256dh, auth: json.keys?.auth }),
+    body: JSON.stringify({ endpoint: subscription.endpoint, p256dh: json.keys?.p256dh, auth: json.keys?.auth, lang: getCurrentLang() }),
   });
   return response.ok;
 }

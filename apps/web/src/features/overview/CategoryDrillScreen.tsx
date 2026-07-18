@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useQuery } from '@/db/useQuery';
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
@@ -51,6 +51,21 @@ export function CategoryDrillScreen() {
     return found >= 0 ? found : PERIOD_COUNT - 1;
   }, [periods, from]);
   const [periodIndex, setPeriodIndex] = useState(initialIndex);
+  // the space row loads async: the first render computes periods with
+  // default month boundaries, so a custom period start makes `from`
+  // unmatchable and the drill snapped back to the CURRENT period (user
+  // bug). Re-anchor when the real config lands — unless the user already
+  // picked a bar themselves (render-time prev-value pattern).
+  const touched = useRef(false);
+  const lastInitial = useRef(initialIndex);
+  if (lastInitial.current !== initialIndex) {
+    lastInitial.current = initialIndex;
+    if (!touched.current) setPeriodIndex(initialIndex);
+  }
+  const selectPeriod = (index: number) => {
+    touched.current = true;
+    setPeriodIndex(index);
+  };
 
   const accountsById = useMemo(() => new Map((accounts ?? []).map((a) => [a.id, a])), [accounts]);
   const perPeriod = useMemo(
@@ -108,7 +123,7 @@ export function CategoryDrillScreen() {
             values={perPeriod.map((entry) => entry.totalCents)}
             labels={barLabels}
             selected={periodIndex}
-            onSelect={setPeriodIndex}
+            onSelect={selectPeriod}
             accent={color}
           />
         </div>

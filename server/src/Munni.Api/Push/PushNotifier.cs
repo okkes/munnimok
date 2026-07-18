@@ -19,6 +19,11 @@ public class PushSubscriptionRow
     public required string Endpoint { get; set; }
     public string? P256dh { get; set; }
     public string? Auth { get; set; }
+    /// <summary>the device's UI language at registration — native pushes
+    /// carry a visible notification block (iOS shows nothing for
+    /// data-only messages when the app is closed), and its text is
+    /// localized server-side per device</summary>
+    public string Lang { get; set; } = "en";
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 

@@ -58,6 +58,7 @@ describe('push subscription management', () => {
       endpoint: 'https://push.example/abc',
       p256dh: 'p',
       auth: 'a',
+      lang: 'en', // the server localizes native/visible text per device
     });
   });
 

@@ -6,6 +6,9 @@
     "adjustMarginsForEdgeToEdge": "disable"
   },
   "plugins": {
+    "Keyboard": {
+      "resize": "native"
+    },
     "PushNotifications": {
       "presentationOptions": ["badge", "sound", "alert"]
     },

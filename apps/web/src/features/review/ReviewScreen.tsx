@@ -375,23 +375,10 @@ export function ReviewScreen() {
 
   const [typeOpen, setTypeOpen] = useState(false);
   const [splitOpen, setSplitOpen] = useState(false);
-  const skippedKey = `munni_review_skipped:${spaceId}`;
-  const [skipped, setSkipped] = useState<ReadonlySet<string>>(() => {
-    try {
-      return new Set(JSON.parse(sessionStorage.getItem(skippedKey) ?? '[]') as string[]);
-    } catch {
-      return new Set();
-    }
-  });
-  // persisted so navigating away (create a category / recurring / event)
-  // and coming back resumes at the same card (user request)
-  const updateSkipped = (update: (prev: ReadonlySet<string>) => ReadonlySet<string>) => {
-    setSkipped((prev) => {
-      const next = update(prev);
-      sessionStorage.setItem(skippedKey, JSON.stringify([...next]));
-      return next;
-    });
-  };
+  // per-visit only (user ruling): mid-review side steps happen in sheets
+  // that keep the screen mounted, so state survives those — but leaving
+  // review and coming back later starts the deck from the top again
+  const [skipped, setSkipped] = useState<ReadonlySet<string>>(new Set());
   // the card's STAGED decision (review redesign): user edits live here,
   // only Confirm writes; null = untouched, follow tx + prediction live
   const [stagedDraft, setStagedDraft] = useState<ReviewDraft | null>(null);
@@ -584,7 +571,7 @@ export function ReviewScreen() {
       } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
         e.preventDefault();
         captureLeaving();
-        updateSkipped((prev) => new Set([...prev, tx.id]));
+        setSkipped((prev) => new Set([...prev, tx.id]));
       }
     };
     window.addEventListener('keydown', onKey);
@@ -624,7 +611,7 @@ export function ReviewScreen() {
           <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center" data-testid="review-skipped-note">
             <Icon name="debug-step-over" size={40} color="var(--m-warning)" />
             <p className="max-w-[260px] text-sm text-ink-2">{t('review.skippedRemain', { n: skipped.size })}</p>
-            <Button variant="outline" data-testid="review-reset-skipped" onClick={() => updateSkipped(() => new Set())}>
+            <Button variant="outline" data-testid="review-reset-skipped" onClick={() => setSkipped(() => new Set())}>
               {t('review.reviewSkipped')}
             </Button>
           </div>
@@ -792,7 +779,7 @@ export function ReviewScreen() {
                 data-testid="review-skip-btn"
                 onClick={() => {
                   captureLeaving();
-                  updateSkipped((prev) => new Set([...prev, tx.id]));
+                  setSkipped((prev) => new Set([...prev, tx.id]));
                 }}
               >
                 {t('review.skip')}

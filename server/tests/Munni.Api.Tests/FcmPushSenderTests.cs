@@ -62,25 +62,46 @@ public class FcmPushSenderTests
         return (new FcmPushSender(http, config), handler);
     }
 
-    private static PushSubscriptionRow Row(string token) => new()
+    private static PushSubscriptionRow Row(string token, string lang = "en") => new()
     {
         Id = Guid.NewGuid(),
         UserId = Guid.NewGuid(),
         Kind = "fcm",
         Endpoint = token,
+        Lang = lang,
     };
 
     [Fact]
-    public async Task Sends_data_only_messages_and_reuses_the_oauth_token()
+    public async Task Sends_data_plus_visible_notification_and_reuses_the_oauth_token()
     {
         var (sender, handler) = Create();
-        Assert.True(await sender.SendAsync(Row("tok-1"), """{"type":"new-transactions"}""", CancellationToken.None));
-        Assert.True(await sender.SendAsync(Row("tok-2"), """{"type":"friend-request"}""", CancellationToken.None));
+        Assert.True(await sender.SendAsync(Row("tok-1"), """{"type":"new-transactions","count":3}""", CancellationToken.None));
+        Assert.Contains("3 new transactions arrived", handler.LastSendBody);
+        Assert.True(await sender.SendAsync(Row("tok-2"), """{"type":"friend-request","fromName":"Ayse"}""", CancellationToken.None));
 
         Assert.Equal(1, handler.TokenCalls); // cached until expiry
         Assert.Contains("\"token\":\"tok-2\"", handler.LastSendBody);
-        Assert.Contains("friend-request", handler.LastSendBody);
-        Assert.Contains("\"data\":", handler.LastSendBody); // data-only: the app localizes
+        Assert.Contains("\"data\":", handler.LastSendBody); // in-app routing payload rides along
+        // the OS-rendered notification block: closed iOS apps show nothing
+        // for data-only messages (user report: friend requests never showed)
+        Assert.Contains("\"notification\":", handler.LastSendBody);
+        Assert.Contains("sent you a friend request", handler.LastSendBody);
+        Assert.Contains("apns-priority", handler.LastSendBody);
+    }
+
+    [Fact]
+    public async Task Notification_text_follows_the_device_language()
+    {
+        var (sender, handler) = Create();
+        Assert.True(await sender.SendAsync(Row("tok-nl", "nl"), """{"type":"friend-request","fromName":"Bob"}""", CancellationToken.None));
+        Assert.Contains("Bob heeft je een vriendschapsverzoek gestuurd", handler.LastSendBody);
+
+        Assert.True(await sender.SendAsync(Row("tok-tr", "tr"), """{"type":"space-invite","fromName":"Bob","spaceName":"Ev"}""", CancellationToken.None));
+        Assert.Contains("alan", handler.LastSendBody); // "… \"Ev\" alanına davet etti"
+
+        // unknown types stay data-only (no notification block)
+        Assert.True(await sender.SendAsync(Row("tok-x"), """{"type":"mystery"}""", CancellationToken.None));
+        Assert.DoesNotContain("\"notification\":", handler.LastSendBody);
     }
 
     [Fact]

@@ -225,22 +225,6 @@ describe('ReviewScreen (demo identity)', () => {
     db.close();
   }, 15_000);
 
-  it('skips survive leaving the screen: the queue resumes where the user left off', async () => {
-    renderApp('/review');
-    await screen.findByTestId('review-card');
-    const first = screen.getByTestId('review-card').textContent;
-
-    fireEvent.click(screen.getByTestId('review-skip-btn'));
-    await waitFor(() => expect(screen.getByTestId('review-card').textContent).not.toBe(first), { timeout: 5000 });
-    const second = screen.getByTestId('review-card').textContent;
-
-    // leave (create a category, say) and come back — same card, not the start
-    cleanup();
-    renderApp('/review');
-    await screen.findByTestId('review-card');
-    await waitFor(() => expect(screen.getByTestId('review-card').textContent).toBe(second), { timeout: 5000 });
-  }, 15_000);
-
   it('no auto-match: the manual chip opens the picker and confirm links the choice', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
@@ -393,6 +377,13 @@ describe('ReviewScreen (demo identity)', () => {
     expect(note.textContent).toContain('3');
     fireEvent.click(screen.getByTestId('review-reset-skipped'));
     expect(await screen.findByTestId('review-card')).toBeTruthy();
+
+    // leaving review and coming back starts the deck from the top again
+    // (user ruling 2026-07-19: skips are per-visit, not per-session)
+    fireEvent.click(screen.getByTestId('review-skip-btn'));
+    cleanup();
+    renderApp('/review');
+    await waitFor(() => expect(screen.getByTestId('review-card').textContent).toBe(firstMerchant));
   }, 15_000);
 });
 

@@ -57,6 +57,13 @@ export default defineConfig(({ mode }) => {
           // offline/demo too.
           globPatterns: ['**/*.{js,css,html,ico,png,svg,json,woff2,jpg}'],
           maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+          // iife, NOT the default es: the worker is registered as a classic
+          // script, but the es build kept `import.meta` (dynamic-import
+          // helpers, catalog-baseline import) — browsers threw
+          // "Cannot use 'import.meta' outside a module" at parse time and
+          // production ran with NO service worker at all: no offline, no
+          // web push (user ss 2026-07-19). iife inlines every chunk.
+          rollupFormat: 'iife',
         },
       }),
       {

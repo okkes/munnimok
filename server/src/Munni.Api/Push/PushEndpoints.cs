@@ -6,7 +6,7 @@ using Munni.Api.Validation;
 namespace Munni.Api.Push;
 
 /// <summary>Kind "webpush" (default): endpoint+keys. Kind "fcm": the device token rides Endpoint, keys stay null.</summary>
-public sealed record SubscribeRequest(string Endpoint, string? P256dh = null, string? Auth = null, string Kind = "webpush");
+public sealed record SubscribeRequest(string Endpoint, string? P256dh = null, string? Auth = null, string Kind = "webpush", string? Lang = null);
 
 public static class PushEndpoints
 {
@@ -28,6 +28,7 @@ public static class PushEndpoints
                     Endpoint = request.Endpoint,
                     P256dh = request.P256dh,
                     Auth = request.Auth,
+                    Lang = request.Lang ?? "en",
                 });
             }
             else
@@ -37,6 +38,7 @@ public static class PushEndpoints
                 existing.Kind = request.Kind;
                 existing.P256dh = request.P256dh;
                 existing.Auth = request.Auth;
+                existing.Lang = request.Lang ?? existing.Lang;
             }
             await db.SaveChangesAsync();
             return Results.Ok();
