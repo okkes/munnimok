@@ -52,22 +52,18 @@ for (const V of VARIANTS) {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V, { demo: true });
     await page.click('[data-testid="home-review-banner"]');
-    // each confirm must actually advance the queue — rapid clicks can
-    // land twice on the same card while it swaps (CI-only flake)
-    const card = page.locator('[data-testid="review-card"]');
-    for (let i = 0; i < 3; i++) {
-      if (await page.locator('[data-testid="review-empty"]').count()) break;
-      const before = await card.textContent();
-      // self-healing confirm: a click landing mid-swap can be swallowed
-      // by the outgoing card — re-click until the queue visibly advances
-      await expect(async () => {
-        if (await page.locator('[data-testid="review-empty"]').count()) return;
-        if ((await card.textContent()) !== before) return;
-        await page.click('[data-testid="review-confirm-btn"]', { timeout: 2000 }).catch(() => undefined);
-        throw new Error('queue not advanced yet');
-      }).toPass({ timeout: 45_000, intervals: [500, 1000, 2000] });
-    }
-    await expect(page.locator('[data-testid="review-empty"]')).toBeVisible({ timeout: 30_000 });
+    // drain the whole queue: keep confirming until the empty state shows.
+    // Re-confirming a card that hasn't swapped yet is an idempotent write,
+    // so no advance-tracking is needed — the paced intervals stop this
+    // from hammering, and a genuinely unconfirmable card still fails.
+    // (the old fixed 3-iteration loop flaked whenever the LAST live-query
+    // round trip outlived its separate budget on coverage runners)
+    await expect(async () => {
+      if (await page.locator('[data-testid="review-empty"]').count()) return;
+      await page.click('[data-testid="review-confirm-btn"]', { timeout: 2000 }).catch(() => undefined);
+      throw new Error('queue not empty yet');
+    }).toPass({ timeout: 90_000, intervals: [800, 1500, 3000] });
+    await expect(page.locator('[data-testid="review-empty"]')).toBeVisible();
     await page.click('[data-testid="review-back"]');
     await expect(page.locator('[data-testid="screen-home"]')).toBeVisible();
     await expect(page.locator('[data-testid="home-review-banner"]')).toHaveCount(0);

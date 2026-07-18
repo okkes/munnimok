@@ -17,6 +17,37 @@ public static partial class GcEndpoints
     [System.Text.RegularExpressions.GeneratedRegex("^[A-Za-z]{2}$")]
     private static partial System.Text.RegularExpressions.Regex CountryCode();
 
+    private static async Task<IResult> ListInstitutionsAsync(string country, BankProviderRegistry registry, AppDbContext db, IMemoryCache cache)
+    {
+        if (!CountryCode().IsMatch(country))
+            return Results.BadRequest(new { error = "country must be a 2-letter code" });
+        var api = await registry.ActiveAsync(db);
+        IReadOnlyList<GcInstitution>? list;
+        try
+        {
+            list = await cache.GetOrCreateAsync($"institutions-{api.ProviderId}-{country}", async entry =>
+            {
+                entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(24);
+                var fetched = await api.GetInstitutionsAsync(country);
+                await RecordLogoUrlsAsync(db, fetched);
+                return fetched;
+            });
+        }
+        catch (Exception ex)
+        {
+            // bare 500s left the app guessing (GlitchTip issue 14) —
+            // name the provider and its reason, like create/complete
+            SentrySdk.CaptureException(ex);
+            var detail = ex.Message.Length > 300 ? ex.Message[..300] : ex.Message;
+            return Results.Problem(title: $"{api.ProviderId} institutions failed", detail: detail, statusCode: 502);
+        }
+        // relative logo path: the client prefixes its API origin
+        return Results.Ok(list!.Select(i => i with
+        {
+            Logo = string.IsNullOrEmpty(i.Logo) ? i.Logo : $"/gocardless/institutions/{Uri.EscapeDataString(i.Id)}/logo",
+        }));
+    }
+
     /// <summary>remember every logo URL so the logo endpoint can vendor
     /// the bytes — the app never hotlinks the provider CDN</summary>
     private static async Task RecordLogoUrlsAsync(AppDbContext db, IReadOnlyList<GcInstitution> fetched)
@@ -77,24 +108,7 @@ public static partial class GcEndpoints
 
         // institution list, cached per active provider: it changes rarely
         // and the vendors rate-limit
-        group.MapGet("/institutions", async (string country, BankProviderRegistry registry, AppDbContext db, IMemoryCache cache) =>
-        {
-            if (!CountryCode().IsMatch(country))
-                return Results.BadRequest(new { error = "country must be a 2-letter code" });
-            var api = await registry.ActiveAsync(db);
-            var list = await cache.GetOrCreateAsync($"institutions-{api.ProviderId}-{country}", async entry =>
-            {
-                entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(24);
-                var fetched = await api.GetInstitutionsAsync(country);
-                await RecordLogoUrlsAsync(db, fetched);
-                return fetched;
-            });
-            // relative logo path: the client prefixes its API origin
-            return Results.Ok(list!.Select(i => i with
-            {
-                Logo = string.IsNullOrEmpty(i.Logo) ? i.Logo : $"/gocardless/institutions/{Uri.EscapeDataString(i.Id)}/logo",
-            }));
-        });
+        group.MapGet("/institutions", ListInstitutionsAsync);
 
         // the vendored logo bytes — anonymous (public artwork) so a plain
         // <img> tag can load it; fetched from the recorded URL exactly once

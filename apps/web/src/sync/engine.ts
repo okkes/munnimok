@@ -124,7 +124,10 @@ export class SyncEngine {
     } catch (err) {
       this.lastError = String(err); // surfaced on the connecting screen
       const offline = err instanceof TypeError; // fetch network errors are TypeError
-      if (!offline) reportError('sync', err); // real faults, not connectivity
+      // 401/403 are identity states (the auth path reports + recovers
+      // those itself) — report only genuine sync faults
+      const authState = err instanceof SyncHttpError && (err.status === 401 || err.status === 403);
+      if (!offline && !authState) reportError('sync', err);
       this.setStatus(offline ? 'offline' : 'error');
     } finally {
       this.running = false;
