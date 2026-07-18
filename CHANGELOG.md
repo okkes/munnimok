@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.12.2](https://github.com/okkes/munnimok/compare/v2.12.1...v2.12.2) (2026-07-18)
+
+
+### 🐞 Bug Fixes
+
+* **banking:** EnableBanking signing key survives its transient client; profile avatar survives reinstall ([594311b](https://github.com/okkes/munnimok/commit/594311bb94cc0613b8bc13f1434fb479b904c5ea))
+
 ## [2.12.1](https://github.com/okkes/munnimok/compare/v2.12.0...v2.12.1) (2026-07-18)
 
 
