@@ -209,7 +209,7 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
     expect(summary.textContent).toContain('€52.40');
     // hero shows the net amount, gross struck through
     expect(screen.getByTestId('tx-detail-amount').textContent).toContain('-€32.40');
-    expect(screen.getByTestId('tx-detail-gross').textContent).toContain('-€52.40');
+    expect(screen.getByTestId('tx-detail-original-amount').textContent).toContain('-€52.40'); // details block owns the original now
 
     // physical rewrite (user rule): both sides' splits carry the NET truth
     const db = new MunniDB('munni_demo');
@@ -260,7 +260,7 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
     fireEvent.click(screen.getByTestId('reimb-save'));
 
     // hero shows what the salary is still worth, gross struck through
-    await waitFor(() => expect(screen.getByTestId('tx-detail-gross').textContent).toContain('+€2,200.00'), { timeout: 5000 });
+    await waitFor(() => expect(screen.getByTestId('tx-detail-original-amount').textContent).toContain('+€2,200.00'), { timeout: 5000 });
     expect(screen.getByTestId('tx-detail-amount').textContent).not.toContain('+€2,200.00');
     // …and the uncategorized credit filed itself as Reimbursement
     await waitFor(() => expect(screen.getByTestId('tx-detail-category-row').textContent).toContain('Reimbursement'));

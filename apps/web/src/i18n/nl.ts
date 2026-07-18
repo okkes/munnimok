@@ -1556,6 +1556,8 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'tour.cats.2b': 'Voeg eigen categorieën toe met eigen icoon en kleur; verberg ingebouwde die je nooit gebruikt.',
   'tour.cats.3t': 'Schuif vrij',
   'tour.cats.3b': 'Sleep subcategorieën naar een andere hoofdcategorie — de historie verhuist mee.',
+  'tour.cats.4t': 'Ingedrukt houden',
+  'tour.cats.4b': 'Houd een categorie vast — hoofd of je eigen sub — en er verschijnt een actiemenu met een kleine tril: bewerken, verbergen, subs toevoegen of verplaatsen.',
   'tour.ov.1t': 'Vier bakken',
   'tour.ov.1b': 'Inkomen, uitgaven, sparen en beleggen — elke tegel op Thuis opent zijn eigen uitsplitsing.',
   'tour.ov.2t': 'Wandel door de tijd',

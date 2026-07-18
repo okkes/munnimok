@@ -68,11 +68,29 @@ export async function ensurePersistentStorage(): Promise<void> {
 
 /** munni://gc-callback?ref=… → /gc-callback?ref=… (null for foreign urls).
  *  Accepts channel-suffixed schemes too (munni-dev:// in the staging app). */
+/** the https paths a verified App Link / universal link may hand us —
+ *  a tight allowlist so nothing else ever routes into the shell */
+const UNIVERSAL_LINK_PATHS = ['/gc-callback', '/splits/join/'];
+
 export function deepLinkToPath(url: string): string | null {
   const match = /^munni(?:-\w+)?:\/\/([\w./-]*)(\?[^#]*)?/.exec(url);
-  if (!match) return null;
-  const path = match[1].replace(/^\/+/, '');
-  return `/${path}${match[2] ?? ''}`;
+  if (match) {
+    const path = match[1].replace(/^\/+/, '');
+    return `/${path}${match[2] ?? ''}`;
+  }
+  // universal links (UL2): the bank's https redirect / a split invite
+  // opens the app directly — same in-app routes as the scheme form
+  if (/^https:\/\/[^/]*\bokkes\.synology\.me\//.test(url)) {
+    try {
+      const parsed = new URL(url);
+      if (UNIVERSAL_LINK_PATHS.some((prefix) => parsed.pathname.startsWith(prefix))) {
+        return parsed.pathname + parsed.search;
+      }
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 /** the untouched munni:// callback url — the OIDC code exchange must

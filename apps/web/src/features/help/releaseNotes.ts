@@ -18,6 +18,27 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.13.0',
+    date: '2026-07-18',
+    items: [
+      {
+        en: 'Real app links: bank-consent returns and split invites are now verified https links that open the app directly — no more "Open in munni?" popup on iPhone once the new build is installed. Invite links work as normal web links for everyone else.',
+        nl: 'Echte app-links: terugkeer na banktoestemming en split-uitnodigingen zijn nu geverifieerde https-links die de app direct openen — geen "Openen in munni?"-popup meer op iPhone zodra de nieuwe build is geïnstalleerd. Uitnodigingslinks werken als gewone weblinks voor iedereen anders.',
+        tr: 'Gerçek uygulama bağlantıları: banka onayı dönüşleri ve bölüşme davetleri artık uygulamayı doğrudan açan doğrulanmış https bağlantıları — yeni sürüm kurulduktan sonra iPhone\'da "munni\'de aç?" penceresi yok. Davet bağlantıları diğer herkes için normal web bağlantısı olarak çalışır.',
+      },
+      {
+        en: 'Transaction detail refined: one Edit button for the whole categories block, the type row reads value-first like its neighbours, the Details rows carry icons, and the duplicate struck-through amount left the header.',
+        nl: 'Transactiedetail verfijnd: één Bewerken-knop voor het hele categorieënblok, de typeregel toont eerst de waarde net als zijn buren, de Details-regels hebben iconen, en het dubbele doorgestreepte bedrag is uit de kop verdwenen.',
+        tr: 'İşlem detayı inceltildi: tüm kategoriler bloğu için tek Düzenle düğmesi, tür satırı komşuları gibi önce değeri gösteriyor, Detay satırlarında simgeler var ve başlıktaki mükerrer üstü çizili tutar kaldırıldı.',
+      },
+      {
+        en: 'Categories feel consistent: holding your own sub-category now opens an action menu (edit, move) just like main categories — the accidental drag is gone — and every hold answers with a small vibration so you know the menu is coming. The tour explains it.',
+        nl: 'Categorieën voelen consistent: je eigen subcategorie vasthouden opent nu een actiemenu (bewerken, verplaatsen) net als hoofdcategorieën — het onbedoelde slepen is weg — en elk vasthouden antwoordt met een kleine tril zodat je weet dat het menu komt. De tour legt het uit.',
+        tr: 'Kategoriler tutarlı: kendi alt kategorini basılı tutmak artık ana kategoriler gibi bir işlem menüsü açıyor (düzenle, taşı) — istenmeyen sürükleme kalktı — ve her basılı tutuş menünün geleceğini bildiren küçük bir titreşimle yanıt veriyor. Tur bunu anlatıyor.',
+      },
+    ],
+  },
+  {
     version: '2.12.2',
     date: '2026-07-18',
     items: [

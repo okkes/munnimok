@@ -1556,6 +1556,8 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'tour.cats.2b': 'Kendi simgesi ve rengiyle özel kategoriler ekle; hiç kullanmadığın hazır olanları gizle.',
   'tour.cats.3t': 'Serbestçe taşı',
   'tour.cats.3b': 'Alt kategorileri başka bir ana kategoriye sürükle — geçmiş de birlikte taşınır.',
+  'tour.cats.4t': 'Basılı tut',
+  'tour.cats.4b': 'Bir kategoriyi basılı tut — ana ya da kendi altın — küçük bir titreşimle işlem menüsü açılır: düzenle, gizle, alt ekle veya taşı.',
   'tour.ov.1t': 'Dört kova',
   'tour.ov.1b': 'Gelir, harcama, birikim ve yatırım — Ana sayfadaki her kutu kendi dökümünü açar.',
   'tour.ov.2t': 'Zamanda yürü',

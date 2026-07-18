@@ -201,7 +201,9 @@ describe('Splits (SP1)', () => {
     });
 
     fireEvent.click(await screen.findByTestId('split-invite'));
-    await waitFor(() => expect(screen.getByTestId('split-invite-link').textContent).toContain('#/splits/join/tok-abc'));
+    // real path (no #): verified app links can only match real paths
+    await waitFor(() => expect(screen.getByTestId('split-invite-link').textContent).toContain('/splits/join/tok-abc'));
+    expect(screen.getByTestId('split-invite-link').textContent).not.toContain('#');
   });
 
   it('join screen shows ONLY name + inviter, then accepts with MY chosen space (SP3)', async () => {

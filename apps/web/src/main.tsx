@@ -26,6 +26,11 @@ import { initLockWatcher, useLock } from '@/features/lock/lock';
 import { UpdateToast } from '@/ui/UpdateToast';
 
 const isGcCallbackPath = window.location.pathname.includes('/gc-callback');
+// split invites are REAL paths now (OS link matching never sees a #
+// fragment) — bounce into the hash router before anything renders
+if (window.location.pathname.startsWith('/splits/join/')) {
+  window.location.replace(`${window.location.origin}/#${window.location.pathname}`);
+}
 
 // Chosen-offline identities (demo / offline mode) promise ZERO network
 // traffic — not even crash reports. Signed-in users who merely lost

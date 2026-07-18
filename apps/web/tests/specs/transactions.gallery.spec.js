@@ -115,13 +115,13 @@ for (const V of VARIANTS) {
     await page.waitForTimeout(500);
     // net −18.99, gross struck through, summary line
     await expect(page.locator('[data-testid="tx-detail-amount"]')).toContainText('18.99');
-    await expect(page.locator('[data-testid="tx-detail-gross"]')).toContainText('28.99');
+    await expect(page.locator('[data-testid="tx-detail-original-amount"]')).toContainText('28.99'); // details block owns the original
     await expect(page.locator('[data-testid="reimb-summary"]')).toContainText('10.00');
     await shot(page, k('34-tx-reimburse'));
     // unlink restores the gross amount
     await page.locator('[data-testid^="reimb-unlink-"]').click();
     await expect(page.locator('[data-testid="tx-detail-amount"]')).toContainText('28.99');
-    await expect(page.locator('[data-testid="tx-detail-gross"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="tx-detail-original-amount"]')).toHaveCount(0);
     await teardown(page, ctx, k('34-tx-reimburse'));
   });
 

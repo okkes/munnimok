@@ -63,13 +63,15 @@ for (const V of VARIANTS) {
     await host.page.waitForSelector('[data-testid="screen-split-detail"]');
     await host.page.click('[data-testid="split-invite"]');
     const linkBox = host.page.locator('[data-testid="split-invite-link"]');
-    await expect(linkBox).toContainText('#/splits/join/');
-    const joinHash = (await linkBox.textContent()).trim().replace(/^.*#/, '#');
+    // real path (no #): OS app links can only match real paths; the web
+    // shell bounces /splits/join/* into the hash router
+    await expect(linkBox).toContainText('/splits/join/');
+    const joinPath = new URL((await linkBox.textContent()).trim()).pathname;
 
     // a complete stranger (not a friend, no shared space) follows the link
     const guest = await createPage(browser, V);
     await base(guest.page, V, { userSub: `e2e-split-guest-${stamp}` });
-    await guest.page.goto(`/${joinHash}`);
+    await guest.page.goto(joinPath);
     await guest.page.waitForSelector('[data-testid="split-join-card"]');
     await expect(guest.page.locator('[data-testid="split-join-card"]')).toContainText('Ski trip');
     await shot(guest.page, k('69-split-join'));

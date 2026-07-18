@@ -26,12 +26,12 @@ android {
     productFlavors {
         prod {
             dimension 'channel'
-            manifestPlaceholders = [munniScheme: 'munni', munniLabel: 'munni']
+            manifestPlaceholders = [munniScheme: 'munni', munniLabel: 'munni', munniHost: 'munni.okkes.synology.me']
         }
         dev {
             dimension 'channel'
             applicationIdSuffix '.dev'
-            manifestPlaceholders = [munniScheme: 'munni-dev', munniLabel: 'munni dev']
+            manifestPlaceholders = [munniScheme: 'munni-dev', munniLabel: 'munni dev', munniHost: 'munni-test.okkes.synology.me']
         }
     }
     // release signing comes from CI env (repo secrets); local builds

@@ -1,5 +1,7 @@
 # Universal links (associated domains) — plan
 
+> **Status 2026-07-18: UL1 + UL2 SHIPPED.** AASA + assetlinks.json are served by the web image (team id stamped at build from the APPLE_TEAM_ID secret), the iOS entitlement lists both domains for both apps, Android carries verified `autoVerify` intent filters per flavor, and `deepLinkToPath` routes the https forms. Scope was deliberately narrowed to **/gc-callback\*** and **/splits/join/\*** — sign-in/sign-out callbacks stay on the custom scheme so the app never hijacks a BROWSER user's OIDC exchange mid-flight. Split invites became real paths (`/splits/join/{token}`, the shell bounces them into the hash router) because OS link-matching cannot see `#` fragments. Remaining user-side: the **app.munni.dev** Play app's own signing-key SHA-256 (Play Console → the dev app → App integrity) still needs adding to assetlinks.json for Play-installed dev builds; the fingerprints for app.munni (signing + upload keys) are in. Verify on device after the next store builds: iOS Settings → Developer → Universal Links diagnostics / `adb shell pm get-app-links app.munni`.
+
 **Goal:** replace the custom-scheme hops (`munni://…`) with real `https://munni.okkes.synology.me/…` links that open the native app directly. This removes the iOS "Open in munni?" confirmation popup, upgrades Android to verified App Links, and makes every share/invite link (splits, GC callback) open the app when it is installed and the website when it is not.
 
 ## How it works

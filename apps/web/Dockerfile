@@ -15,6 +15,8 @@ ARG VITE_LOGTO_RESOURCE=""
 ARG VITE_GLITCHTIP_DSN=""
 # staging | production — shown in the Settings footer next to the version
 ARG VITE_CHANNEL=""
+# Apple team id for the universal-links AASA file (public by design)
+ARG APPLE_TEAM_ID=""
 ENV VITE_API_URL=$VITE_API_URL \
     VITE_LOGTO_ENDPOINT=$VITE_LOGTO_ENDPOINT \
     VITE_LOGTO_APP_ID=$VITE_LOGTO_APP_ID \
@@ -23,6 +25,9 @@ ENV VITE_API_URL=$VITE_API_URL \
     VITE_CHANNEL=$VITE_CHANNEL
 RUN sed -i "s/execSync('git rev-list --count HEAD').toString().trim()/'${BUILD_NUMBER}'/" apps/web/vite.config.ts || true
 RUN npm run build --workspace @munni/web
+# universal links (UL1): the committed AASA carries a placeholder so the
+# team id lives only in secrets; an unset id leaves the file inert
+RUN sed -i "s/__APPLE_TEAM_ID__/${APPLE_TEAM_ID}/g" apps/web/dist/.well-known/apple-app-site-association
 
 FROM nginx:alpine
 COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf

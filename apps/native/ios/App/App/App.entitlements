@@ -4,5 +4,10 @@
 <dict>
 	<key>aps-environment</key>
 	<string>production</string>
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:munni.okkes.synology.me</string>
+		<string>applinks:munni-test.okkes.synology.me</string>
+	</array>
 </dict>
 </plist>

@@ -70,7 +70,6 @@ function CategorySlices({
             </span>
             {i === 0 && tx.needsReview === 1 && <Pill tone="warning">{t('tx.unreviewed')}</Pill>}
             {slice && <span className="m-num text-[13px] text-ink-2">{fmtCents(slice.amountCents, tx.currency, lang)}</span>}
-            <Icon name="pencil-outline" size={16} color="var(--m-ink-4)" />
           </button>
         );
       })}
@@ -89,28 +88,32 @@ function DetailFacts({ tx, givenOut }: Readonly<{ tx: SpaceTx; givenOut: number 
       <div className="m-cap mt-5 mb-1 px-1">{t('tx.detailsSection')}</div>
       <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="tx-detail-facts">
         {(totalReimbursedCents(tx) > 0 || givenOut > 0) && (
-          <div className="flex items-center justify-between border-b border-line-2 px-4 py-3 text-[14px] last:border-0">
-            <span className="text-ink-3">{t('tx.originalAmount')}</span>
+          <div className="flex items-center gap-3 border-b border-line-2 px-4 py-3 text-[14px] last:border-0">
+            <Icon name="cash-refund" size={18} color="var(--m-ink-3)" />
+            <span className="min-w-0 flex-1 text-ink-3">{t('tx.originalAmount')}</span>
             <span className="m-num text-ink" data-testid="tx-detail-original-amount">
               {fmtCents(tx.amountCents, tx.currency, lang, { sign: true })}
             </span>
           </div>
         )}
         {!!tx.titleOverride && (
-          <div className="flex items-center justify-between gap-3 border-b border-line-2 px-4 py-3 text-[14px] last:border-0">
+          <div className="flex items-center gap-3 border-b border-line-2 px-4 py-3 text-[14px] last:border-0">
+            <Icon name="label-outline" size={18} color="var(--m-ink-3)" />
             <span className="shrink-0 text-ink-3">{t('tx.originalTitle')}</span>
-            <span className="min-w-0 truncate text-ink" data-testid="tx-detail-original-title">
+            <span className="min-w-0 flex-1 truncate text-right text-ink" data-testid="tx-detail-original-title">
               {cleanBankText(tx.merchant)}
             </span>
           </div>
         )}
         {tx.description && (
-          <div className="mx-4 my-3 rounded-xl bg-bg-2 px-3 py-2.5" data-testid="tx-detail-bankdata">
-            <div className="mb-1 flex items-center gap-1.5 text-[10px] font-medium tracking-wide text-ink-4 uppercase">
-              <Icon name="bank-outline" size={12} />
-              {t('tx.bankDetails')}
+          <div className="px-4 py-3" data-testid="tx-detail-bankdata">
+            <div className="flex items-center gap-3 text-[14px]">
+              <Icon name="bank-outline" size={18} color="var(--m-ink-3)" />
+              <span className="text-ink-3">{t('tx.bankDetails')}</span>
             </div>
-            <div className="font-mono text-xs break-words text-ink-3">{humanizeBankKeys(cleanBankText(tx.description))}</div>
+            <div className="mt-1.5 pl-[30px] font-mono text-xs break-words text-ink-3">
+              {humanizeBankKeys(cleanBankText(tx.description))}
+            </div>
           </div>
         )}
       </div>
@@ -466,11 +469,6 @@ export function TxDetailScreen() {
               tx.currency, lang, { sign: true },
             )}
           </div>
-          {(totalReimbursedCents(tx) > 0 || givenOut > 0) && (
-            <div className="m-num mt-0.5 text-sm text-ink-4 line-through" data-testid="tx-detail-gross">
-              {fmtCents(tx.amountCents, tx.currency, lang, { sign: true })}
-            </div>
-          )}
           <div className="mt-1 text-sm text-ink-3">
             {fmtDay.format(new Date(tx.date))}
             {tx.time ? ` · ${tx.time}` : ''}
@@ -517,8 +515,8 @@ export function TxDetailScreen() {
             className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
           >
             <Icon name="swap-vertical" size={20} color="var(--m-ink-3)" />
-            <span className="min-w-0 flex-1 truncate">{t('tx.type')}</span>
-            <span className="text-xs text-ink-4">{t(`tx.type.${tx.txType}`)}</span>
+            <span className="min-w-0 flex-1 truncate">{t(`tx.type.${tx.txType}`)}</span>
+            <span className="text-xs text-ink-4">{t('tx.type')}</span>
             <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
           </button>
           <div className="mx-4 h-px bg-line-2" />
@@ -531,9 +529,20 @@ export function TxDetailScreen() {
           />
         </div>
 
-        {/* block: categories — one row per slice, every pencil opens the
-            unified split editor (review parity, user request) */}
-        <div className="m-cap mt-5 mb-1 px-1">{t('screen.categories')}</div>
+        {/* block: categories — ONE edit affordance for the whole block
+            (user: a pencil per slice read wrong); rows stay tappable */}
+        <div className="m-cap mt-5 mb-1 flex items-center justify-between px-1">
+          <span>{t('screen.categories')}</span>
+          <button
+            data-testid="tx-detail-cats-edit"
+            aria-label={t('action.edit')}
+            onClick={() => setSplitOpen(true)}
+            className="m-tap flex items-center gap-1 border-none bg-transparent text-[11px] font-semibold text-accent-deep"
+          >
+            <Icon name="pencil-outline" size={13} />
+            {t('action.edit')}
+          </button>
+        </div>
         <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="tx-detail-categories">
           <CategorySlices tx={tx} cats={cats} fallbackCat={cat} fallbackColor={color} onEdit={() => setSplitOpen(true)} />
           {bulkOffer && (

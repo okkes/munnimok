@@ -391,7 +391,9 @@ export function SplitDetailScreen() {
     // the hosted https origin, never capacitor://localhost — the link
     // must open for people on any platform (user report)
     const base = `${publicOrigin()}/`;
-    setInviteLink(`${base}#/splits/join/${token}`);
+    // real path (no #): verified app links open the app directly; the
+    // web shell bounces it into the hash router
+    setInviteLink(`${base}splits/join/${token}`);
   };
 
   const shareInvite = async () => {

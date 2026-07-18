@@ -28,6 +28,18 @@
                 <data android:scheme="${munniScheme}" />
             </intent-filter>
 
+            <!-- verified App Links (UL2): the bank's https redirect and
+                 split invites open the app directly — scope stays TIGHT
+                 so browser flows (sign-in callbacks) are never hijacked -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="${munniHost}" />
+                <data android:pathPrefix="/gc-callback" />
+                <data android:pathPrefix="/splits/join/" />
+            </intent-filter>
+
             <!-- §5: long-press launcher shortcuts (Review / Transactions) -->
             <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
         </activity>

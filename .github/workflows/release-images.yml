@@ -119,6 +119,7 @@ jobs:
             VITE_LOGTO_RESOURCE=${{ steps.meta.outputs.api_url }}
             VITE_GLITCHTIP_DSN=${{ vars.VITE_GLITCHTIP_DSN }}
             VITE_CHANNEL=${{ steps.meta.outputs.app_channel }}
+            APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}
           tags: |
             ${{ env.REGISTRY }}/munni-web:${{ steps.meta.outputs.channel }}
             ${{ env.REGISTRY }}/munni-web:${{ steps.meta.outputs.channel }}-${{ steps.meta.outputs.build }}

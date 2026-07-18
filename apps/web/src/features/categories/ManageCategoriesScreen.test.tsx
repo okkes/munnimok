@@ -126,7 +126,7 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
     await waitFor(() => expect(screen.queryByText('Padel & Tennis')).toBeNull());
   });
 
-  it('drag-and-drop: lifting a sub folds the mains, dropping asks to confirm, confirming moves it', async () => {
+  it('holding a custom sub opens its action menu; Move to… jumps into the move picker', async () => {
     await openScreen();
     expandGroup('sport');
     fireEvent.click(screen.getByTestId('cats-addsub-sport'));
@@ -135,20 +135,16 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
     const row = (await screen.findByText('Padel', {}, { timeout: 5000 })).closest('button')!;
     const catId = row.getAttribute('data-testid')!.replace('managecat-', '');
 
-    // lifting via the handle folds every main into a drop row + shows the ghost
-    fireEvent.pointerDown(screen.getByTestId(`cats-drag-${catId}`), { clientY: 200 });
-    const dropRow = await screen.findByTestId('cats-drop-entertainment');
-    expect(screen.getByTestId('cats-drag-ghost').textContent).toContain('Padel');
+    // press-and-hold on the row (drag is retired) opens the sub menu
+    fireEvent.pointerDown(screen.getByTestId(`managecat-${catId}`));
+    await new Promise((resolve) => setTimeout(resolve, 550));
+    fireEvent.pointerUp(screen.getByTestId(`managecat-${catId}`));
+    await screen.findByTestId('cats-sub-menu');
 
-    // hover the entertainment fold row (the rail probe is stubbed — happy-dom has no layout)
-    (document as unknown as { elementFromPoint: (x: number, y: number) => Element | null }).elementFromPoint = () =>
-      dropRow;
-    fireEvent.pointerMove(window, { clientY: 260 });
-    await waitFor(() => expect(screen.getByTestId('cats-drop-entertainment').className).toContain('border-accent'));
-
-    // release → visual confirmation sheet → confirm commits the move
-    fireEvent.pointerUp(window);
-    fireEvent.click(await screen.findByTestId('cats-move-confirm'));
+    // Move to… opens the edit form WITH the move picker on top
+    fireEvent.click(screen.getByTestId(`cats-movesub-${catId}`));
+    fireEvent.click(await screen.findByTestId('catform-move-entertainment'));
+    fireEvent.click(screen.getByTestId('catform-save'));
     expandGroup('entertainment');
     await waitFor(
       () => {
@@ -157,7 +153,6 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
       },
       { timeout: 5000 },
     );
-    // multi-step flow: the default 5s test budget trips under coverage load
   }, 15_000);
 
   it('moving a sub via Move to… works instantly when types match', async () => {

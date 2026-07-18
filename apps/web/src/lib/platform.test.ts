@@ -31,6 +31,15 @@ describe('platform seam', () => {
     expect(deepLinkToPath('intent://foo')).toBeNull();
   });
 
+  it('universal links map allowed https paths and refuse everything else (UL2)', () => {
+    expect(deepLinkToPath('https://munni.okkes.synology.me/gc-callback?ref=r-1')).toBe('/gc-callback?ref=r-1');
+    expect(deepLinkToPath('https://munni-test.okkes.synology.me/splits/join/tok-1')).toBe('/splits/join/tok-1');
+    // outside the allowlist: never routed into the shell
+    expect(deepLinkToPath('https://munni.okkes.synology.me/auth-callback?code=x')).toBeNull();
+    expect(deepLinkToPath('https://munni.okkes.synology.me/')).toBeNull();
+    expect(deepLinkToPath('https://evil.example/splits/join/tok-1')).toBeNull();
+  });
+
   it('an auth deep link stashes the RAW munni:// url for the code exchange', () => {
     sessionStorage.clear();
     const listeners: Record<string, (data: never) => void> = {};

@@ -1554,6 +1554,8 @@ export const en = {
   'tour.cats.2b': 'Add custom categories with their own icon and color; hide built-ins you never use.',
   'tour.cats.3t': 'Rearrange freely',
   'tour.cats.3b': 'Drag subcategories to another main — history moves with them.',
+  'tour.cats.4t': 'Press and hold',
+  'tour.cats.4b': 'Hold a category — main or your own sub — and an action menu appears with a little buzz: edit, hide, add subs or move it elsewhere.',
   'tour.ov.1t': 'Four buckets',
   'tour.ov.1b': 'Income, spending, saving and investments — each tile on Home opens its own breakdown.',
   'tour.ov.2t': 'Walk through time',

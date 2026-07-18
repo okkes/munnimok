@@ -197,6 +197,7 @@ export const TOURS: Tour[] = [
       { titleKey: 'tour.cats.1t', bodyKey: 'tour.cats.1b', illustration: '🗂️' },
       { titleKey: 'tour.cats.2t', bodyKey: 'tour.cats.2b', illustration: '🎨', anchor: 'cats-add' },
       { titleKey: 'tour.cats.3t', bodyKey: 'tour.cats.3b', illustration: '🧲' },
+      { titleKey: 'tour.cats.4t', bodyKey: 'tour.cats.4b', illustration: '👆', anchor: 'cats-group-consumption' },
     ],
   },
   {
