@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.18.1](https://github.com/okkes/munnimok/compare/v2.18.0...v2.18.1) (2026-07-19)
+
+
+### 🐞 Bug Fixes
+
+* **app:** family-account consent safety, staging keeps the shared identity, FCM errors name themselves ([003b653](https://github.com/okkes/munnimok/commit/003b6537084ad684b295a68ee9eda29d0ef6c0cd))
+
 ## [2.18.0](https://github.com/okkes/munnimok/compare/v2.17.0...v2.18.0) (2026-07-19)
 
 
