@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.20.0](https://github.com/okkes/munnimok/compare/v2.19.1...v2.20.0) (2026-07-19)
+
+
+### ✨ Features
+
+* **app:** recurring set-asides + allocation topics, admin facelift, PSD2 architecture dossier ([76115ff](https://github.com/okkes/munnimok/commit/76115fffcec17793fba83e9cb9c75b251b4f92d7))
+
 ## [2.19.1](https://github.com/okkes/munnimok/compare/v2.19.0...v2.19.1) (2026-07-19)
 
 
