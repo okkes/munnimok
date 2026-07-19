@@ -18,6 +18,17 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.20.1',
+    date: '2026-07-20',
+    items: [
+      {
+        en: 'Sync unclogged: one rejected change (a new topic or a set-aside) could silently block everything queued behind it — a hundred fresh store receipts included — and the app looked "offline" while the server was fine. The server now accepts what it should have, big uploads go in chunks that each land for good, and one stuck space can never freeze the others. Queued receipts sync through on their own after this update.',
+        nl: 'Synchronisatie ontstopt: één afgewezen wijziging (een nieuw thema of opzij-zetten) kon stilletjes alles erachter blokkeren — honderd verse winkelbonnetjes incluis — en de app leek "offline" terwijl de server prima draaide. De server accepteert nu wat hij had moeten accepteren, grote uploads gaan in deelstukken die elk definitief landen, en één vastgelopen ruimte kan de rest nooit meer bevriezen. Bonnetjes in de wachtrij synchroniseren na deze update vanzelf door.',
+        tr: 'Senkronizasyon açıldı: reddedilen tek bir değişiklik (yeni bir konu veya kenara ayırma) arkasında sıraya girmiş her şeyi — yüz taze market fişi dahil — sessizce tıkayabiliyordu ve sunucu sapasağlamken uygulama "çevrimdışı" görünüyordu. Sunucu artık kabul etmesi gerekeni kabul ediyor, büyük yüklemeler her biri kalıcı olarak inen parçalar hâlinde gidiyor ve takılan tek bir alan diğerlerini asla donduramıyor. Kuyruktaki fişler bu güncellemeden sonra kendiliğinden senkronize olur.',
+      },
+    ],
+  },
+  {
     version: '2.20.0',
     date: '2026-07-19',
     items: [

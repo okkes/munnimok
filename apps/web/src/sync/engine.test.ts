@@ -18,9 +18,13 @@ class InMemoryServer implements SyncBackend {
   private seenOpIds = new Set<string>();
   private lastSeq = 0;
   forbiddenSpaces = new Set<string>();
+  rejectedSpaces = new Set<string>(); // 400s (a poisoned op) — never 403
+  pushCalls: number[] = [];
 
   async push(spaceId: string, _clientId: string, ops: Op[]): Promise<PushResult> {
     if (this.forbiddenSpaces.has(spaceId)) throw new SyncHttpError(403);
+    if (this.rejectedSpaces.has(spaceId)) throw new SyncHttpError(400);
+    this.pushCalls.push(ops.length);
     for (const op of ops) {
       if (this.seenOpIds.has(op.opId)) continue;
       this.seenOpIds.add(op.opId);
@@ -145,6 +149,29 @@ describe('SyncEngine', () => {
     expect(await a.db.meta.get('syncCursor_feed-1')).toBeUndefined();
     // the personal space itself is untouched
     expect((await a.db.spaces.get('s1'))?.name).toBe('Mine');
+  });
+
+  it('big outboxes push in chunks; a poisoned space never starves the others', async () => {
+    let w = 1_000_000;
+    const a = device('devA', () => ++w, server);
+    dbs.push(a.db);
+
+    // 650 queued ops → three chunked pushes (300/300/50), all drained
+    await a.repo.upsert('space', 's1', 's1', { name: 'Big', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
+    for (let i = 0; i < 649; i++) await a.repo.upsert('receipt', 's1', `r${i}`, { merchant: 'AH', totalCents: i });
+    await a.engine.syncAll();
+    expect(server.pushCalls).toEqual([300, 300, 50]);
+    expect(await a.db.outbox.count()).toBe(0);
+
+    // s-poison rejects its push (a bad op) — s2 must still sync fine
+    await a.repo.upsert('space', 's-poison', 's-poison', { name: 'Bad', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
+    await a.repo.upsert('space', 's2', 's2', { name: 'Good', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
+    server.rejectedSpaces.add('s-poison');
+    await a.engine.syncAll(); // reports 'error' but must not abort the loop
+    const s2Outbox = (await a.db.outbox.toArray()).filter((o) => o.spaceId === 's2');
+    expect(s2Outbox).toHaveLength(0); // the healthy space drained
+    const poisonOutbox = (await a.db.outbox.toArray()).filter((o) => o.spaceId === 's-poison');
+    expect(poisonOutbox.length).toBeGreaterThan(0); // kept for retry, not dropped
   });
 
   it('fresh device discovers and pulls spaces it has never seen', async () => {

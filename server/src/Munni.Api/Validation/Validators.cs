@@ -69,14 +69,19 @@ public sealed class ChangeRoleRequestValidator : AbstractValidator<ChangeRoleReq
 
 public sealed class SyncOpDtoValidator : AbstractValidator<SyncOpDto>
 {
-    private static readonly string[] Entities = ["space", "account", "category", "transaction", "txMeta", "accountLink", "recurring", "recurringDismiss", "budget", "event", "goal", "goalContribution", "debt", "allocation", "receipt", "storeMarker", "holding", "lot", "insightDismiss"];
+    private static readonly string[] Entities = ["space", "account", "category", "transaction", "txMeta", "accountLink", "recurring", "recurringDismiss", "budget", "event", "goal", "goalContribution", "debt", "allocation", "receipt", "storeMarker", "holding", "lot", "insightDismiss", "topic"];
 
     public SyncOpDtoValidator()
     {
         RuleFor(o => o.OpId).NotEmpty().MaximumLength(64);
         RuleFor(o => o.SpaceId).NotEmpty().MaximumLength(64);
         RuleFor(o => o.Entity).NotEmpty().Must(Entities.Contains).WithMessage("unknown entity");
-        RuleFor(o => o.EntityId).NotEmpty().MaximumLength(64);
+        // 128, not 64: composite ids are legitimate — an allocation cell is
+        // `alloc:{space-uuid}:{period}:{catId}` (65+ for real spaces) and a
+        // recurring set-aside bucket adds `rec:{uuid}` on top. A too-tight
+        // limit 400s the push and POISONS the outbox: everything queued
+        // after the op (a hundred store receipts, say) never syncs again
+        RuleFor(o => o.EntityId).NotEmpty().MaximumLength(128);
         RuleFor(o => o.Hlc).NotEmpty().MaximumLength(64);
         RuleFor(o => o.Fields).NotNull();
     }

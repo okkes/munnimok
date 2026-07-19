@@ -5,6 +5,9 @@ import type { SyncBackend } from './backend';
 import { SyncHttpError } from './backend';
 
 const cursorKey = (spaceId: string) => `syncCursor_${spaceId}`;
+
+/** ops per push request — the server caps at 1000, proxies cap body size */
+const PUSH_CHUNK = 300;
 export const LAST_SYNC_KEY = 'lastSyncAt';
 
 export type SyncStatus = 'idle' | 'syncing' | 'error' | 'offline';
@@ -118,8 +121,20 @@ export class SyncEngine {
       // and pull spaces the server knows us to be in (fresh device / new invite)
       const serverSpaces = await this.backend.listSpaces();
       const spaceIds = [...new Set([...spaces.map((s) => s.id), ...outboxSpaces, ...serverSpaces])];
-      for (const spaceId of spaceIds) await this.syncSpace(spaceId);
+      // one space's failure must not starve the rest: a single poisoned
+      // outbox (one rejected op) used to abort the whole loop, so nothing
+      // else on the device synced anymore (user report: store receipts +
+      // "offline" while the server was fine)
+      let firstError: unknown = null;
+      for (const spaceId of spaceIds) {
+        try {
+          await this.syncSpace(spaceId);
+        } catch (err) {
+          firstError ??= err;
+        }
+      }
       await this.purgeOrphanFeeds(spaces, outboxSpaces, serverSpaces);
+      if (firstError) throw firstError;
       await this.store.metaPut(LAST_SYNC_KEY, Date.now());
       this.setStatus('idle');
     } catch (err) {
@@ -137,11 +152,15 @@ export class SyncEngine {
 
   async syncSpace(spaceId: string): Promise<void> {
     try {
-      // 1. push queued local ops (ordered by HLC)
+      // 1. push queued local ops (ordered by HLC), CHUNKED: the server
+      // caps a push at 1000 ops and proxies cap body size — a store-
+      // receipt sync alone can queue hundreds of fat ops, and each chunk
+      // that lands is deleted immediately so progress survives a failure
       const outbox = await this.store.outboxBySpace(spaceId);
-      if (outbox.length > 0) {
-        await this.backend.push(spaceId, this.clientId, outbox);
-        await this.store.outboxDelete(outbox.map((o) => o.opId));
+      for (let i = 0; i < outbox.length; i += PUSH_CHUNK) {
+        const chunk = outbox.slice(i, i + PUSH_CHUNK);
+        await this.backend.push(spaceId, this.clientId, chunk);
+        await this.store.outboxDelete(chunk.map((o) => o.opId));
       }
 
       // 2. pull everything after our cursor and merge (own ops no-op)
@@ -183,7 +202,13 @@ export class SyncEngine {
 
   /** membership revoked (403) or explicitly left: remove all local data of the space */
   async purgeSpace(spaceId: string): Promise<void> {
-    const scoped = ['account', 'category', 'transaction', 'txMeta', 'accountLink'] as const;
+    // every space-scoped entity — the original five left receipts,
+    // budgets, goals & co. behind as ghosts after leaving a space
+    const scoped = [
+      'account', 'category', 'transaction', 'txMeta', 'accountLink',
+      'recurring', 'recurringDismiss', 'budget', 'event', 'goal', 'goalContribution',
+      'debt', 'allocation', 'receipt', 'storeMarker', 'holding', 'lot', 'insightDismiss', 'topic',
+    ] as const;
     await this.store.transact(['space', ...scoped, 'outbox', 'meta'], async () => {
       await this.store.deleteRow('space', spaceId);
       for (const entity of scoped) {
