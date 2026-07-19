@@ -18,6 +18,17 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.19.0',
+    date: '2026-07-19',
+    items: [
+      {
+        en: 'Two small clarity fixes: the category editor in review now says "Done" instead of "Save" (it only stages your choice — Confirm on the card is what writes), and removing a member from a space asks for confirmation first, spelling out what they lose.',
+        nl: 'Twee kleine duidelijkheidsverbeteringen: de categoriebewerker in beoordelen zegt nu "Klaar" in plaats van "Opslaan" (het zet je keuze alleen klaar — Bevestigen op de kaart schrijft pas), en een lid uit een ruimte verwijderen vraagt eerst om bevestiging, met uitleg over wat diegene verliest.',
+        tr: 'İki küçük netlik düzeltmesi: incelemedeki kategori düzenleyici artık "Kaydet" yerine "Tamam" diyor (yalnızca seçimini hazırlar — asıl yazan, karttaki Onayla), ve bir üyeyi alandan çıkarmak önce neyi kaybedeceğini açıklayarak onay istiyor.',
+      },
+    ],
+  },
+  {
     version: '2.18.1',
     date: '2026-07-19',
     items: [

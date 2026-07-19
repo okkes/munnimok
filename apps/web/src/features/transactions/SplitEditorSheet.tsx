@@ -278,8 +278,10 @@ export function SplitEditorSheet({
             </button>
           )}
 
+          {/* "Done", not "Save": in review this only stages the draft — the
+              card's Confirm is the real write (user: Save felt misleading) */}
           <Button data-testid="split-save" onClick={save} disabled={!!error}>
-            {t('action.save')}
+            {t('split.done')}
           </Button>
           {!!source?.length && (
             <Button variant="outline" data-testid="split-clear" onClick={clearSplit}>

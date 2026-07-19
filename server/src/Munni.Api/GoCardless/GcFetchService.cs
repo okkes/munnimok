@@ -136,10 +136,8 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
         // oldest → newest: the last assignment wins, i.e. the newest consent
         foreach (var requisition in linkedRemotes.OrderBy(r => r.Created))
         {
-            if (!localByRemoteId.TryGetValue(requisition.Id, out var local)) continue;
-            foreach (var accountId in requisition.Accounts)
+            foreach (var (local, linked) in CoveredPairs(requisition, localByRemoteId, byAccountId))
             {
-                if (!byAccountId.TryGetValue(accountId, out var linked)) continue;
                 var boundTo = localById.GetValueOrDefault(linked.RequisitionId);
                 if (boundTo is not null && boundTo.UserId != local.UserId) continue; // someone else's binding
                 linked.RequisitionId = local.Id;
@@ -152,16 +150,27 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
         var covering = new HashSet<Guid>();
         foreach (var requisition in linkedRemotes)
         {
-            if (!localByRemoteId.TryGetValue(requisition.Id, out var local)) continue;
-            foreach (var accountId in requisition.Accounts)
+            foreach (var (local, linked) in CoveredPairs(requisition, localByRemoteId, byAccountId))
             {
-                if (!byAccountId.TryGetValue(accountId, out var linked)) continue;
                 var boundTo = localById.GetValueOrDefault(linked.RequisitionId);
                 if (boundTo is not null && boundTo.UserId != local.UserId) covering.Add(local.Id);
             }
         }
         await db.SaveChangesAsync(ct);
         return covering;
+    }
+
+    /// <summary>the (local requisition, linked account) pairs a remote consent covers</summary>
+    private static IEnumerable<(GcRequisition Local, GcLinkedAccount Linked)> CoveredPairs(
+        GcRequisitionListItem requisition,
+        Dictionary<string, GcRequisition> localByRemoteId,
+        Dictionary<string, GcLinkedAccount> byAccountId)
+    {
+        if (!localByRemoteId.TryGetValue(requisition.Id, out var local)) yield break;
+        foreach (var accountId in requisition.Accounts)
+        {
+            if (byAccountId.TryGetValue(accountId, out var linked)) yield return (local, linked);
+        }
     }
 
     /// <summary>seconds between account fetches (staggering); tests shrink it</summary>

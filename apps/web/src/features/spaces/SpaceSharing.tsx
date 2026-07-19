@@ -8,6 +8,7 @@ import { useServerRefresh } from '@/lib/serverEvents';
 import { Avatar } from '@/features/profile/ProfileScreen';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
+import { Sheet } from '@/ui/Sheet';
 
 export type SpaceRole = 'owner' | 'contributor' | 'reader';
 
@@ -165,6 +166,9 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
   const [friendId, setFriendId] = useState('');
   const [friendRequestSent, setFriendRequestSent] = useState(false);
   const [inviteSentTo, setInviteSentTo] = useState<string | null>(null);
+  // removing someone is disruptive (they lose the shared accounts too) —
+  // the X only opens a confirm sheet, the sheet does the removal
+  const [kickTarget, setKickTarget] = useState<MemberDto | null>(null);
 
   const reload = useCallback(async () => {
     const [membersRes, friendsRes, meRes, outgoingRes] = await Promise.all([
@@ -227,6 +231,7 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
   };
   const kick = async (userId: string) => {
     await apiFetch(`/spaces/${spaceId}/members/${userId}`, { method: 'DELETE' });
+    setKickTarget(null);
     await reload();
   };
   const changeRole = async (userId: string, role: SpaceRole) => {
@@ -270,7 +275,7 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
               <button
                 aria-label={t('action.delete')}
                 data-testid={`space-kick-${m.userId}`}
-                onClick={() => void kick(m.userId)}
+                onClick={() => setKickTarget(m)}
                 className="m-tap border-none bg-transparent text-ink-4"
               >
                 <Icon name="close" size={16} />
@@ -369,6 +374,24 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
           </Button>
         </div>
       )}
+      {/* removal double-check (user request): the X never removes directly */}
+      <Sheet open={kickTarget !== null} onOpenChange={(next) => !next && setKickTarget(null)} title={t('space.kickTitle')} size="compact">
+        <div className="flex flex-col gap-4 pt-1">
+          <p className="text-[14px] text-ink-2" data-testid="space-kick-body">
+            {t('space.kickBody', { name: kickTarget?.displayName ?? short(kickTarget?.userId ?? '') })}
+          </p>
+          <Button
+            variant="danger"
+            data-testid="space-kick-confirm"
+            onClick={() => kickTarget && void kick(kickTarget.userId)}
+          >
+            {t('action.confirm')}
+          </Button>
+          <Button variant="outline" data-testid="space-kick-cancel" onClick={() => setKickTarget(null)}>
+            {t('action.cancel')}
+          </Button>
+        </div>
+      </Sheet>
     </div>
   );
 }

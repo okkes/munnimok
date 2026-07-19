@@ -135,7 +135,7 @@ public static class AccountDeletion
         // staging shares the Logto instance with production: a staging
         // deletion removes staging DATA only — destroying the identity
         // would lock the person out of the production app too
-        if (config.GetValue("Logto:DeleteIdentityOnAccountDeletion", true) == false)
+        if (!config.GetValue("Logto:DeleteIdentityOnAccountDeletion", true))
         {
             if (logger.IsEnabled(LogLevel.Information))
                 logger.LogInformation("account deletion: identity deletion disabled in this environment — {Sub} kept at Logto", sub);

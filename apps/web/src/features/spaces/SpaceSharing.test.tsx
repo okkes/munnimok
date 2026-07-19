@@ -88,8 +88,10 @@ describe('SpaceSharing (user identity, scripted server)', () => {
     expect(await screen.findByTestId('space-addfriend-sent')).toBeTruthy();
     expect(friendRequests).toEqual([{ toUserId: 'some-user-id' }]);
 
-    // kicking removes the row
+    // kicking asks first (user request): the X opens a confirm sheet
     fireEvent.click(screen.getByTestId(`space-kick-${BOB}`));
+    expect((await screen.findByTestId('space-kick-body')).textContent).toContain('Bob');
+    fireEvent.click(screen.getByTestId('space-kick-confirm'));
     await waitFor(() => expect(screen.queryByTestId(`space-kick-${BOB}`)).toBeNull());
   }, 15_000);
 
