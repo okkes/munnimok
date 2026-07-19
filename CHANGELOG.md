@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.19.1](https://github.com/okkes/munnimok/compare/v2.19.0...v2.19.1) (2026-07-19)
+
+
+### 🐞 Bug Fixes
+
+* **auth:** stay signed in across app updates ([fe5beea](https://github.com/okkes/munnimok/commit/fe5beea2b6e15520678669dd28366fa18eb69324))
+
 ## [2.19.0](https://github.com/okkes/munnimok/compare/v2.18.1...v2.19.0) (2026-07-19)
 
 
