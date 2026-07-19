@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.19.0](https://github.com/okkes/munnimok/compare/v2.18.1...v2.19.0) (2026-07-19)
+
+
+### ✨ Features
+
+* **app:** split editor says Done, removing a member asks first ([ec37993](https://github.com/okkes/munnimok/commit/ec3799374d908406c107bd48cf6d064df742ba0f))
+
 ## [2.18.1](https://github.com/okkes/munnimok/compare/v2.18.0...v2.18.1) (2026-07-19)
 
 
