@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.18.0](https://github.com/okkes/munnimok/compare/v2.17.0...v2.18.0) (2026-07-19)
+
+
+### ✨ Features
+
+* **app:** left-space cleanup, duplicate-consent convergence, diagnosis names the bound consent ([eac496d](https://github.com/okkes/munnimok/commit/eac496dfed8191519d29dab28e480af053e7ad59))
+
 ## [2.17.0](https://github.com/okkes/munnimok/compare/v2.16.0...v2.17.0) (2026-07-18)
 
 
