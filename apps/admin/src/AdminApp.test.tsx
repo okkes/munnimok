@@ -126,7 +126,7 @@ describe('AdminApp (test-auth mode)', () => {
           memberSpaces: ['space-main'],
           ownedFeeds: [{ feedSpaceId: 'feed12345678', maxSeq: 42 }],
           attachments: [],
-          gcLinks: [{ gcAccountId: 'gc-1', spaceId: 'space-dead-1', accountEntityId: 'a1', iban: 'NL69INGB0123456789', provider: 'gocardless', lastFetchAt: null }],
+          gcLinks: [{ gcAccountId: 'gc-1', spaceId: 'space-dead-1', accountEntityId: 'a1', iban: 'NL69INGB0123456789', provider: 'gocardless', lastFetchAt: null, requisitionId: 'req-abcd1234' }],
         },
       }),
       'GET /admin/users/sub-carol/diagnosis': () => ({ status: 500 }),
@@ -141,6 +141,7 @@ describe('AdminApp (test-auth mode)', () => {
     expect(panel.textContent).toContain('ops 42');
     expect(panel.textContent).toContain('NONE — feeds never attached');
     expect(panel.textContent).toContain('fetched never');
+    expect(panel.textContent).toContain('consent req-abcd'); // names the consent carrying the account
 
     // a dead call must not spin forever — it says what went wrong
     fireEvent.click(screen.getByTestId('diagnose-sub-carol'));

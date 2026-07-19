@@ -243,21 +243,11 @@ public static partial class GcEndpoints
         foreach (var gcAccountId in accounts)
         {
             var linked = await db.GcLinkedAccounts.FindAsync(gcAccountId);
-            GcAccountDetails details;
-            try
+            var details = await ResolveDetailsAsync(gc, gcAccountId, linked);
+            if (details is null)
             {
-                details = await gc.GetAccountDetailsAsync(gcAccountId);
-            }
-            catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
-            {
-                if (linked is null)
-                {
-                    deferred++;
-                    continue;
-                }
-                // a previous attempt stored the identity — reuse it
-                var isRealIban = !linked.Iban.StartsWith("GC:", StringComparison.OrdinalIgnoreCase);
-                details = new GcAccountDetails(isRealIban ? linked.Iban : null, null, linked.Currency);
+                deferred++; // identity unknown until the budget resets
+                continue;
             }
             // wallet-style accounts (PayPal…) carry no IBAN — a
             // deterministic per-account reference keeps the whole feed
@@ -278,6 +268,16 @@ public static partial class GcEndpoints
                     Provider = requisition.Provider,
                 };
                 db.GcLinkedAccounts.Add(linked);
+            }
+            else
+            {
+                // a retried journey re-consented the same bank account, so
+                // the row moves to this newest consent with the freshest
+                // 90-day window — the older requisition ends up account-less
+                // and the idle cleanup frees its provider slot (user had
+                // NINE ING consents, unclear which one carried the account)
+                linked.RequisitionId = requisition.Id;
+                linked.SpaceId = requisition.SpaceId;
             }
 
             IReadOnlyList<GcBalance> balances = [];
@@ -301,5 +301,24 @@ public static partial class GcEndpoints
             linkedCount++;
         }
         return (linkedCount, imported, deferred);
+    }
+
+    /// <summary>
+    /// The account's identity from the provider, or the previously stored
+    /// row when the daily details budget is spent — null means neither is
+    /// available and the account defers to the scheduled healer.
+    /// </summary>
+    private static async Task<GcAccountDetails?> ResolveDetailsAsync(IBankDataApi gc, string gcAccountId, GcLinkedAccount? linked)
+    {
+        try
+        {
+            return await gc.GetAccountDetailsAsync(gcAccountId);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+        {
+            if (linked is null) return null;
+            var isRealIban = !linked.Iban.StartsWith("GC:", StringComparison.OrdinalIgnoreCase);
+            return new GcAccountDetails(isRealIban ? linked.Iban : null, null, linked.Currency);
+        }
     }
 }

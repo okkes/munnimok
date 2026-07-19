@@ -35,8 +35,10 @@ public sealed class FakeGoCardlessApi : IGoCardlessApi
     public Task<GcRequisitionStatus> GetRequisitionAsync(string requisitionId, CancellationToken ct = default) =>
         Task.FromResult(Status);
 
+    public List<GcRequisitionListItem> RemoteRequisitions { get; set; } = [];
+
     public Task<IReadOnlyList<GcRequisitionListItem>> ListRequisitionsAsync(CancellationToken ct = default) =>
-        Task.FromResult<IReadOnlyList<GcRequisitionListItem>>([]);
+        Task.FromResult<IReadOnlyList<GcRequisitionListItem>>(RemoteRequisitions);
 
     public Task DeleteRequisitionAsync(string requisitionId, CancellationToken ct = default)
     {
@@ -673,6 +675,67 @@ public class GcEndpointsTests : IClassFixture<GcApiFactory>
         finally
         {
             _factory.Gc.Pending = [];
+        }
+    }
+
+    [Fact]
+    public async Task Cleanup_rebinds_accounts_to_the_newest_consent_and_frees_the_older_duplicate()
+    {
+        // the user's nine-ING-consents mess: the account row stays bound to
+        // whichever consent completed FIRST, so "which one is safe to
+        // delete" was unanswerable — cleanup now converges on the newest
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var oldId = Guid.NewGuid();
+        var newId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.GcRequisitions.Add(new GcRequisition
+            {
+                Id = oldId, UserId = userId, SpaceId = $"space_rb_{suffix}",
+                InstitutionId = "ING_NL", RequisitionId = $"req-old-{suffix}", Status = "linked",
+                CreatedAt = DateTimeOffset.UtcNow.AddDays(-5),
+            });
+            db.GcRequisitions.Add(new GcRequisition
+            {
+                Id = newId, UserId = userId, SpaceId = $"space_rb_{suffix}",
+                InstitutionId = "ING_NL", RequisitionId = $"req-new-{suffix}", Status = "linked",
+                CreatedAt = DateTimeOffset.UtcNow.AddDays(-3),
+            });
+            db.GcLinkedAccounts.Add(new GcLinkedAccount
+            {
+                GcAccountId = $"gc-rb-{suffix}", SpaceId = $"space_rb_{suffix}",
+                AccountEntityId = ImportIds.AccountId("NL55ABNA0123456789"),
+                Iban = "NL55ABNA0123456789", Currency = "EUR",
+                RequisitionId = oldId, LastFetchAt = DateTimeOffset.UtcNow,
+            });
+            await db.SaveChangesAsync();
+        }
+        _factory.Gc.RemoteRequisitions =
+        [
+            new GcRequisitionListItem($"req-old-{suffix}", "LN", "ING_NL", DateTimeOffset.UtcNow.AddDays(-5), null, [$"gc-rb-{suffix}"]),
+            new GcRequisitionListItem($"req-new-{suffix}", "LN", "ING_NL", DateTimeOffset.UtcNow.AddDays(-3), null, [$"gc-rb-{suffix}"]),
+        ];
+        try
+        {
+            var service = new GcFetchService(
+                _factory.Services.GetRequiredService<IServiceScopeFactory>(),
+                NullLogger<GcFetchService>.Instance);
+            await service.CleanupIdleRequisitionsAsync(CancellationToken.None);
+
+            using var scope = _factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            // the account now rides the newest consent …
+            Assert.Equal(newId, (await db.GcLinkedAccounts.FindAsync($"gc-rb-{suffix}"))!.RequisitionId);
+            // … and the account-less older duplicate was freed at the provider
+            Assert.Contains($"req-old-{suffix}", _factory.Gc.DeletedRequisitions);
+            Assert.Null(await db.GcRequisitions.FindAsync(oldId));
+            Assert.NotNull(await db.GcRequisitions.FindAsync(newId));
+        }
+        finally
+        {
+            _factory.Gc.RemoteRequisitions = [];
         }
     }
 

@@ -126,6 +126,27 @@ describe('SyncEngine', () => {
     expect(await a.db.outbox.count()).toBe(0);
   });
 
+  it('feed data of a space the server no longer grants is purged (left-space ghost accounts)', async () => {
+    // feed spaces have no local 'space' row — after leaving the space that
+    // shared them, they dropped out of the pull loop and their accounts
+    // lingered forever as ghost "shared with me" rows (user report)
+    let w = 1_000_000;
+    const a = device('devA', () => ++w, server);
+    dbs.push(a.db);
+
+    await a.repo.upsert('space', 's1', 's1', { name: 'Mine', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
+    // a shared feed pulled earlier: account row WITHOUT a local space row
+    await a.db.accounts.put({ id: 'feed-acc', spaceId: 'feed-1', name: 'Their ING', deleted: 0, fieldVersions: {} } as unknown as AccountRow);
+    await a.db.meta.put({ key: 'syncCursor_feed-1', value: 7 });
+
+    await a.engine.syncAll(); // server lists only s1 — access to feed-1 is gone
+
+    expect(await a.db.accounts.get('feed-acc')).toBeUndefined();
+    expect(await a.db.meta.get('syncCursor_feed-1')).toBeUndefined();
+    // the personal space itself is untouched
+    expect((await a.db.spaces.get('s1'))?.name).toBe('Mine');
+  });
+
   it('fresh device discovers and pulls spaces it has never seen', async () => {
     let wa = 1_000_000;
     const a = device('devA', () => ++wa, server);

@@ -119,6 +119,7 @@ export class SyncEngine {
       const serverSpaces = await this.backend.listSpaces();
       const spaceIds = [...new Set([...spaces.map((s) => s.id), ...outboxSpaces, ...serverSpaces])];
       for (const spaceId of spaceIds) await this.syncSpace(spaceId);
+      await this.purgeOrphanFeeds(spaces, outboxSpaces, serverSpaces);
       await this.store.metaPut(LAST_SYNC_KEY, Date.now());
       this.setStatus('idle');
     } catch (err) {
@@ -155,6 +156,29 @@ export class SyncEngine {
       }
       throw err;
     }
+  }
+
+  /**
+   * Feed spaces carry no local 'space' row, so after leaving (or being
+   * removed from) the space that shared them, they drop out of the pull
+   * loop without ever hitting the 403 that purges member spaces — their
+   * accounts lingered forever as ghost "shared with me" rows (user
+   * report). Any local account data in a space the server no longer
+   * grants is removed here; the owner's own feeds stay reachable
+   * (owned), so only genuinely lost access is purged.
+   */
+  private async purgeOrphanFeeds(
+    spaces: { id: string }[],
+    outboxSpaces: string[],
+    serverSpaces: string[],
+  ): Promise<void> {
+    const known = new Set([...spaces.map((s) => s.id), ...outboxSpaces, ...serverSpaces]);
+    const orphans = new Set(
+      (await this.store.allRows('account'))
+        .map((a) => a.spaceId)
+        .filter((id) => !known.has(id)),
+    );
+    for (const id of orphans) await this.purgeSpace(id);
   }
 
   /** membership revoked (403) or explicitly left: remove all local data of the space */

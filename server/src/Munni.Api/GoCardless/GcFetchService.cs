@@ -67,6 +67,12 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
         var gc = scope.ServiceProvider.GetService<IGoCardlessApi>();
         if (gc is null) return;
 
+        // converge duplicate consents first: every linked account moves to
+        // its NEWEST consent, so older duplicates become account-less and
+        // age into the idle deletion below (user had nine ING consents and
+        // no way to tell which one carried the account)
+        await RebindToNewestConsentAsync(db, gc, ct);
+
         var cutoff = DateTimeOffset.UtcNow - IdleGraceDays;
         var used = await db.GcLinkedAccounts.Select(a => a.RequisitionId).Distinct().ToListAsync(ct);
         var idle = await db.GcRequisitions
@@ -94,6 +100,40 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
                 logger.LogInformation("gc cleanup: removed idle {Institution} requisition from {Created}", requisition.InstitutionId, requisition.CreatedAt);
         }
         if (idle.Count > 0) await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// Moves every GoCardless-linked account onto the newest LINKED
+    /// consent that covers it (authoritative account list from the
+    /// provider's own requisition listing — one call per day). Retried
+    /// consent journeys used to leave the row bound to whichever consent
+    /// completed FIRST, so deleting apparent duplicates could silently
+    /// kill the sync.
+    /// </summary>
+    private static async Task RebindToNewestConsentAsync(AppDbContext db, IGoCardlessApi gc, CancellationToken ct)
+    {
+        var remote = await gc.ListRequisitionsAsync(ct);
+        var locals = await db.GcRequisitions.Where(r => r.Provider == GoCardlessBankApi.Id).ToListAsync(ct);
+        // several local rows can carry the same provider id (interrupted
+        // journeys re-using a consent) — the newest local row represents it
+        var localByRemoteId = locals
+            .GroupBy(l => l.RequisitionId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(l => l.CreatedAt).First());
+        var accounts = await db.GcLinkedAccounts.ToListAsync(ct);
+        var byAccountId = accounts.ToDictionary(a => a.GcAccountId);
+
+        // oldest → newest: the last assignment wins, i.e. the newest consent
+        foreach (var requisition in remote.Where(r => r.Status == "LN").OrderBy(r => r.Created))
+        {
+            if (!localByRemoteId.TryGetValue(requisition.Id, out var local)) continue;
+            foreach (var accountId in requisition.Accounts)
+            {
+                if (!byAccountId.TryGetValue(accountId, out var linked)) continue;
+                linked.RequisitionId = local.Id;
+                linked.SpaceId = local.SpaceId;
+            }
+        }
+        await db.SaveChangesAsync(ct);
     }
 
     /// <summary>seconds between account fetches (staggering); tests shrink it</summary>

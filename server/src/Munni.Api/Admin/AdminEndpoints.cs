@@ -10,7 +10,7 @@ namespace Munni.Api.Admin;
 public sealed record AdminUserDto(Guid Id, string Sub, string? DisplayName, string? Email, DateTimeOffset CreatedAt, int SpaceCount, bool IsAdmin, bool Bootstrap);
 public sealed record AdminFeedDto(string FeedSpaceId, long MaxSeq);
 public sealed record AdminAttachmentDto(string SpaceId, string FeedSpaceId, string AccountId);
-public sealed record AdminGcLinkDto(string GcAccountId, string SpaceId, string AccountEntityId, string Iban, string Provider, DateTimeOffset? LastFetchAt);
+public sealed record AdminGcLinkDto(string GcAccountId, string SpaceId, string AccountEntityId, string Iban, string Provider, DateTimeOffset? LastFetchAt, string RequisitionId);
 public sealed record AdminUserDiagnosisDto(
     Guid UserId,
     List<string> MemberSpaces,
@@ -100,7 +100,10 @@ public static class AdminEndpoints
         var gcLinks = await db.GcRequisitions
             .Where(r => r.UserId == user.Id)
             .Join(db.GcLinkedAccounts, r => r.Id, a => a.RequisitionId,
-                (r, a) => new AdminGcLinkDto(a.GcAccountId, a.SpaceId, a.AccountEntityId, a.Iban, a.Provider, a.LastFetchAt))
+                // RequisitionId = the PROVIDER's consent id, matching what
+                // the Bank connections panel lists — names the consent that
+                // actually carries this account (safe-to-delete question)
+                (r, a) => new AdminGcLinkDto(a.GcAccountId, a.SpaceId, a.AccountEntityId, a.Iban, a.Provider, a.LastFetchAt, r.RequisitionId))
             .ToListAsync();
         return Results.Ok(new AdminUserDiagnosisDto(
             user.Id,

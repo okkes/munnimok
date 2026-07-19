@@ -7,7 +7,7 @@ interface UserDiagnosis {
   memberSpaces: string[];
   ownedFeeds: { feedSpaceId: string; maxSeq: number }[];
   attachments: { spaceId: string; feedSpaceId: string; accountId: string }[];
-  gcLinks: { gcAccountId: string; spaceId: string; accountEntityId: string; iban: string; provider: string; lastFetchAt: string | null }[];
+  gcLinks: { gcAccountId: string; spaceId: string; accountEntityId: string; iban: string; provider: string; lastFetchAt: string | null; requisitionId: string }[];
 }
 
 interface AdminUser {
@@ -531,7 +531,7 @@ function UsersScreen({
                         {diag.data.gcLinks.length === 0
                           ? 'NONE'
                           : diag.data.gcLinks
-                              .map((g) => `${g.provider}:${g.iban.slice(-4)} → space ${g.spaceId.slice(0, 12)}… (fetched ${g.lastFetchAt ? new Date(g.lastFetchAt).toLocaleString() : 'never'})`)
+                              .map((g) => `${g.provider}:${g.iban.slice(-4)} → space ${g.spaceId.slice(0, 12)}… · consent ${g.requisitionId.slice(0, 8)}… (fetched ${g.lastFetchAt ? new Date(g.lastFetchAt).toLocaleString() : 'never'})`)
                               .join(' | ')}
                       </div>
                     </div>

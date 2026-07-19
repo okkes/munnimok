@@ -85,6 +85,9 @@ describe('AccountsScreen (demo identity)', () => {
       spaces: [{ id: 's-user', name: 'Personal' }],
       api: {
         'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false } }),
+        // production /me/spaces includes reachable feeds — without feed-1
+        // here the engine treats it as lost access and purges the account
+        'GET /me/spaces': () => ['s-user', 'feed-1'],
         'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
         'POST /spaces/s-user/accounts': () => ({}),
       },

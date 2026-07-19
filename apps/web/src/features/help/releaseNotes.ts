@@ -18,6 +18,17 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.18.0',
+    date: '2026-07-19',
+    items: [
+      {
+        en: 'Leaving a shared space now cleans up after itself: accounts someone else shared there disappear from your overview instead of lingering forever. When the account\'s owner leaves while others stay, it shows as archived for them — history stays readable, new data stops. And duplicate bank consents tidy themselves: your account automatically rides the newest consent while older duplicates are released.',
+        nl: 'Een gedeelde ruimte verlaten ruimt nu netjes op: accounts die iemand anders daar deelde verdwijnen uit je overzicht in plaats van eeuwig te blijven hangen. Vertrekt de eigenaar van het account terwijl anderen blijven, dan zien zij het als gearchiveerd — geschiedenis blijft leesbaar, nieuwe data stopt. Dubbele banktoestemmingen ruimen zichzelf op: je account rijdt automatisch op de nieuwste toestemming en oudere duplicaten worden vrijgegeven.',
+        tr: 'Paylaşılan bir alandan ayrılmak artık arkasını topluyor: başkasının orada paylaştığı hesaplar sonsuza dek takılı kalmak yerine genel bakışından kayboluyor. Hesabın sahibi ayrılıp diğerleri kalırsa, onlar için arşivlenmiş görünür — geçmiş okunabilir kalır, yeni veri durur. Yinelenen banka rızaları da kendini topluyor: hesabın otomatik olarak en yeni rızaya biner, eski kopyalar serbest bırakılır.',
+      },
+    ],
+  },
+  {
     version: '2.17.0',
     date: '2026-07-19',
     items: [
