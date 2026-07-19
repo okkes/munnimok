@@ -83,6 +83,63 @@ export function availableCents(
   return available;
 }
 
+// ── recurring set-asides ─────────────────────────────────────────────────
+// Every recurring cost is inevitable: the allocate screen encourages
+// setting money aside for it in its own envelope, keyed by a pseudo
+// bucket id so it shares the income pool with the category envelopes.
+
+/** allocation bucket id of a recurring cost's set-aside */
+export const recBucketId = (recurringId: string): string => `rec:${recurringId}`;
+
+/** positive expense cents per linked recurring cost inside a period */
+export function spentByRecurring(
+  txs: readonly (TransactionRow & { recurringId?: string })[],
+  period: Period,
+): Map<string, number> {
+  const totals = new Map<string, number>();
+  for (const tx of txs) {
+    if (tx.deleted !== 0 || tx.txType !== 'expense' || !tx.recurringId) continue;
+    if (tx.date < period.start || tx.date > period.end) continue;
+    totals.set(tx.recurringId, (totals.get(tx.recurringId) ?? 0) + -tx.amountCents);
+  }
+  return totals;
+}
+
+/**
+ * Per-period set-aside suggestion: the recurring's cost translated to
+ * the space's period cadence — a yearly bill on monthly periods
+ * suggests 1/12, so the inevitable cost is saved gradually.
+ */
+export function recurringPeriodShare(
+  rec: { amountCents: number; every: 'week' | 'month' | 'year'; everyN?: number },
+  periodType: 'week' | 'month',
+): number {
+  const n = rec.everyN && rec.everyN > 0 ? rec.everyN : 1;
+  const perYear = { week: 52 / n, month: 12 / n, year: 1 / n }[rec.every];
+  const periodsPerYear = periodType === 'week' ? 52 : 12;
+  return Math.round((rec.amountCents * perYear) / periodsPerYear);
+}
+
+/** a recurring set-aside's envelope balance (mirrors availableCents) */
+export function availableRecCents(
+  recurringId: string,
+  periods: readonly Period[],
+  rollover: boolean,
+  txs: readonly (TransactionRow & { recurringId?: string })[],
+  allocations: readonly AllocationRow[],
+): number {
+  const bucket = recBucketId(recurringId);
+  const window = rollover ? periods : periods.slice(-1);
+  let available = 0;
+  for (const period of window) {
+    const assigned = allocations
+      .filter((a) => a.deleted === 0 && a.periodStart === period.start && a.catId === bucket)
+      .reduce((sum, a) => sum + a.assignedCents, 0);
+    available += assigned - (spentByRecurring(txs, period).get(recurringId) ?? 0);
+  }
+  return available;
+}
+
 /**
  * Age of Money: how many days the money spent had been sitting in the
  * wallet — FIFO over income, averaged across the most recent expenses.

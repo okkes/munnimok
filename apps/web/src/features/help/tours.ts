@@ -141,6 +141,7 @@ export const TOURS: Tour[] = [
       { titleKey: 'tour.alloc.2t', bodyKey: 'tour.alloc.2b', illustration: '🧮', anchor: 'alloc-toallocate' },
       { titleKey: 'tour.alloc.3t', bodyKey: 'tour.alloc.3b', illustration: '🤝' },
       { titleKey: 'tour.alloc.4t', bodyKey: 'tour.alloc.4b', illustration: '♻️', anchor: 'alloc-rollover' },
+      { titleKey: 'tour.alloc.5t', bodyKey: 'tour.alloc.5b', illustration: '📌' },
     ],
   },
   {

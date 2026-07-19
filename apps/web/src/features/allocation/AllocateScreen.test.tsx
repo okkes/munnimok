@@ -69,6 +69,64 @@ describe('Allocation (demo identity)', () => {
     await waitFor(() => expect(screen.queryByTestId('alloc-readonly')).toBeNull());
   }, 15_000);
 
+  it('topics group envelopes with a subtotal and can be edited', async () => {
+    renderApp('/allocate');
+    await screen.findByTestId('screen-allocate');
+    await screen.findByTestId('alloc-input-housing');
+
+    fireEvent.click(screen.getByTestId('alloc-topic-new'));
+    fireEvent.change(await screen.findByTestId('alloc-topic-name'), { target: { value: 'Fun' } });
+    fireEvent.click(screen.getByTestId('alloc-topiccat-consumption'));
+    fireEvent.click(screen.getByTestId('alloc-topic-save'));
+
+    // the group renders with its member row inside and a subtotal chip
+    await waitFor(() => expect(document.querySelector('[data-testid^="alloc-topicgroup-"]')).toBeTruthy());
+    const topic = document.querySelector('[data-testid^="alloc-topicgroup-"]')!;
+    expect(topic.textContent).toContain('Fun');
+    await waitFor(() => expect(topic.querySelector('[data-testid="alloc-input-consumption"]')).toBeTruthy());
+
+    // deleting from the editor dissolves the group back into the flat list
+    fireEvent.click(topic.querySelector('[data-testid^="alloc-topic-edit-"]')!);
+    fireEvent.click(await screen.findByTestId('alloc-topic-delete'));
+    await waitFor(() =>
+      expect(screen.getByTestId('alloc-list').querySelector('[data-testid="alloc-input-consumption"]')).toBeTruthy(),
+    );
+  }, 15_000);
+
+  it('recurring costs offer a set-aside envelope with a per-period suggestion', async () => {
+    // lean unit-test seed carries no recurrings — plant one (monthly €15.99)
+    const recId = 'rec_alloc';
+    const first = renderApp('/allocate');
+    await screen.findByTestId('screen-allocate');
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const { DEMO_SPACE_ID } = await import('@/db/seed');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-alloc'), { trackOutbox: false });
+    await repo.upsert('recurring', DEMO_SPACE_ID, recId, {
+      name: 'Streamo',
+      kind: 'subscription',
+      amountCents: 1599,
+      every: 'month',
+      dueDay: 7,
+      active: 1,
+    });
+    first.unmount();
+
+    renderApp('/allocate');
+    await screen.findByTestId('screen-allocate');
+    const fill = await screen.findByTestId(`alloc-rec-fill-${recId}`, {}, { timeout: 5000 });
+    fireEvent.click(fill); // one tap sets the suggested share aside
+    await waitFor(() => {
+      const input = screen.getByTestId(`alloc-rec-input-${recId}`) as HTMLInputElement;
+      expect(Number.parseFloat(input.value)).toBeGreaterThan(0);
+    });
+    // the set-aside draws from the same income pool as the envelopes
+    await waitFor(() => expect(screen.getByTestId('alloc-toallocate').textContent).toMatch(/-/));
+  }, 15_000);
+
   it('rollover is a visible per-space toggle', async () => {
     renderApp('/allocate');
     await screen.findByTestId('screen-allocate');

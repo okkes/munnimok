@@ -11,6 +11,7 @@ import type {
   EventRow,
   HoldingRow,
   InsightDismissRow,
+  TopicRow,
   LotRow,
   QuoteCacheRow,
   ReceiptRow,
@@ -54,6 +55,7 @@ export class MunniDB extends Dexie {
   holdings!: Table<HoldingRow, string>;
   lots!: Table<LotRow, string>;
   insightDismissals!: Table<InsightDismissRow, string>;
+  topics!: Table<TopicRow, string>;
   /** device-only — delayed quotes are a cache, not data */
   quoteCache!: Table<QuoteCacheRow, string>;
   outbox!: Table<OutboxRow, string>;
@@ -113,6 +115,10 @@ export class MunniDB extends Dexie {
     this.version(10).stores({
       insightDismissals: 'id, spaceId',
     });
+    // allocation topics: custom category groupings
+    this.version(11).stores({
+      topics: 'id, spaceId',
+    });
   }
 
   tableFor<E extends EntityName>(entity: E) {
@@ -155,6 +161,8 @@ export class MunniDB extends Dexie {
         return this.lots;
       case 'insightDismiss':
         return this.insightDismissals;
+      case 'topic':
+        return this.topics;
       default:
         throw new Error(`unknown entity: ${entity}`);
     }

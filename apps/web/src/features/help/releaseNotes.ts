@@ -18,6 +18,22 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.20.0',
+    date: '2026-07-19',
+    items: [
+      {
+        en: 'Allocation grows up: every recurring cost now has its own set-aside envelope — one tap funds the suggested share, and a yearly bill on monthly periods suggests exactly 1/12 so the inevitable never surprises you. And you can group envelopes into your own topics: create "Fun", drop entertainment and coffee in, and watch one subtotal instead of five rows.',
+        nl: 'Toewijzen wordt volwassen: elke terugkerende kostenpost heeft nu een eigen opzij-zet-envelop — één tik dekt het voorgestelde deel, en een jaarlijkse rekening op maandperiodes stelt precies 1/12 voor zodat het onvermijdelijke je nooit verrast. En je kunt enveloppen groeperen in eigen thema\'s: maak "Fun", stop entertainment en koffie erin, en volg één subtotaal in plaats van vijf rijen.',
+        tr: 'Tahsis büyüyor: her düzenli giderin artık kendi kenara-ayırma zarfı var — tek dokunuş önerilen payı karşılar; aylık dönemlerde yıllık bir fatura tam 1/12 önerir, kaçınılmaz olan seni asla şaşırtmaz. Zarfları kendi konularında da gruplayabilirsin: "Keyif" oluştur, eğlenceyi ve kahveyi içine at, beş satır yerine tek ara toplamı izle.',
+      },
+      {
+        en: 'The admin console got a facelift — one consistent control language, calmer cards, and prediction keywords finally speak human: category names with the id as a subtitle, and a proper picker instead of typing ids.',
+        nl: 'De beheerconsole kreeg een opknapbeurt — één consistente bedieningstaal, rustigere kaarten, en voorspellingstrefwoorden spreken eindelijk mensentaal: categorienamen met het id als ondertitel, en een echte kiezer in plaats van id\'s typen.',
+        tr: 'Yönetim konsolu yenilendi — tek tutarlı kontrol dili, daha sakin kartlar; tahmin anahtar kelimeleri sonunda insanca konuşuyor: kimlik alt başlık olmak üzere kategori adları ve kimlik yazmak yerine gerçek bir seçici.',
+      },
+    ],
+  },
+  {
     version: '2.19.1',
     date: '2026-07-19',
     items: [

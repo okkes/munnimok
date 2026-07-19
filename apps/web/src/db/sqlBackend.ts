@@ -54,6 +54,7 @@ const ENTITIES: readonly EntityName[] = [
   'holding',
   'lot',
   'insightDismiss',
+  'topic',
 ];
 
 const ENTITY_SET: ReadonlySet<EntityName> = new Set(ENTITIES);

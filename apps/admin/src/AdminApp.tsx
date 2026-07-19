@@ -705,6 +705,22 @@ function CatalogScreen({
     return !q || row.id.toLowerCase().includes(q) || rowLabel(row).toLowerCase().includes(q);
   };
 
+  // keyword UX: humans pick and read category NAMES, ids stay subtitles
+  const pretty = (id: string) => id.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase());
+  const catLabel = (id: string) => {
+    const overlay = categories.find((c) => c.id === id && !isSyntheticTombstone(c));
+    return overlay ? overlay.names.en : pretty(id);
+  };
+  const selectableCats = tree.mains
+    .filter((m) => !m.overlay?.deleted)
+    .flatMap((m) => [
+      { row: m, sub: false },
+      ...tree
+        .childrenOf(m.id)
+        .filter((s) => !s.overlay?.deleted)
+        .flatMap((s) => [{ row: s, sub: true }, ...tree.childrenOf(s.id).filter((l) => !l.overlay?.deleted).map((l) => ({ row: l, sub: true }))]),
+    ]);
+
   const openForm = (prefill: Partial<typeof draft>) => {
     setDraft({ id: '', parentId: '', en: '', nl: '', tr: '', icon: '', txType: 'expense', ...prefill });
     setFormOpen(true);
@@ -919,8 +935,11 @@ function CatalogScreen({
             <tbody>
               {keywords.map((rule, i) => (
                 <tr key={rule.catId + '-' + i}>
-                  <td><code>{rule.catId}</code></td>
-                  <td>{rule.keywords.join(', ')}</td>
+                  <td>
+                    <span className="cell-title">{catLabel(rule.catId)}</span>
+                    <div className="cell-sub">{rule.catId}</div>
+                  </td>
+                  <td className="kw-words">{rule.keywords.join(', ')}</td>
                   <td className="cell-actions">
                     <button data-testid={'catalog-kw-remove-' + i} disabled={busy} onClick={() => setKeywords(keywords.filter((_, j) => j !== i))}>
                       remove
@@ -932,9 +951,19 @@ function CatalogScreen({
           </table>
         )}
         <div className="form-row">
-          <input data-testid="catalog-kw-cat" placeholder="catId" value={keywordDraft.catId} onChange={(e) => setKeywordDraft({ ...keywordDraft, catId: e.target.value })} />
+          <select data-testid="catalog-kw-cat" value={keywordDraft.catId} onChange={(e) => setKeywordDraft({ ...keywordDraft, catId: e.target.value })}>
+            <option value="">Category…</option>
+            {selectableCats.map(({ row, sub }) => {
+              const label = rowLabel(row) === row.id ? pretty(row.id) : rowLabel(row);
+              return (
+                <option key={row.id} value={row.id}>
+                  {sub ? `— ${label}` : label}
+                </option>
+              );
+            })}
+          </select>
           <input data-testid="catalog-kw-words" placeholder="keywords, comma, separated" value={keywordDraft.words} onChange={(e) => setKeywordDraft({ ...keywordDraft, words: e.target.value })} />
-          <button data-testid="catalog-add-keyword" disabled={busy} onClick={addKeywordRule}>
+          <button data-testid="catalog-add-keyword" className="btn" disabled={busy} onClick={addKeywordRule}>
             Add rule
           </button>
         </div>
@@ -948,8 +977,11 @@ function CatalogScreen({
               {BUNDLED.keywords.map((rule, i) => (
                 <tr key={rule.catId + '-' + i}>
                   <td>{rule.lang}</td>
-                  <td><code>{rule.catId}</code></td>
-                  <td>{rule.keywords.join(', ')}</td>
+                  <td>
+                    <span className="cell-title">{catLabel(rule.catId)}</span>
+                    <div className="cell-sub">{rule.catId}</div>
+                  </td>
+                  <td className="kw-words">{rule.keywords.join(', ')}</td>
                 </tr>
               ))}
             </tbody>

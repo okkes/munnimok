@@ -4,8 +4,21 @@ import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useAllocationOps, useAllocations } from '@/application/allocation';
 import { useBudgets } from '@/application/budgets';
+import { useRecurrings } from '@/application/recurring';
+import { useTopicOps, useTopics } from '@/application/topics';
 import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
-import { ageOfMoneyDays, availableCents, spentByMainCat, spreadEvenly, toAllocateCents } from '@/domain/allocation';
+import {
+  ageOfMoneyDays,
+  availableCents,
+  availableRecCents,
+  recBucketId,
+  recurringPeriodShare,
+  spentByMainCat,
+  spentByRecurring,
+  spreadEvenly,
+  toAllocateCents,
+} from '@/domain/allocation';
+import type { RecurringRow, TopicRow } from '@/db/types';
 import { periodHistory } from '@/domain/periods';
 import type { Period } from '@/domain/periods';
 import { catName, useCategories } from '@/features/categories/useCategories';
@@ -41,6 +54,12 @@ export function AllocateScreen() {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [focusedCat, setFocusedCat] = useState<string | null>(null);
   const [coverFor, setCoverFor] = useState<string | null>(null);
+  const recurrings = useRecurrings();
+  const topics = useTopics();
+  const topicOps = useTopicOps();
+  const [topicEdit, setTopicEdit] = useState<TopicRow | 'new' | null>(null);
+  const [topicName, setTopicName] = useState('');
+  const [topicCats, setTopicCats] = useState<ReadonlySet<string>>(new Set());
 
   const history = useMemo(
     () => periodHistory(space?.periodType ?? 'month', space?.periodDay ?? 1, WINDOW),
@@ -216,6 +235,82 @@ export function AllocateScreen() {
 
   const donors = rows.filter((r) => r.id !== coverFor && model.availableOf(r.id) > 0);
 
+  // ── recurring set-asides (user request: fund the inevitable) ─────────
+  const recSpent = useMemo(() => spentByRecurring(txs ?? [], view), [txs, view]);
+  const renderRecRow = (rec: RecurringRow) => {
+    const bucket = recBucketId(rec.id);
+    const assigned = model.assignedOf(view, bucket);
+    const available = availableRecCents(rec.id, windowPeriods, rollover, txs ?? [], allocations ?? []);
+    const share = recurringPeriodShare(rec, space?.periodType === 'week' ? 'week' : 'month');
+    let pillColor = 'var(--m-ink-3)';
+    if (available > 0) pillColor = 'var(--m-accent-deep)';
+    else if (available < 0) pillColor = 'var(--m-negative)';
+    return (
+      <div key={rec.id} className="border-b border-line-2 px-4 py-2.5 last:border-0" data-testid={`alloc-rec-${rec.id}`}>
+        <div className="flex items-center gap-3">
+          <Icon name={rec.icon ?? 'autorenew'} size={17} color="var(--m-ink-3)" />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[13px] font-medium text-ink">{rec.name}</span>
+            <span className="block text-[11px] text-ink-4">
+              {t('alloc.spentShort', { amount: money(recSpent.get(rec.id) ?? 0) })}
+            </span>
+          </span>
+          {editable && assigned < share && (
+            <button
+              data-testid={`alloc-rec-fill-${rec.id}`}
+              onClick={() => chipAssign(bucket, share)}
+              className="m-tap rounded-full border border-line bg-surface px-2.5 py-1 text-[11px] text-ink-2"
+            >
+              {t('alloc.recFill', { amount: money(share) })}
+            </button>
+          )}
+          <span
+            className="m-num rounded-full px-2 py-0.5 text-[11px] font-semibold"
+            data-testid={`alloc-rec-avail-${rec.id}`}
+            style={{ color: pillColor, background: `color-mix(in srgb, ${pillColor} 12%, transparent)` }}
+          >
+            {money(available)}
+          </span>
+          <input
+            data-testid={`alloc-rec-input-${rec.id}`}
+            type="number"
+            inputMode="decimal"
+            step="0.01"
+            disabled={!editable}
+            value={drafts[bucket] ?? (assigned === 0 ? '' : (assigned / 100).toFixed(2))}
+            placeholder="0.00"
+            onChange={(e) => setDrafts((d) => ({ ...d, [bucket]: e.target.value }))}
+            onBlur={() => commitDraft(bucket)}
+            className="h-9 w-24 rounded-input border border-line bg-surface px-2 text-right font-mono text-[13px] text-ink outline-none placeholder:text-ink-4 disabled:opacity-60"
+          />
+        </div>
+      </div>
+    );
+  };
+
+  // ── topics: user-defined envelope groups (user request) ──────────────
+  const topicOf = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const topic of topics ?? []) for (const catId of topic.catIds) map.set(catId, topic.id);
+    return map;
+  }, [topics]);
+  const ungrouped = rows.filter((r) => !topicOf.has(r.id));
+  const topicSubtotal = (topic: TopicRow) =>
+    topic.catIds.reduce((sum, catId) => sum + model.availableOf(catId), 0);
+  const openTopicEditor = (topic: TopicRow | 'new') => {
+    setTopicEdit(topic);
+    setTopicName(topic === 'new' ? '' : topic.name);
+    setTopicCats(new Set(topic === 'new' ? [] : topic.catIds));
+  };
+  const saveTopic = async () => {
+    if (!topicName.trim() || topicCats.size === 0) return;
+    await topicOps.save(topicEdit === 'new' || topicEdit === null ? null : topicEdit.id, {
+      name: topicName.trim(),
+      catIds: [...topicCats],
+    });
+    setTopicEdit(null);
+  };
+
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-allocate">
       <AppBar
@@ -286,9 +381,49 @@ export function AllocateScreen() {
           </div>
         )}
 
-        {/* envelopes */}
-        <div className="mt-3 rounded-card border border-line bg-surface" data-testid="alloc-list">
-          {rows.map(renderRow)}
+        {/* recurring set-asides: fund the inevitable before it hits */}
+        {(recurrings ?? []).length > 0 && (
+          <>
+            <div className="m-cap mt-4 mb-1 px-1">{t('alloc.setAside')}</div>
+            <p className="mb-1 px-1 text-[11px] text-ink-4">{t('alloc.setAsideHint')}</p>
+            <div className="rounded-card border border-line bg-surface" data-testid="alloc-rec-list">
+              {(recurrings ?? []).map(renderRecRow)}
+            </div>
+          </>
+        )}
+
+        {/* envelopes, grouped by the user's topics */}
+        <div className="mt-4 mb-1 flex items-center justify-between px-1">
+          <span className="m-cap">{t('alloc.envelopes')}</span>
+          <button
+            data-testid="alloc-topic-new"
+            onClick={() => openTopicEditor('new')}
+            className="m-tap border-none bg-transparent text-[12px] font-medium text-accent-deep"
+          >
+            + {t('alloc.topicNew')}
+          </button>
+        </div>
+        {(topics ?? []).map((topic) => (
+          <div key={topic.id} className="mb-3 rounded-card border border-line bg-surface" data-testid={`alloc-topicgroup-${topic.id}`}>
+            <div className="flex items-center gap-2 border-b border-line-2 px-4 py-2">
+              <span className="min-w-0 flex-1 truncate text-[12px] font-semibold tracking-wide text-ink-2 uppercase">{topic.name}</span>
+              <span className="m-num text-[11px] font-semibold" style={{ color: topicSubtotal(topic) < 0 ? 'var(--m-negative)' : 'var(--m-accent-deep)' }} data-testid={`alloc-topic-total-${topic.id}`}>
+                {money(topicSubtotal(topic))}
+              </span>
+              <button
+                aria-label={t('action.edit')}
+                data-testid={`alloc-topic-edit-${topic.id}`}
+                onClick={() => openTopicEditor(topic)}
+                className="m-tap border-none bg-transparent text-ink-4"
+              >
+                <Icon name="pencil-outline" size={14} />
+              </button>
+            </div>
+            {rows.filter((r) => topic.catIds.includes(r.id)).map(renderRow)}
+          </div>
+        ))}
+        <div className="rounded-card border border-line bg-surface" data-testid="alloc-list">
+          {ungrouped.map(renderRow)}
         </div>
 
         {/* rollover is a space decision, synced */}
@@ -309,6 +444,60 @@ export function AllocateScreen() {
           </span>
         </button>
       </div>
+
+      {/* topic editor: name + member categories */}
+      <Sheet open={topicEdit !== null} onOpenChange={(open) => !open && setTopicEdit(null)} title={t('alloc.topicTitle')} size="tall">
+        <div className="flex flex-col gap-3 pt-1">
+          <input
+            data-testid="alloc-topic-name"
+            value={topicName}
+            onChange={(e) => setTopicName(e.target.value)}
+            placeholder={t('alloc.topicName')}
+            className="h-11 rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none placeholder:text-ink-4"
+          />
+          <div className="overflow-hidden rounded-card border border-line bg-surface">
+            {rows.map((cat) => {
+              const member = topicCats.has(cat.id);
+              const elsewhere = topicOf.get(cat.id) !== undefined && (topicEdit === 'new' || topicOf.get(cat.id) !== (topicEdit as TopicRow | null)?.id);
+              return (
+                <button
+                  key={cat.id}
+                  data-testid={`alloc-topiccat-${cat.id}`}
+                  disabled={elsewhere && !member}
+                  onClick={() =>
+                    setTopicCats((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(cat.id)) next.delete(cat.id);
+                      else next.add(cat.id);
+                      return next;
+                    })
+                  }
+                  className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-2.5 text-left last:border-0 disabled:opacity-40"
+                >
+                  <Icon name={cat.icon} size={17} color={cat.color ?? 'var(--m-ink-3)'} />
+                  <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{catName(cat, t)}</span>
+                  <Icon name={member ? 'checkbox-marked' : 'checkbox-blank-outline'} size={18} color={member ? 'var(--m-accent-deep)' : 'var(--m-ink-4)'} />
+                </button>
+              );
+            })}
+          </div>
+          <Button data-testid="alloc-topic-save" onClick={() => void saveTopic()} disabled={!topicName.trim() || topicCats.size === 0}>
+            {t('split.done')}
+          </Button>
+          {topicEdit !== 'new' && topicEdit !== null && (
+            <Button
+              variant="danger"
+              data-testid="alloc-topic-delete"
+              onClick={() => {
+                void topicOps.remove(topicEdit.id);
+                setTopicEdit(null);
+              }}
+            >
+              {t('action.delete')}
+            </Button>
+          )}
+        </div>
+      </Sheet>
 
       {/* cover an overspent envelope from a calmer one */}
       <Sheet open={coverFor !== null} onOpenChange={(open) => !open && setCoverFor(null)} title={t('alloc.coverTitle')} size="form">

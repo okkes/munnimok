@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ageOfMoneyDays, allocationId, availableCents, spreadEvenly, toAllocateCents } from './allocation';
+import { ageOfMoneyDays, allocationId, availableCents, availableRecCents, recBucketId, recurringPeriodShare, spentByRecurring, spreadEvenly, toAllocateCents } from './allocation';
 import type { AccountRow, AllocationRow, TransactionRow } from '@/db/types';
 
 const tx = (partial: Partial<TransactionRow>): TransactionRow =>
@@ -79,5 +79,26 @@ describe('allocation math', () => {
     expect([...spread.values()]).toEqual([34, 33, 33]);
     expect(spreadEvenly(0, ['a']).size).toBe(0);
     expect(spreadEvenly(-5, ['a']).size).toBe(0);
+  });
+
+  it('translates a recurring cost into the period cadence (set-aside suggestion)', () => {
+    expect(recurringPeriodShare({ amountCents: 1200, every: 'month' }, 'month')).toBe(1200);
+    expect(recurringPeriodShare({ amountCents: 24_000, every: 'year' }, 'month')).toBe(2000); // 1/12
+    expect(recurringPeriodShare({ amountCents: 1000, every: 'week' }, 'month')).toBe(4333); // ~52/12
+    expect(recurringPeriodShare({ amountCents: 24_000, every: 'year' }, 'week')).toBe(462); // 1/52
+    expect(recurringPeriodShare({ amountCents: 2400, every: 'month', everyN: 2 }, 'month')).toBe(1200);
+  });
+
+  it('recurring set-asides mirror the envelope math on their own bucket', () => {
+    const period = { start: '2026-01-01', end: '2026-01-31' };
+    const txs = [
+      tx({ txType: 'expense', amountCents: -1599, date: '2026-01-12', recurringId: 'rec1' }),
+      tx({ txType: 'expense', amountCents: -999, date: '2026-01-13' }), // unlinked: not counted
+    ];
+    expect(spentByRecurring(txs, period).get('rec1')).toBe(1599);
+    const allocations: AllocationRow[] = [
+      { id: allocationId('s', period.start, recBucketId('rec1')), spaceId: 's', periodStart: period.start, catId: recBucketId('rec1'), assignedCents: 2000, deleted: 0, fieldVersions: {} },
+    ];
+    expect(availableRecCents('rec1', [period], true, txs, allocations)).toBe(401); // 20.00 − 15.99
   });
 });

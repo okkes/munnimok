@@ -452,6 +452,15 @@ export interface InsightDismissRow extends SyncEnvelope {
   insightId: string;
 }
 
+/** custom grouping of MAIN categories on the allocate screen ("Fun" =
+ * entertainment + coffee + …) — synced, per space */
+export interface TopicRow extends SyncEnvelope {
+  id: string;
+  spaceId: string;
+  name: string;
+  catIds: string[];
+}
+
 /** DEVICE-ONLY delayed-quote cache — prices are never synced data. */
 export interface QuoteCacheRow {
   /** `{source}:{priceKey}` */
@@ -520,7 +529,8 @@ export type EntityName =
   | 'storeMarker'
   | 'holding'
   | 'lot'
-  | 'insightDismiss';
+  | 'insightDismiss'
+  | 'topic';
 
 export interface EntityRowMap {
   space: SpaceRow;
@@ -542,4 +552,5 @@ export interface EntityRowMap {
   holding: HoldingRow;
   lot: LotRow;
   insightDismiss: InsightDismissRow;
+  topic: TopicRow;
 }
