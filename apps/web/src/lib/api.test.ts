@@ -74,6 +74,9 @@ describe('dead-session handling (401 → retry → re-login)', () => {
   it('retries once with a fresh token, then clears the session and returns to login', async () => {
     const { resetAuthExpiryGuard } = await import('./api');
     resetAuthExpiryGuard();
+    const { setAccessTokenGetter, signalAuthReady } = await import('@/app/authToken');
+    signalAuthReady(); // the restore finished — apiFetch may proceed
+    setAccessTokenGetter(async () => 'stale-but-real-token'); // a REAL bearer gets rejected
     const { useSession } = await import('@/app/session');
     // apiFetch reads the persisted identity, not the store snapshot
     localStorage.setItem('munni_session', JSON.stringify({ kind: 'user', sub: 'stale-user' }));
@@ -99,5 +102,29 @@ describe('dead-session handling (401 → retry → re-login)', () => {
     // a second 401 in the same page load must not loop the navigation
     await apiFetch('/me/spaces');
     expect(assignSpy).toHaveBeenCalledTimes(1);
+    setAccessTokenGetter(null);
+  });
+
+  it('a 401 without a bearer never forces a logout (cold-start boot race)', async () => {
+    // an app update always cold-starts: requests fired before the token
+    // getter exists carry no bearer — those 401s prove nothing about the
+    // refresh token and must NOT wipe the session (user: had to sign in
+    // after every update)
+    const { resetAuthExpiryGuard, apiFetch } = await import('./api');
+    resetAuthExpiryGuard();
+    const { setAccessTokenGetter, signalAuthReady } = await import('@/app/authToken');
+    signalAuthReady();
+    setAccessTokenGetter(null); // no getter yet — exactly the boot window
+    const { useSession } = await import('@/app/session');
+    localStorage.setItem('munni_session', JSON.stringify({ kind: 'user', sub: 'booting-user' }));
+    useSession.setState({ identity: { kind: 'user', sub: 'booting-user' } });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 401 })));
+    const assignSpy = vi.fn();
+    vi.stubGlobal('location', { ...globalThis.location, assign: assignSpy });
+
+    const res = await apiFetch('/me/spaces');
+    expect(res.status).toBe(401); // the caller sees the 401 …
+    expect(useSession.getState().identity).not.toBeNull(); // … but stays signed in
+    expect(assignSpy).not.toHaveBeenCalled();
   });
 });

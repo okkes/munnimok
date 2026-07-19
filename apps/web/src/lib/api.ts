@@ -1,5 +1,5 @@
 import { config } from '@/app/config';
-import { getAccessToken } from '@/app/authToken';
+import { getAccessToken, waitForAuthReady } from '@/app/authToken';
 import { readSessionIdentity } from '@/app/session';
 
 /** rejects API access for identities that promised to stay offline */
@@ -26,6 +26,14 @@ export function resetAuthExpiryGuard(): void {
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
   assertNetworkAllowed();
   const identity = readSessionIdentity();
+  // Cold-start guard: every app update forces a cold start, and screens
+  // fire their requests the moment they mount — BEFORE Logto finished
+  // restoring the session. Those requests went out with no bearer, hit
+  // 401 twice and the dead-session handler below logged the user out and
+  // wiped a perfectly healthy refresh token (user: "I must log in after
+  // every update"). Wait for the restore to finish first.
+  if (identity?.kind === 'user' && !identity.testAuth) await waitForAuthReady();
+  let sentBearer = false;
   const attempt = async (): Promise<Response> => {
     const headers = new Headers(init.headers);
     headers.set('Content-Type', 'application/json');
@@ -33,6 +41,7 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
       if (identity.testAuth) headers.set('X-User-Sub', identity.sub);
       else {
         const token = await getAccessToken();
+        sentBearer = !!token;
         if (token) headers.set('Authorization', `Bearer ${token}`);
       }
     }
@@ -42,7 +51,9 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
   if (response.status === 401 && identity?.kind === 'user' && !identity.testAuth) {
     // maybe just an expired access token — the SDK mints a fresh one
     response = await attempt();
-    if (response.status === 401 && !handlingAuthExpiry) {
+    // a 401 WITHOUT a bearer proves nothing about the refresh token —
+    // only a rejected real token means the session is truly dead
+    if (response.status === 401 && sentBearer && !handlingAuthExpiry) {
       // the refresh token is dead too (IdP restart, revocation): no
       // amount of retrying helps. Clear the session and return to the
       // login screen instead of sitting on "server unreachable" until a

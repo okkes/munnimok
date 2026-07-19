@@ -18,6 +18,17 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.19.1',
+    date: '2026-07-19',
+    items: [
+      {
+        en: 'You stay signed in across app updates now. Every update restarts the app, and a start-up race could throw away a perfectly healthy session — requests fired before the sign-in state finished loading were mistaken for an expired login. The app now waits for the session to restore before talking to the server, and only a genuinely rejected login can sign you out.',
+        nl: 'Je blijft nu ingelogd na app-updates. Elke update herstart de app, en een opstartrace kon een prima gezonde sessie weggooien — verzoeken die vertrokken vóór de inlogstatus geladen was, werden aangezien voor een verlopen login. De app wacht nu tot de sessie hersteld is voor hij met de server praat, en alleen een écht afgewezen login kan je nog uitloggen.',
+        tr: 'Artık uygulama güncellemelerinde oturumun açık kalıyor. Her güncelleme uygulamayı yeniden başlatır ve bir açılış yarışı gayet sağlıklı bir oturumu çöpe atabiliyordu — oturum durumu yüklenmeden çıkan istekler süresi dolmuş giriş sanılıyordu. Uygulama artık sunucuyla konuşmadan önce oturumun geri yüklenmesini bekliyor; seni ancak gerçekten reddedilen bir giriş oturumdan çıkarabilir.',
+      },
+    ],
+  },
+  {
     version: '2.19.0',
     date: '2026-07-19',
     items: [
