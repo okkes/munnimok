@@ -45,6 +45,9 @@ services:
       # account deletion needs the Logto Management API (M2M app)
       Logto__M2mAppId: ${LOGTO_M2M_APP_ID:-}
       Logto__M2mAppSecret: ${LOGTO_M2M_APP_SECRET:-}
+      # staging and production share ONE Logto — a staging account deletion
+      # must never destroy the identity the production app still uses
+      Logto__DeleteIdentityOnAccountDeletion: "false"
       Ocr__BaseUrl: http://ocr:8884
       BUILD_NUMBER: dev
     ports:

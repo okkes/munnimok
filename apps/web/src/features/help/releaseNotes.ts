@@ -18,6 +18,17 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.18.1',
+    date: '2026-07-19',
+    items: [
+      {
+        en: 'Family accounts, done right: when two people each connect the same shared bank account, both consents stay respected — one person\'s cleanup can never cut off the other\'s access, and the data still arrives once for everyone. Also: deleting your account in the test app no longer touches the login identity the real app uses.',
+        nl: 'Gezinsrekeningen, goed geregeld: wanneer twee mensen allebei dezelfde gedeelde bankrekening koppelen, blijven beide toestemmingen gerespecteerd — de opruiming van de één kan nooit de toegang van de ander afsnijden, en de data komt nog steeds één keer binnen voor iedereen. Ook: je account verwijderen in de testapp raakt niet langer de inlogidentiteit die de echte app gebruikt.',
+        tr: 'Aile hesapları hakkıyla: iki kişi aynı ortak banka hesabını ayrı ayrı bağladığında iki rıza da korunur — birinin temizliği diğerinin erişimini asla kesemez ve veri herkes için yine tek sefer gelir. Ayrıca: test uygulamasında hesabını silmek, gerçek uygulamanın kullandığı giriş kimliğine artık dokunmuyor.',
+      },
+    ],
+  },
+  {
     version: '2.18.0',
     date: '2026-07-19',
     items: [

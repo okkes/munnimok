@@ -740,6 +740,69 @@ public class GcEndpointsTests : IClassFixture<GcApiFactory>
     }
 
     [Fact]
+    public async Task Family_account_consented_by_two_users_keeps_both_consents_and_the_original_binding()
+    {
+        // shared family bank account: both partners consent separately; the
+        // provider returns the SAME account id for both. Rebinding must
+        // stay within one user, and the second person's consent is never
+        // idle-deleted even though the row is bound to the first person's.
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var aliceReq = Guid.NewGuid();
+        var bobReq = Guid.NewGuid();
+        var alice = Guid.NewGuid();
+        var bob = Guid.NewGuid();
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.GcRequisitions.Add(new GcRequisition
+            {
+                Id = aliceReq, UserId = alice, SpaceId = $"space_fa_a_{suffix}",
+                InstitutionId = "ING_NL", RequisitionId = $"req-alice-{suffix}", Status = "linked",
+                CreatedAt = DateTimeOffset.UtcNow.AddDays(-10),
+            });
+            // Bob consented later, and his requisition holds no local rows
+            db.GcRequisitions.Add(new GcRequisition
+            {
+                Id = bobReq, UserId = bob, SpaceId = $"space_fa_b_{suffix}",
+                InstitutionId = "ING_NL", RequisitionId = $"req-bob-{suffix}", Status = "linked",
+                CreatedAt = DateTimeOffset.UtcNow.AddDays(-4),
+            });
+            db.GcLinkedAccounts.Add(new GcLinkedAccount
+            {
+                GcAccountId = $"gc-fa-{suffix}", SpaceId = $"space_fa_a_{suffix}",
+                AccountEntityId = ImportIds.AccountId("NL44INGB0088888888"),
+                Iban = "NL44INGB0088888888", Currency = "EUR",
+                RequisitionId = aliceReq, LastFetchAt = DateTimeOffset.UtcNow,
+            });
+            await db.SaveChangesAsync();
+        }
+        _factory.Gc.RemoteRequisitions =
+        [
+            new GcRequisitionListItem($"req-alice-{suffix}", "LN", "ING_NL", DateTimeOffset.UtcNow.AddDays(-10), null, [$"gc-fa-{suffix}"]),
+            new GcRequisitionListItem($"req-bob-{suffix}", "LN", "ING_NL", DateTimeOffset.UtcNow.AddDays(-4), null, [$"gc-fa-{suffix}"]),
+        ];
+        try
+        {
+            var service = new GcFetchService(
+                _factory.Services.GetRequiredService<IServiceScopeFactory>(),
+                NullLogger<GcFetchService>.Instance);
+            await service.CleanupIdleRequisitionsAsync(CancellationToken.None);
+
+            using var scope = _factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            // Alice keeps the binding — Bob's newer consent must not steal it
+            Assert.Equal(aliceReq, (await db.GcLinkedAccounts.FindAsync($"gc-fa-{suffix}"))!.RequisitionId);
+            // and Bob's covering consent survives the idle sweep
+            Assert.DoesNotContain($"req-bob-{suffix}", _factory.Gc.DeletedRequisitions);
+            Assert.NotNull(await db.GcRequisitions.FindAsync(bobReq));
+        }
+        finally
+        {
+            _factory.Gc.RemoteRequisitions = [];
+        }
+    }
+
+    [Fact]
     public async Task Cleanup_frees_idle_requisitions_but_keeps_fresh_and_linked_ones()
     {
         var suffix = Guid.NewGuid().ToString("N")[..8];

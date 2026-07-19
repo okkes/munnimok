@@ -71,10 +71,16 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
         // its NEWEST consent, so older duplicates become account-less and
         // age into the idle deletion below (user had nine ING consents and
         // no way to tell which one carried the account)
-        await RebindToNewestConsentAsync(db, gc, ct);
+        var covering = await RebindToNewestConsentAsync(db, gc, ct);
 
         var cutoff = DateTimeOffset.UtcNow - IdleGraceDays;
-        var used = await db.GcLinkedAccounts.Select(a => a.RequisitionId).Distinct().ToListAsync(ct);
+        var used = (await db.GcLinkedAccounts.Select(a => a.RequisitionId).Distinct().ToListAsync(ct))
+            // a consent that still covers a known account at the provider is
+            // never dead weight even when the row is bound to someone else's
+            // consent — deleting it would revoke a family member's own
+            // access to the shared account
+            .Union(covering)
+            .ToList();
         var idle = await db.GcRequisitions
             // 'approved' = bank consent given, ingest pending on quota —
             // the healer owns those, cleanup must not cut them loose
@@ -108,9 +114,12 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
     /// provider's own requisition listing — one call per day). Retried
     /// consent journeys used to leave the row bound to whichever consent
     /// completed FIRST, so deleting apparent duplicates could silently
-    /// kill the sync.
+    /// kill the sync. Rebinding stays within one user: a shared family
+    /// account consented by two people keeps each person's consent alive.
+    /// Returns every local requisition id that still covers a known
+    /// account — those are never idle, whoever the row is bound to.
     /// </summary>
-    private static async Task RebindToNewestConsentAsync(AppDbContext db, IGoCardlessApi gc, CancellationToken ct)
+    private static async Task<HashSet<Guid>> RebindToNewestConsentAsync(AppDbContext db, IGoCardlessApi gc, CancellationToken ct)
     {
         var remote = await gc.ListRequisitionsAsync(ct);
         var locals = await db.GcRequisitions.Where(r => r.Provider == GoCardlessBankApi.Id).ToListAsync(ct);
@@ -119,21 +128,40 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
         var localByRemoteId = locals
             .GroupBy(l => l.RequisitionId)
             .ToDictionary(g => g.Key, g => g.OrderByDescending(l => l.CreatedAt).First());
+        var localById = locals.ToDictionary(l => l.Id);
         var accounts = await db.GcLinkedAccounts.ToListAsync(ct);
         var byAccountId = accounts.ToDictionary(a => a.GcAccountId);
 
+        var linkedRemotes = remote.Where(r => r.Status == "LN").ToList();
         // oldest → newest: the last assignment wins, i.e. the newest consent
-        foreach (var requisition in remote.Where(r => r.Status == "LN").OrderBy(r => r.Created))
+        foreach (var requisition in linkedRemotes.OrderBy(r => r.Created))
         {
             if (!localByRemoteId.TryGetValue(requisition.Id, out var local)) continue;
             foreach (var accountId in requisition.Accounts)
             {
                 if (!byAccountId.TryGetValue(accountId, out var linked)) continue;
+                var boundTo = localById.GetValueOrDefault(linked.RequisitionId);
+                if (boundTo is not null && boundTo.UserId != local.UserId) continue; // someone else's binding
                 linked.RequisitionId = local.Id;
                 linked.SpaceId = local.SpaceId;
             }
         }
+        // second pass, against the FINAL bindings: another user's consent
+        // covering a known account is protected — the same user's older
+        // duplicates are not (they are exactly what should age out)
+        var covering = new HashSet<Guid>();
+        foreach (var requisition in linkedRemotes)
+        {
+            if (!localByRemoteId.TryGetValue(requisition.Id, out var local)) continue;
+            foreach (var accountId in requisition.Accounts)
+            {
+                if (!byAccountId.TryGetValue(accountId, out var linked)) continue;
+                var boundTo = localById.GetValueOrDefault(linked.RequisitionId);
+                if (boundTo is not null && boundTo.UserId != local.UserId) covering.Add(local.Id);
+            }
+        }
         await db.SaveChangesAsync(ct);
+        return covering;
     }
 
     /// <summary>seconds between account fetches (staggering); tests shrink it</summary>

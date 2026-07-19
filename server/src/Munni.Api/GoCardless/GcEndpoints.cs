@@ -275,9 +275,16 @@ public static partial class GcEndpoints
                 // the row moves to this newest consent with the freshest
                 // 90-day window — the older requisition ends up account-less
                 // and the idle cleanup frees its provider slot (user had
-                // NINE ING consents, unclear which one carried the account)
-                linked.RequisitionId = requisition.Id;
-                linked.SpaceId = requisition.SpaceId;
+                // NINE ING consents, unclear which one carried the account).
+                // Only within the SAME user: a shared family account linked
+                // by a second person keeps the first one's binding — each
+                // person's consent lives its own life (family-account case)
+                var boundTo = await db.GcRequisitions.FindAsync(linked.RequisitionId);
+                if (boundTo is null || boundTo.UserId == requisition.UserId)
+                {
+                    linked.RequisitionId = requisition.Id;
+                    linked.SpaceId = requisition.SpaceId;
+                }
             }
 
             IReadOnlyList<GcBalance> balances = [];

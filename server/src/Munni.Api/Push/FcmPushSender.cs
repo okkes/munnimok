@@ -117,7 +117,15 @@ public sealed class FcmPushSender : IPushSender
         using var response = await _http.SendAsync(request, ct);
         if (response.StatusCode is System.Net.HttpStatusCode.NotFound or System.Net.HttpStatusCode.Gone)
             return false; // UNREGISTERED — the caller removes the row
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            // relay FCM's own reason (self-diagnosing rule): a bare status
+            // hid "SENDER_ID_MISMATCH"-class config errors for days
+            var body = await response.Content.ReadAsStringAsync(ct);
+            throw new HttpRequestException(
+                $"{(int)response.StatusCode} {response.StatusCode} from FCM: {(body.Length > 300 ? body[..300] : body)}",
+                null, response.StatusCode);
+        }
         return true;
     }
 

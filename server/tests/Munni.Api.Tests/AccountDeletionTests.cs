@@ -1,5 +1,6 @@
 using System.Net;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Munni.Api.Accounts;
 using Munni.Api.Data;
@@ -25,6 +26,36 @@ public class AccountDeletionTests : IClassFixture<AdminApiFactory>
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-User-Sub", sub);
         return client;
+    }
+
+    private sealed class CountingHttpFactory : IHttpClientFactory
+    {
+        public int Created;
+        public HttpClient CreateClient(string name)
+        {
+            Created++;
+            return new HttpClient();
+        }
+    }
+
+    [Fact]
+    public async Task Identity_deletion_can_be_disabled_per_environment()
+    {
+        // staging shares Logto with production — with the knob off, the
+        // Logto Management API must never even be contacted
+        var factory = new CountingHttpFactory();
+        var config = new Microsoft.Extensions.Configuration.ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Logto:DeleteIdentityOnAccountDeletion"] = "false",
+                ["Logto:M2mAppId"] = "m2m-app",
+                ["Logto:M2mAppSecret"] = "m2m-secret",
+                ["Auth:Authority"] = "https://logto.test/oidc",
+            })
+            .Build();
+        await AccountDeletion.DeleteLogtoUserAsync(
+            factory, config, Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance, "sub-shared");
+        Assert.Equal(0, factory.Created);
     }
 
     private async Task<(Guid LeaverId, Guid FriendId)> SeedWorldAsync(string leaverSub, string friendSub, string prefix)
