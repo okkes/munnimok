@@ -18,6 +18,22 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.21.0',
+    date: '2026-07-20',
+    items: [
+      {
+        en: 'You can finally delete a connected bank account. It disconnects the bank, removes the account with its transactions and everything built on them from every space — and if someone else also linked the same account, only your connection goes, theirs stays untouched.',
+        nl: 'Je kunt een gekoppelde bankrekening eindelijk verwijderen. Het verbreekt de bankkoppeling en haalt de rekening met transacties en alles wat erop gebouwd is uit elke ruimte — en als iemand anders dezelfde rekening ook gekoppeld heeft, verdwijnt alleen jouw koppeling; die van hen blijft staan.',
+        tr: 'Bağlı bir banka hesabını sonunda silebilirsin. Banka bağlantısını keser, hesabı işlemleriyle ve üzerine kurulu her şeyle birlikte tüm alanlardan kaldırır — aynı hesabı başka biri de bağladıysa yalnızca senin bağlantın gider, onlarınki olduğu gibi kalır.',
+      },
+      {
+        en: 'A round of polish from your reports: the appearance setting is one clear light / dark / auto switch, "Moved to / from" is now called Counterparty and sits with type and categories in one grouped editor during review, icon search keeps the built-in icons visible when online results arrive, a picked account icon shows immediately (and bank syncs no longer overwrite your renames), and the stuck-button glitch after long-pressing a store login link is gone.',
+        nl: 'Een polijstronde uit jouw meldingen: de weergave-instelling is één duidelijke licht / donker / auto-schakelaar, "Naar / van rekening" heet nu Tegenpartij en staat samen met type en categorieën in één gegroepeerde bewerker tijdens beoordelen, de icoonzoeker houdt de ingebouwde iconen zichtbaar wanneer online resultaten binnenkomen, een gekozen rekeningicoon verschijnt meteen (en banksynchronisaties overschrijven je hernoemingen niet meer), en de vastgelopen-knop-glitch na lang drukken op een winkel-loginlink is verholpen.',
+        tr: 'Bildirimlerinden bir cila turu: görünüm ayarı tek ve net bir açık / koyu / otomatik anahtarı oldu, "Gittiği / geldiği hesap" artık Karşı taraf ve incelemede tür ile kategorilerle birlikte tek gruplu düzenleyicide duruyor, simge arama çevrimiçi sonuçlar gelince yerleşik simgeleri görünür tutuyor, seçilen hesap simgesi anında görünüyor (ve banka senkronizasyonları yeniden adlandırmalarını artık ezmiyor), mağaza giriş bağlantısına uzun basınca oluşan takılı-düğme hatası da giderildi.',
+      },
+    ],
+  },
+  {
     version: '2.20.1',
     date: '2026-07-20',
     items: [
