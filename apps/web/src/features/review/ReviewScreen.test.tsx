@@ -33,6 +33,34 @@ describe('ReviewScreen (demo identity)', () => {
     expect(await screen.findByTestId('review-empty')).toBeTruthy();
   }, 15_000);
 
+  it('the category editor groups counterparty and type above the split rows', async () => {
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+
+    // opening the category editor shows the grouped context rows (user
+    // request: suggested-by → counterparty → type → categories)
+    fireEvent.click(screen.getByTestId('review-category-chip'));
+    await screen.findByTestId('split-editor');
+    const typeRow = screen.getByTestId('split-type-row');
+    // the renamed caption rides on the counter row
+    expect(screen.getByTestId('split-counter-row').textContent).toContain('Counterparty');
+
+    // the counter row precedes the type row, which precedes the cat rows
+    const counterRow = screen.getByTestId('split-counter-row');
+    const catRow = screen.getByTestId('split-cat-0');
+    expect(counterRow.compareDocumentPosition(typeRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(typeRow.compareDocumentPosition(catRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    // the type row opens the stacked options sheet; a pick stages the
+    // draft and updates the row in place
+    fireEvent.click(typeRow);
+    await screen.findByTestId('txtype-options');
+    fireEvent.click(screen.getByTestId('txtype-saving'));
+    await waitFor(() => expect(screen.getByTestId('split-type-row').textContent).toContain('Saving'));
+    // the card row behind the sheet reflects the same staged decision
+    expect(screen.getByTestId('review-type-row').textContent).toContain('Saving');
+  }, 15_000);
+
   it('a picked category is staged and written on confirm', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');

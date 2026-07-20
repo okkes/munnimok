@@ -31,6 +31,117 @@ export const TX_TYPE_VISUAL: Record<TxType, { icon: string; color: string }> = {
   adjustment: { icon: 'tune-variant', color: '#7F8C8D' },
 };
 
+/** the 7 type options as a flat list — shared by the type sheet and the
+ *  review category editor's stacked type picker */
+export function TxTypeOptionList({ current, onPick }: Readonly<{ current: TxType; onPick: (type: TxType) => void }>) {
+  const { t } = useLang();
+  return (
+    <div className="flex flex-col" data-testid="txtype-options">
+      {ALL_TX_TYPES.map((type) => (
+        <button
+          key={type}
+          data-testid={`txtype-${type}`}
+          onClick={() => onPick(type)}
+          className="m-tap flex items-center gap-3 border-none bg-transparent px-1 py-2.5 text-left text-[14px] text-ink"
+        >
+          <span
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
+            style={{ background: `color-mix(in srgb, ${TX_TYPE_VISUAL[type].color} 14%, transparent)` }}
+          >
+            <Icon name={TX_TYPE_VISUAL[type].icon} size={17} color={TX_TYPE_VISUAL[type].color} />
+          </span>
+          <span className="flex-1">{t(`tx.type.${type}`)}</span>
+          {current === type && <Icon name="check" size={18} color="var(--m-accent)" />}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** just the 7 types in a sheet — the review category editor's type row */
+export function TxTypeOptionsSheet({
+  open,
+  onOpenChange,
+  current,
+  onPick,
+}: Readonly<{
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  current: TxType;
+  onPick: (type: TxType) => void;
+}>) {
+  const { t } = useLang();
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange} title={t('tx.type')} size="tall">
+      <TxTypeOptionList
+        current={current}
+        onPick={(type) => {
+          onPick(type);
+          onOpenChange(false);
+        }}
+      />
+    </Sheet>
+  );
+}
+
+/** own-accounts picker for the counterparty — chosen account (or null =
+ *  no link) is reported and the sheet closes */
+export function CounterAccountSheet({
+  open,
+  onOpenChange,
+  tx,
+  currentLinkedId,
+  onChoose,
+}: Readonly<{
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  tx: SpaceTx;
+  currentLinkedId?: string;
+  onChoose: (account: { id: string; type: AccountType } | null) => void;
+}>) {
+  const { t, lang } = useLang();
+  const allAccounts = useSpaceAccounts();
+  const accounts = useMemo(() => allAccounts?.filter((a) => a.id !== tx.accountId), [allAccounts, tx.accountId]);
+
+  const choose = (account: { id: string; type: AccountType } | null) => {
+    onChoose(account);
+    onOpenChange(false);
+  };
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange} title={t('tx.counterAccount')} size="form">
+      <p className="pb-2 text-[12px] text-ink-3">{t('tx.counterAccountHint')}</p>
+      <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="txtype-accounts">
+        <button
+          data-testid="txtype-linked-none"
+          onClick={() => choose(null)}
+          className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3 text-left"
+        >
+          <Icon name="close-circle-outline" size={18} color="var(--m-ink-4)" />
+          <span className="min-w-0 flex-1 text-[14px] text-ink-2">{t('tx.linkedAccountNone')}</span>
+          {!currentLinkedId && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
+        </button>
+        {(accounts ?? []).map((account) => (
+          <button
+            key={account.id}
+            data-testid={`txtype-linked-${account.id}`}
+            onClick={() => choose({ id: account.id, type: account.type })}
+            className="m-tap flex w-full items-center gap-3 border-t border-line-2 px-4 py-3 text-left"
+          >
+            <Icon name={ACCOUNT_ICON[account.type] ?? 'bank-outline'} size={18} color="var(--m-ink-2)" />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[14px] text-ink">{account.name}</span>
+              <span className="block text-[11px] text-ink-4">{t(`tx.type.${typeForLinkedAccount(account.type)}`)}</span>
+            </span>
+            <span className="m-num text-[12px] text-ink-3">{fmtCents(account.balanceCents, account.currency, lang)}</span>
+            {currentLinkedId === account.id && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
+          </button>
+        ))}
+      </div>
+    </Sheet>
+  );
+}
+
 /**
  * Counter-account + type editor, account-first (user feedback): the
  * account this money moved to or from suggests the type, so it leads —
@@ -58,7 +169,7 @@ export function TxTypeSheet({
   onPickType?: (txType: TxType) => void;
   onPickLinked?: (account: { id: string; type: AccountType } | null) => void;
 }>) {
-  const { t, lang } = useLang();
+  const { t } = useLang();
   const cats = useCategories();
   const transform = useTxTransform();
 
@@ -82,16 +193,10 @@ export function TxTypeSheet({
     onOpenChange(false);
   };
 
-  const chooseLinked = (accountId: string | null) => {
-    const account = accountId === null ? null : (accounts?.find((a) => a.id === accountId) ?? null);
-    if (accountId !== null && !account) return;
-    if (controlled) {
-      onPickLinked?.(account && { id: account.id, type: account.type });
-    } else if (account) {
-      save(typeForLinkedAccount(account.type), account.id);
-    } else {
-      save(tx.txType, null);
-    }
+  const chooseLinked = (account: { id: string; type: AccountType } | null) => {
+    if (controlled) onPickLinked?.(account);
+    else if (account) save(typeForLinkedAccount(account.type), account.id);
+    else save(tx.txType, null);
     onOpenChange(false);
   };
 
@@ -130,65 +235,18 @@ export function TxTypeSheet({
             {t('tx.typeDefaultFromAccount')}
           </p>
         )}
-        <div className="flex flex-col" data-testid="txtype-options">
-          {ALL_TX_TYPES.map((type) => (
-            <button
-              key={type}
-              data-testid={`txtype-${type}`}
-              onClick={() => chooseType(type)}
-              className="m-tap flex items-center gap-3 border-none bg-transparent px-1 py-2.5 text-left text-[14px] text-ink"
-            >
-              <span
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
-                style={{ background: `color-mix(in srgb, ${TX_TYPE_VISUAL[type].color} 14%, transparent)` }}
-              >
-                <Icon name={TX_TYPE_VISUAL[type].icon} size={17} color={TX_TYPE_VISUAL[type].color} />
-              </span>
-              <span className="flex-1">{t(`tx.type.${type}`)}</span>
-              {current.txType === type && <Icon name="check" size={18} color="var(--m-accent)" />}
-            </button>
-          ))}
-        </div>
+        <TxTypeOptionList current={current.txType} onPick={chooseType} />
       </Sheet>
 
       {/* stacked: the account picker (user redesign — editing the
           counterparty opens its own sheet) */}
-      <Sheet open={accountsOpen} onOpenChange={setAccountsOpen} title={t('tx.counterAccount')} size="form">
-        <p className="pb-2 text-[12px] text-ink-3">{t('tx.counterAccountHint')}</p>
-        <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="txtype-accounts">
-          <button
-            data-testid="txtype-linked-none"
-            onClick={() => {
-              chooseLinked(null);
-              setAccountsOpen(false);
-            }}
-            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3 text-left"
-          >
-            <Icon name="close-circle-outline" size={18} color="var(--m-ink-4)" />
-            <span className="min-w-0 flex-1 text-[14px] text-ink-2">{t('tx.linkedAccountNone')}</span>
-            {!current.linkedAccountId && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
-          </button>
-          {(accounts ?? []).map((account) => (
-            <button
-              key={account.id}
-              data-testid={`txtype-linked-${account.id}`}
-              onClick={() => {
-                chooseLinked(account.id);
-                setAccountsOpen(false);
-              }}
-              className="m-tap flex w-full items-center gap-3 border-t border-line-2 px-4 py-3 text-left"
-            >
-              <Icon name={ACCOUNT_ICON[account.type] ?? 'bank-outline'} size={18} color="var(--m-ink-2)" />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[14px] text-ink">{account.name}</span>
-                <span className="block text-[11px] text-ink-4">{t(`tx.type.${typeForLinkedAccount(account.type)}`)}</span>
-              </span>
-              <span className="m-num text-[12px] text-ink-3">{fmtCents(account.balanceCents, account.currency, lang)}</span>
-              {current.linkedAccountId === account.id && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
-            </button>
-          ))}
-        </div>
-      </Sheet>
+      <CounterAccountSheet
+        open={accountsOpen}
+        onOpenChange={setAccountsOpen}
+        tx={tx}
+        currentLinkedId={current.linkedAccountId}
+        onChoose={chooseLinked}
+      />
     </>
   );
 }

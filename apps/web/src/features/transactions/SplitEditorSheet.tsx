@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useSpaceTransactions, useTxTransform } from '@/application/transactions';
 import type { SpaceTx } from '@/application/transactions';
 import { useLang } from '@/i18n';
@@ -58,6 +59,7 @@ export function SplitEditorSheet({
   seedSingle = false,
   onApplySingle,
   reason,
+  header,
 }: Readonly<{
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -75,6 +77,9 @@ export function SplitEditorSheet({
   onApplySingle?: (catId: string) => void;
   /** why the current category was suggested (review card) — shown inline */
   reason?: string | null;
+  /** grouped context rows (review: counterparty + type) — rendered under
+   *  the reason, above the split rows, so related decisions sit together */
+  header?: ReactNode;
 }>) {
   const { t, lang } = useLang();
   const transform = useTxTransform();
@@ -207,6 +212,7 @@ export function SplitEditorSheet({
               {reason}
             </div>
           )}
+          {header}
           {/* exact euros for one charge, percentages when the shape repeats */}
           <div className="flex gap-1.5">
             <Chip className="flex-1" testId="split-mode-amount" selected={mode === 'amount'} onClick={() => switchMode('amount')}>
