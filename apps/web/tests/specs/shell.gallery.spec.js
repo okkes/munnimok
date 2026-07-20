@@ -107,7 +107,7 @@ for (const V of VARIANTS) {
     await base(page, V, { demo: true });
     await gotoGlobalSettings(page);
     await expect(page.locator('[data-testid="settings-theme-toggle"]')).toBeVisible();
-    await page.click('[data-testid="settings-theme-toggle"]');
+    await page.click('[data-testid="settings-theme-dark"]');
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     await shot(page, k('05-shell-dark'));
     await teardown(page, ctx, k('05-shell-dark'));

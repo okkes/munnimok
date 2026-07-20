@@ -33,6 +33,54 @@ const LANGS: { code: Lang; labelKey: 'lang.en' | 'lang.nl' | 'lang.tr'; badge: s
   { code: 'tr', labelKey: 'lang.tr', badge: 'TR' },
 ];
 
+/** three-state appearance control: light / dark / follow device */
+function ThemeModeSwitch() {
+  const { t } = useLang();
+  const { mode, setMode } = useTheme();
+  const segCls = (active: boolean) =>
+    `m-tap flex items-center justify-center px-2.5 py-1 ${
+      active ? 'bg-accent-soft text-accent-deep' : 'text-ink-3'
+    }`;
+  return (
+    <span
+      role="group"
+      aria-label={t('settings.appearance')}
+      className="flex shrink-0 overflow-hidden rounded-lg border border-line-2"
+    >
+      <button
+        type="button"
+        data-testid="settings-theme-light"
+        aria-label={t('settings.themeLight')}
+        aria-pressed={mode === 'light'}
+        onClick={() => setMode('light')}
+        className={segCls(mode === 'light')}
+      >
+        <Icon name="weather-sunny" size={15} />
+      </button>
+      <button
+        type="button"
+        data-testid="settings-theme-dark"
+        aria-label={t('settings.themeDark')}
+        aria-pressed={mode === 'dark'}
+        onClick={() => setMode('dark')}
+        className={`${segCls(mode === 'dark')} border-x border-line-2`}
+      >
+        <Icon name="weather-night" size={15} />
+      </button>
+      <button
+        type="button"
+        data-testid="settings-theme-auto"
+        aria-label={t('settings.followDevice')}
+        aria-pressed={mode === 'system'}
+        onClick={() => setMode('system')}
+        className={`${segCls(mode === 'system')} font-mono text-[11px] font-semibold`}
+      >
+        AUTO
+      </button>
+    </span>
+  );
+}
+
 /**
  * Everything that is NOT scoped to a space lives here, behind a single
  * "Global settings" door on the Settings tab (user feedback: mixing
@@ -78,7 +126,7 @@ function EncryptedStoreRow() {
 
 export function GlobalSettingsScreen() {
   const { t, lang, setLang, langOverridden, followDeviceLang } = useLang();
-  const { theme, mode: themeMode, setMode: setThemeMode, toggle } = useTheme();
+  const { theme, mode: themeMode } = useTheme();
   const { store } = useData();
   const tipsOff = useTipsDisabled();
   const [langSheetOpen, setLangSheetOpen] = useState(false);
@@ -270,35 +318,8 @@ export function GlobalSettingsScreen() {
             icon={theme === 'dark' ? 'weather-night' : 'weather-sunny'}
             title={t('settings.appearance')}
             sub={themeMode === 'system' ? t('settings.followDevice') : undefined}
-            trailing={
-              // tap the row to pin light/dark; the chip returns to device-
-              // tracking. A span, not a button: the Row itself is a button
-              // and nested buttons are invalid HTML (React warns, browsers
-              // may split the DOM) — role+tabIndex keep it keyboardable.
-              <span // NOSONAR — a real <button> here would nest inside the Row's button (invalid HTML); role+tabIndex+keys make the span equivalent
-                data-testid="settings-theme-auto"
-                role="button"
-                tabIndex={0}
-                aria-label={t('settings.followDevice')}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setThemeMode('system');
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setThemeMode('system');
-                  }
-                }}
-                className={`m-tap inline-block rounded-md px-1.5 py-0.5 font-mono text-[11px] font-semibold ${
-                  themeMode === 'system' ? 'bg-accent-soft text-accent-deep' : 'bg-bg-2 text-ink-3'
-                }`}
-              >
-                AUTO
-              </span>
-            }
-            onClick={toggle}
+            chevron={false}
+            trailing={<ThemeModeSwitch />}
           />
           <Row
             testId="settings-tips-toggle"

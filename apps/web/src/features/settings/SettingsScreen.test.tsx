@@ -50,13 +50,20 @@ describe('GlobalSettingsScreen (demo identity)', () => {
     expect(screen.queryByTestId('settings-admin-row')).toBeNull();
   });
 
-  it('theme toggle flips the document theme', async () => {
+  it('theme segments pin light/dark and AUTO returns to device tracking', async () => {
     renderApp('/settings/global');
     await screen.findByTestId('screen-settings-global');
     expect(document.documentElement.dataset.theme).toBe('light');
-    fireEvent.click(screen.getByTestId('settings-theme-toggle'));
+    fireEvent.click(screen.getByTestId('settings-theme-dark'));
     expect(document.documentElement.dataset.theme).toBe('dark');
     expect(localStorage.getItem('munni_theme')).toBe('dark');
+    fireEvent.click(screen.getByTestId('settings-theme-light'));
+    expect(document.documentElement.dataset.theme).toBe('light');
+    expect(localStorage.getItem('munni_theme')).toBe('light');
+    fireEvent.click(screen.getByTestId('settings-theme-auto'));
+    // system mode = stored key removed; jsdom's matchMedia default resolves light
+    expect(localStorage.getItem('munni_theme')).toBeNull();
+    expect(screen.getByTestId('settings-theme-auto').getAttribute('aria-pressed')).toBe('true');
   });
 
   it('language sheet switches the UI language and persists it', async () => {
