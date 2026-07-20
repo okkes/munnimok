@@ -47,7 +47,9 @@ describe('Receipts S1 (demo identity)', () => {
 
   it('the connections door lists the six stores; demo cannot connect', async () => {
     await openFirstTx();
-    fireEvent.click(screen.getByTestId('receipt-connections'));
+    // R8: the attach sheet is the one door — stores link at its bottom
+    fireEvent.click(screen.getByTestId('receipt-empty'));
+    fireEvent.click(await screen.findByTestId('receipt-connections'));
     await screen.findByTestId('screen-shopping');
     expect(screen.getByTestId('shopping-privacy')).toBeTruthy();
     for (const store of ['ah', 'jumbo', 'bol', 'coolblue', 'mediamarkt', 'amazon']) {
@@ -229,8 +231,7 @@ describe('Receipts S1 (demo identity)', () => {
   it('settings reaches receipts; the stores door reaches connections', async () => {
     renderApp('/settings');
     await screen.findByTestId('screen-settings');
-    // receipts are the feature's home (receipts v2); stores live inside it
-    fireEvent.click(screen.getByTestId('settings-global-row'));
+    // v3: receipts live in the SPACE section; stores stay a global door
     fireEvent.click(await screen.findByTestId('settings-receipts-row'));
     await screen.findByTestId('screen-receipts');
     fireEvent.click(screen.getByTestId('receipts-stores'));

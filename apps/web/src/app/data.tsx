@@ -209,6 +209,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
           const { hydrateProfileMeta } = await import('@/application/profileHydrate');
           await hydrateProfileMeta(store);
         })().catch(() => undefined);
+        // receipts v2 → v3: fan-out rows become global rows + snapshot
+        // links, once per identity (fire-and-forget, retried while offline)
+        void (async () => {
+          const { migrateLegacyReceipts } = await import('@/application/receiptsMigrate');
+          await migrateLegacyReceipts(store, repo);
+        })().catch(() => undefined);
         engine = buildSyncEngine(identity, store, repo);
         // pushes failing (offline / server away) — arm the background
         // flush so the outbox drains even if the app is killed meanwhile

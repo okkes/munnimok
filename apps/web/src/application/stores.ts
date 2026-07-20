@@ -113,6 +113,8 @@ export interface StoreOps {
   /** manual attach from the picker: snapshot-link into the active space */
   linkReceipt: (receipt: ReceiptRow, txId: string) => Promise<void>;
   unlinkReceipt: (linkId: string) => Promise<void>;
+  /** delete an unmatched receipt from the owner's global store feed */
+  removeGlobalReceipt: (receiptId: string) => Promise<void>;
 }
 
 const STORE_LABEL: Record<ConnectableStore, string> = { ah: 'Albert Heijn', jumbo: 'Jumbo' };
@@ -302,6 +304,10 @@ export function useStoreOps(): StoreOps {
     },
     unlinkReceipt: async (linkId) => {
       await repo.remove('receiptLink', spaceId, linkId);
+    },
+    removeGlobalReceipt: async (receiptId) => {
+      const feedId = myStoreFeedId();
+      if (feedId) await repo.remove('receipt', feedId, receiptId);
     },
   };
 }

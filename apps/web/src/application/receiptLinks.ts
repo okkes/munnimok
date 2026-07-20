@@ -107,15 +107,53 @@ export function useSpaceReceipts(): SpaceReceiptView[] | undefined {
   return useQuery(store, async () => spaceReceipts(store, spaceId), [spaceId]);
 }
 
+// ── normalized entries (what the screens render and act on) ──────────────
+
+export type ReceiptKind = 'link' | 'legacy' | 'global';
+
+/** one receipt as a screen sees it, whatever storage generation it is */
+export interface ReceiptEntry {
+  kind: ReceiptKind;
+  /** ReceiptRow-shaped payload — rendering + linking always work on this */
+  data: ReceiptRow;
+  /** the receiptLink row id (kind 'link' — unlink target) */
+  linkId?: string;
+  txId?: string;
+}
+
+const linkAsReceipt = (link: ReceiptLinkRow): ReceiptRow => ({
+  id: link.receiptId ?? link.id,
+  spaceId: link.spaceId,
+  txId: link.txId,
+  source: link.source,
+  date: link.date,
+  totalCents: link.totalCents,
+  merchant: link.merchant,
+  items: link.items,
+  image: link.image,
+  instanceId: link.instanceId,
+  payment: link.payment,
+  fieldVersions: link.fieldVersions,
+  deleted: link.deleted,
+});
+
+export const viewAsEntry = (view: SpaceReceiptView): ReceiptEntry =>
+  view.legacy
+    ? { kind: 'legacy', data: linkAsReceipt(view.link), txId: view.link.txId }
+    : { kind: 'link', data: linkAsReceipt(view.link), linkId: view.link.id, txId: view.link.txId };
+
+export const globalAsEntry = (row: ReceiptRow): ReceiptEntry => ({ kind: 'global', data: row });
+
 /** the receipt attached to one transaction (v3 link or legacy row) */
-export function useTxReceiptView(txId: string | undefined): SpaceReceiptView | null | undefined {
+export function useTxReceiptEntry(txId: string | undefined): ReceiptEntry | null | undefined {
   const { store, spaceId } = useData();
   return useQuery(
     store,
     async () => {
       if (!txId) return null;
       const all = await spaceReceipts(store, spaceId);
-      return all.find((v) => v.link.txId === txId) ?? null;
+      const view = all.find((v) => v.link.txId === txId);
+      return view ? viewAsEntry(view) : null;
     },
     [spaceId, txId],
   );

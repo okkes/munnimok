@@ -3,9 +3,9 @@ import { useNavigate } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { useReceiptOps } from '@/application/receipts';
 import { storesAvailable, useStoreOps } from '@/application/stores';
+import type { ReceiptEntry } from '@/application/receiptLinks';
 import { useSpaceTransactions } from '@/application/transactions';
 import { candidateLadder, parseReceiptText } from '@/domain/storeReceipts';
-import type { ReceiptRow } from '@/db/types';
 import { apiFetch } from '@/lib/api';
 import { fmtCents } from '@/lib/money';
 import { Button } from '@/ui/Button';
@@ -24,16 +24,17 @@ const STORE_NAMES: Record<string, string> = {
 
 /**
  * One receipt in full — shared by the tx detail, the receipts browser
- * and the unmatched list: photo/items, the transaction it proves (or a
- * candidate picker to link it), OCR read-items and a two-tap delete.
+ * and the unmatched list. Works on a normalized entry: v3 snapshot
+ * links, legacy rows and unmatched global receipts each route their
+ * delete/link actions to the right store.
  */
 export function ReceiptViewSheet({
-  receipt,
+  entry,
   currency,
   onClose,
   contextTxId,
 }: Readonly<{
-  receipt: ReceiptRow | null;
+  entry: ReceiptEntry | null;
   currency: string;
   onClose: () => void;
   /** the transaction the sheet was opened FROM — its own row is noise there (user bug) */
@@ -49,6 +50,8 @@ export function ReceiptViewSheet({
   const [showMore, setShowMore] = useState(false);
   const [ocrState, setOcrState] = useState<'idle' | 'busy' | 'failed'>('idle');
 
+  const receipt = entry?.data ?? null;
+
   useEffect(() => {
     setConfirmDelete(false);
     setPicking(false);
@@ -56,7 +59,8 @@ export function ReceiptViewSheet({
     setOcrState('idle');
   }, [receipt?.id]);
 
-  const linkedTx = receipt?.txId ? txs?.find((tx) => tx.id === receipt.txId) : undefined;
+  const linkedTxId = entry?.txId;
+  const linkedTx = linkedTxId ? txs?.find((tx) => tx.id === linkedTxId) : undefined;
   const money = (cents: number) => fmtCents(cents, currency, lang);
   const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short', year: 'numeric' });
 
@@ -88,19 +92,26 @@ export function ReceiptViewSheet({
     }
   };
 
+  // a snapshot link "deletes" by unlinking — the wording must say so
+  const deleteLabel = entry?.kind === 'link' ? t('receipt.unlink') : t('action.delete');
+
   const removeReceipt = async () => {
-    if (!receipt) return;
+    if (!entry) return;
     if (!confirmDelete) {
       setConfirmDelete(true);
       return;
     }
-    await receiptOps.remove(receipt.id);
+    // each generation deletes in its own store: unlink the snapshot,
+    // remove the legacy row, or drop the unmatched global receipt
+    if (entry.kind === 'link' && entry.linkId) await storeOps.unlinkReceipt(entry.linkId);
+    else if (entry.kind === 'global') await storeOps.removeGlobalReceipt(entry.data.id);
+    else await receiptOps.remove(entry.data.id);
     onClose();
   };
 
   return (
-    <Sheet open={receipt !== null} onOpenChange={(open) => !open && onClose()} title={t('receipt.title')} size="tall">
-      {receipt && (
+    <Sheet open={entry !== null} onOpenChange={(open) => !open && onClose()} title={t('receipt.title')} size="tall">
+      {entry && receipt && (
         <div className="flex flex-col gap-3">
           <div className="flex items-baseline justify-between px-1 text-[12px] text-ink-3">
             <span>
@@ -125,6 +136,12 @@ export function ReceiptViewSheet({
             </div>
           )}
 
+          {receipt.payment?.method && (
+            <p className="px-1 text-[11px] text-ink-4" data-testid="receipt-payment">
+              {receipt.payment.method}
+            </p>
+          )}
+
           {/* the transaction this receipt proves — hidden when the sheet
               was opened from that very transaction (self-reference) */}
           {linkedTx && linkedTx.id !== contextTxId && (
@@ -132,7 +149,7 @@ export function ReceiptViewSheet({
               <TxRow tx={linkedTx} showDate onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: linkedTx.id } })} />
             </div>
           )}
-          {!linkedTx && (
+          {!linkedTxId && (
             <>
               <Button variant="outline" className="w-full" data-testid="receipt-link-tx" onClick={() => setPicking((v) => !v)}>
                 {t('receipts.pickTx')}
@@ -165,7 +182,7 @@ export function ReceiptViewSheet({
             </>
           )}
 
-          {receipt.source === 'photo' && !receipt.items?.length && storesAvailable() && (
+          {entry.kind === 'legacy' && receipt.source === 'photo' && !receipt.items?.length && storesAvailable() && (
             <>
               <Button variant="outline" className="w-full" data-testid="receipt-read-items" disabled={ocrState === 'busy'} onClick={() => void readItems()}>
                 {t('receipt.readItems')}
@@ -179,7 +196,7 @@ export function ReceiptViewSheet({
           )}
 
           <Button variant="danger" className="w-full" data-testid="receipt-delete" onClick={() => void removeReceipt()}>
-            {confirmDelete ? t('action.confirm') : t('action.delete')}
+            {confirmDelete ? t('action.confirm') : deleteLabel}
           </Button>
         </div>
       )}
