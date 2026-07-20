@@ -8,9 +8,10 @@ import { useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
 import type { AccountSource } from '@/db/types';
 import { BrandIconPicker } from '@/features/recurring/BrandIconPicker';
+import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
-import { attachAccount, detachAccount, fetchSpaceLinks } from './feedGateway';
+import { attachAccount, deleteFeedAccount, detachAccount, fetchSpaceLinks } from './feedGateway';
 
 /** where an account's data comes from, for the settings section */
 export const SOURCE_KEYS: Record<AccountSource, TranslationKey> = {
@@ -38,11 +39,14 @@ export function AttachSheet({
   canEdit?: boolean;
 }>) {
   const { t } = useLang();
-  const { store, repo } = useData();
+  const { store, repo, engine } = useData();
   const [busy, setBusy] = useState<string | null>(null);
   const [historyFrom, setHistoryFrom] = useState('');
   const [name, setName] = useState('');
   const [logoOpen, setLogoOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteFailed, setDeleteFailed] = useState(false);
 
   const spaces = useQuery(store, async () => (await store.allRows('space')).filter((s) => s.deleted === 0), []);
   // LIVE link rows, not the entry snapshot: the checkboxes must flip the
@@ -80,6 +84,29 @@ export function AttachSheet({
   const saveName = () => {
     const trimmed = name.trim();
     if (trimmed && trimmed !== account.name) void repo.upsert('account', account.spaceId, account.id, { name: trimmed });
+  };
+
+  const deleteAccount = async () => {
+    if (deleteBusy) return;
+    setDeleteBusy(true);
+    setDeleteFailed(false);
+    try {
+      // server first: consent revocation + cascade (or partial removal
+      // when someone else still covers the account — server ruling)
+      await deleteFeedAccount(feedSpaceId);
+      // my synced mirrors tombstone through the normal outbox path; the
+      // feed's local rows are purged directly — it is no longer ours
+      for (const link of liveLinks ?? []) {
+        await repo.remove('accountLink', link.spaceId, link.id);
+      }
+      await engine?.purgeSpace(feedSpaceId);
+      setDeleteOpen(false);
+      onOpenChange(false);
+    } catch {
+      setDeleteFailed(true);
+    } finally {
+      setDeleteBusy(false);
+    }
   };
 
   const toggle = async (spaceId: string) => {
@@ -186,6 +213,39 @@ export function AttachSheet({
           );
         })}
       </div>
+      {/* danger zone: deletion exists for connected accounts too (user
+          request) — syncing identities only, the server owns the cascade */}
+      {canEdit && engine && (
+        <Button
+          variant="danger"
+          className="mt-4 w-full"
+          data-testid="attach-delete"
+          onClick={() => {
+            setDeleteFailed(false);
+            setDeleteOpen(true);
+          }}
+        >
+          {t('acct.deleteAccount')}
+        </Button>
+      )}
+      <Sheet open={deleteOpen} onOpenChange={setDeleteOpen} title={t('acct.deleteConfirmTitle')} size="form">
+        <div className="flex flex-col gap-4 pt-1">
+          <p className="text-[14px] leading-relaxed text-ink-2" data-testid="attach-delete-body">
+            {t('acct.deleteConfirmBody')}
+          </p>
+          {deleteFailed && (
+            <p className="text-[12px] text-negative" data-testid="attach-delete-failed">
+              {t('acct.deleteFailed')}
+            </p>
+          )}
+          <Button variant="danger" data-testid="attach-delete-confirm" disabled={deleteBusy} onClick={() => void deleteAccount()}>
+            {t('action.confirm')}
+          </Button>
+          <Button variant="outline" data-testid="attach-delete-cancel" onClick={() => setDeleteOpen(false)}>
+            {t('action.cancel')}
+          </Button>
+        </div>
+      </Sheet>
       <BrandIconPicker
         open={logoOpen}
         onOpenChange={setLogoOpen}

@@ -40,6 +40,9 @@ public static class AccountEndpoints
         group.MapGet("/spaces/{spaceId}/accounts", ListLinks);
         group.MapPost("/spaces/{spaceId}/accounts", Attach).WithValidation<AttachAccountRequest>();
         group.MapDelete("/spaces/{spaceId}/accounts/{linkId:guid}", Detach);
+        // delete one financial account: my consent always, the feed itself
+        // only when nobody else covers it (FeedDeletion has the ruling)
+        group.MapDelete("/me/feeds/{feedSpaceId}", FeedDeletion.DeleteFeedAccount);
     }
 
     private static async Task<IResult> RegisterFeed(RegisterFeedRequest request, AppDbContext db, HttpContext http)

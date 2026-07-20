@@ -1242,6 +1242,11 @@ export const en = {
   'tx.deleteManualConfirm': 'Tap again to delete permanently',
   'txform.manualOnly': 'Manual transactions need a manually maintained account — automatically synced bank accounts only take data from the bank.',
   'acct.changeIcon': 'Change icon',
+  'acct.deleteAccount': 'Delete account',
+  'acct.deleteConfirmTitle': 'Delete this account?',
+  'acct.deleteConfirmBody':
+    'This disconnects the bank and removes the account, its transactions and everything based on them from all spaces. If someone else also linked this account, only your connection is removed. This cannot be undone.',
+  'acct.deleteFailed': 'Could not delete — check your connection and try again.',
   'acct.source': 'Data source',
   'acct.sourceManual': 'Manual',
   'acct.sourceImport': 'File import',

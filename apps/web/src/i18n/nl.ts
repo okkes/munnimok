@@ -1244,6 +1244,11 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'tx.deleteManualConfirm': 'Tik nogmaals om definitief te verwijderen',
   'txform.manualOnly': 'Handmatige transacties hebben een handmatig bijgehouden rekening nodig — automatisch gesynchroniseerde rekeningen krijgen hun gegevens alleen van de bank.',
   'acct.changeIcon': 'Icoon wijzigen',
+  'acct.deleteAccount': 'Rekening verwijderen',
+  'acct.deleteConfirmTitle': 'Deze rekening verwijderen?',
+  'acct.deleteConfirmBody':
+    'Dit verbreekt de bankkoppeling en verwijdert de rekening, de transacties en alles wat daarop gebaseerd is uit alle ruimtes. Als iemand anders deze rekening ook heeft gekoppeld, wordt alleen jouw koppeling verwijderd. Dit kan niet ongedaan worden gemaakt.',
+  'acct.deleteFailed': 'Verwijderen is niet gelukt — controleer je verbinding en probeer het opnieuw.',
   'acct.source': 'Gegevensbron',
   'acct.sourceManual': 'Handmatig',
   'acct.sourceImport': 'Bestandsimport',

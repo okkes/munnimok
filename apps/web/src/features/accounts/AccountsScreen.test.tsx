@@ -143,6 +143,47 @@ describe('AccountsScreen (demo identity)', () => {
     await waitFor(() => expect(row.querySelector('.mdi-checkbox-marked')).toBeTruthy(), { timeout: 5000 });
   }, 15_000);
 
+  it('deleting a connected account confirms, calls the server and purges it locally', async () => {
+    indexedDB.deleteDatabase(USER_TEST_DB);
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const db = new MunniDB(USER_TEST_DB);
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
+    await repo.upsert('account', 'feed-1', 'feedacct-1', {
+      name: 'ING Betaal',
+      type: 'checking',
+      source: 'gocardless',
+      currency: 'EUR',
+      balanceCents: 5000,
+      iban: 'NL69INGB0123456789',
+    });
+    db.close();
+
+    let deleted = false;
+    renderAppAsUser('/accounts', {
+      spaces: [{ id: 's-user', name: 'Personal' }],
+      api: {
+        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false } }),
+        'GET /me/spaces': () => ['s-user', 'feed-1'],
+        'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
+        'DELETE /me/feeds/feed-1': () => {
+          deleted = true;
+          return { erased: true };
+        },
+      },
+    });
+
+    fireEvent.click(await screen.findByTestId('account-row-feedacct-1'));
+    fireEvent.click(await screen.findByTestId('attach-delete'));
+    // the X-style direct delete never fires — a confirm sheet asks first
+    fireEvent.click(await screen.findByTestId('attach-delete-confirm'));
+    await waitFor(() => expect(deleted).toBe(true), { timeout: 5000 });
+    // the feed's local rows are purged: the account leaves the overview
+    await waitFor(() => expect(screen.queryByTestId('account-row-feedacct-1')).toBeNull(), { timeout: 5000 });
+  }, 15_000);
+
   it('adds a manual cash account through the type grid', async () => {
     renderApp('/accounts');
     await screen.findByTestId('account-row-demo_main');

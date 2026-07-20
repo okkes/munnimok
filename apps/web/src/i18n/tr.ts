@@ -1244,6 +1244,11 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'tx.deleteManualConfirm': 'Kalıcı olarak silmek için tekrar dokun',
   'txform.manualOnly': 'Manuel işlemler için elle tutulan bir hesap gerekir — otomatik eşitlenen banka hesapları verilerini yalnızca bankadan alır.',
   'acct.changeIcon': 'Simgeyi değiştir',
+  'acct.deleteAccount': 'Hesabı sil',
+  'acct.deleteConfirmTitle': 'Bu hesap silinsin mi?',
+  'acct.deleteConfirmBody':
+    'Bu, banka bağlantısını keser ve hesabı, işlemlerini ve bunlara dayalı her şeyi tüm alanlardan siler. Bu hesabı başka biri de bağladıysa yalnızca senin bağlantın kaldırılır. Bu işlem geri alınamaz.',
+  'acct.deleteFailed': 'Silinemedi — bağlantını kontrol edip tekrar dene.',
   'acct.source': 'Veri kaynağı',
   'acct.sourceManual': 'Manuel',
   'acct.sourceImport': 'Dosya içe aktarma',
