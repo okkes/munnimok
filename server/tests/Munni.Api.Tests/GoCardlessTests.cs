@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Munni.Api.Data;
 using Munni.Api.GoCardless;
+using Munni.Api.Sync;
 
 namespace Munni.Api.Tests;
 
@@ -157,5 +158,40 @@ public class GcIngestTests
         Assert.Equal(3, await db.EntityRows.CountAsync(r => r.SpaceId == FeedId && r.Entity == "transaction"));
         Assert.Equal(3, await db.EntityRows.CountAsync(r => r.SpaceId == "s1" && r.Entity == "txMeta"));
         Assert.Equal(1, await db.SpaceAccountLinks.CountAsync());
+    }
+
+    [Fact]
+    public async Task RefetchDoesNotClobberAUserRename()
+    {
+        await using var db = await SeedDbAsync();
+        var space = await db.Spaces.FindAsync("s1");
+        var ingest = new GcIngest(db);
+        var linked = Linked("s1");
+        await ingest.IngestAccountAsync(space!, linked, Details, Balances, Transactions);
+        await db.SaveChangesAsync();
+
+        // the user renames the account on their phone; the next fetch runs
+        // LATER, so before the fix its fresh server HLC won the name field
+        var accountId = ImportIds.AccountId("NL69INGB0123456789");
+        var feedSpace = await db.Spaces.FindAsync(FeedId);
+        var rename = new SyncOpDto(
+            "rename-op-1", FeedId, "account", accountId,
+            new Dictionary<string, JsonElement> { ["name"] = JsonSerializer.SerializeToElement("My spending") },
+            ServerHlc.Now().Replace(ServerHlc.DeviceId, "phone"));
+        await new SyncWriter(db).ApplyAsync(feedSpace!, null, [rename]);
+        await db.SaveChangesAsync();
+
+        // drop the recorded account op so the refresh op is not deduped by
+        // its minute-grained op id (real fetches run in a later minute)
+        db.SyncOps.RemoveRange(db.SyncOps.Where(o => o.SpaceId == FeedId && o.Entity == "account"));
+        await db.SaveChangesAsync();
+
+        await ingest.IngestAccountAsync(space!, linked, Details, Balances, Transactions);
+        await db.SaveChangesAsync();
+
+        var row = await db.EntityRows.FindAsync(FeedId, "account", accountId);
+        var data = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(row!.DataJson)!;
+        Assert.Equal("My spending", data["name"].GetString()); // rename survives the refresh
+        Assert.Equal(123456, data["balanceCents"].GetInt32()); // raw facts still refreshed
     }
 }

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CAMT_FIXTURE } from '@/test/camt-fixture';
 import { USER_TEST_DB, renderApp, renderAppAsUser } from '@/test/harness';
 
@@ -59,6 +59,47 @@ describe('AccountsScreen (demo identity)', () => {
     expect(screen.getByTestId('attach-space-demo_space')).toBeTruthy();
     expect(screen.queryByTestId('acctedit-name')).toBeNull(); // not the editor
   });
+
+  it('an icon pick shows up while the attach sheet stays open', async () => {
+    // regression: the sheet rendered the entry SNAPSHOT, so a freshly
+    // picked icon looked like it did nothing until the screen was reopened
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) =>
+      String(url).includes('brands/index.json')
+        ? new Response(JSON.stringify([{ slug: 'netflix', title: 'Netflix' }]), { status: 200 })
+        : new Response('', { status: 404 }),
+    );
+    const first = renderApp('/accounts');
+    await screen.findByTestId('account-row-demo_main');
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
+    await repo.upsert('account', 'feed-1', 'feedacct-1', {
+      name: 'ING Betaal',
+      type: 'checking',
+      source: 'gocardless',
+      currency: 'EUR',
+      balanceCents: 5000,
+      iban: 'NL69INGB0123456789',
+    });
+    await repo.upsert('accountLink', 'demo_space', 'link-1', {
+      feedSpaceId: 'feed-1',
+      accountId: 'feedacct-1',
+    });
+    db.close();
+    first.unmount();
+
+    renderApp('/accounts');
+    fireEvent.click(await screen.findByTestId('account-row-feedacct-1'));
+    fireEvent.click(await screen.findByTestId('attach-change-icon'));
+    fireEvent.change(await screen.findByTestId('brandpicker-search'), { target: { value: 'netflix' } });
+    fireEvent.click(await screen.findByTestId('brandpicker-netflix'));
+    // no close/reopen: the live account row swaps the button's icon in place
+    await waitFor(() => expect(screen.getByTestId('attach-change-icon').querySelector('img')).toBeTruthy());
+    fetchMock.mockRestore();
+  }, 15_000);
 
   it('attach checkboxes update live while the sheet stays open', async () => {
     // user identity: the toggle writes the accountLink mirror to Dexie —

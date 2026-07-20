@@ -55,6 +55,11 @@ export function AttachSheet({
       accountId ? (await store.allRows('accountLink')).filter((l) => l.deleted === 0 && l.accountId === accountId) : [],
     [accountId],
   );
+  // LIVE account row for the same reason: an icon pick must show up while
+  // the sheet stays open (user bug: it looked like nothing happened)
+  const liveAccount = useQuery(store, async () => (accountId ? await store.get('account', accountId) : undefined), [
+    accountId,
+  ]);
 
   // the date input is an OVERRIDE; empty means each space's own default
   useEffect(() => {
@@ -65,7 +70,8 @@ export function AttachSheet({
   }, [open, entry?.account.name]);
 
   if (!entry?.feedSpaceId) return null;
-  const { account, feedSpaceId } = entry;
+  const { feedSpaceId } = entry;
+  const account = liveAccount ?? entry.account;
   const viaBySpace = new Map((liveLinks ?? []).map((l) => [l.spaceId, l]));
 
   // display name + icon live on the feed's account row — the owner's

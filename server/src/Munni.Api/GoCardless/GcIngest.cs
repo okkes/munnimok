@@ -35,7 +35,7 @@ public sealed partial class GcIngest(AppDbContext db)
         string NextHlc() => ServerHlc.Now(counter++);
 
         // account row in the feed (create or refresh balance — raw bank truth)
-        var accountFields = await BuildAccountFieldsAsync(linked, details, balances);
+        var accountFields = await BuildAccountFieldsAsync(feedSpace.Id, linked, details, balances);
         // minute-grained seed: rate-budgeted accounts sync several times a
         // day and each fetch must refresh lastSyncedAt (a daily seed would
         // dedupe the later ones away)
@@ -163,7 +163,7 @@ public sealed partial class GcIngest(AppDbContext db)
 
     /// <summary>The feed account row's fields: raw bank truth plus the logo hint.</summary>
     private async Task<Dictionary<string, JsonElement>> BuildAccountFieldsAsync(
-        GcLinkedAccount linked, GcAccountDetails details, IReadOnlyList<GcBalance> balances)
+        string feedSpaceId, GcLinkedAccount linked, GcAccountDetails details, IReadOnlyList<GcBalance> balances)
     {
         var balance = balances.FirstOrDefault(b => b.BalanceType is "closingBooked" or "interimBooked")
                       ?? (balances.Count > 0 ? balances[0] : null);
@@ -176,11 +176,16 @@ public sealed partial class GcIngest(AppDbContext db)
             : InstitutionDisplayName(requisition?.InstitutionId) ?? details.OwnerName ?? "Wallet";
         var fields = new Dictionary<string, JsonElement>
         {
-            ["name"] = Json(details.Name ?? fallbackName),
             ["type"] = Json("checking"),
             ["source"] = Json("gocardless"),
             ["currency"] = Json(details.Currency ?? linked.Currency),
         };
+        // the bank's display name seeds the row once; after that the field
+        // belongs to the user (re-asserting it each fetch stamped a fresh
+        // server HLC and silently clobbered renames made in the app)
+        var exists = await db.EntityRows.AnyAsync(r =>
+            r.SpaceId == feedSpaceId && r.Entity == "account" && r.EntityId == linked.AccountEntityId);
+        if (!exists) fields["name"] = Json(details.Name ?? fallbackName);
         if (isRealIban) fields["iban"] = Json(linked.Iban);
         // the institution id lets clients show the real bank logo
         if (requisition is not null) fields["bankId"] = Json(requisition.InstitutionId);
