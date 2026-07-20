@@ -52,13 +52,14 @@ describe('ReviewScreen (demo identity)', () => {
     expect(typeRow.compareDocumentPosition(catRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
     // the type row opens the stacked options sheet; a pick stages the
-    // draft and updates the row in place
+    // draft and updates the row in place. The card itself carries NO
+    // counterparty/type rows anymore (user request: no duplicates).
+    expect(screen.queryByTestId('review-counter-row')).toBeNull();
+    expect(screen.queryByTestId('review-type-row')).toBeNull();
     fireEvent.click(typeRow);
     await screen.findByTestId('txtype-options');
     fireEvent.click(screen.getByTestId('txtype-saving'));
     await waitFor(() => expect(screen.getByTestId('split-type-row').textContent).toContain('Saving'));
-    // the card row behind the sheet reflects the same staged decision
-    expect(screen.getByTestId('review-type-row').textContent).toContain('Saving');
   }, 15_000);
 
   it('a picked category is staged and written on confirm', async () => {
@@ -367,12 +368,14 @@ describe('ReviewScreen (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Coffee'));
     expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false);
 
-    // flip the type to one Coffee does not speak: the chip must ask again
-    fireEvent.click(screen.getByTestId('review-type-row'));
+    // flip the type (now via the type row INSIDE the category editor) to
+    // one Coffee does not speak: the chip must ask again
+    fireEvent.click(screen.getByTestId('review-category-chip'));
+    fireEvent.click(await screen.findByTestId('split-type-row'));
     await screen.findByTestId('txtype-options');
     fireEvent.click(screen.getByTestId('txtype-saving'));
     await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).not.toContain('Coffee'));
-    expect(screen.getByTestId('review-type-row').textContent).toContain('Saving');
+    expect(screen.getByTestId('split-type-row').textContent).toContain('Saving');
     expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(true);
 
     // nothing was written mid-flight: the tx still holds its own type
@@ -382,8 +385,8 @@ describe('ReviewScreen (demo identity)', () => {
     expect(current.txType).not.toBe('saving');
     db.close();
 
-    // a saving-compatible category re-arms Confirm
-    fireEvent.click(screen.getByTestId('review-category-chip'));
+    // a saving-compatible category re-arms Confirm (the editor is still
+    // open; its picker now filters by the staged saving type)
     fireEvent.click(await screen.findByTestId('split-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
     fireEvent.click(screen.getByTestId('split-save'));

@@ -35,7 +35,7 @@ import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { SplitEditorSheet } from '@/features/transactions/SplitEditorSheet';
 import { RecurringVisual, cadenceLabel } from '@/features/recurring/RecurringVisual';
-import { CounterAccountSheet, TX_TYPE_VISUAL, TxTypeOptionsSheet, TxTypeSheet } from '@/features/transactions/TxTypeSheet';
+import { CounterAccountSheet, TX_TYPE_VISUAL, TxTypeOptionsSheet } from '@/features/transactions/TxTypeSheet';
 
 /** one grouped-context row inside the category editor (counterparty,
  *  type) — the card-row anatomy in the sheet's input skin */
@@ -404,7 +404,6 @@ export function ReviewScreen() {
   const recurrings = useRecurrings();
   const recurringOps = useRecurringOps();
 
-  const [typeOpen, setTypeOpen] = useState(false);
   const [splitOpen, setSplitOpen] = useState(false);
   // stacked pickers for the grouped rows INSIDE the category editor
   // (user request: counterparty + type live with the category decision)
@@ -696,30 +695,10 @@ export function ReviewScreen() {
               </div>
               <div className="mx-4 h-px bg-line-2" />
 
-              {/* every decision is a row now (user redesign): counterparty,
-                  type, categories, recurring, event */}
+              {/* the card keeps categories, recurring and event rows;
+                  counterparty + type moved INTO the category editor (user
+                  request — no duplicate rows here) */}
               <div data-testid="review-cats">
-                <button
-                  data-testid="review-counter-row"
-                  onClick={() => setTypeOpen(true)}
-                  className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
-                >
-                  <Icon name="swap-horizontal" size={18} color="var(--m-ink-3)" />
-                  <span className="min-w-0 flex-1 truncate">{draftCounter?.name ?? t('tx.linkedAccountNone')}</span>
-                  <span className="text-[11px] text-ink-4">{t('tx.counterAccount')}</span>
-                  <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
-                </button>
-                <button
-                  data-testid="review-type-row"
-                  onClick={() => setTypeOpen(true)}
-                  className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
-                >
-                  <Icon name={TX_TYPE_VISUAL[draft?.txType ?? tx.txType].icon} size={18} color={TX_TYPE_VISUAL[draft?.txType ?? tx.txType].color} />
-                  <span className="min-w-0 flex-1 truncate">{draftTypeLabel ?? t(`tx.type.${tx.txType}`)}</span>
-                  <span className="text-[11px] text-ink-4">{t('tx.type')}</span>
-                  <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
-                </button>
-
                 {(draft?.splits?.length ? draft.splits : [null]).map((slice) => {
                   const sliceCat = slice ? cats.byId(slice.catId) : cat;
                   const sliceColor = slice
@@ -838,16 +817,6 @@ export function ReviewScreen() {
 
       {/* the quick picker is gone (user redesign): every category edit
           goes through the unified split editor's per-row pickers */}
-      {tx && draft && (
-        <TxTypeSheet
-          open={typeOpen}
-          onOpenChange={setTypeOpen}
-          tx={tx}
-          value={{ txType: draft.txType, linkedAccountId: draft.linkedAccountId }}
-          onPickType={(nextType) => setStagedDraft(withType(draft, nextType, cats))}
-          onPickLinked={(account) => setStagedDraft(withLinkedAccount(draft, account, cats))}
-        />
-      )}
       {tx && draft && (
         <SplitEditorSheet
           open={splitOpen}
