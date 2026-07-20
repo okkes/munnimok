@@ -1,6 +1,7 @@
 # Receipts v3 — store connections & receipts redesign
 
-Status: **DESIGN — awaiting approval** (2026-07-20). Nothing here is implemented.
+Status: **APPROVED** (2026-07-20) — the user answered the three open
+questions; rulings folded in below. Implementation in slice order.
 
 Decisions already made by the user (folded in):
 
@@ -90,20 +91,35 @@ an `<a>` so copy-link still works.
   accounts), matches are constrained to transactions of that account; a tail that
   matches **no** attached account only downranks (bank cards vs. IBAN tails vary).
 
-## R6 — Storage model: global receipts + per-space link overlay
+## R6 — Storage model: global receipts + per-space SNAPSHOT links
 
-- **`receipt` rows move to a global scope** (owner's user feed, like `storeConn`):
-  id `rcpt:{store}:{instanceId}:{ext}` — pulled once, stored once.
-- **NEW `receiptLink` per-space entity** (the txMeta analogue):
+Rulings 1+2 (2026-07-20) shape this slice: *"if the transactions stay,
+the linked receipts stay"* and *"remove instance deletes unmatched
+receipts; linked ones stay linked."* Both fall out of one mechanism —
+**linking snapshots the receipt into the space**:
+
+- **Global store**: `receipt` rows live in the owner's personal STORE
+  FEED (a `/feeds`-registered space, `personalFeedSpaceId('STORES:'+sub, sub)`),
+  id `rcpt:{store}:{instanceId}:{ext}` — pulled once, stored once,
+  visible only to the owner. This is the fetch/dedupe layer.
+- **`receiptLink` — NEW per-space synced entity** (the txMeta analogue):
   `{ id: v5('rlink:'+spaceId+':'+receiptId), spaceId, receiptId, txId,
-    linkedBy, auto? }`. All linking (auto + manual) writes here; `ReceiptRow.txId`
-  retires.
-- Members of a space see receipts of instances linked into the space via
-  `storeConnLink` (read-time join), not via row fan-out.
-- Migration: existing `rcpt:…@{space}` rows collapse by `storeRef` into one global
-  row; their `txId` values become `receiptLink` rows in the original space.
-- Photo/manual receipts (no store) stay space-scoped but adopt `receiptLink` for
-  consistency.
+    linkedBy, auto?, + a SNAPSHOT of the receipt payload (source,
+    instanceId, date, totalCents, merchant, items, payment) }`.
+  All linking (auto + manual) writes here; `ReceiptRow.txId` retires.
+- Because the link carries the payload, a linked receipt needs NO read
+  access to the owner's store feed: every member renders it, it survives
+  the owner leaving the space (like archived transactions), and it
+  survives instance removal. Unlinking tombstones the link row; the
+  snapshot dies with it.
+- **Remove instance** (ruling 2): tombstone the instance's UNLINKED
+  global receipt rows + the instance itself; space snapshots untouched.
+- Migration: existing per-space `rcpt:…@{space}` rows — linked ones
+  become `receiptLink` snapshots in their space; unlinked ones collapse
+  by `storeRef` into the global store feed; the old rows tombstone.
+- Photo/manual receipts (no store) skip the global layer: they are
+  born as a `receiptLink` snapshot (with `receiptId: null`) in the space
+  where they were captured.
 
 ## R7 — Receipts screen under space Settings
 
@@ -139,11 +155,13 @@ R3 (bug, ships now) → R1 → R2 → R6 → R5 → R4 → R7 → R8 → R9.
 R1+R6 are the risky data-model slices and land behind the migration; R7–R9 are
 independent once R6 exists.
 
-## Open questions
+## Rulings (2026-07-20, all three questions answered)
 
-1. R6 puts store receipts in the **owner's user feed** — acceptable that a member
-   leaving a space loses access to those receipts (links purge with the space)?
-2. Remove-instance keeps already-pulled receipts (bank-feed analogy). OK, or
-   should removing an instance offer "also delete its receipts"?
-3. Jumbo payment fields are unverified until someone with a Jumbo login tests —
-   ship AH-only payment awareness first?
+1. **Linked receipts follow the transactions.** If the transactions stay
+   (leave-and-archive), the linked receipts stay too — implemented via
+   snapshot links (R6): the link row carries the payload, so no
+   cross-feed read is ever needed. Implementation choice was delegated.
+2. **Remove instance deletes the unmatched receipts** of that instance;
+   already-linked ones stay linked (their snapshots live in the spaces).
+3. **AH-only payment awareness ships first**; Jumbo payment fields wait
+   until a real Jumbo login can verify the shapes.
