@@ -100,6 +100,11 @@ jobs:
           # staging look: white leaf on brand green + the dev Firebase app
           sed -i '' 's/ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;/ASSETCATALOG_COMPILER_APPICON_NAME = "AppIcon-Dev";/g' App.xcodeproj/project.pbxproj
           cp App/GoogleService-Info-Dev.plist App/GoogleService-Info.plist
+          # ONE associated domain per channel (universal-links plan §UL3):
+          # the dev app claims the test host only, so the OS never offers
+          # the prod app for a munni-dev login
+          /usr/libexec/PlistBuddy -c "Set :com.apple.developer.associated-domains:0 applinks:munni-test.okkes.synology.me" App/App.entitlements
+          /usr/libexec/PlistBuddy -c "Print :com.apple.developer.associated-domains" App/App.entitlements
 
       # Apple requires the iOS 26 SDK for App Store Connect uploads; the
       # runner's default Xcode is older, so pick the newest installed one

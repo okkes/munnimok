@@ -25,9 +25,10 @@ ENV VITE_API_URL=$VITE_API_URL \
     VITE_CHANNEL=$VITE_CHANNEL
 RUN sed -i "s/execSync('git rev-list --count HEAD').toString().trim()/'${BUILD_NUMBER}'/" apps/web/vite.config.ts || true
 RUN npm run build --workspace @munni/web
-# universal links (UL1): the committed AASA carries a placeholder so the
-# team id lives only in secrets; an unset id leaves the file inert
-RUN sed -i "s/__APPLE_TEAM_ID__/${APPLE_TEAM_ID}/g" apps/web/dist/.well-known/apple-app-site-association
+# universal links (UL1): the committed AASA files carry a placeholder so
+# the team id lives only in secrets; an unset id leaves them inert.
+# One file per channel — nginx serves the right one per host.
+RUN sed -i "s/__APPLE_TEAM_ID__/${APPLE_TEAM_ID}/g" apps/web/dist/.well-known/apple-app-site-association.*
 
 FROM nginx:alpine
 COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
