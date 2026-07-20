@@ -7,11 +7,13 @@ import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 
 /**
- * Brand logo picker for recurring costs. Two sources, seamlessly merged:
- * the vendored simpleicons set (public/brands — precached, so it works
- * fully offline and for demo/offline identities) and, when the server
- * has logo.dev configured and the identity may use the network, live
- * brand search with far wider coverage.
+ * Brand logo picker for recurring costs, accounts, … Two labelled
+ * segments: the vendored simpleicons set leads (public/brands —
+ * precached, instant, works fully offline and for demo/offline
+ * identities) and, when the server has logo.dev configured and the
+ * identity may use the network, an online section follows with far
+ * wider coverage. Local hits never disappear when the online answer
+ * lands (user bug: they used to be deduped away).
  */
 
 interface BrandEntry {
@@ -112,15 +114,11 @@ export function BrandIconPicker({ open, onOpenChange, onPick, initialQuery = '' 
 
   const remoteShown = remote.slice(0, 12);
 
-  const local = useMemo(() => {
+  const localShown = useMemo(() => {
     const q = query.trim().toLowerCase();
     const hits = q ? index.filter((b) => b.title.toLowerCase().includes(q) || b.slug.includes(q)) : index;
     return hits.slice(0, 24);
   }, [index, query]);
-
-  // when the online search answered, drop vendored duplicates of its hits
-  const remoteSlugs = useMemo(() => new Set(remoteShown.map((r) => r.domain.split('.')[0])), [remoteShown]);
-  const localShown = remoteShown.length > 0 ? local.filter((b) => !remoteSlugs.has(b.slug)) : local;
 
   const pick = (logo: string | null) => {
     onPick({ logo });
@@ -174,7 +172,28 @@ export function BrandIconPicker({ open, onOpenChange, onPick, initialQuery = '' 
           </p>
         )}
 
-        {/* online results lead: wider coverage and real brand marks */}
+        {/* the vendored set leads and never disappears; captions only when
+            both segments are on screen, so the plain browse view stays calm */}
+        {remoteShown.length > 0 && localShown.length > 0 && (
+          <div className="m-cap px-1">{t('recurring.iconBuiltin')}</div>
+        )}
+        <div className="grid grid-cols-4 gap-2" data-testid="brandpicker-local">
+          {localShown.map((brand) => (
+            <button
+              key={brand.slug}
+              data-testid={`brandpicker-${brand.slug}`}
+              title={brand.title}
+              onClick={() => pick(`brands/${brand.slug}.svg`)}
+              className="m-tap flex flex-col items-center gap-1.5 rounded-xl border border-line bg-surface px-1 py-2.5"
+            >
+              <img src={`brands/${brand.slug}.svg`} alt="" className="h-7 w-7 object-contain" loading="lazy" />
+              <span className="w-full truncate text-center text-[10px] text-ink-3">
+                <Highlight text={brand.title} query={query} />
+              </span>
+            </button>
+          ))}
+        </div>
+
         {remoteShown.length > 0 && (
           <>
             <div className="m-cap px-1">{t('recurring.iconOnline')}</div>
@@ -194,26 +213,8 @@ export function BrandIconPicker({ open, onOpenChange, onPick, initialQuery = '' 
                 </button>
               ))}
             </div>
-            {localShown.length > 0 && <div className="m-cap px-1">{t('recurring.iconBuiltin')}</div>}
           </>
         )}
-
-        <div className="grid grid-cols-4 gap-2" data-testid="brandpicker-local">
-          {localShown.map((brand) => (
-            <button
-              key={brand.slug}
-              data-testid={`brandpicker-${brand.slug}`}
-              title={brand.title}
-              onClick={() => pick(`brands/${brand.slug}.svg`)}
-              className="m-tap flex flex-col items-center gap-1.5 rounded-xl border border-line bg-surface px-1 py-2.5"
-            >
-              <img src={`brands/${brand.slug}.svg`} alt="" className="h-7 w-7 object-contain" loading="lazy" />
-              <span className="w-full truncate text-center text-[10px] text-ink-3">
-                <Highlight text={brand.title} query={query} />
-              </span>
-            </button>
-          ))}
-        </div>
       </div>
     </Sheet>
   );
