@@ -19,7 +19,17 @@ export function initPressFeedback(): void {
     'pointerdown',
     (e) => {
       if (e.pointerType === 'mouse') return; // CSS :active covers mice
-      const target = (e.target as Element).closest?.('.m-tap');
+      const raw = e.target as Element;
+      // touch pointers capture their hit-test target implicitly; a
+      // long-press that opens the context menu (copy-link on an <a>)
+      // swallows the matching pointerup, and the element then keeps
+      // swallowing the NEXT touches too — every tap "pressed" the link
+      // until the app was killed (user bug). Nothing needs capture, so
+      // drop it up front.
+      if (raw instanceof HTMLElement && raw.hasPointerCapture?.(e.pointerId)) {
+        raw.releasePointerCapture(e.pointerId);
+      }
+      const target = raw.closest?.('.m-tap');
       if (!(target instanceof HTMLElement)) return;
       clear();
       // tiny delay: a fast flick should scroll without flashing every row;
@@ -36,4 +46,9 @@ export function initPressFeedback(): void {
   // gesture — exactly the "interrupted press" moment
   document.addEventListener('pointercancel', clear, { passive: true });
   document.addEventListener('scroll', clear, { capture: true, passive: true });
+  // long-press context menu (copy link) and app switches (opening the
+  // store's login browser) both suppress the trailing pointerup — the
+  // pressed look must not survive them
+  document.addEventListener('contextmenu', clear, { capture: true });
+  document.addEventListener('visibilitychange', clear);
 }
