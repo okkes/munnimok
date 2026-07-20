@@ -42,11 +42,9 @@ function ThemeModeSwitch() {
       active ? 'bg-accent-soft text-accent-deep' : 'text-ink-3'
     }`;
   return (
-    <span
-      role="group"
-      aria-label={t('settings.appearance')}
-      className="flex shrink-0 overflow-hidden rounded-lg border border-line-2"
-    >
+    // no group role (S6819): each segment is a labelled aria-pressed
+    // button — the span is purely a visual frame
+    <span className="flex shrink-0 overflow-hidden rounded-lg border border-line-2">
       <button
         type="button"
         data-testid="settings-theme-light"
