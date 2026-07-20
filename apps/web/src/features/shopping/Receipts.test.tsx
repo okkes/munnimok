@@ -59,16 +59,18 @@ describe('Receipts S1 (demo identity)', () => {
     expect(screen.queryByTestId('shop-ah-connect')).toBeNull();
   }, 15_000);
 
-  it('a signed-in user connects AH by pasting the redirect address', async () => {
+  it('a signed-in user connects AH, names the instance, includes a second space', async () => {
     renderAppAsUser('/shopping', {
       spaces: [
         { id: 's-user', name: 'Personal' },
         { id: 's-two', name: 'Second', kind: 'shared' },
       ],
       api: {
+        'POST /feeds': () => ({ feedSpaceId: 'feed', owned: true }),
         'POST /shop/proxy/ah-api': (body) => {
           const request = body as { path: string };
           if (request.path === '/mobile-auth/v1/auth/token') return { access_token: 'acc-1', refresh_token: 'ref-1' };
+          if (request.path === '/mobile-services/member/v1/member') return { memberId: 777 };
           if (request.path === '/mobile-services/v2/receipts') return [];
           return {};
         },
@@ -82,26 +84,43 @@ describe('Receipts S1 (demo identity)', () => {
       target: { value: 'appie://login-exit?code=abc-12345' },
     });
     fireEvent.click(screen.getByTestId('shop-ah-submit'));
-    // connected state answers out loud: status line, verified sync result
-    await screen.findByTestId('shop-ah-sync', {}, { timeout: 5000 });
-    expect(screen.getByTestId('shop-ah-disconnect')).toBeTruthy();
-    await waitFor(() => expect(screen.getByTestId('shop-ah-status').textContent).toContain('Connected'));
-    await screen.findByTestId('shop-ah-sync-result');
 
-    // sharing (user ruling): the connection starts private to exactly the
-    // space that was active at connect time; ticking the other space opts
-    // its members in
-    const rows = [await screen.findByTestId('shop-ah-share-s-user'), await screen.findByTestId('shop-ah-share-s-two')];
-    const checked = rows.filter((row) => row.querySelector('.mdi-checkbox-marked'));
-    expect(checked).toHaveLength(1);
+    // v3: a fresh instance asks for its display name right away
+    const nameInput = (await screen.findByTestId('shop-name-input', {}, { timeout: 5000 })) as HTMLInputElement;
+    expect(nameInput.value).toBe('Albert Heijn');
+    fireEvent.change(nameInput, { target: { value: 'AH thuis' } });
+    fireEvent.click(screen.getByTestId('shop-name-save'));
+
+    // the named instance card renders with its connected state
+    const card = await waitFor(() => {
+      const el = document.querySelector('[data-testid^="shop-inst-"][data-testid*="-"]');
+      expect(el).toBeTruthy();
+      return el!;
+    });
+    await waitFor(() => expect(card.closest('[data-testid^="shop-inst-"]')!.textContent).toContain('AH thuis'));
+
+    // include the OTHER space via the manage sheet — the connect already
+    // included the active one; afterwards both spaces see the connection
+    fireEvent.click(document.querySelector('[data-testid^="shop-inst-manage-"]')!);
+    const rows = [await screen.findByTestId('shop-inst-space-s-user'), await screen.findByTestId('shop-inst-space-s-two')];
+    await waitFor(() => expect(rows.filter((row) => row.querySelector('.mdi-checkbox-marked'))).toHaveLength(1));
     const unchecked = rows.find((row) => !row.querySelector('.mdi-checkbox-marked'))!;
     fireEvent.click(unchecked);
-    await waitFor(() => expect(unchecked.querySelector('.mdi-checkbox-marked')).toBeTruthy());
+    await waitFor(() => expect(rows.filter((row) => row.querySelector('.mdi-checkbox-marked'))).toHaveLength(2));
+
     const { MunniDB } = await import('@/db/schema');
     const db = new MunniDB(USER_TEST_DB);
     await waitFor(async () => {
-      const shared = (await db.storeConnections.get('ah'))?.sharedSpaceIds ?? [];
-      expect([...shared].sort((a, b) => a.localeCompare(b))).toEqual(['s-two', 's-user']);
+      const instances = await db.storeInstances.toArray();
+      expect(instances).toHaveLength(1);
+      expect(instances[0].tokens).toEqual({ access: 'acc-1', refresh: 'ref-1' });
+      const links = await db.storeConnLinks.toArray();
+      const live = links.filter((l) => l.deleted === 0);
+      expect(live.map((l) => l.spaceId).sort((a, b) => a.localeCompare(b))).toEqual(['s-two', 's-user']);
+      // the synced metadata carries the chosen name + identity hash
+      const meta = (await db.storeConns.toArray()).find((c) => c.deleted === 0);
+      expect(meta?.displayName).toBe('AH thuis');
+      expect(meta?.providerAccountHash).toBeTruthy();
     });
     db.close();
   }, 15_000);
@@ -149,6 +168,7 @@ describe('Receipts S1 (demo identity)', () => {
   it('a signed-in user connects Jumbo with username/password (never stored)', async () => {
     renderAppAsUser('/shopping', {
       api: {
+        'POST /feeds': () => ({ feedSpaceId: 'feed', owned: true }),
         'POST /shop/proxy/jumbo': (body) => {
           const request = body as { path: string };
           if (request.path === '/v17/users/login') {
@@ -166,16 +186,20 @@ describe('Receipts S1 (demo identity)', () => {
     fireEvent.change(screen.getByTestId('shop-jumbo-pass'), { target: { value: 'geheim' } });
     fireEvent.click(screen.getByTestId('shop-jumbo-submit'));
 
-    await waitFor(() => expect(screen.getByTestId('shop-jumbo-status').textContent).toContain('Connected'), { timeout: 5000 });
-    expect(screen.getByTestId('shop-jumbo-disconnect')).toBeTruthy();
-    // per-connection sharing renders for jumbo too
-    expect(await screen.findByTestId('shop-jumbo-share-s-user')).toBeTruthy();
+    // v3: the naming step confirms the connect worked
+    const nameInput = (await screen.findByTestId('shop-name-input', {}, { timeout: 5000 })) as HTMLInputElement;
+    expect(nameInput.value).toBe('Jumbo');
+    fireEvent.click(screen.getByTestId('shop-name-save'));
+
     // only the session token is kept — never the credentials
     const { MunniDB } = await import('@/db/schema');
     const db = new MunniDB(USER_TEST_DB);
-    const connection = await db.storeConnections.get('jumbo');
-    expect(connection?.tokens).toEqual({ token: 'jt-1' });
-    expect(JSON.stringify(connection)).not.toContain('geheim');
+    await waitFor(async () => {
+      const instances = await db.storeInstances.toArray();
+      expect(instances).toHaveLength(1);
+      expect(instances[0].tokens).toEqual({ token: 'jt-1' });
+      expect(JSON.stringify(instances[0])).not.toContain('geheim');
+    });
     db.close();
   }, 15_000);
 
@@ -198,7 +222,7 @@ describe('Receipts S1 (demo identity)', () => {
     // nothing was stored
     const { MunniDB } = await import('@/db/schema');
     const db = new MunniDB(USER_TEST_DB);
-    expect(await db.storeConnections.get('jumbo')).toBeUndefined();
+    expect(await db.storeInstances.toArray()).toHaveLength(0);
     db.close();
   }, 15_000);
 

@@ -87,20 +87,21 @@ export async function disableStoreSync(store: StorageBackend): Promise<void> {
   await store.metaDelete(CSK_KEY);
 }
 
-/** push one connection's tokens as ciphertext (no-op while disabled) */
+/** push one connection's tokens as ciphertext (no-op while disabled).
+ *  v3: blobs are keyed by INSTANCE id — several connections per store. */
 export async function pushConnection(store: StorageBackend, connection: StoreConnectionRow): Promise<void> {
   const csk = (await store.metaGet(CSK_KEY))?.value as string | undefined;
   if (!csk) return;
   const cipher = await encryptJson(csk, connection);
-  await apiFetch(`/me/store-sync/connections/${connection.store}`, {
+  await apiFetch(`/me/store-sync/connections/${connection.id}`, {
     method: 'PUT',
     body: JSON.stringify({ cipher }),
   }).catch(() => undefined); // offline: the next push wins
 }
 
-export async function removeConnectionCipher(store: StorageBackend, storeId: string): Promise<void> {
+export async function removeConnectionCipher(store: StorageBackend, instanceId: string): Promise<void> {
   if (!(await syncEnabled(store))) return;
-  await apiFetch(`/me/store-sync/connections/${storeId}`, { method: 'DELETE' }).catch(() => undefined);
+  await apiFetch(`/me/store-sync/connections/${instanceId}`, { method: 'DELETE' }).catch(() => undefined);
 }
 
 export async function pushAllConnections(store: StorageBackend): Promise<void> {
@@ -119,8 +120,11 @@ export async function pullConnections(store: StorageBackend): Promise<number> {
   let adopted = 0;
   for (const row of rows) {
     try {
-      const remote = await decryptJson<StoreConnectionRow>(csk, row.cipher);
-      const local = await store.storeConnGet(remote.store);
+      const decrypted = await decryptJson<StoreConnectionRow>(csk, row.cipher);
+      // pre-v3 blobs carry no instance id — adopt them under the store
+      // name, matching the local schema migration
+      const remote = decrypted.id ? decrypted : { ...decrypted, id: decrypted.store };
+      const local = await store.storeConnGet(remote.id);
       if (!local || Date.parse(remote.refreshedAt) > Date.parse(local.refreshedAt)) {
         await store.storeConnPut(remote);
         adopted++;

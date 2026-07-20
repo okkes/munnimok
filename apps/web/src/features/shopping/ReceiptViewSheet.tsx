@@ -145,7 +145,7 @@ export function ReceiptViewSheet({
                       tx={tx}
                       showDate
                       onClick={() => {
-                        void storeOps.attachReceipt(receipt.id, tx.id);
+                        void storeOps.linkReceipt(receipt, tx.id);
                         setPicking(false);
                       }}
                     />

@@ -1,4 +1,4 @@
-import type { ReceiptItem, ReceiptSource, TransactionRow } from '@/db/types';
+import type { ReceiptItem, ReceiptPayment, ReceiptSource, TransactionRow } from '@/db/types';
 
 /**
  * Store receipts domain (receipts design S2) — all pure: matching
@@ -23,13 +23,39 @@ export interface MatchableReceipt {
   source: ReceiptSource;
   date: string;
   totalCents: number;
+  /** how it was paid, when the store exposes it (R5) */
+  payment?: ReceiptPayment;
 }
+
+/** resolves a transaction's paying-account IBAN/PAN tail, when known */
+export type AccountTailOf = (tx: TransactionRow) => string | undefined;
 
 const dayDiff = (a: string, b: string): number => Math.abs(Math.round((Date.parse(a) - Date.parse(b)) / 86_400_000));
 
+/**
+ * Payment awareness (R5 ruling): when the receipt names the paying
+ * account's tail AND at least one candidate's account matches it, the
+ * mismatching candidates drop out; when NO candidate matches (store
+ * cards vs IBAN tails vary) the tail only downranks via scoring.
+ */
+function applyPaymentFilter(
+  receipt: MatchableReceipt,
+  candidates: TransactionRow[],
+  tailOf?: AccountTailOf,
+): TransactionRow[] {
+  const tail = receipt.payment?.accountTail;
+  if (!tail || !tailOf) return candidates;
+  const hits = candidates.filter((tx) => tailOf(tx)?.endsWith(tail));
+  return hits.length > 0 ? hits : candidates;
+}
+
 /** design rule: amount ± 2 cents, date ± 2 days, merchant as tiebreaker */
-export function matchCandidates(receipt: MatchableReceipt, txs: readonly TransactionRow[]): TransactionRow[] {
-  return txs
+export function matchCandidates(
+  receipt: MatchableReceipt,
+  txs: readonly TransactionRow[],
+  tailOf?: AccountTailOf,
+): TransactionRow[] {
+  const base = txs
     .filter(
       (tx) =>
         tx.deleted === 0 &&
@@ -38,6 +64,7 @@ export function matchCandidates(receipt: MatchableReceipt, txs: readonly Transac
         dayDiff(tx.date, receipt.date) <= 2,
     )
     .sort((a, b) => scoreOf(receipt, b) - scoreOf(receipt, a));
+  return applyPaymentFilter(receipt, base, tailOf);
 }
 
 const merchantHit = (source: ReceiptSource, tx: TransactionRow): boolean =>
@@ -54,8 +81,13 @@ function scoreOf(receipt: MatchableReceipt, tx: TransactionRow): number {
  * SINGLE — exact amount, date ±2d, merchant fingerprint — attaches by
  * itself; everything else stays unlinked for a manual pick.
  */
-export function bestMatch(receipt: MatchableReceipt, txs: readonly TransactionRow[], takenTxIds: ReadonlySet<string>): string | null {
-  const rung1 = matchCandidates(receipt, txs).filter(
+export function bestMatch(
+  receipt: MatchableReceipt,
+  txs: readonly TransactionRow[],
+  takenTxIds: ReadonlySet<string>,
+  tailOf?: AccountTailOf,
+): string | null {
+  const rung1 = matchCandidates(receipt, txs, tailOf).filter(
     (tx) => !takenTxIds.has(tx.id) && -tx.amountCents === receipt.totalCents && merchantHit(receipt.source, tx),
   );
   return rung1.length === 1 ? rung1[0].id : null;
@@ -113,6 +145,26 @@ export function mapAhSummary(row: AhReceiptSummary): MatchableReceipt & { storeI
     date: row.transactionMoment.slice(0, 10),
     totalCents: euroToCents(row.total?.amount?.amount),
   };
+}
+
+/**
+ * Payment line → how the receipt was paid (R5, AH-only per ruling 3).
+ * AH prints e.g. "PINNEN" plus a masked card/IBAN ending in a few
+ * digits; the tail constrains transaction matching to that account.
+ */
+const AH_PAYMENT_LINE = /pin|maestro|mastercard|visa|ideal|contactloos/i;
+// exactly two mask chars suffice: a longer run still matches at its end
+const MASKED_TAIL = /[*Xx•]{2}\s?(\d{3,4})\b/;
+const TRAILING_DIGITS = /(\d{4})$/;
+
+export function mapAhPayment(uiItems: readonly AhReceiptUiItem[]): ReceiptPayment | undefined {
+  for (const item of uiItems) {
+    const text = (item.description ?? '').trim();
+    if (!AH_PAYMENT_LINE.test(text)) continue;
+    const tail = MASKED_TAIL.exec(text)?.[1] ?? TRAILING_DIGITS.exec(text)?.[1];
+    return { method: text.slice(0, 40), accountTail: tail };
+  }
+  return undefined;
 }
 
 /** the detail's receiptUiItems: keep the products, drop dividers/totals */

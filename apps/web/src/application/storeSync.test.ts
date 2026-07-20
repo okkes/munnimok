@@ -87,7 +87,7 @@ describe('E2EE store-connection sync (two devices, real crypto)', () => {
     const desktop = backend();
 
     // phone: connect AH locally, turn sync on
-    await phone.storeConnPut({ store: 'ah', tokens: { access: 'tok-access', refresh: 'tok-refresh' }, refreshedAt: '2026-07-17T10:00:00Z', status: 'ok' });
+    await phone.storeConnPut({ id: 'ah', store: 'ah', tokens: { access: 'tok-access', refresh: 'tok-refresh' }, refreshedAt: '2026-07-17T10:00:00Z', status: 'ok' });
     await enableStoreSync(phone);
     await pushConnection(phone, (await phone.storeConnGet('ah'))!);
     // the server never sees plaintext
@@ -110,12 +110,12 @@ describe('E2EE store-connection sync (two devices, real crypto)', () => {
   it('pull adopts only fresher tokens; global off wipes the server', async () => {
     fakeServer();
     const phone = backend();
-    await phone.storeConnPut({ store: 'ah', tokens: { access: 'old' }, refreshedAt: '2026-07-17T10:00:00Z', status: 'ok' });
+    await phone.storeConnPut({ id: 'ah', store: 'ah', tokens: { access: 'old' }, refreshedAt: '2026-07-17T10:00:00Z', status: 'ok' });
     await enableStoreSync(phone);
     await pushConnection(phone, (await phone.storeConnGet('ah'))!);
 
     // local copy got newer meanwhile — the pull must not clobber it
-    await phone.storeConnPut({ store: 'ah', tokens: { access: 'newer' }, refreshedAt: '2026-07-17T12:00:00Z', status: 'ok' });
+    await phone.storeConnPut({ id: 'ah', store: 'ah', tokens: { access: 'newer' }, refreshedAt: '2026-07-17T12:00:00Z', status: 'ok' });
     expect(await pullConnections(phone)).toBe(0);
     expect((await phone.storeConnGet('ah'))?.tokens.access).toBe('newer');
 

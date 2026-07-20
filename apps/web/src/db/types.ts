@@ -352,14 +352,25 @@ export interface ReceiptItem {
   totalCents: number;
 }
 
+/** how a store receipt was paid, when the provider exposes it (R5) */
+export interface ReceiptPayment {
+  /** provider wording, e.g. 'PIN', 'ideal' */
+  method?: string;
+  /** last digits of the paying IBAN/PAN — constrains tx matching */
+  accountTail?: string;
+}
+
 /**
- * A transaction's line-item proof (approved receipts design). Photo
- * receipts carry a downscaled data URL; store receipts carry items.
+ * A transaction's line-item proof. Receipts v3 (approved redesign):
+ * store receipts live ONCE in the owner's personal STORE FEED (the
+ * global fetch/dedupe layer); linking snapshots them into a space via
+ * `receiptLink`. Photo receipts skip the global layer entirely.
  */
 export interface ReceiptRow extends SyncEnvelope {
   id: string;
+  /** the owner's store feed (v3) or a viewing space (legacy rows) */
   spaceId: string;
-  /** the transaction it proves — set on capture (photo) or by the matcher */
+  /** legacy pre-v3 link — new links live on receiptLink rows */
   txId?: string;
   source: ReceiptSource;
   date: string;
@@ -368,27 +379,90 @@ export interface ReceiptRow extends SyncEnvelope {
   items?: ReceiptItem[];
   /** downscaled data URL (photo path) */
   image?: string;
-  /** `{store}:{externalId}` — dedupe key across the spaces a connection is shared with */
+  /** `{store}:{externalId}` — cross-source dedupe key */
   storeRef?: string;
+  /** the connection instance that pulled it (v3) */
+  instanceId?: string;
+  payment?: ReceiptPayment;
 }
 
+export type StoreId = Exclude<ReceiptSource, 'photo'>;
+
 /**
- * DEVICE-ONLY store login state — never synced, never on our server
- * (receipts design privacy law). A new phone reconnects by design.
+ * DEVICE-ONLY store login state — never synced in plaintext, never on
+ * our server (receipts privacy law; E2EE storeSync ferries ciphertext).
+ * v3: keyed by INSTANCE id — multiple connections of one store coexist.
  */
 export interface StoreConnectionRow {
-  store: Exclude<ReceiptSource, 'photo'>;
+  /** instance id (uuid; migrated legacy rows use the store name) */
+  id: string;
+  store: StoreId;
   tokens: Record<string, string>;
   refreshedAt: string;
   status: 'ok' | 'expired';
   /** newest store receipt already ingested (dedupe cursor) */
   lastReceiptId?: string;
-  /**
-   * spaces this connection's receipts flow into (user ruling: sharing a
-   * connection with a space lets every member search its receipts) —
-   * defaults to the space that was active at connect time
-   */
-  sharedSpaceIds?: string[];
+  /** provider account identity hash — duplicate-connection detection */
+  providerAccountHash?: string;
+}
+
+/**
+ * SYNCED, secret-free connection-instance metadata. Lives in the
+ * owner's personal STORE FEED: every one of their devices renders the
+ * instance (name, icon) even before E2EE tokens arrive.
+ */
+export interface StoreConnRow extends SyncEnvelope {
+  id: string; // instance id
+  spaceId: string; // the owner's store feed
+  store: StoreId;
+  displayName: string;
+  /** BrandIconPicker result ('brands/….svg' or a logo URL) */
+  icon?: string;
+  providerAccountHash?: string;
+  connectedAt: string;
+  /** 'expired' = reconnect needed (mirrored from the device row) */
+  status?: 'ok' | 'expired';
+}
+
+/**
+ * Per-space inclusion of a connection instance (the accountLink
+ * analogue): members see included connections and their receipts flow
+ * into the space. Carries a name/icon snapshot — members cannot read
+ * the owner's store feed.
+ */
+export interface StoreConnLinkRow extends SyncEnvelope {
+  id: string; // `sclink:{spaceId}:{instanceId}`
+  spaceId: string;
+  instanceId: string;
+  store: StoreId;
+  displayName: string;
+  icon?: string;
+  addedByName?: string;
+}
+
+/**
+ * Per-space receipt↔transaction link (the txMeta analogue) carrying a
+ * SNAPSHOT of the receipt payload — rulings 1+2: linked receipts follow
+ * the transactions (survive leaving, survive instance removal) because
+ * the link needs no read access to the owner's store feed.
+ */
+export interface ReceiptLinkRow extends SyncEnvelope {
+  id: string;
+  spaceId: string;
+  /** global receipt id; absent for photo-born links */
+  receiptId?: string;
+  /** absent = the receipt is present in the space but not attached yet */
+  txId?: string;
+  source: ReceiptSource;
+  instanceId?: string;
+  date: string;
+  totalCents: number;
+  merchant?: string;
+  items?: ReceiptItem[];
+  image?: string;
+  payment?: ReceiptPayment;
+  /** 1 = the matcher linked it, 0/absent = a human did */
+  auto?: 0 | 1;
 }
 
 /**
@@ -526,7 +600,10 @@ export type EntityName =
   | 'debt'
   | 'allocation'
   | 'receipt'
+  | 'receiptLink'
   | 'storeMarker'
+  | 'storeConn'
+  | 'storeConnLink'
   | 'holding'
   | 'lot'
   | 'insightDismiss'
@@ -548,7 +625,10 @@ export interface EntityRowMap {
   debt: DebtRow;
   allocation: AllocationRow;
   receipt: ReceiptRow;
+  receiptLink: ReceiptLinkRow;
   storeMarker: StoreMarkerRow;
+  storeConn: StoreConnRow;
+  storeConnLink: StoreConnLinkRow;
   holding: HoldingRow;
   lot: LotRow;
   insightDismiss: InsightDismissRow;

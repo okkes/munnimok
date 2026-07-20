@@ -55,9 +55,10 @@ export interface StorageBackend {
 
   // --- device-only stores (never synced) ---
   storeConnAll(): Promise<StoreConnectionRow[]>;
-  storeConnGet(store: StoreConnectionRow['store']): Promise<StoreConnectionRow | undefined>;
+  /** by INSTANCE id (receipts v3; legacy migrated rows use the store name) */
+  storeConnGet(id: string): Promise<StoreConnectionRow | undefined>;
   storeConnPut(row: StoreConnectionRow): Promise<void>;
-  storeConnDelete(store: StoreConnectionRow['store']): Promise<void>;
+  storeConnDelete(id: string): Promise<void>;
   quoteCacheAll(): Promise<QuoteCacheRow[]>;
   quoteCachePutAll(rows: QuoteCacheRow[]): Promise<void>;
 
@@ -144,19 +145,19 @@ export class DexieBackend implements StorageBackend {
   }
 
   storeConnAll() {
-    return this.db.storeConnections.toArray();
+    return this.db.storeInstances.toArray();
   }
 
-  storeConnGet(store: StoreConnectionRow['store']) {
-    return this.db.storeConnections.get(store);
+  storeConnGet(id: string) {
+    return this.db.storeInstances.get(id);
   }
 
   async storeConnPut(row: StoreConnectionRow) {
-    await this.db.storeConnections.put(row);
+    await this.db.storeInstances.put(row);
   }
 
-  async storeConnDelete(store: StoreConnectionRow['store']) {
-    await this.db.storeConnections.delete(store);
+  async storeConnDelete(id: string) {
+    await this.db.storeInstances.delete(id);
   }
 
   quoteCacheAll() {

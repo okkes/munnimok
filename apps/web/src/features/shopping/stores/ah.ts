@@ -111,6 +111,16 @@ export async function ahFetchReceipts(call: ProxyCall, accessToken: string): Pro
   return { status: legacy.status, via: 'rest', receipts: legacyRows.filter((r) => r.transactionId && r.transactionMoment) };
 }
 
+/** the member's stable id — duplicate-connection detection, best-effort */
+export async function ahFetchMemberId(call: ProxyCall, accessToken: string): Promise<string | null> {
+  const { status, json } = await call('ah-api', '/mobile-services/member/v1/member', {
+    authorization: `Bearer ${accessToken}`,
+  });
+  if (status !== 200) return null;
+  const member = json as { memberId?: number | string } | null;
+  return member?.memberId != null ? String(member.memberId) : null;
+}
+
 export async function ahFetchReceiptItems(call: ProxyCall, accessToken: string, transactionId: string): Promise<AhReceiptUiItem[]> {
   const { status, json } = await graphql(call, accessToken, RECEIPT_DETAILS_QUERY, { id: transactionId });
   const products = (json as GraphqlEnvelope | null)?.data?.posReceiptDetails?.products;

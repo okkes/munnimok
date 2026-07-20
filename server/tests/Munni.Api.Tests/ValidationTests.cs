@@ -93,6 +93,20 @@ public class ValidationTests
     }
 
     [Fact]
+    public void Push_accepts_the_receipts_v3_entities()
+    {
+        // receipts redesign: instance metadata, per-space inclusion links
+        // and snapshot receipt links all travel the oplog — a missing
+        // whitelist entry poisons the outbox (the 2.20.1 lesson)
+        Assert.True(new PushRequestValidator().Validate(new PushRequest("device-1", [Op(entity: "storeConn")])).IsValid);
+        Assert.True(new PushRequestValidator().Validate(new PushRequest("device-1", [Op(entity: "storeConnLink")])).IsValid);
+        Assert.True(new PushRequestValidator().Validate(new PushRequest("device-1", [Op(entity: "receiptLink")])).IsValid);
+        // the longest v3 composite id stays inside the 128 cap
+        var sclinkId = $"sclink:{Guid.NewGuid()}:{Guid.NewGuid()}";
+        Assert.True(new SyncOpDtoValidator().Validate(Op(entity: "storeConnLink") with { EntityId = sclinkId }).IsValid);
+    }
+
+    [Fact]
     public void Push_rejects_unknown_entities_and_missing_ids()
     {
         Assert.False(new PushRequestValidator().Validate(new PushRequest("device-1", [Op(entity: "user")])).IsValid);
