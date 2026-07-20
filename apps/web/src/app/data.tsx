@@ -198,10 +198,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
         // operator catalog: cheap ETag revalidation, then apply any
         // tombstones exactly once per version — all fire-and-forget
         void (async () => {
-          const { refreshCatalog } = await import('@/sync/catalogSync');
+          const { cachedCatalog, refreshCatalog } = await import('@/sync/catalogSync');
           await refreshCatalog(store);
           const { applyCatalogTombstones } = await import('@/application/catalogMaintenance');
           await applyCatalogTombstones(store, repo);
+          // R9: operator-curated store fingerprints feed the receipt matcher
+          const { setCatalogStorePatterns } = await import('@/domain/storeReceipts');
+          setCatalogStorePatterns((await cachedCatalog(store))?.stores ?? []);
         })().catch(() => undefined);
         // reinstall gap: the Settings avatar reads the local profile copy —
         // hydrate it from /me when missing (fire-and-forget)

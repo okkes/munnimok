@@ -1,5 +1,14 @@
-import { describe, expect, it } from 'vitest';
-import { bestMatch, candidateLadder, mapAhItems, mapAhSummary, matchCandidates, parseReceiptText } from './storeReceipts';
+import { afterEach, describe, expect, it } from 'vitest';
+import {
+  bestMatch,
+  candidateLadder,
+  mapAhItems,
+  mapAhPayment,
+  mapAhSummary,
+  matchCandidates,
+  parseReceiptText,
+  setCatalogStorePatterns,
+} from './storeReceipts';
 import type { MatchableReceipt } from './storeReceipts';
 import type { TransactionRow } from '@/db/types';
 
@@ -21,6 +30,8 @@ const tx = (partial: Partial<TransactionRow>): TransactionRow =>
 const receipt: MatchableReceipt = { id: 'r1', source: 'ah', date: '2026-07-05', totalCents: 2350 };
 
 describe('receipt ↔ transaction matching', () => {
+  afterEach(() => setCatalogStorePatterns([])); // catalog overrides never leak between tests
+
   it('amount ±2c and date ±2d bound the candidates', () => {
     const txs = [
       tx({ id: 'hit' }),
@@ -56,6 +67,27 @@ describe('receipt ↔ transaction matching', () => {
     expect(bestMatch(receipt, [tx({ id: 'foreign', merchant: 'Snackbar' })], new Set())).toBeNull();
   });
 
+  it('payment tails constrain matching when a candidate account matches (R5)', () => {
+    const paid: MatchableReceipt = { ...receipt, payment: { method: 'PINNEN', accountTail: '4321' } };
+    const txs = [tx({ id: 'right-card' }), tx({ id: 'other-card' })];
+    const tails: Record<string, string> = { 'right-card': 'NL0012344321', 'other-card': 'NL0099998888' };
+    const tailOf = (row: TransactionRow) => tails[row.id];
+    // twins would be ambiguous — the tail disambiguates
+    expect(bestMatch(paid, txs, new Set(), tailOf)).toBe('right-card');
+    // no candidate matches the tail (store card ≠ IBAN): nobody is excluded
+    const strangers = [tx({ id: 'only' })];
+    expect(bestMatch({ ...receipt, payment: { accountTail: '0000' } }, strangers, new Set(), tailOf)).toBe('only');
+  });
+
+  it('operator store patterns from the catalog override the bundled fingerprint (R9)', () => {
+    setCatalogStorePatterns([{ id: 'ah', patterns: ['appie market'] }]);
+    const custom = [tx({ id: 'custom', merchant: 'APPIE MARKET AMSTERDAM' }), tx({ id: 'other', merchant: 'Snackbar' })];
+    expect(bestMatch(receipt, custom, new Set())).toBe('custom');
+    // a broken operator regex never breaks matching — bundled rules return
+    setCatalogStorePatterns([{ id: 'ah', patterns: ['('] }]);
+    expect(bestMatch(receipt, [tx({ id: 'ah-again' })], new Set())).toBe('ah-again');
+  });
+
   it('the picker ladder widens on demand: near matches, same price, latest', () => {
     const txs = [
       tx({ id: 'near', date: '2026-07-05' }),
@@ -71,6 +103,15 @@ describe('receipt ↔ transaction matching', () => {
 });
 
 describe('AH payload mapping', () => {
+  it('payment lines yield method + masked tail; product lines never do', () => {
+    const items = [
+      { type: 'product', description: 'MELK', amount: '2,58' },
+      { type: 'payment', description: 'PINNEN Maestro ****1234', amount: '23,50' },
+    ];
+    expect(mapAhPayment(items)).toEqual({ method: 'PINNEN Maestro ****1234', accountTail: '1234' });
+    expect(mapAhPayment([{ type: 'product', description: 'MELK', amount: '2,58' }])).toBeUndefined();
+  });
+
   it('summary rows become matchable receipts (euros → cents)', () => {
     const mapped = mapAhSummary({
       transactionId: 'tid-1',

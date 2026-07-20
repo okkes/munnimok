@@ -72,12 +72,22 @@ interface CatalogKeywordRule {
   catId: string;
   keywords: string[];
 }
+/** receipts v3 R9: operator-curated merchant patterns per store — the
+ *  receipt auto-matcher improves without an app release */
+interface CatalogStoreRule {
+  id: string;
+  patterns: string[];
+}
 interface CatalogDoc {
   version: number;
   categories: CatalogCategory[];
   keywords: CatalogKeywordRule[];
+  stores?: CatalogStoreRule[];
 }
-const EMPTY_CATALOG: CatalogDoc = { version: 0, categories: [], keywords: [] };
+const EMPTY_CATALOG: CatalogDoc = { version: 0, categories: [], keywords: [], stores: [] };
+
+/** the connectable + coming-soon stores the matcher knows about */
+const STORE_IDS = ['ah', 'jumbo', 'bol', 'coolblue', 'mediamarkt', 'amazon'] as const;
 
 interface BundledCategory {
   id: string;
@@ -186,8 +196,8 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
   };
 
   const pickProvider = (id: string) => act(() => call('/admin/bank-provider', { method: 'PUT', body: JSON.stringify({ provider: id }) }));
-  const publishCatalog = (categories: CatalogCategory[], keywords: CatalogKeywordRule[]) =>
-    act(() => call('/admin/catalog', { method: 'PUT', body: JSON.stringify({ categories, keywords }) }));
+  const publishCatalog = (categories: CatalogCategory[], keywords: CatalogKeywordRule[], stores: CatalogStoreRule[]) =>
+    act(() => call('/admin/catalog', { method: 'PUT', body: JSON.stringify({ categories, keywords, stores }) }));
   const promote = (userSub: string) => act(() => call(`/admin/admins/${encodeURIComponent(userSub)}`, { method: 'POST' }));
   const demote = (userSub: string) => act(() => call(`/admin/admins/${encodeURIComponent(userSub)}`, { method: 'DELETE' }));
 
@@ -686,18 +696,29 @@ function CatalogScreen({
 }: Readonly<{
   doc: CatalogDoc;
   busy: boolean;
-  onPublish: (categories: CatalogCategory[], keywords: CatalogKeywordRule[]) => void;
+  onPublish: (categories: CatalogCategory[], keywords: CatalogKeywordRule[], stores: CatalogStoreRule[]) => void;
 }>) {
   const [categories, setCategories] = useState<CatalogCategory[]>(doc.categories);
   const [keywords, setKeywords] = useState<CatalogKeywordRule[]>(doc.keywords);
+  // raw text per store (parsing on publish — a controlled parse-on-type
+  // input would swallow the comma the operator just typed)
+  const [storeText, setStoreText] = useState<Record<string, string>>(() =>
+    Object.fromEntries((doc.stores ?? []).map((s) => [s.id, s.patterns.join(', ')])),
+  );
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; typed: string } | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [draft, setDraft] = useState({ id: '', parentId: '', en: '', nl: '', tr: '', icon: '', txType: 'expense' });
   const [keywordDraft, setKeywordDraft] = useState({ catId: '', words: '' });
+  const storeRules = (): CatalogStoreRule[] =>
+    STORE_IDS.flatMap((id) => {
+      const patterns = (storeText[id] ?? '').split(',').map((p) => p.trim()).filter(Boolean);
+      return patterns.length > 0 ? [{ id, patterns }] : [];
+    });
   const dirty =
     JSON.stringify(categories) !== JSON.stringify(doc.categories) ||
-    JSON.stringify(keywords) !== JSON.stringify(doc.keywords);
+    JSON.stringify(keywords) !== JSON.stringify(doc.keywords) ||
+    JSON.stringify(storeRules()) !== JSON.stringify(doc.stores ?? []);
 
   const tree = buildTree(categories);
   const matches = (row: TreeRow) => {
@@ -989,9 +1010,40 @@ function CatalogScreen({
         </details>
       </section>
 
+      {/* receipts v3 R9: merchant fingerprints per store — the receipt
+          auto-matcher tests these against transaction merchants */}
+      <section className="card">
+        <div className="card-head">
+          <h2>Store matching</h2>
+          <span className="sub">comma-separated patterns (regex allowed); empty = the bundled fingerprint</span>
+        </div>
+        <table data-testid="catalog-stores">
+          <thead>
+            <tr>
+              <th>store</th><th>merchant patterns</th>
+            </tr>
+          </thead>
+          <tbody>
+            {STORE_IDS.map((id) => (
+              <tr key={id}>
+                <td><span className="cell-title">{id}</span></td>
+                <td>
+                  <input
+                    data-testid={'catalog-store-' + id}
+                    placeholder="albert heijn, \bah\b"
+                    value={storeText[id] ?? ''}
+                    onChange={(e) => setStoreText((current) => ({ ...current, [id]: e.target.value }))}
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+
       <div className={'pubbar' + (dirty ? ' show' : '')}>
         <span className="sub">{dirty ? 'Unpublished changes' : 'Everything published'}</span>
-        <button data-testid="catalog-publish" className="primary" disabled={busy || !dirty} onClick={() => onPublish(categories, keywords)}>
+        <button data-testid="catalog-publish" className="primary" disabled={busy || !dirty} onClick={() => onPublish(categories, keywords, storeRules())}>
           Publish version {doc.version + 1}
         </button>
       </div>

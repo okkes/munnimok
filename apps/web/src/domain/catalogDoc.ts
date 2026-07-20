@@ -33,10 +33,19 @@ export interface CatalogKeywordRule {
   keywords: string[];
 }
 
+/** operator-curated merchant patterns per store (receipts v3 R9): the
+ *  auto-matcher's fingerprint improves without an app release */
+export interface CatalogStoreRule {
+  /** ReceiptSource id, e.g. 'ah' */
+  id: string;
+  patterns: string[];
+}
+
 export interface CatalogDoc {
   version: number;
   categories: CatalogDocCategory[];
   keywords: CatalogKeywordRule[];
+  stores?: CatalogStoreRule[];
 }
 
 /** a builtin whose display name may come from the document */

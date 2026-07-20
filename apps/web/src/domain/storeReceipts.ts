@@ -18,6 +18,24 @@ const STORE_MERCHANT: Partial<Record<ReceiptSource, RegExp>> = {
   amazon: /amazon/i,
 };
 
+/** operator overrides from the catalog (R9): admin-curated patterns win
+ *  over the bundled fingerprints so matching improves without releases */
+let catalogStorePatterns: Partial<Record<ReceiptSource, RegExp>> = {};
+
+export function setCatalogStorePatterns(rules: readonly { id: string; patterns: string[] }[]): void {
+  const next: Partial<Record<ReceiptSource, RegExp>> = {};
+  for (const rule of rules) {
+    const parts = rule.patterns.map((p) => p.trim()).filter(Boolean);
+    if (parts.length === 0) continue;
+    try {
+      next[rule.id as ReceiptSource] = new RegExp(parts.join('|'), 'i');
+    } catch {
+      // a broken operator pattern must never break matching
+    }
+  }
+  catalogStorePatterns = next;
+}
+
 export interface MatchableReceipt {
   id: string;
   source: ReceiptSource;
@@ -68,7 +86,7 @@ export function matchCandidates(
 }
 
 const merchantHit = (source: ReceiptSource, tx: TransactionRow): boolean =>
-  STORE_MERCHANT[source]?.test(tx.merchant ?? '') ?? false;
+  (catalogStorePatterns[source] ?? STORE_MERCHANT[source])?.test(tx.merchant ?? '') ?? false;
 
 function scoreOf(receipt: MatchableReceipt, tx: TransactionRow): number {
   const merchant = merchantHit(receipt.source, tx) ? 2 : 0;
