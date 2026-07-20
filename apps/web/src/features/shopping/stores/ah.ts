@@ -118,7 +118,7 @@ export async function ahFetchMemberId(call: ProxyCall, accessToken: string): Pro
   });
   if (status !== 200) return null;
   const member = json as { memberId?: number | string } | null;
-  return member?.memberId != null ? String(member.memberId) : null;
+  return member?.memberId == null ? null : String(member.memberId);
 }
 
 export async function ahFetchReceiptItems(call: ProxyCall, accessToken: string, transactionId: string): Promise<AhReceiptUiItem[]> {

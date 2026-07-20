@@ -167,6 +167,50 @@ describe('Receipts S1 (demo identity)', () => {
     await screen.findByTestId('receipt-linked-tx');
   }, 15_000);
 
+  it('managing an instance renames it everywhere and remove cascades (ruling 2)', async () => {
+    renderAppAsUser('/shopping', {
+      spaces: [{ id: 's-user', name: 'Personal' }],
+      api: {
+        'POST /feeds': () => ({ feedSpaceId: 'feed', owned: true }),
+        'POST /shop/proxy/ah-api': (body) => {
+          const request = body as { path: string };
+          if (request.path === '/mobile-auth/v1/auth/token') return { access_token: 'acc-1', refresh_token: 'ref-1' };
+          if (request.path === '/mobile-services/v2/receipts') return [];
+          return {};
+        },
+      },
+    });
+    await screen.findByTestId('screen-shopping');
+    fireEvent.click(await screen.findByTestId('shop-ah-connect'));
+    fireEvent.change(await screen.findByTestId('shop-ah-paste'), { target: { value: 'appie://login-exit?code=abc-12345' } });
+    fireEvent.click(screen.getByTestId('shop-ah-submit'));
+    fireEvent.click(await screen.findByTestId('shop-name-save', {}, { timeout: 5000 }));
+
+    // manage: rename on blur reaches the synced metadata AND the links
+    fireEvent.click(await waitFor(() => document.querySelector('[data-testid^="shop-inst-manage-"]')!));
+    const nameInput = (await screen.findByTestId('shop-manage-name')) as HTMLInputElement;
+    fireEvent.change(nameInput, { target: { value: 'AH werk' } });
+    fireEvent.blur(nameInput);
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB(USER_TEST_DB);
+    await waitFor(async () => {
+      expect((await db.storeConns.toArray()).find((c) => c.deleted === 0)?.displayName).toBe('AH werk');
+      expect((await db.storeConnLinks.toArray()).find((l) => l.deleted === 0)?.displayName).toBe('AH werk');
+    });
+
+    // remove asks twice, then the instance + links tombstone and the
+    // device tokens disappear (unlinked receipts would go the same way)
+    fireEvent.click(screen.getByTestId('shop-inst-remove'));
+    await screen.findByTestId('shop-remove-note');
+    fireEvent.click(screen.getByTestId('shop-inst-remove-confirm'));
+    await waitFor(async () => {
+      expect(await db.storeInstances.toArray()).toHaveLength(0);
+      expect((await db.storeConns.toArray()).every((c) => c.deleted === 1)).toBe(true);
+      expect((await db.storeConnLinks.toArray()).every((l) => l.deleted === 1)).toBe(true);
+    });
+    db.close();
+  }, 15_000);
+
   it('a signed-in user connects Jumbo with username/password (never stored)', async () => {
     renderAppAsUser('/shopping', {
       api: {

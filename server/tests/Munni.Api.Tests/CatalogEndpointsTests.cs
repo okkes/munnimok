@@ -77,6 +77,8 @@ public class CatalogEndpointsTests : IClassFixture<AdminApiFactory>
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
+    private static readonly string[] AhPatterns = ["albert heijn", "AH to go"];
+
     [Fact]
     public async Task Publish_RoundTrips_StorePatterns_AndDefaultsThemEmpty()
     {
@@ -93,7 +95,7 @@ public class CatalogEndpointsTests : IClassFixture<AdminApiFactory>
         {
             categories = Array.Empty<object>(),
             keywords = Array.Empty<object>(),
-            stores = new[] { new { id = "ah", patterns = new[] { "albert heijn", "AH to go" } } },
+            stores = new[] { new { id = "ah", patterns = AhPatterns } },
         });
         Assert.Equal(HttpStatusCode.OK, withStores.StatusCode);
         var read2 = JsonDocument.Parse(await (await ClientFor(null).GetAsync("/catalog")).Content.ReadAsStringAsync()).RootElement;

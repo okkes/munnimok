@@ -34,6 +34,32 @@ interface InstanceView {
   device?: StoreConnectionRow;
 }
 
+/** one sync attempt's outcome, spoken out loud (kept from v2) */
+function SyncResultLine({ id, state }: Readonly<{ id: string; state: 'busy' | StoreSyncResult }>) {
+  const { t } = useLang();
+  if (state === 'busy')
+    return (
+      <span className="block text-[11px] text-ink-4" data-testid={`shop-inst-syncing-${id}`}>
+        {t('shop.syncBusy')}
+      </span>
+    );
+  let text = t('shop.syncFailed', { status: state.httpStatus ?? '?' });
+  if (state.status === 'ok') text = state.added > 0 ? t('shop.syncAdded', { n: state.added }) : t('shop.syncNone');
+  if (state.status === 'expired') text = t('shop.syncExpired');
+  // which recipe answered (user question: "is it the fallback?")
+  let via = '';
+  if (state.status === 'ok' && state.via) via = state.via === 'graphql' ? ' · GraphQL' : ' · REST (fallback)';
+  return (
+    <span
+      className={`block text-[11px] ${state.status === 'ok' ? 'text-accent-deep' : 'text-negative'}`}
+      data-testid={`shop-inst-result-${id}`}
+    >
+      {text}
+      {via && <span data-testid="shop-ah-via">{via}</span>}
+    </span>
+  );
+}
+
 /**
  * Settings → Shopping connections, receipts v3: connections are named
  * INSTANCES (several per store), globally visible on the owner's
@@ -94,30 +120,7 @@ export function ShoppingConnectionsScreen() {
 
   const statusLine = (view: InstanceView) => {
     const syncState = syncStates[view.meta.id];
-    if (syncState === 'busy')
-      return (
-        <span className="block text-[11px] text-ink-4" data-testid={`shop-inst-syncing-${view.meta.id}`}>
-          {t('shop.syncBusy')}
-        </span>
-      );
-    if (syncState) {
-      let text = t('shop.syncFailed', { status: syncState.httpStatus ?? '?' });
-      if (syncState.status === 'ok')
-        text = syncState.added > 0 ? t('shop.syncAdded', { n: syncState.added }) : t('shop.syncNone');
-      if (syncState.status === 'expired') text = t('shop.syncExpired');
-      // which recipe answered (user question: "is it the fallback?")
-      let via = '';
-      if (syncState.status === 'ok' && syncState.via) via = syncState.via === 'graphql' ? ' · GraphQL' : ' · REST (fallback)';
-      return (
-        <span
-          className={`block text-[11px] ${syncState.status === 'ok' ? 'text-accent-deep' : 'text-negative'}`}
-          data-testid={`shop-inst-result-${view.meta.id}`}
-        >
-          {text}
-          {via && <span data-testid="shop-ah-via">{via}</span>}
-        </span>
-      );
-    }
+    if (syncState) return <SyncResultLine id={view.meta.id} state={syncState} />;
     if (view.device?.status === 'ok')
       return (
         <span className="block text-[11px] text-ink-4" data-testid={`shop-inst-status-${view.meta.id}`}>
