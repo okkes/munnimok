@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.20.1](https://github.com/okkes/munnimok/compare/v2.20.0...v2.20.1) (2026-07-19)
+
+
+### 🐞 Bug Fixes
+
+* **sync:** unclog poisoned outboxes — accept topics + composite ids, chunk pushes, isolate space failures ([7cea99f](https://github.com/okkes/munnimok/commit/7cea99f813440db14acf2fa06b2a994449a1bf64))
+
 ## [2.20.0](https://github.com/okkes/munnimok/compare/v2.19.1...v2.20.0) (2026-07-19)
 
 
