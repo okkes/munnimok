@@ -26,10 +26,30 @@ LOG="$LIVE/deploy.log"
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*" >>"$LOG"; }
 
-# never run two applies at once (an image pull can outlast the schedule)
+# never run two applies at once (an image pull can outlast the schedule).
+# But a HOLDER that outlives any sane apply is a hung apply: on
+# 2026-07-20 a wedged docker pull held this lock for 40+ hours and the
+# silent `exit 0` froze BOTH stacks while newer bundles sat in
+# published/ — so a long-stale holder is now killed (next cycle applies).
 if command -v flock >/dev/null 2>&1; then
   exec 9>"$LIVE/.apply.lock"
-  flock -n 9 || exit 0
+  if ! flock -n 9; then
+    holder="$(cat "$LIVE/.apply.pid" 2>/dev/null || echo)"
+    started="$(cat "$LIVE/.apply.started" 2>/dev/null || echo 0)"
+    age=$(( $(date +%s) - started ))
+    # 90 min covers the slowest image pull; /proc guard: never kill a
+    # recycled PID that is not an apply run
+    if [ -n "$holder" ] && [ "$age" -gt 5400 ] && grep -q "apply" "/proc/$holder/cmdline" 2>/dev/null; then
+      log "apply held by PID $holder for ${age}s — killing the stale holder; next cycle retries"
+      if command -v pgrep >/dev/null 2>&1; then
+        for child in $(pgrep -P "$holder" 2>/dev/null); do kill -9 "$child" 2>/dev/null; done
+      fi
+      kill -9 "$holder" 2>/dev/null
+    fi
+    exit 0
+  fi
+  echo $$ >"$LIVE/.apply.pid"
+  date +%s >"$LIVE/.apply.started"
 fi
 
 apply_channel() { # apply_channel STAMP BUNDLE MARKER STACKS...
