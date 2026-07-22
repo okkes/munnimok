@@ -1,0 +1,2 @@
+CREATE DATABASE logto;
+CREATE DATABASE glitchtip;

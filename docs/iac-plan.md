@@ -4,14 +4,27 @@ Status: **APPROVED with amendments** (2026-07-22). Goal (user): "I
 provide the root credentials once; everything else is generated, stored
 and deployed by code."
 
-User rulings folded in:
-- **Zero reuse of production.** The IaC stacks share NOTHING with the
-  running prod/staging stacks — no shared Logto, no shared Postgres,
-  no shared containers. Every service is deployed fresh per stack.
-- **Twin stacks, iac naming.** IaC deploys a dev + prod pair mirroring
-  today's channels: **munni-iac-staging** and **munni-iac-prod**. Both
-  must come up from the same `bootstrap` path; only the stack file
-  differs. Prod adopts the pipeline only after BOTH twins pass.
+User rulings folded in (clarified 2026-07-22, IMPLEMENTATION STARTED):
+- **Isolated from the existing stacks, shared within the pair.** The
+  IaC pair mirrors today's topology exactly: munni-iac-prod owns the
+  heavyweight shared services (Logto, GlitchTip) and munni-iac-staging
+  REUSES them — the same way today's staging rides prod's Logto. What
+  the pair must never do is touch or reuse anything from the CURRENT
+  prod/staging stacks: own Logto instance, own databases, own
+  containers, own domains.
+- **Twin stacks, iac naming + domains.** **munni-iac-prod** at
+  `munni-iac.okkes.synology.me` and **munni-iac-staging** at
+  `munni-iac-test.okkes.synology.me` (`-iac` in every hostname keeps
+  the pair visually unmistakable). Both come up from the same
+  `bootstrap` path; only the stack file differs. Prod adopts the
+  pipeline only after BOTH twins pass.
+- **First-time vs steady-state, no shortcuts.** Bootstrap must handle
+  BOTH flows explicitly: the FIRST deployment of a stack produces
+  every artifact the unavoidable manual steps need (the signed .aab
+  for the first Play upload, the .ipa for the first TestFlight push,
+  the exact console clicks, in order, with the generated values
+  inlined) — a runbook rendered per stack, not generic prose. Every
+  deployment after that runs with zero human input.
 - **Ordering: Raspberry Pi first.** The Pi arc (multi-arch images,
   docs/raspberry-pi-plan.md) changes what a "host" is; IaC modules
   must target both DSM and the Pi, so the Pi work lands before the
@@ -67,11 +80,13 @@ Logto has a full Management API (we already use it for user deletion).
   post-logout URIs, CORS origins, resource indicators derived from the
   stack file's domains. Apply = upsert by app name; ids written back to
   GitHub variables (`VITE_LOGTO_APP_ID`, …).
-- **Each IaC stack runs its OWN Logto instance** (user ruling: no
-  reuse of production). The Logto container + its database are part of
-  the stack render; its OOBE + one "infra" M2M credential is the
-  single manual step *per stack*, after which apps/redirects/resources
-  are all code.
+- **One Logto instance per PAIR, owned by munni-iac-prod** (user
+  clarification: staging reuses it, mirroring today's topology; only
+  the CURRENT stacks' Logto is off-limits). The container + database
+  render with the prod twin; its OOBE + one "infra" M2M credential is
+  the single manual step per pair, after which apps/redirects/
+  resources for BOTH twins are code. Staging deletion safety knob
+  (`Logto:DeleteIdentityOnAccountDeletion=false`) carries over.
 
 ### 3. Stack rendering (compose + env)
 
@@ -98,12 +113,33 @@ DSM has a full web API (we already drive FileStation):
 ### 5. The munni-iac proof twins
 
 Acceptance test for the whole plan: from a clean checkout,
-`bootstrap --stack munni-iac-staging` and `--stack munni-iac-prod`
-must each produce a fully self-contained stack (web + api + **own
-Logto instance** + own postgres + own subdomains + own secrets) with
-ZERO console visits beyond the documented per-stack Logto OOBE step,
-then `bootstrap --destroy <stack>` removes it all. Only after both
-twins pass does prod adopt the same path.
+`bootstrap --stack munni-iac-prod` then `--stack munni-iac-staging`
+must produce the working pair (prod twin carries Logto + GlitchTip,
+staging twin reuses them; own postgres dbs, own `munni-iac*`
+subdomains, own secrets) with ZERO console visits beyond the
+documented once-per-pair Logto OOBE step, then
+`bootstrap --destroy <stack>` removes it all. Only after both twins
+pass does prod adopt the same path.
+
+### 6. First-time vs steady-state (explicit, per stack)
+
+`bootstrap --stack X` detects state and prints/does the right flow:
+
+**First run** (nothing exists yet):
+1. generate + store all derivable secrets; verify operator-provided
+   roots against the manifest
+2. render compose/env, deploy containers, run Logto module (after the
+   operator completes the pair's one OOBE step, guided)
+3. produce the manual-step artifacts: a signed .aab (new appId per
+   stack, e.g. `app.munni.iac`) for the first Play upload, the
+   TestFlight archive job trigger, DNS records to create, DSM
+   firewall expectations — all written into a rendered
+   `runbook.<stack>.md` with the actual generated values inlined
+4. `--verify` probes everything reachable and lists exactly what
+   remains manual
+
+**Steady state** (marker exists, manifest satisfied): render, diff,
+apply, verify — no prompts, no manual steps, CI-invokable.
 
 ## Inevitably manual (documented, verified, never scripted)
 

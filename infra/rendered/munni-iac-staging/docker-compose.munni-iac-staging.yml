@@ -1,0 +1,76 @@
+# munni-iac-staging — RENDERED by infra/bootstrap.mjs, do not edit by hand.
+# Reverse proxy (DSM): munni-iac-test.okkes.synology.me -> :8295, munni-iac-test-api.okkes.synology.me -> :8297,
+# munni-iac-test-admin.okkes.synology.me -> :8296 (LAN only)
+
+services:
+  web:
+    image: ${REGISTRY}/munni-web:${TAG}
+    restart: unless-stopped
+    ports:
+      - "8295:80"
+
+  admin:
+    image: ${REGISTRY}/munni-admin:${TAG}
+    restart: unless-stopped
+    ports:
+      - "8296:80"
+
+  api:
+    image: ${REGISTRY}/munni-api:${TAG}
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Db: Host=postgres;Database=munni;Username=munni;Password=${POSTGRES_PASSWORD}
+      Db__AutoMigrate: "true"
+      Auth__Authority: https://logto-iac.okkes.synology.me/oidc
+      Auth__Audience: https://munni-iac-test-api.okkes.synology.me
+      Cors__Origins__0: https://munni-iac-test.okkes.synology.me
+      Cors__Origins__1: https://munni-iac-test-admin.okkes.synology.me
+      Cors__Origins__2: https://localhost
+      Cors__Origins__3: capacitor://localhost
+      GoCardless__SecretId: ${GOCARDLESS_SECRET_ID}
+      GoCardless__SecretKey: ${GOCARDLESS_SECRET_KEY}
+      EnableBanking__ApplicationId: ${ENABLEBANKING_APPLICATION_ID:-}
+      EnableBanking__PrivateKeyPem: ${ENABLEBANKING_PRIVATE_KEY_PEM:-}
+      Push__VapidPublicKey: ${PUSH_VAPID_PUBLIC_KEY:-}
+      Push__VapidPrivateKey: ${PUSH_VAPID_PRIVATE_KEY:-}
+      Push__Subject: ${PUSH_VAPID_SUBJECT:-mailto:admin@localhost}
+      Fcm__ServiceAccountJson: ${FCM_SERVICE_ACCOUNT_JSON:-}
+      Logos__SecretKey: ${LOGODEV_SECRET_KEY:-}
+      Logos__PublicToken: ${LOGODEV_PUBLIC_TOKEN:-}
+      Admin__Subs: ${ADMIN_SUBS:-}
+      Sentry__Dsn: ${API_SENTRY_DSN:-}
+      Logto__M2mAppId: ${LOGTO_M2M_APP_ID:-}
+      Logto__M2mAppSecret: ${LOGTO_M2M_APP_SECRET:-}
+      # staging must never delete a shared-Logto identity
+      Logto__DeleteIdentityOnAccountDeletion: "false"
+      BUILD_NUMBER: ${TAG}
+      Ocr__BaseUrl: http://ocr:8884
+    ports:
+      - "8297:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  ocr:
+    image: hertzg/tesseract-server:latest
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: munni
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: munni
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U munni"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:

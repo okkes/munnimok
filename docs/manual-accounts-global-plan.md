@@ -1,86 +1,60 @@
-# Manual accounts go global — plan
+# Account tiers — fully linked, semi linked, space-scoped manual
 
-Status: **DESIGN — awaiting approval + answers** (2026-07-22). User
-ruling: manual accounts should work like linked bank accounts — global
-at the identity level, visible per space only through attachment, raw
-transaction data global, per-space modifications local to the space.
+Status: **DESIGN v2 — user redirection** (2026-07-22). The earlier
+"manual accounts go global" idea is dropped. User ruling: there are
+THREE kinds of financial accounts, and only the last one accepts
+manually added transactions.
 
-## Today vs target
+## The three tiers
 
-Today a manual account is a plain `account` row INSIDE one space; its
-transactions belong to that space alone; another space can never see
-it. Bank/CAMT accounts already have the right shape: the account and
-its raw transactions live in a **feed space**, spaces opt in via
-`accountLink`, and per-space edits (category, notes, splits) stay in
-the attaching space.
+| Tier | Source | Lives | Attach model | Manual tx |
+|---|---|---|---|---|
+| **Fully linked** | Open banking (GoCardless, EnableBanking) — data arrives on its own | Feed space (global) | Per-space attach with start date | **Never** — the bank is the single source of truth |
+| **Semi linked** | Bank export uploads: CAMT.053 today, ING/CSV dumps next | Feed space (global) | Same per-space attach | **Never** — the next upload is the source of truth; hand-typed rows would duplicate or contradict it |
+| **Space-scoped manual** | Typed in by hand (cash, savings jar, informal loans) | Inside ONE space, like today | None — it exists only where it was created | **Yes** — the only tier where transactions are hand-entered, and balance updates live with them |
 
-Target: manual accounts adopt the exact same feed machinery — one
-model for every account, and the new per-space attach/detach screen
-(shipped 2026-07-22) works for manual accounts unchanged.
+Why the hard no on manual tx for linked tiers: a hand-typed row on a
+bank-fed account WILL collide with the imported truth (dedupe can't
+tell a manual entry from a slow booking), and reconciliation errors
+are exactly what munni exists to avoid. If something is missing from
+a bank feed, the fix is an upload (semi) or waiting for the feed
+(full) — or tracking it in a manual account.
 
-## Design
+## What this changes (and doesn't)
 
-- **Creation** (Global settings → Financial accounts → add): a manual
-  account gets its own feed space — `personalFeedSpaceId(accountId,
-  sub)` for syncing identities, a local feed-shaped id offline. The
-  account row + all its transactions live there. Server-side the feed
-  registers like a CAMT feed (`POST /feeds`).
-- **Attachment**: identical to bank accounts — `accountLink` +
-  server link; the space's Financial accounts screen is the only
-  attach/detach surface. History start date applies (manual tx before
-  the date stay invisible in that space).
-- **Raw vs transformation** (existing law): amount, date, description,
-  balance = raw, global, editable by any feed member wherever they see
-  it (edits propagate everywhere, like a bank correction would).
-  Category, notes, splits, reimbursements = per-space.
-- **Multiple owners**: feeds already allow several members (family
-  GoCardless model). Any feed member can enter/edit raw transactions;
-  all members see the same raw history.
-- **Ownership transfer**: when the last owner leaves a space the
-  account is attached to — or deletes their munni account — feed
-  ownership transfers to the OWNERS of the spaces it is attached to
-  (they become feed members) instead of the data dying. Detach-
-  everywhere plus sole ownership = the feed is deleted with the
-  account (today's cascade).
-- **Migration**: a one-time client+server migration moves every
-  existing per-space manual account into its own feed space +
-  auto-attaches it to its original space with full history — no
-  visible change for the user, but afterwards it can be attached
-  elsewhere. Offline identities migrate purely locally.
+The architecture already matches: full + semi accounts are feed-space
+accounts with `accountLink` attachment; manual accounts are space
+rows. No migration, no global manual feeds, no ownership-transfer
+machinery. The work is ENFORCEMENT + CLARITY:
 
-## Open questions (please answer before build)
+- **Enforcement**: manual add/edit of transactions is already blocked
+  for `gocardless` accounts — extend the same block to `camt053` (and
+  any future import source). One rule: `source !== 'manual'` ⇒ no
+  manual tx, client-side (form hides the account) and server-side
+  (validator rejects tx ops whose account is feed-fed… client-only is
+  acceptable for v1 since raw tx entry is client-authored anyway).
+- **Naming in the UI**: the tier shows on account rows and the attach
+  sheet — "Linked", "Imported", "Manual" (EN/NL/TR) — replacing the
+  current manual/automated wording, so the user can predict behavior
+  before tapping.
+- **Balance**: manual accounts keep the live hand-maintained balance;
+  linked/imported balances come from the feed only.
+- **ING CSV importer** (new semi-linked source): same pipeline as
+  CAMT.053 — parse, feed-space dedupe by IBAN, attach with history
+  window. Slice below; other banks' CSVs follow the same adapter
+  shape.
 
-1. **Cross-space raw edits.** Space B's member (not the creator) has
-   the account attached and fixes a typo in a transaction amount —
-   that edit is raw, so it changes what space A sees too. Intended?
-   (The bank-account analogy says yes; saying no means amounts become
-   per-space and balances diverge.)
-2. **Who may add transactions?** Any member of any attached space, or
-   only feed members (creator + transferred owners)? I lean: any
-   member of an attached space may ADD (a household logs cash spends
-   together), raw EDITS restricted to feed members.
-3. **Balance.** Manual balance is currently a stored number nudged by
-   manual tx deltas. Global model: one global balance on the feed
-   account (space-independent). OK?
-4. **Ownership transfer timing.** Transfer when the last owner
-   LEAVES a space / deletes their account — automatic to all owners
-   of all attached spaces, or should the leaver get a "hand over to
-   whom?" choice when multiple candidates exist?
-5. **Migration consent.** Silent auto-migration on app update, or a
-   one-time "your manual accounts are now global" notice?
+## Slices
 
-## Slices (after answers)
+- AT1 tier enforcement (camt053 joins the no-manual-tx rule) + tier
+  labels on account rows / attach surfaces + EN/NL/TR + tests
+- AT2 ING CSV importer (adapter beside importCamt, shared preview
+  UI) + tests with a real-shape fixture
+- AT3 docs/guide/tour touch-ups explaining the three tiers
 
-- MA1 server: manual feeds (register/membership/transfer rules) +
-  validators + tests
-- MA2 client: creation into feed space + migration (online + offline)
-- MA3 attach/detach parity + raw-vs-transform enforcement for manual
-  tx + balance unification
-- MA4 ownership-transfer flows (leave space, delete account) + tests
+## Related follow-up (unchanged)
 
-## Related follow-up (noted, separate)
-
-Consent expiry push: the space accounts screen now flags stale
-GoCardless syncs client-side ("Reconnect?"); a server-driven push
-notification when a 90/180-day consent actually expires belongs in
-the notifications backlog.
+Consent expiry push: the space accounts screen flags stale GoCardless
+syncs client-side ("Reconnect?"); a server-driven push when a
+90/180-day consent actually expires belongs in the notifications
+backlog.
