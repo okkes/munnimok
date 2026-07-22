@@ -437,6 +437,11 @@ export function TxDetailScreen() {
       setConfirmDelete(true);
       return;
     }
+    // manual accounts keep a LIVE balance: deleting the row hands its
+    // amount back (bank-linked balances stay the bank's)
+    if (account && account.source !== 'gocardless') {
+      await repo.upsert('account', tx.spaceId, account.id, { balanceCents: account.balanceCents - tx.amountCents });
+    }
     await repo.remove('transaction', tx.spaceId, tx.id);
     void navigate({ to: '/transactions' });
   };

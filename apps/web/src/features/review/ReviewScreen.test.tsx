@@ -320,6 +320,8 @@ describe('ReviewScreen (demo identity)', () => {
     // redesign) — a second row is added explicitly
     fireEvent.click(screen.getByTestId('review-category-chip'));
     fireEvent.click(await screen.findByTestId('split-add-row'));
+    // the fresh row is uncategorized + 0 — no THIRD row until it's done
+    expect((screen.getByTestId('split-add-row') as HTMLButtonElement).disabled).toBe(true);
     const amount0 = (await screen.findByTestId('split-amount-0')) as HTMLInputElement;
     expect(amount0.value).toBe('10,00');
 
@@ -377,6 +379,10 @@ describe('ReviewScreen (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).not.toContain('Coffee'));
     expect(screen.getByTestId('split-type-row').textContent).toContain('Saving');
     expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(true);
+    // the editor flags the stranded category and holds Done (user ss:
+    // Income type with a Maintenance row felt silently wrong)
+    await screen.findByTestId('split-type-conflict');
+    expect((screen.getByTestId('split-save') as HTMLButtonElement).disabled).toBe(true);
 
     // nothing was written mid-flight: the tx still holds its own type
     const db = new MunniDB('munni_demo');

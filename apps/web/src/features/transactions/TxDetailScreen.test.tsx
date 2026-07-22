@@ -316,6 +316,12 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     fireEvent.click(await screen.findByTestId('tx-detail-category-row'));
     await screen.findByTestId('split-editor');
     fireEvent.click(screen.getByTestId('split-add-row'));
+    // the gate (user request): the fresh row must be finished — category
+    // AND a value — before another may be added
+    expect((screen.getByTestId('split-add-row') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByTestId('split-cat-1'));
+    fireEvent.click(await screen.findByTestId('catpicker-restaurants'));
+    fireEvent.change(screen.getByTestId('split-amount-1'), { target: { value: '0,01' } });
 
     // a third row can be added and removed again
     fireEvent.click(screen.getByTestId('split-add-row'));

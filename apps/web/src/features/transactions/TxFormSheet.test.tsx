@@ -60,6 +60,22 @@ describe('TxFormSheet (demo identity)', () => {
     );
   });
 
+  it('a manual expense adjusts the account balance live (user bug: it froze)', async () => {
+    await openForm();
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    const before = (await db.accounts.get('demo_main'))!.balanceCents;
+
+    fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '50,00' } });
+    fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Markt' } });
+    fireEvent.click(screen.getByTestId('txform-save'));
+
+    await waitFor(async () => {
+      expect((await db.accounts.get('demo_main'))!.balanceCents).toBe(before - 5000);
+    }, { timeout: 5000 });
+    db.close();
+  }, 15_000);
+
   it('type follows the category until explicitly set; counter account suggests it', async () => {
     await openForm();
     // demo has several accounts -> the counter row is offered

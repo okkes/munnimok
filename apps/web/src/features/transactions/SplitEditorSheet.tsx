@@ -127,6 +127,25 @@ export function SplitEditorSheet({
   const remainder = mode === 'pct' ? pctRemainder(splits) : splitRemainderCents(referenceCents, splits);
   const error = sheetError({ seedSingle, rowCount: rows.length, mode, referenceCents, splits });
 
+  // a mid-edit TYPE change can strand categories that don't speak the
+  // new type (user ss: Income + Maintenance) — flag them and hold Done
+  const effectiveType = txType ?? tx.txType;
+  const rowConflicts = rows.map((r) => {
+    if (r.catId === UNCATEGORIZED_ID) return false;
+    const speaks = cats.byId(r.catId).txTypes;
+    return !!speaks && !speaks.includes(effectiveType);
+  });
+  const hasTypeConflict = rowConflicts.some(Boolean);
+
+  // an empty or zero row must be finished before ANOTHER row appears
+  // (user request: + Add category waits for the current one)
+  const rowUnfinished = (index: number) => {
+    if (rows[index].catId === UNCATEGORIZED_ID) return true;
+    const value = mode === 'pct' ? parsePct(rows[index].amount) : (parseCents(rows[index].amount) ?? 0);
+    return value <= 0;
+  };
+  const addBlocked = rows.some((_, i) => rowUnfinished(i));
+
   const switchMode = (next: 'amount' | 'pct') => {
     if (next === mode) return;
     setMode(next);
@@ -145,7 +164,7 @@ export function SplitEditorSheet({
   };
 
   const save = () => {
-    if (error) return;
+    if (error || hasTypeConflict) return;
     // a lone row in the unified editor means "just this category" — no
     // split is stored, the category rides through onApplySingle
     if (seedSingle && rows.length === 1) {
@@ -227,7 +246,9 @@ export function SplitEditorSheet({
               <button
                 data-testid={`split-cat-${i}`}
                 onClick={() => setPickerFor(i)}
-                className="m-tap flex h-11 min-w-0 flex-1 items-center gap-2 rounded-input border border-line bg-surface px-3 text-left text-[14px] text-ink"
+                className={`m-tap flex h-11 min-w-0 flex-1 items-center gap-2 rounded-input border bg-surface px-3 text-left text-[14px] text-ink ${
+                  rowConflicts[i] ? 'border-negative' : 'border-line'
+                }`}
               >
                 <Icon name={cats.byId(row.catId).icon} size={17} color={cats.byId(cats.byId(row.catId).parentId ?? '').color ?? cats.byId(row.catId).color} />
                 <span className="truncate">{catName(cats.byId(row.catId), t)}</span>
@@ -261,14 +282,23 @@ export function SplitEditorSheet({
             </div>
           ))}
 
+          {/* finish the open row first (user request): no new row while
+              one is still uncategorized or worth nothing */}
           <button
             data-testid="split-add-row"
             onClick={addRow}
-            className="m-tap flex items-center gap-1.5 border-none bg-transparent px-1 py-1 text-[13px] font-medium text-accent-deep"
+            disabled={addBlocked}
+            className="m-tap flex items-center gap-1.5 border-none bg-transparent px-1 py-1 text-[13px] font-medium text-accent-deep disabled:opacity-40"
           >
             <Icon name="plus" size={16} />
             {t('split.addRow')}
           </button>
+
+          {hasTypeConflict && (
+            <p className="rounded-card bg-negative-soft px-3 py-2 text-[12px] leading-relaxed text-negative" data-testid="split-type-conflict">
+              {t('split.typeConflict', { type: t(`tx.type.${effectiveType}`) })}
+            </p>
+          )}
 
           {remainder !== 0 && (
             <button
@@ -286,7 +316,7 @@ export function SplitEditorSheet({
 
           {/* "Done", not "Save": in review this only stages the draft — the
               card's Confirm is the real write (user: Save felt misleading) */}
-          <Button data-testid="split-save" onClick={save} disabled={!!error}>
+          <Button data-testid="split-save" onClick={save} disabled={!!error || hasTypeConflict}>
             {t('split.done')}
           </Button>
           {!!source?.length && (
