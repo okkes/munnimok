@@ -53,6 +53,17 @@ function manualBalanceDeltas(
   return out;
 }
 
+/** write the deltas through the repo — kept out of the component (S3776) */
+function applyManualBalanceDeltas(
+  repo: { upsert: (entity: 'account', spaceId: string, id: string, fields: { balanceCents: number }) => Promise<unknown> },
+  spaceId: string,
+  entries: ReturnType<typeof manualBalanceDeltas>,
+): void {
+  for (const { account, delta } of entries) {
+    void repo.upsert('account', spaceId, account.id, { balanceCents: account.balanceCents + delta });
+  }
+}
+
 const TX_TYPES = Object.keys(TX_TYPE_VISUAL) as TxType[];
 
 /**
@@ -143,9 +154,7 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
   const save = () => {
     if (!valid || !effectiveAccount || cents === null) return;
     const signed = isExpense ? -Math.abs(cents) : Math.abs(cents);
-    for (const { account, delta } of manualBalanceDeltas(accounts, tx, effectiveAccount, signed)) {
-      void repo.upsert('account', spaceId, account.id, { balanceCents: account.balanceCents + delta });
-    }
+    applyManualBalanceDeltas(repo, spaceId, manualBalanceDeltas(accounts, tx, effectiveAccount, signed));
     void repo.upsert('transaction', spaceId, tx?.id ?? repo.newId(), {
       accountId: effectiveAccount,
       date,
