@@ -60,6 +60,19 @@ describe('TxFormSheet (demo identity)', () => {
     );
   });
 
+  it('no manual account: the form explains itself and doors to accounts', async () => {
+    const { renderAppAsUser, USER_TEST_DB } = await import('@/test/harness');
+    indexedDB.deleteDatabase(USER_TEST_DB);
+    // a user space with ZERO writable accounts (no seed)
+    renderAppAsUser('/transactions', { spaces: [{ id: 's-user', name: 'Personal' }] });
+    await screen.findByTestId('tx-list');
+    fireEvent.click(screen.getByTestId('tx-add'));
+    // the empty state replaces the form and the CTA lands on accounts
+    await screen.findByTestId('txform-no-accounts');
+    fireEvent.click(screen.getByTestId('txform-add-account'));
+    await screen.findByTestId('screen-accounts');
+  }, 15_000);
+
   it('a manual expense adjusts the account balance live (user bug: it froze)', async () => {
     await openForm();
     const { MunniDB } = await import('@/db/schema');

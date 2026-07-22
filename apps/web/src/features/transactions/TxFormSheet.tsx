@@ -25,6 +25,37 @@ interface TxFormSheetProps {
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
+type BalanceAccount = { id: string; source: string; balanceCents: number };
+
+/**
+ * Manual accounts keep a LIVE balance (user bug: it froze at the stated
+ * amount): every manual write adjusts the touched account(s) by the
+ * row's delta. Bank-linked balances stay the bank's; CAMT gets
+ * corrected on import.
+ */
+function manualBalanceDeltas(
+  accounts: readonly BalanceAccount[] | undefined,
+  tx: TransactionRow | undefined,
+  targetId: string,
+  signed: number,
+): Array<{ account: BalanceAccount; delta: number }> {
+  const adjustable = (id: string) => {
+    const account = accounts?.find((a) => a.id === id);
+    return account && account.source !== 'gocardless' ? account : undefined;
+  };
+  const target = adjustable(targetId);
+  if (tx && tx.accountId === targetId) {
+    return target ? [{ account: target, delta: signed - tx.amountCents }] : [];
+  }
+  const deltas: Array<{ account: BalanceAccount; delta: number }> = [];
+  if (tx) {
+    const previous = adjustable(tx.accountId);
+    if (previous) deltas.push({ account: previous, delta: -tx.amountCents });
+  }
+  if (target) deltas.push({ account: target, delta: signed });
+  return deltas.filter((d) => d.delta !== 0);
+}
+
 const TX_TYPES = Object.keys(TX_TYPE_VISUAL) as TxType[];
 
 /**
@@ -112,23 +143,11 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
     setCounterOpen(false);
   };
 
-  // manual accounts keep a LIVE balance (user bug: it froze at the
-  // stated amount): every manual write adjusts it by the row's delta.
-  // Bank-linked balances stay the bank's; CAMT gets corrected on import.
-  const adjustBalance = (target: { id: string; source: string; balanceCents: number } | undefined, delta: number) => {
-    if (!target || target.source === 'gocardless' || delta === 0) return;
-    void repo.upsert('account', spaceId, target.id, { balanceCents: target.balanceCents + delta });
-  };
-
   const save = () => {
     if (!valid || !effectiveAccount || cents === null) return;
     const signed = isExpense ? -Math.abs(cents) : Math.abs(cents);
-    const target = accounts?.find((a) => a.id === effectiveAccount);
-    if (tx && tx.accountId === effectiveAccount) {
-      adjustBalance(target, signed - tx.amountCents);
-    } else {
-      if (tx) adjustBalance(accounts?.find((a) => a.id === tx.accountId), -tx.amountCents);
-      adjustBalance(target, signed);
+    for (const { account, delta } of manualBalanceDeltas(accounts, tx, effectiveAccount, signed)) {
+      void repo.upsert('account', spaceId, account.id, { balanceCents: account.balanceCents + delta });
     }
     void repo.upsert('transaction', spaceId, tx?.id ?? repo.newId(), {
       accountId: effectiveAccount,
