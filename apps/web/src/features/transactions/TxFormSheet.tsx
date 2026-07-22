@@ -53,7 +53,7 @@ function manualBalanceDeltas(
   const out: Array<{ account: BalanceAccount; delta: number }> = [];
   for (const [id, delta] of deltas) {
     const account = accounts?.find((a) => a.id === id);
-    if (account?.source !== 'gocardless' && account && delta !== 0) out.push({ account, delta });
+    if (account?.source === 'manual' && delta !== 0) out.push({ account, delta });
   }
   return out;
 }
@@ -100,9 +100,10 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
 
   const allAccounts = useSpaceAccounts();
   const accounts = useMemo(() => allAccounts?.filter((a) => !a.archived), [allAccounts]);
-  // manual rows belong on manually maintained accounts only — open
-  // banking feeds are the bank's, not ours to append to
-  const writable = useMemo(() => (accounts ?? []).filter((a) => a.source !== 'gocardless'), [accounts]);
+  // tier rule: hand-typed rows belong on MANUAL accounts only — linked
+  // feeds are the bank's and imported (camt/csv) accounts are the next
+  // upload's; manual entries there would duplicate or contradict them
+  const writable = useMemo(() => (accounts ?? []).filter((a) => a.source === 'manual'), [accounts]);
   const recurrings = useRecurrings();
 
   // (re)fill when opened

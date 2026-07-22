@@ -167,8 +167,29 @@ describe('SpacesScreen (demo identity)', () => {
     await screen.findByTestId('screen-settings');
     fireEvent.click(await screen.findByTestId('settings-space-accounts-row'));
     const section = await screen.findByTestId('space-accounts');
-    // the demo space owns its seeded accounts directly
+    // the demo space owns its seeded accounts directly — provenance says so
     await waitFor(() => expect(section.textContent).toContain('Demo Savings'), { timeout: 5000 });
+    expect(section.textContent).toContain('created in this space');
     expect(screen.getByTestId('space-accounts-manage')).toBeTruthy();
+  }, 10_000);
+
+  it('creates a space-scoped manual account from the space accounts screen', async () => {
+    renderApp('/settings');
+    await screen.findByTestId('screen-settings');
+    fireEvent.click(await screen.findByTestId('settings-space-accounts-row'));
+    await screen.findByTestId('space-accounts');
+
+    fireEvent.click(screen.getByTestId('space-accounts-add-manual'));
+    // the sheet says plainly that this account is space-scoped, and
+    // offers ONLY manual types — no bank connect, no import
+    expect(await screen.findByTestId('space-add-scope-note')).toBeTruthy();
+    expect(screen.queryByTestId('acct-connect-bank')).toBeNull();
+    fireEvent.click(screen.getByTestId('space-accttype-cash'));
+    fireEvent.change(await screen.findByTestId('space-acctform-name'), { target: { value: 'Holiday jar' } });
+    fireEvent.change(screen.getByTestId('space-acctform-balance'), { target: { value: '50' } });
+    fireEvent.click(screen.getByTestId('space-acctform-save'));
+    await waitFor(() => expect(screen.getByTestId('space-accounts').textContent).toContain('Holiday jar'), {
+      timeout: 5000,
+    });
   }, 10_000);
 });

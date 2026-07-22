@@ -16,8 +16,8 @@ import { BrandIconPicker } from '@/features/recurring/BrandIconPicker';
 import { BankConnectSheet } from './BankConnect';
 import { useInstitutionLogos } from './useInstitutionLogos';
 import { useLang } from '@/i18n';
-import type { TranslationKey } from '@/i18n';
 import { useData } from '@/app/data';
+import { useQuery } from '@/db/useQuery';
 import { fmtCents, parseCents } from '@/lib/money';
 import { fmtTimeAgo } from '@/lib/text';
 import type { AccountRow, AccountType } from '@/db/types';
@@ -29,17 +29,7 @@ import { EmptyState } from '@/ui/EmptyState';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 
-const TYPES: { type: AccountType; labelKey: TranslationKey; icon: string; liability?: boolean }[] = [
-  { type: 'checking', labelKey: 'acct.bank', icon: 'bank-outline' },
-  { type: 'savings', labelKey: 'acct.saving', icon: 'piggy-bank-outline' },
-  { type: 'cash', labelKey: 'acct.cashWallet', icon: 'wallet-outline' },
-  { type: 'brokerage', labelKey: 'acct.brokerage', icon: 'chart-line' },
-  { type: 'credit', labelKey: 'acct.creditCard', icon: 'credit-card-outline', liability: true },
-  { type: 'mortgage', labelKey: 'acct.mortgage', icon: 'home-percent-outline', liability: true },
-  { type: 'loan', labelKey: 'acct.loan', icon: 'hand-coin-outline', liability: true },
-];
-const typeDef = (type: AccountType) => TYPES.find((d) => d.type === type) ?? TYPES[0];
-const isLiability = (type: AccountType) => !!typeDef(type).liability;
+import { ACCOUNT_TYPES as TYPES, typeDef, isLiability, manualBalanceDate } from './accountTypes';
 
 function AccountRowButton({
   entry,
@@ -177,6 +167,7 @@ function SharedWithMeSection({ list, lang }: { list: GlobalAccount[]; lang: Retu
 export function AccountsScreen() {
   const { t, lang } = useLang();
   const { store, repo, spaceId } = useData();
+  const activeSpace = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<AccountRow | null>(null);
   const [newType, setNewType] = useState<AccountType | null>(null);
@@ -266,12 +257,7 @@ export function AccountsScreen() {
     setBalance('');
   };
 
-  // manual balances are statements of "true today" — date them so a
-  // statement import can tell whether its balance is newer (see importCamt)
-  const localToday = () => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  };
+  const localToday = manualBalanceDate;
 
   const createAccount = () => {
     const cents = parseCents(balance || '0');
@@ -391,6 +377,10 @@ export function AccountsScreen() {
               <Icon name={typeDef(newType).icon} size={16} />
               {t(typeDef(newType).labelKey)} · {t('acct.manual')}
             </div>
+            {/* tier rule made visible: manual accounts are space-scoped */}
+            <p className="text-[12px] leading-snug text-ink-4" data-testid="acctform-scope-note">
+              {t('acct.createScopeNote', { space: activeSpace?.name ?? '' })}
+            </p>
             <input
               data-testid="acctform-name"
               value={name}
