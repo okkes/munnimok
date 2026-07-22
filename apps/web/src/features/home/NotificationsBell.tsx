@@ -35,6 +35,7 @@ const ACT_VISUAL: Record<string, { key: TranslationKey; icon: string }> = {
   budgetAdd: { key: 'act.budgetAdd', icon: 'chart-donut' },
   accountAdd: { key: 'act.accountAdd', icon: 'bank-outline' },
 };
+const GENERIC_VISUAL: { key: TranslationKey; icon: string } = { key: 'act.generic', icon: 'history' };
 
 /** the space's newest-first action history (YNAB-style, user request) */
 function HistoryList() {
@@ -59,7 +60,7 @@ function HistoryList() {
   return (
     <div className="flex flex-col" data-testid="history-list">
       {rows.map((row) => {
-        const visual = ACT_VISUAL[row.kind] ?? { key: 'act.generic' as TranslationKey, icon: 'history' };
+        const visual = ACT_VISUAL[row.kind] ?? GENERIC_VISUAL;
         return (
           <div key={row.id} data-testid={`history-row-${row.id}`} className="flex items-start gap-3 border-b border-line-2 px-1 py-3 last:border-0">
             <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-bg-2">

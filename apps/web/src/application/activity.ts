@@ -35,6 +35,7 @@ export async function logActivity(
 export async function pruneActivity(store: StorageBackend, repo: Repo, spaceId: string): Promise<void> {
   const rows = (await store.bySpace('activity', spaceId)).filter((r) => r.deleted === 0);
   if (rows.length <= ACTIVITY_CAP) return;
-  const excess = rows.sort((a, b) => a.at.localeCompare(b.at)).slice(0, rows.length - ACTIVITY_CAP);
+  const oldestFirst = [...rows].sort((a, b) => a.at.localeCompare(b.at));
+  const excess = oldestFirst.slice(0, rows.length - ACTIVITY_CAP);
   for (const row of excess) await repo.remove('activity', spaceId, row.id);
 }
