@@ -96,7 +96,16 @@ Logto has a full Management API (we already use it for user deletion).
   come from one JSON. The NAS bundle pipeline stays as-is; it just
   gains a third channel (`munni-iac`).
 
-### 4. NAS automation (no SSH, DSM API)
+### 4. NAS automation (no SSH, DSM API) — reverse proxy SHIPPED
+
+`.github/workflows/iac.yml` runs bootstrap in CI (user ruling: IaC
+lives in GitHub Actions): manual dispatch applies a stack; pushes
+touching infra/ verify both. Operator one-timers: **IAC_GH_PAT** repo
+secret (fine-grained, environments+secrets+variables — GITHUB_TOKEN
+cannot write environment secrets), and the existing SYNOLOGY_* deploy
+secrets (the account needs DSM admin for AppPortal writes).
+`infra/modules/dsm.mjs` upserts the stack's reverse-proxy rules via
+`SYNO.Core.AppPortal.ReverseProxy` (idempotent by source FQDN).
 
 DSM has a full web API (we already drive FileStation):
 - **Reverse proxy rules**: `SYNO.Core.AppPortal.ReverseProxy` — create

@@ -6,22 +6,24 @@ every later deploy is automatic. Secrets minted this run: none.
 > ⚠ Operator secrets still MISSING in GitHub Environment `iac-production`:
 > IAC_LOGTO_INFRA_M2M_ID, IAC_LOGTO_INFRA_M2M_SECRET, NAS_GHCR_PAT, NAS_GOCARDLESS_SECRET_ID, NAS_GOCARDLESS_SECRET_KEY, NAS_ADMIN_SUBS — bootstrap will not verify until they exist.
 
-## 1. DNS + DSM reverse proxy (once per stack)
+## 1. DNS + firewall (once per stack — the only host steps left manual)
 
-Create reverse-proxy rules (Control Panel → Login Portal → Advanced →
-Reverse Proxy), all sources HTTPS okkes.synology.me:443:
+Reverse-proxy rules are CODE now: the bootstrap's DSM module creates
+them via SYNO.Core.AppPortal.ReverseProxy whenever SYNOLOGY_* creds
+are in the environment (the IaC workflow injects them). Rules applied:
+- munni-iac.okkes.synology.me → localhost:8290
+- munni-iac-api.okkes.synology.me → localhost:8292
+- munni-iac-admin.okkes.synology.me → localhost:8291
+- logto-iac.okkes.synology.me → localhost:3101
+- logto-iac-admin.okkes.synology.me → localhost:3102
+- glitchtip-iac.okkes.synology.me → localhost:8293
 
-| Source host | Destination |
-|---|---|
-| munni-iac.okkes.synology.me | http://localhost:8290 |
-| munni-iac-api.okkes.synology.me | http://localhost:8292 |
-| munni-iac-admin.okkes.synology.me | http://localhost:8291 (RESTRICT TO LAN in the firewall) |
-| logto-iac.okkes.synology.me | http://localhost:3101 |
-| logto-iac-admin.okkes.synology.me | http://localhost:3102 (RESTRICT TO LAN) |
-| glitchtip-iac.okkes.synology.me | http://localhost:8293 |
-
-Firewall: allow 172.16.0.0/12 (docker bridge) in the access profile —
-Logto self-fetches its ADMIN_ENDPOINT through the host gateway.
+Still manual (probed by --verify, never scripted):
+- DNS: the *.okkes.synology.me wildcard already covers these subdomains
+  when using Synology DDNS; external registrars need the records.
+- DSM firewall: allow 172.16.0.0/12 (docker bridge) in the access
+  profile — Logto self-fetches its ADMIN_ENDPOINT through the host
+  gateway — and RESTRICT munni-iac-admin.okkes.synology.me + logto-iac-admin.okkes.synology.me to LAN.
 
 ## 2. Deploy the containers
 

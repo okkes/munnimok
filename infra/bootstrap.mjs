@@ -17,6 +17,7 @@ import { ensureSecrets, verifySecrets } from './modules/secrets.mjs';
 import { applyApps, writeBack } from './modules/logto.mjs';
 import { renderStack } from './modules/render.mjs';
 import { renderRunbook } from './modules/runbook.mjs';
+import { applyReverseProxy } from './modules/dsm.mjs';
 
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(`--${name}`);
@@ -100,6 +101,20 @@ if (envSecret(infraEnv, 'IAC_LOGTO_INFRA_M2M_ID')) {
   }
 } else {
   console.log(`  logto: waiting for the one manual OOBE step (see the runbook) — infra M2M credential not stored yet`);
+}
+
+// DSM reverse proxy as code — runs whenever the deploy account creds
+// are in the shell (CI injects SYNOLOGY_*; locally: export them)
+const { SYNOLOGY_URL, SYNOLOGY_USER, SYNOLOGY_PASS } = process.env;
+if (SYNOLOGY_URL && SYNOLOGY_USER && SYNOLOGY_PASS) {
+  try {
+    const result = await applyReverseProxy(stack, { url: SYNOLOGY_URL, user: SYNOLOGY_USER, pass: SYNOLOGY_PASS });
+    console.log(`  dsm: reverse proxy created=[${result.created}] updated=[${result.updated}] unchanged=${result.unchanged.length}`);
+  } catch (e) {
+    console.log(`  dsm: reverse-proxy apply failed (${e.message}) — check the deploy account's DSM admin rights`);
+  }
+} else {
+  console.log('  dsm: SYNOLOGY_URL/USER/PASS not in env — reverse-proxy rules not applied this run');
 }
 
 const runbook = renderRunbook(stack, { minted, missingOperator });
