@@ -1,9 +1,22 @@
 # Infrastructure as Code — whole-ecosystem plan
 
-Status: **DESIGN — awaiting approval** (2026-07-22). Goal (user): "I
+Status: **APPROVED with amendments** (2026-07-22). Goal (user): "I
 provide the root credentials once; everything else is generated, stored
-and deployed by code." Test vehicle: a parallel **munni-iac** stack that
-proves the pipeline end-to-end before it owns prod.
+and deployed by code."
+
+User rulings folded in:
+- **Zero reuse of production.** The IaC stacks share NOTHING with the
+  running prod/staging stacks — no shared Logto, no shared Postgres,
+  no shared containers. Every service is deployed fresh per stack.
+- **Twin stacks, iac naming.** IaC deploys a dev + prod pair mirroring
+  today's channels: **munni-iac-staging** and **munni-iac-prod**. Both
+  must come up from the same `bootstrap` path; only the stack file
+  differs. Prod adopts the pipeline only after BOTH twins pass.
+- **Ordering: Raspberry Pi first.** The Pi arc (multi-arch images,
+  docs/raspberry-pi-plan.md) changes what a "host" is; IaC modules
+  must target both DSM and the Pi, so the Pi work lands before the
+  host-facing IaC slices (IAC4+). IAC1–IAC3 are host-agnostic and can
+  proceed in parallel.
 
 ## What exists today (baseline)
 
@@ -19,8 +32,9 @@ One repo directory `infra/` owns everything:
 
 ```
 infra/
-  stacks/            # one folder per stack: prod / staging / munni-iac
-    munni-iac.jsonc  # domains, ports, channels, feature flags
+  stacks/            # one folder per stack
+    munni-iac-staging.jsonc  # domains, ports, channels, feature flags
+    munni-iac-prod.jsonc
   modules/
     github.ps1|sh    # repo variables/secrets via gh api
     logto.mjs        # Logto Management API: apps, redirects, resources
@@ -53,12 +67,11 @@ Logto has a full Management API (we already use it for user deletion).
   post-logout URIs, CORS origins, resource indicators derived from the
   stack file's domains. Apply = upsert by app name; ids written back to
   GitHub variables (`VITE_LOGTO_APP_ID`, …).
-- Bootstrap problem (who creates the creator?): Logto's OOBE creates
-  the first admin; from it ONE M2M app ("infra") is made by hand and
-  its credential stored — everything after is code. Documented as the
-  single manual step per Logto instance.
-- The Logto instance itself (container, db, seed) is already compose-
-  managed; the compose template moves into `infra/stacks` rendering.
+- **Each IaC stack runs its OWN Logto instance** (user ruling: no
+  reuse of production). The Logto container + its database are part of
+  the stack render; its OOBE + one "infra" M2M credential is the
+  single manual step *per stack*, after which apps/redirects/resources
+  are all code.
 
 ### 3. Stack rendering (compose + env)
 
@@ -82,14 +95,15 @@ DSM has a full web API (we already drive FileStation):
 - **Task scheduler**: the apply.sh 5-min task — creatable via
   `SYNO.Core.TaskScheduler`; bootstrap ensures it exists.
 
-### 5. The munni-iac proof stack
+### 5. The munni-iac proof twins
 
 Acceptance test for the whole plan: from a clean checkout,
-`bootstrap --stack munni-iac` must produce a working third stack
-(web + api + logto sharing prod's instance + own postgres db + own
-subdomain + own Logto apps) with ZERO console visits, then
-`bootstrap --destroy munni-iac` removes it all. Only after that
-does prod adopt the same path.
+`bootstrap --stack munni-iac-staging` and `--stack munni-iac-prod`
+must each produce a fully self-contained stack (web + api + **own
+Logto instance** + own postgres + own subdomains + own secrets) with
+ZERO console visits beyond the documented per-stack Logto OOBE step,
+then `bootstrap --destroy <stack>` removes it all. Only after both
+twins pass does prod adopt the same path.
 
 ## Inevitably manual (documented, verified, never scripted)
 
@@ -101,10 +115,16 @@ does prod adopt the same path.
 
 ## Slices
 
-- IAC1 `infra/` skeleton + stack files + secrets manifest + generator
-  (GitHub secrets writer)
-- IAC2 Logto module (apps as code, ids written back)
+Ordering rule: PI1–PI3 (raspberry-pi-plan.md) land first; IAC1–IAC3
+are host-agnostic and may run in parallel with them.
+
+- IAC1 `infra/` skeleton + twin stack files + secrets manifest +
+  generator (GitHub secrets writer)
+- IAC2 Logto module (own instance per stack; apps as code, ids
+  written back)
 - IAC3 stack rendering unification (compose/env from stack file)
-- IAC4 DSM module (reverse proxy + task scheduler + verify probes)
-- IAC5 cert automation (DNS-01 in CI, DSM upload)
-- IAC6 munni-iac end-to-end bootstrap + destroy + runbook
+- IAC4 host module (DSM reverse proxy + task scheduler + verify
+  probes; Pi twin of the same interface)
+- IAC5 cert automation (DNS-01 in CI, host upload)
+- IAC6 munni-iac-staging + munni-iac-prod end-to-end bootstrap +
+  destroy + runbook

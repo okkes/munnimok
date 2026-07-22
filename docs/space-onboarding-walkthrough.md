@@ -1,63 +1,85 @@
-# Interactive space walkthrough after signup — plan
+# Guided onboarding — spaces, accounts, first transaction
 
-Status: **DESIGN — awaiting approval** (2026-07-22). User idea: after
-signup, walk the user through CREATING and DELETING a real space so the
-space concept lands — a tour that interacts with the live environment,
-unlike today's point-and-tell steps.
+Status: **DESIGN v2 — user-scaled scope** (2026-07-22). The original
+idea (create/delete a space mid-tour) grew into a full guided
+onboarding: the tutorial now IS how a fresh identity gets its first
+space, first financial account and first transaction. This version
+merges the user's flow with my recommendations.
 
-## My honest take (asked for)
+## The flow (signed-in and offline identities alike)
 
-The idea is good, the deletion half is not. Creating a throwaway space
-teaches the concept viscerally — but making a fresh user DELETE
-something in their first minutes teaches the wrong lesson ("things
-here get destroyed") and trains them to click through danger confirms
-(we just added a cooldown to make deletion feel weighty; the tutorial
-would immediately undermine it). Deletion is also the one step that
-can't be made safe against a user wandering off mid-tour.
+Runs right after onboarding completes, driving the REAL screens with
+real writes — no sandbox, nothing to throw away afterwards.
 
-**Counter-proposal:** a guided *"Make it yours"* walkthrough that
-creates and keeps something useful:
-1. "This is your Personal space — everything lives in a space." (point)
-2. "Spaces separate bookkeeping: household, a trip, a hobby." (point)
-3. **Do:** create a second space together (name prefilled "Household",
-   user can edit) — the walkthrough drives the REAL form.
-4. **Do:** switch between the two via the Home avatar switcher — the
-   moment the concept clicks.
-5. "Invite someone later from here; delete a space here — munni asks
-   twice." (point at the danger zone, never press it)
-6. Offer: keep the new space, or "remove it again" — ONE tap on offer
-   removes the tutorial space (walkthrough-owned, so no danger-confirm
-   is undermined; it was ours, not theirs).
+1. **Name your space.** "Everything in munni lives in a space." The
+   walkthrough opens the real create form with "Personal" prefilled;
+   the user can rename. This creates the DEFAULT space — there is no
+   pre-made one anymore, the tutorial owns first-space creation.
+2. **Create a financial account.** Walk to Global settings →
+   Financial accounts, create a manual account (cash or checking,
+   their pick, starting balance optional). Teaches: accounts are
+   GLOBAL, not inside a space.
+3. **Attach it.** Back on the space's Financial accounts screen, use
+   the new "+ attach" flow (pick the account, keep the default start
+   date). Teaches: a space sees only what you attach to it.
+4. **First transaction.** Add a groceries expense on that account
+   (amount prefilled €12.34, editable). The review/home blocks light
+   up with real data — the payoff moment.
+5. **A second space.** Create "Family" together, switch to it via the
+   Home avatar switcher, and see it EMPTY: the account isn't attached
+   here. The scoping lesson lands by observation, not explanation.
+   Offer (one tap, optional): attach the same account to Family too —
+   or leave it empty and just switch back.
+6. **Wrap.** Point at (never press) the danger zone: "Spaces and
+   accounts can be removed here — munni always asks twice." Card
+   summarizes what now exists: 2 spaces, 1 account, 1 transaction.
 
-Step 6 gives the create+delete round-trip the user wanted, with agency
-and without rehearsing destruction on real data.
+## Skipping (encouraged to stay, free to go)
 
-## Mechanics: an `acts` tour mode
+- Every step shows "Skip tour" (small, secondary). The FIRST skip tap
+  gets one encouragement line ("2 minutes — it sets up your space and
+  first account"); a second tap skips for real. Never nag twice.
+- Skip before step 1 completes → munni silently creates a default
+  "Personal" space (no account, no transaction) so the app is never
+  space-less. Skip later → whatever real data exists stays; nothing
+  is rolled back (it's THEIR data — created through real forms).
+- Re-entry: Settings → Help → "Restart the welcome tour". Resume
+  detection: completed steps (space exists, account exists, …) show
+  as pre-ticked and the tour fast-forwards to the first unmet step.
 
-Today's tours point (`anchor`) and can forward one tap (`advanceOn:
-'tap'`). This adds a third capability, kept deliberately narrow:
+## Offline / demo parity
 
-- `TourStep.act?: 'await-testid' | 'await-value'` — the step completes
-  when the environment REACHES a state (e.g. a space row with the
-  tutorial marker exists), not when Next is pressed. The card shows a
-  live checklist tick when the condition lands.
-- The walkthrough never writes data itself except in step 6's offered
-  removal (tagged: the space row carries `tutorial: 1` so the
-  walkthrough only ever deletes what it created).
-- Escape hatches everywhere: End tour keeps whatever exists; re-running
-  the walkthrough detects a leftover tutorial space and resumes.
-- Trigger: once, after onboarding completes (signed-in identities), as
-  an offer card on Home — never auto-started mid-task. Offline
-  profiles get it too (spaces are local there).
+Offline profiles run the identical flow (all steps are local-first
+writes; the attach step uses the local link mirror — no server).
+Demo identities skip it: demo data already demonstrates everything.
+
+## Mechanics: the `acts` tour mode
+
+Extends today's point-and-tell tours with state-driven steps:
+
+- `TourStep.act: 'await-testid' | 'await-value'` — the step completes
+  when the environment reaches the state (space row exists, account
+  row exists, tx row exists), not when Next is pressed. Card shows a
+  live checklist tick per condition.
+- The walkthrough itself writes NOTHING except the silent default
+  space on early skip; everything else goes through the real forms
+  the user submits.
+- Escape hatches: End tour keeps whatever exists; navigation away
+  pauses the tour (resume card on Home); all copy EN/NL/TR.
 
 ## Slices
 
-- SW1 tour engine `act` steps (await-state completion + checklist UI)
-- SW2 the five-step walkthrough + tutorial-tagged space + resume logic
-- SW3 Home offer card + once-per-identity persistence + EN/NL/TR
-- Tests: full walkthrough run (create → switch → keep), the remove
-  offer, abandonment + resume, re-run idempotency.
+- SW1 tour engine `act` steps (await-state completion + checklist UI
+  + resume/fast-forward detection)
+- SW2 steps 1–4 (space, account, attach, transaction) + skip paths +
+  silent default-space fallback
+- SW3 steps 5–6 (second space, switcher, scoping offer, wrap) + Home
+  resume card + once-per-identity persistence + EN/NL/TR
+- SW4 offline parity + tests: full run, early skip (default space
+  appears), mid skip (data kept), abandonment + resume, re-run
+  idempotency.
 
-Open question for the user: agree with replacing the delete step by the
-"walkthrough-owned space + optional removal" shape, or do you want the
-literal create-then-delete drill anyway?
+Open items (small, my call unless you object): the encouragement copy
+tone, the prefilled amounts/names, and whether step 5's "attach to
+Family too" offer defaults to yes or no (I lean NO — the empty space
+is the lesson).

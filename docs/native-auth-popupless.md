@@ -1,56 +1,69 @@
-# Popup-less native sign-in — why the popup survives, and the fix
+# Redirect flows — the unified best-practices plan
 
-Status: **DESIGN — awaiting approval** (2026-07-22).
+Status: **APPROVED** (2026-07-22). User mandate: *"best practices come
+first, user experience second"* — for EVERY redirect in the product
+(login, logout, bank consent), on native, PWA and web, we implement
+the platform-sanctioned mechanism and accept whatever system UI that
+brings. This document supersedes the earlier popup-only scope.
 
-## Why "Open this page in munni dev?" still appears
+## Why the popup survived (context)
 
 The universal-link work fixed WHICH app answers — but not the popup.
-Two iOS rules make the current flow structurally popup-bound:
+Two iOS rules make the Safari-redirect login structurally popup-bound:
 
 1. **Universal links need a user tap.** Logto's return to
    `/native-auth` is a server redirect chain; iOS deliberately does not
-   auto-open apps from redirects/JS navigations (anti-hijack). So the
-   hosted page loads in Safari instead of the app opening.
+   auto-open apps from redirects/JS navigations (anti-hijack).
 2. **Same-domain links never universal-link.** The hosted page's
-   fallback bounce (`munni-dev://native-auth…`) is a custom-scheme
-   navigation — and THOSE always get the "Open in …?" confirm.
+   custom-scheme bounce (`munni-dev://native-auth…`) always gets the
+   "Open in …?" confirm.
 
-So: right app ✓ (the per-channel fix), popup ✗ — it cannot be removed
-within the Safari-redirect flow. Android Custom Tabs don't have this
-confirm, so Android is popup-free once its own flow lands app links.
+Right app ✓, popup ✗ — unfixable inside a Safari-redirect flow.
 
-## The fix Apple built for exactly this: ASWebAuthenticationSession
+## The redirect matrix (policy of record)
 
-`ASWebAuthenticationSession` is iOS's OAuth primitive: an in-app
-browser sheet that shares Safari's cookies (SSO works), takes a
-callback scheme, and hands the callback URL straight back to the app —
-**no "Open in app?" popup at the end**. The trade: iOS shows ONE system
-alert at the START ("munni dev wants to use okkes.synology.me to sign
-in") — unavoidable, but it reads as intended behavior, happens before
-typing credentials, and the flow never leaves the app.
+RFC 8252 (OAuth for Native Apps) is the governing best practice: native
+apps MUST use an external user-agent, never a webview, and SHOULD use
+the platform's dedicated auth session API.
 
-## Plan
+| Flow | iOS native | Android native | PWA / web |
+|---|---|---|---|
+| Login / logout | `ASWebAuthenticationSession` (system auth sheet, shares Safari cookies, callback scheme handed straight back — no end-of-flow popup; one system consent alert at start is the sanctioned trade) | Chrome Custom Tabs (`androidx.browser`) + scheme callback — no confirm dialogs at all | Full-page same-tab OIDC redirect (no popups — popup flows fight blockers and mobile browsers) |
+| Bank consent (GoCardless / EnableBanking) | System browser via `openUrl` — NOT the auth session: PSD2 app-to-app requires the bank page to be able to hand off to the bank's own app, which auth-session sheets suppress. Return = universal link `/gc-callback` (the bank's "return to munni" is a real user tap, so it opens the app directly) | Same: external browser / bank app, return via App Link `/gc-callback` | Same-tab redirect out, same-tab return to `/gc-callback` inside the PWA scope |
+| Invite / join links (`/splits/join`) | Universal link (external tap — exactly what ULs are for) | App Link | Normal navigation |
 
-- NA1 **Capacitor plugin**: a ~60-line Swift plugin (`AuthSession`)
+Principles the matrix encodes:
+- **Auth session APIs for first-party auth, external browser for
+  third-party (bank) auth**, universal/app links only for flows that
+  begin with an external user tap.
+- Never a webview for credentials (RFC 8252 §8.12); never a popup
+  window on web.
+- Callback URLs are scheme-based on native (`munni(-dev)://…`) and
+  path-based on web — both derived from the channel config
+  (`config.ts` nativeScheme), never hardcoded.
+
+## Slices
+
+- NA1 **Capacitor plugin**: ~60-line Swift `AuthSession` plugin
   exposing `start(url, callbackScheme) → Promise<callbackUrl>` via
-  ASWebAuthenticationSession (+ `prefersEphemeralWebBrowserSession:
-  false` so the Logto session cookie persists → subsequent logins are
-  instant). Android twin uses Chrome Custom Tabs
-  (`androidx.browser`) + the existing scheme callback — same JS API.
+  ASWebAuthenticationSession (`prefersEphemeralWebBrowserSession:
+  false` so the Logto cookie persists → subsequent logins are
+  instant). Android twin on Custom Tabs — same JS API.
 - NA2 **Web wiring**: on native, `signIn` builds the Logto authorize
-  URL with redirect `munni(-dev)://auth-callback` (already registered
-  in Logto) and runs it through the plugin instead of navigating the
-  webview; the returned callback URL feeds the existing
-  `NativeCallbackScreen` handleSignInCallback path unchanged. Sign-out
-  gets the same treatment (end-session in the auth session, callback
-  `…://signed-out`).
-- NA3 **Cleanup**: the hosted `/native-auth` scheme-bounce stays as the
-  fallback for old builds, then retires; the universal-link paths for
-  `/native-auth` can drop out of the AASA once no old build matters
-  (gc-callback and splits/join stay — those come from EXTERNAL taps,
-  where universal links genuinely shine).
+  URL with redirect `munni(-dev)://auth-callback` and runs it through
+  the plugin instead of navigating the webview; the returned callback
+  URL feeds the existing `NativeCallbackScreen` handleSignInCallback
+  path unchanged. Sign-out same shape (end-session in the session,
+  callback `…://signed-out`).
+- NA3 **Bank-consent audit**: verify GC/EB consent launches use
+  `openUrl` (not webview navigation) on both platforms and that
+  `/gc-callback` returns land via universal/app link into the running
+  app; fix any drift. Web stays same-tab.
+- NA4 **Cleanup**: the hosted `/native-auth` scheme-bounce stays as
+  fallback for old builds, then retires; drop `/native-auth` from the
+  AASA once no old build matters (`/gc-callback` and `/splits/join`
+  stay — external-tap flows are where universal links shine).
 
-Result: munni dev → in-app auth sheet → back in munni dev, zero
-end-of-flow popups, on both platforms. Bank-consent returns
-(/gc-callback) keep the universal-link path — the bank page tap IS a
-user gesture, so those open the app directly.
+Result: login never leaves the app and ends popup-free on both
+platforms; bank consent keeps full app-to-app capability; web keeps
+plain redirects everywhere.
