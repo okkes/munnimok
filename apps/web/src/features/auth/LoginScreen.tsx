@@ -119,6 +119,9 @@ export function LoginScreen() {
   const navigate = useNavigate();
   const onLine = useOnLine();
   const [offlineOpen, setOfflineOpen] = useState(false);
+  // in-between step (user request): before profiles, say plainly what
+  // offline mode keeps and what it gives up
+  const [offlineStep, setOfflineStep] = useState<'info' | 'profiles'>('info');
   const [profileName, setProfileName] = useState('');
   const profiles = listOfflineProfiles();
 
@@ -186,7 +189,14 @@ export function LoginScreen() {
               <Icon name="account-eye-outline" size={18} />
               {t('login.demoUser')}
             </Button>
-            <Button variant="ghost" onClick={() => setOfflineOpen(true)} data-testid="login-offline-btn">
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setOfflineStep('info');
+                setOfflineOpen(true);
+              }}
+              data-testid="login-offline-btn"
+            >
               <Icon name="lock-outline" size={16} />
               {t('offline.loginBtn')}
             </Button>
@@ -196,7 +206,32 @@ export function LoginScreen() {
         {/* offline mode: fully local profiles, zero network */}
         <Sheet open={offlineOpen} onOpenChange={setOfflineOpen} title={t('offline.infoTitle')} size="form">
           <p className="pb-3 text-[13px] text-ink-3">{t('offline.infoSubtitle')}</p>
-          {profiles.length > 0 && (
+          {offlineStep === 'info' && (
+            <div data-testid="offline-info-step">
+              <p className="pb-1.5 text-[12px] font-semibold text-ink-2">{t('offline.keepTitle')}</p>
+              <div className="mb-3 flex flex-col gap-2">
+                {(['offline.keep1', 'offline.keep2', 'offline.keep3'] as const).map((key) => (
+                  <div key={key} className="flex items-start gap-2.5 text-[13px] leading-snug text-ink-2">
+                    <Icon name="check-circle-outline" size={17} color="var(--m-accent-deep)" />
+                    <span className="min-w-0 flex-1">{t(key)}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="pb-1.5 text-[12px] font-semibold text-ink-2">{t('offline.loseTitle')}</p>
+              <div className="mb-4 flex flex-col gap-2">
+                {(['offline.lose1', 'offline.lose2', 'offline.lose3'] as const).map((key) => (
+                  <div key={key} className="flex items-start gap-2.5 text-[13px] leading-snug text-ink-3">
+                    <Icon name="close-circle-outline" size={17} color="var(--m-ink-4)" />
+                    <span className="min-w-0 flex-1">{t(key)}</span>
+                  </div>
+                ))}
+              </div>
+              <Button className="w-full" data-testid="offline-info-continue" onClick={() => setOfflineStep('profiles')}>
+                {t('offline.continueBtn')}
+              </Button>
+            </div>
+          )}
+          {offlineStep === 'profiles' && profiles.length > 0 && (
             <div className="mb-3 overflow-hidden rounded-card border border-line bg-surface" data-testid="offline-profiles">
               {profiles.map((p) => (
                 <button
@@ -212,6 +247,7 @@ export function LoginScreen() {
               ))}
             </div>
           )}
+          {offlineStep === 'profiles' && (
           <div className="flex gap-2">
             <input
               data-testid="offline-name"
@@ -224,6 +260,7 @@ export function LoginScreen() {
               {t('offline.addProfile')}
             </Button>
           </div>
+          )}
         </Sheet>
 
         <p className="px-6 pb-[max(24px,env(safe-area-inset-bottom))] text-center text-[11px] text-ink-4 md:w-[440px] md:px-0 md:pt-3 md:pb-0">
