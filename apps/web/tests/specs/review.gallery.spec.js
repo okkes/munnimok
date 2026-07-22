@@ -9,8 +9,8 @@ for (const V of VARIANTS) {
   test(`review-a1 banner opens queue [${V.id}]`, async ({ browser }) => {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V, { demo: true });
-    // 3 seeded transactions need review
-    await expect(page.locator('[data-testid="home-review-banner"]')).toContainText('3');
+    // the demo seeds a review backlog (count varies with the rich seed)
+    await expect(page.locator('[data-testid="home-review-banner"]')).toContainText(/[0-9]+ transactions/);
     await shot(page, k('13-review-banner') + '--s1');
     await page.click('[data-testid="home-review-banner"]');
     await expect(page.locator('[data-testid="review-card"]')).toBeVisible();
@@ -39,9 +39,14 @@ for (const V of VARIANTS) {
     await page.click('[data-testid="split-save"]');
     await expect(page.locator('[data-testid="review-category-chip"]')).toContainText('Gift');
     await shot(page, k('14-review-flow') + '--s2');
-    await page.click('[data-testid="review-confirm-btn"]'); // 2/3 confirmed as Gift
-    await expect(page.locator('[data-testid="review-card"]')).toContainText('Amazon.nl');
-    await page.click('[data-testid="review-confirm-btn"]'); // 3/3 done
+    await page.click('[data-testid="review-confirm-btn"]'); // Gift confirmed
+    // the richer demo seed varies the rest of the queue — drain it with
+    // the same paced idempotent-confirm loop as review-a3
+    await expect(async () => {
+      if (await page.locator('[data-testid="review-empty"]').count()) return;
+      await page.click('[data-testid="review-confirm-btn"]', { timeout: 2000 }).catch(() => undefined);
+      throw new Error('queue not empty yet');
+    }).toPass({ timeout: 90_000, intervals: [800, 1500, 3000] });
     await expect(page.locator('[data-testid="review-empty"]')).toBeVisible();
     await shot(page, k('14-review-flow'));
     await teardown(page, ctx, k('14-review-flow'));

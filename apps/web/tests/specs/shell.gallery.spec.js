@@ -64,11 +64,9 @@ for (const V of VARIANTS) {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V); // login screen, no session
     await page.click('[data-testid="login-offline-btn"]');
-    // the in-between step explains offline trade-offs before profiles
-    await page.waitForSelector('[data-testid="offline-info-step"]');
+    // offline mode is a full screen: trade-off cards above the profiles
+    await page.waitForSelector('[data-testid="screen-offline-intro"]');
     await shot(page, k('38-offline') + '--s0');
-    await page.click('[data-testid="offline-info-continue"]');
-    await page.waitForSelector('[data-testid="offline-name"]');
     await page.fill('[data-testid="offline-name"]', 'Okkes Offline');
     await shot(page, k('38-offline') + '--s1');
     await page.click('[data-testid="offline-create"]');
@@ -98,7 +96,6 @@ for (const V of VARIANTS) {
     await page.click('[data-testid="settings-signout"]');
     await page.waitForSelector('[data-testid="screen-login"]');
     await page.click('[data-testid="login-offline-btn"]');
-    await page.click('[data-testid="offline-info-continue"]');
     await page.locator('[data-testid^="offline-profile-"]').click();
     await page.waitForSelector('[data-testid="tab-home"]');
     await page.click('[data-testid="tab-transactions"]');

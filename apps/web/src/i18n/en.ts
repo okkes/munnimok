@@ -358,7 +358,7 @@ export const en = {
   'offline.lose1': 'No bank connections — transactions are typed in or imported from files by hand',
   'offline.lose2': 'No sync or cloud backup: your data lives only on this device',
   'offline.lose3': 'No shared spaces or splitting costs with friends and family',
-  'offline.continueBtn': 'Continue offline',
+  'offline.chooseProfile': 'Choose or create a profile',
   'offline.infoTitle': 'Offline mode',
   'offline.infoSubtitle': 'Your data, your rules.',
   'offline.infoOwnership': 'Full data ownership',

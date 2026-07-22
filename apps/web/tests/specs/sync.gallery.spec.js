@@ -220,7 +220,10 @@ for (const V of VARIANTS) {
     await expect(a.page.locator('[data-testid="onboarding-currency-hint"]')).toContainText('TRY');
     await shot(a.page, k('37-onboarding'));
     await a.page.click('[data-testid="onboarding-save"]');
-    // step 2 (bank connect) — skip it in the e2e stack
+    // step 2 (app lock) — decide later in the e2e stack
+    await a.page.waitForSelector('[data-testid="onboarding-lock-step"]');
+    await a.page.click('[data-testid="onboarding-lock-later"]');
+    // step 3 (bank connect) — skip it in the e2e stack
     await a.page.waitForSelector('[data-testid="onboarding-bank-step"]');
     await shot(a.page, k('37-onboarding') + '--s1');
     await a.page.click('[data-testid="onboarding-bank-later"]');

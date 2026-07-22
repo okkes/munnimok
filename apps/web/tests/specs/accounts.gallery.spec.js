@@ -59,7 +59,11 @@ for (const V of VARIANTS) {
     // delete it: tombstone removes it from the list and the home total
     await page.click('[data-testid="account-row-demo_save"]');
     await page.click('[data-testid="acctedit-delete"]');
-    await page.waitForTimeout(500);
+    // aligned destructive deletes: the danger sheet asks first, and its
+    // confirm arms only after the cooldown (5s in real builds)
+    const removeConfirm = page.locator('[data-testid="acctedit-remove-confirm"]');
+    await expect(removeConfirm).toBeEnabled({ timeout: 10_000 });
+    await removeConfirm.click();
     await expect(page.locator('[data-testid="account-row-demo_save"]')).toHaveCount(0);
     await page.click('[data-testid="tab-home"]');
     await expect(page.locator('[data-testid="home-total-balance"]')).toContainText('3,420.55');

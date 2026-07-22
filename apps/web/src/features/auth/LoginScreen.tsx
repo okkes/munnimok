@@ -7,7 +7,6 @@ import { useSession } from '@/app/session';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Logo } from '@/ui/Logo';
-import { Sheet } from '@/ui/Sheet';
 import { callbackUri } from './logto';
 import { addOfflineProfile, listOfflineProfiles } from './offlineProfiles';
 import leafUrl from '@/assets/leaf.png';
@@ -118,12 +117,24 @@ export function LoginScreen() {
   const { login } = useSession();
   const navigate = useNavigate();
   const onLine = useOnLine();
-  const [offlineOpen, setOfflineOpen] = useState(false);
-  // in-between step (user request): before profiles, say plainly what
-  // offline mode keeps and what it gives up
-  const [offlineStep, setOfflineStep] = useState<'info' | 'profiles'>('info');
+  // offline mode is a full sub-SCREEN now (user: the sheet undersold it);
+  // login modes must honor the browser back button — manual pushState +
+  // popstate, since /login is a single route
+  const [offlineView, setOfflineView] = useState(false);
   const [profileName, setProfileName] = useState('');
   const profiles = listOfflineProfiles();
+
+  useEffect(() => {
+    if (!offlineView) return;
+    const onPop = () => setOfflineView(false);
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [offlineView]);
+
+  const openOffline = () => {
+    window.history.pushState({ munniLogin: 'offline' }, '');
+    setOfflineView(true);
+  };
 
   const enterDemo = () => {
     login({ kind: 'demo' });
@@ -139,6 +150,98 @@ export function LoginScreen() {
     if (!profileName.trim()) return;
     enterOffline(addOfflineProfile(profileName).id);
   };
+
+  if (offlineView) {
+    return (
+      <div className="m-fade flex h-full flex-col overflow-y-auto bg-bg" data-testid="screen-offline-intro">
+        <div className="mx-auto flex w-full max-w-[480px] flex-1 flex-col px-6 pb-[max(24px,env(safe-area-inset-bottom))]">
+          <div className="flex items-center gap-1 pt-[max(12px,env(safe-area-inset-top))]">
+            <button
+              aria-label={t('action.back')}
+              data-testid="offline-intro-back"
+              onClick={() => window.history.back()}
+              className="m-tap -ml-2 flex h-10 w-10 items-center justify-center border-none bg-transparent text-ink"
+            >
+              <Icon name="chevron-left" size={24} />
+            </button>
+          </div>
+          <div className="flex flex-col items-center gap-2 pt-2 pb-5 text-center">
+            <span className="flex h-14 w-14 items-center justify-center rounded-full bg-accent-soft">
+              <Icon name="lock-outline" size={26} color="var(--m-accent-deep)" />
+            </span>
+            <h1 className="m-h2 text-ink">{t('offline.infoTitle')}</h1>
+            <p className="max-w-[300px] text-sm text-ink-3">{t('offline.infoSubtitle')}</p>
+          </div>
+
+          <p className="pb-2 text-[12px] font-semibold tracking-wide text-ink-2 uppercase">{t('offline.keepTitle')}</p>
+          <div className="mb-4 overflow-hidden rounded-card border border-line bg-surface" data-testid="offline-keep-card">
+            {(
+              [
+                ['shield-lock-outline', 'offline.keep1'],
+                ['wallet-outline', 'offline.keep2'],
+                ['fingerprint', 'offline.keep3'],
+              ] as const
+            ).map(([icon, key]) => (
+              <div key={key} className="flex items-start gap-3 border-b border-line-2 px-4 py-3 last:border-0">
+                <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-soft">
+                  <Icon name={icon} size={17} color="var(--m-accent-deep)" />
+                </span>
+                <span className="min-w-0 flex-1 text-[13px] leading-snug text-ink-2">{t(key)}</span>
+              </div>
+            ))}
+          </div>
+
+          <p className="pb-2 text-[12px] font-semibold tracking-wide text-ink-2 uppercase">{t('offline.loseTitle')}</p>
+          <div className="mb-5 overflow-hidden rounded-card border border-line bg-surface" data-testid="offline-lose-card">
+            {(
+              [
+                ['bank-off-outline', 'offline.lose1'],
+                ['cloud-off-outline', 'offline.lose2'],
+                ['account-group-outline', 'offline.lose3'],
+              ] as const
+            ).map(([icon, key]) => (
+              <div key={key} className="flex items-start gap-3 border-b border-line-2 px-4 py-3 last:border-0">
+                <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-bg-2">
+                  <Icon name={icon} size={17} color="var(--m-ink-4)" />
+                </span>
+                <span className="min-w-0 flex-1 text-[13px] leading-snug text-ink-3">{t(key)}</span>
+              </div>
+            ))}
+          </div>
+
+          <p className="pb-2 text-[12px] font-semibold tracking-wide text-ink-2 uppercase">{t('offline.chooseProfile')}</p>
+          {profiles.length > 0 && (
+            <div className="mb-3 overflow-hidden rounded-card border border-line bg-surface" data-testid="offline-profiles">
+              {profiles.map((p) => (
+                <button
+                  key={p.id}
+                  data-testid={`offline-profile-${p.id}`}
+                  onClick={() => enterOffline(p.id)}
+                  className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3 text-left text-[14px] text-ink"
+                >
+                  <Icon name="account-lock-outline" size={19} color="var(--m-ink-3)" />
+                  <span className="flex-1 truncate">{p.name}</span>
+                  <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="flex gap-2">
+            <input
+              data-testid="offline-name"
+              value={profileName}
+              onChange={(e) => setProfileName(e.target.value)}
+              placeholder={t('login.namePlaceholder')}
+              className="h-11 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 text-[14px] text-ink outline-none placeholder:text-ink-4"
+            />
+            <Button size="sm" className="h-11" data-testid="offline-create" onClick={createOffline} disabled={!profileName.trim()}>
+              {t('offline.addProfile')}
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="m-fade relative flex h-full flex-col overflow-y-auto bg-bg md:flex-row md:overflow-hidden" data-testid="screen-login">
@@ -189,79 +292,12 @@ export function LoginScreen() {
               <Icon name="account-eye-outline" size={18} />
               {t('login.demoUser')}
             </Button>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setOfflineStep('info');
-                setOfflineOpen(true);
-              }}
-              data-testid="login-offline-btn"
-            >
+            <Button variant="ghost" onClick={openOffline} data-testid="login-offline-btn">
               <Icon name="lock-outline" size={16} />
               {t('offline.loginBtn')}
             </Button>
           </div>
         </div>
-
-        {/* offline mode: fully local profiles, zero network */}
-        <Sheet open={offlineOpen} onOpenChange={setOfflineOpen} title={t('offline.infoTitle')} size="form">
-          <p className="pb-3 text-[13px] text-ink-3">{t('offline.infoSubtitle')}</p>
-          {offlineStep === 'info' && (
-            <div data-testid="offline-info-step">
-              <p className="pb-1.5 text-[12px] font-semibold text-ink-2">{t('offline.keepTitle')}</p>
-              <div className="mb-3 flex flex-col gap-2">
-                {(['offline.keep1', 'offline.keep2', 'offline.keep3'] as const).map((key) => (
-                  <div key={key} className="flex items-start gap-2.5 text-[13px] leading-snug text-ink-2">
-                    <Icon name="check-circle-outline" size={17} color="var(--m-accent-deep)" />
-                    <span className="min-w-0 flex-1">{t(key)}</span>
-                  </div>
-                ))}
-              </div>
-              <p className="pb-1.5 text-[12px] font-semibold text-ink-2">{t('offline.loseTitle')}</p>
-              <div className="mb-4 flex flex-col gap-2">
-                {(['offline.lose1', 'offline.lose2', 'offline.lose3'] as const).map((key) => (
-                  <div key={key} className="flex items-start gap-2.5 text-[13px] leading-snug text-ink-3">
-                    <Icon name="close-circle-outline" size={17} color="var(--m-ink-4)" />
-                    <span className="min-w-0 flex-1">{t(key)}</span>
-                  </div>
-                ))}
-              </div>
-              <Button className="w-full" data-testid="offline-info-continue" onClick={() => setOfflineStep('profiles')}>
-                {t('offline.continueBtn')}
-              </Button>
-            </div>
-          )}
-          {offlineStep === 'profiles' && profiles.length > 0 && (
-            <div className="mb-3 overflow-hidden rounded-card border border-line bg-surface" data-testid="offline-profiles">
-              {profiles.map((p) => (
-                <button
-                  key={p.id}
-                  data-testid={`offline-profile-${p.id}`}
-                  onClick={() => enterOffline(p.id)}
-                  className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3 text-left text-[14px] text-ink"
-                >
-                  <Icon name="account-lock-outline" size={19} color="var(--m-ink-3)" />
-                  <span className="flex-1 truncate">{p.name}</span>
-                  <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
-                </button>
-              ))}
-            </div>
-          )}
-          {offlineStep === 'profiles' && (
-          <div className="flex gap-2">
-            <input
-              data-testid="offline-name"
-              value={profileName}
-              onChange={(e) => setProfileName(e.target.value)}
-              placeholder={t('login.namePlaceholder')}
-              className="h-11 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 text-[14px] text-ink outline-none placeholder:text-ink-4"
-            />
-            <Button size="sm" className="h-11" data-testid="offline-create" onClick={createOffline} disabled={!profileName.trim()}>
-              {t('offline.addProfile')}
-            </Button>
-          </div>
-          )}
-        </Sheet>
 
         <p className="px-6 pb-[max(24px,env(safe-area-inset-bottom))] text-center text-[11px] text-ink-4 md:w-[440px] md:px-0 md:pt-3 md:pb-0">
           {t('login.terms')}

@@ -359,7 +359,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'offline.lose1': 'Banka bağlantısı yok — işlemler elle girilir veya dosyadan aktarılır',
   'offline.lose2': 'Senkronizasyon veya bulut yedeği yok: verilerin yalnızca bu cihazda yaşar',
   'offline.lose3': 'Paylaşılan alanlar veya arkadaşlarla masraf bölüşme yok',
-  'offline.continueBtn': 'Çevrimdışı devam et',
+  'offline.chooseProfile': 'Profil seç veya oluştur',
   'offline.loginBtn': 'Çevrimdışı mod',
   'offline.infoTitle': 'Çevrimdışı mod',
   'offline.infoSubtitle': 'Verileriniz, kurallarınız.',
