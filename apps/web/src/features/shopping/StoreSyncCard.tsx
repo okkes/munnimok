@@ -107,6 +107,19 @@ export function StoreSyncCard() {
         {headerAction()}
       </div>
 
+      {/* the mechanics in three sentences (user: "a bit confusing") —
+          foldable so the card stays calm once understood */}
+      <details className="border-t border-line-2 px-4 py-2.5" data-testid="store-sync-how">
+        <summary className="cursor-pointer list-none text-[12px] font-medium text-accent-deep">
+          {t('shopsync.howTitle')}
+        </summary>
+        <ol className="mt-1.5 flex list-decimal flex-col gap-1 pl-4 text-[12px] leading-relaxed text-ink-3">
+          <li>{t('shopsync.how1')}</li>
+          <li>{t('shopsync.how2')}</li>
+          <li>{t('shopsync.how3')}</li>
+        </ol>
+      </details>
+
       {(pendingHere || enabled) && (
         <p className="border-t border-line-2 px-4 py-2.5 text-[12px] text-ink-3" data-testid="store-sync-fingerprint">
           {t('shopsync.thisDevice')} · <span className="font-mono font-semibold text-ink">{myFingerprint}</span>

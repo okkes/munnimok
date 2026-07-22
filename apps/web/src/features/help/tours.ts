@@ -259,6 +259,7 @@ export const TOURS: Tour[] = [
       { titleKey: 'tour.shop.2t', bodyKey: 'tour.shop.2b', illustration: '🔒', anchor: 'shopping-store-ah' },
       { titleKey: 'tour.shop.3t', bodyKey: 'tour.shop.3b', illustration: '🧲' },
       { titleKey: 'tour.shop.4t', bodyKey: 'tour.shop.4b', illustration: '🔍' },
+      { titleKey: 'tour.shop.5t', bodyKey: 'tour.shop.5b', illustration: '🔁', anchor: 'store-sync-card' },
     ],
   },
   {

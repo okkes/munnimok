@@ -2,6 +2,7 @@ import { useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
 import { useData } from '@/app/data';
 import type { SpaceRow } from '@/db/types';
+import { useDragReorder } from '@/ui/dragReorder';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 
@@ -70,6 +71,16 @@ export function HomeCustomizeSheet({ open, onOpenChange, space }: Readonly<{ ope
     persist(next);
   };
 
+  // drag anywhere in the list (user request: same feel as the category
+  // editors had) — splice, not swap, so a long drag lands in one write
+  const reorder = (from: number, to: number) => {
+    const next = [...blocks];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    persist(next);
+  };
+  const { drag, setRowRef, handleProps } = useDragReorder(blocks.length, reorder);
+
   const toggle = (index: number) => {
     const next = blocks.map((entry, i) => (i === index ? { ...entry, hidden: !entry.hidden } : entry));
     persist(next);
@@ -80,7 +91,21 @@ export function HomeCustomizeSheet({ open, onOpenChange, space }: Readonly<{ ope
       <p className="pb-2 text-[12px] text-ink-3">{t('home.customizeSub')}</p>
       <div className="flex flex-col" data-testid="home-customize-list">
         {blocks.map((entry, index) => (
-          <div key={entry.id} className="flex items-center gap-2 border-b border-line-2 py-2 last:border-0">
+          <div
+            key={entry.id}
+            ref={setRowRef(index)}
+            className={`flex items-center gap-2 border-b border-line-2 py-2 last:border-0 ${
+              drag?.from === index ? 'opacity-60' : ''
+            } ${drag?.over === index && drag.over !== drag.from ? 'bg-accent-soft' : ''}`}
+          >
+            <button
+              aria-label={t('home.dragHandle')}
+              data-testid={`home-block-drag-${entry.id}`}
+              {...handleProps(index)}
+              className="m-tap flex h-9 w-7 cursor-grab items-center justify-center border-none bg-transparent text-ink-4"
+            >
+              <Icon name="drag-horizontal-variant" size={17} />
+            </button>
             <span className={`min-w-0 flex-1 truncate text-[14px] ${entry.hidden ? 'text-ink-4' : 'text-ink'}`}>
               {t(HOME_BLOCK_LABELS[entry.id])}
             </span>
