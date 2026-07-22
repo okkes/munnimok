@@ -82,7 +82,10 @@ export const TOURS: Tour[] = [
     steps: [
       { titleKey: 'tour.review.1t', bodyKey: 'tour.review.1b', illustration: '🎯' },
       { titleKey: 'tour.review.2t', bodyKey: 'tour.review.2b', illustration: '🃏', anchor: 'review-card' },
-      { titleKey: 'tour.review.3t', bodyKey: 'tour.review.3b', illustration: '✅', anchor: 'review-confirm-btn', advanceOn: 'tap' },
+      // no advanceOn:'tap' here (user report): forwarding the tap really
+      // CONFIRMED the card — the deck advanced mid-tour and the skip
+      // step could point at nothing. Tour steps only point, never act.
+      { titleKey: 'tour.review.3t', bodyKey: 'tour.review.3b', illustration: '✅', anchor: 'review-confirm-btn' },
       { titleKey: 'tour.review.4t', bodyKey: 'tour.review.4b', illustration: '⏭️', anchor: 'review-skip-btn' },
     ],
   },

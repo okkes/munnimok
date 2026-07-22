@@ -9,6 +9,7 @@ import type { TranslationKey } from '@/i18n';
 import type { AccountSource } from '@/db/types';
 import { BrandIconPicker } from '@/features/recurring/BrandIconPicker';
 import { Button } from '@/ui/Button';
+import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 import { attachAccount, deleteFeedAccount, detachAccount, fetchSpaceLinks } from './feedGateway';
@@ -228,24 +229,16 @@ export function AttachSheet({
           {t('acct.deleteAccount')}
         </Button>
       )}
-      <Sheet open={deleteOpen} onOpenChange={setDeleteOpen} title={t('acct.deleteConfirmTitle')} size="form">
-        <div className="flex flex-col gap-4 pt-1">
-          <p className="text-[14px] leading-relaxed text-ink-2" data-testid="attach-delete-body">
-            {t('acct.deleteConfirmBody')}
-          </p>
-          {deleteFailed && (
-            <p className="text-[12px] text-negative" data-testid="attach-delete-failed">
-              {t('acct.deleteFailed')}
-            </p>
-          )}
-          <Button variant="danger" data-testid="attach-delete-confirm" disabled={deleteBusy} onClick={() => void deleteAccount()}>
-            {t('action.confirm')}
-          </Button>
-          <Button variant="outline" data-testid="attach-delete-cancel" onClick={() => setDeleteOpen(false)}>
-            {t('action.cancel')}
-          </Button>
-        </div>
-      </Sheet>
+      <DangerConfirmSheet
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title={t('acct.deleteConfirmTitle')}
+        body={t('acct.deleteConfirmBody')}
+        busy={deleteBusy}
+        error={deleteFailed ? t('acct.deleteFailed') : null}
+        onConfirm={() => void deleteAccount()}
+        testId="attach-delete"
+      />
       <BrandIconPicker
         open={logoOpen}
         onOpenChange={setLogoOpen}

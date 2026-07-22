@@ -10,6 +10,7 @@ import { leaveSpace, useMyRole } from './SpaceSharing';
 import { DEFAULT_HISTORY_MONTHS, isoMonthsAgo } from './spaceDefaults';
 import type { SpacePeriodType } from '@/db/types';
 import { AppBar, IconButton } from '@/ui/AppBar';
+import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { Button } from '@/ui/Button';
 import { ColorPicker } from '@/ui/ColorPicker';
 import { Icon } from '@/ui/Icon';
@@ -129,7 +130,7 @@ export function SpaceSettingsScreen() {
     }
   };
 
-  const deleteSpace = async () => {
+  const openDeleteConfirm = async () => {
     if (!space) return;
     if (space.id === activeSpaceId) {
       setDeleteError(t('space.cannotDeleteActive'));
@@ -142,10 +143,11 @@ export function SpaceSettingsScreen() {
       setDeleteError(t('space.cannotDeleteOnly'));
       return;
     }
-    if (!confirmDelete) {
-      setConfirmDelete(true); // destructive: second tap confirms
-      return;
-    }
+    setConfirmDelete(true); // the shared danger sheet takes it from here
+  };
+
+  const deleteSpace = async () => {
+    if (!space) return;
     await repo.remove('space', space.id, space.id);
     goBack();
   };
@@ -346,13 +348,8 @@ export function SpaceSettingsScreen() {
             )}
             {myRole === 'owner' && (
               <div className="mt-4 flex flex-col gap-2">
-                {confirmDelete && (
-                  <p className="px-1 text-[13px] text-ink-3" data-testid="space-delete-confirm-note">
-                    {t('space.deleteConfirmNote')}
-                  </p>
-                )}
-                <Button variant="danger" data-testid="space-edit-delete" onClick={() => void deleteSpace()}>
-                  {confirmDelete ? t('action.confirm') : t('space.delete')}
+                <Button variant="danger" data-testid="space-edit-delete" onClick={() => void openDeleteConfirm()}>
+                  {t('space.delete')}
                 </Button>
               </div>
             )}
@@ -364,6 +361,16 @@ export function SpaceSettingsScreen() {
           </div>
         )}
       </div>
+      {/* aligned destructive confirm (user request): sheet + cooldown,
+          same shape as account/store/user deletion */}
+      <DangerConfirmSheet
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title={t('space.deleteConfirmTitle')}
+        body={t('space.deleteConfirmNote')}
+        onConfirm={() => void deleteSpace()}
+        testId="space-delete"
+      />
     </div>
   );
 }

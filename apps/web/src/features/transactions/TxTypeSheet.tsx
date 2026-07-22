@@ -1,9 +1,8 @@
-import { useMemo, useState } from 'react';
-import { useSpaceAccounts, useTxTransform } from '@/application/transactions';
+import { useMemo } from 'react';
+import { useSpaceAccounts } from '@/application/transactions';
 import type { SpaceTx } from '@/application/transactions';
 import { useLang } from '@/i18n';
-import { ALL_TX_TYPES, applyTypeChange, typeForLinkedAccount } from '@/domain/txType';
-import { useCategories } from '@/features/categories/useCategories';
+import { ALL_TX_TYPES, typeForLinkedAccount } from '@/domain/txType';
 import type { AccountType, TxType } from '@/db/types';
 import { fmtCents } from '@/lib/money';
 import { Icon } from '@/ui/Icon';
@@ -58,21 +57,29 @@ export function TxTypeOptionList({ current, onPick }: Readonly<{ current: TxType
   );
 }
 
-/** just the 7 types in a sheet — the review category editor's type row */
+/** just the 7 types in a sheet — the type rows on detail and review */
 export function TxTypeOptionsSheet({
   open,
   onOpenChange,
   current,
   onPick,
+  linkedNote = false,
 }: Readonly<{
   open: boolean;
   onOpenChange: (open: boolean) => void;
   current: TxType;
   onPick: (type: TxType) => void;
+  /** a counter-account link exists: say the type is only a DEFAULT */
+  linkedNote?: boolean;
 }>) {
   const { t } = useLang();
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title={t('tx.type')} size="tall">
+      {linkedNote && (
+        <p className="pb-2 text-[12px] text-ink-3" data-testid="txtype-default-note">
+          {t('tx.typeDefaultFromAccount')}
+        </p>
+      )}
       <TxTypeOptionList
         current={current}
         onPick={(type) => {
@@ -139,114 +146,5 @@ export function CounterAccountSheet({
         ))}
       </div>
     </Sheet>
-  );
-}
-
-/**
- * Counter-account + type editor, account-first (user feedback): the
- * account this money moved to or from suggests the type, so it leads —
- * as a real list with icons and balances instead of guess-the-badge.
- * The account's type is only a DEFAULT (user revision): picking a manual
- * type keeps the link but overrides the type.
- *
- * Two modes: write-through (detail screen — edits land immediately) and
- * CONTROLLED (review draft): with `value`+`onPickType`/`onPickLinked`
- * the sheet only reports choices and never writes.
- */
-export function TxTypeSheet({
-  open,
-  onOpenChange,
-  tx,
-  value,
-  onPickType,
-  onPickLinked,
-}: Readonly<{
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  tx: SpaceTx;
-  /** controlled mode: what the checkmarks reflect instead of the tx */
-  value?: { txType: TxType; linkedAccountId?: string };
-  onPickType?: (txType: TxType) => void;
-  onPickLinked?: (account: { id: string; type: AccountType } | null) => void;
-}>) {
-  const { t } = useLang();
-  const cats = useCategories();
-  const transform = useTxTransform();
-
-  const allAccounts = useSpaceAccounts();
-  const accounts = useMemo(() => allAccounts?.filter((a) => a.id !== tx.accountId), [allAccounts, tx.accountId]);
-
-  const [accountsOpen, setAccountsOpen] = useState(false);
-  const controlled = !!onPickType || !!onPickLinked;
-  const current = value ?? { txType: tx.txType, linkedAccountId: tx.linkedAccountId };
-  const catTxTypes = cats.byId(tx.catId).txTypes;
-
-  const save = (nextType: TxType, linkedAccountId: string | null) => {
-    const fields = applyTypeChange({ nextType, linkedAccountId, currentCatId: tx.catId, catTxTypes });
-    // explicit null clears the link (undefined would be dropped by JSON)
-    void transform(tx, { ...fields, linkedAccountId: linkedAccountId ?? (null as never) });
-  };
-
-  const chooseType = (type: TxType) => {
-    if (controlled) onPickType?.(type);
-    else save(type, tx.linkedAccountId ?? null); // the link survives a manual override
-    onOpenChange(false);
-  };
-
-  const chooseLinked = (account: { id: string; type: AccountType } | null) => {
-    if (controlled) onPickLinked?.(account);
-    else if (account) save(typeForLinkedAccount(account.type), account.id);
-    else save(tx.txType, null);
-    onOpenChange(false);
-  };
-
-  const linked = current.linkedAccountId ? accounts?.find((a) => a.id === current.linkedAccountId) : undefined;
-
-  return (
-    <>
-      <Sheet open={open} onOpenChange={onOpenChange} title={t('tx.type')} size="tall">
-        {/* the other side first — it decides the type. One compact row now
-            (user redesign); the picker stacks on top */}
-        <div className="m-cap mb-1 px-1">{t('tx.counterAccount')}</div>
-        <button
-          data-testid="txtype-counter-row"
-          onClick={() => setAccountsOpen(true)}
-          className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left"
-        >
-          <Icon
-            name={linked ? (ACCOUNT_ICON[linked.type] ?? 'bank-outline') : 'swap-horizontal'}
-            size={18}
-            color={linked ? 'var(--m-accent-deep)' : 'var(--m-ink-3)'}
-          />
-          <span className="min-w-0 flex-1">
-            <span className={`block truncate text-[14px] ${linked ? 'text-ink' : 'text-ink-3'}`}>
-              {linked ? linked.name : (tx.counterIban ?? t('tx.counterAccountPick'))}
-            </span>
-            {linked && tx.counterIban && (
-              <span className="block truncate font-mono text-[11px] text-ink-4">{tx.counterIban}</span>
-            )}
-          </span>
-          <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
-        </button>
-
-        <div className="m-cap mt-4 mb-1 px-1">{t('tx.typeManual')}</div>
-        {!!current.linkedAccountId && (
-          <p className="pb-2 text-[12px] text-ink-3" data-testid="txtype-default-note">
-            {t('tx.typeDefaultFromAccount')}
-          </p>
-        )}
-        <TxTypeOptionList current={current.txType} onPick={chooseType} />
-      </Sheet>
-
-      {/* stacked: the account picker (user redesign — editing the
-          counterparty opens its own sheet) */}
-      <CounterAccountSheet
-        open={accountsOpen}
-        onOpenChange={setAccountsOpen}
-        tx={tx}
-        currentLinkedId={current.linkedAccountId}
-        onChoose={chooseLinked}
-      />
-    </>
   );
 }

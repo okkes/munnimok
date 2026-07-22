@@ -10,6 +10,7 @@ import type { StoreSyncResult } from '@/features/shopping/stores/sync';
 import { AH_AUTHORIZE_URL } from './stores/ah';
 import type { StoreConnRow, StoreConnectionRow } from '@/db/types';
 import { BrandIconPicker } from '@/features/recurring/BrandIconPicker';
+import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
@@ -551,19 +552,19 @@ function ManageInstanceSheet({
           })}
         </div>
 
-        {confirmRemove && (
-          <p className="text-[12px] leading-relaxed text-ink-3" data-testid="shop-remove-note">
-            {t('shop.removeNote')}
-          </p>
-        )}
-        <Button
-          variant="danger"
-          data-testid={confirmRemove ? 'shop-inst-remove-confirm' : 'shop-inst-remove'}
-          onClick={() => (confirmRemove ? void remove() : setConfirmRemove(true))}
-        >
-          {confirmRemove ? t('action.confirm') : t('shop.removeInstance')}
+        <Button variant="danger" data-testid="shop-inst-remove" onClick={() => setConfirmRemove(true)}>
+          {t('shop.removeInstance')}
         </Button>
       </div>
+      {/* aligned destructive confirm (user request): sheet + cooldown */}
+      <DangerConfirmSheet
+        open={confirmRemove}
+        onOpenChange={setConfirmRemove}
+        title={t('shop.removeInstance')}
+        body={t('shop.removeNote')}
+        onConfirm={() => void remove()}
+        testId="shop-inst-remove"
+      />
       <BrandIconPicker
         open={iconOpen}
         onOpenChange={setIconOpen}

@@ -15,7 +15,7 @@ import { Sheet } from '@/ui/Sheet';
 import { disablePush, enablePush, pushEnabled, pushSupported } from '@/lib/push';
 import { isNativeApp } from '@/lib/platform';
 import { config } from '@/app/config';
-import { FLAG_KEY } from '@/db/openStore';
+import { FLAG_KEY, activeStoreBackend } from '@/db/openStore';
 import { ExportSheet } from './ExportSheet';
 import {
   biometricAvailable,
@@ -105,16 +105,23 @@ function EncryptedStoreRow() {
   const { t } = useLang();
   const { encryptedOn, toggleEncrypted } = useEncryptedStoreToggle();
   if (!isNativeApp() || config.channel === 'production') return null;
+  // the sub answers "did SQLCipher really take over?" (user question):
+  // the flag is intent — activeStoreBackend() is what actually OPENED.
+  // A failed open falls back to Dexie and clears the flag, so ON +
+  // "active" together are the proof.
+  const active = activeStoreBackend() === 'sqlcipher';
+  let pillText = 'OFF';
+  if (encryptedOn) pillText = active ? t('settings.encryptedOnActive') : 'ON';
   return (
     <Row
       testId="settings-encrypted-toggle"
       icon={encryptedOn ? 'shield-lock' : 'shield-lock-open-outline'}
       title={t('settings.encryptedStore')}
-      sub={t('settings.encryptedStoreSub')}
+      sub={encryptedOn && active ? t('settings.encryptedActive') : t('settings.encryptedStoreSub')}
       chevron={false}
       trailing={
-        <Pill tone={encryptedOn ? 'accent' : 'neutral'} testId="settings-encrypted-state">
-          {encryptedOn ? 'ON' : 'OFF'}
+        <Pill tone={encryptedOn && active ? 'accent' : 'neutral'} testId="settings-encrypted-state">
+          {pillText}
         </Pill>
       }
       onClick={toggleEncrypted}

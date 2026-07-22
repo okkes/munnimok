@@ -198,10 +198,10 @@ describe('Receipts S1 (demo identity)', () => {
       expect((await db.storeConnLinks.toArray()).find((l) => l.deleted === 0)?.displayName).toBe('AH werk');
     });
 
-    // remove asks twice, then the instance + links tombstone and the
-    // device tokens disappear (unlinked receipts would go the same way)
+    // remove opens the shared danger sheet, then the instance + links
+    // tombstone and the device tokens disappear (unlinked receipts too)
     fireEvent.click(screen.getByTestId('shop-inst-remove'));
-    await screen.findByTestId('shop-remove-note');
+    await screen.findByTestId('shop-inst-remove-body');
     fireEvent.click(screen.getByTestId('shop-inst-remove-confirm'));
     await waitFor(async () => {
       expect(await db.storeInstances.toArray()).toHaveLength(0);

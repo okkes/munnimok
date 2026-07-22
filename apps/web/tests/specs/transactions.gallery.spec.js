@@ -129,10 +129,9 @@ for (const V of VARIANTS) {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V, { demo: true });
     await openFirstReviewTx(page); // dm100: hobby expense on demo_main
-    await page.click('[data-testid="tx-detail-type-row"]');
-    await page.waitForSelector('[data-testid="txtype-options"]');
-    // the account list stacks behind the counterparty row (user redesign)
-    await page.click('[data-testid="txtype-counter-row"]');
+    // the counterparty row opens the account picker DIRECTLY (user report)
+    await page.click('[data-testid="tx-detail-counterparty-edit"]');
+    await page.waitForSelector('[data-testid="txtype-accounts"]');
     // link the savings account -> type becomes Saving, category conflicts -> reset
     await page.click('[data-testid="txtype-linked-demo_save"]');
     await page.waitForTimeout(500);

@@ -151,10 +151,11 @@ describe('SpacesScreen (demo identity)', () => {
     await waitFor(() => expect(activeRow()!.textContent).toContain('Temp'));
 
     fireEvent.click(screen.getByTestId(`space-edit-${firstId}`));
-    // destructive: first tap arms the confirmation, second tap deletes
+    // destructive: the shared danger sheet asks with the consequences
+    // spelled out (cooldown is 0 in tests)
     fireEvent.click(await screen.findByTestId('space-edit-delete'));
-    expect(await screen.findByTestId('space-delete-confirm-note')).toBeTruthy();
-    fireEvent.click(screen.getByTestId('space-edit-delete'));
+    expect(await screen.findByTestId('space-delete-body')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('space-delete-confirm'));
     await waitFor(() => expect(screen.queryByTestId(`space-row-${firstId}`)).toBeNull());
     // multi-step flow: the default 5s test budget trips under coverage load
   }, 15_000);

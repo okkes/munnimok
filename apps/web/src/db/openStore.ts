@@ -13,6 +13,12 @@ import { sqliteAvailable } from './capacitorSql';
  */
 export const FLAG_KEY = 'munni_encrypted_store';
 
+/** what actually opened — the UI's truth signal (user: "how do I verify
+ *  SQLCipher really took over?"): the flag is intent, this is fact */
+export type ActiveStoreBackend = 'sqlcipher' | 'dexie';
+let activeBackend: ActiveStoreBackend = 'dexie';
+export const activeStoreBackend = (): ActiveStoreBackend => activeBackend;
+
 export const encryptedStoreEnabled = (): boolean =>
   isNativeApp() && sqliteAvailable() && localStorage.getItem(FLAG_KEY) === '1';
 
@@ -29,6 +35,7 @@ export async function openStorageBackend(name: string): Promise<StorageBackend> 
       ]);
       const executor = await openEncryptedExecutor(name);
       await initSqlSchema(executor);
+      activeBackend = 'sqlcipher';
       return new SqlStorageBackend(executor);
     } catch (err) {
       console.error('encrypted store failed to open — falling back to Dexie', err);
@@ -37,6 +44,7 @@ export async function openStorageBackend(name: string): Promise<StorageBackend> 
       localStorage.removeItem(FLAG_KEY);
     }
   }
+  activeBackend = 'dexie';
   return new DexieBackend(new MunniDB(name));
 }
 

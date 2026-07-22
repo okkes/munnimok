@@ -217,7 +217,9 @@ describe('AccountsScreen (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('account-row-demo_save').textContent).toContain('Rainy day'));
 
     fireEvent.click(screen.getByTestId('account-row-demo_save'));
+    // aligned destructive confirm: delete opens the shared danger sheet
     fireEvent.click(await screen.findByTestId('acctedit-delete'));
+    fireEvent.click(await screen.findByTestId('acctedit-remove-confirm'));
     await waitFor(() => expect(screen.queryByTestId('account-row-demo_save')).toBeNull());
   });
 
