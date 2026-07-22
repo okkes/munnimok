@@ -93,6 +93,13 @@ public class ValidationTests
     }
 
     [Fact]
+    public void Push_accepts_the_activity_history_entity()
+    {
+        // per-space "who did what" rows (capped client-side at 200)
+        Assert.True(new PushRequestValidator().Validate(new PushRequest("device-1", [Op(entity: "activity")])).IsValid);
+    }
+
+    [Fact]
     public void Push_accepts_the_receipts_v3_entities()
     {
         // receipts redesign: instance metadata, per-space inclusion links

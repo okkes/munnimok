@@ -5,6 +5,7 @@ import { UNCATEGORIZED_ID } from '@/domain/categories';
 import { typeForLinkedAccount } from '@/domain/txType';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
+import { logActivity } from '@/application/activity';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { useRecurrings } from '@/application/recurring';
 import { parseCents } from '@/lib/money';
@@ -80,7 +81,7 @@ const TX_TYPES = Object.keys(TX_TYPE_VISUAL) as TxType[];
 export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
   const { t } = useLang();
   const navigate = useNavigate();
-  const { repo, spaceId } = useData();
+  const { store, repo, spaceId } = useData();
   const cats = useCategories();
   const [amount, setAmount] = useState('');
   const [isExpense, setIsExpense] = useState(true);
@@ -160,6 +161,7 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
     if (!valid || !effectiveAccount || cents === null) return;
     const signed = isExpense ? -Math.abs(cents) : Math.abs(cents);
     applyManualBalanceDeltas(repo, spaceId, manualBalanceDeltas(accounts, tx, effectiveAccount, signed));
+    if (!tx) void logActivity(store, repo, spaceId, 'txAdd', merchant.trim());
     void repo.upsert('transaction', spaceId, tx?.id ?? repo.newId(), {
       accountId: effectiveAccount,
       date,

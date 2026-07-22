@@ -12,6 +12,7 @@ import type {
   HoldingRow,
   InsightDismissRow,
   TopicRow,
+  ActivityRow,
   LotRow,
   QuoteCacheRow,
   ReceiptLinkRow,
@@ -63,6 +64,7 @@ export class MunniDB extends Dexie {
   lots!: Table<LotRow, string>;
   insightDismissals!: Table<InsightDismissRow, string>;
   topics!: Table<TopicRow, string>;
+  activities!: Table<ActivityRow, string>;
   /** device-only — delayed quotes are a cache, not data */
   quoteCache!: Table<QuoteCacheRow, string>;
   outbox!: Table<OutboxRow, string>;
@@ -146,6 +148,10 @@ export class MunniDB extends Dexie {
     // the retired per-store table goes in its own version (Dexie rule:
     // deletion and the upgrade that reads it must not share a version)
     this.version(13).stores({ storeConnections: null });
+    // activity history: who did what, newest 200 per space
+    this.version(14).stores({
+      activities: 'id, spaceId',
+    });
   }
 
   tableFor<E extends EntityName>(entity: E) {
@@ -196,6 +202,8 @@ export class MunniDB extends Dexie {
         return this.insightDismissals;
       case 'topic':
         return this.topics;
+      case 'activity':
+        return this.activities;
       default:
         throw new Error(`unknown entity: ${entity}`);
     }

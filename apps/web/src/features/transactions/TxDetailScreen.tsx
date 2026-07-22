@@ -10,6 +10,7 @@ import { RecurringVisual } from '@/features/recurring/RecurringVisual';
 import { useLang } from '@/i18n';
 import type { TFunc } from '@/i18n';
 import { useData } from '@/app/data';
+import { logActivity } from '@/application/activity';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { fmtCents } from '@/lib/money';
 import { cleanBankText, humanizeBankKeys, txTitle } from '@/lib/text';
@@ -428,7 +429,9 @@ export function TxDetailScreen() {
     setBulkOffer(null);
   };
   const saveNotes = (notes: string) => {
-    if (notes !== (tx.notes ?? '')) void transform(tx, { notes });
+    if (notes === (tx.notes ?? '')) return;
+    void transform(tx, { notes });
+    void logActivity(store, repo, spaceId, 'note', txTitle(tx));
   };
 
   // two-tap confirm, matching the app's other destructive rows

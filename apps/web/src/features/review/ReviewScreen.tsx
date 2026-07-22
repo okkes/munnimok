@@ -23,6 +23,7 @@ import { predictTx } from '@/domain/predictCategory';
 import { recurringAmountMatches } from '@/domain/recurring';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
+import { logActivity } from '@/application/activity';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { fmtCents } from '@/lib/money';
 import { cleanBankText, txTitle } from '@/lib/text';
@@ -397,7 +398,7 @@ function RecurringPickSheet({
  */
 export function ReviewScreen() {
   const { t, lang } = useLang();
-  const { store, spaceId } = useData();
+  const { store, repo, spaceId } = useData();
   const cats = useCategories();
   const allTxs = useSpaceTransactions();
   const transform = useTxTransform();
@@ -584,6 +585,8 @@ export function ReviewScreen() {
     });
     // other billing cycles of a linked recurring pick up their link here
     void recurringOps.reconcile().catch(() => undefined);
+    const bulkN = similar.filter((s) => bulkSelected.has(s.id)).length;
+    void logActivity(store, repo, spaceId, 'review', bulkN ? `${txTitle(tx)} +${bulkN}` : txTitle(tx));
     hapticNotify('SUCCESS'); // §5: a physical tick on the native shells
   };
 

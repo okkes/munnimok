@@ -69,7 +69,7 @@ public sealed class ChangeRoleRequestValidator : AbstractValidator<ChangeRoleReq
 
 public sealed class SyncOpDtoValidator : AbstractValidator<SyncOpDto>
 {
-    private static readonly string[] Entities = ["space", "account", "category", "transaction", "txMeta", "accountLink", "recurring", "recurringDismiss", "budget", "event", "goal", "goalContribution", "debt", "allocation", "receipt", "receiptLink", "storeMarker", "storeConn", "storeConnLink", "holding", "lot", "insightDismiss", "topic"];
+    private static readonly string[] Entities = ["space", "account", "category", "transaction", "txMeta", "accountLink", "recurring", "recurringDismiss", "budget", "event", "goal", "goalContribution", "debt", "allocation", "receipt", "receiptLink", "storeMarker", "storeConn", "storeConnLink", "holding", "lot", "insightDismiss", "topic", "activity"];
 
     public SyncOpDtoValidator()
     {

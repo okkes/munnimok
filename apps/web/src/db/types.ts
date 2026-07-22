@@ -587,6 +587,20 @@ export interface MetaRow {
   value: unknown;
 }
 
+/** one line of "who did what" — capped at the newest 200 per space */
+export interface ActivityRow extends SyncEnvelope {
+  id: string;
+  spaceId: string;
+  /** what happened (translated client-side): review | note | txAdd | attach | detach | budgetAdd | accountAdd */
+  kind: string;
+  /** display name frozen at write time so offline devices can render it */
+  actorName?: string;
+  /** free-form context: tx title, account name, budget name … */
+  detail?: string;
+  /** ISO datetime of the action */
+  at: string;
+}
+
 export type EntityName =
   | 'space'
   | 'account'
@@ -610,7 +624,8 @@ export type EntityName =
   | 'holding'
   | 'lot'
   | 'insightDismiss'
-  | 'topic';
+  | 'topic'
+  | 'activity';
 
 export interface EntityRowMap {
   space: SpaceRow;
@@ -636,4 +651,5 @@ export interface EntityRowMap {
   lot: LotRow;
   insightDismiss: InsightDismissRow;
   topic: TopicRow;
+  activity: ActivityRow;
 }

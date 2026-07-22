@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useData } from '@/app/data';
+import { logActivity } from './activity';
 import { useQuery } from '@/db/useQuery';
 import { useSpaceTransactions } from './transactions';
 import { localToday } from './recurring';
@@ -40,11 +41,12 @@ export interface BudgetOps {
 }
 
 export function useBudgetOps(): BudgetOps {
-  const { repo, spaceId } = useData();
+  const { store, repo, spaceId } = useData();
   return {
     save: async (id, fields) => {
       const rowId = id ?? repo.newId();
       await repo.upsert('budget', spaceId, rowId, fields);
+      if (!id) void logActivity(store, repo, spaceId, 'budgetAdd', fields.name);
       return rowId;
     },
     remove: (id) => repo.remove('budget', spaceId, id),

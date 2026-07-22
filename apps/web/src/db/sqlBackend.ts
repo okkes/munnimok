@@ -58,6 +58,7 @@ const ENTITIES: readonly EntityName[] = [
   'lot',
   'insightDismiss',
   'topic',
+  'activity',
 ];
 
 const ENTITY_SET: ReadonlySet<EntityName> = new Set(ENTITIES);

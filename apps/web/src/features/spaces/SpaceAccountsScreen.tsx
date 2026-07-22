@@ -5,6 +5,7 @@ import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useSession } from '@/app/session';
 import { attachFeedToSpace, detachFeedFromSpace } from '@/application/accountAttach';
+import { logActivity } from '@/application/activity';
 import { fetchMyFeedIds } from '@/features/accounts/feedGateway';
 import { SOURCE_KEYS } from '@/features/accounts/AttachSheet';
 import { ACCOUNT_TYPES, isLiability, manualBalanceDate, typeDef } from '@/features/accounts/accountTypes';
@@ -79,6 +80,7 @@ export function SpaceAccountsScreen() {
       balanceCents: isLiability(newType) ? -Math.abs(cents) : cents,
       balanceAsOf: manualBalanceDate(),
     });
+    void logActivity(store, repo, spaceId, 'accountAdd', newName.trim());
     setAddOpen(false);
     setNewType(null);
     setNewName('');
