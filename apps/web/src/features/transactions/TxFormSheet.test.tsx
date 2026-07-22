@@ -68,9 +68,9 @@ describe('TxFormSheet (demo identity)', () => {
     await screen.findByTestId('tx-list');
     fireEvent.click(screen.getByTestId('tx-add'));
     // the empty state replaces the form and the CTA lands on accounts
-    await screen.findByTestId('txform-no-accounts');
+    expect(await screen.findByTestId('txform-no-accounts')).toBeTruthy();
     fireEvent.click(screen.getByTestId('txform-add-account'));
-    await screen.findByTestId('screen-accounts');
+    expect(await screen.findByTestId('screen-accounts')).toBeTruthy();
   }, 15_000);
 
   it('a manual expense adjusts the account balance live (user bug: it froze)', async () => {

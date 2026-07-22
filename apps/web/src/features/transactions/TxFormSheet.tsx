@@ -39,21 +39,18 @@ function manualBalanceDeltas(
   targetId: string,
   signed: number,
 ): Array<{ account: BalanceAccount; delta: number }> {
-  const adjustable = (id: string) => {
+  // merge per account id: an edit on the SAME account collapses into
+  // one net delta, a moved row touches two accounts
+  const deltas = new Map<string, number>();
+  if (tx) deltas.set(tx.accountId, -tx.amountCents);
+  deltas.set(targetId, (deltas.get(targetId) ?? 0) + signed);
+
+  const out: Array<{ account: BalanceAccount; delta: number }> = [];
+  for (const [id, delta] of deltas) {
     const account = accounts?.find((a) => a.id === id);
-    return account && account.source !== 'gocardless' ? account : undefined;
-  };
-  const target = adjustable(targetId);
-  if (tx && tx.accountId === targetId) {
-    return target ? [{ account: target, delta: signed - tx.amountCents }] : [];
+    if (account?.source !== 'gocardless' && account && delta !== 0) out.push({ account, delta });
   }
-  const deltas: Array<{ account: BalanceAccount; delta: number }> = [];
-  if (tx) {
-    const previous = adjustable(tx.accountId);
-    if (previous) deltas.push({ account: previous, delta: -tx.amountCents });
-  }
-  if (target) deltas.push({ account: target, delta: signed });
-  return deltas.filter((d) => d.delta !== 0);
+  return out;
 }
 
 const TX_TYPES = Object.keys(TX_TYPE_VISUAL) as TxType[];
