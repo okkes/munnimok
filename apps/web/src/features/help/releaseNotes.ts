@@ -22,7 +22,17 @@ export const WHATS_NEW: WhatsNewEntry[] = [
     date: '2026-07-22',
     items: [
       {
-        en: 'Choosing offline mode now shows you the honest trade first: what you keep (total privacy with zero telemetry, the full app working without internet, PIN or fingerprint lock) and what you give up (bank connections, sync and cloud backup, shared spaces) — before you create a profile.',
+        en: 'The bell now keeps a history: the last 200 actions in your space — who reviewed what, added a transaction, attached an account or created a budget — synced so every member sees the same trail.',
+        nl: 'De bel houdt nu een geschiedenis bij: de laatste 200 acties in je ruimte — wie wat beoordeelde, een transactie toevoegde, een rekening koppelde of een budget maakte — gesynchroniseerd zodat elk lid hetzelfde spoor ziet.',
+        tr: 'Zil artık bir geçmiş tutuyor: alanındaki son 200 eylem — kim neyi inceledi, işlem ekledi, hesap bağladı veya bütçe oluşturdu — senkronize, böylece her üye aynı izi görür.',
+      },
+      {
+        en: 'Accounts now come in three clear kinds: linked (open banking), imported (statement uploads) and manual. Only manual accounts take hand-typed transactions — imported ones are corrected by their next upload instead. Each space creates its own manual accounts right on its Financial accounts screen, and every row says where it came from: created in this space, your account, or shared by a member.',
+        nl: 'Rekeningen zijn er nu in drie duidelijke soorten: gekoppeld (open banking), geïmporteerd (afschrift-uploads) en handmatig. Alleen handmatige rekeningen nemen zelf ingetypte transacties aan — geïmporteerde worden gecorrigeerd door hun volgende upload. Elke ruimte maakt haar eigen handmatige rekeningen direct op het scherm Financiële rekeningen, en elke rij vertelt waar ze vandaan komt: gemaakt in deze ruimte, jouw rekening, of gedeeld door een lid.',
+        tr: 'Hesaplar artık üç net türde: bağlı (açık bankacılık), aktarılmış (ekstre yüklemeleri) ve manuel. Yalnızca manuel hesaplar elle girilen işlem kabul eder — aktarılmışları bir sonraki yükleme düzeltir. Her alan kendi manuel hesaplarını doğrudan Finansal hesaplar ekranında oluşturur ve her satır nereden geldiğini söyler: bu alanda oluşturuldu, senin hesabın veya bir üye tarafından paylaşıldı.',
+      },
+      {
+        en: 'Choosing offline mode now shows you the honest trade on its own screen first: what you keep (total privacy with zero telemetry, the full app working without internet, PIN or fingerprint lock) and what you give up (bank connections, sync and cloud backup, shared spaces) — before you create a profile.',
         nl: 'Wie voor offline modus kiest, ziet nu eerst eerlijk de afweging: wat je behoudt (volledige privacy zonder telemetrie, de volledige app zonder internet, pincode- of vingerafdrukvergrendeling) en wat je opgeeft (bankkoppelingen, synchronisatie en cloudback-up, gedeelde ruimtes) — vóór je een profiel aanmaakt.',
         tr: 'Çevrimdışı modu seçince artık önce dürüst bir değiş tokuş görürsün: neler seninle kalır (telemetrisiz tam gizlilik, internetsiz çalışan uygulamanın tamamı, PIN veya parmak izi kilidi) ve nelerden vazgeçersin (banka bağlantıları, senkronizasyon ve bulut yedeği, paylaşılan alanlar) — profil oluşturmadan önce.',
       },
