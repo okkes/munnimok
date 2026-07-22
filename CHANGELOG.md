@@ -1,5 +1,35 @@
 # Changelog
 
+## [2.21.0](https://github.com/okkes/munnimok/compare/v2.20.1...v2.21.0) (2026-07-22)
+
+
+### ✨ Features
+
+* **accounts:** delete connected accounts with a revoke-mine-only cascade ([82a3443](https://github.com/okkes/munnimok/commit/82a34431638d85634fef63418ba0a7552a43f385))
+* **accounts:** per-space attach/detach with start date, last-sync + reconnect hint ([406502d](https://github.com/okkes/munnimok/commit/406502d071f28dd11e31866cf7973b7d84f18d61))
+* **demo:** six months of coherent history + a bulk-review pile ([ec11021](https://github.com/okkes/munnimok/commit/ec110213eb913f82c70c8127584dcef97de781a7))
+* **icons:** local icon segment leads and survives online results ([215424b](https://github.com/okkes/munnimok/commit/215424bbedfa4bf87f1acc9fe07a6a8a881ebda0))
+* **receipts:** R9 — admin-curated store merchant patterns feed the matcher ([48d83c7](https://github.com/okkes/munnimok/commit/48d83c79704800ff1ff2e84eb31c1ef965ce0316))
+* **receipts:** v3 foundation — instance connections, global store feed, snapshot links ([ba21a53](https://github.com/okkes/munnimok/commit/ba21a532cdb063213ce92b3895f260c24d500077))
+* **receipts:** v3 migration + receipts screen filters + one attach flow ([588a2f4](https://github.com/okkes/munnimok/commit/588a2f4aa25bd14536340dc811bd50de4242b12d))
+* **review:** counterparty and type join the category editor ([738085c](https://github.com/okkes/munnimok/commit/738085cbda4f04a138cbc82ca952896c6a681818))
+* **settings:** three-state appearance control; counterparty label ([84435b2](https://github.com/okkes/munnimok/commit/84435b25915ea7bbd7943ae42b453dbd3b5aa3ad))
+* **tx:** live manual balances, guarded split editor, no-account flow, Bank-linked label ([2b562e0](https://github.com/okkes/munnimok/commit/2b562e0a0e918bad741dc67e1e8c1323d7b1c175))
+* **ux:** budget period bars + filters + days-left, drag-reorder customize sheets, store-sync explainer ([0fcc776](https://github.com/okkes/munnimok/commit/0fcc776b709231891159865500d7585619cfa054))
+* **ux:** direct counter/type pickers on detail, aligned danger sheets, tour and label fixes ([447e92e](https://github.com/okkes/munnimok/commit/447e92e3ee165e40818a24b3e290579cebf1f469))
+* **ux:** drag v2 with ghost + slide animation (arrows retired); days-to-reset on Home and budgets list ([041397a](https://github.com/okkes/munnimok/commit/041397a06dfac73939653cecf012de47c0eb209c))
+
+
+### 🐞 Bug Fixes
+
+* **accounts:** icon picks show live in AttachSheet; bank sync no longer clobbers renames ([cd7846b](https://github.com/okkes/munnimok/commit/cd7846b652054a27fcff2eabd54cbbef5a0cfab4))
+* **demo:** pin the MEI money cluster out of the current month ([f39b79e](https://github.com/okkes/munnimok/commit/f39b79e535894c924bfe04543c04d8f5b9245fda))
+* **deploy:** munni dev Play signing key in assetlinks; stale apply locks self-heal ([212570f](https://github.com/okkes/munnimok/commit/212570f127190124a84e12379b3803f36ca37680))
+* **native:** hosted /native-auth bounce follows the channel scheme; review card sheds duplicate rows ([72a42e6](https://github.com/okkes/munnimok/commit/72a42e67cc1afb237f13f553da04914591ad5010))
+* **native:** one universal-link domain per channel — dev logins stop opening prod ([b46a3fe](https://github.com/okkes/munnimok/commit/b46a3feb21f74a8f52f9f18da58a6ba062ea9644))
+* **ui:** release stuck press state after long-press context menu ([7310a23](https://github.com/okkes/munnimok/commit/7310a2321903c9bf95aba60c5b2766e4e17b6da6))
+* **ux:** encrypted-store re-enable, lang popover dismiss, unique private names, onboarding lock step ([c2ce662](https://github.com/okkes/munnimok/commit/c2ce6625d1c38874a4ddad5c8ddeac122ba58325))
+
 ## [2.20.1](https://github.com/okkes/munnimok/compare/v2.20.0...v2.20.1) (2026-07-19)
 
 
