@@ -62,6 +62,14 @@ export async function detachAccount(spaceId: string, serverLinkId: string): Prom
   await apiFetch(`/spaces/${spaceId}/accounts/${serverLinkId}`, { method: 'DELETE' });
 }
 
+/** delete one financial account: my bank consent always goes; the feed
+ *  itself is erased only when nobody else still covers it (server ruling) */
+export async function deleteFeedAccount(feedSpaceId: string): Promise<{ erased: boolean }> {
+  const res = await apiFetch(`/me/feeds/${feedSpaceId}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`delete failed (${res.status})`);
+  return (await res.json()) as { erased: boolean };
+}
+
 /** server links of a space (authoritative ids needed for detach) */
 export async function fetchSpaceLinks(spaceId: string): Promise<{ id: string; feedSpaceId: string; accountId: string }[]> {
   const res = await apiFetch(`/spaces/${spaceId}/accounts`);

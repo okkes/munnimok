@@ -1,6 +1,8 @@
 import { useNavigate } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import { useBudgetStatuses } from '@/application/budgets';
+import { localToday } from '@/application/recurring';
+import { budgetDaysLeft } from '@/domain/budgets';
 import type { BudgetStatus } from '@/domain/budgets';
 import { fmtCents } from '@/lib/money';
 import { useQuery } from '@/db/useQuery';
@@ -34,8 +36,10 @@ export function BudgetCard({ status, currency, onClick }: Readonly<{ status: Bud
               {t(over ? 'budgets.over' : 'budgets.left', { amount: fmtCents(Math.abs(leftCents), currency, lang) })}
             </span>
           </span>
-          <span className="block text-[11px] text-ink-4">
+          <span className="block text-[11px] text-ink-4" data-testid={`budget-cadence-${budget.id}`}>
             {t(CADENCE_KEYS[budget.every])}
+            {/* days until reset next to the cadence (user request) */}
+            {` · ${t('budgets.daysLeft', { n: budgetDaysLeft(budget, localToday()) })}`}
             {carriedCents > 0 && ` · ${t('budgets.carryLine', { amount: fmtCents(carriedCents, currency, lang) })}`}
           </span>
         </span>

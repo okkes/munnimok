@@ -25,12 +25,24 @@ export function SpacesScreen() {
   const syncing = identity?.kind === 'user';
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState('');
+  const [nameError, setNameError] = useState(false);
 
   const spaces = useQuery(store, async () => (await store.allRows('space')).filter((s) => s.deleted === 0), []);
 
-  const createSpace = () => {
+  // duplicate PRIVATE names are a footgun (user rule: private unique;
+  // shared may collide — they get a creator line to tell them apart)
+  const privateNameTaken = (candidate: string) =>
+    (spaces ?? []).some((s) => s.kind !== 'shared' && s.name.trim().toLowerCase() === candidate.trim().toLowerCase());
+
+  const createSpace = async () => {
     if (!name.trim()) return;
+    if (privateNameTaken(name)) {
+      setNameError(true);
+      return;
+    }
     const id = repo.newId();
+    // shared duplicates render "created by X" — capture the creator now
+    const profile = (await store.metaGet('profile'))?.value as { displayName?: string } | undefined;
     void repo
       .upsert('space', id, id, {
         name: name.trim(),
@@ -41,6 +53,7 @@ export function SpacesScreen() {
         // persisted, not just displayed — attaching an account must see
         // the same default the settings screen shows (user bug report)
         historyStartDate: isoMonthsAgo(DEFAULT_HISTORY_MONTHS),
+        ...(profile?.displayName ? { createdByName: profile.displayName } : {}),
       })
       .then(() => setActiveSpace(id));
     setCreateOpen(false);
@@ -104,6 +117,12 @@ export function SpacesScreen() {
                       <span className="block truncate text-[15px] font-medium text-ink">{space.name}</span>
                       <span className="block truncate text-xs text-ink-4">
                         {t(space.kind === 'shared' ? 'space.kindShared' : 'space.kindPersonal')}
+                        {/* shared spaces may share a name — the creator
+                            line tells the twins apart (user rule) */}
+                        {space.createdByName &&
+                          (spaces ?? []).some(
+                            (other) => other.id !== space.id && other.name.trim().toLowerCase() === space.name.trim().toLowerCase(),
+                          ) && <> · {t('space.createdBy', { name: space.createdByName })}</>}
                         {active && (
                           <>
                             {' · '}
@@ -136,11 +155,19 @@ export function SpacesScreen() {
           <input
             data-testid="space-create-name"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => {
+              setName(e.target.value);
+              setNameError(false);
+            }}
             placeholder={t('space.nameThisSpace')}
             className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
           />
-          <Button data-testid="space-create-save" onClick={createSpace} disabled={!name.trim()}>
+          {nameError && (
+            <p className="text-[12px] text-negative" data-testid="space-create-name-taken">
+              {t('space.nameTaken')}
+            </p>
+          )}
+          <Button data-testid="space-create-save" onClick={() => void createSpace()} disabled={!name.trim()}>
             {t('space.create')}
           </Button>
         </div>

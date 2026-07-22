@@ -25,15 +25,15 @@ export const GUIDE = [
   {
     id: 'banks',
     title: 'Connecting your bank',
-    body: `Settings → Global settings → Financial Accounts. Connect a bank (read-only PSD2 access — munni can never move money), import a CAMT.053 statement for accounts your bank won't share, or add cash/savings accounts manually. Bank data lands once per account and every space you attach it to sees the same facts.`,
-    tips: ['New transactions arrive automatically several times a day.', 'Reserved (not yet booked) card payments show with a badge and disappear when the real booking lands.'],
+    body: `Settings → Global settings → Financial Accounts. Connect a bank (read-only PSD2 access — munni can never move money), import a CAMT.053 statement for accounts your bank won't share, or add cash/savings accounts manually. Bank data lands once per account; each space picks its accounts on its own Financial accounts screen — attach an existing account there with a start date, or detach it when the space no longer needs it.`,
+    tips: ['New transactions arrive automatically several times a day.', 'Reserved (not yet booked) card payments show with a badge and disappear when the real booking lands.', 'Each account row shows when the bank last answered — a Reconnect hint appears when a consent has gone quiet.'],
     shots: ['16-accounts-list', '19-import-preview', '20-import-run'],
   },
   {
     id: 'review',
     title: 'Reviewing transactions',
     body: `The review deck shows one transaction at a time with a suggested category and the reason behind it. Everything you change — category, type, splits — stays a draft until you hit Confirm. "Also apply to similar" catches the rest of the same merchant in one go.`,
-    tips: ['Tap the description to read the full bank text.', 'Skip is honest: it leaves no trace and the card returns later.', 'Every decision is a row on the card now: counterparty, type, categories, recurring and events.', 'Missing a category, recurring cost or event? Create it right from the picker — the card keeps your place.'],
+    tips: ['Tap the description to read the full bank text.', 'Skip is honest: it leaves no trace and the card returns later.', 'The category row opens one grouped editor: the suggestion reason, counterparty, type and categories together — they inform each other.', 'Missing a category, recurring cost or event? Create it right from the picker — the card keeps your place.'],
     shots: ['13-review-banner', '14-review-flow', '15-review-done'],
   },
   {

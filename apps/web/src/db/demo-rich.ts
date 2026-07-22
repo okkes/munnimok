@@ -28,6 +28,7 @@ const monthDay = (offset: number, day: number): string => {
 
 export async function seedRichDemo(repo: Repo): Promise<void> {
   await seedIncome(repo);
+  await seedHistory(repo);
   await seedRecurring(repo);
   await seedBudgets(repo);
   await seedGoals(repo);
@@ -45,16 +46,65 @@ async function seedIncome(repo: Repo): Promise<void> {
       accountId: 'demo_main', date, amountCents: cents, currency: 'EUR', merchant,
       catId: cat, txType: 'income', needsReview: 0, description: desc,
     } as never);
-  // salary on the 24th, three months of history ending at the most
+  // salary on the 24th, six months of history ending at the most
   // recent 24th that has already passed (never seed a future charge —
   // that keeps "safe to spend until payday" and the tiles honest)
   const today = iso(now());
   const latestPast = today.slice(8) >= '24' ? 0 : -1; // this month's 24th passed?
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 6; i++) {
     await credit(`demo_sal_${i}`, monthDay(latestPast - i, 24), 240_000, 'Demo Corp BV', 'salary', 'DEMO CORP BV SALARIS');
   }
   // a smaller irregular side gig — populates the custom Side gig category
   await credit('demo_sidegig_1', daysAgo(12), 45_000, 'Freelance Client', 'demo_cat_sidegig', 'INVOICE #204');
+}
+
+
+// ── six months of everyday spending (user request): budgets, trends and
+//    the new per-cycle bars all get real long-term shapes. Fixed rotas,
+//    not randomness — the seed must be idempotent and test-stable. ──────
+async function seedHistory(repo: Repo): Promise<void> {
+  const spend = (id: string, date: string, cents: number, merchant: string, cat: string, review = 0) =>
+    repo.upsert('transaction', DEMO_SPACE_ID, id, {
+      accountId: 'demo_main', date, amountCents: -cents, currency: 'EUR', merchant,
+      catId: review ? 'uncategorized' : cat, txType: 'expense', needsReview: review, description: merchant.toUpperCase(),
+    } as never);
+
+  // weekly groceries — amounts rotate so no two cycles look identical
+  const grocery = [5230, 4875, 6120, 3990];
+  for (let week = 1; week <= 26; week += 1) {
+    await spend(`demo_hist_ah_${week}`, daysAgo(week * 7 + 2), grocery[week % 4], 'Albert Heijn', 'groceries');
+  }
+  // dining out twice a month + takeout once
+  const dinner = [4650, 3400, 5450, 2900];
+  for (let m = 0; m < 6; m += 1) {
+    await spend(`demo_hist_din_${m}a`, monthDay(-m, 4), dinner[m % 4], 'Bistro Zwaan', 'restaurants');
+    await spend(`demo_hist_din_${m}b`, monthDay(-m, 17), dinner[(m + 1) % 4], 'Demo Restaurant', 'restaurants');
+    await spend(`demo_hist_din_${m}c`, monthDay(-m, 8), 3890, 'Thuisbezorgd', 'takeout');
+  }
+  // utilities + transport, monthly rhythms
+  for (let m = 0; m < 6; m += 1) {
+    await spend(`demo_hist_water_${m}`, monthDay(-m, 3), 2850, 'Waternet', 'housingUtility');
+    await spend(`demo_hist_ns_${m}`, monthDay(-m, 6), 4500, 'NS Groep', 'transportPublic');
+    if (m % 2 === 0) await spend(`demo_hist_fuel_${m}`, monthDay(-m, 20), 6240, 'Shell', 'transportFuel');
+  }
+  // small weekly coffee + occasional fun money
+  for (let week = 1; week <= 26; week += 2) {
+    await spend(`demo_hist_cof_${week}`, daysAgo(week * 7), 380, 'Coffee District', 'coffee');
+  }
+  for (let m = 0; m < 6; m += 2) {
+    await spend(`demo_hist_fun_${m}`, monthDay(-m, 14), 2400, 'Pathé', 'movie');
+    await spend(`demo_hist_shop_${m}`, monthDay(-m, 22), 3499, 'Bol.com', 'shopping');
+  }
+
+  // a same-merchant REVIEW pile (user request: exercising bulk apply —
+  // confirming one Albert Heijn offers the siblings in one tap)
+  await spend('demo_rev_ah_0', daysAgo(1), 2340, 'Albert Heijn', 'groceries', 1);
+  await spend('demo_rev_ah_1', daysAgo(3), 5115, 'Albert Heijn', 'groceries', 1);
+  await spend('demo_rev_ah_2', daysAgo(5), 1875, 'Albert Heijn', 'groceries', 1);
+  await spend('demo_rev_ah_3', daysAgo(6), 4420, 'Albert Heijn', 'groceries', 1);
+  // and two more strangers so the queue feels like a real backlog
+  await spend('demo_rev_x_0', daysAgo(2), 1799, 'Praxis', 'uncategorized', 1);
+  await spend('demo_rev_x_1', daysAgo(4), 899, 'Etos', 'uncategorized', 1);
 }
 
 // ── recurring costs + their linked charge history ──────────────────────
@@ -76,20 +126,20 @@ async function seedRecurring(repo: Repo): Promise<void> {
 
   // rent — the big fixed cost, monthly, with three months of history
   await up('demo_rec_rent', { name: 'Rent', kind: 'fixed', amountCents: 118_000, catId: 'housingRent', every: 'month', dueDay: 1, active: 1 });
-  for (let i = 3; i >= 0; i--) await charge(`demo_rent_${i}`, 'demo_rec_rent', monthDay(-i, 1), 118_000, 'Housing Corp', 'housingRent');
+  for (let i = 6; i >= 0; i--) await charge(`demo_rent_${i}`, 'demo_rec_rent', monthDay(-i, 1), 118_000, 'Housing Corp', 'housingRent');
 
   // Netflix — a SUSTAINED price hike (13.99 → 15.99): subscription intel
   await up('demo_rec_netflix', { name: 'Netflix', kind: 'subscription', luxury: 1, amountCents: 1599, catId: 'subs', every: 'month', dueDay: 12, active: 1 });
-  const nflx = [1399, 1399, 1599, 1599];
-  for (let i = 0; i < 4; i++) await charge(`demo_nflx_${i}`, 'demo_rec_netflix', monthDay(i - 3, 12), nflx[i], 'NETFLIX.COM', 'subs');
+  const nflx = [1399, 1399, 1399, 1399, 1599, 1599];
+  for (let i = 0; i < 6; i++) await charge(`demo_nflx_${i}`, 'demo_rec_netflix', monthDay(i - 5, 12), nflx[i], 'NETFLIX.COM', 'subs');
 
   // Spotify — a second streaming sub (overlap insight), steady price
   await up('demo_rec_spotify', { name: 'Spotify', kind: 'subscription', luxury: 1, amountCents: 1099, catId: 'subs', every: 'month', dueDay: 5, active: 1 });
-  for (let i = 3; i >= 0; i--) await charge(`demo_spot_${i}`, 'demo_rec_spotify', monthDay(-i, 5), 1099, 'Spotify', 'subs');
+  for (let i = 6; i >= 0; i--) await charge(`demo_spot_${i}`, 'demo_rec_spotify', monthDay(-i, 5), 1099, 'Spotify', 'subs');
 
   // gym — monthly subscription
   await up('demo_rec_gym', { name: 'Basic-Fit', kind: 'subscription', amountCents: 2499, catId: 'gym', every: 'month', dueDay: 2, active: 1 });
-  for (let i = 3; i >= 0; i--) await charge(`demo_gym_${i}`, 'demo_rec_gym', monthDay(-i, 2), 2499, 'Basic-Fit', 'gym');
+  for (let i = 6; i >= 0; i--) await charge(`demo_gym_${i}`, 'demo_rec_gym', monthDay(-i, 2), 2499, 'Basic-Fit', 'gym');
 
   // yearly insurance — edge case: year cadence, due a few months out
   await up('demo_rec_ins', { name: 'Home insurance', kind: 'fixed', amountCents: 24_000, catId: 'insurance', every: 'year', dueDay: 15, dueMonth: ((now().getMonth() + 3) % 12) + 1, active: 1 });

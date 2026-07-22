@@ -1,4 +1,5 @@
-# Multi-stage build for the sync API (linux/amd64 for Synology x64 NAS)
+# Multi-stage build for the sync API — arch-agnostic: CI builds it
+# natively per platform (amd64 NAS, arm64 Pi) and merges the manifest
 FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
 WORKDIR /src
 COPY src/Munni.Api/Munni.Api.csproj src/Munni.Api/

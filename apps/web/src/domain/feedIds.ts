@@ -41,3 +41,13 @@ export const adoptedCategoryId = (spaceId: string, sourceCatId: string): string 
 /** one dismissal row per merchant pattern per space (LWW-convergent) */
 export const recurringDismissId = (spaceId: string, merchantKeyValue: string): string =>
   uuidv5(`recdis:${spaceId}:${merchantKeyValue}`, IMPORT_NS);
+
+/** receipts v3: one snapshot link per global receipt per space */
+export const receiptLinkId = (spaceId: string, receiptId: string): string =>
+  uuidv5(`rlink:${spaceId}:${receiptId}`, IMPORT_NS);
+
+/** receipts v3: per-space inclusion of a store-connection instance */
+export const storeConnLinkId = (spaceId: string, instanceId: string): string => `sclink:${spaceId}:${instanceId}`;
+
+/** the owner's personal STORE FEED — global receipts + instance metadata */
+export const storeFeedId = (sub: string): string => personalFeedSpaceId('STORES', sub);

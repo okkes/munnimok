@@ -157,7 +157,7 @@ describe('SqlStorageBackend parity with DexieBackend', () => {
 
   it('device-only stores round-trip', async () => {
     for (const { name, store } of await bothBackends()) {
-      await store.storeConnPut({ store: 'ah', tokens: { access: 'x' }, refreshedAt: '2026-01-01', status: 'ok' });
+      await store.storeConnPut({ id: 'ah', store: 'ah', tokens: { access: 'x' }, refreshedAt: '2026-01-01', status: 'ok' });
       expect((await store.storeConnGet('ah'))?.status, name).toBe('ok');
       expect((await store.storeConnAll()).length, name).toBe(1);
       await store.storeConnDelete('ah');

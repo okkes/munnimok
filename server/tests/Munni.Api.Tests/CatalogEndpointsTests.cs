@@ -76,4 +76,31 @@ public class CatalogEndpointsTests : IClassFixture<AdminApiFactory>
         var response = await admin.PutAsJsonAsync("/admin/catalog", new { categories = "nope", keywords = Array.Empty<object>() });
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
+
+    private static readonly string[] AhPatterns = ["albert heijn", "AH to go"];
+
+    [Fact]
+    public async Task Publish_RoundTrips_StorePatterns_AndDefaultsThemEmpty()
+    {
+        var admin = ClientFor("the-admin");
+        await admin.GetAsync("/me");
+        // an older console publishing WITHOUT stores keeps working
+        var legacy = await admin.PutAsJsonAsync("/admin/catalog", new { categories = Array.Empty<object>(), keywords = Array.Empty<object>() });
+        Assert.Equal(HttpStatusCode.OK, legacy.StatusCode);
+        var read1 = JsonDocument.Parse(await (await ClientFor(null).GetAsync("/catalog")).Content.ReadAsStringAsync()).RootElement;
+        Assert.Equal(0, read1.GetProperty("stores").GetArrayLength());
+
+        // receipts v3 R9: patterns publish and serve verbatim
+        var withStores = await admin.PutAsJsonAsync("/admin/catalog", new
+        {
+            categories = Array.Empty<object>(),
+            keywords = Array.Empty<object>(),
+            stores = new[] { new { id = "ah", patterns = AhPatterns } },
+        });
+        Assert.Equal(HttpStatusCode.OK, withStores.StatusCode);
+        var read2 = JsonDocument.Parse(await (await ClientFor(null).GetAsync("/catalog")).Content.ReadAsStringAsync()).RootElement;
+        var store = read2.GetProperty("stores")[0];
+        Assert.Equal("ah", store.GetProperty("id").GetString());
+        Assert.Equal(2, store.GetProperty("patterns").GetArrayLength());
+    }
 }

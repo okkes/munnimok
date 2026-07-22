@@ -146,6 +146,9 @@ export function SettingsScreen() {
             {
               capKey: 'settings.groupTrack',
               rows: [
+                // receipts are a SPACE view (v3 ruling): what you see here
+                // depends on which connections this space includes
+                { testId: 'settings-receipts-row', icon: 'receipt-text-outline', labelKey: 'receipts.title', to: '/receipts' },
                 { testId: 'settings-events-row', icon: 'party-popper', labelKey: 'events.title', to: '/events' },
                 // splits live here, not in Global (user remark): the group
                 // itself is space-independent, but its attachment and the

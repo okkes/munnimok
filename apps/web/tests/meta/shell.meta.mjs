@@ -51,7 +51,7 @@ export const GROUPS = [
       {
         key: '05-shell-dark',
         title: 'Dark mode toggle',
-        desc: 'Appearance row toggles the warm-dark theme; the choice persists in localStorage.',
+        desc: 'The Appearance row hosts a three-way segment (light / dark / auto); picking dark pins the warm-dark theme and persists in localStorage.',
         tags: ['state'],
       },
       {

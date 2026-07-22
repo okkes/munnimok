@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { useSpaceAccounts } from '@/application/transactions';
 import { UNCATEGORIZED_ID } from '@/domain/categories';
 import { typeForLinkedAccount } from '@/domain/txType';
@@ -24,6 +25,50 @@ interface TxFormSheetProps {
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
+/** untouched type follows the category, exactly as before (S3776: the
+ *  fallback chain lives outside the component) */
+const effectiveTxType = (explicit: TxType | null, catTxTypes: readonly TxType[], isExpense: boolean): TxType =>
+  explicit ?? catTxTypes[0] ?? (isExpense ? 'expense' : 'income');
+
+type BalanceAccount = { id: string; source: string; balanceCents: number };
+
+/**
+ * Manual accounts keep a LIVE balance (user bug: it froze at the stated
+ * amount): every manual write adjusts the touched account(s) by the
+ * row's delta. Bank-linked balances stay the bank's; CAMT gets
+ * corrected on import.
+ */
+function manualBalanceDeltas(
+  accounts: readonly BalanceAccount[] | undefined,
+  tx: TransactionRow | undefined,
+  targetId: string,
+  signed: number,
+): Array<{ account: BalanceAccount; delta: number }> {
+  // merge per account id: an edit on the SAME account collapses into
+  // one net delta, a moved row touches two accounts
+  const deltas = new Map<string, number>();
+  if (tx) deltas.set(tx.accountId, -tx.amountCents);
+  deltas.set(targetId, (deltas.get(targetId) ?? 0) + signed);
+
+  const out: Array<{ account: BalanceAccount; delta: number }> = [];
+  for (const [id, delta] of deltas) {
+    const account = accounts?.find((a) => a.id === id);
+    if (account?.source !== 'gocardless' && account && delta !== 0) out.push({ account, delta });
+  }
+  return out;
+}
+
+/** write the deltas through the repo — kept out of the component (S3776) */
+function applyManualBalanceDeltas(
+  repo: { upsert: (entity: 'account', spaceId: string, id: string, fields: { balanceCents: number }) => Promise<unknown> },
+  spaceId: string,
+  entries: ReturnType<typeof manualBalanceDeltas>,
+): void {
+  for (const { account, delta } of entries) {
+    void repo.upsert('account', spaceId, account.id, { balanceCents: account.balanceCents + delta });
+  }
+}
+
 const TX_TYPES = Object.keys(TX_TYPE_VISUAL) as TxType[];
 
 /**
@@ -34,6 +79,7 @@ const TX_TYPES = Object.keys(TX_TYPE_VISUAL) as TxType[];
  */
 export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
   const { t } = useLang();
+  const navigate = useNavigate();
   const { repo, spaceId } = useData();
   const cats = useCategories();
   const [amount, setAmount] = useState('');
@@ -89,8 +135,7 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
   const effectiveAccount = accountId ?? writable[0]?.id ?? null;
   const cents = parseCents(amount);
   const valid = !!merchant.trim() && cents !== null && cents > 0 && !!effectiveAccount && !!date;
-  // untouched type follows the category, exactly as before
-  const effectiveType: TxType = txType ?? cat.txTypes[0] ?? (isExpense ? 'expense' : 'income');
+  const effectiveType: TxType = effectiveTxType(txType, cat.txTypes, isExpense);
   const typeVisual = TX_TYPE_VISUAL[effectiveType];
   // counter candidates: every visible account except the owning one
   const counterCandidates = useMemo(
@@ -113,6 +158,7 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
   const save = () => {
     if (!valid || !effectiveAccount || cents === null) return;
     const signed = isExpense ? -Math.abs(cents) : Math.abs(cents);
+    applyManualBalanceDeltas(repo, spaceId, manualBalanceDeltas(accounts, tx, effectiveAccount, signed));
     void repo.upsert('transaction', spaceId, tx?.id ?? repo.newId(), {
       accountId: effectiveAccount,
       date,
@@ -155,6 +201,25 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
         title={tx ? t('txform.editTitle') : t('txform.addTitle')}
         size="tall"
       >
+        {/* no manual account yet: explain WHY the form can't work and
+            hand over a one-tap path to fix it (user UX request) */}
+        {writable.length === 0 && !tx ? (
+          <div className="flex flex-col items-center gap-3 px-4 pt-8 text-center" data-testid="txform-no-accounts">
+            <Icon name="bank-plus" size={40} color="var(--m-ink-4)" />
+            <p className="text-[15px] font-medium text-ink">{t('txform.noAccountsTitle')}</p>
+            <p className="text-[13px] leading-relaxed text-ink-3">{t('txform.noAccountsBody')}</p>
+            <Button
+              className="mt-2 w-full"
+              data-testid="txform-add-account"
+              onClick={() => {
+                onOpenChange(false);
+                void navigate({ to: '/accounts' });
+              }}
+            >
+              {t('txform.noAccountsCta')}
+            </Button>
+          </div>
+        ) : (
         <div className="flex flex-col gap-3 pt-1">
           {/* direction + amount */}
           <div className="flex gap-2">
@@ -280,6 +345,7 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
             {tx ? t('action.save') : t('action.add')}
           </Button>
         </div>
+        )}
       </Sheet>
 
       {/* stacked: transaction type */}

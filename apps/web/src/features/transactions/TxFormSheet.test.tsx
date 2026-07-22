@@ -60,6 +60,35 @@ describe('TxFormSheet (demo identity)', () => {
     );
   });
 
+  it('no manual account: the form explains itself and doors to accounts', async () => {
+    const { renderAppAsUser, USER_TEST_DB } = await import('@/test/harness');
+    indexedDB.deleteDatabase(USER_TEST_DB);
+    // a user space with ZERO writable accounts (no seed)
+    renderAppAsUser('/transactions', { spaces: [{ id: 's-user', name: 'Personal' }] });
+    await screen.findByTestId('tx-list');
+    fireEvent.click(screen.getByTestId('tx-add'));
+    // the empty state replaces the form and the CTA lands on accounts
+    expect(await screen.findByTestId('txform-no-accounts')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('txform-add-account'));
+    expect(await screen.findByTestId('screen-accounts')).toBeTruthy();
+  }, 15_000);
+
+  it('a manual expense adjusts the account balance live (user bug: it froze)', async () => {
+    await openForm();
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    const before = (await db.accounts.get('demo_main'))!.balanceCents;
+
+    fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '50,00' } });
+    fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Markt' } });
+    fireEvent.click(screen.getByTestId('txform-save'));
+
+    await waitFor(async () => {
+      expect((await db.accounts.get('demo_main'))!.balanceCents).toBe(before - 5000);
+    }, { timeout: 5000 });
+    db.close();
+  }, 15_000);
+
   it('type follows the category until explicitly set; counter account suggests it', async () => {
     await openForm();
     // demo has several accounts -> the counter row is offered

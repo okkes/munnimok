@@ -50,7 +50,10 @@ const ENTITIES: readonly EntityName[] = [
   'debt',
   'allocation',
   'receipt',
+  'receiptLink',
   'storeMarker',
+  'storeConn',
+  'storeConnLink',
   'holding',
   'lot',
   'insightDismiss',
@@ -74,7 +77,22 @@ export async function initSqlSchema(sql: SqlExecutor): Promise<void> {
   await sql.run('CREATE TABLE IF NOT EXISTS outbox (opId TEXT PRIMARY KEY, spaceId TEXT, hlc TEXT, json TEXT NOT NULL)');
   await sql.run('CREATE INDEX IF NOT EXISTS idx_outbox_space ON outbox (spaceId)');
   await sql.run('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, json TEXT NOT NULL)');
-  await sql.run('CREATE TABLE IF NOT EXISTS store_conn (store TEXT PRIMARY KEY, json TEXT NOT NULL)');
+  // receipts v3: instance-keyed connections; a pre-v3 store_conn table
+  // migrates once (id = store name, matching the Dexie upgrade)
+  await sql.run('CREATE TABLE IF NOT EXISTS store_inst (id TEXT PRIMARY KEY, json TEXT NOT NULL)');
+  try {
+    const legacy = await sql.query('SELECT store, json FROM store_conn');
+    for (const row of legacy) {
+      const parsed = JSON.parse(row.json as string) as Record<string, unknown>;
+      await sql.run('INSERT OR IGNORE INTO store_inst (id, json) VALUES (?, ?)', [
+        row.store as string,
+        JSON.stringify({ ...parsed, id: row.store }),
+      ]);
+    }
+    await sql.run('DROP TABLE store_conn');
+  } catch {
+    // no legacy table — fresh database
+  }
   await sql.run('CREATE TABLE IF NOT EXISTS quote_cache (key TEXT PRIMARY KEY, json TEXT NOT NULL)');
 }
 
@@ -187,22 +205,22 @@ export class SqlStorageBackend implements StorageBackend {
   }
 
   async storeConnAll() {
-    const rows = await this.sql.query('SELECT json FROM store_conn');
+    const rows = await this.sql.query('SELECT json FROM store_inst');
     return rows.map((r) => JSON.parse(r.json as string) as StoreConnectionRow);
   }
 
-  async storeConnGet(store: StoreConnectionRow['store']) {
-    const rows = await this.sql.query('SELECT json FROM store_conn WHERE store = ?', [store]);
+  async storeConnGet(id: string) {
+    const rows = await this.sql.query('SELECT json FROM store_inst WHERE id = ?', [id]);
     return rows[0] ? (JSON.parse(rows[0].json as string) as StoreConnectionRow) : undefined;
   }
 
   async storeConnPut(row: StoreConnectionRow) {
-    await this.sql.run('INSERT OR REPLACE INTO store_conn (store, json) VALUES (?, ?)', [row.store, JSON.stringify(row)]);
+    await this.sql.run('INSERT OR REPLACE INTO store_inst (id, json) VALUES (?, ?)', [row.id, JSON.stringify(row)]);
     this.emit();
   }
 
-  async storeConnDelete(store: StoreConnectionRow['store']) {
-    await this.sql.run('DELETE FROM store_conn WHERE store = ?', [store]);
+  async storeConnDelete(id: string) {
+    await this.sql.run('DELETE FROM store_inst WHERE id = ?', [id]);
     this.emit();
   }
 

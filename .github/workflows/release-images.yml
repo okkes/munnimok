@@ -36,9 +36,23 @@ jobs:
             echo "### API line coverage: $(awk "BEGIN{printf \"%.1f%%\", $RATE*100}")" >> $GITHUB_STEP_SUMMARY
           fi
 
+  # PI1: one native build per architecture (no QEMU — full-speed .NET
+  # and Vite builds), merged into one multi-arch tag by the manifest
+  # job below. The NAS (amd64) and a Raspberry Pi (arm64) pull the
+  # same :dev/:latest tag and get their own layers.
   images:
     needs: api-tests
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    outputs:
+      channel: ${{ steps.meta.outputs.channel }}
+      build: ${{ steps.meta.outputs.build }}
     # GitHub Environment = the single source of per-stack config: the
     # SAME variable name (VITE_API_URL, …) carries the right value per
     # environment. No fallbacks — a missing variable fails the guard
@@ -98,11 +112,11 @@ jobs:
           context: server
           file: server/src/Munni.Api/Dockerfile
           push: true
-          tags: |
-            ${{ env.REGISTRY }}/munni-api:${{ steps.meta.outputs.channel }}
-            ${{ env.REGISTRY }}/munni-api:${{ steps.meta.outputs.channel }}-${{ steps.meta.outputs.build }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # arch-suffixed staging tag only — the channel tags are minted
+          # by the manifest job once BOTH arches exist
+          tags: ${{ env.REGISTRY }}/munni-api:${{ steps.meta.outputs.channel }}-${{ steps.meta.outputs.build }}-${{ matrix.arch }}
+          cache-from: type=gha,scope=api-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=api-${{ matrix.arch }}
 
       - name: Build & push web
         uses: docker/build-push-action@v7
@@ -120,11 +134,9 @@ jobs:
             VITE_GLITCHTIP_DSN=${{ vars.VITE_GLITCHTIP_DSN }}
             VITE_CHANNEL=${{ steps.meta.outputs.app_channel }}
             APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}
-          tags: |
-            ${{ env.REGISTRY }}/munni-web:${{ steps.meta.outputs.channel }}
-            ${{ env.REGISTRY }}/munni-web:${{ steps.meta.outputs.channel }}-${{ steps.meta.outputs.build }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: ${{ env.REGISTRY }}/munni-web:${{ steps.meta.outputs.channel }}-${{ steps.meta.outputs.build }}-${{ matrix.arch }}
+          cache-from: type=gha,scope=web-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=web-${{ matrix.arch }}
 
       - name: Build & push admin
         uses: docker/build-push-action@v7
@@ -138,8 +150,31 @@ jobs:
             VITE_LOGTO_APP_ID=${{ steps.meta.outputs.logto_app_admin }}
             VITE_LOGTO_RESOURCE=${{ steps.meta.outputs.api_url }}
             VITE_GLITCHTIP_DSN=${{ vars.VITE_GLITCHTIP_DSN_ADMIN }}
-          tags: |
-            ${{ env.REGISTRY }}/munni-admin:${{ steps.meta.outputs.channel }}
-            ${{ env.REGISTRY }}/munni-admin:${{ steps.meta.outputs.channel }}-${{ steps.meta.outputs.build }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: ${{ env.REGISTRY }}/munni-admin:${{ steps.meta.outputs.channel }}-${{ steps.meta.outputs.build }}-${{ matrix.arch }}
+          cache-from: type=gha,scope=admin-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=admin-${{ matrix.arch }}
+
+  # merge the per-arch pushes into the channel tags the hosts pull
+  manifest:
+    needs: images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create multi-arch manifests
+        run: |
+          CHANNEL='${{ needs.images.outputs.channel }}'
+          BUILD='${{ needs.images.outputs.build }}'
+          for image in munni-api munni-web munni-admin; do
+            docker buildx imagetools create \
+              -t "$REGISTRY/$image:$CHANNEL" \
+              -t "$REGISTRY/$image:$CHANNEL-$BUILD" \
+              "$REGISTRY/$image:$CHANNEL-$BUILD-amd64" \
+              "$REGISTRY/$image:$CHANNEL-$BUILD-arm64"
+            echo "### $image:$CHANNEL" >> $GITHUB_STEP_SUMMARY
+            docker buildx imagetools inspect "$REGISTRY/$image:$CHANNEL" | grep -E 'Platform|Digest' | head -6 >> $GITHUB_STEP_SUMMARY
+          done

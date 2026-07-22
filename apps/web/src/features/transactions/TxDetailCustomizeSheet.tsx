@@ -2,6 +2,7 @@ import { useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
 import { useData } from '@/app/data';
 import type { SpaceRow } from '@/db/types';
+import { useDragReorder } from '@/ui/dragReorder';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 
@@ -52,45 +53,42 @@ export function TxDetailCustomizeSheet({
       txDetailBlocks: next.map((entry) => ({ id: entry.id, hidden: entry.hidden ? (1 as const) : (0 as const) })),
     });
 
-  const move = (index: number, delta: -1 | 1) => {
-    const target = index + delta;
-    if (target < 0 || target >= blocks.length) return;
-    const next = [...blocks];
-    [next[index], next[target]] = [next[target], next[index]];
-    persist(next);
-  };
-
   const toggle = (index: number) => {
     persist(blocks.map((entry, i) => (i === index ? { ...entry, hidden: !entry.hidden } : entry)));
   };
+
+  // drag-to-reorder with ghost + slide, same mechanics as Customize Home
+  const reorder = (from: number, to: number) => {
+    const next = [...blocks];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    persist(next);
+  };
+  const { drag, ghost, setRowRef, rowStyle, handleProps } = useDragReorder(blocks.length, reorder);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title={t('tx.customize')} size="form">
       <p className="pb-2 text-[12px] text-ink-3">{t('tx.customizeSub')}</p>
       <div className="flex flex-col" data-testid="tx-customize-list">
         {blocks.map((entry, index) => (
-          <div key={entry.id} className="flex items-center gap-2 border-b border-line-2 py-2 last:border-0">
+          <div
+            key={entry.id}
+            ref={setRowRef(index)}
+            data-testid={`tx-block-row-${entry.id}`}
+            style={rowStyle(index)}
+            className="flex items-center gap-2 border-b border-line-2 py-2 last:border-0"
+          >
+            <button
+              aria-label={t('home.dragHandle')}
+              data-testid={`tx-block-drag-${entry.id}`}
+              {...handleProps(index)}
+              className="m-tap flex h-9 w-7 cursor-grab items-center justify-center border-none bg-transparent text-ink-4"
+            >
+              <Icon name="drag-horizontal-variant" size={17} />
+            </button>
             <span className={`min-w-0 flex-1 truncate text-[14px] ${entry.hidden ? 'text-ink-4' : 'text-ink'}`}>
               {t(TX_DETAIL_BLOCK_LABELS[entry.id])}
             </span>
-            <button
-              aria-label="↑"
-              data-testid={`tx-block-up-${entry.id}`}
-              disabled={index === 0}
-              onClick={() => move(index, -1)}
-              className="m-tap flex h-9 w-9 items-center justify-center rounded-full border-none bg-transparent text-ink-3 disabled:opacity-30"
-            >
-              <Icon name="arrow-up" size={17} />
-            </button>
-            <button
-              aria-label="↓"
-              data-testid={`tx-block-down-${entry.id}`}
-              disabled={index === blocks.length - 1}
-              onClick={() => move(index, 1)}
-              className="m-tap flex h-9 w-9 items-center justify-center rounded-full border-none bg-transparent text-ink-3 disabled:opacity-30"
-            >
-              <Icon name="arrow-down" size={17} />
-            </button>
             <button
               aria-label={t('home.blockToggle')}
               data-testid={`tx-block-toggle-${entry.id}`}
@@ -106,6 +104,17 @@ export function TxDetailCustomizeSheet({
           </div>
         ))}
       </div>
+      {/* the floating clone that follows the finger */}
+      {drag && ghost && (
+        <div
+          data-testid="tx-block-ghost"
+          className="pointer-events-none fixed z-50 flex items-center gap-2 rounded-input border border-line bg-surface px-2 shadow-2xl"
+          style={{ top: ghost.top, left: ghost.left, width: ghost.width, height: ghost.height }}
+        >
+          <Icon name="drag-horizontal-variant" size={17} color="var(--m-ink-4)" />
+          <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{t(TX_DETAIL_BLOCK_LABELS[blocks[drag.from].id])}</span>
+        </div>
+      )}
     </Sheet>
   );
 }

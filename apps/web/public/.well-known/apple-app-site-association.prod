@@ -2,7 +2,7 @@
   "applinks": {
     "details": [
       {
-        "appIDs": ["__APPLE_TEAM_ID__.app.munni", "__APPLE_TEAM_ID__.app.munni.dev"],
+        "appIDs": ["__APPLE_TEAM_ID__.app.munni"],
         "components": [
           { "/": "/gc-callback*" },
           { "/": "/splits/join/*" },

@@ -33,7 +33,12 @@ describe('OnboardingScreen (demo identity)', () => {
     fireEvent.change(screen.getByTestId('onboarding-name'), { target: { value: 'Okkes' } });
     fireEvent.click(screen.getByTestId('onboarding-save'));
 
-    // step 2: connect your bank (offered), do it later -> home
+    // step 2: the app-lock offer (user request) — skippable, and the
+    // copy names Global settings as the later door
+    expect(await screen.findByTestId('onboarding-lock-step')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('onboarding-lock-later'));
+
+    // step 3: connect your bank (offered), do it later -> home
     expect(await screen.findByTestId('onboarding-bank-step')).toBeTruthy();
     fireEvent.click(screen.getByTestId('onboarding-bank-later'));
     expect(await screen.findByTestId('screen-home')).toBeTruthy();
@@ -44,8 +49,30 @@ describe('OnboardingScreen (demo identity)', () => {
     renderApp('/onboarding');
     await screen.findByTestId('screen-onboarding');
     fireEvent.click(screen.getByTestId('onboarding-skip'));
+    await screen.findByTestId('onboarding-lock-step');
+    fireEvent.click(screen.getByTestId('onboarding-lock-later'));
     await screen.findByTestId('onboarding-bank-step');
     fireEvent.click(screen.getByTestId('onboarding-import'));
     expect(await screen.findByTestId('screen-accounts')).toBeTruthy();
+  });
+
+  it('setting the lock during onboarding writes a PIN-backed config', async () => {
+    renderApp('/onboarding');
+    await screen.findByTestId('screen-onboarding');
+    fireEvent.click(screen.getByTestId('onboarding-skip'));
+    await screen.findByTestId('onboarding-lock-step');
+    fireEvent.change(screen.getByTestId('onboarding-lock-pin'), { target: { value: '1234' } });
+    fireEvent.change(screen.getByTestId('onboarding-lock-pin2'), { target: { value: '4321' } });
+    fireEvent.click(screen.getByTestId('onboarding-lock-enable'));
+    // mismatch stays on the step with the error
+    expect(await screen.findByTestId('onboarding-lock-error')).toBeTruthy();
+    fireEvent.change(screen.getByTestId('onboarding-lock-pin2'), { target: { value: '1234' } });
+    fireEvent.click(screen.getByTestId('onboarding-lock-enable'));
+    await screen.findByTestId('onboarding-bank-step');
+    // the config is stored per identity (munni_lock_<key>)
+    const lockKey = Object.keys(localStorage).find((k) => k.startsWith('munni_lock'));
+    const config = JSON.parse(localStorage.getItem(lockKey ?? '') ?? 'null');
+    expect(config?.enabled).toBe(true);
+    expect(config?.pinHash).toBeTruthy();
   });
 });

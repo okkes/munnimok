@@ -56,6 +56,12 @@ export async function openEncryptedExecutor(database: string): Promise<SqlExecut
   const stored = await plugin.isSecretStored();
   if (!stored.result) await plugin.setEncryptionSecret({ passphrase: mintPassphrase() });
 
+  // the NATIVE side outlives webview reloads: after toggling the store
+  // off and on, its registry still holds the old connection and
+  // createConnection threw "Connection … already exists" — which the
+  // never-brick guard read as a broken store and silently cleared the
+  // flag (user bug). A pre-emptive close makes open idempotent.
+  await plugin.closeConnection({ database, readonly: false }).catch(() => undefined);
   await plugin.createConnection({ database, version: 1, encrypted: true, mode: 'secret', readonly: false });
   await plugin.open({ database });
 

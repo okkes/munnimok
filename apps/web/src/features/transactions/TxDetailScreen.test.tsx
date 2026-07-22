@@ -108,10 +108,9 @@ describe('counterparty account number on the detail screen', () => {
     renderApp('/transactions/tx-cp1');
     const row = await screen.findByTestId('tx-detail-counterparty-edit');
     expect(row.textContent).toContain('NL99ELDR0000000042');
-    // tapping opens the Type sheet; the account picker stacks behind
-    // its counterparty row (user redesign)
+    // tapping opens the account picker DIRECTLY (user report: the
+    // combined type sheet surprised here)
     fireEvent.click(row);
-    fireEvent.click(await screen.findByTestId('txtype-counter-row'));
     expect(await screen.findByTestId('txtype-accounts')).toBeTruthy();
   }, 15_000);
 
@@ -152,9 +151,8 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
 
   it('linking a savings counter-account sets the type as an editable default', async () => {
     renderApp('/transactions/dm6');
-    fireEvent.click(await screen.findByTestId('tx-detail-type-row'));
-    // the account list stacks behind the counterparty row now
-    fireEvent.click(await screen.findByTestId('txtype-counter-row'));
+    // the counterparty row opens the account picker DIRECTLY now
+    fireEvent.click(await screen.findByTestId('tx-detail-counterparty-edit'));
     fireEvent.click(await screen.findByTestId('txtype-linked-demo_save'));
     await waitFor(() => expect(screen.getByTestId('tx-detail-type-row').textContent).toContain('Saving'));
 
@@ -173,9 +171,8 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     });
     db.close();
 
-    // unlinking clears the suggestion note
-    fireEvent.click(screen.getByTestId('tx-detail-type-row'));
-    fireEvent.click(await screen.findByTestId('txtype-counter-row'));
+    // unlinking (via the counterparty row) clears the suggestion note
+    fireEvent.click(screen.getByTestId('tx-detail-counterparty-edit'));
     fireEvent.click(await screen.findByTestId('txtype-linked-none'));
     fireEvent.click(screen.getByTestId('tx-detail-type-row'));
     await waitFor(() => expect(screen.queryByTestId('txtype-default-note')).toBeNull());
@@ -319,6 +316,12 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     fireEvent.click(await screen.findByTestId('tx-detail-category-row'));
     await screen.findByTestId('split-editor');
     fireEvent.click(screen.getByTestId('split-add-row'));
+    // the gate (user request): the fresh row must be finished — category
+    // AND a value — before another may be added
+    expect((screen.getByTestId('split-add-row') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByTestId('split-cat-1'));
+    fireEvent.click(await screen.findByTestId('catpicker-restaurants'));
+    fireEvent.change(screen.getByTestId('split-amount-1'), { target: { value: '0,01' } });
 
     // a third row can be added and removed again
     fireEvent.click(screen.getByTestId('split-add-row'));

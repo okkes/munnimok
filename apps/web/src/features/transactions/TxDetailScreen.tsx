@@ -24,7 +24,8 @@ import { ReceiptSection } from '@/features/shopping/ReceiptSection';
 import { ReimburseSection } from './ReimburseSection';
 import { SplitEditorSheet } from './SplitEditorSheet';
 import { TxFormSheet } from './TxFormSheet';
-import { TxTypeSheet } from './TxTypeSheet';
+import { CounterAccountSheet, TxTypeOptionsSheet } from './TxTypeSheet';
+import { applyTypeChange, typeForLinkedAccount } from '@/domain/txType';
 import { merchantKey } from '@/domain/merchantKey';
 import { TxDetailCustomizeSheet, resolveTxDetailBlocks } from './TxDetailCustomizeSheet';
 import type { TxDetailBlockId } from './TxDetailCustomizeSheet';
@@ -322,7 +323,10 @@ export function TxDetailScreen() {
   // flow as categories, and the memory teaches future arrivals
   const [titleBulk, setTitleBulk] = useState<{ title: string } | null>(null);
   const [titleSelected, setTitleSelected] = useState<ReadonlySet<string>>(new Set());
-  const [typeOpen, setTypeOpen] = useState(false);
+  // counterparty and type each open their OWN picker (user: the combined
+  // sheet surprised — tapping one showed the other's content too)
+  const [counterPickOpen, setCounterPickOpen] = useState(false);
+  const [typePickOpen, setTypePickOpen] = useState(false);
   const [splitOpen, setSplitOpen] = useState(false);
   const [recurringOpen, setRecurringOpen] = useState(false);
   const [eventOpen, setEventOpen] = useState(false);
@@ -433,6 +437,11 @@ export function TxDetailScreen() {
       setConfirmDelete(true);
       return;
     }
+    // manual accounts keep a LIVE balance: deleting the row hands its
+    // amount back (bank-linked balances stay the bank's)
+    if (account && account.source !== 'gocardless') {
+      await repo.upsert('account', tx.spaceId, account.id, { balanceCents: account.balanceCents - tx.amountCents });
+    }
     await repo.remove('transaction', tx.spaceId, tx.id);
     void navigate({ to: '/transactions' });
   };
@@ -516,12 +525,12 @@ export function TxDetailScreen() {
             counterAccountName={counterAccount?.name}
             linkedAccountName={linkedAccount?.name}
             onOpenAccount={() => setCounterOpen(true)}
-            onEdit={() => setTypeOpen(true)}
+            onEdit={() => setCounterPickOpen(true)}
           />
           <div className="mx-4 h-px bg-line-2" />
           <button
             data-testid="tx-detail-type-row"
-            onClick={() => setTypeOpen(true)}
+            onClick={() => setTypePickOpen(true)}
             className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
           >
             <Icon name="swap-vertical" size={20} color="var(--m-ink-3)" />
@@ -642,7 +651,40 @@ export function TxDetailScreen() {
         )}
       </div>
 
-      <TxTypeSheet open={typeOpen} onOpenChange={setTypeOpen} tx={tx} />
+      {/* write-through, split into two direct pickers (user report):
+          the counterparty row shows accounts, the type row shows types */}
+      <CounterAccountSheet
+        open={counterPickOpen}
+        onOpenChange={setCounterPickOpen}
+        tx={tx}
+        currentLinkedId={tx.linkedAccountId}
+        onChoose={(picked) => {
+          const nextType = picked ? typeForLinkedAccount(picked.type) : tx.txType;
+          const fields = applyTypeChange({
+            nextType,
+            linkedAccountId: picked?.id ?? null,
+            currentCatId: tx.catId,
+            catTxTypes: cats.byId(tx.catId).txTypes,
+          });
+          // explicit null clears the link (undefined would be dropped by JSON)
+          void transform(tx, { ...fields, linkedAccountId: picked?.id ?? (null as never) });
+        }}
+      />
+      <TxTypeOptionsSheet
+        open={typePickOpen}
+        onOpenChange={setTypePickOpen}
+        current={tx.txType}
+        linkedNote={!!tx.linkedAccountId}
+        onPick={(nextType: TxType) => {
+          const fields = applyTypeChange({
+            nextType,
+            linkedAccountId: tx.linkedAccountId ?? null,
+            currentCatId: tx.catId,
+            catTxTypes: cats.byId(tx.catId).txTypes,
+          });
+          void transform(tx, fields); // the link survives a manual override
+        }}
+      />
       {/* ONE category flow (review parity): a single row edits the plain
           category through setCategory (which arms the bulk offer);
           added rows store a split write-through */}

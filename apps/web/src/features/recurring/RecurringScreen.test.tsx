@@ -342,7 +342,7 @@ describe('brand picker online search (user identity)', () => {
     fireEvent.change(await screen.findByTestId('brandpicker-search'), { target: { value: 'netflix' } });
   }
 
-  it('shows logo.dev hits first and drops the vendored duplicate', async () => {
+  it('keeps the vendored segment first when logo.dev hits arrive below it', async () => {
     await openPickerAndSearch({
       'GET /health': () => ({ capabilities: { gocardless: false, logos: true } }),
       'GET /logos/search': () => [netflixRemote],
@@ -350,10 +350,11 @@ describe('brand picker online search (user identity)', () => {
 
     const remote = await screen.findByTestId('brandpicker-remote', {}, { timeout: 3000 });
     expect(screen.getByTestId('brandpicker-remote-netflix.com')).toBeTruthy();
-    // online leads, and its vendored twin is deduped from the grid below
+    // the local segment leads and its hit SURVIVES the online answer
+    // (user bug: local matches vanished the moment logo.dev responded)
     const local = screen.getByTestId('brandpicker-local');
-    expect(remote.compareDocumentPosition(local) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(screen.queryByTestId('brandpicker-netflix')).toBeNull();
+    expect(local.compareDocumentPosition(remote) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByTestId('brandpicker-netflix')).toBeTruthy();
     expect(screen.queryByTestId('brandpicker-offline-note')).toBeNull();
 
     // picking a remote hit stores its logo.dev URL

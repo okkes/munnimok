@@ -9,15 +9,5 @@
         "B3:AC:BC:B2:54:C6:ED:51:15:36:74:04:AA:75:AA:02:06:06:00:4E:DA:E8:E6:83:61:2B:0D:2F:AD:25:91:FE"
       ]
     }
-  },
-  {
-    "relation": ["delegate_permission/common.handle_all_urls"],
-    "target": {
-      "namespace": "android_app",
-      "package_name": "app.munni.dev",
-      "sha256_cert_fingerprints": [
-        "B3:AC:BC:B2:54:C6:ED:51:15:36:74:04:AA:75:AA:02:06:06:00:4E:DA:E8:E6:83:61:2B:0D:2F:AD:25:91:FE"
-      ]
-    }
   }
 ]

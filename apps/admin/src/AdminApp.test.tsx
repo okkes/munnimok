@@ -352,10 +352,18 @@ describe('AdminApp (OIDC token mode)', () => {
     fireEvent.change(screen.getByTestId('catalog-kw-words'), { target: { value: 'Padelbaan, PADEL CLUB' } });
     fireEvent.click(screen.getByTestId('catalog-add-keyword'));
 
+    // store merchant patterns (receipts v3 R9) publish alongside
+    fireEvent.change(screen.getByTestId('catalog-store-ah'), { target: { value: 'albert heijn, AH to go' } });
+
     fireEvent.click(screen.getByTestId('catalog-publish'));
     await waitFor(() => expect(published).not.toBeNull());
-    const doc = published as { categories: { id: string }[]; keywords: { catId: string; keywords: string[] }[] };
+    const doc = published as {
+      categories: { id: string }[];
+      keywords: { catId: string; keywords: string[] }[];
+      stores: { id: string; patterns: string[] }[];
+    };
     expect(doc.categories.map((c) => c.id)).toEqual(['groceries', 'padelClub']);
     expect(doc.keywords.at(-1)).toEqual({ catId: 'padelClub', keywords: ['padelbaan', 'padel club'] });
+    expect(doc.stores).toEqual([{ id: 'ah', patterns: ['albert heijn', 'AH to go'] }]);
   });
 });

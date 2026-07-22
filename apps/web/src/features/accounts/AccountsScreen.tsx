@@ -24,6 +24,7 @@ import type { AccountRow, AccountType } from '@/db/types';
 import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
+import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { EmptyState } from '@/ui/EmptyState';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
@@ -298,9 +299,11 @@ export function AccountsScreen() {
     });
     setEditing(null);
   };
+  const [confirmRemove, setConfirmRemove] = useState(false);
   const removeAccount = () => {
     if (!editing) return;
     void repo.remove('account', spaceId, editing.id);
+    setConfirmRemove(false);
     setEditing(null);
   };
 
@@ -542,11 +545,21 @@ export function AccountsScreen() {
           <Button data-testid="acctedit-save" onClick={saveEdit} disabled={!name.trim()}>
             {t('action.save')}
           </Button>
-          <Button variant="danger" data-testid="acctedit-delete" onClick={removeAccount}>
+          <Button variant="danger" data-testid="acctedit-delete" onClick={() => setConfirmRemove(true)}>
             {t('action.delete')}
           </Button>
         </div>
       </Sheet>
+      {/* aligned destructive confirm (user request): one-tap deletes are
+          gone everywhere — sheet + cooldown, same as space/store/bank */}
+      <DangerConfirmSheet
+        open={confirmRemove}
+        onOpenChange={setConfirmRemove}
+        title={t('acct.deleteConfirmTitle')}
+        body={t('acct.deleteManualBody')}
+        onConfirm={removeAccount}
+        testId="acctedit-remove"
+      />
     </div>
   );
 }

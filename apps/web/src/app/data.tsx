@@ -198,16 +198,25 @@ export function DataProvider({ children }: { children: ReactNode }) {
         // operator catalog: cheap ETag revalidation, then apply any
         // tombstones exactly once per version — all fire-and-forget
         void (async () => {
-          const { refreshCatalog } = await import('@/sync/catalogSync');
+          const { cachedCatalog, refreshCatalog } = await import('@/sync/catalogSync');
           await refreshCatalog(store);
           const { applyCatalogTombstones } = await import('@/application/catalogMaintenance');
           await applyCatalogTombstones(store, repo);
+          // R9: operator-curated store fingerprints feed the receipt matcher
+          const { setCatalogStorePatterns } = await import('@/domain/storeReceipts');
+          setCatalogStorePatterns((await cachedCatalog(store))?.stores ?? []);
         })().catch(() => undefined);
         // reinstall gap: the Settings avatar reads the local profile copy —
         // hydrate it from /me when missing (fire-and-forget)
         void (async () => {
           const { hydrateProfileMeta } = await import('@/application/profileHydrate');
           await hydrateProfileMeta(store);
+        })().catch(() => undefined);
+        // receipts v2 → v3: fan-out rows become global rows + snapshot
+        // links, once per identity (fire-and-forget, retried while offline)
+        void (async () => {
+          const { migrateLegacyReceipts } = await import('@/application/receiptsMigrate');
+          await migrateLegacyReceipts(store, repo);
         })().catch(() => undefined);
         engine = buildSyncEngine(identity, store, repo);
         // pushes failing (offline / server away) — arm the background

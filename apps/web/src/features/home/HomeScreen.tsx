@@ -42,6 +42,7 @@ import { goalProgress } from '@/domain/goals';
 import { debtsOverview } from '@/domain/debts';
 import { toAllocateCents } from '@/domain/allocation';
 import { budgetColor, ratioPct } from '@/features/budgets/budgetUi';
+import { budgetDaysLeft } from '@/domain/budgets';
 import { fmtCents } from '@/lib/money';
 import { AppBar } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
@@ -532,10 +533,16 @@ export function HomeScreen() {
                 <span className="min-w-0 flex-1">
                   <span className="flex items-baseline justify-between gap-2">
                     <span className="truncate text-[13px] font-medium text-ink">{status.budget.name}</span>
-                    <span className="m-num shrink-0 text-[12px] font-semibold" style={{ color }}>
-                      {t(over ? 'budgets.over' : 'budgets.left', {
-                        amount: fmtCents(Math.abs(status.leftCents), currency, lang),
-                      })}
+                    <span className="flex shrink-0 items-baseline gap-1.5">
+                      {/* days-to-reset on the landing zone too (user request) */}
+                      <span className="text-[10px] text-ink-4" data-testid={`home-budget-days-${status.budget.id}`}>
+                        {t('budgets.daysLeft', { n: budgetDaysLeft(status.budget, localToday()) })}
+                      </span>
+                      <span className="m-num text-[12px] font-semibold" style={{ color }}>
+                        {t(over ? 'budgets.over' : 'budgets.left', {
+                          amount: fmtCents(Math.abs(status.leftCents), currency, lang),
+                        })}
+                      </span>
                     </span>
                   </span>
                   <ProgressBar className="mt-1" size="sm" value={ratioPct(status) / 100} color={color} />

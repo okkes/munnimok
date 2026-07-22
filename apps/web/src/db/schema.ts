@@ -14,8 +14,11 @@ import type {
   TopicRow,
   LotRow,
   QuoteCacheRow,
+  ReceiptLinkRow,
   ReceiptRow,
   StoreConnectionRow,
+  StoreConnLinkRow,
+  StoreConnRow,
   StoreMarkerRow,
   GoalContributionRow,
   GoalRow,
@@ -49,9 +52,13 @@ export class MunniDB extends Dexie {
   debts!: Table<DebtRow, string>;
   allocations!: Table<AllocationRow, string>;
   receipts!: Table<ReceiptRow, string>;
-  /** device-only — store tokens never sync (receipts privacy law) */
-  storeConnections!: Table<StoreConnectionRow, string>;
+  receiptLinks!: Table<ReceiptLinkRow, string>;
+  /** device-only — store tokens never sync in plaintext (privacy law).
+   *  v3: keyed by instance id (the old per-store table is retired) */
+  storeInstances!: Table<StoreConnectionRow, string>;
   storeMarkers!: Table<StoreMarkerRow, string>;
+  storeConns!: Table<StoreConnRow, string>;
+  storeConnLinks!: Table<StoreConnLinkRow, string>;
   holdings!: Table<HoldingRow, string>;
   lots!: Table<LotRow, string>;
   insightDismissals!: Table<InsightDismissRow, string>;
@@ -119,6 +126,26 @@ export class MunniDB extends Dexie {
     this.version(11).stores({
       topics: 'id, spaceId',
     });
+    // receipts v3: instance-keyed device connections (Dexie cannot rekey
+    // a primary key — new table, rows copied with id = store name so the
+    // E2EE cipher ids stay stable across devices), synced instance
+    // metadata + per-space inclusion links + snapshot receipt links
+    this.version(12)
+      .stores({
+        storeInstances: 'id, store',
+        storeConns: 'id, spaceId',
+        storeConnLinks: 'id, spaceId, instanceId',
+        receiptLinks: 'id, spaceId, txId, receiptId',
+      })
+      .upgrade(async (tx) => {
+        const legacy = await tx.table('storeConnections').toArray();
+        for (const row of legacy) {
+          await tx.table('storeInstances').put({ ...row, id: row.store });
+        }
+      });
+    // the retired per-store table goes in its own version (Dexie rule:
+    // deletion and the upgrade that reads it must not share a version)
+    this.version(13).stores({ storeConnections: null });
   }
 
   tableFor<E extends EntityName>(entity: E) {
@@ -153,8 +180,14 @@ export class MunniDB extends Dexie {
         return this.allocations;
       case 'receipt':
         return this.receipts;
+      case 'receiptLink':
+        return this.receiptLinks;
       case 'storeMarker':
         return this.storeMarkers;
+      case 'storeConn':
+        return this.storeConns;
+      case 'storeConnLink':
+        return this.storeConnLinks;
       case 'holding':
         return this.holdings;
       case 'lot':

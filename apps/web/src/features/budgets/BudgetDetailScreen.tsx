@@ -10,6 +10,7 @@ import { budgetFamily, budgetPeriodAt, budgetSpentCents, budgetStatus, cycleInde
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { fmtCents } from '@/lib/money';
 import { AppBar, IconButton } from '@/ui/AppBar';
+import { Bars } from '@/ui/charts/Bars';
 import { Icon } from '@/ui/Icon';
 import { HeroCard, ProgressBar, Tile } from '@/ui/primitives';
 import { TxRow } from '@/ui/TxRow';
@@ -34,28 +35,45 @@ export function BudgetDetailScreen() {
   const budget = budgets?.find((b) => b.id === budgetId);
   const today = localToday();
 
+  // tap a category row to FILTER the payments below (user request: the
+  // old navigation to a separate list read as a context switch)
+  const [catFilter, setCatFilter] = useState<string | null>(null);
+
   const view = useMemo(() => {
     if (!budget || !txs) return undefined;
     const family = budgetFamily(budget.catIds, cats);
     const status = budgetStatus(budget, txs, cats, today);
-    const shownIndex = Math.max(0, cycleIndex(budget, today) + offset);
+    const currentIndex = cycleIndex(budget, today);
+    const shownIndex = Math.max(0, currentIndex + offset);
     const period = budgetPeriodAt(budget, shownIndex);
     const spent = offset === 0 ? status.spentCents : budgetSpentCents(txs, family, period);
     const limit = offset === 0 ? status.limitCents : budget.amountCents;
+    const listFamily = catFilter ? budgetFamily([catFilter], cats) : family;
     const list = txs
-      .filter((tx) => tx.deleted === 0 && tx.txType === 'expense' && family.has(tx.catId ?? '') && tx.date >= period.start && tx.date <= period.end)
+      .filter((tx) => tx.deleted === 0 && tx.txType === 'expense' && listFamily.has(tx.catId ?? '') && tx.date >= period.start && tx.date <= period.end)
       .sort((a, b) => b.date.localeCompare(a.date));
     const perCat = budget.catIds.map((catId) => ({
       catId,
       spentCents: budgetSpentCents(txs, budgetFamily([catId], cats), period),
     }));
-    return { status, period, spent, limit, list, perCat, atStart: shownIndex === 0 };
-  }, [budget, txs, cats, today, offset]);
+    // spend per cycle, oldest → running (the overview-style bar view);
+    // the bars follow the budget's OWN period, weekly bars for weekly
+    // budgets — everything derives from the same transactions
+    const historyStart = Math.max(0, currentIndex - 7);
+    const history = [];
+    for (let i = historyStart; i <= currentIndex; i += 1) {
+      const p = budgetPeriodAt(budget, i);
+      history.push({ start: p.start, spentCents: budgetSpentCents(txs, family, p) });
+    }
+    return { status, period, spent, limit, list, perCat, history, atStart: shownIndex === 0 };
+  }, [budget, txs, cats, today, offset, catFilter]);
 
   if (!budget || !view)
     return <div className="h-full" data-testid="screen-budget-detail" />;
 
-  const { period, spent, limit, list, perCat, status, atStart } = view;
+  const { period, spent, limit, list, perCat, history, status, atStart } = view;
+  // whole days until the next cycle starts (user request, current cycle only)
+  const daysLeft = Math.max(0, Math.round((Date.parse(period.end) - Date.parse(today)) / 86_400_000)) + 1;
   const ratio = limit > 0 ? spent / limit : 0;
   const over = ratio > 1;
   const color = budgetColor(ratio);
@@ -105,6 +123,11 @@ export function BudgetDetailScreen() {
         {atStart && offset < 0 && (
           <p className="pb-2 text-center text-[11px] text-ink-4">{t('budgets.firstPeriod')}</p>
         )}
+        {offset === 0 && (
+          <p className="pb-2 text-center text-[11px] text-ink-4" data-testid="budgetdetail-daysleft">
+            {t('budgets.daysLeft', { n: daysLeft })}
+          </p>
+        )}
 
         {/* the cycle's numbers */}
         <HeroCard
@@ -143,22 +166,49 @@ export function BudgetDetailScreen() {
           }
         />
 
-        {/* per-category spend, tap → the category drill */}
+        {/* spend per cycle — the same bar view the overview drills have;
+            weekly budgets get weekly bars, the running cycle is hollow,
+            the dashed line is the limit */}
+        {history.length > 1 && (
+          <>
+            <div className="m-cap mt-5 mb-1 px-1">{t('budgets.historyCap')}</div>
+            <div className="rounded-card border border-line bg-surface px-4 py-3">
+              <Bars
+                testId="budgetdetail-bars"
+                values={history.map((h) => h.spentCents)}
+                labels={history.map((h) => fmtDate(h.start))}
+                ariaLabels={history.map((h) => `${fmtDate(h.start)}: ${money(h.spentCents)}`)}
+                hollowLast
+                average={budget.amountCents}
+                height={100}
+              />
+            </div>
+          </>
+        )}
+
+        {/* per-category spend — tapping FILTERS the payments below */}
         <div className="m-cap mt-5 mb-1 px-1">{t('screen.categories')}</div>
         <div className="rounded-card border border-line bg-surface px-4 py-1" data-testid="budgetdetail-cats">
           {perCat.map(({ catId, spentCents }) => {
             const cat = cats.byId(catId);
+            const active = catFilter === catId;
             return (
               <button
                 key={catId}
                 data-testid={`budgetdetail-cat-${catId}`}
-                onClick={() => void navigate({ to: '/overview/$kind/$catId', params: { kind: 'expense', catId } })}
-                className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent py-2.5 text-left last:border-0"
+                onClick={() => setCatFilter((v) => (v === catId ? null : catId))}
+                className={`m-tap flex w-full items-center gap-3 border-b border-line-2 py-2.5 text-left last:border-0 ${
+                  active ? 'bg-accent-soft' : 'bg-transparent'
+                }`}
               >
                 <Icon name={cat.icon} size={17} color={cat.color ?? cats.byId(cat.parentId)?.color ?? 'var(--m-ink-3)'} />
                 <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{catName(cat, t)}</span>
                 <span className="m-num text-[14px] font-semibold text-ink">{money(spentCents)}</span>
-                <Icon name="chevron-right" size={14} color="var(--m-ink-4)" />
+                <Icon
+                  name={active ? 'filter-check' : 'filter-outline'}
+                  size={14}
+                  color={active ? 'var(--m-accent-deep)' : 'var(--m-ink-4)'}
+                />
               </button>
             );
           })}

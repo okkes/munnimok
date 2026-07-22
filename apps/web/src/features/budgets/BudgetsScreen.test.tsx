@@ -72,7 +72,16 @@ describe('Budgets (demo identity)', () => {
     fireEvent.click(card);
     await screen.findByTestId('budgetdetail-hero');
     await waitFor(() => expect(screen.getByTestId('budgetdetail-spent').textContent).toMatch(/€/));
-    expect(screen.getByTestId('budgetdetail-cat-groceries')).toBeTruthy();
+    // the current cycle announces its remaining days (user request)
+    expect(screen.getByTestId('budgetdetail-daysleft').textContent).toMatch(/\d+/);
+
+    // category rows are FILTERS now (user request): tapping narrows the
+    // payments list and tapping again clears
+    const catRow = screen.getByTestId('budgetdetail-cat-groceries');
+    fireEvent.click(catRow);
+    await waitFor(() => expect(catRow.className).toContain('bg-accent-soft'));
+    fireEvent.click(catRow);
+    await waitFor(() => expect(catRow.className).not.toContain('bg-accent-soft'));
 
     // period nav walks backwards and returns
     const label = screen.getByTestId('budgetdetail-period').textContent;

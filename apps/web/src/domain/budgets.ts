@@ -58,6 +58,10 @@ export function budgetPeriodAt(budget: BudgetRow, index: number): Period {
 export const currentBudgetPeriod = (budget: BudgetRow, today: string): Period =>
   budgetPeriodAt(budget, cycleIndex(budget, today));
 
+/** whole days until the cycle resets, today included (list/home/detail) */
+export const budgetDaysLeft = (budget: BudgetRow, today: string): number =>
+  Math.max(0, Math.round((Date.parse(currentBudgetPeriod(budget, today).end) - Date.parse(today)) / 86_400_000)) + 1;
+
 interface CatalogLookup {
   byId: (id: string | undefined) => { id: string; parentId?: string };
   childrenOf: (id: string) => { id: string }[];
