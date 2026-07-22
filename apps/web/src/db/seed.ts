@@ -5,7 +5,7 @@ import { DEMO_ACCOUNTS, DEMO_TXS } from './demo-data';
 
 export const DEMO_SPACE_ID = 'demo_space';
 // bump when the demo dataset changes so returning demo users reseed
-const SEED_FLAG = 'seeded_demo_v2';
+const SEED_FLAG = 'seeded_demo_v3';
 
 // local date, matching the local-time period math in domain/periods.ts —
 // a daysAgo:0 row must always fall inside the current local budget period
