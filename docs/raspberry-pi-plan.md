@@ -1,6 +1,7 @@
 # Raspberry Pi hosting — multi-arch plan
 
-Status: **DESIGN — awaiting approval** (2026-07-22). Goal: the munni
+Status: **APPROVED** (2026-07-22); PI1 shipped — release-images now
+builds amd64+arm64 natively and merges manifests. Goal: the munni
 stack runs on a Raspberry Pi (arm64) the same push-button way it runs
 on the NAS (amd64).
 
