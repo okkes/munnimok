@@ -97,8 +97,18 @@ export function SpaceSettingsScreen() {
 
   const readOnly = myRole === 'reader';
 
-  const save = () => {
+  const save = async () => {
     if (!space || !name.trim() || readOnly) return;
+    // private names stay unique (user rule) — renaming counts too
+    if (space.kind !== 'shared') {
+      const clash = (await store.allRows('space')).some(
+        (s) => s.deleted === 0 && s.id !== space.id && s.kind !== 'shared' && s.name.trim().toLowerCase() === name.trim().toLowerCase(),
+      );
+      if (clash) {
+        setDeleteError(t('space.nameTaken'));
+        return;
+      }
+    }
     void repo.upsert('space', space.id, space.id, {
       name: name.trim(),
       icon,
@@ -327,7 +337,7 @@ export function SpaceSettingsScreen() {
             />
 
             {!readOnly && (
-              <Button data-testid="space-edit-save" onClick={save} disabled={!name.trim()}>
+              <Button data-testid="space-edit-save" onClick={() => void save()} disabled={!name.trim()}>
                 {t('action.save')}
               </Button>
             )}

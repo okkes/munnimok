@@ -9,6 +9,7 @@ import { COUNTRIES, currencyForCountry } from '@/domain/countries';
 /** the pickable currencies: everything a supported country maps to */
 const CURRENCY_CHOICES = [...new Set(COUNTRIES.map((c) => currencyForCountry(c.code)))].sort((a, b) => a.localeCompare(b));
 import { BankConnectSheet } from '@/features/accounts/BankConnect';
+import { biometricAvailable, hashPin, randomSalt, registerBiometric, validPin, writeLockConfig } from '@/features/lock/lock';
 import { Button } from '@/ui/Button';
 import { Highlight } from '@/ui/Highlight';
 import { Icon } from '@/ui/Icon';
@@ -37,14 +38,43 @@ export function OnboardingScreen() {
   const currency = currencyOverride ?? currencyForCountry(country);
   const [countryOpen, setCountryOpen] = useState(false);
   const [query, setQuery] = useState('');
-  // step 1 = profile, step 2 = bank (legacy onboarding parity)
-  const [step, setStep] = useState<1 | 2>(1);
+  // step 1 = profile, step 2 = app lock (user request), step 3 = bank
+  const [step, setStep] = useState<1 | 2 | 3>(1);
   const [gcAvailable, setGcAvailable] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
+  const [bioAvailable, setBioAvailable] = useState(false);
+  const [lockPin, setLockPin] = useState('');
+  const [lockPin2, setLockPin2] = useState('');
+  const [lockError, setLockError] = useState<string | null>(null);
 
   useEffect(() => {
     void getApiCapabilities().then((caps) => setGcAvailable(caps.gocardless));
+    void biometricAvailable().then(setBioAvailable);
   }, []);
+
+  /** same shape as the settings flow: PIN is the fallback, biometrics
+   *  best-effort — a cancelled prompt still yields a PIN-locked app */
+  const enableLock = async () => {
+    if (!validPin(lockPin)) {
+      setLockError(t('lock.pinHint'));
+      return;
+    }
+    if (lockPin !== lockPin2) {
+      setLockError(t('lock.pinMismatch'));
+      return;
+    }
+    const biometric = bioAvailable ? await registerBiometric() : null;
+    const pinSalt = randomSalt();
+    writeLockConfig({
+      enabled: true,
+      credentialId: biometric?.credentialId,
+      biometricKind: biometric?.kind,
+      pinSalt,
+      pinHash: await hashPin(lockPin, pinSalt),
+      timeoutSec: 60,
+    });
+    setStep(3);
+  };
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -123,6 +153,55 @@ export function OnboardingScreen() {
         )}
 
         {step === 2 && (
+          <div className="flex flex-col gap-3" data-testid="onboarding-lock-step">
+            <div className="flex flex-col items-center gap-2 pb-2 text-center">
+              <Icon name="shield-lock-outline" size={36} color="var(--m-accent)" />
+              <h2 className="m-h3 text-ink">{t('onboarding.lockTitle')}</h2>
+              <p className="max-w-[300px] text-[13px] text-ink-3">
+                {t(bioAvailable ? 'onboarding.lockSub' : 'onboarding.lockSubPinOnly')}
+              </p>
+            </div>
+            <input
+              data-testid="onboarding-lock-pin"
+              type="password"
+              inputMode="numeric"
+              value={lockPin}
+              onChange={(e) => {
+                setLockPin(e.target.value);
+                setLockError(null);
+              }}
+              placeholder={t('lock.pinLabel')}
+              className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+            />
+            <input
+              data-testid="onboarding-lock-pin2"
+              type="password"
+              inputMode="numeric"
+              value={lockPin2}
+              onChange={(e) => {
+                setLockPin2(e.target.value);
+                setLockError(null);
+              }}
+              placeholder={t('lock.pinConfirm')}
+              className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+            />
+            {lockError && (
+              <p className="text-[12px] text-negative" data-testid="onboarding-lock-error">
+                {lockError}
+              </p>
+            )}
+            <Button data-testid="onboarding-lock-enable" onClick={() => void enableLock()} disabled={!lockPin || !lockPin2}>
+              <Icon name={bioAvailable ? 'fingerprint' : 'lock-outline'} size={18} />
+              {t('lock.setup')}
+            </Button>
+            {/* skippable — and the note says WHERE it lives later */}
+            <Button variant="ghost" data-testid="onboarding-lock-later" onClick={() => setStep(3)}>
+              {t('onboarding.lockLater')}
+            </Button>
+          </div>
+        )}
+
+        {step === 3 && (
           <div className="flex flex-col gap-3" data-testid="onboarding-bank-step">
             <div className="flex flex-col items-center gap-2 pb-2 text-center">
               <Icon name="bank-outline" size={36} color="var(--m-accent)" />

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useLogto } from '@logto/react';
 import { LANG_NAMES, LANGS, useLang } from '@/i18n';
@@ -60,8 +60,21 @@ function LogtoSignInButton({ onLine }: Readonly<{ onLine: boolean }>) {
 function LangPill() {
   const { lang, setLang } = useLang();
   const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // tap anywhere else closes the popover (user report: it only closed
+  // by tapping the pill again)
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [open]);
+
   return (
-    <div className="relative">
+    <div className="relative" ref={rootRef}>
       <button
         data-testid="login-lang-trigger"
         onClick={() => setOpen((v) => !v)}
