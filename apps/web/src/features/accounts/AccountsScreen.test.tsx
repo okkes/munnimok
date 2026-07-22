@@ -55,8 +55,9 @@ describe('AccountsScreen (demo identity)', () => {
 
     fireEvent.click(row);
     expect(await screen.findByTestId('attach-spaces')).toBeTruthy();
-    // the demo space renders as attached (checkbox on)
+    // the sheet lists ONLY attached spaces now (checkboxes retired)
     expect(screen.getByTestId('attach-space-demo_space')).toBeTruthy();
+    expect(screen.getByTestId('attach-detach-demo_space')).toBeTruthy();
     expect(screen.queryByTestId('acctedit-name')).toBeNull(); // not the editor
   });
 
@@ -101,10 +102,9 @@ describe('AccountsScreen (demo identity)', () => {
     fetchMock.mockRestore();
   }, 15_000);
 
-  it('attach checkboxes update live while the sheet stays open', async () => {
-    // user identity: the toggle writes the accountLink mirror to Dexie —
-    // the checkbox must flip immediately (user bug: it only refreshed
-    // after leaving and re-entering)
+  it('space accounts screen attaches one of my feed accounts with a start date', async () => {
+    // redesign: attaching happens on the space's own accounts screen —
+    // pick an existing account, choose the history start, import
     indexedDB.deleteDatabase(USER_TEST_DB);
     const { MunniDB } = await import('@/db/schema');
     const { Repo } = await import('@/db/repo');
@@ -122,7 +122,8 @@ describe('AccountsScreen (demo identity)', () => {
     });
     db.close();
 
-    renderAppAsUser('/accounts', {
+    let attachBody: { historyFrom?: string } | undefined;
+    renderAppAsUser('/spaces/s-user/accounts', {
       spaces: [{ id: 's-user', name: 'Personal' }],
       api: {
         'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false } }),
@@ -130,17 +131,107 @@ describe('AccountsScreen (demo identity)', () => {
         // here the engine treats it as lost access and purges the account
         'GET /me/spaces': () => ['s-user', 'feed-1'],
         'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
-        'POST /spaces/s-user/accounts': () => ({}),
+        'POST /spaces/s-user/accounts': (body) => {
+          attachBody = body as { historyFrom?: string };
+          return {};
+        },
+      },
+    });
+
+    fireEvent.click(await screen.findByTestId('space-accounts-attach'));
+    fireEvent.click(await screen.findByTestId('space-attach-pick-feedacct-1'));
+    fireEvent.change(await screen.findByTestId('space-attach-history'), { target: { value: '2026-01-01' } });
+    fireEvent.click(screen.getByTestId('space-attach-save'));
+    // the chosen start date reaches the server…
+    await waitFor(() => expect(attachBody?.historyFrom).toBe('2026-01-01'), { timeout: 5000 });
+    // …and the synced mirror renders the attachment (with a detach)
+    await waitFor(() => expect(screen.queryByTestId(/^space-account-detach-/)).toBeTruthy(), { timeout: 5000 });
+  }, 15_000);
+
+  it('space accounts screen detaches through the danger sheet', async () => {
+    indexedDB.deleteDatabase(USER_TEST_DB);
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const db = new MunniDB(USER_TEST_DB);
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
+    await repo.upsert('account', 'feed-1', 'feedacct-1', {
+      name: 'ING Betaal',
+      type: 'checking',
+      source: 'gocardless',
+      currency: 'EUR',
+      balanceCents: 5000,
+      iban: 'NL69INGB0123456789',
+    });
+    await repo.upsert('accountLink', 's-user', 'link-1', { feedSpaceId: 'feed-1', accountId: 'feedacct-1' });
+    db.close();
+
+    let detached = false;
+    renderAppAsUser('/spaces/s-user/accounts', {
+      spaces: [{ id: 's-user', name: 'Personal' }],
+      api: {
+        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false } }),
+        'GET /me/spaces': () => ['s-user', 'feed-1'],
+        'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
+        'GET /spaces/s-user/accounts': () => [{ id: 'srv-1', feedSpaceId: 'feed-1', accountId: 'feedacct-1' }],
+        'DELETE /spaces/s-user/accounts/srv-1': () => {
+          detached = true;
+          return {};
+        },
+      },
+    });
+
+    fireEvent.click(await screen.findByTestId('space-account-detach-link-1'));
+    // destructive: the shared danger sheet asks first (cooldown 0 in tests)
+    fireEvent.click(await screen.findByTestId('space-account-detach-confirm'));
+    await waitFor(() => expect(detached).toBe(true), { timeout: 5000 });
+    await waitFor(() => expect(screen.queryByTestId('space-account-detach-link-1')).toBeNull(), { timeout: 5000 });
+  }, 15_000);
+
+  it('global sheet lists only attached spaces and detaches from there too', async () => {
+    indexedDB.deleteDatabase(USER_TEST_DB);
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const db = new MunniDB(USER_TEST_DB);
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
+    await repo.upsert('account', 'feed-1', 'feedacct-1', {
+      name: 'ING Betaal',
+      type: 'checking',
+      source: 'gocardless',
+      currency: 'EUR',
+      balanceCents: 5000,
+      iban: 'NL69INGB0123456789',
+    });
+    await repo.upsert('accountLink', 's-user', 'link-1', { feedSpaceId: 'feed-1', accountId: 'feedacct-1' });
+    db.close();
+
+    let detached = false;
+    renderAppAsUser('/accounts', {
+      spaces: [{ id: 's-user', name: 'Personal' }],
+      api: {
+        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false } }),
+        'GET /me/spaces': () => ['s-user', 'feed-1'],
+        'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
+        'GET /spaces/s-user/accounts': () => [{ id: 'srv-1', feedSpaceId: 'feed-1', accountId: 'feedacct-1' }],
+        'DELETE /spaces/s-user/accounts/srv-1': () => {
+          detached = true;
+          return {};
+        },
       },
     });
 
     fireEvent.click(await screen.findByTestId('account-row-feedacct-1'));
+    // attached spaces render as plain rows with a detach — no checkboxes
     const row = await screen.findByTestId('attach-space-s-user');
-    expect(row.querySelector('.mdi-checkbox-blank-outline')).toBeTruthy();
-
-    fireEvent.click(row);
-    // no close/reopen: the live link row flips the checkbox in place
-    await waitFor(() => expect(row.querySelector('.mdi-checkbox-marked')).toBeTruthy(), { timeout: 5000 });
+    expect(row.querySelector('.mdi-checkbox-marked, .mdi-checkbox-blank-outline')).toBeNull();
+    fireEvent.click(screen.getByTestId('attach-detach-s-user'));
+    fireEvent.click(await screen.findByTestId('attach-detach-confirm'));
+    await waitFor(() => expect(detached).toBe(true), { timeout: 5000 });
+    // the sheet empties: the account no longer feeds any space
+    await waitFor(() => expect(screen.getByTestId('attach-none')).toBeTruthy(), { timeout: 5000 });
   }, 15_000);
 
   it('deleting a connected account confirms, calls the server and purges it locally', async () => {
