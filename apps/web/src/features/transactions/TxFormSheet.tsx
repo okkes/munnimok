@@ -25,6 +25,11 @@ interface TxFormSheetProps {
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
+/** untouched type follows the category, exactly as before (S3776: the
+ *  fallback chain lives outside the component) */
+const effectiveTxType = (explicit: TxType | null, catTxTypes: readonly TxType[], isExpense: boolean): TxType =>
+  explicit ?? catTxTypes[0] ?? (isExpense ? 'expense' : 'income');
+
 type BalanceAccount = { id: string; source: string; balanceCents: number };
 
 /**
@@ -130,8 +135,7 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
   const effectiveAccount = accountId ?? writable[0]?.id ?? null;
   const cents = parseCents(amount);
   const valid = !!merchant.trim() && cents !== null && cents > 0 && !!effectiveAccount && !!date;
-  // untouched type follows the category, exactly as before
-  const effectiveType: TxType = txType ?? cat.txTypes[0] ?? (isExpense ? 'expense' : 'income');
+  const effectiveType: TxType = effectiveTxType(txType, cat.txTypes, isExpense);
   const typeVisual = TX_TYPE_VISUAL[effectiveType];
   // counter candidates: every visible account except the owning one
   const counterCandidates = useMemo(
