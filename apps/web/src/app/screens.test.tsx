@@ -84,16 +84,25 @@ describe('app screens (demo identity)', () => {
     await waitFor(() => expect(screen.queryByText('Transactions', { selector: '.m-cap' })).toBeNull());
     fireEvent.click(screen.getByTestId('home-block-toggle-transactions'));
 
-    // move overview to the top (past cashflow AND review) — the sheet
-    // re-renders from the synced layout, so each move must be VISIBLE
-    // before the next click computes from it
+    // move overview to the top by DRAGGING it there (arrows retired —
+    // user request). happy-dom rects are zero, so each row fakes its box
     const domOrder = () =>
-      [...document.querySelectorAll('[data-testid^="home-block-up-"]')].map((el) =>
-        el.getAttribute('data-testid')!.replace('home-block-up-', ''),
+      [...document.querySelectorAll('[data-testid^="home-block-row-"]')].map((el) =>
+        el.getAttribute('data-testid')!.replace('home-block-row-', ''),
       );
-    fireEvent.click(screen.getByTestId('home-block-up-overview'));
-    await waitFor(() => expect(domOrder()[1]).toBe('overview'));
-    fireEvent.click(screen.getByTestId('home-block-up-overview'));
+    const fakeRects = () => {
+      [...document.querySelectorAll('[data-testid^="home-block-row-"]')].forEach((el, i) => {
+        (el as HTMLElement).getBoundingClientRect = () => ({ top: i * 40, height: 40, left: 0, width: 320 }) as DOMRect;
+      });
+    };
+    fakeRects();
+    const fromIndex = domOrder().indexOf('overview');
+    const handle = screen.getByTestId('home-block-drag-overview');
+    fireEvent.pointerDown(handle, { pointerId: 1, clientY: fromIndex * 40 + 20 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientY: 5 }); // above row 0's midpoint
+    // the floating ghost follows the finger while dragging
+    expect(screen.getByTestId('home-block-ghost')).toBeTruthy();
+    fireEvent.pointerUp(handle, { pointerId: 1 });
     await waitFor(() => expect(domOrder()[0]).toBe('overview'));
   }, 15_000);
 
