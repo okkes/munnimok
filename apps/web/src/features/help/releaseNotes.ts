@@ -18,6 +18,17 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.22.0',
+    date: '2026-07-22',
+    items: [
+      {
+        en: 'Choosing offline mode now shows you the honest trade first: what you keep (total privacy with zero telemetry, the full app working without internet, PIN or fingerprint lock) and what you give up (bank connections, sync and cloud backup, shared spaces) — before you create a profile.',
+        nl: 'Wie voor offline modus kiest, ziet nu eerst eerlijk de afweging: wat je behoudt (volledige privacy zonder telemetrie, de volledige app zonder internet, pincode- of vingerafdrukvergrendeling) en wat je opgeeft (bankkoppelingen, synchronisatie en cloudback-up, gedeelde ruimtes) — vóór je een profiel aanmaakt.',
+        tr: 'Çevrimdışı modu seçince artık önce dürüst bir değiş tokuş görürsün: neler seninle kalır (telemetrisiz tam gizlilik, internetsiz çalışan uygulamanın tamamı, PIN veya parmak izi kilidi) ve nelerden vazgeçersin (banka bağlantıları, senkronizasyon ve bulut yedeği, paylaşılan alanlar) — profil oluşturmadan önce.',
+      },
+    ],
+  },
+  {
     version: '2.21.0',
     date: '2026-07-20',
     items: [
