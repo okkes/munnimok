@@ -45,6 +45,32 @@ describe('display currency lens (demo identity, manual rates)', () => {
     expect(fetchSpy).not.toHaveBeenCalled(); // the local-first law holds
   }, 15_000);
 
+  it('the balance-band quick toggle sets and clears the lens without visiting the profile', async () => {
+    renderApp('/home');
+    fireEvent.click(await screen.findByTestId('home-balance-band'));
+    fireEvent.click(await screen.findByTestId('band-display-toggle'));
+    fireEvent.click(await screen.findByTestId('band-lens-TRY'));
+
+    // preference persists to the profile meta and shows on the toggle
+    await waitFor(() => expect(screen.getByTestId('band-display-toggle').textContent).toContain('TRY'));
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const profile = (await db.meta.get('profile'))?.value as { displayCurrency?: string } | undefined;
+      expect(profile?.displayCurrency).toBe('TRY');
+    });
+
+    // back to "as recorded" clears it
+    fireEvent.click(screen.getByTestId('band-display-toggle'));
+    fireEvent.click(await screen.findByTestId('band-lens-off'));
+    await waitFor(async () => {
+      const profile = (await db.meta.get('profile'))?.value as { displayCurrency?: string } | undefined;
+      expect(profile?.displayCurrency).toBeUndefined();
+    });
+    db.close();
+    expect(fetchSpy).not.toHaveBeenCalled(); // demo identity: no /me push
+  }, 15_000);
+
   it('without a display currency nothing changes and nothing is marked', async () => {
     renderApp('/home');
     const band = await screen.findByTestId('home-total-balance');

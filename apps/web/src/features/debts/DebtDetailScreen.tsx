@@ -9,7 +9,7 @@ import { localToday } from '@/application/recurring';
 import { projectPayoff } from '@/domain/debts';
 import { merchantKey } from '@/domain/merchantKey';
 import type { DebtRow } from '@/db/types';
-import { fmtCents } from '@/lib/money';
+import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
 import { HeroCard, ProgressBar, Tile } from '@/ui/primitives';
@@ -50,11 +50,12 @@ export function DebtDetailScreen() {
       .slice(0, 50);
   }, [status, txs]);
 
+  const { fmt } = useDisplayMoney();
   if (!status) return <div className="h-full" data-testid="screen-debt-detail" />;
 
   const { debt, remainingCents, progress } = status;
   const currency = space?.currency ?? 'EUR';
-  const money = (cents: number) => fmtCents(cents, currency, lang);
+  const money = (cents: number) => fmt(cents, currency);
   const projection = projectPayoff(remainingCents, debt.paymentCents, debt.interestPctYear, today);
 
   return (

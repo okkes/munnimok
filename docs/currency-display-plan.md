@@ -6,8 +6,16 @@ daily + 90d + full history, cached), client rate cache in meta +
 (profile + `/me.displayCurrency`, offline manual pairs), adopted on the
 balance band (convert-then-sum), every TxRow list (per-day rates), and
 the tx detail headline; space currency renamed to "Ledger currency"
-with the explainer. **CD4 remains**: budgets/goals/charts/overview
-adoption + guide/tour touch-ups + a quick toggle in the band overflow.
+with the explainer. **CD4 SHIPPED (2026-07-24)**: the lens now covers
+Home blocks, Overview + drill, Trends, Budgets, Goals, Debts, Events,
+Allocation, Recurring and Insights (all via useDisplayMoney's fmt, at
+the latest fixing; budget/goal progress stays computed in ledger
+terms), plus a quick display-currency picker in the balance-band
+fold-out and guide/tour touch-ups. Deliberately NOT lensed: portfolio
+(its own quote-based conversion), splits (multi-party amounts stay in
+their own currency), receipts (store-item data), and the tx/account
+FORM inputs (editing happens in the recorded currency). The plan is
+complete.
 
 ## What the field studies say
 

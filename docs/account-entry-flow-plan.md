@@ -1,6 +1,16 @@
 # One way to add an account — entry-flow UX plan
 
-Status: **DESIGN — awaiting approval** (2026-07-23). User observation:
+Status: **COMPLETE** — AE1+AE3 shipped 2026-07-23 (shared
+AddAccountChooser everywhere, tx empty state opens it in place);
+AE2 shipped 2026-07-24 as an attach-offer card on the global accounts
+screen (any of MY feed accounts visible in no space → one-tap "Attach
+to {active space}" with the default history start, dismissible and
+remembered; imports already attach to the importing space, so the
+offer's real job is fresh/broken bank connects); AE4 shipped
+2026-07-24 (tours + guide use the locked Connect/Import/Add/Attach
+verbs and mention ING CSV alongside CAMT). Original diagnosis below.
+
+User observation:
 three places can add an account today (the Transactions empty-state
 button, the space's Financial accounts screen, Global settings →
 Financial Accounts) "and how they are connected does still not feel

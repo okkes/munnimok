@@ -8,7 +8,7 @@ import { periodHistory } from '@/domain/periods';
 import { cashflowSeries, categorySeries, minIso, netWorthSeries } from '@/domain/trends';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { HelpButton } from '@/features/help/HelpButton';
-import { fmtCents } from '@/lib/money';
+import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Bars } from '@/ui/charts/Bars';
 import { Line } from '@/ui/charts/Line';
@@ -73,7 +73,8 @@ export function TrendsScreen() {
   }, [view, accounts, txs, periods, today]);
 
   const selected = catId ? cats.byId(catId) : undefined;
-  const fmt = (cents: number) => fmtCents(cents, currency, lang);
+  const { fmt: fmtLens } = useDisplayMoney();
+  const fmt = (cents: number, opts?: { sign?: boolean }) => fmtLens(cents, currency, opts);
   const periodAria = (i: number, cents: number) =>
     `${new Date(periods[i].start).toLocaleDateString(LOCALES[lang], { month: 'long', year: 'numeric' })}: ${fmt(cents)}`;
 
@@ -162,7 +163,7 @@ export function TrendsScreen() {
                 <span className="h-2 w-2 rounded-sm bg-negative" /> {t('overview.expense')}
               </span>
               <span className="ml-auto" data-testid="trends-flow-net">
-                {t('trends.netThisPeriod', { amount: fmtCents(flow.at(-1)?.netCents ?? 0, currency, lang, { sign: true }) })}
+                {t('trends.netThisPeriod', { amount: fmt(flow.at(-1)?.netCents ?? 0, { sign: true }) })}
               </span>
             </div>
           </div>

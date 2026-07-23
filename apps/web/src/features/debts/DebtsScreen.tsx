@@ -9,7 +9,8 @@ import { useSpaceAccounts } from '@/application/transactions';
 import { localToday } from '@/application/recurring';
 import { projectPayoff } from '@/domain/debts';
 import type { DebtRow } from '@/db/types';
-import { fmtCents, parseCents } from '@/lib/money';
+import { parseCents } from '@/lib/money';
+import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { HelpButton } from '@/features/help/HelpButton';
 import { IntroCard } from '@/features/help/IntroCard';
 import { AppBar, IconButton } from '@/ui/AppBar';
@@ -23,7 +24,8 @@ const LIABILITY_TYPES = new Set(['credit', 'mortgage', 'loan']);
 
 /** create/edit sheet: link a liability account or track manually */
 export function DebtFormSheet({ initial, onClose }: Readonly<{ initial: DebtRow | 'new' | null; onClose: () => void }>) {
-  const { t, lang } = useLang();
+  const { t } = useLang();
+  const { fmt } = useDisplayMoney();
   const ops = useDebtOps();
   const accounts = useSpaceAccounts();
   const editing = initial !== 'new' && initial !== null ? initial : null;
@@ -115,7 +117,7 @@ export function DebtFormSheet({ initial, onClose }: Readonly<{ initial: DebtRow 
               <option value="">{t('debts.noAccount')}</option>
               {liabilities.map((a) => (
                 <option key={a.id} value={a.id}>
-                  {a.name} · {fmtCents(a.balanceCents, a.currency, lang)}
+                  {a.name} · {fmt(a.balanceCents, a.currency)}
                 </option>
               ))}
             </select>
@@ -202,7 +204,8 @@ export function DebtsScreen() {
   const currency = space?.currency ?? 'EUR';
   const [formInitial, setFormInitial] = useState<DebtRow | 'new' | null>(null);
 
-  const money = (cents: number) => fmtCents(cents, currency, lang);
+  const { fmt } = useDisplayMoney();
+  const money = (cents: number) => fmt(cents, currency);
   const active = (statuses ?? []).filter((s) => s.debt.archived !== 1);
   const totalOwed = active.reduce((sum, s) => sum + s.remainingCents, 0);
   const totalMonthly = active.reduce((sum, s) => sum + (s.debt.paymentCents ?? 0), 0);

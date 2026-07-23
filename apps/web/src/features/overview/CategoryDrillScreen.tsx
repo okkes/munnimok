@@ -8,7 +8,7 @@ import type { OverviewKind } from '@/domain/overview';
 import { periodHistory } from '@/domain/periods';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { LOCALES, useLang } from '@/i18n';
-import { fmtCents } from '@/lib/money';
+import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { BarChart } from '@/ui/charts';
 import { Icon } from '@/ui/Icon';
@@ -87,6 +87,7 @@ export function CategoryDrillScreen() {
   const selected = perPeriod[periodIndex];
   const period = periods[periodIndex];
   const currency = space?.currency ?? 'EUR';
+  const { fmt } = useDisplayMoney();
   const cat = cats.byId(catId);
   const color = cat.color ?? cats.byId(cat.parentId)?.color ?? KIND_ACCENT[kind];
   const periodLabel = `${new Date(period.start).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' })} – ${new Date(period.end).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' })}`;
@@ -110,7 +111,7 @@ export function CategoryDrillScreen() {
             <Icon name={cat.icon} size={22} />
           </span>
           <div className="m-num mt-2 text-4xl text-ink" data-testid="catdrill-total">
-            {fmtCents(selected.totalCents, currency, lang)}
+            {fmt(selected.totalCents, currency)}
           </div>
           <div className="mt-1 text-xs font-medium text-ink-3" data-testid="catdrill-period">
             {periodLabel}

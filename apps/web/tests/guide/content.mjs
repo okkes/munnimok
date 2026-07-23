@@ -25,7 +25,7 @@ export const GUIDE = [
   {
     id: 'banks',
     title: 'Connecting your bank',
-    body: `Settings → Global settings → Financial Accounts. Connect a bank (read-only PSD2 access — munni can never move money), import a CAMT.053 statement for accounts your bank won't share, or add cash/savings accounts manually. Bank data lands once per account; each space picks its accounts on its own Financial accounts screen — attach an existing account there with a start date, or detach it when the space no longer needs it.`,
+    body: `Settings → Global settings → Financial Accounts. Connect a bank (read-only PSD2 access — munni can never move money), import a statement (CAMT.053 or ING CSV) for accounts your bank won't share, or add cash/savings accounts manually. Bank data lands once per account; each space picks its accounts on its own Financial accounts screen — attach an existing account there with a start date, or detach it when the space no longer needs it. A freshly connected account that isn't visible in any space yet offers a one-tap attach to your active space.`,
     tips: ['New transactions arrive automatically several times a day.', 'Reserved (not yet booked) card payments show with a badge and disappear when the real booking lands.', 'Each account row shows when the bank last answered — a Reconnect hint appears when a consent has gone quiet.'],
     shots: ['16-accounts-list', '19-import-preview', '20-import-run'],
   },

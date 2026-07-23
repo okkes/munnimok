@@ -12,6 +12,9 @@ import { linkPaypalFunding } from '@/application/paypalLink';
 import type { ImportResult } from './importCamt';
 import { apiFeedGateway, fetchMyFeedIds } from './feedGateway';
 import { AttachSheet, SOURCE_KEYS } from './AttachSheet';
+import { attachFeedToSpace } from '@/application/accountAttach';
+import { DEFAULT_HISTORY_MONTHS, isoMonthsAgo } from '@/features/spaces/spaceDefaults';
+import { useQuery } from '@/db/useQuery';
 import { AddAccountChooser } from './AddAccountChooser';
 import { BrandIconPicker } from '@/features/recurring/BrandIconPicker';
 import { BankConnectSheet } from './BankConnect';
@@ -245,6 +248,33 @@ export function AccountsScreen() {
   const assets = mine.filter((e) => !isLiability(e.account.type));
   const liabilities = mine.filter((e) => isLiability(e.account.type));
 
+  // AE2: feed accounts attached to NO space (fresh bank connect, or a
+  // consent flow that broke mid-return) get a one-tap attach offer for
+  // the active space — the user never hunts for the attach button for
+  // the account they literally just created
+  const activeSpace = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
+  const offerDismissed = useQuery(
+    store,
+    async () => ((await store.metaGet('attachOfferDismissed'))?.value as string[] | undefined) ?? [],
+    [],
+  );
+  const unattached = useMemo(
+    () =>
+      mine.filter(
+        (e) => e.feedSpaceId && !e.sharedVia.some((v) => !v.archived) && !(offerDismissed ?? []).includes(e.account.id),
+      ),
+    [mine, offerDismissed],
+  );
+  const acceptAttachOffer = async () => {
+    const historyFrom = activeSpace?.historyStartDate ?? isoMonthsAgo(DEFAULT_HISTORY_MONTHS);
+    for (const entry of unattached) {
+      await attachFeedToSpace(store, repo, spaceId, entry.feedSpaceId!, entry.account.id, historyFrom).catch(() => undefined);
+    }
+  };
+  const dismissAttachOffer = async () => {
+    await store.metaPut('attachOfferDismissed', [...(offerDismissed ?? []), ...unattached.map((e) => e.account.id)]);
+  };
+
   const openEntry = (entry: GlobalAccount) => {
     if (entry.feedSpaceId) setAttaching(entry); // bank feed: manage attachments
     else openEdit(entry.account); // manual/legacy row: edit name/balance
@@ -313,6 +343,20 @@ export function AccountsScreen() {
         onChange={(e) => void onFilePicked(e.target.files?.[0])}
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
+        {identity?.kind === 'user' && unattached.length > 0 && activeSpace && (
+          <div className="mt-3 rounded-card border border-accent/40 bg-accent-soft px-4 py-3" data-testid="attach-offer">
+            <p className="text-[13px] font-medium text-ink">{t('acct.attachOfferTitle', { n: unattached.length })}</p>
+            <p className="mt-0.5 text-[12px] text-ink-2">{t('acct.attachOfferBody', { space: activeSpace.name })}</p>
+            <div className="mt-2 flex gap-2">
+              <Button size="sm" data-testid="attach-offer-accept" onClick={() => void acceptAttachOffer()}>
+                {t('acct.attachOfferAccept', { space: activeSpace.name })}
+              </Button>
+              <Button size="sm" variant="outline" data-testid="attach-offer-dismiss" onClick={() => void dismissAttachOffer()}>
+                {t('acct.attachOfferLater')}
+              </Button>
+            </div>
+          </div>
+        )}
         {global && mine.length === 0 && global.sharedWithMe.length === 0 ? (
           <EmptyState
             testId="accounts-empty"

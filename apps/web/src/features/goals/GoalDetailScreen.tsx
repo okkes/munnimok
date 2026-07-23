@@ -7,7 +7,8 @@ import { useGoalOps, useGoals } from '@/application/goals';
 import { localToday } from '@/application/recurring';
 import { goalProgress, paceCentsPerMonth } from '@/domain/goals';
 import type { GoalRow } from '@/db/types';
-import { fmtCents, parseCents } from '@/lib/money';
+import { parseCents } from '@/lib/money';
+import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
@@ -42,10 +43,11 @@ export function GoalDetailScreen() {
   useEffect(() => {
     if (goals && !goal) void navigate({ to: '/goals', replace: true });
   }, [goals, goal, navigate]);
+  const { fmt } = useDisplayMoney();
   if (!goal) return <div className="h-full" data-testid="screen-goal-detail" />;
 
   const currency = space?.currency ?? 'EUR';
-  const money = (cents: number) => fmtCents(cents, currency, lang);
+  const money = (cents: number) => fmt(cents, currency);
   const progress = goalProgress(goal);
   const pace = paceCentsPerMonth(goal, localToday());
   const reached = goal.allocatedCents >= goal.targetCents;
@@ -129,7 +131,7 @@ export function GoalDetailScreen() {
                   <span className="block text-[11px] text-ink-4">{fmtDate(c.date)}</span>
                 </span>
                 <span className={`m-num text-[13px] font-semibold ${c.amountCents >= 0 ? 'text-accent-deep' : 'text-warning'}`}>
-                  {fmtCents(c.amountCents, currency, lang, { sign: true })}
+                  {fmt(c.amountCents, currency, { sign: true })}
                 </span>
               </div>
             ))}

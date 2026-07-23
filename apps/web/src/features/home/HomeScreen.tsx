@@ -46,6 +46,8 @@ import { budgetDaysLeft } from '@/domain/budgets';
 import { fmtCents } from '@/lib/money';
 import { sumCents } from '@/lib/rates';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
+import { setDisplayCurrency } from '@/features/currency/displayCurrencyPref';
+import { CURRENCIES } from '@/domain/countries';
 import { AppBar } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
 import { ProgressBar, Tile } from '@/ui/primitives';
@@ -83,7 +85,8 @@ export function HomeScreen() {
   // the band total is convert-then-sum (currency plan): into the display
   // currency when set, else the ledger currency — no more silent numeric
   // mixing of differing account currencies; conversions say ≈
-  const { display, fmt } = useDisplayMoney();
+  const { display, fmt, displayCurrency } = useDisplayMoney();
+  const [lensOpen, setLensOpen] = useState(false);
   const bandCurrency = display?.currency ?? currency;
   const bandTotal = useMemo(
     () =>
@@ -229,31 +232,47 @@ export function HomeScreen() {
             wasted the width), the nudges head the right; on mobile the
             grid dissolves and the DOM order is balance → nudges → blocks */}
         <div className="lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-6">
-          {/* slim balance band: one line; accounts fold out on tap */}
+          {/* slim balance band: one line; accounts fold out on tap. The
+              fold-out lives BESIDE the header button (nested buttons are
+              invalid HTML — the quick lens toggle needs its own) */}
           <div className="min-w-0 lg:col-start-1 lg:row-start-1">
-            <button
-              data-testid="home-balance-band"
-              onClick={() => setAccountsOpen((v) => !v)}
-              className="m-tap w-full rounded-card border-none bg-brand px-5 py-4 text-left text-on-brand"
-            >
-              <div className="flex items-baseline justify-between gap-3">
-                <span className="text-xs font-medium tracking-wider uppercase opacity-70">{t('home.balance')}</span>
-                <Icon name={accountsOpen ? 'chevron-up' : 'chevron-down'} size={16} color="currentColor" />
-              </div>
-              <div className="m-num mt-0.5 text-[28px]" data-testid="home-total-balance">
-                {accounts ? bandLabel : '—'}
-              </div>
-              {accountsOpen && (
-                <div className="mt-2 flex flex-col gap-1" data-testid="home-balance-accounts">
-                  {(accounts ?? []).map((a) => (
-                    <div key={a.id} className="flex items-center justify-between text-[13px] opacity-90">
-                      <span className="truncate">{a.name}</span>
-                      <span className="m-num">{fmt(a.balanceCents, a.currency)}</span>
-                    </div>
-                  ))}
+            <div className="w-full rounded-card bg-brand px-5 py-4 text-on-brand">
+              <button
+                data-testid="home-balance-band"
+                onClick={() => setAccountsOpen((v) => !v)}
+                className="m-tap w-full border-none bg-transparent p-0 text-left text-on-brand"
+              >
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-xs font-medium tracking-wider uppercase opacity-70">{t('home.balance')}</span>
+                  <Icon name={accountsOpen ? 'chevron-up' : 'chevron-down'} size={16} color="currentColor" />
                 </div>
+                <div className="m-num mt-0.5 text-[28px]" data-testid="home-total-balance">
+                  {accounts ? bandLabel : '—'}
+                </div>
+              </button>
+              {accountsOpen && (
+                <>
+                  <div className="mt-2 flex flex-col gap-1" data-testid="home-balance-accounts">
+                    {(accounts ?? []).map((a) => (
+                      <div key={a.id} className="flex items-center justify-between text-[13px] opacity-90">
+                        <span className="truncate">{a.name}</span>
+                        <span className="m-num">{fmt(a.balanceCents, a.currency)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {/* quick display-currency lens (currency plan CD4) */}
+                  <button
+                    data-testid="band-display-toggle"
+                    onClick={() => setLensOpen(true)}
+                    className="m-tap mt-2.5 flex w-full items-center gap-2 border-none bg-transparent p-0 text-left text-[12px] opacity-80"
+                  >
+                    <Icon name="cash-multiple" size={14} color="currentColor" />
+                    <span className="flex-1">{t('profile.displayCurrency')}</span>
+                    <span className="font-mono font-semibold">{displayCurrency ?? t('profile.displayCurrencyAsRecorded')}</span>
+                  </button>
+                </>
               )}
-            </button>
+            </div>
           </div>
 
           {/* first nudge loses its own top margin at lg so both column
@@ -289,6 +308,38 @@ export function HomeScreen() {
 
       <HomeCustomizeSheet open={customizeOpen} onOpenChange={setCustomizeOpen} space={space} />
 
+      {/* quick display-currency picker (band fold-out shortcut) — the
+          full setting with the offline manual rates lives on Profile */}
+      <Sheet open={lensOpen} onOpenChange={setLensOpen} title={t('profile.displayCurrency')} size="form">
+        <div className="flex flex-col pt-1">
+          <button
+            data-testid="band-lens-off"
+            onClick={() => {
+              void setDisplayCurrency(store, identity?.kind, null);
+              setLensOpen(false);
+            }}
+            className="m-tap flex items-center gap-3 border-b border-line-2 border-none bg-transparent px-1 py-3 text-left text-[14px] text-ink"
+          >
+            <span className="flex-1">{t('profile.displayCurrencyAsRecorded')}</span>
+            {!displayCurrency && <Icon name="check" size={15} color="var(--m-accent)" />}
+          </button>
+          {CURRENCIES.map((c) => (
+            <button
+              key={c}
+              data-testid={`band-lens-${c}`}
+              onClick={() => {
+                void setDisplayCurrency(store, identity?.kind, c);
+                setLensOpen(false);
+              }}
+              className="m-tap flex items-center gap-3 border-none bg-transparent px-1 py-3 text-left text-[14px] text-ink"
+            >
+              <span className="flex-1 font-mono">{c}</span>
+              {displayCurrency === c && <Icon name="check" size={15} color="var(--m-accent)" />}
+            </button>
+          ))}
+        </div>
+      </Sheet>
+
       {/* the number must never feel like magic: every part is on the table —
           the bar shows how the balance divides into bills, promises and
           what is actually free until payday */}
@@ -297,12 +348,12 @@ export function HomeScreen() {
           <div className="flex flex-col gap-1 pt-1" data-testid="cashflow-breakdown">
             <div className="pb-2 text-center">
               <div className="m-num text-[30px] font-semibold text-ink" data-testid="cashflow-headline">
-                {fmtCents(forecast.cents, currency, lang)}
+                {fmt(forecast.cents, currency)}
               </div>
               <div className="text-[12px] text-ink-3">
                 {t('cashflow.untilPayday', {
                   date: new Date(forecast.payday.date).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' }),
-                  perDay: fmtCents(forecast.perDayCents, currency, lang),
+                  perDay: fmt(forecast.perDayCents, currency),
                 })}
               </div>
             </div>
@@ -322,7 +373,7 @@ export function HomeScreen() {
 
             <div className="mt-2 flex items-baseline justify-between py-1.5 text-[14px]">
               <span className="text-ink-2">{t('cashflow.liquid')}</span>
-              <span className="m-num font-semibold text-ink">{fmtCents(forecast.liquidCents, currency, lang)}</span>
+              <span className="m-num font-semibold text-ink">{fmt(forecast.liquidCents, currency)}</span>
             </div>
             {forecast.upcoming.length > 0 && (
               <div className="flex items-baseline justify-between py-1.5 text-[14px]" data-testid="cashflow-bills">
@@ -330,7 +381,7 @@ export function HomeScreen() {
                   <span className="h-2 w-2 rounded-full" style={{ background: 'var(--m-warning)' }} />
                   {t('cashflow.bills')}
                 </span>
-                <span className="m-num text-ink-2">{fmtCents(-forecast.upcomingCents, currency, lang, { sign: true })}</span>
+                <span className="m-num text-ink-2">{fmt(-forecast.upcomingCents, currency, { sign: true })}</span>
               </div>
             )}
             {forecast.upcoming.map(({ rec, due }) => (
@@ -343,7 +394,7 @@ export function HomeScreen() {
                 <span className="min-w-0 flex-1 truncate text-ink-3">
                   {rec.name} · {new Date(due).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' })}
                 </span>
-                <span className="m-num text-ink-3">{fmtCents(-rec.amountCents, currency, lang, { sign: true })}</span>
+                <span className="m-num text-ink-3">{fmt(-rec.amountCents, currency, { sign: true })}</span>
               </button>
             ))}
             {forecast.allocationCents > 0 && (
@@ -352,7 +403,7 @@ export function HomeScreen() {
                   <span className="h-2 w-2 rounded-full" style={{ background: 'var(--m-info)' }} />
                   {t('cashflow.allocated')}
                 </span>
-                <span className="m-num text-ink-2">{fmtCents(-forecast.allocationCents, currency, lang, { sign: true })}</span>
+                <span className="m-num text-ink-2">{fmt(-forecast.allocationCents, currency, { sign: true })}</span>
               </div>
             )}
             <div className="mt-1 flex items-baseline justify-between border-t border-line pt-3 text-[15px]">
@@ -363,7 +414,7 @@ export function HomeScreen() {
                 })}
               </span>
               <span className="m-num font-semibold text-ink" data-testid="cashflow-total">
-                {fmtCents(forecast.cents, currency, lang)}
+                {fmt(forecast.cents, currency)}
               </span>
             </div>
             <p className="pt-1 text-[11px] text-ink-4">{t('cashflow.paydaySource', { merchant: cleanBankText(forecast.payday.merchant) })}</p>
@@ -401,7 +452,7 @@ export function HomeScreen() {
               <span className="min-w-0 flex-1">
                 <span className="block text-[10px] font-medium text-ink-3">{t(`overview.${kind}`)}</span>
                 <span className="m-num block truncate text-[13px] font-semibold text-ink">
-                  {fmtCents(summary[TILE_META[kind].field], currency, lang)}
+                  {fmt(summary[TILE_META[kind].field], currency)}
                 </span>
               </span>
             </button>
@@ -440,9 +491,9 @@ export function HomeScreen() {
             <Line values={series.map((point) => point.cents)} height={36} color="var(--m-accent-deep)" />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="m-num block text-[15px] font-semibold text-ink">{fmtCents(nowCents, currency, lang)}</span>
+            <span className="m-num block text-[15px] font-semibold text-ink">{fmt(nowCents, currency)}</span>
             <span className={`block text-[11px] ${delta >= 0 ? 'text-accent-deep' : 'text-negative'}`}>
-              {fmtCents(delta, currency, lang, { sign: true })}
+              {fmt(delta, currency, { sign: true })}
             </span>
           </span>
           <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
@@ -468,10 +519,10 @@ export function HomeScreen() {
           <Tile icon="calendar-arrow-right" bg={`color-mix(in srgb, ${color} 14%, transparent)`} color={color} />
           <span className="min-w-0 flex-1">
             <span className="m-num block text-[15px] font-semibold" style={{ color }} data-testid="home-cashflow-amount">
-              {fmtCents(forecast.cents, currency, lang)}
+              {fmt(forecast.cents, currency)}
             </span>
             <span className="block text-[11px] text-ink-4">
-              {t('cashflow.untilPayday', { date: fmtPayday, perDay: fmtCents(forecast.perDayCents, currency, lang) })}
+              {t('cashflow.untilPayday', { date: fmtPayday, perDay: fmt(forecast.perDayCents, currency) })}
             </span>
           </span>
           <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
@@ -557,7 +608,7 @@ export function HomeScreen() {
                       </span>
                       <span className="m-num text-[12px] font-semibold" style={{ color }}>
                         {t(over ? 'budgets.over' : 'budgets.left', {
-                          amount: fmtCents(Math.abs(status.leftCents), currency, lang),
+                          amount: fmt(Math.abs(status.leftCents), currency),
                         })}
                       </span>
                     </span>
@@ -600,7 +651,7 @@ export function HomeScreen() {
                 <span className="block text-[11px] text-ink-4">{fmtShort(nextDue)}</span>
               </span>
               <span className="m-num text-[13px] font-semibold text-ink">
-                {fmtCents(rec.amountCents, currency, lang)}
+                {fmt(rec.amountCents, currency)}
               </span>
             </button>
           ))}
@@ -638,7 +689,7 @@ export function HomeScreen() {
           />
           <span className="min-w-0 flex-1">
             <span className="m-num block text-[15px] font-semibold" style={{ color }}>
-              {fmtCents(allocLeft, currency, lang)}
+              {fmt(allocLeft, currency)}
             </span>
             <span className="block text-[11px] text-ink-4">
               {allocLeft === 0 ? t('alloc.allAssigned') : t('alloc.toAllocate')}
@@ -679,8 +730,8 @@ export function HomeScreen() {
       return renderTeaser('home-splits-teaser', 'account-cash-outline', 'home.splitsTeaserTitle', 'home.splitsTeaserSub', '/splits');
     }
     const netLine = () => {
-      if (topSplit.net > 0) return t('splits.summaryOwed', { amount: fmtCents(topSplit.net, topSplit.currency, lang) });
-      if (topSplit.net < 0) return t('splits.summaryOwe', { amount: fmtCents(-topSplit.net, topSplit.currency, lang) });
+      if (topSplit.net > 0) return t('splits.summaryOwed', { amount: fmt(topSplit.net, topSplit.currency) });
+      if (topSplit.net < 0) return t('splits.summaryOwe', { amount: fmt(-topSplit.net, topSplit.currency) });
       return t('splits.summaryEven');
     };
     return (
@@ -743,7 +794,7 @@ export function HomeScreen() {
             <img src={eventPicture(featuredEvent)} alt="" loading="lazy" className="h-full w-full object-cover" />
             <span className="absolute inset-x-0 bottom-0 flex items-baseline justify-between bg-gradient-to-t from-black/60 to-transparent px-3 pt-4 pb-1.5">
               <span className="truncate text-[14px] font-semibold text-white">{featuredEvent.name}</span>
-              <span className="m-num shrink-0 pl-2 text-[13px] font-semibold text-white">{fmtCents(spent, currency, lang)}</span>
+              <span className="m-num shrink-0 pl-2 text-[13px] font-semibold text-white">{fmt(spent, currency)}</span>
             </span>
           </span>
           <span className="block px-3 py-1.5 text-[11px] text-ink-4">{statusLine}</span>
@@ -819,10 +870,10 @@ export function HomeScreen() {
         >
           <Tile icon="hand-coin-outline" tone="negative" />
           <span className="min-w-0 flex-1">
-            <span className="m-num block text-[15px] font-semibold text-ink">{fmtCents(debtTotals.totalOwedCents, currency, lang)}</span>
+            <span className="m-num block text-[15px] font-semibold text-ink">{fmt(debtTotals.totalOwedCents, currency)}</span>
             <span className="block text-[11px] text-ink-4">
               {debtTotals.totalMonthlyCents > 0
-                ? t('debts.perMonth', { amount: fmtCents(debtTotals.totalMonthlyCents, currency, lang) })
+                ? t('debts.perMonth', { amount: fmt(debtTotals.totalMonthlyCents, currency) })
                 : t('debts.count', { n: activeDebts.length })}
             </span>
           </span>
@@ -855,7 +906,7 @@ export function HomeScreen() {
           <Tile icon={top.icon} tone="warning" />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-[13px] font-medium text-ink">
-              {t(top.titleKey, Object.fromEntries(Object.entries(top.params).map(([k, v]) => [k, typeof v === 'number' && !['n', 'x', 'months'].includes(k) ? fmtCents(v, currency, lang) : v])))}
+              {t(top.titleKey, Object.fromEntries(Object.entries(top.params).map(([k, v]) => [k, typeof v === 'number' && !['n', 'x', 'months'].includes(k) ? fmt(v, currency) : v])))}
             </span>
             <span className="block text-[11px] text-ink-4">{t('ins.homeSub', { n: insights.length })}</span>
           </span>
