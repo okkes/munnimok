@@ -15,6 +15,10 @@ import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { CategoryPicker } from '@/features/categories/CategoryPicker';
+import { SplitEditorSheet } from './SplitEditorSheet';
+import { SheetContextRow } from '@/ui/SheetContextRow';
+import { primaryCatId } from '@/domain/splits';
+import type { TxSplit } from '@/db/types';
 import { TX_TYPE_VISUAL } from './TxTypeSheet';
 
 interface TxFormSheetProps {
@@ -90,6 +94,10 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
   const [accountId, setAccountId] = useState<string | null>(null);
   const [catId, setCatId] = useState<string>(UNCATEGORIZED_ID);
   const [pickerOpen, setPickerOpen] = useState(false);
+  // unified category editor (user request: same as review — type and
+  // counterparty live INSIDE the category sheet now)
+  const [splitOpen, setSplitOpen] = useState(false);
+  const [stagedSplits, setStagedSplits] = useState<TxSplit[] | null>(null);
   // the quiet extras (user request): explicit type, counter account,
   // recurring link — each hidden while it has nothing to offer
   const [txType, setTxType] = useState<TxType | null>(null);
@@ -131,6 +139,7 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
       setLinkedAccountId(null);
       setRecurringId(null);
     }
+    setStagedSplits(tx?.splits ?? null);
   }, [open, tx]);
 
   const cat = cats.byId(catId);
@@ -157,6 +166,21 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
     setCounterOpen(false);
   };
 
+  // the editor needs a SpaceTx shape; a NEW manual tx builds it from the
+  // live form state (controlled mode only reads amount/cat/currency)
+  const pseudoTx = (tx ?? {
+    id: 'new',
+    spaceId: '',
+    accountId: effectiveAccount ?? '',
+    date,
+    amountCents: cents !== null ? (isExpense ? -Math.abs(cents) : Math.abs(cents)) : 0,
+    currency: accounts?.find((a) => a.id === effectiveAccount)?.currency ?? 'EUR',
+    merchant: merchant.trim(),
+    catId,
+    txType: effectiveType,
+    needsReview: 0,
+  }) as never;
+
   const save = () => {
     if (!valid || !effectiveAccount || cents === null) return;
     const signed = isExpense ? -Math.abs(cents) : Math.abs(cents);
@@ -171,6 +195,8 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
       catId,
       txType: effectiveType,
       needsReview: 0,
+      // splits staged in the unified editor travel with the write
+      ...(stagedSplits?.length ? { splits: stagedSplits } : {}),
       // explicit null clears a previously set link on edit (undefined
       // would drop out of the op and leave the old value standing)
       ...(linkedAccountId || tx?.linkedAccountId ? { linkedAccountId: linkedAccountId ?? (null as never) } : {}),
@@ -289,44 +315,17 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
             </p>
           )}
 
-          {/* category row */}
+          {/* category row — opens the SAME unified editor as review:
+              type + counterparty live inside it (user request) */}
           <button
             data-testid="txform-category"
-            onClick={() => setPickerOpen(true)}
+            onClick={() => setSplitOpen(true)}
             className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink"
           >
             <Icon name={cat.icon} size={20} color={cat.color ?? cats.byId(cat.parentId).color} />
             <span className="flex-1">{catName(cat, t)}</span>
             <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
           </button>
-
-          {/* type row (follows the category until explicitly set) */}
-          <button
-            data-testid="txform-type"
-            onClick={() => setTypeOpen(true)}
-            className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink"
-          >
-            <Icon name={typeVisual.icon} size={20} color={typeVisual.color} />
-            <span className="flex-1">{t(`tx.type.${effectiveType}`)}</span>
-            <span className="text-xs text-ink-4">{t('tx.type')}</span>
-            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-          </button>
-
-          {/* counter account (only when there is another account to point at) */}
-          {counterCandidates.length > 0 && (
-            <button
-              data-testid="txform-counter"
-              onClick={() => setCounterOpen(true)}
-              className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink"
-            >
-              <Icon name="swap-horizontal" size={20} color="var(--m-ink-3)" />
-              <span className={`flex-1 ${linkedAccount ? '' : 'text-ink-4'}`}>
-                {linkedAccount?.name ?? t('tx.counterAccountPick')}
-              </span>
-              <span className="text-xs text-ink-4">{t('tx.counterparty')}</span>
-              <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-            </button>
-          )}
 
           {/* recurring link (only when the space has recurring costs) */}
           {(recurrings?.length ?? 0) > 0 && (
@@ -416,6 +415,46 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
           )}
         </div>
       </Sheet>
+
+      {/* the unified category editor (same component as review) — type
+          and counterparty ride along as context rows */}
+      <SplitEditorSheet
+        open={splitOpen}
+        onOpenChange={setSplitOpen}
+        tx={pseudoTx}
+        value={stagedSplits ?? undefined}
+        txType={effectiveType}
+        seedSingle
+        seedCatId={catId}
+        onApply={(splits) => {
+          setStagedSplits(splits);
+          if (splits?.length) setCatId(primaryCatId(splits) ?? catId);
+        }}
+        onApplySingle={(picked) => {
+          setStagedSplits(null);
+          setCatId(picked);
+        }}
+        header={
+          <>
+            <SheetContextRow
+              testId="txform-counter"
+              icon="swap-horizontal"
+              iconColor="var(--m-ink-3)"
+              value={linkedAccount?.name ?? t('tx.linkedAccountNone')}
+              caption={t('tx.counterAccount')}
+              onClick={() => setCounterOpen(true)}
+            />
+            <SheetContextRow
+              testId="txform-type"
+              icon={typeVisual.icon}
+              iconColor={typeVisual.color}
+              value={t(`tx.type.${effectiveType}`)}
+              caption={t('tx.type')}
+              onClick={() => setTypeOpen(true)}
+            />
+          </>
+        }
+      />
 
       <CategoryPicker
         open={pickerOpen}
