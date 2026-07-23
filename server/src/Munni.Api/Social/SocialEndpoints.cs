@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.EntityFrameworkCore;
 using Munni.Api.Auth;
 using Munni.Api.Data;
@@ -32,6 +33,9 @@ public static class SocialEndpoints
         var authed = app.MapGroup("").RequireAuthorization().WithSafeRouteParams();
 
         authed.MapGet("/me", GetMe);
+        // onboarding default for "country of use" (user ruling: IP-based
+        // ONLY here, for signed-in users — never on the login screen)
+        authed.MapGet("/geo", GetGeoAsync);
         authed.MapPut("/me", UpdateMe).WithValidation<UpdateMeRequest>();
         // full account deletion — Apple guideline 5.1.1 subsection v wants
         // an in-app path. The strict limiter also throttles double-taps.
@@ -52,6 +56,35 @@ public static class SocialEndpoints
     }
 
     // ── identity ────────────────────────────────────────────────────────
+    /// <summary>best-effort IP → ISO country for the onboarding default.
+    /// Free lookup (ip-api.com), cached per IP, fails open to null —
+    /// the client keeps its own default when this returns nothing.</summary>
+    private static readonly ConcurrentDictionary<string, string?> GeoCache = new();
+
+    private static async Task<IResult> GetGeoAsync(HttpContext ctx, IHttpClientFactory httpFactory)
+    {
+        var ip = ctx.Request.Headers["X-Forwarded-For"].FirstOrDefault()?.Split(',')[0].Trim();
+        if (string.IsNullOrEmpty(ip)) ip = ctx.Connection.RemoteIpAddress?.ToString();
+        if (string.IsNullOrEmpty(ip) || ip == "127.0.0.1" || ip == "::1") return Results.Ok(new { country = (string?)null });
+        if (GeoCache.TryGetValue(ip, out var cached)) return Results.Ok(new { country = cached });
+        string? country = null;
+        try
+        {
+            using var client = httpFactory.CreateClient("geo");
+            var res = await client.GetFromJsonAsync<GeoLookup>($"http://ip-api.com/json/{ip}?fields=status,countryCode");
+            if (res?.Status == "success" && !string.IsNullOrEmpty(res.CountryCode)) country = res.CountryCode;
+        }
+        catch
+        {
+            // lookup down — the client default stands
+        }
+        if (GeoCache.Count > 10_000) GeoCache.Clear(); // bounded, coarse
+        GeoCache[ip] = country;
+        return Results.Ok(new { country });
+    }
+
+    private sealed record GeoLookup(string? Status, string? CountryCode);
+
     private static async Task<IResult> GetMe(AppDbContext db, HttpContext http)
     {
         var user = await db.Users.FindAsync(http.GetUserId());

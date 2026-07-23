@@ -40,6 +40,7 @@ export function OnboardingScreen() {
   const [name, setName] = useState('');
   const [picture, setPicture] = useState<string>(AVATARS[0]);
   const [country, setCountry] = useState('NL');
+  const countryTouched = useRef(false);
   const [countryOpen, setCountryOpen] = useState(false);
   const [query, setQuery] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
@@ -53,6 +54,21 @@ export function OnboardingScreen() {
   useEffect(() => {
     void biometricAvailable().then(setBioAvailable);
   }, []);
+
+  // signed-in users get an IP-based country DEFAULT (user ruling: only
+  // here, never on the login screen — zero telemetry before consent);
+  // an explicit pick always wins
+  useEffect(() => {
+    if (identity?.kind !== 'user') return;
+    void apiFetch('/geo')
+      .then(async (res) => (res.ok ? ((await res.json()) as { country?: string | null }) : null))
+      .then((geo) => {
+        if (geo?.country && !countryTouched.current && COUNTRIES.some((c) => c.code === geo.country)) {
+          setCountry(geo.country);
+        }
+      })
+      .catch(() => undefined);
+  }, [identity]);
 
   // offline profiles already told us their name at creation — prefill,
   // don't re-ask from scratch
@@ -265,6 +281,7 @@ export function OnboardingScreen() {
             key={c.code}
             data-testid={`onboarding-country-${c.code}`}
             onClick={() => {
+              countryTouched.current = true;
               setCountry(c.code);
               setCountryOpen(false);
               setQuery('');

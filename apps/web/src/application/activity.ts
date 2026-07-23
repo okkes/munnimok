@@ -3,8 +3,11 @@ import type { StorageBackend } from '@/db/backend';
 import { useSession } from '@/app/session';
 import { offlineProfileName } from '@/features/auth/offlineProfiles';
 
-/** newest rows kept per space (user ruling: the last 200 actions) */
+/** newest rows kept per space — 200 rows OR 90 days, whichever is
+ *  smaller (user-approved): the cap bounds sync payloads, the age bound
+ *  keeps a dormant space from replaying stale history */
 export const ACTIVITY_CAP = 200;
+export const ACTIVITY_MAX_AGE_DAYS = 90;
 
 /**
  * Append one "who did what" line to the space's history (YNAB-style,
@@ -39,11 +42,13 @@ export async function logActivity(
   }
 }
 
-/** tombstone everything beyond the newest ACTIVITY_CAP rows */
+/** tombstone everything beyond the newest ACTIVITY_CAP rows or older
+ *  than ACTIVITY_MAX_AGE_DAYS */
 export async function pruneActivity(store: StorageBackend, repo: Repo, spaceId: string): Promise<void> {
   const rows = (await store.bySpace('activity', spaceId)).filter((r) => r.deleted === 0);
-  if (rows.length <= ACTIVITY_CAP) return;
+  const cutoff = new Date(Date.now() - ACTIVITY_MAX_AGE_DAYS * 86_400_000).toISOString();
   const oldestFirst = [...rows].sort((a, b) => a.at.localeCompare(b.at));
-  const excess = oldestFirst.slice(0, rows.length - ACTIVITY_CAP);
+  const overCap = Math.max(0, rows.length - ACTIVITY_CAP);
+  const excess = oldestFirst.filter((row, i) => i < overCap || row.at < cutoff);
   for (const row of excess) await repo.remove('activity', spaceId, row.id);
 }

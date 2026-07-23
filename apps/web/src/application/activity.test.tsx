@@ -39,6 +39,20 @@ describe('activity history', () => {
     }
     await pruneActivity(store, repo, 's1');
     rows = (await store.bySpace('activity', 's1')).filter((r) => r.deleted === 0);
+    // the 2026-01-01 seeds are older than the 90-day age bound too, so
+    // the age rule removes them all — only the fresh first row survives
+    expect(rows).toHaveLength(1);
+    expect(rows[0].detail).toBe('Coffee');
+
+    // rows within the age window prune by COUNT only
+    for (let i = 0; i < ACTIVITY_CAP + 10; i++) {
+      await repo.upsert('activity', 's2', repo.newId(), {
+        kind: 'note',
+        at: new Date(Date.now() - i * 1000).toISOString(),
+      });
+    }
+    await pruneActivity(store, repo, 's2');
+    rows = (await store.bySpace('activity', 's2')).filter((r) => r.deleted === 0);
     expect(rows).toHaveLength(ACTIVITY_CAP);
     // the newest rows survive — the seconds run up to CAP+9, so the very
     // first (i=0 …) seeded rows are the pruned ones
