@@ -122,7 +122,7 @@ export function Sheet({ open, onOpenChange, title, children, size, height }: Rea
         <dialog
           open
           aria-modal="true"
-          className="relative z-10 m-0 flex w-[480px] max-w-[92vw] flex-col rounded-[20px] border-none bg-bg p-0 text-ink shadow-2xl outline-none"
+          className={`relative z-10 m-0 flex w-[480px] max-w-[92vw] flex-col rounded-[20px] border-none bg-bg p-0 text-ink shadow-2xl outline-none transition-[transform,opacity] duration-200 ${isLocked ? 'scale-[0.97] opacity-60' : ''}`}
           style={{ height: fixedHeight, maxHeight: '85dvh' }}
         >
           {title && <div className="m-h3 shrink-0 px-5 pt-5 pb-1 text-ink">{title}</div>}
@@ -143,18 +143,32 @@ export function Sheet({ open, onOpenChange, title, children, size, height }: Rea
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 z-40 bg-black/40" />
         <Drawer.Content
-          className="fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[92dvh] w-full max-w-[560px] flex-col rounded-t-[20px] bg-bg outline-none"
+          className="fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[92dvh] w-full max-w-[560px] flex-col overflow-hidden rounded-t-[20px] bg-bg shadow-[0_-16px_48px_rgba(0,0,0,0.30)] outline-none"
           style={fixedHeight ? { height: fixedHeight } : undefined}
         >
-          {/* full-height drag zone across the title area */}
-          <div className="shrink-0 cursor-grab pt-2.5 pb-1">
-            <div className="mx-auto h-1.5 w-10 rounded-full bg-line" />
-            {title && (
-              <Drawer.Title className="m-h3 px-5 pt-3 pb-1 text-ink">{title}</Drawer.Title>
-            )}
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-[max(20px,env(safe-area-inset-bottom))]">
-            {children}
+          {/* stacked-sheet depth (user request): a sheet buried under a
+              child visibly recedes instead of hiding behind a thin bar */}
+          <div
+            className={`flex min-h-0 flex-1 flex-col transition-[transform,opacity] duration-200 ${isLocked && open ? 'scale-[0.97] opacity-60' : ''}`}
+            style={{ transformOrigin: 'top center' }}
+          >
+            {/* full-height drag zone across the title area */}
+            <div className="shrink-0 cursor-grab pt-2.5 pb-1">
+              <div className="mx-auto h-1.5 w-10 rounded-full bg-line" />
+              {title && (
+                <Drawer.Title className="m-h3 px-5 pt-3 pb-1 text-ink">{title}</Drawer.Title>
+              )}
+            </div>
+            {/* translateZ: Safari fails to repaint this scroll layer when
+                content GROWS inside vaul's translated drawer (user ss:
+                dark strips around a freshly added row until any resize);
+                promoting it to its own layer keeps paints honest */}
+            <div
+              className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-[max(20px,env(safe-area-inset-bottom))]"
+              style={{ transform: 'translateZ(0)' }}
+            >
+              {children}
+            </div>
           </div>
         </Drawer.Content>
       </Drawer.Portal>
