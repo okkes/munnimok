@@ -37,6 +37,19 @@ const subscribeStack = (listener: () => void) => {
   return () => stackListeners.delete(listener);
 };
 const topOfStack = () => sheetStack.at(-1) ?? -1;
+// visual stack: pops IMMEDIATELY on close so the parent un-shrinks in
+// step with the child's exit animation (the dismissal stack keeps its
+// grace period — an outside tap during the exit must not hit the parent)
+let visualStack: number[] = [];
+const visualOf = () => visualStack.join(',');
+function pushVisual(id: number) {
+  visualStack = [...visualStack.filter((entry) => entry !== id), id];
+  notifyStack();
+}
+function popVisual(id: number) {
+  visualStack = visualStack.filter((entry) => entry !== id);
+  notifyStack();
+}
 
 function pushSheet(id: number) {
   const pending = pendingRemovals.get(id);
@@ -45,10 +58,12 @@ function pushSheet(id: number) {
     pendingRemovals.delete(id);
   }
   sheetStack = [...sheetStack.filter((entry) => entry !== id), id];
+  pushVisual(id);
   notifyStack();
 }
 
 function popSheetSoon(id: number) {
+  popVisual(id); // the parent starts growing back right away
   // keep the slot through the exit animation: a tap while the child is
   // sliding out must not count as an outside-click on the parent below
   pendingRemovals.set(
@@ -61,8 +76,8 @@ function popSheetSoon(id: number) {
   );
 }
 
-/** true when this sheet is the top of the open-sheet stack (or closed) */
-function useSheetStack(open: boolean): boolean {
+/** stack facts for one sheet: dismissal lock + visual depth/covered */
+function useSheetStack(open: boolean): { isLocked: boolean; depth: number; covered: boolean } {
   const idRef = useRef(-1);
   if (idRef.current === -1) idRef.current = nextSheetId++;
   useEffect(() => {
@@ -72,7 +87,15 @@ function useSheetStack(open: boolean): boolean {
     return () => popSheetSoon(id);
   }, [open]);
   const top = useSyncExternalStore(subscribeStack, topOfStack);
-  return !open || top === idRef.current;
+  useSyncExternalStore(subscribeStack, visualOf); // re-render on visual changes
+  const visualIndex = visualStack.indexOf(idRef.current);
+  return {
+    isLocked: open && top !== idRef.current,
+    /** how many sheets sit BELOW this one (0 = root sheet) */
+    depth: visualIndex > 0 ? visualIndex : 0,
+    /** a child is visually on top right now */
+    covered: open && visualIndex !== -1 && visualIndex < visualStack.length - 1,
+  };
 }
 
 interface SheetProps {
@@ -92,8 +115,12 @@ interface SheetProps {
  * parents automatically. Never build inline overlays.
  */
 export function Sheet({ open, onOpenChange, title, children, size, height }: Readonly<SheetProps>) {
-  const fixedHeight = height ?? (size ? SIZE_PX[size] : undefined);
-  const isLocked = !useSheetStack(open);
+  const requested = height ?? (size ? SIZE_PX[size] : undefined);
+  const { isLocked, depth, covered } = useSheetStack(open);
+  // stacked sheets step DOWN in height (28px per level, floor 280) so
+  // the parent's receded edge stays visible — the depth cue the thin
+  // drag bar alone never gave (user request)
+  const fixedHeight = requested !== undefined ? Math.max(280, requested - depth * 28) : undefined;
   const panel = usePanelMode();
 
   // ESC closes the TOP desktop dialog only
@@ -122,7 +149,7 @@ export function Sheet({ open, onOpenChange, title, children, size, height }: Rea
         <dialog
           open
           aria-modal="true"
-          className={`relative z-10 m-0 flex w-[480px] max-w-[92vw] flex-col rounded-[20px] border-none bg-bg p-0 text-ink shadow-2xl outline-none transition-[transform,opacity] duration-200 ${isLocked ? 'scale-[0.97] opacity-60' : ''}`}
+          className={`relative z-10 m-0 flex w-[480px] max-w-[92vw] flex-col rounded-[20px] border-none bg-bg p-0 text-ink shadow-2xl outline-none transition-[transform,opacity] duration-300 ease-out ${covered ? 'scale-[0.97] opacity-60' : ''}`}
           style={{ height: fixedHeight, maxHeight: '85dvh' }}
         >
           {title && <div className="m-h3 shrink-0 px-5 pt-5 pb-1 text-ink">{title}</div>}
@@ -149,7 +176,7 @@ export function Sheet({ open, onOpenChange, title, children, size, height }: Rea
           {/* stacked-sheet depth (user request): a sheet buried under a
               child visibly recedes instead of hiding behind a thin bar */}
           <div
-            className={`flex min-h-0 flex-1 flex-col transition-[transform,opacity] duration-200 ${isLocked && open ? 'scale-[0.97] opacity-60' : ''}`}
+            className={`flex min-h-0 flex-1 flex-col transition-[transform,opacity] duration-300 ease-out ${covered ? 'scale-[0.97] opacity-60' : ''}`}
             style={{ transformOrigin: 'top center' }}
           >
             {/* full-height drag zone across the title area */}

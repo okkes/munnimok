@@ -662,14 +662,18 @@ export function ManageCategoriesScreen() {
               <p className="col-span-6 py-2 text-center text-[12px] text-ink-4">{t('cats.iconNone')}</p>
             )}
           </div>
-          <Button data-testid="catform-save" onClick={() => void save()} disabled={!name.trim()}>
-            {editing ? t('action.save') : t('action.add')}
-          </Button>
-          {editing && (
-            <Button variant="danger" data-testid="catform-delete" onClick={() => void remove()}>
-              {t('action.delete')}
+          {/* sticky: Save must never hide below the icon grid's fold
+              (user ss — you had to just KNOW the sheet scrolls) */}
+          <div className="sticky bottom-0 -mx-5 flex flex-col gap-2 bg-bg px-5 pt-2 pb-1">
+            <Button data-testid="catform-save" onClick={() => void save()} disabled={!name.trim()}>
+              {editing ? t('action.save') : t('action.add')}
             </Button>
-          )}
+            {editing && (
+              <Button variant="danger" data-testid="catform-delete" onClick={() => void remove()}>
+                {t('action.delete')}
+              </Button>
+            )}
+          </div>
         </div>
       </Sheet>
 
