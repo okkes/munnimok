@@ -38,20 +38,27 @@ export interface DragReorder {
 
 /** keep long lists draggable end-to-end: nudge the nearest scrollable
  *  ancestor while the pointer rides the viewport edges */
-function autoScroll(anchor: HTMLElement | null, pointerY: number): void {
+function findScrollParent(anchor: HTMLElement | null): HTMLElement | null {
   let node: HTMLElement | null = anchor;
   while (node && node !== document.body) {
     const canScroll = node.scrollHeight > node.clientHeight + 4;
-    if (canScroll && /(auto|scroll)/.test(getComputedStyle(node).overflowY)) break;
+    if (canScroll && /(auto|scroll)/.test(getComputedStyle(node).overflowY)) return node;
     node = node.parentElement;
   }
+  return null;
+}
+
+function autoScroll(anchor: HTMLElement | null, pointerY: number): void {
   const EDGE = 56;
   const STEP = 14;
-  const top = node && node !== document.body ? node.getBoundingClientRect().top : 0;
-  const bottom = node && node !== document.body ? node.getBoundingClientRect().bottom : window.innerHeight;
-  const delta = pointerY < top + EDGE ? -STEP : pointerY > bottom - EDGE ? STEP : 0;
+  const node = findScrollParent(anchor);
+  const top = node ? node.getBoundingClientRect().top : 0;
+  const bottom = node ? node.getBoundingClientRect().bottom : window.innerHeight;
+  let delta = 0;
+  if (pointerY < top + EDGE) delta = -STEP;
+  else if (pointerY > bottom - EDGE) delta = STEP;
   if (!delta) return;
-  if (node && node !== document.body) node.scrollTop += delta;
+  if (node) node.scrollTop += delta;
   else window.scrollBy(0, delta);
 }
 
