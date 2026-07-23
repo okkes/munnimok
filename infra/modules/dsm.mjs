@@ -21,20 +21,23 @@ async function dsmCall(base, path, params) {
 }
 
 export async function dsmLogin(base, account, passwd) {
+  // enable_syno_token: DSM 7 wants the CSRF token beside the sid on
+  // state-changing entry.cgi calls (per the documented v7 auth flow)
   const data = await dsmCall(base, 'auth.cgi', {
     api: 'SYNO.API.Auth',
-    version: '6',
+    version: '7',
     method: 'login',
     account,
     passwd,
     session: 'Core',
     format: 'sid',
+    enable_syno_token: 'yes',
   });
-  return data.sid;
+  return { sid: data.sid, token: data.synotoken };
 }
 
 export async function dsmLogout(base, sid) {
-  await dsmCall(base, 'auth.cgi', { api: 'SYNO.API.Auth', version: '6', method: 'logout', session: 'Core', _sid: sid }).catch(() => undefined);
+  await dsmCall(base, 'auth.cgi', { api: 'SYNO.API.Auth', version: '7', method: 'logout', session: 'Core', _sid: sid }).catch(() => undefined);
 }
 
 /** the reverse-proxy rules a stack needs: source https host -> local port */
@@ -57,14 +60,15 @@ export function proxyRules(stack) {
 /** upsert the stack's rules; returns {created, updated, unchanged} */
 export async function applyReverseProxy(stack, { url, user, pass }) {
   const base = url.replace(/\/$/, '');
-  const sid = await dsmLogin(base, user, pass);
+  const { sid, token } = await dsmLogin(base, user, pass);
+  const auth = { _sid: sid, ...(token ? { SynoToken: token } : {}) };
   try {
     const existing = (
       await dsmCall(base, 'entry.cgi', {
         api: 'SYNO.Core.AppPortal.ReverseProxy',
         version: '1',
         method: 'list',
-        _sid: sid,
+        ...auth,
       })
     ).entries ?? [];
     const out = { created: [], updated: [], unchanged: [] };
@@ -87,7 +91,7 @@ export async function applyReverseProxy(stack, { url, user, pass }) {
           version: '1',
           method: 'create',
           entry: JSON.stringify(desired),
-          _sid: sid,
+          ...auth,
         });
         out.created.push(rule.host);
       } else if (match.backend?.port !== rule.port) {
@@ -96,7 +100,7 @@ export async function applyReverseProxy(stack, { url, user, pass }) {
           version: '1',
           method: 'update',
           entry: JSON.stringify({ ...desired, uuid: match.uuid }),
-          _sid: sid,
+          ...auth,
         });
         out.updated.push(rule.host);
       } else {

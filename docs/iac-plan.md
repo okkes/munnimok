@@ -110,9 +110,19 @@ secrets (the account needs DSM admin for AppPortal writes).
 DSM has a full web API (we already drive FileStation):
 - **Reverse proxy rules**: `SYNO.Core.AppPortal.ReverseProxy` — create
   `munni-iac.<domain>` → container port mappings from the stack file.
-- **Certificates**: `SYNO.Core.Certificate` upload — pair with a
-  Let's Encrypt DNS-01 issuance in CI (acme.sh, DNS provider API) so
-  cert renewal is a scheduled workflow, not a DSM click.
+- **Certificates** (approach settled, user-provided reference): use
+  acme.sh's `synology_dsm` deploy hook — it logs into DSM, finds or
+  creates the named certificate, imports key+chain and reloads HTTP
+  services. A scheduled workflow (or NAS task) runs
+  `acme.sh --deploy -d <domain> --deploy-hook synology_dsm` with
+  SYNO_USERNAME/SYNO_PASSWORD/SYNO_HOSTNAME/SYNO_CERTIFICATE env; the
+  wildcard covers the munni-iac subdomains. No hand-rolled
+  SYNO.Core.Certificate client needed.
+- **Reverse-proxy caveat** (same reference): the entry schema is
+  internal and can shift between DSM releases — when a create/update
+  400s after a DSM upgrade, capture the request the DSM UI itself
+  sends (devtools → copy as cURL) and realign dsm.mjs's `desired`
+  object.
 - **Firewall**: DSM's firewall API is undocumented/fragile — rules
   stay manual, but `bootstrap --verify` PROBES the outcome (container
   subnets reachable, ports answering) and prints exactly what to fix.
