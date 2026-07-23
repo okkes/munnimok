@@ -5,6 +5,8 @@
  * @capacitor/core, so web/PWA builds carry zero native code.
  */
 
+import { publicOrigin } from '@/app/config';
+
 interface CapacitorPluginListener {
   addListener?: (event: string, cb: (data: never) => void) => unknown;
 }
@@ -80,13 +82,16 @@ export function deepLinkToPath(url: string): string | null {
   }
   // universal links (UL2): the bank's https redirect / a split invite
   // opens the app directly — same in-app routes as the scheme form.
-  // No host pin (the domain is a secret in this public repo): the OS
-  // only routes universal links for the entitlement domains anyway, so
-  // the PATH allowlist below is the real gate.
-  if (/^https:\/\//.test(url)) {
+  // The allowed hosts derive from publicOrigin (config), not a literal:
+  // the domain is a secret in this public repo. Channel siblings
+  // (munni./munni-test. on the same parent) stay accepted.
+  if (url.startsWith('https://')) {
     try {
       const parsed = new URL(url);
-      if (UNIVERSAL_LINK_PATHS.some((prefix) => parsed.pathname.startsWith(prefix))) {
+      const own = new URL(publicOrigin()).hostname;
+      const parent = own.split('.').slice(1).join('.');
+      const hostOk = parsed.hostname === own || (!!parent && parsed.hostname.endsWith(`.${parent}`));
+      if (hostOk && UNIVERSAL_LINK_PATHS.some((prefix) => parsed.pathname.startsWith(prefix))) {
         return parsed.pathname + parsed.search;
       }
     } catch {

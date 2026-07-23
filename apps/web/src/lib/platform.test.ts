@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NATIVE_CALLBACK_KEY, deepLinkToPath, ensurePersistentStorage, getNativePushToken, initDeepLinks, isNativeApp } from './platform';
 
 type CapacitorStub = {
@@ -14,6 +14,11 @@ const setCapacitor = (stub: CapacitorStub | undefined) => {
 afterEach(() => setCapacitor(undefined));
 
 describe('platform seam', () => {
+  // universal-link host checks derive from publicOrigin now (the real
+  // domain is a secret) — pin it for the fixtures
+  beforeEach(() => vi.stubEnv('VITE_PUBLIC_ORIGIN', 'https://munni.munni.example'));
+  afterEach(() => vi.unstubAllEnvs());
+
   it('detects the shell only through the injected global', () => {
     expect(isNativeApp()).toBe(false);
     setCapacitor({ isNativePlatform: () => true });
