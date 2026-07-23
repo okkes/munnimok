@@ -6,6 +6,7 @@ import { logtoConfigured } from '@/app/config';
 import { useSession } from '@/app/session';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
+import { Flag, langFlagCode } from '@/ui/Flag';
 import { Logo } from '@/ui/Logo';
 import { callbackUri } from './logto';
 import { addOfflineProfile, listOfflineProfiles } from './offlineProfiles';
@@ -80,7 +81,7 @@ function LangPill() {
         onClick={() => setOpen((v) => !v)}
         className="m-tap flex items-center gap-1.5 rounded-full border border-line bg-surface py-1.5 pr-2.5 pl-3 text-[12px] font-semibold text-ink-2 shadow-[0_2px_12px_rgba(0,0,0,0.10)]"
       >
-        <span className="rounded-[4px] bg-bg-2 px-1 text-[10px] font-bold text-ink-3">{lang.toUpperCase()}</span>
+        <Flag code={langFlagCode(lang)} size={18} />
         {LANG_NAMES[lang]}
         <Icon name={open ? 'chevron-up' : 'chevron-down'} size={14} color="var(--m-ink-3)" />
       </button>
@@ -96,7 +97,7 @@ function LangPill() {
               }}
               className="m-tap flex w-full items-center gap-2.5 border-b border-line-2 bg-transparent px-4 py-3 text-left text-[14px] text-ink last:border-0"
             >
-              <span className="rounded-[4px] bg-bg-2 px-1 text-[10px] font-bold text-ink-3">{code.toUpperCase()}</span>
+              <Flag code={langFlagCode(code)} size={18} />
               <span className="flex-1">{LANG_NAMES[code]}</span>
               {lang === code && <Icon name="check" size={15} color="var(--m-accent)" />}
             </button>

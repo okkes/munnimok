@@ -15,6 +15,7 @@ import { Button } from '@/ui/Button';
 import { Chip } from '@/ui/primitives';
 import { Highlight } from '@/ui/Highlight';
 import { Icon } from '@/ui/Icon';
+import { Flag, langFlagCode } from '@/ui/Flag';
 import { Logo } from '@/ui/Logo';
 import { Sheet } from '@/ui/Sheet';
 
@@ -174,6 +175,7 @@ export function OnboardingScreen() {
             <div className="flex gap-2" data-testid="onboarding-langs">
               {LANGS.map((code) => (
                 <Chip key={code} testId={`onboarding-lang-${code}`} selected={lang === code} onClick={() => setLang(code)}>
+                  <Flag code={langFlagCode(code)} size={16} className="mr-1" />
                   {LANG_NAMES[code]}
                 </Chip>
               ))}
@@ -185,9 +187,7 @@ export function OnboardingScreen() {
               onClick={() => setCountryOpen(true)}
               className="m-tap flex h-12 w-full items-center gap-3 rounded-input border border-line bg-surface px-4 text-left text-[15px] text-ink"
             >
-              <span className="rounded-md bg-bg-2 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-ink-3">
-                {country}
-              </span>
+              <Flag code={country} size={20} />
               <span className="flex-1">{countryLabel(country, lang)}</span>
               <Icon name="chevron-down" size={18} color="var(--m-ink-4)" />
             </button>
@@ -271,9 +271,7 @@ export function OnboardingScreen() {
             }}
             className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-1 py-2.5 text-left text-[14px] text-ink"
           >
-            <span className="rounded-md bg-bg-2 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-ink-3">
-              {c.code}
-            </span>
+            <Flag code={c.code} size={20} />
             <span className="flex-1">
               <Highlight text={c[lang]} query={query} />
             </span>

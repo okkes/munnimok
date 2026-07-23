@@ -10,6 +10,7 @@ import { TIPS_DISABLED_KEY, useTipsDisabled } from '@/features/help/tipsPref';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
+import { Flag, langFlagCode } from '@/ui/Flag';
 import { Pill, Row } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { disablePush, enablePush, pushEnabled, pushSupported } from '@/lib/push';
@@ -496,9 +497,7 @@ export function GlobalSettingsScreen() {
               }}
               className="m-tap flex items-center gap-3 border-none bg-transparent px-1 py-3.5 text-left text-[15px] text-ink"
             >
-              <span className="rounded-md bg-bg-2 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-ink-3">
-                {entry.badge}
-              </span>
+              <Flag code={langFlagCode(entry.code)} size={20} />
               <span className="flex-1">{t(entry.labelKey)}</span>
               {langOverridden && lang === entry.code && <Icon name="check" size={18} color="var(--m-accent)" />}
             </button>

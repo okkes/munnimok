@@ -12,6 +12,7 @@ import { setPredictionCountry } from '@/domain/predictCategory';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
+import { Flag } from '@/ui/Flag';
 import { Sheet } from '@/ui/Sheet';
 
 /** avatar presets: "icon|color" */
@@ -226,7 +227,7 @@ export function ProfileScreen() {
           onClick={() => setCountryOpen(true)}
           className="m-tap flex h-12 w-full items-center gap-3 rounded-input border border-line bg-surface px-4 text-left text-[15px] text-ink"
         >
-          <span className="rounded-md bg-bg-2 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-ink-3">{country}</span>
+          <Flag code={country} size={20} />
           <span className="flex-1">{COUNTRIES.find((c) => c.code === country)?.[lang] ?? country}</span>
           <Icon name="chevron-down" size={18} color="var(--m-ink-4)" />
         </button>
@@ -243,7 +244,7 @@ export function ProfileScreen() {
               }}
               className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-1 py-2.5 text-left text-[14px] text-ink"
             >
-              <span className="rounded-md bg-bg-2 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-ink-3">{c.code}</span>
+              <Flag code={c.code} size={20} />
               <span className="flex-1">{c[lang]}</span>
               {country === c.code && <Icon name="check" size={15} color="var(--m-accent)" />}
             </button>

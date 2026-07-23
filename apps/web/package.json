@@ -25,6 +25,7 @@
     "@sentry/react": "^10.65.0",
     "@tanstack/react-router": "^1.170.18",
     "dexie": "^4.4.4",
+    "flag-icons": "^7.5.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "uuid": "^14.0.1",
