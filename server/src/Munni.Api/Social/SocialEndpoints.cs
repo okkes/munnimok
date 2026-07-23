@@ -7,8 +7,8 @@ using Munni.Api.Validation;
 
 namespace Munni.Api.Social;
 
-public sealed record MeResponse(Guid UserId, string? DisplayName, string? Picture, string? Country = null);
-public sealed record UpdateMeRequest(string DisplayName, string? Picture = null, string? Country = null);
+public sealed record MeResponse(Guid UserId, string? DisplayName, string? Picture, string? Country = null, string? DisplayCurrency = null);
+public sealed record UpdateMeRequest(string DisplayName, string? Picture = null, string? Country = null, string? DisplayCurrency = null);
 public sealed record FriendDto(Guid UserId, string? DisplayName, string? Picture = null);
 public sealed record FriendRequestDto(Guid Id, Guid FromUserId, string? FromName, Guid ToUserId, string? ToName);
 public sealed record FriendsResponse(List<FriendDto> Friends, List<FriendRequestDto> SentPending, List<FriendRequestDto> ReceivedPending);
@@ -88,7 +88,7 @@ public static class SocialEndpoints
     private static async Task<IResult> GetMe(AppDbContext db, HttpContext http)
     {
         var user = await db.Users.FindAsync(http.GetUserId());
-        return Results.Ok(new MeResponse(user!.Id, user.DisplayName, user.Picture, user.Country));
+        return Results.Ok(new MeResponse(user!.Id, user.DisplayName, user.Picture, user.Country, user.DisplayCurrency));
     }
 
     private static async Task<IResult> DeleteMe(
@@ -111,8 +111,12 @@ public static class SocialEndpoints
         user!.DisplayName = request.DisplayName.Trim();
         if (request.Picture is not null) user.Picture = request.Picture;
         if (request.Country is not null) user.Country = request.Country.ToUpperInvariant();
+        // display currency is a personal rendering preference (currency
+        // plan CD3): '' clears back to "as recorded", null leaves it alone
+        if (request.DisplayCurrency is not null)
+            user.DisplayCurrency = request.DisplayCurrency.Length == 0 ? null : request.DisplayCurrency.ToUpperInvariant();
         await db.SaveChangesAsync();
-        return Results.Ok(new MeResponse(user.Id, user.DisplayName, user.Picture, user.Country));
+        return Results.Ok(new MeResponse(user.Id, user.DisplayName, user.Picture, user.Country, user.DisplayCurrency));
     }
 
     // ── friends ─────────────────────────────────────────────────────────

@@ -15,6 +15,7 @@ import { AddAccountChooser } from '@/features/accounts/AddAccountChooser';
 import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
 import { TxRow } from '@/ui/TxRow';
+import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { TxFormSheet } from './TxFormSheet';
 
 const DATE_FMT: Record<string, string> = { en: 'en-GB', nl: 'nl-NL', tr: 'tr-TR' };
@@ -101,6 +102,13 @@ export function TransactionsScreen() {
     matched.sort((a, b) => b.date.localeCompare(a.date));
     return matched.slice(0, 200);
   }, [allTxs, query, filters, uncatOnly, catIds]);
+
+  // display-currency lens: rows convert at their own day's fixing —
+  // warm the rate cache for every date this list is about to show
+  const { ensureDates } = useDisplayMoney();
+  useEffect(() => {
+    ensureDates([...new Set((txs ?? []).map((tx) => tx.date))]);
+  }, [txs, ensureDates]);
 
   const groups = groupByDate(txs ?? []);
   const activeCount = countActive(filters);

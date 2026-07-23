@@ -4,6 +4,7 @@ import { useQuery } from '@/db/useQuery';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { useLgViewport } from '@/lib/viewport';
 import { useSpaceTransaction, useSpaceTransactions, useTxTransform } from '@/application/transactions';
+import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { useRecurringOps, useRecurrings } from '@/application/recurring';
 import { useEvents } from '@/application/events';
 import { RecurringVisual } from '@/features/recurring/RecurringVisual';
@@ -382,8 +383,18 @@ export function TxDetailScreen() {
   const allTxs = useSpaceTransactions();
   const givenOut = tx && tx.amountCents > 0 ? givenCents(allTxs ?? [], tx.id) : 0;
 
+  // display-currency lens: the headline converts at THIS day's fixing
+  const { fmt, ensureDates } = useDisplayMoney();
+  const txDate = tx?.date;
+  useEffect(() => {
+    if (txDate) ensureDates([txDate]);
+  }, [txDate, ensureDates]);
+
   if (!tx)
     return <div className="h-full" data-testid="screen-tx-detail" />;
+
+  const netCents = tx.amountCents > 0 ? netCreditCents(tx, givenOut) : netAmountCents(tx);
+  const headlineAmount = fmt(netCents, tx.currency, { sign: true, date: tx.date });
 
   const cat = cats.byId(tx.catId);
   const parent = cat.parentId ? cats.byId(cat.parentId) : undefined;
@@ -478,15 +489,19 @@ export function TxDetailScreen() {
           {/* both directions show the net truth: expenses minus what came
               back, credits minus what they refunded elsewhere */}
           <div className="m-num text-4xl text-ink" data-testid="tx-detail-amount">
-            {fmtCents(
-              tx.amountCents > 0 ? netCreditCents(tx, givenOut) : netAmountCents(tx),
-              tx.currency, lang, { sign: true },
-            )}
+            {headlineAmount}
           </div>
           <div className="mt-1 text-sm text-ink-3">
             {fmtDay.format(new Date(tx.date))}
             {tx.time ? ` · ${tx.time}` : ''}
           </div>
+          {/* converted headline (display-currency lens): the recorded truth
+              stays one line below — a detail screen must never hide it */}
+          {headlineAmount.startsWith('≈') && (
+            <div className="m-num mt-0.5 text-[13px] text-ink-4" data-testid="tx-detail-recorded-amount">
+              {fmtCents(netCents, tx.currency, lang, { sign: true })}
+            </div>
+          )}
           {tx.pending === 1 && (
             <div className="mt-2" data-testid="tx-detail-pending">
               <Pill tone="warning">{t('tx.pendingBadge')}</Pill>

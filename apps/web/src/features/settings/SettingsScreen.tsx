@@ -221,7 +221,7 @@ export function SettingsScreen() {
                 { testId: 'settings-space-members-row', icon: 'account-multiple-outline', labelKey: 'space.members', to: '/spaces/$spaceId/members', userOnly: true },
                 { testId: 'settings-categories-row', icon: 'shape-outline', labelKey: 'screen.categories', to: '/categories' },
                 { testId: 'settings-period-row', icon: 'calendar-month-outline', labelKey: 'space.periodTitle', to: '/spaces/$spaceId/period' },
-                { testId: 'settings-currency-row', icon: 'cash-100', labelKey: 'space.currency', sheet: 'currency' },
+                { testId: 'settings-currency-row', icon: 'cash-100', labelKey: 'space.ledgerCurrency', sheet: 'currency' },
                 { testId: 'settings-history-row', icon: 'history', labelKey: 'space.historyStart', sheet: 'history' },
               ],
             },
@@ -290,8 +290,12 @@ export function SettingsScreen() {
 
       {/* extracted space settings (user request): small single-purpose
           sheets — picking a value applies immediately (LWW makes it safe) */}
-      <Sheet open={currencyOpen} onOpenChange={setCurrencyOpen} title={t('space.currency')} size="form">
+      <Sheet open={currencyOpen} onOpenChange={setCurrencyOpen} title={t('space.ledgerCurrency')} size="form">
         <div className="flex flex-col gap-3 pt-1">
+          {/* "ledger" is deliberate (currency plan CD5): this anchors
+              budgets, goals and period totals for every member — how
+              amounts READ is the personal display currency on Profile */}
+          <p className="text-[12px] text-ink-3">{t('space.ledgerCurrencyInfo')}</p>
           {readOnly && <p className="text-[12px] text-ink-3">{t('space.readerNote')}</p>}
           <div className="flex flex-wrap gap-2">
             {CURRENCIES.map((c) => (

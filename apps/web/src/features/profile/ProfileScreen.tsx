@@ -7,8 +7,10 @@ import { getOfflineProfile, updateOfflineProfile } from '@/features/auth/offline
 import { useLang } from '@/i18n';
 import { apiFetch } from '@/lib/api';
 import { downscaleImage, isDataImage } from '@/lib/image';
-import { COUNTRIES } from '@/domain/countries';
+import { COUNTRIES, CURRENCIES } from '@/domain/countries';
 import { setPredictionCountry } from '@/domain/predictCategory';
+import { MANUAL_RATES_META_KEY, readManualRates } from '@/lib/rates';
+import { useQuery } from '@/db/useQuery';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
@@ -49,23 +51,47 @@ export function Avatar({ picture, size = 40 }: { picture?: string | null; size?:
 const PROFILE_META_KEY = 'profile';
 
 /** the Settings-header copy of a /me payload; null when there is nothing worth storing */
-function profileMetaCopy(me: { displayName: string | null; picture: string | null }): LocalProfile | null {
+function profileMetaCopy(me: {
+  displayName: string | null;
+  picture: string | null;
+  country?: string | null;
+  displayCurrency?: string | null;
+}): LocalProfile | null {
   if (!me.displayName && !me.picture) return null;
-  return { name: me.displayName ?? '', picture: me.picture ?? undefined };
+  return {
+    name: me.displayName ?? '',
+    picture: me.picture ?? undefined,
+    // country and display currency ride along — the refresh used to
+    // overwrite the meta copy WITHOUT them, silently dropping both
+    country: me.country ?? undefined,
+    displayCurrency: me.displayCurrency ?? undefined,
+  };
 }
 
 /** /me → screen state, refreshing the local Settings-header copy on the way */
 async function fetchUserProfile(
   store: ReturnType<typeof useData>['store'],
-): Promise<{ name: string; picture: string | null; userId: string } | null> {
+): Promise<{ name: string; picture: string | null; userId: string; country: string | null; displayCurrency: string | null } | null> {
   const res = await apiFetch('/me').catch(() => null);
   if (!res?.ok) return null;
-  const me = (await res.json()) as { userId: string; displayName: string | null; picture: string | null };
+  const me = (await res.json()) as {
+    userId: string;
+    displayName: string | null;
+    picture: string | null;
+    country: string | null;
+    displayCurrency: string | null;
+  };
   // keep the local copy in step with the server — an avatar changed on
   // another device or a reinstall lands here
   const copy = profileMetaCopy(me);
   if (copy) await store.metaPut(PROFILE_META_KEY, copy);
-  return { name: me.displayName ?? '', picture: me.picture, userId: me.userId };
+  return {
+    name: me.displayName ?? '',
+    picture: me.picture,
+    userId: me.userId,
+    country: me.country ?? null,
+    displayCurrency: me.displayCurrency ?? null,
+  };
 }
 
 interface LocalProfile {
@@ -73,6 +99,8 @@ interface LocalProfile {
   picture?: string;
   /** ISO country of use — tunes category prediction */
   country?: string;
+  /** ISO 4217 display currency (currency plan CD3); absent = as recorded */
+  displayCurrency?: string;
 }
 
 /**
@@ -90,6 +118,9 @@ export function ProfileScreen() {
   const [email, setEmail] = useState<string | null>(null);
   const [country, setCountry] = useState('NL');
   const [countryOpen, setCountryOpen] = useState(false);
+  // null = "as recorded" (the default: no conversion anywhere)
+  const [displayCurrency, setDisplayCurrency] = useState<string | null>(null);
+  const [displayCurrencyOpen, setDisplayCurrencyOpen] = useState(false);
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -113,6 +144,7 @@ export function ProfileScreen() {
           setName(loaded.name);
           if (loaded.picture) setPicture(loaded.picture);
           setUserId(loaded.userId);
+          setDisplayCurrency(loaded.displayCurrency);
         }
       } else if (identity?.kind === 'offline') {
         const profile = getOfflineProfile(identity.profileId);
@@ -125,6 +157,8 @@ export function ProfileScreen() {
       }
       const localCopy = (await store.metaGet(PROFILE_META_KEY))?.value as LocalProfile | undefined;
       if (localCopy?.country && !cancelled) setCountry(localCopy.country);
+      // server already answered for signed-in users; local copy serves the rest
+      if (identity?.kind !== 'user' && localCopy?.displayCurrency && !cancelled) setDisplayCurrency(localCopy.displayCurrency);
     })();
     return () => {
       cancelled = true;
@@ -134,14 +168,23 @@ export function ProfileScreen() {
   const save = async () => {
     if (!name.trim()) return;
     if (identity?.kind === 'user') {
-      await apiFetch('/me', { method: 'PUT', body: JSON.stringify({ displayName: name.trim(), picture, country }) }).catch(
+      // displayCurrency '' = the server's explicit "clear back to as recorded"
+      await apiFetch('/me', {
+        method: 'PUT',
+        body: JSON.stringify({ displayName: name.trim(), picture, country, displayCurrency: displayCurrency ?? '' }),
+      }).catch(
         () => undefined, // offline is fine — retried on next profile save
       );
     } else if (identity?.kind === 'offline') {
       updateOfflineProfile(identity.profileId, { name: name.trim(), picture });
     }
     // local copy for instant display everywhere (all identity kinds)
-    await store.metaPut(PROFILE_META_KEY, { name: name.trim(), picture, country } satisfies LocalProfile);
+    await store.metaPut(PROFILE_META_KEY, {
+      name: name.trim(),
+      picture,
+      country,
+      displayCurrency: displayCurrency ?? undefined,
+    } satisfies LocalProfile);
     setPredictionCountry(country);
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
@@ -251,6 +294,51 @@ export function ProfileScreen() {
           ))}
         </Sheet>
 
+        {/* display currency (currency plan CD3): a personal rendering
+            lens — every conversion shows ≈, the data never changes */}
+        <div className="m-cap mt-5 mb-1 px-1">{t('profile.displayCurrency')}</div>
+        <button
+          data-testid="profile-display-currency"
+          onClick={() => setDisplayCurrencyOpen(true)}
+          className="m-tap flex h-12 w-full items-center gap-3 rounded-input border border-line bg-surface px-4 text-left text-[15px] text-ink"
+        >
+          <Icon name="cash-multiple" size={20} color="var(--m-ink-3)" />
+          <span className="flex-1">{displayCurrency ?? t('profile.displayCurrencyAsRecorded')}</span>
+          <Icon name="chevron-down" size={18} color="var(--m-ink-4)" />
+        </button>
+        <p className="mt-1 px-1 text-[12px] leading-snug text-ink-4">{t('profile.displayCurrencyInfo')}</p>
+        {identity?.kind !== 'user' && displayCurrency && <ManualRatesEditor display={displayCurrency} />}
+
+        <Sheet open={displayCurrencyOpen} onOpenChange={setDisplayCurrencyOpen} title={t('profile.displayCurrency')} size="form">
+          <div className="flex flex-col pt-1">
+            <button
+              data-testid="display-currency-off"
+              onClick={() => {
+                setDisplayCurrency(null);
+                setDisplayCurrencyOpen(false);
+              }}
+              className="m-tap flex items-center gap-3 border-b border-line-2 border-none bg-transparent px-1 py-3 text-left text-[14px] text-ink"
+            >
+              <span className="flex-1">{t('profile.displayCurrencyAsRecorded')}</span>
+              {!displayCurrency && <Icon name="check" size={15} color="var(--m-accent)" />}
+            </button>
+            {CURRENCIES.map((c) => (
+              <button
+                key={c}
+                data-testid={`display-currency-${c}`}
+                onClick={() => {
+                  setDisplayCurrency(c);
+                  setDisplayCurrencyOpen(false);
+                }}
+                className="m-tap flex items-center gap-3 border-none bg-transparent px-1 py-3 text-left text-[14px] text-ink"
+              >
+                <span className="flex-1 font-mono">{c}</span>
+                {displayCurrency === c && <Icon name="check" size={15} color="var(--m-accent)" />}
+              </button>
+            ))}
+          </div>
+        </Sheet>
+
         <Button className="mt-4 w-full" data-testid="profile-save" onClick={() => void save()} disabled={!name.trim()}>
           {saved ? t('profile.saved') : t('action.save')}
         </Button>
@@ -279,6 +367,50 @@ export function ProfileScreen() {
         )}
         {identity?.kind === 'user' && <EmailLoader onEmail={setEmail} sub={identity.sub} />}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Offline profiles have no rate feed (zero network by design) — they
+ * pin a manual rate per currency pair instead (currency plan CD2). One
+ * input per currency this device actually holds accounts in.
+ */
+function ManualRatesEditor({ display }: Readonly<{ display: string }>) {
+  const { t } = useLang();
+  const { store } = useData();
+  const accounts = useQuery(store, async () => (await store.allRows('account')).filter((a) => a.deleted === 0), []);
+  const manual = useQuery(store, async () => readManualRates(store), []);
+  const froms = [...new Set((accounts ?? []).map((a) => a.currency))].filter((c) => c && c !== display).sort((a, b) => a.localeCompare(b));
+  if (froms.length === 0 || !manual) return null;
+
+  const saveRate = async (from: string, raw: string) => {
+    const next = { ...manual };
+    const value = Number(raw.trim().replace(',', '.'));
+    if (raw.trim() && Number.isFinite(value) && value > 0) next[`${from}>${display}`] = value;
+    else delete next[`${from}>${display}`];
+    await store.metaPut(MANUAL_RATES_META_KEY, next);
+  };
+
+  return (
+    <div className="mt-3 flex flex-col gap-2">
+      <div className="m-cap px-1">{t('profile.manualRates')}</div>
+      <p className="-mt-1 px-1 text-[12px] leading-snug text-ink-4">{t('profile.manualRatesInfo', { currency: display })}</p>
+      {froms.map((from) => (
+        <label key={from} className="flex items-center gap-3 text-[13px] text-ink-2">
+          <span className="w-24 font-mono">1 {from} =</span>
+          <input
+            data-testid={`manual-rate-${from}`}
+            type="text"
+            inputMode="decimal"
+            defaultValue={manual[`${from}>${display}`] ?? ''}
+            onBlur={(e) => void saveRate(from, e.target.value)}
+            placeholder="0,00"
+            className="h-10 w-28 rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none placeholder:text-ink-4"
+          />
+          <span className="font-mono text-ink-3">{display}</span>
+        </label>
+      ))}
     </div>
   );
 }

@@ -19,7 +19,7 @@ export const GUIDE = [
     id: 'home',
     title: 'Home is yours',
     body: `Home is a landing zone of blocks: review queue, this period, new transactions, budgets, upcoming costs and more. Reorder or hide blocks with Customize Home at the bottom. The avatar on the top right switches spaces.`,
-    tips: ['The balance band folds out to show every account.', 'Portfolio has its own tab at the bottom.', 'The bell keeps the space’s history: the last 200 actions with who did what.'],
+    tips: ['The balance band folds out to show every account.', 'Portfolio has its own tab at the bottom.', 'The bell keeps the space’s history: the last 200 actions with who did what.', 'Pick a display currency on your profile to read every amount in one currency, marked ≈ — your data keeps its own.'],
     shots: ['01-shell-home', '59-overview-home'],
   },
   {

@@ -1,9 +1,13 @@
 # Multi-currency & display conversion — plan v2
 
-Status: **DESIGN v2 — awaiting approval** (2026-07-23). v1 hung the
-display currency off the SPACE; user asked to re-examine that against
-what other finance apps do, and whether space-level currency was ever
-right.
+Status: **CD1–CD3 + CD5 SHIPPED** (2026-07-23): server `/rates` (ECB
+daily + 90d + full history, cached), client rate cache in meta +
+`fmtDisplay`/`sumCents` with the ≈ marker, user-level display currency
+(profile + `/me.displayCurrency`, offline manual pairs), adopted on the
+balance band (convert-then-sum), every TxRow list (per-day rates), and
+the tx detail headline; space currency renamed to "Ledger currency"
+with the explainer. **CD4 remains**: budgets/goals/charts/overview
+adoption + guide/tour touch-ups + a quick toggle in the band overflow.
 
 ## What the field studies say
 

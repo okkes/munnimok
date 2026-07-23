@@ -1,6 +1,6 @@
 import { LOCALES, useLang } from '@/i18n';
-import { fmtCents } from '@/lib/money';
 import { txTitle } from '@/lib/text';
+import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { netAmountCents, netCreditCents } from '@/domain/reimbursement';
 import type { TransactionRow } from '@/db/types';
 import { catName, useCategories } from '@/features/categories/useCategories';
@@ -65,6 +65,10 @@ export function TxRow({
 }) {
   const { t, lang } = useLang();
   const cats = useCategories();
+  // display-currency lens (currency plan): rows convert at their OWN
+  // day's rate — historically honest lists; without a preference this
+  // is plain fmtCents
+  const { fmt } = useDisplayMoney();
   const { icon: iconName, color, label: categoryLabel } = txVisual(tx, cats, t);
 
   // reimbursements change what a transaction really cost — lists show
@@ -118,15 +122,15 @@ export function TxRow({
       )}
       <span className="shrink-0 text-right">
         <span className={`m-num block text-[14px] font-semibold ${positive ? 'text-accent-deep' : 'text-ink'}`}>
-          {fmtCents(display, tx.currency, lang, { sign: true })}
+          {fmt(display, tx.currency, { sign: true, date: tx.date })}
         </span>
         {amountOverrideCents === undefined && reimbursed && (
           <span className="m-num block text-[11px] text-ink-4 line-through">
-            {fmtCents(tx.amountCents, tx.currency, lang, { sign: true })}
+            {fmt(tx.amountCents, tx.currency, { sign: true, date: tx.date })}
           </span>
         )}
         {amountOverrideCents !== undefined && amountOverrideCents !== net && (
-          <span className="m-num block text-[11px] text-ink-4">{fmtCents(net, tx.currency, lang, { sign: true })}</span>
+          <span className="m-num block text-[11px] text-ink-4">{fmt(net, tx.currency, { sign: true, date: tx.date })}</span>
         )}
       </span>
     </button>

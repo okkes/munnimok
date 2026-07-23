@@ -44,6 +44,8 @@ import { toAllocateCents } from '@/domain/allocation';
 import { budgetColor, ratioPct } from '@/features/budgets/budgetUi';
 import { budgetDaysLeft } from '@/domain/budgets';
 import { fmtCents } from '@/lib/money';
+import { sumCents } from '@/lib/rates';
+import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { AppBar } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
 import { ProgressBar, Tile } from '@/ui/primitives';
@@ -77,8 +79,22 @@ export function HomeScreen() {
   }, [needsOnboarding, navigate]);
 
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
-  const totalCents = (accounts ?? []).reduce((sum, a) => sum + a.balanceCents, 0);
   const currency = space?.currency ?? accounts?.[0]?.currency ?? 'EUR';
+  // the band total is convert-then-sum (currency plan): into the display
+  // currency when set, else the ledger currency — no more silent numeric
+  // mixing of differing account currencies; conversions say ≈
+  const { display, fmt } = useDisplayMoney();
+  const bandCurrency = display?.currency ?? currency;
+  const bandTotal = useMemo(
+    () =>
+      sumCents(
+        (accounts ?? []).map((a) => ({ cents: a.balanceCents, currency: a.currency })),
+        bandCurrency,
+        display?.cache.days.latest,
+        display?.manual,
+      ),
+    [accounts, bandCurrency, display],
+  );
   const period = useMemo(
     () => periodHistory(space?.periodType ?? 'month', space?.periodDay ?? 1, 1)[0],
     [space?.periodType, space?.periodDay],
@@ -224,14 +240,14 @@ export function HomeScreen() {
                 <Icon name={accountsOpen ? 'chevron-up' : 'chevron-down'} size={16} color="currentColor" />
               </div>
               <div className="m-num mt-0.5 text-[28px]" data-testid="home-total-balance">
-                {accounts ? fmtCents(totalCents, currency, lang) : '—'}
+                {accounts ? `${bandTotal.approximate ? '≈ ' : ''}${fmtCents(bandTotal.cents, bandCurrency, lang)}` : '—'}
               </div>
               {accountsOpen && (
                 <div className="mt-2 flex flex-col gap-1" data-testid="home-balance-accounts">
                   {(accounts ?? []).map((a) => (
                     <div key={a.id} className="flex items-center justify-between text-[13px] opacity-90">
                       <span className="truncate">{a.name}</span>
-                      <span className="m-num">{fmtCents(a.balanceCents, a.currency, lang)}</span>
+                      <span className="m-num">{fmt(a.balanceCents, a.currency)}</span>
                     </div>
                   ))}
                 </div>
