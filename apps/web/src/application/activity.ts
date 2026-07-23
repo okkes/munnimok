@@ -20,12 +20,12 @@ export async function logActivity(
   detail?: string,
 ): Promise<void> {
   try {
-    const profile = (await store.metaGet('profile'))?.value as { displayName?: string } | undefined;
+    const profile = (await store.metaGet('profile'))?.value as { name?: string } | undefined;
     // actor resolution: profile display name first, the offline profile's
     // name as fallback — plus the sub so other devices can render "You"
     const identity = useSession.getState().identity;
     const actorName =
-      profile?.displayName ?? (identity?.kind === 'offline' ? offlineProfileName(identity.profileId) : undefined);
+      profile?.name ?? (identity?.kind === 'offline' ? offlineProfileName(identity.profileId) : undefined);
     await repo.upsert('activity', spaceId, repo.newId(), {
       kind,
       ...(actorName ? { actorName } : {}),

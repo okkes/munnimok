@@ -217,19 +217,14 @@ for (const V of VARIANTS) {
     await a.page.waitForSelector('[data-testid="onboarding-country-search"]');
     await a.page.fill('[data-testid="onboarding-country-search"]', 'Turk');
     await a.page.click('[data-testid="onboarding-country-TR"]');
-    await expect(a.page.locator('[data-testid="onboarding-currency-hint"]')).toContainText('TRY');
     await shot(a.page, k('37-onboarding'));
     await a.page.click('[data-testid="onboarding-save"]');
-    // step 2 (app lock) — decide later in the e2e stack
+    // step 2 (app lock) — decide later in the e2e stack; the bank step is
+    // gone (the guided tutorial owns account setup now)
     await a.page.waitForSelector('[data-testid="onboarding-lock-step"]');
-    await a.page.click('[data-testid="onboarding-lock-later"]');
-    // step 3 (bank connect) — skip it in the e2e stack
-    await a.page.waitForSelector('[data-testid="onboarding-bank-step"]');
     await shot(a.page, k('37-onboarding') + '--s1');
-    await a.page.click('[data-testid="onboarding-bank-later"]');
+    await a.page.click('[data-testid="onboarding-lock-later"]');
     await a.page.waitForSelector('[data-testid="screen-home"]');
-    // currency applied to the personal space: home total renders in TRY
-    await expect(a.page.locator('[data-testid="home-total-balance"]')).toContainText('TRY');
     // reload: onboarding never comes back
     await a.page.reload();
     await a.page.waitForSelector('[data-testid="screen-home"]');

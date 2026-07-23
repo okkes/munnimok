@@ -7,9 +7,12 @@ import { getOfflineProfile, updateOfflineProfile } from '@/features/auth/offline
 import { useLang } from '@/i18n';
 import { apiFetch } from '@/lib/api';
 import { downscaleImage, isDataImage } from '@/lib/image';
+import { COUNTRIES } from '@/domain/countries';
+import { setPredictionCountry } from '@/domain/predictCategory';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
+import { Sheet } from '@/ui/Sheet';
 
 /** avatar presets: "icon|color" */
 export const AVATARS = [
@@ -67,6 +70,8 @@ async function fetchUserProfile(
 interface LocalProfile {
   name?: string;
   picture?: string;
+  /** ISO country of use — tunes category prediction */
+  country?: string;
 }
 
 /**
@@ -75,13 +80,15 @@ interface LocalProfile {
  * identities keep everything on the device.
  */
 export function ProfileScreen() {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const { store } = useData();
   const identity = useSession((s) => s.identity);
   const [name, setName] = useState('');
   const [picture, setPicture] = useState(AVATARS[0]);
   const [userId, setUserId] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
+  const [country, setCountry] = useState('NL');
+  const [countryOpen, setCountryOpen] = useState(false);
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -115,6 +122,8 @@ export function ProfileScreen() {
         setName(stored?.name ?? 'Demo');
         if (stored?.picture) setPicture(stored.picture);
       }
+      const localCopy = (await store.metaGet(PROFILE_META_KEY))?.value as LocalProfile | undefined;
+      if (localCopy?.country && !cancelled) setCountry(localCopy.country);
     })();
     return () => {
       cancelled = true;
@@ -124,14 +133,15 @@ export function ProfileScreen() {
   const save = async () => {
     if (!name.trim()) return;
     if (identity?.kind === 'user') {
-      await apiFetch('/me', { method: 'PUT', body: JSON.stringify({ displayName: name.trim(), picture }) }).catch(
+      await apiFetch('/me', { method: 'PUT', body: JSON.stringify({ displayName: name.trim(), picture, country }) }).catch(
         () => undefined, // offline is fine — retried on next profile save
       );
     } else if (identity?.kind === 'offline') {
       updateOfflineProfile(identity.profileId, { name: name.trim(), picture });
     }
     // local copy for instant display everywhere (all identity kinds)
-    await store.metaPut(PROFILE_META_KEY, { name: name.trim(), picture } satisfies LocalProfile);
+    await store.metaPut(PROFILE_META_KEY, { name: name.trim(), picture, country } satisfies LocalProfile);
+    setPredictionCountry(country);
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
   };
@@ -204,9 +214,41 @@ export function ProfileScreen() {
           data-testid="profile-name"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder={t('login.fullName')}
+          placeholder={t('profile.displayName')}
           className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
         />
+
+        {/* country of use — changeable later (user request); tunes the
+            category predictor, explained by the info line */}
+        <div className="m-cap mt-5 mb-1 px-1">{t('onboarding.countryLabel')}</div>
+        <button
+          data-testid="profile-country"
+          onClick={() => setCountryOpen(true)}
+          className="m-tap flex h-12 w-full items-center gap-3 rounded-input border border-line bg-surface px-4 text-left text-[15px] text-ink"
+        >
+          <span className="rounded-md bg-bg-2 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-ink-3">{country}</span>
+          <span className="flex-1">{COUNTRIES.find((c) => c.code === country)?.[lang] ?? country}</span>
+          <Icon name="chevron-down" size={18} color="var(--m-ink-4)" />
+        </button>
+        <p className="mt-1 px-1 text-[12px] leading-snug text-ink-4">{t('profile.countryInfo')}</p>
+
+        <Sheet open={countryOpen} onOpenChange={setCountryOpen} title={t('onboarding.countryLabel')} size="tall">
+          {COUNTRIES.map((c) => (
+            <button
+              key={c.code}
+              data-testid={`profile-country-${c.code}`}
+              onClick={() => {
+                setCountry(c.code);
+                setCountryOpen(false);
+              }}
+              className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-1 py-2.5 text-left text-[14px] text-ink"
+            >
+              <span className="rounded-md bg-bg-2 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-ink-3">{c.code}</span>
+              <span className="flex-1">{c[lang]}</span>
+              {country === c.code && <Icon name="check" size={15} color="var(--m-accent)" />}
+            </button>
+          ))}
+        </Sheet>
 
         <Button className="mt-4 w-full" data-testid="profile-save" onClick={() => void save()} disabled={!name.trim()}>
           {saved ? t('profile.saved') : t('action.save')}

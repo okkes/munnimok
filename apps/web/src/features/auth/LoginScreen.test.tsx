@@ -51,6 +51,12 @@ describe('LoginScreen', () => {
     fireEvent.change(name, { target: { value: 'Okkes' } });
     fireEvent.click(screen.getByTestId('offline-create'));
 
+    // offline users get the same first-run setup (user ruling): name is
+    // prefilled from the profile; finish it to reach home
+    await screen.findByTestId('screen-onboarding');
+    await waitFor(() => expect((screen.getByTestId('onboarding-name') as HTMLInputElement).value).toBe('Okkes'));
+    fireEvent.click(screen.getByTestId('onboarding-save'));
+    fireEvent.click(await screen.findByTestId('onboarding-lock-later'));
     expect(await screen.findByTestId('screen-home')).toBeTruthy();
     const identity = readSessionIdentity();
     expect(identity?.kind).toBe('offline');
@@ -81,6 +87,9 @@ describe('LoginScreen', () => {
     fireEvent.click(await screen.findByTestId('offline-continue'));
     fireEvent.change(await screen.findByTestId('offline-name'), { target: { value: 'Okkes' } });
     fireEvent.click(screen.getByTestId('offline-create'));
+    await screen.findByTestId('screen-onboarding');
+    fireEvent.click(screen.getByTestId('onboarding-save'));
+    fireEvent.click(await screen.findByTestId('onboarding-lock-later'));
     await screen.findByTestId('screen-home');
     const identity = readSessionIdentity();
     first.unmount();

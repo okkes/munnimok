@@ -7,6 +7,7 @@ import { identityDbName } from '@/db/schema';
 import type { StorageBackend } from '@/db/backend';
 import { destroyStorage, openStorageBackend } from '@/db/openStore';
 import { Repo } from '@/db/repo';
+import { setPredictionCountry } from '@/domain/predictCategory';
 import { getClock, getDeviceId } from '@/db/device';
 import { seedDemoIfNeeded } from '@/db/seed';
 import { ApiSyncBackend } from '@/sync/backend';
@@ -242,6 +243,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
           periodDay: 1,
           historyStartDate: isoMonthsAgo(DEFAULT_HISTORY_MONTHS),
         });
+        // offline users get the same first-run setup (user ruling)
+        await store.metaPut('needsOnboarding', true);
+      }
+      // country of use tunes the category predictor (onboarding stores it)
+      {
+        const profile = (await store.metaGet('profile'))?.value as { country?: string } | undefined;
+        setPredictionCountry(profile?.country);
       }
       if (engine) {
         const eng = engine;

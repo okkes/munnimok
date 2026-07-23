@@ -72,6 +72,10 @@ for (const V of VARIANTS) {
     await page.fill('[data-testid="offline-name"]', 'Okkes Offline');
     await shot(page, k('38-offline') + '--s1');
     await page.click('[data-testid="offline-create"]');
+    // offline first-run setup (name prefilled from the profile)
+    await page.waitForSelector('[data-testid="screen-onboarding"]');
+    await page.click('[data-testid="onboarding-save"]');
+    await page.click('[data-testid="onboarding-lock-later"]');
     await page.waitForSelector('[data-testid="tab-home"]');
     // personal space carries the profile name
     await gotoSpaces(page);

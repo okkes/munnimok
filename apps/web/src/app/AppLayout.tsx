@@ -101,11 +101,13 @@ function DemoBanner() {
 export function AppLayout() {
   const { t } = useLang();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  // onboarding is a focused flow — no navigation chrome (user request)
+  const hideNav = pathname.startsWith('/onboarding');
 
   return (
     <div className="flex h-full flex-row bg-bg text-ink">
       {/* Desktop sidebar */}
-      <nav className="hidden w-60 shrink-0 flex-col border-r border-line bg-bg-2 px-4 pt-6 pb-4 md:flex">
+      <nav className={`w-60 shrink-0 flex-col border-r border-line bg-bg-2 px-4 pt-6 pb-4 ${hideNav ? 'hidden' : 'hidden md:flex'}`}>
         <div className="flex items-center gap-2 px-2 pb-8">
           <Logo size={26} />
           <DemoBadge />
@@ -153,7 +155,7 @@ export function AppLayout() {
         {/* clamp: Android 3-button navigation reports up to ~48px inset,
             iOS home indicator 34px — honor them fully; the 56px ceiling
             guards against Safari's minimized-toolbar env() inflation */}
-        <nav className="flex shrink-0 items-stretch justify-around border-t border-line bg-bg pb-[clamp(0px,env(safe-area-inset-bottom),56px)] md:hidden">
+        <nav className={`shrink-0 items-stretch justify-around border-t border-line bg-bg pb-[clamp(0px,env(safe-area-inset-bottom),56px)] md:hidden ${hideNav ? 'hidden' : 'flex'}`}>
           {TABS.map((tab) => {
             const active = pathname.startsWith(tab.to);
             return (

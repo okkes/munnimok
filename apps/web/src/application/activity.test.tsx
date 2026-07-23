@@ -21,7 +21,7 @@ describe('activity history', () => {
     const db = new MunniDB('munni_act_test');
     const store = new DexieBackend(db);
     const repo = new Repo(store, new HlcClock('t'), { trackOutbox: false });
-    await store.metaPut('profile', { displayName: 'Okkes' });
+    await store.metaPut('profile', { name: 'Okkes' });
 
     await logActivity(store, repo, 's1', 'txAdd', 'Coffee');
     let rows = (await store.bySpace('activity', 's1')).filter((r) => r.deleted === 0);
