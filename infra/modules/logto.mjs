@@ -131,6 +131,25 @@ export async function applySocialConnectors(pairStack, { m2mId, m2mSecret }) {
   return { applied };
 }
 
+/**
+ * Sign-in screen branding (user request: munni instead of the Logto
+ * default): logo + brand color on the PAIR's sign-in experience. The
+ * logo is served by the stack's own web app — no extra hosting.
+ */
+export async function applyBranding(pairStack, { m2mId, m2mSecret }) {
+  const logtoUrl = pairStack.urls.logto;
+  const token = await mgmtToken(logtoUrl, m2mId, m2mSecret);
+  const logoUrl = `${pairStack.urls.web}/icon-512.png`;
+  await api(logtoUrl, token, '/sign-in-exp', {
+    method: 'PATCH',
+    body: JSON.stringify({
+      branding: { logoUrl, darkLogoUrl: logoUrl, favicon: `${pairStack.urls.web}/icon-192.png` },
+      color: { primaryColor: '#08372B', isDarkModeEnabled: true },
+    }),
+  });
+  return { logoUrl };
+}
+
 /** write the ids where CI reads them (variables) + m2m secret (secret) */
 export function writeBack(stack, apps) {
   const env = stack.githubEnvironment;

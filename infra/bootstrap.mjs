@@ -14,7 +14,7 @@
 import { execFileSync } from 'node:child_process';
 import { listStacks, loadStack, pairProd } from './modules/stack.mjs';
 import { ensureSecrets, verifySecrets } from './modules/secrets.mjs';
-import { applyApps, applySocialConnectors, writeBack } from './modules/logto.mjs';
+import { applyApps, applyBranding, applySocialConnectors, writeBack } from './modules/logto.mjs';
 import { renderStack } from './modules/render.mjs';
 import { renderRunbook } from './modules/runbook.mjs';
 import { applyReverseProxy } from './modules/dsm.mjs';
@@ -99,6 +99,8 @@ if (envSecret(infraEnv, 'IAC_LOGTO_INFRA_M2M_ID')) {
     if (stack.role === 'prod') {
       const social = await applySocialConnectors(pair, creds).catch((e) => ({ applied: [], error: e.message }));
       console.log(social.applied.length ? `  logto: social connectors applied [${social.applied}]` : `  logto: no social connector credentials in env — skipped${social.error ? ` (${social.error})` : ''}`);
+      const brand = await applyBranding(pair, creds).catch((e) => ({ error: e.message }));
+      console.log(brand.error ? `  logto: branding failed (${brand.error})` : `  logto: sign-in branded (munni logo + colors)`);
     }
   } else {
     console.log('  logto: infra credential exists in GitHub but not in this shell — export IAC_LOGTO_INFRA_M2M_ID/SECRET to apply apps locally (CI injects them)');
