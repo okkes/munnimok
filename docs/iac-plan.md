@@ -183,3 +183,25 @@ are host-agnostic and may run in parallel with them.
 - IAC5 cert automation (DNS-01 in CI, host upload)
 - IAC6 munni-iac-staging + munni-iac-prod end-to-end bootstrap +
   destroy + runbook
+
+## North star (user, 2026-07-23)
+
+The end state this plan serves: **anyone — you after a full wipe, or a
+friend — can roll out the entire ecosystem on their own hardware (NAS,
+Raspberry Pi, or other) from a clean checkout plus a handful of root
+credentials.** Consequences already folded in, plus two roadmap items:
+
+- **IAC7 — deploy/ folds into infra/**: today `deploy/` (hand-written
+  composes, render-env, apply.sh) and `infra/` (rendered stacks)
+  overlap. End state: infra renders EVERYTHING — the live prod/staging
+  stacks become stack files like the iac pair, deploy/ keeps only the
+  host-side poller. Migration happens after the munni-iac pair proves
+  the pipeline (§5), never before.
+- **IAC8 — shrink the manual list relentlessly**: every runbook item
+  is a bug with a priority. Current list and their fates: Logto OOBE
+  (scriptable via bootstrap once Logto ships headless OOBE — watch
+  upstream), GlitchTip org/DSN creation (has an API — automate, easy),
+  DSM firewall (probe-only, DSM API too fragile), DNS (registrar API
+  optional profile), store uploads (Apple/Google mandate the first
+  manual upload — irreducible).
+

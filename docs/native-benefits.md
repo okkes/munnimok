@@ -1,4 +1,9 @@
-# Benefiting from the native shell — plan (APPROVED, in delivery)
+# Benefiting from the native shell — plan (APPROVED, §2 remaining)
+
+> Audit 2026-07-23: §1 (biometric app lock) ✅, §3 (device language/
+> theme) ✅, §4 (store update prompt) ✅, §5 (haptics/camera/share) ✅.
+> The ONLY open slice is **§2 encryption at rest** — tracked with its
+> beta→production checklist in docs/encryption-at-rest-design.md.
 
 Progress 2026-07-16: **§3 DONE** (first-run device language+theme, and
 "Follow device" options in both pickers — the AUTO chip on Appearance,

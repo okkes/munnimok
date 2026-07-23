@@ -64,6 +64,11 @@ Principles the matrix encodes:
   AASA once no old build matters (`/gc-callback` and `/splits/join`
   stay — external-tap flows are where universal links shine).
 
+Carried over from the (retired) universal-links plan — one pending
+user action: the **app.munni.dev** Play app's own signing-key SHA-256
+(Play Console → App integrity) still needs adding to
+assetlinks.dev.json for Play-installed dev builds.
+
 Result: login never leaves the app and ends popup-free on both
 platforms; bank consent keeps full app-to-app capability; web keeps
 plain redirects everywhere.

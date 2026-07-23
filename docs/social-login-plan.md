@@ -1,6 +1,10 @@
 # Apple + Google sign-in through Logto — step-by-step
 
-Status: PLAN 2026-07-17. All app-side code already supports this —
+Status: UPDATED 2026-07-23 — for the IaC pair this is now CODE
+(infra/modules/logto.mjs applySocialConnectors; console steps in
+infra/README.md Part C). This document remains the manual guide for
+the EXISTING prod/staging Logto only, until prod adopts the IaC path.
+Originally: PLAN 2026-07-17. All app-side code already supports this —
 Logto renders whatever connectors are enabled, and our sign-in flow
 (system browser + `munni://auth-callback` deep link on native) is
 exactly the flow Google/Apple require. The remaining work is console

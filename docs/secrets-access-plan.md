@@ -1,6 +1,9 @@
 # Reading back generated secrets — plan
 
-Status: **DESIGN — awaiting approval** (2026-07-23). Problem (user):
+Status: **APPROVED with one ruling** (2026-07-23): the vault is PART
+OF THE STACK — it deploys inside the IaC prod twin's compose (one
+vault per pair, next to Logto/GlitchTip), never a centralized
+instance shared across deployments. Problem (user):
 bootstrap now GENERATES passwords straight into GitHub Environment
 secrets — which are **write-only**. There is no API to read a secret
 back, so "what's the pgadmin password?" currently has no answer except

@@ -69,3 +69,36 @@ rebuild started. The web/PWA keeps Dexie unchanged.
 
 E4 ships only after a dedicated security-review pass; E1 can start any
 time — it is a pure refactor that also pays down storage-layer debt.
+
+## Beta → production checklist (2026-07-23, user ask)
+
+Where it stands: E1+E2 shipped — the toggle works, SQLCipher opens,
+the ACTIVE pill proves which backend really loaded, open failures
+fall back to Dexie without bricking, and the disable path's stale-
+outbox wedge was fixed (op quarantine). What still separates beta
+from production:
+
+1. **Proof on device (you, ~15 min, next TestFlight build):**
+   a. Global settings → toggle Encrypted storage ON → app relaunches →
+      the row must read ON + **active**.
+   b. Use the app normally (add a tx, sync) — everything behaves.
+   c. Toggle OFF → relaunch → data intact, sync recovers (quarantine
+      fix) — the previous 400 wedge is the regression to watch.
+   d. iOS integrity spot-check: Settings → Privacy → none needed —
+      the real check is E3a below (we surface cipher proof in-app).
+2. **E3a — verifiable proof in-app (build next):** the settings row
+   gains the SQLCipher `PRAGMA cipher_version` output when active —
+   plugin-reported, not inferred; plus a one-tap "verify" that writes+
+   reads a probe row. Trust through evidence, not a flag.
+3. **E3b — default-ON migration for new native installs**: fresh
+   installs open SQLCipher directly (empty + resync is already the
+   migration); existing installs keep Dexie until they toggle (or a
+   later forced migration after §4 bakes).
+4. **E4 — security pass before flipping existing users**: passphrase
+   handling review (Keychain/Keystore access class, backup exclusion),
+   failure telemetry over one release cycle, and the offline-profile
+   warning (no server to resync from — their migration must COPY, not
+   wipe).
+
+Recommended order: you run (1) on the next build; I ship (2)+(3) in
+one slice; (4) gates the default flip for existing installs.
