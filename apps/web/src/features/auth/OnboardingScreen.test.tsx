@@ -30,7 +30,8 @@ describe('OnboardingScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('onboarding-country'));
     fireEvent.change(await screen.findByTestId('onboarding-country-search'), { target: { value: 'Turk' } });
     fireEvent.click(await screen.findByTestId('onboarding-country-TR'));
-    await waitFor(() => expect(screen.getByTestId('onboarding-country').textContent).toContain('TR'));
+    // the code badge became a flag icon (user request) — assert the flag
+    await waitFor(() => expect(screen.getByTestId('onboarding-country').querySelector('[data-testid="flag-tr"]')).toBeTruthy());
 
     // language stays changeable during onboarding (kept from login pick)
     fireEvent.click(screen.getByTestId('onboarding-lang-nl'));
