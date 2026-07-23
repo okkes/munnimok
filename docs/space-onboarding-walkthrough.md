@@ -1,6 +1,12 @@
 # Guided onboarding — spaces, accounts, first transaction
 
-Status: **DESIGN v2 — user-scaled scope** (2026-07-22). The original
+Status: **DESIGN v3 — realigned** (2026-07-23) with the shipped
+onboarding v2 (profile/lock only, bank step gone — THIS walkthrough
+owns account setup now), the three account tiers (manual accounts are
+SPACE-scoped, created on the space's own screen), and the approved
+account-entry chooser (docs/account-entry-flow-plan.md).
+
+Formerly: **DESIGN v2 — user-scaled scope** (2026-07-22). The original
 idea (create/delete a space mid-tour) grew into a full guided
 onboarding: the tutorial now IS how a fresh identity gets its first
 space, first financial account and first transaction. This version
@@ -11,25 +17,30 @@ merges the user's flow with my recommendations.
 Runs right after onboarding completes, driving the REAL screens with
 real writes — no sandbox, nothing to throw away afterwards.
 
-1. **Name your space.** "Everything in munni lives in a space." The
-   walkthrough opens the real create form with "Personal" prefilled;
-   the user can rename. This creates the DEFAULT space — there is no
-   pre-made one anymore, the tutorial owns first-space creation.
-2. **Create a financial account.** Walk to Global settings →
-   Financial accounts, create a manual account (cash or checking,
-   their pick, starting balance optional). Teaches: accounts are
-   GLOBAL, not inside a space.
-3. **Attach it.** Back on the space's Financial accounts screen, use
-   the new "+ attach" flow (pick the account, keep the default start
-   date). Teaches: a space sees only what you attach to it.
+1. **Meet your space.** "Everything in munni lives in a space." The
+   personal space already exists (onboarding v2 named it after you) —
+   the walkthrough shows it and offers a rename in the real settings
+   form. Teaches the concept without duplicating onboarding.
+2. **Create a financial account.** On THIS space's Financial
+   accounts screen, open the Add-account chooser and create a MANUAL
+   account (cash/checking, starting balance + currency). Teaches the
+   tier rule: manual accounts live inside a space; bank connections
+   and imports are global. (Tier v2 changed this step: manual
+   creation is space-scoped now, so no Global-settings detour.)
+3. **See the global side.** Point (never force) at the chooser's
+   Connect-a-bank and Import rows: "these live at your account level
+   and get ATTACHED to spaces — the spaceAccounts tour picks this up
+   any time via the ? button." Teaches attach vs create without
+   requiring a bank.
 4. **First transaction.** Add a groceries expense on that account
    (amount prefilled €12.34, editable). The review/home blocks light
    up with real data — the payoff moment.
 5. **A second space.** Create "Family" together, switch to it via the
-   Home avatar switcher, and see it EMPTY: the account isn't attached
-   here. The scoping lesson lands by observation, not explanation.
-   Offer (one tap, optional): attach the same account to Family too —
-   or leave it empty and just switch back.
+   Home avatar switcher, and see it EMPTY: the manual account belongs
+   to the first space. The scoping lesson lands by observation. Note
+   (tier rule): a MANUAL account cannot be attached elsewhere — the
+   walkthrough says exactly that and points at where a linked/imported
+   account WOULD be attached ("+ attach" on this screen).
 6. **Wrap.** Point at (never press) the danger zone: "Spaces and
    accounts can be removed here — munni always asks twice." Card
    summarizes what now exists: 2 spaces, 1 account, 1 transaction.
@@ -39,9 +50,9 @@ real writes — no sandbox, nothing to throw away afterwards.
 - Every step shows "Skip tour" (small, secondary). The FIRST skip tap
   gets one encouragement line ("2 minutes — it sets up your space and
   first account"); a second tap skips for real. Never nag twice.
-- Skip before step 1 completes → munni silently creates a default
-  "Personal" space (no account, no transaction) so the app is never
-  space-less. Skip later → whatever real data exists stays; nothing
+- Skip before step 1 completes → the default "Personal" space already
+  exists (onboarding v2 creates/renames it), so nothing is missing —
+  the tour simply ends. Skip later → whatever real data exists stays; nothing
   is rolled back (it's THEIR data — created through real forms).
 - Re-entry: Settings → Help → "Restart the welcome tour". Resume
   detection: completed steps (space exists, account exists, …) show
@@ -61,9 +72,8 @@ Extends today's point-and-tell tours with state-driven steps:
   when the environment reaches the state (space row exists, account
   row exists, tx row exists), not when Next is pressed. Card shows a
   live checklist tick per condition.
-- The walkthrough itself writes NOTHING except the silent default
-  space on early skip; everything else goes through the real forms
-  the user submits.
+- The walkthrough itself writes NOTHING — every change goes through
+  the real forms the user submits (the default space predates it).
 - Escape hatches: End tour keeps whatever exists; navigation away
   pauses the tour (resume card on Home); all copy EN/NL/TR.
 
@@ -80,6 +90,5 @@ Extends today's point-and-tell tours with state-driven steps:
   idempotency.
 
 Open items (small, my call unless you object): the encouragement copy
-tone, the prefilled amounts/names, and whether step 5's "attach to
-Family too" offer defaults to yes or no (I lean NO — the empty space
-is the lesson).
+tone and the prefilled amounts/names. (The old "attach to Family too"
+question is moot — manual accounts can't attach elsewhere by design.)

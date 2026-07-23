@@ -1,56 +1,84 @@
-# Display-currency conversion — plan
+# Multi-currency & display conversion — plan v2
 
-Status: **DESIGN — awaiting approval** (2026-07-23). User request: a
-VISUAL conversion layer — e.g. a euro account whose values render in
-dollars at that day's rate — now that accounts carry their own
-currency.
+Status: **DESIGN v2 — awaiting approval** (2026-07-23). v1 hung the
+display currency off the SPACE; user asked to re-examine that against
+what other finance apps do, and whether space-level currency was ever
+right.
 
-## Principle: raw money is never converted, only its rendering
+## What the field studies say
 
-Amounts stay stored in their account's currency forever (raw-data
-law). Conversion happens at the last moment, in the formatting layer,
-clearly marked as approximate. That keeps sync, budgets math and
-reconciliation exact, and makes the feature purely additive.
+- **YNAB**: one budget = ONE currency, hard. No conversion at all;
+  multi-currency users are told to run separate budgets. Praised for
+  predictability, cursed by every expat forum thread.
+- **Revolut / Wise**: accounts (pockets) each have a real currency; a
+  single user-level **home currency** renders totals, marked as
+  approximate. The canonical modern model.
+- **Spendee / Wallet by BudgetBakers**: per-wallet currency + one
+  user "main currency" for dashboards; conversions marked, rates
+  daily.
+- **Copilot / Monarch (US)**: effectively single-currency; where they
+  convert, it's at display level with a per-user setting.
+- **Actual Budget** (closest architectural cousin, local-first):
+  deliberately single-currency per budget file — they punted, and
+  it's their most-requested feature.
 
-## Design
+Pattern: **facts carry their own currency; ONE preference, owned by
+the PERSON (not the group), converts rendering; budgets/limits live
+in a stable ledger currency.**
 
-1. **Rates**: daily reference rates from the ECB via OUR api (`GET
-   /rates?date=` — server fetches/caches the ECB daily XML once,
-   ~30 currencies, no API key, free). Client caches every seen day in
-   a `rateCache` device table → offline shows the last known rate
-   with its date. Offline profiles that never see a server can enter
-   a manual rate per currency pair (stored locally) — honest fallback.
-2. **Setting**: per SPACE display currency (`space.displayCurrency`,
-   default = space currency). One toggle spot: space settings, next
-   to the existing currency picker: "Show amounts in …". Per-account
-   opt-out is deliberately NOT offered (mixed columns of silently
-   different currencies is how spreadsheets lie).
-3. **Rendering**: `fmtCents` grows a converting sibling
-   `fmtDisplay(cents, fromCurrency, ctx)` used by the money surfaces
-   (lists, cards, totals, budgets, charts). Converted values carry a
-   marker: `≈ $1,234.00` — the ≈ is the promise that raw data is
-   untouched. Detail screens show BOTH: original prominent, converted
-   beneath.
-4. **Totals across currencies** (the real win): the balance band and
-   overview totals currently mix currencies numerically when accounts
-   differ — with a display currency they convert-then-sum and mark
-   the result ≈. This quietly fixes a correctness wart.
-5. **Rate date**: conversions use the transaction's DATE rate when we
-   have it (historical accuracy for lists), today's rate for balances
-   and forecasts. The tooltip/detail line names the rate + date.
+## Verdict on our model
+
+Space currency was half right. Split its two jobs:
+
+1. **Ledger currency (space-level, KEEP).** Budgets, goals, period
+   totals and allocation envelopes need a stable unit shared by every
+   member — that is genuinely a property of the shared bookkeeping,
+   exactly like YNAB's budget currency. It stays `space.currency`,
+   renamed in the UI to "Ledger currency" with a line explaining what
+   it anchors.
+2. **Display currency (USER-level, NEW — this replaces v1's
+   space-level idea).** How amounts RENDER is a personal preference:
+   a Turkish family member viewing the shared NL space should see ₺
+   without changing anything for anyone else. It lives on the profile
+   (meta + `/me`, next to country), applies across all spaces and
+   surfaces, defaults to "as recorded" (no conversion).
+
+Why user-level beats space-level for display: conversion is a reading
+aid, not bookkeeping; space-level would force one member's preference
+on everyone and create edit wars; and every reference app (Revolut,
+Wise, Spendee) landed on person-level for exactly this reason.
+
+## Mechanics (unchanged from v1 where it was already right)
+
+- Raw amounts are NEVER converted in storage — display-layer only,
+  every converted value marked `≈` (user-approved; no extra banner).
+- **Rates**: `GET /rates?date=` on our API — server fetches/caches the
+  ECB daily reference XML (~30 currencies, no key). Client caches
+  every seen day (device table) → offline renders the last known rate;
+  offline profiles can pin a manual rate per pair.
+- **Which day's rate**: transaction rows convert at their transaction
+  date's rate (historically honest lists); balances, totals and
+  forecasts use the latest rate. Detail lines name rate + date.
+- **Cross-currency totals**: the balance band / overview convert-then-
+  sum into the display currency (or the ledger currency when display
+  is "as recorded") — fixing today's silent numeric mixing of
+  differing account currencies.
+- **Budgets/goals**: limits stay in the ledger currency; when a
+  display currency is active their AMOUNTS render converted (`≈`) but
+  progress percentages are computed in ledger terms, so a bar never
+  moves because the dollar moved (answers v1's open question — my
+  recommendation stands, awaiting your verdict).
 
 ## Slices
 
-- CD1 server /rates (ECB fetch + cache + history) + tests
-- CD2 client rate cache + `fmtDisplay` + manual-rate fallback for
-  offline profiles
-- CD3 space setting + money surfaces adoption (lists, band, overview,
-  budgets read-only views) with the ≈ marker + EN/NL/TR
-- CD4 charts/trends + detail dual display + guide/tour touch-ups
+- CD1 server /rates (ECB fetch + day cache + history) + tests
+- CD2 client rate cache + `fmtDisplay` + manual-rate fallback
+  (offline) + the ≈ marker
+- CD3 profile-level display-currency setting (onboarding untouched;
+  Profile + quick toggle in the balance band overflow) + adoption on
+  lists/band/overview + EN/NL/TR
+- CD4 budgets/goals/charts adoption + guide/tour touch-ups
+- CD5 space settings rename to "Ledger currency" + explainer line
 
-Open questions:
-1. OK that budgets keep their LIMITS in the space currency (only the
-   rendering converts)? Alternative — converting limits too — makes a
-   budget "move" day to day, which feels wrong to me.
-2. Is the ≈ marker enough, or do you want an explicit banner when a
-   space renders in a foreign display currency?
+Open question (the one from v1, restated): agree that budget LIMITS
+stay ledger-anchored with converted display only?

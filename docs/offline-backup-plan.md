@@ -84,11 +84,13 @@ and Global settings. Flow:
    feed-shaped/duplicate ids), queues everything through the outbox,
    and lets the normal engine push. Local-first means the UI is usable
    the whole time.
-4. **The warning** (user ask): before anything moves — "This turns your
-   offline profile into this signed-in account. There is no way back to
-   an offline profile with this data; your last backup is your undo."
-   A forced backup download IS the confirm button ("Save backup &
-   migrate").
+4. **The warning** (updated 2026-07-23 — online→offline now exists, so
+   "no way back" is no longer true): before anything moves — "This
+   turns your offline profile into this signed-in account. You can go
+   offline again later (docs/online-to-offline-plan.md), but this
+   exact offline profile is consumed by the migration; your backup is
+   the snapshot of this moment." A forced backup download stays the
+   confirm button ("Save backup & migrate").
 5. After success: the offline profile row is removed from the picker;
    the identity db is deleted after the outbox fully drains (verified
    server-side counts), not before.
