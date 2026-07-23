@@ -1,10 +1,12 @@
 import { reportError } from '@/lib/report';
 import type { StorageBackend } from '@/db/backend';
+import type { OutboxRow } from '@/db/types';
 import type { Repo } from '@/db/repo';
 import type { SyncBackend } from './backend';
 import { SyncHttpError } from './backend';
 
 const cursorKey = (spaceId: string) => `syncCursor_${spaceId}`;
+const parkedKey = (spaceId: string) => `parkedOps_${spaceId}`;
 
 /** ops per push request — the server caps at 1000, proxies cap body size */
 const PUSH_CHUNK = 300;
@@ -150,17 +152,65 @@ export class SyncEngine {
     }
   }
 
+  /**
+   * Push one chunk; a 400 means the server REJECTS an op in it — and
+   * endless retries wedge the space as "offline" until reinstall (user
+   * report: a stale outbox left behind by the encrypted-store switch).
+   * Bisect to the guilty op(s), QUARANTINE them in meta (preserved, not
+   * destroyed — a later server fix can still rescue them, like the
+   * topic-whitelist outage did) and report them, so everything queued
+   * behind keeps syncing.
+   */
+  private async pushChunk(spaceId: string, chunk: OutboxRow[]): Promise<void> {
+    try {
+      await this.backend.push(spaceId, this.clientId, chunk);
+      await this.store.outboxDelete(chunk.map((o) => o.opId));
+    } catch (err) {
+      if (!(err instanceof SyncHttpError) || err.status !== 400) throw err;
+      if (chunk.length === 1) {
+        const op = chunk[0];
+        const parked = ((await this.store.metaGet(parkedKey(spaceId)))?.value as OutboxRow[] | undefined) ?? [];
+        await this.store.metaPut(parkedKey(spaceId), [...parked, op].slice(-500));
+        await this.store.outboxDelete([op.opId]);
+        reportError('sync', new Error(`server rejected op (400), parked: entity=${op.entity} entityId=${String(op.entityId).slice(0, 140)} space=${spaceId}`));
+        return;
+      }
+      const mid = Math.ceil(chunk.length / 2);
+      await this.pushChunk(spaceId, chunk.slice(0, mid));
+      await this.pushChunk(spaceId, chunk.slice(mid));
+    }
+  }
+
+  /** once per app session, offer parked ops back to the server — a fixed
+   *  validator accepts them and the data catches up */
+  private readonly parkedRetried = new Set<string>();
+  private async retryParked(spaceId: string): Promise<void> {
+    if (this.parkedRetried.has(spaceId)) return;
+    this.parkedRetried.add(spaceId);
+    const parked = ((await this.store.metaGet(parkedKey(spaceId)))?.value as OutboxRow[] | undefined) ?? [];
+    if (!parked.length) return;
+    const stillParked: OutboxRow[] = [];
+    for (const op of parked) {
+      try {
+        await this.backend.push(spaceId, this.clientId, [op]);
+      } catch {
+        stillParked.push(op);
+      }
+    }
+    if (stillParked.length !== parked.length) await this.store.metaPut(parkedKey(spaceId), stillParked);
+  }
+
   async syncSpace(spaceId: string): Promise<void> {
     try {
       // 1. push queued local ops (ordered by HLC), CHUNKED: the server
       // caps a push at 1000 ops and proxies cap body size — a store-
       // receipt sync alone can queue hundreds of fat ops, and each chunk
       // that lands is deleted immediately so progress survives a failure
+      await this.retryParked(spaceId);
       const outbox = await this.store.outboxBySpace(spaceId);
       for (let i = 0; i < outbox.length; i += PUSH_CHUNK) {
         const chunk = outbox.slice(i, i + PUSH_CHUNK);
-        await this.backend.push(spaceId, this.clientId, chunk);
-        await this.store.outboxDelete(chunk.map((o) => o.opId));
+        await this.pushChunk(spaceId, chunk);
       }
 
       // 2. pull everything after our cursor and merge (own ops no-op)

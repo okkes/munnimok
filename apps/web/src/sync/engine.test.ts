@@ -50,9 +50,10 @@ let dbCounter = 0;
 
 function device(name: string, wall: () => number, server: InMemoryServer) {
   const db = new MunniDB(`engine_test_${name}_${dbCounter}`);
-  const repo = new Repo(new DexieBackend(db), new HlcClock(name, undefined, wall), { trackOutbox: true });
-  const engine = new SyncEngine(new DexieBackend(db), repo, server, name);
-  return { db, repo, engine };
+  const storeBackend = new DexieBackend(db);
+  const repo = new Repo(storeBackend, new HlcClock(name, undefined, wall), { trackOutbox: true });
+  const engine = new SyncEngine(storeBackend, repo, server, name);
+  return { db, repo, engine, storeBackend };
 }
 
 describe('SyncEngine', () => {
@@ -167,11 +168,33 @@ describe('SyncEngine', () => {
     await a.repo.upsert('space', 's-poison', 's-poison', { name: 'Bad', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
     await a.repo.upsert('space', 's2', 's2', { name: 'Good', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
     server.rejectedSpaces.add('s-poison');
-    await a.engine.syncAll(); // reports 'error' but must not abort the loop
+    await a.engine.syncAll();
     const s2Outbox = (await a.db.outbox.toArray()).filter((o) => o.spaceId === 's2');
     expect(s2Outbox).toHaveLength(0); // the healthy space drained
+    // rejected ops leave the OUTBOX (no eternal 400 wedge — user report:
+    // "offline" until reinstall) but are QUARANTINED in meta, never lost
     const poisonOutbox = (await a.db.outbox.toArray()).filter((o) => o.spaceId === 's-poison');
-    expect(poisonOutbox.length).toBeGreaterThan(0); // kept for retry, not dropped
+    expect(poisonOutbox).toHaveLength(0);
+    const parked = (await a.db.meta.get('parkedOps_s-poison'))?.value as unknown[];
+    expect(parked.length).toBeGreaterThan(0);
+  });
+
+  it('parked (400-rejected) ops are re-offered and catch up once the server accepts them', async () => {
+    let w = 1_000_000;
+    const a = device('devA', () => ++w, server);
+    dbs.push(a.db);
+    await a.repo.upsert('space', 's-heal', 's-heal', { name: 'Heals', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
+    server.rejectedSpaces.add('s-heal');
+    await a.engine.syncAll(); // parks the space row op
+    expect(((await a.db.meta.get('parkedOps_s-heal'))?.value as unknown[]).length).toBeGreaterThan(0);
+
+    // the server-side fix ships (validator accepts the op now); a fresh
+    // session (new engine instance) re-offers the parked ops exactly once
+    server.rejectedSpaces.delete('s-heal');
+    const revived = new SyncEngine(a.storeBackend, a.repo, server, 'devA');
+    await revived.syncAll();
+    expect((await a.db.meta.get('parkedOps_s-heal'))?.value as unknown[]).toHaveLength(0);
+    expect((await server.pull('s-heal', 0)).ops.some((op) => op.entity === 'space')).toBe(true);
   });
 
   it('fresh device discovers and pulls spaces it has never seen', async () => {
