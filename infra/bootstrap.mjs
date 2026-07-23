@@ -14,7 +14,7 @@
 import { execFileSync } from 'node:child_process';
 import { listStacks, loadStack, pairProd } from './modules/stack.mjs';
 import { ensureSecrets, verifySecrets } from './modules/secrets.mjs';
-import { applyApps, writeBack } from './modules/logto.mjs';
+import { applyApps, applySocialConnectors, writeBack } from './modules/logto.mjs';
 import { renderStack } from './modules/render.mjs';
 import { renderRunbook } from './modules/runbook.mjs';
 import { applyReverseProxy } from './modules/dsm.mjs';
@@ -96,6 +96,10 @@ if (envSecret(infraEnv, 'IAC_LOGTO_INFRA_M2M_ID')) {
     const apps = await applyApps(pair, stack, creds);
     writeBack(stack, apps);
     console.log(`  logto: apps upserted (web ${apps.web.id}, admin ${apps.admin.id}, native ${apps.native.id})`);
+    if (stack.role === 'prod') {
+      const social = await applySocialConnectors(pair, creds).catch((e) => ({ applied: [], error: e.message }));
+      console.log(social.applied.length ? `  logto: social connectors applied [${social.applied}]` : `  logto: no social connector credentials in env — skipped${social.error ? ` (${social.error})` : ''}`);
+    }
   } else {
     console.log('  logto: infra credential exists in GitHub but not in this shell — export IAC_LOGTO_INFRA_M2M_ID/SECRET to apply apps locally (CI injects them)');
   }

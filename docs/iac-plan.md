@@ -13,8 +13,8 @@ User rulings folded in (clarified 2026-07-22, IMPLEMENTATION STARTED):
   prod/staging stacks: own Logto instance, own databases, own
   containers, own domains.
 - **Twin stacks, iac naming + domains.** **munni-iac-prod** at
-  `munni-iac.okkes.synology.me` and **munni-iac-staging** at
-  `munni-iac-test.okkes.synology.me` (`-iac` in every hostname keeps
+  `munni-iac.<domain>` and **munni-iac-staging** at
+  `munni-iac-test.<domain>` (`-iac` in every hostname keeps
   the pair visually unmistakable). Both come up from the same
   `bootstrap` path; only the stack file differs. Prod adopts the
   pipeline only after BOTH twins pass.

@@ -57,8 +57,15 @@ jobs:
           # secrets — GITHUB_TOKEN cannot; the operator provides IAC_GH_PAT
           # (fine-grained: administration + secrets + variables, this repo)
           GH_TOKEN: ${{ secrets.IAC_GH_PAT || secrets.GITHUB_TOKEN }}
+          IAC_DOMAIN: ${{ secrets.IAC_DOMAIN }}
           IAC_LOGTO_INFRA_M2M_ID: ${{ secrets.IAC_LOGTO_INFRA_M2M_ID }}
           IAC_LOGTO_INFRA_M2M_SECRET: ${{ secrets.IAC_LOGTO_INFRA_M2M_SECRET }}
+          LOGTO_GOOGLE_CLIENT_ID: ${{ secrets.LOGTO_GOOGLE_CLIENT_ID }}
+          LOGTO_GOOGLE_CLIENT_SECRET: ${{ secrets.LOGTO_GOOGLE_CLIENT_SECRET }}
+          LOGTO_APPLE_CLIENT_ID: ${{ secrets.LOGTO_APPLE_CLIENT_ID }}
+          LOGTO_APPLE_TEAM_ID: ${{ secrets.LOGTO_APPLE_TEAM_ID }}
+          LOGTO_APPLE_KEY_ID: ${{ secrets.LOGTO_APPLE_KEY_ID }}
+          LOGTO_APPLE_PRIVATE_KEY: ${{ secrets.LOGTO_APPLE_PRIVATE_KEY }}
           SYNOLOGY_URL: ${{ secrets.SYNOLOGY_URL }}
           SYNOLOGY_USER: ${{ secrets.SYNOLOGY_USER }}
           SYNOLOGY_PASS: ${{ secrets.SYNOLOGY_PASS }}

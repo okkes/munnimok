@@ -9,7 +9,7 @@ export const config = {
   logto: {
     endpoint: (import.meta.env.VITE_LOGTO_ENDPOINT as string | undefined) ?? '',
     appId: (import.meta.env.VITE_LOGTO_APP_ID as string | undefined) ?? '',
-    /** API resource indicator, e.g. https://munni-api.okkes.synology.me */
+    /** API resource indicator, e.g. https://munni-api.<your-domain> */
     resource: (import.meta.env.VITE_LOGTO_RESOURCE as string | undefined) ?? '',
   },
   glitchtipDsn: (import.meta.env.VITE_GLITCHTIP_DSN as string | undefined) ?? '',

@@ -63,7 +63,7 @@ quotes — the template quotes it), `NAS_GOCARDLESS_SECRET_ID`,
 ## One-time NAS setup
 
 1. **Make the NAS reachable** over HTTPS (QuickConnect or a port-forward
-   to DSM, e.g. `https://okkes.synology.me:5001`).
+   to DSM, e.g. `https://<your-domain>:5001`).
 
 2. **Dedicated deploy account** (Control Panel → User): e.g. `github-deploy`,
    member of a group with **FileStation** access and write permission to
@@ -94,7 +94,7 @@ quotes — the template quotes it), `NAS_GOCARDLESS_SECRET_ID`,
 
 | Secret | Value |
 |---|---|
-| `SYNOLOGY_URL` | `https://okkes.synology.me:5001` (DSM HTTPS endpoint) |
+| `SYNOLOGY_URL` | `https://<your-domain>:5001` (DSM HTTPS endpoint) |
 | `SYNOLOGY_USER` | the `github-deploy` account |
 | `SYNOLOGY_PASS` | its password |
 | `SYNOLOGY_PATH` | `/docker/munni/published` (FileStation path, no volume prefix) |

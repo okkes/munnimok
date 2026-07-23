@@ -42,16 +42,16 @@ manual entry.
    Then create the *Project* in Container Manager pointing at
    `docker-compose.yml` in that folder.
 3. **Reverse proxy** (DSM → Login Portal → Advanced → Reverse Proxy), all
-   HTTPS with the `*.okkes.synology.me` wildcard certificate:
+   HTTPS with the `*.<your-domain>` wildcard certificate:
    | Source | Destination |
    |---|---|
-   | `munni.okkes.synology.me:443` | `localhost:8090` |
-   | `munni-api.okkes.synology.me:443` | `localhost:8091` |
-   | `logto.okkes.synology.me:443` | `localhost:3001` |
-   | `logto-admin.okkes.synology.me:443` | `localhost:3002` |
-   | `glitchtip.okkes.synology.me:443` | `localhost:8092` |
-   | `pgadmin.okkes.synology.me:443` | `localhost:8093` |
-   | `munni-admin.okkes.synology.me:443` | `localhost:8085` (LAN-only) |
+   | `munni.<your-domain>:443` | `localhost:8090` |
+   | `munni-api.<your-domain>:443` | `localhost:8091` |
+   | `logto.<your-domain>:443` | `localhost:3001` |
+   | `logto-admin.<your-domain>:443` | `localhost:3002` |
+   | `glitchtip.<your-domain>:443` | `localhost:8092` |
+   | `pgadmin.<your-domain>:443` | `localhost:8093` |
+   | `munni-admin.<your-domain>:443` | `localhost:8085` (LAN-only) |
 
    For `munni-api` add WebSocket support off, and for all of them enable
    HTTP/2. Restrict `logto-admin` **and `pgadmin`** to LAN in DSM firewall

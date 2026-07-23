@@ -9,7 +9,7 @@
   "channel": "dev",
   "githubEnvironment": "iac-staging",
 
-  "domain": "okkes.synology.me",
+  "domain": "${IAC_DOMAIN}",
   "hosts": {
     "web": "munni-iac-test",
     "api": "munni-iac-test-api",

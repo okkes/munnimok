@@ -85,6 +85,52 @@ export async function applyApps(pairStack, stack, { m2mId, m2mSecret }) {
   return out;
 }
 
+/**
+ * Social sign-in as code (user request): Google + Apple connectors on
+ * the PAIR's Logto, from operator-provided OAuth credentials in the
+ * environment. Absent credentials skip that provider — the runbook
+ * lists the one-time console steps to mint them.
+ */
+export async function applySocialConnectors(pairStack, { m2mId, m2mSecret }) {
+  const logtoUrl = pairStack.urls.logto;
+  const token = await mgmtToken(logtoUrl, m2mId, m2mSecret);
+  const wanted = [];
+  const { LOGTO_GOOGLE_CLIENT_ID, LOGTO_GOOGLE_CLIENT_SECRET, LOGTO_APPLE_CLIENT_ID, LOGTO_APPLE_TEAM_ID, LOGTO_APPLE_KEY_ID, LOGTO_APPLE_PRIVATE_KEY } = process.env;
+  if (LOGTO_GOOGLE_CLIENT_ID && LOGTO_GOOGLE_CLIENT_SECRET) {
+    wanted.push({
+      target: 'google',
+      connectorId: 'google-universal',
+      config: { clientId: LOGTO_GOOGLE_CLIENT_ID, clientSecret: LOGTO_GOOGLE_CLIENT_SECRET, scope: 'openid profile email' },
+    });
+  }
+  if (LOGTO_APPLE_CLIENT_ID && LOGTO_APPLE_TEAM_ID && LOGTO_APPLE_KEY_ID && LOGTO_APPLE_PRIVATE_KEY) {
+    wanted.push({
+      target: 'apple',
+      connectorId: 'apple-universal',
+      config: { clientId: LOGTO_APPLE_CLIENT_ID, teamId: LOGTO_APPLE_TEAM_ID, keyId: LOGTO_APPLE_KEY_ID, privateKey: LOGTO_APPLE_PRIVATE_KEY, scope: 'name email' },
+    });
+  }
+  if (!wanted.length) return { applied: [] };
+
+  const existing = await api(logtoUrl, token, '/connectors?page_size=100');
+  const applied = [];
+  for (const def of wanted) {
+    const match = existing.find((c) => c.target === def.target);
+    if (match) {
+      await api(logtoUrl, token, `/connectors/${match.id}`, { method: 'PATCH', body: JSON.stringify({ config: def.config }) });
+    } else {
+      await api(logtoUrl, token, '/connectors', { method: 'POST', body: JSON.stringify({ connectorId: def.connectorId, config: def.config, syncProfile: true }) });
+    }
+    applied.push(def.target);
+  }
+  // surface them on the sign-in screen
+  await api(logtoUrl, token, '/sign-in-exp', {
+    method: 'PATCH',
+    body: JSON.stringify({ socialSignInConnectorTargets: applied }),
+  });
+  return { applied };
+}
+
 /** write the ids where CI reads them (variables) + m2m secret (secret) */
 export function writeBack(stack, apps) {
   const env = stack.githubEnvironment;

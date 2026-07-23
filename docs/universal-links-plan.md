@@ -1,10 +1,10 @@
 # Universal links (associated domains) — plan
 
-> **Status 2026-07-20: per-channel isolation SHIPPED.** The combined AASA/assetlinks (both apps on both hosts) made iOS offer the PROD app for a munni-dev login — the entitlement also listed both domains in every build. Now: one association file per channel (`apple-app-site-association.{prod,dev}`, `assetlinks.{prod,dev}.json`) selected by an nginx `map $host`, the committed entitlement claims only the prod domain, and the iOS dev rebrand step swaps it to the test domain. Remaining user-side: staging environment variable `NATIVE_PUBLIC_ORIGIN` must be `https://munni-test.okkes.synology.me` (a prod value there sends dev logins to the prod host — the Android symptom), and the app.munni.dev Play signing SHA-256 is still pending.
+> **Status 2026-07-20: per-channel isolation SHIPPED.** The combined AASA/assetlinks (both apps on both hosts) made iOS offer the PROD app for a munni-dev login — the entitlement also listed both domains in every build. Now: one association file per channel (`apple-app-site-association.{prod,dev}`, `assetlinks.{prod,dev}.json`) selected by an nginx `map $host`, the committed entitlement claims only the prod domain, and the iOS dev rebrand step swaps it to the test domain. Remaining user-side: staging environment variable `NATIVE_PUBLIC_ORIGIN` must be `https://munni-test.<your-domain>` (a prod value there sends dev logins to the prod host — the Android symptom), and the app.munni.dev Play signing SHA-256 is still pending.
 
 > **Status 2026-07-18: UL1 + UL2 SHIPPED.** AASA + assetlinks.json are served by the web image (team id stamped at build from the APPLE_TEAM_ID secret), the iOS entitlement lists both domains for both apps, Android carries verified `autoVerify` intent filters per flavor, and `deepLinkToPath` routes the https forms. Scope was deliberately narrowed to **/gc-callback\*** and **/splits/join/\*** — sign-in/sign-out callbacks stay on the custom scheme so the app never hijacks a BROWSER user's OIDC exchange mid-flight. Split invites became real paths (`/splits/join/{token}`, the shell bounces them into the hash router) because OS link-matching cannot see `#` fragments. Remaining user-side: the **app.munni.dev** Play app's own signing-key SHA-256 (Play Console → the dev app → App integrity) still needs adding to assetlinks.json for Play-installed dev builds; the fingerprints for app.munni (signing + upload keys) are in. Verify on device after the next store builds: iOS Settings → Developer → Universal Links diagnostics / `adb shell pm get-app-links app.munni`.
 
-**Goal:** replace the custom-scheme hops (`munni://…`) with real `https://munni.okkes.synology.me/…` links that open the native app directly. This removes the iOS "Open in munni?" confirmation popup, upgrades Android to verified App Links, and makes every share/invite link (splits, GC callback) open the app when it is installed and the website when it is not.
+**Goal:** replace the custom-scheme hops (`munni://…`) with real `https://munni.<your-domain>/…` links that open the native app directly. This removes the iOS "Open in munni?" confirmation popup, upgrades Android to verified App Links, and makes every share/invite link (splits, GC callback) open the app when it is installed and the website when it is not.
 
 ## How it works
 
@@ -34,12 +34,12 @@
 ```
 
 - `assetlinks.json` listing package `app.munni` with **two** SHA-256 fingerprints: the upload key *and* the Play App Signing key (Play Console → Setup → App integrity).
-- Staging twins on `munni-test.okkes.synology.me` for `app.munni.dev`.
+- Staging twins on `munni-test.<your-domain>` for `app.munni.dev`.
 - nginx: a `location /.well-known/` block in the web image with explicit types; files templated at build time (TEAMID + package per channel via build args, same pattern as the other per-channel values).
 
 ### 2. App-side handling (UL2)
 
-- **iOS:** add the Associated Domains entitlement (`applinks:munni.okkes.synology.me`, staging adds `applinks:munni-test.okkes.synology.me`) to `App.entitlements`; the dev-channel rebrand step must swap the domain the same way it swaps the bundle id.
+- **iOS:** add the Associated Domains entitlement (`applinks:munni.<your-domain>`, staging adds `applinks:munni-test.<your-domain>`) to `App.entitlements`; the dev-channel rebrand step must swap the domain the same way it swaps the bundle id.
 - **Android:** `intent-filter` with `autoVerify` for the https host + the four path prefixes in `AndroidManifest.xml` (both flavors, host per flavor via `manifestPlaceholders`).
 - **Web app:** `deepLinkToPath()` learns the https form — `https://<our-host>/gc-callback?…` maps to the same in-app routes the `munni://` form does today. Capacitor's `App.appUrlOpen` already delivers universal links, so the existing listener keeps working. The custom scheme **stays** as a fallback (QR codes, mail clients that strip link associations, dev builds without domain verification).
 

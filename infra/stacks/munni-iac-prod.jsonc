@@ -9,7 +9,7 @@
   "channel": "latest", // image tag channel (same registry, same images)
   "githubEnvironment": "iac-production",
 
-  "domain": "okkes.synology.me",
+  "domain": "${IAC_DOMAIN}",
   "hosts": {
     "web": "munni-iac",
     "api": "munni-iac-api",

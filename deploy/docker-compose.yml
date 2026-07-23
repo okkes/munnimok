@@ -1,6 +1,6 @@
 # munni production stack for Synology NAS (Container Manager project).
 # Secrets come from ./env/.env.local (git-ignored) — copy env/.env.example.
-# DSM reverse proxy terminates HTTPS on *.okkes.synology.me and forwards:
+# DSM reverse proxy terminates HTTPS on *.<your-domain> and forwards:
 #   munni.        -> web:80
 #   munni-api.    -> api:8080
 #   munni-admin.  -> admin:80      (restrict to LAN in DSM firewall)

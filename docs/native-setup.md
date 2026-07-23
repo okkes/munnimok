@@ -10,7 +10,7 @@ later, Apple (step 5).
 `NATIVE_API_URL`, `NATIVE_PUBLIC_ORIGIN`, `NATIVE_LOGTO_ENDPOINT`,
 `NATIVE_LOGTO_APP_ID`, `NATIVE_LOGTO_RESOURCE` are set. The resource is
 the **API resource indicator** — the identifier of the API in Logto's
-"API resources" (here `https://munni-api.okkes.synology.me`), which the
+"API resources" (here `https://munni-api.<your-domain>`), which the
 app requests access tokens FOR. Same value the web build uses as
 `VITE_LOGTO_RESOURCE`.
 
@@ -190,9 +190,9 @@ Environments → `production` / `staging`): dev-branch jobs run in
 `staging`, master jobs in `production`, and a variable defined there
 overrides the repo-level variable of the SAME name (no more `_DEV`
 suffixes). To point dev builds at the staging stack, define in the
-staging environment: `NATIVE_API_URL=https://munni-test-api.okkes.synology.me`,
-`NATIVE_PUBLIC_ORIGIN=https://munni-test.okkes.synology.me`,
-`NATIVE_LOGTO_RESOURCE=https://munni-test-api.okkes.synology.me`.
+staging environment: `NATIVE_API_URL=https://munni-test-api.<your-domain>`,
+`NATIVE_PUBLIC_ORIGIN=https://munni-test.<your-domain>`,
+`NATIVE_LOGTO_RESOURCE=https://munni-test-api.<your-domain>`.
 When a name is absent there, the repo-level (production) value applies.
 
 Export compliance: answered once and encoded — Info.plist carries

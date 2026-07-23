@@ -26,6 +26,12 @@ export function listStacks() {
 export function loadStack(name) {
   const file = join(STACKS_DIR, `${name}.jsonc`);
   const cfg = JSON.parse(stripJsonc(readFileSync(file, 'utf8')));
+  // the NAS domain is treated as a SECRET (public repo): stack files
+  // carry a placeholder, the environment provides the value
+  if (cfg.domain === '${IAC_DOMAIN}') {
+    if (!process.env.IAC_DOMAIN) throw new Error('IAC_DOMAIN is not set — export it (locally) or add the repo secret (CI)');
+    cfg.domain = process.env.IAC_DOMAIN;
+  }
   if (cfg.stack !== name) throw new Error(`stack file ${file} declares "${cfg.stack}" — must match its filename`);
   const host = (key) => `${cfg.hosts[key]}.${cfg.domain}`;
   const url = (key) => `https://${host(key)}`;
