@@ -129,6 +129,12 @@ function useEncryptedStoreToggle() {
   return { encryptedOn, toggleEncrypted };
 }
 
+const PROBE_SUB_KEYS = {
+  idle: 'settings.encryptionVerifySub',
+  ok: 'settings.encryptionVerifyOk',
+  fail: 'settings.encryptionVerifyFail',
+} as const;
+
 /** Encrypted storage on the native shells (E3a/E3b): fresh installs
  *  default onto SQLCipher, and the row carries plugin-reported proof —
  *  the `PRAGMA cipher_version` answer plus a one-tap write/read probe.
@@ -180,7 +186,7 @@ function EncryptedStoreRow() {
           testId="settings-encryption-verify"
           icon="check-decagram-outline"
           title={t('settings.encryptionVerify')}
-          sub={probe === 'idle' ? t('settings.encryptionVerifySub') : t(probe === 'ok' ? 'settings.encryptionVerifyOk' : 'settings.encryptionVerifyFail')}
+          sub={t(PROBE_SUB_KEYS[probe])}
           chevron={false}
           onClick={() => void runProbe()}
         />

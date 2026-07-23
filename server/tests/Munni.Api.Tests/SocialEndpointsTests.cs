@@ -26,6 +26,15 @@ public class SocialEndpointsTests : IClassFixture<SyncApiFactory>
     }
 
     [Fact]
+    public async Task Geo_answers_null_country_for_local_or_unknown_addresses()
+    {
+        // TestServer has no remote IP → the lookup must fail OPEN to null
+        var client = ClientFor($"geo-{Guid.NewGuid():N}");
+        var res = await client.GetFromJsonAsync<JsonElement>("/geo");
+        Assert.Equal(JsonValueKind.Null, res.GetProperty("country").ValueKind);
+    }
+
+    [Fact]
     public async Task DisplayCurrency_sets_uppercases_and_clears_with_the_empty_sentinel()
     {
         var client = ClientFor($"fx-{Guid.NewGuid():N}");

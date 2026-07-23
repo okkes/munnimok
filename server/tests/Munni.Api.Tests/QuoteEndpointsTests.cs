@@ -93,6 +93,18 @@ public class QuoteEndpointsTests : IClassFixture<QuotesApiFactory>
     }
 
     [Fact]
+    public async Task Search_maps_stock_and_coin_hits_and_rejects_short_queries()
+    {
+        Assert.Equal(HttpStatusCode.BadRequest, (await Client().GetAsync("/quotes/search?q=a")).StatusCode);
+        var payload = await Client().GetFromJsonAsync<JsonElement>("/quotes/search?q=asml");
+        var stock = Assert.Single(payload.GetProperty("stocks").EnumerateArray()); // the OPTION hit is filtered out
+        Assert.Equal("ASML.AS", stock.GetProperty("symbol").GetString());
+        Assert.Equal("Amsterdam", stock.GetProperty("exchange").GetString());
+        var coin = Assert.Single(payload.GetProperty("coins").EnumerateArray());
+        Assert.Equal("bitcoin", coin.GetProperty("id").GetString());
+    }
+
+    [Fact]
     public async Task Quotes_require_auth_and_at_least_one_key()
     {
         Assert.Equal(HttpStatusCode.Unauthorized, (await _factory.CreateClient().GetAsync("/quotes?symbols=ASML.AS")).StatusCode);
