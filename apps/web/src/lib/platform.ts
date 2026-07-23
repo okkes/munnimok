@@ -79,8 +79,11 @@ export function deepLinkToPath(url: string): string | null {
     return `/${path}${match[2] ?? ''}`;
   }
   // universal links (UL2): the bank's https redirect / a split invite
-  // opens the app directly — same in-app routes as the scheme form
-  if (/^https:\/\/[^/]*\bokkes\.synology\.me\//.test(url)) {
+  // opens the app directly — same in-app routes as the scheme form.
+  // No host pin (the domain is a secret in this public repo): the OS
+  // only routes universal links for the entitlement domains anyway, so
+  // the PATH allowlist below is the real gate.
+  if (/^https:\/\//.test(url)) {
     try {
       const parsed = new URL(url);
       if (UNIVERSAL_LINK_PATHS.some((prefix) => parsed.pathname.startsWith(prefix))) {
