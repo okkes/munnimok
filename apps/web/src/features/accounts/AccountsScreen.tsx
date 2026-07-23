@@ -175,6 +175,8 @@ export function AccountsScreen() {
   const [importPreview, setImportPreview] = useState<ParsedStatement[] | null>(null);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [importError, setImportError] = useState(false);
+  // export-steps hint per format before the file dialog (user request)
+  const [importPickOpen, setImportPickOpen] = useState(false);
   const identity = useSession((s) => s.identity);
 
   // GoCardless accounts arrive via sync, so there is no local "account
@@ -292,7 +294,7 @@ export function AccountsScreen() {
             <IconButton
               label={t('import.statement')}
               testId="accounts-import"
-              onClick={() => fileRef.current?.click()}
+              onClick={() => setImportPickOpen(true)}
             >
               <Icon name="file-upload-outline" size={21} />
             </IconButton>
@@ -346,13 +348,41 @@ export function AccountsScreen() {
         canEdit={!!attaching && !global?.sharedWithMe.includes(attaching)}
       />
 
+      {/* which export is this? each row explains how to get the file */}
+      <Sheet open={importPickOpen} onOpenChange={setImportPickOpen} title={t('import.pickFormat')} size="form">
+        <div className="flex flex-col gap-2 pt-1" data-testid="import-format-pick">
+          {(
+            [
+              ['import-format-camt', 'file-xml-box', 'import.formatCamt', 'import.formatCamtSub'],
+              ['import-format-ing', 'file-delimited-outline', 'import.formatIng', 'import.formatIngSub'],
+            ] as const
+          ).map(([testId, icon, titleKey, subKey]) => (
+            <button
+              key={testId}
+              data-testid={testId}
+              onClick={() => {
+                setImportPickOpen(false);
+                fileRef.current?.click();
+              }}
+              className="m-tap flex items-start gap-3 rounded-card border border-line bg-surface p-4 text-left"
+            >
+              <Icon name={icon} size={22} color="var(--m-accent)" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-[14px] font-semibold text-ink">{t(titleKey)}</span>
+                <span className="block pt-0.5 text-[12px] leading-snug text-ink-3">{t(subKey)}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      </Sheet>
+
       {/* AE1: the ONE Add-account chooser (intent-routed) */}
       <AddAccountChooser
         open={addOpen}
         onOpenChange={setAddOpen}
         gcAvailable={gcAvailable}
         onConnect={() => setConnectOpen(true)}
-        onImport={() => fileRef.current?.click()}
+        onImport={() => setImportPickOpen(true)}
       />
 
       <BankConnectSheet open={connectOpen} onOpenChange={setConnectOpen} />

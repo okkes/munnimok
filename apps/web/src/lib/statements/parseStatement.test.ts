@@ -123,3 +123,83 @@ describe('parseStatement — detection', () => {
     expect(() => parseStatement('<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.02"></Document>')).toThrow(); // camt validates deeper
   });
 });
+
+describe('parseStatement — English variants + balance files (real 2026 exports)', () => {
+  const enCurrent = [
+    '"Date";"Name / Description";"Account";"Counterparty";"Code";"Debit/credit";"Amount (EUR)";"Transaction type";"Notifications";"Resulting balance";"Tag"',
+    '"20260722";"123 3D B.V.";"NL74INGB0001029507";"NL70RABO0115600000";"IW";"Debit";"9,75";"iDEAL | Wero";"Name: 123 3D B.V.";"-1922,25";""',
+    '"20260720";"OHRA";"NL74INGB0001029507";"NL98INGB0002712510";"VZ";"Credit";"3,40";"Batch payment";"Name: OHRA";"-1912,50";""',
+  ].join('
+');
+
+  it('parses the ENGLISH current-account export identically to the Dutch one', () => {
+    const [stmt] = parseStatement(enCurrent);
+    expect(stmt.accountType).toBe('checking');
+    expect(stmt.iban).toBe('NL74INGB0001029507');
+    expect(stmt.entries).toHaveLength(2);
+    expect(stmt.entries.find((e) => e.counterpartyName === '123 3D B.V.')!.amountCents).toBe(-975);
+    expect(stmt.entries.find((e) => e.counterpartyName === 'OHRA')!.amountCents).toBe(340);
+    expect(stmt.closingBalanceCents).toBe(-192225);
+    expect(stmt.balanceAsOf).toBe('2026-07-22');
+  });
+
+  it('NL and EN twins of the same rows produce IDENTICAL dedupe refs', () => {
+    // same facts, different header language — re-importing the other
+    // language must skip everything
+    const nl = [
+      '"Datum";"Naam / Omschrijving";"Rekening";"Tegenrekening";"Code";"Af Bij";"Bedrag (EUR)";"Mutatiesoort";"Mededelingen";"Saldo na mutatie";"Tag"',
+      '"20260722";"123 3D B.V.";"NL74INGB0001029507";"NL70RABO0115600000";"IW";"Af";"9,75";"iDEAL | Wero";"Name: 123 3D B.V.";"-1922,25";""',
+    ].join('
+');
+    const en = [
+      '"Date";"Name / Description";"Account";"Counterparty";"Code";"Debit/credit";"Amount (EUR)";"Transaction type";"Notifications";"Resulting balance";"Tag"',
+      '"20260722";"123 3D B.V.";"NL74INGB0001029507";"NL70RABO0115600000";"IW";"Debit";"9,75";"iDEAL | Wero";"Name: 123 3D B.V.";"-1922,25";""',
+    ].join('
+');
+    expect(parseStatement(nl)[0].entries[0].ref).toBe(parseStatement(en)[0].entries[0].ref);
+  });
+
+  it('parses the ENGLISH credit card (DOT decimals) and the Dutch twin the same', () => {
+    const en = [
+      '"Date";"Name / Description";"Transaction type";"Debit/credit";"Amount (EUR)";"Notifications";"Card number"',
+      '"2026-07-22";"Albert Heijn 1842";"Debit";"Debit";"26.44";"Transaction date: 21/07/2026";"5248 **** **** 7201"',
+    ].join('
+');
+    const [stmt] = parseStatement(en, 'CreditCard_210034322508_x.csv');
+    expect(stmt.accountType).toBe('credit');
+    expect(stmt.iban).toBe('52487201');
+    expect(stmt.entries[0].amountCents).toBe(-2644);
+  });
+
+  it('balance-history exports (both kinds) import as zero-entry balance updates', () => {
+    const current = [
+      '"Date";"Account";"Currency";"Book balance";"Value balance"',
+      '"2026-07-22";"NL74INGB0001029507";"EUR";"-1922,25";"-1922,25"',
+      '"2026-07-21";"NL74INGB0001029507";"EUR";"-1912,50";"-1912,50"',
+    ].join('
+');
+    const [cur] = parseStatement(current);
+    expect(cur.entries).toHaveLength(0);
+    expect(cur.accountType).toBe('checking');
+    expect(cur.closingBalanceCents).toBe(-192225);
+    expect(cur.balanceAsOf).toBe('2026-07-22');
+
+    const savings = [
+      '"Datum";"Rekening";"Rekening naam";"Valuta";"Boeksaldo"',
+      '"2026-07-22";"V28681505";"Oranje Spaarrekening";"EUR";"9,20"',
+    ].join('
+');
+    const [sav] = parseStatement(savings);
+    expect(sav.accountType).toBe('savings');
+    expect(sav.accountName).toBe('Oranje Spaarrekening');
+    expect(sav.closingBalanceCents).toBe(920);
+  });
+
+  it('a header-only export parses to an importable-nothing statement', () => {
+    const empty = '"Date";"Description";"Account";"Account name";"Counterparty";"Debit/credit";"Amount";"Currency";"Transaction type";"Notifications";"Resulting balance"';
+    const [stmt] = parseStatement(empty);
+    expect(stmt.entries).toHaveLength(0);
+    expect(stmt.closingBalanceCents).toBeNull();
+    expect(stmt.iban).toBe('');
+  });
+});
