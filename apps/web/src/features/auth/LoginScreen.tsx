@@ -8,8 +8,9 @@ import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Flag, langFlagCode } from '@/ui/Flag';
 import { Logo } from '@/ui/Logo';
+import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { callbackUri } from './logto';
-import { addOfflineProfile, listOfflineProfiles } from './offlineProfiles';
+import { addOfflineProfile, deleteOfflineProfile, listOfflineProfiles } from './offlineProfiles';
 import leafUrl from '@/assets/leaf.png';
 import loginBgUrl from '@/assets/login-bg.png';
 // re-encoded from the provided PNG (2.2MB) — the login screen is precached
@@ -123,7 +124,18 @@ export function LoginScreen() {
   // back button — manual pushState + popstate, since /login is one route
   const [offlineView, setOfflineView] = useState<'intro' | 'profiles' | null>(null);
   const [profileName, setProfileName] = useState('');
-  const profiles = listOfflineProfiles();
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [profilesVersion, setProfilesVersion] = useState(0);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const profiles = listOfflineProfiles(); // re-read after a delete (profilesVersion)
+  void profilesVersion;
+
+  const removeProfile = async () => {
+    if (!deleteTarget) return;
+    await deleteOfflineProfile(deleteTarget.id);
+    setDeleteTarget(null);
+    setProfilesVersion((v) => v + 1);
+  };
 
   useEffect(() => {
     if (!offlineView) return;
@@ -249,16 +261,26 @@ export function LoginScreen() {
           {profiles.length > 0 ? (
             <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="offline-profiles">
               {profiles.map((p) => (
-                <button
-                  key={p.id}
-                  data-testid={`offline-profile-${p.id}`}
-                  onClick={() => enterOffline(p.id)}
-                  className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
-                >
-                  <Icon name="account-lock-outline" size={19} color="var(--m-ink-3)" />
-                  <span className="flex-1 truncate">{p.name}</span>
-                  <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
-                </button>
+                <div key={p.id} className="flex items-center">
+                  <button
+                    data-testid={`offline-profile-${p.id}`}
+                    onClick={() => enterOffline(p.id)}
+                    className="m-tap flex min-w-0 flex-1 items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+                  >
+                    <Icon name="account-lock-outline" size={19} color="var(--m-ink-3)" />
+                    <span className="flex-1 truncate">{p.name}</span>
+                    <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
+                  </button>
+                  {/* delete the profile + ALL its data (user request) */}
+                  <button
+                    aria-label={t('action.delete')}
+                    data-testid={`offline-delete-${p.id}`}
+                    onClick={() => setDeleteTarget({ id: p.id, name: p.name })}
+                    className="m-tap flex h-10 w-10 shrink-0 items-center justify-center border-none bg-transparent pr-2 text-ink-4"
+                  >
+                    <Icon name="trash-can-outline" size={17} />
+                  </button>
+                </div>
               ))}
             </div>
           ) : (
@@ -275,6 +297,14 @@ export function LoginScreen() {
               </Button>
             </div>
           )}
+          <DangerConfirmSheet
+            open={deleteTarget !== null}
+            onOpenChange={(open) => !open && setDeleteTarget(null)}
+            title={t('offline.deleteTitle')}
+            body={t('offline.deleteBody', { name: deleteTarget?.name ?? '' })}
+            onConfirm={() => void removeProfile()}
+            testId="offline-delete"
+          />
         </div>
       </div>
     );

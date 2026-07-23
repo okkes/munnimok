@@ -368,6 +368,8 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'offline.lose1': 'Geen bankkoppelingen — transacties typ je zelf in of importeer je uit bestanden',
   'offline.lose2': 'Geen synchronisatie of cloudback-up: je gegevens leven alleen op dit apparaat',
   'offline.lose3': 'Geen gedeelde ruimtes of kosten delen met vrienden en familie',
+  'offline.deleteTitle': 'Dit profiel verwijderen?',
+  'offline.deleteBody': 'Alles wat {name} op dit apparaat bijhield wordt definitief gewist — rekeningen, transacties, budgetten, alles. Er is geen cloudkopie en geen ongedaan maken.',
   'offline.chooseProfile': 'Kies of maak een profiel',
   'offline.loginBtn': 'Offline modus',
   'offline.infoTitle': 'Offline modus',

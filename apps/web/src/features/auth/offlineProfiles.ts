@@ -47,3 +47,17 @@ export function updateOfflineProfile(id: string, changes: Pick<Partial<OfflinePr
   const updated = listOfflineProfiles().map((p) => (p.id === id ? { ...p, ...changes } : p));
   localStorage.setItem(KEY, JSON.stringify(updated));
 }
+
+/**
+ * Delete the profile AND everything it owns (user request — with one
+ * profile per device, reinstalling was the only way out): the identity
+ * database wherever it lives (Dexie or SQLCipher), the app-lock config
+ * and the registry row. Irreversible by design.
+ */
+export async function deleteOfflineProfile(id: string): Promise<void> {
+  const { destroyStorage } = await import('@/db/openStore');
+  const { identityDbName } = await import('@/db/schema');
+  await destroyStorage(identityDbName(`offline_${id}`)).catch(() => undefined);
+  localStorage.removeItem(`munni_lock_offline_${id}`);
+  localStorage.setItem(KEY, JSON.stringify(listOfflineProfiles().filter((p) => p.id !== id)));
+}
