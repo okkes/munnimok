@@ -237,16 +237,31 @@ export class SqlStorageBackend implements StorageBackend {
     this.emit();
   }
 
+  /** transactions are serialized: SQL BEGIN is connection-wide, and two
+   *  concurrent Repo writes (e.g. a manual tx + its balance delta, both
+   *  fired without awaiting) raced into "cannot start a transaction
+   *  within a transaction" on SQLCipher (user GlitchTip report). Dexie
+   *  schedules overlapping transactions itself; here the queue does. */
+  private txQueue: Promise<void> = Promise.resolve();
+
   async transact(_tables: TableScope[], fn: () => Promise<void>) {
-    // SQL transactions are connection-wide — the table list is a Dexie
-    // requirement the SQL engine doesn't share
-    this.inTransaction = true;
-    try {
-      await this.sql.transaction(fn);
-    } finally {
-      this.inTransaction = false;
-    }
-    this.emit();
+    // the table list is a Dexie requirement the SQL engine doesn't share
+    const run = async () => {
+      this.inTransaction = true;
+      try {
+        await this.sql.transaction(fn);
+      } finally {
+        this.inTransaction = false;
+      }
+      this.emit();
+    };
+    const next = this.txQueue.then(run, run);
+    // keep the chain alive when a transaction rejects
+    this.txQueue = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
   }
 
   subscribe<T>(query: () => Promise<T>, onNext: (value: T) => void, onError?: (err: unknown) => void) {

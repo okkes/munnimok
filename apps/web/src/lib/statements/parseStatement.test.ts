@@ -129,8 +129,7 @@ describe('parseStatement — English variants + balance files (real 2026 exports
     '"Date";"Name / Description";"Account";"Counterparty";"Code";"Debit/credit";"Amount (EUR)";"Transaction type";"Notifications";"Resulting balance";"Tag"',
     '"20260722";"123 3D B.V.";"NL74INGB0001029507";"NL70RABO0115600000";"IW";"Debit";"9,75";"iDEAL | Wero";"Name: 123 3D B.V.";"-1922,25";""',
     '"20260720";"OHRA";"NL74INGB0001029507";"NL98INGB0002712510";"VZ";"Credit";"3,40";"Batch payment";"Name: OHRA";"-1912,50";""',
-  ].join('
-');
+  ].join(String.fromCharCode(10));
 
   it('parses the ENGLISH current-account export identically to the Dutch one', () => {
     const [stmt] = parseStatement(enCurrent);
@@ -149,13 +148,11 @@ describe('parseStatement — English variants + balance files (real 2026 exports
     const nl = [
       '"Datum";"Naam / Omschrijving";"Rekening";"Tegenrekening";"Code";"Af Bij";"Bedrag (EUR)";"Mutatiesoort";"Mededelingen";"Saldo na mutatie";"Tag"',
       '"20260722";"123 3D B.V.";"NL74INGB0001029507";"NL70RABO0115600000";"IW";"Af";"9,75";"iDEAL | Wero";"Name: 123 3D B.V.";"-1922,25";""',
-    ].join('
-');
+    ].join(String.fromCharCode(10));
     const en = [
       '"Date";"Name / Description";"Account";"Counterparty";"Code";"Debit/credit";"Amount (EUR)";"Transaction type";"Notifications";"Resulting balance";"Tag"',
       '"20260722";"123 3D B.V.";"NL74INGB0001029507";"NL70RABO0115600000";"IW";"Debit";"9,75";"iDEAL | Wero";"Name: 123 3D B.V.";"-1922,25";""',
-    ].join('
-');
+    ].join(String.fromCharCode(10));
     expect(parseStatement(nl)[0].entries[0].ref).toBe(parseStatement(en)[0].entries[0].ref);
   });
 
@@ -163,8 +160,7 @@ describe('parseStatement — English variants + balance files (real 2026 exports
     const en = [
       '"Date";"Name / Description";"Transaction type";"Debit/credit";"Amount (EUR)";"Notifications";"Card number"',
       '"2026-07-22";"Albert Heijn 1842";"Debit";"Debit";"26.44";"Transaction date: 21/07/2026";"5248 **** **** 7201"',
-    ].join('
-');
+    ].join(String.fromCharCode(10));
     const [stmt] = parseStatement(en, 'CreditCard_210034322508_x.csv');
     expect(stmt.accountType).toBe('credit');
     expect(stmt.iban).toBe('52487201');
@@ -176,8 +172,7 @@ describe('parseStatement — English variants + balance files (real 2026 exports
       '"Date";"Account";"Currency";"Book balance";"Value balance"',
       '"2026-07-22";"NL74INGB0001029507";"EUR";"-1922,25";"-1922,25"',
       '"2026-07-21";"NL74INGB0001029507";"EUR";"-1912,50";"-1912,50"',
-    ].join('
-');
+    ].join(String.fromCharCode(10));
     const [cur] = parseStatement(current);
     expect(cur.entries).toHaveLength(0);
     expect(cur.accountType).toBe('checking');
@@ -187,8 +182,7 @@ describe('parseStatement — English variants + balance files (real 2026 exports
     const savings = [
       '"Datum";"Rekening";"Rekening naam";"Valuta";"Boeksaldo"',
       '"2026-07-22";"V28681505";"Oranje Spaarrekening";"EUR";"9,20"',
-    ].join('
-');
+    ].join(String.fromCharCode(10));
     const [sav] = parseStatement(savings);
     expect(sav.accountType).toBe('savings');
     expect(sav.accountName).toBe('Oranje Spaarrekening');
