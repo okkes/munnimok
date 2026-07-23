@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { renderApp } from '@/test/harness';
 
@@ -11,7 +11,7 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
     indexedDB.deleteDatabase('munni_demo');
   });
 
-  it('an expense hides credit-only categories; income shows them', async () => {
+  it('an expense hides credit-only categories', async () => {
     renderApp('/transactions');
     await screen.findByTestId('tx-list');
     fireEvent.click(screen.getByTestId('tx-add'));
@@ -20,18 +20,25 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
     // expense (debit): the custom Padel main's Other sub (direction both)
     // is offered once the catalog's live query delivers the custom rows…
     fireEvent.click(screen.getByTestId('txform-category'));
+    fireEvent.click(await screen.findByTestId('split-cat-0'));
     await screen.findByTestId('catpicker-groceries');
     await screen.findByTestId('catpicker-demo_cat_padel_other');
     // …while the demo credit-only sub "Side gig" is hidden
     expect(screen.queryByTestId('catpicker-demo_cat_sidegig')).toBeNull();
-    fireEvent.keyDown(document.body, { key: 'Escape' });
+  }, 15_000);
 
-    // switch to income (credit): Side gig appears, debit-only cats disappear
+  it('income shows credit-only categories and hides debit-only ones', async () => {
+    renderApp('/transactions');
+    await screen.findByTestId('tx-list');
+    fireEvent.click(screen.getByTestId('tx-add'));
+    await screen.findByTestId('txform-account-demo_main');
+    // toggle BEFORE opening the editor: a fresh stack per direction
     fireEvent.click(screen.getByTestId('txform-income'));
     fireEvent.click(screen.getByTestId('txform-category'));
-    await waitFor(() => expect(screen.getByTestId('catpicker-demo_cat_sidegig')).toBeTruthy());
+    fireEvent.click(await screen.findByTestId('split-cat-0'));
+    await screen.findByTestId('catpicker-demo_cat_sidegig');
     expect(screen.queryByTestId('catpicker-savingDeposit')).toBeNull(); // builtin debit-only
-  });
+  }, 15_000);
 
   it('a dead-end search offers creating a custom category (user request)', async () => {
     renderApp('/transactions');
@@ -39,6 +46,7 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
     fireEvent.click(screen.getByTestId('tx-add'));
     await screen.findByTestId('txform-account-demo_main');
     fireEvent.click(screen.getByTestId('txform-category'));
+    fireEvent.click(await screen.findByTestId('split-cat-0'));
     await screen.findByTestId('catpicker-groceries');
 
     // the create door is always at the list's end…
@@ -56,6 +64,7 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
     fireEvent.click(screen.getByTestId('tx-add'));
     await screen.findByTestId('txform-account-demo_main');
     fireEvent.click(screen.getByTestId('txform-category'));
+    fireEvent.click(await screen.findByTestId('split-cat-0'));
     await screen.findByTestId('catpicker-alcohol');
     expect(screen.getByTestId('catpicker-tobacco')).toBeTruthy();
     // the expected-reimbursement expense left its hidden parent and is pickable

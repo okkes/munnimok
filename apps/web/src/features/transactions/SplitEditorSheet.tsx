@@ -58,6 +58,7 @@ export function SplitEditorSheet({
   onApply,
   seedSingle = false,
   seedCatId,
+  direction,
   onApplySingle,
   reason,
   header,
@@ -77,6 +78,10 @@ export function SplitEditorSheet({
   /** seedSingle: the CURRENT category (review keeps it on the draft, not
    *  the raw tx — seeding from tx.catId showed Uncategorized, user bug) */
   seedCatId?: string;
+  /** money direction override: the ADD form knows expense/income before
+   *  any amount exists (amountCents 0 read as credit and hid expense
+   *  categories in the picker) */
+  direction?: 'debit' | 'credit';
   /** seedSingle mode: saving with one row reports the plain category */
   onApplySingle?: (catId: string) => void;
   /** why the current category was suggested (review card) — shown inline */
@@ -335,8 +340,11 @@ export function SplitEditorSheet({
         onOpenChange={(next) => {
           if (!next) setPickerFor(null);
         }}
-        direction={tx.amountCents < 0 ? 'debit' : 'credit'}
-        txType={txType ?? tx.txType}
+        direction={direction ?? (tx.amountCents < 0 ? 'debit' : 'credit')}
+        // add-form mode (direction given): filter by direction only — the
+        // fallback type follows the category and would hide the other
+        // direction's categories before one is picked (old form behavior)
+        txType={direction ? undefined : (txType ?? tx.txType)}
         selectedId={pickerFor === null ? undefined : rows[pickerFor]?.catId}
         onPick={(catId) => {
           if (pickerFor !== null) setRows((r) => r.map((x, j) => (j === pickerFor ? { ...x, catId } : x)));

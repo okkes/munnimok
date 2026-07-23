@@ -426,6 +426,7 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
         txType={effectiveType}
         seedSingle
         seedCatId={catId}
+        direction={isExpense ? 'debit' : 'credit'}
         onApply={(splits) => {
           setStagedSplits(splits);
           if (splits?.length) setCatId(primaryCatId(splits) ?? catId);
