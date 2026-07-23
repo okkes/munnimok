@@ -117,23 +117,28 @@ export function LoginScreen() {
   const { login } = useSession();
   const navigate = useNavigate();
   const onLine = useOnLine();
-  // offline mode is a full sub-SCREEN now (user: the sheet undersold it);
-  // login modes must honor the browser back button — manual pushState +
-  // popstate, since /login is a single route
-  const [offlineView, setOfflineView] = useState(false);
+  // offline mode is two full sub-SCREENS now (user ruling: info first,
+  // then profile on its own screen); login modes must honor the browser
+  // back button — manual pushState + popstate, since /login is one route
+  const [offlineView, setOfflineView] = useState<'intro' | 'profiles' | null>(null);
   const [profileName, setProfileName] = useState('');
   const profiles = listOfflineProfiles();
 
   useEffect(() => {
     if (!offlineView) return;
-    const onPop = () => setOfflineView(false);
+    const onPop = () => setOfflineView((v) => (v === 'profiles' ? 'intro' : null));
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, [offlineView]);
 
   const openOffline = () => {
     window.history.pushState({ munniLogin: 'offline' }, '');
-    setOfflineView(true);
+    setOfflineView('intro');
+  };
+
+  const openProfiles = () => {
+    window.history.pushState({ munniLogin: 'offline-profiles' }, '');
+    setOfflineView('profiles');
   };
 
   const enterDemo = () => {
@@ -151,7 +156,7 @@ export function LoginScreen() {
     enterOffline(addOfflineProfile(profileName).id);
   };
 
-  if (offlineView) {
+  if (offlineView === 'intro') {
     return (
       <div className="m-fade flex h-full flex-col overflow-y-auto bg-bg" data-testid="screen-offline-intro">
         <div className="mx-auto flex w-full max-w-[480px] flex-1 flex-col px-6 pb-[max(24px,env(safe-area-inset-bottom))]">
@@ -209,15 +214,45 @@ export function LoginScreen() {
             ))}
           </div>
 
-          <p className="pb-2 text-[12px] font-semibold tracking-wide text-ink-2 uppercase">{t('offline.chooseProfile')}</p>
-          {profiles.length > 0 && (
-            <div className="mb-3 overflow-hidden rounded-card border border-line bg-surface" data-testid="offline-profiles">
+          <Button className="mt-auto w-full" data-testid="offline-continue" onClick={openProfiles}>
+            {t('offline.continueBtn')}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (offlineView === 'profiles') {
+    return (
+      <div className="m-fade flex h-full flex-col overflow-y-auto bg-bg" data-testid="screen-offline-profiles">
+        <div className="mx-auto flex w-full max-w-[480px] flex-1 flex-col px-6 pb-[max(24px,env(safe-area-inset-bottom))]">
+          <div className="flex items-center gap-1 pt-[max(12px,env(safe-area-inset-top))]">
+            <button
+              aria-label={t('action.back')}
+              data-testid="offline-profiles-back"
+              onClick={() => window.history.back()}
+              className="m-tap -ml-2 flex h-10 w-10 items-center justify-center border-none bg-transparent text-ink"
+            >
+              <Icon name="chevron-left" size={24} />
+            </button>
+          </div>
+          <div className="flex flex-col items-center gap-2 pt-2 pb-6 text-center">
+            <span className="flex h-14 w-14 items-center justify-center rounded-full bg-accent-soft">
+              <Icon name="account-lock-outline" size={26} color="var(--m-accent-deep)" />
+            </span>
+            <h1 className="m-h2 text-ink">{t('offline.chooseProfile')}</h1>
+            {/* ONE profile per device (user ruling): spaces are how you
+                separate bookkeeping — parallel profiles would bury that */}
+            <p className="max-w-[300px] text-sm text-ink-3">{t(profiles.length ? 'offline.oneProfileHint' : 'offline.profileSub')}</p>
+          </div>
+          {profiles.length > 0 ? (
+            <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="offline-profiles">
               {profiles.map((p) => (
                 <button
                   key={p.id}
                   data-testid={`offline-profile-${p.id}`}
                   onClick={() => enterOffline(p.id)}
-                  className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3 text-left text-[14px] text-ink"
+                  className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
                 >
                   <Icon name="account-lock-outline" size={19} color="var(--m-ink-3)" />
                   <span className="flex-1 truncate">{p.name}</span>
@@ -225,19 +260,20 @@ export function LoginScreen() {
                 </button>
               ))}
             </div>
+          ) : (
+            <div className="flex gap-2">
+              <input
+                data-testid="offline-name"
+                value={profileName}
+                onChange={(e) => setProfileName(e.target.value)}
+                placeholder={t('login.namePlaceholder')}
+                className="h-11 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 text-[14px] text-ink outline-none placeholder:text-ink-4"
+              />
+              <Button size="sm" className="h-11" data-testid="offline-create" onClick={createOffline} disabled={!profileName.trim()}>
+                {t('offline.addProfile')}
+              </Button>
+            </div>
           )}
-          <div className="flex gap-2">
-            <input
-              data-testid="offline-name"
-              value={profileName}
-              onChange={(e) => setProfileName(e.target.value)}
-              placeholder={t('login.namePlaceholder')}
-              className="h-11 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 text-[14px] text-ink outline-none placeholder:text-ink-4"
-            />
-            <Button size="sm" className="h-11" data-testid="offline-create" onClick={createOffline} disabled={!profileName.trim()}>
-              {t('offline.addProfile')}
-            </Button>
-          </div>
         </div>
       </div>
     );

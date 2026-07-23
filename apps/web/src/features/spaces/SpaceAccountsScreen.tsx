@@ -10,13 +10,14 @@ import { fetchMyFeedIds } from '@/features/accounts/feedGateway';
 import { SOURCE_KEYS } from '@/features/accounts/AttachSheet';
 import { ACCOUNT_TYPES, isLiability, manualBalanceDate, typeDef } from '@/features/accounts/accountTypes';
 import { parseCents } from '@/lib/money';
+import { CURRENCIES } from '@/domain/countries';
 import type { AccountLinkRow, AccountRow, AccountType } from '@/db/types';
 import { fmtTimeAgo } from '@/lib/text';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { Icon } from '@/ui/Icon';
-import { Pill, Row } from '@/ui/primitives';
+import { Chip, Pill, Row } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 
 /** bank-linked data older than this smells like a dead consent (90/180d
@@ -108,6 +109,9 @@ export function SpaceAccountsScreen() {
   const [newType, setNewType] = useState<AccountType | null>(null);
   const [newName, setNewName] = useState('');
   const [newBalance, setNewBalance] = useState('');
+  // currency starts as the space's, but stays the user's call (request)
+  const [newCurrency, setNewCurrency] = useState<string | null>(null);
+  const effectiveCurrency = newCurrency ?? space?.currency ?? 'EUR';
 
   const createManual = () => {
     const cents = parseCents(newBalance || '0');
@@ -116,7 +120,7 @@ export function SpaceAccountsScreen() {
       name: newName.trim(),
       type: newType,
       source: 'manual',
-      currency: 'EUR',
+      currency: effectiveCurrency,
       balanceCents: isLiability(newType) ? -Math.abs(cents) : cents,
       balanceAsOf: manualBalanceDate(),
     });
@@ -125,6 +129,7 @@ export function SpaceAccountsScreen() {
     setNewType(null);
     setNewName('');
     setNewBalance('');
+    setNewCurrency(null);
   };
 
   const mySub = identity?.kind === 'user' ? identity.sub : undefined;
@@ -322,9 +327,17 @@ export function SpaceAccountsScreen() {
               value={newBalance}
               onChange={(e) => setNewBalance(e.target.value)}
               inputMode="decimal"
-              placeholder={`${t('acct.initialBalance')} (EUR)`}
+              placeholder={`${t('acct.initialBalance')} (${effectiveCurrency})`}
               className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
             />
+            <div className="m-cap px-1">{t('space.currency')}</div>
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {CURRENCIES.map((c) => (
+                <Chip key={c} className="font-mono" testId={`space-acctform-currency-${c}`} selected={effectiveCurrency === c} onClick={() => setNewCurrency(c)}>
+                  {c}
+                </Chip>
+              ))}
+            </div>
             <Button data-testid="space-acctform-save" onClick={createManual} disabled={!newName.trim()}>
               {t('action.add')}
             </Button>

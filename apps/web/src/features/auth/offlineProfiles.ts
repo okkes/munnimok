@@ -26,8 +26,12 @@ export function listOfflineProfiles(): OfflineProfile[] {
 }
 
 export function addOfflineProfile(name: string): OfflineProfile {
+  // ONE profile per device (user ruling): bookkeeping separates through
+  // spaces, not parallel profiles — a second create returns the first
+  const existing = listOfflineProfiles()[0];
+  if (existing) return existing;
   const profile: OfflineProfile = { id: uuidv7(), name: name.trim(), createdAt: Date.now() };
-  localStorage.setItem(KEY, JSON.stringify([...listOfflineProfiles(), profile]));
+  localStorage.setItem(KEY, JSON.stringify([profile]));
   return profile;
 }
 

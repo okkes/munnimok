@@ -595,6 +595,8 @@ export interface ActivityRow extends SyncEnvelope {
   kind: string;
   /** display name frozen at write time so offline devices can render it */
   actorName?: string;
+  /** OIDC sub of the actor (user identities) — lets devices render "You" */
+  actorSub?: string;
   /** free-form context: tx title, account name, budget name … */
   detail?: string;
   /** ISO datetime of the action */

@@ -67,6 +67,8 @@ for (const V of VARIANTS) {
     // offline mode is a full screen: trade-off cards above the profiles
     await page.waitForSelector('[data-testid="screen-offline-intro"]');
     await shot(page, k('38-offline') + '--s0');
+    await page.click('[data-testid="offline-continue"]');
+    await page.waitForSelector('[data-testid="screen-offline-profiles"]');
     await page.fill('[data-testid="offline-name"]', 'Okkes Offline');
     await shot(page, k('38-offline') + '--s1');
     await page.click('[data-testid="offline-create"]');
@@ -96,6 +98,7 @@ for (const V of VARIANTS) {
     await page.click('[data-testid="settings-signout"]');
     await page.waitForSelector('[data-testid="screen-login"]');
     await page.click('[data-testid="login-offline-btn"]');
+    await page.click('[data-testid="offline-continue"]');
     await page.locator('[data-testid^="offline-profile-"]').click();
     await page.waitForSelector('[data-testid="tab-home"]');
     await page.click('[data-testid="tab-transactions"]');

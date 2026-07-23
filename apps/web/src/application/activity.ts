@@ -1,5 +1,7 @@
 import type { Repo } from '@/db/repo';
 import type { StorageBackend } from '@/db/backend';
+import { useSession } from '@/app/session';
+import { offlineProfileName } from '@/features/auth/offlineProfiles';
 
 /** newest rows kept per space (user ruling: the last 200 actions) */
 export const ACTIVITY_CAP = 200;
@@ -19,9 +21,15 @@ export async function logActivity(
 ): Promise<void> {
   try {
     const profile = (await store.metaGet('profile'))?.value as { displayName?: string } | undefined;
+    // actor resolution: profile display name first, the offline profile's
+    // name as fallback — plus the sub so other devices can render "You"
+    const identity = useSession.getState().identity;
+    const actorName =
+      profile?.displayName ?? (identity?.kind === 'offline' ? offlineProfileName(identity.profileId) : undefined);
     await repo.upsert('activity', spaceId, repo.newId(), {
       kind,
-      ...(profile?.displayName ? { actorName: profile.displayName } : {}),
+      ...(actorName ? { actorName } : {}),
+      ...(identity?.kind === 'user' ? { actorSub: identity.sub } : {}),
       ...(detail ? { detail } : {}),
       at: new Date().toISOString(),
     });

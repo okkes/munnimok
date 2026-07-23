@@ -5,12 +5,15 @@ import { addOfflineProfile, listOfflineProfiles, offlineProfileName } from './of
 describe('offline profile registry', () => {
   beforeEach(() => localStorage.clear());
 
-  it('starts empty and accumulates profiles', () => {
+  it('starts empty and holds exactly ONE profile per device', () => {
     expect(listOfflineProfiles()).toEqual([]);
     const a = addOfflineProfile('  Okkes ');
     expect(a.name).toBe('Okkes');
-    addOfflineProfile('Partner');
-    expect(listOfflineProfiles().map((p) => p.name)).toEqual(['Okkes', 'Partner']);
+    // user ruling: no parallel profiles — spaces separate bookkeeping;
+    // a second create returns the existing profile instead
+    const b = addOfflineProfile('Partner');
+    expect(b.id).toBe(a.id);
+    expect(listOfflineProfiles().map((p) => p.name)).toEqual(['Okkes']);
     expect(offlineProfileName(a.id)).toBe('Okkes');
   });
 

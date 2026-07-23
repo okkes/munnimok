@@ -34,14 +34,18 @@ describe('LoginScreen', () => {
   it('creates an offline profile and enters a personal space named after it', async () => {
     renderApp('/login', { signedIn: false });
     fireEvent.click(await screen.findByTestId('login-offline-btn'));
-    // offline mode is its own screen now: trade-off cards above the profiles
+    // step 1: the trade-off screen (info only, no profiles yet)
     expect(await screen.findByTestId('screen-offline-intro')).toBeTruthy();
     expect(screen.getByTestId('offline-keep-card')).toBeTruthy();
     expect(screen.getByTestId('offline-lose-card')).toBeTruthy();
+    expect(screen.queryByTestId('offline-name')).toBeNull();
     // browser back leaves the offline screen (login modes honor popstate)
     fireEvent.popState(window);
     expect(screen.queryByTestId('screen-offline-intro')).toBeNull();
     fireEvent.click(screen.getByTestId('login-offline-btn'));
+    // step 2: profiles live on their own screen behind Continue
+    fireEvent.click(screen.getByTestId('offline-continue'));
+    expect(await screen.findByTestId('screen-offline-profiles')).toBeTruthy();
     const name = await screen.findByTestId('offline-name');
     expect((screen.getByTestId('offline-create') as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(name, { target: { value: 'Okkes' } });
@@ -74,6 +78,7 @@ describe('LoginScreen', () => {
     // first visit: create the profile
     const first = renderApp('/login', { signedIn: false });
     fireEvent.click(await screen.findByTestId('login-offline-btn'));
+    fireEvent.click(await screen.findByTestId('offline-continue'));
     fireEvent.change(await screen.findByTestId('offline-name'), { target: { value: 'Okkes' } });
     fireEvent.click(screen.getByTestId('offline-create'));
     await screen.findByTestId('screen-home');
@@ -84,6 +89,7 @@ describe('LoginScreen', () => {
     localStorage.removeItem('munni_session');
     renderApp('/login', { signedIn: false });
     fireEvent.click(await screen.findByTestId('login-offline-btn'));
+    fireEvent.click(await screen.findByTestId('offline-continue'));
     const profileBtn = await screen.findByText('Okkes');
     fireEvent.click(profileBtn.closest('button')!);
     expect(await screen.findByTestId('screen-home')).toBeTruthy();

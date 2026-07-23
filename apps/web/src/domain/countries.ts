@@ -88,4 +88,7 @@ export const COUNTRIES: Country[] = [
 
 export const COUNTRY_CURRENCY: Record<string, string> = {"NL":"EUR","DE":"EUR","BE":"EUR","FR":"EUR","ES":"EUR","IT":"EUR","PT":"EUR","FI":"EUR","AT":"EUR","LU":"EUR","IE":"EUR","SK":"EUR","SI":"EUR","EE":"EUR","LV":"EUR","LT":"EUR","CY":"EUR","MT":"EUR","GR":"EUR","HR":"EUR","AD":"EUR","MC":"EUR","ME":"EUR","GB":"GBP","TR":"TRY","PL":"PLN","SE":"SEK","NO":"NOK","DK":"DKK","CH":"CHF","LI":"CHF","CZ":"CZK","HU":"HUF","RO":"RON","BG":"EUR","IS":"EUR","RS":"EUR","BA":"EUR","MK":"EUR","MD":"EUR","UA":"EUR","BY":"EUR","RU":"EUR","AL":"EUR","US":"USD","CA":"CAD","BR":"BRL","MX":"MXN","AR":"ARS","CO":"USD","CL":"USD","PE":"USD","AU":"AUD","NZ":"NZD","SG":"SGD","JP":"JPY","KR":"KRW","CN":"CNY","IN":"INR","PK":"PKR","BD":"USD","ID":"IDR","MY":"MYR","TH":"THB","VN":"VND","PH":"PHP","AE":"AED","SA":"SAR","IL":"ILS","QA":"QAR","ZA":"ZAR","NG":"NGN","EG":"USD","GH":"USD","KE":"USD","MA":"USD"};
 
+/** currencies offered anywhere the user picks one (spaces, manual accounts) */
+export const CURRENCIES = ['EUR', 'USD', 'GBP', 'TRY', 'CHF', 'SEK', 'NOK', 'DKK', 'PLN'];
+
 export const currencyForCountry = (code: string): string => COUNTRY_CURRENCY[code] ?? 'EUR';

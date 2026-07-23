@@ -19,6 +19,8 @@ import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useQuery } from '@/db/useQuery';
 import { fmtCents, parseCents } from '@/lib/money';
+import { CURRENCIES } from '@/domain/countries';
+import { Chip } from '@/ui/primitives';
 import { fmtTimeAgo } from '@/lib/text';
 import type { AccountRow, AccountType } from '@/db/types';
 import { HelpButton } from '@/features/help/HelpButton';
@@ -171,6 +173,8 @@ export function AccountsScreen() {
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<AccountRow | null>(null);
   const [newType, setNewType] = useState<AccountType | null>(null);
+  // currency defaults to the space's, changeable per account (request)
+  const [newCurrency, setNewCurrency] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [balance, setBalance] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
@@ -266,7 +270,7 @@ export function AccountsScreen() {
       name: name.trim(),
       type: newType,
       source: 'manual',
-      currency: 'EUR',
+      currency: newCurrency ?? activeSpace?.currency ?? 'EUR',
       balanceCents: isLiability(newType) ? -Math.abs(cents) : cents,
       balanceAsOf: localToday(),
     });
@@ -393,9 +397,17 @@ export function AccountsScreen() {
               value={balance}
               onChange={(e) => setBalance(e.target.value)}
               inputMode="decimal"
-              placeholder={`${t('acct.initialBalance')} (EUR)`}
+              placeholder={`${t('acct.initialBalance')} (${newCurrency ?? activeSpace?.currency ?? 'EUR'})`}
               className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
             />
+            <div className="m-cap px-1">{t('space.currency')}</div>
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {CURRENCIES.map((c) => (
+                <Chip key={c} className="font-mono" testId={`acctform-currency-${c}`} selected={(newCurrency ?? activeSpace?.currency ?? 'EUR') === c} onClick={() => setNewCurrency(c)}>
+                  {c}
+                </Chip>
+              ))}
+            </div>
             <Button data-testid="acctform-save" onClick={createAccount} disabled={!name.trim()}>
               {t('action.add')}
             </Button>
