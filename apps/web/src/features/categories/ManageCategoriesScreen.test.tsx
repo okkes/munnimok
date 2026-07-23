@@ -108,6 +108,38 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
     expect(custom.closest('button')!.textContent).toContain('Custom');
   });
 
+  it('drags a custom sub onto another main group to move it (restored)', async () => {
+    await openScreen();
+    expandGroup('sport');
+    fireEvent.click(screen.getByTestId('cats-addsub-sport'));
+    fireEvent.change(await screen.findByTestId('catform-name'), { target: { value: 'Padel' } });
+    fireEvent.click(screen.getByTestId('catform-save'));
+    await screen.findByText('Padel', {}, { timeout: 5000 });
+
+    // happy-dom rects are zeros — fake the row + target group boxes
+    const subRow = screen.getByText('Padel').closest('[data-testid^="cats-subrow-"]') as HTMLElement;
+    subRow.getBoundingClientRect = () => ({ top: 100, bottom: 140, left: 0, right: 320, height: 40, width: 320 }) as DOMRect;
+    const target = document.querySelector('[data-cat-group="entertainment"]') as HTMLElement;
+    target.getBoundingClientRect = () => ({ top: 400, bottom: 480, left: 0, right: 320, height: 80, width: 320 }) as DOMRect;
+
+    const subId = subRow.getAttribute('data-testid')!.replace('cats-subrow-', '');
+    const handle = screen.getByTestId(`cats-drag-${subId}`);
+    fireEvent.pointerDown(handle, { pointerId: 1, clientX: 10, clientY: 120 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 10, clientY: 440 });
+    // the ghost follows and the hovered group highlights
+    expect(screen.getByTestId('cats-drag-ghost')).toBeTruthy();
+    fireEvent.pointerUp(handle, { pointerId: 1 });
+
+    // the sub now lives under Entertainment (types match: both expense)
+    await waitFor(async () => {
+      const { MunniDB } = await import('@/db/schema');
+      const db = new MunniDB('munni_demo');
+      const row = await db.categories.get(subId);
+      db.close();
+      expect(row?.parentId).toBe('entertainment');
+    }, { timeout: 5000 });
+  });
+
   it('renames and deletes an unused custom sub without a warning', async () => {
     await openScreen();
     expandGroup('sport');
