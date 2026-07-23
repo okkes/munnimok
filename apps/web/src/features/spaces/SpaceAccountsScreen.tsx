@@ -13,6 +13,7 @@ import { parseCents } from '@/lib/money';
 import { CURRENCIES } from '@/domain/countries';
 import type { AccountLinkRow, AccountRow, AccountType } from '@/db/types';
 import { fmtTimeAgo } from '@/lib/text';
+import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
@@ -224,6 +225,7 @@ export function SpaceAccountsScreen() {
             <Icon name="chevron-left" size={24} />
           </IconButton>
         }
+        trailing={<HelpButton tourId="spaceAccounts" />}
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-8">
         <div className="pt-1" data-testid="space-accounts">
