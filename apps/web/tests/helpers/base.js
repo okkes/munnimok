@@ -51,7 +51,24 @@ export async function base(page, variant, opts = {}) {
   if (opts.extraSetup) await page.addInitScript(opts.extraSetup);
   await page.goto('/');
   const authed = opts.demo || opts.userSub;
+  // brand-new accounts land on the NON-skippable onboarding (tab bar
+  // hidden there) — complete it so specs start on a normal home. Specs
+  // that test onboarding itself pass keepOnboarding: true.
+  if (opts.userSub && !opts.keepOnboarding) await completeOnboardingIfShown(page);
   await page.waitForSelector(authed ? '[data-testid="tab-home"]' : '[data-testid="screen-login"]');
+}
+
+async function completeOnboardingIfShown(page) {
+  const onboarding = page.locator('[data-testid="screen-onboarding"]');
+  try {
+    await onboarding.waitFor({ timeout: 3000 });
+  } catch {
+    return; // returning user — no onboarding
+  }
+  await page.fill('[data-testid="onboarding-name"]', 'E2E User');
+  await page.click('[data-testid="onboarding-save"]');
+  await page.click('[data-testid="onboarding-lock-later"]');
+  await page.waitForSelector('[data-testid="screen-home"]');
 }
 
 // App-wide rows live behind the single "Global settings" door on the

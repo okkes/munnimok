@@ -210,7 +210,7 @@ for (const V of VARIANTS) {
     const sub = `e2e-onboard-${Date.now()}`;
 
     const a = await createPage(browser, V);
-    await base(a.page, V, { userSub: sub });
+    await base(a.page, V, { userSub: sub, keepOnboarding: true });
     // brand-new user -> redirected to onboarding
     await a.page.waitForSelector('[data-testid="screen-onboarding"]');
     await a.page.fill('[data-testid="onboarding-name"]', 'Okkes Test');
