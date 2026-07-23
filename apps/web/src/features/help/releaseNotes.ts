@@ -22,6 +22,16 @@ export const WHATS_NEW: WhatsNewEntry[] = [
     date: '2026-07-22',
     items: [
       {
+        en: 'A fresh start, properly: one first-run setup for online and offline users — pick an avatar (or upload a photo), tell us how to call you and where you use munni (it sharpens category suggestions), keep or change your language, and set the app lock — with the tab bar out of the way. The bank step left onboarding; a guided tutorial takes that over.',
+        nl: 'Een frisse start, maar dan goed: één eerste-keer-instelling voor online en offline gebruikers — kies een avatar (of upload een foto), vertel hoe we je mogen noemen en waar je munni gebruikt (dat scherpt categoriesuggesties aan), behoud of wijzig je taal en stel de app-vergrendeling in — met de tabbalk uit beeld. De bankstap verliet de onboarding; een begeleide tutorial neemt dat over.',
+        tr: 'Taze bir başlangıç, hakkıyla: çevrimiçi ve çevrimdışı kullanıcılar için tek bir ilk kurulum — avatar seç (veya fotoğraf yükle), sana nasıl sesleneceğimizi ve munni’yi nerede kullandığını söyle (kategori önerilerini keskinleştirir), dilini koru veya değiştir ve uygulama kilidini kur — sekme çubuğu yolundan çekilmiş halde. Banka adımı karşılamadan çıktı; rehberli eğitim onu devralıyor.',
+      },
+      {
+        en: 'Flags and clarity: language and country pickers now show real flag icons (bundled, so they work offline and on every platform), the space accounts screen gained a tutorial explaining the three account kinds, detaching an account now warns exactly what the space loses, and manual accounts pick their own currency.',
+        nl: 'Vlaggen en duidelijkheid: taal- en landkiezers tonen nu echte vlagpictogrammen (meegeleverd, dus ze werken offline en op elk platform), het rekeningenscherm van de ruimte kreeg een tutorial over de drie rekeningsoorten, ontkoppelen waarschuwt nu precies wat de ruimte verliest, en handmatige rekeningen kiezen hun eigen valuta.',
+        tr: 'Bayraklar ve netlik: dil ve ülke seçiciler artık gerçek bayrak simgeleri gösteriyor (pakete dahil — çevrimdışı ve her platformda çalışır), alanın hesaplar ekranı üç hesap türünü anlatan bir eğitim kazandı, hesap ayırma alanın tam olarak neyi kaybedeceğini söylüyor ve manuel hesaplar kendi para birimini seçiyor.',
+      },
+      {
         en: 'The bell now keeps a history: the last 200 actions in your space — who reviewed what, added a transaction, attached an account or created a budget — synced so every member sees the same trail.',
         nl: 'De bel houdt nu een geschiedenis bij: de laatste 200 acties in je ruimte — wie wat beoordeelde, een transactie toevoegde, een rekening koppelde of een budget maakte — gesynchroniseerd zodat elk lid hetzelfde spoor ziet.',
         tr: 'Zil artık bir geçmiş tutuyor: alanındaki son 200 eylem — kim neyi inceledi, işlem ekledi, hesap bağladı veya bütçe oluşturdu — senkronize, böylece her üye aynı izi görür.',
