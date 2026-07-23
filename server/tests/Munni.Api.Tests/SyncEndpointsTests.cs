@@ -123,6 +123,23 @@ public class SyncApiFactory : WebApplicationFactory<Program>
                 services.Remove(d);
             }
             services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase("sync-tests"));
+            // /geo must never reach the real ip-api.com from tests
+            services.AddHttpClient("geo").ConfigurePrimaryHttpMessageHandler(() => new FakeGeoLookupHandler());
+        });
+    }
+}
+
+/// <summary>ip-api.com stand-in: every public IP resolves to NL</summary>
+internal sealed class FakeGeoLookupHandler : HttpMessageHandler
+{
+    public static int Calls;
+
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+    {
+        Interlocked.Increment(ref Calls);
+        return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"status":"success","countryCode":"NL"}""", System.Text.Encoding.UTF8, "application/json"),
         });
     }
 }

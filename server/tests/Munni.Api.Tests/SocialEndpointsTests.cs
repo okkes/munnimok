@@ -35,6 +35,23 @@ public class SocialEndpointsTests : IClassFixture<SyncApiFactory>
     }
 
     [Fact]
+    public async Task Geo_resolves_public_addresses_and_caches_per_ip()
+    {
+        var client = ClientFor($"geo2-{Guid.NewGuid():N}");
+        var ip = $"83.84.{Random.Shared.Next(1, 250)}.{Random.Shared.Next(1, 250)}";
+        client.DefaultRequestHeaders.Add("X-Forwarded-For", ip);
+
+        var res = await client.GetFromJsonAsync<JsonElement>("/geo");
+        Assert.Equal("NL", res.GetProperty("country").GetString());
+
+        // second request for the SAME ip is served from the per-IP cache
+        var before = FakeGeoLookupHandler.Calls;
+        var cached = await client.GetFromJsonAsync<JsonElement>("/geo");
+        Assert.Equal("NL", cached.GetProperty("country").GetString());
+        Assert.Equal(before, FakeGeoLookupHandler.Calls);
+    }
+
+    [Fact]
     public async Task DisplayCurrency_sets_uppercases_and_clears_with_the_empty_sentinel()
     {
         var client = ClientFor($"fx-{Guid.NewGuid():N}");
