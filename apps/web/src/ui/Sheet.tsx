@@ -92,7 +92,7 @@ function useSheetStack(open: boolean): { isLocked: boolean; depth: number; cover
   return {
     isLocked: open && top !== idRef.current,
     /** how many sheets sit BELOW this one (0 = root sheet) */
-    depth: visualIndex > 0 ? visualIndex : 0,
+    depth: Math.max(0, visualIndex),
     /** a child is visually on top right now */
     covered: open && visualIndex !== -1 && visualIndex < visualStack.length - 1,
   };
@@ -120,7 +120,7 @@ export function Sheet({ open, onOpenChange, title, children, size, height }: Rea
   // stacked sheets step DOWN in height (28px per level, floor 280) so
   // the parent's receded edge stays visible — the depth cue the thin
   // drag bar alone never gave (user request)
-  const fixedHeight = requested !== undefined ? Math.max(280, requested - depth * 28) : undefined;
+  const fixedHeight = requested === undefined ? undefined : Math.max(280, requested - depth * 28);
   const panel = usePanelMode();
 
   // ESC closes the TOP desktop dialog only

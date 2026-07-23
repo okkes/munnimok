@@ -87,23 +87,11 @@ public static class RatesEndpoints
             if (!response.IsSuccessStatusCode) return null;
             var doc = XDocument.Load(await response.Content.ReadAsStreamAsync(ct));
             // namespace-agnostic: <Cube time="…"><Cube currency="…" rate="…"/></Cube>
-            var days = new List<ParsedDay>();
-            foreach (var dayCube in doc.Descendants().Where(e => e.Name.LocalName == "Cube" && e.Attribute("time") is not null))
-            {
-                var time = dayCube.Attribute("time")!.Value;
-                if (!DateOnly.TryParseExact(time, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var dayOnly)) continue;
-                // EUR itself rides along at 1.0 so clients convert any pair
-                var rates = new Dictionary<string, decimal> { ["EUR"] = 1m };
-                foreach (var rateCube in dayCube.Elements().Where(e => e.Name.LocalName == "Cube"))
-                {
-                    var currency = rateCube.Attribute("currency")?.Value;
-                    var rate = rateCube.Attribute("rate")?.Value;
-                    if (currency is null || rate is null) continue;
-                    if (decimal.TryParse(rate, NumberStyles.Any, CultureInfo.InvariantCulture, out var parsed) && parsed > 0)
-                        rates[currency] = parsed;
-                }
-                if (rates.Count > 1) days.Add(new ParsedDay(time, dayOnly, rates));
-            }
+            var days = doc.Descendants()
+                .Where(e => e.Name.LocalName == "Cube" && e.Attribute("time") is not null)
+                .Select(ParseDayCube)
+                .OfType<ParsedDay>()
+                .ToList();
             days.Sort((a, b) => b.DayOnly.CompareTo(a.DayOnly)); // newest first
             return days.Count > 0 ? days : null;
         }
@@ -111,5 +99,22 @@ public static class RatesEndpoints
         {
             return null; // vendor down → 502/404 upstream, client keeps its cache
         }
+    }
+
+    private static ParsedDay? ParseDayCube(XElement dayCube)
+    {
+        var time = dayCube.Attribute("time")!.Value;
+        if (!DateOnly.TryParseExact(time, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var dayOnly)) return null;
+        // EUR itself rides along at 1.0 so clients convert any pair
+        var rates = new Dictionary<string, decimal> { ["EUR"] = 1m };
+        foreach (var rateCube in dayCube.Elements().Where(e => e.Name.LocalName == "Cube"))
+        {
+            var currency = rateCube.Attribute("currency")?.Value;
+            var rate = rateCube.Attribute("rate")?.Value;
+            if (currency is null || rate is null) continue;
+            if (decimal.TryParse(rate, NumberStyles.Any, CultureInfo.InvariantCulture, out var parsed) && parsed > 0)
+                rates[currency] = parsed;
+        }
+        return rates.Count > 1 ? new ParsedDay(time, dayOnly, rates) : null;
     }
 }

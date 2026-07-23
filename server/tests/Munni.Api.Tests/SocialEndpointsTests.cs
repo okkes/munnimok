@@ -26,6 +26,26 @@ public class SocialEndpointsTests : IClassFixture<SyncApiFactory>
     }
 
     [Fact]
+    public async Task DisplayCurrency_sets_uppercases_and_clears_with_the_empty_sentinel()
+    {
+        var client = ClientFor($"fx-{Guid.NewGuid():N}");
+
+        // set (lowercase input normalizes), null leaves it alone, '' clears
+        await client.PutAsJsonAsync("/me", new UpdateMeRequest("Fx", DisplayCurrency: "try"));
+        Assert.Equal("TRY", (await client.GetFromJsonAsync<MeResponse>("/me"))!.DisplayCurrency);
+
+        await client.PutAsJsonAsync("/me", new UpdateMeRequest("Fx"));
+        Assert.Equal("TRY", (await client.GetFromJsonAsync<MeResponse>("/me"))!.DisplayCurrency);
+
+        await client.PutAsJsonAsync("/me", new UpdateMeRequest("Fx", DisplayCurrency: ""));
+        Assert.Null((await client.GetFromJsonAsync<MeResponse>("/me"))!.DisplayCurrency);
+
+        // not a currency code → validation rejects
+        var bad = await client.PutAsJsonAsync("/me", new UpdateMeRequest("Fx", DisplayCurrency: "EURO"));
+        Assert.Equal(HttpStatusCode.BadRequest, bad.StatusCode);
+    }
+
+    [Fact]
     public async Task FullFlow_FriendRequest_SpaceInvite_MembershipAndSync()
     {
         var suffix = Guid.NewGuid().ToString("N")[..8];

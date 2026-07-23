@@ -95,6 +95,7 @@ export function HomeScreen() {
       ),
     [accounts, bandCurrency, display],
   );
+  const bandLabel = `${bandTotal.approximate ? '≈ ' : ''}${fmtCents(bandTotal.cents, bandCurrency, lang)}`;
   const period = useMemo(
     () => periodHistory(space?.periodType ?? 'month', space?.periodDay ?? 1, 1)[0],
     [space?.periodType, space?.periodDay],
@@ -240,7 +241,7 @@ export function HomeScreen() {
                 <Icon name={accountsOpen ? 'chevron-up' : 'chevron-down'} size={16} color="currentColor" />
               </div>
               <div className="m-num mt-0.5 text-[28px]" data-testid="home-total-balance">
-                {accounts ? `${bandTotal.approximate ? '≈ ' : ''}${fmtCents(bandTotal.cents, bandCurrency, lang)}` : '—'}
+                {accounts ? bandLabel : '—'}
               </div>
               {accountsOpen && (
                 <div className="mt-2 flex flex-col gap-1" data-testid="home-balance-accounts">

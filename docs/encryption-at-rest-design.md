@@ -86,14 +86,17 @@ from production:
       fix) — the previous 400 wedge is the regression to watch.
    d. iOS integrity spot-check: Settings → Privacy → none needed —
       the real check is E3a below (we surface cipher proof in-app).
-2. **E3a — verifiable proof in-app (build next):** the settings row
-   gains the SQLCipher `PRAGMA cipher_version` output when active —
-   plugin-reported, not inferred; plus a one-tap "verify" that writes+
-   reads a probe row. Trust through evidence, not a flag.
-3. **E3b — default-ON migration for new native installs**: fresh
-   installs open SQLCipher directly (empty + resync is already the
-   migration); existing installs keep Dexie until they toggle (or a
-   later forced migration after §4 bakes).
+2. **E3a — verifiable proof in-app: SHIPPED (2026-07-23).** The
+   settings row shows the SQLCipher `PRAGMA cipher_version` answer when
+   active (plain SQLite answers empty — null = no proof), plus a
+   one-tap "Verify encryption" row that round-trips a probe row through
+   the live store. The row is visible on native in every channel now.
+3. **E3b — default-ON for new native installs: SHIPPED (2026-07-23).**
+   The flag is three-state: absent → decided once at first open (no
+   munni database on the device = fresh → '1', else '0'); an explicit
+   or fallback OFF writes '0' so the default never re-triggers or loops
+   a failing open. Existing installs keep Dexie until they toggle (or
+   §4 flips them).
 4. **E4 — security pass before flipping existing users**: passphrase
    handling review (Keychain/Keystore access class, backup exclusion),
    failure telemetry over one release cycle, and the offline-profile

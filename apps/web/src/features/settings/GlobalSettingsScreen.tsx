@@ -17,8 +17,8 @@ import { Avatar } from '@/features/profile/ProfileScreen';
 import { Sheet } from '@/ui/Sheet';
 import { disablePush, enablePush, pushEnabled, pushSupported } from '@/lib/push';
 import { isNativeApp } from '@/lib/platform';
-import { config } from '@/app/config';
 import { FLAG_KEY, activeStoreBackend } from '@/db/openStore';
+import { sqlCipherVersion } from '@/db/capacitorSql';
 import { ExportSheet } from './ExportSheet';
 import {
   biometricAvailable,
@@ -115,48 +115,77 @@ function ThemeModeSwitch() {
  * "Global settings" door on the Settings tab (user feedback: mixing
  * space-scoped and app-wide rows in one list was confusing).
  */
-/** E2 dev switch state: the flag is read at db open, so a clean reload applies it */
+/** E2/E3b switch state: the flag is read at db open, so a clean reload
+ *  applies it. OFF writes '0' (not a removal) — an absent flag would
+ *  re-trigger the fresh-install default-ON next launch. */
 function useEncryptedStoreToggle() {
   const [encryptedOn, setEncryptedOn] = useState(() => localStorage.getItem(FLAG_KEY) === '1');
   const toggleEncrypted = () => {
     const next = !encryptedOn;
-    if (next) localStorage.setItem(FLAG_KEY, '1');
-    else localStorage.removeItem(FLAG_KEY);
+    localStorage.setItem(FLAG_KEY, next ? '1' : '0');
     setEncryptedOn(next);
     window.location.reload();
   };
   return { encryptedOn, toggleEncrypted };
 }
 
-/** E2 dev switch: run the native shell on the encrypted SQLCipher store —
- *  visible only in non-production native builds until E3/E4 make it the
- *  default. Flipping it relaunches onto an empty store; a signed-in
- *  identity simply re-syncs. */
+/** Encrypted storage on the native shells (E3a/E3b): fresh installs
+ *  default onto SQLCipher, and the row carries plugin-reported proof —
+ *  the `PRAGMA cipher_version` answer plus a one-tap write/read probe.
+ *  Trust through evidence, not a flag. Flipping relaunches onto an
+ *  empty store; a signed-in identity simply re-syncs. */
 function EncryptedStoreRow() {
   const { t } = useLang();
+  const { store } = useData();
   const { encryptedOn, toggleEncrypted } = useEncryptedStoreToggle();
-  if (!isNativeApp() || config.channel === 'production') return null;
+  const [probe, setProbe] = useState<'idle' | 'ok' | 'fail'>('idle');
+  if (!isNativeApp()) return null;
   // the sub answers "did SQLCipher really take over?" (user question):
-  // the flag is intent — activeStoreBackend() is what actually OPENED.
-  // A failed open falls back to Dexie and clears the flag, so ON +
-  // "active" together are the proof.
+  // the flag is intent — activeStoreBackend() is what actually OPENED,
+  // and the cipher version is what the ENGINE reported (plain SQLite
+  // answers empty). ON + active + a version string are the proof.
   const active = activeStoreBackend() === 'sqlcipher';
+  const cipher = sqlCipherVersion();
   let pillText = 'OFF';
   if (encryptedOn) pillText = active ? t('settings.encryptedOnActive') : 'ON';
+  let sub = t('settings.encryptedStoreSub');
+  if (encryptedOn && active) sub = cipher ? `${t('settings.encryptedActive')} · SQLCipher ${cipher}` : t('settings.encryptedActive');
+
+  // one-tap verify (E3a): write a probe row through the live store and
+  // read it back — proves the engine at work end-to-end, right now
+  const runProbe = async () => {
+    const nonce = crypto.randomUUID();
+    await store.metaPut('encryption_probe', nonce);
+    const back = (await store.metaGet('encryption_probe'))?.value;
+    setProbe(back === nonce && active && !!cipher ? 'ok' : 'fail');
+  };
+
   return (
-    <Row
-      testId="settings-encrypted-toggle"
-      icon={encryptedOn ? 'shield-lock' : 'shield-lock-open-outline'}
-      title={t('settings.encryptedStore')}
-      sub={encryptedOn && active ? t('settings.encryptedActive') : t('settings.encryptedStoreSub')}
-      chevron={false}
-      trailing={
-        <Pill tone={encryptedOn && active ? 'accent' : 'neutral'} testId="settings-encrypted-state">
-          {pillText}
-        </Pill>
-      }
-      onClick={toggleEncrypted}
-    />
+    <>
+      <Row
+        testId="settings-encrypted-toggle"
+        icon={encryptedOn ? 'shield-lock' : 'shield-lock-open-outline'}
+        title={t('settings.encryptedStore')}
+        sub={sub}
+        chevron={false}
+        trailing={
+          <Pill tone={encryptedOn && active ? 'accent' : 'neutral'} testId="settings-encrypted-state">
+            {pillText}
+          </Pill>
+        }
+        onClick={toggleEncrypted}
+      />
+      {encryptedOn && active && (
+        <Row
+          testId="settings-encryption-verify"
+          icon="check-decagram-outline"
+          title={t('settings.encryptionVerify')}
+          sub={probe === 'idle' ? t('settings.encryptionVerifySub') : t(probe === 'ok' ? 'settings.encryptionVerifyOk' : 'settings.encryptionVerifyFail')}
+          chevron={false}
+          onClick={() => void runProbe()}
+        />
+      )}
+    </>
   );
 }
 

@@ -103,6 +103,43 @@ interface LocalProfile {
   displayCurrency?: string;
 }
 
+interface LoadedProfileState {
+  name: string;
+  picture: string | null;
+  userId: string | null;
+  country: string | null;
+  displayCurrency: string | null;
+}
+
+/** the screen's initial values per identity kind: server truth for
+ *  signed-in users, the device copy for offline/demo */
+async function loadProfileState(
+  identity: { kind: string; profileId?: string } | null,
+  store: ReturnType<typeof useData>['store'],
+): Promise<LoadedProfileState> {
+  if (identity?.kind === 'user') {
+    const loaded = await fetchUserProfile(store);
+    // the refresh already synced the meta copy — country rides on it
+    const localCopy = (await store.metaGet(PROFILE_META_KEY))?.value as LocalProfile | undefined;
+    return {
+      name: loaded?.name ?? '',
+      picture: loaded?.picture ?? null,
+      userId: loaded?.userId ?? null,
+      country: loaded?.country ?? localCopy?.country ?? null,
+      displayCurrency: loaded?.displayCurrency ?? null,
+    };
+  }
+  const localCopy = (await store.metaGet(PROFILE_META_KEY))?.value as LocalProfile | undefined;
+  const offline = identity?.kind === 'offline' && identity.profileId ? getOfflineProfile(identity.profileId) : undefined;
+  return {
+    name: offline ? (offline.name ?? '') : (localCopy?.name ?? 'Demo'),
+    picture: offline?.picture ?? localCopy?.picture ?? null,
+    userId: null,
+    country: localCopy?.country ?? null,
+    displayCurrency: localCopy?.displayCurrency ?? null,
+  };
+}
+
 /**
  * Who you are: display name + avatar (shared with friends/space members
  * for signed-in users), your user id and login email. Demo and offline
@@ -138,27 +175,13 @@ export function ProfileScreen() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      if (identity?.kind === 'user') {
-        const loaded = await fetchUserProfile(store);
-        if (loaded && !cancelled) {
-          setName(loaded.name);
-          if (loaded.picture) setPicture(loaded.picture);
-          setUserId(loaded.userId);
-          setDisplayCurrency(loaded.displayCurrency);
-        }
-      } else if (identity?.kind === 'offline') {
-        const profile = getOfflineProfile(identity.profileId);
-        setName(profile?.name ?? '');
-        if (profile?.picture) setPicture(profile.picture);
-      } else {
-        const stored = (await store.metaGet(PROFILE_META_KEY))?.value as LocalProfile | undefined;
-        setName(stored?.name ?? 'Demo');
-        if (stored?.picture) setPicture(stored.picture);
-      }
-      const localCopy = (await store.metaGet(PROFILE_META_KEY))?.value as LocalProfile | undefined;
-      if (localCopy?.country && !cancelled) setCountry(localCopy.country);
-      // server already answered for signed-in users; local copy serves the rest
-      if (identity?.kind !== 'user' && localCopy?.displayCurrency && !cancelled) setDisplayCurrency(localCopy.displayCurrency);
+      const loaded = await loadProfileState(identity, store);
+      if (cancelled) return;
+      setName(loaded.name);
+      if (loaded.picture) setPicture(loaded.picture);
+      if (loaded.userId) setUserId(loaded.userId);
+      if (loaded.country) setCountry(loaded.country);
+      setDisplayCurrency(loaded.displayCurrency);
     })();
     return () => {
       cancelled = true;

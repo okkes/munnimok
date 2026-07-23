@@ -9,7 +9,7 @@ import { logActivity } from '@/application/activity';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { useRecurrings } from '@/application/recurring';
 import { parseCents } from '@/lib/money';
-import type { TransactionRow, TxType } from '@/db/types';
+import type { TransactionRow, TxSplit, TxType } from '@/db/types';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
@@ -18,7 +18,6 @@ import { CategoryPicker } from '@/features/categories/CategoryPicker';
 import { SplitEditorSheet } from './SplitEditorSheet';
 import { SheetContextRow } from '@/ui/SheetContextRow';
 import { primaryCatId } from '@/domain/splits';
-import type { TxSplit } from '@/db/types';
 import { TX_TYPE_VISUAL } from './TxTypeSheet';
 
 interface TxFormSheetProps {
@@ -168,12 +167,13 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
 
   // the editor needs a SpaceTx shape; a NEW manual tx builds it from the
   // live form state (controlled mode only reads amount/cat/currency)
+  const draftAbsCents = Math.abs(cents ?? 0);
   const pseudoTx = (tx ?? {
     id: 'new',
     spaceId: '',
     accountId: effectiveAccount ?? '',
     date,
-    amountCents: cents !== null ? (isExpense ? -Math.abs(cents) : Math.abs(cents)) : 0,
+    amountCents: isExpense ? -draftAbsCents : draftAbsCents,
     currency: accounts?.find((a) => a.id === effectiveAccount)?.currency ?? 'EUR',
     merchant: merchant.trim(),
     catId,

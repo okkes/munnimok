@@ -157,3 +157,50 @@ public class RatesEndpointsTests : IClassFixture<RatesApiFactory>
         Assert.True(before >= 1);
     }
 }
+
+/// <summary>the ECB being down must surface as 502, never a crash or an empty 200</summary>
+internal sealed class DeadEcbHandler : HttpMessageHandler
+{
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) =>
+        Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+}
+
+public class DeadRatesApiFactory : WebApplicationFactory<Program>
+{
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        builder.UseSetting("Auth:TestMode", "true");
+        builder.UseSetting("Db:AutoMigrate", "false");
+        builder.ConfigureServices(services =>
+        {
+            foreach (var d in services
+                         .Where(d =>
+                             d.ServiceType == typeof(DbContextOptions<AppDbContext>) ||
+                             d.ServiceType == typeof(DbContextOptions) ||
+                             d.ServiceType == typeof(AppDbContext) ||
+                             d.ServiceType.Name.Contains("IDbContextOptionsConfiguration"))
+                         .ToList())
+            {
+                services.Remove(d);
+            }
+            services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase("rates-down-tests"));
+            services.AddHttpClient(RatesEndpoints.EcbClientName).ConfigurePrimaryHttpMessageHandler(() => new DeadEcbHandler());
+        });
+    }
+}
+
+public class RatesVendorDownTests : IClassFixture<DeadRatesApiFactory>
+{
+    private readonly DeadRatesApiFactory _factory;
+
+    public RatesVendorDownTests(DeadRatesApiFactory factory) => _factory = factory;
+
+    [Fact]
+    public async Task A_dead_vendor_answers_502_for_latest_and_dated_requests()
+    {
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-User-Sub", "converter-down");
+        Assert.Equal(HttpStatusCode.BadGateway, (await client.GetAsync("/rates")).StatusCode);
+        Assert.Equal(HttpStatusCode.BadGateway, (await client.GetAsync("/rates?date=2026-07-20")).StatusCode);
+    }
+}

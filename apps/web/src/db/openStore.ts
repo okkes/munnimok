@@ -22,7 +22,28 @@ export const activeStoreBackend = (): ActiveStoreBackend => activeBackend;
 export const encryptedStoreEnabled = (): boolean =>
   isNativeApp() && sqliteAvailable() && localStorage.getItem(FLAG_KEY) === '1';
 
+/**
+ * E3b: FRESH native installs default onto the encrypted store — an
+ * empty database plus first sync IS the migration, so day one is the
+ * free moment to encrypt. Existing installs (any munni database already
+ * on the device) keep Dexie until they toggle or E4 flips them. The
+ * choice is made exactly once and remembered: '1' encrypted, '0' Dexie.
+ */
+async function resolveDefaultBackendChoice(): Promise<void> {
+  if (!isNativeApp() || !sqliteAvailable()) return;
+  if (localStorage.getItem(FLAG_KEY) !== null) return; // already decided
+  let hasExistingData = true; // unknown → conservative: keep Dexie
+  try {
+    const dbs = await indexedDB.databases();
+    hasExistingData = dbs.some((d) => (d.name ?? '').startsWith('munni'));
+  } catch {
+    // databases() unavailable — stay conservative
+  }
+  localStorage.setItem(FLAG_KEY, hasExistingData ? '0' : '1');
+}
+
 export async function openStorageBackend(name: string): Promise<StorageBackend> {
+  await resolveDefaultBackendChoice();
   if (encryptedStoreEnabled()) {
     // NEVER brick the app on the encrypted path (user report: a plugin
     // config error left the shell stuck on the connecting screen until
@@ -41,7 +62,9 @@ export async function openStorageBackend(name: string): Promise<StorageBackend> 
       console.error('encrypted store failed to open — falling back to Dexie', err);
       const { captureException } = await import('@sentry/react').catch(() => ({ captureException: () => undefined }));
       captureException(err);
-      localStorage.removeItem(FLAG_KEY);
+      // '0', not remove: a removed flag would re-trigger the fresh-install
+      // default next launch and loop the failure (E3b)
+      localStorage.setItem(FLAG_KEY, '0');
     }
   }
   activeBackend = 'dexie';
