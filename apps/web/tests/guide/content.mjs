@@ -46,8 +46,8 @@ export const GUIDE = [
   {
     id: 'spaces',
     title: 'Spaces & sharing',
-    body: `Spaces are separate bookkeeping areas — personal, household, a trip. Invite friends into a shared space: everyone sees the same transactions but each space keeps its own categories and budgets. Attach a bank account to any number of spaces, each with its own history start.`,
-    tips: ['Roles: owners manage members, contributors edit, readers only look.', 'Leaving a space archives your attached accounts for the others instead of deleting history.'],
+    body: `Spaces are separate bookkeeping areas — personal, household, a trip. Invite friends into a shared space: everyone sees the same transactions but each space keeps its own categories and budgets. Attach a bank account to any number of spaces, each with its own history start. The card at the top of the Settings tab opens the space's own settings (name, image, color); its budget period, currency and default history start are separate settings right below it.`,
+    tips: ['Roles: owners manage members, contributors edit, readers only look.', 'Leaving a space archives your attached accounts for the others instead of deleting history.', 'The budget period screen has its own tutorial — tap the ? up top.'],
     shots: ['22-spaces-list', '33-space-share', '61-feed-share'],
   },
   {

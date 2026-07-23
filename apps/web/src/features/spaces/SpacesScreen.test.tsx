@@ -67,7 +67,7 @@ describe('SpacesScreen (demo identity)', () => {
     });
   });
 
-  it('saves icon, color, currency, period and history start from the settings sheet', async () => {
+  it('saves icon and color from the slimmed settings screen (period/currency/history moved out)', async () => {
     renderApp('/spaces');
     await screen.findByTestId('screen-spaces');
     const id = (await findActiveRow()).getAttribute('data-testid')!.replace('space-row-', '');
@@ -75,9 +75,11 @@ describe('SpacesScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId(`space-edit-${id}`));
     fireEvent.click(await screen.findByTestId('space-icon-briefcase-outline'));
     fireEvent.click(screen.getByTestId('space-color-3498DB'));
-    fireEvent.click(screen.getByTestId('space-currency-TRY'));
-    fireEvent.click(screen.getByTestId('space-period-week'));
-    fireEvent.change(screen.getByTestId('space-history-start'), { target: { value: '2026-01-01' } });
+    // extracted settings must be GONE from this screen (user request:
+    // only the space's identity + danger zone live here)
+    expect(screen.queryByTestId('space-currency-TRY')).toBeNull();
+    expect(screen.queryByTestId('space-period-week')).toBeNull();
+    expect(screen.queryByTestId('space-history-start')).toBeNull();
     fireEvent.click(screen.getByTestId('space-edit-save'));
 
     const { MunniDB } = await import('@/db/schema');
@@ -88,9 +90,6 @@ describe('SpacesScreen (demo identity)', () => {
         const space = await db.spaces.get(id);
         expect(space?.icon).toBe('briefcase-outline');
         expect(space?.color).toBe('#3498DB');
-        expect(space?.currency).toBe('TRY');
-        expect(space?.periodType).toBe('week');
-        expect(space?.historyStartDate).toBe('2026-01-01');
       },
       { timeout: 5000 },
     );
@@ -103,34 +102,6 @@ describe('SpacesScreen (demo identity)', () => {
       },
       { timeout: 5000 },
     );
-  });
-
-  it('monthly period exposes the start-day input, weekly hides it', async () => {
-    renderApp('/spaces');
-    await screen.findByTestId('screen-spaces');
-    const id = (await findActiveRow()).getAttribute('data-testid')!.replace('space-row-', '');
-
-    fireEvent.click(screen.getByTestId(`space-edit-${id}`));
-    const day = await screen.findByTestId('space-period-day');
-    fireEvent.change(day, { target: { value: '40' } });
-    expect((day as HTMLInputElement).value).toBe('40'); // free while typing (deletable '1')
-    fireEvent.blur(day);
-    expect((day as HTMLInputElement).value).toBe('28'); // clamped on blur
-
-    fireEvent.click(screen.getByTestId('space-period-biweekly'));
-    expect(screen.queryByTestId('space-period-day')).toBeNull();
-    // weekly/bi-weekly periods pick a START WEEKDAY instead (legacy parity)
-    expect(screen.getByTestId('space-weekday-3')).toBeTruthy();
-    fireEvent.click(screen.getByTestId('space-weekday-3'));
-    fireEvent.click(screen.getByTestId('space-edit-save'));
-    const { MunniDB } = await import('@/db/schema');
-    const db = new MunniDB('munni_demo');
-    await waitFor(async () => {
-      const space = await db.spaces.get(id);
-      expect(space?.periodType).toBe('biweekly');
-      expect(space?.periodDay).toBe(3); // Wednesday
-    });
-    db.close();
   });
 
   it('refuses deleting the active or only space, allows deleting another', async () => {

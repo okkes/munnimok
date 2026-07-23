@@ -24,8 +24,8 @@ describe('ProfileScreen (demo identity)', () => {
     fetchSpy.mockClear();
   });
 
-  it('opens from the settings header row', async () => {
-    renderApp('/settings');
+  it('opens from the global settings header row (profile moved there — it is global)', async () => {
+    renderApp('/settings/global');
     fireEvent.click(await screen.findByTestId('settings-profile-row'));
     expect(await screen.findByTestId('screen-profile')).toBeTruthy();
     expect(fetchSpy).not.toHaveBeenCalled();
@@ -42,7 +42,7 @@ describe('ProfileScreen (demo identity)', () => {
     await screen.findByText('Saved');
     first.unmount(); // release the db before mounting a fresh app
 
-    renderApp('/settings');
+    renderApp('/settings/global');
     await waitFor(() => expect(screen.getByTestId('settings-profile-row').textContent).toContain('Okkes'));
     expect(fetchSpy).not.toHaveBeenCalled();
   });

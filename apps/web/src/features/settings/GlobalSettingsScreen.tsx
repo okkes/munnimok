@@ -12,6 +12,8 @@ import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Flag, langFlagCode } from '@/ui/Flag';
 import { Pill, Row } from '@/ui/primitives';
+import { useQuery } from '@/db/useQuery';
+import { Avatar } from '@/features/profile/ProfileScreen';
 import { Sheet } from '@/ui/Sheet';
 import { disablePush, enablePush, pushEnabled, pushSupported } from '@/lib/push';
 import { isNativeApp } from '@/lib/platform';
@@ -33,6 +35,34 @@ const LANGS: { code: Lang; labelKey: 'lang.en' | 'lang.nl' | 'lang.tr'; badge: s
   { code: 'nl', labelKey: 'lang.nl', badge: 'NL' },
   { code: 'tr', labelKey: 'lang.tr', badge: 'TR' },
 ];
+
+/** who you are, everywhere — moved here from the Settings tab (user
+ *  request: the profile is global, the Settings tab header is the space) */
+function ProfileHeaderRow({ onClick }: Readonly<{ onClick: () => void }>) {
+  const { t } = useLang();
+  const { store } = useData();
+  const profile = useQuery(
+    store,
+    async () => (await store.metaGet('profile'))?.value as { name?: string; picture?: string } | undefined,
+    [],
+  );
+  return (
+    <button
+      data-testid="settings-profile-row"
+      onClick={onClick}
+      className="m-tap mb-4 flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3.5 text-left"
+    >
+      <Avatar picture={profile?.picture} size={44} />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[15px] font-semibold text-ink">{profile?.name ?? t('profile.title')}</span>
+        {/* no name yet → the title already says "Profile"; repeating it read
+            as a bug ("Profiel / Profiel") — invite instead (§2L) */}
+        <span className="block text-[12px] text-ink-3">{profile?.name ? t('profile.title') : t('profile.setupHint')}</span>
+      </span>
+      <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+    </button>
+  );
+}
 
 /** three-state appearance control: light / dark / follow device */
 function ThemeModeSwitch() {
@@ -257,6 +287,7 @@ export function GlobalSettingsScreen() {
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
+        <ProfileHeaderRow onClick={() => void navigate({ to: '/profile' })} />
         <div className="overflow-hidden rounded-card border border-line bg-surface">
           {/* spaces moved here from the tab bar — day-to-day switching
               happens via the Home avatar, management is a settings task */}

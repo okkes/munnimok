@@ -21,6 +21,7 @@ export type TourId =
   | 'spaceAccounts'
   | 'spaces'
   | 'categories'
+  | 'period'
   | 'overview'
   | 'portfolio'
   | 'insights'
@@ -203,6 +204,21 @@ export const TOURS: Tour[] = [
       { titleKey: 'tour.cats.2t', bodyKey: 'tour.cats.2b', illustration: '🎨', anchor: 'cats-add' },
       { titleKey: 'tour.cats.3t', bodyKey: 'tour.cats.3b', illustration: '🧲' },
       { titleKey: 'tour.cats.4t', bodyKey: 'tour.cats.4b', illustration: '👆', anchor: 'cats-group-consumption' },
+    ],
+  },
+  {
+    // ships with the extracted period screen (user rule: new screens
+    // bring their tour in the same arc); 'current' = the screen carries
+    // a spaceId param, so the walkthrough runs where the ? lives
+    id: 'period',
+    titleKey: 'space.periodTitle',
+    icon: 'calendar-month-outline',
+    screen: 'current',
+    steps: [
+      { titleKey: 'tour.period.1t', bodyKey: 'tour.period.1b', illustration: '🗓️' },
+      { titleKey: 'tour.period.2t', bodyKey: 'tour.period.2b', illustration: '📆', anchor: 'space-period-month' },
+      { titleKey: 'tour.period.3t', bodyKey: 'tour.period.3b', illustration: '📌', anchor: 'space-period-day' },
+      { titleKey: 'tour.period.4t', bodyKey: 'tour.period.4b', illustration: '⚡' },
     ],
   },
   {

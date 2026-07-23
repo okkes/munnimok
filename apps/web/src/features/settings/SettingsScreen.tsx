@@ -9,11 +9,16 @@ import { oidcSignOut } from '@/app/authToken';
 import { useSession } from '@/app/session';
 import { AppBar } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
-import { Row } from '@/ui/primitives';
+import { Chip, Row } from '@/ui/primitives';
+import { Sheet } from '@/ui/Sheet';
 import { useQuery } from '@/db/useQuery';
-import { Avatar } from '@/features/profile/ProfileScreen';
+import { useMyRole } from '@/features/spaces/SpaceSharing';
+import { PERIOD_KEYS } from '@/features/spaces/PeriodSettingsScreen';
+import { DEFAULT_HISTORY_MONTHS, isoMonthsAgo } from '@/features/spaces/spaceDefaults';
+import { CURRENCIES } from '@/domain/countries';
 import { LAST_SYNC_KEY } from '@/sync/engine';
 import type { SyncStatus } from '@/sync/engine';
+import type { SpaceRow } from '@/db/types';
 
 const SYNC_STATUS_KEYS = {
   idle: 'sync.synced',
@@ -63,25 +68,33 @@ function SyncStatusRow() {
   );
 }
 
-function ProfileHeaderRow({ onClick }: Readonly<{ onClick: () => void }>) {
+/** the active space as the screen's header card — tapping it opens the
+ *  space's own settings (replaces the old "Settings" row + scope caption:
+ *  the space the rows below belong to IS this card) */
+function SpaceHeaderRow({ space, onClick }: Readonly<{ space: SpaceRow | undefined; onClick: () => void }>) {
   const { t } = useLang();
-  const { store } = useData();
-  const profile = useQuery(store, 
-    async () => (await store.metaGet('profile'))?.value as { name?: string; picture?: string } | undefined,
-    [],
-  );
   return (
     <button
-      data-testid="settings-profile-row"
+      data-testid="settings-space-row"
       onClick={onClick}
       className="m-tap mb-4 flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3.5 text-left"
     >
-      <Avatar picture={profile?.picture} size={44} />
+      {space?.picture ? (
+        <img src={space.picture} alt="" className="h-11 w-11 shrink-0 rounded-full object-cover" />
+      ) : (
+        <span
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full"
+          style={{
+            background: `color-mix(in srgb, ${space?.color ?? 'var(--m-accent)'} 16%, transparent)`,
+            color: space?.color ?? 'var(--m-accent-deep)',
+          }}
+        >
+          <Icon name={space?.icon ?? (space?.kind === 'shared' ? 'account-group-outline' : 'leaf')} size={22} />
+        </span>
+      )}
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[15px] font-semibold text-ink">{profile?.name ?? t('profile.title')}</span>
-        {/* no name yet → the title already says "Profile"; repeating it read
-            as a bug ("Profiel / Profiel") — invite instead (§2L) */}
-        <span className="block text-[12px] text-ink-3">{profile?.name ? t('profile.title') : t('profile.setupHint')}</span>
+        <span className="block truncate text-[15px] font-semibold text-ink">{space?.name ?? ''}</span>
+        <span className="block text-[12px] text-ink-3">{t('settings.spaceCardSub')}</span>
       </span>
       <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
     </button>
@@ -89,11 +102,46 @@ function ProfileHeaderRow({ onClick }: Readonly<{ onClick: () => void }>) {
 }
 
 export function SettingsScreen() {
-  const { t } = useLang();
-  const { store, spaceId } = useData();
+  const { t, lang } = useLang();
+  const { store, repo, spaceId } = useData();
   const activeSpace = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const { identity, logout } = useSession();
   const navigate = useNavigate();
+  const [currencyOpen, setCurrencyOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  // readers can look at the space's period/currency/history but not change them
+  const myRole = useMyRole(spaceId, identity?.kind === 'user');
+  const readOnly = myRole === 'reader';
+
+  const updateSpace = async (changes: Partial<Pick<SpaceRow, 'currency' | 'historyStartDate'>>) => {
+    if (!activeSpace || readOnly) return;
+    await repo.upsert('space', activeSpace.id, activeSpace.id, changes);
+  };
+
+  // extracted settings show their current value on the row (like the
+  // language row in Global settings) — the list doubles as an overview
+  const settingValue = (testId: string) => {
+    if (!activeSpace) return undefined;
+    if (testId === 'settings-period-row') {
+      return <span className="text-[12px] text-ink-3">{t(PERIOD_KEYS[activeSpace.periodType])}</span>;
+    }
+    if (testId === 'settings-currency-row') {
+      return (
+        <span className="rounded-md bg-bg-2 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-ink-3" data-testid="settings-currency-value">
+          {activeSpace.currency}
+        </span>
+      );
+    }
+    if (testId === 'settings-history-row') {
+      const iso = activeSpace.historyStartDate ?? isoMonthsAgo(DEFAULT_HISTORY_MONTHS);
+      return (
+        <span className="text-[12px] text-ink-3">
+          {new Date(`${iso}T00:00:00`).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short', year: 'numeric' })}
+        </span>
+      );
+    }
+    return undefined;
+  };
   const signOut = async () => {
     const current = identity;
     logout();
@@ -120,20 +168,17 @@ export function SettingsScreen() {
     <div className="m-fade flex h-full flex-col" data-testid="screen-settings">
       <AppBar large title={t('screen.settings')} />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
-        <ProfileHeaderRow onClick={() => void navigate({ to: '/profile' })} />
+        {/* the space card is the scope label: everything below until the
+            "Everywhere" caption belongs to THIS space (user request — the
+            old "This space · x" text + Settings row collapsed into it) */}
+        <SpaceHeaderRow space={activeSpace} onClick={() => void navigate({ to: '/spaces/$spaceId', params: { spaceId } })} />
         {identity?.kind === 'user' && (
           <div className="mb-4 overflow-hidden rounded-card border border-line bg-surface">
             <SyncStatusRow />
           </div>
         )}
-        {/* scope split (user feedback): what belongs to THIS space vs the
-            whole app was invisible — space-scoped rows get captions, and
-            everything app-wide lives behind ONE door so the two scopes
-            can't blur together. The feature doors group by intent
-            (redesign ruling): Plan / Track / Learn / Setup. */}
-        <p className="m-cap mb-1 px-1" data-testid="settings-scope-space">
-          {t('settings.scopeSpace', { name: activeSpace?.name ?? '' })}
-        </p>
+        {/* the feature doors group by intent (redesign ruling):
+            Plan / Track / Learn / Setup. */}
         {(
           [
             {
@@ -168,12 +213,16 @@ export function SettingsScreen() {
             {
               capKey: 'settings.groupSetup',
               rows: [
-                { testId: 'settings-space-settings-row', icon: 'cog-outline', labelKey: 'space.settings', to: '/spaces/$spaceId' },
                 // the space's accounts/members moved out of the (already
-                // big) space-settings screen — user remark
+                // big) space-settings screen — user remark; period,
+                // currency and history start were extracted next (same
+                // remark: that screen kept only the space's identity)
                 { testId: 'settings-space-accounts-row', icon: 'bank-outline', labelKey: 'space.financialAccounts', to: '/spaces/$spaceId/accounts' },
                 { testId: 'settings-space-members-row', icon: 'account-multiple-outline', labelKey: 'space.members', to: '/spaces/$spaceId/members', userOnly: true },
                 { testId: 'settings-categories-row', icon: 'shape-outline', labelKey: 'screen.categories', to: '/categories' },
+                { testId: 'settings-period-row', icon: 'calendar-month-outline', labelKey: 'space.periodTitle', to: '/spaces/$spaceId/period' },
+                { testId: 'settings-currency-row', icon: 'cash-100', labelKey: 'space.currency', sheet: 'currency' },
+                { testId: 'settings-history-row', icon: 'history', labelKey: 'space.historyStart', sheet: 'history' },
               ],
             },
           ] as const
@@ -191,7 +240,16 @@ export function SettingsScreen() {
                     testId={row.testId}
                     icon={row.icon}
                     title={t(row.labelKey)}
-                    onClick={() => void navigate({ to: row.to, params: { spaceId } })}
+                    trailing={settingValue(row.testId)}
+                    onClick={() => {
+                      if (!('sheet' in row)) {
+                        void navigate({ to: row.to, params: { spaceId } });
+                      } else if (row.sheet === 'currency') {
+                        setCurrencyOpen(true);
+                      } else {
+                        setHistoryOpen(true);
+                      }
+                    }}
                   />
                 ))}
             </div>
@@ -229,6 +287,48 @@ export function SettingsScreen() {
           {config.channel !== 'production' && ` · ${config.channel || 'local'}`}
         </div>
       </div>
+
+      {/* extracted space settings (user request): small single-purpose
+          sheets — picking a value applies immediately (LWW makes it safe) */}
+      <Sheet open={currencyOpen} onOpenChange={setCurrencyOpen} title={t('space.currency')} size="form">
+        <div className="flex flex-col gap-3 pt-1">
+          {readOnly && <p className="text-[12px] text-ink-3">{t('space.readerNote')}</p>}
+          <div className="flex flex-wrap gap-2">
+            {CURRENCIES.map((c) => (
+              <Chip
+                key={c}
+                className="font-mono"
+                testId={`space-currency-${c}`}
+                disabled={readOnly}
+                selected={activeSpace?.currency === c}
+                onClick={() => {
+                  void updateSpace({ currency: c });
+                  setCurrencyOpen(false);
+                }}
+              >
+                {c}
+              </Chip>
+            ))}
+          </div>
+        </div>
+      </Sheet>
+
+      <Sheet open={historyOpen} onOpenChange={setHistoryOpen} title={t('space.historyStart')} size="form">
+        <div className="flex flex-col gap-3 pt-1">
+          <p className="text-[12px] text-ink-3">{t('space.historyStartSub')}</p>
+          {readOnly && <p className="text-[12px] text-ink-3">{t('space.readerNote')}</p>}
+          <input
+            data-testid="space-history-start"
+            type="date"
+            value={activeSpace?.historyStartDate ?? isoMonthsAgo(DEFAULT_HISTORY_MONTHS)}
+            disabled={readOnly}
+            onChange={(e) => {
+              if (e.target.value) void updateSpace({ historyStartDate: e.target.value });
+            }}
+            className="h-12 w-full appearance-none rounded-input border border-line bg-surface px-4 text-left text-[15px] text-ink outline-none"
+          />
+        </div>
+      </Sheet>
     </div>
   );
 }

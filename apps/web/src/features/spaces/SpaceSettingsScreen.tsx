@@ -1,49 +1,33 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@/db/useQuery';
 import { useNavigate, useParams, useRouter } from '@tanstack/react-router';
-import { LOCALES, useLang } from '@/i18n';
+import { useLang } from '@/i18n';
 import { downscaleImage } from '@/lib/image';
 import { apiFetch } from '@/lib/api';
 import { useData } from '@/app/data';
 import { useSession } from '@/app/session';
 import { leaveSpace, useMyRole } from './SpaceSharing';
-import { DEFAULT_HISTORY_MONTHS, isoMonthsAgo } from './spaceDefaults';
-import type { SpacePeriodType } from '@/db/types';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { Button } from '@/ui/Button';
 import { ColorPicker } from '@/ui/ColorPicker';
 import { Icon } from '@/ui/Icon';
-import { Chip } from '@/ui/primitives';
-import { CURRENCIES } from '@/domain/countries';
 
 const SPACE_ICONS = [
   'leaf', 'home-outline', 'account-group-outline', 'briefcase-outline', 'airplane', 'heart-outline',
   'piggy-bank-outline', 'cart-outline', 'star-outline', 'beach', 'paw', 'baby-carriage',
 ];
 const SPACE_COLORS = ['#08372B', '#3498DB', '#27AE60', '#9B59B6', '#E74C3C', '#F39C12', '#16A085', '#E91E63'];
-const PERIODS: SpacePeriodType[] = ['month', 'week', 'biweekly'];
-const PERIOD_KEYS = {
-  month: 'space.periodMonthly',
-  week: 'space.periodWeekly',
-  biweekly: 'space.periodBiweekly',
-  custom: 'space.periodMonthly',
-} as const;
-
-const WEEKDAYS = [1, 2, 3, 4, 5, 6, 7]; // ISO: Monday … Sunday
-const clampWeekday = (day: number) => Math.min(Math.max(day || 1, 1), 7);
-/** localized short weekday name — 5 Jan 2020 + n lands on ISO weekday n */
-const weekdayName = (weekday: number, lang: keyof typeof LOCALES) =>
-  new Intl.DateTimeFormat(LOCALES[lang], { weekday: 'short' }).format(new Date(2020, 0, 5 + weekday));
 
 /**
- * A space's settings as a full screen: identity (name/icon/color) and
- * money (currency/period/history start). Members and financial accounts
- * live on their own screens, reached from Settings (user remark: the
- * doors here were redundant). Browser back = route back.
+ * A space's settings, slimmed to its IDENTITY: name, image/icon, color —
+ * plus leaving/deleting the space (user request: the screen tried to do
+ * everything). Period, currency and history start are separate settings
+ * on the Settings tab; members and financial accounts have their own
+ * screens. Browser back = route back.
  */
 export function SpaceSettingsScreen() {
-  const { t, lang } = useLang();
+  const { t } = useLang();
   const { store, repo, engine, setActiveSpace, spaceId: activeSpaceId } = useData();
   const navigate = useNavigate();
   const identity = useSession((s) => s.identity);
@@ -59,12 +43,6 @@ export function SpaceSettingsScreen() {
   const [name, setName] = useState('');
   const [icon, setIcon] = useState(SPACE_ICONS[0]);
   const [color, setColor] = useState(SPACE_COLORS[0]);
-  const [currency, setCurrency] = useState('EUR');
-  const [periodType, setPeriodType] = useState<SpacePeriodType>('month');
-  const [periodDay, setPeriodDay] = useState(1);
-  // free-typed draft so the '1' can be deleted while editing; clamped on blur
-  const [periodDayText, setPeriodDayText] = useState('1');
-  const [historyStart, setHistoryStart] = useState('');
   const [picture, setPicture] = useState('');
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -85,13 +63,6 @@ export function SpaceSettingsScreen() {
     setName(space.name);
     setIcon(space.icon ?? SPACE_ICONS[0]);
     setColor(space.color ?? SPACE_COLORS[0]);
-    setCurrency(space.currency);
-    setPeriodType(space.periodType === 'custom' ? 'month' : space.periodType);
-    setPeriodDay(space.periodDay || 1);
-    setPeriodDayText(String(space.periodDay || 1));
-    // default 3 months back (approved accounts ruling) — an empty iOS
-    // date input also renders as a blank bar, so it always has a value
-    setHistoryStart(space.historyStartDate ?? isoMonthsAgo(DEFAULT_HISTORY_MONTHS));
     setPicture(space.picture ?? '');
   }
 
@@ -113,10 +84,6 @@ export function SpaceSettingsScreen() {
       name: name.trim(),
       icon,
       color,
-      currency,
-      periodType,
-      periodDay,
-      historyStartDate: historyStart || undefined,
       picture, // '' clears a previously set image
     });
     goBack();
@@ -251,89 +218,6 @@ export function SpaceSettingsScreen() {
               disabled={readOnly}
               testIdPrefix="space-color"
               customLabel={t('color.custom')}
-            />
-
-            <div className="m-cap px-1">{t('space.currency')}</div>
-            <div className="flex gap-2 overflow-x-auto pb-1">
-              {CURRENCIES.map((c) => (
-                <Chip
-                  key={c}
-                  className="font-mono"
-                  testId={`space-currency-${c}`}
-                  disabled={readOnly}
-                  selected={currency === c}
-                  onClick={() => setCurrency(c)}
-                >
-                  {c}
-                </Chip>
-              ))}
-            </div>
-
-            <div className="m-cap px-1">{t('space.periodTitle')}</div>
-            {/* wrap: NL/TR labels (Tweewekelijks…) must never widen the page */}
-            <div className="flex flex-wrap gap-2">
-              {PERIODS.map((p) => (
-                <Chip
-                  key={p}
-                  className="min-w-[30%] flex-1"
-                  testId={`space-period-${p}`}
-                  disabled={readOnly}
-                  selected={periodType === p}
-                  onClick={() => setPeriodType(p)}
-                >
-                  {t(PERIOD_KEYS[p])}
-                </Chip>
-              ))}
-            </div>
-            {periodType === 'month' ? (
-              <label className="flex items-center gap-3 text-[13px] text-ink-2">
-                {t('space.periodDayLabel')}
-                <input
-                  data-testid="space-period-day"
-                  type="number"
-                  min={1}
-                  max={28}
-                  value={periodDayText}
-                  disabled={readOnly}
-                  onChange={(e) => setPeriodDayText(e.target.value)}
-                  onBlur={() => {
-                    const clamped = Math.min(28, Math.max(1, Number(periodDayText) || 1));
-                    setPeriodDay(clamped);
-                    setPeriodDayText(String(clamped));
-                  }}
-                  className="h-10 w-20 rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none"
-                />
-              </label>
-            ) : (
-              // weekly/bi-weekly periods start on a chosen weekday (legacy parity)
-              <div className="flex flex-wrap gap-1.5">
-                {WEEKDAYS.map((weekday) => (
-                  <button
-                    key={weekday}
-                    data-testid={`space-weekday-${weekday}`}
-                    disabled={readOnly}
-                    onClick={() => setPeriodDay(weekday)}
-                    className={`m-tap rounded-full border px-2.5 py-1.5 text-[12px] ${
-                      clampWeekday(periodDay) === weekday
-                        ? 'border-accent bg-accent-soft font-medium text-accent-deep'
-                        : 'border-line bg-surface text-ink-2'
-                    }`}
-                  >
-                    {weekdayName(weekday, lang)}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            <div className="m-cap px-1">{t('space.historyStart')}</div>
-            <p className="-mt-2 px-1 text-[11px] text-ink-4">{t('space.historyStartSub')}</p>
-            <input
-              data-testid="space-history-start"
-              type="date"
-              value={historyStart}
-              disabled={readOnly}
-              onChange={(e) => setHistoryStart(e.target.value)}
-              className="h-12 w-full appearance-none rounded-input border border-line bg-surface px-4 text-left text-[15px] text-ink outline-none"
             />
 
             {!readOnly && (
