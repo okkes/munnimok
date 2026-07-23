@@ -57,6 +57,7 @@ export function SplitEditorSheet({
   txType,
   onApply,
   seedSingle = false,
+  seedCatId,
   onApplySingle,
   reason,
   header,
@@ -73,6 +74,9 @@ export function SplitEditorSheet({
   /** empty start seeds ONE row (current category, full amount) instead
    *  of the classic two — the review card's unified editor */
   seedSingle?: boolean;
+  /** seedSingle: the CURRENT category (review keeps it on the draft, not
+   *  the raw tx — seeding from tx.catId showed Uncategorized, user bug) */
+  seedCatId?: string;
   /** seedSingle mode: saving with one row reports the plain category */
   onApplySingle?: (catId: string) => void;
   /** why the current category was suggested (review card) — shown inline */
@@ -110,7 +114,7 @@ export function SplitEditorSheet({
       // review's unified editor (user redesign): open on JUST the current
       // category owning the full amount — rows are added explicitly
       setMode('amount');
-      setRows([newRow(tx.catId ?? UNCATEGORIZED_ID, toText(Math.abs(referenceCents)))]);
+      setRows([newRow(seedCatId ?? tx.catId ?? UNCATEGORIZED_ID, toText(Math.abs(referenceCents)))]);
     } else {
       setMode('amount');
       // start from the current category + an empty second row
@@ -269,7 +273,7 @@ export function SplitEditorSheet({
                 inputMode="decimal"
                 className="h-11 w-24 rounded-input border border-line bg-surface px-3 text-right text-[14px] text-ink outline-none"
               />
-              {rows.length > 2 && (
+              {rows.length > (seedSingle ? 1 : 2) && (
                 <button
                   aria-label={t('action.delete')}
                   data-testid={`split-remove-${i}`}

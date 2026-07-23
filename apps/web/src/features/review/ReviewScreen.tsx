@@ -541,13 +541,16 @@ export function ReviewScreen() {
     if (!tx || !queue) return [] as SpaceTx[];
     const key = merchantKey(tx.merchant);
     const mustMatchAmount = !!draftSplits?.length && !splitsArePct(draftSplits);
+    // skipped cards left the deck on purpose — bulk must not drag them
+    // back in (user request: the count follows the visible queue)
     return queue.filter(
       (item) =>
         item.id !== tx.id &&
+        !skipped.has(item.id) &&
         merchantKey(item.merchant) === key &&
         (!mustMatchAmount || item.amountCents === tx.amountCents),
     );
-  }, [tx, queue, draftSplits]);
+  }, [tx, queue, draftSplits, skipped]);
 
   // fresh card: reset the staged draft and offer the link. This runs
   // DURING render (previous-id ref pattern), not in an effect — a late
@@ -716,7 +719,17 @@ export function ReviewScreen() {
                     >
                       <Icon name={sliceCat.icon} size={18} color={sliceColor ?? 'var(--m-ink-3)'} />
                       <span className="min-w-0 flex-1 truncate">
-                        {slice || draft?.catId ? catName(sliceCat, t) : t('review.pickPrompt')}
+                        {slice || draft?.catId ? (
+                          <>
+                            {catName(sliceCat, t)}
+                            {/* the parent gives the sub its context (user request) */}
+                            {sliceCat.parentId && (
+                              <span className="text-[12px] font-normal text-ink-4"> · {catName(cats.byId(sliceCat.parentId), t)}</span>
+                            )}
+                          </>
+                        ) : (
+                          t('review.pickPrompt')
+                        )}
                       </span>
                       {slice && <span className="m-num text-[12px] text-ink-2">{fmtCents(slice.amountCents, tx.currency, lang)}</span>}
                       <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
@@ -830,6 +843,7 @@ export function ReviewScreen() {
           value={draft.splits}
           txType={draft.txType}
           seedSingle
+          seedCatId={draft.catId}
           onApply={(splits) => setStagedDraft(withSplits(draft, splits ?? undefined))}
           onApplySingle={(catId) => setStagedDraft(withCategory(withSplits(draft, undefined), catId, cats))}
           reason={reasonLine}

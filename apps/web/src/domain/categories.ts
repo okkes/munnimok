@@ -53,6 +53,7 @@ export const BUILTIN_CATEGORIES: BuiltinCategory[] = [
   {"id":"takeout","parentId":"consumption","nameKey":"cat.takeout","icon":"food-takeout-box-outline","txTypes":["expense"],"direction":"debit"},
   {"id":"sweets","parentId":"consumption","nameKey":"cat.sweets","icon":"candy-outline","txTypes":["expense"],"direction":"debit"},
   {"id":"alcohol","parentId":"consumption","nameKey":"cat.alcohol","icon":"glass-cocktail","txTypes":["expense"],"direction":"debit"},
+  {"id":"softDrinks","parentId":"consumption","nameKey":"cat.softDrinks","icon":"bottle-soda-classic-outline","txTypes":["expense"],"direction":"debit"},
   {"id":"tobacco","parentId":"consumption","nameKey":"cat.tobacco","icon":"smoking","txTypes":["expense"],"direction":"debit"},
   {"id":"coffee","parentId":"consumption","nameKey":"cat.coffee","icon":"coffee-outline","txTypes":["expense"],"direction":"debit"},
   {"id":"lunchWork","parentId":"consumption","nameKey":"cat.lunchWork","icon":"silverware-fork-knife","txTypes":["expense"],"direction":"debit"},
