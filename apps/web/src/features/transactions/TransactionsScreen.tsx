@@ -11,6 +11,7 @@ import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { EmptyState } from '@/ui/EmptyState';
+import { AddAccountChooser } from '@/features/accounts/AddAccountChooser';
 import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
 import { TxRow } from '@/ui/TxRow';
@@ -41,6 +42,8 @@ export function TransactionsScreen() {
   const allTxs = useSpaceTransactions();
   // desktop density (D2): the account column needs names, one lookup for all rows
   const accounts = useSpaceAccounts();
+  // AE3: the empty state opens the shared chooser IN PLACE
+  const [chooserOpen, setChooserOpen] = useState(false);
   const accountNames = useMemo(() => new Map((accounts ?? []).map((a) => [a.id, a.name])), [accounts]);
   // credits net out what they refunded: one pass over the links for the whole list
   const givenByCredit = useMemo(() => {
@@ -163,7 +166,7 @@ export function TransactionsScreen() {
             text={t(filtering ? 'tx.emptyFiltered' : 'tx.emptyList')}
             action={
               filtering ? undefined : (
-                <Button size="sm" variant="outline" onClick={() => void navigate({ to: '/accounts' })}>
+                <Button size="sm" variant="outline" data-testid="tx-empty-add-account" onClick={() => setChooserOpen(true)}>
                   <Icon name="bank-plus" size={16} />
                   {t('tx.emptyCta')}
                 </Button>
@@ -191,6 +194,7 @@ export function TransactionsScreen() {
           </div>
         ))}
       </div>
+      <AddAccountChooser open={chooserOpen} onOpenChange={setChooserOpen} gcAvailable />
     </div>
   );
 }

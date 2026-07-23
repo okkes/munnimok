@@ -25,10 +25,11 @@ async function addCashAccount(page, name, balance) {
   await gotoGlobalSettings(page);
   await page.click('[data-testid="settings-accounts-row"]');
   await page.click('[data-testid="accounts-add"]');
-  await page.click('[data-testid="accttype-cash"]');
-  await page.fill('[data-testid="acctform-name"]', name);
-  await page.fill('[data-testid="acctform-balance"]', balance);
-  await page.click('[data-testid="acctform-save"]');
+  await page.click('[data-testid="chooser-manual"]');
+  await page.click('[data-testid="chooser-accttype-cash"]');
+  await page.fill('[data-testid="chooser-acctform-name"]', name);
+  await page.fill('[data-testid="chooser-acctform-balance"]', balance);
+  await page.click('[data-testid="chooser-acctform-save"]');
   await page.waitForTimeout(500);
 }
 

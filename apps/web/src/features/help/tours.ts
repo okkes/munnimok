@@ -288,7 +288,7 @@ const SPACE_ACCOUNTS_TOUR: Tour = {
     { titleKey: 'tour.spaceacct.1t', bodyKey: 'tour.spaceacct.1b', illustration: '🏦' },
     { titleKey: 'tour.spaceacct.2t', bodyKey: 'tour.spaceacct.2b', illustration: '🔗' },
     { titleKey: 'tour.spaceacct.3t', bodyKey: 'tour.spaceacct.3b', illustration: '📄' },
-    { titleKey: 'tour.spaceacct.4t', bodyKey: 'tour.spaceacct.4b', illustration: '✍️', anchor: 'space-accounts-add-manual' },
+    { titleKey: 'tour.spaceacct.4t', bodyKey: 'tour.spaceacct.4b', illustration: '✍️', anchor: 'space-accounts-add' },
     { titleKey: 'tour.spaceacct.5t', bodyKey: 'tour.spaceacct.5b', illustration: '🧲', anchor: 'space-accounts-attach' },
     { titleKey: 'tour.spaceacct.6t', bodyKey: 'tour.spaceacct.6b', illustration: '🏷️', anchor: 'space-accounts' },
   ],

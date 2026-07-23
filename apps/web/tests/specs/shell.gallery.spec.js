@@ -84,10 +84,11 @@ for (const V of VARIANTS) {
     await gotoGlobalSettings(page);
     await page.click('[data-testid="settings-accounts-row"]');
     await page.click('[data-testid="accounts-add"]');
-    await page.click('[data-testid="accttype-cash"]');
-    await page.fill('[data-testid="acctform-name"]', 'Wallet');
-    await page.fill('[data-testid="acctform-balance"]', '100');
-    await page.click('[data-testid="acctform-save"]');
+    await page.click('[data-testid="chooser-manual"]');
+    await page.click('[data-testid="chooser-accttype-cash"]');
+    await page.fill('[data-testid="chooser-acctform-name"]', 'Wallet');
+    await page.fill('[data-testid="chooser-acctform-balance"]', '100');
+    await page.click('[data-testid="chooser-acctform-save"]');
     await page.waitForTimeout(500);
     await page.click('[data-testid="tab-transactions"]');
     await page.click('[data-testid="tx-add"]');

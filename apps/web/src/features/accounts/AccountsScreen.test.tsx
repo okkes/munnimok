@@ -275,14 +275,16 @@ describe('AccountsScreen (demo identity)', () => {
     await waitFor(() => expect(screen.queryByTestId('account-row-feedacct-1')).toBeNull(), { timeout: 5000 });
   }, 15_000);
 
-  it('adds a manual cash account through the type grid', async () => {
+  it('adds a manual cash account through the intent chooser (AE1)', async () => {
     renderApp('/accounts');
     await screen.findByTestId('account-row-demo_main');
     fireEvent.click(screen.getByTestId('accounts-add'));
-    fireEvent.click(await screen.findByTestId('accttype-cash'));
-    fireEvent.change(screen.getByTestId('acctform-name'), { target: { value: 'Wallet' } });
-    fireEvent.change(screen.getByTestId('acctform-balance'), { target: { value: '25,50' } });
-    fireEvent.click(screen.getByTestId('acctform-save'));
+    // the chooser routes by intent and names where the result lives
+    fireEvent.click(await screen.findByTestId('chooser-manual'));
+    fireEvent.click(await screen.findByTestId('chooser-accttype-cash'));
+    fireEvent.change(screen.getByTestId('chooser-acctform-name'), { target: { value: 'Wallet' } });
+    fireEvent.change(screen.getByTestId('chooser-acctform-balance'), { target: { value: '25,50' } });
+    fireEvent.click(screen.getByTestId('chooser-acctform-save'));
     await waitFor(() => expect(screen.getByText('Wallet')).toBeTruthy());
   });
 
@@ -290,10 +292,11 @@ describe('AccountsScreen (demo identity)', () => {
     renderApp('/accounts');
     await screen.findByTestId('account-row-demo_main');
     fireEvent.click(screen.getByTestId('accounts-add'));
-    fireEvent.click(await screen.findByTestId('accttype-credit'));
-    fireEvent.change(screen.getByTestId('acctform-name'), { target: { value: 'Visa' } });
-    fireEvent.change(screen.getByTestId('acctform-balance'), { target: { value: '100' } });
-    fireEvent.click(screen.getByTestId('acctform-save'));
+    fireEvent.click(await screen.findByTestId('chooser-manual'));
+    fireEvent.click(await screen.findByTestId('chooser-accttype-credit'));
+    fireEvent.change(screen.getByTestId('chooser-acctform-name'), { target: { value: 'Visa' } });
+    fireEvent.change(screen.getByTestId('chooser-acctform-balance'), { target: { value: '100' } });
+    fireEvent.click(screen.getByTestId('chooser-acctform-save'));
     // renders under Liabilities with a negative amount
     const row = await screen.findByText('Visa');
     expect(row.closest('button')!.textContent).toContain('-€100.00');

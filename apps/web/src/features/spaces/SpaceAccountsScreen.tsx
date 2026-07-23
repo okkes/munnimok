@@ -5,20 +5,17 @@ import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useSession } from '@/app/session';
 import { attachFeedToSpace, detachFeedFromSpace } from '@/application/accountAttach';
-import { logActivity } from '@/application/activity';
 import { fetchMyFeedIds } from '@/features/accounts/feedGateway';
 import { SOURCE_KEYS } from '@/features/accounts/AttachSheet';
-import { ACCOUNT_TYPES, isLiability, manualBalanceDate, typeDef } from '@/features/accounts/accountTypes';
-import { parseCents } from '@/lib/money';
-import { CURRENCIES } from '@/domain/countries';
-import type { AccountLinkRow, AccountRow, AccountType } from '@/db/types';
+import { AddAccountChooser } from '@/features/accounts/AddAccountChooser';
+import type { AccountLinkRow, AccountRow } from '@/db/types';
 import { fmtTimeAgo } from '@/lib/text';
 import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { Icon } from '@/ui/Icon';
-import { Chip, Pill, Row } from '@/ui/primitives';
+import { Pill, Row } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 
 /** bank-linked data older than this smells like a dead consent (90/180d
@@ -104,34 +101,8 @@ export function SpaceAccountsScreen() {
   const [historyFrom, setHistoryFrom] = useState('');
   const [busy, setBusy] = useState(false);
   const [detachTarget, setDetachTarget] = useState<AttachedAccountEntry | null>(null);
-  // space-scoped manual creation (tier rule: only manual accounts are
-  // created here; bank connect + imports stay global)
+  // AE1: creation goes through the shared chooser now
   const [addOpen, setAddOpen] = useState(false);
-  const [newType, setNewType] = useState<AccountType | null>(null);
-  const [newName, setNewName] = useState('');
-  const [newBalance, setNewBalance] = useState('');
-  // currency starts as the space's, but stays the user's call (request)
-  const [newCurrency, setNewCurrency] = useState<string | null>(null);
-  const effectiveCurrency = newCurrency ?? space?.currency ?? 'EUR';
-
-  const createManual = () => {
-    const cents = parseCents(newBalance || '0');
-    if (!newType || !newName.trim() || cents === null) return;
-    void repo.upsert('account', spaceId, repo.newId(), {
-      name: newName.trim(),
-      type: newType,
-      source: 'manual',
-      currency: effectiveCurrency,
-      balanceCents: isLiability(newType) ? -Math.abs(cents) : cents,
-      balanceAsOf: manualBalanceDate(),
-    });
-    void logActivity(store, repo, spaceId, 'accountAdd', newName.trim());
-    setAddOpen(false);
-    setNewType(null);
-    setNewName('');
-    setNewBalance('');
-    setNewCurrency(null);
-  };
 
   const mySub = identity?.kind === 'user' ? identity.sub : undefined;
 
@@ -294,72 +265,18 @@ export function SpaceAccountsScreen() {
           <Button
             variant="outline"
             className="mt-2 w-full"
-            data-testid="space-accounts-add-manual"
-            onClick={() => {
-              setNewType(null);
-              setAddOpen(true);
-            }}
+            data-testid="space-accounts-add"
+            onClick={() => setAddOpen(true)}
           >
             <Icon name="plus" size={17} />
-            {t('acct.addManual')}
+            {t('acct.addAccount')}
           </Button>
         </div>
       </div>
 
-      {/* space-scoped manual creation — no bank connect, no import here */}
-      <Sheet open={addOpen} onOpenChange={setAddOpen} title={t('acct.addManual')} size="tall">
-        <p className="pb-3 text-[12px] leading-snug text-ink-3" data-testid="space-add-scope-note">
-          {t('acct.spaceScopedNote', { space: space?.name ?? '' })}
-        </p>
-        {newType ? (
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center gap-2 text-[13px] text-ink-3">
-              <Icon name={typeDef(newType).icon} size={16} />
-              {t(typeDef(newType).labelKey)} · {t('acct.manual')}
-            </div>
-            <input
-              data-testid="space-acctform-name"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder={t('acct.accountName')}
-              className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
-            />
-            <input
-              data-testid="space-acctform-balance"
-              value={newBalance}
-              onChange={(e) => setNewBalance(e.target.value)}
-              inputMode="decimal"
-              placeholder={`${t('acct.initialBalance')} (${effectiveCurrency})`}
-              className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
-            />
-            <div className="m-cap px-1">{t('space.currency')}</div>
-            <div className="flex gap-2 overflow-x-auto pb-1">
-              {CURRENCIES.map((c) => (
-                <Chip key={c} className="font-mono" testId={`space-acctform-currency-${c}`} selected={effectiveCurrency === c} onClick={() => setNewCurrency(c)}>
-                  {c}
-                </Chip>
-              ))}
-            </div>
-            <Button data-testid="space-acctform-save" onClick={createManual} disabled={!newName.trim()}>
-              {t('action.add')}
-            </Button>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-2">
-            {ACCOUNT_TYPES.map((def) => (
-              <button
-                key={def.type}
-                data-testid={`space-accttype-${def.type}`}
-                onClick={() => setNewType(def.type)}
-                className="m-tap flex flex-col items-start gap-2 rounded-card border border-line bg-surface p-4 text-left"
-              >
-                <Icon name={def.icon} size={22} color="var(--m-accent)" />
-                <span className="text-[13px] font-medium text-ink">{t(def.labelKey)}</span>
-              </button>
-            ))}
-          </div>
-        )}
-      </Sheet>
+      {/* AE1: the shared intent chooser — manual creates in place */}
+      <AddAccountChooser open={addOpen} onOpenChange={setAddOpen} gcAvailable={syncing} />
+
       {/* pick an existing account, choose the history start, attach */}
       <Sheet open={attachOpen} onOpenChange={setAttachOpen} title={t('acct.attachToSpace')} size="tall">
         <div className="flex flex-col gap-3 pt-1">

@@ -41,7 +41,7 @@ describe('BankConnectSheet (user identity, GoCardless enabled)', () => {
     Object.defineProperty(location, 'href', { configurable: true, set: hrefSpy, get: () => 'http://localhost/' });
 
     fireEvent.click(await screen.findByTestId('accounts-add'));
-    fireEvent.click(await screen.findByTestId('acct-connect-bank'));
+    fireEvent.click(await screen.findByTestId('chooser-connect'));
 
     // both institutions load; the search narrows them
     await screen.findByTestId('gc-bank-ING_NL');
@@ -64,7 +64,7 @@ describe('BankConnectSheet (user identity, GoCardless enabled)', () => {
       },
     });
     fireEvent.click(await screen.findByTestId('accounts-add'));
-    fireEvent.click(await screen.findByTestId('acct-connect-bank'));
+    fireEvent.click(await screen.findByTestId('chooser-connect'));
     expect(await screen.findByTestId('gc-error')).toBeTruthy();
   }, 15_000);
 });

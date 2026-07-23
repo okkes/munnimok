@@ -179,15 +179,15 @@ describe('SpacesScreen (demo identity)', () => {
     fireEvent.click(await screen.findByTestId('settings-space-accounts-row'));
     await screen.findByTestId('space-accounts');
 
-    fireEvent.click(screen.getByTestId('space-accounts-add-manual'));
-    // the sheet says plainly that this account is space-scoped, and
-    // offers ONLY manual types — no bank connect, no import
-    expect(await screen.findByTestId('space-add-scope-note')).toBeTruthy();
-    expect(screen.queryByTestId('acct-connect-bank')).toBeNull();
-    fireEvent.click(screen.getByTestId('space-accttype-cash'));
-    fireEvent.change(await screen.findByTestId('space-acctform-name'), { target: { value: 'Holiday jar' } });
-    fireEvent.change(screen.getByTestId('space-acctform-balance'), { target: { value: '50' } });
-    fireEvent.click(screen.getByTestId('space-acctform-save'));
+    fireEvent.click(screen.getByTestId('space-accounts-add'));
+    // the shared chooser: manual creates in place, and its sub-line
+    // says plainly that the account is space-scoped
+    fireEvent.click(await screen.findByTestId('chooser-manual'));
+    expect(await screen.findByTestId('chooser-manual-form')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('chooser-accttype-cash'));
+    fireEvent.change(await screen.findByTestId('chooser-acctform-name'), { target: { value: 'Holiday jar' } });
+    fireEvent.change(screen.getByTestId('chooser-acctform-balance'), { target: { value: '50' } });
+    fireEvent.click(screen.getByTestId('chooser-acctform-save'));
     await waitFor(() => expect(screen.getByTestId('space-accounts').textContent).toContain('Holiday jar'), {
       timeout: 5000,
     });

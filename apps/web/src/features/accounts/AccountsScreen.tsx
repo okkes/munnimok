@@ -12,17 +12,15 @@ import { linkPaypalFunding } from '@/application/paypalLink';
 import type { ImportResult } from './importCamt';
 import { apiFeedGateway, fetchMyFeedIds } from './feedGateway';
 import { AttachSheet, SOURCE_KEYS } from './AttachSheet';
+import { AddAccountChooser } from './AddAccountChooser';
 import { BrandIconPicker } from '@/features/recurring/BrandIconPicker';
 import { BankConnectSheet } from './BankConnect';
 import { useInstitutionLogos } from './useInstitutionLogos';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
-import { useQuery } from '@/db/useQuery';
 import { fmtCents, parseCents } from '@/lib/money';
-import { CURRENCIES } from '@/domain/countries';
-import { Chip } from '@/ui/primitives';
 import { fmtTimeAgo } from '@/lib/text';
-import type { AccountRow, AccountType } from '@/db/types';
+import type { AccountRow } from '@/db/types';
 import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
@@ -31,7 +29,7 @@ import { EmptyState } from '@/ui/EmptyState';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 
-import { ACCOUNT_TYPES as TYPES, typeDef, isLiability, manualBalanceDate } from './accountTypes';
+import { typeDef, isLiability, manualBalanceDate } from './accountTypes';
 
 function AccountRowButton({
   entry,
@@ -169,12 +167,8 @@ function SharedWithMeSection({ list, lang }: { list: GlobalAccount[]; lang: Retu
 export function AccountsScreen() {
   const { t, lang } = useLang();
   const { store, repo, spaceId } = useData();
-  const activeSpace = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<AccountRow | null>(null);
-  const [newType, setNewType] = useState<AccountType | null>(null);
-  // currency defaults to the space's, changeable per account (request)
-  const [newCurrency, setNewCurrency] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [balance, setBalance] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
@@ -254,28 +248,7 @@ export function AccountsScreen() {
     else openEdit(entry.account); // manual/legacy row: edit name/balance
   };
 
-  const closeAdd = () => {
-    setAddOpen(false);
-    setNewType(null);
-    setName('');
-    setBalance('');
-  };
-
   const localToday = manualBalanceDate;
-
-  const createAccount = () => {
-    const cents = parseCents(balance || '0');
-    if (!newType || !name.trim() || cents === null) return;
-    void repo.upsert('account', spaceId, repo.newId(), {
-      name: name.trim(),
-      type: newType,
-      source: 'manual',
-      currency: newCurrency ?? activeSpace?.currency ?? 'EUR',
-      balanceCents: isLiability(newType) ? -Math.abs(cents) : cents,
-      balanceAsOf: localToday(),
-    });
-    closeAdd();
-  };
 
   const saveEdit = () => {
     if (!editing || !name.trim()) return;
@@ -373,77 +346,14 @@ export function AccountsScreen() {
         canEdit={!!attaching && !global?.sharedWithMe.includes(attaching)}
       />
 
-      {/* Add account: type grid, then form */}
-      <Sheet open={addOpen} onOpenChange={(open) => !open && closeAdd()} title={newType ? t('acct.addAccount') : t('acct.selectType')} size="tall">
-        {newType ? (
-          <div className="flex flex-col gap-3 pt-1">
-            <div className="flex items-center gap-2 text-[13px] text-ink-3">
-              <Icon name={typeDef(newType).icon} size={16} />
-              {t(typeDef(newType).labelKey)} · {t('acct.manual')}
-            </div>
-            {/* tier rule made visible: manual accounts are space-scoped */}
-            <p className="text-[12px] leading-snug text-ink-4" data-testid="acctform-scope-note">
-              {t('acct.createScopeNote', { space: activeSpace?.name ?? '' })}
-            </p>
-            <input
-              data-testid="acctform-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder={t('acct.accountName')}
-              className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
-            />
-            <input
-              data-testid="acctform-balance"
-              value={balance}
-              onChange={(e) => setBalance(e.target.value)}
-              inputMode="decimal"
-              placeholder={`${t('acct.initialBalance')} (${newCurrency ?? activeSpace?.currency ?? 'EUR'})`}
-              className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
-            />
-            <div className="m-cap px-1">{t('space.currency')}</div>
-            <div className="flex gap-2 overflow-x-auto pb-1">
-              {CURRENCIES.map((c) => (
-                <Chip key={c} className="font-mono" testId={`acctform-currency-${c}`} selected={(newCurrency ?? activeSpace?.currency ?? 'EUR') === c} onClick={() => setNewCurrency(c)}>
-                  {c}
-                </Chip>
-              ))}
-            </div>
-            <Button data-testid="acctform-save" onClick={createAccount} disabled={!name.trim()}>
-              {t('action.add')}
-            </Button>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-2 pt-1">
-            {gcAvailable && (
-              <button
-                data-testid="acct-connect-bank"
-                onClick={() => {
-                  setAddOpen(false);
-                  setConnectOpen(true);
-                }}
-                className="m-tap col-span-2 flex items-center gap-3 rounded-card border border-accent bg-accent-soft p-4 text-left"
-              >
-                <Icon name="bank-transfer" size={24} color="var(--m-accent-deep)" />
-                <span className="min-w-0 flex-1">
-                  <span className="block text-[14px] font-semibold text-accent-deep">{t('gc.connect')}</span>
-                  <span className="block text-[12px] text-ink-3">{t('gc.connectSub')}</span>
-                </span>
-              </button>
-            )}
-            {TYPES.map((def) => (
-              <button
-                key={def.type}
-                data-testid={`accttype-${def.type}`}
-                onClick={() => setNewType(def.type)}
-                className="m-tap flex flex-col items-start gap-2 rounded-card border border-line bg-surface p-4 text-left"
-              >
-                <Icon name={def.icon} size={22} color="var(--m-accent)" />
-                <span className="text-[13px] font-medium text-ink">{t(def.labelKey)}</span>
-              </button>
-            ))}
-          </div>
-        )}
-      </Sheet>
+      {/* AE1: the ONE Add-account chooser (intent-routed) */}
+      <AddAccountChooser
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        gcAvailable={gcAvailable}
+        onConnect={() => setConnectOpen(true)}
+        onImport={() => fileRef.current?.click()}
+      />
 
       <BankConnectSheet open={connectOpen} onOpenChange={setConnectOpen} />
       <BrandIconPicker
