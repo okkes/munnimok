@@ -51,6 +51,18 @@ machinery. The work is ENFORCEMENT + CLARITY:
 - AT2 ING CSV importer (adapter beside importCamt, shared preview
   UI) + tests with a real-shape fixture
 - AT3 docs/guide/tour touch-ups explaining the three tiers
+- AT4 **shared import feeds** (user question 2026-07-23): today, when
+  two people import statements of the SAME bank account, the second
+  importer's feed registration hits the "owned by another user" 409
+  and falls back to a personal sub-salted feed — two parallel pools,
+  duplicated rows in a shared space. Fix: on that 409 the server
+  checks whether the existing feed is ATTACHED to any space the
+  requester is a member of — if so, they already see its data, so
+  granting feed co-membership leaks nothing and merges the pools
+  (both now upload into one feed; dedupe by bank reference absorbs
+  overlapping statements). No shared space → the personal-feed
+  fallback stays (an IBAN in a crafted file must never join a
+  stranger's feed). Mirrors the GoCardless family-account model.
 
 ## Related follow-up (unchanged)
 
