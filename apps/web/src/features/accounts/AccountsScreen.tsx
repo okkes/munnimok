@@ -260,19 +260,21 @@ export function AccountsScreen() {
   );
   const unattached = useMemo(
     () =>
-      mine.filter(
-        (e) => e.feedSpaceId && !e.sharedVia.some((v) => !v.archived) && !(offerDismissed ?? []).includes(e.account.id),
+      mine.flatMap((e) =>
+        e.feedSpaceId && !e.sharedVia.some((v) => !v.archived) && !(offerDismissed ?? []).includes(e.account.id)
+          ? [{ accountId: e.account.id, feedSpaceId: e.feedSpaceId }]
+          : [],
       ),
     [mine, offerDismissed],
   );
   const acceptAttachOffer = async () => {
     const historyFrom = activeSpace?.historyStartDate ?? isoMonthsAgo(DEFAULT_HISTORY_MONTHS);
     for (const entry of unattached) {
-      await attachFeedToSpace(store, repo, spaceId, entry.feedSpaceId!, entry.account.id, historyFrom).catch(() => undefined);
+      await attachFeedToSpace(store, repo, spaceId, entry.feedSpaceId, entry.accountId, historyFrom).catch(() => undefined);
     }
   };
   const dismissAttachOffer = async () => {
-    await store.metaPut('attachOfferDismissed', [...(offerDismissed ?? []), ...unattached.map((e) => e.account.id)]);
+    await store.metaPut('attachOfferDismissed', [...(offerDismissed ?? []), ...unattached.map((e) => e.accountId)]);
   };
 
   const openEntry = (entry: GlobalAccount) => {
