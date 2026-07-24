@@ -147,6 +147,48 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
     }, { timeout: 5000 });
   });
 
+  it('drop conflicts show the drag error; cancel paths commit nothing', async () => {
+    await openScreen();
+    // a sub named like one the target already has → duplicateSub on drop
+    expandGroup('entertainment');
+    fireEvent.click(screen.getByTestId('cats-addsub-entertainment'));
+    fireEvent.change(await screen.findByTestId('catform-name'), { target: { value: 'Padel' } });
+    fireEvent.click(screen.getByTestId('catform-save'));
+    await screen.findByText('Padel', {}, { timeout: 5000 });
+    expandGroup('sport');
+    fireEvent.click(screen.getByTestId('cats-addsub-sport'));
+    fireEvent.change(await screen.findByTestId('catform-name'), { target: { value: 'Padel' } });
+    fireEvent.click(screen.getByTestId('catform-save'));
+    // the SPORT copy is the one being dragged — wait for it inside its group
+    const findSportRow = () =>
+      [...document.querySelectorAll('[data-cat-group="sport"] [data-testid^="cats-subrow-"]')].find((el) =>
+        el.textContent?.includes('Padel'),
+      ) as HTMLElement | undefined;
+    await waitFor(() => expect(findSportRow()).toBeTruthy(), { timeout: 5000 });
+    const subId = findSportRow()!.getAttribute('data-testid')!.replace('cats-subrow-', '');
+
+    // a cancelled drag leaves fold mode with no confirm sheet
+    fireEvent.pointerDown(screen.getAllByTestId(`cats-drag-${subId}`).at(-1)!, { pointerId: 1, clientY: 120 });
+    await screen.findByTestId('cats-drop-entertainment');
+    fireEvent.pointerCancel(window, { pointerId: 1 });
+    await waitFor(() => expect(screen.queryByTestId('cats-drop-entertainment')).toBeNull());
+    expect(screen.queryByTestId('cats-move-confirm')).toBeNull();
+
+    // dropping onto a parent that already owns the name → error banner
+    fireEvent.pointerDown(screen.getAllByTestId(`cats-drag-${subId}`).at(-1)!, { pointerId: 2, clientY: 120 });
+    const drop = await screen.findByTestId('cats-drop-entertainment');
+    const originalFromPoint = document.elementFromPoint;
+    document.elementFromPoint = () => drop;
+    try {
+      fireEvent.pointerMove(window, { pointerId: 2, clientY: 300 });
+      fireEvent.pointerUp(window, { pointerId: 2 });
+    } finally {
+      document.elementFromPoint = originalFromPoint;
+    }
+    await screen.findByTestId('cats-drag-error');
+    expect(screen.queryByTestId('cats-move-confirm')).toBeNull();
+  });
+
   it('renames and deletes an unused custom sub without a warning', async () => {
     await openScreen();
     expandGroup('sport');
