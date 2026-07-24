@@ -191,6 +191,7 @@ export function AccountsScreen() {
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [importError, setImportError] = useState(false);
   const [runFailed, setRunFailed] = useState(false);
+  const [importing, setImporting] = useState(false);
   // export-steps hint per format before the file dialog (user request)
   const [importPickOpen, setImportPickOpen] = useState(false);
   const identity = useSession((s) => s.identity);
@@ -239,7 +240,8 @@ export function AccountsScreen() {
   };
 
   const runImport = async () => {
-    if (!importPreview?.length) return;
+    if (!importPreview?.length || importing) return; // double-taps fired PARALLEL imports (user report 2026-07-25)
+    setImporting(true);
     // syncing identities import into feed spaces (shared-accounts model);
     // demo/offline keep everything merged in the current space
     const feeds = identity?.kind === 'user' ? apiFeedGateway(identity.sub) : undefined;
@@ -251,6 +253,8 @@ export function AccountsScreen() {
       // (user report 2026-07-24); the preview stays for a retry
       setRunFailed(true);
       return;
+    } finally {
+      setImporting(false);
     }
     setRunFailed(false);
     void logActivity(store, repo, spaceId, 'importRun', `${importPreview.length}`);
@@ -534,7 +538,7 @@ export function AccountsScreen() {
                 </div>
               );
             })}
-            <Button data-testid="import-run" onClick={() => void runImport()} disabled={!importPreview?.length}>
+            <Button data-testid="import-run" onClick={() => void runImport()} disabled={!importPreview?.length || importing}>
               {t('import.doImport')}
             </Button>
           </div>

@@ -139,7 +139,19 @@ public static class AccountEndpoints
             link.AttachedBy = me;
             if (request.HistoryFrom is not null) link.HistoryFrom = request.HistoryFrom;
         }
-        await db.SaveChangesAsync();
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateException)
+        {
+            // two attaches raced the check-then-insert (double-tapped
+            // import, 23505 on the unique link index) — adopt the row the
+            // winner created instead of answering 500 (staging 2026-07-25)
+            db.Entry(link).State = EntityState.Detached;
+            link = await db.SpaceAccountLinks.FirstAsync(l =>
+                l.SpaceId == spaceId && l.FeedSpaceId == request.FeedSpaceId && l.AccountId == request.AccountId);
+        }
         return Results.Ok(new AccountLinkDto(link.Id, link.SpaceId, link.FeedSpaceId, link.AccountId, link.AttachedBy, link.HistoryFrom, link.Archived));
     }
 
