@@ -54,9 +54,9 @@ export async function convertToOffline(ctx: GoOfflineContext, opts: GoOfflineOpt
   if (opts.deleteServerData) {
     await apiFetch('/me', { method: 'DELETE' }).catch(() => undefined);
   } else {
-    const me = (await apiFetch('/me')
+    const me = await apiFetch('/me')
       .then(async (res) => (res.ok ? ((await res.json()) as { userId: string }) : null))
-      .catch(() => null)) as { userId: string } | null;
+      .catch(() => null);
     if (me) {
       for (const spaceId of opts.sharedSpaceIds) {
         await apiFetch(`/spaces/${spaceId}/members/${me.userId}`, { method: 'DELETE' }).catch(() => undefined);
