@@ -197,3 +197,64 @@ describe('parseStatement — English variants + balance files (real 2026 exports
     expect(stmt.iban).toBe('');
   });
 });
+
+describe('parseStatement — PayPal activity export', () => {
+  const HDR =
+    '"Date","Time","TimeZone","Name","Type","Status","Currency","Gross","Fee","Net","From Email Address","To Email Address","Transaction ID","Shipping Address","Address Status","Item Title","Item ID","Shipping and Handling Amount","Insurance Amount","Sales Tax","Option 1 Name","Option 1 Value","Option 2 Name","Option 2 Value","Reference Txn ID","Invoice Number","Custom Number","Quantity","Receipt ID","Balance","Address Line 1","Address Line 2/District/Neighborhood","Town/City","State/Province/Region/County/Territory/Prefecture/Republic","Zip/Postal Code","Country","Contact Phone Number","Subject","Note","Country Code","Balance Impact"';
+  const row = (
+    date: string,
+    name: string,
+    type: string,
+    status: string,
+    currency: string,
+    net: string,
+    from: string,
+    to: string,
+    tx: string,
+    balance: string,
+    impact: string,
+    item = '',
+  ) =>
+    `"${date}","12:00:00","CET","${name}","${type}","${status}","${currency}","${net}","0,00","${net}","${from}","${to}","${tx}","","","${item}","","","","","","","","","","","","","","${balance}","","","","","","","","","","","${impact}"`;
+
+  const ME = 'me@example.com';
+  const PAYPAL = [
+    HDR,
+    row('06/01/2026', 'Acme Music', 'PreApproved Payment Bill User Payment', 'Completed', 'EUR', '-23,00', ME, 'billing@acme.example', 'TX1', '-23,00', 'Debit', 'Music Plus'),
+    // the funding leg that tops the balance back up — never a transaction
+    row('06/01/2026', '', 'Bank Deposit to PP Account ', 'Pending', 'EUR', '23,00', '', '', 'TX2', '0,00', 'Credit'),
+    // an authorization hold: Memo rows are not money moving
+    row('16/02/2026', 'Card Corp', 'General Authorization', 'Pending', 'EUR', '-34,99', ME, 'pay@card.example', 'TX3', '0,00', 'Memo'),
+    // a USD charge settles through a same-day EUR conversion leg
+    row('19/06/2026', 'Octo Devtools', 'PreApproved Payment Bill User Payment', 'Completed', 'USD', '-48,00', ME, 'billing@octo.example', 'TX4', '-48,00', 'Debit'),
+    row('19/06/2026', '', 'Bank Deposit to PP Account ', 'Pending', 'EUR', '43,67', '', '', 'TX5', '43,67', 'Credit'),
+    row('19/06/2026', '', 'General Currency Conversion', 'Completed', 'EUR', '-43,67', '', '', 'TX6', '0,00', 'Debit'),
+    row('19/06/2026', '', 'General Currency Conversion', 'Completed', 'USD', '48,00', '', '', 'TX7', '0,00', 'Credit'),
+    // money received stays positive and keeps its sender
+    row('24/06/2026', 'A Friend', 'General Payment', 'Completed', 'EUR', '12,50', 'friend@example.com', ME, 'TX8', '12,50', 'Credit'),
+  ].join('\n');
+
+  it('imports only real payments, converts foreign charges, keys one synthetic account', () => {
+    const [stmt] = parseStatement(PAYPAL);
+    // one stable IBAN-less account per PayPal login
+    expect(stmt.iban).toBe('PAYPALMEEXAMPLECOM');
+    expect(stmt.accountName).toBe(`PayPal ${ME}`);
+    expect(stmt.currency).toBe('EUR');
+
+    expect(stmt.entries.map((e) => e.ref)).toEqual(['paypal:TX1', 'paypal:TX4', 'paypal:TX8']);
+    const [music, octo, friend] = stmt.entries;
+    expect(music.amountCents).toBe(-2300);
+    expect(music.counterpartyName).toBe('Acme Music');
+    expect(music.description).toContain('Music Plus');
+    // the USD charge imports at its EUR settlement cost, original noted
+    expect(octo.amountCents).toBe(-4367);
+    expect(octo.currency).toBe('EUR');
+    expect(octo.description).toContain('48.00 USD');
+    expect(friend.amountCents).toBe(1250);
+    expect(friend.counterpartyName).toBe('A Friend');
+
+    // newest EUR running balance becomes the closing balance
+    expect(stmt.closingBalanceCents).toBe(1250);
+    expect(stmt.balanceAsOf).toBe('2026-06-24');
+  });
+});
