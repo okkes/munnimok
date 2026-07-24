@@ -205,3 +205,56 @@ credentials.** Consequences already folded in, plus two roadmap items:
   optional profile), store uploads (Apple/Google mandate the first
   manual upload — irreducible).
 
+
+## Amendment 2026-07-24: three stacks + split admin (APPROVED IN PRINCIPLE, details open)
+
+User direction: grow the twin into a **three-stack** topology and split
+the admin portal into **per-environment admins plus one shared admin**.
+
+### Three stacks
+
+Today's pair (munni-iac-prod, munni-iac-staging) gains a third member:
+
+1. **munni-iac-dev** at `munni-iac-dev.<domain>` — tracks the dev
+   branch head automatically (what staging does today), free to break.
+2. **munni-iac-staging** becomes the RELEASE-CANDIDATE stack: it moves
+   only when a release PR is cut (release-please branch), so what you
+   test there is byte-identical to what prod will run.
+3. **munni-iac-prod** unchanged: moves on the release tag.
+
+Consequences the stack files absorb: three GitHub Environments, three
+deploy channels in deploy-nas/infra (VERSION, VERSION_RC,
+VERSION_DEV), Logto stays SHARED (one instance, three apps with their
+own redirect sets — the modules already render apps per stack), three
+databases on the shared postgres, and the NAS scheduler applies three
+markers. Cost: one more container set on the NAS (~web+api only; ocr/
+postgres/logto stay shared) — small.
+
+### Split admin portal
+
+Today one admin console talks to one environment. Target:
+
+- **Per-env admin** (`admin-iac-dev/…-test/…` hosts): exactly today's
+  console, scoped to its own environment's API/database — diagnosing a
+  staging user can never touch prod data, and a broken dev admin build
+  never blocks prod support.
+- **Shared admin** (one host): the cross-environment concerns that
+  today have no home — GoCardless/EB provider quota + rate budgets
+  (provider limits are PER CREDENTIAL, shared by all envs), bank
+  catalog curation, Logto user overview, deploy/version dashboard (per
+  env: applied version, last apply, container recency — the NAS facts
+  we kept fetching by hand today).
+
+Implementation shape: the admin app gains an `ENV_TARGETS` config
+(rendered by infra per stack); "shared admin" is the same build with
+multiple targets + the provider/deploy panels enabled. One codebase,
+no fork. Auth: per-env admins use that env's Logto app; shared admin
+uses prod Logto with an explicit `admin:shared` scope.
+
+Open decisions before implementation (pick + I proceed):
+- (a) third stack rides the NAS like the others vs waits for the
+  Raspberry Pi host (Pi-first ordering above suggests the latter);
+- (b) shared-admin deploy/version dashboard: read-only, or with a
+  "re-apply now" trigger (needs an M2M route to the NAS poller);
+- (c) whether staging-as-RC changes your day-to-day testing flow (you
+  test dev features on the DEV stack from then on).
