@@ -59,12 +59,17 @@ export async function base(page, variant, opts = {}) {
 }
 
 async function completeOnboardingIfShown(page) {
+  // a brand-new user's FIRST paint can exceed a short fixed wait on a
+  // cold CI stack — the old 3s timeout then declared "no onboarding"
+  // and the spec waited forever for a tab bar onboarding keeps hidden.
+  // Race the two possible outcomes instead of guessing.
   const onboarding = page.locator('[data-testid="screen-onboarding"]');
-  try {
-    await onboarding.waitFor({ timeout: 3000 });
-  } catch {
-    return; // returning user — no onboarding
-  }
+  const home = page.locator('[data-testid="tab-home"]');
+  const winner = await Promise.race([
+    onboarding.waitFor({ timeout: 30000 }).then(() => 'onboarding').catch(() => null),
+    home.waitFor({ state: 'visible', timeout: 30000 }).then(() => 'home').catch(() => null),
+  ]);
+  if (winner !== 'onboarding') return; // returning user — no onboarding
   await page.fill('[data-testid="onboarding-name"]', 'E2E User');
   await page.click('[data-testid="onboarding-save"]');
   await page.click('[data-testid="onboarding-lock-later"]');
