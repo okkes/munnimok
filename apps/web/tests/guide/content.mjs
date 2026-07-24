@@ -39,7 +39,7 @@ export const GUIDE = [
   {
     id: 'transactions',
     title: 'Transaction details',
-    body: `Open any transaction to recategorize, split across categories, link the counter-account (which suggests the type — you can still override it), attach receipts, link recurring costs or events, and record reimbursements that show the net cost.`,
+    body: `Open any transaction to recategorize, split across categories, link the counter-account (which suggests the type — you can still override it), attach receipts, link recurring costs or events, and record reimbursements that show the net cost. Settled value moves into the special Reimbursed category — real categories keep only what you truly paid — and the transactions tab has an "Unsettled reimbursements" quick filter for everything still waiting on money.`,
     tips: ['Search matches amounts too: typing 10 finds 10.99 and 210.15.', 'If the counterparty is one of your own accounts, its row becomes tappable.', 'Recategorizing offers a bulk apply — tap the bar to pick exactly which transactions it touches.', '"Customize this view" reorders or hides the sections below the details.', 'Rename a transaction via the pencil — munni remembers and auto-renames future arrivals; the bank original stays under Details.'],
     shots: ['09-tx-detail', '36-tx-split', '34-tx-reimburse', '35-tx-type-link'],
   },
