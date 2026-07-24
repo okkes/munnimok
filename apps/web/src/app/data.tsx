@@ -225,6 +225,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
         engine.onStatus((status) => {
           if (status === 'offline' || status === 'error') requestOutboxSync();
         });
+        // remote-wipe: if this account was deleted (or went offline) on
+        // ANOTHER device, the /me binding mismatch wipes this copy too
+        void (async () => {
+          const { verifyAccountBinding } = await import('@/features/auth/accountBinding');
+          await verifyAccountBinding(store, identity, async () => {
+            const { useSession } = await import('./session');
+            useSession.getState().logout();
+            await destroyIdentityData(identity);
+            globalThis.location.assign('/#/login');
+          });
+        })().catch(() => undefined);
       }
 
       // ask the browser not to evict our data (iOS 7-day ITP wipe etc.);

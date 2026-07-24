@@ -32,11 +32,8 @@ export interface GoOfflineContext {
 }
 
 export interface GoOfflineOptions {
-  /** every shared space (membership ends for all of them) */
-  sharedSpaceIds: readonly string[];
-  /** the subset whose LOCAL copy is purged instead of kept as snapshot */
+  /** shared spaces whose LOCAL copy is purged instead of kept as snapshot */
   dropSpaceIds: readonly string[];
-  deleteServerData: boolean;
   profileName: string;
   profilePicture?: string;
 }
@@ -49,20 +46,12 @@ export async function convertToOffline(ctx: GoOfflineContext, opts: GoOfflineOpt
   const profile = adoptOfflineProfile(opts.profileName, opts.profilePicture, identityKey(ctx.identity));
   if (!profile) return null;
 
-  // server exit, best-effort: deletion covers memberships and consents
-  // in one sweep; otherwise leave every shared space individually
-  if (opts.deleteServerData) {
-    await apiFetch('/me', { method: 'DELETE' }).catch(() => undefined);
-  } else {
-    const me = await apiFetch('/me')
-      .then(async (res) => (res.ok ? ((await res.json()) as { userId: string }) : null))
-      .catch(() => null);
-    if (me) {
-      for (const spaceId of opts.sharedSpaceIds) {
-        await apiFetch(`/spaces/${spaceId}/members/${me.userId}`, { method: 'DELETE' }).catch(() => undefined);
-      }
-    }
-  }
+  // server exit, best-effort (user ruling: going offline always deletes
+  // the server data — as if the app had been offline from day one).
+  // keepIdentity: the Logto login survives in EVERY environment (dev and
+  // prod share identities); other devices detect the dead account via
+  // the /me binding check and wipe themselves.
+  await apiFetch('/me?keepIdentity=true', { method: 'DELETE' }).catch(() => undefined);
 
   // bank-linked accounts → manual tier: the feed is gone, hand-typed
   // rows take over; balances and history stay untouched

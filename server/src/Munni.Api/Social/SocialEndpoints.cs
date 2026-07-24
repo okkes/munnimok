@@ -96,12 +96,16 @@ public static class SocialEndpoints
         HttpContext http,
         IHttpClientFactory httpFactory,
         IConfiguration config,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        bool keepIdentity = false)
     {
         var user = await db.Users.FindAsync(http.GetUserId());
         if (user is null) return Results.NotFound();
         var gc = http.RequestServices.GetService<Munni.Api.GoCardless.IGoCardlessApi>();
-        await AccountDeletion.DeleteUserAsync(db, gc, httpFactory, config, loggerFactory.CreateLogger("AccountDeletion"), user);
+        // keepIdentity: the go-offline conversion — munni data dies, the
+        // Logto login survives (dev and prod share identities, and a later
+        // sign-in should simply provision a fresh account)
+        await AccountDeletion.DeleteUserAsync(db, gc, httpFactory, config, loggerFactory.CreateLogger("AccountDeletion"), user, !keepIdentity);
         return Results.Ok(new { deleted = true });
     }
 

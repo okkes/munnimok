@@ -44,10 +44,6 @@ describe('Go offline (user identity, scripted server)', () => {
       calls.push('delete-me');
       return { deleted: true };
     },
-    'DELETE /spaces/sh-1/members/00000000-0000-0000-0000-000000000001': () => {
-      calls.push('leave-sh-1');
-      return {};
-    },
   });
 
   it('converts: rebinds the store, flips bank accounts to manual, purges dropped spaces, deletes server data', async () => {
@@ -90,23 +86,20 @@ describe('Go offline (user identity, scripted server)', () => {
     db.close();
   }, 20_000);
 
-  it('keeping the snapshot leaves the space locally but ends the membership server-side', async () => {
+  it('keeping the snapshot leaves the space locally; the server account is deleted either way', async () => {
     await seedStore();
     const calls: string[] = [];
     renderAppAsUser('/settings/go-offline', { spaces: [{ id: 's-user', name: 'Personal' }], api: api(calls) });
 
     await screen.findByTestId('screen-go-offline');
     await screen.findByTestId('gooffline-keep-sh-1', {}, { timeout: 5000 }); // default = keep
-    // keep the server account too — memberships must end individually
-    fireEvent.click(screen.getByTestId('gooffline-delete-server'));
-    await waitFor(() => expect(screen.getByTestId('gooffline-delete-state').textContent).toBe('OFF'));
 
     fireEvent.click(screen.getByTestId('gooffline-open-confirm'));
     fireEvent.click(await screen.findByTestId('gooffline-confirm', {}, { timeout: 5000 }));
 
     await waitFor(() => expect(useSession.getState().identity?.kind).toBe('offline'), { timeout: 8000 });
-    await waitFor(() => expect(calls).toContain('leave-sh-1'));
-    expect(calls).not.toContain('delete-me');
+    // always a clean exit (user ruling) — but keepIdentity spares the login
+    await waitFor(() => expect(calls).toContain('delete-me'));
 
     // the snapshot survives in the adopted store
     const { MunniDB } = await import('@/db/schema');

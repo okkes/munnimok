@@ -266,8 +266,8 @@ describe('Settings screens (user identity, scripted server)', () => {
 
   it('account deletion requires the typed word, calls the api and wipes the device', async () => {
     let deleted = false;
-    // moved to Global settings (user remark: too close to sign-out)
-    renderAppAsUser('/settings/global', {
+    // lives on the PROFILE screen now (user request: identity-level danger)
+    renderAppAsUser('/profile', {
       api: {
         'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false } }),
         'DELETE /me': () => {
@@ -276,7 +276,7 @@ describe('Settings screens (user identity, scripted server)', () => {
         },
       },
     });
-    await screen.findByTestId('screen-settings-global');
+    await screen.findByTestId('screen-profile');
     fireEvent.click(await screen.findByTestId('settings-delete-account'));
 
     // the confirm stays disarmed until the exact word is typed

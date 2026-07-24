@@ -8,7 +8,7 @@ import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { Icon } from '@/ui/Icon';
-import { Chip, Pill } from '@/ui/primitives';
+import { Chip } from '@/ui/primitives';
 import { listOfflineProfiles } from './offlineProfiles';
 import { convertToOffline } from './goOffline';
 
@@ -45,7 +45,6 @@ export function GoOfflineScreen() {
   );
   const sharedSpaces = (spaces ?? []).filter((s) => s.kind === 'shared');
   const [dropIds, setDropIds] = useState<ReadonlySet<string>>(new Set());
-  const [deleteServer, setDeleteServer] = useState(true);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   // one offline profile per device: conversion cannot mint a second
@@ -69,9 +68,7 @@ export function GoOfflineScreen() {
     const profileId = await convertToOffline(
       { store, repo, engine, identity },
       {
-        sharedSpaceIds: sharedSpaces.map((s) => s.id),
         dropSpaceIds: [...dropIds],
-        deleteServerData: deleteServer,
         profileName: profile?.name ?? 'munni',
         profilePicture: profile?.picture,
       },
@@ -141,21 +138,6 @@ export function GoOfflineScreen() {
             </div>
           </>
         )}
-
-        <button
-          data-testid="gooffline-delete-server"
-          onClick={() => setDeleteServer((v) => !v)}
-          className="m-tap mb-4 flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left"
-        >
-          <Icon name={deleteServer ? 'delete-forever-outline' : 'cloud-outline'} size={20} color="var(--m-ink-3)" />
-          <span className="min-w-0 flex-1">
-            <span className="block text-[14px] text-ink">{t('goOffline.deleteServer')}</span>
-            <span className="block text-[12px] text-ink-4">{t('goOffline.deleteServerSub')}</span>
-          </span>
-          <Pill tone={deleteServer ? 'accent' : 'neutral'} testId="gooffline-delete-state">
-            {deleteServer ? 'ON' : 'OFF'}
-          </Pill>
-        </button>
 
         <p className="mb-3 px-1 text-[12px] leading-snug text-ink-3">{t('goOffline.noWayBack')}</p>
         {blocked && (

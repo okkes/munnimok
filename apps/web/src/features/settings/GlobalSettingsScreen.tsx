@@ -4,7 +4,7 @@ import { apiFetch, getApiCapabilities } from '@/lib/api';
 import { LOCALES, useLang } from '@/i18n';
 import type { Lang } from '@/i18n';
 import { useTheme } from '@/app/theme';
-import { destroyIdentityData, useData } from '@/app/data';
+import { useData } from '@/app/data';
 import { useSession } from '@/app/session';
 import { TIPS_DISABLED_KEY, useTipsDisabled } from '@/features/help/tipsPref';
 import { AppBar, IconButton } from '@/ui/AppBar';
@@ -203,7 +203,6 @@ export function GlobalSettingsScreen() {
   const [langSheetOpen, setLangSheetOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const identity = useSession((s) => s.identity);
-  const logout = useSession((s) => s.logout);
   const navigate = useNavigate();
   const router = useRouter();
   const [gcAvailable, setGcAvailable] = useState(false);
@@ -221,29 +220,6 @@ export function GlobalSettingsScreen() {
   const [lockTimeout, setLockTimeout] = useState(60);
   const [lockBioAvailable, setLockBioAvailable] = useState(false);
   const [lockError, setLockError] = useState<string | null>(null);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deleteTyped, setDeleteTyped] = useState('');
-  const [deleteBusy, setDeleteBusy] = useState(false);
-  const [deleteError, setDeleteError] = useState(false);
-
-  // full account deletion (account-deletion design; Apple 5.1.1(v)):
-  // the server erases everything, then the device forgets the identity
-  const deleteAccount = async () => {
-    const current = identity;
-    if (current?.kind !== 'user') return;
-    setDeleteBusy(true);
-    setDeleteError(false);
-    const res = await apiFetch('/me', { method: 'DELETE' }).catch(() => null);
-    if (!res?.ok) {
-      setDeleteBusy(false);
-      setDeleteError(true);
-      return;
-    }
-    logout();
-    await destroyIdentityData(current);
-    await navigate({ to: '/login' });
-  };
-
   useEffect(() => {
     if (identity?.kind !== 'user') return;
     void getApiCapabilities().then((caps) => {
@@ -408,67 +384,9 @@ export function GlobalSettingsScreen() {
           />
         </div>
 
-        {/* account deletion lives here, deliberately far from sign-out
-            (user remark: the two were one accidental tap apart) */}
-        {identity?.kind === 'user' && (
-          <div className="mt-4 overflow-hidden rounded-card border border-line bg-surface">
-            {/* OO2: danger-adjacent but not hidden — the conversion has
-                its own consent screen */}
-            <Row
-              testId="settings-go-offline"
-              icon="wifi-off"
-              title={t('goOffline.title')}
-              sub={t('goOffline.rowSub')}
-              onClick={() => void navigate({ to: '/settings/go-offline' })}
-            />
-            <button
-              data-testid="settings-delete-account"
-              onClick={() => {
-                setDeleteTyped('');
-                setDeleteError(false);
-                setDeleteOpen(true);
-              }}
-              className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-negative"
-            >
-              <Icon name="account-remove-outline" size={20} />
-              <span className="min-w-0 flex-1">
-                <span className="block">{t('settings.deleteAccount')}</span>
-                <span className="block text-[11px] text-ink-4">{t('settings.deleteAccountSub')}</span>
-              </span>
-            </button>
-          </div>
-        )}
+        {/* go-offline + account deletion moved to the PROFILE screen
+            (user request): they are about the identity, not app settings */}
       </div>
-
-      {/* the point of no return: everything the design promises, spelled
-          out, then a typed confirmation — no accidental taps */}
-      <Sheet open={deleteOpen} onOpenChange={setDeleteOpen} title={t('settings.deleteAccountTitle')} size="form">
-        <div className="flex flex-col gap-3 pt-1">
-          <p className="text-[13px] text-ink-2">{t('settings.deleteAccountBody')}</p>
-          <p className="text-[12px] text-ink-3">{t('settings.deleteTypePrompt', { word: t('settings.deleteTypeWord') })}</p>
-          <input
-            data-testid="delete-account-input"
-            value={deleteTyped}
-            onChange={(e) => setDeleteTyped(e.target.value)}
-            placeholder={t('settings.deleteTypeWord')}
-            autoCapitalize="characters"
-            className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none"
-          />
-          {deleteError && (
-            <p className="text-[12px] text-negative" data-testid="delete-account-error">
-              {t('settings.deleteFailed')}
-            </p>
-          )}
-          <button
-            data-testid="delete-account-confirm"
-            disabled={deleteBusy || deleteTyped.trim().toUpperCase() !== t('settings.deleteTypeWord')}
-            onClick={() => void deleteAccount()}
-            className="m-tap h-12 rounded-input border-none bg-negative font-semibold text-white disabled:opacity-40"
-          >
-            {deleteBusy ? '…' : t('settings.deleteAccountConfirm')}
-          </button>
-        </div>
-      </Sheet>
 
       {/* Bank connections status */}
       <Sheet open={connectionsOpen} onOpenChange={setConnectionsOpen} title={t('gc.connections')} size="form">
