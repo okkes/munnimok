@@ -102,10 +102,14 @@ public static class AdminEndpoints
             var username = user.TryGetProperty("username", out var name) && name.ValueKind == JsonValueKind.String
                 ? name.GetString()
                 : null;
-            if (username is null || username.ToLowerInvariant() == username) continue;
+            if (username is null) continue;
+            var lower = username.ToLowerInvariant();
+            // exact-ordinal check: "is it ALREADY lowercase", not a
+            // case-insensitive comparison (CA1862 wants this explicit)
+            if (string.Equals(lower, username, StringComparison.Ordinal)) continue;
             using var patch = session.Request(HttpMethod.Patch, $"/api/users/{Uri.EscapeDataString(id)}");
             patch.Content = new StringContent(
-                JsonSerializer.Serialize(new { username = username.ToLowerInvariant() }), Encoding.UTF8, "application/json");
+                JsonSerializer.Serialize(new { username = lower }), Encoding.UTF8, "application/json");
             var patchResponse = await session.Http.SendAsync(patch);
             if (patchResponse.IsSuccessStatusCode) changed.Add(username);
             else skipped.Add($"{username} ({(int)patchResponse.StatusCode})");
