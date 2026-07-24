@@ -80,7 +80,11 @@ jobs:
             echo "stamp=VERSION_STAGING" >> "$GITHUB_OUTPUT"
           fi
           tar -czf "$RUNNER_TEMP/bundle.tgz" -C "$STAGE" .
-          echo "${GITHUB_SHA}" > "$RUNNER_TEMP/stamp.txt"
+          # NOT $GITHUB_SHA: under workflow_run that is the DEFAULT-branch
+          # tip — constant across dev pushes, so the NAS poller saw
+          # "nothing new" and staging froze (2026-07-24). Stamp with the
+          # commit that actually built the images.
+          echo "${{ github.event.workflow_run.head_sha || github.sha }}" > "$RUNNER_TEMP/stamp.txt"
         env:
           SECRETS_JSON: ${{ toJSON(secrets) }}
 
