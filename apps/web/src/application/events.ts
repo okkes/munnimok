@@ -1,5 +1,6 @@
 import { useData } from '@/app/data';
 import { useQuery } from '@/db/useQuery';
+import { logRowActivity } from './activity';
 import type { EventRow } from '@/db/types';
 
 /** the active space's events, active first then archived, newest range first */
@@ -22,13 +23,17 @@ export interface EventOps {
 }
 
 export function useEventOps(): EventOps {
-  const { repo, spaceId } = useData();
+  const { store, repo, spaceId } = useData();
   return {
     save: async (id, fields) => {
       const rowId = id ?? repo.newId();
       await repo.upsert('event', spaceId, rowId, fields);
+      void logRowActivity(store, repo, spaceId, 'event', rowId, id ? 'eventEdit' : 'eventAdd', fields.name);
       return rowId;
     },
-    remove: (id) => repo.remove('event', spaceId, id),
+    remove: async (id) => {
+      await logRowActivity(store, repo, spaceId, 'event', id, 'eventRemove');
+      await repo.remove('event', spaceId, id);
+    },
   };
 }

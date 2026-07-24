@@ -4,6 +4,7 @@ import { ALL_TX_TYPES } from '@/domain/txType';
 import type { CategoryRow, CatDirection, TxType } from '@/db/types';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
+import { logActivity } from '@/application/activity';
 import { hapticNotify } from '@/lib/platform';
 import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
@@ -259,13 +260,14 @@ export function ManageCategoriesScreen() {
       namedCategories(),
     );
     if (conflict) return; // same name already lives there — the form's move path explains; drag just declines
-    await runGuarded(await prepareCategoryEdit(store, repo, row as never, { parentId }), 'edit');
+    await runGuarded(await prepareCategoryEdit(store, repo, row as never, { parentId }), 'edit', catName(row, t));
   };
   const subDrag = useDragToTargets((subId, parentId) => void moveByDrag(subId, parentId));
   // hold on a custom sub opens its action sheet (drag-to-move retired)
   const [subMenu, setSubMenu] = useState<Cat | null>(null);
   const [pending, setPending] = useState<PendingCommit | null>(null);
   const [pendingKind, setPendingKind] = useState<'edit' | 'delete'>('edit');
+  const [pendingDetail, setPendingDetail] = useState<string | undefined>(undefined);
   const [copyOpen, setCopyOpen] = useState(false);
 
   // pointer-based drag & drop: lift a custom sub (long-press or handle),
@@ -318,12 +320,14 @@ export function ManageCategoriesScreen() {
     setMode(row.isParent === 1 ? { kind: 'editMain', row } : { kind: 'editSub', row });
   };
 
-  const runGuarded = async (commit: PendingCommit, kind: 'edit' | 'delete') => {
+  const runGuarded = async (commit: PendingCommit, kind: 'edit' | 'delete', detail?: string) => {
     if (commit.affected.length === 0) {
       await commit.commit();
+      void logActivity(store, repo, spaceId, kind === 'delete' ? 'catRemove' : 'catEdit', detail);
       setMode(null);
     } else {
       setPendingKind(kind);
+      setPendingDetail(detail);
       setPending(commit);
     }
   };
@@ -356,27 +360,30 @@ export function ManageCategoriesScreen() {
     }
     if (mode.kind === 'newMain') {
       await createMainCategory(repo, spaceId, { name: name.trim(), icon, color, txType, otherName: t('cats.other') });
+      void logActivity(store, repo, spaceId, 'catAdd', name.trim());
       setMode(null);
     } else if (mode.kind === 'newSub') {
       await createSubCategory(store, repo, spaceId, { parentId: mode.parentId, name: name.trim(), icon, direction });
+      void logActivity(store, repo, spaceId, 'catAdd', name.trim());
       setMode(null);
     } else {
       const changes: CategoryChanges =
         mode.kind === 'editMain'
           ? { name: name.trim(), icon, color, txType }
           : { name: name.trim(), icon, direction, ...(moveTo ? { parentId: moveTo } : {}) };
-      await runGuarded(await prepareCategoryEdit(store, repo, mode.row, changes), 'edit');
+      await runGuarded(await prepareCategoryEdit(store, repo, mode.row, changes), 'edit', name.trim());
     }
   };
 
   const remove = async () => {
     if (!mode || (mode.kind !== 'editMain' && mode.kind !== 'editSub')) return;
-    await runGuarded(await prepareCategoryDelete(store, repo, mode.row), 'delete');
+    await runGuarded(await prepareCategoryDelete(store, repo, mode.row), 'delete', mode.row.name);
   };
 
   const confirmPending = async () => {
     if (!pending) return;
     await pending.commit();
+    void logActivity(store, repo, spaceId, pendingKind === 'delete' ? 'catRemove' : 'catEdit', pendingDetail);
     setPending(null);
     setMode(null);
   };
@@ -746,7 +753,11 @@ export function ManageCategoriesScreen() {
                 <Button
                   size="sm"
                   data-testid={`cats-copy-${r.id}`}
-                  onClick={() => void copyCategoryToSpace(store, repo, spaceId, r)}
+                  onClick={() =>
+                    void copyCategoryToSpace(store, repo, spaceId, r).then(() =>
+                      logActivity(store, repo, spaceId, 'catAdd', r.name),
+                    )
+                  }
                 >
                   {t('action.add')}
                 </Button>

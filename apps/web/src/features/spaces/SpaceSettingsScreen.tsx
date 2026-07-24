@@ -5,6 +5,7 @@ import { useLang } from '@/i18n';
 import { downscaleImage } from '@/lib/image';
 import { apiFetch } from '@/lib/api';
 import { useData } from '@/app/data';
+import { logActivity } from '@/application/activity';
 import { useSession } from '@/app/session';
 import { leaveSpace, useMyRole } from './SpaceSharing';
 import { AppBar, IconButton } from '@/ui/AppBar';
@@ -86,6 +87,7 @@ export function SpaceSettingsScreen() {
       color,
       picture, // '' clears a previously set image
     });
+    void logActivity(store, repo, space.id, 'spaceEdit', name.trim());
     goBack();
   };
 

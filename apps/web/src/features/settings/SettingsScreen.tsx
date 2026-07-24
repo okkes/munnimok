@@ -4,6 +4,7 @@ import { config, publicOrigin } from '@/app/config';
 import { isNativeApp } from '@/lib/platform';
 import { LOCALES, useLang } from '@/i18n';
 import { destroyIdentityData, useData } from '@/app/data';
+import { logActivity } from '@/application/activity';
 import { OFFLINE_REASON_KEYS, useOfflineReason } from '@/app/OfflineBanner';
 import { oidcSignOut } from '@/app/authToken';
 import { useSession } from '@/app/session';
@@ -116,6 +117,7 @@ export function SettingsScreen() {
   const updateSpace = async (changes: Partial<Pick<SpaceRow, 'currency' | 'historyStartDate'>>) => {
     if (!activeSpace || readOnly) return;
     await repo.upsert('space', activeSpace.id, activeSpace.id, changes);
+    void logActivity(store, repo, activeSpace.id, 'spaceEdit', activeSpace.name);
   };
 
   // extracted settings show their current value on the row (like the

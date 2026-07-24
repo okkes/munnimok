@@ -1,6 +1,7 @@
 import { useData } from '@/app/data';
 import { useQuery } from '@/db/useQuery';
 import { allocationId } from '@/domain/allocation';
+import { logActivity } from './activity';
 import type { AllocationRow } from '@/db/types';
 
 /** every allocation cell of the space (small table — periods × mains) */
@@ -21,8 +22,8 @@ export interface AllocationOps {
 }
 
 export function useAllocationOps(): AllocationOps {
-  const { repo, spaceId } = useData();
-  const assign = async (periodStart: string, catId: string, assignedCents: number) => {
+  const { store, repo, spaceId } = useData();
+  const write = async (periodStart: string, catId: string, assignedCents: number) => {
     await repo.upsert('allocation', spaceId, allocationId(spaceId, periodStart, catId), {
       periodStart,
       catId,
@@ -30,10 +31,15 @@ export function useAllocationOps(): AllocationOps {
     });
   };
   return {
-    assign,
+    assign: async (periodStart, catId, assignedCents) => {
+      await write(periodStart, catId, assignedCents);
+      void logActivity(store, repo, spaceId, 'allocationEdit');
+    },
+    // one history line per move, not one per touched cell
     move: async (periodStart, fromCatId, toCatId, cents, currentOf) => {
-      await assign(periodStart, fromCatId, currentOf(fromCatId) - cents);
-      await assign(periodStart, toCatId, currentOf(toCatId) + cents);
+      await write(periodStart, fromCatId, currentOf(fromCatId) - cents);
+      await write(periodStart, toCatId, currentOf(toCatId) + cents);
+      void logActivity(store, repo, spaceId, 'allocationEdit');
     },
   };
 }

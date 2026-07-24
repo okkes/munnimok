@@ -4,6 +4,7 @@ import { useNavigate, useParams } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useEvents } from '@/application/events';
+import { logActivity } from '@/application/activity';
 import { useSpaceTransactions, useTxTransform } from '@/application/transactions';
 import { eventCategoryBreakdown, eventPerDayCents, eventSpentCents, eventSubcategoryBreakdown, suggestableTxs } from '@/domain/events';
 import { catName, useCategories } from '@/features/categories/useCategories';
@@ -26,7 +27,7 @@ import type { EventRow } from '@/db/types';
 export function EventDetailScreen() {
   const { t, lang } = useLang();
   const navigate = useNavigate();
-  const { store, spaceId } = useData();
+  const { store, repo, spaceId } = useData();
   const { eventId } = useParams({ strict: false }) as { eventId: string };
   const events = useEvents();
   const txs = useSpaceTransactions();
@@ -83,9 +84,15 @@ export function EventDetailScreen() {
   const attachPicked = async () => {
     setAttaching(true);
     try {
+      let n = 0;
       for (const tx of view.suggestions) {
-        if (picked.has(tx.id)) await transform(tx, { eventId: event.id });
+        // one history line for the whole batch, not one per transaction
+        if (picked.has(tx.id)) {
+          await transform(tx, { eventId: event.id }, null);
+          n++;
+        }
       }
+      if (n > 0) void logActivity(store, repo, spaceId, 'txLink', `${event.name} +${n}`);
       setPickOpen(false);
     } finally {
       setAttaching(false);

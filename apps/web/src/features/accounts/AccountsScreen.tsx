@@ -21,6 +21,7 @@ import { BankConnectSheet } from './BankConnect';
 import { useInstitutionLogos } from './useInstitutionLogos';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
+import { logActivity } from '@/application/activity';
 import { fmtCents, parseCents } from '@/lib/money';
 import { fmtTimeAgo } from '@/lib/text';
 import type { AccountRow } from '@/db/types';
@@ -231,6 +232,7 @@ export function AccountsScreen() {
     // demo/offline keep everything merged in the current space
     const feeds = identity?.kind === 'user' ? apiFeedGateway(identity.sub) : undefined;
     setImportResult(await importCamtStatements(repo, store, spaceId, importPreview, feeds));
+    void logActivity(store, repo, spaceId, 'importRun', `${importPreview.length}`);
     // a just-imported account may BE the counterparty of older rows
     // (and vice versa) — retro-link them (user rule)
     await linkAllCounterparties(store, repo, spaceId).catch(() => undefined);
@@ -301,12 +303,14 @@ export function AccountsScreen() {
       name: name.trim(),
       ...(balanceChanged ? { balanceCents: signed!, balanceAsOf: localToday() } : {}),
     });
+    void logActivity(store, repo, spaceId, 'accountEdit', name.trim());
     setEditing(null);
   };
   const [confirmRemove, setConfirmRemove] = useState(false);
   const removeAccount = () => {
     if (!editing) return;
     void repo.remove('account', spaceId, editing.id);
+    void logActivity(store, repo, spaceId, 'accountRemove', editing.name);
     setConfirmRemove(false);
     setEditing(null);
   };
@@ -447,6 +451,7 @@ export function AccountsScreen() {
         onPick={({ logo }) => {
           if (editing) {
             void repo.upsert('account', spaceId, editing.id, { logo: logo ?? (null as never) });
+            void logActivity(store, repo, spaceId, 'accountEdit', editing.name);
             setEditing({ ...editing, logo: logo ?? undefined });
           }
           setEditLogoOpen(false);

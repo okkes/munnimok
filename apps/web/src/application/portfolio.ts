@@ -5,6 +5,7 @@ import { readSessionIdentity } from '@/app/session';
 import { holdingView, portfolioTotals, quoteKey } from '@/domain/portfolio';
 import type { HoldingView, PortfolioTotals } from '@/domain/portfolio';
 import { parseDegiroPortfolio, parseDegiroTransactions } from '@/domain/degiro';
+import { logActivity, logRowActivity } from './activity';
 import type { HoldingRow, LotRow } from '@/db/types';
 import { apiFetch } from '@/lib/api';
 
@@ -183,17 +184,28 @@ export function usePortfolioOps(): PortfolioOps {
     saveHolding: async (id, fields) => {
       const rowId = id ?? repo.newId();
       await repo.upsert('holding', spaceId, rowId, fields);
+      void logRowActivity(store, repo, spaceId, 'holding', rowId, id ? 'holdingEdit' : 'holdingAdd', fields.name);
       return rowId;
     },
     removeHolding: async (id) => {
+      await logRowActivity(store, repo, spaceId, 'holding', id, 'holdingRemove');
       await repo.remove('holding', spaceId, id);
       const lots = (await store.bySpace('lot', spaceId)).filter((l) => l.holdingId === id && l.deleted === 0);
       for (const lot of lots) await repo.remove('lot', spaceId, lot.id);
     },
     addLot: async (holdingId, fields) => {
       await repo.upsert('lot', spaceId, repo.newId(), { holdingId, ...fields });
+      void logRowActivity(store, repo, spaceId, 'holding', holdingId, 'holdingEdit');
     },
-    removeLot: (id) => repo.remove('lot', spaceId, id),
-    importDegiro,
+    removeLot: async (id) => {
+      const lot = await store.get('lot', id);
+      await repo.remove('lot', spaceId, id);
+      if (lot) void logRowActivity(store, repo, spaceId, 'holding', lot.holdingId, 'holdingEdit');
+    },
+    importDegiro: async (files) => {
+      const total = await importDegiro(files);
+      if (total.holdings + total.lots > 0) void logActivity(store, repo, spaceId, 'importRun');
+      return total;
+    },
   };
 }

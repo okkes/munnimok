@@ -3,6 +3,7 @@ import { useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
 import { useData } from '@/app/data';
 import { adoptUserCategoriesOnShare } from '@/features/categories/categoryOps';
+import { logActivity } from '@/application/activity';
 import { apiFetch } from '@/lib/api';
 import { useServerRefresh } from '@/lib/serverEvents';
 import { Avatar } from '@/features/profile/ProfileScreen';
@@ -202,7 +203,10 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
       method: 'POST',
       body: JSON.stringify({ toUserId: friend.userId, role: 'contributor', spaceName }),
     }).catch(() => null);
-    if (res?.ok) setInviteSentTo(friend.displayName ?? short(friend.userId));
+    if (res?.ok) {
+      setInviteSentTo(friend.displayName ?? short(friend.userId));
+      void logActivity(store, repo, spaceId, 'memberInvite', friend.displayName ?? short(friend.userId));
+    }
     // inviting someone makes this a shared space: its categories become
     // space-scoped and user-scoped categories stop leaking into it — so
     // the user-scoped ones its transactions already use are adopted
@@ -211,6 +215,7 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
     if (space && space.kind !== 'shared') {
       await adoptUserCategoriesOnShare(store, repo, spaceId);
       await repo.upsert('space', spaceId, spaceId, { kind: 'shared' });
+      void logActivity(store, repo, spaceId, 'spaceShare', spaceName);
     }
     await reload();
   };
@@ -230,12 +235,15 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
     await reload();
   };
   const kick = async (userId: string) => {
+    const name = members.find((m) => m.userId === userId)?.displayName ?? short(userId);
     await apiFetch(`/spaces/${spaceId}/members/${userId}`, { method: 'DELETE' });
+    void logActivity(store, repo, spaceId, 'memberRemove', name);
     setKickTarget(null);
     await reload();
   };
   const changeRole = async (userId: string, role: SpaceRole) => {
     await apiFetch(`/spaces/${spaceId}/members/${userId}/role`, { method: 'PUT', body: JSON.stringify({ role }) });
+    void logActivity(store, repo, spaceId, 'memberRole', members.find((m) => m.userId === userId)?.displayName ?? short(userId));
     await reload();
   };
   const leave = async () => {

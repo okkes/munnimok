@@ -3,7 +3,7 @@ import 'fake-indexeddb/auto';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { renderApp } from '@/test/harness';
-import { ACTIVITY_CAP, logActivity, pruneActivity } from './activity';
+import { ACTIVITY_CAP, logActivity, logRowActivity, pruneActivity } from './activity';
 
 describe('activity history', () => {
   beforeEach(() => {
@@ -61,6 +61,28 @@ describe('activity history', () => {
     db.close();
   });
 
+  it('logRowActivity resolves the row name when the patch has none', async () => {
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const db = new MunniDB('munni_act_test');
+    const store = new DexieBackend(db);
+    const repo = new Repo(store, new HlcClock('t'), { trackOutbox: false });
+    await repo.upsert('budget', 's1', 'b1', { name: 'Groceries' });
+
+    // no explicit name: the helper reads it off the stored row
+    await logRowActivity(store, repo, 's1', 'budget', 'b1', 'budgetEdit');
+    // explicit name wins without a lookup
+    await logRowActivity(store, repo, 's1', 'budget', 'b1', 'budgetRemove', 'Renamed');
+    const rows = (await store.bySpace('activity', 's1')).filter((r) => r.deleted === 0);
+    expect(rows.map((r) => [r.kind, r.detail]).sort()).toEqual([
+      ['budgetEdit', 'Groceries'],
+      ['budgetRemove', 'Renamed'],
+    ]);
+    db.close();
+  });
+
   it('a manual transaction shows up in the bell history tab', async () => {
     renderApp('/transactions');
     await screen.findByTestId('tx-list');
@@ -76,5 +98,13 @@ describe('activity history', () => {
     // demo identity: no server alerts — the sheet opens straight on history
     const list = await screen.findByTestId('history-list');
     expect(list.textContent).toContain('Bakery');
+
+    // only the person is tappable (user rule): the row itself is not a
+    // button; clicking the actor name opens my profile
+    const row = list.querySelector('[data-testid^="history-row-"]');
+    expect(row?.tagName).not.toBe('BUTTON');
+    const actorButton = list.querySelector('[data-testid^="history-actor-"]') as HTMLElement;
+    fireEvent.click(actorButton);
+    await screen.findByTestId('screen-profile');
   }, 15_000);
 });

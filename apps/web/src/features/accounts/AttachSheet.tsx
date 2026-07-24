@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useQuery } from '@/db/useQuery';
 import type { GlobalAccount } from '@/application/accounts';
 import { detachFeedFromSpace } from '@/application/accountAttach';
+import { logActivity } from '@/application/activity';
 import { useData } from '@/app/data';
 import { useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
@@ -39,7 +40,7 @@ export function AttachSheet({
   canEdit?: boolean;
 }>) {
   const { t } = useLang();
-  const { store, repo, engine } = useData();
+  const { store, repo, engine, spaceId } = useData();
   const [busy, setBusy] = useState<string | null>(null);
   const [detachSpaceId, setDetachSpaceId] = useState<string | null>(null);
   const [name, setName] = useState('');
@@ -79,7 +80,10 @@ export function AttachSheet({
   // account); raw bank facts (iban, balance) stay untouched
   const saveName = () => {
     const trimmed = name.trim();
-    if (trimmed && trimmed !== account.name) void repo.upsert('account', account.spaceId, account.id, { name: trimmed });
+    if (trimmed && trimmed !== account.name) {
+      void repo.upsert('account', account.spaceId, account.id, { name: trimmed });
+      void logActivity(store, repo, spaceId, 'accountEdit', trimmed);
+    }
   };
 
   const deleteAccount = async () => {
@@ -96,6 +100,7 @@ export function AttachSheet({
         await repo.remove('accountLink', link.spaceId, link.id);
       }
       await engine?.purgeSpace(feedSpaceId);
+      void logActivity(store, repo, spaceId, 'accountRemove', account.name);
       setDeleteOpen(false);
       onOpenChange(false);
     } catch {
@@ -241,6 +246,7 @@ export function AttachSheet({
         initialQuery={account.name}
         onPick={({ logo }) => {
           void repo.upsert('account', account.spaceId, account.id, { logo: logo ?? (null as never) });
+          void logActivity(store, repo, spaceId, 'accountEdit', account.name);
           setLogoOpen(false);
         }}
       />

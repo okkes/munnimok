@@ -6,6 +6,8 @@ import type { SpaceTx } from '@/db/joined';
 import { merchantKey } from '@/domain/merchantKey';
 import { addDays, cycleKeyOf, nextDueDate, recurringAmountMatches } from '@/domain/recurring';
 import { recurringDismissId } from '@/domain/feedIds';
+import { logActivity, logRowActivity } from './activity';
+import { txTitle } from '@/lib/text';
 import type { StorageBackend } from '@/db/backend';
 import { useQuery } from '@/db/useQuery';
 import type { Repo } from '@/db/repo';
@@ -61,12 +63,19 @@ export function useRecurringOps(): RecurringOps {
     save: async (id, fields) => {
       const rowId = id ?? repo.newId();
       await repo.upsert('recurring', spaceId, rowId, fields);
+      void logRowActivity(store, repo, spaceId, 'recurring', rowId, id ? 'recEdit' : 'recAdd', fields.name);
       return rowId;
     },
-    remove: (id) => repo.remove('recurring', spaceId, id),
+    remove: async (id) => {
+      await logRowActivity(store, repo, spaceId, 'recurring', id, 'recRemove');
+      await repo.remove('recurring', spaceId, id);
+    },
     dismissSuggestion: (key) =>
       repo.upsert('recurringDismiss', spaceId, recurringDismissId(spaceId, key), { merchantKey: key }),
-    linkTx: (tx, recurringId) => writeTxTransform(repo, tx, { recurringId }),
+    linkTx: async (tx, recurringId) => {
+      await writeTxTransform(repo, tx, { recurringId });
+      void logActivity(store, repo, spaceId, 'txLink', txTitle(tx));
+    },
     reconcile: () => reconcileRecurringLinks(store, repo, spaceId),
   };
 }

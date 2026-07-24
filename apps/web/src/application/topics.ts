@@ -1,5 +1,6 @@
 import { useData } from '@/app/data';
 import { useQuery } from '@/db/useQuery';
+import { logActivity, logRowActivity } from './activity';
 import type { TopicRow } from '@/db/types';
 
 /**
@@ -21,10 +22,15 @@ export function useTopics(): TopicRow[] | undefined {
 }
 
 export function useTopicOps() {
-  const { repo, spaceId } = useData();
+  const { store, repo, spaceId } = useData();
   return {
-    save: async (id: string | null, fields: { name: string; catIds: string[] }) =>
-      repo.upsert('topic', spaceId, id ?? crypto.randomUUID(), fields),
-    remove: async (id: string) => repo.remove('topic', spaceId, id),
+    save: async (id: string | null, fields: { name: string; catIds: string[] }) => {
+      await repo.upsert('topic', spaceId, id ?? crypto.randomUUID(), fields);
+      void logActivity(store, repo, spaceId, id ? 'topicEdit' : 'topicAdd', fields.name);
+    },
+    remove: async (id: string) => {
+      await logRowActivity(store, repo, spaceId, 'topic', id, 'topicRemove');
+      await repo.remove('topic', spaceId, id);
+    },
   };
 }

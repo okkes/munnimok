@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useData } from '@/app/data';
 import { useQuery } from '@/db/useQuery';
+import { logRowActivity } from './activity';
 import { useSpaceAccounts } from './transactions';
 import { debtProgress, debtRemainingCents } from '@/domain/debts';
 import type { DebtRow } from '@/db/types';
@@ -40,13 +41,17 @@ export interface DebtOps {
 }
 
 export function useDebtOps(): DebtOps {
-  const { repo, spaceId } = useData();
+  const { store, repo, spaceId } = useData();
   return {
     save: async (id, fields) => {
       const rowId = id ?? repo.newId();
       await repo.upsert('debt', spaceId, rowId, fields);
+      void logRowActivity(store, repo, spaceId, 'debt', rowId, id ? 'debtEdit' : 'debtAdd', fields.name);
       return rowId;
     },
-    remove: (id) => repo.remove('debt', spaceId, id),
+    remove: async (id) => {
+      await logRowActivity(store, repo, spaceId, 'debt', id, 'debtRemove');
+      await repo.remove('debt', spaceId, id);
+    },
   };
 }

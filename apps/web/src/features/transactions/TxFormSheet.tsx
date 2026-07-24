@@ -185,7 +185,7 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
     if (!valid || !effectiveAccount || cents === null) return;
     const signed = isExpense ? -Math.abs(cents) : Math.abs(cents);
     applyManualBalanceDeltas(repo, spaceId, manualBalanceDeltas(accounts, tx, effectiveAccount, signed));
-    if (!tx) void logActivity(store, repo, spaceId, 'txAdd', merchant.trim());
+    void logActivity(store, repo, spaceId, tx ? 'txEdit' : 'txAdd', merchant.trim());
     void repo.upsert('transaction', spaceId, tx?.id ?? repo.newId(), {
       accountId: effectiveAccount,
       date,

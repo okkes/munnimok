@@ -408,7 +408,7 @@ export function TxDetailScreen() {
 
   const setCategory = (catId: string) => {
     const txType = cats.byId(catId).txTypes[0] ?? tx.txType;
-    void transform(tx, { catId, txType, needsReview: 0 });
+    void transform(tx, { catId, txType, needsReview: 0 }, 'txCategory');
     // bulk mechanism from the detail too (user request) — unlike review
     // it reaches EVERYTHING of this merchant, reviewed included
     const similar = similarTo(allTxs, tx, (item) => item.catId !== catId);
@@ -432,22 +432,24 @@ export function TxDetailScreen() {
 
   const applyTitleBulk = async () => {
     if (!titleBulk) return;
-    for (const item of titleTargets.filter((target) => titleSelected.has(target.id))) {
-      await transform(item, { titleOverride: titleBulk.title });
-    }
+    const picked = titleTargets.filter((target) => titleSelected.has(target.id));
+    // one history line for the whole bulk, not one per sibling
+    for (const item of picked) await transform(item, { titleOverride: titleBulk.title }, null);
+    if (picked.length) void logActivity(store, repo, spaceId, 'txEdit', `${txTitle(tx)} +${picked.length}`);
     setTitleBulk(null);
   };
 
   const applyBulk = async () => {
     if (!bulkOffer) return;
-    for (const item of bulkTargets.filter((target) => bulkSelected.has(target.id))) {
-      await transform(item, { catId: bulkOffer.catId, txType: bulkOffer.txType, needsReview: 0 });
-    }
+    const picked = bulkTargets.filter((target) => bulkSelected.has(target.id));
+    // one history line for the whole bulk, not one per sibling
+    for (const item of picked) await transform(item, { catId: bulkOffer.catId, txType: bulkOffer.txType, needsReview: 0 }, null);
+    if (picked.length) void logActivity(store, repo, spaceId, 'txCategory', `${txTitle(tx)} +${picked.length}`);
     setBulkOffer(null);
   };
   const saveNotes = (notes: string) => {
     if (notes === (tx.notes ?? '')) return;
-    void transform(tx, { notes });
+    void transform(tx, { notes }, null); // 'note' is the richer line
     void logActivity(store, repo, spaceId, 'note', txTitle(tx));
   };
 
@@ -463,6 +465,7 @@ export function TxDetailScreen() {
       await repo.upsert('account', tx.spaceId, account.id, { balanceCents: account.balanceCents - tx.amountCents });
     }
     await repo.remove('transaction', tx.spaceId, tx.id);
+    void logActivity(store, repo, spaceId, 'txDelete', txTitle(tx));
     void navigate({ to: '/transactions' });
   };
 
@@ -691,7 +694,7 @@ export function TxDetailScreen() {
             catTxTypes: cats.byId(tx.catId).txTypes,
           });
           // explicit null clears the link (undefined would be dropped by JSON)
-          void transform(tx, { ...fields, linkedAccountId: picked?.id ?? (null as never) });
+          void transform(tx, { ...fields, linkedAccountId: picked?.id ?? (null as never) }, 'txLink');
         }}
       />
       <TxTypeOptionsSheet
@@ -706,7 +709,7 @@ export function TxDetailScreen() {
             currentCatId: tx.catId,
             catTxTypes: cats.byId(tx.catId).txTypes,
           });
-          void transform(tx, fields); // the link survives a manual override
+          void transform(tx, fields, 'txCategory'); // the link survives a manual override
         }}
       />
       {/* ONE category flow (review parity): a single row edits the plain
@@ -748,7 +751,7 @@ export function TxDetailScreen() {
           <button
             data-testid="tx-event-none"
             onClick={() => {
-              void transform(tx, { eventId: '' });
+              void transform(tx, { eventId: '' }, 'txLink');
               setEventOpen(false);
             }}
             className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-1 py-3 text-left text-[14px] text-ink-2"
@@ -764,7 +767,7 @@ export function TxDetailScreen() {
                 key={e.id}
                 data-testid={`tx-event-${e.id}`}
                 onClick={() => {
-                  void transform(tx, { eventId: e.id });
+                  void transform(tx, { eventId: e.id }, 'txLink');
                   setEventOpen(false);
                 }}
                 className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-1 py-3 text-left text-[14px] text-ink last:border-0"
@@ -791,7 +794,7 @@ export function TxDetailScreen() {
       {eventCreating && (
         <EventFormSheet
           initial="new"
-          onSaved={(id) => void transform(tx, { eventId: id })}
+          onSaved={(id) => void transform(tx, { eventId: id }, 'txLink')}
           onClose={() => setEventCreating(false)}
         />
       )}

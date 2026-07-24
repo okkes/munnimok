@@ -2,6 +2,8 @@ import { visibleAccounts, visibleTransactions, writeTxTransform } from '@/db/joi
 import type { SpaceAccount, SpaceTx, TxTransformFields } from '@/db/joined';
 import { useQuery } from '@/db/useQuery';
 import { useData } from '@/app/data';
+import { txTitle } from '@/lib/text';
+import { logActivity } from './activity';
 
 export type { SpaceAccount, SpaceTx, TxTransformFields };
 
@@ -36,8 +38,16 @@ export function useSpaceTransaction(txId: string): SpaceTx | undefined {
  * The single write path for a space's opinion about a transaction
  * (category, type, notes, splits, reimbursements, review flag): overlay
  * for feed rows, in place for legacy rows.
+ *
+ * `activity` names the history line this gesture writes — default
+ * 'txEdit'; pass a more specific kind, or null when the caller logs a
+ * richer line itself (review). Auto-relinks bypass this hook entirely
+ * (writeTxTransform direct), so machine writes never reach the history.
  */
-export function useTxTransform(): (tx: SpaceTx, fields: TxTransformFields) => Promise<void> {
-  const { repo } = useData();
-  return (tx, fields) => writeTxTransform(repo, tx, fields);
+export function useTxTransform(): (tx: SpaceTx, fields: TxTransformFields, activity?: string | null) => Promise<void> {
+  const { store, repo, spaceId } = useData();
+  return async (tx, fields, activity = 'txEdit') => {
+    await writeTxTransform(repo, tx, fields);
+    if (activity) void logActivity(store, repo, spaceId, activity, txTitle(tx));
+  };
 }
