@@ -1,9 +1,17 @@
 # Online → offline migration — plan
 
-Status: **DESIGN — awaiting approval** (2026-07-23). Context: the
-payment plan's cancel path says "you drop to offline-style local use";
-user asks how feasible a REAL online→offline conversion is, especially
-for data that presumes a server (friends, shared spaces, bank feeds).
+Status: **SHIPPED** (2026-07-24, OO1-OO4). Global settings → "Go
+offline" opens the consent screen (kept list, ends list, keep/remove
+per shared space, delete-server-data default ON), and confirm performs
+the identity REBIND: the new offline profile carries a `storeKey`
+pointing at the signed-in identity's existing store (identityKey
+resolves it — zero copying), bank-linked accounts flip to the manual
+tier (user ruling: manual continuation, not frozen), dropped shared
+spaces purge locally, memberships end server-side (or the whole
+account is deleted). One offline profile per device stands — the
+screen refuses with an explanation when one exists. Deleting an
+adopted offline profile destroys the adopted store. The open question
+below was answered by the user: manual, not frozen.
 
 ## Feasibility: high — the architecture already carries it
 

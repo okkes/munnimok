@@ -32,7 +32,11 @@ verbatim in spirit:
 - Cancel = instant, self-serve, no retention flow beyond one honest
   screen ("your data stays; you drop to offline-style local use or
   export everything"). A canceled account keeps read access + export
-  forever; sync and bank refresh stop at period end.
+  forever; sync and bank refresh stop at period end. **OO4 (shipped
+  2026-07-24): the "keep using munni offline" option on that screen is
+  the real Go-offline conversion** (Global settings → Go offline):
+  identity rebind adopting the local store, bank accounts flip to the
+  manual tier, per-space snapshot triage — not a degraded mode.
 - Lapsed payment → 14-day grace (full function + gentle banner), then
   read-only sync until fixed. Never hold data hostage.
 

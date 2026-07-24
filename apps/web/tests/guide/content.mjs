@@ -74,7 +74,7 @@ export const GUIDE = [
   {
     id: 'devices',
     title: 'Devices & offline',
-    body: `Signed in, every device converges on the same data — edits made offline sync when you're back. Two people can edit the same transaction at once; the newer edit per field wins everywhere, identically.`,
+    body: `Signed in, every device converges on the same data — edits made offline sync when you're back. Two people can edit the same transaction at once; the newer edit per field wins everywhere, identically. And if you ever want out of the cloud entirely, Global settings → Go offline converts your account into a device-only offline profile: everything stays, bank-linked accounts become manual, and your server data can be erased in the same step.`,
     tips: ['Push notifications tell you when new bank transactions arrive.', 'The sync card at the top of Settings shows the last successful sync.'],
     shots: ['25-sync-devices', '58-sync-live', '38-offline'],
   },

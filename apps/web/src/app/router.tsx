@@ -20,6 +20,7 @@ import { SpaceAccountsScreen } from '@/features/spaces/SpaceAccountsScreen';
 import { SpaceMembersScreen } from '@/features/spaces/SpaceMembersScreen';
 import { SettingsScreen } from '@/features/settings/SettingsScreen';
 import { GlobalSettingsScreen } from '@/features/settings/GlobalSettingsScreen';
+import { GoOfflineScreen } from '@/features/auth/GoOfflineScreen';
 import { ReviewScreen } from '@/features/review/ReviewScreen';
 import { AccountsScreen } from '@/features/accounts/AccountsScreen';
 import { ManageCategoriesScreen } from '@/features/categories/ManageCategoriesScreen';
@@ -136,6 +137,11 @@ const settingsGlobalRoute = createRoute({
   path: '/settings/global',
   component: GlobalSettingsScreen,
 });
+const goOfflineRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/settings/go-offline',
+  component: GoOfflineScreen,
+});
 const reviewRoute = createRoute({ getParentRoute: () => appRoute, path: '/review', component: ReviewScreen });
 const accountsRoute = createRoute({ getParentRoute: () => appRoute, path: '/accounts', component: AccountsScreen });
 const categoriesRoute = createRoute({
@@ -202,6 +208,7 @@ export const routeTree = rootRoute.addChildren([
     spaceAccountsRoute,
     settingsRoute,
     settingsGlobalRoute,
+    goOfflineRoute,
     reviewRoute,
     accountsRoute,
     categoriesRoute,

@@ -412,6 +412,15 @@ export function GlobalSettingsScreen() {
             (user remark: the two were one accidental tap apart) */}
         {identity?.kind === 'user' && (
           <div className="mt-4 overflow-hidden rounded-card border border-line bg-surface">
+            {/* OO2: danger-adjacent but not hidden — the conversion has
+                its own consent screen */}
+            <Row
+              testId="settings-go-offline"
+              icon="wifi-off"
+              title={t('goOffline.title')}
+              sub={t('goOffline.rowSub')}
+              onClick={() => void navigate({ to: '/settings/go-offline' })}
+            />
             <button
               data-testid="settings-delete-account"
               onClick={() => {

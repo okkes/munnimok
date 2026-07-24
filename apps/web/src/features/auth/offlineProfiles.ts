@@ -11,6 +11,10 @@ export interface OfflineProfile {
   createdAt: number;
   /** avatar preset id ("icon|color"), set from the profile screen */
   picture?: string;
+  /** OO1 identity rebind: a profile born from "Go offline" ADOPTS the
+   *  signed-in identity's existing store — this is that identity key
+   *  (e.g. "user_abc"). Absent = a normal profile with its own store. */
+  storeKey?: string;
 }
 
 const KEY = 'munni_offline_profiles';
@@ -31,6 +35,19 @@ export function addOfflineProfile(name: string): OfflineProfile {
   const existing = listOfflineProfiles()[0];
   if (existing) return existing;
   const profile: OfflineProfile = { id: uuidv7(), name: name.trim(), createdAt: Date.now() };
+  localStorage.setItem(KEY, JSON.stringify([profile]));
+  return profile;
+}
+
+/**
+ * OO1: mint the profile for an online→offline conversion. It ADOPTS the
+ * signed-in identity's store (no copying — the local-first store IS the
+ * data). Refuses when a profile already exists: one per device stands,
+ * and silently merging two stores would be a lie.
+ */
+export function adoptOfflineProfile(name: string, picture: string | undefined, storeKey: string): OfflineProfile | null {
+  if (listOfflineProfiles().length > 0) return null;
+  const profile: OfflineProfile = { id: uuidv7(), name: name.trim() || 'munni', createdAt: Date.now(), picture, storeKey };
   localStorage.setItem(KEY, JSON.stringify([profile]));
   return profile;
 }
@@ -57,7 +74,9 @@ export function updateOfflineProfile(id: string, changes: Pick<Partial<OfflinePr
 export async function deleteOfflineProfile(id: string): Promise<void> {
   const { destroyStorage } = await import('@/db/openStore');
   const { identityDbName } = await import('@/db/schema');
-  await destroyStorage(identityDbName(`offline_${id}`)).catch(() => undefined);
-  localStorage.removeItem(`munni_lock_offline_${id}`);
+  // an adopted profile lives in the rebound store — destroy THAT one
+  const key = getOfflineProfile(id)?.storeKey ?? `offline_${id}`;
+  await destroyStorage(identityDbName(key)).catch(() => undefined);
+  localStorage.removeItem(`munni_lock_${key}`);
   localStorage.setItem(KEY, JSON.stringify(listOfflineProfiles().filter((p) => p.id !== id)));
 }
