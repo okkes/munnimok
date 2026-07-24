@@ -227,15 +227,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         });
         // remote-wipe: if this account was deleted (or went offline) on
         // ANOTHER device, the /me binding mismatch wipes this copy too
-        void (async () => {
-          const { verifyAccountBinding } = await import('@/features/auth/accountBinding');
-          await verifyAccountBinding(store, identity, async () => {
-            const { useSession } = await import('./session');
-            useSession.getState().logout();
-            await destroyIdentityData(identity);
-            globalThis.location.assign('/#/login');
-          });
-        })().catch(() => undefined);
+        void enforceAccountBinding(store, identity).catch(() => undefined);
       }
 
       // ask the browser not to evict our data (iOS 7-day ITP wipe etc.);
@@ -361,6 +353,17 @@ export function useData(): DataContextValue {
 }
 
 /** Demo logout = wipe the database so next login reseeds pristine state. */
+/** remote-wipe enforcement: mismatch → wipe this device + back to login */
+async function enforceAccountBinding(store: StorageBackend, identity: Identity): Promise<void> {
+  const { verifyAccountBinding } = await import('@/features/auth/accountBinding');
+  await verifyAccountBinding(store, identity, async () => {
+    const { useSession } = await import('./session');
+    useSession.getState().logout();
+    await destroyIdentityData(identity);
+    globalThis.location.assign('/#/login');
+  });
+}
+
 export async function destroyIdentityData(identity: Identity): Promise<void> {
   await destroyStorage(identityDbName(identityKey(identity)));
 }
