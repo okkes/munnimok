@@ -4,7 +4,7 @@ import { useNavigate, useParams } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useSpaceTransactions } from '@/application/transactions';
-import { localToday } from '@/application/recurring';
+import { localToday, useRecurringOps } from '@/application/recurring';
 import { nextDueDate } from '@/domain/recurring';
 import { detectPriceChange, yearlyCents, yearlyDeltaCents } from '@/domain/recurringPrice';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
@@ -26,6 +26,7 @@ export function RecurringDetailScreen() {
   const { store, spaceId } = useData();
   const { recId } = useParams({ strict: false }) as { recId: string };
   const navigate = useNavigate();
+  const ops = useRecurringOps();
   const [formInitial, setFormInitial] = useState<FormState | null>(null);
 
   // 'loading' sentinel: Dexie's get() yields undefined both while loading
@@ -145,6 +146,17 @@ export function RecurringDetailScreen() {
                 })}
               </span>
             </span>
+            {/* one-tap adoption (2026-07-24 ruling): the system only
+                RECOMMENDS — the amount stays the user's until this tap */}
+            {priceChange.toCents !== rec.amountCents && (
+              <button
+                data-testid="recdetail-price-apply"
+                onClick={() => void ops.save(rec.id, { amountCents: priceChange.toCents })}
+                className="m-tap shrink-0 rounded-full border-none bg-warning px-3 py-1.5 text-[12px] font-semibold text-white"
+              >
+                {t('recurring.priceApply', { amount: money(priceChange.toCents) })}
+              </button>
+            )}
           </div>
         )}
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { LOCALES, useLang } from '@/i18n';
+import { txTitle } from '@/lib/text';
 import { useRecurringOps } from '@/application/recurring';
 import type { RecurringSuggestion } from '@/domain/detectRecurring';
 import type { RecurringEvery, RecurringKind, RecurringRow } from '@/db/types';
@@ -47,6 +48,18 @@ export const emptyForm = (): FormState => ({
   active: true,
 });
 
+/** quick-add prefill (user request): the shortcut inside review / tx
+ *  detail derives as much as possible from the transaction itself —
+ *  name, amount and the due day from the transaction's own date */
+export const formFromTx = (tx: { merchant: string; titleOverride?: string; amountCents: number; date: string }): FormState => ({
+  ...emptyForm(),
+  name: txTitle(tx),
+  amount: (Math.abs(tx.amountCents) / 100).toFixed(2),
+  firstDue: tx.date,
+  dueDay: Math.min(28, Number(tx.date.slice(8, 10)) || 1),
+  dueMonth: Number(tx.date.slice(5, 7)) || 1,
+});
+
 export const formFromRec = (rec: RecurringRow): FormState => ({
   id: rec.id,
   name: rec.name,
@@ -81,6 +94,9 @@ interface RecurringFormSheetProps {
   onClose: () => void;
   /** e.g. the detail screen leaves after its record was deleted */
   onDeleted?: () => void;
+  /** create-and-return hosts (review, tx detail) get the saved row's id
+   *  HERE — sniffing the live-query list after close is a lost race */
+  onSaved?: (id: string) => void;
 }
 
 /**
@@ -88,7 +104,7 @@ interface RecurringFormSheetProps {
  * tab (add), the detail screen (edit) and the suggestions screen
  * (accept). Owns its pickers and persistence.
  */
-export function RecurringFormSheet({ initial, onClose, onDeleted }: Readonly<RecurringFormSheetProps>) {
+export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved }: Readonly<RecurringFormSheetProps>) {
   const { t, lang } = useLang();
   const ops = useRecurringOps();
   const [form, setForm] = useState<FormState | null>(null);
@@ -129,7 +145,7 @@ export function RecurringFormSheet({ initial, onClose, onDeleted }: Readonly<Rec
           dueDay: Math.min(31, Math.max(1, form.dueDay || 1)),
           ...(form.every === 'year' ? { dueMonth: Math.min(12, Math.max(1, form.dueMonth || 1)) } : {}),
         };
-    await ops.save(form.id, {
+    const savedId = await ops.save(form.id, {
       name: form.name.trim(),
       kind: form.kind,
       luxury: form.luxury ? 1 : 0,
@@ -141,6 +157,7 @@ export function RecurringFormSheet({ initial, onClose, onDeleted }: Readonly<Rec
       notifyDaysBefore: form.notify || undefined,
       merchantKey: form.merchantKey,
     });
+    onSaved?.(savedId);
     onClose();
     // an accepted suggestion should immediately own its past payments
     if (fromSuggestion) await ops.reconcile();

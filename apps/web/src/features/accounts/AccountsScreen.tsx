@@ -205,12 +205,19 @@ export function AccountsScreen() {
     void fetchMyFeedIds().then(setMyFeedIds).catch(() => undefined);
   }, [identity?.kind]);
 
-  const onFilePicked = async (file: File | undefined) => {
-    if (!file) return;
+  const onFilePicked = async (files: FileList | null) => {
+    const picked = [...(files ?? [])];
+    if (picked.length === 0) return;
     setImportError(false);
     setImportResult(null);
     try {
-      setImportPreview(parseStatement(await file.text(), file.name));
+      // several exports in one go (user request): parse each file and
+      // pool the statements — dedupe refs make overlaps import cleanly
+      const statements: ParsedStatement[] = [];
+      for (const file of picked) {
+        statements.push(...parseStatement(await file.text(), file.name));
+      }
+      setImportPreview(statements);
     } catch {
       setImportPreview(null);
       setImportError(true);
@@ -340,9 +347,10 @@ export function AccountsScreen() {
         ref={fileRef}
         type="file"
         accept=".xml,.csv,text/xml,application/xml,text/csv"
+        multiple
         hidden
         data-testid="accounts-import-input"
-        onChange={(e) => void onFilePicked(e.target.files?.[0])}
+        onChange={(e) => void onFilePicked(e.target.files)}
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         {identity?.kind === 'user' && unattached.length > 0 && activeSpace && (

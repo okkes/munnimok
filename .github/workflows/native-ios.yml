@@ -228,27 +228,22 @@ jobs:
         if: steps.asc.outputs.present == 'true'
         working-directory: apps/native/ios/App
         run: |
-          # Apple caps TestFlight uploads per app per day — a busy dev day
-          # burned the whole quota and then FAILED the run. Dev pushes now
-          # export-only (full signing validation, no upload); master pushes
-          # and manual dispatches upload for real.
-          DESTINATION=export
-          if [ "${{ github.ref_name }}" = "master" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            DESTINATION=upload
-          fi
-          echo "destination: $DESTINATION"
           cat > "$RUNNER_TEMP/exportOptions.plist" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
           <dict>
             <key>method</key><string>app-store-connect</string>
-            <key>destination</key><string>$DESTINATION</string>
+            <key>destination</key><string>upload</string>
             <key>teamID</key><string>$APPLE_TEAM_ID</string>
             <key>uploadSymbols</key><true/>
           </dict>
           </plist>
           PLIST
+          # Apple caps TestFlight uploads per app per day. Hitting the cap
+          # is expected on a busy dev day and must not paint CI red (user
+          # ruling): degrade to a warning; every other failure stays fatal.
+          set +e
           xcodebuild -exportArchive \
             -archivePath "$RUNNER_TEMP/App.xcarchive" \
             -exportOptionsPlist "$RUNNER_TEMP/exportOptions.plist" \
@@ -256,7 +251,14 @@ jobs:
             -allowProvisioningUpdates \
             -authenticationKeyPath "$RUNNER_TEMP/asc.p8" \
             -authenticationKeyID "$ASC_KEY_ID" \
-            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" 2>&1 | tee "$RUNNER_TEMP/export.log"
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ] && grep -q "Upload limit reached" "$RUNNER_TEMP/export.log"; then
+            echo "::warning title=TestFlight upload skipped::Apple's daily upload limit is reached — the build archived and signed fine; the next quiet day's push uploads again."
+            exit 0
+          fi
+          exit "$status"
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}

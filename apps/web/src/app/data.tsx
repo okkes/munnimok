@@ -58,6 +58,12 @@ export async function bootstrapUserSpaces(
     if (isCancelled()) return;
   }
 
+  // a CANCELLED instance must never write: StrictMode/HMR double-mounts
+  // run two bootstraps against the SAME database, and the stale one's
+  // slow first sync used to re-set needsOnboarding AFTER the user had
+  // already finished onboarding — ambushing the app mid-use
+  if (isCancelled()) return;
+
   if (!(await hasLocalSpaces())) {
     // server confirmed: brand-new user — create the personal space once
     const personalId = uuidv7();

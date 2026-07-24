@@ -36,7 +36,17 @@ export const EVENT_PICTURES = [
 export const eventPicture = (event: Pick<EventRow, 'picture'>): string => event.picture || EVENT_PICTURES[0];
 
 /** create/edit: the picture carries the character; icons retired */
-export function EventFormSheet({ initial, onClose }: Readonly<{ initial: EventRow | 'new' | null; onClose: () => void }>) {
+export function EventFormSheet({
+  initial,
+  onClose,
+  onSaved,
+}: Readonly<{
+  initial: EventRow | 'new' | null;
+  onClose: () => void;
+  /** create-and-return hosts (review, tx detail) get the saved row's id
+   *  HERE — sniffing the live-query list after close is a lost race */
+  onSaved?: (id: string) => void;
+}>) {
   const { t } = useLang();
   const ops = useEventOps();
   const editing = initial !== 'new' && initial !== null ? initial : null;
@@ -68,7 +78,7 @@ export function EventFormSheet({ initial, onClose }: Readonly<{ initial: EventRo
   const save = async () => {
     if (!name.trim()) return;
     const budgetCents = parseCents(estimate);
-    await ops.save(editing?.id ?? null, {
+    const savedId = await ops.save(editing?.id ?? null, {
       name: name.trim(),
       picture,
       from: from || undefined,
@@ -77,6 +87,7 @@ export function EventFormSheet({ initial, onClose }: Readonly<{ initial: EventRo
       note: note.trim() || undefined,
       archived: editing?.archived ?? 0,
     });
+    onSaved?.(savedId);
     onClose();
   };
 

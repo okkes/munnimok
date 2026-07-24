@@ -49,31 +49,90 @@ export async function base(page, variant, opts = {}) {
     }
   }, { lang: variant.lang, dark: variant.dark, demo: !!opts.demo, userSub: opts.userSub ?? null });
   if (opts.extraSetup) await page.addInitScript(opts.extraSetup);
+  if (process.env.E2E_LOG) page.on('console', (m) => console.log('[page]', m.text()));
   await page.goto('/');
   const authed = opts.demo || opts.userSub;
   // brand-new accounts land on the NON-skippable onboarding (tab bar
   // hidden there) — complete it so specs start on a normal home. Specs
   // that test onboarding itself pass keepOnboarding: true.
-  if (opts.userSub && !opts.keepOnboarding) await completeOnboardingIfShown(page);
+  if (opts.userSub && !opts.keepOnboarding) await completeOnboardingIfShown(page, opts.userSub);
   await page.waitForSelector(authed ? '[data-testid="tab-home"]' : '[data-testid="screen-login"]');
 }
 
-async function completeOnboardingIfShown(page) {
+async function completeOnboardingIfShown(page, userSub) {
   // a brand-new user's FIRST paint can exceed a short fixed wait on a
   // cold CI stack — the old 3s timeout then declared "no onboarding"
   // and the spec waited forever for a tab bar onboarding keeps hidden.
   // Race the two possible outcomes instead of guessing.
   const onboarding = page.locator('[data-testid="screen-onboarding"]');
-  const home = page.locator('[data-testid="tab-home"]');
-  const winner = await Promise.race([
-    onboarding.waitFor({ timeout: 30000 }).then(() => 'onboarding').catch(() => null),
-    home.waitFor({ state: 'visible', timeout: 30000 }).then(() => 'home').catch(() => null),
+  // NOT tab-home: the tab bar sits OUTSIDE DataProvider and is visible
+  // during the whole bootstrap — screen-home only renders once state is
+  // ready, which is exactly when the needsOnboarding meta is final
+  const home = page.locator('[data-testid="screen-home"]');
+  // as patient as the spec budget itself: under FULL-suite load a brand
+  // new user's first paint has been observed beyond 30s — a shorter cap
+  // here just converts slowness into a guaranteed timeout later
+  let winner = await Promise.race([
+    onboarding.waitFor({ timeout: 120000 }).then(() => 'onboarding').catch(() => null),
+    home.waitFor({ state: 'visible', timeout: 120000 }).then(() => 'home').catch(() => null),
   ]);
-  if (winner !== 'onboarding') return; // returning user — no onboarding
-  await page.fill('[data-testid="onboarding-name"]', 'E2E User');
-  await page.click('[data-testid="onboarding-save"]');
-  await page.click('[data-testid="onboarding-lock-later"]');
-  await page.waitForSelector('[data-testid="screen-home"]');
+  if (winner === 'home') {
+    // the tab bar can paint a beat BEFORE Home's needsOnboarding query
+    // navigates away — the meta itself is already final (the fail-closed
+    // bootstrap wrote it before rendering), so read it directly instead
+    // of guessing: races here ambushed specs with a late onboarding
+    const needs = await page.evaluate(
+      (dbName) =>
+        new Promise((resolve) => {
+          const req = indexedDB.open(dbName);
+          req.onerror = () => resolve(false);
+          req.onsuccess = () => {
+            const db = req.result;
+            try {
+              const get = db.transaction('meta').objectStore('meta').get('needsOnboarding');
+              get.onsuccess = () => {
+                resolve(get.result?.value === true);
+                db.close();
+              };
+              get.onerror = () => {
+                resolve(false);
+                db.close();
+              };
+            } catch {
+              resolve(false);
+              db.close();
+            }
+          };
+        }),
+      `munni_user_${userSub}`,
+    );
+    if (!needs) return; // truly a returning user
+    await onboarding.waitFor({ timeout: 30000 }); // the redirect is coming
+    winner = 'onboarding';
+  }
+  if (winner !== 'onboarding') return;
+  // something can remount the tree once during a cold boot and wipe the
+  // typed name (CI snapshots showed the field empty + Continue disabled
+  // AFTER a successful fill) — so fill-until-armed, then walk the steps,
+  // retrying the whole passage if the screen snaps back
+  const name = page.locator('[data-testid="onboarding-name"]');
+  const save = page.locator('[data-testid="onboarding-save"]');
+  for (let attempt = 0; attempt < 6; attempt++) {
+    try {
+      for (let i = 0; i < 30 && !(await save.isEnabled().catch(() => false)); i++) {
+        await name.fill('E2E User').catch(() => undefined);
+        await page.waitForTimeout(500);
+      }
+      await save.click({ timeout: 10000 });
+      await page.click('[data-testid="onboarding-lock-later"]', { timeout: 15000 });
+      await page.waitForSelector('[data-testid="screen-home"]', { timeout: 20000 });
+      return;
+    } catch {
+      // snapped back to an earlier step (or home already arrived) — loop
+      if (await page.locator('[data-testid="screen-home"]').isVisible().catch(() => false)) return;
+    }
+  }
+  throw new Error('onboarding never completed — see the page snapshot');
 }
 
 // App-wide rows live behind the single "Global settings" door on the

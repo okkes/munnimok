@@ -16,6 +16,36 @@ describe('TxDetailScreen (demo identity)', () => {
     indexedDB.deleteDatabase('munni_demo');
   });
 
+  it('quick-adds a recurring from the detail: form prefilled from the tx, created row auto-links', async () => {
+    renderApp('/transactions/dm6');
+    await screen.findByTestId('screen-tx-detail');
+    const headline = (await screen.findByTestId('tx-detail-amount')).textContent ?? '';
+
+    fireEvent.click(screen.getByTestId('tx-detail-recurring-row'));
+    fireEvent.click(await screen.findByTestId('tx-recurring-create'));
+
+    // prefill (user request): name + amount derive from the transaction
+    const nameInput = (await screen.findByTestId('recform-name')) as HTMLInputElement;
+    expect(nameInput.value.length).toBeGreaterThan(0);
+    const amountInput = screen.getByTestId('recform-amount') as HTMLInputElement;
+    expect(headline.replace(/[^0-9]/g, '')).toContain(amountInput.value.replace(/[^0-9]/g, ''));
+
+    fireEvent.click(screen.getByTestId('recform-save'));
+    // the fresh recurring auto-links — the row shows its name, not "None"
+    await waitFor(
+      () => expect(screen.getByTestId('tx-detail-recurring-row').textContent).toContain(nameInput.value),
+      { timeout: 5000 },
+    );
+
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const tx = await db.transactions.get('dm6');
+      expect(tx?.recurringId).toBeTruthy();
+    });
+    db.close();
+  }, 15_000);
+
   it('opens a transaction from the list and shows its detail', async () => {
     renderApp('/transactions');
     const list = await screen.findByTestId('tx-list');

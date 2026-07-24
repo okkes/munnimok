@@ -1,10 +1,19 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo } from 'react';
+import type { ReactNode } from 'react';
 import { useQuery } from '@/db/useQuery';
 import { useData } from '@/app/data';
 import { useSession } from '@/app/session';
 import { useLang } from '@/i18n';
+import { fmtCents } from '@/lib/money';
 import { ensureRates, fmtDisplay, readManualRates, readRatesCache } from '@/lib/rates';
 import type { DisplayContext } from '@/lib/rates';
+
+export interface DisplayMoney {
+  displayCurrency: string | null;
+  display: DisplayContext | null;
+  fmt: (cents: number, currency: string, opts?: { sign?: boolean; date?: string }) => string;
+  ensureDates: (dates: readonly string[]) => void;
+}
 
 /**
  * The display-currency lens (currency plan CD3): reads the user-level
@@ -13,8 +22,14 @@ import type { DisplayContext } from '@/lib/rates';
  * pairs), and hands surfaces one `fmt` that renders any amount in the
  * chosen currency, marked ≈. With no preference set it is exactly
  * fmtCents — "as recorded" costs nothing.
+ *
+ * Subscriptions live ONCE in the provider (AppLayout): the first
+ * version ran this hook per TxRow, which meant hundreds of store
+ * subscriptions all re-reading the rates cache on EVERY write emission
+ * — a real slowdown during sync pulls (it melted the multi-user e2e
+ * specs on cold CI runners before it would have melted real devices).
  */
-export function useDisplayMoney() {
+function useDisplayMoneyStandalone(): DisplayMoney {
   const { lang } = useLang();
   const { store } = useData();
   const identity = useSession((s) => s.identity);
@@ -55,4 +70,29 @@ export function useDisplayMoney() {
   );
 
   return { displayCurrency, display, fmt, ensureDates };
+}
+
+const DisplayMoneyContext = createContext<DisplayMoney | null>(null);
+
+/** mounted once inside the authed layout — all screens and rows share it */
+export function DisplayMoneyProvider({ children }: Readonly<{ children: ReactNode }>) {
+  const value = useDisplayMoneyStandalone();
+  return <DisplayMoneyContext.Provider value={value}>{children}</DisplayMoneyContext.Provider>;
+}
+
+export function useDisplayMoney(): DisplayMoney {
+  const ctx = useContext(DisplayMoneyContext);
+  const { lang } = useLang();
+  // outside the provider (odd mounts, isolated tests): plain fmtCents,
+  // zero store subscriptions — never silently recreate the heavy path
+  const fallback = useMemo<DisplayMoney>(
+    () => ({
+      displayCurrency: null,
+      display: null,
+      fmt: (cents, currency, opts) => fmtCents(cents, currency, lang, opts),
+      ensureDates: () => undefined,
+    }),
+    [lang],
+  );
+  return ctx ?? fallback;
 }
