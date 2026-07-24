@@ -25,7 +25,7 @@ export const GUIDE = [
   {
     id: 'banks',
     title: 'Connecting your bank',
-    body: `Settings → Global settings → Financial Accounts. Connect a bank (read-only PSD2 access — munni can never move money), import a statement (CAMT.053 or ING CSV) for accounts your bank won't share, or add cash/savings accounts manually. Bank data lands once per account; each space picks its accounts on its own Financial accounts screen — attach an existing account there with a start date, or detach it when the space no longer needs it. A freshly connected account that isn't visible in any space yet offers a one-tap attach to your active space.`,
+    body: `Settings → Global settings → Financial Accounts. Connect a bank (read-only PSD2 access — munni can never move money), import statements (CAMT.053 or ING CSV — several files at once) for accounts your bank won't share, or add cash/savings accounts manually. Bank data lands once per account; each space picks its accounts on its own Financial accounts screen — attach an existing account there with a start date, or detach it when the space no longer needs it. A freshly connected account that isn't visible in any space yet offers a one-tap attach to your active space.`,
     tips: ['New transactions arrive automatically several times a day.', 'Reserved (not yet booked) card payments show with a badge and disappear when the real booking lands.', 'Each account row shows when the bank last answered — a Reconnect hint appears when a consent has gone quiet.'],
     shots: ['16-accounts-list', '19-import-preview', '20-import-run'],
   },
@@ -74,7 +74,7 @@ export const GUIDE = [
   {
     id: 'devices',
     title: 'Devices & offline',
-    body: `Signed in, every device converges on the same data — edits made offline sync when you're back. Two people can edit the same transaction at once; the newer edit per field wins everywhere, identically. And if you ever want out of the cloud entirely, Global settings → Go offline converts your account into a device-only offline profile: everything stays, bank-linked accounts become manual, and your server data can be erased in the same step.`,
+    body: `Signed in, every device converges on the same data — edits made offline sync when you're back. Two people can edit the same transaction at once; the newer edit per field wins everywhere, identically. And if you ever want out of the cloud entirely, Profile → Go offline converts your account into a device-only offline profile: everything stays, bank-linked accounts become manual, your server data is erased, and other signed-in devices wipe themselves on their next sync.`,
     tips: ['Push notifications tell you when new bank transactions arrive.', 'The sync card at the top of Settings shows the last successful sync.'],
     shots: ['25-sync-devices', '58-sync-live', '38-offline'],
   },

@@ -18,6 +18,17 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.23.0',
+    date: '2026-07-24',
+    items: [
+      {
+        en: 'Quicker links, honest amounts: creating a recurring cost or event from review — and now also from a transaction’s detail — prefills the form from the transaction and reliably attaches the new item to it in one go. A recurring cost’s amount is now truly yours: munni never changes it behind your back, it only spots price changes and offers a one-tap “Update to …”. Statement imports accept several files at once, and go-offline plus account deletion moved to the bottom of your profile.',
+        nl: 'Snellere koppelingen, eerlijke bedragen: een vaste last of gebeurtenis aanmaken vanuit beoordelen — en nu ook vanuit de transactiedetails — vult het formulier vooraf in vanuit de transactie en koppelt het nieuwe item betrouwbaar in één keer. Het bedrag van een vaste last is nu echt van jou: munni wijzigt het nooit stiekem, het signaleert alleen prijswijzigingen en biedt één tik “Bijwerken naar …”. Afschrift-imports accepteren meerdere bestanden tegelijk, en offline gaan plus accountverwijdering verhuisden naar de onderkant van je profiel.',
+        tr: 'Daha hızlı bağlantılar, dürüst tutarlar: incelemeden — ve artık işlem detayından da — düzenli gider veya etkinlik oluşturmak formu işlemden doldurur ve yeni öğeyi tek seferde güvenilir şekilde bağlar. Düzenli giderin tutarı artık gerçekten senin: munni onu asla gizlice değiştirmez, yalnızca fiyat değişimlerini yakalar ve tek dokunuş “… olarak güncelle” önerir. Ekstre içe aktarımı aynı anda birden çok dosya kabul eder; çevrimdışına geçme ve hesap silme profilinin altına taşındı.',
+      },
+    ],
+  },
+  {
     version: '2.22.0',
     date: '2026-07-22',
     items: [
