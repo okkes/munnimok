@@ -116,19 +116,26 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
     fireEvent.click(screen.getByTestId('catform-save'));
     await screen.findByText('Padel', {}, { timeout: 5000 });
 
-    // happy-dom rects are zeros — fake the row + target group boxes
     const subRow = screen.getByText('Padel').closest('[data-testid^="cats-subrow-"]') as HTMLElement;
-    subRow.getBoundingClientRect = () => ({ top: 100, bottom: 140, left: 0, right: 320, height: 40, width: 320 }) as DOMRect;
-    const target = document.querySelector('[data-cat-group="entertainment"]') as HTMLElement;
-    target.getBoundingClientRect = () => ({ top: 400, bottom: 480, left: 0, right: 320, height: 80, width: 320 }) as DOMRect;
-
     const subId = subRow.getAttribute('data-testid')!.replace('cats-subrow-', '');
     const handle = screen.getByTestId(`cats-drag-${subId}`);
+
+    // lift: every main folds into a drop row, the ghost floats on the rail
     fireEvent.pointerDown(handle, { pointerId: 1, clientX: 10, clientY: 120 });
-    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 10, clientY: 440 });
-    // the ghost follows and the hovered group highlights
+    const drop = await screen.findByTestId('cats-drop-entertainment');
     expect(screen.getByTestId('cats-drag-ghost')).toBeTruthy();
-    fireEvent.pointerUp(handle, { pointerId: 1 });
+
+    // happy-dom has no real hit-testing — route the rail probe to the row
+    const originalFromPoint = document.elementFromPoint;
+    document.elementFromPoint = () => drop;
+    try {
+      fireEvent.pointerMove(window, { pointerId: 1, clientX: 10, clientY: 440 });
+      fireEvent.pointerUp(window, { pointerId: 1 });
+      // release opens the confirmation sheet; only confirm commits
+      fireEvent.click(await screen.findByTestId('cats-move-confirm'));
+    } finally {
+      document.elementFromPoint = originalFromPoint;
+    }
 
     // the sub now lives under Entertainment (types match: both expense)
     await waitFor(async () => {

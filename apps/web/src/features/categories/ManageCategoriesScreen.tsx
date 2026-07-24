@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@/db/useQuery';
 import { ALL_TX_TYPES } from '@/domain/txType';
 import type { CategoryRow, CatDirection, TxType } from '@/db/types';
@@ -14,8 +14,6 @@ import { Collapse } from '@/ui/Collapse';
 import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
-import { useDragToTargets } from '@/ui/dragReorder';
-import type { DragToTargets } from '@/ui/dragReorder';
 import {
   copyCategoryToSpace,
   createMainCategory,
@@ -111,8 +109,7 @@ function SubCatRow({
   onEdit,
   onMenu,
   t,
-  dragHandleProps,
-  dragRowRef,
+  onDragStart,
   dragging,
 }: Readonly<{
   cat: Cat;
@@ -121,29 +118,18 @@ function SubCatRow({
   onMenu: () => void;
   t: TFunc;
   /** custom subs drag onto another main (restored, user request) */
-  dragHandleProps?: ReturnType<DragToTargets['handleProps']>;
-  dragRowRef?: (el: HTMLElement | null) => void;
+  /** present on movable rows: lifts the row into the fold-and-drop flow */
+  onDragStart?: (clientY: number) => void;
   dragging?: boolean;
 }>) {
   const canHold = !!cat.custom && !cat.isOther;
   const hold = useHoldMenu(canHold, onMenu);
   return (
     <div
-      ref={dragRowRef}
       data-testid={`cats-subrow-${cat.id}`}
       className={`flex select-none items-center ${canHold ? 'bg-accent-soft/35' : ''}`}
       style={dragging ? { opacity: 0.3 } : undefined}
     >
-      {dragHandleProps && (
-        <button
-          aria-label={t('home.dragHandle')}
-          data-testid={`cats-drag-${cat.id}`}
-          {...dragHandleProps}
-          className="m-tap flex h-10 w-8 shrink-0 cursor-grab items-center justify-center border-none bg-transparent pl-2 text-ink-4"
-        >
-          <Icon name="drag-horizontal-variant" size={16} />
-        </button>
-      )}
       <button
         data-testid={`managecat-${cat.id}`}
         disabled={!cat.custom || cat.isOther}
@@ -170,6 +156,21 @@ function SubCatRow({
           </>
         )}
       </button>
+      {/* right-side handle (restored pre-replacement design): lifts
+          instantly; touch-none keeps the whole gesture ours on Android */}
+      {onDragStart && (
+        <button
+          aria-label={t('cats.moveTarget')}
+          data-testid={`cats-drag-${cat.id}`}
+          onPointerDown={(e) => {
+            e.preventDefault();
+            onDragStart(e.clientY);
+          }}
+          className="m-tap flex h-9 w-9 shrink-0 touch-none items-center justify-center border-none bg-transparent text-ink-4 select-none"
+        >
+          <Icon name="drag-horizontal-variant" size={18} />
+        </button>
+      )}
     </div>
   );
 }
@@ -250,21 +251,31 @@ export function ManageCategoriesScreen() {
   const [direction, setDirection] = useState<CatDirection>('both');
   const [moveTo, setMoveTo] = useState<string | null>(null);
   const [moveSheetOpen, setMoveSheetOpen] = useState(false);
-  // restored drag-to-move (user request): drag a custom sub onto another
-  // main's group; the hold menu stays as the accessible alternative
-  const moveByDrag = async (subId: string, parentId: string) => {
-    const row = cats.byId(subId);
-    if (!row.custom || row.parentId === parentId) return;
-    const conflict = categoryNameConflict(
-      { name: catName(row, t), parentId, selfId: row.id },
-      namedCategories(),
-    );
-    if (conflict) return; // same name already lives there — the form's move path explains; drag just declines
-    await runGuarded(await prepareCategoryEdit(store, repo, row as never, { parentId }), 'edit', catName(row, t));
-  };
-  const subDrag = useDragToTargets((subId, parentId) => void moveByDrag(subId, parentId));
-  // hold on a custom sub opens its action sheet (drag-to-move retired)
+  // hold on a custom sub opens its action sheet (accessible alternative)
   const [subMenu, setSubMenu] = useState<Cat | null>(null);
+  // restored pre-replacement drag (user request, from 683f068a): lift a
+  // custom sub via its right-side handle, every main folds into a drop
+  // row, a ghost follows the finger on a vertical rail, edges
+  // auto-scroll, release asks for confirmation
+  const [dragging, setDragging] = useState<CategoryRow | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [moveConfirm, setMoveConfirm] = useState<{ sub: CategoryRow; targetId: string; commit: PendingCommit } | null>(null);
+  const [dragError, setDragError] = useState<CategoryNameConflict | null>(null);
+  const dropTargetRef = useRef<string | null>(null);
+  dropTargetRef.current = dropTarget;
+  const ghostRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const pointerY = useRef(0);
+  // live "a drag owns the pointer" flag (state is too slow for native
+  // event dispatch)
+  const dragActiveRef = useRef(false);
+
+  const startDrag = (row: CategoryRow, clientY: number) => {
+    dragActiveRef.current = true;
+    pointerY.current = clientY;
+    navigator.vibrate?.(15); // lift feedback where supported
+    setDragging(row);
+  };
   const [pending, setPending] = useState<PendingCommit | null>(null);
   const [pendingKind, setPendingKind] = useState<'edit' | 'delete'>('edit');
   const [pendingDetail, setPendingDetail] = useState<string | undefined>(undefined);
@@ -398,6 +409,98 @@ export function ManageCategoriesScreen() {
     await repo.upsert('space', spaceId, spaceId, { hiddenMains: [...next] });
   };
 
+  // the active drag: ghost follows the pointer, edges auto-scroll, the
+  // hovered fold row highlights, release opens the confirmation sheet
+  useEffect(() => {
+    if (!dragging) return;
+    const scroller = scrollRef.current;
+
+    const targetUnderRail = () => {
+      // the rail ignores horizontal drift: probe at the list's center X
+      const rect = scroller?.getBoundingClientRect();
+      const x = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
+      const y = rect ? Math.min(Math.max(pointerY.current, rect.top + 1), rect.bottom - 1) : pointerY.current;
+      const group = document.elementFromPoint(x, y)?.closest?.('[data-cat-group]');
+      return (group as HTMLElement | null)?.dataset.catGroup ?? null;
+    };
+    // the ghost is ABSOLUTE inside the scroll container, not fixed:
+    // iOS misplaces fixed elements inside our measured-height app frame,
+    // and content coordinates stay correct while auto-scroll runs
+    const positionGhost = () => {
+      const rect = scroller?.getBoundingClientRect();
+      if (!ghostRef.current || !rect || !scroller) return;
+      ghostRef.current.style.top = `${pointerY.current - rect.top + scroller.scrollTop}px`;
+    };
+    const endDrag = () => {
+      dragActiveRef.current = false;
+      setDragging(null);
+      setDropTarget(null);
+    };
+    const onMove = (e: PointerEvent) => {
+      pointerY.current = e.clientY;
+      positionGhost();
+      setDropTarget(targetUnderRail());
+    };
+    const onUp = () => {
+      const targetId = dropTargetRef.current;
+      endDrag();
+      if (!targetId || targetId === dragging.parentId) return;
+      // naming rules apply to drags too: the target parent may already
+      // hold a sub with this name (or the name IS a parent's)
+      const conflict = categoryNameConflict(
+        { name: catName(cats.byId(dragging.id), t), parentId: targetId, selfId: dragging.id },
+        namedCategories(),
+      );
+      if (conflict) {
+        setDragError(conflict);
+        setTimeout(() => setDragError(null), 4000);
+        return;
+      }
+      prepareCategoryEdit(store, repo, dragging, { parentId: targetId })
+        .then((commit) => setMoveConfirm({ sub: dragging, targetId, commit }))
+        .catch(() => undefined); // db closed under us (teardown) — drop the move
+    };
+    // the browser reclaimed the pointer (Android does this the moment it
+    // decides the gesture is a scroll) — that is a CANCEL, never a drop
+    const onCancel = () => endDrag();
+    // the drag owns every touch until the finger lifts — without this,
+    // Android reclaims the gesture as a scroll mid-drag
+    const blockTouch = (ev: TouchEvent) => {
+      if (dragActiveRef.current && ev.cancelable) ev.preventDefault();
+    };
+    // holding still near an edge must keep scrolling — hence a rAF loop,
+    // not just pointermove; it also re-resolves the hovered group and
+    // re-anchors the ghost while content slides beneath the finger
+    let raf = requestAnimationFrame(function tick() {
+      if (scroller) {
+        const rect = scroller.getBoundingClientRect();
+        const zone = 64;
+        let dy = 0;
+        if (pointerY.current < rect.top + zone) dy = -Math.ceil((rect.top + zone - pointerY.current) / 6);
+        else if (pointerY.current > rect.bottom - zone) dy = Math.ceil((pointerY.current - (rect.bottom - zone)) / 6);
+        if (dy !== 0) {
+          scroller.scrollTop += dy;
+          positionGhost();
+          setDropTarget(targetUnderRail());
+        }
+      }
+      raf = requestAnimationFrame(tick);
+    });
+    positionGhost(); // anchor before the first move
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp, { once: true });
+    window.addEventListener('pointercancel', onCancel, { once: true });
+    window.addEventListener('touchmove', blockTouch, { passive: false });
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onCancel);
+      window.removeEventListener('touchmove', blockTouch);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dragging]);
+
   const editing = mode?.kind === 'editMain' || mode?.kind === 'editSub';
   const isMainForm = mode?.kind === 'newMain' || mode?.kind === 'editMain';
   let formParent = null;
@@ -426,7 +529,15 @@ export function ManageCategoriesScreen() {
           </>
         }
       />
-      <div className="relative min-h-0 flex-1 overflow-y-auto px-5 pb-6">
+      <div ref={scrollRef} className={`relative min-h-0 flex-1 overflow-y-auto px-5 pb-6 ${dragging ? 'select-none' : ''}`}>
+        {dragError && (
+          <p
+            className="mt-2 rounded-card border border-negative/40 bg-negative/10 px-3 py-2 text-[12px] text-negative"
+            data-testid="cats-drag-error"
+          >
+            {t(NAME_ERROR_KEYS[dragError])}
+          </p>
+        )}
         {/* one-line legend: the arrows carry meaning nowhere else explained */}
         <p className="mt-2 flex items-center gap-1 px-1 text-[11px] text-ink-4">
           <Icon name="arrow-up-thin" size={13} /> {t('cats.legendDebit')}
@@ -445,15 +556,32 @@ export function ManageCategoriesScreen() {
         )}
         {cats.allParents.map((parent) => {
           const mainHidden = cats.hiddenMains.has(parent.id);
+          if (dragging) {
+            if (mainHidden) return null; // hidden mains take no drops
+            // fold mode: every main collapses into one fat drop row, so
+            // even a long list fits a couple of screens while dragging
+            let foldClass = 'border-line bg-surface';
+            if (dropTarget === parent.id) foldClass = 'border-accent bg-accent-soft';
+            else if (parent.id === dragging.parentId) foldClass = 'border-line bg-surface opacity-55';
+            return (
+              <div
+                key={parent.id}
+                data-cat-group={parent.id}
+                data-testid={`cats-drop-${parent.id}`}
+                className={`mt-2 flex items-center gap-2.5 rounded-card border px-4 py-3.5 transition-colors ${foldClass}`}
+              >
+                <Icon name={parent.icon} size={17} color={parent.color} />
+                <span className="min-w-0 flex-1 truncate text-[13px] font-medium" style={{ color: parent.color }}>
+                  {catName(parent, t)}
+                </span>
+                <span className="rounded bg-bg-2 px-1.5 py-0.5 text-[9px] font-semibold text-ink-3">
+                  {t(`tx.type.${parent.txTypes[0]}`)}
+                </span>
+              </div>
+            );
+          }
           return (
-            <div
-              key={parent.id}
-              data-cat-group={parent.id}
-              ref={subDrag.targetRef(parent.id)}
-              className={`rounded-card transition-shadow ${mainHidden ? 'opacity-55' : ''} ${
-                subDrag.hoveredTarget === parent.id && subDrag.dragId ? 'ring-2 ring-accent' : ''
-              }`}
-            >
+            <div key={parent.id} data-cat-group={parent.id} className={mainHidden ? 'opacity-55' : ''}>
               <GroupHeader
                 parent={parent}
                 mainHidden={mainHidden}
@@ -481,9 +609,15 @@ export function ManageCategoriesScreen() {
                       onEdit={() => openEdit(cat)}
                       onMenu={() => setSubMenu(cat)}
                       t={t}
-                      dragHandleProps={cat.custom && !cat.isOther ? subDrag.handleProps(cat.id) : undefined}
-                      dragRowRef={cat.custom && !cat.isOther ? subDrag.rowRef(cat.id) : undefined}
-                      dragging={subDrag.dragId === cat.id}
+                      onDragStart={
+                        cat.custom && !cat.isOther && !cat.isParent
+                          ? (clientY) => {
+                              const row = rowById(cat.id);
+                              if (row) startDrag(row, clientY);
+                            }
+                          : undefined
+                      }
+                      dragging={false} /* fold mode replaces rows while a drag is live */
                     />
                   </div>
                 ))}
@@ -494,6 +628,22 @@ export function ManageCategoriesScreen() {
           );
         })}
 
+        {/* the lifted sub floats on a vertical rail above the list —
+            absolutely positioned in CONTENT coordinates (fixed proved
+            unreliable inside the measured-height app frame on iOS) */}
+        {dragging && (
+          <div
+            ref={ghostRef}
+            data-testid="cats-drag-ghost"
+            className="pointer-events-none absolute inset-x-0 z-30 mx-auto w-[80%] max-w-sm -translate-y-1/2"
+          >
+            <div className="flex items-center gap-3 rounded-card border border-accent bg-surface px-4 py-3 shadow-xl">
+              <Icon name={dragging.icon} size={19} color={cats.byId(dragging.parentId ?? '')?.color} />
+              <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-ink">{dragging.name}</span>
+              <Icon name="drag-horizontal-variant" size={18} color="var(--m-ink-4)" />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* hold menu for a custom sub (drag retired — user request) */}
@@ -534,17 +684,58 @@ export function ManageCategoriesScreen() {
         )}
       </Sheet>
 
-      {/* the floating clone that follows the finger (restored drag) */}
-      {subDrag.dragId && subDrag.ghost && (
-        <div
-          data-testid="cats-drag-ghost"
-          className="pointer-events-none fixed z-50 flex items-center gap-2 rounded-input border border-line bg-surface px-3 shadow-2xl"
-          style={{ top: subDrag.ghost.top, left: subDrag.ghost.left, width: subDrag.ghost.width, height: subDrag.ghost.height }}
-        >
-          <Icon name={cats.byId(subDrag.dragId).icon} size={17} color="var(--m-ink-3)" />
-          <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{catName(cats.byId(subDrag.dragId), t)}</span>
-        </div>
-      )}
+      {/* drop confirmation: show the move visually before committing */}
+      <Sheet
+        open={moveConfirm !== null}
+        onOpenChange={(open) => !open && setMoveConfirm(null)}
+        title={t('cats.moveConfirmTitle')}
+        size="compact"
+      >
+        {moveConfirm && (
+          <>
+            <div className="flex items-center justify-center gap-2.5 pt-3" data-testid="cats-move-visual">
+              {[cats.byId(moveConfirm.sub.parentId ?? ''), cats.byId(moveConfirm.targetId)].map((end, i) => (
+                <span key={end?.id ?? i} className="contents">
+                  {i === 1 && <Icon name="arrow-right" size={17} color="var(--m-ink-4)" />}
+                  <span
+                    className="flex min-w-0 items-center gap-1.5 rounded-full border border-line bg-surface px-3 py-1.5 text-[13px] font-medium"
+                    style={{ color: end?.color }}
+                  >
+                    <Icon name={end?.icon ?? 'help-circle-outline'} size={15} />
+                    <span className="max-w-[110px] truncate">{end ? catName(end, t) : '?'}</span>
+                  </span>
+                </span>
+              ))}
+            </div>
+            <p className="pt-3 text-center text-[14px] text-ink-2" data-testid="cats-move-text">
+              {t('cats.moveConfirmText', { name: moveConfirm.sub.name ?? '' })}
+            </p>
+            {moveConfirm.commit.affected.length > 0 && (
+              <p className="pt-1 text-center text-[12px]" style={{ color: 'var(--m-warning)' }}>
+                {t('cats.impactWarning', { n: moveConfirm.commit.affected.length })}
+              </p>
+            )}
+            <div className="mt-4 flex gap-3">
+              <Button variant="outline" className="flex-1" data-testid="cats-move-cancel" onClick={() => setMoveConfirm(null)}>
+                {t('action.cancel')}
+              </Button>
+              <Button
+                className="flex-1"
+                data-testid="cats-move-confirm"
+                onClick={() => {
+                  void moveConfirm.commit.commit().then(() => {
+                    // cross-main moves log like any other category edit
+                    void logActivity(store, repo, spaceId, 'catEdit', moveConfirm.sub.name);
+                    setMoveConfirm(null);
+                  });
+                }}
+              >
+                {t('action.confirm')}
+              </Button>
+            </div>
+          </>
+        )}
+      </Sheet>
 
       {/* create / edit */}
       <Sheet open={mode !== null} onOpenChange={(open) => !open && setMode(null)} title={formTitle} size="tall">
