@@ -237,16 +237,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
         // remote disconnect (logged-in devices, user ruling: disconnect =
         // wipe): the api choke point saw a 410 device-revoked — erase
         // this copy exactly like the binding wipe would
-        if (deviceRevokedHandler) globalThis.removeEventListener('munni:device-revoked', deviceRevokedHandler);
-        deviceRevokedHandler = () => {
-          void (async () => {
-            const { useSession } = await import('./session');
-            useSession.getState().logout();
-            await destroyIdentityData(identity);
-            globalThis.location.assign('/#/login');
-          })();
-        };
-        globalThis.addEventListener('munni:device-revoked', deviceRevokedHandler);
+        revokedWipeIdentity = identity;
+        globalThis.removeEventListener('munni:device-revoked', onDeviceRevoked);
+        globalThis.addEventListener('munni:device-revoked', onDeviceRevoked);
       }
 
       // ask the browser not to evict our data (iOS 7-day ITP wipe etc.);
@@ -380,8 +373,22 @@ export function useData(): DataContextValue {
 
 /** Demo logout = wipe the database so next login reseeds pristine state. */
 /** remote-wipe enforcement: mismatch → wipe this device + back to login */
-// one live listener across identity switches (registered per DataProvider init)
-let deviceRevokedHandler: (() => void) | null = null;
+// remote disconnect (user ruling: disconnect = wipe): the api choke
+// point saw a 410 device-revoked — erase this copy exactly like the
+// account-binding wipe would. One module-level listener; the identity
+// it wipes follows the active DataProvider.
+let revokedWipeIdentity: Identity | null = null;
+
+async function wipeRevokedDevice(identity: Identity): Promise<void> {
+  const { useSession } = await import('./session');
+  useSession.getState().logout();
+  await destroyIdentityData(identity);
+  globalThis.location.assign('/#/login');
+}
+
+function onDeviceRevoked(): void {
+  if (revokedWipeIdentity) void wipeRevokedDevice(revokedWipeIdentity).catch(() => undefined);
+}
 
 async function enforceAccountBinding(store: StorageBackend, identity: Identity): Promise<void> {
   const { verifyAccountBinding } = await import('@/features/auth/accountBinding');
