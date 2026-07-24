@@ -581,7 +581,7 @@ export function HomeScreen() {
           <button
             data-testid="home-budgets-all"
             onClick={() => void navigate({ to: '/budgets' })}
-            className="m-tap border-none bg-transparent text-[10px] font-medium normal-case text-ink-4"
+            className="m-tap border-none bg-transparent text-[11px] font-semibold text-accent-deep"
           >
             {t('action.seeAll')}
           </button>
@@ -814,7 +814,7 @@ export function HomeScreen() {
           <button
             data-testid="home-goals-all"
             onClick={() => void navigate({ to: '/goals' })}
-            className="m-tap border-none bg-transparent text-[10px] font-medium normal-case text-ink-4"
+            className="m-tap border-none bg-transparent text-[11px] font-semibold text-accent-deep"
           >
             {t('action.seeAll')}
           </button>
@@ -932,7 +932,7 @@ export function HomeScreen() {
               void ackAll();
               void navigate({ to: '/transactions' });
             }}
-            className="m-tap border-none bg-transparent text-[10px] font-medium normal-case text-ink-4"
+            className="m-tap border-none bg-transparent text-[11px] font-semibold text-accent-deep"
           >
             {t('action.seeAll')}
           </button>

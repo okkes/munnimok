@@ -70,9 +70,11 @@ public static class SocialEndpoints
         string? country = null;
         try
         {
+            // ipwho.is: free AND speaks TLS (ip-api.com's free tier is
+            // plaintext-only — Sonar hotspot, and the IP deserves better)
             using var client = httpFactory.CreateClient("geo");
-            var res = await client.GetFromJsonAsync<GeoLookup>($"http://ip-api.com/json/{ip}?fields=status,countryCode");
-            if (res?.Status == "success" && !string.IsNullOrEmpty(res.CountryCode)) country = res.CountryCode;
+            var res = await client.GetFromJsonAsync<GeoLookup>($"https://ipwho.is/{ip}?fields=success,country_code");
+            if (res?.Success == true && !string.IsNullOrEmpty(res.CountryCode)) country = res.CountryCode;
         }
         catch
         {
@@ -83,7 +85,9 @@ public static class SocialEndpoints
         return Results.Ok(new { country });
     }
 
-    private sealed record GeoLookup(string? Status, string? CountryCode);
+    private sealed record GeoLookup(
+        [property: System.Text.Json.Serialization.JsonPropertyName("success")] bool? Success,
+        [property: System.Text.Json.Serialization.JsonPropertyName("country_code")] string? CountryCode);
 
     private static async Task<IResult> GetMe(AppDbContext db, HttpContext http)
     {

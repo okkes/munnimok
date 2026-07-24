@@ -5,7 +5,8 @@ import { FLAG_KEY, activeStoreBackend, openStorageBackend } from './openStore';
 
 vi.mock('@/lib/platform', () => ({ isNativeApp: () => true }));
 
-/** the same fake raw plugin the executor tests use */
+/** the same fake raw plugin the executor tests use — `run` is recorded
+ *  so the migration's INSERTs are observable */
 const makePlugin = () => ({
   isSecretStored: vi.fn().mockResolvedValue({ result: true }),
   setEncryptionSecret: vi.fn().mockResolvedValue(undefined),
@@ -28,57 +29,57 @@ const wipeIndexedDb = async () => {
   for (const db of await indexedDB.databases()) if (db.name) indexedDB.deleteDatabase(db.name);
 };
 
-describe('E3b: fresh native installs default onto the encrypted store', () => {
+describe('E4: native always opens the encrypted store (with Dexie copy migration)', () => {
   beforeEach(async () => {
     localStorage.clear();
     await wipeIndexedDb();
   });
   afterEach(() => setPlugin(undefined));
 
-  it('a fresh install (no munni databases, no flag) decides "1" and opens SQLCipher', async () => {
+  it('opens SQLCipher with no flag, no toggle — always on', async () => {
     setPlugin(makePlugin());
     const backend = await openStorageBackend('munni_fresh');
-    expect(localStorage.getItem(FLAG_KEY)).toBe('1');
     expect(activeStoreBackend()).toBe('sqlcipher');
+    expect(localStorage.getItem(FLAG_KEY)).toBeNull(); // no decision to record
     backend.close();
   });
 
-  it('an existing install (a munni database already on the device) stays on Dexie', async () => {
-    // simulate the pre-E3b device: an identity database already exists
-    await new Promise<void>((resolve, reject) => {
-      const req = indexedDB.open('munni_veteran');
-      req.onsuccess = () => {
-        req.result.close();
-        resolve();
-      };
-      req.onerror = () => reject(req.error as Error);
-    });
-    setPlugin(makePlugin());
+  it('copies an existing Dexie store on first encrypted open — outbox included', async () => {
+    // veteran device: Dexie holds a space and an unpushed op
+    const { MunniDB } = await import('./schema');
+    const { DexieBackend } = await import('./backend');
+    const db = new MunniDB('munni_veteran');
+    const dexie = new DexieBackend(db);
+    await dexie.put('space', { id: 'sp-1', spaceId: 'sp-1', name: 'Personal', deleted: 0 });
+    await dexie.outboxAdd({ opId: 'op-1', spaceId: 'sp-1', hlc: '001', entity: 'space', entityId: 'sp-1', fields: {} } as never);
+    db.close();
+
+    const plugin = makePlugin();
+    setPlugin(plugin);
     const backend = await openStorageBackend('munni_veteran');
-    expect(localStorage.getItem(FLAG_KEY)).toBe('0');
-    expect(activeStoreBackend()).toBe('dexie');
+    expect(activeStoreBackend()).toBe('sqlcipher');
+
+    const inserts = plugin.run.mock.calls.map((c: unknown[]) => (c[0] as { statement: string; values: unknown[] }));
+    expect(inserts.some((i) => i.statement.includes('INSERT OR REPLACE INTO e_space') && i.values[0] === 'sp-1')).toBe(true);
+    expect(inserts.some((i) => i.statement.includes('INSERT INTO outbox') && i.values[0] === 'op-1')).toBe(true);
+    // the one-shot marker lands in meta so the copy never repeats
+    expect(inserts.some((i) => i.statement.includes('INTO meta') && i.values[0] === 'dexieMigrated')).toBe(true);
     backend.close();
   });
 
-  it('an explicit OFF ("0") is remembered — the default never re-triggers', async () => {
-    localStorage.setItem(FLAG_KEY, '0');
-    setPlugin(makePlugin());
-    const backend = await openStorageBackend('munni_optout');
-    expect(localStorage.getItem(FLAG_KEY)).toBe('0');
-    expect(activeStoreBackend()).toBe('dexie');
-    backend.close();
-  });
-
-  it('an encrypted-open failure falls back to Dexie and records "0", not a removal', async () => {
+  it('an encrypted-open failure falls back to Dexie (where the data still lives) and records "0"', async () => {
     const plugin = makePlugin();
     plugin.open.mockRejectedValue(new Error('plugin config broken'));
     setPlugin(plugin);
-    localStorage.setItem(FLAG_KEY, '1');
     const backend = await openStorageBackend('munni_broken');
     expect(activeStoreBackend()).toBe('dexie'); // never brick the app
-    // '0' (not removed): an absent flag would re-run the fresh-install
-    // default next launch and loop the failure
     expect(localStorage.getItem(FLAG_KEY)).toBe('0');
     backend.close();
+
+    // and the fallback is stable on the next launch
+    setPlugin(makePlugin());
+    const backend2 = await openStorageBackend('munni_broken');
+    expect(activeStoreBackend()).toBe('dexie');
+    backend2.close();
   });
 });

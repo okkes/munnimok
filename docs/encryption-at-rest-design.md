@@ -97,11 +97,14 @@ from production:
    or fallback OFF writes '0' so the default never re-triggers or loops
    a failing open. Existing installs keep Dexie until they toggle (or
    §4 flips them).
-4. **E4 — security pass before flipping existing users**: passphrase
-   handling review (Keychain/Keystore access class, backup exclusion),
-   failure telemetry over one release cycle, and the offline-profile
-   warning (no server to resync from — their migration must COPY, not
-   wipe).
+4. **E4 — SHIPPED (2026-07-24, user ruling "tested properly, enable
+   fully")**: native shells now ALWAYS open SQLCipher — no toggle, no
+   verify UI (both removed from settings). Existing installs migrate by
+   COPY on first encrypted open (all entities + outbox with unpushed
+   ops + meta + store connections + quote cache) — offline profiles
+   lose nothing; the Dexie original is kept untouched as the safety
+   net behind the never-brick fallback ('0' flag = fallback marker
+   only). cipher_version capture stays in the executor for telemetry.
 
 Recommended order: you run (1) on the next build; I ship (2)+(3) in
 one slice; (4) gates the default flip for existing installs.

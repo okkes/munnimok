@@ -7,10 +7,11 @@ import type { Identity } from '@/app/session';
  * belongs to a dead account. The server JIT-provisions a FRESH user row
  * (new id) for the same login on the next request, so the device can
  * detect death by comparing the /me userId against the one it bound to
- * at first sync — a mismatch (or an authenticated 404) means "your
- * account is gone": wipe local data and return to the login screen.
- * Offline and transient failures verify nothing — the check only ever
- * acts on a POSITIVE signal.
+ * at first sync — a MISMATCH means "your account is gone": wipe local
+ * data and return to the login screen. Nothing else acts: offline,
+ * transient failures and even 404s verify nothing (a gateway hiccup
+ * must never wipe a device) — JIT provisioning guarantees the mismatch
+ * signal arrives on the next authenticated /me anyway.
  */
 export const BOUND_USER_KEY = 'boundUserId';
 
@@ -26,12 +27,7 @@ export async function verifyAccountBinding(
 ): Promise<void> {
   if (identity.kind !== 'user') return;
   const res = await apiFetch('/me').catch(() => null);
-  if (!res) return; // offline — nothing to verify
-  if (res.status === 404) {
-    await onDead();
-    return;
-  }
-  if (!res.ok) return;
+  if (!res?.ok) return; // offline / error / 404 — no positive signal, no action
   const me = (await res.json().catch(() => null)) as { userId?: string } | null;
   if (!me?.userId) return;
   const bound = (await store.metaGet(BOUND_USER_KEY))?.value as string | undefined;

@@ -34,7 +34,7 @@ export interface SqlExecutor {
   destroy(): Promise<void>;
 }
 
-const ENTITIES: readonly EntityName[] = [
+export const ENTITIES: readonly EntityName[] = [
   'space',
   'account',
   'category',

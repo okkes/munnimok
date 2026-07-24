@@ -16,9 +16,6 @@ import { useQuery } from '@/db/useQuery';
 import { Avatar } from '@/features/profile/ProfileScreen';
 import { Sheet } from '@/ui/Sheet';
 import { disablePush, enablePush, pushEnabled, pushSupported } from '@/lib/push';
-import { isNativeApp } from '@/lib/platform';
-import { FLAG_KEY, activeStoreBackend } from '@/db/openStore';
-import { sqlCipherVersion } from '@/db/capacitorSql';
 import { ExportSheet } from './ExportSheet';
 import {
   biometricAvailable,
@@ -115,85 +112,6 @@ function ThemeModeSwitch() {
  * "Global settings" door on the Settings tab (user feedback: mixing
  * space-scoped and app-wide rows in one list was confusing).
  */
-/** E2/E3b switch state: the flag is read at db open, so a clean reload
- *  applies it. OFF writes '0' (not a removal) — an absent flag would
- *  re-trigger the fresh-install default-ON next launch. */
-function useEncryptedStoreToggle() {
-  const [encryptedOn, setEncryptedOn] = useState(() => localStorage.getItem(FLAG_KEY) === '1');
-  const toggleEncrypted = () => {
-    const next = !encryptedOn;
-    localStorage.setItem(FLAG_KEY, next ? '1' : '0');
-    setEncryptedOn(next);
-    window.location.reload();
-  };
-  return { encryptedOn, toggleEncrypted };
-}
-
-const PROBE_SUB_KEYS = {
-  idle: 'settings.encryptionVerifySub',
-  ok: 'settings.encryptionVerifyOk',
-  fail: 'settings.encryptionVerifyFail',
-} as const;
-
-/** Encrypted storage on the native shells (E3a/E3b): fresh installs
- *  default onto SQLCipher, and the row carries plugin-reported proof —
- *  the `PRAGMA cipher_version` answer plus a one-tap write/read probe.
- *  Trust through evidence, not a flag. Flipping relaunches onto an
- *  empty store; a signed-in identity simply re-syncs. */
-function EncryptedStoreRow() {
-  const { t } = useLang();
-  const { store } = useData();
-  const { encryptedOn, toggleEncrypted } = useEncryptedStoreToggle();
-  const [probe, setProbe] = useState<'idle' | 'ok' | 'fail'>('idle');
-  if (!isNativeApp()) return null;
-  // the sub answers "did SQLCipher really take over?" (user question):
-  // the flag is intent — activeStoreBackend() is what actually OPENED,
-  // and the cipher version is what the ENGINE reported (plain SQLite
-  // answers empty). ON + active + a version string are the proof.
-  const active = activeStoreBackend() === 'sqlcipher';
-  const cipher = sqlCipherVersion();
-  let pillText = 'OFF';
-  if (encryptedOn) pillText = active ? t('settings.encryptedOnActive') : 'ON';
-  let sub = t('settings.encryptedStoreSub');
-  if (encryptedOn && active) sub = cipher ? `${t('settings.encryptedActive')} · SQLCipher ${cipher}` : t('settings.encryptedActive');
-
-  // one-tap verify (E3a): write a probe row through the live store and
-  // read it back — proves the engine at work end-to-end, right now
-  const runProbe = async () => {
-    const nonce = crypto.randomUUID();
-    await store.metaPut('encryption_probe', nonce);
-    const back = (await store.metaGet('encryption_probe'))?.value;
-    setProbe(back === nonce && active && !!cipher ? 'ok' : 'fail');
-  };
-
-  return (
-    <>
-      <Row
-        testId="settings-encrypted-toggle"
-        icon={encryptedOn ? 'shield-lock' : 'shield-lock-open-outline'}
-        title={t('settings.encryptedStore')}
-        sub={sub}
-        chevron={false}
-        trailing={
-          <Pill tone={encryptedOn && active ? 'accent' : 'neutral'} testId="settings-encrypted-state">
-            {pillText}
-          </Pill>
-        }
-        onClick={toggleEncrypted}
-      />
-      {encryptedOn && active && (
-        <Row
-          testId="settings-encryption-verify"
-          icon="check-decagram-outline"
-          title={t('settings.encryptionVerify')}
-          sub={t(PROBE_SUB_KEYS[probe])}
-          chevron={false}
-          onClick={() => void runProbe()}
-        />
-      )}
-    </>
-  );
-}
 
 export function GlobalSettingsScreen() {
   const { t, lang, setLang, langOverridden, followDeviceLang } = useLang();
@@ -347,7 +265,6 @@ export function GlobalSettingsScreen() {
               onClick={() => void togglePush()}
             />
           )}
-          <EncryptedStoreRow />
           <Row
             testId="settings-lock-toggle"
             icon={lockOn ? 'lock' : 'lock-open-variant-outline'}

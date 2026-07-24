@@ -129,7 +129,7 @@ public class SyncApiFactory : WebApplicationFactory<Program>
     }
 }
 
-/// <summary>ip-api.com stand-in: every public IP resolves to NL</summary>
+/// <summary>ipwho.is stand-in: every public IP resolves to NL</summary>
 internal sealed class FakeGeoLookupHandler : HttpMessageHandler
 {
     public static int Calls;
@@ -139,7 +139,7 @@ internal sealed class FakeGeoLookupHandler : HttpMessageHandler
         Interlocked.Increment(ref Calls);
         return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
         {
-            Content = new StringContent("""{"status":"success","countryCode":"NL"}""", System.Text.Encoding.UTF8, "application/json"),
+            Content = new StringContent("""{"success":true,"country_code":"NL"}""", System.Text.Encoding.UTF8, "application/json"),
         });
     }
 }

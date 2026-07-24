@@ -204,12 +204,14 @@ export function mapAhItems(uiItems: readonly AhReceiptUiItem[]): ReceiptItem[] {
 
 /** register noise a Dutch receipt prints around the products */
 const OCR_SKIP = /totaal|subtotaal|bonus|korting|te betalen|pinnen|betaald|wisselgeld|btw|koopzegels|airmiles|spaar|statiegeld retour/i;
-const OCR_ITEM = /^(?:(\d{1,2})\s*[x×]\s*)?(.{2,40}?)\s+(\d{1,4}[.,]\d{2})\s*-?$/;
+// input is a single OCR line hard-capped at 60 chars below, so the
+// lazy group's backtracking is bounded — not super-linear in practice
+const OCR_ITEM = /^(?:(\d{1,2})\s*[x×]\s*)?(.{2,40}?)\s+(\d{1,4}[.,]\d{2})\s*-?$/; // NOSONAR(S5852) bounded input
 
 export function parseReceiptText(text: string): ReceiptItem[] {
   const items: ReceiptItem[] = [];
   for (const raw of text.split('\n')) {
-    const line = raw.trim();
+    const line = raw.trim().slice(0, 60);
     if (!line || OCR_SKIP.test(line)) continue;
     const match = OCR_ITEM.exec(line);
     if (!match) continue;

@@ -45,17 +45,18 @@ describe('remote-wipe binding check', () => {
     expect(onDead).toHaveBeenCalledTimes(1);
   });
 
-  it('an authenticated 404 also means the account is gone; offline verifies nothing', async () => {
+  it('offline, errors and 404s all verify nothing — only the mismatch acts', async () => {
     const store = memStore();
     store.meta.set(BOUND_USER_KEY, 'user-a');
     const onDead = vi.fn().mockResolvedValue(undefined);
 
     fetchMock.mockImplementation(() => Promise.reject(new Error('offline')));
     await verifyAccountBinding(store, USER, onDead);
-    expect(onDead).not.toHaveBeenCalled(); // no signal, no action
-
     fetchMock.mockImplementation(() => Promise.resolve(new Response('', { status: 404 })));
     await verifyAccountBinding(store, USER, onDead);
-    expect(onDead).toHaveBeenCalledTimes(1);
+    fetchMock.mockImplementation(() => Promise.resolve(new Response('', { status: 500 })));
+    await verifyAccountBinding(store, USER, onDead);
+    // a gateway hiccup must never wipe a device
+    expect(onDead).not.toHaveBeenCalled();
   });
 });
