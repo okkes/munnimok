@@ -293,6 +293,56 @@ export function Sheet({ open, onOpenChange, title, children, size, height }: Rea
   // sheet is meant to stay open but sits translated shortly after release,
   // put it back ourselves with vaul's own easing.
   const drawerRef = useRef<HTMLDivElement>(null);
+
+  // THE fast-flick fix (2026-07-24, user: "drag/hold unregistered when
+  // moving quickly", Android + iOS): vaul couples its touchmove guard to
+  // repositionInputs — which we disable on Android/native for the
+  // keyboard fix — so nothing stopped the webview from claiming quick
+  // pans as scrolls and killing the pointer stream (pointercancel) the
+  // moment it decided. Recreate the guard ourselves, scoped to the
+  // drawer: block native scrolling where there is nothing to scroll, and
+  // at the scroll edges in the direction that cannot scroll — the
+  // gesture then stays a pointer stream and vaul follows the finger at
+  // any speed. Mid-range list scrolling stays fully native.
+  useEffect(() => {
+    const drawer = drawerRef.current;
+    if (!open || panel || !drawer) return;
+    let lastY = 0;
+    const scrollableWithin = (target: EventTarget | null): HTMLElement | null => {
+      let node = target instanceof HTMLElement ? target : null;
+      while (node && node !== drawer) {
+        if (node.scrollHeight > node.clientHeight + 1) {
+          const overflowY = getComputedStyle(node).overflowY;
+          if (overflowY === 'auto' || overflowY === 'scroll') return node;
+        }
+        node = node.parentElement;
+      }
+      return null;
+    };
+    const onTouchStart = (e: TouchEvent) => {
+      lastY = e.changedTouches[0].pageY;
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      const scrollable = scrollableWithin(e.target);
+      const y = e.changedTouches[0].pageY;
+      const goingDown = y > lastY;
+      lastY = y;
+      if (!e.cancelable) return; // native scroll already owns this gesture
+      if (!scrollable) {
+        e.preventDefault(); // nothing to scroll under the finger — all drag
+        return;
+      }
+      const atTop = scrollable.scrollTop <= 0;
+      const atBottom = scrollable.scrollTop >= scrollable.scrollHeight - scrollable.clientHeight;
+      if ((atTop && goingDown) || (atBottom && !goingDown)) e.preventDefault();
+    };
+    drawer.addEventListener('touchstart', onTouchStart, { passive: true });
+    drawer.addEventListener('touchmove', onTouchMove, { passive: false });
+    return () => {
+      drawer.removeEventListener('touchstart', onTouchStart);
+      drawer.removeEventListener('touchmove', onTouchMove);
+    };
+  }, [open, panel]);
   const settleGuard = () => {
     setTimeout(() => {
       const el = drawerRef.current;
@@ -361,7 +411,7 @@ export function Sheet({ open, onOpenChange, title, children, size, height }: Rea
                 promoting it to its own layer keeps paints honest */}
             <div
               ref={scrollRef}
-              className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-[max(20px,env(safe-area-inset-bottom))]"
+              className="min-h-0 flex-1 overflow-y-auto overscroll-none px-5 pb-[max(20px,env(safe-area-inset-bottom))]"
               style={{ transform: 'translateZ(0)', ...(contentFits ? { touchAction: 'none' } : {}) }}
             >
               <div ref={innerRef}>{children}</div>
