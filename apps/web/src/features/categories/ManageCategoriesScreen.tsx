@@ -27,6 +27,7 @@ import type { Cat } from './useCategories';
 import type { TFunc } from '@/i18n';
 import { MDI_NAMES } from '@/generated/mdiNames';
 import { categoryNameConflict } from '@/domain/categoryNames';
+import { REIMBURSEMENT_MAIN_ID } from '@/domain/categories';
 import type { CategoryNameConflict, NamedCategory } from '@/domain/categoryNames';
 
 const NAME_ERROR_KEYS = {
@@ -189,7 +190,8 @@ function GroupHeader({
   isExpanded: boolean;
   onToggle: () => void;
   onMenu: () => void;
-  onAddSub: () => void;
+  /** absent on LOCKED system mains (reimbursement): no user subs there */
+  onAddSub?: () => void;
   t: TFunc;
 }>) {
   const hold = useHoldMenu(true, onMenu);
@@ -213,7 +215,7 @@ function GroupHeader({
           {t(`tx.type.${parent.txTypes[0]}`)}
         </span>
       </button>
-      {!mainHidden && (
+      {!mainHidden && onAddSub && (
         <button
           aria-label={t('cats.addSub')}
           title={t('cats.addSub')}
@@ -588,7 +590,7 @@ export function ManageCategoriesScreen() {
                 isExpanded={expandedGroups.has(parent.id)}
                 onToggle={() => toggleGroup(parent.id)}
                 onMenu={() => setGroupMenu(parent)}
-                onAddSub={() => openNewSub(parent.id)}
+                onAddSub={parent.id === REIMBURSEMENT_MAIN_ID ? undefined : () => openNewSub(parent.id)}
                 t={t}
               />
               {mainHidden && (
