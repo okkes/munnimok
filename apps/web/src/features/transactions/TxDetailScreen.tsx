@@ -116,7 +116,7 @@ function DetailFacts({ tx, givenOut }: Readonly<{ tx: SpaceTx; givenOut: number 
               <Icon name="bank-outline" size={18} color="var(--m-ink-3)" />
               <span className="text-ink-3">{t('tx.bankDetails')}</span>
             </div>
-            <div className="mt-1.5 pl-[30px] font-mono text-xs break-words text-ink-3">
+            <div className="mt-1.5 pl-[30px] font-mono text-xs break-words text-ink-3 select-text">
               {humanizeBankKeys(cleanBankText(tx.description))}
             </div>
           </div>

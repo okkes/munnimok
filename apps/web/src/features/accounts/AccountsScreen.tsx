@@ -83,7 +83,7 @@ function AccountRowButton({
             {feedSubtitle}
           </span>
         ) : (
-          account.iban && <span className="block truncate font-mono text-[11px] text-ink-4">{account.iban}</span>
+          account.iban && <span className="block truncate font-mono text-[11px] text-ink-4 select-text">{account.iban}</span>
         )}
         {/* when the account last heard from its bank/statement (user request) */}
         {account.lastSyncedAt && (
