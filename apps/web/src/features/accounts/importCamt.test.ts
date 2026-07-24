@@ -7,7 +7,7 @@ import { DexieBackend } from '@/db/backend';
 import { feedSpaceId } from '@/domain/feedIds';
 import { visibleTransactions } from '@/db/joined';
 import type { CamtStatement } from '@/lib/camt053/parse';
-import { importCamtStatements } from './importCamt';
+import { importCamtStatements, statementCoverageEnd } from './importCamt';
 
 let counter = 0;
 
@@ -73,6 +73,26 @@ describe('importCamtStatements', () => {
     expect(salary).toMatchObject({ catId: 'salary', needsReview: 1, txType: 'income' });
     const unknown = txs.find((t) => t.importRef === 'REF-003')!;
     expect(unknown).toMatchObject({ catId: 'uncategorized', needsReview: 1 });
+  });
+
+  it('stamps how far the imported data reaches — and never moves it backwards', async () => {
+    // coverage = newest entry date (balanceAsOf wins only when newer)
+    expect(statementCoverageEnd(statement())).toBe('2026-07-05');
+    expect(statementCoverageEnd({ entries: [], balanceAsOf: '2026-07-01' })).toBe('2026-07-01');
+    expect(statementCoverageEnd({ entries: [] })).toBeNull();
+
+    const store = new DexieBackend(db);
+    const first = await importCamtStatements(repo, store, 's1', [statement()]);
+    const id = first.accounts[0].accountId;
+    expect((await db.accounts.get(id))?.dataThroughDate).toBe('2026-07-05');
+
+    // re-importing an OLDER export must not shrink the coverage
+    await importCamtStatements(repo, store, 's1', [
+      statement({ entries: [statement().entries[2]], closingBalanceCents: null }),
+    ]);
+    const account = await db.accounts.get(id);
+    expect(account?.dataThroughDate).toBe('2026-07-05');
+    expect(account?.lastSyncedAt).toBeTruthy();
   });
 
   it('twice-confirmed merchant history overrides keywords and skips review', async () => {

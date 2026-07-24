@@ -151,6 +151,37 @@ export async function importCamtStatements(
 const emptyStatement = (stmt: ParsedStatement): boolean =>
   !stmt.iban.trim() || (stmt.entries.length === 0 && stmt.closingBalanceCents === null);
 
+/**
+ * The newest date a statement actually covers (yyyy-mm-dd, or null for
+ * balance-only files without a date). "When was this exported" is the
+ * fact the upload date hides — an export from three weeks ago imports
+ * fine and silently leaves a three-week hole after it.
+ */
+export function statementCoverageEnd(stmt: Pick<ParsedStatement, 'entries' | 'balanceAsOf'>): string | null {
+  let end = stmt.balanceAsOf ?? null;
+  for (const entry of stmt.entries) {
+    if (!end || entry.date > end) end = entry.date;
+  }
+  return end;
+}
+
+/** every import touch refreshes the freshness facts on the account */
+async function stampCoverage(
+  repo: Repo,
+  spaceId: string,
+  accountId: string,
+  existing: { dataThroughDate?: string } | undefined,
+  stmt: ParsedStatement,
+): Promise<void> {
+  const end = statementCoverageEnd(stmt);
+  await repo.upsert('account', spaceId, accountId, {
+    lastSyncedAt: new Date().toISOString(),
+    // coverage only moves FORWARD: re-importing an old export must not
+    // shrink what a newer one already established
+    ...(end && (!existing?.dataThroughDate || end > existing.dataThroughDate) ? { dataThroughDate: end } : {}),
+  });
+}
+
 async function importMerged(
   repo: Repo,
   store: StorageBackend,
@@ -177,6 +208,7 @@ async function importMerged(
         balanceCents: stmt.closingBalanceCents!,
         ...(stmt.balanceAsOf ? { balanceAsOf: stmt.balanceAsOf } : {}),
       });
+    await stampCoverage(repo, spaceId, accountId, match, stmt);
 
     let txCount = 0;
     for (const entry of stmt.entries) {
@@ -232,6 +264,8 @@ async function importIntoFeeds(
         balanceCents: stmt.closingBalanceCents!,
         ...(stmt.balanceAsOf ? { balanceAsOf: stmt.balanceAsOf } : {}),
       });
+    // coverage only moves forward, so a just-recreated row is safe here
+    await stampCoverage(repo, feedId, accountId, account, stmt);
 
     let txCount = 0;
     for (const entry of stmt.entries) {

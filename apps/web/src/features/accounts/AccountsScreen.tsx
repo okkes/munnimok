@@ -5,7 +5,7 @@ import { parseStatement } from '@/lib/statements/parseStatement';
 import type { ParsedStatement } from '@/lib/statements/parseStatement';
 import { getApiCapabilities } from '@/lib/api';
 import { useSession } from '@/app/session';
-import { importCamtStatements } from './importCamt';
+import { importCamtStatements, statementCoverageEnd } from './importCamt';
 import { linkAllCounterparties } from '@/application/counterLink';
 import { applyTitleMemory } from '@/application/titleMemory';
 import { linkPaypalFunding } from '@/application/paypalLink';
@@ -34,6 +34,10 @@ import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 
 import { typeDef, isLiability, manualBalanceDate } from './accountTypes';
+
+/** whole days between a yyyy-mm-dd date and now; 0 when absent */
+const daysSince = (date?: string | null): number =>
+  date ? Math.floor((Date.now() - new Date(date).getTime()) / 86_400_000) : 0;
 
 function AccountRowButton({
   entry,
@@ -89,6 +93,13 @@ function AccountRowButton({
         {account.lastSyncedAt && (
           <span className="block truncate text-[11px] text-ink-4" data-testid={`account-synced-${account.id}`}>
             {t('acct.lastSynced', { when: fmtTimeAgo(account.lastSyncedAt, lang) })}
+          </span>
+        )}
+        {/* export-vs-upload insight (user request): a recent import of an
+            OLD export leaves a silent hole — say where the data ends */}
+        {account.source !== 'gocardless' && daysSince(account.dataThroughDate) > 14 && (
+          <span className="block truncate text-[11px] text-warning" data-testid={`account-datathrough-${account.id}`}>
+            {t('acct.dataThrough', { when: fmtTimeAgo(account.dataThroughDate!, lang) })}
           </span>
         )}
       </span>
@@ -480,6 +491,23 @@ export function AccountsScreen() {
                       {match?.name ?? t('import.newAccount')}
                     </span>
                     <span className="block truncate font-mono text-[11px] text-ink-4">{stmt.iban}</span>
+                    {/* export-vs-upload insight: an old export imports
+                        fine and silently misses everything after it —
+                        warn BEFORE the import, when a fresh export is
+                        one download away */}
+                    {(() => {
+                      const through = statementCoverageEnd(stmt);
+                      if (!through) return null;
+                      const stale = daysSince(through) > 7;
+                      return (
+                        <span
+                          className={`block truncate text-[11px] ${stale ? 'text-warning' : 'text-ink-4'}`}
+                          data-testid={`import-through-${i}`}
+                        >
+                          {t(stale ? 'import.throughStale' : 'import.through', { when: fmtTimeAgo(through, lang) })}
+                        </span>
+                      );
+                    })()}
                   </span>
                   <span className="text-[12px] text-ink-3">
                     {stmt.entries.length === 1

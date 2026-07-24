@@ -55,6 +55,10 @@ export interface AccountRow extends SyncEnvelope {
   balanceAsOf?: string;
   /** when this account last heard from its source (ISO; bank fetch or statement import) */
   lastSyncedAt?: string;
+  /** newest transaction date an imported statement covered (yyyy-mm-dd):
+   *  "you imported five minutes ago" and "the data ends three weeks ago"
+   *  are different facts — this carries the second one */
+  dataThroughDate?: string;
   iban?: string;
   bankId?: string;
   color?: string;
