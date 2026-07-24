@@ -66,6 +66,34 @@ describe('TransactionsScreen (demo identity)', () => {
     await waitFor(() => expect(rows().length).toBeGreaterThan(3));
   });
 
+  it('the unsettled-reimbursements chip shows only open expected/received value', async () => {
+    renderApp('/transactions');
+    await screen.findByTestId('tx-list');
+    await waitFor(() => expect(rows().length).toBeGreaterThan(3));
+
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-unsettled'), { trackOutbox: false });
+    // open expectation → shows; fully settled → drops out of the filter
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'open-1', {
+      accountId: 'demo_main', date: '2026-06-22', amountCents: -8000, currency: 'EUR',
+      merchant: 'FRONTED DINNER', catId: 'eatingOut', txType: 'expense', needsReview: 0,
+      splits: [{ catId: 'eatingOut', amountCents: 3000 }, { catId: 'expenseReimburse', amountCents: 5000 }],
+    });
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'settled-1', {
+      accountId: 'demo_main', date: '2026-06-23', amountCents: 5000, currency: 'EUR',
+      merchant: 'PAID BACK', catId: 'reimbursed', txType: 'income', needsReview: 0,
+      splits: [{ catId: 'reimbursed', amountCents: 5000 }],
+    });
+    db.close();
+    await waitFor(() => expect(screen.queryByText('FRONTED DINNER')).toBeTruthy(), { timeout: 5000 });
+
+    fireEvent.click(screen.getByTestId('tx-filter-unsettled'));
+    await waitFor(() => expect(rows().length).toBe(1), { timeout: 5000 });
+    expect(screen.getByText('FRONTED DINNER')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('tx-filter-unsettled'));
+    await waitFor(() => expect(rows().length).toBeGreaterThan(3));
+  });
+
   it('the filter sheet narrows by account and type; clear restores everything', async () => {
     renderApp('/transactions');
     await screen.findByTestId('tx-list');
