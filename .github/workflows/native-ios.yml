@@ -228,13 +228,22 @@ jobs:
         if: steps.asc.outputs.present == 'true'
         working-directory: apps/native/ios/App
         run: |
+          # Apple caps TestFlight uploads per app per day — a busy dev day
+          # burned the whole quota and then FAILED the run. Dev pushes now
+          # export-only (full signing validation, no upload); master pushes
+          # and manual dispatches upload for real.
+          DESTINATION=export
+          if [ "${{ github.ref_name }}" = "master" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            DESTINATION=upload
+          fi
+          echo "destination: $DESTINATION"
           cat > "$RUNNER_TEMP/exportOptions.plist" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
           <dict>
             <key>method</key><string>app-store-connect</string>
-            <key>destination</key><string>upload</string>
+            <key>destination</key><string>$DESTINATION</string>
             <key>teamID</key><string>$APPLE_TEAM_ID</string>
             <key>uploadSymbols</key><true/>
           </dict>

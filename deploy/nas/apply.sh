@@ -31,8 +31,18 @@ log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*" >>"$LOG"; }
 # 2026-07-20 a wedged docker pull held this lock for 40+ hours and the
 # silent `exit 0` froze BOTH stacks while newer bundles sat in
 # published/ — so a long-stale holder is now killed (next cycle applies).
+# heartbeat: every scheduler cycle stamps this file, so "the scheduler
+# stopped" and "an apply is stuck" become distinguishable from the
+# outside (nas-diag list shows mtimes) — the 2026-07-22 outage was
+# invisible for two days because silence looked like idleness
+date +%s >"$LIVE/.apply.heartbeat" 2>/dev/null || true
+
+# .apply.lock2: v2 lock name. A holder of the OLD lock that predates the
+# pid file could never be killed (no pid to target) and starved every
+# cycle via silent exit 0 — a fresh name breaks that class of wedge once,
+# and the pid+age kill below handles future ones.
 if command -v flock >/dev/null 2>&1; then
-  exec 9>"$LIVE/.apply.lock"
+  exec 9>"$LIVE/.apply.lock2"
   if ! flock -n 9; then
     holder="$(cat "$LIVE/.apply.pid" 2>/dev/null || echo)"
     started="$(cat "$LIVE/.apply.started" 2>/dev/null || echo 0)"
@@ -45,6 +55,10 @@ if command -v flock >/dev/null 2>&1; then
         for child in $(pgrep -P "$holder" 2>/dev/null); do kill -9 "$child" 2>/dev/null; done
       fi
       kill -9 "$holder" 2>/dev/null
+    elif [ "$age" -gt 5400 ]; then
+      # no identifiable holder (pre-pid-file wedge): say so instead of
+      # exiting silently — the log is the only witness we have
+      log "apply lock held >90min with no identifiable holder — waiting; if this repeats, reboot the NAS or clear the lock"
     fi
     exit 0
   fi
