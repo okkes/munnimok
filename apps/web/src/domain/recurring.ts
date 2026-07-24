@@ -130,13 +130,13 @@ export const isDueWithin = (
 };
 
 /**
- * The estimate rectified by facts: once transactions are linked, the
- * average of the latest three actual amounts replaces the user's guess.
+ * The amount is the USER'S hard value (redesign ruling 2026-07-24): the
+ * system never rewrites it — it only detects drift (detectPriceChange)
+ * and offers a one-tap update on the detail screen. The old behavior
+ * silently replaced the value with the 3-payment average.
  */
-export function effectiveAmountCents(rec: Pick<RecurringRow, 'amountCents'>, linkedAmounts: readonly number[]): number {
-  if (linkedAmounts.length === 0) return Math.abs(rec.amountCents);
-  const latest = linkedAmounts.slice(-3).map((a) => Math.abs(a));
-  return Math.round(latest.reduce((s, a) => s + a, 0) / latest.length);
+export function effectiveAmountCents(rec: Pick<RecurringRow, 'amountCents'>): number {
+  return Math.abs(rec.amountCents);
 }
 
 export interface LinkedTx {
@@ -166,7 +166,7 @@ export function computeRange(
 ): RecurringComputed[] {
   return recs.map((rec) => {
     const linked = [...(linkedByRec.get(rec.id) ?? [])].sort((a, b) => a.date.localeCompare(b.date));
-    const effectiveCents = effectiveAmountCents(rec, linked.map((t) => t.amountCents));
+    const effectiveCents = effectiveAmountCents(rec);
     const occurrences = rec.active === 1 ? occurrencesBetween(rec, from, to).length : 0;
     const inRange = linked.filter((t) => t.date >= from && t.date <= to);
     const paidCents = inRange.reduce((s, t) => s + Math.abs(t.amountCents), 0);

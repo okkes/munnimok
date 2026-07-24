@@ -126,10 +126,10 @@ describe('every-N and weekly cadences', () => {
 });
 
 describe('recurring amounts and summaries', () => {
-  it('linked actuals rectify the estimate (average of the latest three)', () => {
-    expect(effectiveAmountCents(rec({ amountCents: 1000 }), [])).toBe(1000);
-    expect(effectiveAmountCents(rec({ amountCents: 1000 }), [-1399])).toBe(1399);
-    expect(effectiveAmountCents(rec({ amountCents: 1000 }), [-900, -1200, -1200, -1500])).toBe(1300);
+  it('the amount is the USER value — linked actuals never rewrite it (2026-07-24 ruling)', () => {
+    // drift is surfaced via detectPriceChange + a one-tap update instead
+    expect(effectiveAmountCents(rec({ amountCents: 1000 }))).toBe(1000);
+    expect(effectiveAmountCents(rec({ amountCents: -1000 }))).toBe(1000);
   });
 
   it('computeRange + summarize produce period totals, paid and remaining', () => {
