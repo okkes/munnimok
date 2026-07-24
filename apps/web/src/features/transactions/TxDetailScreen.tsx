@@ -5,6 +5,8 @@ import { useNavigate, useParams } from '@tanstack/react-router';
 import { useLgViewport } from '@/lib/viewport';
 import { useSpaceTransaction, useSpaceTransactions, useTxTransform } from '@/application/transactions';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
+import { RecurringFormSheet, formFromTx } from '@/features/recurring/RecurringFormSheet';
+import { EventFormSheet } from '@/features/events/EventsScreen';
 import { useRecurringOps, useRecurrings } from '@/application/recurring';
 import { useEvents } from '@/application/events';
 import { RecurringVisual } from '@/features/recurring/RecurringVisual';
@@ -331,6 +333,10 @@ export function TxDetailScreen() {
   const [typePickOpen, setTypePickOpen] = useState(false);
   const [splitOpen, setSplitOpen] = useState(false);
   const [recurringOpen, setRecurringOpen] = useState(false);
+  // create-and-return doors (user request): snapshot of pre-existing ids
+  // so the freshly created row is identifiable and auto-links to this tx
+  const [recCreating, setRecCreating] = useState(false);
+  const [eventCreating, setEventCreating] = useState(false);
   const [eventOpen, setEventOpen] = useState(false);
   const [counterOpen, setCounterOpen] = useState(false);
   const [bulkOffer, setBulkOffer] = useState<{ catId: string; txType: TxType; count: number } | null>(null);
@@ -768,8 +774,27 @@ export function TxDetailScreen() {
                 {tx.eventId === e.id && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
               </button>
             ))}
+          <button
+            data-testid="tx-event-create"
+            onClick={() => {
+              setEventCreating(true);
+              setEventOpen(false);
+            }}
+            className="m-tap flex w-full items-center gap-3 border-t border-line-2 px-1 py-3 text-left text-[14px] font-medium text-accent-deep"
+          >
+            <Icon name="plus" size={18} />
+            {t('events.new')}
+          </button>
         </div>
       </Sheet>
+      {/* create-and-return: the fresh event auto-links to this tx */}
+      {eventCreating && (
+        <EventFormSheet
+          initial="new"
+          onSaved={(id) => void transform(tx, { eventId: id })}
+          onClose={() => setEventCreating(false)}
+        />
+      )}
 
       {/* attach to a recurring cost */}
       <Sheet open={recurringOpen} onOpenChange={setRecurringOpen} title={t('recurring.linkTitle')} size="form">
@@ -804,8 +829,27 @@ export function TxDetailScreen() {
                 {tx.recurringId === r.id && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
               </button>
             ))}
+          <button
+            data-testid="tx-recurring-create"
+            onClick={() => {
+              setRecCreating(true);
+              setRecurringOpen(false);
+            }}
+            className="m-tap flex w-full items-center gap-3 border-t border-line-2 px-1 py-3 text-left text-[14px] font-medium text-accent-deep"
+          >
+            <Icon name="plus" size={18} />
+            {t('recurring.add')}
+          </button>
         </div>
       </Sheet>
+      {/* create-and-return: prefilled from THIS transaction, auto-links */}
+      {recCreating && (
+        <RecurringFormSheet
+          initial={formFromTx(tx)}
+          onSaved={(id) => void recurringOps.linkTx(tx, id)}
+          onClose={() => setRecCreating(false)}
+        />
+      )}
     </div>
   );
 }

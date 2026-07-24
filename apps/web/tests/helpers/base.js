@@ -65,9 +65,12 @@ async function completeOnboardingIfShown(page) {
   // Race the two possible outcomes instead of guessing.
   const onboarding = page.locator('[data-testid="screen-onboarding"]');
   const home = page.locator('[data-testid="tab-home"]');
+  // as patient as the spec budget itself: under FULL-suite load a brand
+  // new user's first paint has been observed beyond 30s — a shorter cap
+  // here just converts slowness into a guaranteed timeout later
   const winner = await Promise.race([
-    onboarding.waitFor({ timeout: 30000 }).then(() => 'onboarding').catch(() => null),
-    home.waitFor({ state: 'visible', timeout: 30000 }).then(() => 'home').catch(() => null),
+    onboarding.waitFor({ timeout: 120000 }).then(() => 'onboarding').catch(() => null),
+    home.waitFor({ state: 'visible', timeout: 120000 }).then(() => 'home').catch(() => null),
   ]);
   if (winner !== 'onboarding') return; // returning user — no onboarding
   await page.fill('[data-testid="onboarding-name"]', 'E2E User');

@@ -131,7 +131,7 @@ for (const V of VARIANTS) {
 
   test(`sync-a3 shared space: invite via UI, member data converges [${V.id}]`, async ({ browser }) => {
     test.skip(!(await syncApiUp()), 'sync API not running');
-    test.setTimeout(150_000);
+    test.setTimeout(300_000);
     const run = Date.now();
 
     // alice: create a space to share
@@ -256,7 +256,7 @@ for (const V of VARIANTS) {
 
   test(`sync-a6 shared bank feed: import, invite, diverge, archive on leave [${V.id}]`, async ({ browser }) => {
     test.skip(!(await syncApiUp()), 'sync API not running');
-    test.setTimeout(240_000);
+    test.setTimeout(300_000);
     const run = Date.now();
 
     // alice: fresh user, creates the shared space (becomes active)

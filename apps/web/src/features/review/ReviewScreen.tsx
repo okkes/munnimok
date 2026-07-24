@@ -6,7 +6,7 @@ import { buildSpaceMerchantMemory } from '@/application/prediction';
 import { useRecurringOps, useRecurrings } from '@/application/recurring';
 import { useEvents } from '@/application/events';
 import { EventFormSheet } from '@/features/events/EventsScreen';
-import { RecurringFormSheet, emptyForm } from '@/features/recurring/RecurringFormSheet';
+import { RecurringFormSheet, formFromTx } from '@/features/recurring/RecurringFormSheet';
 import { merchantKey } from '@/domain/merchantKey';
 import { draftReady, initDraft, withCategory, withLinkedAccount, withSplits, withType } from '@/domain/reviewDraft';
 import { normalizeIban } from '@/domain/feedIds';
@@ -409,8 +409,8 @@ export function ReviewScreen() {
   const [eventPick, setEventPick] = useState<string | null>(null);
   const [eventPickOpen, setEventPickOpen] = useState(false);
   // create-and-return doors: snapshot ids, diff on close, auto-attach
-  const [recCreating, setRecCreating] = useState<ReadonlySet<string> | null>(null);
-  const [eventCreating, setEventCreating] = useState<ReadonlySet<string> | null>(null);
+  const [recCreating, setRecCreating] = useState(false);
+  const [eventCreating, setEventCreating] = useState(false);
   const [initialCount, setInitialCount] = useState<number | null>(null);
 
   // teaching data: what this space (or the user's personal spaces) confirmed before
@@ -880,23 +880,23 @@ export function ReviewScreen() {
             setRecPickOpen(false);
           }}
           onCreate={() => {
-            setRecCreating(new Set((recurrings ?? []).map((r) => r.id)));
+            setRecCreating(true);
             setRecPickOpen(false);
           }}
         />
       )}
-      {/* create-and-return: a fresh recurring auto-attaches to this card */}
-      {recCreating && (
+      {/* create-and-return: a fresh recurring auto-attaches to this card,
+          prefilled from the transaction itself (user request). onSaved
+          carries the id — sniffing the live-query list after close was a
+          lost race, which is why "create" never actually attached */}
+      {recCreating && tx && (
         <RecurringFormSheet
-          initial={emptyForm()}
-          onClose={() => {
-            const created = (recurrings ?? []).find((r) => !recCreating.has(r.id));
-            if (created) {
-              if (recMatch) setLinkRecurring(false);
-              setManualRecId(created.id);
-            }
-            setRecCreating(null);
+          initial={formFromTx(tx)}
+          onSaved={(id) => {
+            if (recMatch) setLinkRecurring(false);
+            setManualRecId(id);
           }}
+          onClose={() => setRecCreating(false)}
         />
       )}
       {tx && (
@@ -932,7 +932,7 @@ export function ReviewScreen() {
             <button
               data-testid="review-event-create"
               onClick={() => {
-                setEventCreating(new Set(activeEvents.map((e) => e.id)));
+                setEventCreating(true);
                 setEventPickOpen(false);
               }}
               className="m-tap flex w-full items-center gap-3 px-1 py-3 text-left text-[14px] font-medium text-accent-deep"
@@ -946,11 +946,8 @@ export function ReviewScreen() {
       {eventCreating && (
         <EventFormSheet
           initial="new"
-          onClose={() => {
-            const created = activeEvents.find((e) => !eventCreating.has(e.id));
-            if (created) setEventPick(created.id);
-            setEventCreating(null);
-          }}
+          onSaved={(id) => setEventPick(id)}
+          onClose={() => setEventCreating(false)}
         />
       )}
     </div>
