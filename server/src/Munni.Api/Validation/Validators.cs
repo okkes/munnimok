@@ -101,6 +101,14 @@ public sealed class PushRequestValidator : AbstractValidator<PushRequest>
     }
 }
 
+public sealed class RenameDeviceRequestValidator : AbstractValidator<Munni.Api.Auth.RenameDeviceRequest>
+{
+    public RenameDeviceRequestValidator()
+    {
+        RuleFor(r => r.Name).NotEmpty().MaximumLength(60);
+    }
+}
+
 public sealed class SubscribeRequestValidator : AbstractValidator<Munni.Api.Push.SubscribeRequest>
 {
     public SubscribeRequestValidator()

@@ -244,6 +244,7 @@ app.MapGet("/health", () => Results.Ok(new
     },
 }));
 app.MapSync();
+app.MapDevices();
 app.MapSocial();
 app.MapSplits();
 app.MapPush();

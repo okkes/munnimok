@@ -418,6 +418,18 @@ export function ProfileScreen() {
 
         {/* identity-level danger zone (user request: these belong to the
             PROFILE, not app settings) — always last on the screen */}
+        {/* logged-in devices (approved plan): see + disconnect them */}
+        {identity?.kind === 'user' && (
+          <div className="mt-6 overflow-hidden rounded-card border border-line bg-surface">
+            <Row
+              testId="profile-devices"
+              icon="devices"
+              title={t('devices.title')}
+              sub={t('devices.rowSub')}
+              onClick={() => void navigate({ to: '/devices' })}
+            />
+          </div>
+        )}
         {identity?.kind === 'user' && (
           <div className="mt-6 overflow-hidden rounded-card border border-line bg-surface">
             <Row

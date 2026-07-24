@@ -75,7 +75,7 @@ export const GUIDE = [
     id: 'devices',
     title: 'Devices & offline',
     body: `Signed in, every device converges on the same data — edits made offline sync when you're back. Two people can edit the same transaction at once; the newer edit per field wins everywhere, identically. And if you ever want out of the cloud entirely, Profile → Go offline converts your account into a device-only offline profile: everything stays, bank-linked accounts become manual, your server data is erased, and other signed-in devices wipe themselves on their next sync.`,
-    tips: ['Push notifications tell you when new bank transactions arrive.', 'The sync card at the top of Settings shows the last successful sync.'],
+    tips: ['Push notifications tell you when new bank transactions arrive.', 'The sync card at the top of Settings shows the last successful sync.', 'Profile → Devices lists every device signed in to your account — rename them, and disconnect one remotely: it erases its munni data the next time it connects.'],
     shots: ['25-sync-devices', '58-sync-live', '38-offline'],
   },
 ];

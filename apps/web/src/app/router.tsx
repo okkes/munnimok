@@ -48,6 +48,7 @@ import { HoldingDetailScreen } from '@/features/portfolio/HoldingDetailScreen';
 import { InsightsScreen } from '@/features/insights/InsightsScreen';
 import { TrendsScreen } from '@/features/trends/TrendsScreen';
 import { ProfileScreen } from '@/features/profile/ProfileScreen';
+import { DevicesScreen } from '@/features/profile/DevicesScreen';
 import { RecurringScreen } from '@/features/recurring/RecurringScreen';
 import { RecurringDetailScreen } from '@/features/recurring/RecurringDetailScreen';
 import { RecurringSuggestionsScreen } from '@/features/recurring/RecurringSuggestionsScreen';
@@ -155,6 +156,7 @@ const splitJoinRoute = createRoute({ getParentRoute: () => appRoute, path: '/spl
 const splitDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/splits/$splitId', component: SplitDetailScreen });
 const onboardingRoute = createRoute({ getParentRoute: () => appRoute, path: '/onboarding', component: OnboardingScreen });
 const profileRoute = createRoute({ getParentRoute: () => appRoute, path: '/profile', component: ProfileScreen });
+const devicesRoute = createRoute({ getParentRoute: () => appRoute, path: '/devices', component: DevicesScreen });
 const overviewRoute = createRoute({ getParentRoute: () => appRoute, path: '/overview/$kind', component: OverviewScreen });
 const budgetsRoute = createRoute({
   getParentRoute: () => appRoute,
@@ -218,6 +220,7 @@ export const routeTree = rootRoute.addChildren([
     splitDetailRoute,
     onboardingRoute,
     profileRoute,
+    devicesRoute,
     overviewRoute,
     categoryDrillRoute,
     budgetsRoute.addChildren([budgetDetailRoute]),

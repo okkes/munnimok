@@ -234,6 +234,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
         // remote-wipe: if this account was deleted (or went offline) on
         // ANOTHER device, the /me binding mismatch wipes this copy too
         void enforceAccountBinding(store, identity).catch(() => undefined);
+        // remote disconnect (logged-in devices, user ruling: disconnect =
+        // wipe): the api choke point saw a 410 device-revoked — erase
+        // this copy exactly like the binding wipe would
+        if (deviceRevokedHandler) globalThis.removeEventListener('munni:device-revoked', deviceRevokedHandler);
+        deviceRevokedHandler = () => {
+          void (async () => {
+            const { useSession } = await import('./session');
+            useSession.getState().logout();
+            await destroyIdentityData(identity);
+            globalThis.location.assign('/#/login');
+          })();
+        };
+        globalThis.addEventListener('munni:device-revoked', deviceRevokedHandler);
       }
 
       // ask the browser not to evict our data (iOS 7-day ITP wipe etc.);
@@ -367,6 +380,9 @@ export function useData(): DataContextValue {
 
 /** Demo logout = wipe the database so next login reseeds pristine state. */
 /** remote-wipe enforcement: mismatch → wipe this device + back to login */
+// one live listener across identity switches (registered per DataProvider init)
+let deviceRevokedHandler: (() => void) | null = null;
+
 async function enforceAccountBinding(store: StorageBackend, identity: Identity): Promise<void> {
   const { verifyAccountBinding } = await import('@/features/auth/accountBinding');
   await verifyAccountBinding(store, identity, async () => {

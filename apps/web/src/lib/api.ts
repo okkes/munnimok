@@ -3,6 +3,14 @@ import { getAccessToken, waitForAuthReady } from '@/app/authToken';
 import { readSessionIdentity } from '@/app/session';
 import { protocolIssueFor } from './protocol';
 import type { ProtocolIssue } from './protocol';
+import { getDeviceId } from '@/db/device';
+import { isNativeApp } from './platform';
+
+/** what kind of device this is, as far as the server needs to know */
+function devicePlatform(): string {
+  if (!isNativeApp()) return 'web';
+  return /Android/i.test(navigator.userAgent) ? 'android' : 'ios';
+}
 
 /** rejects API access for identities that promised to stay offline */
 function assertNetworkAllowed(): void {
@@ -39,6 +47,10 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
   const attempt = async (): Promise<Response> => {
     const headers = new Headers(init.headers);
     headers.set('Content-Type', 'application/json');
+    // logged-in devices: every request names the calling device so the
+    // server can stamp last-seen and enforce a remote disconnect
+    headers.set('X-Munni-Device', getDeviceId());
+    headers.set('X-Munni-Platform', devicePlatform());
     if (identity?.kind === 'user') {
       if (identity.testAuth) headers.set('X-User-Sub', identity.sub);
       else {
@@ -50,6 +62,14 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
     return fetch(`${config.apiUrl}${path}`, { ...init, headers });
   };
   let response = await attempt();
+  if (response.status === 410) {
+    // remote disconnect (user ruling: disconnect = wipe): another device
+    // revoked this one — data.tsx listens and erases this copy
+    const body = await response.clone().json().catch(() => null);
+    if ((body as { error?: string } | null)?.error === 'device-revoked') {
+      globalThis.dispatchEvent(new CustomEvent('munni:device-revoked'));
+    }
+  }
   if (response.status === 401 && identity?.kind === 'user' && !identity.testAuth) {
     // maybe just an expired access token — the SDK mints a fresh one
     response = await attempt();
