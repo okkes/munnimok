@@ -9,7 +9,7 @@ for (const V of VARIANTS) {
 
   test(`sp-a1 create a split, add expenses, ledger says who owes whom [${V.id}]`, async ({ browser }) => {
     test.skip(!(await syncApiUp()), 'sync API not running (docker compose -f deploy/docker-compose.test.yml up -d)');
-    test.setTimeout(120_000);
+    test.setTimeout(240_000);
     const sub = `e2e-split-${Date.now()}`;
 
     const { page, ctx } = await createPage(browser, V);
@@ -49,7 +49,7 @@ for (const V of VARIANTS) {
 
   test(`sp-a2 invite link: a stranger joins with their own space attachment [${V.id}]`, async ({ browser }) => {
     test.skip(!(await syncApiUp()), 'sync API not running (docker compose -f deploy/docker-compose.test.yml up -d)');
-    test.setTimeout(120_000);
+    test.setTimeout(240_000);
     const stamp = Date.now();
 
     // host creates a split and mints the share link

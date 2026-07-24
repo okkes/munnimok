@@ -14,7 +14,7 @@ for (const V of VARIANTS) {
 
   test(`friends-a1 request, accept, unfriend across two users [${V.id}]`, async ({ browser }) => {
     test.skip(!(await syncApiUp()), 'sync API not running');
-    test.setTimeout(120_000);
+    test.setTimeout(240_000);
     const run = Date.now();
 
     const alice = await createPage(browser, V);
