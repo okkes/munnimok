@@ -11,6 +11,7 @@ import { useRecurringReminders } from '@/application/recurring';
 import { useStoreKeepAlive } from '@/application/stores';
 import { collectBudgetAlerts } from '@/sync/swBudgets';
 import { hapticNotify } from '@/lib/platform';
+import { EdgeSwipeBack } from '@/ui/EdgeSwipeBack';
 import { Icon } from '@/ui/Icon';
 import { Logo } from '@/ui/Logo';
 
@@ -152,6 +153,7 @@ export function AppLayout() {
             <RecurringReminders />
             <StoreKeepAlive />
             <BudgetAlerts />
+            <EdgeSwipeBack />
             </DisplayMoneyProvider>
           </DataProvider>
         </div>

@@ -46,8 +46,8 @@ export function useBudgetOps(): BudgetOps {
     save: async (id, fields) => {
       const rowId = id ?? repo.newId();
       await repo.upsert('budget', spaceId, rowId, fields);
-      if (!id) void logActivity(store, repo, spaceId, 'budgetAdd', fields.name);
-      else void logRowActivity(store, repo, spaceId, 'budget', rowId, 'budgetEdit', fields.name);
+      if (id) void logRowActivity(store, repo, spaceId, 'budget', rowId, 'budgetEdit', fields.name);
+      else void logActivity(store, repo, spaceId, 'budgetAdd', fields.name);
       return rowId;
     },
     remove: async (id) => {

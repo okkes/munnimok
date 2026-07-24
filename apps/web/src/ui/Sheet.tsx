@@ -1,5 +1,5 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react';
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { Drawer } from 'vaul';
 // desktop ruling (2026-07-17, replaces §4.3's right panel the user
 // disliked): at lg a sheet renders as a centered dialog — the familiar
@@ -51,6 +51,22 @@ function popVisual(id: number) {
   notifyStack();
 }
 
+/** true while any sheet is open — global gestures (edge-swipe back) must stand down */
+export const hasOpenSheet = (): boolean => visualStack.length > 0;
+
+// drag-linked zoom (user request): while the TOP sheet is dragged toward
+// dismissal, every covered parent grows back in step with the finger —
+// and shrinks again when the drag retreats. One global progress value is
+// enough: only the top sheet can drag.
+let topDragPct = 0;
+const readDragPct = () => topDragPct;
+function setTopDragPct(pct: number) {
+  const next = Math.min(1, Math.max(0, pct));
+  if (next === topDragPct) return;
+  topDragPct = next;
+  notifyStack();
+}
+
 function pushSheet(id: number) {
   const pending = pendingRemovals.get(id);
   if (pending) {
@@ -77,7 +93,7 @@ function popSheetSoon(id: number) {
 }
 
 /** stack facts for one sheet: dismissal lock + visual depth/covered */
-function useSheetStack(open: boolean): { isLocked: boolean; depth: number; covered: boolean } {
+function useSheetStack(open: boolean): { isLocked: boolean; depth: number; covered: boolean; dragPct: number } {
   const idRef = useRef(-1);
   if (idRef.current === -1) idRef.current = nextSheetId++;
   useEffect(() => {
@@ -88,6 +104,7 @@ function useSheetStack(open: boolean): { isLocked: boolean; depth: number; cover
   }, [open]);
   const top = useSyncExternalStore(subscribeStack, topOfStack);
   useSyncExternalStore(subscribeStack, visualOf); // re-render on visual changes
+  const dragPct = useSyncExternalStore(subscribeStack, readDragPct);
   const visualIndex = visualStack.indexOf(idRef.current);
   return {
     isLocked: open && top !== idRef.current,
@@ -95,8 +112,27 @@ function useSheetStack(open: boolean): { isLocked: boolean; depth: number; cover
     depth: Math.max(0, visualIndex),
     /** a child is visually on top right now */
     covered: open && visualIndex !== -1 && visualIndex < visualStack.length - 1,
+    /** how far the sheet ABOVE has been dragged toward dismissal (0..1) */
+    dragPct,
   };
 }
+
+// the receded-parent look: noticeably smaller than the old 0.97 (user:
+// "more drastic"), interpolated back to full size by the child's drag
+const COVERED_SCALE = 0.92;
+const COVERED_OPACITY = 0.55;
+const coveredStyle = (covered: boolean, dragPct: number): CSSProperties | undefined => {
+  if (!covered) return undefined;
+  const scale = COVERED_SCALE + (1 - COVERED_SCALE) * dragPct;
+  const opacity = COVERED_OPACITY + (1 - COVERED_OPACITY) * dragPct;
+  return {
+    transform: `scale(${scale})`,
+    opacity,
+    // mid-drag the parent must TRACK the finger, not chase it through a
+    // 300ms ease — the transition only smooths the settled states
+    transition: dragPct > 0 && dragPct < 1 ? 'none' : 'transform 300ms ease-out, opacity 300ms ease-out',
+  };
+};
 
 interface SheetProps {
   open: boolean;
@@ -116,7 +152,7 @@ interface SheetProps {
  */
 export function Sheet({ open, onOpenChange, title, children, size, height }: Readonly<SheetProps>) {
   const requested = height ?? (size ? SIZE_PX[size] : undefined);
-  const { isLocked, depth, covered } = useSheetStack(open);
+  const { isLocked, depth, covered, dragPct } = useSheetStack(open);
   // stacked sheets step DOWN in height (28px per level, floor 280) so
   // the parent's receded edge stays visible — the depth cue the thin
   // drag bar alone never gave (user request)
@@ -149,8 +185,8 @@ export function Sheet({ open, onOpenChange, title, children, size, height }: Rea
         <dialog
           open
           aria-modal="true"
-          className={`relative z-10 m-0 flex w-[480px] max-w-[92vw] flex-col rounded-[20px] border-none bg-bg p-0 text-ink shadow-2xl outline-none transition-[transform,opacity] duration-300 ease-out ${covered ? 'scale-[0.97] opacity-60' : ''}`}
-          style={{ height: fixedHeight, maxHeight: '85dvh' }}
+          className="relative z-10 m-0 flex w-[480px] max-w-[92vw] flex-col rounded-[20px] border-none bg-bg p-0 text-ink shadow-2xl outline-none transition-[transform,opacity] duration-300 ease-out"
+          style={{ height: fixedHeight, maxHeight: '85dvh', ...coveredStyle(covered, dragPct) }}
         >
           {title && <div className="m-h3 shrink-0 px-5 pt-5 pb-1 text-ink">{title}</div>}
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pt-2 pb-5">{children}</div>
@@ -162,10 +198,19 @@ export function Sheet({ open, onOpenChange, title, children, size, height }: Rea
   return (
     <Drawer.Root
       open={open}
-      onOpenChange={(next) => (isLocked && !next ? undefined : onOpenChange(next))}
+      onOpenChange={(next) => {
+        if (!next) setTopDragPct(0); // a settled dismissal ends the drag
+        if (isLocked && !next) return;
+        onOpenChange(next);
+      }}
       dismissible={!isLocked}
       repositionInputs={!VIEWPORT_RESIZES}
       direction="bottom"
+      onDrag={(_event, pct) => {
+        // only the top sheet can drag — its progress drives the parents
+        if (!isLocked) setTopDragPct(pct);
+      }}
+      onRelease={(_event, staysOpen) => setTopDragPct(staysOpen ? 0 : 1)}
     >
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 z-40 bg-black/40" />
@@ -174,13 +219,20 @@ export function Sheet({ open, onOpenChange, title, children, size, height }: Rea
           style={fixedHeight ? { height: fixedHeight } : undefined}
         >
           {/* stacked-sheet depth (user request): a sheet buried under a
-              child visibly recedes instead of hiding behind a thin bar */}
+              child visibly recedes instead of hiding behind a thin bar —
+              and grows back in step with the child's dismissal drag */}
           <div
-            className={`flex min-h-0 flex-1 flex-col transition-[transform,opacity] duration-300 ease-out ${covered ? 'scale-[0.97] opacity-60' : ''}`}
-            style={{ transformOrigin: 'top center' }}
+            className="flex min-h-0 flex-1 flex-col transition-[transform,opacity] duration-300 ease-out"
+            style={{ transformOrigin: 'top center', ...coveredStyle(covered, dragPct) }}
           >
-            {/* full-height drag zone across the title area */}
-            <div className="shrink-0 cursor-grab pt-2.5 pb-1">
+            {/* full-height drag zone across the title area. touch-none +
+                pointer capture: once a drag starts here, the finger may
+                wander over scrollable content without the browser
+                stealing the gesture (user bug: drags cancelled mid-pull) */}
+            <div
+              className="shrink-0 cursor-grab touch-none pt-2.5 pb-1"
+              onPointerDown={(e) => e.currentTarget.setPointerCapture(e.pointerId)}
+            >
               <div className="mx-auto h-1.5 w-10 rounded-full bg-line" />
               {title && (
                 <Drawer.Title className="m-h3 px-5 pt-3 pb-1 text-ink">{title}</Drawer.Title>
