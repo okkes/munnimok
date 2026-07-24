@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.23.0](https://github.com/okkes/munnimok/compare/v2.22.0...v2.23.0) (2026-07-24)
+
+
+### ✨ Features
+
+* **recurring:** the amount is the user's — drift becomes a one-tap recommendation ([c5c2c62](https://github.com/okkes/munnimok/commit/c5c2c62e602adc362f73740d7a2a7f06aa6b9703))
+* **tx:** quick-add prefill + reliable auto-link; multi-file imports; patient e2e onboarding wait ([4acaa42](https://github.com/okkes/munnimok/commit/4acaa42d094ca7b248090a6da03d6f3a6b95ab34))
+
+
+### 🐞 Bug Fixes
+
+* **e2e:** 240s budgets for every multi-user spec — cold-stack double onboarding outlives 120s ([7a9c19f](https://github.com/okkes/munnimok/commit/7a9c19fb87afa7876e85bd1c674d7b30c94b51fb))
+* **e2e:** deterministic onboarding wait in the shared base() helper ([7481eec](https://github.com/okkes/munnimok/commit/7481eec04ade82a8a8f8e50712638cf6a7d26b0f))
+* **e2e:** fill-until-armed onboarding passage — a fill racing first hydration under CPU starvation left the field empty and the click waiting forever ([1ce9be4](https://github.com/okkes/munnimok/commit/1ce9be4f815c3ca0040e003a28818ec14846c1a1))
+* **e2e:** race onboarding vs home in base() — cold-start first paint outlived the 3s guess ([9f07467](https://github.com/okkes/munnimok/commit/9f07467578972f5de2e6cb33d6e53e7bac572825))
+* **e2e:** the onboarding race keyed on the WRONG signal — tab bar lives outside DataProvider ([81ff54e](https://github.com/okkes/munnimok/commit/81ff54e8e5db87ea193c2da512024415009c63b8))
+* **perf:** one shared display-currency lens (per-row hooks melted sync-time perf); iOS uploads always run, daily cap degrades to a warning ([4868b62](https://github.com/okkes/munnimok/commit/4868b62ca7ffd4fa383c3ec1471601b41f0053a7))
+
 ## [2.22.0](https://github.com/okkes/munnimok/compare/v2.21.0...v2.22.0) (2026-07-24)
 
 
