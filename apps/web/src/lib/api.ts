@@ -1,6 +1,8 @@
 import { config } from '@/app/config';
 import { getAccessToken, waitForAuthReady } from '@/app/authToken';
 import { readSessionIdentity } from '@/app/session';
+import { protocolIssueFor } from './protocol';
+import type { ProtocolIssue } from './protocol';
 
 /** rejects API access for identities that promised to stay offline */
 function assertNetworkAllowed(): void {
@@ -80,11 +82,16 @@ export interface ApiCapabilities {
 }
 
 let capabilities: ApiCapabilities | null = null;
+let protocolIssue: ProtocolIssue | null = null;
 
 /** test seam: the per-page-load cache must not leak between test cases */
 export function resetApiCapabilitiesCache(): void {
   capabilities = null;
+  protocolIssue = null;
 }
+
+/** the last /health handshake verdict — null while unknown or compatible */
+export const getProtocolIssue = (): ProtocolIssue | null => protocolIssue;
 
 /** Server feature flags from /health (cached per page load). */
 export async function getApiCapabilities(): Promise<ApiCapabilities> {
@@ -95,7 +102,12 @@ export async function getApiCapabilities(): Promise<ApiCapabilities> {
   if (identity && identity.kind !== 'user') return { gocardless: false };
   try {
     const res = await fetch(`${config.apiUrl}/health`, { signal: AbortSignal.timeout(3000) });
-    const body = (await res.json()) as { capabilities?: ApiCapabilities };
+    const body = (await res.json()) as {
+      capabilities?: ApiCapabilities;
+      protocol?: number;
+      minClientProtocol?: number;
+    };
+    protocolIssue = protocolIssueFor(body);
     capabilities = body.capabilities ?? { gocardless: false };
     return capabilities;
   } catch {

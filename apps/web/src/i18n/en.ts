@@ -1161,6 +1161,8 @@ export const en = {
   'cats.iconNone': 'No icon matches that search.',
   'demo.banner': 'Demo mode — sample data, nothing is saved to an account.',
   'sync.reasonUnreachable': 'munni isn’t available right now — everything keeps working on this device, and we reconnect automatically.',
+  'sync.reasonClientOutdated': 'this app is too old for the server — update the app to sync again. Everything keeps working on this device.',
+  'sync.reasonServerOutdated': 'the server must be updated before this app can sync. Everything keeps working on this device.',
   'color.custom': 'Custom color',
   'color.saturation': 'Saturation',
   'color.lightness': 'Lightness',

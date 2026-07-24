@@ -1163,6 +1163,8 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'cats.iconNone': 'Geen icoon gevonden voor die zoekopdracht.',
   'demo.banner': 'Demomodus — voorbeeldgegevens, er wordt niets in een account opgeslagen.',
   'sync.reasonUnreachable': 'munni is momenteel niet beschikbaar — alles blijft op dit apparaat werken en we verbinden automatisch opnieuw.',
+  'sync.reasonClientOutdated': 'deze app is te oud voor de server — werk de app bij om weer te synchroniseren. Alles blijft op dit apparaat werken.',
+  'sync.reasonServerOutdated': 'de server moet eerst worden bijgewerkt voordat deze app kan synchroniseren. Alles blijft op dit apparaat werken.',
   'color.custom': 'Eigen kleur',
   'color.saturation': 'Verzadiging',
   'color.lightness': 'Helderheid',
