@@ -83,29 +83,34 @@ public static class AdminEndpoints
         var skipped = new List<string>();
         for (var page = 1; page <= 50; page++)
         {
-            using var listRequest = session.Request(HttpMethod.Get, $"/api/users?page={page}&page_size=100");
-            var listResponse = await session.Http.SendAsync(listRequest);
-            listResponse.EnsureSuccessStatusCode();
-            using var users = JsonDocument.Parse(await listResponse.Content.ReadAsStringAsync());
-            var batch = users.RootElement.EnumerateArray().ToList();
-            foreach (var user in batch)
-            {
-                var id = user.GetProperty("id").GetString()!;
-                var username = user.TryGetProperty("username", out var name) && name.ValueKind == JsonValueKind.String
-                    ? name.GetString()
-                    : null;
-                if (username is null) continue;
-                var lower = username.ToLowerInvariant();
-                if (lower == username) continue;
-                using var patch = session.Request(HttpMethod.Patch, $"/api/users/{Uri.EscapeDataString(id)}");
-                patch.Content = new StringContent(JsonSerializer.Serialize(new { username = lower }), Encoding.UTF8, "application/json");
-                var patchResponse = await session.Http.SendAsync(patch);
-                if (patchResponse.IsSuccessStatusCode) changed.Add(username);
-                else skipped.Add($"{username} ({(int)patchResponse.StatusCode})");
-            }
-            if (batch.Count < 100) break;
+            if (await LowercasePageAsync(session, page, changed, skipped) < 100) break;
         }
         return Results.Ok(new { changed, skipped });
+    }
+
+    /// <summary>lowercases one Logto user page; returns the page's size</summary>
+    private static async Task<int> LowercasePageAsync(LogtoSession session, int page, List<string> changed, List<string> skipped)
+    {
+        using var listRequest = session.Request(HttpMethod.Get, $"/api/users?page={page}&page_size=100");
+        var listResponse = await session.Http.SendAsync(listRequest);
+        listResponse.EnsureSuccessStatusCode();
+        using var users = JsonDocument.Parse(await listResponse.Content.ReadAsStringAsync());
+        var batch = users.RootElement.EnumerateArray().ToList();
+        foreach (var user in batch)
+        {
+            var id = user.GetProperty("id").GetString()!;
+            var username = user.TryGetProperty("username", out var name) && name.ValueKind == JsonValueKind.String
+                ? name.GetString()
+                : null;
+            if (username is null || username.ToLowerInvariant() == username) continue;
+            using var patch = session.Request(HttpMethod.Patch, $"/api/users/{Uri.EscapeDataString(id)}");
+            patch.Content = new StringContent(
+                JsonSerializer.Serialize(new { username = username.ToLowerInvariant() }), Encoding.UTF8, "application/json");
+            var patchResponse = await session.Http.SendAsync(patch);
+            if (patchResponse.IsSuccessStatusCode) changed.Add(username);
+            else skipped.Add($"{username} ({(int)patchResponse.StatusCode})");
+        }
+        return batch.Count;
     }
 
     private static async Task<IResult> ListUsers(HttpContext http, AppDbContext db, IConfiguration config)
