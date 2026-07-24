@@ -73,10 +73,28 @@ async function completeOnboardingIfShown(page) {
     home.waitFor({ state: 'visible', timeout: 120000 }).then(() => 'home').catch(() => null),
   ]);
   if (winner !== 'onboarding') return; // returning user — no onboarding
-  await page.fill('[data-testid="onboarding-name"]', 'E2E User');
-  await page.click('[data-testid="onboarding-save"]');
-  await page.click('[data-testid="onboarding-lock-later"]');
-  await page.waitForSelector('[data-testid="screen-home"]');
+  // something can remount the tree once during a cold boot and wipe the
+  // typed name (CI snapshots showed the field empty + Continue disabled
+  // AFTER a successful fill) — so fill-until-armed, then walk the steps,
+  // retrying the whole passage if the screen snaps back
+  const name = page.locator('[data-testid="onboarding-name"]');
+  const save = page.locator('[data-testid="onboarding-save"]');
+  for (let attempt = 0; attempt < 6; attempt++) {
+    try {
+      for (let i = 0; i < 30 && !(await save.isEnabled().catch(() => false)); i++) {
+        await name.fill('E2E User').catch(() => undefined);
+        await page.waitForTimeout(500);
+      }
+      await save.click({ timeout: 10000 });
+      await page.click('[data-testid="onboarding-lock-later"]', { timeout: 15000 });
+      await page.waitForSelector('[data-testid="screen-home"]', { timeout: 20000 });
+      return;
+    } catch {
+      // snapped back to an earlier step (or home already arrived) — loop
+      if (await page.locator('[data-testid="screen-home"]').isVisible().catch(() => false)) return;
+    }
+  }
+  throw new Error('onboarding never completed — see the page snapshot');
 }
 
 // App-wide rows live behind the single "Global settings" door on the
