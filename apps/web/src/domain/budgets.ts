@@ -72,7 +72,9 @@ export function budgetFamily(catIds: readonly string[], catalog: CatalogLookup):
   return new Set(catIds.flatMap((id) => [id, ...catalog.childrenOf(id).map((c) => c.id)]));
 }
 
-/** positive cents spent by the family inside a period (refunds reduce it) */
+/** positive cents spent by the family inside a period (refunds reduce it).
+ *  Slice-aware (reimbursement redesign): a split transaction contributes
+ *  only its family slices, so reimbursed value never counts as spending. */
 export function budgetSpentCents(
   txs: readonly TransactionRow[],
   family: ReadonlySet<string>,
@@ -82,8 +84,13 @@ export function budgetSpentCents(
   for (const tx of txs) {
     if (tx.deleted !== 0 || tx.txType !== 'expense') continue;
     if (tx.date < period.start || tx.date > period.end) continue;
-    if (!family.has(tx.catId ?? '')) continue;
-    total += -tx.amountCents;
+    if (tx.splits?.length) {
+      for (const slice of tx.splits) {
+        if (family.has(slice.catId)) total += slice.amountCents;
+      }
+    } else if (family.has(tx.catId ?? '')) {
+      total += -tx.amountCents;
+    }
   }
   return total;
 }

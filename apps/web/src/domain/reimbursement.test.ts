@@ -4,9 +4,9 @@ import {
   creditRemainingCents,
   givenCents,
   netAmountCents,
-  redistributedSplits,
   netCreditCents,
   remainingCents,
+  settledSplits,
   totalReimbursedCents,
   withLink,
 } from './reimbursement';
@@ -83,59 +83,83 @@ describe('reimbursement math', () => {
   });
 });
 
-describe('redistributedSplits (physical rewrite, user rules)', () => {
-  const names: Record<string, string> = { groceries: 'Groceries', eatingOut: 'Eating out', fun: 'Fun', reimburse: 'Reimbursement', expenseReimburse: 'Expected reimbursement', uncategorized: 'Uncategorized', transferIn: 'Transfer In' };
+describe('settledSplits (redesign: gross slices + explicit reimbursed)', () => {
+  const names: Record<string, string> = { food: 'Food', coffee: 'Coffee', sweets: 'Sweets', eatingOut: 'Eating out', fun: 'Fun', incomeOther: 'Other income', reimburse: 'Received reimbursement', expenseReimburse: 'Expected reimbursement', reimbursed: 'Reimbursed', uncategorized: 'Uncategorized' };
   const nameOf = (id: string) => names[id] ?? id;
+  const by = (out: { catId: string; amountCents: number }[]) =>
+    Object.fromEntries(out.map((s) => [s.catId, s.amountCents]));
 
-  it('a non-split credit shrinks to its net value in its own category', () => {
-    const out = redistributedSplits({ amountCents: 10_000, catId: 'transferIn', splits: undefined }, 5_000, nameOf);
-    expect(out).toEqual([{ catId: 'transferIn', amountCents: 5_000 }]);
+  it('use case 1: plain expense + uncategorized credit, full link', () => {
+    // x −100 [food], y +50 [uncat] → x [food 50, reimbursed 50], y [reimbursed 50]
+    const x = settledSplits({ amountCents: -10_000, catId: 'food', splits: undefined }, 5_000, nameOf);
+    expect(by(x)).toEqual({ food: 5_000, reimbursed: 5_000 });
+    const y = settledSplits({ amountCents: 5_000, catId: 'uncategorized', splits: undefined }, 5_000, nameOf);
+    expect(by(y)).toEqual({ reimbursed: 5_000 });
   });
 
-  it('consumes reimbursement categories first, then uncategorized, then the largest', () => {
-    const tx = {
-      amountCents: -10_000,
-      catId: 'groceries',
-      splits: [
-        { catId: 'groceries', amountCents: 4_000 },
-        { catId: 'expenseReimburse', amountCents: 2_000 },
-        { catId: 'uncategorized', amountCents: 1_000 },
-        { catId: 'fun', amountCents: 3_000 },
-      ],
-    };
-    // reduce by 3500: 2000 reimb + 1000 uncat + 500 from groceries (largest)
-    const out = redistributedSplits(tx, 6_500, nameOf);
-    expect(out).toEqual([
-      { catId: 'groceries', amountCents: 3_500 },
-      { catId: 'fun', amountCents: 3_000 },
-    ]);
+  it('use case 2: expected + received sides settle into reimbursed', () => {
+    const x = settledSplits(
+      { amountCents: -10_000, catId: 'food', splits: [{ catId: 'food', amountCents: 5_000 }, { catId: 'expenseReimburse', amountCents: 5_000 }] },
+      6_000,
+      nameOf,
+    );
+    expect(by(x)).toEqual({ food: 4_000, reimbursed: 6_000 });
+    const y = settledSplits({ amountCents: 6_000, catId: 'reimburse', splits: undefined }, 6_000, nameOf);
+    expect(by(y)).toEqual({ reimbursed: 6_000 });
   });
 
-  it('largest-first with alphabetical tie-break, zeroed slices removed', () => {
-    const tx = {
-      amountCents: -6_000,
-      catId: 'groceries',
-      splits: [
-        { catId: 'fun', amountCents: 3_000 },
-        { catId: 'eatingOut', amountCents: 3_000 },
-      ],
-    };
+  it('use case 3: partial settlement leaves the expectation open', () => {
+    const x = settledSplits({ amountCents: -10_000, catId: 'expenseReimburse', splits: undefined }, 5_000, nameOf);
+    expect(by(x)).toEqual({ expenseReimburse: 5_000, reimbursed: 5_000 });
+    const y = settledSplits({ amountCents: 8_000, catId: 'incomeOther', splits: undefined }, 5_000, nameOf);
+    expect(by(y)).toEqual({ incomeOther: 3_000, reimbursed: 5_000 });
+  });
+
+  it('use case 4: deduction order expected → uncategorized → largest', () => {
+    const x = settledSplits(
+      {
+        amountCents: -10_000,
+        catId: 'coffee',
+        splits: [
+          { catId: 'coffee', amountCents: 3_000 },
+          { catId: 'sweets', amountCents: 1_500 },
+          { catId: 'uncategorized', amountCents: 500 },
+          { catId: 'expenseReimburse', amountCents: 5_000 },
+        ],
+      },
+      5_100,
+      nameOf,
+    );
+    // expected 5000 first, then 100 from uncategorized — coffee/sweets untouched
+    expect(by(x)).toEqual({ coffee: 3_000, sweets: 1_500, uncategorized: 400, reimbursed: 5_100 });
+  });
+
+  it('largest-first with alphabetical tie-break', () => {
+    const out = settledSplits(
+      { amountCents: -6_000, catId: 'fun', splits: [{ catId: 'fun', amountCents: 3_000 }, { catId: 'eatingOut', amountCents: 3_000 }] },
+      4_000,
+      nameOf,
+    );
     // tie at 3000: "Eating out" < "Fun" alphabetically → consumed first
-    const out = redistributedSplits(tx, 2_000, nameOf);
-    expect(out).toEqual([{ catId: 'fun', amountCents: 2_000 }]);
+    expect(by(out)).toEqual({ fun: 2_000, reimbursed: 4_000 });
   });
 
-  it('keeps a zero slice when fully reimbursed (readers must not fall back to gross)', () => {
-    const out = redistributedSplits({ amountCents: -4_000, catId: 'groceries', splits: undefined }, 0, nameOf);
-    expect(out).toEqual([{ catId: 'groceries', amountCents: 0 }]);
+  it('a removed settlement frees value onto uncategorized, never the original category', () => {
+    const out = settledSplits(
+      { amountCents: -10_000, catId: 'food', splits: [{ catId: 'food', amountCents: 5_000 }, { catId: 'reimbursed', amountCents: 5_000 }] },
+      0,
+      nameOf,
+    );
+    expect(by(out)).toEqual({ food: 5_000, uncategorized: 5_000 });
   });
 
-  it('a removed reimbursement frees value onto uncategorized, never the original category', () => {
-    const tx = { amountCents: 10_000, catId: 'transferIn', splits: [{ catId: 'transferIn', amountCents: 5_000 }] };
-    const out = redistributedSplits(tx, 10_000, nameOf);
-    expect(out).toEqual([
-      { catId: 'transferIn', amountCents: 5_000 },
-      { catId: 'uncategorized', amountCents: 5_000 },
-    ]);
+  it('legacy NET slices normalize: the shortfall against gross becomes reimbursed', () => {
+    // pre-redesign row: −100 gross, 40 linked, slices summed to net 60
+    const out = settledSplits(
+      { amountCents: -10_000, catId: 'food', splits: [{ catId: 'food', amountCents: 6_000 }] },
+      4_000,
+      nameOf,
+    );
+    expect(by(out)).toEqual({ food: 6_000, reimbursed: 4_000 });
   });
 });

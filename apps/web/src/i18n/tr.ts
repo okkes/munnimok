@@ -1475,6 +1475,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'tx.splitMixed': 'Birden fazla kategori',
   'tx.unreviewed': 'İncelenmedi',
   'tx.uncategorizedFilter': 'Kategorisiz',
+  'tx.unsettledFilter': 'Bekleyen geri ödemeler',
   'tx.counterAccount': 'Karşı taraf',
   'tx.counterAccountHint': 'Bu işlemin diğer tarafındaki hesap. Birini seçmek türü otomatik belirler.',
   'tx.typeManual': 'Veya türü kendin seç',

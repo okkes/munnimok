@@ -1473,6 +1473,7 @@ export const en = {
   'tx.splitMixed': 'Multiple categories',
   'tx.unreviewed': 'Unreviewed',
   'tx.uncategorizedFilter': 'Uncategorized',
+  'tx.unsettledFilter': 'Unsettled reimbursements',
   'tx.counterAccount': 'Counterparty',
   'tx.counterAccountHint': 'The account on the other side of this transaction. Picking one sets the type automatically.',
   'tx.typeManual': 'Or set the type yourself',

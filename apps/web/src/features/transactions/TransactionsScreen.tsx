@@ -7,6 +7,7 @@ import type { SheetFilters } from './FilterSheet';
 import { useLang } from '@/i18n';
 import type { TransactionRow } from '@/db/types';
 import { filterTxs } from '@/domain/txFilter';
+import { hasUnsettledReimbursement } from '@/domain/reimbursement';
 import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
@@ -36,6 +37,7 @@ export function TransactionsScreen() {
   const [addOpen, setAddOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [uncatOnly, setUncatOnly] = useState(false);
+  const [unsettledOnly, setUnsettledOnly] = useState(false);
   const [filters, setFilters] = useState<SheetFilters>(EMPTY_FILTERS);
   const [filterOpen, setFilterOpen] = useState(false);
   const cats = useCategories();
@@ -90,7 +92,7 @@ export function TransactionsScreen() {
   const txs = useMemo(() => {
     if (!allTxs) return undefined;
     // filterTxs returns a fresh array — sorting it in place mutates no input
-    const matched = filterTxs(allTxs, {
+    let matched = filterTxs(allTxs, {
       query,
       accountIds: filters.accountIds,
       onlyUncategorized: uncatOnly,
@@ -99,9 +101,11 @@ export function TransactionsScreen() {
       from: filters.from,
       to: filters.to,
     });
+    // quick filter (redesign): expected/received value still open
+    if (unsettledOnly) matched = matched.filter(hasUnsettledReimbursement);
     matched.sort((a, b) => b.date.localeCompare(a.date));
     return matched.slice(0, 200);
-  }, [allTxs, query, filters, uncatOnly, catIds]);
+  }, [allTxs, query, filters, uncatOnly, unsettledOnly, catIds]);
 
   // display-currency lens: rows convert at their own day's fixing —
   // warm the rate cache for every date this list is about to show
@@ -112,7 +116,7 @@ export function TransactionsScreen() {
 
   const groups = groupByDate(txs ?? []);
   const activeCount = countActive(filters);
-  const filtering = !!query || uncatOnly || !!catIds || activeCount > 0;
+  const filtering = !!query || uncatOnly || unsettledOnly || !!catIds || activeCount > 0;
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-transactions">
@@ -152,6 +156,9 @@ export function TransactionsScreen() {
           </Chip>
           <Chip testId="tx-filter-uncat" tone="warning" selected={uncatOnly} onClick={() => setUncatOnly((v) => !v)}>
             {t('tx.uncategorizedFilter')}
+          </Chip>
+          <Chip testId="tx-filter-unsettled" selected={unsettledOnly} onClick={() => setUnsettledOnly((v) => !v)}>
+            {t('tx.unsettledFilter')}
           </Chip>
           {activeCount > 0 && (
             <button

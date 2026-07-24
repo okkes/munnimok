@@ -10,13 +10,13 @@ import {
   creditRemainingCents,
   givenCents,
   netAmountCents,
-  redistributedSplits,
   remainingCents,
+  settledSplits,
   totalReimbursedCents,
   withLink,
 } from '@/domain/reimbursement';
 import type { TxReimbursement } from '@/db/types';
-import { UNCATEGORIZED_ID } from '@/domain/categories';
+import { REIMBURSED_ID, UNCATEGORIZED_ID } from '@/domain/categories';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
@@ -99,26 +99,23 @@ export function ReimburseSection({ tx }: { tx: SpaceTx }) {
   const cats = useCategories();
   const nameOf = (id: string) => catName(cats.byId(id), t);
 
-  // reimbursements physically rewrite category attribution (user rule):
-  // splits carry the NET truth so budgets/trends/drill-downs agree for free
+  // settlement rewrites category attribution (redesign, docs/
+  // reimbursement-redesign.md): slices keep the GROSS truth and the
+  // settled value moves into an explicit `reimbursed` slice on BOTH sides
   const expensePatch = (expense: SpaceTx, newLinks: TxReimbursement[]) => ({
     reimbursements: newLinks,
-    splits: redistributedSplits(
-      expense,
-      Math.max(0, Math.abs(expense.amountCents) - totalReimbursedCents({ reimbursements: newLinks })),
-      nameOf,
-    ),
+    splits: settledSplits(expense, totalReimbursedCents({ reimbursements: newLinks }), nameOf),
   });
 
   // a settled credit deserves a real category instead of "Uncategorized"
-  // (user remark): the moment it is linked it self-files as Reimbursement,
+  // (user remark): the moment it is linked it self-files as Reimbursed,
   // unless the user already picked something deliberately
   const creditPatch = (credit: SpaceTx, newGivenCents: number) => {
     const selfFiles = (!credit.catId || credit.catId === UNCATEGORIZED_ID || credit.needsReview === 1) && newGivenCents > 0;
-    const catId = selfFiles ? 'reimburse' : credit.catId;
+    const catId = selfFiles ? REIMBURSED_ID : credit.catId;
     return {
       ...(selfFiles ? { catId, txType: 'income' as const, needsReview: 0 as const } : {}),
-      splits: redistributedSplits({ ...credit, catId }, Math.max(0, credit.amountCents - newGivenCents), nameOf),
+      splits: settledSplits({ ...credit, catId }, newGivenCents, nameOf),
     };
   };
 

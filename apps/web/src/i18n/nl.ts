@@ -1475,6 +1475,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'tx.splitMixed': 'Meerdere categorieën',
   'tx.unreviewed': 'Niet beoordeeld',
   'tx.uncategorizedFilter': 'Ongecategoriseerd',
+  'tx.unsettledFilter': 'Openstaande vergoedingen',
   'tx.counterAccount': 'Tegenpartij',
   'tx.counterAccountHint': 'De rekening aan de andere kant van deze transactie. Een keuze bepaalt automatisch het type.',
   'tx.typeManual': 'Of kies het type zelf',

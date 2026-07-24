@@ -1,7 +1,9 @@
 import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
+import { visibleTransactions, writeTxTransform } from '@/db/joined';
 import { tombstonedIds } from '@/domain/catalogDoc';
 import { UNCATEGORIZED_ID } from '@/domain/categories';
+import { givenCents, settledSplits, totalReimbursedCents } from '@/domain/reimbursement';
 import { cachedCatalog } from '@/sync/catalogSync';
 
 /**
@@ -44,5 +46,46 @@ export async function applyCatalogTombstones(store: StorageBackend, repo: Repo):
     }
   }
   await store.metaPut(markerKey, Date.now());
+  return touched;
+}
+
+/**
+ * Reimbursement redesign migration (answer d, docs/
+ * reimbursement-redesign.md): legacy rows carried NET slices — the
+ * settled value had silently shrunk away. One pass per identity rewrites
+ * every linked transaction (both sides, per space overlay) to gross
+ * slices + an explicit `reimbursed` slice. Tie-breaks use category IDS,
+ * not localized names, so concurrent migrations on two devices write
+ * byte-identical splits and LWW converges cleanly.
+ */
+export async function migrateReimbursementSlices(store: StorageBackend, repo: Repo): Promise<number> {
+  const markerKey = 'reimbSettledSlices_v1';
+  if (await store.metaGet(markerKey)) return 0;
+  const nameOf = (id: string) => id;
+
+  let touched = 0;
+  const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0);
+  for (const space of spaces) {
+    touched += await migrateSpaceReimbursements(repo, await visibleTransactions(store, space.id), nameOf);
+  }
+  await store.metaPut(markerKey, Date.now());
+  return touched;
+}
+
+async function migrateSpaceReimbursements(
+  repo: Repo,
+  txs: Awaited<ReturnType<typeof visibleTransactions>>,
+  nameOf: (id: string) => string,
+): Promise<number> {
+  let touched = 0;
+  for (const tx of txs) {
+    if (tx.deleted !== 0) continue;
+    const settled = tx.amountCents < 0 ? totalReimbursedCents(tx) : givenCents(txs, tx.id);
+    if (settled <= 0) continue;
+    const next = settledSplits(tx, settled, nameOf);
+    if (JSON.stringify(next) === JSON.stringify(tx.splits ?? [])) continue;
+    await writeTxTransform(repo, tx, { splits: next });
+    touched++;
+  }
   return touched;
 }

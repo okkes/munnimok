@@ -240,6 +240,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // best-effort — installed PWAs are exempt, native storage is app-scoped
       if (identity.kind !== 'demo') void ensurePersistentStorage();
       if (identity.kind === 'demo') await seedDemoIfNeeded(repo);
+      // reimbursement redesign: legacy NET slices become gross + an
+      // explicit reimbursed slice, once per identity (marker-gated;
+      // ALL identities — demo/offline data migrates too)
+      void (async () => {
+        const { migrateReimbursementSlices } = await import('@/application/catalogMaintenance');
+        await migrateReimbursementSlices(store, repo);
+      })().catch(() => undefined);
       if (identity.kind === 'offline' && (await liveSpaces(store)).length === 0) {
         // fully local profile: personal space named after the profile
         const { offlineProfileName } = await import('@/features/auth/offlineProfiles');
