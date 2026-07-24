@@ -8,7 +8,8 @@ import { useSpaceTransactions } from '@/application/transactions';
 import { eventSpentCents } from '@/domain/events';
 import type { EventRow } from '@/db/types';
 import { downscaleImage } from '@/lib/image';
-import { fmtCents, parseCents } from '@/lib/money';
+import { parseCents } from '@/lib/money';
+import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { HelpButton } from '@/features/help/HelpButton';
 import { IntroCard } from '@/features/help/IntroCard';
 import { AppBar, IconButton } from '@/ui/AppBar';
@@ -207,6 +208,7 @@ export function EventsScreen() {
   const txs = useSpaceTransactions();
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const currency = space?.currency ?? 'EUR';
+  const { fmt } = useDisplayMoney();
   const [formInitial, setFormInitial] = useState<EventRow | 'new' | null>(null);
 
   const fmtRange = (event: EventRow) => {
@@ -229,7 +231,7 @@ export function EventsScreen() {
           <img src={eventPicture(event)} alt="" loading="lazy" className="h-full w-full object-cover" />
           <span className="absolute right-3 bottom-2 rounded-lg bg-black/45 px-2 py-0.5 backdrop-blur-sm">
             <span className="m-num text-[14px] font-semibold text-white" data-testid={`event-total-${event.id}`}>
-              {fmtCents(spent, currency, lang)}
+              {fmt(spent, currency)}
             </span>
           </span>
         </div>
@@ -237,7 +239,7 @@ export function EventsScreen() {
           <span className="flex items-baseline justify-between gap-2">
             <span className="truncate text-[15px] font-semibold text-ink">{event.name}</span>
             {event.budgetCents ? (
-              <span className="shrink-0 text-[11px] text-ink-4">{t('budgets.of', { amount: fmtCents(event.budgetCents, currency, lang) })}</span>
+              <span className="shrink-0 text-[11px] text-ink-4">{t('budgets.of', { amount: fmt(event.budgetCents, currency) })}</span>
             ) : null}
           </span>
           <span className="block text-[11px] text-ink-4">{fmtRange(event) ?? t('events.undated')}</span>

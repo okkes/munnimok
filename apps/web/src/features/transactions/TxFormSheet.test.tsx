@@ -40,9 +40,12 @@ describe('TxFormSheet (demo identity)', () => {
     fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '12,34' } });
     fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Bakker Bart' } });
 
-    // pick a category through the nested picker
+    // the category row opens the UNIFIED editor (same as review) —
+    // pick through its per-row picker, Done stages the single category
     fireEvent.click(screen.getByTestId('txform-category'));
+    fireEvent.click(await screen.findByTestId('split-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-groceries'));
+    fireEvent.click(await screen.findByTestId('split-save'));
     await waitFor(() => expect(screen.getByTestId('txform-category').textContent).toContain('Grocery'));
 
     fireEvent.click(screen.getByTestId('txform-save'));
@@ -91,8 +94,9 @@ describe('TxFormSheet (demo identity)', () => {
 
   it('type follows the category until explicitly set; counter account suggests it', async () => {
     await openForm();
-    // demo has several accounts -> the counter row is offered
-    fireEvent.click(screen.getByTestId('txform-counter'));
+    // type + counterparty moved INTO the category editor (user request)
+    fireEvent.click(screen.getByTestId('txform-category'));
+    fireEvent.click(await screen.findByTestId('txform-counter'));
     await screen.findByTestId('txform-counter-options');
     fireEvent.click(screen.getByTestId('txform-counter-demo_save'));
     // the savings counterparty suggests Saving (same rule as the detail)

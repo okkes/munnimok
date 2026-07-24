@@ -1,5 +1,6 @@
 import { CATEGORY_BY_ID } from './categories';
 import { KEYWORD_RULES } from './keyword-categories';
+import type { KeywordRule } from './keyword-categories';
 import { predictFromMemory } from './merchantMemory';
 import type { MerchantMemory } from './merchantMemory';
 import type { TxType } from '@/db/types';
@@ -13,10 +14,28 @@ import type { TxType } from '@/db/types';
  * whole word. Longest keyword wins. Rules are filtered by money direction
  * so e.g. income keywords never fire on a debit.
  */
+/**
+ * Country of use → keyword language (onboarding asks for it so imports
+ * of local merchants predict better). Only Dutch keyword sets exist
+ * today; unknown countries fall back to them rather than to nothing —
+ * new locales slot in here as their keyword files land.
+ */
+const COUNTRY_KEYWORD_LANG: Record<string, string> = { NL: 'nl', BE: 'nl' };
+const FALLBACK_KEYWORD_LANG = 'nl';
+
+let activeRules: readonly KeywordRule[] = KEYWORD_RULES;
+
+/** hydrate from the stored profile at app open + when onboarding saves */
+export function setPredictionCountry(country?: string): void {
+  const keywordLang = COUNTRY_KEYWORD_LANG[country?.toUpperCase() ?? ''] ?? FALLBACK_KEYWORD_LANG;
+  const filtered = KEYWORD_RULES.filter((r) => r.lang === keywordLang);
+  activeRules = filtered.length ? filtered : KEYWORD_RULES.filter((r) => r.lang === FALLBACK_KEYWORD_LANG);
+}
+
 export function predictCategory(
   text: string,
   direction: 'credit' | 'debit',
-  rules: readonly { catId: string; keywords: string[] }[] = KEYWORD_RULES,
+  rules: readonly { catId: string; keywords: string[] }[] = activeRules,
   catById: { get: (id: string) => { direction: 'credit' | 'debit' | 'both' } | undefined } = CATEGORY_BY_ID,
 ): string | null {
   const haystack = text.toLowerCase();
@@ -81,7 +100,7 @@ export function predictTx(input: PredictInput): TxPrediction | null {
   const catId = predictCategory(
     `${input.merchant} ${input.titleOverride ?? ''} ${input.description ?? ''}`,
     direction,
-    input.keywordRules ? [...input.keywordRules, ...KEYWORD_RULES] : KEYWORD_RULES,
+    input.keywordRules ? [...input.keywordRules, ...activeRules] : activeRules,
   );
   if (!catId) return null;
   const txType = CATEGORY_BY_ID.get(catId)?.txTypes[0] ?? (direction === 'credit' ? 'income' : 'expense');

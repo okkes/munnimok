@@ -72,9 +72,12 @@ for (const V of VARIANTS) {
     await page.fill('[data-testid="txform-amount"]', '12,50');
     await page.fill('[data-testid="txform-merchant"]', 'Test Lunch');
     await page.click('[data-testid="txform-category"]');
+    // unified editor (same as review): per-row picker, Done stages it
+    await page.click('[data-testid="split-cat-0"]');
     await page.waitForSelector('[data-testid="catpicker-search"]');
     await page.fill('[data-testid="catpicker-search"]', 'dining');
     await page.click('[data-testid="catpicker-restaurants"]');
+    await page.click('[data-testid="split-save"]');
     await page.waitForTimeout(500);
     await shot(page, k('27-tx-create') + '--s1');
     await page.click('[data-testid="txform-save"]');

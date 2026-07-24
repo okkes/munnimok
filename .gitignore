@@ -15,6 +15,8 @@ playwright-report/
 .env.*
 !.env.example
 !.env.nas
+# IaC placeholder templates (NAS_* placeholders, no secret values)
+!.env.munni-iac-*
 **/env/.env
 **/env/.env.*
 !**/env/.env.example

@@ -36,6 +36,32 @@ export interface DragReorder {
   };
 }
 
+/** keep long lists draggable end-to-end: nudge the nearest scrollable
+ *  ancestor while the pointer rides the viewport edges */
+function findScrollParent(anchor: HTMLElement | null): HTMLElement | null {
+  let node: HTMLElement | null = anchor;
+  while (node && node !== document.body) {
+    const canScroll = node.scrollHeight > node.clientHeight + 4;
+    if (canScroll && /(auto|scroll)/.test(getComputedStyle(node).overflowY)) return node;
+    node = node.parentElement;
+  }
+  return null;
+}
+
+function autoScroll(anchor: HTMLElement | null, pointerY: number): void {
+  const EDGE = 56;
+  const STEP = 14;
+  const node = findScrollParent(anchor);
+  const top = node ? node.getBoundingClientRect().top : 0;
+  const bottom = node ? node.getBoundingClientRect().bottom : window.innerHeight;
+  let delta = 0;
+  if (pointerY < top + EDGE) delta = -STEP;
+  else if (pointerY > bottom - EDGE) delta = STEP;
+  if (!delta) return;
+  if (node) node.scrollTop += delta;
+  else window.scrollBy(0, delta);
+}
+
 export function useDragReorder(count: number, onMove: (from: number, to: number) => void): DragReorder {
   const rowRefs = useRef<(HTMLElement | null)[]>([]);
   const dragRef = useRef<DragState | null>(null);
@@ -77,7 +103,9 @@ export function useDragReorder(count: number, onMove: (from: number, to: number)
     },
     onPointerMove: (e: ReactPointerEvent<HTMLElement>) => {
       const current = dragRef.current;
-      if (current) update({ ...current, y: e.clientY, over: indexAt(e.clientY) });
+      if (!current) return;
+      autoScroll(rowRefs.current[current.from], e.clientY);
+      update({ ...current, y: e.clientY, over: indexAt(e.clientY) });
     },
     onPointerUp: () => {
       const current = dragRef.current;
@@ -109,4 +137,86 @@ export function useDragReorder(count: number, onMove: (from: number, to: number)
   };
 
   return { drag, ghost, setRowRef, rowStyle, handleProps };
+}
+
+export interface DragToTargets {
+  /** id of the row being dragged, null when idle */
+  dragId: string | null;
+  /** viewport rect for the floating clone */
+  ghost: { top: number; left: number; width: number; height: number } | null;
+  /** target currently under the pointer */
+  hoveredTarget: string | null;
+  rowRef: (id: string) => (el: HTMLElement | null) => void;
+  targetRef: (id: string) => (el: HTMLElement | null) => void;
+  handleProps: (id: string) => {
+    onPointerDown: (e: ReactPointerEvent<HTMLElement>) => void;
+    onPointerMove: (e: ReactPointerEvent<HTMLElement>) => void;
+    onPointerUp: () => void;
+    onPointerCancel: () => void;
+    style: { touchAction: 'none' };
+  };
+}
+
+/**
+ * Drag a row onto one of several drop TARGETS (restored category
+ * drag-to-move, user request): same ghost visual as the reorder hook,
+ * targets highlight while hovered, the drop commits once on release.
+ */
+export function useDragToTargets(onDrop: (dragId: string, targetId: string) => void): DragToTargets {
+  const rowEls = useRef(new Map<string, HTMLElement>());
+  const targetEls = useRef(new Map<string, HTMLElement>());
+  const stateRef = useRef<{ id: string; y: number; rect: { left: number; width: number; height: number }; over: string | null } | null>(null);
+  const [state, setState] = useState<typeof stateRef.current>(null);
+
+  const update = (next: typeof stateRef.current) => {
+    stateRef.current = next;
+    setState(next);
+  };
+
+  const targetAt = (x: number, y: number): string | null => {
+    for (const [id, el] of targetEls.current) {
+      const r = el.getBoundingClientRect();
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return id;
+    }
+    return null;
+  };
+
+  const rowRef = (id: string) => (el: HTMLElement | null) => {
+    if (el) rowEls.current.set(id, el);
+    else rowEls.current.delete(id);
+  };
+  const targetRef = (id: string) => (el: HTMLElement | null) => {
+    if (el) targetEls.current.set(id, el);
+    else targetEls.current.delete(id);
+  };
+
+  const handleProps = (id: string) => ({
+    onPointerDown: (e: ReactPointerEvent<HTMLElement>) => {
+      e.currentTarget.setPointerCapture?.(e.pointerId);
+      const rect = rowEls.current.get(id)?.getBoundingClientRect();
+      update({ id, y: e.clientY, rect: { left: rect?.left ?? 0, width: rect?.width ?? 0, height: rect?.height ?? 44 }, over: null });
+    },
+    onPointerMove: (e: ReactPointerEvent<HTMLElement>) => {
+      const current = stateRef.current;
+      if (!current) return;
+      autoScroll(rowEls.current.get(current.id) ?? null, e.clientY);
+      update({ ...current, y: e.clientY, over: targetAt(e.clientX, e.clientY) });
+    },
+    onPointerUp: () => {
+      const current = stateRef.current;
+      if (current?.over) onDrop(current.id, current.over);
+      update(null);
+    },
+    onPointerCancel: () => update(null),
+    style: { touchAction: 'none' as const },
+  });
+
+  return {
+    dragId: state?.id ?? null,
+    ghost: state ? { top: state.y - state.rect.height / 2, left: state.rect.left, width: state.rect.width, height: state.rect.height } : null,
+    hoveredTarget: state?.over ?? null,
+    rowRef,
+    targetRef,
+    handleProps,
+  };
 }

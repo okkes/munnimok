@@ -27,14 +27,15 @@ for (const V of VARIANTS) {
     await base(page, V, { demo: true });
     await goToAccounts(page);
     await page.click('[data-testid="accounts-add"]');
-    await page.waitForSelector('[data-testid="accttype-cash"]');
+    await page.click('[data-testid="chooser-manual"]');
+    await page.waitForSelector('[data-testid="chooser-accttype-cash"]');
     await page.waitForTimeout(500); // sheet slide-in
     await shot(page, k('17-accounts-add') + '--s1');
-    await page.click('[data-testid="accttype-cash"]');
-    await page.fill('[data-testid="acctform-name"]', 'Wallet');
-    await page.fill('[data-testid="acctform-balance"]', '52,50');
+    await page.click('[data-testid="chooser-accttype-cash"]');
+    await page.fill('[data-testid="chooser-acctform-name"]', 'Wallet');
+    await page.fill('[data-testid="chooser-acctform-balance"]', '52,50');
     await shot(page, k('17-accounts-add') + '--s2');
-    await page.click('[data-testid="acctform-save"]');
+    await page.click('[data-testid="chooser-acctform-save"]');
     await page.waitForTimeout(500); // sheet slide-out
     await expect(page.locator('[data-testid="screen-accounts"]')).toContainText('Wallet');
     await expect(page.locator('[data-testid="screen-accounts"]')).toContainText('52.50');
@@ -59,7 +60,11 @@ for (const V of VARIANTS) {
     // delete it: tombstone removes it from the list and the home total
     await page.click('[data-testid="account-row-demo_save"]');
     await page.click('[data-testid="acctedit-delete"]');
-    await page.waitForTimeout(500);
+    // aligned destructive deletes: the danger sheet asks first, and its
+    // confirm arms only after the cooldown (5s in real builds)
+    const removeConfirm = page.locator('[data-testid="acctedit-remove-confirm"]');
+    await expect(removeConfirm).toBeEnabled({ timeout: 10_000 });
+    await removeConfirm.click();
     await expect(page.locator('[data-testid="account-row-demo_save"]')).toHaveCount(0);
     await page.click('[data-testid="tab-home"]');
     await expect(page.locator('[data-testid="home-total-balance"]')).toContainText('3,420.55');

@@ -19,7 +19,8 @@ public static class AccountDeletion
         IHttpClientFactory httpFactory,
         IConfiguration config,
         ILogger logger,
-        User user)
+        User user,
+        bool deleteIdentity = true)
     {
         // 1 · revoke bank consents at the provider (GoCardless supports
         //     deletion; Enable Banking sessions expire on their own)
@@ -43,7 +44,10 @@ public static class AccountDeletion
 
         // 6 · the Logto identity (kills the login + other sessions). Optional:
         //     without the M2M credential the server data still disappears.
-        await DeleteLogtoUserAsync(httpFactory, config, logger, user.Sub);
+        //     Go-offline conversions KEEP the identity in every environment
+        //     (deleteIdentity=false): the login survives, the data is gone,
+        //     and a later online sign-in provisions a fresh account.
+        if (deleteIdentity) await DeleteLogtoUserAsync(httpFactory, config, logger, user.Sub);
 
         // 7 · the user row last — a retry after any partial failure can re-enter
         db.Users.Remove(user);

@@ -1,4 +1,5 @@
 import { accountLinkId } from '@/domain/feedIds';
+import { logActivity } from './activity';
 import { DEFAULT_HISTORY_MONTHS, isoMonthsAgo } from '@/features/spaces/spaceDefaults';
 import { attachAccount, detachAccount, fetchSpaceLinks } from '@/features/accounts/feedGateway';
 import type { Repo } from '@/db/repo';
@@ -30,6 +31,7 @@ export async function attachFeedToSpace(
     historyFrom: from,
     archived: 0,
   });
+  void logActivity(store, repo, spaceId, 'attach', (await store.get('account', accountId))?.name);
 }
 
 export async function detachFeedFromSpace(
@@ -46,4 +48,5 @@ export async function detachFeedFromSpace(
     (l) => l.deleted === 0 && l.accountId === accountId && l.feedSpaceId === feedSpaceId,
   );
   if (local) await repo.remove('accountLink', spaceId, local.id);
+  void logActivity(store, repo, spaceId, 'detach', (await store.get('account', accountId))?.name);
 }

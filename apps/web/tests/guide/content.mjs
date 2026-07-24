@@ -19,13 +19,13 @@ export const GUIDE = [
     id: 'home',
     title: 'Home is yours',
     body: `Home is a landing zone of blocks: review queue, this period, new transactions, budgets, upcoming costs and more. Reorder or hide blocks with Customize Home at the bottom. The avatar on the top right switches spaces.`,
-    tips: ['The balance band folds out to show every account.', 'Portfolio has its own tab at the bottom.'],
+    tips: ['The balance band folds out to show every account.', 'Portfolio has its own tab at the bottom.', 'The bell keeps the space’s history: the last 200 actions with who did what.', 'Pick a display currency on your profile to read every amount in one currency, marked ≈ — your data keeps its own.'],
     shots: ['01-shell-home', '59-overview-home'],
   },
   {
     id: 'banks',
     title: 'Connecting your bank',
-    body: `Settings → Global settings → Financial Accounts. Connect a bank (read-only PSD2 access — munni can never move money), import a CAMT.053 statement for accounts your bank won't share, or add cash/savings accounts manually. Bank data lands once per account; each space picks its accounts on its own Financial accounts screen — attach an existing account there with a start date, or detach it when the space no longer needs it.`,
+    body: `Settings → Global settings → Financial Accounts. Connect a bank (read-only PSD2 access — munni can never move money), import a statement (CAMT.053 or ING CSV) for accounts your bank won't share, or add cash/savings accounts manually. Bank data lands once per account; each space picks its accounts on its own Financial accounts screen — attach an existing account there with a start date, or detach it when the space no longer needs it. A freshly connected account that isn't visible in any space yet offers a one-tap attach to your active space.`,
     tips: ['New transactions arrive automatically several times a day.', 'Reserved (not yet booked) card payments show with a badge and disappear when the real booking lands.', 'Each account row shows when the bank last answered — a Reconnect hint appears when a consent has gone quiet.'],
     shots: ['16-accounts-list', '19-import-preview', '20-import-run'],
   },
@@ -46,8 +46,8 @@ export const GUIDE = [
   {
     id: 'spaces',
     title: 'Spaces & sharing',
-    body: `Spaces are separate bookkeeping areas — personal, household, a trip. Invite friends into a shared space: everyone sees the same transactions but each space keeps its own categories and budgets. Attach a bank account to any number of spaces, each with its own history start.`,
-    tips: ['Roles: owners manage members, contributors edit, readers only look.', 'Leaving a space archives your attached accounts for the others instead of deleting history.'],
+    body: `Spaces are separate bookkeeping areas — personal, household, a trip. Invite friends into a shared space: everyone sees the same transactions but each space keeps its own categories and budgets. Attach a bank account to any number of spaces, each with its own history start. The card at the top of the Settings tab opens the space's own settings (name, image, color); its budget period, currency and default history start are separate settings right below it.`,
+    tips: ['Roles: owners manage members, contributors edit, readers only look.', 'Leaving a space archives your attached accounts for the others instead of deleting history.', 'The budget period screen has its own tutorial — tap the ? up top.'],
     shots: ['22-spaces-list', '33-space-share', '61-feed-share'],
   },
   {
@@ -74,7 +74,7 @@ export const GUIDE = [
   {
     id: 'devices',
     title: 'Devices & offline',
-    body: `Signed in, every device converges on the same data — edits made offline sync when you're back. Two people can edit the same transaction at once; the newer edit per field wins everywhere, identically.`,
+    body: `Signed in, every device converges on the same data — edits made offline sync when you're back. Two people can edit the same transaction at once; the newer edit per field wins everywhere, identically. And if you ever want out of the cloud entirely, Global settings → Go offline converts your account into a device-only offline profile: everything stays, bank-linked accounts become manual, and your server data can be erased in the same step.`,
     tips: ['Push notifications tell you when new bank transactions arrive.', 'The sync card at the top of Settings shows the last successful sync.'],
     shots: ['25-sync-devices', '58-sync-live', '38-offline'],
   },

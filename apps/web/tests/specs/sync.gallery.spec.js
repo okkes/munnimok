@@ -25,10 +25,11 @@ async function addCashAccount(page, name, balance) {
   await gotoGlobalSettings(page);
   await page.click('[data-testid="settings-accounts-row"]');
   await page.click('[data-testid="accounts-add"]');
-  await page.click('[data-testid="accttype-cash"]');
-  await page.fill('[data-testid="acctform-name"]', name);
-  await page.fill('[data-testid="acctform-balance"]', balance);
-  await page.click('[data-testid="acctform-save"]');
+  await page.click('[data-testid="chooser-manual"]');
+  await page.click('[data-testid="chooser-accttype-cash"]');
+  await page.fill('[data-testid="chooser-acctform-name"]', name);
+  await page.fill('[data-testid="chooser-acctform-balance"]', balance);
+  await page.click('[data-testid="chooser-acctform-save"]');
   await page.waitForTimeout(500);
 }
 
@@ -209,7 +210,7 @@ for (const V of VARIANTS) {
     const sub = `e2e-onboard-${Date.now()}`;
 
     const a = await createPage(browser, V);
-    await base(a.page, V, { userSub: sub });
+    await base(a.page, V, { userSub: sub, keepOnboarding: true });
     // brand-new user -> redirected to onboarding
     await a.page.waitForSelector('[data-testid="screen-onboarding"]');
     await a.page.fill('[data-testid="onboarding-name"]', 'Okkes Test');
@@ -217,16 +218,14 @@ for (const V of VARIANTS) {
     await a.page.waitForSelector('[data-testid="onboarding-country-search"]');
     await a.page.fill('[data-testid="onboarding-country-search"]', 'Turk');
     await a.page.click('[data-testid="onboarding-country-TR"]');
-    await expect(a.page.locator('[data-testid="onboarding-currency-hint"]')).toContainText('TRY');
     await shot(a.page, k('37-onboarding'));
     await a.page.click('[data-testid="onboarding-save"]');
-    // step 2 (bank connect) — skip it in the e2e stack
-    await a.page.waitForSelector('[data-testid="onboarding-bank-step"]');
+    // step 2 (app lock) — decide later in the e2e stack; the bank step is
+    // gone (the guided tutorial owns account setup now)
+    await a.page.waitForSelector('[data-testid="onboarding-lock-step"]');
     await shot(a.page, k('37-onboarding') + '--s1');
-    await a.page.click('[data-testid="onboarding-bank-later"]');
+    await a.page.click('[data-testid="onboarding-lock-later"]');
     await a.page.waitForSelector('[data-testid="screen-home"]');
-    // currency applied to the personal space: home total renders in TRY
-    await expect(a.page.locator('[data-testid="home-total-balance"]')).toContainText('TRY');
     // reload: onboarding never comes back
     await a.page.reload();
     await a.page.waitForSelector('[data-testid="screen-home"]');

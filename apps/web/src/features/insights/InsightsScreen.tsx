@@ -5,7 +5,7 @@ import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useInsightDigest, useInsightOps, useInsights } from '@/application/insights';
 import type { Insight, InsightSeverity } from '@/domain/insights';
-import { fmtCents } from '@/lib/money';
+import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
@@ -41,7 +41,7 @@ function MiniBars({ data, color }: Readonly<{ data: number[]; color: string }>) 
  * a door to the fix. All local math; dismissals sync per space.
  */
 export function InsightsScreen() {
-  const { t, lang } = useLang();
+  const { t } = useLang();
   const navigate = useNavigate();
   const { store, spaceId } = useData();
   const insights = useInsights();
@@ -51,7 +51,8 @@ export function InsightsScreen() {
   const currency = space?.currency ?? 'EUR';
   const [open, setOpen] = useState<string | null>(null);
 
-  const money = (cents: number) => fmtCents(cents, currency, lang);
+  const { fmt } = useDisplayMoney();
+  const money = (cents: number) => fmt(cents, currency);
   const withMoney = (params: Record<string, string | number>) =>
     Object.fromEntries(
       Object.entries(params).map(([key, value]) => [

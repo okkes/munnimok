@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.EntityFrameworkCore;
 using Munni.Api.Auth;
 using Munni.Api.Data;
@@ -6,8 +7,8 @@ using Munni.Api.Validation;
 
 namespace Munni.Api.Social;
 
-public sealed record MeResponse(Guid UserId, string? DisplayName, string? Picture);
-public sealed record UpdateMeRequest(string DisplayName, string? Picture = null);
+public sealed record MeResponse(Guid UserId, string? DisplayName, string? Picture, string? Country = null, string? DisplayCurrency = null);
+public sealed record UpdateMeRequest(string DisplayName, string? Picture = null, string? Country = null, string? DisplayCurrency = null);
 public sealed record FriendDto(Guid UserId, string? DisplayName, string? Picture = null);
 public sealed record FriendRequestDto(Guid Id, Guid FromUserId, string? FromName, Guid ToUserId, string? ToName);
 public sealed record FriendsResponse(List<FriendDto> Friends, List<FriendRequestDto> SentPending, List<FriendRequestDto> ReceivedPending);
@@ -32,6 +33,9 @@ public static class SocialEndpoints
         var authed = app.MapGroup("").RequireAuthorization().WithSafeRouteParams();
 
         authed.MapGet("/me", GetMe);
+        // onboarding default for "country of use" (user ruling: IP-based
+        // ONLY here, for signed-in users — never on the login screen)
+        authed.MapGet("/geo", GetGeoAsync);
         authed.MapPut("/me", UpdateMe).WithValidation<UpdateMeRequest>();
         // full account deletion — Apple guideline 5.1.1 subsection v wants
         // an in-app path. The strict limiter also throttles double-taps.
@@ -52,10 +56,43 @@ public static class SocialEndpoints
     }
 
     // ── identity ────────────────────────────────────────────────────────
+    /// <summary>best-effort IP → ISO country for the onboarding default.
+    /// Free lookup (ip-api.com), cached per IP, fails open to null —
+    /// the client keeps its own default when this returns nothing.</summary>
+    private static readonly ConcurrentDictionary<string, string?> GeoCache = new();
+
+    private static async Task<IResult> GetGeoAsync(HttpContext ctx, IHttpClientFactory httpFactory)
+    {
+        var ip = ctx.Request.Headers["X-Forwarded-For"].FirstOrDefault()?.Split(',')[0].Trim();
+        if (string.IsNullOrEmpty(ip)) ip = ctx.Connection.RemoteIpAddress?.ToString();
+        if (string.IsNullOrEmpty(ip) || ip == "127.0.0.1" || ip == "::1") return Results.Ok(new { country = (string?)null });
+        if (GeoCache.TryGetValue(ip, out var cached)) return Results.Ok(new { country = cached });
+        string? country = null;
+        try
+        {
+            // ipwho.is: free AND speaks TLS (ip-api.com's free tier is
+            // plaintext-only — Sonar hotspot, and the IP deserves better)
+            using var client = httpFactory.CreateClient("geo");
+            var res = await client.GetFromJsonAsync<GeoLookup>($"https://ipwho.is/{ip}?fields=success,country_code");
+            if (res?.Success == true && !string.IsNullOrEmpty(res.CountryCode)) country = res.CountryCode;
+        }
+        catch
+        {
+            // lookup down — the client default stands
+        }
+        if (GeoCache.Count > 10_000) GeoCache.Clear(); // bounded, coarse
+        GeoCache[ip] = country;
+        return Results.Ok(new { country });
+    }
+
+    private sealed record GeoLookup(
+        [property: System.Text.Json.Serialization.JsonPropertyName("success")] bool? Success,
+        [property: System.Text.Json.Serialization.JsonPropertyName("country_code")] string? CountryCode);
+
     private static async Task<IResult> GetMe(AppDbContext db, HttpContext http)
     {
         var user = await db.Users.FindAsync(http.GetUserId());
-        return Results.Ok(new MeResponse(user!.Id, user.DisplayName, user.Picture));
+        return Results.Ok(new MeResponse(user!.Id, user.DisplayName, user.Picture, user.Country, user.DisplayCurrency));
     }
 
     private static async Task<IResult> DeleteMe(
@@ -63,12 +100,16 @@ public static class SocialEndpoints
         HttpContext http,
         IHttpClientFactory httpFactory,
         IConfiguration config,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        bool keepIdentity = false)
     {
         var user = await db.Users.FindAsync(http.GetUserId());
         if (user is null) return Results.NotFound();
         var gc = http.RequestServices.GetService<Munni.Api.GoCardless.IGoCardlessApi>();
-        await AccountDeletion.DeleteUserAsync(db, gc, httpFactory, config, loggerFactory.CreateLogger("AccountDeletion"), user);
+        // keepIdentity: the go-offline conversion — munni data dies, the
+        // Logto login survives (dev and prod share identities, and a later
+        // sign-in should simply provision a fresh account)
+        await AccountDeletion.DeleteUserAsync(db, gc, httpFactory, config, loggerFactory.CreateLogger("AccountDeletion"), user, !keepIdentity);
         return Results.Ok(new { deleted = true });
     }
 
@@ -77,8 +118,13 @@ public static class SocialEndpoints
         var user = await db.Users.FindAsync(http.GetUserId());
         user!.DisplayName = request.DisplayName.Trim();
         if (request.Picture is not null) user.Picture = request.Picture;
+        if (request.Country is not null) user.Country = request.Country.ToUpperInvariant();
+        // display currency is a personal rendering preference (currency
+        // plan CD3): '' clears back to "as recorded", null leaves it alone
+        if (request.DisplayCurrency is not null)
+            user.DisplayCurrency = request.DisplayCurrency.Length == 0 ? null : request.DisplayCurrency.ToUpperInvariant();
         await db.SaveChangesAsync();
-        return Results.Ok(new MeResponse(user.Id, user.DisplayName, user.Picture));
+        return Results.Ok(new MeResponse(user.Id, user.DisplayName, user.Picture, user.Country, user.DisplayCurrency));
     }
 
     // ── friends ─────────────────────────────────────────────────────────

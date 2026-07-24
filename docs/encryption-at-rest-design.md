@@ -69,3 +69,42 @@ rebuild started. The web/PWA keeps Dexie unchanged.
 
 E4 ships only after a dedicated security-review pass; E1 can start any
 time — it is a pure refactor that also pays down storage-layer debt.
+
+## Beta → production checklist (2026-07-23, user ask)
+
+Where it stands: E1+E2 shipped — the toggle works, SQLCipher opens,
+the ACTIVE pill proves which backend really loaded, open failures
+fall back to Dexie without bricking, and the disable path's stale-
+outbox wedge was fixed (op quarantine). What still separates beta
+from production:
+
+1. **Proof on device (you, ~15 min, next TestFlight build):**
+   a. Global settings → toggle Encrypted storage ON → app relaunches →
+      the row must read ON + **active**.
+   b. Use the app normally (add a tx, sync) — everything behaves.
+   c. Toggle OFF → relaunch → data intact, sync recovers (quarantine
+      fix) — the previous 400 wedge is the regression to watch.
+   d. iOS integrity spot-check: Settings → Privacy → none needed —
+      the real check is E3a below (we surface cipher proof in-app).
+2. **E3a — verifiable proof in-app: SHIPPED (2026-07-23).** The
+   settings row shows the SQLCipher `PRAGMA cipher_version` answer when
+   active (plain SQLite answers empty — null = no proof), plus a
+   one-tap "Verify encryption" row that round-trips a probe row through
+   the live store. The row is visible on native in every channel now.
+3. **E3b — default-ON for new native installs: SHIPPED (2026-07-23).**
+   The flag is three-state: absent → decided once at first open (no
+   munni database on the device = fresh → '1', else '0'); an explicit
+   or fallback OFF writes '0' so the default never re-triggers or loops
+   a failing open. Existing installs keep Dexie until they toggle (or
+   §4 flips them).
+4. **E4 — SHIPPED (2026-07-24, user ruling "tested properly, enable
+   fully")**: native shells now ALWAYS open SQLCipher — no toggle, no
+   verify UI (both removed from settings). Existing installs migrate by
+   COPY on first encrypted open (all entities + outbox with unpushed
+   ops + meta + store connections + quote cache) — offline profiles
+   lose nothing; the Dexie original is kept untouched as the safety
+   net behind the never-brick fallback ('0' flag = fallback marker
+   only). cipher_version capture stays in the executor for telemetry.
+
+Recommended order: you run (1) on the next build; I ship (2)+(3) in
+one slice; (4) gates the default flip for existing installs.

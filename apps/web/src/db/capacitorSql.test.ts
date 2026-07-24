@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { openEncryptedExecutor, sqliteAvailable } from './capacitorSql';
+import { openEncryptedExecutor, sqlCipherVersion, sqliteAvailable } from './capacitorSql';
 
 /** a fake raw plugin, close enough for the executor's contract */
 const makePlugin = (queryValues: Record<string, unknown>[]) => ({
@@ -51,5 +51,23 @@ describe('capacitorSql executor', () => {
     expect(plugin.commitTransaction).toHaveBeenCalledTimes(1);
     await expect(executor.transaction(async () => Promise.reject(new Error('boom')))).rejects.toThrow('boom');
     expect(plugin.rollbackTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('captures the cipher_version proof at open — an empty answer records null (E3a)', async () => {
+    // SQLCipher answers the PRAGMA with a version row; PLAIN SQLite
+    // answers empty — so the recorded value is engine-reported proof
+    const plugin = makePlugin([]);
+    plugin.query.mockImplementation(async ({ statement }: { statement: string }) =>
+      statement.includes('cipher_version') ? { values: [{ cipher_version: '4.6.1 community' }] } : { values: [] },
+    );
+    setPlugin(plugin);
+    await openEncryptedExecutor('munni-test');
+    expect(sqlCipherVersion()).toBe('4.6.1 community');
+
+    // an unencrypted engine (empty PRAGMA answer) must NOT claim proof
+    const bare = makePlugin([]);
+    setPlugin(bare);
+    await openEncryptedExecutor('munni-test');
+    expect(sqlCipherVersion()).toBeNull();
   });
 });

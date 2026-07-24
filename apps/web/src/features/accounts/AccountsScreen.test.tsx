@@ -102,6 +102,85 @@ describe('AccountsScreen (demo identity)', () => {
     fetchMock.mockRestore();
   }, 15_000);
 
+  it('AE2: a feed account attached to no space gets the one-tap attach offer; accept wires it to the active space', async () => {
+    indexedDB.deleteDatabase(USER_TEST_DB);
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const db = new MunniDB(USER_TEST_DB);
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
+    // fresh bank connect: the account exists in its feed space, but NO
+    // accountLink row anywhere — exactly the "attached nowhere" state
+    await repo.upsert('account', 'feed-1', 'feedacct-1', {
+      name: 'ING Betaal',
+      type: 'checking',
+      source: 'gocardless',
+      currency: 'EUR',
+      balanceCents: 5000,
+      iban: 'NL69INGB0123456789',
+    });
+    db.close();
+
+    let attachBody: { historyFrom?: string } | undefined;
+    renderAppAsUser('/accounts', {
+      spaces: [{ id: 's-user', name: 'Personal' }],
+      api: {
+        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false } }),
+        'GET /me/spaces': () => ['s-user', 'feed-1'],
+        'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
+        'POST /spaces/s-user/accounts': (body) => {
+          attachBody = body as { historyFrom?: string };
+          return {};
+        },
+      },
+    });
+
+    const offer = await screen.findByTestId('attach-offer', {}, { timeout: 5000 });
+    expect(offer.textContent).toContain('Personal');
+    fireEvent.click(screen.getByTestId('attach-offer-accept'));
+    // the attach reaches the server with the default history window…
+    await waitFor(() => expect(attachBody?.historyFrom).toMatch(/^\d{4}-\d{2}-\d{2}$/), { timeout: 5000 });
+    // …and once the link mirror lands the offer resolves itself
+    await waitFor(() => expect(screen.queryByTestId('attach-offer')).toBeNull(), { timeout: 5000 });
+  }, 15_000);
+
+  it('AE2: "not now" dismisses the offer and it stays dismissed', async () => {
+    indexedDB.deleteDatabase(USER_TEST_DB);
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const db = new MunniDB(USER_TEST_DB);
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
+    await repo.upsert('account', 'feed-1', 'feedacct-1', {
+      name: 'ING Betaal',
+      type: 'checking',
+      source: 'gocardless',
+      currency: 'EUR',
+      balanceCents: 5000,
+      iban: 'NL69INGB0123456789',
+    });
+    db.close();
+
+    renderAppAsUser('/accounts', {
+      spaces: [{ id: 's-user', name: 'Personal' }],
+      api: {
+        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false } }),
+        'GET /me/spaces': () => ['s-user', 'feed-1'],
+        'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
+      },
+    });
+
+    fireEvent.click(await screen.findByTestId('attach-offer-dismiss', {}, { timeout: 5000 }));
+    await waitFor(() => expect(screen.queryByTestId('attach-offer')).toBeNull());
+    // the dismissal is remembered on the device, not just this render
+    const db2 = new MunniDB(USER_TEST_DB);
+    const dismissed = (await db2.meta.get('attachOfferDismissed'))?.value as string[] | undefined;
+    expect(dismissed).toContain('feedacct-1');
+    db2.close();
+  }, 15_000);
+
   it('space accounts screen attaches one of my feed accounts with a start date', async () => {
     // redesign: attaching happens on the space's own accounts screen —
     // pick an existing account, choose the history start, import
@@ -275,14 +354,16 @@ describe('AccountsScreen (demo identity)', () => {
     await waitFor(() => expect(screen.queryByTestId('account-row-feedacct-1')).toBeNull(), { timeout: 5000 });
   }, 15_000);
 
-  it('adds a manual cash account through the type grid', async () => {
+  it('adds a manual cash account through the intent chooser (AE1)', async () => {
     renderApp('/accounts');
     await screen.findByTestId('account-row-demo_main');
     fireEvent.click(screen.getByTestId('accounts-add'));
-    fireEvent.click(await screen.findByTestId('accttype-cash'));
-    fireEvent.change(screen.getByTestId('acctform-name'), { target: { value: 'Wallet' } });
-    fireEvent.change(screen.getByTestId('acctform-balance'), { target: { value: '25,50' } });
-    fireEvent.click(screen.getByTestId('acctform-save'));
+    // the chooser routes by intent and names where the result lives
+    fireEvent.click(await screen.findByTestId('chooser-manual'));
+    fireEvent.click(await screen.findByTestId('chooser-accttype-cash'));
+    fireEvent.change(screen.getByTestId('chooser-acctform-name'), { target: { value: 'Wallet' } });
+    fireEvent.change(screen.getByTestId('chooser-acctform-balance'), { target: { value: '25,50' } });
+    fireEvent.click(screen.getByTestId('chooser-acctform-save'));
     await waitFor(() => expect(screen.getByText('Wallet')).toBeTruthy());
   });
 
@@ -290,10 +371,11 @@ describe('AccountsScreen (demo identity)', () => {
     renderApp('/accounts');
     await screen.findByTestId('account-row-demo_main');
     fireEvent.click(screen.getByTestId('accounts-add'));
-    fireEvent.click(await screen.findByTestId('accttype-credit'));
-    fireEvent.change(screen.getByTestId('acctform-name'), { target: { value: 'Visa' } });
-    fireEvent.change(screen.getByTestId('acctform-balance'), { target: { value: '100' } });
-    fireEvent.click(screen.getByTestId('acctform-save'));
+    fireEvent.click(await screen.findByTestId('chooser-manual'));
+    fireEvent.click(await screen.findByTestId('chooser-accttype-credit'));
+    fireEvent.change(screen.getByTestId('chooser-acctform-name'), { target: { value: 'Visa' } });
+    fireEvent.change(screen.getByTestId('chooser-acctform-balance'), { target: { value: '100' } });
+    fireEvent.click(screen.getByTestId('chooser-acctform-save'));
     // renders under Liabilities with a negative amount
     const row = await screen.findByText('Visa');
     expect(row.closest('button')!.textContent).toContain('-€100.00');

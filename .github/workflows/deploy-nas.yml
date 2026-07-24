@@ -18,7 +18,7 @@
 # no whole-.env secret, no manual NAS edits (deploy/nas/README.md).
 #
 # Secrets required (besides the NAS_* env values):
-#   SYNOLOGY_URL       e.g. https://okkes.synology.me:5001
+#   SYNOLOGY_URL       e.g. https://<your-nas-domain>:5001
 #   SYNOLOGY_USER      a dedicated DSM account (FileStation write perm,
 #                      2FA OFF — the login API can't do interactive OTP)
 #   SYNOLOGY_PASS      that account's password

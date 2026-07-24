@@ -42,7 +42,7 @@ export function SpacesScreen() {
     }
     const id = repo.newId();
     // shared duplicates render "created by X" — capture the creator now
-    const profile = (await store.metaGet('profile'))?.value as { displayName?: string } | undefined;
+    const profile = (await store.metaGet('profile'))?.value as { name?: string } | undefined;
     void repo
       .upsert('space', id, id, {
         name: name.trim(),
@@ -53,7 +53,7 @@ export function SpacesScreen() {
         // persisted, not just displayed — attaching an account must see
         // the same default the settings screen shows (user bug report)
         historyStartDate: isoMonthsAgo(DEFAULT_HISTORY_MONTHS),
-        ...(profile?.displayName ? { createdByName: profile.displayName } : {}),
+        ...(profile?.name ? { createdByName: profile.name } : {}),
       })
       .then(() => setActiveSpace(id));
     setCreateOpen(false);

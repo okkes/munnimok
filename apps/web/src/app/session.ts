@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { getOfflineProfile } from '@/features/auth/offlineProfiles';
 
 /**
  * Who is using the app on this device. Demo and offline identities never
@@ -33,8 +34,13 @@ export function identityKey(identity: Identity): string {
   switch (identity.kind) {
     case 'demo':
       return 'demo';
-    case 'offline':
-      return `offline_${identity.profileId}`;
+    case 'offline': {
+      // OO1 rebind: a profile minted by "Go offline" adopted the former
+      // signed-in identity's store — its key points there (registry read
+      // is sync localStorage; a missing profile falls back cleanly)
+      const adopted = getOfflineProfile(identity.profileId)?.storeKey;
+      return adopted ?? `offline_${identity.profileId}`;
+    }
     case 'user':
       // subs can contain chars unsafe for db names
       return `user_${identity.sub.replace(/[^a-zA-Z0-9_-]/g, '_')}`;

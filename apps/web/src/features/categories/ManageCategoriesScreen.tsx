@@ -13,6 +13,8 @@ import { Collapse } from '@/ui/Collapse';
 import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
+import { useDragToTargets } from '@/ui/dragReorder';
+import type { DragToTargets } from '@/ui/dragReorder';
 import {
   copyCategoryToSpace,
   createMainCategory,
@@ -108,14 +110,39 @@ function SubCatRow({
   onEdit,
   onMenu,
   t,
-}: Readonly<{ cat: Cat; parentColor?: string; onEdit: () => void; onMenu: () => void; t: TFunc }>) {
+  dragHandleProps,
+  dragRowRef,
+  dragging,
+}: Readonly<{
+  cat: Cat;
+  parentColor?: string;
+  onEdit: () => void;
+  onMenu: () => void;
+  t: TFunc;
+  /** custom subs drag onto another main (restored, user request) */
+  dragHandleProps?: ReturnType<DragToTargets['handleProps']>;
+  dragRowRef?: (el: HTMLElement | null) => void;
+  dragging?: boolean;
+}>) {
   const canHold = !!cat.custom && !cat.isOther;
   const hold = useHoldMenu(canHold, onMenu);
   return (
     <div
+      ref={dragRowRef}
       data-testid={`cats-subrow-${cat.id}`}
       className={`flex select-none items-center ${canHold ? 'bg-accent-soft/35' : ''}`}
+      style={dragging ? { opacity: 0.3 } : undefined}
     >
+      {dragHandleProps && (
+        <button
+          aria-label={t('home.dragHandle')}
+          data-testid={`cats-drag-${cat.id}`}
+          {...dragHandleProps}
+          className="m-tap flex h-10 w-8 shrink-0 cursor-grab items-center justify-center border-none bg-transparent pl-2 text-ink-4"
+        >
+          <Icon name="drag-horizontal-variant" size={16} />
+        </button>
+      )}
       <button
         data-testid={`managecat-${cat.id}`}
         disabled={!cat.custom || cat.isOther}
@@ -222,6 +249,19 @@ export function ManageCategoriesScreen() {
   const [direction, setDirection] = useState<CatDirection>('both');
   const [moveTo, setMoveTo] = useState<string | null>(null);
   const [moveSheetOpen, setMoveSheetOpen] = useState(false);
+  // restored drag-to-move (user request): drag a custom sub onto another
+  // main's group; the hold menu stays as the accessible alternative
+  const moveByDrag = async (subId: string, parentId: string) => {
+    const row = cats.byId(subId);
+    if (!row.custom || row.parentId === parentId) return;
+    const conflict = categoryNameConflict(
+      { name: catName(row, t), parentId, selfId: row.id },
+      namedCategories(),
+    );
+    if (conflict) return; // same name already lives there — the form's move path explains; drag just declines
+    await runGuarded(await prepareCategoryEdit(store, repo, row as never, { parentId }), 'edit');
+  };
+  const subDrag = useDragToTargets((subId, parentId) => void moveByDrag(subId, parentId));
   // hold on a custom sub opens its action sheet (drag-to-move retired)
   const [subMenu, setSubMenu] = useState<Cat | null>(null);
   const [pending, setPending] = useState<PendingCommit | null>(null);
@@ -399,7 +439,14 @@ export function ManageCategoriesScreen() {
         {cats.allParents.map((parent) => {
           const mainHidden = cats.hiddenMains.has(parent.id);
           return (
-            <div key={parent.id} data-cat-group={parent.id} className={mainHidden ? 'opacity-55' : ''}>
+            <div
+              key={parent.id}
+              data-cat-group={parent.id}
+              ref={subDrag.targetRef(parent.id)}
+              className={`rounded-card transition-shadow ${mainHidden ? 'opacity-55' : ''} ${
+                subDrag.hoveredTarget === parent.id && subDrag.dragId ? 'ring-2 ring-accent' : ''
+              }`}
+            >
               <GroupHeader
                 parent={parent}
                 mainHidden={mainHidden}
@@ -421,7 +468,16 @@ export function ManageCategoriesScreen() {
                   <div key={cat.id}>
                     {i > 0 && <div className="mx-4 h-px bg-line-2" />}
                     {/* custom rows read as "yours": subtle accent wash */}
-                    <SubCatRow cat={cat} parentColor={parent.color} onEdit={() => openEdit(cat)} onMenu={() => setSubMenu(cat)} t={t} />
+                    <SubCatRow
+                      cat={cat}
+                      parentColor={parent.color}
+                      onEdit={() => openEdit(cat)}
+                      onMenu={() => setSubMenu(cat)}
+                      t={t}
+                      dragHandleProps={cat.custom && !cat.isOther ? subDrag.handleProps(cat.id) : undefined}
+                      dragRowRef={cat.custom && !cat.isOther ? subDrag.rowRef(cat.id) : undefined}
+                      dragging={subDrag.dragId === cat.id}
+                    />
                   </div>
                 ))}
               </div>
@@ -470,6 +526,18 @@ export function ManageCategoriesScreen() {
           </div>
         )}
       </Sheet>
+
+      {/* the floating clone that follows the finger (restored drag) */}
+      {subDrag.dragId && subDrag.ghost && (
+        <div
+          data-testid="cats-drag-ghost"
+          className="pointer-events-none fixed z-50 flex items-center gap-2 rounded-input border border-line bg-surface px-3 shadow-2xl"
+          style={{ top: subDrag.ghost.top, left: subDrag.ghost.left, width: subDrag.ghost.width, height: subDrag.ghost.height }}
+        >
+          <Icon name={cats.byId(subDrag.dragId).icon} size={17} color="var(--m-ink-3)" />
+          <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{catName(cats.byId(subDrag.dragId), t)}</span>
+        </div>
+      )}
 
       {/* create / edit */}
       <Sheet open={mode !== null} onOpenChange={(open) => !open && setMode(null)} title={formTitle} size="tall">
@@ -594,14 +662,18 @@ export function ManageCategoriesScreen() {
               <p className="col-span-6 py-2 text-center text-[12px] text-ink-4">{t('cats.iconNone')}</p>
             )}
           </div>
-          <Button data-testid="catform-save" onClick={() => void save()} disabled={!name.trim()}>
-            {editing ? t('action.save') : t('action.add')}
-          </Button>
-          {editing && (
-            <Button variant="danger" data-testid="catform-delete" onClick={() => void remove()}>
-              {t('action.delete')}
+          {/* sticky: Save must never hide below the icon grid's fold
+              (user ss — you had to just KNOW the sheet scrolls) */}
+          <div className="sticky bottom-0 -mx-5 flex flex-col gap-2 bg-bg px-5 pt-2 pb-1">
+            <Button data-testid="catform-save" onClick={() => void save()} disabled={!name.trim()}>
+              {editing ? t('action.save') : t('action.add')}
             </Button>
-          )}
+            {editing && (
+              <Button variant="danger" data-testid="catform-delete" onClick={() => void remove()}>
+                {t('action.delete')}
+              </Button>
+            )}
+          </div>
         </div>
       </Sheet>
 

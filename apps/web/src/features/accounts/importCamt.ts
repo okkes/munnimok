@@ -146,6 +146,11 @@ export async function importCamtStatements(
     : importMerged(repo, store, spaceId, statements);
 }
 
+/** header-only exports (real ING files include one) parse to a ref-less
+ *  empty statement — nothing to import, never an account */
+const emptyStatement = (stmt: ParsedStatement): boolean =>
+  !stmt.iban.trim() || (stmt.entries.length === 0 && stmt.closingBalanceCents === null);
+
 async function importMerged(
   repo: Repo,
   store: StorageBackend,
@@ -162,6 +167,7 @@ async function importMerged(
   const accounts: ImportPlanAccount[] = [];
 
   for (const stmt of statements) {
+    if (emptyStatement(stmt)) continue;
     const iban = normalizeIban(stmt.iban);
     const match = byIban.get(iban);
     const accountId = match?.id ?? uuidv5(`acct:${iban}`, IMPORT_NS);
@@ -214,6 +220,7 @@ async function importIntoFeeds(
   const accounts: ImportPlanAccount[] = [];
 
   for (const stmt of statements) {
+    if (emptyStatement(stmt)) continue;
     const iban = normalizeIban(stmt.iban);
     const feedId = await feeds.register(feedSpaceId(iban), iban);
     const accountId = uuidv5(`acct:${iban}`, IMPORT_NS);

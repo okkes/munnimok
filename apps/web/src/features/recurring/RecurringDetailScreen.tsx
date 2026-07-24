@@ -7,7 +7,7 @@ import { useSpaceTransactions } from '@/application/transactions';
 import { localToday } from '@/application/recurring';
 import { nextDueDate } from '@/domain/recurring';
 import { detectPriceChange, yearlyCents, yearlyDeltaCents } from '@/domain/recurringPrice';
-import { fmtCents } from '@/lib/money';
+import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { RecurringFormSheet, formFromRec } from './RecurringFormSheet';
 import type { FormState } from './RecurringFormSheet';
 import { HeroCard, Pill, Tile } from '@/ui/primitives';
@@ -34,7 +34,8 @@ export function RecurringDetailScreen() {
   const txs = useSpaceTransactions();
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const currency = space?.currency ?? 'EUR';
-  const money = (cents: number) => fmtCents(cents, currency, lang);
+  const { fmt } = useDisplayMoney();
+  const money = (cents: number) => fmt(cents, currency);
 
   // deleted elsewhere (other device, or via the edit sheet) — leave
   const gone = rec !== 'loading' && (rec?.deleted !== 0 || rec?.spaceId !== spaceId);
@@ -140,7 +141,7 @@ export function RecurringDetailScreen() {
               </span>
               <span className="block text-[11px] text-ink-3">
                 {t('recurring.priceDelta', {
-                  amount: fmtCents(yearlyDeltaCents(rec, priceChange), currency, lang, { sign: true }),
+                  amount: fmt(yearlyDeltaCents(rec, priceChange), currency, { sign: true }),
                 })}
               </span>
             </span>

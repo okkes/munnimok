@@ -11,7 +11,7 @@
 # secret, done — the render step discovers placeholders automatically.
 
 # --- domains / registry -------------------------------------------------
-DOMAIN=okkes.synology.me
+DOMAIN=${NAS_DOMAIN}
 REGISTRY=ghcr.io/okkes
 TAG=latest
 # fine-grained PAT with read:packages only; update.sh re-logs-in each run
@@ -22,7 +22,7 @@ GHCR_PAT=${NAS_GHCR_PAT}
 POSTGRES_PASSWORD=${NAS_POSTGRES_PASSWORD}
 
 # --- logto ----------------------------------------------------------------
-LOGTO_API_RESOURCE=https://munni-api.okkes.synology.me
+LOGTO_API_RESOURCE=https://munni-api.${NAS_DOMAIN}
 # account deletion: a Machine-to-machine Logto app with the Management
 # API role — without it deletions skip the Logto identity (logged)
 LOGTO_M2M_APP_ID=${NAS_LOGTO_M2M_APP_ID}
@@ -41,7 +41,7 @@ GOCARDLESS_SECRET_KEY=${NAS_GOCARDLESS_SECRET_KEY}
 ADMIN_SUBS=${NAS_ADMIN_SUBS}
 
 # --- pgadmin ----------------------------------------------------------------
-PGADMIN_EMAIL=admin@okkes.synology.me
+PGADMIN_EMAIL=admin@${NAS_DOMAIN}
 PGADMIN_PASSWORD=${NAS_PGADMIN_PASSWORD}
 
 # --- backups -----------------------------------------------------------------
@@ -51,7 +51,7 @@ BACKUP_DIR=/volume1/backups/munni
 #     subscriptions, so it lives in secrets, not here) ----------------------
 PUSH_VAPID_PUBLIC_KEY=${NAS_PUSH_VAPID_PUBLIC_KEY}
 PUSH_VAPID_PRIVATE_KEY=${NAS_PUSH_VAPID_PRIVATE_KEY}
-PUSH_VAPID_SUBJECT=mailto:admin@okkes.synology.me
+PUSH_VAPID_SUBJECT=mailto:admin@${NAS_DOMAIN}
 
 # --- native app push (Firebase service-account JSON, one line) -------------
 FCM_SERVICE_ACCOUNT_JSON='${NAS_FCM_SERVICE_ACCOUNT_JSON}'

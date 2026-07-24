@@ -4,8 +4,8 @@
 # separate Logto SPA app for the munni-test origin).
 #
 # DSM reverse proxy:
-#   munni-test.okkes.synology.me      -> localhost:8095
-#   munni-test-api.okkes.synology.me  -> localhost:8096
+#   munni-test.<your-domain>      -> localhost:8095
+#   munni-test-api.<your-domain>  -> localhost:8096
 #
 # Env: .env.staging (rendered by CI from the staging GitHub Environment;
 # falls back to the production .env when absent).

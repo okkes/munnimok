@@ -4,7 +4,7 @@ import { useSpaceTransactions } from '@/application/transactions';
 import { localToday, useDismissedKeys, useRecurringOps, useRecurrings } from '@/application/recurring';
 import { detectRecurring } from '@/domain/detectRecurring';
 import type { RecurringSuggestion } from '@/domain/detectRecurring';
-import { fmtCents } from '@/lib/money';
+import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { RecurringFormSheet, formFromSuggestion } from './RecurringFormSheet';
 import type { FormState } from './RecurringFormSheet';
 import { AppBar, IconButton } from '@/ui/AppBar';
@@ -32,7 +32,8 @@ export function RecurringSuggestionsScreen() {
 
   const today = localToday();
   const currency = space?.currency ?? 'EUR';
-  const money = (cents: number) => fmtCents(cents, currency, lang);
+  const { fmt } = useDisplayMoney();
+  const money = (cents: number) => fmt(cents, currency);
   const fmtDate = (iso: string) =>
     new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short', year: 'numeric' });
 

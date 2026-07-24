@@ -10,7 +10,7 @@ import type { RecurringComputed } from '@/domain/recurring';
 import { detectPriceChange, yearlyCents } from '@/domain/recurringPrice';
 import { detectRecurring } from '@/domain/detectRecurring';
 import { nextPeriod, periodHistory } from '@/domain/periods';
-import { fmtCents } from '@/lib/money';
+import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { RecurringFormSheet, emptyForm } from './RecurringFormSheet';
 import type { FormState } from './RecurringFormSheet';
 import { RecurringVisual, cadenceLabel } from './RecurringVisual';
@@ -40,7 +40,8 @@ export function RecurringScreen() {
 
   const today = localToday();
   const currency = space?.currency ?? 'EUR';
-  const money = (cents: number) => fmtCents(cents, currency, lang);
+  const { fmt } = useDisplayMoney();
+  const money = (cents: number) => fmt(cents, currency);
   const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' });
 
   const period = useMemo(

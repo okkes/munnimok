@@ -4,7 +4,7 @@ import { useBudgetStatuses } from '@/application/budgets';
 import { localToday } from '@/application/recurring';
 import { budgetDaysLeft } from '@/domain/budgets';
 import type { BudgetStatus } from '@/domain/budgets';
-import { fmtCents } from '@/lib/money';
+import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { useQuery } from '@/db/useQuery';
 import { useData } from '@/app/data';
 import { HelpButton } from '@/features/help/HelpButton';
@@ -16,7 +16,8 @@ import { CADENCE_KEYS, budgetColor, budgetSoft, ratioPct } from './budgetUi';
 
 /** One budget card: urgency-colored state, progress, carry-over note. */
 export function BudgetCard({ status, currency, onClick }: Readonly<{ status: BudgetStatus; currency: string; onClick: () => void }>) {
-  const { t, lang } = useLang();
+  const { t } = useLang();
+  const { fmt } = useDisplayMoney();
   const { budget, leftCents, carriedCents, ratio, spentCents, limitCents } = status;
   const over = ratio > 1;
   const color = budgetColor(ratio);
@@ -33,14 +34,14 @@ export function BudgetCard({ status, currency, onClick }: Readonly<{ status: Bud
           <span className="flex items-baseline justify-between gap-2">
             <span className="truncate text-[15px] font-semibold text-ink">{budget.name}</span>
             <span className="m-num shrink-0 text-[14px] font-semibold" style={{ color }} data-testid={`budget-left-${budget.id}`}>
-              {t(over ? 'budgets.over' : 'budgets.left', { amount: fmtCents(Math.abs(leftCents), currency, lang) })}
+              {t(over ? 'budgets.over' : 'budgets.left', { amount: fmt(Math.abs(leftCents), currency) })}
             </span>
           </span>
           <span className="block text-[11px] text-ink-4" data-testid={`budget-cadence-${budget.id}`}>
             {t(CADENCE_KEYS[budget.every])}
             {/* days until reset next to the cadence (user request) */}
             {` · ${t('budgets.daysLeft', { n: budgetDaysLeft(budget, localToday()) })}`}
-            {carriedCents > 0 && ` · ${t('budgets.carryLine', { amount: fmtCents(carriedCents, currency, lang) })}`}
+            {carriedCents > 0 && ` · ${t('budgets.carryLine', { amount: fmt(carriedCents, currency) })}`}
           </span>
         </span>
       </div>
@@ -59,9 +60,9 @@ export function BudgetCard({ status, currency, onClick }: Readonly<{ status: Bud
       />
       <div className="mt-1.5 flex justify-between text-[11px] text-ink-3">
         <span>
-          <span className="m-num font-semibold text-ink-2">{fmtCents(spentCents, currency, lang)}</span> {t('budgets.spent')}
+          <span className="m-num font-semibold text-ink-2">{fmt(spentCents, currency)}</span> {t('budgets.spent')}
         </span>
-        <span>{t('budgets.of', { amount: fmtCents(limitCents, currency, lang) })}</span>
+        <span>{t('budgets.of', { amount: fmt(limitCents, currency) })}</span>
       </div>
     </button>
   );

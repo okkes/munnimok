@@ -8,7 +8,7 @@ import { useSpaceTransactions } from '@/application/transactions';
 import { localToday } from '@/application/recurring';
 import { budgetFamily, budgetPeriodAt, budgetSpentCents, budgetStatus, cycleIndex } from '@/domain/budgets';
 import { catName, useCategories } from '@/features/categories/useCategories';
-import { fmtCents } from '@/lib/money';
+import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Bars } from '@/ui/charts/Bars';
 import { Icon } from '@/ui/Icon';
@@ -68,6 +68,7 @@ export function BudgetDetailScreen() {
     return { status, period, spent, limit, list, perCat, history, atStart: shownIndex === 0 };
   }, [budget, txs, cats, today, offset, catFilter]);
 
+  const { fmt } = useDisplayMoney();
   if (!budget || !view)
     return <div className="h-full" data-testid="screen-budget-detail" />;
 
@@ -78,7 +79,7 @@ export function BudgetDetailScreen() {
   const over = ratio > 1;
   const color = budgetColor(ratio);
   const currency = space?.currency ?? 'EUR';
-  const money = (cents: number) => fmtCents(cents, currency, lang);
+  const money = (cents: number) => fmt(cents, currency);
   const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' });
 
   return (

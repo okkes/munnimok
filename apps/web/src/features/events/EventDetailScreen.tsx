@@ -7,7 +7,7 @@ import { useEvents } from '@/application/events';
 import { useSpaceTransactions, useTxTransform } from '@/application/transactions';
 import { eventCategoryBreakdown, eventPerDayCents, eventSpentCents, eventSubcategoryBreakdown, suggestableTxs } from '@/domain/events';
 import { catName, useCategories } from '@/features/categories/useCategories';
-import { fmtCents } from '@/lib/money';
+import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
@@ -48,7 +48,8 @@ export function EventDetailScreen() {
     if (events && !event) void navigate({ to: '/events', replace: true });
   }, [events, event, navigate]);
   const currency = space?.currency ?? 'EUR';
-  const money = (cents: number) => fmtCents(cents, currency, lang);
+  const { fmt } = useDisplayMoney();
+  const money = (cents: number) => fmt(cents, currency);
 
   const view = useMemo(() => {
     if (!event || !txs) return undefined;

@@ -474,8 +474,14 @@ namespace Munni.Api.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("Country")
+                        .HasColumnType("text");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DisplayCurrency")
+                        .HasColumnType("text");
 
                     b.Property<string>("DisplayName")
                         .HasColumnType("text");

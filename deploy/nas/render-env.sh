@@ -23,7 +23,7 @@ done
 envsubst "$VARLIST" < "$TEMPLATE" > "$OUTPUT"
 
 # the stack cannot run without these two — fail loudly, not at 3am on the NAS
-for required in NAS_GHCR_PAT NAS_POSTGRES_PASSWORD; do
+for required in NAS_GHCR_PAT NAS_POSTGRES_PASSWORD NAS_DOMAIN; do
   if [ -z "${!required:-}" ]; then
     echo "::error::required secret $required is missing or empty" >&2
     exit 1

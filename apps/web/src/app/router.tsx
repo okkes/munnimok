@@ -15,10 +15,12 @@ import { TransactionsScreen } from '@/features/transactions/TransactionsScreen';
 import { TxDetailScreen } from '@/features/transactions/TxDetailScreen';
 import { SpacesScreen } from '@/features/spaces/SpacesScreen';
 import { SpaceSettingsScreen } from '@/features/spaces/SpaceSettingsScreen';
+import { PeriodSettingsScreen } from '@/features/spaces/PeriodSettingsScreen';
 import { SpaceAccountsScreen } from '@/features/spaces/SpaceAccountsScreen';
 import { SpaceMembersScreen } from '@/features/spaces/SpaceMembersScreen';
 import { SettingsScreen } from '@/features/settings/SettingsScreen';
 import { GlobalSettingsScreen } from '@/features/settings/GlobalSettingsScreen';
+import { GoOfflineScreen } from '@/features/auth/GoOfflineScreen';
 import { ReviewScreen } from '@/features/review/ReviewScreen';
 import { AccountsScreen } from '@/features/accounts/AccountsScreen';
 import { ManageCategoriesScreen } from '@/features/categories/ManageCategoriesScreen';
@@ -114,6 +116,11 @@ const spaceSettingsRoute = createRoute({
   path: '/spaces/$spaceId',
   component: SpaceSettingsScreen,
 });
+const spacePeriodRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/spaces/$spaceId/period',
+  component: PeriodSettingsScreen,
+});
 const spaceMembersRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/spaces/$spaceId/members',
@@ -129,6 +136,11 @@ const settingsGlobalRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/settings/global',
   component: GlobalSettingsScreen,
+});
+const goOfflineRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/settings/go-offline',
+  component: GoOfflineScreen,
 });
 const reviewRoute = createRoute({ getParentRoute: () => appRoute, path: '/review', component: ReviewScreen });
 const accountsRoute = createRoute({ getParentRoute: () => appRoute, path: '/accounts', component: AccountsScreen });
@@ -191,10 +203,12 @@ export const routeTree = rootRoute.addChildren([
     recurringSuggestionsRoute,
     spacesRoute,
     spaceSettingsRoute,
+    spacePeriodRoute,
     spaceMembersRoute,
     spaceAccountsRoute,
     settingsRoute,
     settingsGlobalRoute,
+    goOfflineRoute,
     reviewRoute,
     accountsRoute,
     categoriesRoute,

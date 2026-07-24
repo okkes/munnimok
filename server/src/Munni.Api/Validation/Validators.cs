@@ -35,6 +35,9 @@ public sealed class UpdateMeRequestValidator : AbstractValidator<UpdateMeRequest
         // preset avatar id ("icon|#color") or a small data URL — the client
         // downscales uploads to ≤256px JPEG, well under this cap
         RuleFor(r => r.Picture).MaximumLength(65_536);
+        RuleFor(r => r.Country).Matches("^[A-Za-z]{2}$").When(r => !string.IsNullOrEmpty(r.Country));
+        // '' is the explicit "clear back to as-recorded" sentinel
+        RuleFor(r => r.DisplayCurrency).Matches("^[A-Za-z]{3}$").When(r => !string.IsNullOrEmpty(r.DisplayCurrency));
     }
 }
 
@@ -69,7 +72,7 @@ public sealed class ChangeRoleRequestValidator : AbstractValidator<ChangeRoleReq
 
 public sealed class SyncOpDtoValidator : AbstractValidator<SyncOpDto>
 {
-    private static readonly string[] Entities = ["space", "account", "category", "transaction", "txMeta", "accountLink", "recurring", "recurringDismiss", "budget", "event", "goal", "goalContribution", "debt", "allocation", "receipt", "receiptLink", "storeMarker", "storeConn", "storeConnLink", "holding", "lot", "insightDismiss", "topic"];
+    private static readonly string[] Entities = ["space", "account", "category", "transaction", "txMeta", "accountLink", "recurring", "recurringDismiss", "budget", "event", "goal", "goalContribution", "debt", "allocation", "receipt", "receiptLink", "storeMarker", "storeConn", "storeConnLink", "holding", "lot", "insightDismiss", "topic", "activity"];
 
     public SyncOpDtoValidator()
     {

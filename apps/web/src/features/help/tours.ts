@@ -18,8 +18,10 @@ export type TourId =
   | 'transactions'
   | 'recurring'
   | 'accounts'
+  | 'spaceAccounts'
   | 'spaces'
   | 'categories'
+  | 'period'
   | 'overview'
   | 'portfolio'
   | 'insights'
@@ -205,6 +207,21 @@ export const TOURS: Tour[] = [
     ],
   },
   {
+    // ships with the extracted period screen (user rule: new screens
+    // bring their tour in the same arc); 'current' = the screen carries
+    // a spaceId param, so the walkthrough runs where the ? lives
+    id: 'period',
+    titleKey: 'space.periodTitle',
+    icon: 'calendar-month-outline',
+    screen: 'current',
+    steps: [
+      { titleKey: 'tour.period.1t', bodyKey: 'tour.period.1b', illustration: '🗓️' },
+      { titleKey: 'tour.period.2t', bodyKey: 'tour.period.2b', illustration: '📆', anchor: 'space-period-month' },
+      { titleKey: 'tour.period.3t', bodyKey: 'tour.period.3b', illustration: '📌', anchor: 'space-period-day' },
+      { titleKey: 'tour.period.4t', bodyKey: 'tour.period.4b', illustration: '⚡' },
+    ],
+  },
+  {
     id: 'overview',
     titleKey: 'overview.thisPeriod',
     icon: 'chart-donut',
@@ -275,5 +292,23 @@ export const TOURS: Tour[] = [
     ],
   },
 ];
+
+/** the three account tiers, taught where they live (user request:
+ *  understanding manual vs import vs open banking is load-bearing) */
+const SPACE_ACCOUNTS_TOUR: Tour = {
+  id: 'spaceAccounts',
+  titleKey: 'space.financialAccounts',
+  icon: 'bank-outline',
+  screen: 'current',
+  steps: [
+    { titleKey: 'tour.spaceacct.1t', bodyKey: 'tour.spaceacct.1b', illustration: '🏦' },
+    { titleKey: 'tour.spaceacct.2t', bodyKey: 'tour.spaceacct.2b', illustration: '🔗' },
+    { titleKey: 'tour.spaceacct.3t', bodyKey: 'tour.spaceacct.3b', illustration: '📄' },
+    { titleKey: 'tour.spaceacct.4t', bodyKey: 'tour.spaceacct.4b', illustration: '✍️', anchor: 'space-accounts-add' },
+    { titleKey: 'tour.spaceacct.5t', bodyKey: 'tour.spaceacct.5b', illustration: '🧲', anchor: 'space-accounts-attach' },
+    { titleKey: 'tour.spaceacct.6t', bodyKey: 'tour.spaceacct.6b', illustration: '🏷️', anchor: 'space-accounts' },
+  ],
+};
+TOURS.push(SPACE_ACCOUNTS_TOUR);
 
 export const tourById = (id: TourId): Tour => TOURS.find((tour) => tour.id === id)!;

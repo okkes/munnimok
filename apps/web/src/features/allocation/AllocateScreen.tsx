@@ -23,7 +23,8 @@ import { periodHistory } from '@/domain/periods';
 import type { Period } from '@/domain/periods';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import type { Cat } from '@/features/categories/useCategories';
-import { fmtCents, parseCents } from '@/lib/money';
+import { parseCents } from '@/lib/money';
+import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { HelpButton } from '@/features/help/HelpButton';
 import { IntroCard } from '@/features/help/IntroCard';
 import { AppBar, IconButton } from '@/ui/AppBar';
@@ -104,7 +105,8 @@ export function AllocateScreen() {
   }, [allocations, txs, accountsById, cats, windowPeriods, view, rollover]);
 
   const currency = space?.currency ?? 'EUR';
-  const money = (cents: number) => fmtCents(cents, currency, lang);
+  const { fmt } = useDisplayMoney();
+  const money = (cents: number) => fmt(cents, currency);
   const fmtShort = (iso: string) => new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' });
 
   let headerColor = 'var(--m-warning)';

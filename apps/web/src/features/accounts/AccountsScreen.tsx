@@ -12,15 +12,18 @@ import { linkPaypalFunding } from '@/application/paypalLink';
 import type { ImportResult } from './importCamt';
 import { apiFeedGateway, fetchMyFeedIds } from './feedGateway';
 import { AttachSheet, SOURCE_KEYS } from './AttachSheet';
+import { attachFeedToSpace } from '@/application/accountAttach';
+import { DEFAULT_HISTORY_MONTHS, isoMonthsAgo } from '@/features/spaces/spaceDefaults';
+import { useQuery } from '@/db/useQuery';
+import { AddAccountChooser } from './AddAccountChooser';
 import { BrandIconPicker } from '@/features/recurring/BrandIconPicker';
 import { BankConnectSheet } from './BankConnect';
 import { useInstitutionLogos } from './useInstitutionLogos';
 import { useLang } from '@/i18n';
-import type { TranslationKey } from '@/i18n';
 import { useData } from '@/app/data';
 import { fmtCents, parseCents } from '@/lib/money';
 import { fmtTimeAgo } from '@/lib/text';
-import type { AccountRow, AccountType } from '@/db/types';
+import type { AccountRow } from '@/db/types';
 import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
@@ -29,17 +32,7 @@ import { EmptyState } from '@/ui/EmptyState';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 
-const TYPES: { type: AccountType; labelKey: TranslationKey; icon: string; liability?: boolean }[] = [
-  { type: 'checking', labelKey: 'acct.bank', icon: 'bank-outline' },
-  { type: 'savings', labelKey: 'acct.saving', icon: 'piggy-bank-outline' },
-  { type: 'cash', labelKey: 'acct.cashWallet', icon: 'wallet-outline' },
-  { type: 'brokerage', labelKey: 'acct.brokerage', icon: 'chart-line' },
-  { type: 'credit', labelKey: 'acct.creditCard', icon: 'credit-card-outline', liability: true },
-  { type: 'mortgage', labelKey: 'acct.mortgage', icon: 'home-percent-outline', liability: true },
-  { type: 'loan', labelKey: 'acct.loan', icon: 'hand-coin-outline', liability: true },
-];
-const typeDef = (type: AccountType) => TYPES.find((d) => d.type === type) ?? TYPES[0];
-const isLiability = (type: AccountType) => !!typeDef(type).liability;
+import { typeDef, isLiability, manualBalanceDate } from './accountTypes';
 
 function AccountRowButton({
   entry,
@@ -179,13 +172,14 @@ export function AccountsScreen() {
   const { store, repo, spaceId } = useData();
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<AccountRow | null>(null);
-  const [newType, setNewType] = useState<AccountType | null>(null);
   const [name, setName] = useState('');
   const [balance, setBalance] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
   const [importPreview, setImportPreview] = useState<ParsedStatement[] | null>(null);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [importError, setImportError] = useState(false);
+  // export-steps hint per format before the file dialog (user request)
+  const [importPickOpen, setImportPickOpen] = useState(false);
   const identity = useSession((s) => s.identity);
 
   // GoCardless accounts arrive via sync, so there is no local "account
@@ -254,38 +248,41 @@ export function AccountsScreen() {
   const assets = mine.filter((e) => !isLiability(e.account.type));
   const liabilities = mine.filter((e) => isLiability(e.account.type));
 
+  // AE2: feed accounts attached to NO space (fresh bank connect, or a
+  // consent flow that broke mid-return) get a one-tap attach offer for
+  // the active space — the user never hunts for the attach button for
+  // the account they literally just created
+  const activeSpace = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
+  const offerDismissed = useQuery(
+    store,
+    async () => ((await store.metaGet('attachOfferDismissed'))?.value as string[] | undefined) ?? [],
+    [],
+  );
+  const unattached = useMemo(
+    () =>
+      mine.flatMap((e) =>
+        e.feedSpaceId && !e.sharedVia.some((v) => !v.archived) && !(offerDismissed ?? []).includes(e.account.id)
+          ? [{ accountId: e.account.id, feedSpaceId: e.feedSpaceId }]
+          : [],
+      ),
+    [mine, offerDismissed],
+  );
+  const acceptAttachOffer = async () => {
+    const historyFrom = activeSpace?.historyStartDate ?? isoMonthsAgo(DEFAULT_HISTORY_MONTHS);
+    for (const entry of unattached) {
+      await attachFeedToSpace(store, repo, spaceId, entry.feedSpaceId, entry.accountId, historyFrom).catch(() => undefined);
+    }
+  };
+  const dismissAttachOffer = async () => {
+    await store.metaPut('attachOfferDismissed', [...(offerDismissed ?? []), ...unattached.map((e) => e.accountId)]);
+  };
+
   const openEntry = (entry: GlobalAccount) => {
     if (entry.feedSpaceId) setAttaching(entry); // bank feed: manage attachments
     else openEdit(entry.account); // manual/legacy row: edit name/balance
   };
 
-  const closeAdd = () => {
-    setAddOpen(false);
-    setNewType(null);
-    setName('');
-    setBalance('');
-  };
-
-  // manual balances are statements of "true today" — date them so a
-  // statement import can tell whether its balance is newer (see importCamt)
-  const localToday = () => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  };
-
-  const createAccount = () => {
-    const cents = parseCents(balance || '0');
-    if (!newType || !name.trim() || cents === null) return;
-    void repo.upsert('account', spaceId, repo.newId(), {
-      name: name.trim(),
-      type: newType,
-      source: 'manual',
-      currency: 'EUR',
-      balanceCents: isLiability(newType) ? -Math.abs(cents) : cents,
-      balanceAsOf: localToday(),
-    });
-    closeAdd();
-  };
+  const localToday = manualBalanceDate;
 
   const saveEdit = () => {
     if (!editing || !name.trim()) return;
@@ -329,7 +326,7 @@ export function AccountsScreen() {
             <IconButton
               label={t('import.statement')}
               testId="accounts-import"
-              onClick={() => fileRef.current?.click()}
+              onClick={() => setImportPickOpen(true)}
             >
               <Icon name="file-upload-outline" size={21} />
             </IconButton>
@@ -348,6 +345,20 @@ export function AccountsScreen() {
         onChange={(e) => void onFilePicked(e.target.files?.[0])}
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
+        {identity?.kind === 'user' && unattached.length > 0 && activeSpace && (
+          <div className="mt-3 rounded-card border border-accent/40 bg-accent-soft px-4 py-3" data-testid="attach-offer">
+            <p className="text-[13px] font-medium text-ink">{t('acct.attachOfferTitle', { n: unattached.length })}</p>
+            <p className="mt-0.5 text-[12px] text-ink-2">{t('acct.attachOfferBody', { space: activeSpace.name })}</p>
+            <div className="mt-2 flex gap-2">
+              <Button size="sm" data-testid="attach-offer-accept" onClick={() => void acceptAttachOffer()}>
+                {t('acct.attachOfferAccept', { space: activeSpace.name })}
+              </Button>
+              <Button size="sm" variant="outline" data-testid="attach-offer-dismiss" onClick={() => void dismissAttachOffer()}>
+                {t('acct.attachOfferLater')}
+              </Button>
+            </div>
+          </div>
+        )}
         {global && mine.length === 0 && global.sharedWithMe.length === 0 ? (
           <EmptyState
             testId="accounts-empty"
@@ -383,65 +394,42 @@ export function AccountsScreen() {
         canEdit={!!attaching && !global?.sharedWithMe.includes(attaching)}
       />
 
-      {/* Add account: type grid, then form */}
-      <Sheet open={addOpen} onOpenChange={(open) => !open && closeAdd()} title={newType ? t('acct.addAccount') : t('acct.selectType')} size="tall">
-        {newType ? (
-          <div className="flex flex-col gap-3 pt-1">
-            <div className="flex items-center gap-2 text-[13px] text-ink-3">
-              <Icon name={typeDef(newType).icon} size={16} />
-              {t(typeDef(newType).labelKey)} · {t('acct.manual')}
-            </div>
-            <input
-              data-testid="acctform-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder={t('acct.accountName')}
-              className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
-            />
-            <input
-              data-testid="acctform-balance"
-              value={balance}
-              onChange={(e) => setBalance(e.target.value)}
-              inputMode="decimal"
-              placeholder={`${t('acct.initialBalance')} (EUR)`}
-              className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
-            />
-            <Button data-testid="acctform-save" onClick={createAccount} disabled={!name.trim()}>
-              {t('action.add')}
-            </Button>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-2 pt-1">
-            {gcAvailable && (
-              <button
-                data-testid="acct-connect-bank"
-                onClick={() => {
-                  setAddOpen(false);
-                  setConnectOpen(true);
-                }}
-                className="m-tap col-span-2 flex items-center gap-3 rounded-card border border-accent bg-accent-soft p-4 text-left"
-              >
-                <Icon name="bank-transfer" size={24} color="var(--m-accent-deep)" />
-                <span className="min-w-0 flex-1">
-                  <span className="block text-[14px] font-semibold text-accent-deep">{t('gc.connect')}</span>
-                  <span className="block text-[12px] text-ink-3">{t('gc.connectSub')}</span>
-                </span>
-              </button>
-            )}
-            {TYPES.map((def) => (
-              <button
-                key={def.type}
-                data-testid={`accttype-${def.type}`}
-                onClick={() => setNewType(def.type)}
-                className="m-tap flex flex-col items-start gap-2 rounded-card border border-line bg-surface p-4 text-left"
-              >
-                <Icon name={def.icon} size={22} color="var(--m-accent)" />
-                <span className="text-[13px] font-medium text-ink">{t(def.labelKey)}</span>
-              </button>
-            ))}
-          </div>
-        )}
+      {/* which export is this? each row explains how to get the file */}
+      <Sheet open={importPickOpen} onOpenChange={setImportPickOpen} title={t('import.pickFormat')} size="form">
+        <div className="flex flex-col gap-2 pt-1" data-testid="import-format-pick">
+          {(
+            [
+              ['import-format-camt', 'file-xml-box', 'import.formatCamt', 'import.formatCamtSub'],
+              ['import-format-ing', 'file-delimited-outline', 'import.formatIng', 'import.formatIngSub'],
+            ] as const
+          ).map(([testId, icon, titleKey, subKey]) => (
+            <button
+              key={testId}
+              data-testid={testId}
+              onClick={() => {
+                setImportPickOpen(false);
+                fileRef.current?.click();
+              }}
+              className="m-tap flex items-start gap-3 rounded-card border border-line bg-surface p-4 text-left"
+            >
+              <Icon name={icon} size={22} color="var(--m-accent)" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-[14px] font-semibold text-ink">{t(titleKey)}</span>
+                <span className="block pt-0.5 text-[12px] leading-snug text-ink-3">{t(subKey)}</span>
+              </span>
+            </button>
+          ))}
+        </div>
       </Sheet>
+
+      {/* AE1: the ONE Add-account chooser (intent-routed) */}
+      <AddAccountChooser
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        gcAvailable={gcAvailable}
+        onConnect={() => setConnectOpen(true)}
+        onImport={() => setImportPickOpen(true)}
+      />
 
       <BankConnectSheet open={connectOpen} onOpenChange={setConnectOpen} />
       <BrandIconPicker

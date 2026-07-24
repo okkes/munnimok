@@ -1,6 +1,10 @@
 # Apple + Google sign-in through Logto — step-by-step
 
-Status: PLAN 2026-07-17. All app-side code already supports this —
+Status: UPDATED 2026-07-23 — for the IaC pair this is now CODE
+(infra/modules/logto.mjs applySocialConnectors; console steps in
+infra/README.md Part C). This document remains the manual guide for
+the EXISTING prod/staging Logto only, until prod adopts the IaC path.
+Originally: PLAN 2026-07-17. All app-side code already supports this —
 Logto renders whatever connectors are enabled, and our sign-in flow
 (system browser + `munni://auth-callback` deep link on native) is
 exactly the flow Google/Apple require. The remaining work is console
@@ -10,14 +14,14 @@ configuration with YOUR accounts; nothing here can be done for you.
 
 1. https://console.cloud.google.com → create (or reuse) a project.
 2. **APIs & Services → OAuth consent screen**: External; app name
-   `munni`; support email; authorized domain `okkes.synology.me`.
+   `munni`; support email; authorized domain `<your-domain>`.
    Publish the app (stays in "production" with basic scopes — no
    verification needed for email/profile).
 3. **Credentials → Create credentials → OAuth client ID** → type
    *Web application*:
    - Authorized redirect URI: open the Logto admin console →
      **Connectors → Social → Add → Google** — it displays the exact
-     callback URI (`https://logto.okkes.synology.me/callback/<id>`).
+     callback URI (`https://logto.<your-domain>/callback/<id>`).
      Paste that.
 4. Copy the Client ID + Client secret into the Logto Google connector
    and save.
@@ -35,7 +39,7 @@ Prereq: your Apple Developer membership (same one that signs the app).
    Identifiers → + → Services ID** (e.g. `me.okkes.munni.signin`).
    Enable **Sign in with Apple** on it → Configure:
    - Primary App ID: the munni iOS App ID.
-   - Domains: `logto.okkes.synology.me`
+   - Domains: `logto.<your-domain>`
    - Return URL: the callback URI shown by the Logto **Apple**
      connector (same shape as Google's).
 2. **Keys → + → Sign in with Apple** → download the `.p8` once, note

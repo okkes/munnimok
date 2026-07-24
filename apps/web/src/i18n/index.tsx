@@ -34,8 +34,16 @@ interface LangContextValue {
 const LangContext = createContext<LangContextValue | null>(null);
 
 function deviceLang(): Lang {
-  const device = (navigator.language || '').slice(0, 2).toLowerCase();
-  return device === 'nl' || device === 'tr' ? device : 'en';
+  // scan the WHOLE system preference list, not just the primary (user
+  // request: match the device language at the login screen) — a Dutch
+  // system with English first still surfaces nl further down. No match →
+  // English. (IP-country guessing deliberately skipped: it would need an
+  // external lookup before login, against the zero-telemetry posture.)
+  for (const candidate of navigator.languages?.length ? navigator.languages : [navigator.language || '']) {
+    const code = candidate.slice(0, 2).toLowerCase();
+    if (code === 'nl' || code === 'tr' || code === 'en') return code as Lang;
+  }
+  return 'en';
 }
 
 function readStoredLang(): Lang {

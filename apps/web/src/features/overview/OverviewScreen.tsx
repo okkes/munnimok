@@ -8,7 +8,7 @@ import type { OverviewKind } from '@/domain/overview';
 import { periodHistory } from '@/domain/periods';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { LOCALES, useLang } from '@/i18n';
-import { fmtCents } from '@/lib/money';
+import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { BarChart, StackedBar } from '@/ui/charts';
@@ -81,6 +81,7 @@ export function OverviewScreen() {
   const grandTotal = barValues[periodIndex] ?? 0;
   const positiveTotal = groups.reduce((sum, g) => sum + Math.max(g.totalCents, 0), 0);
   const currency = space?.currency ?? 'EUR';
+  const { fmt } = useDisplayMoney();
 
   const colorOf = (catId: string, i: number) => cats.byId(catId).color ?? FALLBACK_COLORS[i % FALLBACK_COLORS.length];
   const periodLabel = `${new Date(period.start).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' })} – ${new Date(period.end).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' })}`;
@@ -99,7 +100,7 @@ export function OverviewScreen() {
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <div className="py-2 text-center">
           <div className="m-num text-4xl text-ink" data-testid="overview-total">
-            {fmtCents(grandTotal, currency, lang)}
+            {fmt(grandTotal, currency)}
           </div>
           <div className="mt-1 text-xs font-medium text-ink-3">{periodLabel}</div>
         </div>
@@ -143,7 +144,7 @@ export function OverviewScreen() {
                     <span className="flex items-center justify-between">
                       <span className="truncate text-[14px] font-semibold text-ink">{catName(main, t)}</span>
                       <span className="m-num text-[14px] font-semibold text-ink">
-                        {fmtCents(group.totalCents, currency, lang)}
+                        {fmt(group.totalCents, currency)}
                       </span>
                     </span>
                     <span className="mt-1.5 flex items-center gap-2">
@@ -177,7 +178,7 @@ export function OverviewScreen() {
                         {t('overview.allIn', { name: catName(main, t) })}
                       </span>
                       <span className="m-num text-[13px] font-medium text-ink">
-                        {fmtCents(group.totalCents, currency, lang)}
+                        {fmt(group.totalCents, currency)}
                       </span>
                       <Icon name="chevron-right" size={14} color="var(--m-ink-4)" />
                     </button>
@@ -194,7 +195,7 @@ export function OverviewScreen() {
                           <span className="ml-2 text-[11px] text-ink-4">{t('overview.transactions', { n: sub.count })}</span>
                         </span>
                         <span className="m-num text-[13px] font-medium text-ink">
-                          {fmtCents(sub.totalCents, currency, lang)}
+                          {fmt(sub.totalCents, currency)}
                         </span>
                         <Icon name="chevron-right" size={14} color="var(--m-ink-4)" />
                       </button>

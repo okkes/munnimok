@@ -7,6 +7,7 @@ import { identityDbName } from '@/db/schema';
 import type { StorageBackend } from '@/db/backend';
 import { destroyStorage, openStorageBackend } from '@/db/openStore';
 import { Repo } from '@/db/repo';
+import { setPredictionCountry } from '@/domain/predictCategory';
 import { getClock, getDeviceId } from '@/db/device';
 import { seedDemoIfNeeded } from '@/db/seed';
 import { ApiSyncBackend } from '@/sync/backend';
@@ -224,6 +225,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
         engine.onStatus((status) => {
           if (status === 'offline' || status === 'error') requestOutboxSync();
         });
+        // remote-wipe: if this account was deleted (or went offline) on
+        // ANOTHER device, the /me binding mismatch wipes this copy too
+        void enforceAccountBinding(store, identity).catch(() => undefined);
       }
 
       // ask the browser not to evict our data (iOS 7-day ITP wipe etc.);
@@ -242,6 +246,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
           periodDay: 1,
           historyStartDate: isoMonthsAgo(DEFAULT_HISTORY_MONTHS),
         });
+        // offline users get the same first-run setup (user ruling)
+        await store.metaPut('needsOnboarding', true);
+      }
+      // country of use tunes the category predictor (onboarding stores it)
+      {
+        const profile = (await store.metaGet('profile'))?.value as { country?: string } | undefined;
+        setPredictionCountry(profile?.country);
       }
       if (engine) {
         const eng = engine;
@@ -342,6 +353,17 @@ export function useData(): DataContextValue {
 }
 
 /** Demo logout = wipe the database so next login reseeds pristine state. */
+/** remote-wipe enforcement: mismatch → wipe this device + back to login */
+async function enforceAccountBinding(store: StorageBackend, identity: Identity): Promise<void> {
+  const { verifyAccountBinding } = await import('@/features/auth/accountBinding');
+  await verifyAccountBinding(store, identity, async () => {
+    const { useSession } = await import('./session');
+    useSession.getState().logout();
+    await destroyIdentityData(identity);
+    globalThis.location.assign('/#/login');
+  });
+}
+
 export async function destroyIdentityData(identity: Identity): Promise<void> {
   await destroyStorage(identityDbName(identityKey(identity)));
 }

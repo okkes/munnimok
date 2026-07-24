@@ -36,7 +36,9 @@ export function HelpProvider({ children }: Readonly<{ children: ReactNode }>) {
       if (!tour.screen) return;
       setSlidesFor(null);
       markSeen(tourId);
-      void navigate({ to: tour.screen });
+      // 'current' = run where the help button lives (param routes can't
+      // be navigated to blindly — e.g. a space's accounts screen)
+      if (tour.screen !== 'current') void navigate({ to: tour.screen });
       setSpotlight({ tourId, step: 0 });
     },
     [navigate, markSeen],

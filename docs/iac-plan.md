@@ -4,14 +4,27 @@ Status: **APPROVED with amendments** (2026-07-22). Goal (user): "I
 provide the root credentials once; everything else is generated, stored
 and deployed by code."
 
-User rulings folded in:
-- **Zero reuse of production.** The IaC stacks share NOTHING with the
-  running prod/staging stacks — no shared Logto, no shared Postgres,
-  no shared containers. Every service is deployed fresh per stack.
-- **Twin stacks, iac naming.** IaC deploys a dev + prod pair mirroring
-  today's channels: **munni-iac-staging** and **munni-iac-prod**. Both
-  must come up from the same `bootstrap` path; only the stack file
-  differs. Prod adopts the pipeline only after BOTH twins pass.
+User rulings folded in (clarified 2026-07-22, IMPLEMENTATION STARTED):
+- **Isolated from the existing stacks, shared within the pair.** The
+  IaC pair mirrors today's topology exactly: munni-iac-prod owns the
+  heavyweight shared services (Logto, GlitchTip) and munni-iac-staging
+  REUSES them — the same way today's staging rides prod's Logto. What
+  the pair must never do is touch or reuse anything from the CURRENT
+  prod/staging stacks: own Logto instance, own databases, own
+  containers, own domains.
+- **Twin stacks, iac naming + domains.** **munni-iac-prod** at
+  `munni-iac.<domain>` and **munni-iac-staging** at
+  `munni-iac-test.<domain>` (`-iac` in every hostname keeps
+  the pair visually unmistakable). Both come up from the same
+  `bootstrap` path; only the stack file differs. Prod adopts the
+  pipeline only after BOTH twins pass.
+- **First-time vs steady-state, no shortcuts.** Bootstrap must handle
+  BOTH flows explicitly: the FIRST deployment of a stack produces
+  every artifact the unavoidable manual steps need (the signed .aab
+  for the first Play upload, the .ipa for the first TestFlight push,
+  the exact console clicks, in order, with the generated values
+  inlined) — a runbook rendered per stack, not generic prose. Every
+  deployment after that runs with zero human input.
 - **Ordering: Raspberry Pi first.** The Pi arc (multi-arch images,
   docs/raspberry-pi-plan.md) changes what a "host" is; IaC modules
   must target both DSM and the Pi, so the Pi work lands before the
@@ -67,11 +80,13 @@ Logto has a full Management API (we already use it for user deletion).
   post-logout URIs, CORS origins, resource indicators derived from the
   stack file's domains. Apply = upsert by app name; ids written back to
   GitHub variables (`VITE_LOGTO_APP_ID`, …).
-- **Each IaC stack runs its OWN Logto instance** (user ruling: no
-  reuse of production). The Logto container + its database are part of
-  the stack render; its OOBE + one "infra" M2M credential is the
-  single manual step *per stack*, after which apps/redirects/resources
-  are all code.
+- **One Logto instance per PAIR, owned by munni-iac-prod** (user
+  clarification: staging reuses it, mirroring today's topology; only
+  the CURRENT stacks' Logto is off-limits). The container + database
+  render with the prod twin; its OOBE + one "infra" M2M credential is
+  the single manual step per pair, after which apps/redirects/
+  resources for BOTH twins are code. Staging deletion safety knob
+  (`Logto:DeleteIdentityOnAccountDeletion=false`) carries over.
 
 ### 3. Stack rendering (compose + env)
 
@@ -81,14 +96,33 @@ Logto has a full Management API (we already use it for user deletion).
   come from one JSON. The NAS bundle pipeline stays as-is; it just
   gains a third channel (`munni-iac`).
 
-### 4. NAS automation (no SSH, DSM API)
+### 4. NAS automation (no SSH, DSM API) — reverse proxy SHIPPED
+
+`.github/workflows/iac.yml` runs bootstrap in CI (user ruling: IaC
+lives in GitHub Actions): manual dispatch applies a stack; pushes
+touching infra/ verify both. Operator one-timers: **IAC_GH_PAT** repo
+secret (fine-grained, environments+secrets+variables — GITHUB_TOKEN
+cannot write environment secrets), and the existing SYNOLOGY_* deploy
+secrets (the account needs DSM admin for AppPortal writes).
+`infra/modules/dsm.mjs` upserts the stack's reverse-proxy rules via
+`SYNO.Core.AppPortal.ReverseProxy` (idempotent by source FQDN).
 
 DSM has a full web API (we already drive FileStation):
 - **Reverse proxy rules**: `SYNO.Core.AppPortal.ReverseProxy` — create
   `munni-iac.<domain>` → container port mappings from the stack file.
-- **Certificates**: `SYNO.Core.Certificate` upload — pair with a
-  Let's Encrypt DNS-01 issuance in CI (acme.sh, DNS provider API) so
-  cert renewal is a scheduled workflow, not a DSM click.
+- **Certificates** (approach settled, user-provided reference): use
+  acme.sh's `synology_dsm` deploy hook — it logs into DSM, finds or
+  creates the named certificate, imports key+chain and reloads HTTP
+  services. A scheduled workflow (or NAS task) runs
+  `acme.sh --deploy -d <domain> --deploy-hook synology_dsm` with
+  SYNO_USERNAME/SYNO_PASSWORD/SYNO_HOSTNAME/SYNO_CERTIFICATE env; the
+  wildcard covers the munni-iac subdomains. No hand-rolled
+  SYNO.Core.Certificate client needed.
+- **Reverse-proxy caveat** (same reference): the entry schema is
+  internal and can shift between DSM releases — when a create/update
+  400s after a DSM upgrade, capture the request the DSM UI itself
+  sends (devtools → copy as cURL) and realign dsm.mjs's `desired`
+  object.
 - **Firewall**: DSM's firewall API is undocumented/fragile — rules
   stay manual, but `bootstrap --verify` PROBES the outcome (container
   subnets reachable, ports answering) and prints exactly what to fix.
@@ -98,12 +132,33 @@ DSM has a full web API (we already drive FileStation):
 ### 5. The munni-iac proof twins
 
 Acceptance test for the whole plan: from a clean checkout,
-`bootstrap --stack munni-iac-staging` and `--stack munni-iac-prod`
-must each produce a fully self-contained stack (web + api + **own
-Logto instance** + own postgres + own subdomains + own secrets) with
-ZERO console visits beyond the documented per-stack Logto OOBE step,
-then `bootstrap --destroy <stack>` removes it all. Only after both
-twins pass does prod adopt the same path.
+`bootstrap --stack munni-iac-prod` then `--stack munni-iac-staging`
+must produce the working pair (prod twin carries Logto + GlitchTip,
+staging twin reuses them; own postgres dbs, own `munni-iac*`
+subdomains, own secrets) with ZERO console visits beyond the
+documented once-per-pair Logto OOBE step, then
+`bootstrap --destroy <stack>` removes it all. Only after both twins
+pass does prod adopt the same path.
+
+### 6. First-time vs steady-state (explicit, per stack)
+
+`bootstrap --stack X` detects state and prints/does the right flow:
+
+**First run** (nothing exists yet):
+1. generate + store all derivable secrets; verify operator-provided
+   roots against the manifest
+2. render compose/env, deploy containers, run Logto module (after the
+   operator completes the pair's one OOBE step, guided)
+3. produce the manual-step artifacts: a signed .aab (new appId per
+   stack, e.g. `app.munni.iac`) for the first Play upload, the
+   TestFlight archive job trigger, DNS records to create, DSM
+   firewall expectations — all written into a rendered
+   `runbook.<stack>.md` with the actual generated values inlined
+4. `--verify` probes everything reachable and lists exactly what
+   remains manual
+
+**Steady state** (marker exists, manifest satisfied): render, diff,
+apply, verify — no prompts, no manual steps, CI-invokable.
 
 ## Inevitably manual (documented, verified, never scripted)
 
@@ -128,3 +183,25 @@ are host-agnostic and may run in parallel with them.
 - IAC5 cert automation (DNS-01 in CI, host upload)
 - IAC6 munni-iac-staging + munni-iac-prod end-to-end bootstrap +
   destroy + runbook
+
+## North star (user, 2026-07-23)
+
+The end state this plan serves: **anyone — you after a full wipe, or a
+friend — can roll out the entire ecosystem on their own hardware (NAS,
+Raspberry Pi, or other) from a clean checkout plus a handful of root
+credentials.** Consequences already folded in, plus two roadmap items:
+
+- **IAC7 — deploy/ folds into infra/**: today `deploy/` (hand-written
+  composes, render-env, apply.sh) and `infra/` (rendered stacks)
+  overlap. End state: infra renders EVERYTHING — the live prod/staging
+  stacks become stack files like the iac pair, deploy/ keeps only the
+  host-side poller. Migration happens after the munni-iac pair proves
+  the pipeline (§5), never before.
+- **IAC8 — shrink the manual list relentlessly**: every runbook item
+  is a bug with a priority. Current list and their fates: Logto OOBE
+  (scriptable via bootstrap once Logto ships headless OOBE — watch
+  upstream), GlitchTip org/DSN creation (has an API — automate, easy),
+  DSM firewall (probe-only, DSM API too fragile), DNS (registrar API
+  optional profile), store uploads (Apple/Google mandate the first
+  manual upload — irreducible).
+

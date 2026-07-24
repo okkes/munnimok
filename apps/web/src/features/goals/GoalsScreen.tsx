@@ -9,7 +9,8 @@ import { useSpaceAccounts } from '@/application/transactions';
 import { localToday } from '@/application/recurring';
 import { goalOverview, goalProgress, paceCentsPerMonth } from '@/domain/goals';
 import type { GoalRow } from '@/db/types';
-import { fmtCents, parseCents } from '@/lib/money';
+import { parseCents } from '@/lib/money';
+import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { HelpButton } from '@/features/help/HelpButton';
 import { IntroCard } from '@/features/help/IntroCard';
 import { AppBar, IconButton } from '@/ui/AppBar';
@@ -190,7 +191,7 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
 
 /** All goals + the honesty header: saved vs allocated vs unallocated. */
 export function GoalsScreen() {
-  const { t, lang } = useLang();
+  const { t } = useLang();
   const navigate = useNavigate();
   const { store, spaceId } = useData();
   const goals = useGoals();
@@ -199,7 +200,8 @@ export function GoalsScreen() {
   const currency = space?.currency ?? 'EUR';
   const [formInitial, setFormInitial] = useState<GoalRow | 'new' | null>(null);
 
-  const money = (cents: number) => fmtCents(cents, currency, lang);
+  const { fmt } = useDisplayMoney();
+  const money = (cents: number) => fmt(cents, currency);
   const overview = goalOverview(goals ?? [], accounts ?? []);
   const negative = overview.unallocatedCents < 0;
   const today = localToday();

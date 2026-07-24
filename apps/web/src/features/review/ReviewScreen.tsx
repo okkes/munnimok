@@ -23,6 +23,7 @@ import { predictTx } from '@/domain/predictCategory';
 import { recurringAmountMatches } from '@/domain/recurring';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
+import { logActivity } from '@/application/activity';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { fmtCents } from '@/lib/money';
 import { cleanBankText, txTitle } from '@/lib/text';
@@ -34,40 +35,12 @@ import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { SplitEditorSheet } from '@/features/transactions/SplitEditorSheet';
+import { SheetContextRow } from '@/ui/SheetContextRow';
 import { RecurringVisual, cadenceLabel } from '@/features/recurring/RecurringVisual';
 import { CounterAccountSheet, TX_TYPE_VISUAL, TxTypeOptionsSheet } from '@/features/transactions/TxTypeSheet';
 
 /** one grouped-context row inside the category editor (counterparty,
  *  type) — the card-row anatomy in the sheet's input skin */
-function SheetContextRow({
-  testId,
-  icon,
-  iconColor,
-  value,
-  caption,
-  onClick,
-}: Readonly<{
-  testId: string;
-  icon: string;
-  iconColor: string;
-  value: string;
-  caption: string;
-  onClick: () => void;
-}>) {
-  return (
-    <button
-      data-testid={testId}
-      onClick={onClick}
-      className="m-tap flex w-full items-center gap-2.5 rounded-input border border-line bg-surface px-3 py-2.5 text-left text-[14px] text-ink"
-    >
-      <Icon name={icon} size={17} color={iconColor} />
-      <span className="min-w-0 flex-1 truncate">{value}</span>
-      <span className="text-[11px] text-ink-4">{caption}</span>
-      <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
-    </button>
-  );
-}
-
 /** why the shown category was suggested, per prediction source */
 const REASON_KEYS = {
   history: 'review.reasonHistory',
@@ -397,7 +370,7 @@ function RecurringPickSheet({
  */
 export function ReviewScreen() {
   const { t, lang } = useLang();
-  const { store, spaceId } = useData();
+  const { store, repo, spaceId } = useData();
   const cats = useCategories();
   const allTxs = useSpaceTransactions();
   const transform = useTxTransform();
@@ -540,13 +513,16 @@ export function ReviewScreen() {
     if (!tx || !queue) return [] as SpaceTx[];
     const key = merchantKey(tx.merchant);
     const mustMatchAmount = !!draftSplits?.length && !splitsArePct(draftSplits);
+    // skipped cards left the deck on purpose — bulk must not drag them
+    // back in (user request: the count follows the visible queue)
     return queue.filter(
       (item) =>
         item.id !== tx.id &&
+        !skipped.has(item.id) &&
         merchantKey(item.merchant) === key &&
         (!mustMatchAmount || item.amountCents === tx.amountCents),
     );
-  }, [tx, queue, draftSplits]);
+  }, [tx, queue, draftSplits, skipped]);
 
   // fresh card: reset the staged draft and offer the link. This runs
   // DURING render (previous-id ref pattern), not in an effect — a late
@@ -584,6 +560,8 @@ export function ReviewScreen() {
     });
     // other billing cycles of a linked recurring pick up their link here
     void recurringOps.reconcile().catch(() => undefined);
+    const bulkN = similar.filter((s) => bulkSelected.has(s.id)).length;
+    void logActivity(store, repo, spaceId, 'review', bulkN ? `${txTitle(tx)} +${bulkN}` : txTitle(tx));
     hapticNotify('SUCCESS'); // §5: a physical tick on the native shells
   };
 
@@ -713,7 +691,17 @@ export function ReviewScreen() {
                     >
                       <Icon name={sliceCat.icon} size={18} color={sliceColor ?? 'var(--m-ink-3)'} />
                       <span className="min-w-0 flex-1 truncate">
-                        {slice || draft?.catId ? catName(sliceCat, t) : t('review.pickPrompt')}
+                        {slice || draft?.catId ? (
+                          <>
+                            {catName(sliceCat, t)}
+                            {/* the parent gives the sub its context (user request) */}
+                            {sliceCat.parentId && (
+                              <span className="text-[12px] font-normal text-ink-4"> · {catName(cats.byId(sliceCat.parentId), t)}</span>
+                            )}
+                          </>
+                        ) : (
+                          t('review.pickPrompt')
+                        )}
                       </span>
                       {slice && <span className="m-num text-[12px] text-ink-2">{fmtCents(slice.amountCents, tx.currency, lang)}</span>}
                       <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
@@ -827,6 +815,7 @@ export function ReviewScreen() {
           value={draft.splits}
           txType={draft.txType}
           seedSingle
+          seedCatId={draft.catId}
           onApply={(splits) => setStagedDraft(withSplits(draft, splits ?? undefined))}
           onApplySingle={(catId) => setStagedDraft(withCategory(withSplits(draft, undefined), catId, cats))}
           reason={reasonLine}

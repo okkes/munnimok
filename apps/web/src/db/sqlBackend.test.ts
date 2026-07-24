@@ -215,3 +215,32 @@ describe('SqlStorageBackend parity with DexieBackend', () => {
     }
   });
 });
+
+describe('transaction serialization (SQLCipher regression)', () => {
+  it('concurrent un-awaited transactions serialize instead of nesting', async () => {
+    // the real bug: a manual tx + its balance delta both fired without
+    // awaiting → connection-wide BEGIN inside BEGIN on SQLCipher
+    const backend = (await bothBackends())[1].store;
+    const writes = Array.from({ length: 6 }, (_, i) =>
+      backend.transact(['account'], async () => {
+        await backend.put('account', { id: `acc-${i}`, spaceId: 's1', name: `A${i}`, deleted: 0, fieldVersions: {} } as never);
+      }),
+    );
+    await Promise.all(writes);
+    const rows = await backend.bySpace('account', 's1');
+    expect(rows).toHaveLength(6);
+  });
+
+  it('a rejecting transaction does not wedge the queue', async () => {
+    const backend = (await bothBackends())[1].store;
+    await expect(
+      backend.transact(['account'], async () => {
+        throw new Error('boom');
+      }),
+    ).rejects.toThrow('boom');
+    await backend.transact(['account'], async () => {
+      await backend.put('account', { id: 'after', spaceId: 's1', name: 'After', deleted: 0, fieldVersions: {} } as never);
+    });
+    expect((await backend.bySpace('account', 's1')).map((r) => r.id)).toContain('after');
+  });
+});

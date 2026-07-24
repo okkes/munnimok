@@ -26,6 +26,52 @@ public class SocialEndpointsTests : IClassFixture<SyncApiFactory>
     }
 
     [Fact]
+    public async Task Geo_answers_null_country_for_local_or_unknown_addresses()
+    {
+        // TestServer has no remote IP → the lookup must fail OPEN to null
+        var client = ClientFor($"geo-{Guid.NewGuid():N}");
+        var res = await client.GetFromJsonAsync<JsonElement>("/geo");
+        Assert.Equal(JsonValueKind.Null, res.GetProperty("country").ValueKind);
+    }
+
+    [Fact]
+    public async Task Geo_resolves_public_addresses_and_caches_per_ip()
+    {
+        var client = ClientFor($"geo2-{Guid.NewGuid():N}");
+        var ip = $"83.84.{Random.Shared.Next(1, 250)}.{Random.Shared.Next(1, 250)}";
+        client.DefaultRequestHeaders.Add("X-Forwarded-For", ip);
+
+        var res = await client.GetFromJsonAsync<JsonElement>("/geo");
+        Assert.Equal("NL", res.GetProperty("country").GetString());
+
+        // second request for the SAME ip is served from the per-IP cache
+        var before = FakeGeoLookupHandler.Calls;
+        var cached = await client.GetFromJsonAsync<JsonElement>("/geo");
+        Assert.Equal("NL", cached.GetProperty("country").GetString());
+        Assert.Equal(before, FakeGeoLookupHandler.Calls);
+    }
+
+    [Fact]
+    public async Task DisplayCurrency_sets_uppercases_and_clears_with_the_empty_sentinel()
+    {
+        var client = ClientFor($"fx-{Guid.NewGuid():N}");
+
+        // set (lowercase input normalizes), null leaves it alone, '' clears
+        await client.PutAsJsonAsync("/me", new UpdateMeRequest("Fx", DisplayCurrency: "try"));
+        Assert.Equal("TRY", (await client.GetFromJsonAsync<MeResponse>("/me"))!.DisplayCurrency);
+
+        await client.PutAsJsonAsync("/me", new UpdateMeRequest("Fx"));
+        Assert.Equal("TRY", (await client.GetFromJsonAsync<MeResponse>("/me"))!.DisplayCurrency);
+
+        await client.PutAsJsonAsync("/me", new UpdateMeRequest("Fx", DisplayCurrency: ""));
+        Assert.Null((await client.GetFromJsonAsync<MeResponse>("/me"))!.DisplayCurrency);
+
+        // not a currency code → validation rejects
+        var bad = await client.PutAsJsonAsync("/me", new UpdateMeRequest("Fx", DisplayCurrency: "EURO"));
+        Assert.Equal(HttpStatusCode.BadRequest, bad.StatusCode);
+    }
+
+    [Fact]
     public async Task FullFlow_FriendRequest_SpaceInvite_MembershipAndSync()
     {
         var suffix = Guid.NewGuid().ToString("N")[..8];

@@ -14,6 +14,7 @@ using Munni.Api.GoCardless;
 using Munni.Api.ImportWatch;
 using Munni.Api.Investments;
 using Munni.Api.Logos;
+using Munni.Api.Rates;
 using Munni.Api.Push;
 using Munni.Api.Shopping;
 using Munni.Api.Social;
@@ -64,6 +65,7 @@ builder.Services.AddHttpClient(StoreProxyEndpoints.HttpClientName,
 
 // Logto Management API (account deletion): activates with Logto:M2m* config
 builder.Services.AddHttpClient("logto-m2m", client => client.Timeout = TimeSpan.FromSeconds(10));
+builder.Services.AddHttpClient("geo", client => client.Timeout = TimeSpan.FromSeconds(4));
 
 // receipt OCR via the Tesseract sidecar — enabled when the container is configured
 var ocrEnabled = !string.IsNullOrEmpty(builder.Configuration["Ocr:BaseUrl"]);
@@ -88,6 +90,14 @@ builder.Services.AddHttpClient(QuoteEndpoints.CoinGeckoClientName, client =>
 {
     client.BaseAddress = new Uri("https://api.coingecko.com"); // NOSONAR(S1075) vendor API base
     client.Timeout = TimeSpan.FromSeconds(8);
+});
+
+// ECB reference rates for display-currency conversion — free, no key
+builder.Services.AddHttpClient(RatesEndpoints.EcbClientName, client =>
+{
+    client.BaseAddress = new Uri("https://www.ecb.europa.eu"); // NOSONAR(S1075) vendor API base
+    // the full-history file is a few MB — allow it time on slow links
+    client.Timeout = TimeSpan.FromSeconds(30);
 });
 
 // brand-logo search (logo.dev) — enabled when both keys are configured
@@ -235,6 +245,7 @@ app.MapLogos(app.Configuration);
 app.MapStoreProxy();
 if (ocrEnabled) app.MapOcr();
 app.MapQuotes();
+app.MapRates();
 app.MapAccounts();
 app.MapAdmin(gcConfigured, bankingEnabled);
 app.MapCatalog();

@@ -21,6 +21,54 @@ describe('SettingsScreen (demo identity)', () => {
     expect(await screen.findByTestId('screen-settings-global')).toBeTruthy();
   });
 
+  it('the space header card opens space settings; the old row and scope caption are gone', async () => {
+    renderApp('/settings');
+    await screen.findByTestId('screen-settings');
+    // restructure (user request): the space card IS the scope label + door
+    expect(screen.queryByTestId('settings-space-settings-row')).toBeNull();
+    expect(screen.queryByTestId('settings-scope-space')).toBeNull();
+    // profile moved to Global settings — it is not space-scoped
+    expect(screen.queryByTestId('settings-profile-row')).toBeNull();
+    fireEvent.click(screen.getByTestId('settings-space-row'));
+    expect(await screen.findByTestId('screen-space-settings')).toBeTruthy();
+  });
+
+  it('currency is its own setting: the sheet applies the pick immediately and shows it on the row', async () => {
+    renderApp('/settings');
+    await screen.findByTestId('screen-settings');
+    await waitFor(() => expect(screen.getByTestId('settings-currency-value').textContent).toBe('EUR'));
+    fireEvent.click(screen.getByTestId('settings-currency-row'));
+    fireEvent.click(await screen.findByTestId('space-currency-TRY'));
+    // no save button: the pick persists and the row badge follows
+    await waitFor(() => expect(screen.getByTestId('settings-currency-value').textContent).toBe('TRY'), {
+      timeout: 5000,
+    });
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const space = (await db.spaces.toArray()).find((s) => s.deleted === 0);
+      expect(space?.currency).toBe('TRY');
+    });
+    db.close();
+  });
+
+  it('default history start is its own setting: the sheet date persists immediately', async () => {
+    renderApp('/settings');
+    await screen.findByTestId('screen-settings');
+    fireEvent.click(await screen.findByTestId('settings-history-row'));
+    fireEvent.change(await screen.findByTestId('space-history-start'), { target: { value: '2026-01-01' } });
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    await waitFor(
+      async () => {
+        const space = (await db.spaces.toArray()).find((s) => s.deleted === 0);
+        expect(space?.historyStartDate).toBe('2026-01-01');
+      },
+      { timeout: 5000 },
+    );
+    db.close();
+  });
+
   it('demo sign-out returns to the login screen and wipes the demo db', async () => {
     renderApp('/settings');
     await screen.findByTestId('screen-settings');
@@ -218,8 +266,8 @@ describe('Settings screens (user identity, scripted server)', () => {
 
   it('account deletion requires the typed word, calls the api and wipes the device', async () => {
     let deleted = false;
-    // moved to Global settings (user remark: too close to sign-out)
-    renderAppAsUser('/settings/global', {
+    // lives on the PROFILE screen now (user request: identity-level danger)
+    renderAppAsUser('/profile', {
       api: {
         'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false } }),
         'DELETE /me': () => {
@@ -228,7 +276,7 @@ describe('Settings screens (user identity, scripted server)', () => {
         },
       },
     });
-    await screen.findByTestId('screen-settings-global');
+    await screen.findByTestId('screen-profile');
     fireEvent.click(await screen.findByTestId('settings-delete-account'));
 
     // the confirm stays disarmed until the exact word is typed

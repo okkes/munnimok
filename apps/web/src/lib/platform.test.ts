@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NATIVE_CALLBACK_KEY, deepLinkToPath, ensurePersistentStorage, getNativePushToken, initDeepLinks, isNativeApp } from './platform';
 
 type CapacitorStub = {
@@ -14,6 +14,11 @@ const setCapacitor = (stub: CapacitorStub | undefined) => {
 afterEach(() => setCapacitor(undefined));
 
 describe('platform seam', () => {
+  // universal-link host checks derive from publicOrigin now (the real
+  // domain is a secret) — pin it for the fixtures
+  beforeEach(() => vi.stubEnv('VITE_PUBLIC_ORIGIN', 'https://munni.munni.example'));
+  afterEach(() => vi.unstubAllEnvs());
+
   it('detects the shell only through the injected global', () => {
     expect(isNativeApp()).toBe(false);
     setCapacitor({ isNativePlatform: () => true });
@@ -32,11 +37,11 @@ describe('platform seam', () => {
   });
 
   it('universal links map allowed https paths and refuse everything else (UL2)', () => {
-    expect(deepLinkToPath('https://munni.okkes.synology.me/gc-callback?ref=r-1')).toBe('/gc-callback?ref=r-1');
-    expect(deepLinkToPath('https://munni-test.okkes.synology.me/splits/join/tok-1')).toBe('/splits/join/tok-1');
+    expect(deepLinkToPath('https://munni.munni.example/gc-callback?ref=r-1')).toBe('/gc-callback?ref=r-1');
+    expect(deepLinkToPath('https://munni-test.munni.example/splits/join/tok-1')).toBe('/splits/join/tok-1');
     // outside the allowlist: never routed into the shell
-    expect(deepLinkToPath('https://munni.okkes.synology.me/auth-callback?code=x')).toBeNull();
-    expect(deepLinkToPath('https://munni.okkes.synology.me/')).toBeNull();
+    expect(deepLinkToPath('https://munni.munni.example/auth-callback?code=x')).toBeNull();
+    expect(deepLinkToPath('https://munni.munni.example/')).toBeNull();
     expect(deepLinkToPath('https://evil.example/splits/join/tok-1')).toBeNull();
   });
 

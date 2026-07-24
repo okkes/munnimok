@@ -6,8 +6,11 @@ import { useData } from '@/app/data';
 import { useSession } from '@/app/session';
 import { attachFeedToSpace, detachFeedFromSpace } from '@/application/accountAttach';
 import { fetchMyFeedIds } from '@/features/accounts/feedGateway';
-import type { AccountRow } from '@/db/types';
+import { SOURCE_KEYS } from '@/features/accounts/AttachSheet';
+import { AddAccountChooser } from '@/features/accounts/AddAccountChooser';
+import type { AccountLinkRow, AccountRow } from '@/db/types';
 import { fmtTimeAgo } from '@/lib/text';
+import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
@@ -36,6 +39,46 @@ interface AttachCandidate {
   ibanTail?: string;
 }
 
+type T = ReturnType<typeof useLang>['t'];
+type Lang = ReturnType<typeof useLang>['lang'];
+
+const ibanTail = (iban?: string) => (iban ? `…${iban.slice(-4)}` : undefined);
+
+const syncLine = (t: T, lang: Lang, account?: AccountRow) =>
+  account?.lastSyncedAt ? t('acct.lastSynced', { when: fmtTimeAgo(account.lastSyncedAt, lang) }) : undefined;
+
+const isStale = (account?: AccountRow) =>
+  account?.source === 'gocardless' &&
+  !!account.lastSyncedAt &&
+  Date.now() - Date.parse(account.lastSyncedAt) > STALE_SYNC_MS;
+
+function linkProvenance(t: T, link: AccountLinkRow, mySub?: string): string | undefined {
+  if (link.attachedBy && mySub === link.attachedBy) return t('acct.provMine');
+  if (link.attachedByName) return t('acct.provShared', { name: link.attachedByName });
+  return undefined;
+}
+
+/** one feed attachment as a display row (S3776: out of the query fn) */
+function linkEntry(t: T, lang: Lang, link: AccountLinkRow, account: AccountRow | undefined, mySub?: string): AttachedAccountEntry {
+  return {
+    key: link.id,
+    name: account?.name ?? t('acct.bank'),
+    subtitle: [
+      ibanTail(account?.iban),
+      account ? t(SOURCE_KEYS[account.source]) : undefined,
+      linkProvenance(t, link, mySub),
+      link.historyFrom ? `${t('acct.historyFrom')} ${link.historyFrom}` : undefined,
+      // last-sync on the space overview too (user request)
+      syncLine(t, lang, account),
+    ]
+      .filter(Boolean)
+      .join(' · '),
+    archived: !!link.archived,
+    stale: isStale(account),
+    detach: { feedSpaceId: link.feedSpaceId, accountId: link.accountId },
+  };
+}
+
 /**
  * The financial accounts this space sees (redesign 2026-07-22): the
  * list shows last-sync freshness, every feed attachment detaches HERE
@@ -58,8 +101,10 @@ export function SpaceAccountsScreen() {
   const [historyFrom, setHistoryFrom] = useState('');
   const [busy, setBusy] = useState(false);
   const [detachTarget, setDetachTarget] = useState<AttachedAccountEntry | null>(null);
+  // AE1: creation goes through the shared chooser now
+  const [addOpen, setAddOpen] = useState(false);
 
-  const ibanTail = (iban?: string) => (iban ? `…${iban.slice(-4)}` : undefined);
+  const mySub = identity?.kind === 'user' ? identity.sub : undefined;
 
   const entries = useQuery(store, async () => {
     // reads only — a teardown/closed-db rejection must never escape
@@ -75,44 +120,23 @@ export function SpaceAccountsScreen() {
     for (const account of linked) {
       if (account) feedAccounts.set(account.id, account);
     }
-    const syncLine = (account?: AccountRow) =>
-      account?.lastSyncedAt ? t('acct.lastSynced', { when: fmtTimeAgo(account.lastSyncedAt, lang) }) : undefined;
-    const isStale = (account?: AccountRow) =>
-      account?.source === 'gocardless' &&
-      !!account.lastSyncedAt &&
-      Date.now() - Date.parse(account.lastSyncedAt) > STALE_SYNC_MS;
-
+    // provenance is spelled out per row (user request): space-scoped
+    // manual, your global account, or shared into this space by someone
     const list: AttachedAccountEntry[] = ownAccounts.map((account) => ({
       key: account.id,
       name: account.name,
-      subtitle: [ibanTail(account.iban), t(account.source === 'manual' ? 'acct.manual' : 'acct.automated'), syncLine(account)]
+      subtitle: [ibanTail(account.iban), t(SOURCE_KEYS[account.source]), t('acct.provSpace'), syncLine(t, lang, account)]
         .filter(Boolean)
         .join(' · '),
       archived: !!account.archived,
       stale: isStale(account),
     }));
     for (const link of links) {
-      const account = feedAccounts.get(link.accountId);
-      list.push({
-        key: link.id,
-        name: account?.name ?? t('acct.bank'),
-        subtitle: [
-          ibanTail(account?.iban),
-          link.attachedByName ? `${t('space.by')} ${link.attachedByName}` : undefined,
-          link.historyFrom ? `${t('acct.historyFrom')} ${link.historyFrom}` : undefined,
-          // last-sync on the space overview too (user request)
-          syncLine(account),
-        ]
-          .filter(Boolean)
-          .join(' · '),
-        archived: !!link.archived,
-        stale: isStale(account),
-        detach: { feedSpaceId: link.feedSpaceId, accountId: link.accountId },
-      });
+      list.push(linkEntry(t, lang, link, feedAccounts.get(link.accountId), mySub));
     }
     list.sort((x, y) => x.name.localeCompare(y.name));
     return list;
-  }, [spaceId]);
+  }, [spaceId, mySub]);
 
   // "+ attach": my feeds' accounts that this space does NOT have yet
   const candidates = useQuery(
@@ -172,6 +196,7 @@ export function SpaceAccountsScreen() {
             <Icon name="chevron-left" size={24} />
           </IconButton>
         }
+        trailing={<HelpButton tourId="spaceAccounts" />}
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-8">
         <div className="pt-1" data-testid="space-accounts">
@@ -237,8 +262,20 @@ export function SpaceAccountsScreen() {
               <Icon name="chevron-right" size={15} />
             </button>
           )}
+          <Button
+            variant="outline"
+            className="mt-2 w-full"
+            data-testid="space-accounts-add"
+            onClick={() => setAddOpen(true)}
+          >
+            <Icon name="plus" size={17} />
+            {t('acct.addAccount')}
+          </Button>
         </div>
       </div>
+
+      {/* AE1: the shared intent chooser — manual creates in place */}
+      <AddAccountChooser open={addOpen} onOpenChange={setAddOpen} gcAvailable={syncing} />
 
       {/* pick an existing account, choose the history start, attach */}
       <Sheet open={attachOpen} onOpenChange={setAttachOpen} title={t('acct.attachToSpace')} size="tall">

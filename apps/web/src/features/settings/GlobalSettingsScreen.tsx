@@ -4,18 +4,18 @@ import { apiFetch, getApiCapabilities } from '@/lib/api';
 import { LOCALES, useLang } from '@/i18n';
 import type { Lang } from '@/i18n';
 import { useTheme } from '@/app/theme';
-import { destroyIdentityData, useData } from '@/app/data';
+import { useData } from '@/app/data';
 import { useSession } from '@/app/session';
 import { TIPS_DISABLED_KEY, useTipsDisabled } from '@/features/help/tipsPref';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
+import { Flag, langFlagCode } from '@/ui/Flag';
 import { Pill, Row } from '@/ui/primitives';
+import { useQuery } from '@/db/useQuery';
+import { Avatar } from '@/features/profile/ProfileScreen';
 import { Sheet } from '@/ui/Sheet';
 import { disablePush, enablePush, pushEnabled, pushSupported } from '@/lib/push';
-import { isNativeApp } from '@/lib/platform';
-import { config } from '@/app/config';
-import { FLAG_KEY, activeStoreBackend } from '@/db/openStore';
 import { ExportSheet } from './ExportSheet';
 import {
   biometricAvailable,
@@ -32,6 +32,34 @@ const LANGS: { code: Lang; labelKey: 'lang.en' | 'lang.nl' | 'lang.tr'; badge: s
   { code: 'nl', labelKey: 'lang.nl', badge: 'NL' },
   { code: 'tr', labelKey: 'lang.tr', badge: 'TR' },
 ];
+
+/** who you are, everywhere — moved here from the Settings tab (user
+ *  request: the profile is global, the Settings tab header is the space) */
+function ProfileHeaderRow({ onClick }: Readonly<{ onClick: () => void }>) {
+  const { t } = useLang();
+  const { store } = useData();
+  const profile = useQuery(
+    store,
+    async () => (await store.metaGet('profile'))?.value as { name?: string; picture?: string } | undefined,
+    [],
+  );
+  return (
+    <button
+      data-testid="settings-profile-row"
+      onClick={onClick}
+      className="m-tap mb-4 flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3.5 text-left"
+    >
+      <Avatar picture={profile?.picture} size={44} />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[15px] font-semibold text-ink">{profile?.name ?? t('profile.title')}</span>
+        {/* no name yet → the title already says "Profile"; repeating it read
+            as a bug ("Profiel / Profiel") — invite instead (§2L) */}
+        <span className="block text-[12px] text-ink-3">{profile?.name ? t('profile.title') : t('profile.setupHint')}</span>
+      </span>
+      <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+    </button>
+  );
+}
 
 /** three-state appearance control: light / dark / follow device */
 function ThemeModeSwitch() {
@@ -84,50 +112,6 @@ function ThemeModeSwitch() {
  * "Global settings" door on the Settings tab (user feedback: mixing
  * space-scoped and app-wide rows in one list was confusing).
  */
-/** E2 dev switch state: the flag is read at db open, so a clean reload applies it */
-function useEncryptedStoreToggle() {
-  const [encryptedOn, setEncryptedOn] = useState(() => localStorage.getItem(FLAG_KEY) === '1');
-  const toggleEncrypted = () => {
-    const next = !encryptedOn;
-    if (next) localStorage.setItem(FLAG_KEY, '1');
-    else localStorage.removeItem(FLAG_KEY);
-    setEncryptedOn(next);
-    window.location.reload();
-  };
-  return { encryptedOn, toggleEncrypted };
-}
-
-/** E2 dev switch: run the native shell on the encrypted SQLCipher store —
- *  visible only in non-production native builds until E3/E4 make it the
- *  default. Flipping it relaunches onto an empty store; a signed-in
- *  identity simply re-syncs. */
-function EncryptedStoreRow() {
-  const { t } = useLang();
-  const { encryptedOn, toggleEncrypted } = useEncryptedStoreToggle();
-  if (!isNativeApp() || config.channel === 'production') return null;
-  // the sub answers "did SQLCipher really take over?" (user question):
-  // the flag is intent — activeStoreBackend() is what actually OPENED.
-  // A failed open falls back to Dexie and clears the flag, so ON +
-  // "active" together are the proof.
-  const active = activeStoreBackend() === 'sqlcipher';
-  let pillText = 'OFF';
-  if (encryptedOn) pillText = active ? t('settings.encryptedOnActive') : 'ON';
-  return (
-    <Row
-      testId="settings-encrypted-toggle"
-      icon={encryptedOn ? 'shield-lock' : 'shield-lock-open-outline'}
-      title={t('settings.encryptedStore')}
-      sub={encryptedOn && active ? t('settings.encryptedActive') : t('settings.encryptedStoreSub')}
-      chevron={false}
-      trailing={
-        <Pill tone={encryptedOn && active ? 'accent' : 'neutral'} testId="settings-encrypted-state">
-          {pillText}
-        </Pill>
-      }
-      onClick={toggleEncrypted}
-    />
-  );
-}
 
 export function GlobalSettingsScreen() {
   const { t, lang, setLang, langOverridden, followDeviceLang } = useLang();
@@ -137,7 +121,6 @@ export function GlobalSettingsScreen() {
   const [langSheetOpen, setLangSheetOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const identity = useSession((s) => s.identity);
-  const logout = useSession((s) => s.logout);
   const navigate = useNavigate();
   const router = useRouter();
   const [gcAvailable, setGcAvailable] = useState(false);
@@ -155,29 +138,6 @@ export function GlobalSettingsScreen() {
   const [lockTimeout, setLockTimeout] = useState(60);
   const [lockBioAvailable, setLockBioAvailable] = useState(false);
   const [lockError, setLockError] = useState<string | null>(null);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deleteTyped, setDeleteTyped] = useState('');
-  const [deleteBusy, setDeleteBusy] = useState(false);
-  const [deleteError, setDeleteError] = useState(false);
-
-  // full account deletion (account-deletion design; Apple 5.1.1(v)):
-  // the server erases everything, then the device forgets the identity
-  const deleteAccount = async () => {
-    const current = identity;
-    if (current?.kind !== 'user') return;
-    setDeleteBusy(true);
-    setDeleteError(false);
-    const res = await apiFetch('/me', { method: 'DELETE' }).catch(() => null);
-    if (!res?.ok) {
-      setDeleteBusy(false);
-      setDeleteError(true);
-      return;
-    }
-    logout();
-    await destroyIdentityData(current);
-    await navigate({ to: '/login' });
-  };
-
   useEffect(() => {
     if (identity?.kind !== 'user') return;
     void getApiCapabilities().then((caps) => {
@@ -256,6 +216,7 @@ export function GlobalSettingsScreen() {
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
+        <ProfileHeaderRow onClick={() => void navigate({ to: '/profile' })} />
         <div className="overflow-hidden rounded-card border border-line bg-surface">
           {/* spaces moved here from the tab bar — day-to-day switching
               happens via the Home avatar, management is a settings task */}
@@ -304,7 +265,6 @@ export function GlobalSettingsScreen() {
               onClick={() => void togglePush()}
             />
           )}
-          <EncryptedStoreRow />
           <Row
             testId="settings-lock-toggle"
             icon={lockOn ? 'lock' : 'lock-open-variant-outline'}
@@ -341,58 +301,9 @@ export function GlobalSettingsScreen() {
           />
         </div>
 
-        {/* account deletion lives here, deliberately far from sign-out
-            (user remark: the two were one accidental tap apart) */}
-        {identity?.kind === 'user' && (
-          <div className="mt-4 overflow-hidden rounded-card border border-line bg-surface">
-            <button
-              data-testid="settings-delete-account"
-              onClick={() => {
-                setDeleteTyped('');
-                setDeleteError(false);
-                setDeleteOpen(true);
-              }}
-              className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-negative"
-            >
-              <Icon name="account-remove-outline" size={20} />
-              <span className="min-w-0 flex-1">
-                <span className="block">{t('settings.deleteAccount')}</span>
-                <span className="block text-[11px] text-ink-4">{t('settings.deleteAccountSub')}</span>
-              </span>
-            </button>
-          </div>
-        )}
+        {/* go-offline + account deletion moved to the PROFILE screen
+            (user request): they are about the identity, not app settings */}
       </div>
-
-      {/* the point of no return: everything the design promises, spelled
-          out, then a typed confirmation — no accidental taps */}
-      <Sheet open={deleteOpen} onOpenChange={setDeleteOpen} title={t('settings.deleteAccountTitle')} size="form">
-        <div className="flex flex-col gap-3 pt-1">
-          <p className="text-[13px] text-ink-2">{t('settings.deleteAccountBody')}</p>
-          <p className="text-[12px] text-ink-3">{t('settings.deleteTypePrompt', { word: t('settings.deleteTypeWord') })}</p>
-          <input
-            data-testid="delete-account-input"
-            value={deleteTyped}
-            onChange={(e) => setDeleteTyped(e.target.value)}
-            placeholder={t('settings.deleteTypeWord')}
-            autoCapitalize="characters"
-            className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none"
-          />
-          {deleteError && (
-            <p className="text-[12px] text-negative" data-testid="delete-account-error">
-              {t('settings.deleteFailed')}
-            </p>
-          )}
-          <button
-            data-testid="delete-account-confirm"
-            disabled={deleteBusy || deleteTyped.trim().toUpperCase() !== t('settings.deleteTypeWord')}
-            onClick={() => void deleteAccount()}
-            className="m-tap h-12 rounded-input border-none bg-negative font-semibold text-white disabled:opacity-40"
-          >
-            {deleteBusy ? '…' : t('settings.deleteAccountConfirm')}
-          </button>
-        </div>
-      </Sheet>
 
       {/* Bank connections status */}
       <Sheet open={connectionsOpen} onOpenChange={setConnectionsOpen} title={t('gc.connections')} size="form">
@@ -496,9 +407,7 @@ export function GlobalSettingsScreen() {
               }}
               className="m-tap flex items-center gap-3 border-none bg-transparent px-1 py-3.5 text-left text-[15px] text-ink"
             >
-              <span className="rounded-md bg-bg-2 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-ink-3">
-                {entry.badge}
-              </span>
+              <Flag code={langFlagCode(entry.code)} size={20} />
               <span className="flex-1">{t(entry.labelKey)}</span>
               {langOverridden && lang === entry.code && <Icon name="check" size={18} color="var(--m-accent)" />}
             </button>

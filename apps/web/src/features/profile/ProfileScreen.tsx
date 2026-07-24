@@ -1,15 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLogto } from '@logto/react';
+import { useNavigate } from '@tanstack/react-router';
 import { logtoConfigured } from '@/app/config';
-import { useData } from '@/app/data';
+import { destroyIdentityData, useData } from '@/app/data';
+import { Row } from '@/ui/primitives';
 import { useSession } from '@/app/session';
 import { getOfflineProfile, updateOfflineProfile } from '@/features/auth/offlineProfiles';
 import { useLang } from '@/i18n';
 import { apiFetch } from '@/lib/api';
 import { downscaleImage, isDataImage } from '@/lib/image';
+import { COUNTRIES, CURRENCIES } from '@/domain/countries';
+import { setPredictionCountry } from '@/domain/predictCategory';
+import { MANUAL_RATES_META_KEY, readManualRates } from '@/lib/rates';
+import { useQuery } from '@/db/useQuery';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
+import { Flag } from '@/ui/Flag';
+import { Sheet } from '@/ui/Sheet';
 
 /** avatar presets: "icon|color" */
 export const AVATARS = [
@@ -45,28 +53,93 @@ export function Avatar({ picture, size = 40 }: { picture?: string | null; size?:
 const PROFILE_META_KEY = 'profile';
 
 /** the Settings-header copy of a /me payload; null when there is nothing worth storing */
-function profileMetaCopy(me: { displayName: string | null; picture: string | null }): LocalProfile | null {
+function profileMetaCopy(me: {
+  displayName: string | null;
+  picture: string | null;
+  country?: string | null;
+  displayCurrency?: string | null;
+}): LocalProfile | null {
   if (!me.displayName && !me.picture) return null;
-  return { name: me.displayName ?? '', picture: me.picture ?? undefined };
+  return {
+    name: me.displayName ?? '',
+    picture: me.picture ?? undefined,
+    // country and display currency ride along — the refresh used to
+    // overwrite the meta copy WITHOUT them, silently dropping both
+    country: me.country ?? undefined,
+    displayCurrency: me.displayCurrency ?? undefined,
+  };
 }
 
 /** /me → screen state, refreshing the local Settings-header copy on the way */
 async function fetchUserProfile(
   store: ReturnType<typeof useData>['store'],
-): Promise<{ name: string; picture: string | null; userId: string } | null> {
+): Promise<{ name: string; picture: string | null; userId: string; country: string | null; displayCurrency: string | null } | null> {
   const res = await apiFetch('/me').catch(() => null);
   if (!res?.ok) return null;
-  const me = (await res.json()) as { userId: string; displayName: string | null; picture: string | null };
+  const me = (await res.json()) as {
+    userId: string;
+    displayName: string | null;
+    picture: string | null;
+    country: string | null;
+    displayCurrency: string | null;
+  };
   // keep the local copy in step with the server — an avatar changed on
   // another device or a reinstall lands here
   const copy = profileMetaCopy(me);
   if (copy) await store.metaPut(PROFILE_META_KEY, copy);
-  return { name: me.displayName ?? '', picture: me.picture, userId: me.userId };
+  return {
+    name: me.displayName ?? '',
+    picture: me.picture,
+    userId: me.userId,
+    country: me.country ?? null,
+    displayCurrency: me.displayCurrency ?? null,
+  };
 }
 
 interface LocalProfile {
   name?: string;
   picture?: string;
+  /** ISO country of use — tunes category prediction */
+  country?: string;
+  /** ISO 4217 display currency (currency plan CD3); absent = as recorded */
+  displayCurrency?: string;
+}
+
+interface LoadedProfileState {
+  name: string;
+  picture: string | null;
+  userId: string | null;
+  country: string | null;
+  displayCurrency: string | null;
+}
+
+/** the screen's initial values per identity kind: server truth for
+ *  signed-in users, the device copy for offline/demo */
+async function loadProfileState(
+  identity: { kind: string; profileId?: string } | null,
+  store: ReturnType<typeof useData>['store'],
+): Promise<LoadedProfileState> {
+  if (identity?.kind === 'user') {
+    const loaded = await fetchUserProfile(store);
+    // the refresh already synced the meta copy — country rides on it
+    const localCopy = (await store.metaGet(PROFILE_META_KEY))?.value as LocalProfile | undefined;
+    return {
+      name: loaded?.name ?? '',
+      picture: loaded?.picture ?? null,
+      userId: loaded?.userId ?? null,
+      country: loaded?.country ?? localCopy?.country ?? null,
+      displayCurrency: loaded?.displayCurrency ?? null,
+    };
+  }
+  const localCopy = (await store.metaGet(PROFILE_META_KEY))?.value as LocalProfile | undefined;
+  const offline = identity?.kind === 'offline' && identity.profileId ? getOfflineProfile(identity.profileId) : undefined;
+  return {
+    name: offline ? (offline.name ?? '') : (localCopy?.name ?? 'Demo'),
+    picture: offline?.picture ?? localCopy?.picture ?? null,
+    userId: null,
+    country: localCopy?.country ?? null,
+    displayCurrency: localCopy?.displayCurrency ?? null,
+  };
 }
 
 /**
@@ -75,16 +148,45 @@ interface LocalProfile {
  * identities keep everything on the device.
  */
 export function ProfileScreen() {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const { store } = useData();
   const identity = useSession((s) => s.identity);
   const [name, setName] = useState('');
   const [picture, setPicture] = useState(AVATARS[0]);
   const [userId, setUserId] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
+  const [country, setCountry] = useState('NL');
+  const [countryOpen, setCountryOpen] = useState(false);
+  // null = "as recorded" (the default: no conversion anywhere)
+  const [displayCurrency, setDisplayCurrency] = useState<string | null>(null);
+  const [displayCurrencyOpen, setDisplayCurrencyOpen] = useState(false);
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteTyped, setDeleteTyped] = useState('');
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const navigate = useNavigate();
+  const logout = useSession((s) => s.logout);
+
+  // full account deletion (account-deletion design; Apple 5.1.1(v)):
+  // the server erases everything, then the device forgets the identity
+  const deleteAccount = async () => {
+    const current = identity;
+    if (current?.kind !== 'user') return;
+    setDeleteBusy(true);
+    setDeleteError(false);
+    const res = await apiFetch('/me', { method: 'DELETE' }).catch(() => null);
+    if (!res?.ok) {
+      setDeleteBusy(false);
+      setDeleteError(true);
+      return;
+    }
+    logout();
+    await destroyIdentityData(current);
+    await navigate({ to: '/login' });
+  };
 
   const onPhotoPicked = async (file: File | undefined) => {
     if (!file) return;
@@ -99,22 +201,13 @@ export function ProfileScreen() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      if (identity?.kind === 'user') {
-        const loaded = await fetchUserProfile(store);
-        if (loaded && !cancelled) {
-          setName(loaded.name);
-          if (loaded.picture) setPicture(loaded.picture);
-          setUserId(loaded.userId);
-        }
-      } else if (identity?.kind === 'offline') {
-        const profile = getOfflineProfile(identity.profileId);
-        setName(profile?.name ?? '');
-        if (profile?.picture) setPicture(profile.picture);
-      } else {
-        const stored = (await store.metaGet(PROFILE_META_KEY))?.value as LocalProfile | undefined;
-        setName(stored?.name ?? 'Demo');
-        if (stored?.picture) setPicture(stored.picture);
-      }
+      const loaded = await loadProfileState(identity, store);
+      if (cancelled) return;
+      setName(loaded.name);
+      if (loaded.picture) setPicture(loaded.picture);
+      if (loaded.userId) setUserId(loaded.userId);
+      if (loaded.country) setCountry(loaded.country);
+      setDisplayCurrency(loaded.displayCurrency);
     })();
     return () => {
       cancelled = true;
@@ -124,14 +217,24 @@ export function ProfileScreen() {
   const save = async () => {
     if (!name.trim()) return;
     if (identity?.kind === 'user') {
-      await apiFetch('/me', { method: 'PUT', body: JSON.stringify({ displayName: name.trim(), picture }) }).catch(
+      // displayCurrency '' = the server's explicit "clear back to as recorded"
+      await apiFetch('/me', {
+        method: 'PUT',
+        body: JSON.stringify({ displayName: name.trim(), picture, country, displayCurrency: displayCurrency ?? '' }),
+      }).catch(
         () => undefined, // offline is fine — retried on next profile save
       );
     } else if (identity?.kind === 'offline') {
       updateOfflineProfile(identity.profileId, { name: name.trim(), picture });
     }
     // local copy for instant display everywhere (all identity kinds)
-    await store.metaPut(PROFILE_META_KEY, { name: name.trim(), picture } satisfies LocalProfile);
+    await store.metaPut(PROFILE_META_KEY, {
+      name: name.trim(),
+      picture,
+      country,
+      displayCurrency: displayCurrency ?? undefined,
+    } satisfies LocalProfile);
+    setPredictionCountry(country);
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
   };
@@ -204,9 +307,86 @@ export function ProfileScreen() {
           data-testid="profile-name"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder={t('login.fullName')}
+          placeholder={t('profile.displayName')}
           className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
         />
+
+        {/* country of use — changeable later (user request); tunes the
+            category predictor, explained by the info line */}
+        <div className="m-cap mt-5 mb-1 px-1">{t('onboarding.countryLabel')}</div>
+        <button
+          data-testid="profile-country"
+          onClick={() => setCountryOpen(true)}
+          className="m-tap flex h-12 w-full items-center gap-3 rounded-input border border-line bg-surface px-4 text-left text-[15px] text-ink"
+        >
+          <Flag code={country} size={20} />
+          <span className="flex-1">{COUNTRIES.find((c) => c.code === country)?.[lang] ?? country}</span>
+          <Icon name="chevron-down" size={18} color="var(--m-ink-4)" />
+        </button>
+        <p className="mt-1 px-1 text-[12px] leading-snug text-ink-4">{t('profile.countryInfo')}</p>
+
+        <Sheet open={countryOpen} onOpenChange={setCountryOpen} title={t('onboarding.countryLabel')} size="tall">
+          {COUNTRIES.map((c) => (
+            <button
+              key={c.code}
+              data-testid={`profile-country-${c.code}`}
+              onClick={() => {
+                setCountry(c.code);
+                setCountryOpen(false);
+              }}
+              className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-1 py-2.5 text-left text-[14px] text-ink"
+            >
+              <Flag code={c.code} size={20} />
+              <span className="flex-1">{c[lang]}</span>
+              {country === c.code && <Icon name="check" size={15} color="var(--m-accent)" />}
+            </button>
+          ))}
+        </Sheet>
+
+        {/* display currency (currency plan CD3): a personal rendering
+            lens — every conversion shows ≈, the data never changes */}
+        <div className="m-cap mt-5 mb-1 px-1">{t('profile.displayCurrency')}</div>
+        <button
+          data-testid="profile-display-currency"
+          onClick={() => setDisplayCurrencyOpen(true)}
+          className="m-tap flex h-12 w-full items-center gap-3 rounded-input border border-line bg-surface px-4 text-left text-[15px] text-ink"
+        >
+          <Icon name="cash-multiple" size={20} color="var(--m-ink-3)" />
+          <span className="flex-1">{displayCurrency ?? t('profile.displayCurrencyAsRecorded')}</span>
+          <Icon name="chevron-down" size={18} color="var(--m-ink-4)" />
+        </button>
+        <p className="mt-1 px-1 text-[12px] leading-snug text-ink-4">{t('profile.displayCurrencyInfo')}</p>
+        {identity?.kind !== 'user' && displayCurrency && <ManualRatesEditor display={displayCurrency} />}
+
+        <Sheet open={displayCurrencyOpen} onOpenChange={setDisplayCurrencyOpen} title={t('profile.displayCurrency')} size="form">
+          <div className="flex flex-col pt-1">
+            <button
+              data-testid="display-currency-off"
+              onClick={() => {
+                setDisplayCurrency(null);
+                setDisplayCurrencyOpen(false);
+              }}
+              className="m-tap flex items-center gap-3 border-b border-line-2 border-none bg-transparent px-1 py-3 text-left text-[14px] text-ink"
+            >
+              <span className="flex-1">{t('profile.displayCurrencyAsRecorded')}</span>
+              {!displayCurrency && <Icon name="check" size={15} color="var(--m-accent)" />}
+            </button>
+            {CURRENCIES.map((c) => (
+              <button
+                key={c}
+                data-testid={`display-currency-${c}`}
+                onClick={() => {
+                  setDisplayCurrency(c);
+                  setDisplayCurrencyOpen(false);
+                }}
+                className="m-tap flex items-center gap-3 border-none bg-transparent px-1 py-3 text-left text-[14px] text-ink"
+              >
+                <span className="flex-1 font-mono">{c}</span>
+                {displayCurrency === c && <Icon name="check" size={15} color="var(--m-accent)" />}
+              </button>
+            ))}
+          </div>
+        </Sheet>
 
         <Button className="mt-4 w-full" data-testid="profile-save" onClick={() => void save()} disabled={!name.trim()}>
           {saved ? t('profile.saved') : t('action.save')}
@@ -235,7 +415,110 @@ export function ProfileScreen() {
           </div>
         )}
         {identity?.kind === 'user' && <EmailLoader onEmail={setEmail} sub={identity.sub} />}
+
+        {/* identity-level danger zone (user request: these belong to the
+            PROFILE, not app settings) — always last on the screen */}
+        {identity?.kind === 'user' && (
+          <div className="mt-6 overflow-hidden rounded-card border border-line bg-surface">
+            <Row
+              testId="settings-go-offline"
+              icon="wifi-off"
+              title={t('goOffline.title')}
+              sub={t('goOffline.rowSub')}
+              onClick={() => void navigate({ to: '/settings/go-offline' })}
+            />
+            <button
+              data-testid="settings-delete-account"
+              onClick={() => {
+                setDeleteTyped('');
+                setDeleteError(false);
+                setDeleteOpen(true);
+              }}
+              className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-negative"
+            >
+              <Icon name="account-remove-outline" size={20} />
+              <span className="min-w-0 flex-1">
+                <span className="block">{t('settings.deleteAccount')}</span>
+                <span className="block text-[11px] text-ink-4">{t('settings.deleteAccountSub')}</span>
+              </span>
+            </button>
+          </div>
+        )}
       </div>
+
+      {/* the point of no return: everything the design promises, spelled
+          out, then a typed confirmation — no accidental taps */}
+      <Sheet open={deleteOpen} onOpenChange={setDeleteOpen} title={t('settings.deleteAccountTitle')} size="form">
+        <div className="flex flex-col gap-3 pt-1">
+          <p className="text-[13px] text-ink-2">{t('settings.deleteAccountBody')}</p>
+          <p className="text-[12px] text-ink-3">{t('settings.deleteTypePrompt', { word: t('settings.deleteTypeWord') })}</p>
+          <input
+            data-testid="delete-account-input"
+            value={deleteTyped}
+            onChange={(e) => setDeleteTyped(e.target.value)}
+            placeholder={t('settings.deleteTypeWord')}
+            autoCapitalize="characters"
+            className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none"
+          />
+          {deleteError && (
+            <p className="text-[12px] text-negative" data-testid="delete-account-error">
+              {t('settings.deleteFailed')}
+            </p>
+          )}
+          <button
+            data-testid="delete-account-confirm"
+            disabled={deleteBusy || deleteTyped.trim().toUpperCase() !== t('settings.deleteTypeWord')}
+            onClick={() => void deleteAccount()}
+            className="m-tap h-12 rounded-input border-none bg-negative font-semibold text-white disabled:opacity-40"
+          >
+            {deleteBusy ? '…' : t('settings.deleteAccountConfirm')}
+          </button>
+        </div>
+      </Sheet>
+    </div>
+  );
+}
+
+/**
+ * Offline profiles have no rate feed (zero network by design) — they
+ * pin a manual rate per currency pair instead (currency plan CD2). One
+ * input per currency this device actually holds accounts in.
+ */
+function ManualRatesEditor({ display }: Readonly<{ display: string }>) {
+  const { t } = useLang();
+  const { store } = useData();
+  const accounts = useQuery(store, async () => (await store.allRows('account')).filter((a) => a.deleted === 0), []);
+  const manual = useQuery(store, async () => readManualRates(store), []);
+  const froms = [...new Set((accounts ?? []).map((a) => a.currency))].filter((c) => c && c !== display).sort((a, b) => a.localeCompare(b));
+  if (froms.length === 0 || !manual) return null;
+
+  const saveRate = async (from: string, raw: string) => {
+    const next = { ...manual };
+    const value = Number(raw.trim().replace(',', '.'));
+    if (raw.trim() && Number.isFinite(value) && value > 0) next[`${from}>${display}`] = value;
+    else delete next[`${from}>${display}`];
+    await store.metaPut(MANUAL_RATES_META_KEY, next);
+  };
+
+  return (
+    <div className="mt-3 flex flex-col gap-2">
+      <div className="m-cap px-1">{t('profile.manualRates')}</div>
+      <p className="-mt-1 px-1 text-[12px] leading-snug text-ink-4">{t('profile.manualRatesInfo', { currency: display })}</p>
+      {froms.map((from) => (
+        <label key={from} className="flex items-center gap-3 text-[13px] text-ink-2">
+          <span className="w-24 font-mono">1 {from} =</span>
+          <input
+            data-testid={`manual-rate-${from}`}
+            type="text"
+            inputMode="decimal"
+            defaultValue={manual[`${from}>${display}`] ?? ''}
+            onBlur={(e) => void saveRate(from, e.target.value)}
+            placeholder="0,00"
+            className="h-10 w-28 rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none placeholder:text-ink-4"
+          />
+          <span className="font-mono text-ink-3">{display}</span>
+        </label>
+      ))}
     </div>
   );
 }

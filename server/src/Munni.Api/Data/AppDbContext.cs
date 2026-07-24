@@ -267,6 +267,10 @@ public class User
     public string? DisplayName { get; set; }
     /// <summary>avatar preset id ("icon|color"), chosen on the profile screen</summary>
     public string? Picture { get; set; }
+    /// <summary>ISO 3166-1 alpha-2 country of use — feeds category prediction</summary>
+    public string? Country { get; set; }
+    /// <summary>ISO 4217 display currency (currency plan CD3) — null = "as recorded", no conversion</summary>
+    public string? DisplayCurrency { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
