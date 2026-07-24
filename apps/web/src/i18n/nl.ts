@@ -943,6 +943,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'import.preview': 'Importoverzicht',
   'import.newAccount': 'Nieuwe rekening',
   'import.txCount': '{n} transacties',
+  'import.runFailed': 'Import mislukt — controleer je verbinding en probeer opnieuw',
   'import.through': 'gegevens tot {when}',
   'import.throughStale': 'export eindigt {when} — alles daarna ontbreekt',
   'import.doImport': 'Importeren',

@@ -1,4 +1,4 @@
-# Logged-in devices — design plan (2026-07-24, awaiting approval)
+# Logged-in devices — design plan (2026-07-24, APPROVED)
 
 User request: see which devices are signed in to my account, when each
 was last seen, and disconnect one remotely.
@@ -36,12 +36,9 @@ fmtTimeAgo, "this device" badge), trailing Disconnect with the
 standard two-step danger confirm. Activity history logs a
 `deviceRevoke` line. EN/NL/TR, browser-back, works in the phone frame.
 
-## Decisions I need from you
+## Decisions (user, 2026-07-24)
 
-1. **Disconnect = wipe** (proposed: yes — the threat model is a lost
-   or stolen device, and the wipe path already exists) or disconnect =
-   sign-out that leaves local data readable?
-2. Show **offline/demo profiles**? (proposed: no — devices are a
-   signed-in concept; offline devices never touch the server.)
-3. Device **naming**: auto-derived only, or user-renamable rows?
-   (proposed: auto-derived, rename later if it ever matters.)
+1. Disconnect = **wipe** — the revoked device erases its local data via
+   the account-binding wipe path.
+2. Offline/demo profiles do **not** appear — signed-in concept only.
+3. Names are **auto-derived AND editable** — rows get a rename affordance.

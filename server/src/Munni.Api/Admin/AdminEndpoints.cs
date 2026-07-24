@@ -1,3 +1,5 @@
+using System.Text;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Munni.Api.Auth;
 using Munni.Api.Banking;
@@ -53,6 +55,12 @@ public static class AdminEndpoints
         // DELETE /me (account-deletion design)
         group.MapDelete("/users/{sub}", DeleteUser);
         group.MapGet("/users/{sub}/diagnosis", UserDiagnosis);
+        // Logto username casing (docs/logto-username-casing.md option 1):
+        // one-shot lowercase migration via the Management API — mobile
+        // keyboards capitalize the first letter and Logto matches
+        // usernames case-sensitively, locking people out of their own
+        // account. Collisions are skipped and reported, never merged.
+        group.MapPost("/logto/lowercase-usernames", LowercaseUsernames);
 
         MapAdminGrants(group);
         MapQuota(group);
@@ -60,6 +68,44 @@ public static class AdminEndpoints
         if (!goCardlessEnabled) return;
         group.MapGet("/gocardless/requisitions", ListRequisitions);
         group.MapDelete("/gocardless/requisitions/{requisitionId}", DeleteRequisition);
+    }
+
+    /// <summary>one-shot migration: every Logto username becomes lowercase;
+    /// collisions (Okkes vs okkes both existing) are skipped and reported</summary>
+    private static async Task<IResult> LowercaseUsernames(
+        HttpContext http, AppDbContext db, IConfiguration config, IHttpClientFactory httpFactory)
+    {
+        if (!await IsAdminAsync(http, db, config)) return Results.Forbid();
+        var session = await LogtoManagement.ConnectAsync(httpFactory, config);
+        if (session is null) return Results.Problem("Logto M2M not configured", statusCode: 503);
+
+        var changed = new List<string>();
+        var skipped = new List<string>();
+        for (var page = 1; page <= 50; page++)
+        {
+            using var listRequest = session.Request(HttpMethod.Get, $"/api/users?page={page}&page_size=100");
+            var listResponse = await session.Http.SendAsync(listRequest);
+            listResponse.EnsureSuccessStatusCode();
+            using var users = JsonDocument.Parse(await listResponse.Content.ReadAsStringAsync());
+            var batch = users.RootElement.EnumerateArray().ToList();
+            foreach (var user in batch)
+            {
+                var id = user.GetProperty("id").GetString()!;
+                var username = user.TryGetProperty("username", out var name) && name.ValueKind == JsonValueKind.String
+                    ? name.GetString()
+                    : null;
+                if (username is null) continue;
+                var lower = username.ToLowerInvariant();
+                if (lower == username) continue;
+                using var patch = session.Request(HttpMethod.Patch, $"/api/users/{Uri.EscapeDataString(id)}");
+                patch.Content = new StringContent(JsonSerializer.Serialize(new { username = lower }), Encoding.UTF8, "application/json");
+                var patchResponse = await session.Http.SendAsync(patch);
+                if (patchResponse.IsSuccessStatusCode) changed.Add(username);
+                else skipped.Add($"{username} ({(int)patchResponse.StatusCode})");
+            }
+            if (batch.Count < 100) break;
+        }
+        return Results.Ok(new { changed, skipped });
     }
 
     private static async Task<IResult> ListUsers(HttpContext http, AppDbContext db, IConfiguration config)

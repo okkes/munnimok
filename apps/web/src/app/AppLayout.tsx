@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, Outlet, useRouterState } from '@tanstack/react-router';
 import { DisplayMoneyProvider } from '@/features/currency/useDisplayMoney';
 import { useLang } from '@/i18n';
@@ -31,6 +31,45 @@ const TABS: TabDef[] = [
   { to: '/portfolio', labelKey: 'tab.portfolio', icon: 'chart-timeline-variant', iconActive: 'chart-timeline-variant', testId: 'tab-portfolio' },
   { to: '/settings', labelKey: 'tab.settings', icon: 'cog-outline', iconActive: 'cog', testId: 'tab-settings' },
 ];
+
+const isEditable = (el: EventTarget | null): el is HTMLElement =>
+  el instanceof HTMLElement && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+
+/**
+ * On-screen keyboard awareness (user report 2026-07-24): the viewport
+ * RESIZES for the keyboard on Android + the native shells, which pushed
+ * the tab bar right on top of it — hide the bar while an editable has
+ * focus. The focused field also scrolls itself into view once the
+ * resized layout has settled (fields near the bottom stayed hidden).
+ */
+function useKeyboardOpen(): boolean {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    let scrollTimer: ReturnType<typeof setTimeout> | undefined;
+    const onFocusIn = (e: FocusEvent) => {
+      if (!isEditable(e.target)) return;
+      const el = e.target;
+      setOpen(true);
+      clearTimeout(scrollTimer);
+      // the keyboard/viewport animation needs a beat before measuring
+      scrollTimer = setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 300);
+    };
+    const onFocusOut = () => {
+      // focus often hops field-to-field — only a settled blur closes
+      setTimeout(() => {
+        if (!isEditable(document.activeElement)) setOpen(false);
+      }, 100);
+    };
+    window.addEventListener('focusin', onFocusIn);
+    window.addEventListener('focusout', onFocusOut);
+    return () => {
+      clearTimeout(scrollTimer);
+      window.removeEventListener('focusin', onFocusIn);
+      window.removeEventListener('focusout', onFocusOut);
+    };
+  }, []);
+  return open;
+}
 
 /** headless: fires due-soon reminders once per app open (needs DataProvider) */
 function RecurringReminders() {
@@ -105,6 +144,8 @@ export function AppLayout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   // onboarding is a focused flow — no navigation chrome (user request)
   const hideNav = pathname.startsWith('/onboarding');
+  // the mobile tab bar makes no sense floating on top of the keyboard
+  const keyboardOpen = useKeyboardOpen();
 
   return (
     <div className="flex h-full flex-row bg-bg text-ink">
@@ -162,7 +203,7 @@ export function AppLayout() {
         {/* clamp: Android 3-button navigation reports up to ~48px inset,
             iOS home indicator 34px — honor them fully; the 56px ceiling
             guards against Safari's minimized-toolbar env() inflation */}
-        <nav className={`shrink-0 items-stretch justify-around border-t border-line bg-bg pb-[clamp(0px,env(safe-area-inset-bottom),56px)] md:hidden ${hideNav ? 'hidden' : 'flex'}`}>
+        <nav className={`shrink-0 items-stretch justify-around border-t border-line bg-bg pb-[clamp(0px,env(safe-area-inset-bottom),56px)] md:hidden ${hideNav || keyboardOpen ? 'hidden' : 'flex'}`}>
           {TABS.map((tab) => {
             const active = pathname.startsWith(tab.to);
             return (

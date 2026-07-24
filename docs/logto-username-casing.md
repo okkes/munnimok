@@ -26,7 +26,10 @@ Options, ranked:
    surface — password reset, error states, WebAuthn later. Too much
    for this bug.
 
-Proposal: do (1) now — lowercase-normalize on registration + sign-in
-paths and migrate existing usernames to lowercase — and enable (2)'s
-email sign-in as a bonus convenience whenever the account-email work
-happens anyway. Say the word and I'll implement (1).
+Decision (user, 2026-07-24): **option 1**. Shipped: admin endpoint
+`POST /admin/logto/lowercase-usernames` — a one-shot Management-API
+migration lowercasing every existing username (collisions skipped and
+reported, never merged). Run it once from the admin console/curl after
+deploy. Caveat kept honest: the HOSTED sign-up UI cannot be patched, so
+a future user registering `Okkes` would reintroduce a mixed-case name —
+rerun the endpoint, or revisit option 2 (email sign-in) if it recurs.

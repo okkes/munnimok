@@ -943,6 +943,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'import.preview': 'İçe aktarma önizlemesi',
   'import.newAccount': 'Yeni hesap',
   'import.txCount': '{n} işlem',
+  'import.runFailed': 'İçe aktarma başarısız — bağlantınızı kontrol edip tekrar deneyin',
   'import.through': 'veriler {when} kadar',
   'import.throughStale': 'dışa aktarım {when} bitiyor — sonrası eksik',
   'import.doImport': 'İçe aktar',

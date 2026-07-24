@@ -87,6 +87,41 @@ public class FeedEndpointsTests : IClassFixture<FeedsApiFactory>
     }
 
     [Fact]
+    public async Task An_orphaned_feed_is_reclaimable_but_a_living_owner_still_conflicts()
+    {
+        var feed = FeedId();
+        var aliceSub = $"alice_{Guid.NewGuid():N}";
+        var alice = ClientFor(aliceSub);
+        var bob = ClientFor($"bob_{Guid.NewGuid():N}");
+
+        Assert.Equal(HttpStatusCode.OK,
+            (await alice.PostAsJsonAsync("/feeds", new RegisterFeedRequest(feed, "NL69INGB0123456789"))).StatusCode);
+
+        // living owner: someone else stays conflicted
+        Assert.Equal(HttpStatusCode.Conflict,
+            (await bob.PostAsJsonAsync("/feeds", new RegisterFeedRequest(feed, "NL69INGB0123456789"))).StatusCode);
+
+        // the owner's user row disappears (account deletion / go-offline
+        // left the feed behind) — the feed becomes claimable instead of
+        // 409ing the next importer forever (staging 2026-07-24)
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var owner = await db.Users.FirstAsync(u => u.Sub == aliceSub);
+            db.Users.Remove(owner);
+            await db.SaveChangesAsync();
+        }
+
+        Assert.Equal(HttpStatusCode.OK,
+            (await bob.PostAsJsonAsync("/feeds", new RegisterFeedRequest(feed, "NL69INGB0123456789"))).StatusCode);
+        var feeds = await bob.GetFromJsonAsync<List<MyFeedDto>>("/me/feeds");
+        Assert.Contains(feeds!, f => f.FeedSpaceId == feed);
+        // and the new owner can push raw data
+        var push = await bob.PostAsJsonAsync($"/sync/{feed}/push", new PushRequest("dev1", [Op(feed)]));
+        Assert.True(push.IsSuccessStatusCode, await push.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
     public async Task Attachment_derives_member_read_access_and_discovery()
     {
         var feed = FeedId();

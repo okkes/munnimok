@@ -47,7 +47,19 @@ public static class UserResolution
             {
                 user = new User { Id = Guid.NewGuid(), Sub = sub };
                 db.Users.Add(user);
-                await db.SaveChangesAsync();
+                try
+                {
+                    await db.SaveChangesAsync();
+                }
+                catch (DbUpdateException)
+                {
+                    // a fresh app launch fires several requests at once and
+                    // they all JIT-provision the same sub — the unique index
+                    // (IX_Users_Sub) lets exactly one insert win; the losers
+                    // adopt that row instead of answering 500
+                    db.Entry(user).State = EntityState.Detached;
+                    user = await db.Users.FirstAsync(u => u.Sub == sub);
+                }
             }
             http.Items[ItemKey] = user.Id;
         }

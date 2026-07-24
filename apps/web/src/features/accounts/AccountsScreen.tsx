@@ -190,6 +190,7 @@ export function AccountsScreen() {
   const [importPreview, setImportPreview] = useState<ParsedStatement[] | null>(null);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [importError, setImportError] = useState(false);
+  const [runFailed, setRunFailed] = useState(false);
   // export-steps hint per format before the file dialog (user request)
   const [importPickOpen, setImportPickOpen] = useState(false);
   const identity = useSession((s) => s.identity);
@@ -242,7 +243,16 @@ export function AccountsScreen() {
     // syncing identities import into feed spaces (shared-accounts model);
     // demo/offline keep everything merged in the current space
     const feeds = identity?.kind === 'user' ? apiFeedGateway(identity.sub) : undefined;
-    setImportResult(await importCamtStatements(repo, store, spaceId, importPreview, feeds));
+    try {
+      setImportResult(await importCamtStatements(repo, store, spaceId, importPreview, feeds));
+    } catch {
+      // a failed run (feed registration, server away) must SAY so —
+      // a silently unchanged screen reads as "the app is broken"
+      // (user report 2026-07-24); the preview stays for a retry
+      setRunFailed(true);
+      return;
+    }
+    setRunFailed(false);
     void logActivity(store, repo, spaceId, 'importRun', `${importPreview.length}`);
     // a just-imported account may BE the counterparty of older rows
     // (and vice versa) — retro-link them (user rule)
@@ -255,6 +265,7 @@ export function AccountsScreen() {
   };
 
   const closeImport = () => {
+    setRunFailed(false);
     setImportPreview(null);
     setImportResult(null);
     setImportError(false);
@@ -479,6 +490,12 @@ export function AccountsScreen() {
         )}
         {!importError && !importResult && (
           <div className="flex flex-col gap-3 pt-1" data-testid="import-preview">
+            {runFailed && (
+              <div className="flex items-center gap-2 rounded-card bg-negative-soft px-4 py-3 text-[14px] text-negative" data-testid="import-run-error">
+                <Icon name="alert-circle-outline" size={18} />
+                {t('import.runFailed')}
+              </div>
+            )}
             {(importPreview ?? []).map((stmt, i) => {
               const iban = stmt.iban.replace(/\s/g, '').toUpperCase();
               const match = mine.find((e) => e.account.iban?.replace(/\s/g, '').toUpperCase() === iban)?.account;

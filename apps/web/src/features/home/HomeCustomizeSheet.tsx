@@ -31,6 +31,24 @@ export const HOME_BLOCK_LABELS: Record<HomeBlockId, TranslationKey> = {
   networth: 'trends.viewNetworth',
 };
 
+/** each block wears its own face — the plain text list read as a form
+ *  instead of a preview of Home (user feedback 2026-07-24) */
+export const HOME_BLOCK_ICONS: Record<HomeBlockId, string> = {
+  review: 'check-decagram-outline',
+  cashflow: 'swap-vertical',
+  overview: 'chart-donut',
+  transactions: 'format-list-bulleted',
+  budgets: 'wallet-outline',
+  allocation: 'view-grid-outline',
+  upcoming: 'calendar-clock',
+  goals: 'flag-outline',
+  debts: 'scale-balance',
+  events: 'calendar-star',
+  splits: 'account-group-outline',
+  insights: 'lightbulb-outline',
+  networth: 'chart-line',
+};
+
 export interface HomeBlockConfig {
   id: HomeBlockId;
   hidden: boolean;
@@ -88,16 +106,9 @@ export function HomeCustomizeSheet({ open, onOpenChange, space }: Readonly<{ ope
             ref={setRowRef(index)}
             data-testid={`home-block-row-${entry.id}`}
             style={rowStyle(index)}
-            className="flex items-center gap-2 border-b border-line-2 py-2 last:border-0"
+            className="flex items-center gap-2.5 border-b border-line-2 py-2 last:border-0"
           >
-            <button
-              aria-label={t('home.dragHandle')}
-              data-testid={`home-block-drag-${entry.id}`}
-              {...handleProps(index)}
-              className="m-tap flex h-9 w-7 cursor-grab items-center justify-center border-none bg-transparent text-ink-4"
-            >
-              <Icon name="drag-horizontal-variant" size={17} />
-            </button>
+            <Icon name={HOME_BLOCK_ICONS[entry.id]} size={19} color={entry.hidden ? 'var(--m-ink-4)' : 'var(--m-accent-deep)'} />
             <span className={`min-w-0 flex-1 truncate text-[14px] ${entry.hidden ? 'text-ink-4' : 'text-ink'}`}>
               {t(HOME_BLOCK_LABELS[entry.id])}
             </span>
@@ -109,6 +120,15 @@ export function HomeCustomizeSheet({ open, onOpenChange, space }: Readonly<{ ope
             >
               <Icon name={entry.hidden ? 'eye-off-outline' : 'eye-outline'} size={18} color={entry.hidden ? 'var(--m-ink-4)' : 'var(--m-accent-deep)'} />
             </button>
+            {/* handle on the RIGHT, matching the category manager (user request) */}
+            <button
+              aria-label={t('home.dragHandle')}
+              data-testid={`home-block-drag-${entry.id}`}
+              {...handleProps(index)}
+              className="m-tap flex h-9 w-9 shrink-0 cursor-grab touch-none items-center justify-center border-none bg-transparent text-ink-4 select-none"
+            >
+              <Icon name="drag-horizontal-variant" size={18} />
+            </button>
           </div>
         ))}
       </div>
@@ -116,11 +136,12 @@ export function HomeCustomizeSheet({ open, onOpenChange, space }: Readonly<{ ope
       {drag && ghost && (
         <div
           data-testid="home-block-ghost"
-          className="pointer-events-none fixed z-50 flex items-center gap-2 rounded-input border border-line bg-surface px-2 shadow-2xl"
+          className="pointer-events-none fixed z-50 flex items-center gap-2.5 rounded-input border border-accent bg-surface px-3 shadow-2xl"
           style={{ top: ghost.top, left: ghost.left, width: ghost.width, height: ghost.height }}
         >
-          <Icon name="drag-horizontal-variant" size={17} color="var(--m-ink-4)" />
-          <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{t(HOME_BLOCK_LABELS[blocks[drag.from].id])}</span>
+          <Icon name={HOME_BLOCK_ICONS[blocks[drag.from].id]} size={19} color="var(--m-accent-deep)" />
+          <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-ink">{t(HOME_BLOCK_LABELS[blocks[drag.from].id])}</span>
+          <Icon name="drag-horizontal-variant" size={18} color="var(--m-ink-4)" />
         </div>
       )}
     </Sheet>

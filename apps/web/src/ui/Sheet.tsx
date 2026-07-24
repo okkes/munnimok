@@ -328,6 +328,13 @@ export function Sheet({ open, onOpenChange, title, children, size, height }: Rea
       const goingDown = y > lastY;
       lastY = y;
       if (!e.cancelable) return; // native scroll already owns this gesture
+      // once vaul's drag is LIVE, the gesture belongs to the sheet until
+      // the finger lifts — wiggling up, crossing buttons or text must
+      // never hand it back to native scrolling (user rule 2026-07-24)
+      if (drawer.classList.contains('vaul-dragging')) {
+        e.preventDefault();
+        return;
+      }
       if (!scrollable) {
         e.preventDefault(); // nothing to scroll under the finger — all drag
         return;

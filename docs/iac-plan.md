@@ -206,55 +206,47 @@ credentials.** Consequences already folded in, plus two roadmap items:
   manual upload — irreducible).
 
 
-## Amendment 2026-07-24: three stacks + split admin (APPROVED IN PRINCIPLE, details open)
+## Amendment 2026-07-24 (corrected per user): shared-services stack + per-env stacks, split admin
 
-User direction: grow the twin into a **three-stack** topology and split
-the admin portal into **per-environment admins plus one shared admin**.
+The user's actual topology (my earlier "three environments" reading was
+wrong):
 
-### Three stacks
+### Stacks
 
-Today's pair (munni-iac-prod, munni-iac-staging) gains a third member:
+- **One SHARED stack** owning the cross-environment services: Logto,
+  GlitchTip, pgAdmin (and the shared postgres they ride). Deployed once,
+  upgraded on its own cadence — an env deploy can never take the login
+  or the error tracker down.
+- **One stack PER ENVIRONMENT** (staging, production, x, y, z…): api,
+  web, ocr, import-watch — everything that IS the app. Each env stack
+  points at the shared stack for identity/monitoring and at its own
+  database on the shared postgres.
 
-1. **munni-iac-dev** at `munni-iac-dev.<domain>` — tracks the dev
-   branch head automatically (what staging does today), free to break.
-2. **munni-iac-staging** becomes the RELEASE-CANDIDATE stack: it moves
-   only when a release PR is cut (release-please branch), so what you
-   test there is byte-identical to what prod will run.
-3. **munni-iac-prod** unchanged: moves on the release tag.
-
-Consequences the stack files absorb: three GitHub Environments, three
-deploy channels in deploy-nas/infra (VERSION, VERSION_RC,
-VERSION_DEV), Logto stays SHARED (one instance, three apps with their
-own redirect sets — the modules already render apps per stack), three
-databases on the shared postgres, and the NAS scheduler applies three
-markers. Cost: one more container set on the NAS (~web+api only; ocr/
-postgres/logto stay shared) — small.
+Infra consequence: `infra/stacks/` gains `munni-shared.jsonc` next to
+the per-env files; the render module splits services accordingly; the
+NAS poller applies the shared stack with its own marker (rarely moves).
+Env stacks list the shared endpoints as inputs — nothing shared is
+duplicated per env.
 
 ### Split admin portal
 
-Today one admin console talks to one environment. Target:
+Two APPS, not one app with modes:
 
-- **Per-env admin** (`admin-iac-dev/…-test/…` hosts): exactly today's
-  console, scoped to its own environment's API/database — diagnosing a
-  staging user can never touch prod data, and a broken dev admin build
-  never blocks prod support.
-- **Shared admin** (one host): the cross-environment concerns that
-  today have no home — GoCardless/EB provider quota + rate budgets
-  (provider limits are PER CREDENTIAL, shared by all envs), bank
-  catalog curation, Logto user overview, deploy/version dashboard (per
-  env: applied version, last apply, container recency — the NAS facts
-  we kept fetching by hand today).
+- **munni portal <env>** (one deployment per env stack): manages that
+  environment's DATA — categories, category keywords, users/diagnosis,
+  quota view for that env. Talks only to its own env's API.
+- **munni shared services portal** (one deployment, lives in the shared
+  stack): manages what is genuinely cross-env — GoCardless/Enable
+  Banking credentials + provider quota (limits are per credential,
+  shared by every env), Logto administration, and other shared-service
+  concerns as they appear.
 
-Implementation shape: the admin app gains an `ENV_TARGETS` config
-(rendered by infra per stack); "shared admin" is the same build with
-multiple targets + the provider/deploy panels enabled. One codebase,
-no fork. Auth: per-env admins use that env's Logto app; shared admin
-uses prod Logto with an explicit `admin:shared` scope.
+Codebase: keep one apps/admin codebase with two build TARGETS (env
+portal / shared portal) so components stay shared while the deployed
+apps stay separate. Auth: env portals use their env's Logto app; the
+shared portal gets its own Logto app with an explicit shared-admin
+scope.
 
-Open decisions before implementation (pick + I proceed):
-- (a) third stack rides the NAS like the others vs waits for the
-  Raspberry Pi host (Pi-first ordering above suggests the latter);
-- (b) shared-admin deploy/version dashboard: read-only, or with a
-  "re-apply now" trigger (needs an M2M route to the NAS poller);
-- (c) whether staging-as-RC changes your day-to-day testing flow (you
-  test dev features on the DEV stack from then on).
+Migration order: introduce the shared stack in the IaC pair first
+(munni-iac-shared + the twins consuming it), prove it, then fold the
+LIVE deployment the same way during IAC7.

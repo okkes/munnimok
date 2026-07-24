@@ -17,6 +17,13 @@ export const TX_DETAIL_BLOCK_LABELS: Record<TxDetailBlockId, TranslationKey> = {
   notes: 'tx.notes',
 };
 
+/** icons matching the sections they stand for (user feedback 2026-07-24) */
+export const TX_DETAIL_BLOCK_ICONS: Record<TxDetailBlockId, string> = {
+  reimburse: 'cash-refund',
+  receipts: 'receipt-text-outline',
+  notes: 'note-edit-outline',
+};
+
 export interface TxDetailBlockConfig {
   id: TxDetailBlockId;
   hidden: boolean;
@@ -76,16 +83,9 @@ export function TxDetailCustomizeSheet({
             ref={setRowRef(index)}
             data-testid={`tx-block-row-${entry.id}`}
             style={rowStyle(index)}
-            className="flex items-center gap-2 border-b border-line-2 py-2 last:border-0"
+            className="flex items-center gap-2.5 border-b border-line-2 py-2 last:border-0"
           >
-            <button
-              aria-label={t('home.dragHandle')}
-              data-testid={`tx-block-drag-${entry.id}`}
-              {...handleProps(index)}
-              className="m-tap flex h-9 w-7 cursor-grab items-center justify-center border-none bg-transparent text-ink-4"
-            >
-              <Icon name="drag-horizontal-variant" size={17} />
-            </button>
+            <Icon name={TX_DETAIL_BLOCK_ICONS[entry.id]} size={19} color={entry.hidden ? 'var(--m-ink-4)' : 'var(--m-accent-deep)'} />
             <span className={`min-w-0 flex-1 truncate text-[14px] ${entry.hidden ? 'text-ink-4' : 'text-ink'}`}>
               {t(TX_DETAIL_BLOCK_LABELS[entry.id])}
             </span>
@@ -101,6 +101,15 @@ export function TxDetailCustomizeSheet({
                 color={entry.hidden ? 'var(--m-ink-4)' : 'var(--m-accent-deep)'}
               />
             </button>
+            {/* handle on the RIGHT, matching the category manager (user request) */}
+            <button
+              aria-label={t('home.dragHandle')}
+              data-testid={`tx-block-drag-${entry.id}`}
+              {...handleProps(index)}
+              className="m-tap flex h-9 w-9 shrink-0 cursor-grab touch-none items-center justify-center border-none bg-transparent text-ink-4 select-none"
+            >
+              <Icon name="drag-horizontal-variant" size={18} />
+            </button>
           </div>
         ))}
       </div>
@@ -108,11 +117,12 @@ export function TxDetailCustomizeSheet({
       {drag && ghost && (
         <div
           data-testid="tx-block-ghost"
-          className="pointer-events-none fixed z-50 flex items-center gap-2 rounded-input border border-line bg-surface px-2 shadow-2xl"
+          className="pointer-events-none fixed z-50 flex items-center gap-2.5 rounded-input border border-accent bg-surface px-3 shadow-2xl"
           style={{ top: ghost.top, left: ghost.left, width: ghost.width, height: ghost.height }}
         >
-          <Icon name="drag-horizontal-variant" size={17} color="var(--m-ink-4)" />
-          <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{t(TX_DETAIL_BLOCK_LABELS[blocks[drag.from].id])}</span>
+          <Icon name={TX_DETAIL_BLOCK_ICONS[blocks[drag.from].id]} size={19} color="var(--m-accent-deep)" />
+          <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-ink">{t(TX_DETAIL_BLOCK_LABELS[blocks[drag.from].id])}</span>
+          <Icon name="drag-horizontal-variant" size={18} color="var(--m-ink-4)" />
         </div>
       )}
     </Sheet>

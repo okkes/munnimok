@@ -941,6 +941,7 @@ export const en = {
   'import.preview': 'Import preview',
   'import.newAccount': 'New account',
   'import.txCount': '{n} transactions',
+  'import.runFailed': 'Import failed — check your connection and try again',
   'import.through': 'data up to {when}',
   'import.throughStale': 'export ends {when} — anything newer is missing',
   'import.doImport': 'Import',
