@@ -1,5 +1,50 @@
 # Changelog
 
+## [2.22.0](https://github.com/okkes/munnimok/compare/v2.21.0...v2.22.0) (2026-07-24)
+
+
+### ✨ Features
+
+* **accounts:** AE1+AE3 — the one intent-routed Add-account chooser everywhere ([97ac745](https://github.com/okkes/munnimok/commit/97ac7457cb6decda20cf5c8d81578df9383b12fa))
+* **accounts:** three account tiers — manual tx only on manual accounts, space-scoped creation, provenance labels ([a7eddaf](https://github.com/okkes/munnimok/commit/a7eddaf7b6ede99c66fa378882f31b3dea6b95b7))
+* activity history prunes 200 rows or 90 days; onboarding country defaults from IP for signed-in users ([48b59b9](https://github.com/okkes/munnimok/commit/48b59b96f11c010e24a26f32acd7e605e6b49f8c))
+* **activity:** per-space action history — last 200 who-did-what rows in the bell ([1f847f8](https://github.com/okkes/munnimok/commit/1f847f829e1723c8d813650f160d41af7e8f2f40))
+* **auth:** go-offline always deletes server data (login survives), remote-wipe for other devices; danger zone moves to profile ([81852fa](https://github.com/okkes/munnimok/commit/81852fa8b0ebb28be383a6895840489b590ca71b))
+* **auth:** offline profile can be deleted — data, lock config and registry, danger-confirmed ([170793b](https://github.com/okkes/munnimok/commit/170793b26e54678a1411a6e17298e41d9c99b11f))
+* **auth:** online → offline conversion — identity rebind, consent screen, manual-tier flip (OO1-OO4) ([0ec7429](https://github.com/okkes/munnimok/commit/0ec74299e7eda4c5bfd030a53cd7e83465dcff70))
+* **cats:** drag-to-move restored — custom subs drag onto another main with ghost + target highlight ([bfbca86](https://github.com/okkes/munnimok/commit/bfbca86dc71aa39a41c88c29ba576e902001dc60))
+* **currency:** CD4 — lens across all money surfaces + band quick toggle; AE2 attach offer; AE4 vocabulary ([9adab43](https://github.com/okkes/munnimok/commit/9adab43b0aea5bad7b9ea36d43bd74c73aac85ab))
+* **currency:** display-currency lens — ECB rates, user-level preference, ≈ everywhere it converts ([b15505e](https://github.com/okkes/munnimok/commit/b15505ebdfc51efadb6c8d8343389b92676e54ba))
+* **encryption:** E3a cipher proof + verify probe, E3b encrypted-by-default for fresh native installs ([ae0a13a](https://github.com/okkes/munnimok/commit/ae0a13a4be9ec4538801cb19f1e4b022a247267f))
+* **encryption:** E4 — SQLCipher always-on for native, Dexie copy-migration; Sonar hotspots resolved; green see-all ([de20bb5](https://github.com/okkes/munnimok/commit/de20bb57b37978ccb362c2ba78f848ef379b70fa))
+* **help:** space-accounts tutorial — three account tiers, slides + live walkthrough ([8f96887](https://github.com/okkes/munnimok/commit/8f96887d63fe68260b225f2205439edf3d1938de))
+* **import:** ING exports fully supported — bilingual, all five shapes, balance files, format picker ([13d152e](https://github.com/okkes/munnimok/commit/13d152e1bcf0e6c2fba4e82046ae4e56d5e52309))
+* **infra:** domain as secret, Logto social connectors as code, baby-steps README, secrets-access plan ([305c787](https://github.com/okkes/munnimok/commit/305c787022c68aaad4965f30b83cd5f02681aa19))
+* **infra:** DSM v7 auth with SynoToken; cert automation settles on acme.sh synology_dsm hook ([76ac147](https://github.com/okkes/munnimok/commit/76ac147f98019287ed1b38480549df5bfefa1db4))
+* **infra:** IaC runs in GitHub Actions + DSM reverse proxy as code ([2bb2318](https://github.com/okkes/munnimok/commit/2bb23185ea3276cae0c112c4e67dc265f1fcb336))
+* **infra:** Logto sign-in screen branded as code — munni logo + brand color ([cc44d61](https://github.com/okkes/munnimok/commit/cc44d61e33bc5cfbd845e63805af1998aab72d6f))
+* offline two-step screens + single profile, activity actor names, detach-loss warning, account currency pick ([a4590bf](https://github.com/okkes/munnimok/commit/a4590bf949ae501994f1f59c2b12fdb9b0c32971))
+* **onboarding:** one first-run setup for online AND offline — profile, language, country of use, avatar, lock ([8fc3311](https://github.com/okkes/munnimok/commit/8fc3311598f4ea88785b0ba27c708fa75bcf30c2))
+* **settings:** restructure settings — space card header, profile to global, period/currency/history as own settings ([a7737fe](https://github.com/okkes/munnimok/commit/a7737fe309714c0723a7fd7d3c1c7ac6d644cb6a))
+* **tx:** manual add uses the SAME unified category editor as review ([13b03ff](https://github.com/okkes/munnimok/commit/13b03ff81b66c3f7e47cb77b4b52d9b54a1c3e82))
+* **ui:** offline country-flag icons for language and country fields ([0f33fe2](https://github.com/okkes/munnimok/commit/0f33fe25d442ddef74f90ab514f878a66c4a0284))
+* **ui:** stacked sheets step down in height, recede releases instantly, category Save is sticky ([5245576](https://github.com/okkes/munnimok/commit/52455765307824ab08dd458590fb429120c90702))
+
+
+### 🐞 Bug Fixes
+
+* **ci:** commit the workspace lockfile for flag-icons ([5b293ea](https://github.com/okkes/munnimok/commit/5b293eaab99cc960e7d65f7341dc28b82b2cd2d6))
+* **ci:** iOS uploads only from master/dispatch (Apple daily cap); self-heal the NAS apply lock ([8a023b6](https://github.com/okkes/munnimok/commit/8a023b6b24321efb0c741096ab6aeb15ed1e1a11))
+* **db:** serialize SQL transactions — SQLCipher choked on concurrent Repo writes ([71bb04f](https://github.com/okkes/munnimok/commit/71bb04fa444087d3670c039edba7626ea0cb298d))
+* **e2e:** align gallery specs with danger sheets, rich demo and onboarding lock; feat(auth): offline intro is a full screen ([ae471a3](https://github.com/okkes/munnimok/commit/ae471a323f792d82ea48d3a106a5c65fb3d730bd))
+* **e2e:** base() completes the non-skippable onboarding for fresh users ([8170d8e](https://github.com/okkes/munnimok/commit/8170d8ec2547abda57fee9cb00d27e908afae7c9))
+* **platform:** universal-link handling drops the hardcoded host pin ([01e4933](https://github.com/okkes/munnimok/commit/01e4933a41bf3ffaefb92df3e5324e70cd33f269))
+* **platform:** universal-link hosts derive from publicOrigin — foreign hosts still refused ([9ba3234](https://github.com/okkes/munnimok/commit/9ba323434ed63348868153259feed4c6d5ae585f))
+* **review:** split editor seeds the draft category, rows removable in review, bulk skips skipped, main+sub shown; feat(cats): soft-drinks sub + Other-income rename ([8bfe156](https://github.com/okkes/munnimok/commit/8bfe1567ca9879fff5f63e0b21fbe1b769595af3))
+* **sync:** quarantine 400-rejected ops instead of wedging the space ([c9cdd24](https://github.com/okkes/munnimok/commit/c9cdd24bb53985321a5c35d68d9df25c45d672bf))
+* **tests:** CategoryPicker suite follows the unified editor; add-form picker filters by direction only ([d95b348](https://github.com/okkes/munnimok/commit/d95b3488b2ba22e218c5c387e1b82484b14e8205))
+* **ui:** sheets show stack depth and stop Safari paint glitches on grown content ([e6f0bb5](https://github.com/okkes/munnimok/commit/e6f0bb5e3911a6b0a1f5a20be0e5efd3358fbcde))
+
 ## [2.21.0](https://github.com/okkes/munnimok/compare/v2.20.1...v2.21.0) (2026-07-22)
 
 
