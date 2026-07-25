@@ -494,7 +494,7 @@ describe('import batches (master plan IB)', () => {
     await repo.upsert('account', 'feed-1', 'feedacct-1', {
       name: 'ING Betaal',
       type: 'checking',
-      source: 'import',
+      source: 'camt053',
       currency: 'EUR',
       balanceCents: 5000,
       iban: 'NL69INGB0123456789',
