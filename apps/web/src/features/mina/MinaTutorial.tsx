@@ -157,15 +157,19 @@ export function MinaTutorial() {
     if (screen) void navigate({ to: screen });
   }, [screen, navigate]);
 
-  // publish form suggestions for the live step
+  // publish form suggestions for the live step — AND the upcoming one:
+  // the form usually opens during the preceding gate step (the + click),
+  // before the act step is current
   useEffect(() => {
-    if (!step?.suggestKey) return;
-    const value = t(step.suggestKey);
-    if (step.act?.entity === 'space') setMinaSuggestions({ spaceName: value });
-    else if (step.act?.entity === 'account') setMinaSuggestions({ accountName: value });
-    else if (step.act?.entity === 'transaction') setMinaSuggestions({ txMerchant: value, txAmount: '12,34' });
+    if (!run?.active) return;
+    const source = [MINA_STEPS[run.step], MINA_STEPS[run.step + 1]].find((s) => s?.suggestKey);
+    if (!source?.suggestKey) return;
+    const value = t(source.suggestKey);
+    if (source.act?.entity === 'space') setMinaSuggestions({ spaceName: value });
+    else if (source.act?.entity === 'account') setMinaSuggestions({ accountName: value });
+    else if (source.act?.entity === 'transaction') setMinaSuggestions({ txMerchant: value, txAmount: '12,34' });
     return () => setMinaSuggestions({});
-  }, [step, t, lang]);
+  }, [run?.active, run?.step, t, lang]);
 
   // anchor tracking: rAF-driven re-measure (scroll/resize/sheet motion)
   const anchorKey = step?.anchor?.join(',') ?? '';
