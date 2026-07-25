@@ -95,6 +95,23 @@ describe('importCamtStatements', () => {
     expect(account?.lastSyncedAt).toBeTruthy();
   });
 
+  it('stamps rows with a batch id; re-imports keep their FIRST batch (rollback unit)', async () => {
+    const store = new DexieBackend(db);
+    await importCamtStatements(repo, store, 's1', [statement()]);
+    const first = await db.transactions.toArray();
+    expect(first).toHaveLength(3);
+    const firstBatch = first[0].importBatchId!;
+    expect(firstBatch).toBeTruthy();
+    expect(first.every((t) => t.importBatchId === firstBatch)).toBe(true);
+
+    // overlapping re-import: dedupe means the original batch still owns
+    // the rows — rolling back the SECOND upload must remove nothing
+    await importCamtStatements(repo, store, 's1', [statement()]);
+    const after = await db.transactions.toArray();
+    expect(after).toHaveLength(3);
+    expect(after.every((t) => t.importBatchId === firstBatch)).toBe(true);
+  });
+
   it('twice-confirmed merchant history overrides keywords and skips review', async () => {
     await repo.upsert('space', 's1', 's1', { name: 'P', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
     // the user categorized this merchant twice by hand (reviewed rows)

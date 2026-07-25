@@ -97,6 +97,15 @@ interface EntryContext {
   iban: string;
   memory: MerchantMemory;
   keywordRules?: readonly { catId: string; keywords: string[] }[];
+  /** master plan IB: one id per statement per run — rollback's unit */
+  batchId: string;
+  /** uploader display name, frozen at import time */
+  importedBy?: string;
+}
+
+/** the uploader's display name (same source the activity history freezes) */
+async function uploaderName(store: StorageBackend): Promise<string | undefined> {
+  return ((await store.metaGet('profile'))?.value as { name?: string } | undefined)?.name;
 }
 
 /** returns true when the entry was new (imported), false when it already existed */
@@ -114,6 +123,8 @@ async function importEntry(ctx: EntryContext, entry: ParsedStatement['entries'][
     ...(entry.counterpartyIban ? { counterIban: normalizeIban(entry.counterpartyIban) } : {}),
     ...predictEntry(ctx.memory, entry, ctx.keywordRules),
     importRef: entry.ref,
+    importBatchId: ctx.batchId,
+    ...(ctx.importedBy ? { importedBy: ctx.importedBy } : {}),
   });
   return true;
 }
@@ -189,6 +200,7 @@ async function importMerged(
   statements: ParsedStatement[],
 ): Promise<ImportResult> {
   const memory = await buildSpaceMerchantMemory(store, spaceId);
+  const importedBy = await uploaderName(store);
   const keywordRules = (await cachedCatalog(store))?.keywords;
   const existing = (await store.bySpace('account', spaceId)).filter((a) => a.deleted === 0);
   const byIban = new Map(existing.flatMap((a) => (a.iban ? [[normalizeIban(a.iban), a] as const] : [])));
@@ -211,8 +223,9 @@ async function importMerged(
     await stampCoverage(repo, spaceId, accountId, match, stmt);
 
     let txCount = 0;
+    const batchId = crypto.randomUUID();
     for (const entry of stmt.entries) {
-      if (await importEntry({ repo, store, spaceId, accountId, iban, memory, keywordRules }, entry)) {
+      if (await importEntry({ repo, store, spaceId, accountId, iban, memory, keywordRules, batchId, importedBy }, entry)) {
         imported++;
         txCount++;
       } else {
@@ -246,6 +259,7 @@ async function importIntoFeeds(
   feeds: FeedGateway,
 ): Promise<ImportResult> {
   const memory = await buildSpaceMerchantMemory(store, spaceId);
+  const importedBy = await uploaderName(store);
   const keywordRules = (await cachedCatalog(store))?.keywords;
   let imported = 0;
   let skipped = 0;
@@ -268,8 +282,9 @@ async function importIntoFeeds(
     await stampCoverage(repo, feedId, accountId, account, stmt);
 
     let txCount = 0;
+    const batchId = crypto.randomUUID();
     for (const entry of stmt.entries) {
-      if (await importFeedEntry({ repo, store, spaceId, accountId, iban, memory, keywordRules }, feedId, entry)) {
+      if (await importFeedEntry({ repo, store, spaceId, accountId, iban, memory, keywordRules, batchId, importedBy }, feedId, entry)) {
         imported++;
         txCount++;
       } else {
@@ -315,6 +330,8 @@ async function importFeedEntry(
     description: entry.description,
     ...(entry.counterpartyIban ? { counterIban: normalizeIban(entry.counterpartyIban) } : {}),
     importRef: entry.ref,
+    importBatchId: ctx.batchId,
+    ...(ctx.importedBy ? { importedBy: ctx.importedBy } : {}),
   });
 
   await ctx.repo.upsert('txMeta', ctx.spaceId, txMetaId(ctx.spaceId, txId), {

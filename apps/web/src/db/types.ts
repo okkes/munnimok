@@ -139,6 +139,11 @@ export interface TransactionRow extends SyncEnvelope {
   pending?: 0 | 1;
   /** deterministic id source for imported rows (bank tx id / CAMT entry ref) */
   importRef?: string;
+  /** master plan IB: which upload created this row — rollback removes a
+   *  batch's rows and ONLY its rows (deduped rows keep their first batch) */
+  importBatchId?: string;
+  /** display name of the uploader at import time (frozen, like activity) */
+  importedBy?: string;
   reimbursements?: TxReimbursement[];
   /** counter-account for transfers/savings/debt payments — locks txType */
   linkedAccountId?: string;

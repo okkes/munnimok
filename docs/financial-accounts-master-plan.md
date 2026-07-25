@@ -1,6 +1,7 @@
 # Financial accounts — the master plan
 
-Status: **DESIGN — awaiting approval** (2026-07-23). Supersedes
+Status: **IMPLEMENTED (v1) 2026-07-25** — see the slice ledger at the
+bottom for what shipped versus what is deliberately deferred. Supersedes
 `manual-accounts-global-plan.md` (AT1/AT3 shipped; AT2/AT4 fold in
 here). Input: the user's ChatGPT consultation — its core insight is
 adopted wholesale, mapped onto what munni already has.
@@ -124,12 +125,46 @@ online→offline flips external accounts to manual-continuation per
 docs/online-to-offline-plan.md; offline→online uploads local feeds as
 fresh external accounts with the migrating user as administrator.
 
-## Open questions
+## Answers (user, 2026-07-24)
 
-1. Roles: fine with auto-granting **Contributor** to all members of a
-   space the account is attached to (ChatGPT's "practical default"),
-   or should the administrator flip a switch per space?
-2. Rollback surface: admin-app only at first, or in the member app's
-   account sheet from day one?
-3. The controlled MERGE of two previously-separate personal feeds:
-   worth building in v1, or defer until someone actually hits it?
+1. Auto-grant Contributor — "decide based on what you think is
+   actually good, UX and security wise".
+2. Rollback in the **member app's account sheet from day 1**.
+3. Merge: **worth building in v1**. Plus requirement x: linked is the
+   truth; mismatches judged on in-between dates (never the edges);
+   the user sees EVERY mismatched transaction before deletion; edit
+   migration is offered per match and can be ignored; munni
+   auto-suggests when IBANs match.
+
+## Slice ledger (v1, shipped 2026-07-25)
+
+- **EV / requirement x — SHIPPED**: `domain/reconcile.ts` +
+  `application/reconcile.ts` + ReconcileSheet. Provenance by reference
+  shape (synthetic `ing:`/`paypal:` vs bank references; CAMT real refs
+  dedupe against providers by id already). Linked coverage judged with
+  exclusive edges; matches migrate edits across all space overlays
+  (per-match opt-out), receipts follow, reimbursement links re-point,
+  mismatches listed in full before deletion, pre-coverage history
+  survives. Auto-suggest on the accounts screen for mixed-source
+  accounts AND same-IBAN linked+imported pairs.
+  *Deferred within EV*: a physical `TransactionEvidence` table and
+  moving pre-coverage rows INTO the linked feed (the old imported
+  account remains as the history holder after a pair reconcile) — do
+  this when someone actually needs the old account gone.
+- **IB — SHIPPED (derived form)**: every imported row is stamped
+  `importBatchId` + `importedBy` (one batch per statement per run);
+  the account sheet lists uploads (count, date range, uploader) with
+  per-batch rollback — a batch removes only rows it created, deduped
+  rows keep their first batch. A separate server-side ImportBatch
+  table (raw payload retention, re-parse) is deferred: the derived
+  form already gives attribution + rollback with zero new sync
+  surface.
+- **RO — DEFERRED**: today's de-facto roles (feed owner = admin;
+  pooling rule for co-contribution) match the plan's defaults; the
+  explicit grant table waits until a real second-contributor case
+  appears.
+- **ID — DEFERRED to SEC4**: HMAC identities + IBAN encryption belong
+  in the backend-security arc; the orphaned-feed reclaim (2026-07-25)
+  removed the sharpest edge of the guessable-id class meanwhile.
+- **LC — DOCUMENTED**: lifecycle is current behavior as stated above;
+  the account-deletion cascade is the terminal step.
