@@ -474,3 +474,58 @@ describe('reconcile suggestion (master plan: linked is the truth)', () => {
     check.close();
   }, 20_000);
 });
+
+describe('import batches (master plan IB)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase('munni_demo');
+  });
+
+  it('the attach sheet lists statement uploads and rolls one back — only ITS rows fall', async () => {
+    const first = renderApp('/accounts');
+    await screen.findByTestId('account-row-demo_main');
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('ib-ui'), { trackOutbox: false });
+    await repo.upsert('account', 'feed-1', 'feedacct-1', {
+      name: 'ING Betaal',
+      type: 'checking',
+      source: 'import',
+      currency: 'EUR',
+      balanceCents: 5000,
+      iban: 'NL69INGB0123456789',
+    });
+    await repo.upsert('accountLink', 'demo_space', 'link-1', { feedSpaceId: 'feed-1', accountId: 'feedacct-1', attachedByName: 'Okkes' });
+    const raw = { accountId: 'feedacct-1', currency: 'EUR', txType: 'expense' as const, needsReview: 0 as const };
+    // one two-row batch (with an uploader name) and one row a LATER upload
+    // merely re-encountered — it keeps its first batch and must survive
+    await repo.upsert('transaction', 'demo_space', 'B1a', { ...raw, date: '2026-06-03', amountCents: -100, merchant: 'A', importRef: 'ing:b:1', importBatchId: 'batch-1', importedBy: 'Okkes' });
+    await repo.upsert('transaction', 'demo_space', 'B1b', { ...raw, date: '2026-06-07', amountCents: -200, merchant: 'B', importRef: 'ing:b:2', importBatchId: 'batch-1', importedBy: 'Okkes' });
+    await repo.upsert('transaction', 'demo_space', 'B2a', { ...raw, date: '2026-06-09', amountCents: -300, merchant: 'C', importRef: 'ing:b:3', importBatchId: 'batch-2' });
+    db.close();
+    first.unmount();
+
+    renderApp('/accounts');
+    fireEvent.click(await screen.findByTestId('account-row-feedacct-1', {}, { timeout: 5000 }));
+    const list = await screen.findByTestId('attach-imports', {}, { timeout: 5000 });
+    // batch-1 spans its rows' dates and names its uploader
+    expect(list.textContent).toContain('2026-06-03');
+    expect(list.textContent).toContain('2026-06-07');
+    expect(list.textContent).toContain('Okkes');
+
+    fireEvent.click(screen.getByTestId('attach-rollback-batch-1'));
+    fireEvent.click(await screen.findByTestId('attach-rollback-confirm', {}, { timeout: 5000 }));
+    // batch-1's rows tombstone; batch-2's row (and its list entry) survive
+    await waitFor(() => expect(screen.queryByTestId('attach-rollback-batch-1')).toBeNull(), { timeout: 5000 });
+    expect(screen.getByTestId('attach-rollback-batch-2')).toBeTruthy();
+    const check = new MunniDB('munni_demo');
+    expect((await check.transactions.get('B1a'))?.deleted).toBe(1);
+    expect((await check.transactions.get('B1b'))?.deleted).toBe(1);
+    expect((await check.transactions.get('B2a'))?.deleted).toBe(0);
+    check.close();
+  }, 20_000);
+});

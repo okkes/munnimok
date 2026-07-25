@@ -249,8 +249,22 @@ describe('welcome walkthrough run (signed-in identity)', () => {
     expect(actCard.textContent).toContain(en['tour.welcome.2t']);
     expect(screen.getByTestId('walkthrough-act-state').textContent).toBe(en['tour.welcome.stepWaiting']);
 
+    // the user "creates an account": a NEW element with the act prefix
+    // appears — the poll ticks the step done and the tour advances itself
+    const made = document.createElement('div');
+    made.dataset.testid = 'space-account-made-by-user';
+    document.body.appendChild(made);
+    await waitFor(
+      () => expect(screen.getByTestId('walkthrough-act-state').textContent).toBe(en['tour.welcome.stepDone']),
+      { timeout: 5000 },
+    );
+    await waitFor(() => expect(screen.getByTestId('spotlight-title').textContent).toBe(en['tour.welcome.3t']), {
+      timeout: 5000,
+    });
+    made.remove();
+
     // ending early keeps the Home card alive (welcomeTourDone unset)
     fireEvent.click(screen.getByTestId('spotlight-end'));
-    await waitFor(() => expect(screen.queryByTestId('walkthrough-act-card')).toBeNull());
+    await waitFor(() => expect(screen.queryByTestId('spotlight-card')).toBeNull());
   }, 20_000);
 });
