@@ -62,7 +62,7 @@ export function reconcilePlan(rows: readonly TransactionRow[]): ReconcilePlan {
   }
 
   const dates = linked.map((r) => r.date).sort((a, b) => a.localeCompare(b));
-  const coverage = { from: dates[0], to: dates[dates.length - 1] };
+  const coverage = { from: dates[0], to: dates.at(-1)! };
 
   const byShape = new Map<string, TransactionRow[]>();
   for (const row of linked) {

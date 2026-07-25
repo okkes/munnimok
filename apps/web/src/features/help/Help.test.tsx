@@ -222,3 +222,35 @@ describe('welcome card (signed-in identity)', () => {
     await waitFor(() => expect(screen.queryByTestId('welcome-tour-card')).toBeNull(), { timeout: 5000 });
   }, 15_000);
 });
+
+describe('welcome walkthrough run (signed-in identity)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+  });
+
+  it('starts on the space step, walks to an act step, and End keeps the card resumable', async () => {
+    const { USER_TEST_DB, renderAppAsUser } = await import('@/test/harness');
+    indexedDB.deleteDatabase(USER_TEST_DB);
+    renderAppAsUser('/home');
+    fireEvent.click(await screen.findByTestId('welcome-tour-start', {}, { timeout: 5000 }));
+
+    // fresh identity → step 1 (meet your space) on the settings screen
+    await screen.findByTestId('spotlight-card', {}, { timeout: 5000 });
+    await waitFor(() => expect(screen.getByTestId('spotlight-title').textContent).toBe(en['tour.welcome.1t']), {
+      timeout: 5000,
+    });
+    await screen.findByTestId('screen-settings', {}, { timeout: 5000 });
+
+    // next lands on the ACT step: non-blocking card, waiting for the
+    // user's own account creation on the space's accounts screen
+    fireEvent.click(screen.getByTestId('spotlight-next'));
+    const actCard = await screen.findByTestId('walkthrough-act-card', {}, { timeout: 5000 });
+    expect(actCard.textContent).toContain(en['tour.welcome.2t']);
+    expect(screen.getByTestId('walkthrough-act-state').textContent).toBe(en['tour.welcome.stepWaiting']);
+
+    // ending early keeps the Home card alive (welcomeTourDone unset)
+    fireEvent.click(screen.getByTestId('spotlight-end'));
+    await waitFor(() => expect(screen.queryByTestId('walkthrough-act-card')).toBeNull());
+  }, 20_000);
+});
