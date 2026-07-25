@@ -138,6 +138,15 @@ export function OnboardingScreen() {
   };
 
   const finish = async () => {
+    // Mina takes over IMMEDIATELY after the form (user ruling: no
+    // opt-in card, no Home in between) — once per identity
+    const pending = (await store.metaGet('minaTutorialPending'))?.value;
+    const done = (await store.metaGet('minaTutorialDone'))?.value;
+    if (pending && !done) {
+      await store.metaDelete('minaTutorialPending');
+      await store.metaPut('minaTutorialState', { active: true, step: 0, ledger: [] });
+      window.dispatchEvent(new Event('mina:start'));
+    }
     await navigate({ to: '/home' });
   };
 

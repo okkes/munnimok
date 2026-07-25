@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
+import { minaSuggestedAccountName } from '@/features/mina/steps';
 import { useLang } from '@/i18n';
 import { useQuery } from '@/db/useQuery';
 import { useData } from '@/app/data';
@@ -63,6 +64,12 @@ export function AddAccountChooser({
     close(false);
     void navigate({ to: '/accounts' });
   };
+
+  // Mina suggests the demo account's name; the user still presses Add
+  useEffect(() => {
+    if (step === 'manual' && newType && !name) setName(minaSuggestedAccountName() ?? '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, newType]);
 
   const createManual = () => {
     const cents = parseCents(balance || '0');

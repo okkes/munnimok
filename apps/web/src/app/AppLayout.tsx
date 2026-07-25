@@ -12,6 +12,7 @@ import { useStoreKeepAlive } from '@/application/stores';
 import { collectBudgetAlerts } from '@/sync/swBudgets';
 import { hapticNotify } from '@/lib/platform';
 import { EdgeSwipeBack } from '@/ui/EdgeSwipeBack';
+import { MinaTutorial } from '@/features/mina/MinaTutorial';
 import { Icon } from '@/ui/Icon';
 import { Logo } from '@/ui/Logo';
 
@@ -195,6 +196,7 @@ export function AppLayout() {
             <StoreKeepAlive />
             <BudgetAlerts />
             <EdgeSwipeBack />
+            <MinaTutorial />
             </DisplayMoneyProvider>
           </DataProvider>
         </div>

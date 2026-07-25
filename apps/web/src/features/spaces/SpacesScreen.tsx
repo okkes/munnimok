@@ -11,6 +11,7 @@ import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
+import { minaSuggestedSpaceName } from '@/features/mina/steps';
 
 /**
  * Spaces: separate bookkeeping areas, shared with other people or not.
@@ -76,7 +77,9 @@ export function SpacesScreen() {
               label={t('space.new')}
               testId="spaces-add"
               onClick={() => {
-                setName('');
+                // Mina suggests the first names ("Private", "Family") —
+                // the user still edits and presses Create themselves
+                setName(minaSuggestedSpaceName() ?? '');
                 setCreateOpen(true);
               }}
             >

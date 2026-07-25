@@ -57,6 +57,14 @@ function popVisual(id: number) {
 /** true while any sheet is open — global gestures (edge-swipe back) must stand down */
 export const hasOpenSheet = (): boolean => visualStack.length > 0;
 
+// every open sheet registers its close callback; the Mina tutorial (and
+// only flows like it) dismisses leftovers before moving to a step whose
+// target lives outside any sheet
+const sheetClosers = new Map<number, () => void>();
+export function closeAllSheets(): void {
+  for (const close of [...sheetClosers.values()].reverse()) close();
+}
+
 // ── drag-linked zoom (imperative) ────────────────────────────────────────
 // Covered parents recede; while the TOP sheet is dragged toward dismissal
 // they grow back IN STEP with the finger, both directions. This is driven
@@ -276,6 +284,12 @@ function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, foote
 export function Sheet({ open, onOpenChange, title, children, size, height, footer }: Readonly<SheetProps>) {
   const requested = height ?? (size ? SIZE_PX[size] : undefined);
   const { id, isLocked, depth } = useSheetStack(open);
+  // registered while open so closeAllSheets() can dismiss leftovers
+  useEffect(() => {
+    if (!open) return;
+    sheetClosers.set(id, () => onOpenChange(false));
+    return () => void sheetClosers.delete(id);
+  }, [open, id, onOpenChange]);
   // stacked sheets step DOWN in height (28px per level, floor 280) so
   // the parent's receded edge stays visible — the depth cue the thin
   // drag bar alone never gave (user request)

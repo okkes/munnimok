@@ -179,7 +179,8 @@ describe('TxFormSheet (demo identity)', () => {
     fireEvent.click(screen.getByTestId('tx-add'));
     await screen.findByTestId('txform-save');
     await screen.findByTestId('txform-account-demo_save'); // the manual ones stay
-    expect(screen.queryByTestId('txform-account-demo_main')).toBeNull();
+    // the cross-connection write lands via a live re-emission — await it
+    await waitFor(() => expect(screen.queryByTestId('txform-account-demo_main')).toBeNull(), { timeout: 5000 });
   });
 
   it('the income toggle stores a positive amount', async () => {

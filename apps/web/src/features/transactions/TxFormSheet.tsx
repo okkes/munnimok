@@ -18,6 +18,7 @@ import { CategoryPicker } from '@/features/categories/CategoryPicker';
 import { SplitEditorSheet } from './SplitEditorSheet';
 import { primaryCatId } from '@/domain/splits';
 import { kindOf } from '@/domain/txKind';
+import { minaSuggestedTx } from '@/features/mina/steps';
 import type { TxKind } from '@/domain/txKind';
 import { CounterpartySheet, TX_KIND_VISUAL, TxKindSheet, kindDetail } from './TxKindSheet';
 
@@ -137,10 +138,13 @@ function KindRows({
  *  (S3776: the branch lives out of the component) */
 function initialFormState(tx: TransactionRow | undefined) {
   if (!tx) {
+    // Mina's demo suggestion pre-fills; the user edits freely and the
+    // act-step accepts ANY values (approval remark 2)
+    const suggested = minaSuggestedTx();
     return {
-      amount: '',
+      amount: suggested?.amount ?? '',
       isExpense: true,
-      merchant: '',
+      merchant: suggested?.merchant ?? '',
       date: todayIso(),
       accountId: null,
       catId: UNCATEGORIZED_ID,

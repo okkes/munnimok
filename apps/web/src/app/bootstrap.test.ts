@@ -62,17 +62,16 @@ const setup = () => {
 const FAST_RETRY_MS = 5;
 
 describe('bootstrapUserSpaces (fail closed)', () => {
-  it('does NOT create a space while the server is unreachable; creates once confirmed empty', async () => {
+  it('creates NO space even once confirmed empty — the Mina tutorial owns the first one', async () => {
     const { db, repo, server, engine } = setup();
     server.failuresLeft = 2;
 
     await bootstrapUserSpaces(new DexieBackend(db), repo, engine, () => false, FAST_RETRY_MS);
 
-    // exactly ONE personal space, created only after the server said "none"
-    const spaces = await db.spaces.filter((s) => s.deleted === 0).toArray();
-    expect(spaces).toHaveLength(1);
-    expect(spaces[0].kind).toBe('personal');
+    // brand-new user: zero spaces, onboarding + tutorial pending flags set
+    expect(await db.spaces.filter((s) => s.deleted === 0).count()).toBe(0);
     expect((await db.meta.get('needsOnboarding'))?.value).toBe(true);
+    expect((await db.meta.get('minaTutorialPending'))?.value).toBe(true);
     db.close();
   });
 
@@ -111,7 +110,9 @@ describe('bootstrapUserSpaces (fail closed)', () => {
     await bootstrapUserSpaces(new DexieBackend(db), repo, engine, () => false, FAST_RETRY_MS, (n) => reported.push(n));
 
     expect(reported).toEqual([1, 2, 3]); // one per failed round, then success
-    expect((await db.spaces.filter((s) => s.deleted === 0).toArray())).toHaveLength(1);
+    // confirmed empty → tutorial pending, still no auto-created space
+    expect((await db.meta.get('minaTutorialPending'))?.value).toBe(true);
+    expect(await db.spaces.filter((s) => s.deleted === 0).count()).toBe(0);
     db.close();
   });
 

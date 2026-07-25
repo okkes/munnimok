@@ -1,6 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { v7 as uuidv7 } from 'uuid';
 import { useLang } from '@/i18n';
 import { Icon } from '@/ui/Icon';
 import { identityDbName } from '@/db/schema';
@@ -19,7 +18,6 @@ import { ensurePersistentStorage } from '@/lib/platform';
 import { getAccessToken, waitForAuthReady } from './authToken';
 import { identityKey, useSession } from './session';
 import type { Identity } from './session';
-import { DEFAULT_HISTORY_MONTHS, isoMonthsAgo } from '@/features/spaces/spaceDefaults';
 
 const ACTIVE_SPACE_KEY = 'activeSpaceId';
 /** id of a personal space this device created during bootstrap (self-heal marker) */
@@ -65,19 +63,11 @@ export async function bootstrapUserSpaces(
   if (isCancelled()) return;
 
   if (!(await hasLocalSpaces())) {
-    // server confirmed: brand-new user — create the personal space once
-    const personalId = uuidv7();
-    await repo.upsert('space', personalId, personalId, {
-      name: 'Personal',
-      kind: 'personal',
-      currency: 'EUR',
-      periodType: 'month',
-      periodDay: 1,
-      historyStartDate: isoMonthsAgo(DEFAULT_HISTORY_MONTHS),
-    });
-    await store.metaPut(BOOTSTRAP_SPACE_KEY, personalId);
-    // show the one-time onboarding (this device created the space)
+    // server confirmed: brand-new user. NO space is created any more
+    // (Mina tutorial, user ruling): the ≥1-space rule is suspended until
+    // the tutorial's create-step (or its skip path) provides one.
     await store.metaPut('needsOnboarding', true);
+    await store.metaPut('minaTutorialPending', true);
     return;
   }
 
@@ -257,19 +247,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
         await migrateUnlinkedTransferKinds(store, repo);
       })().catch(() => undefined);
       if (identity.kind === 'offline' && (await liveSpaces(store)).length === 0) {
-        // fully local profile: personal space named after the profile
-        const { offlineProfileName } = await import('@/features/auth/offlineProfiles');
-        const personalId = uuidv7();
-        await repo.upsert('space', personalId, personalId, {
-          name: offlineProfileName(identity.profileId) ?? 'Personal',
-          kind: 'personal',
-          currency: 'EUR',
-          periodType: 'month',
-          periodDay: 1,
-          historyStartDate: isoMonthsAgo(DEFAULT_HISTORY_MONTHS),
-        });
-        // offline users get the same first-run setup (user ruling)
+        // fully local profile, same Mina flow as online (user ruling):
+        // no auto-created space — the tutorial's create-step (or its
+        // skip path) provides the first one
         await store.metaPut('needsOnboarding', true);
+        await store.metaPut('minaTutorialPending', true);
       }
       // country of use tunes the category predictor (onboarding stores it)
       {
@@ -295,7 +277,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
       const stored = (await store.metaGet(ACTIVE_SPACE_KEY))?.value as string | undefined;
       const spaces = await liveSpaces(store);
       const spaceId = spaces.find((s) => s.id === stored)?.id ?? spaces[0]?.id;
-      if (!spaceId) throw new Error('no space available after seed');
+      if (!spaceId) {
+        // zero spaces is LEGAL only while the Mina tutorial owns the
+        // first-run (user ruling) — anything else is still a hard bug
+        const tutorial =
+          (await store.metaGet('minaTutorialPending'))?.value ||
+          ((await store.metaGet('minaTutorialState'))?.value as { active?: boolean } | undefined)?.active;
+        if (!tutorial) throw new Error('no space available after seed');
+        if (!cancelled) setState({ store, repo, spaceId: '', engine });
+        return;
+      }
       if (!cancelled) setState({ store, repo, spaceId, engine });
     })().catch((err) => {
       // StrictMode double-mount closes the first db mid-seed — expected
