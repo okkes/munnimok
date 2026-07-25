@@ -5,13 +5,15 @@ import { parseStatement } from '@/lib/statements/parseStatement';
 import type { ParsedStatement } from '@/lib/statements/parseStatement';
 import { getApiCapabilities } from '@/lib/api';
 import { useSession } from '@/app/session';
-import { importCamtStatements } from './importCamt';
+import { importCamtStatements, statementCoverageEnd } from './importCamt';
 import { linkAllCounterparties } from '@/application/counterLink';
 import { applyTitleMemory } from '@/application/titleMemory';
 import { linkPaypalFunding } from '@/application/paypalLink';
 import type { ImportResult } from './importCamt';
 import { apiFeedGateway, fetchMyFeedIds } from './feedGateway';
 import { AttachSheet, SOURCE_KEYS } from './AttachSheet';
+import { ReconcileSheet } from './ReconcileSheet';
+import { normalizeIban } from '@/domain/feedIds';
 import { attachFeedToSpace } from '@/application/accountAttach';
 import { DEFAULT_HISTORY_MONTHS, isoMonthsAgo } from '@/features/spaces/spaceDefaults';
 import { useQuery } from '@/db/useQuery';
@@ -21,6 +23,7 @@ import { BankConnectSheet } from './BankConnect';
 import { useInstitutionLogos } from './useInstitutionLogos';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
+import { logActivity } from '@/application/activity';
 import { fmtCents, parseCents } from '@/lib/money';
 import { fmtTimeAgo } from '@/lib/text';
 import type { AccountRow } from '@/db/types';
@@ -33,6 +36,10 @@ import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 
 import { typeDef, isLiability, manualBalanceDate } from './accountTypes';
+
+/** whole days between a yyyy-mm-dd date and now; 0 when absent */
+const daysSince = (date?: string | null): number =>
+  date ? Math.floor((Date.now() - new Date(date).getTime()) / 86_400_000) : 0;
 
 function AccountRowButton({
   entry,
@@ -82,12 +89,19 @@ function AccountRowButton({
             {feedSubtitle}
           </span>
         ) : (
-          account.iban && <span className="block truncate font-mono text-[11px] text-ink-4">{account.iban}</span>
+          account.iban && <span className="block truncate font-mono text-[11px] text-ink-4 select-text">{account.iban}</span>
         )}
         {/* when the account last heard from its bank/statement (user request) */}
         {account.lastSyncedAt && (
           <span className="block truncate text-[11px] text-ink-4" data-testid={`account-synced-${account.id}`}>
             {t('acct.lastSynced', { when: fmtTimeAgo(account.lastSyncedAt, lang) })}
+          </span>
+        )}
+        {/* export-vs-upload insight (user request): a recent import of an
+            OLD export leaves a silent hole — say where the data ends */}
+        {account.source !== 'gocardless' && daysSince(account.dataThroughDate) > 14 && (
+          <span className="block truncate text-[11px] text-warning" data-testid={`account-datathrough-${account.id}`}>
+            {t('acct.dataThrough', { when: fmtTimeAgo(account.dataThroughDate!, lang) })}
           </span>
         )}
       </span>
@@ -178,6 +192,8 @@ export function AccountsScreen() {
   const [importPreview, setImportPreview] = useState<ParsedStatement[] | null>(null);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [importError, setImportError] = useState(false);
+  const [runFailed, setRunFailed] = useState(false);
+  const [importing, setImporting] = useState(false);
   // export-steps hint per format before the file dialog (user request)
   const [importPickOpen, setImportPickOpen] = useState(false);
   const identity = useSession((s) => s.identity);
@@ -226,11 +242,24 @@ export function AccountsScreen() {
   };
 
   const runImport = async () => {
-    if (!importPreview?.length) return;
+    if (!importPreview?.length || importing) return; // double-taps fired PARALLEL imports (user report 2026-07-25)
+    setImporting(true);
     // syncing identities import into feed spaces (shared-accounts model);
     // demo/offline keep everything merged in the current space
     const feeds = identity?.kind === 'user' ? apiFeedGateway(identity.sub) : undefined;
-    setImportResult(await importCamtStatements(repo, store, spaceId, importPreview, feeds));
+    try {
+      setImportResult(await importCamtStatements(repo, store, spaceId, importPreview, feeds));
+    } catch {
+      // a failed run (feed registration, server away) must SAY so —
+      // a silently unchanged screen reads as "the app is broken"
+      // (user report 2026-07-24); the preview stays for a retry
+      setRunFailed(true);
+      return;
+    } finally {
+      setImporting(false);
+    }
+    setRunFailed(false);
+    void logActivity(store, repo, spaceId, 'importRun', `${importPreview.length}`);
     // a just-imported account may BE the counterparty of older rows
     // (and vice versa) — retro-link them (user rule)
     await linkAllCounterparties(store, repo, spaceId).catch(() => undefined);
@@ -242,6 +271,7 @@ export function AccountsScreen() {
   };
 
   const closeImport = () => {
+    setRunFailed(false);
     setImportPreview(null);
     setImportResult(null);
     setImportError(false);
@@ -254,6 +284,52 @@ export function AccountsScreen() {
   const mine = useMemo(() => (global?.mine ?? []).filter((e) => !e.account.archived), [global]);
   const assets = mine.filter((e) => !isLiability(e.account.type));
   const liabilities = mine.filter((e) => isLiability(e.account.type));
+
+  // master plan (answer 3, auto-suggest): an account fed by BOTH a bank
+  // connection and statement uploads — or a same-IBAN pair of a linked
+  // and an imported account — offers a reconcile pass (linked = truth)
+  const sourcesByAccount = useQuery(store, async () => {
+    const { isImportedRow, isLinkedRow } = await import('@/domain/reconcile');
+    const byAccount = new Map<string, { linked: boolean; imported: number }>();
+    for (const tx of await store.allRows('transaction')) {
+      if (tx.deleted !== 0 || !tx.importRef) continue;
+      const entry = byAccount.get(tx.accountId) ?? { linked: false, imported: 0 };
+      if (isLinkedRow(tx)) entry.linked = true;
+      else if (isImportedRow(tx)) entry.imported++;
+      byAccount.set(tx.accountId, entry);
+    }
+    return byAccount;
+  }, []);
+  const [reconcileIds, setReconcileIds] = useState<string[] | null>(null);
+  const reconcileSuggestions = useMemo(() => {
+    if (!sourcesByAccount) return [];
+    const out: { name: string; imported: number; accountIds: string[] }[] = [];
+    const claimed = new Set<string>();
+    for (const entry of mine) {
+      const own = sourcesByAccount.get(entry.account.id);
+      if (own?.linked && own.imported > 0) {
+        out.push({ name: entry.account.name, imported: own.imported, accountIds: [entry.account.id] });
+        claimed.add(entry.account.id);
+        continue;
+      }
+      // same-IBAN pair: this imported account has a linked twin
+      if (!own?.imported || !entry.account.iban || claimed.has(entry.account.id)) continue;
+      const iban = normalizeIban(entry.account.iban);
+      const twin = mine.find(
+        (other) =>
+          other.account.id !== entry.account.id &&
+          !!other.account.iban &&
+          normalizeIban(other.account.iban) === iban &&
+          sourcesByAccount.get(other.account.id)?.linked,
+      );
+      if (twin) {
+        out.push({ name: twin.account.name, imported: own.imported, accountIds: [twin.account.id, entry.account.id] });
+        claimed.add(entry.account.id);
+        claimed.add(twin.account.id);
+      }
+    }
+    return out;
+  }, [mine, sourcesByAccount]);
 
   // AE2: feed accounts attached to NO space (fresh bank connect, or a
   // consent flow that broke mid-return) get a one-tap attach offer for
@@ -301,12 +377,14 @@ export function AccountsScreen() {
       name: name.trim(),
       ...(balanceChanged ? { balanceCents: signed!, balanceAsOf: localToday() } : {}),
     });
+    void logActivity(store, repo, spaceId, 'accountEdit', name.trim());
     setEditing(null);
   };
   const [confirmRemove, setConfirmRemove] = useState(false);
   const removeAccount = () => {
     if (!editing) return;
     void repo.remove('account', spaceId, editing.id);
+    void logActivity(store, repo, spaceId, 'accountRemove', editing.name);
     setConfirmRemove(false);
     setEditing(null);
   };
@@ -387,6 +465,21 @@ export function AccountsScreen() {
           />
         ) : (
           <>
+            {reconcileSuggestions.map((suggestion) => (
+              <button
+                key={suggestion.accountIds.join('+')}
+                data-testid={`account-reconcile-${suggestion.accountIds[suggestion.accountIds.length - 1]}`}
+                onClick={() => setReconcileIds(suggestion.accountIds)}
+                className="m-tap mb-2 flex w-full items-center gap-2.5 rounded-card border border-accent bg-accent-soft px-4 py-3 text-left text-[13px] font-medium text-accent-deep"
+              >
+                <Icon name="bank-check" size={18} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">{suggestion.name}</span>
+                  <span className="block text-[11px] font-normal">{t('reconcile.suggest', { n: suggestion.imported })}</span>
+                </span>
+                <Icon name="chevron-right" size={16} />
+              </button>
+            ))}
             <AccountSection title={t('acct.assets')} list={assets} lang={lang} onOpen={openEntry} />
             <AccountSection title={t('acct.liabilities')} list={liabilities} lang={lang} onOpen={openEntry} />
             <SharedWithMeSection list={global?.sharedWithMe ?? []} lang={lang} />
@@ -440,6 +533,7 @@ export function AccountsScreen() {
       />
 
       <BankConnectSheet open={connectOpen} onOpenChange={setConnectOpen} />
+      <ReconcileSheet open={reconcileIds !== null} onOpenChange={(next) => !next && setReconcileIds(null)} accountIds={reconcileIds ?? []} />
       <BrandIconPicker
         open={editLogoOpen}
         onOpenChange={setEditLogoOpen}
@@ -447,6 +541,7 @@ export function AccountsScreen() {
         onPick={({ logo }) => {
           if (editing) {
             void repo.upsert('account', spaceId, editing.id, { logo: logo ?? (null as never) });
+            void logActivity(store, repo, spaceId, 'accountEdit', editing.name);
             setEditing({ ...editing, logo: logo ?? undefined });
           }
           setEditLogoOpen(false);
@@ -463,6 +558,12 @@ export function AccountsScreen() {
         )}
         {!importError && !importResult && (
           <div className="flex flex-col gap-3 pt-1" data-testid="import-preview">
+            {runFailed && (
+              <div className="flex items-center gap-2 rounded-card bg-negative-soft px-4 py-3 text-[14px] text-negative" data-testid="import-run-error">
+                <Icon name="alert-circle-outline" size={18} />
+                {t('import.runFailed')}
+              </div>
+            )}
             {(importPreview ?? []).map((stmt, i) => {
               const iban = stmt.iban.replace(/\s/g, '').toUpperCase();
               const match = mine.find((e) => e.account.iban?.replace(/\s/g, '').toUpperCase() === iban)?.account;
@@ -475,6 +576,23 @@ export function AccountsScreen() {
                       {match?.name ?? t('import.newAccount')}
                     </span>
                     <span className="block truncate font-mono text-[11px] text-ink-4">{stmt.iban}</span>
+                    {/* export-vs-upload insight: an old export imports
+                        fine and silently misses everything after it —
+                        warn BEFORE the import, when a fresh export is
+                        one download away */}
+                    {(() => {
+                      const through = statementCoverageEnd(stmt);
+                      if (!through) return null;
+                      const stale = daysSince(through) > 7;
+                      return (
+                        <span
+                          className={`block truncate text-[11px] ${stale ? 'text-warning' : 'text-ink-4'}`}
+                          data-testid={`import-through-${i}`}
+                        >
+                          {t(stale ? 'import.throughStale' : 'import.through', { when: fmtTimeAgo(through, lang) })}
+                        </span>
+                      );
+                    })()}
                   </span>
                   <span className="text-[12px] text-ink-3">
                     {stmt.entries.length === 1
@@ -484,7 +602,7 @@ export function AccountsScreen() {
                 </div>
               );
             })}
-            <Button data-testid="import-run" onClick={() => void runImport()} disabled={!importPreview?.length}>
+            <Button data-testid="import-run" onClick={() => void runImport()} disabled={!importPreview?.length || importing}>
               {t('import.doImport')}
             </Button>
           </div>

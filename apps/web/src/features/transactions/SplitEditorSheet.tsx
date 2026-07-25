@@ -5,8 +5,8 @@ import type { SpaceTx } from '@/application/transactions';
 import { useLang } from '@/i18n';
 import { fmtCents, parseCents } from '@/lib/money';
 import { balanceLastRow, pctRemainder, primaryCatId, resolveSplitsFor, splitRemainderCents, splitsArePct, validatePctSplits, validateSplits } from '@/domain/splits';
-import { givenCents, netAmountCents, netCreditCents } from '@/domain/reimbursement';
-import { UNCATEGORIZED_ID } from '@/domain/categories';
+import { givenCents, netAmountCents, netCreditCents, totalReimbursedCents } from '@/domain/reimbursement';
+import { REIMBURSED_ID, UNCATEGORIZED_ID } from '@/domain/categories';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { CategoryPicker } from '@/features/categories/CategoryPicker';
 import type { TxSplit } from '@/db/types';
@@ -100,13 +100,15 @@ export function SplitEditorSheet({
   // (user request); blurring an untouched empty field restores the value
   const [focusStash, setFocusStash] = useState<{ index: number; amount: string } | null>(null);
 
-  // controlled mode edits the draft's splits; write-through edits the tx's
-  const source = onApply ? value : tx.splits;
   const allTxs = useSpaceTransactions();
-  // write-through partitions the NET value: reimbursements physically
-  // shrink category attribution (user rule), so the editor must ask for
-  // slices that sum to what the transaction is really worth. Controlled
-  // (review-draft) mode keeps the gross amount — reviews precede links.
+  // redesign (docs/reimbursement-redesign.md): stored slices are GROSS
+  // with the settled value in a `reimbursed` slice. The editor still asks
+  // for the NET partition — the user's real categories — and the
+  // reimbursed slice is held aside here and re-attached on save.
+  const settledCents =
+    tx.amountCents < 0 ? totalReimbursedCents(tx) : givenCents(allTxs ?? [], tx.id);
+  // controlled mode edits the draft's splits; write-through edits the tx's
+  const source = onApply ? value : tx.splits?.filter((s) => s.catId !== REIMBURSED_ID);
   const netCents = tx.amountCents < 0 ? netAmountCents(tx) : netCreditCents(tx, givenCents(allTxs ?? [], tx.id));
   const referenceCents = onApply ? tx.amountCents : netCents;
   useEffect(() => {
@@ -189,8 +191,10 @@ export function SplitEditorSheet({
     if (onApply) {
       onApply(stored);
     } else {
+      // the settled value rides along untouched — gross invariant kept
+      const withSettled = settledCents > 0 ? [...stored, { catId: REIMBURSED_ID, amountCents: settledCents }] : stored;
       void transform(tx, {
-        splits: stored,
+        splits: withSettled,
         catId: primaryCatId(stored),
       });
     }
@@ -200,6 +204,15 @@ export function SplitEditorSheet({
   const clearSplit = () => {
     if (onApply) {
       onApply(null);
+    } else if (settledCents > 0) {
+      // "no split" on a settled tx still needs the gross partition:
+      // one slice for the chosen category, one for the settled value
+      const catId = primaryCatId(splits) ?? tx.catId ?? UNCATEGORIZED_ID;
+      const rest = Math.max(0, Math.abs(tx.amountCents) - settledCents);
+      void transform(tx, {
+        splits: [...(rest > 0 ? [{ catId, amountCents: rest }] : []), { catId: REIMBURSED_ID, amountCents: settledCents }],
+        catId,
+      });
     } else {
       void transform(tx, {
         splits: null as never, // explicit null clears the field

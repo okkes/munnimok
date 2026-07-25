@@ -54,12 +54,25 @@ public static class AccountEndpoints
         var existing = await db.FeedSpaces.FindAsync(request.FeedSpaceId);
         if (existing is not null)
         {
-            // idempotent for the owner (reconnect); a CONFLICT for anyone
-            // else — the caller falls back to a personal feed id, so a
-            // squatter can never observe another user's data
-            return existing.OwnerUserId == me
-                ? Results.Ok(new RegisterFeedResponse(existing.Id, true))
-                : Results.Conflict(new { error = "feed registered by another user" });
+            if (existing.OwnerUserId == me)
+                return Results.Ok(new RegisterFeedResponse(existing.Id, true)); // idempotent reconnect
+
+            // an ORPHANED feed (its owner row is gone — account deletion /
+            // go-offline left it behind for other readers, or a pre-fix
+            // wipe leaked it) is claimable: without this, the same person
+            // re-importing after a wipe 409s forever on their own IBAN
+            // (staging 2026-07-24). A feed with a LIVING other owner stays
+            // a conflict — the caller falls back to a personal feed id, so
+            // a squatter can never observe another user's data.
+            var ownerAlive = await db.Users.AnyAsync(u => u.Id == existing.OwnerUserId);
+            if (ownerAlive)
+                return Results.Conflict(new { error = "feed registered by another user" });
+
+            existing.OwnerUserId = me;
+            if (!await db.SpaceMembers.AnyAsync(m => m.SpaceId == existing.Id && m.UserId == me))
+                db.SpaceMembers.Add(new SpaceMember { SpaceId = existing.Id, UserId = me, Role = SpaceRoles.Owner });
+            await db.SaveChangesAsync();
+            return Results.Ok(new RegisterFeedResponse(existing.Id, true));
         }
 
         db.FeedSpaces.Add(new FeedSpace { Id = request.FeedSpaceId, OwnerUserId = me, AccountRef = request.AccountRef });
@@ -126,7 +139,19 @@ public static class AccountEndpoints
             link.AttachedBy = me;
             if (request.HistoryFrom is not null) link.HistoryFrom = request.HistoryFrom;
         }
-        await db.SaveChangesAsync();
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateException)
+        {
+            // two attaches raced the check-then-insert (double-tapped
+            // import, 23505 on the unique link index) — adopt the row the
+            // winner created instead of answering 500 (staging 2026-07-25)
+            db.Entry(link).State = EntityState.Detached;
+            link = await db.SpaceAccountLinks.FirstAsync(l =>
+                l.SpaceId == spaceId && l.FeedSpaceId == request.FeedSpaceId && l.AccountId == request.AccountId);
+        }
         return Results.Ok(new AccountLinkDto(link.Id, link.SpaceId, link.FeedSpaceId, link.AccountId, link.AttachedBy, link.HistoryFrom, link.Archived));
     }
 

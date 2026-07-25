@@ -504,6 +504,34 @@ namespace Munni.Api.Migrations
                     b.ToTable("Users");
                 });
 
+            modelBuilder.Entity("Munni.Api.Data.UserDevice", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Id")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("LastSeenAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Platform")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("UserId", "Id");
+
+                    b.ToTable("UserDevices");
+                });
+
             modelBuilder.Entity("Munni.Api.GoCardless.GcInstitutionLogo", b =>
                 {
                     b.Property<string>("InstitutionId")

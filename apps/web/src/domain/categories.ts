@@ -21,8 +21,15 @@ export interface BuiltinCategory {
 export const BUILTIN_CATEGORIES: BuiltinCategory[] = [
   {"id":"general","nameKey":"cat.general","icon":"help-circle-outline","isParent":true,"hidden":true,"txTypes":["expense","income","saving","transfer","investment","debtPayment","adjustment"],"direction":"both"},
   {"id":"uncategorized","parentId":"general","nameKey":"cat.uncategorized","icon":"help-circle-outline","hidden":true,"txTypes":["expense","income","saving","transfer","investment","debtPayment","adjustment"],"direction":"both"},
+  // reimbursement redesign (2026-07-24, docs/reimbursement-redesign.md):
+  // a LOCKED system main — no user subs, no edits. `reimburse` keeps its
+  // historical id (old rows keep resolving) but now reads as "received
+  // reimbursement"; `expenseReimburse` is the expected side; `reimbursed`
+  // holds the settled value on BOTH sides of a link.
+  {"id":"reimbursement","nameKey":"cat.reimbursement","icon":"cash-refund","color":"#16A085","isParent":true,"txTypes":["expense","income"],"direction":"both"},
+  {"id":"reimbursed","parentId":"reimbursement","nameKey":"cat.reimbursed","icon":"check-decagram-outline","txTypes":["expense","income"],"direction":"both"},
+  {"id":"reimburse","parentId":"reimbursement","nameKey":"cat.reimburse","icon":"cash-refund","positive":true,"txTypes":["income"],"direction":"credit"},
   {"id":"income","nameKey":"cat.income","icon":"cash-plus","color":"#27AE60","isParent":true,"positive":true,"txTypes":["income"],"direction":"credit"},
-  {"id":"reimburse","parentId":"income","nameKey":"cat.reimburse","icon":"cash-refund","positive":true,"txTypes":["income"],"direction":"credit"},
   {"id":"salary","parentId":"income","nameKey":"cat.salary","icon":"office-building-outline","positive":true,"txTypes":["income"],"direction":"credit"},
   {"id":"freelance","parentId":"income","nameKey":"cat.freelance","icon":"home-city-outline","positive":true,"txTypes":["income"],"direction":"credit"},
   {"id":"rental","parentId":"income","nameKey":"cat.rental","icon":"store-clock-outline","positive":true,"txTypes":["income"],"direction":"credit"},
@@ -117,8 +124,9 @@ export const BUILTIN_CATEGORIES: BuiltinCategory[] = [
   {"id":"petInsurance","parentId":"pet","nameKey":"cat.petInsurance","icon":"shield-bug-outline","txTypes":["expense"],"direction":"debit"},
   {"id":"petOther","parentId":"pet","nameKey":"cat.petOther","icon":"fishbowl-outline","txTypes":["expense"],"direction":"debit"},
   {"id":"extra","nameKey":"cat.extra","icon":"archive-plus-outline","color":"#607D8B","isParent":true,"txTypes":["expense"],"direction":"debit"},
-  // moved out of the hidden 'expense' parent — it was unpickable there (user request)
-  {"id":"expenseReimburse","parentId":"extra","nameKey":"cat.expenseReimburse","icon":"cash-refund","txTypes":["expense"],"direction":"debit"},
+  // 2026-07-24: expected reimbursement moved under the locked
+  // `reimbursement` main (id unchanged — old rows keep resolving)
+  {"id":"expenseReimburse","parentId":"reimbursement","nameKey":"cat.expenseReimburse","icon":"cash-refund","txTypes":["expense"],"direction":"debit"},
   {"id":"birthday","parentId":"extra","nameKey":"cat.birthday","icon":"cake-variant-outline","txTypes":["expense"],"direction":"debit"},
   {"id":"funeralInsurance","parentId":"extra","nameKey":"cat.funeralInsurance","icon":"shield-cross-outline","txTypes":["expense"],"direction":"debit"},
   {"id":"charity","parentId":"extra","nameKey":"cat.charity","icon":"handshake-outline","txTypes":["expense"],"direction":"debit"},
@@ -159,3 +167,13 @@ export const childrenOf = (parentId: string): BuiltinCategory[] =>
   BUILTIN_CATEGORIES.filter((c) => c.parentId === parentId);
 
 export const UNCATEGORIZED_ID = 'uncategorized';
+
+// the locked reimbursement tree (docs/reimbursement-redesign.md): the
+// user may PICK these but never edit them or add siblings
+export const REIMBURSEMENT_MAIN_ID = 'reimbursement';
+/** settled value, both sides of a link */
+export const REIMBURSED_ID = 'reimbursed';
+/** money you expect back (negative side, pre-settlement) */
+export const EXPECTED_REIMBURSE_ID = 'expenseReimburse';
+/** money that arrived to settle something (positive side, pre-settlement) */
+export const RECEIVED_REIMBURSE_ID = 'reimburse';

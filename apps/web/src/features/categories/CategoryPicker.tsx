@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { directionAllows } from '@/domain/categoryRules';
+import { REIMBURSED_ID } from '@/domain/categories';
 import { useLang } from '@/i18n';
 import { Highlight } from '@/ui/Highlight';
 import { Icon } from '@/ui/Icon';
@@ -34,6 +35,9 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
         parent,
         children: cats
           .childrenOf(parent.id)
+          // `reimbursed` is munni's own bookkeeping: settlement writes it,
+          // people never pick it (user rule 2026-07-24)
+          .filter((c) => c.id !== REIMBURSED_ID)
           .filter((c) => !direction || directionAllows(c.direction, direction))
           // the invariant: a transaction's category must speak its type
           .filter((c) => !txType || c.txTypes.includes(txType))

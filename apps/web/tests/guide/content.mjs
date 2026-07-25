@@ -25,8 +25,8 @@ export const GUIDE = [
   {
     id: 'banks',
     title: 'Connecting your bank',
-    body: `Settings → Global settings → Financial Accounts. Connect a bank (read-only PSD2 access — munni can never move money), import statements (CAMT.053 or ING CSV — several files at once) for accounts your bank won't share, or add cash/savings accounts manually. Bank data lands once per account; each space picks its accounts on its own Financial accounts screen — attach an existing account there with a start date, or detach it when the space no longer needs it. A freshly connected account that isn't visible in any space yet offers a one-tap attach to your active space.`,
-    tips: ['New transactions arrive automatically several times a day.', 'Reserved (not yet booked) card payments show with a badge and disappear when the real booking lands.', 'Each account row shows when the bank last answered — a Reconnect hint appears when a consent has gone quiet.'],
+    body: `Settings → Global settings → Financial Accounts. Connect a bank (read-only PSD2 access — munni can never move money), import statements (CAMT.053, ING CSV or a PayPal activity export — several files at once) for accounts your bank won't share, or add cash/savings accounts manually. Bank data lands once per account; each space picks its accounts on its own Financial accounts screen — attach an existing account there with a start date, or detach it when the space no longer needs it. A freshly connected account that isn't visible in any space yet offers a one-tap attach to your active space.`,
+    tips: ['New transactions arrive automatically several times a day.', 'Reserved (not yet booked) card payments show with a badge and disappear when the real booking lands.', 'Each account row shows when the bank last answered — a Reconnect hint appears when a consent has gone quiet.', 'Imported accounts warn when their data has gone stale: an export from weeks ago imports fine but silently misses everything after it — the preview and the account row both tell you where the data ends.', 'Connected the bank after importing statements? munni offers a reconcile pass: the bank is the truth, your edits move over, and you review every mismatched row before it is removed.', 'Each upload is a batch on the account sheet — see who uploaded what, and roll a bad upload back out.'],
     shots: ['16-accounts-list', '19-import-preview', '20-import-run'],
   },
   {
@@ -39,7 +39,7 @@ export const GUIDE = [
   {
     id: 'transactions',
     title: 'Transaction details',
-    body: `Open any transaction to recategorize, split across categories, link the counter-account (which suggests the type — you can still override it), attach receipts, link recurring costs or events, and record reimbursements that show the net cost.`,
+    body: `Open any transaction to recategorize, split across categories, link the counter-account (which suggests the type — you can still override it), attach receipts, link recurring costs or events, and record reimbursements that show the net cost. Settled value moves into the special Reimbursed category — real categories keep only what you truly paid — and the transactions tab has an "Unsettled reimbursements" quick filter for everything still waiting on money.`,
     tips: ['Search matches amounts too: typing 10 finds 10.99 and 210.15.', 'If the counterparty is one of your own accounts, its row becomes tappable.', 'Recategorizing offers a bulk apply — tap the bar to pick exactly which transactions it touches.', '"Customize this view" reorders or hides the sections below the details.', 'Rename a transaction via the pencil — munni remembers and auto-renames future arrivals; the bank original stays under Details.'],
     shots: ['09-tx-detail', '36-tx-split', '34-tx-reimburse', '35-tx-type-link'],
   },
@@ -75,7 +75,7 @@ export const GUIDE = [
     id: 'devices',
     title: 'Devices & offline',
     body: `Signed in, every device converges on the same data — edits made offline sync when you're back. Two people can edit the same transaction at once; the newer edit per field wins everywhere, identically. And if you ever want out of the cloud entirely, Profile → Go offline converts your account into a device-only offline profile: everything stays, bank-linked accounts become manual, your server data is erased, and other signed-in devices wipe themselves on their next sync.`,
-    tips: ['Push notifications tell you when new bank transactions arrive.', 'The sync card at the top of Settings shows the last successful sync.'],
+    tips: ['Push notifications tell you when new bank transactions arrive.', 'The sync card at the top of Settings shows the last successful sync.', 'Profile → Devices lists every device signed in to your account — rename them, and disconnect one remotely: it erases its munni data the next time it connects.'],
     shots: ['25-sync-devices', '58-sync-live', '38-offline'],
   },
 ];

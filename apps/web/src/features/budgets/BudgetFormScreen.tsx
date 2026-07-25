@@ -6,6 +6,7 @@ import { useData } from '@/app/data';
 import { useBudgetOps, useBudgets } from '@/application/budgets';
 import { localToday } from '@/application/recurring';
 import { budgetFamily, categoryConflicts } from '@/domain/budgets';
+import { REIMBURSEMENT_MAIN_ID } from '@/domain/categories';
 import type { BudgetCarryMode, BudgetEvery, BudgetRow } from '@/db/types';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { AppBar, IconButton } from '@/ui/AppBar';
@@ -72,7 +73,12 @@ export function BudgetFormScreen() {
     () => (budgets ?? []).filter((b): b is BudgetRow => b.id !== budgetId),
     [budgets, budgetId],
   );
-  const expenseParents = useMemo(() => cats.parents.filter((p) => p.txTypes.includes('expense')), [cats]);
+  // the locked reimbursement tree is excluded from budget math (rule c) —
+  // budgeting it would be budgeting money that is not spending
+  const expenseParents = useMemo(
+    () => cats.parents.filter((p) => p.txTypes.includes('expense') && p.id !== REIMBURSEMENT_MAIN_ID),
+    [cats],
+  );
   const conflictCandidates = useMemo(
     () => expenseParents.flatMap((p) => [p.id, ...cats.childrenOf(p.id).map((c) => c.id)]),
     [expenseParents, cats],

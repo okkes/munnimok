@@ -238,14 +238,17 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
     expect(screen.getByTestId('tx-detail-amount').textContent).toContain('-€32.40');
     expect(screen.getByTestId('tx-detail-original-amount').textContent).toContain('-€52.40'); // details block owns the original now
 
-    // physical rewrite (user rule): both sides' splits carry the NET truth
+    // redesign: slices carry the GROSS truth and the settled value sits
+    // in an explicit `reimbursed` slice on BOTH sides
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
       const expense = await db.transactions.get('dm6');
       const creditId = expense?.reimbursements?.[0]?.txId;
       const credit = creditId ? await db.transactions.get(creditId) : undefined;
-      expect(expense?.splits?.reduce((s, x) => s + x.amountCents, 0)).toBe(3240);
-      expect(credit?.splits?.reduce((s, x) => s + x.amountCents, 0)).toBe((credit?.amountCents ?? 0) - 2000);
+      expect(expense?.splits?.reduce((s, x) => s + x.amountCents, 0)).toBe(5240);
+      expect(expense?.splits?.find((s) => s.catId === 'reimbursed')?.amountCents).toBe(2000);
+      expect(credit?.splits?.reduce((s, x) => s + x.amountCents, 0)).toBe(credit?.amountCents ?? 0);
+      expect(credit?.splits?.find((s) => s.catId === 'reimbursed')?.amountCents).toBe(2000);
     });
 
     // unlink restores the original state
@@ -289,8 +292,8 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
     // hero shows what the salary is still worth, gross struck through
     await waitFor(() => expect(screen.getByTestId('tx-detail-original-amount').textContent).toContain('+€2,200.00'), { timeout: 5000 });
     expect(screen.getByTestId('tx-detail-amount').textContent).not.toContain('+€2,200.00');
-    // …and the uncategorized credit filed itself as Reimbursement
-    await waitFor(() => expect(screen.getByTestId('tx-detail-category-row').textContent).toContain('Reimbursement'));
+    // …and the uncategorized credit filed itself as Reimbursed (redesign)
+    await waitFor(() => expect(screen.getByTestId('tx-detail-category-row').textContent).toContain('Reimbursed'));
 
     // unlinking from this side restores the full amount
     await waitFor(() =>

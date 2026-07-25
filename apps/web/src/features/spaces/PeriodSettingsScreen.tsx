@@ -3,6 +3,7 @@ import { useParams, useRouter } from '@tanstack/react-router';
 import { useQuery } from '@/db/useQuery';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
+import { logActivity } from '@/application/activity';
 import { useSession } from '@/app/session';
 import { useMyRole } from './SpaceSharing';
 import type { SpacePeriodType } from '@/db/types';
@@ -51,6 +52,7 @@ export function PeriodSettingsScreen() {
   const apply = async (changes: { periodType?: SpacePeriodType; periodDay?: number }) => {
     if (!space || readOnly) return;
     await repo.upsert('space', space.id, space.id, changes);
+    void logActivity(store, repo, space.id, 'spaceEdit', space.name);
   };
 
   return (

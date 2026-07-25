@@ -1,6 +1,7 @@
 import { useData } from '@/app/data';
 import { useQuery } from '@/db/useQuery';
 import { downscaleImage } from '@/lib/image';
+import { logActivity } from './activity';
 import type { ReceiptRow } from '@/db/types';
 import type { SpaceTx } from '@/db/joined';
 
@@ -27,7 +28,7 @@ export interface ReceiptOps {
 }
 
 export function useReceiptOps(): ReceiptOps {
-  const { repo, spaceId } = useData();
+  const { store, repo, spaceId } = useData();
   return {
     attachPhoto: async (tx, file) => {
       // receipts want more pixels than avatars — text must stay readable
@@ -40,8 +41,13 @@ export function useReceiptOps(): ReceiptOps {
         merchant: tx.merchant,
         image,
       });
+      void logActivity(store, repo, spaceId, 'receiptAdd', tx.merchant);
     },
-    remove: (id) => repo.remove('receipt', spaceId, id),
+    remove: async (id) => {
+      const row = await store.get('receipt', id);
+      await repo.remove('receipt', spaceId, id);
+      void logActivity(store, repo, spaceId, 'receiptRemove', row?.merchant);
+    },
     setItems: async (id, items) => {
       await repo.upsert('receipt', spaceId, id, { items });
     },

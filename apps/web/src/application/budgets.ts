@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useData } from '@/app/data';
-import { logActivity } from './activity';
+import { logActivity, logRowActivity } from './activity';
 import { useQuery } from '@/db/useQuery';
 import { useSpaceTransactions } from './transactions';
 import { localToday } from './recurring';
@@ -46,9 +46,13 @@ export function useBudgetOps(): BudgetOps {
     save: async (id, fields) => {
       const rowId = id ?? repo.newId();
       await repo.upsert('budget', spaceId, rowId, fields);
-      if (!id) void logActivity(store, repo, spaceId, 'budgetAdd', fields.name);
+      if (id) void logRowActivity(store, repo, spaceId, 'budget', rowId, 'budgetEdit', fields.name);
+      else void logActivity(store, repo, spaceId, 'budgetAdd', fields.name);
       return rowId;
     },
-    remove: (id) => repo.remove('budget', spaceId, id),
+    remove: async (id) => {
+      await logRowActivity(store, repo, spaceId, 'budget', id, 'budgetRemove');
+      await repo.remove('budget', spaceId, id);
+    },
   };
 }

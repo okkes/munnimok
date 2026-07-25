@@ -1,4 +1,5 @@
 import type { AccountRow, TransactionRow, TxType } from '@/db/types';
+import { REIMBURSEMENT_MAIN_ID } from './categories';
 import { inPeriod } from './periods';
 import type { Period } from './periods';
 
@@ -119,11 +120,14 @@ export function categoryContributionCents(
     let cents = 0;
     for (const slice of tx.splits) {
       const cat = catalog.byId(slice.catId);
+      // settled/expected/received value is not spending (redesign rule c)
+      if ((cat.parentId ?? cat.id) === REIMBURSEMENT_MAIN_ID) continue;
       if (cat.id === catId || cat.parentId === catId) cents += slice.amountCents;
     }
     return cents;
   }
   const cat = catalog.byId(tx.catId);
+  if ((cat.parentId ?? cat.id) === REIMBURSEMENT_MAIN_ID) return 0;
   return cat.id === catId || cat.parentId === catId ? contributionCents(kind, tx) : 0;
 }
 
@@ -159,6 +163,8 @@ export function categoryBreakdown(
   const add = (catId: string | undefined, cents: number) => {
     const cat = catalog.byId(catId);
     const mainId = cat.parentId ?? cat.id;
+    // the reimbursement tree never shows in the breakdown (redesign rule c)
+    if (mainId === REIMBURSEMENT_MAIN_ID) return;
     let group = groups.get(mainId);
     if (!group) {
       group = { catId: mainId, totalCents: 0, subs: [], subMap: new Map() };

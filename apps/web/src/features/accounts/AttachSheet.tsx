@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useQuery } from '@/db/useQuery';
 import type { GlobalAccount } from '@/application/accounts';
 import { detachFeedFromSpace } from '@/application/accountAttach';
+import { logActivity } from '@/application/activity';
 import { useData } from '@/app/data';
 import { useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
@@ -12,6 +13,14 @@ import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 import { deleteFeedAccount } from './feedGateway';
+
+interface ImportBatchView {
+  id: string;
+  count: number;
+  from: string;
+  to: string;
+  importedBy?: string;
+}
 
 /** where an account's data comes from, for the settings section */
 export const SOURCE_KEYS: Record<AccountSource, TranslationKey> = {
@@ -39,7 +48,7 @@ export function AttachSheet({
   canEdit?: boolean;
 }>) {
   const { t } = useLang();
-  const { store, repo, engine } = useData();
+  const { store, repo, engine, spaceId } = useData();
   const [busy, setBusy] = useState<string | null>(null);
   const [detachSpaceId, setDetachSpaceId] = useState<string | null>(null);
   const [name, setName] = useState('');
@@ -65,6 +74,43 @@ export function AttachSheet({
     accountId,
   ]);
 
+  // master plan IB: batches derive from the stamped rows — no extra table
+  const batches =
+    useQuery(
+      store,
+      async () => {
+        if (!accountId) return [] as ImportBatchView[];
+        const byBatch = new Map<string, ImportBatchView>();
+        for (const tx of await store.allRows('transaction')) {
+          if (tx.deleted !== 0 || tx.accountId !== accountId || !tx.importBatchId) continue;
+          const batch = byBatch.get(tx.importBatchId) ?? {
+            id: tx.importBatchId,
+            count: 0,
+            from: tx.date,
+            to: tx.date,
+            importedBy: tx.importedBy,
+          };
+          batch.count++;
+          if (tx.date < batch.from) batch.from = tx.date;
+          if (tx.date > batch.to) batch.to = tx.date;
+          byBatch.set(tx.importBatchId, batch);
+        }
+        return [...byBatch.values()].sort((a, b) => b.to.localeCompare(a.to));
+      },
+      [accountId],
+    ) ?? [];
+  const [rollbackBatch, setRollbackBatch] = useState<ImportBatchView | null>(null);
+  const rollback = async () => {
+    if (!rollbackBatch) return;
+    // a batch removes only rows IT created: rows this upload merely
+    // re-encountered keep their first batch id and survive
+    for (const tx of await store.allRows('transaction')) {
+      if (tx.deleted === 0 && tx.importBatchId === rollbackBatch.id) await repo.remove('transaction', tx.spaceId, tx.id);
+    }
+    void logActivity(store, repo, spaceId, 'importRollback', `${rollbackBatch.count}`);
+    setRollbackBatch(null);
+  };
+
   useEffect(() => {
     if (open) setName(entry?.account.name ?? '');
   }, [open, entry?.account.name]);
@@ -79,7 +125,10 @@ export function AttachSheet({
   // account); raw bank facts (iban, balance) stay untouched
   const saveName = () => {
     const trimmed = name.trim();
-    if (trimmed && trimmed !== account.name) void repo.upsert('account', account.spaceId, account.id, { name: trimmed });
+    if (trimmed && trimmed !== account.name) {
+      void repo.upsert('account', account.spaceId, account.id, { name: trimmed });
+      void logActivity(store, repo, spaceId, 'accountEdit', trimmed);
+    }
   };
 
   const deleteAccount = async () => {
@@ -96,6 +145,7 @@ export function AttachSheet({
         await repo.remove('accountLink', link.spaceId, link.id);
       }
       await engine?.purgeSpace(feedSpaceId);
+      void logActivity(store, repo, spaceId, 'accountRemove', account.name);
       setDeleteOpen(false);
       onOpenChange(false);
     } catch {
@@ -197,6 +247,44 @@ export function AttachSheet({
           ))}
         </div>
       )}
+      {/* master plan IB: statement uploads as rollback-able batches —
+          who uploaded what, and one tap to take a bad upload back out */}
+      {canEdit && batches.length > 0 && (
+        <>
+          <div className="m-cap mt-4 mb-1 px-1">{t('imports.section')}</div>
+          <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="attach-imports">
+            {batches.map((batch) => (
+              <div key={batch.id} className="flex items-center gap-3 border-b border-line-2 px-4 py-2.5 last:border-0">
+                <Icon name="file-upload-outline" size={18} color="var(--m-ink-3)" />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[13px] text-ink">
+                    {t('imports.batch', { n: batch.count, from: batch.from, to: batch.to })}
+                  </span>
+                  {batch.importedBy && (
+                    <span className="block text-[11px] text-ink-4">{t('imports.by', { name: batch.importedBy })}</span>
+                  )}
+                </span>
+                <button
+                  aria-label={t('imports.rollback')}
+                  data-testid={`attach-rollback-${batch.id}`}
+                  onClick={() => setRollbackBatch(batch)}
+                  className="m-tap border-none bg-transparent text-negative"
+                >
+                  <Icon name="file-undo" size={18} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+      <DangerConfirmSheet
+        open={rollbackBatch !== null}
+        onOpenChange={(o) => !o && setRollbackBatch(null)}
+        title={t('imports.rollback')}
+        body={t('imports.rollbackBody', { n: rollbackBatch?.count ?? 0, from: rollbackBatch?.from ?? '', to: rollbackBatch?.to ?? '' })}
+        onConfirm={() => void rollback()}
+        testId="attach-rollback"
+      />
       {/* danger zone: deletion exists for connected accounts too (user
           request) — syncing identities only, the server owns the cascade */}
       {canEdit && engine && (
@@ -241,6 +329,7 @@ export function AttachSheet({
         initialQuery={account.name}
         onPick={({ logo }) => {
           void repo.upsert('account', account.spaceId, account.id, { logo: logo ?? (null as never) });
+          void logActivity(store, repo, spaceId, 'accountEdit', account.name);
           setLogoOpen(false);
         }}
       />

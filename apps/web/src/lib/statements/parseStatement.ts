@@ -1,5 +1,6 @@
 import { parseCamt053 } from '@/lib/camt053/parse';
 import { parseIngBalanceCsv, parseIngCreditcardCsv, parseIngCurrentCsv, parseIngSavingsCsv } from './ing';
+import { looksLikePaypalCsv, parsePaypalCsv } from './paypal';
 import type { ParsedStatement } from './ing';
 
 export type { ParsedStatement };
@@ -19,6 +20,9 @@ export function parseStatement(content: string, fileName?: string): ParsedStatem
 
   if (head.trimStart().startsWith('<')) {
     return parseCamt053(content); // CAMT.053 XML (ASN, SNS, Rabo, ING business…)
+  }
+  if (looksLikePaypalCsv(head)) {
+    return parsePaypalCsv(content); // PayPal activity export
   }
   // every ING shape ships in Dutch AND English (verified against real
   // 2026 exports) — detection checks both header sets

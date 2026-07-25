@@ -205,3 +205,48 @@ credentials.** Consequences already folded in, plus two roadmap items:
   optional profile), store uploads (Apple/Google mandate the first
   manual upload — irreducible).
 
+
+## Amendment 2026-07-24 (corrected per user): shared-services stack + per-env stacks, split admin
+
+The user's actual topology (my earlier "three environments" reading was
+wrong):
+
+### Stacks
+
+- **One SHARED stack** owning the cross-environment services: Logto,
+  GlitchTip, pgAdmin (and the shared postgres they ride). Deployed once,
+  upgraded on its own cadence — an env deploy can never take the login
+  or the error tracker down.
+- **One stack PER ENVIRONMENT** (staging, production, x, y, z…): api,
+  web, ocr, import-watch — everything that IS the app. Each env stack
+  points at the shared stack for identity/monitoring and at its own
+  database on the shared postgres.
+
+Infra consequence: `infra/stacks/` gains `munni-shared.jsonc` next to
+the per-env files; the render module splits services accordingly; the
+NAS poller applies the shared stack with its own marker (rarely moves).
+Env stacks list the shared endpoints as inputs — nothing shared is
+duplicated per env.
+
+### Split admin portal
+
+Two APPS, not one app with modes:
+
+- **munni portal <env>** (one deployment per env stack): manages that
+  environment's DATA — categories, category keywords, users/diagnosis,
+  quota view for that env. Talks only to its own env's API.
+- **munni shared services portal** (one deployment, lives in the shared
+  stack): manages what is genuinely cross-env — GoCardless/Enable
+  Banking credentials + provider quota (limits are per credential,
+  shared by every env), Logto administration, and other shared-service
+  concerns as they appear.
+
+Codebase: keep one apps/admin codebase with two build TARGETS (env
+portal / shared portal) so components stay shared while the deployed
+apps stay separate. Auth: env portals use their env's Logto app; the
+shared portal gets its own Logto app with an explicit shared-admin
+scope.
+
+Migration order: introduce the shared stack in the IaC pair first
+(munni-iac-shared + the twins consuming it), prove it, then fold the
+LIVE deployment the same way during IAC7.

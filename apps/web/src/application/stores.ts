@@ -11,6 +11,7 @@ import type { StoreSyncResult } from '@/features/shopping/stores/sync';
 import { pullConnections, pushAllConnections, pushConnection, removeConnectionCipher } from './storeSync';
 import { ensureStoreFeed, myStoreFeedId } from './storeFeed';
 import { writeReceiptLink } from './receiptLinks';
+import { logActivity } from './activity';
 import { storeConnLinkId } from '@/domain/feedIds';
 import type { Repo } from '@/db/repo';
 import type { StorageBackend } from '@/db/backend';
@@ -180,6 +181,7 @@ async function createInstance({ storage, repo, spaceId, store, tokens, providerA
   // E2EE sync (opt-in): the fresh tokens travel as ciphertext
   void pushConnection(storage, connection).catch(() => undefined);
   void syncInstanceReceipts(proxyCall, storage, repo, instanceId).catch(() => undefined);
+  void logActivity(storage, repo, spaceId, 'storeConnect', displayName);
   return { outcome: 'ok', instanceId, duplicateOf };
 }
 
@@ -252,6 +254,7 @@ export function useStoreOps(): StoreOps {
       for (const link of await allLinksOf(instanceId)) {
         await repo.upsert('storeConnLink', link.spaceId, link.id, { displayName: displayName.trim() });
       }
+      void logActivity(storage, repo, spaceId, 'storeEdit', displayName.trim());
     },
     setIcon: async (instanceId, icon) => {
       const meta = (await storage.allRows('storeConn')).find((c) => c.id === instanceId && c.deleted === 0);
@@ -260,6 +263,7 @@ export function useStoreOps(): StoreOps {
       for (const link of await allLinksOf(instanceId)) {
         await repo.upsert('storeConnLink', link.spaceId, link.id, { icon: icon ?? (null as never) });
       }
+      void logActivity(storage, repo, spaceId, 'storeEdit', meta.displayName);
     },
     removeInstance: async (instanceId) => {
       // ruling 2: the instance's global receipts die with it — space
@@ -278,6 +282,7 @@ export function useStoreOps(): StoreOps {
       }
       await storage.storeConnDelete(instanceId);
       void removeConnectionCipher(storage, instanceId).catch(() => undefined);
+      void logActivity(storage, repo, spaceId, 'storeRemove', meta?.displayName);
     },
     syncNow: (instanceId) => syncInstanceReceipts(proxyCall, storage, repo, instanceId),
     setIncludedSpaces: async (instanceId, spaceIds) => {
@@ -294,20 +299,29 @@ export function useStoreOps(): StoreOps {
         });
         // R5: a space gaining a connection re-evaluates its transactions
         await reevaluateSpace(storage, repo, id, instanceId);
+        // the history line lands in the space that GAINED the connection
+        void logActivity(storage, repo, id, 'storeAttach', meta.displayName);
       }
       for (const link of current.filter((l) => !spaceIds.includes(l.spaceId))) {
         await repo.remove('storeConnLink', link.spaceId, link.id);
+        void logActivity(storage, repo, link.spaceId, 'storeDetach', meta.displayName);
       }
     },
     linkReceipt: async (receipt, txId) => {
       await writeReceiptLink(repo, spaceId, receipt, txId, false);
+      void logActivity(storage, repo, spaceId, 'receiptAdd', receipt.merchant);
     },
     unlinkReceipt: async (linkId) => {
       await repo.remove('receiptLink', spaceId, linkId);
+      void logActivity(storage, repo, spaceId, 'receiptRemove');
     },
     removeGlobalReceipt: async (receiptId) => {
       const feedId = myStoreFeedId();
-      if (feedId) await repo.remove('receipt', feedId, receiptId);
+      if (feedId) {
+        const row = await storage.get('receipt', receiptId);
+        await repo.remove('receipt', feedId, receiptId);
+        void logActivity(storage, repo, spaceId, 'receiptRemove', row?.merchant);
+      }
     },
   };
 }

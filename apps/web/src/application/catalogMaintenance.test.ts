@@ -5,7 +5,7 @@ import { DexieBackend } from '@/db/backend';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
 import { HlcClock } from '@/sync/hlc';
-import { applyCatalogTombstones } from './catalogMaintenance';
+import { applyCatalogTombstones, migrateReimbursementSlices } from './catalogMaintenance';
 
 const SPACE = 's1';
 
@@ -58,5 +58,55 @@ describe('catalog tombstone pass (AC3)', () => {
     stores.push(fresh);
     const freshRepo = new Repo(fresh, new HlcClock('ac3b'), { trackOutbox: false });
     expect(await applyCatalogTombstones(fresh, freshRepo)).toBe(0); // no doc, no work
+  });
+});
+
+describe('reimbursement slice migration (redesign, answer d)', () => {
+  const stores: DexieBackend[] = [];
+  afterEach(async () => {
+    for (const s of stores.splice(0)) await s.destroy();
+  });
+
+  async function seeded() {
+    const store = new DexieBackend(new MunniDB(`munni_rbm_${Math.random().toString(36).slice(2)}`));
+    stores.push(store);
+    const repo = new Repo(store, new HlcClock('rbm'), { trackOutbox: false });
+    await repo.upsert('space', SPACE, SPACE, { name: 'P', kind: 'personal', currency: 'EUR', periodType: 'month' });
+    // legacy pair: −100 expense linked 40, its slices shrunk to NET 60;
+    // the +40 credit shrunk to a zero slice (old fully-given shape)
+    await repo.upsert('transaction', SPACE, 'exp', {
+      accountId: 'a', date: '2026-01-01', amountCents: -10_000, currency: 'EUR', merchant: 'X',
+      catId: 'groceries', txType: 'expense', needsReview: 0,
+      reimbursements: [{ txId: 'cred', amountCents: 4_000 }],
+      splits: [{ catId: 'groceries', amountCents: 6_000 }],
+    });
+    await repo.upsert('transaction', SPACE, 'cred', {
+      accountId: 'a', date: '2026-01-02', amountCents: 4_000, currency: 'EUR', merchant: 'Y',
+      catId: 'reimburse', txType: 'income', needsReview: 0,
+      splits: [{ catId: 'reimburse', amountCents: 0 }],
+    });
+    // untouched: no links anywhere near it
+    await repo.upsert('transaction', SPACE, 'plain', {
+      accountId: 'a', date: '2026-01-03', amountCents: -500, currency: 'EUR', merchant: 'Z',
+      catId: 'coffee', txType: 'expense', needsReview: 0,
+    });
+    return { store, repo };
+  }
+
+  it('rewrites legacy NET slices to gross + reimbursed on both sides, once', async () => {
+    const { store, repo } = await seeded();
+    expect(await migrateReimbursementSlices(store, repo)).toBe(2);
+
+    const exp = await store.get('transaction', 'exp');
+    expect(exp?.splits).toEqual([
+      { catId: 'groceries', amountCents: 6_000 },
+      { catId: 'reimbursed', amountCents: 4_000 },
+    ]);
+    const cred = await store.get('transaction', 'cred');
+    expect(cred?.splits).toEqual([{ catId: 'reimbursed', amountCents: 4_000 }]);
+    expect((await store.get('transaction', 'plain'))?.splits).toBeUndefined();
+
+    // marker gates the rerun
+    expect(await migrateReimbursementSlices(store, repo)).toBe(0);
   });
 });

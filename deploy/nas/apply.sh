@@ -60,6 +60,9 @@ if command -v flock >/dev/null 2>&1; then
       # exiting silently — the log is the only witness we have
       log "apply lock held >90min with no identifiable holder — waiting; if this repeats, reboot the NAS or clear the lock"
     fi
+    # stdout reaches the DSM Run Result — a manual run must never LOOK
+    # like it did nothing (2026-07-24: a silent skip hid a live apply)
+    echo "another apply is running (pid ${holder:-?}, ${age}s) — skipped"
     exit 0
   fi
   echo $$ >"$LIVE/.apply.pid"
@@ -109,4 +112,7 @@ apply_channel VERSION munni-deploy.tgz .applied_version \
 # dev bundle refreshes staging only
 apply_channel VERSION_STAGING munni-deploy-staging.tgz .applied_version_staging \
   docker-compose.staging.yml || rc=1
+# one status line to stdout: the DSM Run Result then always tells what
+# state the cycle LEFT things in, even when nothing changed
+echo "cycle done rc=$rc prod=$(cat "$LIVE/.applied_version" 2>/dev/null || echo none) staging=$(cat "$LIVE/.applied_version_staging" 2>/dev/null || echo none)"
 exit $rc

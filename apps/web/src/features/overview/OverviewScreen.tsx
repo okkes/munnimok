@@ -116,7 +116,7 @@ export function OverviewScreen() {
         </div>
 
         <div className="mt-4">
-          <StackedBar segments={groups.map((g, i) => ({ value: g.totalCents, color: colorOf(g.catId, i) }))} />
+          <StackedBar segments={groups.map((g, i) => ({ id: g.catId, value: g.totalCents, color: colorOf(g.catId, i) }))} />
           <div className="mt-3 mb-4 flex flex-wrap gap-x-3 gap-y-1.5">
             {groups.map((g, i) => (
               <span key={g.catId} className="flex items-center gap-1.5 text-[11px] text-ink-2">

@@ -82,7 +82,7 @@ async function writeConfirmation(args: {
   recurringId: string | undefined;
   eventId: string | undefined;
   bulk: SpaceTx[];
-  transform: (tx: SpaceTx, fields: Parameters<ReturnType<typeof useTxTransform>>[1]) => Promise<void>;
+  transform: ReturnType<typeof useTxTransform>;
 }): Promise<void> {
   const { draft } = args;
   // draft-cleared fields on a tx that HAD them need an explicit null
@@ -96,7 +96,7 @@ async function writeConfirmation(args: {
     ...linkField,
     ...(args.recurringId ? { recurringId: args.recurringId } : {}),
     ...(args.eventId ? { eventId: args.eventId } : {}),
-  });
+  }, null); // confirm logs its own richer 'review' line (with bulk count)
   for (const item of args.bulk) {
     // the draft's split shape travels with the bulk: absolute splits fit
     // exact twins by the similar-rule; pct splits rescale per item —
@@ -111,7 +111,7 @@ async function writeConfirmation(args: {
       ...(draft.linkedAccountId ? { linkedAccountId: draft.linkedAccountId } : {}),
       ...(args.recurringId ? { recurringId: args.recurringId } : {}),
       ...(args.eventId ? { eventId: args.eventId } : {}),
-    });
+    }, null);
   }
 }
 

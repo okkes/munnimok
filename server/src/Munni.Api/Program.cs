@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
+using Munni.Api;
 using Munni.Api.Accounts;
 using Munni.Api.Auth;
 using Munni.Api.Banking;
@@ -224,6 +225,11 @@ app.MapGet("/health", () => Results.Ok(new
 {
     status = "ok",
     build = Environment.GetEnvironmentVariable("BUILD_NUMBER") ?? "dev",
+    // version handshake (apps/web/src/lib/protocol.ts owns the bump
+    // discipline): native apps deploy on their own cadence — clients
+    // compare BOTH directions before syncing and refuse a mismatch
+    protocol = ApiProtocol.Version,
+    minClientProtocol = ApiProtocol.MinClient,
     capabilities = new
     {
         gocardless = gcEnabled,
@@ -238,6 +244,7 @@ app.MapGet("/health", () => Results.Ok(new
     },
 }));
 app.MapSync();
+app.MapDevices();
 app.MapSocial();
 app.MapSplits();
 app.MapPush();

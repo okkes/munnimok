@@ -48,11 +48,13 @@ export function BarChart({ values, labels, selected, onSelect, height = 90, acce
 }
 
 interface StackedBarProps {
-  segments: { value: number; color: string }[];
+  segments: { value: number; color: string; id?: string }[];
   height?: number;
 }
 
-/** proportional composition bar (only positive contributions are drawn) */
+/** proportional composition bar (only positive contributions are drawn);
+ *  segments keyed by id keep their identity across period switches, so
+ *  the widths GLIDE to the new proportions instead of snapping */
 export function StackedBar({ segments, height = 10 }: StackedBarProps) {
   const positive = segments.filter((s) => s.value > 0);
   const total = positive.reduce((sum, s) => sum + s.value, 0);
@@ -60,8 +62,12 @@ export function StackedBar({ segments, height = 10 }: StackedBarProps) {
   return (
     <div className="m-grow-x flex w-full origin-left overflow-hidden rounded-full" style={{ height }} data-testid="overview-stackedbar">
       {positive.map((s, i) => (
-        // eslint-disable-next-line react/no-array-index-key -- purely visual, order-stable
-        <div key={`${s.color}-${i}`} style={{ width: `${(s.value / total) * 100}%`, background: s.color }} />
+        // eslint-disable-next-line react/no-array-index-key -- index fallback is purely visual, order-stable
+        <div
+          key={s.id ?? `${s.color}-${i}`}
+          className="transition-[width] duration-500 ease-out"
+          style={{ width: `${(s.value / total) * 100}%`, background: s.color }}
+        />
       ))}
     </div>
   );

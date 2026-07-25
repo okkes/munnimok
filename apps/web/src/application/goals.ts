@@ -1,6 +1,7 @@
 import { useData } from '@/app/data';
 import { useQuery } from '@/db/useQuery';
 import { localToday } from './recurring';
+import { logRowActivity } from './activity';
 import type { GoalRow } from '@/db/types';
 
 /**
@@ -45,9 +46,13 @@ export function useGoalOps(): GoalOps {
     save: async (id, fields) => {
       const rowId = id ?? repo.newId();
       await repo.upsert('goal', spaceId, rowId, fields);
+      void logRowActivity(store, repo, spaceId, 'goal', rowId, id ? 'goalEdit' : 'goalAdd', fields.name);
       return rowId;
     },
-    remove: (id) => repo.remove('goal', spaceId, id),
+    remove: async (id) => {
+      await logRowActivity(store, repo, spaceId, 'goal', id, 'goalRemove');
+      await repo.remove('goal', spaceId, id);
+    },
     contribute: async (goalId, amountCents, note) => {
       await repo.upsert('goalContribution', spaceId, repo.newId(), {
         goalId,
@@ -61,6 +66,7 @@ export function useGoalOps(): GoalOps {
       );
       const total = contributions.reduce((sum, c) => sum + c.amountCents, 0);
       await repo.upsert('goal', spaceId, goalId, { allocatedCents: total });
+      void logRowActivity(store, repo, spaceId, 'goal', goalId, 'goalEdit');
     },
   };
 }

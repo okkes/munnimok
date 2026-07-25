@@ -234,12 +234,25 @@ export function DataProvider({ children }: { children: ReactNode }) {
         // remote-wipe: if this account was deleted (or went offline) on
         // ANOTHER device, the /me binding mismatch wipes this copy too
         void enforceAccountBinding(store, identity).catch(() => undefined);
+        // remote disconnect (logged-in devices, user ruling: disconnect =
+        // wipe): the api choke point saw a 410 device-revoked — erase
+        // this copy exactly like the binding wipe would
+        revokedWipeIdentity = identity;
+        globalThis.removeEventListener('munni:device-revoked', onDeviceRevoked);
+        globalThis.addEventListener('munni:device-revoked', onDeviceRevoked);
       }
 
       // ask the browser not to evict our data (iOS 7-day ITP wipe etc.);
       // best-effort — installed PWAs are exempt, native storage is app-scoped
       if (identity.kind !== 'demo') void ensurePersistentStorage();
       if (identity.kind === 'demo') await seedDemoIfNeeded(repo);
+      // reimbursement redesign: legacy NET slices become gross + an
+      // explicit reimbursed slice, once per identity (marker-gated;
+      // ALL identities — demo/offline data migrates too)
+      void (async () => {
+        const { migrateReimbursementSlices } = await import('@/application/catalogMaintenance');
+        await migrateReimbursementSlices(store, repo);
+      })().catch(() => undefined);
       if (identity.kind === 'offline' && (await liveSpaces(store)).length === 0) {
         // fully local profile: personal space named after the profile
         const { offlineProfileName } = await import('@/features/auth/offlineProfiles');
@@ -360,6 +373,23 @@ export function useData(): DataContextValue {
 
 /** Demo logout = wipe the database so next login reseeds pristine state. */
 /** remote-wipe enforcement: mismatch → wipe this device + back to login */
+// remote disconnect (user ruling: disconnect = wipe): the api choke
+// point saw a 410 device-revoked — erase this copy exactly like the
+// account-binding wipe would. One module-level listener; the identity
+// it wipes follows the active DataProvider.
+let revokedWipeIdentity: Identity | null = null;
+
+async function wipeRevokedDevice(identity: Identity): Promise<void> {
+  const { useSession } = await import('./session');
+  useSession.getState().logout();
+  await destroyIdentityData(identity);
+  globalThis.location.assign('/#/login');
+}
+
+function onDeviceRevoked(): void {
+  if (revokedWipeIdentity) void wipeRevokedDevice(revokedWipeIdentity).catch(() => undefined);
+}
+
 async function enforceAccountBinding(store: StorageBackend, identity: Identity): Promise<void> {
   const { verifyAccountBinding } = await import('@/features/auth/accountBinding');
   await verifyAccountBinding(store, identity, async () => {

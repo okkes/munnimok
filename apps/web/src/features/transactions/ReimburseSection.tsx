@@ -10,13 +10,13 @@ import {
   creditRemainingCents,
   givenCents,
   netAmountCents,
-  redistributedSplits,
   remainingCents,
+  settledSplits,
   totalReimbursedCents,
   withLink,
 } from '@/domain/reimbursement';
 import type { TxReimbursement } from '@/db/types';
-import { UNCATEGORIZED_ID } from '@/domain/categories';
+import { REIMBURSED_ID, UNCATEGORIZED_ID } from '@/domain/categories';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
@@ -99,26 +99,23 @@ export function ReimburseSection({ tx }: { tx: SpaceTx }) {
   const cats = useCategories();
   const nameOf = (id: string) => catName(cats.byId(id), t);
 
-  // reimbursements physically rewrite category attribution (user rule):
-  // splits carry the NET truth so budgets/trends/drill-downs agree for free
+  // settlement rewrites category attribution (redesign, docs/
+  // reimbursement-redesign.md): slices keep the GROSS truth and the
+  // settled value moves into an explicit `reimbursed` slice on BOTH sides
   const expensePatch = (expense: SpaceTx, newLinks: TxReimbursement[]) => ({
     reimbursements: newLinks,
-    splits: redistributedSplits(
-      expense,
-      Math.max(0, Math.abs(expense.amountCents) - totalReimbursedCents({ reimbursements: newLinks })),
-      nameOf,
-    ),
+    splits: settledSplits(expense, totalReimbursedCents({ reimbursements: newLinks }), nameOf),
   });
 
   // a settled credit deserves a real category instead of "Uncategorized"
-  // (user remark): the moment it is linked it self-files as Reimbursement,
+  // (user remark): the moment it is linked it self-files as Reimbursed,
   // unless the user already picked something deliberately
   const creditPatch = (credit: SpaceTx, newGivenCents: number) => {
     const selfFiles = (!credit.catId || credit.catId === UNCATEGORIZED_ID || credit.needsReview === 1) && newGivenCents > 0;
-    const catId = selfFiles ? 'reimburse' : credit.catId;
+    const catId = selfFiles ? REIMBURSED_ID : credit.catId;
     return {
       ...(selfFiles ? { catId, txType: 'income' as const, needsReview: 0 as const } : {}),
-      splits: redistributedSplits({ ...credit, catId }, Math.max(0, credit.amountCents - newGivenCents), nameOf),
+      splits: settledSplits({ ...credit, catId }, newGivenCents, nameOf),
     };
   };
 
@@ -142,16 +139,16 @@ export function ReimburseSection({ tx }: { tx: SpaceTx }) {
       const cents = clampReimbursement(chosen, giveable, parseCents(amount) ?? 0);
       if (cents > 0) {
         const prev = (chosen.reimbursements ?? []).find((r) => r.txId === tx.id)?.amountCents ?? 0;
-        void transform(chosen, expensePatch(chosen, withLink(chosen.reimbursements, tx.id, cents)));
-        void transform(tx, creditPatch(tx, given - prev + cents));
+        void transform(chosen, expensePatch(chosen, withLink(chosen.reimbursements, tx.id, cents)), 'reimburse');
+        void transform(tx, creditPatch(tx, given - prev + cents), null); // one line per gesture, not per side
       }
       setChosen(null);
       setPickerOpen(false);
     };
     const unlinkExpense = (expense: SpaceTx) => {
       const removed = (expense.reimbursements ?? []).find((r) => r.txId === tx.id)?.amountCents ?? 0;
-      void transform(expense, expensePatch(expense, withLink(expense.reimbursements, tx.id, 0)));
-      void transform(tx, creditPatch(tx, given - removed));
+      void transform(expense, expensePatch(expense, withLink(expense.reimbursements, tx.id, 0)), 'reimburse');
+      void transform(tx, creditPatch(tx, given - removed), null);
     };
 
     return (
@@ -258,9 +255,9 @@ export function ReimburseSection({ tx }: { tx: SpaceTx }) {
 
   const unlink = (txId: string) => {
     const removed = (tx.reimbursements ?? []).find((r) => r.txId === txId)?.amountCents ?? 0;
-    void transform(tx, expensePatch(tx, withLink(tx.reimbursements, txId, 0)));
+    void transform(tx, expensePatch(tx, withLink(tx.reimbursements, txId, 0)), 'reimburse');
     const credit = allTxs?.find((c) => c.id === txId);
-    if (credit) void transform(credit, creditPatch(credit, givenCents(allTxs ?? [], credit.id) - removed));
+    if (credit) void transform(credit, creditPatch(credit, givenCents(allTxs ?? [], credit.id) - removed), null);
   };
 
   const choose = (credit: SpaceTx) => {
@@ -274,8 +271,8 @@ export function ReimburseSection({ tx }: { tx: SpaceTx }) {
     const cents = clampReimbursement(tx, chosen.amountCents, parseCents(amount) ?? 0);
     if (cents > 0) {
       const prev = (tx.reimbursements ?? []).find((r) => r.txId === chosen.id)?.amountCents ?? 0;
-      void transform(tx, expensePatch(tx, withLink(tx.reimbursements, chosen.id, cents)));
-      void transform(chosen, creditPatch(chosen, givenCents(allTxs ?? [], chosen.id) - prev + cents));
+      void transform(tx, expensePatch(tx, withLink(tx.reimbursements, chosen.id, cents)), 'reimburse');
+      void transform(chosen, creditPatch(chosen, givenCents(allTxs ?? [], chosen.id) - prev + cents), null);
     }
     setChosen(null);
     setPickerOpen(false);

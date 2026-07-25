@@ -132,7 +132,7 @@ export function FriendsScreen() {
         <div className="mt-2 rounded-card border border-line bg-surface px-4 py-3">
           <div className="m-cap">{t('friends.myId')}</div>
           <button data-testid="friends-copy-id" onClick={copyMyId} className="m-tap mt-1 flex w-full items-center gap-2 border-none bg-transparent p-0 text-left">
-            <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-ink-2">{me?.userId ?? '…'}</span>
+            <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-ink-2 select-text">{me?.userId ?? '…'}</span>
             <Icon name={copied ? 'check' : 'content-copy'} size={16} color={copied ? 'var(--m-accent)' : 'var(--m-ink-4)'} />
           </button>
         </div>

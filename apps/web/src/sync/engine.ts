@@ -1,3 +1,4 @@
+import { getApiCapabilities, getProtocolIssue, resetApiCapabilitiesCache } from '@/lib/api';
 import { reportError } from '@/lib/report';
 import type { StorageBackend } from '@/db/backend';
 import type { OutboxRow } from '@/db/types';
@@ -117,6 +118,17 @@ export class SyncEngine {
     this.running = true;
     this.setStatus('syncing');
     try {
+      // version handshake FIRST (lib/protocol.ts): native apps and the
+      // API deploy separately — a contract mismatch must refuse to sync
+      // instead of exchanging ops both sides half-understand. Fresh
+      // check each cycle: an updated server lifts the block by itself.
+      resetApiCapabilitiesCache();
+      await getApiCapabilities();
+      if (getProtocolIssue()) {
+        this.lastError = `protocol mismatch: ${getProtocolIssue()}`;
+        this.setStatus('error');
+        return;
+      }
       const spaces = (await this.store.allRows('space')).filter((s) => s.deleted === 0);
       // also flush outbox ops for spaces we no longer have rows for
       const outboxSpaces = (await this.store.outboxAll()).map((o) => o.spaceId);

@@ -97,6 +97,15 @@ interface EntryContext {
   iban: string;
   memory: MerchantMemory;
   keywordRules?: readonly { catId: string; keywords: string[] }[];
+  /** master plan IB: one id per statement per run — rollback's unit */
+  batchId: string;
+  /** uploader display name, frozen at import time */
+  importedBy?: string;
+}
+
+/** the uploader's display name (same source the activity history freezes) */
+async function uploaderName(store: StorageBackend): Promise<string | undefined> {
+  return ((await store.metaGet('profile'))?.value as { name?: string } | undefined)?.name;
 }
 
 /** returns true when the entry was new (imported), false when it already existed */
@@ -114,6 +123,8 @@ async function importEntry(ctx: EntryContext, entry: ParsedStatement['entries'][
     ...(entry.counterpartyIban ? { counterIban: normalizeIban(entry.counterpartyIban) } : {}),
     ...predictEntry(ctx.memory, entry, ctx.keywordRules),
     importRef: entry.ref,
+    importBatchId: ctx.batchId,
+    ...(ctx.importedBy ? { importedBy: ctx.importedBy } : {}),
   });
   return true;
 }
@@ -151,6 +162,37 @@ export async function importCamtStatements(
 const emptyStatement = (stmt: ParsedStatement): boolean =>
   !stmt.iban.trim() || (stmt.entries.length === 0 && stmt.closingBalanceCents === null);
 
+/**
+ * The newest date a statement actually covers (yyyy-mm-dd, or null for
+ * balance-only files without a date). "When was this exported" is the
+ * fact the upload date hides — an export from three weeks ago imports
+ * fine and silently leaves a three-week hole after it.
+ */
+export function statementCoverageEnd(stmt: Pick<ParsedStatement, 'entries' | 'balanceAsOf'>): string | null {
+  let end = stmt.balanceAsOf ?? null;
+  for (const entry of stmt.entries) {
+    if (!end || entry.date > end) end = entry.date;
+  }
+  return end;
+}
+
+/** every import touch refreshes the freshness facts on the account */
+async function stampCoverage(
+  repo: Repo,
+  spaceId: string,
+  accountId: string,
+  existing: { dataThroughDate?: string } | undefined,
+  stmt: ParsedStatement,
+): Promise<void> {
+  const end = statementCoverageEnd(stmt);
+  await repo.upsert('account', spaceId, accountId, {
+    lastSyncedAt: new Date().toISOString(),
+    // coverage only moves FORWARD: re-importing an old export must not
+    // shrink what a newer one already established
+    ...(end && (!existing?.dataThroughDate || end > existing.dataThroughDate) ? { dataThroughDate: end } : {}),
+  });
+}
+
 async function importMerged(
   repo: Repo,
   store: StorageBackend,
@@ -158,6 +200,7 @@ async function importMerged(
   statements: ParsedStatement[],
 ): Promise<ImportResult> {
   const memory = await buildSpaceMerchantMemory(store, spaceId);
+  const importedBy = await uploaderName(store);
   const keywordRules = (await cachedCatalog(store))?.keywords;
   const existing = (await store.bySpace('account', spaceId)).filter((a) => a.deleted === 0);
   const byIban = new Map(existing.flatMap((a) => (a.iban ? [[normalizeIban(a.iban), a] as const] : [])));
@@ -177,10 +220,12 @@ async function importMerged(
         balanceCents: stmt.closingBalanceCents!,
         ...(stmt.balanceAsOf ? { balanceAsOf: stmt.balanceAsOf } : {}),
       });
+    await stampCoverage(repo, spaceId, accountId, match, stmt);
 
     let txCount = 0;
+    const batchId = crypto.randomUUID();
     for (const entry of stmt.entries) {
-      if (await importEntry({ repo, store, spaceId, accountId, iban, memory, keywordRules }, entry)) {
+      if (await importEntry({ repo, store, spaceId, accountId, iban, memory, keywordRules, batchId, importedBy }, entry)) {
         imported++;
         txCount++;
       } else {
@@ -214,6 +259,7 @@ async function importIntoFeeds(
   feeds: FeedGateway,
 ): Promise<ImportResult> {
   const memory = await buildSpaceMerchantMemory(store, spaceId);
+  const importedBy = await uploaderName(store);
   const keywordRules = (await cachedCatalog(store))?.keywords;
   let imported = 0;
   let skipped = 0;
@@ -232,10 +278,13 @@ async function importIntoFeeds(
         balanceCents: stmt.closingBalanceCents!,
         ...(stmt.balanceAsOf ? { balanceAsOf: stmt.balanceAsOf } : {}),
       });
+    // coverage only moves forward, so a just-recreated row is safe here
+    await stampCoverage(repo, feedId, accountId, account, stmt);
 
     let txCount = 0;
+    const batchId = crypto.randomUUID();
     for (const entry of stmt.entries) {
-      if (await importFeedEntry({ repo, store, spaceId, accountId, iban, memory, keywordRules }, feedId, entry)) {
+      if (await importFeedEntry({ repo, store, spaceId, accountId, iban, memory, keywordRules, batchId, importedBy }, feedId, entry)) {
         imported++;
         txCount++;
       } else {
@@ -281,6 +330,8 @@ async function importFeedEntry(
     description: entry.description,
     ...(entry.counterpartyIban ? { counterIban: normalizeIban(entry.counterpartyIban) } : {}),
     importRef: entry.ref,
+    importBatchId: ctx.batchId,
+    ...(ctx.importedBy ? { importedBy: ctx.importedBy } : {}),
   });
 
   await ctx.repo.upsert('txMeta', ctx.spaceId, txMetaId(ctx.spaceId, txId), {

@@ -7,6 +7,7 @@ import type { TranslationKey } from '@/i18n';
  */
 
 export type TourId =
+  | 'welcome'
   | 'install'
   | 'home'
   | 'review'
@@ -38,6 +39,12 @@ export interface TourStep {
   anchor?: string;
   /** 'tap' forwards the tap to the real element and advances */
   advanceOn?: 'tap' | 'next';
+  /** ACT step (guided walkthrough): the overlay steps aside and the
+   *  step completes when a NEW element with this testid prefix appears
+   *  — the user drives the real forms, the tour only watches */
+  act?: { appearPrefix: string };
+  /** navigate here when the step starts ('$spaceId' = the active space) */
+  screen?: string;
 }
 
 export interface Tour {
@@ -311,4 +318,35 @@ const SPACE_ACCOUNTS_TOUR: Tour = {
 };
 TOURS.push(SPACE_ACCOUNTS_TOUR);
 
+/** guided space-onboarding walkthrough (docs/space-onboarding-walkthrough.md):
+ *  runs on the REAL screens with real writes — the tour itself writes
+ *  nothing, act steps complete when the user's own form submission lands */
+const WELCOME_TOUR: Tour = {
+  id: 'welcome',
+  titleKey: 'tour.welcome.title',
+  icon: 'compass-outline',
+  screen: '/settings',
+  steps: [
+    { titleKey: 'tour.welcome.1t', bodyKey: 'tour.welcome.1b', illustration: '🏠', screen: '/settings', anchor: 'settings-space-row' },
+    { titleKey: 'tour.welcome.2t', bodyKey: 'tour.welcome.2b', illustration: '✍️', screen: '/spaces/$spaceId/accounts', act: { appearPrefix: 'space-account-' } },
+    { titleKey: 'tour.welcome.3t', bodyKey: 'tour.welcome.3b', illustration: '🔗', anchor: 'space-accounts-attach' },
+    { titleKey: 'tour.welcome.4t', bodyKey: 'tour.welcome.4b', illustration: '🛒', screen: '/transactions', act: { appearPrefix: 'tx-row-' } },
+    { titleKey: 'tour.welcome.5t', bodyKey: 'tour.welcome.5b', illustration: '👪', screen: '/spaces', act: { appearPrefix: 'space-row-' } },
+    { titleKey: 'tour.welcome.6t', bodyKey: 'tour.welcome.6b', illustration: '🎉', screen: '/home' },
+  ],
+};
+TOURS.unshift(WELCOME_TOUR);
+
 export const tourById = (id: TourId): Tour => TOURS.find((tour) => tour.id === id)!;
+
+/**
+ * Resume detection (design: completed steps fast-forward): the first
+ * step whose real-world outcome is still missing, judged by DATA — a
+ * space-scoped account, any transaction, a second space.
+ */
+export function welcomeStartStep(state: { hasAccount: boolean; hasTx: boolean; hasSecondSpace: boolean }): number {
+  if (!state.hasAccount) return 0;
+  if (!state.hasTx) return 3;
+  if (!state.hasSecondSpace) return 4;
+  return 5;
+}

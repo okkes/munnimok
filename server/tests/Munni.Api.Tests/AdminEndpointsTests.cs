@@ -283,3 +283,97 @@ public class QuotaCaptureHandlerTests
     public void ScopeCollapsesIdsIntoEndpointFamilies(string url, string expected) =>
         Assert.Equal(expected, QuotaCaptureHandler.ScopeOf(new Uri(url)));
 }
+
+/// <summary>stubbed Logto Management API for the username migration</summary>
+public sealed class FakeLogtoHandler : HttpMessageHandler
+{
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        var path = request.RequestUri!.AbsolutePath;
+        if (path.EndsWith("/oidc/token"))
+            return Json("""{"access_token":"tok"}""");
+        if (request.Method == HttpMethod.Get && path.EndsWith("/api/users"))
+        {
+            var firstPage = request.RequestUri.Query.Contains("page=1");
+            return Json(firstPage
+                ? """[{"id":"u1","username":"Okkes"},{"id":"u2","username":"already"},{"id":"u3","username":null},{"id":"u4","username":"Taken"}]"""
+                : "[]");
+        }
+        if (request.Method == HttpMethod.Patch && path.Contains("/api/users/"))
+        {
+            // u4's lowercase twin already exists -> Logto rejects the rename
+            return path.EndsWith("/u4")
+                ? Task.FromResult(new HttpResponseMessage(HttpStatusCode.UnprocessableEntity))
+                : Json("{}");
+        }
+        return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+    }
+
+    private static Task<HttpResponseMessage> Json(string body) =>
+        Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json"),
+        });
+}
+
+public class AdminLogtoFactory : WebApplicationFactory<Program>
+{
+    protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
+    {
+        builder.UseSetting("Auth:TestMode", "true");
+        builder.UseSetting("Db:AutoMigrate", "false");
+        builder.UseSetting("Admin:Subs", "the-admin");
+        builder.UseSetting("Logto:M2mAppId", "m2m-app");
+        builder.UseSetting("Logto:M2mAppSecret", "m2m-secret");
+        builder.UseSetting("Auth:Authority", "http://logto.local/oidc");
+        builder.ConfigureServices(services =>
+        {
+            foreach (var d in services
+                         .Where(d =>
+                             d.ServiceType == typeof(DbContextOptions<AppDbContext>) ||
+                             d.ServiceType == typeof(DbContextOptions) ||
+                             d.ServiceType == typeof(AppDbContext) ||
+                             d.ServiceType.Name.Contains("IDbContextOptionsConfiguration"))
+                         .ToList())
+            {
+                services.Remove(d);
+            }
+            services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase("admin-logto-tests"));
+            services.AddHttpClient("logto-m2m").ConfigurePrimaryHttpMessageHandler(() => new FakeLogtoHandler());
+        });
+    }
+}
+
+public class LogtoUsernameMigrationTests : IClassFixture<AdminLogtoFactory>
+{
+    private readonly AdminLogtoFactory _factory;
+
+    public LogtoUsernameMigrationTests(AdminLogtoFactory factory) => _factory = factory;
+
+    private HttpClient ClientFor(string sub)
+    {
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-User-Sub", sub);
+        return client;
+    }
+
+    [Fact]
+    public async Task Lowercases_mixed_case_usernames_and_reports_collisions()
+    {
+        var response = await ClientFor("the-admin").PostAsync("/admin/logto/lowercase-usernames", null);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var changed = body.RootElement.GetProperty("changed").EnumerateArray().Select(e => e.GetString()).ToList();
+        var skipped = body.RootElement.GetProperty("skipped").EnumerateArray().Select(e => e.GetString()).ToList();
+        // already-lowercase and username-less users are untouched
+        Assert.Equal(["Okkes"], changed);
+        Assert.Equal(["Taken (422)"], skipped);
+    }
+
+    [Fact]
+    public async Task Only_admins_may_run_the_migration()
+    {
+        var response = await ClientFor("random-user").PostAsync("/admin/logto/lowercase-usernames", null);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+}

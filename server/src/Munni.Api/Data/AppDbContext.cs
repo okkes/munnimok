@@ -24,6 +24,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<GcInstitutionLogo> GcInstitutionLogos => Set<GcInstitutionLogo>();
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
     public DbSet<StoreSyncDevice> StoreSyncDevices => Set<StoreSyncDevice>();
+    public DbSet<UserDevice> UserDevices => Set<UserDevice>();
     public DbSet<StoreConnCipher> StoreConnCiphers => Set<StoreConnCipher>();
     public DbSet<AdminGrant> AdminGrants => Set<AdminGrant>();
     public DbSet<ProviderQuota> ProviderQuotas => Set<ProviderQuota>();
@@ -52,6 +53,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasIndex(x => new { x.SpaceId, x.OpId }).IsUnique();
         });
         modelBuilder.Entity<EntityRow>(e => e.HasKey(x => new { x.SpaceId, x.Entity, x.EntityId }));
+        modelBuilder.Entity<UserDevice>(e =>
+        {
+            // the same physical device can serve several accounts
+            e.HasKey(x => new { x.UserId, x.Id });
+        });
         modelBuilder.Entity<GcRequisition>(e => e.HasKey(x => x.Id));
         modelBuilder.Entity<GcInstitutionLogo>(e => e.HasKey(x => x.InstitutionId));
         modelBuilder.Entity<GcLinkedAccount>(e =>
@@ -235,6 +241,25 @@ public class AppSetting
 /// <summary>a device's public key for E2EE store-connection sync (SC1);
 /// WrappedCsk is the sync key encrypted TO this device by another one —
 /// the server can store it but never open it</summary>
+/// <summary>
+/// One signed-in device per user (logged-in-devices plan): stamped on
+/// every authenticated request (throttled), revocable — a revoked
+/// device's next request answers 410 and the client wipes itself.
+/// </summary>
+public class UserDevice
+{
+    /// <summary>the client's stable device id (the HLC node id)</summary>
+    public required string Id { get; set; }
+    public Guid UserId { get; set; }
+    /// <summary>web | android | ios (client-declared)</summary>
+    public string? Platform { get; set; }
+    /// <summary>auto-derived, user-editable (user ruling)</summary>
+    public string? Name { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset LastSeenAt { get; set; }
+    public DateTimeOffset? RevokedAt { get; set; }
+}
+
 public class StoreSyncDevice
 {
     public Guid Id { get; set; }

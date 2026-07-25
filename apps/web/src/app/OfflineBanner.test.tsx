@@ -25,6 +25,12 @@ describe('resolveOfflineReason', () => {
     expect(resolveOfflineReason(true, true, 'idle')).toBeNull();
     expect(resolveOfflineReason(true, true, 'syncing')).toBeNull();
   });
+
+  it('a version mismatch outranks everything — the server IS reachable, sync is refused', () => {
+    expect(resolveOfflineReason(true, true, 'error', 'client-outdated')).toBe('client-outdated');
+    expect(resolveOfflineReason(true, false, 'error', 'server-outdated')).toBe('server-outdated');
+    expect(resolveOfflineReason(false, true, 'error', 'client-outdated')).toBeNull(); // still silent without an engine
+  });
 });
 
 describe('offline banner + home indicator', () => {

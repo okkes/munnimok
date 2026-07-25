@@ -3,19 +3,33 @@ import { useLang } from '@/i18n';
 import { useData } from './data';
 import { Icon } from '@/ui/Icon';
 import type { SyncStatus } from '@/sync/engine';
+import { getProtocolIssue } from '@/lib/api';
+import type { ProtocolIssue } from '@/lib/protocol';
 
 /**
  * Why sync is failing for a signed-in user right now:
- * - 'no-network'  — the device has no connectivity at all
- * - 'unreachable' — the network is up but the munni server can't be
+ * - 'no-network'       — the device has no connectivity at all
+ * - 'unreachable'      — the network is up but the munni server can't be
  *   reached (server down, DNS, or a firewall/filter blocking it)
+ * - 'client-outdated'  — the server no longer speaks this app version
+ * - 'server-outdated'  — this app needs a newer server (native apps ship
+ *   on their own cadence; the handshake keeps a mismatch from corrupting
+ *   data — lib/protocol.ts)
  * null when everything is fine — and always null for demo/offline
  * identities, whose local-only mode is a choice, not an error.
  */
-export type OfflineReason = 'no-network' | 'unreachable';
+export type OfflineReason = 'no-network' | 'unreachable' | ProtocolIssue;
 
-export function resolveOfflineReason(hasEngine: boolean, onLine: boolean, status: SyncStatus): OfflineReason | null {
+export function resolveOfflineReason(
+  hasEngine: boolean,
+  onLine: boolean,
+  status: SyncStatus,
+  compat: ProtocolIssue | null = null,
+): OfflineReason | null {
   if (!hasEngine) return null;
+  // a version mismatch is the most specific answer — the server IS
+  // reachable, syncing is deliberately refused
+  if (compat) return compat;
   if (!onLine) return 'no-network'; // definitive — show before any sync attempt fails
   if (status === 'offline' || status === 'error') return 'unreachable';
   return null;
@@ -25,7 +39,16 @@ export function useOfflineReason(): OfflineReason | null {
   const { engine } = useData();
   const [status, setStatus] = useState<SyncStatus>(engine?.getStatus() ?? 'idle');
   const [onLine, setOnLine] = useState(navigator.onLine);
-  useEffect(() => engine?.onStatus(setStatus), [engine]);
+  const [compat, setCompat] = useState<ProtocolIssue | null>(getProtocolIssue());
+  useEffect(
+    () =>
+      engine?.onStatus((next) => {
+        setStatus(next);
+        // every sync attempt refreshes /health — re-read its verdict
+        setCompat(getProtocolIssue());
+      }),
+    [engine],
+  );
   useEffect(() => {
     const update = () => setOnLine(navigator.onLine);
     window.addEventListener('online', update);
@@ -36,12 +59,14 @@ export function useOfflineReason(): OfflineReason | null {
     };
   }, []);
 
-  return resolveOfflineReason(!!engine, onLine, status);
+  return resolveOfflineReason(!!engine, onLine, status, compat);
 }
 
 export const OFFLINE_REASON_KEYS = {
   'no-network': 'sync.reasonNoNetwork',
   unreachable: 'sync.reasonUnreachable',
+  'client-outdated': 'sync.reasonClientOutdated',
+  'server-outdated': 'sync.reasonServerOutdated',
 } as const;
 
 // sessionStorage so a dismissal lasts for this visit only — closing and

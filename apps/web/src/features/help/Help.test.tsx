@@ -178,3 +178,93 @@ describe('Tutorials (demo identity)', () => {
     expect(screen.getByTestId('help-slide-title').textContent).toBe(en['tour.review.1t']);
   }, 15_000);
 });
+
+describe('guided welcome walkthrough', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase('munni_demo');
+  });
+
+  it('fast-forwards to the first unmet step (resume detection by data)', async () => {
+    const { welcomeStartStep } = await import('./tours');
+    expect(welcomeStartStep({ hasAccount: false, hasTx: false, hasSecondSpace: false })).toBe(0);
+    expect(welcomeStartStep({ hasAccount: true, hasTx: false, hasSecondSpace: false })).toBe(3);
+    expect(welcomeStartStep({ hasAccount: true, hasTx: true, hasSecondSpace: false })).toBe(4);
+    expect(welcomeStartStep({ hasAccount: true, hasTx: true, hasSecondSpace: true })).toBe(5);
+  });
+
+  it('demo identities never see the welcome card (demo data demonstrates it all)', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    expect(screen.queryByTestId('welcome-tour-card')).toBeNull();
+  });
+});
+
+describe('welcome card (signed-in identity)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+  });
+
+  it('shows on Home; skipping asks once, the second tap skips for good', async () => {
+    const { USER_TEST_DB, renderAppAsUser } = await import('@/test/harness');
+    indexedDB.deleteDatabase(USER_TEST_DB);
+    renderAppAsUser('/home');
+    const card = await screen.findByTestId('welcome-tour-card', {}, { timeout: 5000 });
+    expect(card).toBeTruthy();
+
+    // first skip tap: one encouragement line, the card stays
+    fireEvent.click(screen.getByTestId('welcome-tour-skip'));
+    expect(screen.getByTestId('welcome-tour-line').textContent).toBe(en['tour.welcome.encourage']);
+    // second tap skips for real
+    fireEvent.click(screen.getByTestId('welcome-tour-skip'));
+    await waitFor(() => expect(screen.queryByTestId('welcome-tour-card')).toBeNull(), { timeout: 5000 });
+  }, 15_000);
+});
+
+describe('welcome walkthrough run (signed-in identity)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+  });
+
+  it('starts on the space step, walks to an act step, and End keeps the card resumable', async () => {
+    const { USER_TEST_DB, renderAppAsUser } = await import('@/test/harness');
+    indexedDB.deleteDatabase(USER_TEST_DB);
+    renderAppAsUser('/home');
+    fireEvent.click(await screen.findByTestId('welcome-tour-start', {}, { timeout: 5000 }));
+
+    // fresh identity → step 1 (meet your space) on the settings screen
+    await screen.findByTestId('spotlight-card', {}, { timeout: 5000 });
+    await waitFor(() => expect(screen.getByTestId('spotlight-title').textContent).toBe(en['tour.welcome.1t']), {
+      timeout: 5000,
+    });
+    await screen.findByTestId('screen-settings', {}, { timeout: 5000 });
+
+    // next lands on the ACT step: non-blocking card, waiting for the
+    // user's own account creation on the space's accounts screen
+    fireEvent.click(screen.getByTestId('spotlight-next'));
+    const actCard = await screen.findByTestId('walkthrough-act-card', {}, { timeout: 5000 });
+    expect(actCard.textContent).toContain(en['tour.welcome.2t']);
+    expect(screen.getByTestId('walkthrough-act-state').textContent).toBe(en['tour.welcome.stepWaiting']);
+
+    // the user "creates an account": a NEW element with the act prefix
+    // appears — the poll ticks the step done and the tour advances itself
+    const made = document.createElement('div');
+    made.dataset.testid = 'space-account-made-by-user';
+    document.body.appendChild(made);
+    await waitFor(
+      () => expect(screen.getByTestId('walkthrough-act-state').textContent).toBe(en['tour.welcome.stepDone']),
+      { timeout: 5000 },
+    );
+    await waitFor(() => expect(screen.getByTestId('spotlight-title').textContent).toBe(en['tour.welcome.3t']), {
+      timeout: 5000,
+    });
+    made.remove();
+
+    // ending early keeps the Home card alive (welcomeTourDone unset)
+    fireEvent.click(screen.getByTestId('spotlight-end'));
+    await waitFor(() => expect(screen.queryByTestId('spotlight-card')).toBeNull());
+  }, 20_000);
+});
