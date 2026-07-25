@@ -89,6 +89,26 @@ Legend: [F] fullscreen page · [B] bubble · [G] gated click (forced) ·
 | S16 | **Clean up.** Gated walk: Settings → Family's space settings → danger zone → Delete space (real confirm sheet). Auto-switch back to Private. | mina-arm-crossed-expression | B+G+A |
 | S17 | **Wrap.** "That's the tour! You have a space, an account and a first transaction. I'm around — the ? button explains every screen." Choice: "Keep what I made" / "Undo the tour's changes" (revert ledger; a fresh empty Private space is created if the revert leaves nothing). Done → Home, `minaTutorialDone`, ledger cleared. | mina-full-hand-open | F |
 
+## Approval remarks (2026-07-26, folded into M1)
+
+1. **The bubble must never cover the target.** The old walkthrough's
+   card sat on top of the very button it asked the user to press. The
+   Mina bubble measures the highlighted element and anchors to the
+   OPPOSITE half of the screen (target in the lower half → bubble on
+   top, and vice versa), re-measuring on resize/scroll.
+2. **Act detection: instant and value-flexible.** DOM-polling missed
+   creations until an app restart. Act-steps now subscribe to the STORE
+   (useQuery live emissions — the same channel every screen renders
+   from): "an account row exists that didn't at step start". Detection
+   is by row EXISTENCE diff, never by the suggested values — a €12
+   transaction satisfies the €13-prefilled step, any name works.
+3. **Desktop-quality.** The HD art is used at full quality on lg:
+   fullscreen pages become a two-column layout (art left, copy right,
+   capped ~1080px); bubbles anchor to the highlighted element instead
+   of the screen edge; the gated spotlight dims the WHOLE viewport
+   including the left navigation (portaled to body, same fix as the
+   desktop dialogs).
+
 ## Engineering slices
 
 - **M1 — engine v2**: gated spotlight (overlay blocks all but the

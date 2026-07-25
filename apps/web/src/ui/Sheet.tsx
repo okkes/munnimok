@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { createPortal } from 'react-dom';
 import type { ReactNode } from 'react';
 import { Drawer } from 'vaul';
 // desktop ruling (2026-07-17, replaces §4.3's right panel the user
@@ -174,6 +175,10 @@ interface SheetProps {
   size?: SheetSize;
   /** escape hatch for truly odd content; prefer `size` */
   height?: number;
+  /** pinned below the scroll area (save/confirm rows) — never `position:
+   *  sticky` inside the scrollport: the keyboard translation and
+   *  safe-area padding sent it drifting over the content (user ss) */
+  footer?: ReactNode;
 }
 
 interface DesktopDialogProps {
@@ -183,12 +188,13 @@ interface DesktopDialogProps {
   fixedHeight: number | undefined;
   title?: string;
   children: ReactNode;
+  footer?: ReactNode;
   onOpenChange: (open: boolean) => void;
 }
 
 /** desktop (2026-07-18 fix): a plain centered dialog — vaul's drawer
  *  transforms fought the centered layout and pinned it to the top */
-function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, onOpenChange }: Readonly<DesktopDialogProps>) {
+function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, footer, onOpenChange }: Readonly<DesktopDialogProps>) {
   // enter/exit: grow from the click point, shrink back to it
   const [phase, setPhase] = useState<'closed' | 'hidden' | 'open'>('closed');
   const originRef = useRef({ x: 0, y: 0 });
@@ -219,7 +225,11 @@ function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, onOpe
   const from = originRef.current;
   const dx = from.x - window.innerWidth / 2;
   const dy = from.y - window.innerHeight / 2;
-  return (
+  // PORTALED to body (user ss): rendered inside the master-detail pane,
+  // the pane's slide transform turned `fixed` into pane-relative — the
+  // overlay grayed only half the app, the list beside it stayed
+  // clickable, and the grow-from-click origin missed by the pane offset.
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
       <button
         aria-label="close"
@@ -251,8 +261,10 @@ function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, onOpe
       >
         {title && <div className="m-h3 shrink-0 px-5 pt-5 pb-1 text-ink">{title}</div>}
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pt-2 pb-5">{children}</div>
+        {footer && <div className="shrink-0 border-t border-line-2 bg-bg px-5 pt-3 pb-5">{footer}</div>}
       </dialog>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -261,7 +273,7 @@ function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, onOpe
  * background scroll locking come from vaul; stacked sheets lock their
  * parents automatically. Never build inline overlays.
  */
-export function Sheet({ open, onOpenChange, title, children, size, height }: Readonly<SheetProps>) {
+export function Sheet({ open, onOpenChange, title, children, size, height, footer }: Readonly<SheetProps>) {
   const requested = height ?? (size ? SIZE_PX[size] : undefined);
   const { id, isLocked, depth } = useSheetStack(open);
   // stacked sheets step DOWN in height (28px per level, floor 280) so
@@ -365,7 +377,7 @@ export function Sheet({ open, onOpenChange, title, children, size, height }: Rea
 
   if (panel) {
     return (
-      <DesktopDialog id={id} open={open} isLocked={isLocked} fixedHeight={fixedHeight} title={title} onOpenChange={onOpenChange}>
+      <DesktopDialog id={id} open={open} isLocked={isLocked} fixedHeight={fixedHeight} title={title} footer={footer} onOpenChange={onOpenChange}>
         {children}
       </DesktopDialog>
     );
@@ -418,11 +430,19 @@ export function Sheet({ open, onOpenChange, title, children, size, height }: Rea
                 promoting it to its own layer keeps paints honest */}
             <div
               ref={scrollRef}
-              className="min-h-0 flex-1 overflow-y-auto overscroll-none px-5 pb-[max(20px,env(safe-area-inset-bottom))]"
+              className={`min-h-0 flex-1 overflow-y-auto overscroll-none px-5 ${footer ? 'pb-2' : 'pb-[max(20px,env(safe-area-inset-bottom))]'}`}
               style={{ transform: 'translateZ(0)', ...(contentFits ? { touchAction: 'none' } : {}) }}
             >
               <div ref={innerRef}>{children}</div>
             </div>
+            {/* pinned footer: OUTSIDE the scrollport, so it can never
+                drift over the content (the sticky-in-scroll version did,
+                user ss) and survives the keyboard translation intact */}
+            {footer && (
+              <div className="shrink-0 border-t border-line-2 bg-bg px-5 pt-3 pb-[max(16px,env(safe-area-inset-bottom))]">
+                {footer}
+              </div>
+            )}
           </div>
         </Drawer.Content>
       </Drawer.Portal>

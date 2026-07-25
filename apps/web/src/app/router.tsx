@@ -11,6 +11,8 @@ import { AppLayout } from './AppLayout';
 import { readSessionIdentity } from './session';
 import { LoginScreen } from '@/features/auth/LoginScreen';
 import { HomeScreen } from '@/features/home/HomeScreen';
+import { HomeCustomizeScreen } from '@/features/home/HomeCustomizeScreen';
+import { TxDetailCustomizeScreen } from '@/features/transactions/TxDetailCustomizeScreen';
 import { TransactionsScreen } from '@/features/transactions/TransactionsScreen';
 import { TxDetailScreen } from '@/features/transactions/TxDetailScreen';
 import { SpacesScreen } from '@/features/spaces/SpacesScreen';
@@ -83,6 +85,10 @@ const indexRoute = createRoute({
 });
 
 const homeRoute = createRoute({ getParentRoute: () => appRoute, path: '/home', component: HomeScreen });
+// customize flows are full screens (user request: dragging on a bottom
+// sheet felt awkward; the sheet transform also sent the drag ghost adrift)
+const homeCustomizeRoute = createRoute({ getParentRoute: () => appRoute, path: '/home/customize', component: HomeCustomizeScreen });
+const txCustomizeRoute = createRoute({ getParentRoute: () => appRoute, path: '/tx-customize', component: TxDetailCustomizeScreen });
 // list routes render the master-detail layout: the list stays mounted
 // while a detail child slides in beside it at lg (animated, §4.2)
 const transactionsRoute = createRoute({
@@ -200,6 +206,8 @@ export const routeTree = rootRoute.addChildren([
   appRoute.addChildren([
     indexRoute,
     homeRoute,
+    homeCustomizeRoute,
+    txCustomizeRoute,
     transactionsRoute.addChildren([txDetailRoute]),
     recurringRoute.addChildren([recurringDetailRoute]),
     recurringSuggestionsRoute,

@@ -22,8 +22,8 @@ import { WhatsNewCard } from '@/features/help/WhatsNew';
 import { UpdateCard } from './UpdateCard';
 import { NotificationsBell } from './NotificationsBell';
 import { eventPicture } from '@/features/events/EventsScreen';
-import { HomeCustomizeSheet, resolveHomeBlocks } from './HomeCustomizeSheet';
-import type { HomeBlockId } from './HomeCustomizeSheet';
+import { resolveHomeBlocks } from './HomeCustomizeScreen';
+import type { HomeBlockId } from './HomeCustomizeScreen';
 import { SpaceSwitcher } from '@/features/spaces/SpaceSwitcher';
 import { useCategories } from '@/features/categories/useCategories';
 import { safeToSpend } from '@/domain/cashflow';
@@ -68,7 +68,6 @@ export function HomeScreen() {
   const identity = useSession((s) => s.identity);
   const topSplit = useTopSplit();
   const [accountsOpen, setAccountsOpen] = useState(false);
-  const [customizeOpen, setCustomizeOpen] = useState(false);
 
   const accounts = useSpaceAccounts();
   const allTxs = useSpaceTransactions();
@@ -300,15 +299,13 @@ export function HomeScreen() {
 
         <button
           data-testid="home-customize"
-          onClick={() => setCustomizeOpen(true)}
+          onClick={() => void navigate({ to: '/home/customize' })}
           className="m-tap mt-5 flex w-full items-center justify-center gap-2 rounded-card border border-dashed border-line bg-transparent py-3 text-[13px] font-medium text-ink-3"
         >
           <Icon name="tune-variant" size={16} />
           {t('home.customize')}
         </button>
       </div>
-
-      <HomeCustomizeSheet open={customizeOpen} onOpenChange={setCustomizeOpen} space={space} />
 
       {/* quick display-currency picker (band fold-out shortcut) — the
           full setting with the offline manual rates lives on Profile */}

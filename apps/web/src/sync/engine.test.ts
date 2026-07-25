@@ -152,6 +152,39 @@ describe('SyncEngine', () => {
     expect((await a.db.spaces.get('s1'))?.name).toBe('Mine');
   });
 
+  it('an import finishing mid-cycle is never swept away (data-loss regression)', async () => {
+    // user report: "imported 200 transactions, then everything
+    // disappeared" — the orphan-feed sweep at the END of a cycle used
+    // the space/outbox snapshots from the START, so a statement import
+    // completing while the cycle ran was judged an orphan and purged
+    // (rows AND their un-pushed outbox ops)
+    let w = 1_000_000;
+    const a = device('devA', () => ++w, server);
+    dbs.push(a.db);
+    await a.repo.upsert('space', 's1', 's1', { name: 'Mine', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
+    await a.engine.syncAll(); // clean baseline
+
+    // the import lands right after the cycle fetched the server's list
+    const origList = server.listSpaces.bind(server);
+    server.listSpaces = async () => {
+      const res = await origList();
+      await a.repo.upsert('account', 'feed-1', 'facc', { name: 'ING import', balanceCents: 0 });
+      await a.repo.upsert('transaction', 'feed-1', 'ftx', { accountId: 'facc', date: '2026-07-01', amountCents: -100, currency: 'EUR', merchant: 'X', txType: 'expense', needsReview: 1 });
+      await a.repo.upsert('accountLink', 's1', 'link1', { feedSpaceId: 'feed-1', accountId: 'facc' });
+      return res;
+    };
+    await a.engine.syncAll();
+    server.listSpaces = origList;
+
+    // nothing was purged — the fresh import survived the sweep…
+    expect(await a.db.accounts.get('facc')).toBeTruthy();
+    expect(await a.db.transactions.get('ftx')).toBeTruthy();
+    // …and the next cycle delivers its ops to the server
+    await a.engine.syncAll();
+    expect(await a.db.outbox.count()).toBe(0);
+    expect((await server.pull('feed-1', 0)).ops.some((op) => op.entity === 'transaction')).toBe(true);
+  });
+
   it('big outboxes push in chunks; a poisoned space never starves the others', async () => {
     let w = 1_000_000;
     const a = device('devA', () => ++w, server);

@@ -32,8 +32,8 @@ import { CounterpartySheet, TX_KIND_VISUAL, TxKindSheet, kindDetail } from './Tx
 import { kindOf, standardTypeFor } from '@/domain/txKind';
 import { applyTypeChange, typeForLinkedAccount } from '@/domain/txType';
 import { merchantKey } from '@/domain/merchantKey';
-import { TxDetailCustomizeSheet, resolveTxDetailBlocks } from './TxDetailCustomizeSheet';
-import type { TxDetailBlockId } from './TxDetailCustomizeSheet';
+import { resolveTxDetailBlocks } from './TxDetailCustomizeScreen';
+import type { TxDetailBlockId } from './TxDetailCustomizeScreen';
 import { TxRow } from '@/ui/TxRow';
 import type { SpaceTx } from '@/application/transactions';
 import type { TxType } from '@/db/types';
@@ -344,7 +344,6 @@ export function TxDetailScreen() {
   // which of the similar transactions the bulk apply will touch (user
   // request: see and pick them, not a blind apply-all)
   const [bulkSelected, setBulkSelected] = useState<ReadonlySet<string>>(new Set());
-  const [customizeOpen, setCustomizeOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const navigate = useNavigate();
   const panes = useLgViewport();
@@ -669,7 +668,7 @@ export function TxDetailScreen() {
 
         <button
           data-testid="tx-detail-customize"
-          onClick={() => setCustomizeOpen(true)}
+          onClick={() => void navigate({ to: '/tx-customize' })}
           className="m-tap mt-5 flex w-full items-center justify-center gap-2 rounded-card border border-dashed border-line bg-transparent py-2.5 text-[13px] font-medium text-ink-3"
         >
           <Icon name="tune-variant" size={16} />
@@ -739,7 +738,6 @@ export function TxDetailScreen() {
         value={txTitle(tx)}
         onSave={renameTitle}
       />
-      <TxDetailCustomizeSheet open={customizeOpen} onOpenChange={setCustomizeOpen} space={space} />
 
       {/* the counterparty is one of the user's own accounts — show it */}
       <Sheet open={counterOpen && !!counterAccount} onOpenChange={setCounterOpen} title={counterAccount?.name ?? ''} size="compact">

@@ -535,12 +535,27 @@ describe('detail sections customize (user request)', () => {
     renderApp('/transactions/cust-a');
     await screen.findByTestId('tx-detail-notes');
 
+    // customize is its own screen now (user request): toggle there,
+    // return to the detail to see the section gone — then restore it
+    const notesHidden = async () =>
+      ((await db.spaces.get(DEMO_SPACE_ID))?.txDetailBlocks ?? []).some((b) => b.id === 'notes' && b.hidden === 1);
+
     fireEvent.click(screen.getByTestId('tx-detail-customize'));
     await screen.findByTestId('tx-customize-list');
     fireEvent.click(screen.getByTestId('tx-block-toggle-notes'));
+    // the write must LAND before unmounting (in-flight puts die with the app)
+    await waitFor(async () => expect(await notesHidden()).toBe(true), { timeout: 5000 });
+    cleanup();
+    renderApp('/transactions/cust-a');
+    await screen.findByTestId('screen-tx-detail');
     await waitFor(() => expect(screen.queryByTestId('tx-detail-notes')).toBeNull());
 
+    fireEvent.click(screen.getByTestId('tx-detail-customize'));
+    await screen.findByTestId('tx-customize-list');
     fireEvent.click(screen.getByTestId('tx-block-toggle-notes'));
+    await waitFor(async () => expect(await notesHidden()).toBe(false), { timeout: 5000 });
+    cleanup();
+    renderApp('/transactions/cust-a');
     await screen.findByTestId('tx-detail-notes');
     db.close();
   }, 15_000);

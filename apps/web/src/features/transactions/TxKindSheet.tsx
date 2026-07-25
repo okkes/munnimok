@@ -111,12 +111,14 @@ export function CounterpartySheet({
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const [query, setQuery] = useState('');
   const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState('');
   const [newType, setNewType] = useState<AccountType | null>(null);
 
   useEffect(() => {
     if (!open) return;
     setQuery('');
     setCreating(false);
+    setNewName('');
     setNewType(null);
   }, [open]);
 
@@ -133,7 +135,7 @@ export function CounterpartySheet({
   };
 
   const create = () => {
-    const name = query.trim();
+    const name = newName.trim();
     if (!name || !newType) return;
     const id = repo.newId();
     void repo.upsert('account', spaceId, id, {
@@ -187,20 +189,31 @@ export function CounterpartySheet({
           )}
         </div>
       )}
-      {/* quick-create door (user request: "search … and create one
-          quickly if it does not exist", like events and recurring) */}
-      {query.trim() && !creating && (
+      {/* quick-create door — ALWAYS visible (user request: reaching a
+          missing account must be fast, especially now that transfers
+          demand a counterparty); a typed search pre-fills the name */}
+      {!creating && (
         <button
           data-testid="counter-create"
-          onClick={() => setCreating(true)}
+          onClick={() => {
+            setNewName(query.trim());
+            setCreating(true);
+          }}
           className="m-tap mt-2 flex w-full items-center gap-2 rounded-card border border-dashed border-line bg-transparent px-4 py-3 text-left text-[14px] font-medium text-accent-deep"
         >
           <Icon name="plus-circle-outline" size={18} />
-          {t('tx.counterCreate', { name: query.trim() })}
+          {query.trim() ? t('tx.counterCreate', { name: query.trim() }) : t('tx.counterNew')}
         </button>
       )}
       {creating && (
         <div className="mt-2 flex flex-col gap-2" data-testid="counter-create-form">
+          <input
+            data-testid="counter-create-name"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            placeholder={t('acct.accountName')}
+            className="h-11 w-full rounded-input border border-line bg-surface px-4 text-[14px] text-ink outline-none placeholder:text-ink-4"
+          />
           <div className="m-cap px-1">{t('acct.accountType')}</div>
           <div className="flex flex-wrap gap-2">
             {ACCOUNT_TYPES.map((def) => (
@@ -214,8 +227,8 @@ export function CounterpartySheet({
           {newType && isLiability(newType) && (
             <p className="px-1 text-[11px] text-ink-4">{t('tx.counterCreateLiability')}</p>
           )}
-          <Button data-testid="counter-create-save" disabled={!newType} onClick={create}>
-            {t('tx.counterCreate', { name: query.trim() })}
+          <Button data-testid="counter-create-save" disabled={!newType || !newName.trim()} onClick={create}>
+            {newName.trim() ? t('tx.counterCreate', { name: newName.trim() }) : t('tx.counterNew')}
           </Button>
         </div>
       )}

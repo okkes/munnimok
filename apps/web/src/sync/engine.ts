@@ -147,7 +147,7 @@ export class SyncEngine {
           firstError ??= err;
         }
       }
-      await this.purgeOrphanFeeds(spaces, outboxSpaces, serverSpaces);
+      await this.purgeOrphanFeeds(serverSpaces);
       if (firstError) throw firstError;
       await this.store.metaPut(LAST_SYNC_KEY, Date.now());
       this.setStatus('idle');
@@ -247,13 +247,29 @@ export class SyncEngine {
    * report). Any local account data in a space the server no longer
    * grants is removed here; the owner's own feeds stay reachable
    * (owned), so only genuinely lost access is purged.
+   *
+   * DATA-LOSS regression (user report: "imported 200 transactions, then
+   * everything disappeared"): this sweep used the space/outbox snapshots
+   * taken at the START of the cycle, but read accounts LIVE — a
+   * statement import finishing while a cycle was mid-flight created its
+   * feed after the snapshot, so the sweep purged the fresh account, all
+   * its transactions AND their un-pushed outbox ops. Everything local is
+   * therefore re-read at sweep time, and any feed a live accountLink
+   * mirror points at is protected even when the server's space list was
+   * fetched before that feed existed.
    */
-  private async purgeOrphanFeeds(
-    spaces: { id: string }[],
-    outboxSpaces: string[],
-    serverSpaces: string[],
-  ): Promise<void> {
-    const known = new Set([...spaces.map((s) => s.id), ...outboxSpaces, ...serverSpaces]);
+  private async purgeOrphanFeeds(serverSpaces: string[]): Promise<void> {
+    const [spaces, outbox, links] = await Promise.all([
+      this.store.allRows('space'),
+      this.store.outboxAll(),
+      this.store.allRows('accountLink'),
+    ]);
+    const known = new Set([
+      ...spaces.filter((s) => s.deleted === 0).map((s) => s.id),
+      ...outbox.map((o) => o.spaceId),
+      ...links.filter((l) => l.deleted === 0).map((l) => l.feedSpaceId),
+      ...serverSpaces,
+    ]);
     const orphans = new Set(
       (await this.store.allRows('account'))
         .map((a) => a.spaceId)
