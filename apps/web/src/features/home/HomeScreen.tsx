@@ -16,6 +16,7 @@ import { useData } from '@/app/data';
 import { OfflineIndicator } from '@/app/OfflineBanner';
 import { HelpButton } from '@/features/help/HelpButton';
 import { IntroCard } from '@/features/help/IntroCard';
+import { WelcomeTourCard } from '@/features/help/WelcomeTourCard';
 import { InstallHint } from '@/features/help/InstallHint';
 import { WhatsNewCard } from '@/features/help/WhatsNew';
 import { UpdateCard } from './UpdateCard';
@@ -281,6 +282,7 @@ export function HomeScreen() {
             <UpdateCard />
             <WhatsNewCard />
             <InstallHint />
+            <WelcomeTourCard />
             <IntroCard tourId="home" />
           </div>
 

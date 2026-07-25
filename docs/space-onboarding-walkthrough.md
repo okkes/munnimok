@@ -1,6 +1,11 @@
 # Guided onboarding — spaces, accounts, first transaction
 
-Status: **DESIGN v3 — realigned** (2026-07-23) with the shipped
+Status: **IMPLEMENTED 2026-07-25** — the `welcome` tour: a Home card
+(one-nudge skip), act-steps that watch the user's REAL form submissions
+land (non-blocking card, appear-prefix detection), per-step screen
+navigation, data-driven resume/fast-forward (`welcomeStartStep`), and
+re-entry via the help index like every other tour. Demo identities are
+excluded. Formerly: **DESIGN v3 — realigned** (2026-07-23) with the shipped
 onboarding v2 (profile/lock only, bank step gone — THIS walkthrough
 owns account setup now), the three account tiers (manual accounts are
 SPACE-scoped, created on the space's own screen), and the approved

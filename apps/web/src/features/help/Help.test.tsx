@@ -178,3 +178,47 @@ describe('Tutorials (demo identity)', () => {
     expect(screen.getByTestId('help-slide-title').textContent).toBe(en['tour.review.1t']);
   }, 15_000);
 });
+
+describe('guided welcome walkthrough', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase('munni_demo');
+  });
+
+  it('fast-forwards to the first unmet step (resume detection by data)', async () => {
+    const { welcomeStartStep } = await import('./tours');
+    expect(welcomeStartStep({ hasAccount: false, hasTx: false, hasSecondSpace: false })).toBe(0);
+    expect(welcomeStartStep({ hasAccount: true, hasTx: false, hasSecondSpace: false })).toBe(3);
+    expect(welcomeStartStep({ hasAccount: true, hasTx: true, hasSecondSpace: false })).toBe(4);
+    expect(welcomeStartStep({ hasAccount: true, hasTx: true, hasSecondSpace: true })).toBe(5);
+  });
+
+  it('demo identities never see the welcome card (demo data demonstrates it all)', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    expect(screen.queryByTestId('welcome-tour-card')).toBeNull();
+  });
+});
+
+describe('welcome card (signed-in identity)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+  });
+
+  it('shows on Home; skipping asks once, the second tap skips for good', async () => {
+    const { USER_TEST_DB, renderAppAsUser } = await import('@/test/harness');
+    indexedDB.deleteDatabase(USER_TEST_DB);
+    renderAppAsUser('/home');
+    const card = await screen.findByTestId('welcome-tour-card', {}, { timeout: 5000 });
+    expect(card).toBeTruthy();
+
+    // first skip tap: one encouragement line, the card stays
+    fireEvent.click(screen.getByTestId('welcome-tour-skip'));
+    expect(screen.getByTestId('welcome-tour-line').textContent).toBe(en['tour.welcome.encourage']);
+    // second tap skips for real
+    fireEvent.click(screen.getByTestId('welcome-tour-skip'));
+    await waitFor(() => expect(screen.queryByTestId('welcome-tour-card')).toBeNull(), { timeout: 5000 });
+  }, 15_000);
+});

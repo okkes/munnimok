@@ -1,8 +1,74 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useNavigate } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
+import { useData } from '@/app/data';
 import type { Tour } from './tours';
 import { Button } from '@/ui/Button';
+import { Icon } from '@/ui/Icon';
+
+/**
+ * ACT step (guided walkthrough): no backdrop — the user drives the real
+ * form; a floating card watches for a NEW element with the prefix
+ * (baseline counted on entry) and advances itself when it appears.
+ */
+function ActStepCard({
+  tour,
+  step,
+  onDone,
+  onEnd,
+}: Readonly<{ tour: Tour; step: number; onDone: () => void; onEnd: () => void }>) {
+  const { t } = useLang();
+  const current = tour.steps[step];
+  const [met, setMet] = useState(false);
+
+  useEffect(() => {
+    setMet(false);
+    const prefix = current.act!.appearPrefix;
+    const count = () => document.querySelectorAll(`[data-testid^="${prefix}"]`).length;
+    const baseline = count();
+    const poll = setInterval(() => {
+      if (count() > baseline) {
+        setMet(true);
+        clearInterval(poll);
+      }
+    }, 400);
+    return () => clearInterval(poll);
+  }, [current, step]);
+
+  useEffect(() => {
+    if (!met) return;
+    const timer = setTimeout(onDone, 900); // let the tick land before moving on
+    return () => clearTimeout(timer);
+  }, [met, onDone]);
+
+  return createPortal(
+    <div
+      data-testid="walkthrough-act-card"
+      className="fixed inset-x-4 bottom-20 z-[120] rounded-card border border-line bg-surface p-4 shadow-xl"
+    >
+      <div className="flex items-start gap-3">
+        <span className="text-[26px] leading-none" aria-hidden>
+          {current.illustration}
+        </span>
+        <span className="min-w-0 flex-1">
+          <p className="text-[14px] font-semibold text-ink">{t(current.titleKey)}</p>
+          <p className="mt-0.5 text-[12px] leading-relaxed text-ink-2">{t(current.bodyKey)}</p>
+        </span>
+      </div>
+      <div className="mt-2 flex items-center gap-2">
+        <span className={`flex flex-1 items-center gap-1.5 text-[12px] ${met ? 'text-accent-deep' : 'text-ink-4'}`} data-testid="walkthrough-act-state">
+          <Icon name={met ? 'check-circle' : 'circle-outline'} size={15} />
+          {t(met ? 'tour.welcome.stepDone' : 'tour.welcome.stepWaiting')}
+        </span>
+        <button data-testid="spotlight-end" onClick={onEnd} className="m-tap border-none bg-transparent text-[12px] text-ink-4">
+          {t('help.end')}
+        </button>
+      </div>
+    </div>,
+    document.body,
+  );
+}
 
 interface Rect {
   top: number;
@@ -25,11 +91,28 @@ export function SpotlightOverlay({
   step,
   onStep,
   onEnd,
-}: Readonly<{ tour: Tour; step: number; onStep: (step: number) => void; onEnd: () => void }>) {
+  onComplete,
+}: Readonly<{
+  tour: Tour;
+  step: number;
+  onStep: (step: number) => void;
+  onEnd: () => void;
+  /** fired when the LAST step advances (walkthrough persistence) */
+  onComplete?: () => void;
+}>) {
   const { t } = useLang();
+  const navigate = useNavigate();
+  const { spaceId } = useData();
   const current = tour.steps[step];
   const [phase, setPhase] = useState<'looking' | 'found' | 'missing'>('looking');
   const [rect, setRect] = useState<Rect | null>(null);
+
+  // guided walkthrough: some steps live on another screen — go there
+  useEffect(() => {
+    if (current.screen) void navigate({ to: current.screen.replace('$spaceId', spaceId) });
+    // deliberately NOT on spaceId: a mid-tour space switch must not teleport
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current.screen, step, navigate]);
 
   useEffect(() => {
     if (!current.anchor) {
@@ -58,9 +141,19 @@ export function SpotlightOverlay({
   }, [current.anchor, step]);
 
   const advance = () => {
-    if (step + 1 >= tour.steps.length) onEnd();
-    else onStep(step + 1);
+    if (step + 1 >= tour.steps.length) {
+      onComplete?.();
+      onEnd();
+    } else {
+      onStep(step + 1);
+    }
   };
+
+  // act steps render their own non-blocking card (branch sits AFTER
+  // every hook, so the hook order stays stable across step kinds)
+  if (current.act) {
+    return <ActStepCard tour={tour} step={step} onDone={advance} onEnd={onEnd} />;
+  }
 
   const tapForward = () => {
     if (current.advanceOn !== 'tap' || !current.anchor) return;

@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useMemo, useState } from 'react
 import type { ReactNode } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useData } from '@/app/data';
-import { tourById } from './tours';
+import { tourById, welcomeStartStep } from './tours';
 import type { TourId } from './tours';
 import { HelpSlidesSheet } from './HelpSlidesSheet';
 import { SpotlightOverlay } from './SpotlightOverlay';
@@ -39,9 +39,27 @@ export function HelpProvider({ children }: Readonly<{ children: ReactNode }>) {
       // 'current' = run where the help button lives (param routes can't
       // be navigated to blindly — e.g. a space's accounts screen)
       if (tour.screen !== 'current') void navigate({ to: tour.screen });
+      if (tourId === 'welcome') {
+        // resume detection (walkthrough design): fast-forward past steps
+        // whose real-world outcome already exists
+        void (async () => {
+          const [accounts, txs, spaces] = await Promise.all([
+            store.allRows('account'),
+            store.allRows('transaction'),
+            store.allRows('space'),
+          ]);
+          const step = welcomeStartStep({
+            hasAccount: accounts.some((a) => a.deleted === 0),
+            hasTx: txs.some((t) => t.deleted === 0),
+            hasSecondSpace: spaces.filter((s) => s.deleted === 0 && !!s.kind).length > 1,
+          });
+          setSpotlight({ tourId, step });
+        })();
+        return;
+      }
       setSpotlight({ tourId, step: 0 });
     },
-    [navigate, markSeen],
+    [navigate, markSeen, store],
   );
 
   const api = useMemo(() => ({ openSlides, startSpotlight }), [openSlides, startSpotlight]);
@@ -64,6 +82,11 @@ export function HelpProvider({ children }: Readonly<{ children: ReactNode }>) {
           step={spotlight.step}
           onStep={(step) => setSpotlight({ ...spotlight, step })}
           onEnd={() => setSpotlight(null)}
+          onComplete={() => {
+            // the guided walkthrough only counts as done when its wrap
+            // step was reached — an early End keeps the Home card alive
+            if (spotlight.tourId === 'welcome') void store.metaPut('welcomeTourDone', true).catch(() => undefined);
+          }}
         />
       )}
     </HelpContext.Provider>
