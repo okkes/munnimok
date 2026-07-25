@@ -55,7 +55,7 @@ describe('TxDetailScreen (demo identity)', () => {
     expect(await screen.findByTestId('screen-tx-detail')).toBeTruthy();
     expect((await screen.findByTestId('tx-detail-amount')).textContent).toMatch(/€/);
     expect(screen.getByTestId('tx-detail-category-row')).toBeTruthy();
-    expect(screen.getByTestId('tx-detail-type-row')).toBeTruthy();
+    expect(screen.getByTestId('tx-detail-kind-row')).toBeTruthy();
   });
 
   it('a manual transaction deletes with a two-tap confirm (user request)', async () => {
@@ -130,18 +130,22 @@ describe('counterparty account number on the detail screen', () => {
     db.close();
   };
 
-  it('an unknown counterparty IBAN renders inside the editable row (user rule: pickable)', async () => {
+  it('an unknown counterparty IBAN shows as a bank fact; only a transfer kind edits it', async () => {
     renderApp('/home'); // seed first, then navigate via a fresh render
     await screen.findByTestId('screen-home');
     await seedTx('NL99ELDR0000000042', 'tx-cp1');
     cleanup();
     renderApp('/transactions/tx-cp1');
-    const row = await screen.findByTestId('tx-detail-counterparty-edit');
+    const row = (await screen.findByTestId('tx-detail-counterparty-edit')) as HTMLButtonElement;
     expect(row.textContent).toContain('NL99ELDR0000000042');
-    // tapping opens the account picker DIRECTLY (user report: the
-    // combined type sheet surprised here)
-    fireEvent.click(row);
-    expect(await screen.findByTestId('txtype-accounts')).toBeTruthy();
+    // a standard expense keeps the row read-only (user simplification:
+    // counterparty is a transfer concept — the IBAN stays visible)
+    expect(row.disabled).toBe(true);
+    // choosing the Transfer kind walks into the mandatory counterparty pick
+    fireEvent.click(screen.getByTestId('tx-detail-kind-row'));
+    await screen.findByTestId('txkind-options');
+    fireEvent.click(screen.getByTestId('txkind-transfer'));
+    expect(await screen.findByTestId('counter-accounts')).toBeTruthy();
   }, 15_000);
 
   it('a counterparty matching an own account becomes a door with account info', async () => {
@@ -167,45 +171,52 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     indexedDB.deleteDatabase('munni_demo');
   });
 
-  it('changing to a conflicting type clears the category and flags review', async () => {
+  it('a transfer to the savings account derives Saving and clears the conflicting category', async () => {
     renderApp('/transactions/dm6');
-    fireEvent.click(await screen.findByTestId('tx-detail-type-row'));
-    await screen.findByTestId('txtype-options');
-    fireEvent.click(screen.getByTestId('txtype-income'));
-    // groceries only allows expense -> category falls back to uncategorized
+    // groceries expense → kind Transfer → the counterparty is mandatory
+    fireEvent.click(await screen.findByTestId('tx-detail-kind-row'));
+    await screen.findByTestId('txkind-options');
+    fireEvent.click(screen.getByTestId('txkind-transfer'));
+    fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
+    // the savings counterparty derives Saving; groceries only speaks
+    // expense → category falls back to uncategorized for review
     await waitFor(() => {
-      expect(screen.getByTestId('tx-detail-type-row').textContent).toContain('Income');
+      expect(screen.getByTestId('tx-detail-kind-row').textContent).toContain('Saving');
       expect(screen.getByTestId('tx-detail-category-row').textContent).toContain('Uncategorized');
     });
-  });
-
-  it('linking a savings counter-account sets the type as an editable default', async () => {
-    renderApp('/transactions/dm6');
-    // the counterparty row opens the account picker DIRECTLY now
-    fireEvent.click(await screen.findByTestId('tx-detail-counterparty-edit'));
-    fireEvent.click(await screen.findByTestId('txtype-linked-demo_save'));
-    await waitFor(() => expect(screen.getByTestId('tx-detail-type-row').textContent).toContain('Saving'));
-
-    // reopen: the account only SUGGESTS the type (user revision) — the
-    // manual list stays usable and overriding keeps the link
-    fireEvent.click(screen.getByTestId('tx-detail-type-row'));
-    expect(await screen.findByTestId('txtype-default-note')).toBeTruthy();
-    expect((screen.getByTestId('txtype-expense') as HTMLButtonElement).disabled).toBe(false);
-    fireEvent.click(screen.getByTestId('txtype-transfer'));
-    await waitFor(() => expect(screen.getByTestId('tx-detail-type-row').textContent).toContain('Transfer'));
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
       const tx = await db.transactions.get('dm6');
-      expect(tx?.txType).toBe('transfer');
-      expect(tx?.linkedAccountId).toBe('demo_save'); // link survived
+      expect(tx?.txType).toBe('saving');
+      expect(tx?.linkedAccountId).toBe('demo_save');
     });
     db.close();
+  }, 15_000);
 
-    // unlinking (via the counterparty row) clears the suggestion note
-    fireEvent.click(screen.getByTestId('tx-detail-counterparty-edit'));
-    fireEvent.click(await screen.findByTestId('txtype-linked-none'));
-    fireEvent.click(screen.getByTestId('tx-detail-type-row'));
-    await waitFor(() => expect(screen.queryByTestId('txtype-default-note')).toBeNull());
+  it('back to Standard: the sign resolves the type and the counterparty clears', async () => {
+    renderApp('/transactions/dm6');
+    fireEvent.click(await screen.findByTestId('tx-detail-kind-row'));
+    await screen.findByTestId('txkind-options');
+    fireEvent.click(screen.getByTestId('txkind-transfer'));
+    fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => expect((await db.transactions.get('dm6'))?.txType).toBe('saving'));
+
+    // standard on a negative amount = expense again, link gone
+    fireEvent.click(screen.getByTestId('tx-detail-kind-row'));
+    await screen.findByTestId('txkind-options');
+    fireEvent.click(screen.getByTestId('txkind-standard'));
+    await waitFor(async () => {
+      const tx = await db.transactions.get('dm6');
+      expect(tx?.txType).toBe('expense');
+      expect(tx?.linkedAccountId).toBeFalsy();
+    });
+    // demo rows are hand-shaped (no importRef) → Adjustment is offered
+    fireEvent.click(screen.getByTestId('tx-detail-kind-row'));
+    await screen.findByTestId('txkind-options');
+    fireEvent.click(screen.getByTestId('txkind-adjustment'));
+    await waitFor(async () => expect((await db.transactions.get('dm6'))?.txType).toBe('adjustment'));
+    db.close();
   }, 15_000);
 });
 

@@ -5,7 +5,7 @@ import { DexieBackend } from '@/db/backend';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
 import { HlcClock } from '@/sync/hlc';
-import { applyCatalogTombstones, migrateReimbursementSlices } from './catalogMaintenance';
+import { applyCatalogTombstones, migrateReimbursementSlices, migrateUnlinkedTransferKinds } from './catalogMaintenance';
 
 const SPACE = 's1';
 
@@ -108,5 +108,40 @@ describe('reimbursement slice migration (redesign, answer d)', () => {
 
     // marker gates the rerun
     expect(await migrateReimbursementSlices(store, repo)).toBe(0);
+  });
+});
+
+describe('unlinked transfer-kind migration (kind simplification)', () => {
+  const stores: DexieBackend[] = [];
+  afterEach(async () => {
+    for (const s of stores.splice(0)) await s.destroy();
+  });
+
+  it('rewrites counterparty-less transfer-family rows to income/expense by sign, once', async () => {
+    const store = new DexieBackend(new MunniDB(`munni_tkm_${Math.random().toString(36).slice(2)}`));
+    stores.push(store);
+    const repo = new Repo(store, new HlcClock('tkm'), { trackOutbox: false });
+    await repo.upsert('space', SPACE, SPACE, { name: 'P', kind: 'personal', currency: 'EUR', periodType: 'month' });
+    const base = { accountId: 'a', currency: 'EUR', merchant: 'X', needsReview: 0 as const };
+    // orphans of the old free type picker: no counterparty anywhere
+    await repo.upsert('transaction', SPACE, 'sv', { ...base, date: '2026-01-01', amountCents: -5_000, txType: 'saving' });
+    await repo.upsert('transaction', SPACE, 'iv', { ...base, date: '2026-01-02', amountCents: 5_000, txType: 'investment' });
+    await repo.upsert('transaction', SPACE, 'tf', { ...base, date: '2026-01-03', amountCents: -1_000, txType: 'transfer' });
+    // linked rows keep their derived type exactly as-is
+    await repo.upsert('transaction', SPACE, 'ok', { ...base, date: '2026-01-04', amountCents: -2_000, txType: 'saving', linkedAccountId: 'b' });
+    // standard + adjustment rows are not the migration's business
+    await repo.upsert('transaction', SPACE, 'ex', { ...base, date: '2026-01-05', amountCents: -300, txType: 'expense' });
+    await repo.upsert('transaction', SPACE, 'ad', { ...base, date: '2026-01-06', amountCents: 300, txType: 'adjustment' });
+
+    expect(await migrateUnlinkedTransferKinds(store, repo)).toBe(3);
+    expect((await store.get('transaction', 'sv'))?.txType).toBe('expense');
+    expect((await store.get('transaction', 'iv'))?.txType).toBe('income');
+    expect((await store.get('transaction', 'tf'))?.txType).toBe('expense');
+    expect((await store.get('transaction', 'ok'))?.txType).toBe('saving');
+    expect((await store.get('transaction', 'ex'))?.txType).toBe('expense');
+    expect((await store.get('transaction', 'ad'))?.txType).toBe('adjustment');
+
+    // marker gates the rerun
+    expect(await migrateUnlinkedTransferKinds(store, repo)).toBe(0);
   });
 });

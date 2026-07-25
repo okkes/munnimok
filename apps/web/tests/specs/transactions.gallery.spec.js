@@ -128,28 +128,30 @@ for (const V of VARIANTS) {
     await teardown(page, ctx, k('34-tx-reimburse'));
   });
 
-  test(`tx-a8 link counter-account suggests type; conflicting category resets [${V.id}]`, async ({ browser }) => {
+  test(`tx-a8 the kind leads: a transfer names its counterparty, standard clears it [${V.id}]`, async ({ browser }) => {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V, { demo: true });
     await openFirstReviewTx(page); // dm100: hobby expense on demo_main
-    // the counterparty row opens the account picker DIRECTLY (user report)
-    await page.click('[data-testid="tx-detail-counterparty-edit"]');
-    await page.waitForSelector('[data-testid="txtype-accounts"]');
-    // link the savings account -> type becomes Saving, category conflicts -> reset
-    await page.click('[data-testid="txtype-linked-demo_save"]');
+    // simplified model: the kind row decides; picking Transfer walks
+    // straight into the MANDATORY counterparty pick
+    await page.click('[data-testid="tx-detail-kind-row"]');
+    await page.waitForSelector('[data-testid="txkind-options"]');
+    await page.click('[data-testid="txkind-transfer"]');
+    await page.waitForSelector('[data-testid="counter-accounts"]');
+    await page.click('[data-testid="counter-pick-demo_save"]');
     await page.waitForTimeout(500);
-    await expect(page.locator('[data-testid="tx-detail-type-row"]')).toContainText('Saving');
+    // the savings counterparty derives Saving; the conflicting category resets
+    await expect(page.locator('[data-testid="tx-detail-kind-row"]')).toContainText('Saving');
     await expect(page.locator('[data-testid="tx-detail-category-row"]')).toContainText('Uncategorized');
-    // reopen: the account only SUGGESTS (user revision) — manual types stay
-    // usable and an override keeps the link
-    await page.click('[data-testid="tx-detail-type-row"]');
-    await expect(page.locator('[data-testid="txtype-default-note"]')).toBeVisible();
-    await expect(page.locator('[data-testid="txtype-expense"]')).toBeEnabled();
+    await expect(page.locator('[data-testid="tx-detail-linked-account"]')).toBeVisible();
     await shot(page, k('35-tx-type-link'));
-    await page.click('[data-testid="txtype-expense"]');
+    // back to Standard: the sign resolves Expense and the link clears
+    await page.click('[data-testid="tx-detail-kind-row"]');
+    await page.waitForSelector('[data-testid="txkind-options"]');
+    await page.click('[data-testid="txkind-standard"]');
     await page.waitForTimeout(500);
-    await expect(page.locator('[data-testid="tx-detail-type-row"]')).toContainText('Expense');
-    await expect(page.locator('[data-testid="tx-detail-linked-account"]')).toBeVisible(); // link survived
+    await expect(page.locator('[data-testid="tx-detail-kind-row"]')).toContainText('Expense');
+    await expect(page.locator('[data-testid="tx-detail-linked-account"]')).toHaveCount(0);
     await teardown(page, ctx, k('35-tx-type-link'));
   });
 

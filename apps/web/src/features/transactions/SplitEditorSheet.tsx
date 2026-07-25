@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import type { ReactNode } from 'react';
 import { useSpaceTransactions, useTxTransform } from '@/application/transactions';
 import type { SpaceTx } from '@/application/transactions';
 import { useLang } from '@/i18n';
@@ -61,7 +60,6 @@ export function SplitEditorSheet({
   direction,
   onApplySingle,
   reason,
-  header,
 }: Readonly<{
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -86,9 +84,6 @@ export function SplitEditorSheet({
   onApplySingle?: (catId: string) => void;
   /** why the current category was suggested (review card) — shown inline */
   reason?: string | null;
-  /** grouped context rows (review: counterparty + type) — rendered under
-   *  the reason, above the split rows, so related decisions sit together */
-  header?: ReactNode;
 }>) {
   const { t, lang } = useLang();
   const transform = useTxTransform();
@@ -127,9 +122,12 @@ export function SplitEditorSheet({
       // start from the current category + an empty second row
       setRows([newRow(tx.catId ?? UNCATEGORIZED_ID, toText(Math.abs(referenceCents))), newRow(UNCATEGORIZED_ID, '0,00')]);
     }
-    // deliberately only on open: the sheet owns its rows while open
+    // deliberately only on open (or a card swap): the sheet owns its
+    // rows while open. Keyed by tx.id, NOT the object — background
+    // writes (sync, migrations) re-emit the same row as a fresh object
+    // and must never wipe rows the user is mid-editing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, tx]);
+  }, [open, tx.id]);
 
   const splits: TxSplit[] =
     mode === 'pct'
@@ -253,7 +251,6 @@ export function SplitEditorSheet({
               {reason}
             </div>
           )}
-          {header}
           {/* exact euros for one charge, percentages when the shape repeats */}
           <div className="flex gap-1.5">
             <Chip className="flex-1" testId="split-mode-amount" selected={mode === 'amount'} onClick={() => switchMode('amount')}>

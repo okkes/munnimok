@@ -4,6 +4,7 @@ import { visibleTransactions, writeTxTransform } from '@/db/joined';
 import { tombstonedIds } from '@/domain/catalogDoc';
 import { UNCATEGORIZED_ID } from '@/domain/categories';
 import { givenCents, settledSplits, totalReimbursedCents } from '@/domain/reimbursement';
+import { kindOf, standardTypeFor } from '@/domain/txKind';
 import { cachedCatalog } from '@/sync/catalogSync';
 
 /**
@@ -67,6 +68,33 @@ export async function migrateReimbursementSlices(store: StorageBackend, repo: Re
   const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0);
   for (const space of spaces) {
     touched += await migrateSpaceReimbursements(repo, await visibleTransactions(store, space.id), nameOf);
+  }
+  await store.metaPut(markerKey, Date.now());
+  return touched;
+}
+
+/**
+ * Kind simplification migration (user ruling 2026-07-25, "auto-migrate
+ * to regular"): the old UI let anyone pick saving / investment / debt
+ * payment / transfer WITHOUT a counterparty — under the simplified model
+ * a transfer-kind row without one is unrepresentable. One pass per
+ * identity rewrites those orphans to plain income/expense by sign.
+ * Categories stay untouched (like all silent migrations, coherence is
+ * enforced on the next human edit), and rows WITH a counterparty keep
+ * their derived type exactly as-is.
+ */
+export async function migrateUnlinkedTransferKinds(store: StorageBackend, repo: Repo): Promise<number> {
+  const markerKey = 'txKindUnlinked_v1';
+  if (await store.metaGet(markerKey)) return 0;
+
+  let touched = 0;
+  const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0);
+  for (const space of spaces) {
+    for (const tx of await visibleTransactions(store, space.id)) {
+      if (tx.deleted !== 0 || kindOf(tx.txType) !== 'transfer' || tx.linkedAccountId) continue;
+      await writeTxTransform(repo, tx, { txType: standardTypeFor(tx.amountCents) });
+      touched++;
+    }
   }
   await store.metaPut(markerKey, Date.now());
   return touched;

@@ -28,7 +28,8 @@ import { ReceiptSection } from '@/features/shopping/ReceiptSection';
 import { ReimburseSection } from './ReimburseSection';
 import { SplitEditorSheet } from './SplitEditorSheet';
 import { TxFormSheet } from './TxFormSheet';
-import { CounterAccountSheet, TxTypeOptionsSheet } from './TxTypeSheet';
+import { CounterpartySheet, TX_KIND_VISUAL, TxKindSheet, kindDetail } from './TxKindSheet';
+import { kindOf, standardTypeFor } from '@/domain/txKind';
 import { applyTypeChange, typeForLinkedAccount } from '@/domain/txType';
 import { merchantKey } from '@/domain/merchantKey';
 import { TxDetailCustomizeSheet, resolveTxDetailBlocks } from './TxDetailCustomizeSheet';
@@ -405,6 +406,8 @@ export function TxDetailScreen() {
   const cat = cats.byId(tx.catId);
   const parent = cat.parentId ? cats.byId(cat.parentId) : undefined;
   const color = cat.color ?? parent?.color ?? 'var(--m-ink-3)';
+  const kind = kindOf(tx.txType);
+  const kindDetailType = kindDetail(tx.txType);
 
   const setCategory = (catId: string) => {
     const txType = cats.byId(catId).txTypes[0] ?? tx.txType;
@@ -547,24 +550,32 @@ export function TxDetailScreen() {
             <span className="text-xs text-ink-4">{t('txform.account')}</span>
           </div>
           <div className="mx-4 h-px bg-line-2" />
+          {/* kind before counterparty (user simplification): WHAT it is,
+              then WHO the other side is — editable only for transfers */}
+          <button
+            data-testid="tx-detail-kind-row"
+            onClick={() => setTypePickOpen(true)}
+            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+          >
+            <Icon name={TX_KIND_VISUAL[kind].icon} size={20} color={TX_KIND_VISUAL[kind].color} />
+            <span className="min-w-0 flex-1 truncate">
+              {t(`tx.kind.${kind}`)}
+              {kindDetailType && (
+                <span className="text-[12px] text-ink-4"> · {t(`tx.type.${kindDetailType}`)}</span>
+              )}
+            </span>
+            <span className="text-xs text-ink-4">{t('tx.kindTitle')}</span>
+            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+          </button>
+          <div className="mx-4 h-px bg-line-2" />
           <CounterpartyRow
             counterIban={tx.counterIban}
             counterAccountName={counterAccount?.name}
             linkedAccountName={linkedAccount?.name}
+            editable={kind === 'transfer'}
             onOpenAccount={() => setCounterOpen(true)}
             onEdit={() => setCounterPickOpen(true)}
           />
-          <div className="mx-4 h-px bg-line-2" />
-          <button
-            data-testid="tx-detail-type-row"
-            onClick={() => setTypePickOpen(true)}
-            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
-          >
-            <Icon name="swap-vertical" size={20} color="var(--m-ink-3)" />
-            <span className="min-w-0 flex-1 truncate">{t(`tx.type.${tx.txType}`)}</span>
-            <span className="text-xs text-ink-4">{t('tx.type')}</span>
-            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-          </button>
         </div>
 
         {/* block: categories — ONE edit affordance for the whole block
@@ -678,38 +689,43 @@ export function TxDetailScreen() {
         )}
       </div>
 
-      {/* write-through, split into two direct pickers (user report):
-          the counterparty row shows accounts, the type row shows types */}
-      <CounterAccountSheet
+      {/* write-through: choosing a counterparty derives the transfer's
+          exact member; the kind sheet handles standard/adjustment */}
+      <CounterpartySheet
         open={counterPickOpen}
         onOpenChange={setCounterPickOpen}
-        tx={tx}
+        excludeAccountId={tx.accountId}
         currentLinkedId={tx.linkedAccountId}
         onChoose={(picked) => {
-          const nextType = picked ? typeForLinkedAccount(picked.type) : tx.txType;
           const fields = applyTypeChange({
-            nextType,
-            linkedAccountId: picked?.id ?? null,
+            nextType: typeForLinkedAccount(picked.type),
+            linkedAccountId: picked.id,
+            currentCatId: tx.catId,
+            catTxTypes: cats.byId(tx.catId).txTypes,
+          });
+          void transform(tx, { ...fields, linkedAccountId: picked.id }, 'txLink');
+        }}
+      />
+      <TxKindSheet
+        open={typePickOpen}
+        onOpenChange={setTypePickOpen}
+        current={kind}
+        allowAdjustment={!tx.importRef && !tx.feedSpaceId}
+        onPick={(nextKind) => {
+          // transfer completes in the counterparty picker — nothing is
+          // written until the (mandatory) other side is chosen
+          if (nextKind === 'transfer') {
+            setCounterPickOpen(true);
+            return;
+          }
+          const fields = applyTypeChange({
+            nextType: nextKind === 'adjustment' ? 'adjustment' : standardTypeFor(tx.amountCents),
+            linkedAccountId: null,
             currentCatId: tx.catId,
             catTxTypes: cats.byId(tx.catId).txTypes,
           });
           // explicit null clears the link (undefined would be dropped by JSON)
-          void transform(tx, { ...fields, linkedAccountId: picked?.id ?? (null as never) }, 'txLink');
-        }}
-      />
-      <TxTypeOptionsSheet
-        open={typePickOpen}
-        onOpenChange={setTypePickOpen}
-        current={tx.txType}
-        linkedNote={!!tx.linkedAccountId}
-        onPick={(nextType: TxType) => {
-          const fields = applyTypeChange({
-            nextType,
-            linkedAccountId: tx.linkedAccountId ?? null,
-            currentCatId: tx.catId,
-            catTxTypes: cats.byId(tx.catId).txTypes,
-          });
-          void transform(tx, fields, 'txCategory'); // the link survives a manual override
+          void transform(tx, { ...fields, linkedAccountId: null as never }, 'txCategory');
         }}
       />
       {/* ONE category flow (review parity): a single row edits the plain
@@ -899,23 +915,29 @@ function CounterpartyRow({
   counterIban,
   counterAccountName,
   linkedAccountName,
+  editable,
   onOpenAccount,
   onEdit,
 }: Readonly<{
   counterIban?: string;
   counterAccountName?: string;
   linkedAccountName?: string;
+  /** transfers only (user simplification): other kinds show the bank's
+   *  counterparty as a plain fact, dimmed and untappable */
+  editable: boolean;
   onOpenAccount: () => void;
   onEdit: () => void;
 }>) {
   const { t } = useLang();
   const matched = !!counterAccountName;
   const primary = counterAccountName ?? linkedAccountName;
+  const disabled = !matched && !editable;
   return (
     <button
       data-testid={matched ? 'tx-detail-counterparty-row' : 'tx-detail-counterparty-edit'}
+      disabled={disabled}
       onClick={matched ? onOpenAccount : onEdit}
-      className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+      className={`m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink ${disabled ? 'opacity-45' : ''}`}
     >
       <Icon name="swap-horizontal" size={20} color={primary ? 'var(--m-accent-deep)' : 'var(--m-ink-3)'} />
       <span className="min-w-0 flex-1">
@@ -923,7 +945,7 @@ function CounterpartyRow({
           <span className="block truncate">{primary}</span>
         ) : (
           <span className="block truncate text-ink-3" data-testid="tx-detail-counter-add">
-            {counterIban ?? t('tx.counterAccountPick')}
+            {counterIban ?? (editable ? t('tx.counterAccountPick') : t('tx.counterNotApplicable'))}
           </span>
         )}
         {counterIban && primary && (
@@ -931,7 +953,7 @@ function CounterpartyRow({
         )}
       </span>
       <span className="text-xs text-ink-4">{t('tx.counterparty')}</span>
-      <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+      {!disabled && <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />}
     </button>
   );
 }

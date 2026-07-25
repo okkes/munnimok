@@ -1,5 +1,6 @@
 import { useSpaceAccounts } from '@/application/transactions';
-import { ALL_TX_TYPES } from '@/domain/txType';
+import { TRANSFER_TYPES, TX_KINDS } from '@/domain/txKind';
+import type { TxKind } from '@/domain/txKind';
 import type { TxType } from '@/db/types';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { useLang } from '@/i18n';
@@ -31,6 +32,24 @@ function toggled<T>(set: ReadonlySet<T>, value: T): Set<T> {
   const next = new Set(set);
   if (next.has(value)) next.delete(value);
   else next.add(value);
+  return next;
+}
+
+/** what each KIND chip means in stored-type terms (user simplification:
+ *  people filter by kind; the transfer family unfolds on demand) */
+const KIND_FILTER_TYPES: Record<TxKind, readonly TxType[]> = {
+  standard: ['income', 'expense'],
+  transfer: TRANSFER_TYPES,
+  adjustment: ['adjustment'],
+};
+
+/** kind chip toggle: any member selected → drop the whole family,
+ *  otherwise select all of it (detail chips then narrow) */
+function kindToggled(set: ReadonlySet<TxType>, kind: TxKind): Set<TxType> {
+  const family = KIND_FILTER_TYPES[kind];
+  const next = new Set(set);
+  if (family.some((type) => next.has(type))) for (const type of family) next.delete(type);
+  else for (const type of family) next.add(type);
   return next;
 }
 
@@ -66,19 +85,35 @@ export function FilterSheet({
           ))}
         </div>
 
-        <div className="m-cap px-1">{t('tx.type')}</div>
+        <div className="m-cap px-1">{t('tx.kindTitle')}</div>
         <div className="flex flex-wrap gap-2">
-          {ALL_TX_TYPES.map((type) => (
+          {TX_KINDS.map((kind) => (
             <Chip
-              key={type}
-              testId={`filter-type-${type}`}
-              selected={value.txTypes.has(type)}
-              onClick={() => onChange({ ...value, txTypes: toggled(value.txTypes, type) })}
+              key={kind}
+              testId={`filter-kind-${kind}`}
+              selected={KIND_FILTER_TYPES[kind].some((type) => value.txTypes.has(type))}
+              onClick={() => onChange({ ...value, txTypes: kindToggled(value.txTypes, kind) })}
             >
-              {t(`tx.type.${type}`)}
+              {t(`tx.kind.${kind}`)}
             </Chip>
           ))}
         </div>
+        {/* power detail (user choice "kinds + detail"): a selected
+            Transfer kind unfolds its exact family members */}
+        {TRANSFER_TYPES.some((type) => value.txTypes.has(type)) && (
+          <div className="flex flex-wrap gap-2 pl-3" data-testid="filter-transfer-detail">
+            {TRANSFER_TYPES.map((type) => (
+              <Chip
+                key={type}
+                testId={`filter-type-${type}`}
+                selected={value.txTypes.has(type)}
+                onClick={() => onChange({ ...value, txTypes: toggled(value.txTypes, type) })}
+              >
+                {t(`tx.type.${type}`)}
+              </Chip>
+            ))}
+          </div>
+        )}
 
         <div className="m-cap px-1">{t('screen.categories')}</div>
         <div className="flex flex-wrap gap-2">

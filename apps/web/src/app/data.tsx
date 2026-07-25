@@ -250,8 +250,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // explicit reimbursed slice, once per identity (marker-gated;
       // ALL identities — demo/offline data migrates too)
       void (async () => {
-        const { migrateReimbursementSlices } = await import('@/application/catalogMaintenance');
+        const { migrateReimbursementSlices, migrateUnlinkedTransferKinds } = await import('@/application/catalogMaintenance');
         await migrateReimbursementSlices(store, repo);
+        // kind simplification: counterparty-less transfer-family rows
+        // become plain income/expense by sign (marker-gated, all identities)
+        await migrateUnlinkedTransferKinds(store, repo);
       })().catch(() => undefined);
       if (identity.kind === 'offline' && (await liveSpaces(store)).length === 0) {
         // fully local profile: personal space named after the profile

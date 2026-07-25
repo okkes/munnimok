@@ -1,5 +1,7 @@
 import { UNCATEGORIZED_ID } from './categories';
 import { primaryCatId } from './splits';
+import { standardTypeFor } from './txKind';
+import type { TxKind } from './txKind';
 import { categoryConflictsWithType, typeForLinkedAccount } from './txType';
 import type { AccountType, TxSplit, TxType } from '@/db/types';
 
@@ -57,6 +59,21 @@ export function withType(draft: ReviewDraft, txType: TxType, catalog: DraftCatal
   return { ...draft, txType };
 }
 
+/**
+ * The simplified kind picker (user redesign): standard resolves by the
+ * money's sign and drops any counterparty; transfer keeps (or awaits) a
+ * counterparty — its exact family member re-derives when one is linked;
+ * adjustment is a bare correction. All transitions run through withType
+ * so category coherence holds.
+ */
+export function withKind(draft: ReviewDraft, kind: TxKind, amountCents: number, catalog: DraftCatalog): ReviewDraft {
+  if (kind === 'standard') return withType({ ...draft, linkedAccountId: undefined }, standardTypeFor(amountCents), catalog);
+  if (kind === 'adjustment') return withType({ ...draft, linkedAccountId: undefined }, 'adjustment', catalog);
+  // transfer: an already-linked counterparty keeps its derived member;
+  // otherwise plain 'transfer' until the (mandatory) pick lands
+  return withType(draft, draft.linkedAccountId ? draft.txType : 'transfer', catalog);
+}
+
 /** the counter-account suggests its type; the suggestion runs through withType */
 export function withLinkedAccount(
   draft: ReviewDraft,
@@ -79,7 +96,8 @@ export function withSplits(draft: ReviewDraft, splits: TxSplit[] | undefined): R
  *  use the hidden 'uncategorized' builtin as a by-design placeholder. */
 export const draftReady = (draft: ReviewDraft): boolean => {
   if (!draft.catId) return false;
-  if (draft.txType === 'transfer') return true;
+  // adjustments are corrections, not spending — same placeholder story
+  if (draft.txType === 'transfer' || draft.txType === 'adjustment') return true;
   if (draft.catId === 'uncategorized') return false;
   return !draft.splits?.some((slice) => slice.catId === 'uncategorized');
 };
