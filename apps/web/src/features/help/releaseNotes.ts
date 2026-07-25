@@ -18,6 +18,37 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.24.0',
+    date: '2026-07-25',
+    items: [
+      {
+        en: 'Reimbursements, rebuilt: mark what you expect back on a transaction and munni tracks it until the money actually lands — the new "Reimbursed" category is applied for you (it left the pickers), settled and open amounts show side by side, budgets and the overview count the real gross with the paid-back part sliced out honestly, and a new filter surfaces everything still waiting to be paid back.',
+        nl: 'Terugbetalingen, herbouwd: markeer wat je terugverwacht op een transactie en munni volgt het tot het geld echt binnen is — de nieuwe categorie "Terugbetaald" wordt voor je toegepast (ze verdween uit de kiezers), afgehandelde en openstaande bedragen staan naast elkaar, budgetten en het overzicht tellen het echte bruto met het terugbetaalde deel eerlijk uitgesneden, en een nieuw filter toont alles wat nog wacht op terugbetaling.',
+        tr: 'Geri ödemeler yeniden kuruldu: bir işlemde geri beklediğini işaretle, munni parayı gerçekten gelene kadar izler — yeni "Geri ödendi" kategorisi senin yerine uygulanır (seçicilerden çıktı), kapanan ve açık tutarlar yan yana görünür, bütçeler ve genel bakış geri ödenen kısmı dürüstçe ayırarak gerçek brütü sayar ve yeni bir filtre hâlâ geri ödeme bekleyen her şeyi öne çıkarır.',
+      },
+      {
+        en: 'A guided welcome: new identities get a walkthrough that sets up the real thing — meet your space, create your first account and transaction with your own hands, see why a second space starts empty. It resumes where your data says you left off, and skipping asks exactly once whether you are sure.',
+        nl: 'Een begeleide start: nieuwe gebruikers krijgen een rondleiding die het echte werk opzet — maak kennis met je ruimte, maak je eerste rekening en transactie met eigen handen, en zie waarom een tweede ruimte leeg begint. Ze gaat verder waar je gegevens zeggen dat je gebleven was, en overslaan vraagt precies één keer of je het zeker weet.',
+        tr: 'Rehberli bir karşılama: yeni kimlikler gerçeğini kuran bir tur alır — alanınla tanış, ilk hesabını ve işlemini kendi ellerinle oluştur, ikinci bir alanın neden boş başladığını gör. Verilerin nerede kaldığını söylüyorsa oradan devam eder ve atlamak tam bir kez emin olup olmadığını sorar.',
+      },
+      {
+        en: 'When a bank connection meets your statement uploads, the connection is the truth: munni offers a reconcile pass that matches uploaded rows to the bank\'s own, migrates your edits (with a per-match opt-out), and shows every mismatch before anything is deleted — history outside the connection\'s window always survives. Statement uploads are also listed as batches now: who uploaded what, and one tap takes a bad upload back out.',
+        nl: 'Wanneer een bankkoppeling je afschrift-uploads tegenkomt, is de koppeling de waarheid: munni biedt een afstemronde die geüploade regels aan die van de bank koppelt, je bewerkingen meeneemt (met per match een uitzetknop) en elke afwijking toont vóór er iets wordt verwijderd — geschiedenis buiten het venster van de koppeling blijft altijd staan. Afschrift-uploads staan nu ook als batches in de lijst: wie wat uploadde, en één tik haalt een verkeerde upload er weer uit.',
+        tr: 'Bir banka bağlantısı ekstre yüklemelerinle karşılaştığında doğru olan bağlantıdır: munni yüklenen satırları bankanınkilerle eşleştiren, düzenlemelerini taşıyan (eşleşme başına vazgeçme seçeneğiyle) ve hiçbir şey silinmeden önce her uyumsuzluğu gösteren bir mutabakat turu önerir — bağlantının penceresi dışındaki geçmiş her zaman korunur. Ekstre yüklemeleri artık partiler hâlinde de listelenir: kim neyi yükledi ve tek dokunuş kötü bir yüklemeyi geri alır.',
+      },
+      {
+        en: 'You can see your signed-in devices now: name them, and sign one out remotely — it wipes itself the next time it talks to the server. The app and server also check they still understand each other after updates, so instead of a vague "offline" you get the honest reason: update the app, or the servers are being updated.',
+        nl: 'Je ziet nu je ingelogde apparaten: geef ze een naam en meld er één op afstand af — het wist zichzelf zodra het weer met de server praat. De app en server controleren na updates ook of ze elkaar nog verstaan, dus in plaats van een vaag "offline" krijg je de eerlijke reden: werk de app bij, of de servers worden bijgewerkt.',
+        tr: 'Artık oturum açmış cihazlarını görebilirsin: onlara ad ver ve birini uzaktan çıkış yaptır — sunucuyla bir sonraki konuşmasında kendini siler. Uygulama ve sunucu, güncellemelerden sonra birbirlerini hâlâ anladıklarını da denetler; belirsiz bir "çevrimdışı" yerine dürüst nedeni görürsün: uygulamayı güncelle ya da sunucular güncelleniyor.',
+      },
+      {
+        en: 'Imports and sheets, steadied: the rare "200 transactions imported, then everything disappeared" is fixed at the root (a double-tapped Import raced itself — the button now waits, and the server forgives), PayPal CSV exports import too, the notes field scrolls into view when the keyboard opens and the tab bar steps aside, a sheet you are dragging can no longer be stolen by the content under your finger, and the Home and transaction-detail customize sheets got icons and the same drag handle as categories.',
+        nl: 'Imports en panelen, gestabiliseerd: het zeldzame "200 transacties geïmporteerd en toen verdween alles" is bij de wortel opgelost (een dubbel getikte Importeren racete tegen zichzelf — de knop wacht nu, en de server vergeeft), PayPal-CSV-exports importeren ook, het notitieveld scrolt in beeld wanneer het toetsenbord opent en de tabbalk stapt opzij, een paneel dat je sleept kan niet langer worden gekaapt door de inhoud onder je vinger, en de aanpas-panelen van Home en transactiedetails kregen iconen en dezelfde sleepgreep als categorieën.',
+        tr: 'İçe aktarma ve paneller sağlamlaştı: nadir görülen "200 işlem içe aktarıldı, sonra her şey kayboldu" kökünden düzeltildi (çift dokunulan İçe aktar kendisiyle yarışıyordu — düğme artık bekliyor, sunucu affediyor), PayPal CSV dışa aktarımları da içe aktarılıyor, klavye açılınca not alanı görünüme kayıyor ve sekme çubuğu kenara çekiliyor, sürüklediğin bir panel artık parmağının altındaki içerik tarafından çalınamıyor ve Ana sayfa ile işlem detayının özelleştirme panelleri simgeler ve kategorilerdekiyle aynı sürükleme tutamacını kazandı.',
+      },
+    ],
+  },
+  {
     version: '2.23.0',
     date: '2026-07-24',
     items: [
