@@ -1,5 +1,36 @@
 # Changelog
 
+## [2.24.0](https://github.com/okkes/munnimok/compare/v2.23.0...v2.24.0) (2026-07-25)
+
+
+### ✨ Features
+
+* **accounts:** import batches with uploader attribution + per-batch rollback; master plan ledger ([1fccf5d](https://github.com/okkes/munnimok/commit/1fccf5d3fbb5d01d6acb0b3121529a34eabecc6a))
+* **accounts:** imported-vs-linked reconciliation -- the connection is the truth ([3b8f263](https://github.com/okkes/munnimok/commit/3b8f26394e5ae8fb509805c50475fd2a89d1cc13))
+* **accounts:** say where imported data ENDS, not just when it arrived ([1633f26](https://github.com/okkes/munnimok/commit/1633f26abf88bfd73322ed8a16568853510c4022))
+* **activity:** complete the space history — every user mutation logs ([bedc473](https://github.com/okkes/munnimok/commit/bedc4731ed5032b2e5775d6574e816587139b3a8))
+* **cats:** locked reimbursement tree -- step 1 of the reimbursement redesign ([7e59591](https://github.com/okkes/munnimok/commit/7e5959152e5646db323fbd4edf7373313b31a962))
+* **cats:** restore the pre-replacement drag-to-move design ([4364e0c](https://github.com/okkes/munnimok/commit/4364e0c1870e5d8b4f4040858a73a205872391ac))
+* **devices:** logged-in devices -- see, rename, remotely disconnect (wipe) ([541a390](https://github.com/okkes/munnimok/commit/541a390e4f43d04d16e5834a7b3d1ee404f0af41))
+* **help:** guided welcome walkthrough -- real screens, real writes, act-steps ([599980e](https://github.com/okkes/munnimok/commit/599980e6654cc9ea764c62f8412138a3a7bb21dc))
+* **reimburse:** keep the locked tree out of budget/trends pickers; guide mentions the redesign ([33dd5c7](https://github.com/okkes/munnimok/commit/33dd5c75df74b81e7d5c41c3a66f4df347b49244))
+* **reimburse:** settled value becomes an explicit `reimbursed` slice -- redesign steps 2-5 ([018571d](https://github.com/okkes/munnimok/commit/018571d99fffddfc69601fd6216e36cead2a6c78))
+* **sheets:** gesture plan phases A+B + desktop grow-from-source dialog ([2f8c4f3](https://github.com/okkes/munnimok/commit/2f8c4f3fdb93e889d3e7627f6e9f513dcdd3a14b))
+* **statements:** PayPal activity-export importer + speak-up apply cycles ([3b5bc55](https://github.com/okkes/munnimok/commit/3b5bc55d0c579ea6f89bf5f7900df5f84dcbe811))
+* **sync:** client-server version handshake -- refuse to sync across a contract mismatch ([24b9c19](https://github.com/okkes/munnimok/commit/24b9c19f888f1ec83bcc03c5bb86e7220af04d0c))
+* **ui:** edge-swipe back, drag-linked sheet zoom, sticky sheet drags, animated overview bar ([d3ec081](https://github.com/okkes/munnimok/commit/d3ec081ad64217776a51277b11fb7062acfa406d))
+
+
+### 🐞 Bug Fixes
+
+* **api,accounts:** attach raced its check-then-insert; import button now guards double-taps ([d15fb05](https://github.com/okkes/munnimok/commit/d15fb05e043af4e08e0fbeb07074397fb27ea720))
+* **api,app:** import failures root-caused + feedback batch ([fdb6e13](https://github.com/okkes/munnimok/commit/fdb6e1300d27633d7c3b60b30a32d6e214b8863a))
+* **api:** explicit ordinal already-lowercase check (CA1862) ([dc0ac6b](https://github.com/okkes/munnimok/commit/dc0ac6b564938e34d35726a0751e4c80e957ba32))
+* **app:** hoist the device-revoked wipe handler (S2004 nesting) ([3011edb](https://github.com/okkes/munnimok/commit/3011edb7bb90d2c90893a2816d1335573bf35d81))
+* **deploy,sheets:** staging stamp used master SHA; restore the touch guard our keyboard fix disabled ([1aa6ab5](https://github.com/okkes/munnimok/commit/1aa6ab5927129250011d0c72ef4daa9b3f7ba240))
+* **deploy:** stamp NAS bundles with the image-building commit, not the default-branch tip ([#100](https://github.com/okkes/munnimok/issues/100)) ([1a5a0c3](https://github.com/okkes/munnimok/commit/1a5a0c3146e2d2d95e08b0b425044e23f46ca413))
+* **tests:** valid AccountSource in batch-rollback seed ([81aceb5](https://github.com/okkes/munnimok/commit/81aceb58c5e93f65987f7d70440bfac9538a8bb6))
+
 ## [2.23.0](https://github.com/okkes/munnimok/compare/v2.22.0...v2.23.0) (2026-07-24)
 
 
