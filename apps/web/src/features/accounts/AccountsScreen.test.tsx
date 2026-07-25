@@ -425,3 +425,52 @@ describe('AccountsScreen (demo identity)', () => {
     expect(await screen.findByTestId('import-error')).toBeTruthy();
   });
 });
+
+describe('reconcile suggestion (master plan: linked is the truth)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase('munni_demo');
+  });
+
+  it('offers a reconcile pass on a mixed-source account, reviews, and deletes judged imports', async () => {
+    const first = renderApp('/accounts');
+    await screen.findByTestId('account-row-demo_main');
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('rec-ui'), { trackOutbox: false });
+    const raw = { accountId: 'demo_main', currency: 'EUR', txType: 'expense' as const, needsReview: 0 as const };
+    // the connection's truth + one matched import, one mismatch, one keeper
+    await repo.upsert('transaction', 'demo_space', 'RL1', { ...raw, date: '2026-06-01', amountCents: -5000, merchant: 'EDGE', importRef: 'REF-EDGE' });
+    await repo.upsert('transaction', 'demo_space', 'RL2', { ...raw, date: '2026-06-10', amountCents: -1200, merchant: 'SHELL', importRef: 'REF-B' });
+    await repo.upsert('transaction', 'demo_space', 'RL3', { ...raw, date: '2026-06-20', amountCents: -300, merchant: 'END', importRef: 'REF-END' });
+    await repo.upsert('transaction', 'demo_space', 'RI1', { ...raw, date: '2026-06-10', amountCents: -1200, merchant: 'Shell station', importRef: 'ing:u:1' });
+    await repo.upsert('transaction', 'demo_space', 'RI2', { ...raw, date: '2026-06-12', amountCents: -999, merchant: 'GHOST', importRef: 'ing:u:2' });
+    await repo.upsert('transaction', 'demo_space', 'RI3', { ...raw, date: '2023-01-05', amountCents: -700, merchant: 'OLD', importRef: 'ing:u:3' });
+    db.close();
+    first.unmount();
+
+    renderApp('/accounts');
+    // the suggestion names the mixed-source account and its import count
+    fireEvent.click(await screen.findByTestId('account-reconcile-demo_main', {}, { timeout: 5000 }));
+
+    // full review: the match (checked for migration), the mismatch, the keeper note
+    await screen.findByTestId('reconcile-review', {}, { timeout: 5000 });
+    expect(screen.getByTestId('reconcile-match-RI1')).toBeTruthy();
+    expect((screen.getByTestId('reconcile-migrate-RI1') as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByTestId('reconcile-mismatch-RI2').textContent).toContain('GHOST');
+    expect(screen.getByTestId('reconcile-kept').textContent).toContain('1');
+
+    fireEvent.click(screen.getByTestId('reconcile-confirm'));
+    await screen.findByTestId('reconcile-done', {}, { timeout: 5000 });
+
+    const check = new MunniDB('munni_demo');
+    expect((await check.transactions.get('RI1'))?.deleted).toBe(1);
+    expect((await check.transactions.get('RI2'))?.deleted).toBe(1);
+    expect((await check.transactions.get('RI3'))?.deleted).toBe(0);
+    check.close();
+  }, 20_000);
+});

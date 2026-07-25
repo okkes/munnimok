@@ -12,6 +12,8 @@ import { linkPaypalFunding } from '@/application/paypalLink';
 import type { ImportResult } from './importCamt';
 import { apiFeedGateway, fetchMyFeedIds } from './feedGateway';
 import { AttachSheet, SOURCE_KEYS } from './AttachSheet';
+import { ReconcileSheet } from './ReconcileSheet';
+import { normalizeIban } from '@/domain/feedIds';
 import { attachFeedToSpace } from '@/application/accountAttach';
 import { DEFAULT_HISTORY_MONTHS, isoMonthsAgo } from '@/features/spaces/spaceDefaults';
 import { useQuery } from '@/db/useQuery';
@@ -283,6 +285,52 @@ export function AccountsScreen() {
   const assets = mine.filter((e) => !isLiability(e.account.type));
   const liabilities = mine.filter((e) => isLiability(e.account.type));
 
+  // master plan (answer 3, auto-suggest): an account fed by BOTH a bank
+  // connection and statement uploads — or a same-IBAN pair of a linked
+  // and an imported account — offers a reconcile pass (linked = truth)
+  const sourcesByAccount = useQuery(store, async () => {
+    const { isImportedRow, isLinkedRow } = await import('@/domain/reconcile');
+    const byAccount = new Map<string, { linked: boolean; imported: number }>();
+    for (const tx of await store.allRows('transaction')) {
+      if (tx.deleted !== 0 || !tx.importRef) continue;
+      const entry = byAccount.get(tx.accountId) ?? { linked: false, imported: 0 };
+      if (isLinkedRow(tx)) entry.linked = true;
+      else if (isImportedRow(tx)) entry.imported++;
+      byAccount.set(tx.accountId, entry);
+    }
+    return byAccount;
+  }, []);
+  const [reconcileIds, setReconcileIds] = useState<string[] | null>(null);
+  const reconcileSuggestions = useMemo(() => {
+    if (!sourcesByAccount) return [];
+    const out: { name: string; imported: number; accountIds: string[] }[] = [];
+    const claimed = new Set<string>();
+    for (const entry of mine) {
+      const own = sourcesByAccount.get(entry.account.id);
+      if (own?.linked && own.imported > 0) {
+        out.push({ name: entry.account.name, imported: own.imported, accountIds: [entry.account.id] });
+        claimed.add(entry.account.id);
+        continue;
+      }
+      // same-IBAN pair: this imported account has a linked twin
+      if (!own?.imported || !entry.account.iban || claimed.has(entry.account.id)) continue;
+      const iban = normalizeIban(entry.account.iban);
+      const twin = mine.find(
+        (other) =>
+          other.account.id !== entry.account.id &&
+          !!other.account.iban &&
+          normalizeIban(other.account.iban) === iban &&
+          sourcesByAccount.get(other.account.id)?.linked,
+      );
+      if (twin) {
+        out.push({ name: twin.account.name, imported: own.imported, accountIds: [twin.account.id, entry.account.id] });
+        claimed.add(entry.account.id);
+        claimed.add(twin.account.id);
+      }
+    }
+    return out;
+  }, [mine, sourcesByAccount]);
+
   // AE2: feed accounts attached to NO space (fresh bank connect, or a
   // consent flow that broke mid-return) get a one-tap attach offer for
   // the active space — the user never hunts for the attach button for
@@ -417,6 +465,21 @@ export function AccountsScreen() {
           />
         ) : (
           <>
+            {reconcileSuggestions.map((suggestion) => (
+              <button
+                key={suggestion.accountIds.join('+')}
+                data-testid={`account-reconcile-${suggestion.accountIds[suggestion.accountIds.length - 1]}`}
+                onClick={() => setReconcileIds(suggestion.accountIds)}
+                className="m-tap mb-2 flex w-full items-center gap-2.5 rounded-card border border-accent bg-accent-soft px-4 py-3 text-left text-[13px] font-medium text-accent-deep"
+              >
+                <Icon name="bank-check" size={18} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">{suggestion.name}</span>
+                  <span className="block text-[11px] font-normal">{t('reconcile.suggest', { n: suggestion.imported })}</span>
+                </span>
+                <Icon name="chevron-right" size={16} />
+              </button>
+            ))}
             <AccountSection title={t('acct.assets')} list={assets} lang={lang} onOpen={openEntry} />
             <AccountSection title={t('acct.liabilities')} list={liabilities} lang={lang} onOpen={openEntry} />
             <SharedWithMeSection list={global?.sharedWithMe ?? []} lang={lang} />
@@ -470,6 +533,7 @@ export function AccountsScreen() {
       />
 
       <BankConnectSheet open={connectOpen} onOpenChange={setConnectOpen} />
+      <ReconcileSheet open={reconcileIds !== null} onOpenChange={(next) => !next && setReconcileIds(null)} accountIds={reconcileIds ?? []} />
       <BrandIconPicker
         open={editLogoOpen}
         onOpenChange={setEditLogoOpen}
