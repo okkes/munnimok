@@ -11,8 +11,8 @@ export const GUIDE = [
   {
     id: 'start',
     title: 'Getting started',
-    body: `munni is local-first: everything lives on your device and works offline; signing in adds sync between your devices. Try the demo from the login screen — it resets itself on sign-out — or create an offline profile that never touches the network.`,
-    tips: ['Install munni as an app (Help → Install as app): you get a clean full screen and your data is protected from browser cleanups.'],
+    body: `munni is local-first: everything lives on your device and works offline; signing in adds sync between your devices. Try the demo from the login screen — it resets itself on sign-out — or create an offline profile that never touches the network. Right after the first-run setup, Mina — munni's assistant — walks you through spaces, accounts and your first transaction on the real screens; everything the tour makes can be undone at the end.`,
+    tips: ['Install munni as an app (Help → Install as app): you get a clean full screen and your data is protected from browser cleanups.', 'Replay the Mina tutorial any time from Help — it fast-forwards past what already exists.'],
     shots: ['06-demo-login', '37-onboarding', '01-shell-home'],
   },
   {
