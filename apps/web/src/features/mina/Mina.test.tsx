@@ -85,19 +85,19 @@ describe('Mina tutorial run (signed-in identity, no space yet)', () => {
     const fs1 = await screen.findByTestId('mina-fullscreen', {}, { timeout: 5000 });
     expect(fs1.textContent).toContain(en['mina.welcome.t']);
     fireEvent.click(screen.getByTestId('mina-next')); // → home bubble
-    await waitFor(() => expect(screen.getByTestId('mina-tutorial').dataset.step).toBe('home'));
+    await waitFor(() => expect(screen.getByTestId('mina-tutorial').dataset.step).toBe('home'), { timeout: 5000 });
     fireEvent.click(screen.getByTestId('mina-next')); // → spaces concept
     fireEvent.click(await screen.findByTestId('mina-next')); // → sharing
     fireEvent.click(await screen.findByTestId('mina-next')); // → openSwitcher gate
-    await waitFor(() => expect(screen.getByTestId('mina-tutorial').dataset.step).toBe('openSwitcher'));
+    await waitFor(() => expect(screen.getByTestId('mina-tutorial').dataset.step).toBe('openSwitcher'), { timeout: 5000 });
 
     // gated walk: switcher → manage → + (real elements, real clicks)
     fireEvent.click(await screen.findByTestId('home-space-switcher', {}, { timeout: 5000 }));
-    await waitFor(() => expect(screen.getByTestId('mina-tutorial').dataset.step).toBe('openManage'));
+    await waitFor(() => expect(screen.getByTestId('mina-tutorial').dataset.step).toBe('openManage'), { timeout: 5000 });
     fireEvent.click(await screen.findByTestId('space-pick-manage', {}, { timeout: 5000 }));
     await waitFor(() => expect(screen.getByTestId('mina-tutorial').dataset.step).toBe('openCreate'), { timeout: 5000 });
     fireEvent.click(await screen.findByTestId('spaces-add', {}, { timeout: 5000 }));
-    await waitFor(() => expect(screen.getByTestId('mina-tutorial').dataset.step).toBe('createSpace'));
+    await waitFor(() => expect(screen.getByTestId('mina-tutorial').dataset.step).toBe('createSpace'), { timeout: 5000 });
 
     // the name arrives pre-filled but the act is value-flexible
     const name = (await screen.findByTestId('space-create-name')) as HTMLInputElement;

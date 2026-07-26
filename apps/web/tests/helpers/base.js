@@ -126,13 +126,34 @@ async function completeOnboardingIfShown(page, userSub) {
       await save.click({ timeout: 10000 });
       await page.click('[data-testid="onboarding-lock-later"]', { timeout: 15000 });
       await page.waitForSelector('[data-testid="screen-home"]', { timeout: 20000 });
+      await skipMinaTutorial(page);
       return;
     } catch {
       // snapped back to an earlier step (or home already arrived) — loop
-      if (await page.locator('[data-testid="screen-home"]').isVisible().catch(() => false)) return;
+      if (await page.locator('[data-testid="screen-home"]').isVisible().catch(() => false)) {
+        await skipMinaTutorial(page);
+        return;
+      }
     }
   }
   throw new Error('onboarding never completed — see the page snapshot');
+}
+
+// Brand-new identities auto-start the Mina tutorial right after the
+// onboarding form (no space exists yet!). Specs that don't test Mina
+// skip it — the skip path creates the default "Private" space, which is
+// what every downstream assertion needs to exist.
+async function skipMinaTutorial(page) {
+  const skip = page.locator('[data-testid="mina-skip"]');
+  if (!(await skip.isVisible().catch(() => false))) {
+    // give the auto-start a beat — dispatched right after navigation
+    await skip.waitFor({ timeout: 5000 }).catch(() => undefined);
+  }
+  if (!(await skip.isVisible().catch(() => false))) return;
+  await skip.click();
+  await page.click('[data-testid="mina-skip-confirm"]', { timeout: 10000 });
+  // the default space lands before the tutorial unmounts
+  await page.waitForSelector('[data-testid="mina-tutorial"]', { state: 'detached', timeout: 15000 });
 }
 
 // App-wide rows live behind the single "Global settings" door on the

@@ -66,8 +66,18 @@ export async function bootstrapUserSpaces(
     // server confirmed: brand-new user. NO space is created any more
     // (Mina tutorial, user ruling): the ≥1-space rule is suspended until
     // the tutorial's create-step (or its skip path) provides one.
-    await store.metaPut('needsOnboarding', true);
-    await store.metaPut('minaTutorialPending', true);
+    // RE-ENTRANCY GUARD: without a created space this branch used to
+    // fire again on every start (and on a slow first confirm AFTER the
+    // user already finished onboarding — the ambush bug, second coming);
+    // any Mina marker means the first-run is already owned.
+    const minaTouched =
+      (await store.metaGet('minaTutorialPending'))?.value ??
+      (await store.metaGet('minaTutorialState'))?.value ??
+      (await store.metaGet('minaTutorialDone'))?.value;
+    if (!minaTouched) {
+      await store.metaPut('needsOnboarding', true);
+      await store.metaPut('minaTutorialPending', true);
+    }
     return;
   }
 

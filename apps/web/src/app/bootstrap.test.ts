@@ -72,6 +72,14 @@ describe('bootstrapUserSpaces (fail closed)', () => {
     expect(await db.spaces.filter((s) => s.deleted === 0).count()).toBe(0);
     expect((await db.meta.get('needsOnboarding'))?.value).toBe(true);
     expect((await db.meta.get('minaTutorialPending'))?.value).toBe(true);
+
+    // re-entrancy: the user finishes onboarding (flags consumed) while a
+    // second bootstrap round completes late — it must NOT re-ambush
+    await db.meta.delete('needsOnboarding');
+    await db.meta.delete('minaTutorialPending');
+    await db.meta.put({ key: 'minaTutorialState', value: { active: true, step: 3, ledger: [] } });
+    await bootstrapUserSpaces(new DexieBackend(db), repo, engine, () => false, FAST_RETRY_MS);
+    expect(await db.meta.get('needsOnboarding')).toBeUndefined();
     db.close();
   });
 
