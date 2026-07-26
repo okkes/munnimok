@@ -8,24 +8,32 @@ import { v7 as uuidv7 } from 'uuid';
 import { DEFAULT_HISTORY_MONTHS, isoMonthsAgo } from '@/features/spaces/spaceDefaults';
 import { useLang } from '@/i18n';
 import { Button } from '@/ui/Button';
-import { closeAllSheets } from '@/ui/Sheet';
+import { Icon } from '@/ui/Icon';
+import { closeAllSheets, hasOpenSheet } from '@/ui/Sheet';
 import { MINA_ART, MINA_EXPR } from './assets';
-import { MINA_DONE_KEY, MINA_STATE_KEY, MINA_STEPS, setMinaSuggestions } from './steps';
+import { MINA_DONE_KEY, MINA_STATE_KEY, MINA_STEPS, minaSuggestedAccountName, minaSuggestedSpaceName, minaSuggestedTx, setMinaSuggestions } from './steps';
 import type { MinaLedgerEntry, MinaRunState } from './steps';
 import { revertMinaRun } from './revert';
 
 const PAD = 6;
 
-/** rectangles that dim everything EXCEPT the anchor hole — four real
- *  elements (not a box-shadow trick) so every outside tap is physically
- *  swallowed: the "forcefully click" rule of the tutorial */
+/**
+ * Barely-there dim + a breathing mint glow on the target (user design
+ * ruling: the heavy gray made it hard to place the button in the whole
+ * picture). Four real shade rectangles still physically swallow every
+ * outside tap, and they TRANSITION between targets — the shade visibly
+ * travels toward the next thing to press instead of snapping.
+ */
 function GateShade({ rect, blockHole }: Readonly<{ rect: DOMRect | null; blockHole: boolean }>) {
-  const r = rect ?? new DOMRect(window.innerWidth / 2, window.innerHeight / 2, 0, 0);
+  // no target: shade collapses to the edges (nothing dimmed) — the next
+  // target's arrival then GROWS the shade toward it. Also kills the
+  // stray center square the old null-rect placeholder painted (user ss).
+  const r = rect ?? new DOMRect(0, 0, window.innerWidth, window.innerHeight);
   const top = Math.max(0, r.top - PAD);
   const left = Math.max(0, r.left - PAD);
   const right = Math.min(window.innerWidth, r.right + PAD);
   const bottom = Math.min(window.innerHeight, r.bottom + PAD);
-  const shade = 'fixed bg-black/55 z-[130]';
+  const shade = 'fixed bg-black/15 z-[130] transition-all duration-500 ease-out';
   return (
     <>
       <div className={shade} style={{ top: 0, left: 0, right: 0, height: top }} />
@@ -34,7 +42,7 @@ function GateShade({ rect, blockHole }: Readonly<{ rect: DOMRect | null; blockHo
       <div className={shade} style={{ top, left: right, right: 0, height: bottom - top }} />
       {rect && (
         <div
-          className="pointer-events-none fixed z-[130] rounded-xl border-2 border-accent"
+          className="m-mina-glow pointer-events-none fixed z-[130] rounded-xl transition-all duration-500 ease-out"
           style={{ top, left, width: right - left, height: bottom - top }}
           data-testid="mina-gate-ring"
         />
@@ -45,10 +53,23 @@ function GateShade({ rect, blockHole }: Readonly<{ rect: DOMRect | null; blockHo
   );
 }
 
-/** where the bubble goes: the OPPOSITE half of the anchor (approval
- *  remark 1 — the old walkthrough covered the very button it pointed at) */
-const bubblePlacement = (rect: DOMRect | null): 'top' | 'bottom' =>
-  rect && rect.top + rect.height / 2 > window.innerHeight / 2 ? 'top' : 'bottom';
+/** the bubble takes whichever half the target does NOT occupy; with no
+ *  target it dodges open sheets (they rise from the bottom — user ss:
+ *  the bubble kept sitting exactly on the form it talked about) */
+const bubblePlacement = (rect: DOMRect | null, sheetOpen: boolean): 'top' | 'bottom' => {
+  if (rect) return rect.top + rect.height / 2 > window.innerHeight / 2 ? 'top' : 'bottom';
+  return sheetOpen ? 'top' : 'bottom';
+};
+
+/** the target's own wording, so tutorial copy can quote it verbatim and
+ *  survive future label changes (user ruling) */
+function elementLabel(el: HTMLElement | null): string {
+  if (!el) return '';
+  const aria = el.getAttribute('aria-label');
+  if (aria) return aria;
+  const firstText = el.querySelector('span, p')?.textContent?.trim();
+  return (firstText || el.textContent || '').trim().slice(0, 40);
+}
 
 export function MinaTutorial() {
   const { t, lang } = useLang();
@@ -59,6 +80,11 @@ export function MinaTutorial() {
   const [rect, setRect] = useState<DOMRect | null>(null);
   const [skipOpen, setSkipOpen] = useState(false);
   const [skipRevert, setSkipRevert] = useState(true);
+  // user ruling: Mina can be tucked away into a glowing corner bubble
+  // when she'd sit in the way — tap to bring her back
+  const [minimized, setMinimized] = useState(false);
+  const [targetLabel, setTargetLabel] = useState('');
+  const [sheetOpen, setSheetOpen] = useState(false);
   // per-act baseline: ids that existed when the act step became current
   const baselineRef = useRef<{ step: number; ids: Set<string> } | null>(null);
 
@@ -73,6 +99,7 @@ export function MinaTutorial() {
     const onStart = () => {
       const fresh: MinaRunState = { active: true, step: 0, ledger: [] };
       void store.metaPut(MINA_STATE_KEY, fresh);
+      setMinimized(false);
       setRun(fresh);
     };
     window.addEventListener('mina:start', onStart);
@@ -159,20 +186,40 @@ export function MinaTutorial() {
 
   // publish form suggestions for the live step — AND the upcoming one:
   // the form usually opens during the preceding gate step (the + click),
-  // before the act step is current
+  // before the act step is current. Suggested SPACE names dedupe against
+  // what already exists (user ss: replaying suggested the taken name
+  // "Private" and the form refused the duplicate).
   useEffect(() => {
     if (!run?.active) return;
     const source = [MINA_STEPS[run.step], MINA_STEPS[run.step + 1]].find((s) => s?.suggestKey);
     if (!source?.suggestKey) return;
     const value = t(source.suggestKey);
-    if (source.act?.entity === 'space') setMinaSuggestions({ spaceName: value });
-    else if (source.act?.entity === 'account') setMinaSuggestions({ accountName: value });
-    else if (source.act?.entity === 'transaction') setMinaSuggestions({ txMerchant: value, txAmount: '12,34' });
-    return () => setMinaSuggestions({});
-  }, [run?.active, run?.step, t, lang]);
+    let cancelled = false;
+    if (source.act?.entity === 'space') {
+      void (async () => {
+        const taken = new Set(
+          (await store.allRows('space')).filter((s) => s.deleted === 0).map((s) => s.name.toLowerCase()),
+        );
+        let name = value;
+        let n = 2;
+        while (taken.has(name.toLowerCase())) {
+          name = `${value}${n}`;
+          n++;
+        }
+        if (!cancelled) setMinaSuggestions({ spaceName: name });
+      })().catch(() => undefined);
+    } else if (source.act?.entity === 'account') setMinaSuggestions({ accountName: value });
+    else if (source.act?.entity === 'transaction') setMinaSuggestions({ txMerchant: value, txAmount: '12,34', txCatId: 'groceries' });
+    return () => {
+      cancelled = true;
+      setMinaSuggestions({});
+    };
+  }, [run?.active, run?.step, t, lang, store]);
 
-  // anchor tracking: rAF-driven re-measure (scroll/resize/sheet motion)
+  // anchor + label + sheet tracking: rAF-driven re-measure (scroll,
+  // resize, sheet motion — and the quoted target label appearing late)
   const anchorKey = step?.anchor?.join(',') ?? '';
+  const labelKey = step?.labelFrom?.join(',') ?? '';
   useEffect(() => {
     if (!run?.active) return;
     let raf = 0;
@@ -184,12 +231,14 @@ export function MinaTutorial() {
         if (prev && next && Math.abs(prev.top - next.top) < 1 && Math.abs(prev.left - next.left) < 1 && Math.abs(prev.width - next.width) < 1) return prev;
         return next;
       });
+      setTargetLabel(elementLabel(resolveAnchor(step?.labelFrom ?? step?.anchor)));
+      setSheetOpen(hasOpenSheet());
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [run?.active, run?.step, anchorKey, resolveAnchor]);
+  }, [run?.active, run?.step, anchorKey, labelKey, resolveAnchor]);
 
   // gate advance: the tap lands on the REAL element; we advance alongside
   useEffect(() => {
@@ -201,6 +250,10 @@ export function MinaTutorial() {
     document.addEventListener('click', onTap, { capture: true });
     return () => document.removeEventListener('click', onTap, { capture: true });
   }, [step, resolveAnchor, advance]);
+
+  // replay detection for the Home copy (a lived-in account is not empty)
+  const spacesLive = useQuery(store, async () => (await store.allRows('space')).filter((s) => s.deleted === 0).length, [run?.step]);
+  const hasSpaces = (spacesLive ?? 0) > 0;
 
   // act detection on the STORE (approval remark 2): live emissions, row
   // EXISTENCE diff — any name, any amount satisfies the step
@@ -248,8 +301,15 @@ export function MinaTutorial() {
 
   if (!run?.active || !step) return null;
 
-  const bubbleSide = bubblePlacement(rect);
+  const bubbleSide = bubblePlacement(rect, sheetOpen);
   const showShade = !!step.anchor || step.gate || step.info;
+  // copy quotes the live target and the (deduped) suggested name
+  const bodyParams = {
+    target: targetLabel,
+    name: minaSuggestedSpaceName() ?? minaSuggestedAccountName() ?? minaSuggestedTx()?.merchant ?? '',
+  };
+  // replay on a lived-in account: "it looks empty" would be nonsense
+  const bodyKey = step.id === 'home' && hasSpaces ? 'mina.home.bReplay' : step.bodyKey;
 
   return createPortal(
     <div data-testid="mina-tutorial" data-step={step.id}>
@@ -290,31 +350,52 @@ export function MinaTutorial() {
       {step.kind === 'bubble' && (
         <>
           {showShade && <GateShade rect={rect} blockHole={!!step.info} />}
-          <div
-            data-testid="mina-bubble"
-            className={`fixed inset-x-4 z-[140] mx-auto max-w-[480px] rounded-card border border-line bg-surface p-4 shadow-2xl ${
-              bubbleSide === 'top' ? 'top-[max(16px,env(safe-area-inset-top))]' : 'bottom-24'
-            }`}
-          >
-            <div className="flex items-start gap-3">
-              {/* Mina talks from the LEFT (user request) */}
-              <img src={MINA_EXPR[step.expr ?? 'smile']} alt="Mina" className="h-12 w-12 shrink-0 rounded-full border border-line object-cover" />
-              <span className="min-w-0 flex-1">
-                <p className="text-[14px] font-semibold text-ink">{t(step.titleKey)}</p>
-                <p className="mt-0.5 text-[12px] leading-relaxed text-ink-2">{t(step.bodyKey)}</p>
-              </span>
-            </div>
-            <div className="mt-2 flex items-center justify-between gap-2">
-              <button data-testid="mina-skip" onClick={() => setSkipOpen(true)} className="m-tap border-none bg-transparent text-[12px] text-ink-4">
-                {t('mina.skip')}
+          {minimized ? (
+            // tucked away: a glowing corner orb brings Mina back (user
+            // ruling — sometimes she simply IS in the way)
+            <button
+              data-testid="mina-restore"
+              onClick={() => setMinimized(false)}
+              className="m-mina-glow fixed bottom-24 left-4 z-[140] flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border border-accent bg-surface"
+            >
+              <img src={MINA_EXPR[step.expr ?? 'smile']} alt="Mina" className="h-full w-full object-cover" />
+            </button>
+          ) : (
+            <div
+              data-testid="mina-bubble"
+              className={`fixed inset-x-4 z-[140] mx-auto max-w-[480px] rounded-card border border-line bg-surface p-4 shadow-2xl ${
+                bubbleSide === 'top' ? 'top-[max(16px,env(safe-area-inset-top))]' : 'bottom-24'
+              }`}
+            >
+              <button
+                aria-label={t('mina.minimize')}
+                data-testid="mina-minimize"
+                onClick={() => setMinimized(true)}
+                className="m-tap absolute top-1.5 right-1.5 flex h-7 w-7 items-center justify-center rounded-full border-none bg-transparent text-ink-4"
+              >
+                <Icon name="arrow-collapse" size={15} />
               </button>
-              {!step.gate && !step.act && (
-                <Button data-testid="mina-next" className="px-5 py-1.5 text-[13px]" onClick={advance}>
-                  {t('mina.continue')}
-                </Button>
-              )}
+              <div className="flex items-start gap-3">
+                {/* Mina talks from the LEFT — full picture, no circle crop
+                    (user request) */}
+                <img src={MINA_EXPR[step.expr ?? 'smile']} alt="Mina" className="h-16 w-auto max-w-[64px] shrink-0 rounded-lg object-contain" />
+                <span className="min-w-0 flex-1 pr-6">
+                  <p className="text-[14px] font-semibold text-ink">{t(step.titleKey)}</p>
+                  <p className="mt-0.5 text-[12px] leading-relaxed text-ink-2">{t(bodyKey, bodyParams)}</p>
+                </span>
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <button data-testid="mina-skip" onClick={() => setSkipOpen(true)} className="m-tap border-none bg-transparent text-[12px] text-ink-4">
+                  {t('mina.skip')}
+                </button>
+                {!step.gate && !step.act && (
+                  <Button data-testid="mina-next" className="px-5 py-1.5 text-[13px]" onClick={advance}>
+                    {t('mina.continue')}
+                  </Button>
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </>
       )}
 

@@ -314,3 +314,11 @@
   animation: m-hold-grow 0.45s linear forwards;
   z-index: -1;
 }
+
+/* Mina tutorial: the target breathes in the brand mint — a wave of
+   light instead of a heavy dim (user design ruling) */
+@keyframes m-mina-glow {
+  0%, 100% { box-shadow: 0 0 4px 1px color-mix(in srgb, var(--m-accent) 45%, transparent), 0 0 0 2px var(--m-accent); }
+  50% { box-shadow: 0 0 24px 9px color-mix(in srgb, var(--m-accent) 85%, transparent), 0 0 0 2px var(--m-accent); }
+}
+.m-mina-glow { animation: m-mina-glow 1.6s ease-in-out infinite; }

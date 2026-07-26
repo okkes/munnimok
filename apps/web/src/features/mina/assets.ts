@@ -30,9 +30,12 @@ export const MINA_ART = {
   handopen: fullHandOpen,
   spaces: sceneSpaces,
   family: sceneFamily,
-  acctManual: sceneAcctManual,
-  acctImport: sceneAcctImport,
-  acctLinked: sceneAcctLinked,
+  // art↔content mapping corrected against the actual files (user ss):
+  // finacc-01 = the three kinds at a glance, finacc-02 = manual lives in
+  // one space, finacc-03 = imported/linked are global and attach
+  acctKinds: sceneAcctManual,
+  acctManual: sceneAcctImport,
+  acctGlobal: sceneAcctLinked,
   txAccount: sceneTxAccount,
 } as const;
 export type MinaArt = keyof typeof MINA_ART;

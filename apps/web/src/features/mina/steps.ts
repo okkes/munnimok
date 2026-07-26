@@ -34,6 +34,9 @@ export interface MinaStep {
   act?: { entity: MinaEntity; absent?: boolean };
   /** form prefill suggestion while this step is live (localized name key) */
   suggestKey?: TranslationKey;
+  /** testids whose live wording fills the copy's {target} (user ruling:
+   *  quote the REAL button so renames never desync the tutorial) */
+  labelFrom?: string[];
 }
 
 export const MINA_STEPS: readonly MinaStep[] = [
@@ -44,28 +47,31 @@ export const MINA_STEPS: readonly MinaStep[] = [
   { id: 'openSwitcher', kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.firstSpace.t', bodyKey: 'mina.openSwitcher.b', screen: '/home', anchor: ['home-space-switcher'], gate: true },
   { id: 'openManage', kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.firstSpace.t', bodyKey: 'mina.openManage.b', anchor: ['space-pick-manage'], gate: true },
   { id: 'openCreate', kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.firstSpace.t', bodyKey: 'mina.openCreate.b', anchor: ['spaces-add'], gate: true },
-  { id: 'createSpace', kind: 'bubble', expr: 'thinking', titleKey: 'mina.firstSpace.t', bodyKey: 'mina.createSpace.b', act: { entity: 'space' }, suggestKey: 'mina.suggest.private' },
+  { id: 'createSpace', kind: 'bubble', expr: 'thinking', titleKey: 'mina.firstSpace.t', bodyKey: 'mina.createSpace.b', act: { entity: 'space' }, suggestKey: 'mina.suggest.private', labelFrom: ['space-create-save'] },
   { id: 'spaceDesign', kind: 'bubble', expr: 'laugh', titleKey: 'mina.spaceDesign.t', bodyKey: 'mina.spaceDesign.b', anchor: ['space-edit-$s1'], info: true },
+  { id: 'acctKinds', kind: 'fullscreen', art: 'acctKinds', titleKey: 'mina.acctKinds.t', bodyKey: 'mina.acctKinds.b' },
   { id: 'acctManual', kind: 'fullscreen', art: 'acctManual', titleKey: 'mina.acctManual.t', bodyKey: 'mina.acctManual.b' },
-  { id: 'acctImport', kind: 'fullscreen', art: 'acctImport', titleKey: 'mina.acctImport.t', bodyKey: 'mina.acctImport.b' },
-  { id: 'acctLinked', kind: 'fullscreen', art: 'acctLinked', titleKey: 'mina.acctLinked.t', bodyKey: 'mina.acctLinked.b' },
+  { id: 'acctGlobal', kind: 'fullscreen', art: 'acctGlobal', titleKey: 'mina.acctGlobal.t', bodyKey: 'mina.acctGlobal.b' },
   { id: 'goSettings', kind: 'bubble', expr: 'sad', titleKey: 'mina.makeAccount.t', bodyKey: 'mina.goSettings.b', anchor: ['tab-settings', 'side-tab-settings'], gate: true },
-  { id: 'openSpaceCard', kind: 'bubble', expr: 'sad', titleKey: 'mina.makeAccount.t', bodyKey: 'mina.openSpaceCard.b', anchor: ['settings-space-accounts-row'], gate: true },
-  { id: 'openAdd', kind: 'bubble', expr: 'sad', titleKey: 'mina.makeAccount.t', bodyKey: 'mina.openAdd.b', anchor: ['space-accounts-add'], gate: true },
-  { id: 'pickManual', kind: 'bubble', expr: 'sad', titleKey: 'mina.makeAccount.t', bodyKey: 'mina.pickManual.b', anchor: ['chooser-manual'], gate: true },
-  { id: 'pickChecking', kind: 'bubble', expr: 'sad', titleKey: 'mina.makeAccount.t', bodyKey: 'mina.pickChecking.b', anchor: ['chooser-accttype-checking'], gate: true },
-  { id: 'createAccount', kind: 'bubble', expr: 'thinking', titleKey: 'mina.makeAccount.t', bodyKey: 'mina.createAccount.b', act: { entity: 'account' }, suggestKey: 'mina.suggest.wallet' },
+  { id: 'openSpaceCard', kind: 'bubble', expr: 'sad', titleKey: 'mina.makeAccount.t', bodyKey: 'mina.openSpaceCard.b', anchor: ['settings-space-accounts-row'], gate: true, labelFrom: ['settings-space-accounts-row'] },
+  { id: 'openAdd', kind: 'bubble', expr: 'sad', titleKey: 'mina.makeAccount.t', bodyKey: 'mina.openAdd.b', anchor: ['space-accounts-add'], gate: true, labelFrom: ['space-accounts-add'] },
+  { id: 'pickManual', kind: 'bubble', expr: 'sad', titleKey: 'mina.makeAccount.t', bodyKey: 'mina.pickTarget.b', anchor: ['chooser-manual'], gate: true, labelFrom: ['chooser-manual'] },
+  { id: 'pickChecking', kind: 'bubble', expr: 'sad', titleKey: 'mina.makeAccount.t', bodyKey: 'mina.pickTargetDo.b', anchor: ['chooser-accttype-checking'], gate: true, labelFrom: ['chooser-accttype-checking'] },
+  { id: 'createAccount', kind: 'bubble', expr: 'thinking', titleKey: 'mina.makeAccount.t', bodyKey: 'mina.createAccount.b', act: { entity: 'account' }, suggestKey: 'mina.suggest.mainbank', labelFrom: ['chooser-acctform-save'] },
   { id: 'txConcept', kind: 'fullscreen', art: 'txAccount', titleKey: 'mina.txConcept.t', bodyKey: 'mina.txConcept.b' },
   { id: 'goTransactions', kind: 'bubble', expr: 'smile', titleKey: 'mina.firstTx.t', bodyKey: 'mina.goTransactions.b', anchor: ['tab-transactions', 'side-tab-transactions'], gate: true },
   { id: 'openTxAdd', kind: 'bubble', expr: 'smile', titleKey: 'mina.firstTx.t', bodyKey: 'mina.openTxAdd.b', anchor: ['tx-add'], gate: true },
-  { id: 'createTx', kind: 'bubble', expr: 'thinking', titleKey: 'mina.firstTx.t', bodyKey: 'mina.createTx.b', act: { entity: 'transaction' }, suggestKey: 'mina.suggest.groceries' },
+  { id: 'createTx', kind: 'bubble', expr: 'thinking', titleKey: 'mina.firstTx.t', bodyKey: 'mina.createTx.b', act: { entity: 'transaction' }, suggestKey: 'mina.suggest.groceries', labelFrom: ['txform-save'] },
   { id: 'goHomePayoff', kind: 'bubble', expr: 'smile', titleKey: 'mina.payoff.t', bodyKey: 'mina.goHomePayoff.b', anchor: ['tab-home', 'side-tab-home'], gate: true },
-  { id: 'payoff', kind: 'bubble', expr: 'smile', titleKey: 'mina.payoff.t', bodyKey: 'mina.payoff.b', anchor: ['home-overview'], info: true },
-  { id: 'openSwitcher2', kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.family.t', bodyKey: 'mina.openSwitcher.b', anchor: ['home-space-switcher'], gate: true },
-  { id: 'openManage2', kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.family.t', bodyKey: 'mina.openManage.b', anchor: ['space-pick-manage'], gate: true },
+  { id: 'payoff', kind: 'bubble', expr: 'smile', titleKey: 'mina.payoff.t', bodyKey: 'mina.payoff.b', anchor: ['home-overview-expense'], info: true },
+  { id: 'openSwitcher2', kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.family.t', bodyKey: 'mina.openSwitcher2.b', anchor: ['home-space-switcher'], gate: true },
+  { id: 'openManage2', kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.family.t', bodyKey: 'mina.openManage.b', anchor: ['space-pick-manage'], gate: true, labelFrom: ['space-pick-manage'] },
   { id: 'openCreate2', kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.family.t', bodyKey: 'mina.openCreate.b', anchor: ['spaces-add'], gate: true },
-  { id: 'createFamily', kind: 'bubble', expr: 'thinking', titleKey: 'mina.family.t', bodyKey: 'mina.createFamily.b', act: { entity: 'space' }, suggestKey: 'mina.suggest.family' },
-  { id: 'switchFamily', kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.family.t', bodyKey: 'mina.switchFamily.b', anchor: ['space-row-$s2'], gate: true },
+  { id: 'createFamily', kind: 'bubble', expr: 'thinking', titleKey: 'mina.family.t', bodyKey: 'mina.createFamily.b', act: { entity: 'space' }, suggestKey: 'mina.suggest.family', labelFrom: ['space-create-save'] },
+  // the fresh space is ACTIVE already (user ss: "tap Family" was moot) —
+  // teach switching by hopping back to the first space and returning
+  { id: 'switchBack', kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.switching.t', bodyKey: 'mina.switchBack.b', anchor: ['space-row-$s1'], gate: true },
+  { id: 'switchAgain', kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.switching.t', bodyKey: 'mina.switchAgain.b', anchor: ['space-row-$s2'], gate: true },
   { id: 'goTransactions2', kind: 'bubble', expr: 'thinking', titleKey: 'mina.isolation.t', bodyKey: 'mina.goTransactions2.b', anchor: ['tab-transactions', 'side-tab-transactions'], gate: true },
   { id: 'emptyList', kind: 'bubble', expr: 'thinking', titleKey: 'mina.isolation.t', bodyKey: 'mina.emptyList.b' },
   { id: 'tryTxAdd', kind: 'bubble', expr: 'thinking', titleKey: 'mina.isolation.t', bodyKey: 'mina.tryTxAdd.b', anchor: ['tx-add'], gate: true },
@@ -96,11 +102,11 @@ export const MINA_DONE_KEY = 'minaTutorialDone';
 // ── live form suggestions (module-level: forms read, controller writes) ──
 // The tutorial never writes DATA; pre-filling a form the user still
 // submits is presentation. Cleared the moment the step advances.
-let suggestions: { spaceName?: string; accountName?: string; txMerchant?: string; txAmount?: string } = {};
+let suggestions: { spaceName?: string; accountName?: string; txMerchant?: string; txAmount?: string; txCatId?: string } = {};
 export const setMinaSuggestions = (next: typeof suggestions): void => {
   suggestions = next;
 };
 export const minaSuggestedSpaceName = (): string | undefined => suggestions.spaceName;
 export const minaSuggestedAccountName = (): string | undefined => suggestions.accountName;
-export const minaSuggestedTx = (): { merchant: string; amount: string } | undefined =>
-  suggestions.txMerchant ? { merchant: suggestions.txMerchant, amount: suggestions.txAmount ?? '' } : undefined;
+export const minaSuggestedTx = (): { merchant: string; amount: string; catId?: string } | undefined =>
+  suggestions.txMerchant ? { merchant: suggestions.txMerchant, amount: suggestions.txAmount ?? '', catId: suggestions.txCatId } : undefined;

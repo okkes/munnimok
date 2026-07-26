@@ -70,19 +70,19 @@ export async function bootstrapUserSpaces(
     // fire again on every start (and on a slow first confirm AFTER the
     // user already finished onboarding — the ambush bug, second coming);
     // any Mina marker means the first-run is already owned.
-    const minaTouched =
-      (await store.metaGet('minaTutorialPending'))?.value ??
-      (await store.metaGet('minaTutorialState'))?.value ??
-      (await store.metaGet('minaTutorialDone'))?.value;
-    if (!minaTouched) {
+    if (!(await minaMarkerExists(store))) {
       await store.metaPut('needsOnboarding', true);
       await store.metaPut('minaTutorialPending', true);
     }
     return;
   }
 
-  // self-heal: if a bootstrap-created space is still empty while the
-  // account's real spaces arrived (pre-fix duplicates), retire it
+  await retireEmptyBootstrapSpace(store, repo);
+}
+
+/** self-heal: a bootstrap-created space still empty while the account's
+ *  real spaces arrived (pre-fix duplicates) retires quietly */
+async function retireEmptyBootstrapSpace(store: StorageBackend, repo: Repo): Promise<void> {
   const bootstrapId = (await store.metaGet(BOOTSTRAP_SPACE_KEY))?.value as string | undefined;
   if (!bootstrapId) return;
   const others = (await liveSpaces(store)).filter((s) => s.id !== bootstrapId).length;
@@ -96,6 +96,14 @@ export async function bootstrapUserSpaces(
     await repo.remove('space', bootstrapId, bootstrapId);
   }
   await store.metaDelete(BOOTSTRAP_SPACE_KEY);
+}
+
+/** any Mina meta marker: the first-run is already owned/ran/finished */
+async function minaMarkerExists(store: StorageBackend): Promise<boolean> {
+  for (const key of ['minaTutorialPending', 'minaTutorialState', 'minaTutorialDone']) {
+    if ((await store.metaGet(key))?.value) return true;
+  }
+  return false;
 }
 
 /** zero spaces is LEGAL only while the Mina tutorial owns the first-run

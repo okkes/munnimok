@@ -138,8 +138,8 @@ function KindRows({
  *  (S3776: the branch lives out of the component) */
 function initialFormState(tx: TransactionRow | undefined) {
   if (!tx) {
-    // Mina's demo suggestion pre-fills; the user edits freely and the
-    // act-step accepts ANY values (approval remark 2)
+    // Mina's demo suggestion pre-fills (category included — user
+    // remark); the user edits freely and the act accepts ANY values
     const suggested = minaSuggestedTx();
     return {
       amount: suggested?.amount ?? '',
@@ -147,7 +147,7 @@ function initialFormState(tx: TransactionRow | undefined) {
       merchant: suggested?.merchant ?? '',
       date: todayIso(),
       accountId: null,
-      catId: UNCATEGORIZED_ID,
+      catId: suggested?.catId ?? UNCATEGORIZED_ID,
       kind: 'standard' as TxKind,
       linkedAccountId: null,
       recurringId: null,

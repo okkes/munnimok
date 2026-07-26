@@ -73,9 +73,12 @@ describe('Mina tutorial run (signed-in identity, no space yet)', () => {
       req.onsuccess = req.onerror = req.onblocked = () => resolve(undefined);
     });
     renderAppAsUser('/home', { spaces: [] });
-    // simulate the onboarding hand-off (bootstrap left zero spaces)
-    await screen.findByTestId('screen-home', {}, { timeout: 5000 });
-    window.dispatchEvent(new Event('mina:start'));
+    // the REAL hand-off: bootstrap left zero spaces + the pending flag,
+    // Home redirects into onboarding, finishing it auto-starts Mina
+    const name = await screen.findByTestId('onboarding-name', {}, { timeout: 5000 });
+    fireEvent.change(name, { target: { value: 'Tester' } });
+    fireEvent.click(screen.getByTestId('onboarding-save'));
+    fireEvent.click(await screen.findByTestId('onboarding-lock-later', {}, { timeout: 5000 }));
     return USER_TEST_DB;
   };
 
