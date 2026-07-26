@@ -15,7 +15,6 @@ import { useTopSplit } from '@/features/splits/useTopSplit';
 import { useData } from '@/app/data';
 import { OfflineIndicator } from '@/app/OfflineBanner';
 import { HelpButton } from '@/features/help/HelpButton';
-import { IntroCard } from '@/features/help/IntroCard';
 import { InstallHint } from '@/features/help/InstallHint';
 import { WhatsNewCard } from '@/features/help/WhatsNew';
 import { UpdateCard } from './UpdateCard';
@@ -281,7 +280,6 @@ export function HomeScreen() {
             <WhatsNewCard />
             <InstallHint />
 
-            <IntroCard tourId="home" />
           </div>
 
           <div className="min-w-0 lg:col-start-1 lg:row-start-2">

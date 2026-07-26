@@ -82,8 +82,13 @@ export function ReimburseSection({ tx }: { tx: SpaceTx }) {
   const credits = useMemo(
     () =>
       allTxs
-        ?.filter((c) => c.amountCents > 0 && c.id !== tx.id && !linkedIds.includes(c.id))
-        .sort((a, b) => b.date.localeCompare(a.date))
+        ?.filter((c) => c.amountCents > 0 && c.id !== tx.id)
+        .map((c) => ({ credit: c, remaining: creditRemainingCents(c, givenCents(allTxs, c.id)), linked: linkedIds.includes(c.id) }))
+        // a credit stays selectable as long as it has value left — even
+        // when already linked here: picking it again MERGES into the
+        // existing link (user rule)
+        .filter((entry) => entry.remaining > 0)
+        .sort((a, b) => b.credit.date.localeCompare(a.credit.date))
         .slice(0, 30),
     [allTxs, tx.id, linkedIds],
   );
@@ -138,9 +143,10 @@ export function ReimburseSection({ tx }: { tx: SpaceTx }) {
       if (!chosen) return;
       const cents = clampReimbursement(chosen, giveable, parseCents(amount) ?? 0);
       if (cents > 0) {
+        // MERGE semantics both directions (user rule): old + new
         const prev = (chosen.reimbursements ?? []).find((r) => r.txId === tx.id)?.amountCents ?? 0;
-        void transform(chosen, expensePatch(chosen, withLink(chosen.reimbursements, tx.id, cents)), 'reimburse');
-        void transform(tx, creditPatch(tx, given - prev + cents), null); // one line per gesture, not per side
+        void transform(chosen, expensePatch(chosen, withLink(chosen.reimbursements, tx.id, prev + cents)), 'reimburse');
+        void transform(tx, creditPatch(tx, given + cents), null); // one line per gesture, not per side
       }
       setChosen(null);
       setPickerOpen(false);
@@ -261,18 +267,23 @@ export function ReimburseSection({ tx }: { tx: SpaceTx }) {
   };
 
   const choose = (credit: SpaceTx) => {
-    const prefill = clampReimbursement(tx, credit.amountCents, credit.amountCents);
+    // the field asks for the ADDITIONAL amount — what the credit still
+    // has left, clamped by what this expense still needs
+    const giveable = creditRemainingCents(credit, givenCents(allTxs ?? [], credit.id));
+    const prefill = clampReimbursement(tx, giveable, giveable);
     setChosen(credit);
     setAmount((prefill / 100).toFixed(2).replace('.', ','));
   };
 
   const confirm = () => {
     if (!chosen) return;
-    const cents = clampReimbursement(tx, chosen.amountCents, parseCents(amount) ?? 0);
+    const giveable = creditRemainingCents(chosen, givenCents(allTxs ?? [], chosen.id));
+    const cents = clampReimbursement(tx, giveable, parseCents(amount) ?? 0);
     if (cents > 0) {
+      // re-picking an already-linked credit MERGES: old + new (user rule)
       const prev = (tx.reimbursements ?? []).find((r) => r.txId === chosen.id)?.amountCents ?? 0;
-      void transform(tx, expensePatch(tx, withLink(tx.reimbursements, chosen.id, cents)), 'reimburse');
-      void transform(chosen, creditPatch(chosen, givenCents(allTxs ?? [], chosen.id) - prev + cents), null);
+      void transform(tx, expensePatch(tx, withLink(tx.reimbursements, chosen.id, prev + cents)), 'reimburse');
+      void transform(chosen, creditPatch(chosen, givenCents(allTxs ?? [], chosen.id) + cents), null);
     }
     setChosen(null);
     setPickerOpen(false);
@@ -362,7 +373,7 @@ export function ReimburseSection({ tx }: { tx: SpaceTx }) {
           </div>
         ) : (
           <div data-testid="reimb-picker">
-            {(credits ?? []).map((credit) => (
+            {(credits ?? []).map(({ credit, remaining, linked }) => (
               <button
                 key={credit.id}
                 data-testid={`reimb-pick-${credit.id}`}
@@ -372,10 +383,14 @@ export function ReimburseSection({ tx }: { tx: SpaceTx }) {
                 <Icon name="cash-plus" size={20} color="var(--m-accent)" />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[14px] text-ink">{cleanBankText(credit.merchant)}</span>
-                  <span className="block text-[11px] text-ink-4">{credit.date}</span>
+                  <span className="block text-[11px] text-ink-4">
+                    {credit.date}
+                    {linked && <span className="text-accent-deep"> · {t('reimb.alreadyLinked')}</span>}
+                  </span>
                 </span>
+                {/* what the credit can still give, not its gross */}
                 <span className="m-num text-[14px] font-semibold text-accent-deep">
-                  +{fmtCents(credit.amountCents, credit.currency, lang)}
+                  +{fmtCents(remaining, credit.currency, lang)}
                 </span>
               </button>
             ))}

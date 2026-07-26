@@ -43,17 +43,26 @@ const isEditable = (el: EventTarget | null): el is HTMLElement =>
  * focus. The focused field also scrolls itself into view once the
  * resized layout has settled (fields near the bottom stayed hidden).
  */
+/** two passes: the iOS native-resize webview settles LATER than 300ms,
+ *  so a single early scroll measured a stale viewport and fields near
+ *  the bottom stayed under the keyboard (user ss). The second pass
+ *  re-centers once the resize has genuinely landed. */
+function scheduleKeyboardScrolls(el: HTMLElement): ReturnType<typeof setTimeout>[] {
+  const center = () => {
+    if (document.activeElement === el) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  };
+  return [300, 750].map((ms) => setTimeout(center, ms));
+}
+
 function useKeyboardOpen(): boolean {
   const [open, setOpen] = useState(false);
   useEffect(() => {
-    let scrollTimer: ReturnType<typeof setTimeout> | undefined;
+    let scrollTimers: ReturnType<typeof setTimeout>[] = [];
     const onFocusIn = (e: FocusEvent) => {
       if (!isEditable(e.target)) return;
-      const el = e.target;
       setOpen(true);
-      clearTimeout(scrollTimer);
-      // the keyboard/viewport animation needs a beat before measuring
-      scrollTimer = setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 300);
+      scrollTimers.forEach(clearTimeout);
+      scrollTimers = scheduleKeyboardScrolls(e.target);
     };
     const onFocusOut = () => {
       // focus often hops field-to-field — only a settled blur closes
@@ -64,7 +73,7 @@ function useKeyboardOpen(): boolean {
     window.addEventListener('focusin', onFocusIn);
     window.addEventListener('focusout', onFocusOut);
     return () => {
-      clearTimeout(scrollTimer);
+      scrollTimers.forEach(clearTimeout);
       window.removeEventListener('focusin', onFocusIn);
       window.removeEventListener('focusout', onFocusOut);
     };

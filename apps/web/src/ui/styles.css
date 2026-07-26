@@ -322,3 +322,6 @@
   50% { box-shadow: 0 0 24px 9px color-mix(in srgb, var(--m-accent) 85%, transparent), 0 0 0 2px var(--m-accent); }
 }
 .m-mina-glow { animation: m-mina-glow 1.6s ease-in-out infinite; }
+/* info-only highlight: a soft steady glow — noticeable, clearly not a
+   button to press (user ruling: two kinds of attention) */
+.m-mina-glow-soft { box-shadow: 0 0 10px 2px color-mix(in srgb, var(--m-accent) 40%, transparent), 0 0 0 1.5px color-mix(in srgb, var(--m-accent) 60%, transparent); }

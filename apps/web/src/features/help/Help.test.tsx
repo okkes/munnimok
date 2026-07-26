@@ -44,18 +44,23 @@ describe('Tutorials (demo identity)', () => {
     }
   }, 15_000);
 
-  it('the intro card nudges once and stays dismissed', async () => {
-    renderApp('/home');
-    const card = await screen.findByTestId('intro-card-home', {}, { timeout: 5000 });
-    expect(card.textContent).toContain('60-second');
-    fireEvent.click(screen.getByTestId('intro-dismiss'));
-    await waitFor(() => expect(screen.queryByTestId('intro-card-home')).toBeNull());
-
-    cleanup();
+  it('the intro card nudges once and stays dismissed (Home has none — Mina owns the first-run)', async () => {
     renderApp('/home');
     await screen.findByTestId('home-balance-band');
-    // never nags again
     expect(screen.queryByTestId('intro-card-home')).toBeNull();
+
+    cleanup();
+    renderApp('/review');
+    const card = await screen.findByTestId('intro-card-review', {}, { timeout: 5000 });
+    expect(card.textContent).toContain('60-second');
+    fireEvent.click(screen.getByTestId('intro-dismiss'));
+    await waitFor(() => expect(screen.queryByTestId('intro-card-review')).toBeNull());
+
+    cleanup();
+    renderApp('/review');
+    await screen.findByTestId('screen-review');
+    // never nags again
+    expect(screen.queryByTestId('intro-card-review')).toBeNull();
   }, 15_000);
 
   it('the ? opens slides; finishing marks the tour as seen', async () => {

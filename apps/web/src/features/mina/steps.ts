@@ -37,34 +37,37 @@ export interface MinaStep {
   /** testids whose live wording fills the copy's {target} (user ruling:
    *  quote the REAL button so renames never desync the tutorial) */
   labelFrom?: string[];
+  /** safe re-entry point: a killed app resumes at the nearest one —
+   *  mid-sheet steps can't reconstruct their transient UI */
+  checkpoint?: boolean;
 }
 
 export const MINA_STEPS: readonly MinaStep[] = [
-  { id: 'welcome', kind: 'fullscreen', art: 'greeting', titleKey: 'mina.welcome.t', bodyKey: 'mina.welcome.b' },
-  { id: 'home', kind: 'bubble', expr: 'smile', titleKey: 'mina.home.t', bodyKey: 'mina.home.b', screen: '/home' },
-  { id: 'spaces', kind: 'fullscreen', art: 'spaces', titleKey: 'mina.spaces.t', bodyKey: 'mina.spaces.b' },
-  { id: 'sharing', kind: 'fullscreen', art: 'family', titleKey: 'mina.sharing.t', bodyKey: 'mina.sharing.b' },
-  { id: 'openSwitcher', kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.firstSpace.t', bodyKey: 'mina.openSwitcher.b', screen: '/home', anchor: ['home-space-switcher'], gate: true },
+  { id: 'welcome', checkpoint: true, kind: 'fullscreen', art: 'greeting', titleKey: 'mina.welcome.t', bodyKey: 'mina.welcome.b' },
+  { id: 'home', checkpoint: true, kind: 'bubble', expr: 'smile', titleKey: 'mina.home.t', bodyKey: 'mina.home.b', screen: '/home' },
+  { id: 'spaces', checkpoint: true, kind: 'fullscreen', art: 'spaces', titleKey: 'mina.spaces.t', bodyKey: 'mina.spaces.b' },
+  { id: 'sharing', checkpoint: true, kind: 'fullscreen', art: 'family', titleKey: 'mina.sharing.t', bodyKey: 'mina.sharing.b' },
+  { id: 'openSwitcher', checkpoint: true, kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.firstSpace.t', bodyKey: 'mina.openSwitcher.b', screen: '/home', anchor: ['home-space-switcher'], gate: true },
   { id: 'openManage', kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.firstSpace.t', bodyKey: 'mina.openManage.b', anchor: ['space-pick-manage'], gate: true },
   { id: 'openCreate', kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.firstSpace.t', bodyKey: 'mina.openCreate.b', anchor: ['spaces-add'], gate: true },
   { id: 'createSpace', kind: 'bubble', expr: 'thinking', titleKey: 'mina.firstSpace.t', bodyKey: 'mina.createSpace.b', act: { entity: 'space' }, suggestKey: 'mina.suggest.private', labelFrom: ['space-create-save'] },
   { id: 'spaceDesign', kind: 'bubble', expr: 'laugh', titleKey: 'mina.spaceDesign.t', bodyKey: 'mina.spaceDesign.b', anchor: ['space-edit-$s1'], info: true },
-  { id: 'acctKinds', kind: 'fullscreen', art: 'acctKinds', titleKey: 'mina.acctKinds.t', bodyKey: 'mina.acctKinds.b' },
-  { id: 'acctManual', kind: 'fullscreen', art: 'acctManual', titleKey: 'mina.acctManual.t', bodyKey: 'mina.acctManual.b' },
-  { id: 'acctGlobal', kind: 'fullscreen', art: 'acctGlobal', titleKey: 'mina.acctGlobal.t', bodyKey: 'mina.acctGlobal.b' },
-  { id: 'goSettings', kind: 'bubble', expr: 'sad', titleKey: 'mina.makeAccount.t', bodyKey: 'mina.goSettings.b', anchor: ['tab-settings', 'side-tab-settings'], gate: true },
+  { id: 'acctKinds', checkpoint: true, kind: 'fullscreen', art: 'acctKinds', titleKey: 'mina.acctKinds.t', bodyKey: 'mina.acctKinds.b' },
+  { id: 'acctManual', checkpoint: true, kind: 'fullscreen', art: 'acctManual', titleKey: 'mina.acctManual.t', bodyKey: 'mina.acctManual.b' },
+  { id: 'acctGlobal', checkpoint: true, kind: 'fullscreen', art: 'acctGlobal', titleKey: 'mina.acctGlobal.t', bodyKey: 'mina.acctGlobal.b' },
+  { id: 'goSettings', checkpoint: true, kind: 'bubble', expr: 'sad', titleKey: 'mina.makeAccount.t', bodyKey: 'mina.goSettings.b', anchor: ['tab-settings', 'side-tab-settings'], gate: true },
   { id: 'openSpaceCard', kind: 'bubble', expr: 'sad', titleKey: 'mina.makeAccount.t', bodyKey: 'mina.openSpaceCard.b', anchor: ['settings-space-accounts-row'], gate: true, labelFrom: ['settings-space-accounts-row'] },
   { id: 'openAdd', kind: 'bubble', expr: 'sad', titleKey: 'mina.makeAccount.t', bodyKey: 'mina.openAdd.b', anchor: ['space-accounts-add'], gate: true, labelFrom: ['space-accounts-add'] },
   { id: 'pickManual', kind: 'bubble', expr: 'sad', titleKey: 'mina.makeAccount.t', bodyKey: 'mina.pickTarget.b', anchor: ['chooser-manual'], gate: true, labelFrom: ['chooser-manual'] },
   { id: 'pickChecking', kind: 'bubble', expr: 'sad', titleKey: 'mina.makeAccount.t', bodyKey: 'mina.pickTargetDo.b', anchor: ['chooser-accttype-checking'], gate: true, labelFrom: ['chooser-accttype-checking'] },
   { id: 'createAccount', kind: 'bubble', expr: 'thinking', titleKey: 'mina.makeAccount.t', bodyKey: 'mina.createAccount.b', act: { entity: 'account' }, suggestKey: 'mina.suggest.mainbank', labelFrom: ['chooser-acctform-save'] },
-  { id: 'txConcept', kind: 'fullscreen', art: 'txAccount', titleKey: 'mina.txConcept.t', bodyKey: 'mina.txConcept.b' },
-  { id: 'goTransactions', kind: 'bubble', expr: 'smile', titleKey: 'mina.firstTx.t', bodyKey: 'mina.goTransactions.b', anchor: ['tab-transactions', 'side-tab-transactions'], gate: true },
+  { id: 'txConcept', checkpoint: true, kind: 'fullscreen', art: 'txAccount', titleKey: 'mina.txConcept.t', bodyKey: 'mina.txConcept.b' },
+  { id: 'goTransactions', checkpoint: true, kind: 'bubble', expr: 'smile', titleKey: 'mina.firstTx.t', bodyKey: 'mina.goTransactions.b', anchor: ['tab-transactions', 'side-tab-transactions'], gate: true },
   { id: 'openTxAdd', kind: 'bubble', expr: 'smile', titleKey: 'mina.firstTx.t', bodyKey: 'mina.openTxAdd.b', anchor: ['tx-add'], gate: true },
   { id: 'createTx', kind: 'bubble', expr: 'thinking', titleKey: 'mina.firstTx.t', bodyKey: 'mina.createTx.b', act: { entity: 'transaction' }, suggestKey: 'mina.suggest.groceries', labelFrom: ['txform-save'] },
-  { id: 'goHomePayoff', kind: 'bubble', expr: 'smile', titleKey: 'mina.payoff.t', bodyKey: 'mina.goHomePayoff.b', anchor: ['tab-home', 'side-tab-home'], gate: true },
+  { id: 'goHomePayoff', checkpoint: true, kind: 'bubble', expr: 'smile', titleKey: 'mina.payoff.t', bodyKey: 'mina.goHomePayoff.b', anchor: ['tab-home', 'side-tab-home'], gate: true },
   { id: 'payoff', kind: 'bubble', expr: 'smile', titleKey: 'mina.payoff.t', bodyKey: 'mina.payoff.b', anchor: ['home-overview-expense'], info: true },
-  { id: 'openSwitcher2', kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.family.t', bodyKey: 'mina.openSwitcher2.b', anchor: ['home-space-switcher'], gate: true },
+  { id: 'openSwitcher2', checkpoint: true, kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.family.t', bodyKey: 'mina.openSwitcher2.b', screen: '/home', anchor: ['home-space-switcher'], gate: true },
   { id: 'openManage2', kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.family.t', bodyKey: 'mina.openManage.b', anchor: ['space-pick-manage'], gate: true, labelFrom: ['space-pick-manage'] },
   { id: 'openCreate2', kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.family.t', bodyKey: 'mina.openCreate.b', anchor: ['spaces-add'], gate: true },
   { id: 'createFamily', kind: 'bubble', expr: 'thinking', titleKey: 'mina.family.t', bodyKey: 'mina.createFamily.b', act: { entity: 'space' }, suggestKey: 'mina.suggest.family', labelFrom: ['space-create-save'] },
@@ -72,14 +75,14 @@ export const MINA_STEPS: readonly MinaStep[] = [
   // teach switching by hopping back to the first space and returning
   { id: 'switchBack', kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.switching.t', bodyKey: 'mina.switchBack.b', anchor: ['space-row-$s1'], gate: true },
   { id: 'switchAgain', kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.switching.t', bodyKey: 'mina.switchAgain.b', anchor: ['space-row-$s2'], gate: true },
-  { id: 'goTransactions2', kind: 'bubble', expr: 'thinking', titleKey: 'mina.isolation.t', bodyKey: 'mina.goTransactions2.b', anchor: ['tab-transactions', 'side-tab-transactions'], gate: true },
+  { id: 'goTransactions2', checkpoint: true, kind: 'bubble', expr: 'thinking', titleKey: 'mina.isolation.t', bodyKey: 'mina.goTransactions2.b', anchor: ['tab-transactions', 'side-tab-transactions'], gate: true },
   { id: 'emptyList', kind: 'bubble', expr: 'thinking', titleKey: 'mina.isolation.t', bodyKey: 'mina.emptyList.b' },
   { id: 'tryTxAdd', kind: 'bubble', expr: 'thinking', titleKey: 'mina.isolation.t', bodyKey: 'mina.tryTxAdd.b', anchor: ['tx-add'], gate: true },
   { id: 'noAccounts', kind: 'bubble', expr: 'thinking', titleKey: 'mina.isolation.t', bodyKey: 'mina.noAccounts.b', anchor: ['txform-no-accounts'], info: true },
-  { id: 'goSettings2', kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.cleanup.t', bodyKey: 'mina.goSettings2.b', anchor: ['tab-settings', 'side-tab-settings'], gate: true },
+  { id: 'goSettings2', checkpoint: true, kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.cleanup.t', bodyKey: 'mina.goSettings2.b', anchor: ['tab-settings', 'side-tab-settings'], gate: true },
   { id: 'openSpaceSettings', kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.cleanup.t', bodyKey: 'mina.openSpaceSettings.b', anchor: ['settings-space-row'], gate: true },
   { id: 'deleteFamily', kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.cleanup.t', bodyKey: 'mina.deleteFamily.b', anchor: ['space-edit-delete'], act: { entity: 'space', absent: true } },
-  { id: 'wrap', kind: 'fullscreen', art: 'handopen', titleKey: 'mina.wrap.t', bodyKey: 'mina.wrap.b' },
+  { id: 'wrap', checkpoint: true, kind: 'fullscreen', art: 'handopen', titleKey: 'mina.wrap.t', bodyKey: 'mina.wrap.b' },
 ];
 
 export const minaStepIndex = (id: string): number => MINA_STEPS.findIndex((s) => s.id === id);

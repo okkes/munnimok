@@ -121,12 +121,13 @@ export function useDragReorder(count: number, onMove: (from: number, to: number)
     : null;
 
   // rows between the origin and the hovered slot slide one row-height
-  // toward the hole; the origin row stays put but fades (the ghost is
-  // the thing that moves)
+  // toward the hole; the origin row stays put but HIDES entirely — at
+  // 0.3 opacity its text shone through the row sliding over it and the
+  // list read as glitched (user ss)
   const rowStyle = (index: number): CSSProperties => {
     if (!drag) return { transition: 'transform 160ms ease' };
     const base: CSSProperties = { transition: 'transform 160ms ease' };
-    if (index === drag.from) return { ...base, opacity: 0.3 };
+    if (index === drag.from) return { ...base, opacity: 0 };
     if (drag.from < drag.over && index > drag.from && index <= drag.over) {
       return { ...base, transform: `translateY(-${drag.height}px)` };
     }

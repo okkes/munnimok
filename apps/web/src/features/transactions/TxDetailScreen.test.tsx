@@ -58,13 +58,14 @@ describe('TxDetailScreen (demo identity)', () => {
     expect(screen.getByTestId('tx-detail-kind-row')).toBeTruthy();
   });
 
-  it('a manual transaction deletes with a two-tap confirm (user request)', async () => {
+  it('a manual transaction deletes through the confirm sheet — no cooldown (user request)', async () => {
     renderApp('/transactions/dm6'); // demo rows carry no importRef -> deletable
     await screen.findByTestId('screen-tx-detail');
-    const del = await screen.findByTestId('tx-detail-delete');
-    fireEvent.click(del); // first tap arms
-    await waitFor(() => expect(del.textContent).not.toBe(''));
-    fireEvent.click(screen.getByTestId('tx-detail-delete')); // second tap deletes
+    fireEvent.click(await screen.findByTestId('tx-detail-delete'));
+    // the aligned danger sheet, instantly armed (cooldown 0)
+    const confirm = (await screen.findByTestId('tx-delete-confirm')) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(false);
+    fireEvent.click(confirm);
     // back on the list, the row is gone (tombstoned)
     const list = await screen.findByTestId('tx-list');
     await waitFor(() => expect(list.querySelector('[data-testid="tx-row-dm6"]')).toBeNull(), { timeout: 5000 });

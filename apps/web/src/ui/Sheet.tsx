@@ -446,6 +446,13 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
               ref={scrollRef}
               className={`min-h-0 flex-1 overflow-y-auto overscroll-none px-5 ${footer ? 'pb-2' : 'pb-[max(20px,env(safe-area-inset-bottom))]'}`}
               style={{ transform: 'translateZ(0)', ...(contentFits ? { touchAction: 'none' } : {}) }}
+              // a pointer landing on an editable must NEVER become a
+              // sheet drag: vaul's gesture capture kept stealing the
+              // touch mid-typing and cancelled the input (user report)
+              onPointerDown={(e) => {
+                const el = e.target as HTMLElement;
+                if (el.closest('input, textarea, select, [contenteditable="true"]')) e.stopPropagation();
+              }}
             >
               <div ref={innerRef}>{children}</div>
             </div>

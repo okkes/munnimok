@@ -25,6 +25,9 @@ const PAD = 6;
  * travels toward the next thing to press instead of snapping.
  */
 function GateShade({ rect, blockHole }: Readonly<{ rect: DOMRect | null; blockHole: boolean }>) {
+  // interactive targets BREATHE; info-only highlights glow softly and
+  // steadily — attention without an invitation to press (user ruling)
+  const glowClass = blockHole ? 'm-mina-glow-soft' : 'm-mina-glow';
   // no target: shade collapses to the edges (nothing dimmed) — the next
   // target's arrival then GROWS the shade toward it. Also kills the
   // stray center square the old null-rect placeholder painted (user ss).
@@ -42,7 +45,7 @@ function GateShade({ rect, blockHole }: Readonly<{ rect: DOMRect | null; blockHo
       <div className={shade} style={{ top, left: right, right: 0, height: bottom - top }} />
       {rect && (
         <div
-          className="m-mina-glow pointer-events-none fixed z-[130] rounded-xl transition-all duration-500 ease-out"
+          className={`${glowClass} pointer-events-none fixed z-[130] rounded-xl transition-all duration-500 ease-out`}
           style={{ top, left, width: right - left, height: bottom - top }}
           data-testid="mina-gate-ring"
         />
@@ -62,13 +65,19 @@ const bubblePlacement = (rect: DOMRect | null, sheetOpen: boolean): 'top' | 'bot
 };
 
 /** the target's own wording, so tutorial copy can quote it verbatim and
- *  survive future label changes (user ruling) */
+ *  survive future label changes (user ruling). Only the first LEAF text
+ *  counts — reading a whole row glued title+subtitle together (user ss:
+ *  “Add a manual accountTyped by hand · …”). */
 function elementLabel(el: HTMLElement | null): string {
   if (!el) return '';
   const aria = el.getAttribute('aria-label');
   if (aria) return aria;
-  const firstText = el.querySelector('span, p')?.textContent?.trim();
-  return (firstText || el.textContent || '').trim().slice(0, 40);
+  for (const node of el.querySelectorAll('span, p, div')) {
+    // length > 1 skips single-glyph icon spans
+    const text = node.childElementCount === 0 ? (node.textContent?.trim() ?? '') : '';
+    if (text.length > 1) return text.slice(0, 40);
+  }
+  return (el.textContent ?? '').trim().slice(0, 40);
 }
 
 export function MinaTutorial() {
@@ -85,6 +94,7 @@ export function MinaTutorial() {
   const [minimized, setMinimized] = useState(false);
   const [targetLabel, setTargetLabel] = useState('');
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [resumePending, setResumePending] = useState(false);
   // per-act baseline: ids that existed when the act step became current
   const baselineRef = useRef<{ step: number; ids: Set<string> } | null>(null);
 
@@ -94,7 +104,14 @@ export function MinaTutorial() {
     let cancelled = false;
     void (async () => {
       const state = (await store.metaGet(MINA_STATE_KEY))?.value as MinaRunState | undefined;
-      if (!cancelled && state?.active) setRun(state);
+      if (cancelled || !state?.active) return;
+      // a killed app resumes at the nearest CHECKPOINT (mid-sheet steps
+      // can't reconstruct their transient UI) and asks first instead of
+      // dropping a mid-flow bubble onto whatever screen loaded (user ss)
+      let rewound = state.step;
+      while (rewound > 0 && !MINA_STEPS[rewound]?.checkpoint) rewound--;
+      setRun({ ...state, step: rewound });
+      if (state.step > 0) setResumePending(true);
     })().catch(() => undefined);
     const onStart = () => {
       const fresh: MinaRunState = { active: true, step: 0, ledger: [] };
@@ -263,16 +280,32 @@ export function MinaTutorial() {
     async () => (actEntity ? (await store.allRows(actEntity)).filter((r) => r.deleted === 0) : []),
     [actEntity, run?.step],
   );
+  // the baseline comes from a DIRECT store read at step entry — the live
+  // query's first emission after a step change can be a STALE snapshot
+  // of the previous step, which made pre-existing rows read as "fresh"
+  // and completed the act instantly (user bug: the create-space step
+  // skipped itself on replays and on the second space)
+  useEffect(() => {
+    baselineRef.current = null;
+    if (!run?.active || !step?.act || step.act.absent) return;
+    const entity = step.act.entity;
+    const stepIndex = run.step;
+    let cancelled = false;
+    void (async () => {
+      const rows = (await store.allRows(entity)).filter((r) => r.deleted === 0);
+      if (!cancelled) baselineRef.current = { step: stepIndex, ids: new Set(rows.map((r) => r.id)) };
+    })().catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [run?.active, run?.step]);
   useEffect(() => {
     if (!run || !step?.act || !actRows) return;
     const live = new Set(actRows.map((r) => r.id));
-    if (baselineRef.current?.step !== run.step) {
-      // absent-acts watch a ledgered row disappear — no baseline needed
-      if (!step.act.absent) {
-        baselineRef.current = { step: run.step, ids: live };
-        return;
-      }
-    }
+    // non-absent acts wait for THEIR OWN baseline — never one inferred
+    // from a possibly-stale emission
+    if (!step.act.absent && baselineRef.current?.step !== run.step) return;
     if (step.act.absent) {
       const family = createdSpaces[1];
       if (family && !live.has(family)) {
@@ -284,6 +317,7 @@ export function MinaTutorial() {
     }
     const fresh = actRows.filter(
       (r) => !baselineRef.current!.ids.has(r.id) &&
+        !run.ledger.some((e) => e.id === r.id) &&
         // bank-fed rows are NEVER ledgered (a sync mid-replay must not
         // get swept into a revert)
         !(r as { importRef?: string }).importRef && !(r as { feedSpaceId?: string }).feedSpaceId,
@@ -300,6 +334,40 @@ export function MinaTutorial() {
   }, [actRows, run?.step]);
 
   if (!run?.active || !step) return null;
+
+  // welcome-back prompt before any step UI (user ruling: ask, then
+  // land the user exactly where the tour continues)
+  if (resumePending) {
+    return createPortal(
+      <div className="fixed inset-0 z-[150] flex items-end justify-center bg-black/50 lg:items-center" data-testid="mina-resume-sheet">
+        <div className="w-full max-w-[480px] rounded-t-[20px] bg-bg p-5 lg:rounded-[20px]">
+          <div className="flex items-start gap-3">
+            <img src={MINA_EXPR.smile} alt="Mina" className="h-16 w-auto max-w-[64px] shrink-0 rounded-lg object-contain" />
+            <span className="min-w-0 flex-1">
+              <p className="text-[15px] font-semibold text-ink">{t('mina.resume.t')}</p>
+              <p className="mt-1 text-[13px] leading-relaxed text-ink-2">{t('mina.resume.b')}</p>
+            </span>
+          </div>
+          <div className="mt-4 flex flex-col gap-2">
+            <Button data-testid="mina-resume-continue" onClick={() => setResumePending(false)}>
+              {t('mina.resume.continue')}
+            </Button>
+            <Button
+              variant="outline"
+              data-testid="mina-resume-skip"
+              onClick={() => {
+                setResumePending(false);
+                setSkipOpen(true);
+              }}
+            >
+              {t('mina.skip')}
+            </Button>
+          </div>
+        </div>
+      </div>,
+      document.body,
+    );
+  }
 
   const bubbleSide = bubblePlacement(rect, sheetOpen);
   const showShade = !!step.anchor || step.gate || step.info;
@@ -405,7 +473,8 @@ export function MinaTutorial() {
         <div className="fixed inset-0 z-[150] flex items-end justify-center bg-black/50 lg:items-center" data-testid="mina-skip-sheet">
           <div className="w-full max-w-[480px] rounded-t-[20px] bg-bg p-5 lg:rounded-[20px]">
             <div className="flex items-start gap-3">
-              <img src={MINA_EXPR.surprised} alt="Mina" className="h-14 w-14 shrink-0 rounded-full border border-line object-cover" />
+              {/* full picture, aligned with the bubble (user request) */}
+              <img src={MINA_EXPR.surprised} alt="Mina" className="h-16 w-auto max-w-[64px] shrink-0 rounded-lg object-contain" />
               <span className="min-w-0 flex-1">
                 <p className="text-[15px] font-semibold text-ink">{t('mina.skipConfirm.t')}</p>
                 <p className="mt-1 text-[13px] leading-relaxed text-ink-2">{t('mina.skipConfirm.b')}</p>

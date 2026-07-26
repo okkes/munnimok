@@ -347,7 +347,12 @@ function ConnectingScreen({ failedAttempts = 0, errorDetail }: { failedAttempts?
     const timer = setTimeout(() => setSlow(true), 1_500);
     return () => clearTimeout(timer);
   }, []);
-  const unreachable = failedAttempts >= 2;
+  // 401s during a fresh sign-in are the auth path's business (token
+  // mirroring/JIT settle within seconds and it recovers on its own) —
+  // flashing "can't reach the server" + a Sign out button at a brand-new
+  // user was scary enough to get clicked (user report)
+  const authSettling = (errorDetail ?? '').includes('401');
+  const unreachable = failedAttempts >= 2 && !authSettling;
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 text-ink-3" data-testid="data-loading">
       {slow && (
