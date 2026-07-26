@@ -282,7 +282,7 @@ function RenameTitleSheet({
   last.current = open;
 
   return (
-    // 'form' height: on iOS vaul lifts the sheet by the keyboard height —
+    // 'form' height: on iOS the sheet lifts by the keyboard height —
     // the compact sheet rose clean off the screen (user report ss 2026-07-18)
     <Sheet open={open} onOpenChange={onOpenChange} title={t('tx.renameTitle')} size="form">
       <input

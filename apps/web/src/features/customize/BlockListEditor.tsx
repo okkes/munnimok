@@ -14,7 +14,7 @@ export interface BlockRow {
  * The shared customize list (Home blocks, transaction-detail sections):
  * eye toggles visibility, the right-side handle drags to reorder. The
  * floating ghost is PORTALED to document.body — rendered inside a
- * transformed ancestor (a vaul sheet mid-gesture) its fixed coordinates
+ * transformed ancestor (a sheet mid-gesture) its fixed coordinates
  * resolved against the transform and drifted wildly (user report).
  */
 export function BlockListEditor({

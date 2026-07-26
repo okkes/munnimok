@@ -183,8 +183,8 @@
     letter-spacing: -0.01em;
   }
   /* sheet-gesture plan RC1 (2026-07-24): on touch devices, long-press
-     text selection STARTS a selection that blocks every sheet drag (vaul
-     refuses to drag while text is highlighted) — and hold-to-copy is
+     text selection STARTS a selection that fights every sheet drag —
+     and hold-to-copy is
      unwanted on most UI text anyway (user ruling). Opt back in with
      `select-text` exactly where copying matters (IDs, IBANs, bank text).
      Inputs keep native selection; desktop (fine pointers) is untouched. */
