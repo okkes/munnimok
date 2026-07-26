@@ -213,6 +213,10 @@ export function MinaTutorial() {
     const value = t(source.suggestKey);
     let cancelled = false;
     if (source.act?.entity === 'space') {
+      // the base name lands SYNCHRONOUSLY — the + can be tapped before
+      // the async dedupe read returns (slow CI proved a user could win
+      // that race and get an empty prefill); the deduped name upgrades it
+      setMinaSuggestions({ spaceName: value });
       void (async () => {
         const taken = new Set(
           (await store.allRows('space')).filter((s) => s.deleted === 0).map((s) => s.name.toLowerCase()),
