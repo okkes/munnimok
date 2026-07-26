@@ -102,9 +102,10 @@ describe('Mina tutorial run (signed-in identity, no space yet)', () => {
     fireEvent.click(await screen.findByTestId('spaces-add', {}, { timeout: 5000 }));
     await waitFor(() => expect(screen.getByTestId('mina-tutorial').dataset.step).toBe('createSpace'), { timeout: 5000 });
 
-    // the name arrives pre-filled but the act is value-flexible
+    // the name arrives pre-filled but the act is value-flexible — the
+    // prefill lands an effect-tick after the input mounts (CI flake)
     const name = (await screen.findByTestId('space-create-name')) as HTMLInputElement;
-    expect(name.value).toBe(en['mina.suggest.private']);
+    await waitFor(() => expect(name.value).toBe(en['mina.suggest.private']), { timeout: 5000 });
     fireEvent.change(name, { target: { value: 'Mijn potje' } });
     fireEvent.click(screen.getByTestId('space-create-save'));
     // act completes on the row existing — and it became the active space
