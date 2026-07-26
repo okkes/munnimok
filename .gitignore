@@ -41,5 +41,7 @@ import-watch/
 *.stackdump
 **/env/sonar-admin-password.txt
 
-temp/
-mina/
+# user's local scratch + raw Mina art pack (repo-root only — must NOT
+# swallow src/features/mina)
+/temp/
+/mina/
