@@ -71,10 +71,13 @@ export const MINA_STEPS: readonly MinaStep[] = [
   { id: 'openManage2', kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.family.t', bodyKey: 'mina.openManage.b', anchor: ['space-pick-manage'], gate: true, labelFrom: ['space-pick-manage'] },
   { id: 'openCreate2', kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.family.t', bodyKey: 'mina.openCreate.b', anchor: ['spaces-add'], gate: true },
   { id: 'createFamily', kind: 'bubble', expr: 'thinking', titleKey: 'mina.family.t', bodyKey: 'mina.createFamily.b', act: { entity: 'space' }, suggestKey: 'mina.suggest.family', labelFrom: ['space-create-save'] },
-  // the fresh space is ACTIVE already (user ss: "tap Family" was moot) —
-  // teach switching by hopping back to the first space and returning
-  { id: 'switchBack', kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.switching.t', bodyKey: 'mina.switchBack.b', anchor: ['space-row-$s1'], gate: true },
-  { id: 'switchAgain', kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.switching.t', bodyKey: 'mina.switchAgain.b', anchor: ['space-row-$s2'], gate: true },
+  // teach switching FROM HOME (user ruling): swapping on the manage
+  // screen shows nothing changing — on Home the whole screen follows
+  { id: 'goHomeSwap', checkpoint: true, kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.switching.t', bodyKey: 'mina.goHomeSwap.b', anchor: ['tab-home', 'side-tab-home'], gate: true },
+  { id: 'openSwitcherSwap', kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.switching.t', bodyKey: 'mina.openSwitcherSwap.b', anchor: ['home-space-switcher'], gate: true },
+  { id: 'pickPrivate', kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.switching.t', bodyKey: 'mina.pickPrivate.b', anchor: ['space-pick-$s1'], gate: true },
+  { id: 'openSwitcherSwap2', kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.switching.t', bodyKey: 'mina.openSwitcherSwap2.b', anchor: ['home-space-switcher'], gate: true },
+  { id: 'pickFamily', kind: 'bubble', expr: 'armcrossed', titleKey: 'mina.switching.t', bodyKey: 'mina.pickFamily.b', anchor: ['space-pick-$s2'], gate: true },
   { id: 'goTransactions2', checkpoint: true, kind: 'bubble', expr: 'thinking', titleKey: 'mina.isolation.t', bodyKey: 'mina.goTransactions2.b', anchor: ['tab-transactions', 'side-tab-transactions'], gate: true },
   { id: 'emptyList', kind: 'bubble', expr: 'thinking', titleKey: 'mina.isolation.t', bodyKey: 'mina.emptyList.b' },
   { id: 'tryTxAdd', kind: 'bubble', expr: 'thinking', titleKey: 'mina.isolation.t', bodyKey: 'mina.tryTxAdd.b', anchor: ['tx-add'], gate: true },

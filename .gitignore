@@ -40,3 +40,6 @@ temporary/
 import-watch/
 *.stackdump
 **/env/sonar-admin-password.txt
+
+temp/
+mina/
