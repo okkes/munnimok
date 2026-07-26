@@ -88,6 +88,14 @@ export async function bootstrapUserSpaces(
   await store.metaDelete(BOOTSTRAP_SPACE_KEY);
 }
 
+/** zero spaces is LEGAL only while the Mina tutorial owns the first-run
+ *  (user ruling) — anything else stays a hard bug */
+async function minaOwnsFirstRun(store: StorageBackend): Promise<boolean> {
+  if ((await store.metaGet('minaTutorialPending'))?.value) return true;
+  const state = (await store.metaGet('minaTutorialState'))?.value as { active?: boolean } | undefined;
+  return !!state?.active;
+}
+
 /** OIDC restore → fail-closed bootstrap → periodic sync (user identities) */
 async function restoreAndSync(
   store: StorageBackend,
@@ -277,17 +285,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       const stored = (await store.metaGet(ACTIVE_SPACE_KEY))?.value as string | undefined;
       const spaces = await liveSpaces(store);
       const spaceId = spaces.find((s) => s.id === stored)?.id ?? spaces[0]?.id;
-      if (!spaceId) {
-        // zero spaces is LEGAL only while the Mina tutorial owns the
-        // first-run (user ruling) — anything else is still a hard bug
-        const tutorial =
-          (await store.metaGet('minaTutorialPending'))?.value ||
-          ((await store.metaGet('minaTutorialState'))?.value as { active?: boolean } | undefined)?.active;
-        if (!tutorial) throw new Error('no space available after seed');
-        if (!cancelled) setState({ store, repo, spaceId: '', engine });
-        return;
-      }
-      if (!cancelled) setState({ store, repo, spaceId, engine });
+      if (!spaceId && !(await minaOwnsFirstRun(store))) throw new Error('no space available after seed');
+      if (!cancelled) setState({ store, repo, spaceId: spaceId ?? '', engine });
     })().catch((err) => {
       // StrictMode double-mount closes the first db mid-seed — expected
       if (!cancelled) throw err;
