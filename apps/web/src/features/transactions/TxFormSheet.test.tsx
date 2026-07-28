@@ -61,7 +61,8 @@ describe('TxFormSheet (demo identity)', () => {
       },
       { timeout: 5000 },
     );
-  });
+    // coverage instrumentation pushes this flow past vitest's 5s default
+  }, 15_000);
 
   it('no manual account: the form explains itself and doors to accounts', async () => {
     const { renderAppAsUser, USER_TEST_DB } = await import('@/test/harness');

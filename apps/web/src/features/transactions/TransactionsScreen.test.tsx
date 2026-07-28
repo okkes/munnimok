@@ -125,5 +125,6 @@ describe('TransactionsScreen (demo identity)', () => {
       expect(rows().length).toBeGreaterThan(0);
       expect(rows().length).toBeLessThan(all);
     });
-  });
+    // coverage instrumentation pushes this flow past vitest's 5s default
+  }, 15_000);
 });
