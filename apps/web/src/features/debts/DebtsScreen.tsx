@@ -64,7 +64,7 @@ export function DebtFormSheet({
     const seededOriginal = editing?.originalCents ?? prefill?.originalCents;
     setOriginal(seededOriginal ? (seededOriginal / 100).toFixed(2) : '');
     setRemaining('');
-    setApr(editing?.interestPctYear !== undefined ? String(editing.interestPctYear) : '');
+    setApr(editing?.interestPctYear === undefined ? '' : String(editing.interestPctYear));
     setPayment(editing?.paymentCents ? (editing.paymentCents / 100).toFixed(2) : '');
     setConfirmDelete(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -426,8 +426,7 @@ export function TxDetailScreen() {
   // the recurring OWNS the category (user rule 2026-07-28): a linked row
   // only picks between the recurring's category and expected
   // reimbursement — the editor's picker enforces it
-  const linkedRec = tx.recurringId ? recurrings?.find((r) => r.id === tx.recurringId) : undefined;
-  const recurringAllowedCats = linkedRec?.catId ? [linkedRec.catId, EXPECTED_REIMBURSE_ID] : undefined;
+  const recurringAllowedCats = recurringCatConstraint(tx, recurrings);
 
   const setCategory = (catId: string) => {
     const txType = cats.byId(catId).txTypes[0] ?? tx.txType;
@@ -929,6 +928,16 @@ function NotesField({
  * account, otherwise EDITABLE (user remark: CAMT rows often ship
  * without one — picking an own account still works and suggests the
  * type through the same sheet as the type row) */
+/** a recurring-linked row's category allowlist: the recurring's own
+ *  category plus expected reimbursement (S3776: extracted) */
+function recurringCatConstraint(
+  tx: { recurringId?: string },
+  recurrings: { id: string; catId?: string }[] | undefined,
+): string[] | undefined {
+  const rec = tx.recurringId ? recurrings?.find((r) => r.id === tx.recurringId) : undefined;
+  return rec?.catId ? [rec.catId, EXPECTED_REIMBURSE_ID] : undefined;
+}
+
 /** the categories caption: one Edit for the block — or a lock while a
  *  reimbursement owns the attribution (user rule; S3776: extracted) */
 function CategoriesHeader({ locked, byRecurring, onEdit }: Readonly<{ locked: boolean; byRecurring?: boolean; onEdit: () => void }>) {

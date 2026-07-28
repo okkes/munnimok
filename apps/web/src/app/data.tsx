@@ -277,14 +277,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // bank-connect completions attach server-side from an anonymous
       // page — mirror any link no device ever saw being made (also heals
       // the historic "connected but shows up nowhere" danglers)
-      if (identity.kind === 'user') {
-        void (async () => {
-          const { reconcileSpaceLinks } = await import('@/application/accountAttach');
-          for (const space of await liveSpaces(store)) {
-            await reconcileSpaceLinks(store, repo, space.id).catch(() => undefined);
-          }
-        })().catch(() => undefined);
-      }
+      if (identity.kind === 'user') void mirrorSpaceLinks(store, repo).catch(() => undefined);
       if (identity.kind === 'offline' && (await liveSpaces(store)).length === 0) {
         // fully local profile, same Mina flow as online (user ruling):
         // no auto-created space — the tutorial's create-step (or its
@@ -343,6 +336,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
   if (!identity) return null;
   if (!value) return <ConnectingScreen failedAttempts={failedAttempts} errorDetail={connectError} />;
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
+}
+
+/** server links → local accountLink mirrors, every member space in turn */
+async function mirrorSpaceLinks(store: StorageBackend, repo: Repo): Promise<void> {
+  const { reconcileSpaceLinks } = await import('@/application/accountAttach');
+  for (const space of await liveSpaces(store)) {
+    await reconcileSpaceLinks(store, repo, space.id).catch(() => undefined);
+  }
 }
 
 /**
