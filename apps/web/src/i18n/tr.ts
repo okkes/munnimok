@@ -1530,6 +1530,8 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'chooser.shareWarnTitle': 'Bu alan paylaşımlı',
   'chooser.shareWarnBody': 'Bağlanan banka veya içe aktarılan ekstre “{space}” içindeki herkese görünür olur — işlemler dahil. Elle eklenen hesaplar sessiz bir köşede kalır; banka verisi kalmaz.',
   'chooser.shareWarnContinue': 'Anladım — devam et',
+  'chooser.manualSpaceDoor': 'Bir alanın içinde yaşar — “{space}” altında ekle',
+  'acct.spaceScopedCap': 'manuel, alana özel',
   'reimb.suggested': 'Önerilen',
   'reimb.suggestedWhy': 'Eşleşme gibi görünüyor — zamanlama, açıklama ve tutar uyuşuyor',
   'reimb.allCredits': 'Tüm gelen işlemler',

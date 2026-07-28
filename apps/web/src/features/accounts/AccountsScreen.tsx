@@ -284,6 +284,12 @@ export function AccountsScreen() {
   const mine = useMemo(() => (global?.mine ?? []).filter((e) => !e.account.archived), [global]);
   const assets = mine.filter((e) => !isLiability(e.account.type));
   const liabilities = mine.filter((e) => isLiability(e.account.type));
+  // reconcile pairing spans BOTH pools: a manual/imported row inside a
+  // space can be the twin of a global bank connection
+  const suggestionPool = useMemo(
+    () => [...mine, ...(global?.spaceScoped ?? []).flatMap((s) => s.accounts).filter((e) => !e.account.archived)],
+    [mine, global],
+  );
 
   // master plan (answer 3, auto-suggest): an account fed by BOTH a bank
   // connection and statement uploads — or a same-IBAN pair of a linked
@@ -305,7 +311,7 @@ export function AccountsScreen() {
     if (!sourcesByAccount) return [];
     const out: { name: string; imported: number; accountIds: string[] }[] = [];
     const claimed = new Set<string>();
-    for (const entry of mine) {
+    for (const entry of suggestionPool) {
       const own = sourcesByAccount.get(entry.account.id);
       if (own?.linked && own.imported > 0) {
         out.push({ name: entry.account.name, imported: own.imported, accountIds: [entry.account.id] });
@@ -315,7 +321,7 @@ export function AccountsScreen() {
       // same-IBAN pair: this imported account has a linked twin
       if (!own?.imported || !entry.account.iban || claimed.has(entry.account.id)) continue;
       const iban = normalizeIban(entry.account.iban);
-      const twin = mine.find(
+      const twin = suggestionPool.find(
         (other) =>
           other.account.id !== entry.account.id &&
           !!other.account.iban &&
@@ -329,7 +335,7 @@ export function AccountsScreen() {
       }
     }
     return out;
-  }, [mine, sourcesByAccount]);
+  }, [suggestionPool, sourcesByAccount]);
 
   // AE2: feed accounts attached to NO space (fresh bank connect, or a
   // consent flow that broke mid-return) get a one-tap attach offer for
@@ -445,7 +451,7 @@ export function AccountsScreen() {
             </div>
           </div>
         )}
-        {global && mine.length === 0 && global.sharedWithMe.length === 0 ? (
+        {global && mine.length === 0 && global.sharedWithMe.length === 0 && global.spaceScoped.length === 0 ? (
           <EmptyState
             testId="accounts-empty"
             icon="bank-outline"
@@ -480,9 +486,22 @@ export function AccountsScreen() {
                 <Icon name="chevron-right" size={16} />
               </button>
             ))}
+            {/* GLOBAL first (user ruling 2026-07-28): bank connections
+                and statement imports are user-level; manual accounts
+                live inside their space and list under it below */}
             <AccountSection title={t('acct.assets')} list={assets} lang={lang} onOpen={openEntry} />
             <AccountSection title={t('acct.liabilities')} list={liabilities} lang={lang} onOpen={openEntry} />
             <SharedWithMeSection list={global?.sharedWithMe ?? []} lang={lang} />
+            {(global?.spaceScoped ?? []).map((segment) => (
+              <div key={segment.spaceId} data-testid={`accounts-space-${segment.spaceId}`}>
+                <AccountSection
+                  title={`${segment.spaceName} · ${t('acct.spaceScopedCap')}`}
+                  list={segment.accounts.filter((e) => !e.account.archived)}
+                  lang={lang}
+                  onOpen={openEntry}
+                />
+              </div>
+            ))}
           </>
         )}
       </div>
@@ -523,11 +542,14 @@ export function AccountsScreen() {
         </div>
       </Sheet>
 
-      {/* AE1: the ONE Add-account chooser (intent-routed) */}
+      {/* AE1: the ONE Add-account chooser (intent-routed). Manual is a
+          DOOR here: this screen is the global overview, and manual
+          accounts live inside a space (user ruling 2026-07-28) */}
       <AddAccountChooser
         open={addOpen}
         onOpenChange={setAddOpen}
         gcAvailable={gcAvailable}
+        hideManual
         onConnect={() => setConnectOpen(true)}
         onImport={() => setImportPickOpen(true)}
       />

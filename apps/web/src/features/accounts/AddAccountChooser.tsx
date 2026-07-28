@@ -28,6 +28,7 @@ export function AddAccountChooser({
   onConnect,
   onImport,
   onCreated,
+  hideManual,
   gcAvailable,
 }: Readonly<{
   open: boolean;
@@ -39,6 +40,10 @@ export function AddAccountChooser({
   /** hosts that consume the fresh account (the transfer counterparty
    *  picker) get the manual creation reported back */
   onCreated?: (account: { id: string; type: AccountType }) => void;
+  /** the GLOBAL accounts screen hides manual creation — manual accounts
+   *  live inside a space, so it points at the space instead (user
+   *  ruling 2026-07-28) */
+  hideManual?: boolean;
   gcAvailable?: boolean;
 }>) {
   const { t } = useLang();
@@ -141,13 +146,31 @@ export function AddAccountChooser({
               })
             }
           />
-          <IntentRow
-            testId="chooser-manual"
-            icon="pencil-plus-outline"
-            title={t('chooser.manual')}
-            sub={t('chooser.manualSub', { space: space?.name ?? '' })}
-            onClick={() => setStep('manual')}
-          />
+          {hideManual ? (
+            <button
+              data-testid="chooser-manual-door"
+              onClick={() => {
+                close(false);
+                void navigate({ to: '/spaces/$spaceId/accounts', params: { spaceId } });
+              }}
+              className="m-tap flex items-center gap-3 rounded-card border border-dashed border-line bg-transparent p-4 text-left"
+            >
+              <Icon name="pencil-plus-outline" size={24} color="var(--m-ink-4)" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-[14px] font-semibold text-ink-2">{t('chooser.manual')}</span>
+                <span className="block text-[12px] text-ink-4">{t('chooser.manualSpaceDoor', { space: space?.name ?? '' })}</span>
+              </span>
+              <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
+            </button>
+          ) : (
+            <IntentRow
+              testId="chooser-manual"
+              icon="pencil-plus-outline"
+              title={t('chooser.manual')}
+              sub={t('chooser.manualSub', { space: space?.name ?? '' })}
+              onClick={() => setStep('manual')}
+            />
+          )}
         </div>
       )}
 

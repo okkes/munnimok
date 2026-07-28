@@ -1528,6 +1528,8 @@ export const en = {
   'chooser.shareWarnTitle': 'This space is shared',
   'chooser.shareWarnBody': 'A connected bank or imported statement becomes visible to everyone in “{space}” — transactions included. Manual accounts stay a quiet corner; bank data does not.',
   'chooser.shareWarnContinue': 'I understand — continue',
+  'chooser.manualSpaceDoor': 'Lives inside a space — add it under “{space}”',
+  'acct.spaceScopedCap': 'manual, space-scoped',
   'reimb.suggested': 'Suggested',
   'reimb.suggestedWhy': 'Looks like the match — timing, wording and amount line up',
   'reimb.allCredits': 'All incoming transactions',

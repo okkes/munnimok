@@ -1530,6 +1530,8 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'chooser.shareWarnTitle': 'Deze ruimte is gedeeld',
   'chooser.shareWarnBody': 'Een gekoppelde bank of geïmporteerd afschrift wordt zichtbaar voor iedereen in “{space}” — inclusief transacties. Handmatige rekeningen blijven een stil hoekje; bankgegevens niet.',
   'chooser.shareWarnContinue': 'Ik begrijp het — ga door',
+  'chooser.manualSpaceDoor': 'Leeft binnen een ruimte — voeg toe onder “{space}”',
+  'acct.spaceScopedCap': 'handmatig, ruimtegebonden',
   'reimb.suggested': 'Voorgesteld',
   'reimb.suggestedWhy': 'Lijkt de match — timing, omschrijving en bedrag kloppen',
   'reimb.allCredits': 'Alle inkomende transacties',
