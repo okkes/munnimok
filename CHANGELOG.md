@@ -1,5 +1,26 @@
 # Changelog
 
+## [2.26.0](https://github.com/okkes/munnimok/compare/v2.25.0...v2.26.0) (2026-07-28)
+
+
+### ✨ Features
+
+* **accounts:** mirror server-side space links the client never saw ([df68e25](https://github.com/okkes/munnimok/commit/df68e2584320a989350131f53739e2750a692cb6))
+* **accounts:** the global overview says where every account lives ([8ce46f8](https://github.com/okkes/munnimok/commit/8ce46f8a9efabedcc9fc937cc529a9b3138a2615))
+* **debts:** a debt is always backed by a loan account ([6385f58](https://github.com/okkes/munnimok/commit/6385f58e673b3a37191dbf9a6ffd43b554c084cc))
+* **debts:** payments derive from the backing account; weekly rate nudge ([b362f62](https://github.com/okkes/munnimok/commit/b362f62962190bf993fd72b0bb781a261824574c))
+* **debts:** the recurring form's Debt kind hands off into debt creation ([f25378e](https://github.com/okkes/munnimok/commit/f25378e2e1f16aa7b6e7f48e1a7a8b9a1d450a08))
+* **recurring:** recurring costs own a category and re-file their transactions ([600fb12](https://github.com/okkes/munnimok/commit/600fb125876487c53daa85c23f0c08b7c3d68f56))
+* **recurring:** the category lock reaches review, detail and linking ([10fd3ec](https://github.com/okkes/munnimok/commit/10fd3ec1acd20eae52e52ba6a2f3e04bc964ea8e))
+* **tx:** full account setup door in the transfer counterparty picker ([7186e40](https://github.com/okkes/munnimok/commit/7186e40d6658a5c419bd185c00e20927d4e675aa))
+
+
+### 🐞 Bug Fixes
+
+* **accounts:** import preview matches manual accounts again + e2e follows the space door ([b611435](https://github.com/okkes/munnimok/commit/b611435b94a82698d55225b5ffe554a1ec6decec))
+* **mina:** onboarding-kill dormancy, cleanup rework, rounded instant shade ([08e10f4](https://github.com/okkes/munnimok/commit/08e10f4e4af567b043b31764a32e132ea70d5b31))
+* **sonar:** unnest diagnose template literals, cover the probe path ([984c539](https://github.com/okkes/munnimok/commit/984c53918a2528e61096a59d2d18c5eeb83ee3e2))
+
 ## [2.25.0](https://github.com/okkes/munnimok/compare/v2.24.0...v2.25.0) (2026-07-28)
 
 
