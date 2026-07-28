@@ -61,13 +61,8 @@ export function DebtFormSheet({
     setName(editing?.name ?? prefill?.name ?? '');
     setIcon(editing?.icon ?? DEBT_ICONS[0]);
     setAccountId(editing?.accountId ?? '');
-    setOriginal(
-      editing?.originalCents
-        ? (editing.originalCents / 100).toFixed(2)
-        : prefill?.originalCents
-          ? (prefill.originalCents / 100).toFixed(2)
-          : '',
-    );
+    const seededOriginal = editing?.originalCents ?? prefill?.originalCents;
+    setOriginal(seededOriginal ? (seededOriginal / 100).toFixed(2) : '');
     setRemaining('');
     setApr(editing?.interestPctYear !== undefined ? String(editing.interestPctYear) : '');
     setPayment(editing?.paymentCents ? (editing.paymentCents / 100).toFixed(2) : '');
@@ -105,6 +100,9 @@ export function DebtFormSheet({
       name: name.trim(),
       icon,
       accountId: backingId,
+      // an auto-detected recurring hands its merchant over — the debt's
+      // payment history then includes those past transactions
+      ...(editing ? {} : { merchantKey: prefill?.merchantKey }),
       originalCents,
       // remaining is the ACCOUNT's business now — never stored again
       remainingCents: undefined,

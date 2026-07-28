@@ -155,6 +155,26 @@ export function useRecurringReminders(): void {
           data: { url: './#/recurring' },
         });
       }
+
+      // debts saved without an interest rate get a WEEKLY nudge to fill
+      // it in — 0% is an answer, an empty rate is a question (user rule
+      // 2026-07-28); quick-add now, find out the rate later
+      const debts = (await store.allRows('debt')).filter(
+        (d) => d.deleted === 0 && d.archived !== 1 && d.interestPctYear === undefined,
+      );
+      for (const debt of debts) {
+        const key = `debtPctReminded_${debt.id}`;
+        const last = (await store.metaGet(key)) as number | undefined;
+        if (last && Date.now() - last < 7 * 86_400_000) continue;
+        await store.metaPut(key, Date.now());
+        await registration.showNotification('munni', {
+          body: t('debts.rateReminderBody', { name: debt.name }),
+          icon: 'icon-192.png',
+          badge: 'icon-192.png',
+          tag: `debt-rate-${debt.id}`,
+          data: { url: './#/debts' },
+        });
+      }
     })().catch(() => undefined); // reminders are best-effort; a closing db must not throw
   }, [store, t, lang]);
 }

@@ -1458,6 +1458,8 @@ export const en = {
   'debts.noAccount': 'Track manually',
   'debts.pickAccount': 'Pick the loan account…',
   'recurring.kindDebt': 'Debt',
+  'tx.paysDebt': 'pays “{name}”',
+  'debts.rateReminderBody': '“{name}” still has no interest rate — even 0% counts. Fill it in for an honest payoff date.',
   'mina.debtFromRecurring': 'A cost that pays something OFF is a debt, not a recurring cost — here it gets a payoff date, interest and its own loan account. I brought your details along.',
   'debts.newAccount': '＋ New loan account (named after this debt)',
   'debts.original': 'Original amount',

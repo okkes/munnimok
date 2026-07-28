@@ -134,6 +134,12 @@ export function CounterpartySheet({
       .filter((a) => !q || a.name.toLowerCase().includes(q));
   }, [allAccounts, excludeAccountId, query]);
 
+  // a loan account is a DEBT's backing account (1:1, user design
+  // 2026-07-28): transferring to it IS paying that debt off — the row
+  // says which one, so picking the account is picking the debt
+  const debts = useQuery(store, async () => (await store.bySpace('debt', spaceId)).filter((d) => d.deleted === 0), [spaceId]);
+  const debtByAccount = useMemo(() => new Map((debts ?? []).filter((d) => d.accountId).map((d) => [d.accountId!, d])), [debts]);
+
   const choose = (account: { id: string; type: AccountType }) => {
     onChoose(account);
     onOpenChange(false);
@@ -181,7 +187,14 @@ export function CounterpartySheet({
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[14px] text-ink">{account.name}</span>
                 {/* what picking this account MAKES the transaction */}
-                <span className="block text-[11px] text-ink-4">{t(`tx.type.${typeForLinkedAccount(account.type)}`)}</span>
+                <span className="block text-[11px] text-ink-4">
+                  {t(`tx.type.${typeForLinkedAccount(account.type)}`)}
+                  {debtByAccount.has(account.id) && (
+                    <span className="text-accent-deep" data-testid={`counter-debt-${account.id}`}>
+                      {' '}· {t('tx.paysDebt', { name: debtByAccount.get(account.id)!.name })}
+                    </span>
+                  )}
+                </span>
               </span>
               <span className="m-num text-[12px] text-ink-3">{fmtCents(account.balanceCents, account.currency, lang)}</span>
               {currentLinkedId === account.id && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
