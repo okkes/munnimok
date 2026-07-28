@@ -380,7 +380,8 @@ function ConnectingScreen({ failedAttempts = 0, errorDetail }: { failedAttempts?
       const res = await apiFetch('/me');
       lines.push(`GET /me: ${res.status}`, `www-authenticate: ${res.headers.get('www-authenticate') ?? '-'}`);
     } catch (err) {
-      lines.push(`GET /me threw: ${err instanceof Error ? `${err.name}: ${err.message}` : String(err)}`);
+      const detail = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+      lines.push(`GET /me threw: ${detail}`);
     }
     setReport(lines.join('\n'));
   };
