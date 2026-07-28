@@ -98,7 +98,15 @@ export function useRecurringOps(): RecurringOps {
     dismissSuggestion: (key) =>
       repo.upsert('recurringDismiss', spaceId, recurringDismissId(spaceId, key), { merchantKey: key }),
     linkTx: async (tx, recurringId) => {
-      await writeTxTransform(repo, tx, { recurringId });
+      // the recurring OWNS the category (user rule 2026-07-28): linking
+      // re-files the transaction — unless the user filed it as expected
+      // reimbursement or settlement filed it as reimbursed
+      const rec = recurringId ? await store.get('recurring', recurringId) : undefined;
+      const refile =
+        rec?.catId && tx.catId !== rec.catId && tx.catId !== 'reimbursed' && tx.catId !== 'expenseReimburse'
+          ? { catId: rec.catId }
+          : {};
+      await writeTxTransform(repo, tx, { recurringId, ...refile });
       void logActivity(store, repo, spaceId, 'txLink', txTitle(tx));
     },
     reconcile: () => reconcileRecurringLinks(store, repo, spaceId),

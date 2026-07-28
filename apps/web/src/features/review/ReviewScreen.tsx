@@ -10,6 +10,7 @@ import { RecurringFormSheet, formFromTx } from '@/features/recurring/RecurringFo
 import { merchantKey } from '@/domain/merchantKey';
 import { draftReady, initDraft, withCategory, withKind, withLinkedAccount, withSplits, withType } from '@/domain/reviewDraft';
 import { kindOf, standardTypeFor } from '@/domain/txKind';
+import { EXPECTED_REIMBURSE_ID } from '@/domain/categories';
 import { Collapse } from '@/ui/Collapse';
 import type { TxKind } from '@/domain/txKind';
 import { normalizeIban } from '@/domain/feedIds';
@@ -639,6 +640,22 @@ export function ReviewScreen() {
     setBulkSelected((sel) => new Set(ids.filter((id) => (prev.has(id) ? sel.has(id) : true))));
   }, [similarKey]);
 
+  // the recurring OWNS the category (user rule 2026-07-28): linking one
+  // stages its category once, and the editor then only offers that
+  // category or expected reimbursement (the one allowed override)
+  const chosenRec = useMemo(() => {
+    const id = chosenRecurringId(recMatch, linkRecurring, manualRecId);
+    return id ? (recurrings ?? []).find((r) => r.id === id) : undefined;
+  }, [recMatch, linkRecurring, manualRecId, recurrings]);
+  useEffect(() => {
+    if (!chosenRec?.catId || !draft) return;
+    if (draft.catId === chosenRec.catId || draft.catId === EXPECTED_REIMBURSE_ID) return;
+    setStagedDraft(withCategory(withSplits(draft, undefined), chosenRec.catId, cats));
+    // once per selection — the pick itself is the trigger, not the draft
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chosenRec?.id, chosenRec?.catId]);
+  const recurringAllowedCats = chosenRec?.catId ? [chosenRec.catId, EXPECTED_REIMBURSE_ID] : undefined;
+
   const draftKind: TxKind = draft ? kindOf(draft.txType) : 'standard';
   const draftKindDetail = draft ? kindDetail(draft.txType) : null;
   const showReason = !!tx && !stagedDraft && prediction?.catId === draft?.catId;
@@ -927,6 +944,7 @@ export function ReviewScreen() {
           onApply={(splits) => setStagedDraft(withSplits(draft, splits ?? undefined))}
           onApplySingle={(catId) => setStagedDraft(withCategory(withSplits(draft, undefined), catId, cats))}
           reason={reasonLine}
+          allowedCatIds={recurringAllowedCats}
         />
       )}
       {tx && draft && (
