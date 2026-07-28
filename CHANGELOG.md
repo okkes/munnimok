@@ -1,5 +1,43 @@
 # Changelog
 
+## [2.25.0](https://github.com/okkes/munnimok/compare/v2.24.0...v2.25.0) (2026-07-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **ui:** replace vaul with react-modal-sheet as the sheet engine
+
+### ✨ Features
+
+* **mina:** design pass from the first device run -- glow, travel, no overlap ([0e9e227](https://github.com/okkes/munnimok/commit/0e9e227eb5eb54dc75cf13c143318feea4d4d017))
+* **mina:** retire the welcome tour, help-index replay, Mina test suite ([5e0e52f](https://github.com/okkes/munnimok/commit/5e0e52f1fc21241b26f3be22e99d80af8477225d))
+* **mina:** tutorial engine + no-space first-run (M1-M4 core) ([d231e56](https://github.com/okkes/munnimok/commit/d231e56248b4a46e8c3fb00e970591db49426b3f))
+* **tx,review,ui:** device-run batch 3 -- reimb link screen, iOS fixes, invariants ([d94ec8a](https://github.com/okkes/munnimok/commit/d94ec8a803b482eaae5fade6687e992a92a7f5ee))
+* **tx:** simplified kinds -- standard / transfer / adjustment ([756e351](https://github.com/okkes/munnimok/commit/756e351666eaaef540a96129247e4b8b6029bb29))
+
+
+### 🐞 Bug Fixes
+
+* **deps:** update android minor & patch ([#104](https://github.com/okkes/munnimok/issues/104)) ([a1a0887](https://github.com/okkes/munnimok/commit/a1a088788aacad50acd524fb8afc953b232e3fb2))
+* **mina,review,ui:** quick batch 4 + v2.25.0 what's new ([7b377ff](https://github.com/okkes/munnimok/commit/7b377ff5ff5f184cafd0224e882981a0ea29b0fe))
+* **mina,tx,ui:** second device-run batch -- resume, act race, reimburse rules ([6ec7014](https://github.com/okkes/munnimok/commit/6ec70148057f1c3c0d326446345f80f2551c9678))
+* **mina:** publish the space-name suggestion synchronously ([f260158](https://github.com/okkes/munnimok/commit/f260158498b0a9a73dab181e4174953dec84cc32))
+* **mina:** re-entrant bootstrap ambush + e2e passage through the tutorial ([9b2e930](https://github.com/okkes/munnimok/commit/9b2e930ea0c4e6fe1b84eab11d7a44729145f1fb))
+* **mina:** teach space switching from Home, not the manage screen ([b118483](https://github.com/okkes/munnimok/commit/b1184830de2661a1c7d8efc3340542e1731bb3ac))
+* **sync,ui:** import purge race (DATA LOSS) + sheet/dialog structural fixes ([db7e7ec](https://github.com/okkes/munnimok/commit/db7e7ec25280babde8e80ded0aaace51a4aa727e))
+* **ui:** open sheets to their full height on iOS (WebKit flex basis) ([afc8a84](https://github.com/okkes/munnimok/commit/afc8a8476c5e9548a7e220ed21647f7a83ee5177))
+* **ui:** open sheets to their full height on iOS (WebKit flex collapse) ([4dde757](https://github.com/okkes/munnimok/commit/4dde757bd28553de35f2fb9d442a803a02cf444a))
+
+
+### 🧹 Chores
+
+* pin the next release to 2.25.0 ([25208e4](https://github.com/okkes/munnimok/commit/25208e422c2bd6a9f3c8cef2f681059fa501066e))
+
+
+### ♻️ Refactoring
+
+* **ui:** replace vaul with react-modal-sheet as the sheet engine ([ee6cff0](https://github.com/okkes/munnimok/commit/ee6cff05e9df287606bd08e884ad231065669091))
+
 ## [2.24.0](https://github.com/okkes/munnimok/compare/v2.23.0...v2.24.0) (2026-07-25)
 
 
