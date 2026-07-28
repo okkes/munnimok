@@ -588,7 +588,9 @@ export function AccountsScreen() {
             )}
             {(importPreview ?? []).map((stmt, i) => {
               const iban = stmt.iban.replace(/\s/g, '').toUpperCase();
-              const match = mine.find((e) => e.account.iban?.replace(/\s/g, '').toUpperCase() === iban)?.account;
+              // IBAN matching spans BOTH pools — an existing manual
+              // account (space-scoped) is a match exactly like a feed
+              const match = suggestionPool.find((e) => e.account.iban?.replace(/\s/g, '').toUpperCase() === iban)?.account;
               return (
                 // key by index: monthly exports repeat the same IBAN per statement
                 <div key={`${stmt.iban}-${i}`} className="flex items-center gap-3 rounded-card border border-line bg-surface px-4 py-3">
