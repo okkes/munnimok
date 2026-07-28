@@ -124,4 +124,53 @@ describe('Repo', () => {
     await dbA.delete();
     await dbB.delete();
   });
+
+  it('model invariants block a malformed local write, whole and clean', async () => {
+    const repo = makeRepo('devA', db, () => ++wallMs);
+    // a screen's validation leaked: positive amount typed expense
+    await expect(
+      repo.upsert('transaction', 's1', 't1', {
+        accountId: 'a',
+        date: '2026-07-01',
+        amountCents: 1_000,
+        currency: 'EUR',
+        merchant: 'X',
+        txType: 'expense',
+        needsReview: 0,
+      }),
+    ).rejects.toMatchObject({ name: 'InvariantViolation' });
+    // nothing landed: no row, no outbox op
+    expect(await db.transactions.get('t1')).toBeUndefined();
+    expect(await db.outbox.toArray()).toHaveLength(0);
+
+    // malformed shapes are caught too (split without a category)
+    await expect(
+      repo.upsert('transaction', 's1', 't2', {
+        accountId: 'a',
+        date: '2026-07-01',
+        amountCents: -1_000,
+        currency: 'EUR',
+        merchant: 'X',
+        txType: 'expense',
+        needsReview: 0,
+        splits: [{ catId: '', amountCents: 500 }],
+      }),
+    ).rejects.toMatchObject({ name: 'InvariantViolation' });
+  });
+
+  it('remote ops are never refused — convergence beats validation', async () => {
+    const repo = makeRepo('devA', db, () => ++wallMs);
+    // another device (or an older build) owns this contradictory row
+    await repo.applyRemoteOps([
+      {
+        opId: 'op-remote',
+        spaceId: 's1',
+        entity: 'transaction',
+        entityId: 'remote1',
+        fields: { accountId: 'a', date: '2026-07-01', amountCents: 1_000, currency: 'EUR', merchant: 'X', txType: 'expense', needsReview: 0 },
+        hlc: '2026-07-01T00:00:00.000Z-0000-devB',
+      },
+    ]);
+    expect((await db.transactions.get('remote1'))?.txType).toBe('expense');
+  });
 });

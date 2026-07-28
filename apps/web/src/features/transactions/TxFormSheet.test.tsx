@@ -61,7 +61,8 @@ describe('TxFormSheet (demo identity)', () => {
       },
       { timeout: 5000 },
     );
-  });
+    // coverage instrumentation pushes this flow past vitest's 5s default
+  }, 15_000);
 
   it('no manual account: the form explains itself and doors to accounts', async () => {
     const { renderAppAsUser, USER_TEST_DB } = await import('@/test/harness');
@@ -92,21 +93,74 @@ describe('TxFormSheet (demo identity)', () => {
     db.close();
   }, 15_000);
 
-  it('type follows the category until explicitly set; counter account suggests it', async () => {
+  it('a transfer kind demands its counterparty; the counterparty derives the type', async () => {
     await openForm();
-    // type + counterparty moved INTO the category editor (user request)
-    fireEvent.click(screen.getByTestId('txform-category'));
-    fireEvent.click(await screen.findByTestId('txform-counter'));
-    await screen.findByTestId('txform-counter-options');
-    fireEvent.click(screen.getByTestId('txform-counter-demo_save'));
-    // the savings counterparty suggests Saving (same rule as the detail)
-    await waitFor(() => expect(screen.getByTestId('txform-type').textContent).toContain('Saving'));
-    // an explicit pick overrides the suggestion
-    fireEvent.click(screen.getByTestId('txform-type'));
-    await screen.findByTestId('txform-type-options');
-    fireEvent.click(screen.getByTestId('txform-type-adjustment'));
-    await waitFor(() => expect(screen.getByTestId('txform-type').textContent).toContain('Adjustment'));
-  });
+    fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '25,00' } });
+    fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Naar spaarpot' } });
+
+    // the kind row sits on the form (user simplification); picking
+    // Transfer opens the mandatory counterparty picker right away
+    fireEvent.click(screen.getByTestId('txform-kind'));
+    await screen.findByTestId('txkind-options');
+    fireEvent.click(screen.getByTestId('txkind-transfer'));
+    await screen.findByTestId('counter-accounts');
+    // save is blocked while the counterparty is missing
+    expect((screen.getByTestId('txform-save') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByTestId('counter-pick-demo_save'));
+    // the savings counterparty derives Saving on the kind row
+    await waitFor(() => expect(screen.getByTestId('txform-kind').textContent).toContain('Saving'));
+    expect(screen.getByTestId('txform-counter').textContent).toContain('Demo Savings');
+    expect((screen.getByTestId('txform-save') as HTMLButtonElement).disabled).toBe(false);
+
+    // back to Standard: the counterparty row leaves with the kind
+    fireEvent.click(screen.getByTestId('txform-kind'));
+    await screen.findByTestId('txkind-options');
+    fireEvent.click(screen.getByTestId('txkind-standard'));
+    await waitFor(() => expect(screen.queryByTestId('txform-counter')).toBeNull());
+
+    // adjustment saves as a correction row (manual-only third kind)
+    fireEvent.click(screen.getByTestId('txform-kind'));
+    await screen.findByTestId('txkind-options');
+    fireEvent.click(screen.getByTestId('txkind-adjustment'));
+    await waitFor(() => expect(screen.getByTestId('txform-kind').textContent).toContain('Adjustment'));
+    fireEvent.click(screen.getByTestId('txform-save'));
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const row = (await db.transactions.toArray()).find((r) => r.merchant === 'Naar spaarpot');
+      expect(row?.txType).toBe('adjustment');
+      expect(row?.linkedAccountId).toBeFalsy();
+    }, { timeout: 5000 });
+    db.close();
+  }, 15_000);
+
+  it('the counterparty picker searches and quick-creates a missing account', async () => {
+    await openForm();
+    fireEvent.click(screen.getByTestId('txform-kind'));
+    await screen.findByTestId('txkind-options');
+    fireEvent.click(screen.getByTestId('txkind-transfer'));
+    await screen.findByTestId('counter-accounts');
+
+    // search narrows; no match offers the create door (user request:
+    // "search … and create one quickly if it does not exist")
+    fireEvent.change(screen.getByTestId('counter-search'), { target: { value: 'Vakantiepot' } });
+    await screen.findByTestId('counter-empty');
+    fireEvent.click(screen.getByTestId('counter-create'));
+    await screen.findByTestId('counter-create-form');
+    fireEvent.click(screen.getByTestId('counter-newtype-savings'));
+    fireEvent.click(screen.getByTestId('counter-create-save'));
+
+    // the fresh manual account IS the counterparty; savings → Saving
+    await waitFor(() => expect(screen.getByTestId('txform-counter').textContent).toContain('Vakantiepot'));
+    expect(screen.getByTestId('txform-kind').textContent).toContain('Saving');
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const made = (await db.accounts.toArray()).find((a) => a.name === 'Vakantiepot');
+      expect(made).toMatchObject({ type: 'savings', source: 'manual', balanceCents: 0 });
+    }, { timeout: 5000 });
+    db.close();
+  }, 15_000);
 
   it('a fully synced (open banking) account is never offered for manual rows', async () => {
     renderApp('/transactions');
@@ -126,7 +180,8 @@ describe('TxFormSheet (demo identity)', () => {
     fireEvent.click(screen.getByTestId('tx-add'));
     await screen.findByTestId('txform-save');
     await screen.findByTestId('txform-account-demo_save'); // the manual ones stay
-    expect(screen.queryByTestId('txform-account-demo_main')).toBeNull();
+    // the cross-connection write lands via a live re-emission — await it
+    await waitFor(() => expect(screen.queryByTestId('txform-account-demo_main')).toBeNull(), { timeout: 5000 });
   });
 
   it('the income toggle stores a positive amount', async () => {

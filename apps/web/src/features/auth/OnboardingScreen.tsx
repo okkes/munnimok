@@ -138,13 +138,23 @@ export function OnboardingScreen() {
   };
 
   const finish = async () => {
+    // Mina takes over IMMEDIATELY after the form (user ruling: no
+    // opt-in card, no Home in between) — once per identity
+    const pending = (await store.metaGet('minaTutorialPending'))?.value;
+    const done = (await store.metaGet('minaTutorialDone'))?.value;
+    if (pending && !done) {
+      await store.metaDelete('minaTutorialPending');
+      await store.metaPut('minaTutorialState', { active: true, step: 0, ledger: [] });
+      window.dispatchEvent(new Event('mina:start'));
+    }
     await navigate({ to: '/home' });
   };
 
   return (
     <div className="m-fade flex h-full flex-col items-center overflow-y-auto px-6" data-testid="screen-onboarding">
       <div className="flex w-full max-w-[420px] flex-col pb-8">
-        <div className="flex flex-col items-center pt-10 pb-6 text-center">
+        {/* desktop: hug the top instead of floating mid-window (user ss) */}
+        <div className="flex flex-col items-center pt-10 pb-6 text-center lg:pt-4">
           <Logo size={32} />
           <h1 className="m-h2 mt-4 text-ink">{t('onboarding.title')}</h1>
         </div>
@@ -184,8 +194,11 @@ export function OnboardingScreen() {
               placeholder={t('profile.displayName')}
               className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
             />
-            {/* the WHY (user request): who sees this name */}
-            <p className="px-1 text-[12px] leading-snug text-ink-4">{t('onboarding.nameInfo')}</p>
+            {/* the WHY, kept short (user request): offline nobody else
+                ever sees the name; online it's the face others see */}
+            <p className="px-1 text-[12px] leading-snug text-ink-4">
+              {t(identity?.kind === 'offline' ? 'onboarding.nameInfoOffline' : 'onboarding.nameInfoOnline')}
+            </p>
 
             <div className="m-cap px-1 pt-1">{t('onboarding.langTitle')}</div>
             <div className="flex gap-2" data-testid="onboarding-langs">

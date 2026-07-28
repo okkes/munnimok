@@ -23,16 +23,19 @@ import { Icon } from '@/ui/Icon';
 import { Pill } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { givenCents, netAmountCents, netCreditCents, totalReimbursedCents } from '@/domain/reimbursement';
+import { REIMBURSED_ID } from '@/domain/categories';
 import { normalizeIban } from '@/domain/feedIds';
 import { ReceiptSection } from '@/features/shopping/ReceiptSection';
 import { ReimburseSection } from './ReimburseSection';
 import { SplitEditorSheet } from './SplitEditorSheet';
 import { TxFormSheet } from './TxFormSheet';
-import { CounterAccountSheet, TxTypeOptionsSheet } from './TxTypeSheet';
+import { CounterpartySheet, TX_KIND_VISUAL, TxKindSheet, kindDetail } from './TxKindSheet';
+import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
+import { kindOf, standardTypeFor } from '@/domain/txKind';
 import { applyTypeChange, typeForLinkedAccount } from '@/domain/txType';
 import { merchantKey } from '@/domain/merchantKey';
-import { TxDetailCustomizeSheet, resolveTxDetailBlocks } from './TxDetailCustomizeSheet';
-import type { TxDetailBlockId } from './TxDetailCustomizeSheet';
+import { resolveTxDetailBlocks } from './TxDetailCustomizeScreen';
+import type { TxDetailBlockId } from './TxDetailCustomizeScreen';
 import { TxRow } from '@/ui/TxRow';
 import type { SpaceTx } from '@/application/transactions';
 import type { TxType } from '@/db/types';
@@ -279,7 +282,7 @@ function RenameTitleSheet({
   last.current = open;
 
   return (
-    // 'form' height: on iOS vaul lifts the sheet by the keyboard height —
+    // 'form' height: on iOS the sheet lifts by the keyboard height —
     // the compact sheet rose clean off the screen (user report ss 2026-07-18)
     <Sheet open={open} onOpenChange={onOpenChange} title={t('tx.renameTitle')} size="form">
       <input
@@ -340,10 +343,13 @@ export function TxDetailScreen() {
   const [eventOpen, setEventOpen] = useState(false);
   const [counterOpen, setCounterOpen] = useState(false);
   const [bulkOffer, setBulkOffer] = useState<{ catId: string; txType: TxType; count: number } | null>(null);
+  // the reimbursement total at arm time: a settlement AFTER arming
+  // rewrites the category attribution, so the stale offer must retire
+  // (user rule: any category change — direct or indirect — re-evaluates)
+  const bulkArmedReimbRef = useRef(0);
   // which of the similar transactions the bulk apply will touch (user
   // request: see and pick them, not a blind apply-all)
   const [bulkSelected, setBulkSelected] = useState<ReadonlySet<string>>(new Set());
-  const [customizeOpen, setCustomizeOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const navigate = useNavigate();
   const panes = useLgViewport();
@@ -389,6 +395,13 @@ export function TxDetailScreen() {
   const allTxs = useSpaceTransactions();
   const givenOut = tx && tx.amountCents > 0 ? givenCents(allTxs ?? [], tx.id) : 0;
 
+  // a settlement AFTER the bulk offer armed rewrote the attribution —
+  // the offer's premise is stale, retire it (user rule)
+  const reimbNow = tx ? totalReimbursedCents(tx) + givenOut : 0;
+  useEffect(() => {
+    if (bulkOffer && reimbNow !== bulkArmedReimbRef.current) setBulkOffer(null);
+  }, [reimbNow, bulkOffer]);
+
   // display-currency lens: the headline converts at THIS day's fixing
   const { fmt, ensureDates } = useDisplayMoney();
   const txDate = tx?.date;
@@ -405,13 +418,20 @@ export function TxDetailScreen() {
   const cat = cats.byId(tx.catId);
   const parent = cat.parentId ? cats.byId(cat.parentId) : undefined;
   const color = cat.color ?? parent?.color ?? 'var(--m-ink-3)';
+  const kind = kindOf(tx.txType);
+  const kindDetailType = kindDetail(tx.txType);
+  // a credit that self-filed as Reimbursed keeps that category as long
+  // as any link lives (user rule) — unlink first, then recategorize
+  const categoryLocked = tx.catId === REIMBURSED_ID && givenOut > 0;
 
   const setCategory = (catId: string) => {
     const txType = cats.byId(catId).txTypes[0] ?? tx.txType;
     void transform(tx, { catId, txType, needsReview: 0 }, 'txCategory');
     // bulk mechanism from the detail too (user request) — unlike review
-    // it reaches EVERYTHING of this merchant, reviewed included
-    const similar = similarTo(allTxs, tx, (item) => item.catId !== catId);
+    // it reaches EVERYTHING of this merchant, reviewed included. The
+    // settlement category is never a bulk suggestion (user rule).
+    const similar = catId === REIMBURSED_ID ? [] : similarTo(allTxs, tx, (item) => item.catId !== catId);
+    bulkArmedReimbRef.current = reimbNow;
     setBulkOffer(similar.length > 0 ? { catId, txType, count: similar.length } : null);
     setBulkSelected(new Set(similar.map((item) => item.id)));
   };
@@ -455,10 +475,6 @@ export function TxDetailScreen() {
 
   // two-tap confirm, matching the app's other destructive rows
   const deleteManualTx = async () => {
-    if (!confirmDelete) {
-      setConfirmDelete(true);
-      return;
-    }
     // manual accounts keep a LIVE balance: deleting the row hands its
     // amount back (bank-linked balances stay the bank's)
     if (account && account.source !== 'gocardless') {
@@ -547,42 +563,39 @@ export function TxDetailScreen() {
             <span className="text-xs text-ink-4">{t('txform.account')}</span>
           </div>
           <div className="mx-4 h-px bg-line-2" />
+          {/* kind before counterparty (user simplification): WHAT it is,
+              then WHO the other side is — editable only for transfers */}
+          <button
+            data-testid="tx-detail-kind-row"
+            onClick={() => setTypePickOpen(true)}
+            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+          >
+            <Icon name={TX_KIND_VISUAL[kind].icon} size={20} color={TX_KIND_VISUAL[kind].color} />
+            <span className="min-w-0 flex-1 truncate">
+              {t(`tx.kind.${kind}`)}
+              {kindDetailType && (
+                <span className="text-[12px] text-ink-4"> · {t(`tx.type.${kindDetailType}`)}</span>
+              )}
+            </span>
+            <span className="text-xs text-ink-4">{t('tx.kindTitle')}</span>
+            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+          </button>
+          <div className="mx-4 h-px bg-line-2" />
           <CounterpartyRow
             counterIban={tx.counterIban}
             counterAccountName={counterAccount?.name}
             linkedAccountName={linkedAccount?.name}
+            editable={kind === 'transfer'}
             onOpenAccount={() => setCounterOpen(true)}
             onEdit={() => setCounterPickOpen(true)}
           />
-          <div className="mx-4 h-px bg-line-2" />
-          <button
-            data-testid="tx-detail-type-row"
-            onClick={() => setTypePickOpen(true)}
-            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
-          >
-            <Icon name="swap-vertical" size={20} color="var(--m-ink-3)" />
-            <span className="min-w-0 flex-1 truncate">{t(`tx.type.${tx.txType}`)}</span>
-            <span className="text-xs text-ink-4">{t('tx.type')}</span>
-            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-          </button>
         </div>
 
         {/* block: categories — ONE edit affordance for the whole block
             (user: a pencil per slice read wrong); rows stay tappable */}
-        <div className="m-cap mt-5 mb-1 flex items-center justify-between px-1">
-          <span>{t('screen.categories')}</span>
-          <button
-            data-testid="tx-detail-cats-edit"
-            aria-label={t('action.edit')}
-            onClick={() => setSplitOpen(true)}
-            className="m-tap flex items-center gap-1 border-none bg-transparent text-[11px] font-semibold text-accent-deep"
-          >
-            <Icon name="pencil-outline" size={13} />
-            {t('action.edit')}
-          </button>
-        </div>
+        <CategoriesHeader locked={categoryLocked} onEdit={() => setSplitOpen(true)} />
         <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="tx-detail-categories">
-          <CategorySlices tx={tx} cats={cats} fallbackCat={cat} fallbackColor={color} onEdit={() => setSplitOpen(true)} />
+          <CategorySlices tx={tx} cats={cats} fallbackCat={cat} fallbackColor={color} onEdit={() => !categoryLocked && setSplitOpen(true)} />
           {bulkOffer && (
             <DetailBulkBar
               targets={bulkTargets}
@@ -658,7 +671,7 @@ export function TxDetailScreen() {
 
         <button
           data-testid="tx-detail-customize"
-          onClick={() => setCustomizeOpen(true)}
+          onClick={() => void navigate({ to: '/tx-customize' })}
           className="m-tap mt-5 flex w-full items-center justify-center gap-2 rounded-card border border-dashed border-line bg-transparent py-2.5 text-[13px] font-medium text-ink-3"
         >
           <Icon name="tune-variant" size={16} />
@@ -670,46 +683,63 @@ export function TxDetailScreen() {
         {!tx.importRef && !tx.feedSpaceId && (
           <button
             data-testid="tx-detail-delete"
-            onClick={() => void deleteManualTx()}
+            onClick={() => setConfirmDelete(true)}
             className="m-tap mt-6 w-full rounded-card border border-line bg-surface px-4 py-3 text-center text-[14px] font-medium text-negative"
           >
-            {confirmDelete ? t('tx.deleteManualConfirm') : t('tx.deleteManual')}
+            {t('tx.deleteManual')}
           </button>
         )}
       </div>
 
-      {/* write-through, split into two direct pickers (user report):
-          the counterparty row shows accounts, the type row shows types */}
-      <CounterAccountSheet
+      {/* the aligned danger confirm — no cooldown: one transaction is a
+          low-stakes delete (user ruling) */}
+      <DangerConfirmSheet
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title={t('tx.deleteManual')}
+        body={t('tx.deleteManualBody', { name: txTitle(tx) })}
+        cooldown={0}
+        onConfirm={() => void deleteManualTx()}
+        testId="tx-delete"
+      />
+
+      {/* write-through: choosing a counterparty derives the transfer's
+          exact member; the kind sheet handles standard/adjustment */}
+      <CounterpartySheet
         open={counterPickOpen}
         onOpenChange={setCounterPickOpen}
-        tx={tx}
+        excludeAccountId={tx.accountId}
         currentLinkedId={tx.linkedAccountId}
         onChoose={(picked) => {
-          const nextType = picked ? typeForLinkedAccount(picked.type) : tx.txType;
           const fields = applyTypeChange({
-            nextType,
-            linkedAccountId: picked?.id ?? null,
+            nextType: typeForLinkedAccount(picked.type),
+            linkedAccountId: picked.id,
+            currentCatId: tx.catId,
+            catTxTypes: cats.byId(tx.catId).txTypes,
+          });
+          void transform(tx, { ...fields, linkedAccountId: picked.id }, 'txLink');
+        }}
+      />
+      <TxKindSheet
+        open={typePickOpen}
+        onOpenChange={setTypePickOpen}
+        current={kind}
+        allowAdjustment={!tx.importRef && !tx.feedSpaceId}
+        onPick={(nextKind) => {
+          // transfer completes in the counterparty picker — nothing is
+          // written until the (mandatory) other side is chosen
+          if (nextKind === 'transfer') {
+            setCounterPickOpen(true);
+            return;
+          }
+          const fields = applyTypeChange({
+            nextType: nextKind === 'adjustment' ? 'adjustment' : standardTypeFor(tx.amountCents),
+            linkedAccountId: null,
             currentCatId: tx.catId,
             catTxTypes: cats.byId(tx.catId).txTypes,
           });
           // explicit null clears the link (undefined would be dropped by JSON)
-          void transform(tx, { ...fields, linkedAccountId: picked?.id ?? (null as never) }, 'txLink');
-        }}
-      />
-      <TxTypeOptionsSheet
-        open={typePickOpen}
-        onOpenChange={setTypePickOpen}
-        current={tx.txType}
-        linkedNote={!!tx.linkedAccountId}
-        onPick={(nextType: TxType) => {
-          const fields = applyTypeChange({
-            nextType,
-            linkedAccountId: tx.linkedAccountId ?? null,
-            currentCatId: tx.catId,
-            catTxTypes: cats.byId(tx.catId).txTypes,
-          });
-          void transform(tx, fields, 'txCategory'); // the link survives a manual override
+          void transform(tx, { ...fields, linkedAccountId: null as never }, 'txCategory');
         }}
       />
       {/* ONE category flow (review parity): a single row edits the plain
@@ -723,7 +753,6 @@ export function TxDetailScreen() {
         value={txTitle(tx)}
         onSave={renameTitle}
       />
-      <TxDetailCustomizeSheet open={customizeOpen} onOpenChange={setCustomizeOpen} space={space} />
 
       {/* the counterparty is one of the user's own accounts — show it */}
       <Sheet open={counterOpen && !!counterAccount} onOpenChange={setCounterOpen} title={counterAccount?.name ?? ''} size="compact">
@@ -895,27 +924,60 @@ function NotesField({
  * account, otherwise EDITABLE (user remark: CAMT rows often ship
  * without one — picking an own account still works and suggests the
  * type through the same sheet as the type row) */
+/** the categories caption: one Edit for the block — or a lock while a
+ *  reimbursement owns the attribution (user rule; S3776: extracted) */
+function CategoriesHeader({ locked, onEdit }: Readonly<{ locked: boolean; onEdit: () => void }>) {
+  const { t } = useLang();
+  return (
+    <div className="m-cap mt-5 mb-1 flex items-center justify-between px-1">
+      <span>{t('screen.categories')}</span>
+      {locked ? (
+        <span className="flex items-center gap-1 text-[11px] text-ink-4" data-testid="tx-detail-cats-locked">
+          <Icon name="lock-outline" size={12} />
+          {t('reimb.categoryLocked')}
+        </span>
+      ) : (
+        <button
+          data-testid="tx-detail-cats-edit"
+          aria-label={t('action.edit')}
+          onClick={onEdit}
+          className="m-tap flex items-center gap-1 border-none bg-transparent text-[11px] font-semibold text-accent-deep"
+        >
+          <Icon name="pencil-outline" size={13} />
+          {t('action.edit')}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function CounterpartyRow({
   counterIban,
   counterAccountName,
   linkedAccountName,
+  editable,
   onOpenAccount,
   onEdit,
 }: Readonly<{
   counterIban?: string;
   counterAccountName?: string;
   linkedAccountName?: string;
+  /** transfers only (user simplification): other kinds show the bank's
+   *  counterparty as a plain fact, dimmed and untappable */
+  editable: boolean;
   onOpenAccount: () => void;
   onEdit: () => void;
 }>) {
   const { t } = useLang();
   const matched = !!counterAccountName;
   const primary = counterAccountName ?? linkedAccountName;
+  const disabled = !matched && !editable;
   return (
     <button
       data-testid={matched ? 'tx-detail-counterparty-row' : 'tx-detail-counterparty-edit'}
+      disabled={disabled}
       onClick={matched ? onOpenAccount : onEdit}
-      className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+      className={`m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink ${disabled ? 'opacity-45' : ''}`}
     >
       <Icon name="swap-horizontal" size={20} color={primary ? 'var(--m-accent-deep)' : 'var(--m-ink-3)'} />
       <span className="min-w-0 flex-1">
@@ -923,7 +985,7 @@ function CounterpartyRow({
           <span className="block truncate">{primary}</span>
         ) : (
           <span className="block truncate text-ink-3" data-testid="tx-detail-counter-add">
-            {counterIban ?? t('tx.counterAccountPick')}
+            {counterIban ?? (editable ? t('tx.counterAccountPick') : t('tx.counterNotApplicable'))}
           </span>
         )}
         {counterIban && primary && (
@@ -931,7 +993,7 @@ function CounterpartyRow({
         )}
       </span>
       <span className="text-xs text-ink-4">{t('tx.counterparty')}</span>
-      <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+      {!disabled && <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />}
     </button>
   );
 }

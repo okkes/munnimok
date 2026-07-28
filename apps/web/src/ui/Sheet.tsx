@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { createPortal } from 'react-dom';
 import type { ReactNode } from 'react';
-import { Drawer } from 'vaul';
+import { Sheet as ModalSheet, type SheetRef } from 'react-modal-sheet';
 // desktop ruling (2026-07-17, replaces §4.3's right panel the user
 // disliked): at lg a sheet renders as a centered dialog — the familiar
 // desktop shape, with the page still visible around it
@@ -11,15 +12,23 @@ import { isNativeApp } from '@/lib/platform';
 export type SheetSize = 'compact' | 'form' | 'tall';
 const SIZE_PX: Record<SheetSize, number> = { compact: 320, form: 440, tall: 600 };
 
-// Vaul's own input repositioning (translating the sheet up by the
-// keyboard height) is only for environments where the viewport does NOT
-// resize for the keyboard — plain iOS Safari. Everywhere the viewport
-// resizes it stacks on top and strands sheets past the status bar with a
+// framer-motion animates in real wall-clock time even in jsdom (vaul's
+// CSS transitions never ran there) — under parallel test load those
+// ~300ms opens/closes eat waitFor budgets at random. Instant in tests.
+const IS_TEST = import.meta.env.MODE === 'test';
+
+// Keyboard avoidance (translating the sheet up by the keyboard height)
+// is only for environments where the viewport does NOT resize for the
+// keyboard — plain iOS Safari/PWA. Everywhere the viewport resizes it
+// stacks on top and strands sheets past the status bar with a
 // keyboard-sized gap at the bottom (user ss 2026-07-19):
 //  - Android: the interactive-widget viewport meta resizes the layout
 //  - native shells: @capacitor/keyboard resize:"native" shrinks the webview
 const IS_ANDROID = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
 const VIEWPORT_RESIZES = IS_ANDROID || isNativeApp();
+/** true where the sheet library's avoidKeyboard is active — the global
+ *  keyboard reveal must stand down inside sheets there (AppLayout) */
+export const SHEET_OWNS_KEYBOARD = !VIEWPORT_RESIZES;
 
 // ── sheet stack ──────────────────────────────────────────────────────────
 // Only the TOP sheet may dismiss. Without this, opening a picker sheet on
@@ -55,6 +64,14 @@ function popVisual(id: number) {
 
 /** true while any sheet is open — global gestures (edge-swipe back) must stand down */
 export const hasOpenSheet = (): boolean => visualStack.length > 0;
+
+// every open sheet registers its close callback; the Mina tutorial (and
+// only flows like it) dismisses leftovers before moving to a step whose
+// target lives outside any sheet
+const sheetClosers = new Map<number, () => void>();
+export function closeAllSheets(): void {
+  for (const close of [...sheetClosers.values()].reverse()) close();
+}
 
 // ── drag-linked zoom (imperative) ────────────────────────────────────────
 // Covered parents recede; while the TOP sheet is dragged toward dismissal
@@ -174,6 +191,10 @@ interface SheetProps {
   size?: SheetSize;
   /** escape hatch for truly odd content; prefer `size` */
   height?: number;
+  /** pinned below the scroll area (save/confirm rows) — never `position:
+   *  sticky` inside the scrollport: the keyboard translation and
+   *  safe-area padding sent it drifting over the content (user ss) */
+  footer?: ReactNode;
 }
 
 interface DesktopDialogProps {
@@ -183,12 +204,13 @@ interface DesktopDialogProps {
   fixedHeight: number | undefined;
   title?: string;
   children: ReactNode;
+  footer?: ReactNode;
   onOpenChange: (open: boolean) => void;
 }
 
 /** desktop (2026-07-18 fix): a plain centered dialog — vaul's drawer
  *  transforms fought the centered layout and pinned it to the top */
-function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, onOpenChange }: Readonly<DesktopDialogProps>) {
+function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, footer, onOpenChange }: Readonly<DesktopDialogProps>) {
   // enter/exit: grow from the click point, shrink back to it
   const [phase, setPhase] = useState<'closed' | 'hidden' | 'open'>('closed');
   const originRef = useRef({ x: 0, y: 0 });
@@ -219,7 +241,11 @@ function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, onOpe
   const from = originRef.current;
   const dx = from.x - window.innerWidth / 2;
   const dy = from.y - window.innerHeight / 2;
-  return (
+  // PORTALED to body (user ss): rendered inside the master-detail pane,
+  // the pane's slide transform turned `fixed` into pane-relative — the
+  // overlay grayed only half the app, the list beside it stayed
+  // clickable, and the grow-from-click origin missed by the pane offset.
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
       <button
         aria-label="close"
@@ -250,182 +276,187 @@ function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, onOpe
         }}
       >
         {title && <div className="m-h3 shrink-0 px-5 pt-5 pb-1 text-ink">{title}</div>}
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pt-2 pb-5">{children}</div>
+        {/* flex-auto, not flex-1: with no `size` this dialog is
+            auto-height, where basis 0% collapses in WebKit (Safari on
+            macOS/iPad) exactly like the mobile sheet did on iOS */}
+        <div className="min-h-0 flex-auto overflow-y-auto overscroll-contain px-5 pt-2 pb-5">{children}</div>
+        {footer && <div className="shrink-0 border-t border-line-2 bg-bg px-5 pt-3 pb-5">{footer}</div>}
       </dialog>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
 /**
- * The one shared bottom sheet for the whole app: swipe-to-dismiss and
- * background scroll locking come from vaul; stacked sheets lock their
+ * The one shared bottom sheet for the whole app: swipe-to-dismiss,
+ * drag/scroll coordination and background scroll locking come from
+ * react-modal-sheet (replaced vaul 2026-07-26 — its gesture capture kept
+ * cancelling inputs mid-typing, user report); stacked sheets lock their
  * parents automatically. Never build inline overlays.
  */
-export function Sheet({ open, onOpenChange, title, children, size, height }: Readonly<SheetProps>) {
+export function Sheet({ open, onOpenChange, title, children, size, height, footer }: Readonly<SheetProps>) {
   const requested = height ?? (size ? SIZE_PX[size] : undefined);
   const { id, isLocked, depth } = useSheetStack(open);
+  // registered while open so closeAllSheets() can dismiss leftovers
+  useEffect(() => {
+    if (!open) return;
+    sheetClosers.set(id, () => onOpenChange(false));
+    return () => void sheetClosers.delete(id);
+  }, [open, id, onOpenChange]);
   // stacked sheets step DOWN in height (28px per level, floor 280) so
   // the parent's receded edge stays visible — the depth cue the thin
   // drag bar alone never gave (user request)
   const fixedHeight = requested === undefined ? undefined : Math.max(280, requested - depth * 28);
   const panel = usePanelMode();
 
-  // gesture plan RC3/RC4: content that FITS the sheet has no scroll to
-  // protect — claim every touch for the drag (touch-action none) and drop
-  // vaul's after-scroll drag lock entirely
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const innerRef = useRef<HTMLDivElement>(null);
-  const [contentFits, setContentFits] = useState(false);
+  // the whole test corpus was written against vaul's jsdom behavior: a
+  // closed sheet STAYED MOUNTED (its exit transition never ran there),
+  // and tests observe post-close state through the still-mounted inputs.
+  // framer-motion's real unmount-after-exit races those assertions under
+  // load — so in tests, once opened, the sheet stays mounted for good.
+  const [everOpen, setEverOpen] = useState(false);
   useEffect(() => {
-    const el = scrollRef.current;
-    if (!open || panel || !el) return;
-    const check = () => setContentFits(el.scrollHeight <= el.clientHeight + 1);
-    check();
-    if (typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(check);
-    ro.observe(el);
-    if (innerRef.current) ro.observe(innerRef.current); // content growth changes scrollHeight only
-    return () => ro.disconnect();
-  }, [open, panel]);
+    if (open) setEverOpen(true);
+  }, [open]);
 
-  // gesture plan RC5: a release vaul refuses (e.g. text got selected
-  // mid-drag) returns without resetting — the sheet hangs mid-air. If the
-  // sheet is meant to stay open but sits translated shortly after release,
-  // put it back ourselves with vaul's own easing.
-  const drawerRef = useRef<HTMLDivElement>(null);
-
-  // THE fast-flick fix (2026-07-24, user: "drag/hold unregistered when
-  // moving quickly", Android + iOS): vaul couples its touchmove guard to
-  // repositionInputs — which we disable on Android/native for the
-  // keyboard fix — so nothing stopped the webview from claiming quick
-  // pans as scrolls and killing the pointer stream (pointercancel) the
-  // moment it decided. Recreate the guard ourselves, scoped to the
-  // drawer: block native scrolling where there is nothing to scroll, and
-  // at the scroll edges in the direction that cannot scroll — the
-  // gesture then stays a pointer stream and vaul follows the finger at
-  // any speed. Mid-range list scrolling stays fully native.
+  // the sheet's y-progress (1 = resting open, 0 = dismissed) drives the
+  // covered parents: they recede in step with the child's slide-in and
+  // grow back in step with its drag/dismissal — both directions, every
+  // frame, without React re-renders
+  const sheetRef = useRef<SheetRef>(null);
+  const isLockedRef = useRef(isLocked);
   useEffect(() => {
-    const drawer = drawerRef.current;
-    if (!open || panel || !drawer) return;
-    let lastY = 0;
-    const scrollableWithin = (target: EventTarget | null): HTMLElement | null => {
-      let node = target instanceof HTMLElement ? target : null;
-      while (node && node !== drawer) {
-        if (node.scrollHeight > node.clientHeight + 1) {
-          const overflowY = getComputedStyle(node).overflowY;
-          if (overflowY === 'auto' || overflowY === 'scroll') return node;
-        }
-        node = node.parentElement;
-      }
-      return null;
+    isLockedRef.current = isLocked;
+  }, [isLocked]);
+  // ESC closes the TOP sheet (vaul inherited this from Radix; the lib
+  // doesn't do keyboard dismissal itself)
+  useEffect(() => {
+    if (!open || panel || isLocked) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onOpenChange(false);
     };
-    const onTouchStart = (e: TouchEvent) => {
-      lastY = e.changedTouches[0].pageY;
-    };
-    const onTouchMove = (e: TouchEvent) => {
-      const scrollable = scrollableWithin(e.target);
-      const y = e.changedTouches[0].pageY;
-      const goingDown = y > lastY;
-      lastY = y;
-      if (!e.cancelable) return; // native scroll already owns this gesture
-      // once vaul's drag is LIVE, the gesture belongs to the sheet until
-      // the finger lifts — wiggling up, crossing buttons or text must
-      // never hand it back to native scrolling (user rule 2026-07-24)
-      if (drawer.classList.contains('vaul-dragging')) {
-        e.preventDefault();
-        return;
-      }
-      if (!scrollable) {
-        e.preventDefault(); // nothing to scroll under the finger — all drag
-        return;
-      }
-      const atTop = scrollable.scrollTop <= 0;
-      const atBottom = scrollable.scrollTop >= scrollable.scrollHeight - scrollable.clientHeight;
-      if ((atTop && goingDown) || (atBottom && !goingDown)) e.preventDefault();
-    };
-    drawer.addEventListener('touchstart', onTouchStart, { passive: true });
-    drawer.addEventListener('touchmove', onTouchMove, { passive: false });
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, panel, isLocked, onOpenChange]);
+  useEffect(() => {
+    if (!open || panel) return;
+    // the ref populates once the portal mounts — subscribe a frame later
+    let unsubscribe: (() => void) | undefined;
+    const raf = requestAnimationFrame(() => {
+      const progress = sheetRef.current?.yProgress;
+      if (!progress) return;
+      unsubscribe = progress.on('change', (value) => {
+        if (isLockedRef.current) return; // only the top sheet drives parents
+        if (value >= 0.999) syncCoveredStyles();
+        else applyDragToCovered(1 - value);
+      });
+    });
     return () => {
-      drawer.removeEventListener('touchstart', onTouchStart);
-      drawer.removeEventListener('touchmove', onTouchMove);
+      cancelAnimationFrame(raf);
+      unsubscribe?.();
     };
   }, [open, panel]);
-  const settleGuard = () => {
-    setTimeout(() => {
-      const el = drawerRef.current;
-      if (!el || el.classList.contains('vaul-dragging')) return;
-      const transform = getComputedStyle(el).transform;
-      if (transform === 'none') return;
-      const translateY = new DOMMatrixReadOnly(transform).m42;
-      if (Math.abs(translateY) < 1) return;
-      el.style.transition = 'transform 0.5s cubic-bezier(0.32, 0.72, 0, 1)';
-      el.style.transform = 'translate3d(0, 0, 0)';
-    }, 150);
-  };
 
   if (panel) {
     return (
-      <DesktopDialog id={id} open={open} isLocked={isLocked} fixedHeight={fixedHeight} title={title} onOpenChange={onOpenChange}>
+      <DesktopDialog id={id} open={open} isLocked={isLocked} fixedHeight={fixedHeight} title={title} footer={footer} onOpenChange={onOpenChange}>
         {children}
       </DesktopDialog>
     );
   }
 
   return (
-    <Drawer.Root
-      open={open}
-      onOpenChange={(next) => {
-        if (!next) syncCoveredStyles(); // a settled dismissal ends the drag
-        if (isLocked && !next) return;
-        onOpenChange(next);
+    <ModalSheet
+      ref={sheetRef}
+      isOpen={IS_TEST ? everOpen : open}
+      onClose={() => {
+        syncCoveredStyles(); // a settled dismissal ends the drag
+        if (!isLocked) onOpenChange(false);
       }}
-      dismissible={!isLocked}
-      repositionInputs={!VIEWPORT_RESIZES}
-      direction="bottom"
-      scrollLockTimeout={contentFits ? 0 : 100}
-      onDrag={(_event, pct) => {
-        // only the top sheet can drag — its progress drives the parents
-        if (!isLocked) applyDragToCovered(pct);
-      }}
-      onRelease={(_event, staysOpen) => {
+      onCloseStart={() => {
         syncCoveredStyles();
-        if (staysOpen) settleGuard();
+        // the exiting copy stays mounted through the close animation —
+        // taps in that window must fall through to what's underneath,
+        // not be swallowed by a ghost whose handlers are about to die
+        const ghost = coveredEls.get(id);
+        if (ghost) ghost.style.pointerEvents = 'none';
       }}
+      detent="content"
+      avoidKeyboard={!VIEWPORT_RESIZES}
+      disableDismiss={isLocked}
+      prefersReducedMotion={IS_TEST}
+      unstyled
+      // z-50 like the old drawer: the Mina tutorial overlay must still be
+      // able to sit above sheets (the lib's default is 9999)
+      style={{ zIndex: 50 }}
     >
-      <Drawer.Portal>
-        <Drawer.Overlay className="fixed inset-0 z-40 bg-black/40" />
-        <Drawer.Content
-          ref={drawerRef}
-          className="fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[92dvh] w-full max-w-[560px] flex-col overflow-hidden rounded-t-[20px] bg-bg shadow-[0_-16px_48px_rgba(0,0,0,0.30)] outline-none"
-          style={fixedHeight ? { height: fixedHeight } : undefined}
+      <ModalSheet.Backdrop
+        className="bg-black/40"
+        onTap={() => {
+          if (!isLocked) onOpenChange(false);
+        }}
+        // plain-click fallback (mouse/emulated environments where the
+        // tap gesture doesn't materialize); double-firing is a no-op
+        onClick={() => {
+          if (!isLocked) onOpenChange(false);
+        }}
+      />
+      <ModalSheet.Container className="inset-x-0 mx-auto w-full max-w-[560px] overflow-hidden rounded-t-[20px] bg-bg shadow-[0_-16px_48px_rgba(0,0,0,0.30)] outline-none">
+        {/* stacked-sheet depth (user request): a sheet buried under a
+            child visibly recedes instead of hiding behind a thin bar —
+            and grows back in step with the child's dismissal drag
+            (styles written imperatively via registerCoveredEl) */}
+        {/* WebKit rule (iOS ss 2026-07-26): inside the auto-height
+            container (detent "content"), `flex-1`'s basis 0% overrides
+            `height` and min-h-0 drops the content minimum — WebKit then
+            resolves the body to ZERO and sheets open header-only, while
+            Blink grows it to content and hides the bug. Basis stays AUTO
+            (flex-initial) so `height` rules; min-h-0 only lets the
+            container's own max clamp shrink it on short screens. */}
+        <div
+          ref={(el) => registerCoveredEl(id, el)}
+          className="flex min-h-0 flex-initial flex-col"
+          style={{ transformOrigin: 'top center', height: fixedHeight }}
+          // a pointer landing on an editable must NEVER become a sheet
+          // drag (input-cancelled-while-typing, user report). Capture
+          // phase: the drag gesture binds natively on the lib's
+          // Header/Content elements, so a bubble-phase stop fires too
+          // late to keep the pointer stream with the input.
+          onPointerDownCapture={(e) => {
+            const el = e.target as HTMLElement;
+            if (el.closest('input, textarea, select, [contenteditable="true"]')) e.stopPropagation();
+          }}
         >
-          {/* stacked-sheet depth (user request): a sheet buried under a
-              child visibly recedes instead of hiding behind a thin bar —
-              and grows back in step with the child's dismissal drag
-              (styles written imperatively via registerCoveredEl) */}
-          <div ref={(el) => registerCoveredEl(id, el)} className="flex min-h-0 flex-1 flex-col" style={{ transformOrigin: 'top center' }}>
-            {/* full-height drag zone across the title area (vaul captures
-                the pointer itself — no extra handling needed here) */}
-            <div className="shrink-0 cursor-grab pt-2.5 pb-1">
-              <div className="mx-auto h-1.5 w-10 rounded-full bg-line" />
-              {title && (
-                <Drawer.Title className="m-h3 px-5 pt-3 pb-1 text-ink">{title}</Drawer.Title>
-              )}
+          {/* full-height drag zone across the title area */}
+          <ModalSheet.Header className="shrink-0 cursor-grab pt-2.5 pb-1">
+            <div className="mx-auto h-1.5 w-10 rounded-full bg-line" />
+            {title && <div className="m-h3 px-5 pt-3 pb-1 text-ink">{title}</div>}
+          </ModalSheet.Header>
+          {/* content drags the sheet only at scroll-top or when nothing
+              scrolls (the lib's scroll-position coordination — the same
+              semantics our hand-rolled touchmove guard gave vaul);
+              bottom padding lives INSIDE the scroller because the lib
+              writes its keyboard inset onto the scroller's own style */}
+          {/* flex-auto (basis auto), same WebKit rule as the wrapper;
+              the scroller swaps the lib's `height: 100%` (indefinite
+              inside a flex-sized parent in WebKit) for flex sizing */}
+          <ModalSheet.Content
+            className="min-h-0 flex-auto"
+            scrollClassName="px-5"
+            scrollStyle={{ height: 'auto', flex: '1 1 auto', minHeight: 0 }}
+          >
+            <div className={footer ? 'pb-2' : 'pb-[max(20px,env(safe-area-inset-bottom))]'}>{children}</div>
+          </ModalSheet.Content>
+          {/* pinned footer: OUTSIDE the scrollport, so it can never
+              drift over the content (the sticky-in-scroll version did,
+              user ss) and survives the keyboard translation intact */}
+          {footer && (
+            <div className="shrink-0 border-t border-line-2 bg-bg px-5 pt-3 pb-[max(16px,env(safe-area-inset-bottom))]">
+              {footer}
             </div>
-            {/* translateZ: Safari fails to repaint this scroll layer when
-                content GROWS inside vaul's translated drawer (user ss:
-                dark strips around a freshly added row until any resize);
-                promoting it to its own layer keeps paints honest */}
-            <div
-              ref={scrollRef}
-              className="min-h-0 flex-1 overflow-y-auto overscroll-none px-5 pb-[max(20px,env(safe-area-inset-bottom))]"
-              style={{ transform: 'translateZ(0)', ...(contentFits ? { touchAction: 'none' } : {}) }}
-            >
-              <div ref={innerRef}>{children}</div>
-            </div>
-          </div>
-        </Drawer.Content>
-      </Drawer.Portal>
-    </Drawer.Root>
+          )}
+        </div>
+      </ModalSheet.Container>
+    </ModalSheet>
   );
 }

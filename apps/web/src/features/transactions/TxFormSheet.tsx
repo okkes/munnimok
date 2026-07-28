@@ -16,9 +16,11 @@ import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { CategoryPicker } from '@/features/categories/CategoryPicker';
 import { SplitEditorSheet } from './SplitEditorSheet';
-import { SheetContextRow } from '@/ui/SheetContextRow';
 import { primaryCatId } from '@/domain/splits';
-import { TX_TYPE_VISUAL } from './TxTypeSheet';
+import { kindOf } from '@/domain/txKind';
+import { minaSuggestedTx } from '@/features/mina/steps';
+import type { TxKind } from '@/domain/txKind';
+import { CounterpartySheet, TX_KIND_VISUAL, TxKindSheet, kindDetail } from './TxKindSheet';
 
 interface TxFormSheetProps {
   open: boolean;
@@ -29,10 +31,17 @@ interface TxFormSheetProps {
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
-/** untouched type follows the category, exactly as before (S3776: the
- *  fallback chain lives outside the component) */
-const effectiveTxType = (explicit: TxType | null, catTxTypes: readonly TxType[], isExpense: boolean): TxType =>
-  explicit ?? catTxTypes[0] ?? (isExpense ? 'expense' : 'income');
+/**
+ * The kind resolves the stored technical type (user simplification):
+ * standard by the sign toggle, transfer by the counterparty's account
+ * type (plain 'transfer' while the mandatory pick is still open),
+ * adjustment as itself.
+ */
+const typeForKind = (kind: TxKind, isExpense: boolean, counterType: TxType | null): TxType => {
+  if (kind === 'adjustment') return 'adjustment';
+  if (kind === 'transfer') return counterType ?? 'transfer';
+  return isExpense ? 'expense' : 'income';
+};
 
 type BalanceAccount = { id: string; source: string; balanceCents: number };
 
@@ -73,7 +82,210 @@ function applyManualBalanceDeltas(
   }
 }
 
-const TX_TYPES = Object.keys(TX_TYPE_VISUAL) as TxType[];
+/** the kind row + (transfers only) the mandatory counterparty row —
+ *  the manual form's face of the simplified model (S3776: out of the
+ *  main component) */
+function KindRows({
+  kind,
+  detailType,
+  counterName,
+  onKind,
+  onCounter,
+}: Readonly<{
+  kind: TxKind;
+  detailType: TxType | null;
+  counterName: string | undefined;
+  onKind: () => void;
+  onCounter: () => void;
+}>) {
+  const { t } = useLang();
+  return (
+    <>
+      {/* kind row (user simplification): standard / transfer / adjustment
+          — the third option exists exactly here, on hand-entered rows */}
+      <button
+        data-testid="txform-kind"
+        onClick={onKind}
+        className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink"
+      >
+        <Icon name={TX_KIND_VISUAL[kind].icon} size={20} color={TX_KIND_VISUAL[kind].color} />
+        <span className="flex-1">
+          {t(`tx.kind.${kind}`)}
+          {detailType && <span className="text-[12px] text-ink-4"> · {t(`tx.type.${detailType}`)}</span>}
+        </span>
+        <span className="text-xs text-ink-4">{t('tx.kindTitle')}</span>
+        <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+      </button>
+      {kind === 'transfer' && (
+        <button
+          data-testid="txform-counter"
+          onClick={onCounter}
+          className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink"
+        >
+          <Icon name="bank-transfer" size={20} color="var(--m-ink-3)" />
+          <span className={`flex-1 ${counterName ? '' : 'text-warning'}`}>
+            {counterName ?? t('tx.counterAccountPick')}
+          </span>
+          <span className="text-xs text-ink-4">{t('tx.counterparty')}</span>
+          <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+        </button>
+      )}
+    </>
+  );
+}
+
+/** what the form opens with: the edited row's values, or a blank slate
+ *  (S3776: the branch lives out of the component) */
+function initialFormState(tx: TransactionRow | undefined) {
+  if (!tx) {
+    // Mina's demo suggestion pre-fills (category included — user
+    // remark); the user edits freely and the act accepts ANY values
+    const suggested = minaSuggestedTx();
+    return {
+      amount: suggested?.amount ?? '',
+      isExpense: true,
+      merchant: suggested?.merchant ?? '',
+      date: todayIso(),
+      accountId: null,
+      catId: suggested?.catId ?? UNCATEGORIZED_ID,
+      kind: 'standard' as TxKind,
+      linkedAccountId: null,
+      recurringId: null,
+    };
+  }
+  return {
+    amount: (Math.abs(tx.amountCents) / 100).toFixed(2).replace('.', ','),
+    isExpense: tx.amountCents < 0,
+    merchant: tx.merchant,
+    date: tx.date,
+    accountId: tx.accountId,
+    catId: tx.catId ?? UNCATEGORIZED_ID,
+    kind: kindOf(tx.txType),
+    linkedAccountId: tx.linkedAccountId ?? null,
+    recurringId: tx.recurringId ?? null,
+  };
+}
+
+/** the split editor needs a SpaceTx shape; a NEW manual tx builds one
+ *  from the live form state (S3776: out of the component) */
+function buildPseudoTx(
+  tx: TransactionRow | undefined,
+  form: {
+    accountId: string;
+    date: string;
+    cents: number | null;
+    isExpense: boolean;
+    currency: string;
+    merchant: string;
+    catId: string;
+    txType: TxType;
+  },
+): never {
+  const abs = Math.abs(form.cents ?? 0);
+  return (tx ?? {
+    id: 'new',
+    spaceId: '',
+    accountId: form.accountId,
+    date: form.date,
+    amountCents: form.isExpense ? -abs : abs,
+    currency: form.currency,
+    merchant: form.merchant,
+    catId: form.catId,
+    txType: form.txType,
+    needsReview: 0,
+  }) as never;
+}
+
+/** save gate: real merchant, positive amount, an account, a date, and —
+ *  for transfers — the mandatory counterparty (user rule) */
+const isValidManualTx = (args: {
+  merchant: string;
+  cents: number | null;
+  account: string | null;
+  date: string;
+  counterMissing: boolean;
+}): boolean => !!args.merchant.trim() && args.cents !== null && args.cents > 0 && !!args.account && !!args.date && !args.counterMissing;
+
+/** the row the manual form writes (S3776: field assembly out of the
+ *  component). Explicit nulls clear previously set links on edit —
+ *  undefined would drop out of the op and leave the old value standing. */
+function manualTxFields(args: {
+  tx: TransactionRow | undefined;
+  accountId: string;
+  date: string;
+  signed: number;
+  currency: string;
+  merchant: string;
+  catId: string;
+  txType: TxType;
+  stagedSplits: TxSplit[] | null;
+  linkedAccountId: string | null;
+  recurringId: string | null;
+}): Partial<Omit<TransactionRow, 'id' | 'spaceId'>> {
+  return {
+    accountId: args.accountId,
+    date: args.date,
+    amountCents: args.signed,
+    currency: args.currency,
+    merchant: args.merchant,
+    catId: args.catId,
+    txType: args.txType,
+    needsReview: 0 as const,
+    // splits staged in the unified editor travel with the write
+    ...(args.stagedSplits?.length ? { splits: args.stagedSplits } : {}),
+    ...(args.linkedAccountId || args.tx?.linkedAccountId ? { linkedAccountId: args.linkedAccountId ?? (null as never) } : {}),
+    ...(args.recurringId || args.tx?.recurringId ? { recurringId: args.recurringId ?? (null as never) } : {}),
+  };
+}
+
+const optionRow = (selected: boolean, onClick: () => void, content: React.ReactNode, testId: string) => (
+  <button
+    key={testId}
+    data-testid={testId}
+    onClick={onClick}
+    className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-4 py-3 text-left last:border-0"
+  >
+    {content}
+    {selected && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
+  </button>
+);
+
+/** the stacked recurring-link picker (S3776: out of the main form) */
+function RecurringPickSheet({
+  open,
+  onOpenChange,
+  recurrings,
+  recurringId,
+  onPick,
+}: Readonly<{
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  recurrings: readonly { id: string; name: string }[];
+  recurringId: string | null;
+  onPick: (id: string | null) => void;
+}>) {
+  const { t } = useLang();
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange} title={t('recurring.linkTitle')} size="form">
+      <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="txform-recurring-options">
+        {optionRow(
+          !recurringId,
+          () => onPick(null),
+          <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{t('recurring.linkNone')}</span>,
+          'txform-recurring-none',
+        )}
+        {recurrings.map((r) =>
+          optionRow(
+            recurringId === r.id,
+            () => onPick(r.id),
+            <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{r.name}</span>,
+            `txform-recurring-${r.id}`,
+          ),
+        )}
+      </div>
+    </Sheet>
+  );
+}
 
 /**
  * Create or edit a manual transaction. Bank-imported rows (importRef set)
@@ -97,12 +309,12 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
   // counterparty live INSIDE the category sheet now)
   const [splitOpen, setSplitOpen] = useState(false);
   const [stagedSplits, setStagedSplits] = useState<TxSplit[] | null>(null);
-  // the quiet extras (user request): explicit type, counter account,
-  // recurring link — each hidden while it has nothing to offer
-  const [txType, setTxType] = useState<TxType | null>(null);
+  // the simplified kind (user redesign): standard / transfer / adjustment;
+  // a transfer refuses to save without its counterparty
+  const [kind, setKind] = useState<TxKind>('standard');
   const [linkedAccountId, setLinkedAccountId] = useState<string | null>(null);
   const [recurringId, setRecurringId] = useState<string | null>(null);
-  const [typeOpen, setTypeOpen] = useState(false);
+  const [kindOpen, setKindOpen] = useState(false);
   const [counterOpen, setCounterOpen] = useState(false);
   const [recurringOpen, setRecurringOpen] = useState(false);
 
@@ -114,113 +326,75 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
   const writable = useMemo(() => (accounts ?? []).filter((a) => a.source === 'manual'), [accounts]);
   const recurrings = useRecurrings();
 
-  // (re)fill when opened
+  // (re)fill when opened — keyed on the row's ID, not the object:
+  // background writes (sync, migrations) re-emit the same row as a
+  // fresh object every cycle on the native SQL backend, and an
+  // identity-keyed reseed overwrote what the user was typing (iOS ss)
   useEffect(() => {
     if (!open) return;
-    if (tx) {
-      setAmount((Math.abs(tx.amountCents) / 100).toFixed(2).replace('.', ','));
-      setIsExpense(tx.amountCents < 0);
-      setMerchant(tx.merchant);
-      setDate(tx.date);
-      setAccountId(tx.accountId);
-      setCatId(tx.catId ?? UNCATEGORIZED_ID);
-      setTxType(tx.txType);
-      setLinkedAccountId(tx.linkedAccountId ?? null);
-      setRecurringId(tx.recurringId ?? null);
-    } else {
-      setAmount('');
-      setIsExpense(true);
-      setMerchant('');
-      setDate(todayIso());
-      setAccountId(null);
-      setCatId(UNCATEGORIZED_ID);
-      setTxType(null);
-      setLinkedAccountId(null);
-      setRecurringId(null);
-    }
+    const initial = initialFormState(tx);
+    setAmount(initial.amount);
+    setIsExpense(initial.isExpense);
+    setMerchant(initial.merchant);
+    setDate(initial.date);
+    setAccountId(initial.accountId);
+    setCatId(initial.catId);
+    setKind(initial.kind);
+    setLinkedAccountId(initial.linkedAccountId);
+    setRecurringId(initial.recurringId);
     setStagedSplits(tx?.splits ?? null);
-  }, [open, tx]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, tx?.id]);
 
   const cat = cats.byId(catId);
   const effectiveAccount = accountId ?? writable[0]?.id ?? null;
   const cents = parseCents(amount);
-  const valid = !!merchant.trim() && cents !== null && cents > 0 && !!effectiveAccount && !!date;
-  const effectiveType: TxType = effectiveTxType(txType, cat.txTypes, isExpense);
-  const typeVisual = TX_TYPE_VISUAL[effectiveType];
-  // counter candidates: every visible account except the owning one
-  const counterCandidates = useMemo(
-    () => (accounts ?? []).filter((a) => a.id !== effectiveAccount),
-    [accounts, effectiveAccount],
-  );
-  const linkedAccount = counterCandidates.find((a) => a.id === linkedAccountId);
+  const linkedAccount = (accounts ?? []).find((a) => a.id === linkedAccountId);
+  const effectiveType: TxType = typeForKind(kind, isExpense, linkedAccount ? typeForLinkedAccount(linkedAccount.type) : null);
+  // a transfer without its counterparty is unrepresentable (user rule)
+  const counterMissing = kind === 'transfer' && !linkedAccount;
+  const kindDetailType = kindDetail(effectiveType);
+  const valid = isValidManualTx({ merchant, cents, account: effectiveAccount, date, counterMissing });
 
-  const pickCounter = (id: string | null) => {
-    setLinkedAccountId(id);
-    // the account suggests the type (same rule as the detail screen);
-    // clearing the link leaves the type as-is
-    if (id) {
-      const account = counterCandidates.find((a) => a.id === id);
-      if (account) setTxType(typeForLinkedAccount(account.type));
-    }
-    setCounterOpen(false);
-  };
-
+  const formCurrency = accounts?.find((a) => a.id === effectiveAccount)?.currency ?? 'EUR';
   // the editor needs a SpaceTx shape; a NEW manual tx builds it from the
   // live form state (controlled mode only reads amount/cat/currency)
-  const draftAbsCents = Math.abs(cents ?? 0);
-  const pseudoTx = (tx ?? {
-    id: 'new',
-    spaceId: '',
+  const pseudoTx = buildPseudoTx(tx, {
     accountId: effectiveAccount ?? '',
     date,
-    amountCents: isExpense ? -draftAbsCents : draftAbsCents,
-    currency: accounts?.find((a) => a.id === effectiveAccount)?.currency ?? 'EUR',
+    cents,
+    isExpense,
+    currency: formCurrency,
     merchant: merchant.trim(),
     catId,
     txType: effectiveType,
-    needsReview: 0,
-  }) as never;
+  });
 
   const save = () => {
     if (!valid || !effectiveAccount || cents === null) return;
     const signed = isExpense ? -Math.abs(cents) : Math.abs(cents);
     applyManualBalanceDeltas(repo, spaceId, manualBalanceDeltas(accounts, tx, effectiveAccount, signed));
     void logActivity(store, repo, spaceId, tx ? 'txEdit' : 'txAdd', merchant.trim());
-    void repo.upsert('transaction', spaceId, tx?.id ?? repo.newId(), {
-      accountId: effectiveAccount,
-      date,
-      amountCents: signed,
-      currency: accounts?.find((a) => a.id === effectiveAccount)?.currency ?? 'EUR',
-      merchant: merchant.trim(),
-      catId,
-      txType: effectiveType,
-      needsReview: 0,
-      // splits staged in the unified editor travel with the write
-      ...(stagedSplits?.length ? { splits: stagedSplits } : {}),
-      // explicit null clears a previously set link on edit (undefined
-      // would drop out of the op and leave the old value standing)
-      ...(linkedAccountId || tx?.linkedAccountId ? { linkedAccountId: linkedAccountId ?? (null as never) } : {}),
-      ...(recurringId || tx?.recurringId ? { recurringId: recurringId ?? (null as never) } : {}),
-    });
+    void repo.upsert(
+      'transaction',
+      spaceId,
+      tx?.id ?? repo.newId(),
+      manualTxFields({
+        tx,
+        accountId: effectiveAccount,
+        date,
+        signed,
+        currency: formCurrency,
+        merchant: merchant.trim(),
+        catId,
+        txType: effectiveType,
+        stagedSplits,
+        linkedAccountId,
+        recurringId,
+      }),
+    );
     onOpenChange(false);
   };
-
-  const optionRow = (
-    selected: boolean,
-    onClick: () => void,
-    content: React.ReactNode,
-    testId: string,
-  ) => (
-    <button
-      key={testId}
-      data-testid={testId}
-      onClick={onClick}
-      className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-4 py-3 text-left last:border-0"
-    >
-      {content}
-      {selected && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
-    </button>
-  );
 
   return (
     <>
@@ -315,8 +489,15 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
             </p>
           )}
 
-          {/* category row — opens the SAME unified editor as review:
-              type + counterparty live inside it (user request) */}
+          <KindRows
+            kind={kind}
+            detailType={kindDetailType}
+            counterName={linkedAccount?.name}
+            onKind={() => setKindOpen(true)}
+            onCounter={() => setCounterOpen(true)}
+          />
+
+          {/* category row — opens the SAME unified editor as review */}
           <button
             data-testid="txform-category"
             onClick={() => setSplitOpen(true)}
@@ -350,71 +531,38 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
         )}
       </Sheet>
 
-      {/* stacked: transaction type */}
-      <Sheet open={typeOpen} onOpenChange={setTypeOpen} title={t('tx.type')} size="form">
-        <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="txform-type-options">
-          {TX_TYPES.map((type) =>
-            optionRow(
-              effectiveType === type,
-              () => {
-                setTxType(type);
-                setTypeOpen(false);
-              },
-              <>
-                <Icon name={TX_TYPE_VISUAL[type].icon} size={20} color={TX_TYPE_VISUAL[type].color} />
-                <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{t(`tx.type.${type}`)}</span>
-              </>,
-              `txform-type-${type}`,
-            ),
-          )}
-        </div>
-      </Sheet>
-
-      {/* stacked: counter account */}
-      <Sheet open={counterOpen} onOpenChange={setCounterOpen} title={t('tx.counterparty')} size="form">
-        <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="txform-counter-options">
-          {optionRow(
-            !linkedAccountId,
-            () => pickCounter(null),
-            <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{t('recurring.linkNone')}</span>,
-            'txform-counter-none',
-          )}
-          {counterCandidates.map((a) =>
-            optionRow(
-              linkedAccountId === a.id,
-              () => pickCounter(a.id),
-              <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{a.name}</span>,
-              `txform-counter-${a.id}`,
-            ),
-          )}
-        </div>
-      </Sheet>
+      {/* stacked: the kind picker — a transfer immediately continues
+          into the mandatory counterparty pick */}
+      <TxKindSheet
+        open={kindOpen}
+        onOpenChange={setKindOpen}
+        current={kind}
+        allowAdjustment
+        onPick={(next) => {
+          setKind(next);
+          if (next === 'transfer') setCounterOpen(true);
+          else setLinkedAccountId(null);
+        }}
+      />
+      <CounterpartySheet
+        open={counterOpen}
+        onOpenChange={setCounterOpen}
+        excludeAccountId={effectiveAccount ?? ''}
+        currentLinkedId={linkedAccountId ?? undefined}
+        onChoose={(picked) => setLinkedAccountId(picked.id)}
+      />
 
       {/* stacked: recurring cost */}
-      <Sheet open={recurringOpen} onOpenChange={setRecurringOpen} title={t('recurring.linkTitle')} size="form">
-        <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="txform-recurring-options">
-          {optionRow(
-            !recurringId,
-            () => {
-              setRecurringId(null);
-              setRecurringOpen(false);
-            },
-            <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{t('recurring.linkNone')}</span>,
-            'txform-recurring-none',
-          )}
-          {(recurrings ?? []).map((r) =>
-            optionRow(
-              recurringId === r.id,
-              () => {
-                setRecurringId(r.id);
-                setRecurringOpen(false);
-              },
-              <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{r.name}</span>,
-              `txform-recurring-${r.id}`,
-            ),
-          )}
-        </div>
-      </Sheet>
+      <RecurringPickSheet
+        open={recurringOpen}
+        onOpenChange={setRecurringOpen}
+        recurrings={recurrings ?? []}
+        recurringId={recurringId}
+        onPick={(id) => {
+          setRecurringId(id);
+          setRecurringOpen(false);
+        }}
+      />
 
       {/* the unified category editor (same component as review) — type
           and counterparty ride along as context rows */}
@@ -435,26 +583,6 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
           setStagedSplits(null);
           setCatId(picked);
         }}
-        header={
-          <>
-            <SheetContextRow
-              testId="txform-counter"
-              icon="swap-horizontal"
-              iconColor="var(--m-ink-3)"
-              value={linkedAccount?.name ?? t('tx.linkedAccountNone')}
-              caption={t('tx.counterAccount')}
-              onClick={() => setCounterOpen(true)}
-            />
-            <SheetContextRow
-              testId="txform-type"
-              icon={typeVisual.icon}
-              iconColor={typeVisual.color}
-              value={t(`tx.type.${effectiveType}`)}
-              caption={t('tx.type')}
-              onClick={() => setTypeOpen(true)}
-            />
-          </>
-        }
       />
 
       <CategoryPicker

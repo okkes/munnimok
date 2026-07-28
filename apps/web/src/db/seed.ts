@@ -1,11 +1,12 @@
 import { CATEGORY_BY_ID } from '@/domain/categories';
+import { kindOf } from '@/domain/txKind';
 import type { TxType } from './types';
 import type { Repo } from './repo';
 import { DEMO_ACCOUNTS, DEMO_TXS } from './demo-data';
 
 export const DEMO_SPACE_ID = 'demo_space';
 // bump when the demo dataset changes so returning demo users reseed
-const SEED_FLAG = 'seeded_demo_v3';
+const SEED_FLAG = 'seeded_demo_v4';
 
 // local date, matching the local-time period math in domain/periods.ts —
 // a daysAgo:0 row must always fall inside the current local budget period
@@ -81,6 +82,7 @@ export async function seedDemoIfNeeded(repo: Repo): Promise<void> {
   });
 
   for (const tx of DEMO_TXS) {
+    const txType = txTypeFor(tx.cat);
     await repo.upsert('transaction', DEMO_SPACE_ID, tx.id, {
       accountId: tx.account,
       date: isoDaysAgo(tx.daysAgo),
@@ -91,7 +93,10 @@ export async function seedDemoIfNeeded(repo: Repo): Promise<void> {
       description: tx.desc,
       catId: tx.cat,
       splits: tx.splits,
-      txType: txTypeFor(tx.cat),
+      txType,
+      // kind model: a transfer-family row always names its counterparty —
+      // the demo's savings transfers move demo_main → demo_save
+      ...(kindOf(txType) === 'transfer' ? { linkedAccountId: 'demo_save' } : {}),
       needsReview: tx.needsReview ? 1 : 0,
       reimbursements: tx.reimbursements?.map((r) => ({ txId: r.txId, amountCents: r.amountCents })),
     });

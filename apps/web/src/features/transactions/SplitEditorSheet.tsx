@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import type { ReactNode } from 'react';
 import { useSpaceTransactions, useTxTransform } from '@/application/transactions';
 import type { SpaceTx } from '@/application/transactions';
 import { useLang } from '@/i18n';
@@ -38,6 +37,11 @@ interface Row {
 let rowCounter = 0;
 const newRow = (catId: string, amount: string): Row => ({ key: `r${rowCounter++}`, catId, amount });
 
+/** categories the OTHER rows already own — hidden in the picker; a
+ *  split across "Rent" and "Rent" is never meaningful (user ss) */
+const excludedCatIds = (rows: Row[], pickerFor: number | null): string[] | undefined =>
+  pickerFor === null ? undefined : rows.filter((x, j) => j !== pickerFor && x.catId !== UNCATEGORIZED_ID).map((x) => x.catId);
+
 const toText = (cents: number) => (cents / 100).toFixed(2).replace('.', ',');
 const toPctText = (pct: number) => String(pct).replace('.', ',');
 const parsePct = (text: string): number => {
@@ -61,7 +65,6 @@ export function SplitEditorSheet({
   direction,
   onApplySingle,
   reason,
-  header,
 }: Readonly<{
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -86,9 +89,6 @@ export function SplitEditorSheet({
   onApplySingle?: (catId: string) => void;
   /** why the current category was suggested (review card) — shown inline */
   reason?: string | null;
-  /** grouped context rows (review: counterparty + type) — rendered under
-   *  the reason, above the split rows, so related decisions sit together */
-  header?: ReactNode;
 }>) {
   const { t, lang } = useLang();
   const transform = useTxTransform();
@@ -127,9 +127,12 @@ export function SplitEditorSheet({
       // start from the current category + an empty second row
       setRows([newRow(tx.catId ?? UNCATEGORIZED_ID, toText(Math.abs(referenceCents))), newRow(UNCATEGORIZED_ID, '0,00')]);
     }
-    // deliberately only on open: the sheet owns its rows while open
+    // deliberately only on open (or a card swap): the sheet owns its
+    // rows while open. Keyed by tx.id, NOT the object — background
+    // writes (sync, migrations) re-emit the same row as a fresh object
+    // and must never wipe rows the user is mid-editing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, tx]);
+  }, [open, tx.id]);
 
   const splits: TxSplit[] =
     mode === 'pct'
@@ -170,7 +173,15 @@ export function SplitEditorSheet({
         }),
       );
     } else {
-      setRows((r) => r.map((row) => ({ ...row, amount: toText(Math.round((abs * parsePct(row.amount)) / 100)) })));
+      // pct → euros must land EXACTLY on the total: rounding each row on
+      // its own left a ±1 cent remainder (50/50 of €34.99 → "€0.01 too
+      // much", user ss). resolveSplitsFor is the same partition the save
+      // path stores — tabbing back shows precisely what saving would.
+      setRows((r) => {
+        const pctSplits = r.map((row) => ({ catId: row.catId, amountCents: 0, pct: parsePct(row.amount) }));
+        const resolved = resolveSplitsFor(abs, pctSplits);
+        return r.map((row, i) => ({ ...row, amount: toText(Math.abs(resolved[i]?.amountCents ?? 0)) }));
+      });
     }
   };
 
@@ -253,7 +264,6 @@ export function SplitEditorSheet({
               {reason}
             </div>
           )}
-          {header}
           {/* exact euros for one charge, percentages when the shape repeats */}
           <div className="flex gap-1.5">
             <Chip className="flex-1" testId="split-mode-amount" selected={mode === 'amount'} onClick={() => switchMode('amount')}>
@@ -359,6 +369,7 @@ export function SplitEditorSheet({
         // direction's categories before one is picked (old form behavior)
         txType={direction ? undefined : (txType ?? tx.txType)}
         selectedId={pickerFor === null ? undefined : rows[pickerFor]?.catId}
+        excludeIds={excludedCatIds(rows, pickerFor)}
         onPick={(catId) => {
           if (pickerFor !== null) setRows((r) => r.map((x, j) => (j === pickerFor ? { ...x, catId } : x)));
         }}

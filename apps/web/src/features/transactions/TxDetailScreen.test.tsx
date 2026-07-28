@@ -55,16 +55,17 @@ describe('TxDetailScreen (demo identity)', () => {
     expect(await screen.findByTestId('screen-tx-detail')).toBeTruthy();
     expect((await screen.findByTestId('tx-detail-amount')).textContent).toMatch(/€/);
     expect(screen.getByTestId('tx-detail-category-row')).toBeTruthy();
-    expect(screen.getByTestId('tx-detail-type-row')).toBeTruthy();
+    expect(screen.getByTestId('tx-detail-kind-row')).toBeTruthy();
   });
 
-  it('a manual transaction deletes with a two-tap confirm (user request)', async () => {
+  it('a manual transaction deletes through the confirm sheet — no cooldown (user request)', async () => {
     renderApp('/transactions/dm6'); // demo rows carry no importRef -> deletable
     await screen.findByTestId('screen-tx-detail');
-    const del = await screen.findByTestId('tx-detail-delete');
-    fireEvent.click(del); // first tap arms
-    await waitFor(() => expect(del.textContent).not.toBe(''));
-    fireEvent.click(screen.getByTestId('tx-detail-delete')); // second tap deletes
+    fireEvent.click(await screen.findByTestId('tx-detail-delete'));
+    // the aligned danger sheet, instantly armed (cooldown 0)
+    const confirm = (await screen.findByTestId('tx-delete-confirm')) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(false);
+    fireEvent.click(confirm);
     // back on the list, the row is gone (tombstoned)
     const list = await screen.findByTestId('tx-list');
     await waitFor(() => expect(list.querySelector('[data-testid="tx-row-dm6"]')).toBeNull(), { timeout: 5000 });
@@ -130,18 +131,22 @@ describe('counterparty account number on the detail screen', () => {
     db.close();
   };
 
-  it('an unknown counterparty IBAN renders inside the editable row (user rule: pickable)', async () => {
+  it('an unknown counterparty IBAN shows as a bank fact; only a transfer kind edits it', async () => {
     renderApp('/home'); // seed first, then navigate via a fresh render
     await screen.findByTestId('screen-home');
     await seedTx('NL99ELDR0000000042', 'tx-cp1');
     cleanup();
     renderApp('/transactions/tx-cp1');
-    const row = await screen.findByTestId('tx-detail-counterparty-edit');
+    const row = (await screen.findByTestId('tx-detail-counterparty-edit')) as HTMLButtonElement;
     expect(row.textContent).toContain('NL99ELDR0000000042');
-    // tapping opens the account picker DIRECTLY (user report: the
-    // combined type sheet surprised here)
-    fireEvent.click(row);
-    expect(await screen.findByTestId('txtype-accounts')).toBeTruthy();
+    // a standard expense keeps the row read-only (user simplification:
+    // counterparty is a transfer concept — the IBAN stays visible)
+    expect(row.disabled).toBe(true);
+    // choosing the Transfer kind walks into the mandatory counterparty pick
+    fireEvent.click(screen.getByTestId('tx-detail-kind-row'));
+    await screen.findByTestId('txkind-options');
+    fireEvent.click(screen.getByTestId('txkind-transfer'));
+    expect(await screen.findByTestId('counter-accounts')).toBeTruthy();
   }, 15_000);
 
   it('a counterparty matching an own account becomes a door with account info', async () => {
@@ -167,45 +172,52 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     indexedDB.deleteDatabase('munni_demo');
   });
 
-  it('changing to a conflicting type clears the category and flags review', async () => {
+  it('a transfer to the savings account derives Saving and clears the conflicting category', async () => {
     renderApp('/transactions/dm6');
-    fireEvent.click(await screen.findByTestId('tx-detail-type-row'));
-    await screen.findByTestId('txtype-options');
-    fireEvent.click(screen.getByTestId('txtype-income'));
-    // groceries only allows expense -> category falls back to uncategorized
+    // groceries expense → kind Transfer → the counterparty is mandatory
+    fireEvent.click(await screen.findByTestId('tx-detail-kind-row'));
+    await screen.findByTestId('txkind-options');
+    fireEvent.click(screen.getByTestId('txkind-transfer'));
+    fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
+    // the savings counterparty derives Saving; groceries only speaks
+    // expense → category falls back to uncategorized for review
     await waitFor(() => {
-      expect(screen.getByTestId('tx-detail-type-row').textContent).toContain('Income');
+      expect(screen.getByTestId('tx-detail-kind-row').textContent).toContain('Saving');
       expect(screen.getByTestId('tx-detail-category-row').textContent).toContain('Uncategorized');
     });
-  });
-
-  it('linking a savings counter-account sets the type as an editable default', async () => {
-    renderApp('/transactions/dm6');
-    // the counterparty row opens the account picker DIRECTLY now
-    fireEvent.click(await screen.findByTestId('tx-detail-counterparty-edit'));
-    fireEvent.click(await screen.findByTestId('txtype-linked-demo_save'));
-    await waitFor(() => expect(screen.getByTestId('tx-detail-type-row').textContent).toContain('Saving'));
-
-    // reopen: the account only SUGGESTS the type (user revision) — the
-    // manual list stays usable and overriding keeps the link
-    fireEvent.click(screen.getByTestId('tx-detail-type-row'));
-    expect(await screen.findByTestId('txtype-default-note')).toBeTruthy();
-    expect((screen.getByTestId('txtype-expense') as HTMLButtonElement).disabled).toBe(false);
-    fireEvent.click(screen.getByTestId('txtype-transfer'));
-    await waitFor(() => expect(screen.getByTestId('tx-detail-type-row').textContent).toContain('Transfer'));
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
       const tx = await db.transactions.get('dm6');
-      expect(tx?.txType).toBe('transfer');
-      expect(tx?.linkedAccountId).toBe('demo_save'); // link survived
+      expect(tx?.txType).toBe('saving');
+      expect(tx?.linkedAccountId).toBe('demo_save');
     });
     db.close();
+  }, 15_000);
 
-    // unlinking (via the counterparty row) clears the suggestion note
-    fireEvent.click(screen.getByTestId('tx-detail-counterparty-edit'));
-    fireEvent.click(await screen.findByTestId('txtype-linked-none'));
-    fireEvent.click(screen.getByTestId('tx-detail-type-row'));
-    await waitFor(() => expect(screen.queryByTestId('txtype-default-note')).toBeNull());
+  it('back to Standard: the sign resolves the type and the counterparty clears', async () => {
+    renderApp('/transactions/dm6');
+    fireEvent.click(await screen.findByTestId('tx-detail-kind-row'));
+    await screen.findByTestId('txkind-options');
+    fireEvent.click(screen.getByTestId('txkind-transfer'));
+    fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => expect((await db.transactions.get('dm6'))?.txType).toBe('saving'));
+
+    // standard on a negative amount = expense again, link gone
+    fireEvent.click(screen.getByTestId('tx-detail-kind-row'));
+    await screen.findByTestId('txkind-options');
+    fireEvent.click(screen.getByTestId('txkind-standard'));
+    await waitFor(async () => {
+      const tx = await db.transactions.get('dm6');
+      expect(tx?.txType).toBe('expense');
+      expect(tx?.linkedAccountId).toBeFalsy();
+    });
+    // demo rows are hand-shaped (no importRef) → Adjustment is offered
+    fireEvent.click(screen.getByTestId('tx-detail-kind-row'));
+    await screen.findByTestId('txkind-options');
+    fireEvent.click(screen.getByTestId('txkind-adjustment'));
+    await waitFor(async () => expect((await db.transactions.get('dm6'))?.txType).toBe('adjustment'));
+    db.close();
   }, 15_000);
 });
 
@@ -218,12 +230,13 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
 
   it('links a credit with a clamped partial amount, then unlinks it', async () => {
     renderApp('/transactions/dm6');
+    // finding the counterpart lives on its own full screen now (redesign)
     fireEvent.click(await screen.findByTestId('reimb-add'));
 
     // pick the salary credit; the prefill is clamped to the expense (52,40)
-    const picker = await screen.findByTestId('reimb-picker');
-    await waitFor(() => expect(picker.querySelector('[data-testid^="reimb-pick-"]')).toBeTruthy());
-    fireEvent.click(picker.querySelector('[data-testid^="reimb-pick-"]')!);
+    const picker = await screen.findByTestId('reimb-link-list');
+    await waitFor(() => expect(picker.querySelector('[data-testid^="reimb-pick-"] [data-testid^="tx-row-"]')).toBeTruthy());
+    fireEvent.click(picker.querySelector('[data-testid^="reimb-pick-"] [data-testid^="tx-row-"]')!);
     const amountInput = (await screen.findByTestId('reimb-amount')) as HTMLInputElement;
     expect(amountInput.value).toBe('52,40');
 
@@ -281,9 +294,9 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
 
     renderApp('/transactions/dm1');
     fireEvent.click(await screen.findByTestId('reimb-add-out'));
-    const picker = await screen.findByTestId('reimb-picker');
-    await waitFor(() => expect(picker.querySelector('[data-testid^="reimb-pick-"]')).toBeTruthy());
-    fireEvent.click(picker.querySelector('[data-testid^="reimb-pick-"]')!);
+    const picker = await screen.findByTestId('reimb-link-list');
+    await waitFor(() => expect(picker.querySelector('[data-testid^="reimb-pick-"] [data-testid^="tx-row-"]')).toBeTruthy());
+    fireEvent.click(picker.querySelector('[data-testid^="reimb-pick-"] [data-testid^="tx-row-"]')!);
     // the prefill is already clamped to the expense's open remainder —
     // save it as-is (which expense is "most recent" is demo-data detail)
     await screen.findByTestId('reimb-amount');
@@ -524,12 +537,27 @@ describe('detail sections customize (user request)', () => {
     renderApp('/transactions/cust-a');
     await screen.findByTestId('tx-detail-notes');
 
+    // customize is its own screen now (user request): toggle there,
+    // return to the detail to see the section gone — then restore it
+    const notesHidden = async () =>
+      ((await db.spaces.get(DEMO_SPACE_ID))?.txDetailBlocks ?? []).some((b) => b.id === 'notes' && b.hidden === 1);
+
     fireEvent.click(screen.getByTestId('tx-detail-customize'));
     await screen.findByTestId('tx-customize-list');
     fireEvent.click(screen.getByTestId('tx-block-toggle-notes'));
+    // the write must LAND before unmounting (in-flight puts die with the app)
+    await waitFor(async () => expect(await notesHidden()).toBe(true), { timeout: 5000 });
+    cleanup();
+    renderApp('/transactions/cust-a');
+    await screen.findByTestId('screen-tx-detail');
     await waitFor(() => expect(screen.queryByTestId('tx-detail-notes')).toBeNull());
 
+    fireEvent.click(screen.getByTestId('tx-detail-customize'));
+    await screen.findByTestId('tx-customize-list');
     fireEvent.click(screen.getByTestId('tx-block-toggle-notes'));
+    await waitFor(async () => expect(await notesHidden()).toBe(false), { timeout: 5000 });
+    cleanup();
+    renderApp('/transactions/cust-a');
     await screen.findByTestId('tx-detail-notes');
     db.close();
   }, 15_000);

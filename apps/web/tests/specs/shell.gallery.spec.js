@@ -76,10 +76,13 @@ for (const V of VARIANTS) {
     await page.waitForSelector('[data-testid="screen-onboarding"]');
     await page.click('[data-testid="onboarding-save"]');
     await page.click('[data-testid="onboarding-lock-later"]');
+    // Mina owns the first-run now — skipping creates the default space
+    await page.click('[data-testid="mina-skip"]');
+    await page.click('[data-testid="mina-skip-confirm"]');
+    await page.waitForSelector('[data-testid="mina-tutorial"]', { state: 'detached' });
     await page.waitForSelector('[data-testid="tab-home"]');
-    // personal space carries the profile name
     await gotoSpaces(page);
-    await expect(page.locator('[data-testid="screen-spaces"]')).toContainText('Okkes Offline');
+    await expect(page.locator('[data-testid="screen-spaces"]')).toContainText('Private');
     // add a cash account, then a manual transaction (zero network)
     await gotoGlobalSettings(page);
     await page.click('[data-testid="settings-accounts-row"]');

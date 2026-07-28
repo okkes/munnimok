@@ -11,8 +11,11 @@ import { AppLayout } from './AppLayout';
 import { readSessionIdentity } from './session';
 import { LoginScreen } from '@/features/auth/LoginScreen';
 import { HomeScreen } from '@/features/home/HomeScreen';
+import { HomeCustomizeScreen } from '@/features/home/HomeCustomizeScreen';
+import { TxDetailCustomizeScreen } from '@/features/transactions/TxDetailCustomizeScreen';
 import { TransactionsScreen } from '@/features/transactions/TransactionsScreen';
 import { TxDetailScreen } from '@/features/transactions/TxDetailScreen';
+import { ReimburseLinkScreen } from '@/features/transactions/ReimburseLinkScreen';
 import { SpacesScreen } from '@/features/spaces/SpacesScreen';
 import { SpaceSettingsScreen } from '@/features/spaces/SpaceSettingsScreen';
 import { PeriodSettingsScreen } from '@/features/spaces/PeriodSettingsScreen';
@@ -83,6 +86,10 @@ const indexRoute = createRoute({
 });
 
 const homeRoute = createRoute({ getParentRoute: () => appRoute, path: '/home', component: HomeScreen });
+// customize flows are full screens (user request: dragging on a bottom
+// sheet felt awkward; the sheet transform also sent the drag ghost adrift)
+const homeCustomizeRoute = createRoute({ getParentRoute: () => appRoute, path: '/home/customize', component: HomeCustomizeScreen });
+const txCustomizeRoute = createRoute({ getParentRoute: () => appRoute, path: '/tx-customize', component: TxDetailCustomizeScreen });
 // list routes render the master-detail layout: the list stays mounted
 // while a detail child slides in beside it at lg (animated, §4.2)
 const transactionsRoute = createRoute({
@@ -94,6 +101,14 @@ const txDetailRoute = createRoute({
   getParentRoute: () => transactionsRoute,
   path: '$txId',
   component: TxDetailScreen,
+});
+// full-screen counterpart picker (user redesign 2026-07-28) — a sibling
+// of the detail under /transactions, so it owns the detail pane on
+// desktop and the whole viewport on mobile
+const reimburseLinkRoute = createRoute({
+  getParentRoute: () => transactionsRoute,
+  path: '$txId/link-reimb',
+  component: ReimburseLinkScreen,
 });
 const recurringRoute = createRoute({
   getParentRoute: () => appRoute,
@@ -200,7 +215,9 @@ export const routeTree = rootRoute.addChildren([
   appRoute.addChildren([
     indexRoute,
     homeRoute,
-    transactionsRoute.addChildren([txDetailRoute]),
+    homeCustomizeRoute,
+    txCustomizeRoute,
+    transactionsRoute.addChildren([txDetailRoute, reimburseLinkRoute]),
     recurringRoute.addChildren([recurringDetailRoute]),
     recurringSuggestionsRoute,
     spacesRoute,

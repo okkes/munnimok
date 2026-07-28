@@ -84,3 +84,30 @@ describe('reviewDraft', () => {
     expect(cleared.catId).toBe('groceries');
   });
 });
+
+describe('withKind (simplified kinds)', () => {
+  it('standard resolves by sign and drops the counterparty', async () => {
+    const { withKind } = await import('./reviewDraft');
+    const linked = withLinkedAccount(initDraft(expenseTx, 'groceries', catalog), { id: 'a-save', type: 'savings' }, catalog);
+    expect(linked.txType).toBe('saving');
+    expect(withKind(linked, 'standard', -1000, catalog)).toMatchObject({ txType: 'expense', linkedAccountId: undefined });
+    expect(withKind(linked, 'standard', 1000, catalog).txType).toBe('income');
+  });
+
+  it('transfer keeps a linked counterparty and its derived member; unlinked starts plain', async () => {
+    const { withKind } = await import('./reviewDraft');
+    const linked = withLinkedAccount(initDraft(expenseTx, 'groceries', catalog), { id: 'a-save', type: 'savings' }, catalog);
+    expect(withKind(linked, 'transfer', -1000, catalog).txType).toBe('saving');
+    expect(withKind(initDraft(expenseTx, 'groceries', catalog), 'transfer', -1000, catalog)).toMatchObject({
+      txType: 'transfer',
+      catId: undefined, // groceries does not speak transfer — ask again
+    });
+  });
+
+  it('adjustment clears the counterparty and confirms without a real category', async () => {
+    const { withKind } = await import('./reviewDraft');
+    const adjusted = withKind(initDraft(expenseTx, 'groceries', catalog), 'adjustment', -1000, catalog);
+    expect(adjusted).toMatchObject({ txType: 'adjustment', linkedAccountId: undefined });
+    expect(draftReady({ ...adjusted, catId: 'uncategorized' })).toBe(true);
+  });
+});

@@ -183,8 +183,8 @@
     letter-spacing: -0.01em;
   }
   /* sheet-gesture plan RC1 (2026-07-24): on touch devices, long-press
-     text selection STARTS a selection that blocks every sheet drag (vaul
-     refuses to drag while text is highlighted) — and hold-to-copy is
+     text selection STARTS a selection that fights every sheet drag —
+     and hold-to-copy is
      unwanted on most UI text anyway (user ruling). Opt back in with
      `select-text` exactly where copying matters (IDs, IBANs, bank text).
      Inputs keep native selection; desktop (fine pointers) is untouched. */
@@ -273,8 +273,11 @@
 }
 
 /* keyboard focus (redesign U5): a visible ring for tab users only —
-   touch and mouse never see it */
-:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+   touch and mouse never see it. Editable fields are EXCLUDED: unlike
+   buttons they match :focus-visible on plain touch focus too, which
+   painted a green ring on every tapped input and clipped awkwardly at
+   sheet edges (user rule 2026-07-28: the caret is the focus signal) */
+:where(button, a, [tabindex]):focus-visible {
   outline: 2px solid var(--m-accent);
   outline-offset: 2px;
 }
@@ -314,3 +317,14 @@
   animation: m-hold-grow 0.45s linear forwards;
   z-index: -1;
 }
+
+/* Mina tutorial: the target breathes in the brand mint — a wave of
+   light instead of a heavy dim (user design ruling) */
+@keyframes m-mina-glow {
+  0%, 100% { box-shadow: 0 0 4px 1px color-mix(in srgb, var(--m-accent) 45%, transparent), 0 0 0 2px var(--m-accent); }
+  50% { box-shadow: 0 0 24px 9px color-mix(in srgb, var(--m-accent) 85%, transparent), 0 0 0 2px var(--m-accent); }
+}
+.m-mina-glow { animation: m-mina-glow 1.6s ease-in-out infinite; }
+/* info-only highlight: a soft steady glow — noticeable, clearly not a
+   button to press (user ruling: two kinds of attention) */
+.m-mina-glow-soft { box-shadow: 0 0 10px 2px color-mix(in srgb, var(--m-accent) 40%, transparent), 0 0 0 1.5px color-mix(in srgb, var(--m-accent) 60%, transparent); }

@@ -41,9 +41,12 @@ describe('TrendsScreen (demo identity)', () => {
     await screen.findByTestId('screen-home');
     expect(screen.queryByTestId('home-networth')).toBeNull(); // hidden by default
 
+    // customize lives on its own screen now (user request) — toggle
+    // there, then back to Home for the payoff
     fireEvent.click(screen.getByTestId('home-customize'));
     await screen.findByTestId('home-customize-list');
     fireEvent.click(screen.getByTestId('home-block-toggle-networth'));
+    fireEvent.click(screen.getByTestId('tab-home'));
     const block = await screen.findByTestId('home-networth', {}, { timeout: 5000 });
     expect(block.textContent).toContain('11,570.55');
   }, 15_000);

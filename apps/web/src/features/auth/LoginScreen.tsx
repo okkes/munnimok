@@ -253,7 +253,9 @@ export function LoginScreen() {
             <span className="flex h-14 w-14 items-center justify-center rounded-full bg-accent-soft">
               <Icon name="account-lock-outline" size={26} color="var(--m-accent-deep)" />
             </span>
-            <h1 className="m-h2 text-ink">{t('offline.chooseProfile')}</h1>
+            {/* the headline follows reality (user ss): with no profile
+                yet there is nothing to "choose" */}
+            <h1 className="m-h2 text-ink">{t(profiles.length ? 'offline.chooseProfile' : 'offline.createProfileTitle')}</h1>
             {/* ONE profile per device (user ruling): spaces are how you
                 separate bookkeeping — parallel profiles would bury that */}
             <p className="max-w-[300px] text-sm text-ink-3">{t(profiles.length ? 'offline.oneProfileHint' : 'offline.profileSub')}</p>

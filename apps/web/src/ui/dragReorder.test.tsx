@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useDragReorder } from './dragReorder';
 
@@ -31,7 +31,7 @@ function Harness({ onMove }: Readonly<{ onMove: (from: number, to: number) => vo
 }
 
 describe('useDragReorder', () => {
-  it('commits one move from the pressed row to the hovered row on release', () => {
+  it('commits one move from the pressed row to the hovered row on release', async () => {
     const onMove = vi.fn();
     render(<Harness onMove={onMove} />);
     const handle = screen.getByTestId('handle-0');
@@ -41,8 +41,9 @@ describe('useDragReorder', () => {
     expect(screen.getByTestId('row-2').className).toContain('over');
     fireEvent.pointerUp(handle, { pointerId: 1 });
 
+    // v3 settles the ghost into its slot before committing (drop animation)
+    await waitFor(() => expect(onMove).toHaveBeenCalledWith(0, 2));
     expect(onMove).toHaveBeenCalledTimes(1);
-    expect(onMove).toHaveBeenCalledWith(0, 2);
   });
 
   it('a cancelled or unmoved drag commits nothing', () => {

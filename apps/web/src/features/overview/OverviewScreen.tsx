@@ -112,6 +112,7 @@ export function OverviewScreen() {
             selected={periodIndex}
             onSelect={setPeriodIndex}
             accent={KIND_ACCENT[kind]}
+            valueLabels={barValues.map((v) => fmt(v, currency))}
           />
         </div>
 
@@ -130,7 +131,10 @@ export function OverviewScreen() {
         <div className="flex flex-col gap-2">
           {groups.map((group, i) => {
             const main = cats.byId(group.catId);
-            const isOpen = expanded[group.catId] ?? false;
+            // a lone main unfolds by itself — with one card there is
+            // nothing to compare, the subs ARE the story (user request);
+            // an explicit tap can still close it
+            const isOpen = expanded[group.catId] ?? groups.length === 1;
             const pct = positiveTotal > 0 ? (Math.max(group.totalCents, 0) / positiveTotal) * 100 : 0;
             return (
               <div key={group.catId} className="overflow-hidden rounded-card border border-line bg-surface">

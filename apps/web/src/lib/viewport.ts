@@ -16,3 +16,35 @@ const readLg = () => (typeof window === 'undefined' ? false : (window.matchMedia
 
 /** true on lg+ viewports; false during SSR and in unit tests */
 export const useLgViewport = (): boolean => useSyncExternalStore(subscribeLg, readLg, () => false);
+
+/**
+ * Scroll only the NEAREST real scroller (overflow-y auto/scroll) to
+ * center `el` in the visible band. Never scrollIntoView: that also
+ * scrolls overflow-HIDDEN ancestors — inside a sheet it sheared the
+ * container and clipped its header (user ss 2026-07-28). The band
+ * respects the visualViewport so a keyboard-shrunk browser viewport
+ * centers against what is actually on screen.
+ */
+export function revealInScroller(el: HTMLElement): void {
+  const vv = window.visualViewport;
+  const viewTop = vv?.offsetTop ?? 0;
+  const viewBottom = viewTop + (vv?.height ?? window.innerHeight);
+  let node: HTMLElement | null = el.parentElement;
+  while (node && node !== document.body) {
+    if (node.scrollHeight > node.clientHeight + 4) {
+      const overflowY = getComputedStyle(node).overflowY;
+      if (overflowY === 'auto' || overflowY === 'scroll') {
+        const box = node.getBoundingClientRect();
+        const bandTop = Math.max(box.top, viewTop);
+        const bandBottom = Math.min(box.bottom, viewBottom);
+        const target = el.getBoundingClientRect();
+        const delta = target.top + target.height / 2 - (bandTop + bandBottom) / 2;
+        if (bandBottom > bandTop && Math.abs(delta) > 8) {
+          node.scrollTo({ top: node.scrollTop + delta, behavior: 'smooth' });
+        }
+        return; // nearest scroller only — never shear outer containers
+      }
+    }
+    node = node.parentElement;
+  }
+}

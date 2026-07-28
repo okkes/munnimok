@@ -33,33 +33,49 @@ describe('ReviewScreen (demo identity)', () => {
     expect(await screen.findByTestId('review-empty')).toBeTruthy();
   }, 15_000);
 
-  it('the category editor groups counterparty and type above the split rows', async () => {
+  it('the card leads with the kind; a transfer pick walks straight into the counterparty', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
 
-    // opening the category editor shows the grouped context rows (user
-    // request: suggested-by → counterparty → type → categories)
+    // kind row first (user simplification); the counterparty row is
+    // HIDDEN for standard rows and eases in when Transfer is picked
+    // (dynamic fields, user redesign 2026-07-28)
+    const kindRow = screen.getByTestId('review-kind-row');
+    expect(kindRow.textContent).toContain('Standard');
+    expect(screen.queryByTestId('review-counter-row')).toBeNull();
+
+    // the split sheet is pure categories now — no context rows
     fireEvent.click(screen.getByTestId('review-category-chip'));
     await screen.findByTestId('split-editor');
-    const typeRow = screen.getByTestId('split-type-row');
-    // the renamed caption rides on the counter row
-    expect(screen.getByTestId('split-counter-row').textContent).toContain('Counterparty');
+    expect(screen.queryByTestId('split-counter-row')).toBeNull();
+    expect(screen.queryByTestId('split-type-row')).toBeNull();
+    fireEvent.click(screen.getByTestId('split-save'));
 
-    // the counter row precedes the type row, which precedes the cat rows
-    const counterRow = screen.getByTestId('split-counter-row');
-    const catRow = screen.getByTestId('split-cat-0');
-    expect(counterRow.compareDocumentPosition(typeRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(typeRow.compareDocumentPosition(catRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // picking Transfer opens the MANDATORY counterparty picker; choosing
+    // the savings account derives the Saving member on the kind row
+    fireEvent.click(kindRow);
+    await screen.findByTestId('txkind-options');
+    fireEvent.click(screen.getByTestId('txkind-transfer'));
+    await screen.findByTestId('counter-accounts');
+    fireEvent.click(screen.getByTestId('counter-pick-demo_save'));
+    await waitFor(() => {
+      expect(screen.getByTestId('review-kind-row').textContent).toContain('Saving');
+      expect(screen.getByTestId('review-counter-row').textContent).toContain('Demo Savings');
+    });
+    expect((screen.getByTestId('review-counter-row') as HTMLButtonElement).disabled).toBe(false);
+  }, 15_000);
 
-    // the type row opens the stacked options sheet; a pick stages the
-    // draft and updates the row in place. The card itself carries NO
-    // counterparty/type rows anymore (user request: no duplicates).
-    expect(screen.queryByTestId('review-counter-row')).toBeNull();
-    expect(screen.queryByTestId('review-type-row')).toBeNull();
-    fireEvent.click(typeRow);
-    await screen.findByTestId('txtype-options');
-    fireEvent.click(screen.getByTestId('txtype-saving'));
-    await waitFor(() => expect(screen.getByTestId('split-type-row').textContent).toContain('Saving'));
+  it('dismissing the counterparty picker rolls a user-picked transfer back', async () => {
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    fireEvent.click(screen.getByTestId('review-kind-row'));
+    await screen.findByTestId('txkind-options');
+    fireEvent.click(screen.getByTestId('txkind-transfer'));
+    // close the picker without choosing — an unlinked transfer is
+    // unrepresentable, so the kind returns to what it was
+    await screen.findByTestId('counter-accounts');
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.getByTestId('review-kind-row').textContent).toContain('Standard'));
   }, 15_000);
 
   it('a picked category is staged and written on confirm', async () => {
@@ -321,6 +337,7 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('review-category-chip'));
     fireEvent.click(await screen.findByTestId('split-add-row'));
     // the fresh row is uncategorized + 0 — no THIRD row until it's done
+    await screen.findByTestId('split-amount-1');
     expect((screen.getByTestId('split-add-row') as HTMLButtonElement).disabled).toBe(true);
     const amount0 = (await screen.findByTestId('split-amount-0')) as HTMLInputElement;
     expect(amount0.value).toBe('10,00');
@@ -370,19 +387,16 @@ describe('ReviewScreen (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Coffee'));
     expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false);
 
-    // flip the type (now via the type row INSIDE the category editor) to
-    // one Coffee does not speak: the chip must ask again
-    fireEvent.click(screen.getByTestId('review-category-chip'));
-    fireEvent.click(await screen.findByTestId('split-type-row'));
-    await screen.findByTestId('txtype-options');
-    fireEvent.click(screen.getByTestId('txtype-saving'));
+    // flip the kind to Transfer with the savings counterparty — the
+    // derived Saving type is one Coffee does not speak: ask again
+    fireEvent.click(screen.getByTestId('review-kind-row'));
+    await screen.findByTestId('txkind-options');
+    fireEvent.click(screen.getByTestId('txkind-transfer'));
+    await screen.findByTestId('counter-accounts');
+    fireEvent.click(screen.getByTestId('counter-pick-demo_save'));
     await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).not.toContain('Coffee'));
-    expect(screen.getByTestId('split-type-row').textContent).toContain('Saving');
+    expect(screen.getByTestId('review-kind-row').textContent).toContain('Saving');
     expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(true);
-    // the editor flags the stranded category and holds Done (user ss:
-    // Income type with a Maintenance row felt silently wrong)
-    await screen.findByTestId('split-type-conflict');
-    expect((screen.getByTestId('split-save') as HTMLButtonElement).disabled).toBe(true);
 
     // nothing was written mid-flight: the tx still holds its own type
     const db = new MunniDB('munni_demo');
@@ -391,8 +405,9 @@ describe('ReviewScreen (demo identity)', () => {
     expect(current.txType).not.toBe('saving');
     db.close();
 
-    // a saving-compatible category re-arms Confirm (the editor is still
-    // open; its picker now filters by the staged saving type)
+    // a saving-compatible category re-arms Confirm (the editor's picker
+    // filters by the staged saving type)
+    fireEvent.click(screen.getByTestId('review-category-chip'));
     fireEvent.click(await screen.findByTestId('split-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
     fireEvent.click(screen.getByTestId('split-save'));

@@ -1,4 +1,5 @@
 import { configure } from '@testing-library/react';
+import { afterAll } from 'vitest';
 
 // coverage instrumentation slows liveQuery round-trips well past RTL's
 // 1s default — every findBy*/waitFor gets headroom instead of piecemeal
@@ -33,6 +34,16 @@ if (typeof window !== 'undefined') {
   window.addEventListener('unhandledrejection', (event) => {
     if (isTeardownNoise(event.reason)) event.preventDefault();
   });
+}
+
+// react-modal-sheet's open transition polls document for its container
+// class (waitForElement: 50ms × 20 ticks) from a fire-and-forget async —
+// a sheet opened near the end of a file leaves that interval ticking
+// into environment teardown, where `document` no longer exists
+// (unhandled ReferenceError fails the run). Let every DOM file's
+// teardown wait out the poll so it self-terminates in a live document.
+if (typeof window !== 'undefined') {
+  afterAll(() => new Promise((resolve) => setTimeout(resolve, 1200)));
 }
 
 // happy-dom's default viewport is 1024×768 — exactly the lg breakpoint,

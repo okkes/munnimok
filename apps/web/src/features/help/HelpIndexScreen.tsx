@@ -60,6 +60,15 @@ export function HelpIndexScreen() {
           />
         </div>
         <div className="overflow-hidden rounded-card border border-line bg-surface">
+          {/* replay the Mina first-run (user ruling: replayable; its
+              revert ledger lets a run be undone at the wrap) */}
+          <Row
+            testId="help-mina-replay"
+            icon="compass-outline"
+            iconColor="var(--m-accent-deep)"
+            title={t('mina.replay')}
+            onClick={() => window.dispatchEvent(new Event('mina:start'))}
+          />
           {/* the install walkthrough is meaningless inside the native shell */}
           {TOURS.filter((tour) => tour.id !== 'install' || !isNativeApp()).map((tour) => (
             <Row

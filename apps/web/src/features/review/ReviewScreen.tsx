@@ -8,7 +8,10 @@ import { useEvents } from '@/application/events';
 import { EventFormSheet } from '@/features/events/EventsScreen';
 import { RecurringFormSheet, formFromTx } from '@/features/recurring/RecurringFormSheet';
 import { merchantKey } from '@/domain/merchantKey';
-import { draftReady, initDraft, withCategory, withLinkedAccount, withSplits, withType } from '@/domain/reviewDraft';
+import { draftReady, initDraft, withCategory, withKind, withLinkedAccount, withSplits, withType } from '@/domain/reviewDraft';
+import { kindOf, standardTypeFor } from '@/domain/txKind';
+import { Collapse } from '@/ui/Collapse';
+import type { TxKind } from '@/domain/txKind';
 import { normalizeIban } from '@/domain/feedIds';
 import { isPaypalAccount, isPaypalFunding } from '@/domain/paypal';
 import { hapticNotify } from '@/lib/platform';
@@ -17,7 +20,7 @@ import { fetchSettlementCandidates } from '@/features/splits/settlementCandidate
 import type { SettlementCandidate } from '@/features/splits/settlementCandidates';
 import { useSession } from '@/app/session';
 import type { ReviewDraft } from '@/domain/reviewDraft';
-import type { AccountType, RecurringRow } from '@/db/types';
+import type { AccountType, RecurringRow, TxType } from '@/db/types';
 import { resolveSplitsFor, splitsArePct } from '@/domain/splits';
 import { predictTx } from '@/domain/predictCategory';
 import { recurringAmountMatches } from '@/domain/recurring';
@@ -35,9 +38,9 @@ import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { SplitEditorSheet } from '@/features/transactions/SplitEditorSheet';
-import { SheetContextRow } from '@/ui/SheetContextRow';
 import { RecurringVisual, cadenceLabel } from '@/features/recurring/RecurringVisual';
-import { CounterAccountSheet, TX_TYPE_VISUAL, TxTypeOptionsSheet } from '@/features/transactions/TxTypeSheet';
+import { TX_TYPE_VISUAL } from '@/features/transactions/TxTypeSheet';
+import { CounterpartySheet, TX_KIND_VISUAL, TxKindSheet, kindDetail } from '@/features/transactions/TxKindSheet';
 
 /** one grouped-context row inside the category editor (counterparty,
  *  type) — the card-row anatomy in the sheet's input skin */
@@ -98,21 +101,28 @@ async function writeConfirmation(args: {
     ...(args.eventId ? { eventId: args.eventId } : {}),
   }, null); // confirm logs its own richer 'review' line (with bulk count)
   for (const item of args.bulk) {
-    // the draft's split shape travels with the bulk: absolute splits fit
-    // exact twins by the similar-rule; pct splits rescale per item —
-    // and the WHOLE decision rides along: type, counterparty, recurring
-    // and event reach every selected sibling too (user rule)
-    const splits = draft.splits?.length ? resolveSplitsFor(item.amountCents, draft.splits) : undefined;
-    await args.transform(item, {
-      catId: draft.catId,
-      txType: draft.txType,
-      needsReview: 0,
-      ...(splits ? { splits } : {}),
-      ...(draft.linkedAccountId ? { linkedAccountId: draft.linkedAccountId } : {}),
-      ...(args.recurringId ? { recurringId: args.recurringId } : {}),
-      ...(args.eventId ? { eventId: args.eventId } : {}),
-    }, null);
+    await args.transform(item, bulkFieldsFor(item, draft, args.recurringId, args.eventId), null);
   }
+}
+
+/** the WHOLE decision rides to every selected sibling (user rule):
+ *  category, type, counterparty, recurring, event. Absolute splits fit
+ *  exact twins by the similar-rule, pct splits rescale per item — and
+ *  sign-bound standard types re-derive by the sibling's OWN sign (the
+ *  similar filter already keeps signs together; this guards any path
+ *  that doesn't). */
+function bulkFieldsFor(item: SpaceTx, draft: ReviewDraft, recurringId: string | undefined, eventId: string | undefined) {
+  const splits = draft.splits?.length ? resolveSplitsFor(item.amountCents, draft.splits) : undefined;
+  const siblingType = kindOf(draft.txType) === 'standard' ? standardTypeFor(item.amountCents) : draft.txType;
+  return {
+    catId: draft.catId,
+    txType: siblingType,
+    needsReview: 0 as const,
+    ...(splits ? { splits } : {}),
+    ...(draft.linkedAccountId ? { linkedAccountId: draft.linkedAccountId } : {}),
+    ...(recurringId ? { recurringId } : {}),
+    ...(eventId ? { eventId } : {}),
+  };
 }
 
 /** "also apply to n similar": a compact summary row on the card; the full
@@ -123,6 +133,78 @@ async function writeConfirmation(args: {
 function stageAsTransfer(draft: ReviewDraft, cats: ReturnType<typeof useCategories>): ReviewDraft {
   const next = withType(draft, 'transfer', cats);
   return next.catId ? next : withCategory(next, 'uncategorized', cats);
+}
+
+/** a kind pick keeps the confirm armed the way transfers always did:
+ *  the hidden 'uncategorized' builtin backs category-less kinds */
+function stageKind(
+  draft: ReviewDraft,
+  kind: TxKind,
+  amountCents: number,
+  cats: ReturnType<typeof useCategories>,
+): ReviewDraft {
+  const next = withKind(draft, kind, amountCents, cats);
+  if (kind !== 'standard' && !next.catId) return withCategory(next, 'uncategorized', cats);
+  return next;
+}
+
+/** the counterparty row's face: dimmed n/a, a warning prompt, or the name */
+function counterRowLabel(kind: TxKind, name: string | undefined, t: ReturnType<typeof useLang>['t']): string {
+  if (kind !== 'transfer') return t('tx.counterNotApplicable');
+  return name ?? t('tx.counterAccountPick');
+}
+
+/** the card's kind + counterparty rows (S3776: out of the main screen);
+ *  the counterparty is a transfer concept — other kinds show it dimmed */
+function CardKindRows({
+  kind,
+  detail,
+  counterName,
+  onKind,
+  onCounter,
+}: Readonly<{
+  kind: TxKind;
+  detail: TxType | null;
+  counterName: string | undefined;
+  onKind: () => void;
+  onCounter: () => void;
+}>) {
+  const { t } = useLang();
+  const isTransfer = kind === 'transfer';
+  return (
+    <>
+      <button
+        data-testid="review-kind-row"
+        onClick={onKind}
+        className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
+      >
+        <Icon name={TX_KIND_VISUAL[kind].icon} size={18} color={TX_KIND_VISUAL[kind].color} />
+        <span className="min-w-0 flex-1 truncate">
+          {t(`tx.kind.${kind}`)}
+          {detail && <span className="text-[12px] font-normal text-ink-4"> · {t(`tx.type.${detail}`)}</span>}
+        </span>
+        <span className="text-[11px] text-ink-4">{t('tx.kindTitle')}</span>
+        <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+      </button>
+      {/* fields show only when they MEAN something: the counterparty
+          eases in when Transfer is picked instead of sitting disabled
+          on every card (user redesign 2026-07-28) */}
+      <Collapse open={isTransfer}>
+        <button
+          data-testid="review-counter-row"
+          onClick={onCounter}
+          className="m-tap m-fade flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
+        >
+          <Icon name="bank-transfer" size={18} color="var(--m-ink-3)" />
+          <span className={`min-w-0 flex-1 truncate ${counterName ? '' : 'text-warning'}`}>
+            {counterRowLabel(kind, counterName, t)}
+          </span>
+          <span className="text-[11px] text-ink-4">{t('tx.counterparty')}</span>
+          <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+        </button>
+      </Collapse>
+    </>
+  );
 }
 
 /** own-account counterparty pre-applies the link + suggested type; the
@@ -378,10 +460,13 @@ export function ReviewScreen() {
   const recurringOps = useRecurringOps();
 
   const [splitOpen, setSplitOpen] = useState(false);
-  // stacked pickers for the grouped rows INSIDE the category editor
-  // (user request: counterparty + type live with the category decision)
-  const [splitCounterOpen, setSplitCounterOpen] = useState(false);
-  const [splitTypeOpen, setSplitTypeOpen] = useState(false);
+  // kind + counterparty rows live ON the card now (user simplification);
+  // a user-picked transfer REQUIRES a counterparty, so dismissing the
+  // picker without choosing rolls the kind back to what it was
+  const [kindOpen, setKindOpen] = useState(false);
+  const [counterOpen, setCounterOpen] = useState(false);
+  const counterFallback = useRef<ReviewDraft | null>(null);
+  const counterChosen = useRef(false);
   // per-visit only (user ruling): mid-review side steps happen in sheets
   // that keep the screen mounted, so state survives those — but leaving
   // review and coming back later starts the deck from the top again
@@ -519,6 +604,10 @@ export function ReviewScreen() {
       (item) =>
         item.id !== tx.id &&
         !skipped.has(item.id) &&
+        // decisions are sign-bound (income vs expense, reimbursement
+        // side): a -€1000 sibling must never inherit a "received
+        // reimbursement" decision made on +€1000 (user ss 2026-07-28)
+        Math.sign(item.amountCents) === Math.sign(tx.amountCents) &&
         merchantKey(item.merchant) === key &&
         (!mustMatchAmount || item.amountCents === tx.amountCents),
     );
@@ -535,14 +624,23 @@ export function ReviewScreen() {
     setEventPick(null);
     setDescExpanded(false);
   });
-  // select every similar item by default — re-selecting when the list
-  // itself changes (a sync can add one mid-card) keeps the visible count
-  // honest about what confirm will actually touch
+  // select every similar item by default. Keyed on MEMBERSHIP, not array
+  // identity: the native SQL backend re-emits unchanged rows every sync
+  // cycle, and an identity-keyed reset kept re-arming boxes the user had
+  // just cleared (iOS ss 2026-07-28). When a sync genuinely changes the
+  // list mid-card, new arrivals join checked and the user's unchecks
+  // survive — the visible count stays honest either way.
+  const similarKey = useMemo(() => similar.map((s) => s.id).sort((a, b) => a.localeCompare(b)).join(','), [similar]);
+  const prevSimilarIds = useRef<ReadonlySet<string>>(new Set());
   useEffect(() => {
-    setBulkSelected(new Set(similar.map((s) => s.id)));
-  }, [similar]);
+    const ids = similarKey ? similarKey.split(',') : [];
+    const prev = prevSimilarIds.current;
+    prevSimilarIds.current = new Set(ids);
+    setBulkSelected((sel) => new Set(ids.filter((id) => (prev.has(id) ? sel.has(id) : true))));
+  }, [similarKey]);
 
-  const draftTypeLabel = draft ? t(`tx.type.${draft.txType}`) : null;
+  const draftKind: TxKind = draft ? kindOf(draft.txType) : 'standard';
+  const draftKindDetail = draft ? kindDetail(draft.txType) : null;
   const showReason = !!tx && !stagedDraft && prediction?.catId === draft?.catId;
   const reasonLine =
     showReason && prediction ? t(REASON_KEYS[prediction.source], { n: prediction.evidence ?? 1 }) : null;
@@ -673,10 +771,20 @@ export function ReviewScreen() {
               </div>
               <div className="mx-4 h-px bg-line-2" />
 
-              {/* the card keeps categories, recurring and event rows;
-                  counterparty + type moved INTO the category editor (user
-                  request — no duplicate rows here) */}
+              {/* kind first (user simplification): WHAT this transaction
+                  is, then the counterparty it involves — the split sheet
+                  is pure categories now */}
               <div data-testid="review-cats">
+                <CardKindRows
+                  kind={draftKind}
+                  detail={draftKindDetail}
+                  counterName={draftCounter?.name}
+                  onKind={() => setKindOpen(true)}
+                  onCounter={() => {
+                    counterFallback.current = null;
+                    setCounterOpen(true);
+                  }}
+                />
                 {(draft?.splits?.length ? draft.splits : [null]).map((slice) => {
                   const sliceCat = slice ? cats.byId(slice.catId) : cat;
                   const sliceColor = slice
@@ -819,45 +927,45 @@ export function ReviewScreen() {
           onApply={(splits) => setStagedDraft(withSplits(draft, splits ?? undefined))}
           onApplySingle={(catId) => setStagedDraft(withCategory(withSplits(draft, undefined), catId, cats))}
           reason={reasonLine}
-          // grouped context (user request): suggested-by, then counterparty,
-          // then type, then the category rows — they inform each other
-          header={
-            <>
-              <SheetContextRow
-                testId="split-counter-row"
-                icon="swap-horizontal"
-                iconColor="var(--m-ink-3)"
-                value={draftCounter?.name ?? t('tx.linkedAccountNone')}
-                caption={t('tx.counterAccount')}
-                onClick={() => setSplitCounterOpen(true)}
-              />
-              <SheetContextRow
-                testId="split-type-row"
-                icon={TX_TYPE_VISUAL[draft.txType].icon}
-                iconColor={TX_TYPE_VISUAL[draft.txType].color}
-                value={draftTypeLabel ?? t(`tx.type.${tx.txType}`)}
-                caption={t('tx.type')}
-                onClick={() => setSplitTypeOpen(true)}
-              />
-            </>
-          }
         />
       )}
       {tx && draft && (
-        <CounterAccountSheet
-          open={splitCounterOpen}
-          onOpenChange={setSplitCounterOpen}
-          tx={tx}
+        <TxKindSheet
+          open={kindOpen}
+          onOpenChange={setKindOpen}
+          current={draftKind}
+          allowAdjustment={!tx.importRef && !tx.feedSpaceId}
+          onPick={(kind) => {
+            const next = stageKind(draft, kind, tx.amountCents, cats);
+            setStagedDraft(next);
+            // a transfer is not complete without its counterparty —
+            // open the picker right away, remember what to roll back to
+            if (kind === 'transfer' && !next.linkedAccountId) {
+              counterFallback.current = draft;
+              setCounterOpen(true);
+            }
+          }}
+        />
+      )}
+      {tx && draft && (
+        <CounterpartySheet
+          open={counterOpen}
+          onOpenChange={(open) => {
+            setCounterOpen(open);
+            if (!open) {
+              // dismissed without a pick: a user-chosen transfer rolls
+              // back — an unlinked transfer is unrepresentable
+              if (!counterChosen.current && counterFallback.current) setStagedDraft(counterFallback.current);
+              counterFallback.current = null;
+              counterChosen.current = false;
+            }
+          }}
+          excludeAccountId={tx.accountId}
           currentLinkedId={draft.linkedAccountId}
-          onChoose={(account) => setStagedDraft(withLinkedAccount(draft, account, cats))}
-        />
-      )}
-      {tx && draft && (
-        <TxTypeOptionsSheet
-          open={splitTypeOpen}
-          onOpenChange={setSplitTypeOpen}
-          current={draft.txType}
-          onPick={(nextType) => setStagedDraft(withType(draft, nextType, cats))}
+          onChoose={(account) => {
+            counterChosen.current = true;
+            setStagedDraft(withLinkedAccount(draft, account, cats));
+          }}
         />
       )}
       {tx && (

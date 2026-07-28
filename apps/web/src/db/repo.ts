@@ -2,7 +2,9 @@ import { v7 as uuidv7 } from 'uuid';
 import type { HlcClock } from '@/sync/hlc';
 import { applyOp } from '@/sync/merge';
 import type { Op, SyncEnvelope } from '@/sync/merge';
+import { reportError } from '@/lib/report';
 import type { StorageBackend } from './backend';
+import { InvariantViolation, rowProblems } from './invariants';
 import type { EntityName, EntityRowMap, OutboxRow } from './types';
 
 export interface RepoOptions {
@@ -68,7 +70,19 @@ export class Repo {
         | null;
       const { row, changed } = applyOp(local, op);
       if (!changed) return;
-      await this.store.put(entity, { ...row, id: entityId, spaceId });
+      // model-level invariants on the MERGED row (user request: the
+      // FluentValidation idea) — a violation blocks the write and lands
+      // in GlitchTip, because it means a screen's own validation leaked.
+      // applyRemoteOps stays unchecked on purpose: convergence with data
+      // other devices already own must never be refused.
+      const merged = { ...row, id: entityId, spaceId };
+      const problems = deleted ? [] : rowProblems(entity, merged);
+      if (problems.length > 0) {
+        const violation = new InvariantViolation(entity, entityId, problems);
+        reportError('invariant', violation);
+        throw violation;
+      }
+      await this.store.put(entity, merged);
       if (this.options.trackOutbox) await this.store.outboxAdd(op);
     });
     this.options.onWrite?.();

@@ -30,8 +30,11 @@ jobs:
 
       - run: npm ci
 
-      # Install only the Chromium browser (faster than full install)
-      - run: npx playwright install --with-deps chromium
+      # Chromium runs the gallery; WebKit runs the sheet-geometry guard
+      # (all of iOS is WebKit — its layout bugs are invisible to Blink).
+      # Installing on the ephemeral runner is the cheap path here; the
+      # local equivalent is dockerized instead: deploy/webkit-e2e.ps1
+      - run: npx playwright install --with-deps chromium webkit
         working-directory: apps/web
 
       # Unit tests with coverage (finance app: correctness paths must be covered)

@@ -111,13 +111,20 @@ describe('TransactionsScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('tx-filter-clear'));
     await waitFor(() => expect(rows().length).toBe(all));
 
-    // type filter: saving transactions only
+    // kind filter (user simplification): the Transfer kind selects the
+    // whole family, then its detail chips narrow to Saving only
     fireEvent.click(screen.getByTestId('tx-filter-open'));
-    fireEvent.click(await screen.findByTestId('filter-type-saving'));
+    fireEvent.click(await screen.findByTestId('filter-kind-transfer'));
+    const detail = await screen.findByTestId('filter-transfer-detail');
+    expect(detail.textContent).toContain('Saving');
+    fireEvent.click(screen.getByTestId('filter-type-transfer'));
+    fireEvent.click(screen.getByTestId('filter-type-debtPayment'));
+    fireEvent.click(screen.getByTestId('filter-type-investment'));
     fireEvent.click(screen.getByTestId('filter-done'));
     await waitFor(() => {
       expect(rows().length).toBeGreaterThan(0);
       expect(rows().length).toBeLessThan(all);
     });
-  });
+    // coverage instrumentation pushes this flow past vitest's 5s default
+  }, 15_000);
 });

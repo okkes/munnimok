@@ -21,6 +21,7 @@ export function DangerConfirmSheet({
   error,
   onConfirm,
   testId,
+  cooldown,
 }: Readonly<{
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -31,17 +32,21 @@ export function DangerConfirmSheet({
   error?: string | null;
   onConfirm: () => void;
   testId: string;
+  /** seconds before Confirm arms — 0 for low-stakes deletes (user
+   *  ruling: a single transaction never warrants the wait) */
+  cooldown?: number;
 }>) {
   const { t } = useLang();
-  const [left, setLeft] = useState(DEFAULT_COOLDOWN);
+  const wait = cooldown ?? DEFAULT_COOLDOWN;
+  const [left, setLeft] = useState(wait);
 
   useEffect(() => {
     if (!open) return;
-    setLeft(DEFAULT_COOLDOWN);
-    if (DEFAULT_COOLDOWN === 0) return;
+    setLeft(wait);
+    if (wait === 0) return;
     const timer = setInterval(() => setLeft((v) => (v <= 1 ? 0 : v - 1)), 1000);
     return () => clearInterval(timer);
-  }, [open]);
+  }, [open, wait]);
 
   const label = confirmLabel ?? t('action.confirm');
   return (

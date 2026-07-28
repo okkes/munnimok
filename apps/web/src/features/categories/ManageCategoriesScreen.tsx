@@ -740,7 +740,26 @@ export function ManageCategoriesScreen() {
       </Sheet>
 
       {/* create / edit */}
-      <Sheet open={mode !== null} onOpenChange={(open) => !open && setMode(null)} title={formTitle} size="tall">
+      <Sheet
+        open={mode !== null}
+        onOpenChange={(open) => !open && setMode(null)}
+        title={formTitle}
+        size="tall"
+        // pinned footer (user ss: the sticky version floated over the
+        // icon grid once the keyboard/safe-area shifted the scrollport)
+        footer={
+          <div className="flex flex-col gap-2">
+            <Button data-testid="catform-save" onClick={() => void save()} disabled={!name.trim()}>
+              {editing ? t('action.save') : t('action.add')}
+            </Button>
+            {editing && (
+              <Button variant="danger" data-testid="catform-delete" onClick={() => void remove()}>
+                {t('action.delete')}
+              </Button>
+            )}
+          </div>
+        }
+      >
         <div className="flex flex-col gap-3 pt-1">
           {formParent && (
             <div className="flex items-center gap-2 text-[13px] text-ink-3">
@@ -860,18 +879,6 @@ export function ManageCategoriesScreen() {
             ))}
             {iconQuery.trim() && MDI_NAMES.every((n) => !n.includes(iconQuery.trim().toLowerCase())) && (
               <p className="col-span-6 py-2 text-center text-[12px] text-ink-4">{t('cats.iconNone')}</p>
-            )}
-          </div>
-          {/* sticky: Save must never hide below the icon grid's fold
-              (user ss — you had to just KNOW the sheet scrolls) */}
-          <div className="sticky bottom-0 -mx-5 flex flex-col gap-2 bg-bg px-5 pt-2 pb-1">
-            <Button data-testid="catform-save" onClick={() => void save()} disabled={!name.trim()}>
-              {editing ? t('action.save') : t('action.add')}
-            </Button>
-            {editing && (
-              <Button variant="danger" data-testid="catform-delete" onClick={() => void remove()}>
-                {t('action.delete')}
-              </Button>
             )}
           </div>
         </div>

@@ -34,6 +34,12 @@ builder.WebHost.UseSentry((SentryAspNetCoreOptions options) =>
     options.Dsn = builder.Configuration["Sentry:Dsn"] ?? string.Empty;
     options.TracesSampleRate = 0; // errors only, no performance tracing
     options.SendDefaultPii = false;
+    // handled races are not incidents: parallel first requests DELIBERATELY
+    // race their inserts (Users / UserDevices JIT-provision, attach links)
+    // and the losers adopt the winner. EF still logs the failed command at
+    // Error level and the SDK forwarded every one as an event — pure noise
+    // that buried real failures (GlitchTip issues 66–74).
+    options.SetBeforeSend((sentryEvent, _) => SentryNoise.IsHandledRace(sentryEvent) ? null : sentryEvent);
 });
 
 builder.Services.AddDbContext<AppDbContext>(options =>
