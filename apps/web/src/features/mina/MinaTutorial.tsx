@@ -7,6 +7,7 @@ import { useQuery } from '@/db/useQuery';
 import { v7 as uuidv7 } from 'uuid';
 import { DEFAULT_HISTORY_MONTHS, isoMonthsAgo } from '@/features/spaces/spaceDefaults';
 import { useLang } from '@/i18n';
+import { revealInScroller } from '@/lib/viewport';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { closeAllSheets, hasOpenSheet } from '@/ui/Sheet';
@@ -176,6 +177,14 @@ export function MinaTutorial() {
           if (el.offsetParent !== null) return el; // the VISIBLE candidate (mobile vs desktop nav)
         }
       }
+      // a stale ledger must never leave a switching step highlight-less
+      // (user ss: no glow, tutorial felt stuck) — any real space row
+      // serves the lesson
+      if ((candidates ?? []).some((c) => c.includes('$s'))) {
+        for (const el of document.querySelectorAll<HTMLElement>('[data-testid^="space-pick-"]')) {
+          if (el.dataset.testid !== 'space-pick-manage' && el.offsetParent !== null) return el;
+        }
+      }
       return null;
     },
     [createdSpaces],
@@ -194,6 +203,23 @@ export function MinaTutorial() {
     if (nextStep.kind === 'fullscreen' || nextStep.anchor?.some((a) => a.startsWith('tab-') || a.startsWith('side-tab-'))) closeAllSheets();
     persist({ ...run, step: run.step + 1 });
   }, [run, persist, finish]);
+
+  // a fresh dialogue always shows itself — leaving Mina minimized after
+  // the user completed a step read as the tutorial dying (user request)
+  useEffect(() => {
+    setMinimized(false);
+  }, [run?.step]);
+
+  // the switching lesson advances on the SWITCH ITSELF, not the row tap:
+  // picking a space closes the switcher sheet before the gate listener
+  // can match the tap, which stranded the step (user ss 2026-07-28) —
+  // and any switch teaches the lesson, whichever row it came from
+  const lastSpaceRef = useRef(spaceId);
+  useEffect(() => {
+    const changed = spaceId !== lastSpaceRef.current;
+    lastSpaceRef.current = spaceId;
+    if (changed && (step?.id === 'pickPrivate' || step?.id === 'pickFamily')) setTimeout(advance, 400);
+  }, [spaceId, step?.id, advance]);
 
   // navigate to the step's screen (never mid-act — acts follow the user)
   const screen = step?.screen;
@@ -241,11 +267,24 @@ export function MinaTutorial() {
   // resize, sheet motion — and the quoted target label appearing late)
   const anchorKey = step?.anchor?.join(',') ?? '';
   const labelKey = step?.labelFrom?.join(',') ?? '';
+  const revealedStepRef = useRef(-1);
   useEffect(() => {
     if (!run?.active) return;
     let raf = 0;
     const tick = () => {
       const el = resolveAnchor(step?.anchor);
+      // a target hiding behind the tab bar (or above the fold) scrolls
+      // itself into the visible band, once per step (user ss: the
+      // Financial Accounts row sat under the navigation)
+      if (el && run && revealedStepRef.current !== run.step) {
+        const r = el.getBoundingClientRect();
+        if (r.top < 70 || r.bottom > window.innerHeight - 96) {
+          revealedStepRef.current = run.step;
+          revealInScroller(el);
+        } else if (r.width > 0) {
+          revealedStepRef.current = run.step; // visible — settled, no scroll
+        }
+      }
       const next = el?.getBoundingClientRect() ?? null;
       setRect((prev) => {
         if (!prev && !next) return prev;

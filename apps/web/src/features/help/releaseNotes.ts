@@ -18,6 +18,37 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.25.0',
+    date: '2026-07-28',
+    items: [
+      {
+        en: 'Sheets got a new engine: typing in any bottom sheet no longer cancels itself, dragging follows your finger faithfully on every platform, and on iOS sheets finally open to their full height. A closing sheet also stops swallowing taps on its way out.',
+        nl: 'Panelen kregen een nieuwe motor: typen in een paneel breekt zichzelf niet meer af, slepen volgt je vinger trouw op elk platform, en op iOS openen panelen eindelijk op volle hoogte. Een sluitend paneel slikt onderweg ook geen tikken meer in.',
+        tr: 'Paneller yeni bir motor kazandı: bir panelde yazmak artık kendini iptal etmiyor, sürükleme her platformda parmağını sadakatle izliyor ve iOS’ta paneller sonunda tam yüksekliğe açılıyor. Kapanan bir panel de çıkarken dokunuşları yutmuyor.',
+      },
+      {
+        en: 'iOS, steadied: what you type is never overwritten by a background sync anymore (recurring form, bulk checkboxes), the keyboard makes one clean move instead of two, taps between fields register immediately, and reordering rows in customize glides — the dropped row now settles softly into its place.',
+        nl: 'iOS gestabiliseerd: wat je typt wordt niet meer overschreven door een synchronisatie op de achtergrond (vaste-lastenformulier, bulkvinkjes), het toetsenbord maakt één vloeiende beweging in plaats van twee, tikken tussen velden registreren direct, en rijen herschikken in aanpassen glijdt — de losgelaten rij nestelt zich nu zacht op zijn plek.',
+        tr: 'iOS sağlamlaştı: yazdıkların artık arka plandaki eşitlemeyle silinmiyor (düzenli gider formu, toplu onay kutuları), klavye iki yerine tek temiz hamle yapıyor, alanlar arası dokunuşlar anında kaydoluyor ve özelleştirmede satırları yeniden sıralamak akıyor — bırakılan satır yerine yumuşakça oturuyor.',
+      },
+      {
+        en: 'Linking a reimbursement has its own screen now: search by name or amount with highlighting, and a "Suggested" section spots the likely match from timing, wording (Tikkie, betaalverzoek…), bookkeeping and size. The prefilled amount follows what the transactions themselves earmark as reimbursement.',
+        nl: 'Een terugbetaling koppelen heeft nu een eigen scherm: zoek op naam of bedrag met markering, en een sectie "Voorgesteld" herkent de waarschijnlijke match aan timing, omschrijving (Tikkie, betaalverzoek…), boekhouding en omvang. Het vooringevulde bedrag volgt wat de transacties zelf als terugbetaling oormerken.',
+        tr: 'Geri ödeme bağlamanın artık kendi ekranı var: ada veya tutara göre vurgulamalı arama yap; "Önerilen" bölümü zamanlama, açıklama (Tikkie, betaalverzoek…), kayıt ve tutara bakarak olası eşleşmeyi bulur. Önceden doldurulan tutar, işlemlerin geri ödeme olarak ayırdığını izler.',
+      },
+      {
+        en: 'Review is stricter where it matters: bulk apply only offers transactions the decision actually fits (a received reimbursement can never land on money you paid), types always follow the sign of each transaction — and old mistyped rows heal themselves. The counterparty row now appears only when Transfer is picked.',
+        nl: 'Beoordelen is strenger waar het telt: bulk toepassen biedt alleen transacties waar de beslissing echt bij past (een ontvangen terugbetaling kan nooit op betaald geld landen), typen volgen altijd het teken van elke transactie — en oude verkeerd getypeerde regels herstellen zichzelf. De tegenpartijregel verschijnt nu alleen wanneer Overboeking is gekozen.',
+        tr: 'İnceleme önemli yerde daha katı: toplu uygulama yalnızca kararın gerçekten uyduğu işlemleri sunar (alınan geri ödeme ödediğin paraya asla inemez), türler her işlemin işaretini izler — ve eski yanlış türlenmiş satırlar kendini onarır. Karşı taraf satırı artık yalnızca Transfer seçilince görünür.',
+      },
+      {
+        en: 'The Mina tour flows better (she scrolls hidden buttons into view, explains why a second space exists, and space-switching completes on the switch itself), the guided cards stay on screen, her pictures respect the notch — and munni now guards its own data: a malformed write is refused and reported before it can ever land.',
+        nl: 'De Mina-rondleiding loopt soepeler (ze scrolt verborgen knoppen in beeld, legt uit waarom een tweede ruimte bestaat, en ruimtewissels ronden af op de wissel zelf), de begeleidende kaarten blijven op het scherm, haar afbeeldingen respecteren de notch — en munni bewaakt nu zijn eigen gegevens: een misvormde schrijfactie wordt geweigerd en gemeld voor die ooit kan landen.',
+        tr: 'Mina turu daha akıcı (gizli düğmeleri görünüme kaydırıyor, ikinci alanın nedenini açıklıyor ve alan geçişi geçişin kendisiyle tamamlanıyor), rehber kartlar ekranda kalıyor, görselleri çentiğe saygılı — ve munni artık kendi verisini koruyor: bozuk bir yazma işlemi daha inmeden reddedilip raporlanıyor.',
+      },
+    ],
+  },
+  {
     version: '2.24.0',
     date: '2026-07-25',
     items: [

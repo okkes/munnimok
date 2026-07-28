@@ -12,6 +12,7 @@ import { useStoreKeepAlive } from '@/application/stores';
 import { collectBudgetAlerts } from '@/sync/swBudgets';
 import { hapticNotify } from '@/lib/platform';
 import { EdgeSwipeBack } from '@/ui/EdgeSwipeBack';
+import { revealInScroller } from '@/lib/viewport';
 import { SHEET_OWNS_KEYBOARD } from '@/ui/Sheet';
 import { MinaTutorial } from '@/features/mina/MinaTutorial';
 import { Icon } from '@/ui/Icon';
@@ -44,35 +45,6 @@ const isEditable = (el: EventTarget | null): el is HTMLElement =>
  * focus. The focused field also scrolls itself into view once the
  * resized layout has settled (fields near the bottom stayed hidden).
  */
-/** scroll only the nearest REAL scroller (overflow-y auto/scroll):
- *  scrollIntoView also scrolls overflow-HIDDEN ancestors — inside a
- *  sheet that sheared the container and clipped its header (user ss
- *  2026-07-28). The visible band respects the visualViewport so a
- *  keyboard-shrunk browser viewport centers against what's on screen. */
-function revealInScroller(el: HTMLElement): void {
-  const vv = window.visualViewport;
-  const viewTop = vv?.offsetTop ?? 0;
-  const viewBottom = viewTop + (vv?.height ?? window.innerHeight);
-  let node: HTMLElement | null = el.parentElement;
-  while (node && node !== document.body) {
-    if (node.scrollHeight > node.clientHeight + 4) {
-      const overflowY = getComputedStyle(node).overflowY;
-      if (overflowY === 'auto' || overflowY === 'scroll') {
-        const box = node.getBoundingClientRect();
-        const bandTop = Math.max(box.top, viewTop);
-        const bandBottom = Math.min(box.bottom, viewBottom);
-        const target = el.getBoundingClientRect();
-        const delta = target.top + target.height / 2 - (bandTop + bandBottom) / 2;
-        if (bandBottom > bandTop && Math.abs(delta) > 8) {
-          node.scrollTo({ top: node.scrollTop + delta, behavior: 'smooth' });
-        }
-        return; // nearest scroller only — never shear outer containers
-      }
-    }
-    node = node.parentElement;
-  }
-}
-
 /** ONE scroll, once the viewport has SETTLED. The old fixed-delay double
  *  pass (300/750ms) visibly re-corrected after the keyboard had landed
  *  and kept moving fields underneath mid-air fingers — the source of

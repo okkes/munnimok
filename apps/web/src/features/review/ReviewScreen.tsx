@@ -10,6 +10,7 @@ import { RecurringFormSheet, formFromTx } from '@/features/recurring/RecurringFo
 import { merchantKey } from '@/domain/merchantKey';
 import { draftReady, initDraft, withCategory, withKind, withLinkedAccount, withSplits, withType } from '@/domain/reviewDraft';
 import { kindOf, standardTypeFor } from '@/domain/txKind';
+import { Collapse } from '@/ui/Collapse';
 import type { TxKind } from '@/domain/txKind';
 import { normalizeIban } from '@/domain/feedIds';
 import { isPaypalAccount, isPaypalFunding } from '@/domain/paypal';
@@ -185,19 +186,23 @@ function CardKindRows({
         <span className="text-[11px] text-ink-4">{t('tx.kindTitle')}</span>
         <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
       </button>
-      <button
-        data-testid="review-counter-row"
-        disabled={!isTransfer}
-        onClick={onCounter}
-        className={`m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink ${isTransfer ? '' : 'opacity-45'}`}
-      >
-        <Icon name="bank-transfer" size={18} color="var(--m-ink-3)" />
-        <span className={`min-w-0 flex-1 truncate ${isTransfer && !counterName ? 'text-warning' : ''}`}>
-          {counterRowLabel(kind, counterName, t)}
-        </span>
-        <span className="text-[11px] text-ink-4">{t('tx.counterparty')}</span>
-        {isTransfer && <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />}
-      </button>
+      {/* fields show only when they MEAN something: the counterparty
+          eases in when Transfer is picked instead of sitting disabled
+          on every card (user redesign 2026-07-28) */}
+      <Collapse open={isTransfer}>
+        <button
+          data-testid="review-counter-row"
+          onClick={onCounter}
+          className="m-tap m-fade flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
+        >
+          <Icon name="bank-transfer" size={18} color="var(--m-ink-3)" />
+          <span className={`min-w-0 flex-1 truncate ${counterName ? '' : 'text-warning'}`}>
+            {counterRowLabel(kind, counterName, t)}
+          </span>
+          <span className="text-[11px] text-ink-4">{t('tx.counterparty')}</span>
+          <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+        </button>
+      </Collapse>
     </>
   );
 }

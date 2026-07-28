@@ -125,8 +125,14 @@ export function useDragReorder(count: number, onMove: (from: number, to: number)
               ? (rects.current[current.over]?.bottom ?? 0) - current.height
               : (rects.current[current.over]?.top ?? 0);
         }
-        el.style.transition = `top ${SETTLE_MS}ms ease`;
+        // the ghost doesn't just land — it DRESSES DOWN into a plain row
+        // while settling, so the accent border/shadow never pops off
+        // abruptly at the end (user request)
+        el.style.transition = `top ${SETTLE_MS}ms ease, background-color ${SETTLE_MS}ms ease, border-color ${SETTLE_MS}ms ease, box-shadow ${SETTLE_MS}ms ease`;
         el.style.top = `${target}px`;
+        el.style.backgroundColor = 'var(--m-bg)';
+        el.style.borderColor = 'transparent';
+        el.style.boxShadow = 'none';
       }
       settleTimer = window.setTimeout(() => {
         const done = stateRef.current;

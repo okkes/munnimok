@@ -352,9 +352,38 @@ function ConnectingScreen({ failedAttempts = 0, errorDetail }: { failedAttempts?
   // 401s during a fresh sign-in are the auth path's business (token
   // mirroring/JIT settle within seconds and it recovers on its own) —
   // flashing "can't reach the server" + a Sign out button at a brand-new
-  // user was scary enough to get clicked (user report)
-  const authSettling = (errorDetail ?? '').includes('401');
-  const unreachable = failedAttempts >= 2 && !authSettling;
+  // user was scary enough to get clicked (user report). But patience has
+  // an END: on iOS the 401s never settled and this screen sat forever
+  // (user ss 2026-07-28) — past 20s the truth beats the calm.
+  const [patienceOver, setPatienceOver] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setPatienceOver(true), 20_000);
+    return () => clearTimeout(timer);
+  }, []);
+  const authSettling = (errorDetail ?? '').includes('401') && !patienceOver;
+  const unreachable = (failedAttempts >= 2 && !authSettling) || (patienceOver && failedAttempts >= 1);
+  // the stuck platform is iOS-only, where DevTools are out of reach — a
+  // built-in probe produces a copyable report instead (user: "I don't
+  // know how to provide you info")
+  const [report, setReport] = useState<string | null>(null);
+  const diagnose = async () => {
+    const lines = [
+      `ua: ${navigator.userAgent}`,
+      `standalone: ${window.matchMedia?.('(display-mode: standalone)')?.matches ?? false}`,
+      `online: ${navigator.onLine}`,
+      `sw: ${navigator.serviceWorker?.controller ? 'controlling' : 'none'}`,
+      `logtoKeys: ${Object.keys(localStorage).filter((k) => k.startsWith('logto:')).length}`,
+      `lastError: ${errorDetail ?? '-'}`,
+    ];
+    try {
+      const { apiFetch } = await import('@/lib/api');
+      const res = await apiFetch('/me');
+      lines.push(`GET /me: ${res.status}`, `www-authenticate: ${res.headers.get('www-authenticate') ?? '-'}`);
+    } catch (err) {
+      lines.push(`GET /me threw: ${err instanceof Error ? `${err.name}: ${err.message}` : String(err)}`);
+    }
+    setReport(lines.join('\n'));
+  };
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 text-ink-3" data-testid="data-loading">
       {slow && (
@@ -369,13 +398,32 @@ function ConnectingScreen({ failedAttempts = 0, errorDetail }: { failedAttempts?
             </p>
           )}
           {unreachable && (
-            <button
-              onClick={() => void logout()}
-              data-testid="connect-signout"
-              className="m-tap mt-2 rounded-full border border-line bg-surface px-5 py-2 text-[13px] font-semibold text-ink"
-            >
-              {t('settings.signOut')}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => void logout()}
+                data-testid="connect-signout"
+                className="m-tap mt-2 rounded-full border border-line bg-surface px-5 py-2 text-[13px] font-semibold text-ink"
+              >
+                {t('settings.signOut')}
+              </button>
+              <button
+                onClick={() => void diagnose()}
+                data-testid="connect-diagnose"
+                className="m-tap mt-2 rounded-full border border-line bg-surface px-5 py-2 text-[13px] font-semibold text-ink"
+              >
+                {t('sync.diagnose')}
+              </button>
+            </div>
+          )}
+          {report && (
+            <textarea
+              readOnly
+              data-testid="connect-diagnose-report"
+              value={report}
+              rows={8}
+              className="mt-2 w-[300px] max-w-[86vw] rounded-input border border-line bg-surface p-2 font-mono text-[10px] text-ink-2"
+              onFocus={(e) => e.currentTarget.select()}
+            />
           )}
         </>
       )}

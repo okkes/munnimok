@@ -37,13 +37,12 @@ describe('ReviewScreen (demo identity)', () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
 
-    // kind row first (user simplification); the counterparty row shows
-    // but stays disabled for standard rows
+    // kind row first (user simplification); the counterparty row is
+    // HIDDEN for standard rows and eases in when Transfer is picked
+    // (dynamic fields, user redesign 2026-07-28)
     const kindRow = screen.getByTestId('review-kind-row');
     expect(kindRow.textContent).toContain('Standard');
-    const counterRow = screen.getByTestId('review-counter-row') as HTMLButtonElement;
-    expect(counterRow.disabled).toBe(true);
-    expect(counterRow.textContent).toContain('Only for transfers');
+    expect(screen.queryByTestId('review-counter-row')).toBeNull();
 
     // the split sheet is pure categories now — no context rows
     fireEvent.click(screen.getByTestId('review-category-chip'));

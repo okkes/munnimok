@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
+import type { UIEvent } from 'react';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { useSpaceTransactions } from '@/application/transactions';
 import type { SpaceTx } from '@/application/transactions';
@@ -37,6 +38,18 @@ export function ReimburseLinkScreen() {
   const [query, setQuery] = useState('');
   const [chosen, setChosen] = useState<SpaceTx | null>(null);
   const [amount, setAmount] = useState('');
+
+  // the search bar rides along: it scrolls away with the content, but
+  // ANY upward scroll sneaks it back in — searching must never require
+  // travelling back to the top of a long list (user request)
+  const [searchShown, setSearchShown] = useState(true);
+  const lastScrollTop = useRef(0);
+  const onListScroll = (e: UIEvent<HTMLDivElement>) => {
+    const top = e.currentTarget.scrollTop;
+    const goingUp = top < lastScrollTop.current;
+    lastScrollTop.current = top;
+    setSearchShown(goingUp || top < 56);
+  };
 
   const anchorIsExpense = (tx?.amountCents ?? 0) < 0;
   const givenOf = (id: string) => givenCents(allTxs ?? [], id);
@@ -116,19 +129,24 @@ export function ReimburseLinkScreen() {
           </IconButton>
         }
       />
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6" onScroll={onListScroll}>
         {tx && (
           <div className="pb-2 text-[12px] text-ink-3" data-testid="reimb-link-anchor">
             {cleanBankText(tx.merchant)} · {fmtCents(tx.amountCents, tx.currency, lang, { sign: true })}
           </div>
         )}
-        <input
-          data-testid="reimb-link-search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={t('tx.searchPlaceholder')}
-          className="mb-2 h-11 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
-        />
+        <div
+          className="sticky top-0 z-10 -mx-5 bg-bg px-5 pt-1 pb-2 transition-all duration-200 ease-out"
+          style={searchShown ? undefined : { transform: 'translateY(-110%)', opacity: 0, pointerEvents: 'none' }}
+        >
+          <input
+            data-testid="reimb-link-search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t('tx.searchPlaceholder')}
+            className="h-11 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+          />
+        </div>
 
         {/* the smart segment stands down while the user searches */}
         {!query && suggested.length > 0 && (
