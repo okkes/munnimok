@@ -4,6 +4,7 @@ import { useSpaceAccounts } from '@/application/transactions';
 import { logActivity } from '@/application/activity';
 import { useData } from '@/app/data';
 import { ACCOUNT_TYPES, isLiability, manualBalanceDate, typeDef } from '@/features/accounts/accountTypes';
+import { AddAccountChooser } from '@/features/accounts/AddAccountChooser';
 import { TX_KINDS, kindOf } from '@/domain/txKind';
 import type { TxKind } from '@/domain/txKind';
 import { typeForLinkedAccount } from '@/domain/txType';
@@ -113,6 +114,10 @@ export function CounterpartySheet({
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [newType, setNewType] = useState<AccountType | null>(null);
+  // the FULL addition flow (bank connect / statement import / manual
+  // with balance+currency), one sheet deeper — the quick-create stays
+  // for the fast path (user request 2026-07-28)
+  const [chooserOpen, setChooserOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -205,6 +210,21 @@ export function CounterpartySheet({
           {query.trim() ? t('tx.counterCreate', { name: query.trim() }) : t('tx.counterNew')}
         </button>
       )}
+      {!creating && (
+        <button
+          data-testid="counter-full-setup"
+          onClick={() => setChooserOpen(true)}
+          className="m-tap mt-2 flex w-full items-center gap-2 rounded-card border border-dashed border-line bg-transparent px-4 py-3 text-left text-[14px] font-medium text-ink-2"
+        >
+          <Icon name="bank-plus" size={18} />
+          {t('tx.counterFullSetup')}
+        </button>
+      )}
+      <AddAccountChooser
+        open={chooserOpen}
+        onOpenChange={setChooserOpen}
+        onCreated={(account) => choose(account)}
+      />
       {creating && (
         <div className="mt-2 flex flex-col gap-2" data-testid="counter-create-form">
           <input
