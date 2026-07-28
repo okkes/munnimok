@@ -391,9 +391,11 @@ function ConnectingScreen({ failedAttempts = 0, errorDetail }: { failedAttempts?
     // iOS field report showed logtoKeys:0 — evicted client auth storage)
     try {
       const token = await getAccessToken();
-      lines.push(`accessToken: ${token ? `present (${token.length} chars)` : 'ABSENT'}`);
+      const state = token ? `present (${token.length} chars)` : 'ABSENT';
+      lines.push(`accessToken: ${state}`);
     } catch (err) {
-      lines.push(`accessToken threw: ${err instanceof Error ? `${err.name}: ${err.message}` : String(err)}`);
+      const detail = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+      lines.push(`accessToken threw: ${detail}`);
     }
     try {
       const { apiFetch } = await import('@/lib/api');
