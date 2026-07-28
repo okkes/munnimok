@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useLang } from '@/i18n';
 import type { Tour } from './tours';
@@ -78,7 +78,24 @@ export function SpotlightOverlay({
   };
 
   const spotlight = phase === 'found' && rect !== null;
-  const tooltipBelow = !rect || rect.top + rect.height < (globalThis.innerHeight || 800) / 2;
+
+  // card placement is measured, not CSS-anchored: bottom-anchoring above
+  // a TALL anchor (the review card) pushed the card's top clean off the
+  // screen (user ss 2026-07-28) — measure the card, place it under/over
+  // the anchor, then clamp inside the viewport + status-bar safe area
+  const cardRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el) return;
+    const vh = globalThis.innerHeight || 800;
+    const h = el.offsetHeight;
+    let top: number;
+    if (!rect) top = vh * 0.3;
+    else if (rect.top + rect.height < vh / 2) top = rect.top + rect.height + 12;
+    else top = rect.top - 12 - h;
+    top = Math.min(top, vh - h - 12);
+    el.style.top = `max(calc(env(safe-area-inset-top, 0px) + 8px), ${Math.round(top)}px)`;
+  }, [rect, phase, step]);
 
   return createPortal(
     <div className="fixed inset-0 z-[120]" data-testid="spotlight-overlay">
@@ -101,11 +118,11 @@ export function SpotlightOverlay({
         <div className="absolute inset-0 bg-black/55" />
       )}
 
-      {/* the step card */}
+      {/* the step card (top written by the measuring effect above) */}
       <div
+        ref={cardRef}
         data-testid="spotlight-card"
         className="absolute inset-x-4 rounded-card border border-line bg-surface p-4 shadow-xl"
-        style={tooltipBelow ? { top: spotlight ? rect.top + rect.height + 12 : '30%' } : { bottom: (globalThis.innerHeight || 800) - (rect?.top ?? 0) + 12 }}
       >
         {phase === 'missing' && (
           <div className="pb-1 text-center text-[34px] leading-none" aria-hidden>

@@ -5,7 +5,7 @@ import { DexieBackend } from '@/db/backend';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
 import { HlcClock } from '@/sync/hlc';
-import { applyCatalogTombstones, migrateReimbursementSlices, migrateUnlinkedTransferKinds } from './catalogMaintenance';
+import { applyCatalogTombstones, migrateReimbursementSlices, migrateSignContradictions, migrateUnlinkedTransferKinds } from './catalogMaintenance';
 
 const SPACE = 's1';
 
@@ -143,5 +143,39 @@ describe('unlinked transfer-kind migration (kind simplification)', () => {
 
     // marker gates the rerun
     expect(await migrateUnlinkedTransferKinds(store, repo)).toBe(0);
+  });
+});
+
+describe('sign-contradiction heal (pre-2026-07-28 bulk-apply damage)', () => {
+  const stores: DexieBackend[] = [];
+  afterEach(async () => {
+    for (const s of stores.splice(0)) await s.destroy();
+  });
+
+  it('re-derives standard rows typed against their sign, once', async () => {
+    const store = new DexieBackend(new MunniDB(`munni_sgn_${Math.random().toString(36).slice(2)}`));
+    stores.push(store);
+    const repo = new Repo(store, new HlcClock('sgn'), { trackOutbox: false });
+    await repo.upsert('space', SPACE, SPACE, { name: 'P', kind: 'personal', currency: 'EUR', periodType: 'month' });
+    const base = { accountId: 'a', currency: 'EUR', merchant: 'X', needsReview: 0 as const };
+    await repo.upsert('transaction', SPACE, 'wrongPlus', { ...base, date: '2026-04-01', amountCents: 100_000, txType: 'income' });
+    await repo.upsert('transaction', SPACE, 'wrongMinus', { ...base, date: '2026-04-02', amountCents: -100_000, txType: 'expense' });
+    await repo.upsert('transaction', SPACE, 'fine', { ...base, date: '2026-04-03', amountCents: -500, txType: 'expense' });
+    await repo.upsert('transaction', SPACE, 'saving', { ...base, date: '2026-04-04', amountCents: 2_000, txType: 'saving', linkedAccountId: 'b' });
+    // the damage predates the write-path invariant — corrupt via the raw
+    // store, exactly how those rows exist in the wild
+    for (const [id, txType] of [['wrongPlus', 'expense'], ['wrongMinus', 'income']] as const) {
+      const row = await store.get('transaction', id);
+      await store.put('transaction', { ...row!, txType });
+    }
+
+    expect(await migrateSignContradictions(store, repo)).toBe(2);
+    expect((await store.get('transaction', 'wrongPlus'))?.txType).toBe('income');
+    expect((await store.get('transaction', 'wrongMinus'))?.txType).toBe('expense');
+    expect((await store.get('transaction', 'fine'))?.txType).toBe('expense');
+    expect((await store.get('transaction', 'saving'))?.txType).toBe('saving');
+
+    // marker gates the rerun
+    expect(await migrateSignContradictions(store, repo)).toBe(0);
   });
 });

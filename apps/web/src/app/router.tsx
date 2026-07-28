@@ -15,6 +15,7 @@ import { HomeCustomizeScreen } from '@/features/home/HomeCustomizeScreen';
 import { TxDetailCustomizeScreen } from '@/features/transactions/TxDetailCustomizeScreen';
 import { TransactionsScreen } from '@/features/transactions/TransactionsScreen';
 import { TxDetailScreen } from '@/features/transactions/TxDetailScreen';
+import { ReimburseLinkScreen } from '@/features/transactions/ReimburseLinkScreen';
 import { SpacesScreen } from '@/features/spaces/SpacesScreen';
 import { SpaceSettingsScreen } from '@/features/spaces/SpaceSettingsScreen';
 import { PeriodSettingsScreen } from '@/features/spaces/PeriodSettingsScreen';
@@ -100,6 +101,14 @@ const txDetailRoute = createRoute({
   getParentRoute: () => transactionsRoute,
   path: '$txId',
   component: TxDetailScreen,
+});
+// full-screen counterpart picker (user redesign 2026-07-28) — a sibling
+// of the detail under /transactions, so it owns the detail pane on
+// desktop and the whole viewport on mobile
+const reimburseLinkRoute = createRoute({
+  getParentRoute: () => transactionsRoute,
+  path: '$txId/link-reimb',
+  component: ReimburseLinkScreen,
 });
 const recurringRoute = createRoute({
   getParentRoute: () => appRoute,
@@ -208,7 +217,7 @@ export const routeTree = rootRoute.addChildren([
     homeRoute,
     homeCustomizeRoute,
     txCustomizeRoute,
-    transactionsRoute.addChildren([txDetailRoute]),
+    transactionsRoute.addChildren([txDetailRoute, reimburseLinkRoute]),
     recurringRoute.addChildren([recurringDetailRoute]),
     recurringSuggestionsRoute,
     spacesRoute,

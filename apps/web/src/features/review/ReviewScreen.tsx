@@ -9,7 +9,7 @@ import { EventFormSheet } from '@/features/events/EventsScreen';
 import { RecurringFormSheet, formFromTx } from '@/features/recurring/RecurringFormSheet';
 import { merchantKey } from '@/domain/merchantKey';
 import { draftReady, initDraft, withCategory, withKind, withLinkedAccount, withSplits, withType } from '@/domain/reviewDraft';
-import { kindOf } from '@/domain/txKind';
+import { kindOf, standardTypeFor } from '@/domain/txKind';
 import type { TxKind } from '@/domain/txKind';
 import { normalizeIban } from '@/domain/feedIds';
 import { isPaypalAccount, isPaypalFunding } from '@/domain/paypal';
@@ -100,21 +100,28 @@ async function writeConfirmation(args: {
     ...(args.eventId ? { eventId: args.eventId } : {}),
   }, null); // confirm logs its own richer 'review' line (with bulk count)
   for (const item of args.bulk) {
-    // the draft's split shape travels with the bulk: absolute splits fit
-    // exact twins by the similar-rule; pct splits rescale per item —
-    // and the WHOLE decision rides along: type, counterparty, recurring
-    // and event reach every selected sibling too (user rule)
-    const splits = draft.splits?.length ? resolveSplitsFor(item.amountCents, draft.splits) : undefined;
-    await args.transform(item, {
-      catId: draft.catId,
-      txType: draft.txType,
-      needsReview: 0,
-      ...(splits ? { splits } : {}),
-      ...(draft.linkedAccountId ? { linkedAccountId: draft.linkedAccountId } : {}),
-      ...(args.recurringId ? { recurringId: args.recurringId } : {}),
-      ...(args.eventId ? { eventId: args.eventId } : {}),
-    }, null);
+    await args.transform(item, bulkFieldsFor(item, draft, args.recurringId, args.eventId), null);
   }
+}
+
+/** the WHOLE decision rides to every selected sibling (user rule):
+ *  category, type, counterparty, recurring, event. Absolute splits fit
+ *  exact twins by the similar-rule, pct splits rescale per item — and
+ *  sign-bound standard types re-derive by the sibling's OWN sign (the
+ *  similar filter already keeps signs together; this guards any path
+ *  that doesn't). */
+function bulkFieldsFor(item: SpaceTx, draft: ReviewDraft, recurringId: string | undefined, eventId: string | undefined) {
+  const splits = draft.splits?.length ? resolveSplitsFor(item.amountCents, draft.splits) : undefined;
+  const siblingType = kindOf(draft.txType) === 'standard' ? standardTypeFor(item.amountCents) : draft.txType;
+  return {
+    catId: draft.catId,
+    txType: siblingType,
+    needsReview: 0 as const,
+    ...(splits ? { splits } : {}),
+    ...(draft.linkedAccountId ? { linkedAccountId: draft.linkedAccountId } : {}),
+    ...(recurringId ? { recurringId } : {}),
+    ...(eventId ? { eventId } : {}),
+  };
 }
 
 /** "also apply to n similar": a compact summary row on the card; the full
@@ -592,6 +599,10 @@ export function ReviewScreen() {
       (item) =>
         item.id !== tx.id &&
         !skipped.has(item.id) &&
+        // decisions are sign-bound (income vs expense, reimbursement
+        // side): a -€1000 sibling must never inherit a "received
+        // reimbursement" decision made on +€1000 (user ss 2026-07-28)
+        Math.sign(item.amountCents) === Math.sign(tx.amountCents) &&
         merchantKey(item.merchant) === key &&
         (!mustMatchAmount || item.amountCents === tx.amountCents),
     );
@@ -608,12 +619,20 @@ export function ReviewScreen() {
     setEventPick(null);
     setDescExpanded(false);
   });
-  // select every similar item by default — re-selecting when the list
-  // itself changes (a sync can add one mid-card) keeps the visible count
-  // honest about what confirm will actually touch
+  // select every similar item by default. Keyed on MEMBERSHIP, not array
+  // identity: the native SQL backend re-emits unchanged rows every sync
+  // cycle, and an identity-keyed reset kept re-arming boxes the user had
+  // just cleared (iOS ss 2026-07-28). When a sync genuinely changes the
+  // list mid-card, new arrivals join checked and the user's unchecks
+  // survive — the visible count stays honest either way.
+  const similarKey = useMemo(() => similar.map((s) => s.id).sort((a, b) => a.localeCompare(b)).join(','), [similar]);
+  const prevSimilarIds = useRef<ReadonlySet<string>>(new Set());
   useEffect(() => {
-    setBulkSelected(new Set(similar.map((s) => s.id)));
-  }, [similar]);
+    const ids = similarKey ? similarKey.split(',') : [];
+    const prev = prevSimilarIds.current;
+    prevSimilarIds.current = new Set(ids);
+    setBulkSelected((sel) => new Set(ids.filter((id) => (prev.has(id) ? sel.has(id) : true))));
+  }, [similarKey]);
 
   const draftKind: TxKind = draft ? kindOf(draft.txType) : 'standard';
   const draftKindDetail = draft ? kindDetail(draft.txType) : null;

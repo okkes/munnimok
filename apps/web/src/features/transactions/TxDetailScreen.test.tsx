@@ -230,12 +230,13 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
 
   it('links a credit with a clamped partial amount, then unlinks it', async () => {
     renderApp('/transactions/dm6');
+    // finding the counterpart lives on its own full screen now (redesign)
     fireEvent.click(await screen.findByTestId('reimb-add'));
 
     // pick the salary credit; the prefill is clamped to the expense (52,40)
-    const picker = await screen.findByTestId('reimb-picker');
-    await waitFor(() => expect(picker.querySelector('[data-testid^="reimb-pick-"]')).toBeTruthy());
-    fireEvent.click(picker.querySelector('[data-testid^="reimb-pick-"]')!);
+    const picker = await screen.findByTestId('reimb-link-list');
+    await waitFor(() => expect(picker.querySelector('[data-testid^="reimb-pick-"] [data-testid^="tx-row-"]')).toBeTruthy());
+    fireEvent.click(picker.querySelector('[data-testid^="reimb-pick-"] [data-testid^="tx-row-"]')!);
     const amountInput = (await screen.findByTestId('reimb-amount')) as HTMLInputElement;
     expect(amountInput.value).toBe('52,40');
 
@@ -293,9 +294,9 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
 
     renderApp('/transactions/dm1');
     fireEvent.click(await screen.findByTestId('reimb-add-out'));
-    const picker = await screen.findByTestId('reimb-picker');
-    await waitFor(() => expect(picker.querySelector('[data-testid^="reimb-pick-"]')).toBeTruthy());
-    fireEvent.click(picker.querySelector('[data-testid^="reimb-pick-"]')!);
+    const picker = await screen.findByTestId('reimb-link-list');
+    await waitFor(() => expect(picker.querySelector('[data-testid^="reimb-pick-"] [data-testid^="tx-row-"]')).toBeTruthy());
+    fireEvent.click(picker.querySelector('[data-testid^="reimb-pick-"] [data-testid^="tx-row-"]')!);
     // the prefill is already clamped to the expense's open remainder —
     // save it as-is (which expense is "most recent" is demo-data detail)
     await screen.findByTestId('reimb-amount');

@@ -266,11 +266,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // explicit reimbursed slice, once per identity (marker-gated;
       // ALL identities — demo/offline data migrates too)
       void (async () => {
-        const { migrateReimbursementSlices, migrateUnlinkedTransferKinds } = await import('@/application/catalogMaintenance');
+        const { migrateReimbursementSlices, migrateUnlinkedTransferKinds, migrateSignContradictions } = await import('@/application/catalogMaintenance');
         await migrateReimbursementSlices(store, repo);
         // kind simplification: counterparty-less transfer-family rows
         // become plain income/expense by sign (marker-gated, all identities)
         await migrateUnlinkedTransferKinds(store, repo);
+        // heal rows the pre-2026-07-28 bulk-apply typed against their sign
+        await migrateSignContradictions(store, repo);
       })().catch(() => undefined);
       if (identity.kind === 'offline' && (await liveSpaces(store)).length === 0) {
         // fully local profile, same Mina flow as online (user ruling):

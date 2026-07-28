@@ -326,7 +326,10 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
   const writable = useMemo(() => (accounts ?? []).filter((a) => a.source === 'manual'), [accounts]);
   const recurrings = useRecurrings();
 
-  // (re)fill when opened
+  // (re)fill when opened — keyed on the row's ID, not the object:
+  // background writes (sync, migrations) re-emit the same row as a
+  // fresh object every cycle on the native SQL backend, and an
+  // identity-keyed reseed overwrote what the user was typing (iOS ss)
   useEffect(() => {
     if (!open) return;
     const initial = initialFormState(tx);
@@ -340,7 +343,8 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
     setLinkedAccountId(initial.linkedAccountId);
     setRecurringId(initial.recurringId);
     setStagedSplits(tx?.splits ?? null);
-  }, [open, tx]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, tx?.id]);
 
   const cat = cats.byId(catId);
   const effectiveAccount = accountId ?? writable[0]?.id ?? null;

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { LOCALES, useLang } from '@/i18n';
 import { txTitle } from '@/lib/text';
 import { useRecurringOps } from '@/application/recurring';
@@ -114,12 +114,21 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved }: Rea
   const [dueDayText, setDueDayText] = useState('1');
   const [everyNText, setEveryNText] = useState('1');
 
+  // seed on open or when the underlying RECORD changes — never on object
+  // identity: callers rebuild `initial` per render (formFromTx in review),
+  // and on the native SQL backend every sync cycle re-emits fresh objects.
+  // The identity-keyed reseed kept overwriting mid-typing edits (iOS ss).
+  const seedKey = initial === null ? null : (initial.id ?? 'new');
+  const seededRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
+    if (seededRef.current === seedKey) return;
+    seededRef.current = seedKey;
     setForm(initial);
     setDueDayText(String(initial?.dueDay ?? 1));
     setEveryNText(String(initial?.everyN ?? 1));
     setConfirmDelete(false);
-  }, [initial]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seedKey]);
 
   const save = async () => {
     if (!form?.name.trim()) return;

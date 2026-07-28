@@ -59,6 +59,9 @@ export function EventFormSheet({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const uploadRef = useRef<HTMLInputElement>(null);
 
+  // seed keyed on the record's ID, never object identity (the iOS
+  // reseed class: re-emitted rows must not wipe mid-typing edits)
+  const seedKey = initial === null ? null : (editing?.id ?? 'new');
   useEffect(() => {
     setName(editing?.name ?? '');
     setPicture(editing?.picture ?? EVENT_PICTURES[0]);
@@ -67,7 +70,8 @@ export function EventFormSheet({
     setEstimate(editing?.budgetCents ? (editing.budgetCents / 100).toFixed(2) : '');
     setNote(editing?.note ?? '');
     setConfirmDelete(false);
-  }, [initial, editing]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seedKey]);
 
   const onUpload = async (file: File | undefined) => {
     if (!file) return;

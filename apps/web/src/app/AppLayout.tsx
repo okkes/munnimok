@@ -12,6 +12,7 @@ import { useStoreKeepAlive } from '@/application/stores';
 import { collectBudgetAlerts } from '@/sync/swBudgets';
 import { hapticNotify } from '@/lib/platform';
 import { EdgeSwipeBack } from '@/ui/EdgeSwipeBack';
+import { SHEET_OWNS_KEYBOARD } from '@/ui/Sheet';
 import { MinaTutorial } from '@/features/mina/MinaTutorial';
 import { Icon } from '@/ui/Icon';
 import { Logo } from '@/ui/Logo';
@@ -43,26 +44,95 @@ const isEditable = (el: EventTarget | null): el is HTMLElement =>
  * focus. The focused field also scrolls itself into view once the
  * resized layout has settled (fields near the bottom stayed hidden).
  */
-/** two passes: the iOS native-resize webview settles LATER than 300ms,
- *  so a single early scroll measured a stale viewport and fields near
- *  the bottom stayed under the keyboard (user ss). The second pass
- *  re-centers once the resize has genuinely landed. */
-function scheduleKeyboardScrolls(el: HTMLElement): ReturnType<typeof setTimeout>[] {
-  const center = () => {
-    if (document.activeElement === el) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+/** scroll only the nearest REAL scroller (overflow-y auto/scroll):
+ *  scrollIntoView also scrolls overflow-HIDDEN ancestors — inside a
+ *  sheet that sheared the container and clipped its header (user ss
+ *  2026-07-28). The visible band respects the visualViewport so a
+ *  keyboard-shrunk browser viewport centers against what's on screen. */
+function revealInScroller(el: HTMLElement): void {
+  const vv = window.visualViewport;
+  const viewTop = vv?.offsetTop ?? 0;
+  const viewBottom = viewTop + (vv?.height ?? window.innerHeight);
+  let node: HTMLElement | null = el.parentElement;
+  while (node && node !== document.body) {
+    if (node.scrollHeight > node.clientHeight + 4) {
+      const overflowY = getComputedStyle(node).overflowY;
+      if (overflowY === 'auto' || overflowY === 'scroll') {
+        const box = node.getBoundingClientRect();
+        const bandTop = Math.max(box.top, viewTop);
+        const bandBottom = Math.min(box.bottom, viewBottom);
+        const target = el.getBoundingClientRect();
+        const delta = target.top + target.height / 2 - (bandTop + bandBottom) / 2;
+        if (bandBottom > bandTop && Math.abs(delta) > 8) {
+          node.scrollTo({ top: node.scrollTop + delta, behavior: 'smooth' });
+        }
+        return; // nearest scroller only — never shear outer containers
+      }
+    }
+    node = node.parentElement;
+  }
+}
+
+/** ONE scroll, once the viewport has SETTLED. The old fixed-delay double
+ *  pass (300/750ms) visibly re-corrected after the keyboard had landed
+ *  and kept moving fields underneath mid-air fingers — the source of
+ *  the dead-tap-then-register feel (user ss ×3, 2026-07-28). Watching
+ *  the visualViewport hold still also makes field-to-field hops (no
+ *  resize at all) reveal fast instead of waiting out a timer. */
+function scheduleKeyboardReveal(el: HTMLElement): () => void {
+  const vv = window.visualViewport;
+  let cancelled = false;
+  let done = false;
+  const fire = () => {
+    if (cancelled || done) return;
+    done = true;
+    if (document.activeElement === el) revealInScroller(el);
   };
-  return [300, 750].map((ms) => setTimeout(center, ms));
+  if (!vv) {
+    const timer = setTimeout(fire, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }
+  let last = vv.height;
+  let quiet = 0;
+  const interval = setInterval(() => {
+    if (vv.height === last) {
+      quiet += 1;
+      if (quiet >= 2) {
+        clearInterval(interval);
+        fire(); // ~120ms of stillness — the resize (if any) has landed
+      }
+    } else {
+      quiet = 0;
+      last = vv.height;
+    }
+  }, 60);
+  const cap = setTimeout(() => {
+    clearInterval(interval);
+    fire();
+  }, 900);
+  return () => {
+    cancelled = true;
+    clearInterval(interval);
+    clearTimeout(cap);
+  };
 }
 
 function useKeyboardOpen(): boolean {
   const [open, setOpen] = useState(false);
   useEffect(() => {
-    let scrollTimers: ReturnType<typeof setTimeout>[] = [];
+    let cancelReveal: (() => void) | null = null;
     const onFocusIn = (e: FocusEvent) => {
       if (!isEditable(e.target)) return;
       setOpen(true);
-      scrollTimers.forEach(clearTimeout);
-      scrollTimers = scheduleKeyboardScrolls(e.target);
+      cancelReveal?.();
+      // inside a sheet on iOS Safari/PWA the sheet library owns the
+      // keyboard (it translates the sheet AND reveals the field) — a
+      // second reveal here fought it
+      if (SHEET_OWNS_KEYBOARD && e.target.closest('.react-modal-sheet-container')) return;
+      cancelReveal = scheduleKeyboardReveal(e.target);
     };
     const onFocusOut = () => {
       // focus often hops field-to-field — only a settled blur closes
@@ -73,7 +143,7 @@ function useKeyboardOpen(): boolean {
     window.addEventListener('focusin', onFocusIn);
     window.addEventListener('focusout', onFocusOut);
     return () => {
-      scrollTimers.forEach(clearTimeout);
+      cancelReveal?.();
       window.removeEventListener('focusin', onFocusIn);
       window.removeEventListener('focusout', onFocusOut);
     };

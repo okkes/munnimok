@@ -386,9 +386,15 @@ export function MinaTutorial() {
   return createPortal(
     <div data-testid="mina-tutorial" data-step={step.id}>
       {step.kind === 'fullscreen' && (
-        <div className="fixed inset-0 z-[130] flex flex-col items-center overflow-y-auto bg-bg" data-testid="mina-fullscreen">
+        <div
+          className="fixed inset-0 z-[130] flex flex-col items-center overflow-y-auto bg-bg"
+          data-testid="mina-fullscreen"
+          // the art must start BELOW the status bar (user ss: the
+          // camera/notch cut Mina's head off on tall pictures)
+          style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 12px)' }}
+        >
           <div className="flex w-full max-w-[420px] flex-1 flex-col items-center px-6 pb-8 lg:max-w-[860px] lg:flex-row lg:items-center lg:gap-10">
-            <img src={MINA_ART[step.art!]} alt="Mina" className="mt-6 max-h-[46dvh] w-auto max-w-full rounded-2xl object-contain lg:mt-0 lg:max-h-[70dvh] lg:flex-1" />
+            <img src={MINA_ART[step.art!]} alt="Mina" className="mt-4 max-h-[42dvh] w-auto max-w-full rounded-2xl object-contain lg:mt-0 lg:max-h-[70dvh] lg:flex-1" />
             <div className="flex w-full flex-col items-center text-center lg:items-start lg:text-left">
               <h1 className="m-h2 mt-5 text-ink">{t(step.titleKey)}</h1>
               <p className="mt-2 max-w-[360px] text-[14px] leading-relaxed text-ink-2">{t(step.bodyKey)}</p>

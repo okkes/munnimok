@@ -37,6 +37,11 @@ interface Row {
 let rowCounter = 0;
 const newRow = (catId: string, amount: string): Row => ({ key: `r${rowCounter++}`, catId, amount });
 
+/** categories the OTHER rows already own — hidden in the picker; a
+ *  split across "Rent" and "Rent" is never meaningful (user ss) */
+const excludedCatIds = (rows: Row[], pickerFor: number | null): string[] | undefined =>
+  pickerFor === null ? undefined : rows.filter((x, j) => j !== pickerFor && x.catId !== UNCATEGORIZED_ID).map((x) => x.catId);
+
 const toText = (cents: number) => (cents / 100).toFixed(2).replace('.', ',');
 const toPctText = (pct: number) => String(pct).replace('.', ',');
 const parsePct = (text: string): number => {
@@ -168,7 +173,15 @@ export function SplitEditorSheet({
         }),
       );
     } else {
-      setRows((r) => r.map((row) => ({ ...row, amount: toText(Math.round((abs * parsePct(row.amount)) / 100)) })));
+      // pct → euros must land EXACTLY on the total: rounding each row on
+      // its own left a ±1 cent remainder (50/50 of €34.99 → "€0.01 too
+      // much", user ss). resolveSplitsFor is the same partition the save
+      // path stores — tabbing back shows precisely what saving would.
+      setRows((r) => {
+        const pctSplits = r.map((row) => ({ catId: row.catId, amountCents: 0, pct: parsePct(row.amount) }));
+        const resolved = resolveSplitsFor(abs, pctSplits);
+        return r.map((row, i) => ({ ...row, amount: toText(Math.abs(resolved[i]?.amountCents ?? 0)) }));
+      });
     }
   };
 
@@ -356,6 +369,7 @@ export function SplitEditorSheet({
         // direction's categories before one is picked (old form behavior)
         txType={direction ? undefined : (txType ?? tx.txType)}
         selectedId={pickerFor === null ? undefined : rows[pickerFor]?.catId}
+        excludeIds={excludedCatIds(rows, pickerFor)}
         onPick={(catId) => {
           if (pickerFor !== null) setRows((r) => r.map((x, j) => (j === pickerFor ? { ...x, catId } : x)));
         }}

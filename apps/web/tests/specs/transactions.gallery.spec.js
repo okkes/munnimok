@@ -108,10 +108,11 @@ for (const V of VARIANTS) {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V, { demo: true });
     await openFirstReviewTx(page); // dm100: Amazon.nl -28.99
-    // link the salary credit, capped automatically at the open remainder
+    // finding the counterpart lives on its own full screen now (redesign
+    // 2026-07-28): search + suggestions above the full candidate list
     await page.click('[data-testid="reimb-add"]');
-    await page.waitForSelector('[data-testid="reimb-picker"]');
-    await page.locator('[data-testid^="reimb-pick-"]').first().click();
+    await page.waitForSelector('[data-testid="reimb-link-list"]');
+    await page.locator('[data-testid="reimb-link-list"] [data-testid^="tx-row-"]').first().click();
     await expect(page.locator('[data-testid="reimb-amount"]')).toHaveValue('28,99'); // clamped prefill
     await page.fill('[data-testid="reimb-amount"]', '10,00');
     await page.click('[data-testid="reimb-save"]');

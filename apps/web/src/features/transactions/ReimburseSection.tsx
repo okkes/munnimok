@@ -1,23 +1,12 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { useSpaceTransactions, useTxTransform } from '@/application/transactions';
+import { useSpaceTransactions } from '@/application/transactions';
 import type { SpaceTx } from '@/application/transactions';
 import { useLang } from '@/i18n';
-import { fmtCents, parseCents } from '@/lib/money';
+import { fmtCents } from '@/lib/money';
 import { cleanBankText } from '@/lib/text';
-import {
-  clampReimbursement,
-  creditRemainingCents,
-  givenCents,
-  netAmountCents,
-  remainingCents,
-  settledSplits,
-  totalReimbursedCents,
-  withLink,
-} from '@/domain/reimbursement';
-import type { TxReimbursement } from '@/db/types';
-import { REIMBURSED_ID, UNCATEGORIZED_ID } from '@/domain/categories';
-import { catName, useCategories } from '@/features/categories/useCategories';
+import { creditRemainingCents, givenCents, netAmountCents, remainingCents, totalReimbursedCents } from '@/domain/reimbursement';
+import { useReimburseLinks } from './useReimburseLinks';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
@@ -63,35 +52,21 @@ function CounterpartSheet({
 }
 
 /**
- * Reimbursement links on an expense: list + unlink, and a picker over
- * recent credit transactions with a clamped amount to link. Candidates
- * come from what the SPACE sees, so reimbursements can only ever pair
+ * Reimbursement links on a transaction: the linked list + unlink here;
+ * FINDING the counterpart lives on its own full screen (user redesign
+ * 2026-07-28 — search, suggestions, more room). Candidates come from
+ * what the SPACE sees, so reimbursements can only ever pair
  * transactions of accounts attached to the same space (user rule).
  */
 export function ReimburseSection({ tx }: { tx: SpaceTx }) {
   const { t, lang } = useLang();
-  const transform = useTxTransform();
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [chosen, setChosen] = useState<SpaceTx | null>(null);
-  const [amount, setAmount] = useState('');
+  const navigate = useNavigate();
   const [counterpart, setCounterpart] = useState<{ tx: SpaceTx; cents: number } | null>(null);
 
   const allTxs = useSpaceTransactions();
+  const { unlink } = useReimburseLinks(allTxs);
   const linkedIds = useMemo(() => (tx.reimbursements ?? []).map((r) => r.txId), [tx.reimbursements]);
   const linkedTxs = useMemo(() => allTxs?.filter((c) => linkedIds.includes(c.id)), [allTxs, linkedIds]);
-  const credits = useMemo(
-    () =>
-      allTxs
-        ?.filter((c) => c.amountCents > 0 && c.id !== tx.id)
-        .map((c) => ({ credit: c, remaining: creditRemainingCents(c, givenCents(allTxs, c.id)), linked: linkedIds.includes(c.id) }))
-        // a credit stays selectable as long as it has value left — even
-        // when already linked here: picking it again MERGES into the
-        // existing link (user rule)
-        .filter((entry) => entry.remaining > 0)
-        .sort((a, b) => b.credit.date.localeCompare(a.credit.date))
-        .slice(0, 30),
-    [allTxs, tx.id, linkedIds],
-  );
   // the reverse direction: expenses that name THIS credit as their refund
   const reimburses = useMemo(
     () =>
@@ -101,61 +76,13 @@ export function ReimburseSection({ tx }: { tx: SpaceTx }) {
     [allTxs, tx.id],
   );
 
-  const cats = useCategories();
-  const nameOf = (id: string) => catName(cats.byId(id), t);
-
-  // settlement rewrites category attribution (redesign, docs/
-  // reimbursement-redesign.md): slices keep the GROSS truth and the
-  // settled value moves into an explicit `reimbursed` slice on BOTH sides
-  const expensePatch = (expense: SpaceTx, newLinks: TxReimbursement[]) => ({
-    reimbursements: newLinks,
-    splits: settledSplits(expense, totalReimbursedCents({ reimbursements: newLinks }), nameOf),
-  });
-
-  // a settled credit deserves a real category instead of "Uncategorized"
-  // (user remark): the moment it is linked it self-files as Reimbursed,
-  // unless the user already picked something deliberately
-  const creditPatch = (credit: SpaceTx, newGivenCents: number) => {
-    const selfFiles = (!credit.catId || credit.catId === UNCATEGORIZED_ID || credit.needsReview === 1) && newGivenCents > 0;
-    const catId = selfFiles ? REIMBURSED_ID : credit.catId;
-    return {
-      ...(selfFiles ? { catId, txType: 'income' as const, needsReview: 0 as const } : {}),
-      splits: settledSplits({ ...credit, catId }, newGivenCents, nameOf),
-    };
-  };
+  const openPicker = () => void navigate({ to: '/transactions/$txId/link-reimb', params: { txId: tx.id } });
 
   // a credit that reimburses something shows its own side of the story —
   // and can start a link itself (user request: income side too)
   if (tx.amountCents >= 0) {
     const given = givenCents(allTxs ?? [], tx.id);
     const giveable = creditRemainingCents(tx, given);
-    // expenses still open for reimbursement, newest first
-    const openExpenses = (allTxs ?? [])
-      .filter((e) => e.amountCents < 0 && remainingCents(e) > 0)
-      .sort((a, b) => b.date.localeCompare(a.date))
-      .slice(0, 30);
-
-    const chooseExpense = (expense: SpaceTx) => {
-      setChosen(expense);
-      setAmount((Math.min(remainingCents(expense), giveable) / 100).toFixed(2).replace('.', ','));
-    };
-    const confirmExpense = () => {
-      if (!chosen) return;
-      const cents = clampReimbursement(chosen, giveable, parseCents(amount) ?? 0);
-      if (cents > 0) {
-        // MERGE semantics both directions (user rule): old + new
-        const prev = (chosen.reimbursements ?? []).find((r) => r.txId === tx.id)?.amountCents ?? 0;
-        void transform(chosen, expensePatch(chosen, withLink(chosen.reimbursements, tx.id, prev + cents)), 'reimburse');
-        void transform(tx, creditPatch(tx, given + cents), null); // one line per gesture, not per side
-      }
-      setChosen(null);
-      setPickerOpen(false);
-    };
-    const unlinkExpense = (expense: SpaceTx) => {
-      const removed = (expense.reimbursements ?? []).find((r) => r.txId === tx.id)?.amountCents ?? 0;
-      void transform(expense, expensePatch(expense, withLink(expense.reimbursements, tx.id, 0)), 'reimburse');
-      void transform(tx, creditPatch(tx, given - removed), null);
-    };
 
     return (
       <>
@@ -164,10 +91,7 @@ export function ReimburseSection({ tx }: { tx: SpaceTx }) {
           {giveable > 0 && (
             <button
               data-testid="reimb-add-out"
-              onClick={() => {
-                setChosen(null);
-                setPickerOpen(true);
-              }}
+              onClick={openPicker}
               className="m-tap flex items-center gap-1 border-none bg-transparent text-[11px] font-semibold text-accent-deep"
             >
               <Icon name="plus" size={14} />
@@ -195,7 +119,7 @@ export function ReimburseSection({ tx }: { tx: SpaceTx }) {
               <button
                 aria-label={t('action.delete')}
                 data-testid={`reimb-unlink-out-${expense.id}`}
-                onClick={() => unlinkExpense(expense)}
+                onClick={() => unlink(expense, tx)}
                 className="m-tap border-none bg-transparent text-ink-4"
               >
                 <Icon name="close" size={16} />
@@ -213,81 +137,11 @@ export function ReimburseSection({ tx }: { tx: SpaceTx }) {
           )}
         </div>
 
-        {/* pick the expense this credit pays back, then confirm the amount */}
-        <Sheet open={pickerOpen} onOpenChange={setPickerOpen} title={t('reimb.linkOut')} size="tall">
-          {chosen ? (
-            <div className="flex flex-col gap-3 pt-1" data-testid="reimb-confirm">
-              <div className="text-[14px] text-ink">{cleanBankText(chosen.merchant)}</div>
-              <input
-                data-testid="reimb-amount"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                inputMode="decimal"
-                placeholder={t('reimb.amountLabel')}
-                className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none"
-              />
-              <Button data-testid="reimb-save" onClick={confirmExpense}>
-                {t('action.save')}
-              </Button>
-            </div>
-          ) : (
-            <div data-testid="reimb-picker">
-              {openExpenses.map((expense) => (
-                <button
-                  key={expense.id}
-                  data-testid={`reimb-pick-${expense.id}`}
-                  onClick={() => chooseExpense(expense)}
-                  className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-1 py-2.5 text-left"
-                >
-                  <Icon name="cash-minus" size={20} color="var(--m-negative)" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[14px] text-ink">{cleanBankText(expense.merchant)}</span>
-                    <span className="block text-[11px] text-ink-4">{expense.date}</span>
-                  </span>
-                  <span className="m-num text-[14px] font-semibold text-ink">
-                    {fmtCents(-remainingCents(expense), expense.currency, lang, { sign: true })}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-        </Sheet>
-
         <CounterpartSheet counterpart={counterpart?.tx ?? null} linkedCents={counterpart?.cents ?? 0} currency={tx.currency} onClose={() => setCounterpart(null)} />
       </>
     );
   }
   const total = totalReimbursedCents(tx);
-
-  const unlink = (txId: string) => {
-    const removed = (tx.reimbursements ?? []).find((r) => r.txId === txId)?.amountCents ?? 0;
-    void transform(tx, expensePatch(tx, withLink(tx.reimbursements, txId, 0)), 'reimburse');
-    const credit = allTxs?.find((c) => c.id === txId);
-    if (credit) void transform(credit, creditPatch(credit, givenCents(allTxs ?? [], credit.id) - removed), null);
-  };
-
-  const choose = (credit: SpaceTx) => {
-    // the field asks for the ADDITIONAL amount — what the credit still
-    // has left, clamped by what this expense still needs
-    const giveable = creditRemainingCents(credit, givenCents(allTxs ?? [], credit.id));
-    const prefill = clampReimbursement(tx, giveable, giveable);
-    setChosen(credit);
-    setAmount((prefill / 100).toFixed(2).replace('.', ','));
-  };
-
-  const confirm = () => {
-    if (!chosen) return;
-    const giveable = creditRemainingCents(chosen, givenCents(allTxs ?? [], chosen.id));
-    const cents = clampReimbursement(tx, giveable, parseCents(amount) ?? 0);
-    if (cents > 0) {
-      // re-picking an already-linked credit MERGES: old + new (user rule)
-      const prev = (tx.reimbursements ?? []).find((r) => r.txId === chosen.id)?.amountCents ?? 0;
-      void transform(tx, expensePatch(tx, withLink(tx.reimbursements, chosen.id, prev + cents)), 'reimburse');
-      void transform(chosen, creditPatch(chosen, givenCents(allTxs ?? [], chosen.id) + cents), null);
-    }
-    setChosen(null);
-    setPickerOpen(false);
-  };
 
   return (
     <>
@@ -296,10 +150,7 @@ export function ReimburseSection({ tx }: { tx: SpaceTx }) {
         {remainingCents(tx) > 0 && (
           <button
             data-testid="reimb-add"
-            onClick={() => {
-              setChosen(null);
-              setPickerOpen(true);
-            }}
+            onClick={openPicker}
             className="m-tap flex items-center gap-1 border-none bg-transparent text-[11px] font-semibold text-accent-deep"
           >
             <Icon name="plus" size={14} />
@@ -330,7 +181,10 @@ export function ReimburseSection({ tx }: { tx: SpaceTx }) {
               <button
                 aria-label={t('action.delete')}
                 data-testid={`reimb-unlink-${linked.id}`}
-                onClick={() => unlink(linked.id)}
+                onClick={() => {
+                  const credit = allTxs?.find((c) => c.id === linked.id);
+                  if (credit) unlink(tx, credit);
+                }}
                 className="m-tap border-none bg-transparent text-ink-4"
               >
                 <Icon name="close" size={16} />
@@ -353,50 +207,6 @@ export function ReimburseSection({ tx }: { tx: SpaceTx }) {
           <div className="px-4 py-4 text-center text-[12px] text-ink-4">—</div>
         )}
       </div>
-
-      {/* pick a credit tx, then confirm the amount */}
-      <Sheet open={pickerOpen} onOpenChange={setPickerOpen} title={t('reimb.link')} size="tall">
-        {chosen ? (
-          <div className="flex flex-col gap-3 pt-1" data-testid="reimb-confirm">
-            <div className="text-[14px] text-ink">{cleanBankText(chosen.merchant)}</div>
-            <input
-              data-testid="reimb-amount"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              inputMode="decimal"
-              placeholder={t('reimb.amountLabel')}
-              className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none"
-            />
-            <Button data-testid="reimb-save" onClick={confirm}>
-              {t('action.save')}
-            </Button>
-          </div>
-        ) : (
-          <div data-testid="reimb-picker">
-            {(credits ?? []).map(({ credit, remaining, linked }) => (
-              <button
-                key={credit.id}
-                data-testid={`reimb-pick-${credit.id}`}
-                onClick={() => choose(credit)}
-                className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-1 py-2.5 text-left"
-              >
-                <Icon name="cash-plus" size={20} color="var(--m-accent)" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[14px] text-ink">{cleanBankText(credit.merchant)}</span>
-                  <span className="block text-[11px] text-ink-4">
-                    {credit.date}
-                    {linked && <span className="text-accent-deep"> · {t('reimb.alreadyLinked')}</span>}
-                  </span>
-                </span>
-                {/* what the credit can still give, not its gross */}
-                <span className="m-num text-[14px] font-semibold text-accent-deep">
-                  +{fmtCents(remaining, credit.currency, lang)}
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
-      </Sheet>
 
       <CounterpartSheet counterpart={counterpart?.tx ?? null} linkedCents={counterpart?.cents ?? 0} currency={tx.currency} onClose={() => setCounterpart(null)} />
     </>

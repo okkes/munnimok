@@ -273,8 +273,11 @@
 }
 
 /* keyboard focus (redesign U5): a visible ring for tab users only —
-   touch and mouse never see it */
-:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+   touch and mouse never see it. Editable fields are EXCLUDED: unlike
+   buttons they match :focus-visible on plain touch focus too, which
+   painted a green ring on every tapped input and clipped awkwardly at
+   sheet edges (user rule 2026-07-28: the caret is the focus signal) */
+:where(button, a, [tabindex]):focus-visible {
   outline: 2px solid var(--m-accent);
   outline-offset: 2px;
 }

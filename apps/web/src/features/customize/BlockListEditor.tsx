@@ -30,7 +30,7 @@ export function BlockListEditor({
   onReorder: (from: number, to: number) => void;
 }>) {
   const { t } = useLang();
-  const { drag, ghost, setRowRef, rowStyle, handleProps } = useDragReorder(rows.length, onReorder);
+  const { drag, ghostRect, setRowRef, setGhostRef, rowStyle, handleProps } = useDragReorder(rows.length, onReorder);
 
   return (
     <>
@@ -65,13 +65,15 @@ export function BlockListEditor({
           </button>
         </div>
       ))}
-      {/* the floating clone that follows the finger */}
-      {drag && ghost &&
+      {/* the floating clone that follows the finger — `top` is written
+          imperatively (per-frame follow + the settle-into-slot drop) */}
+      {drag && ghostRect &&
         createPortal(
           <div
+            ref={setGhostRef}
             data-testid={`${testPrefix}-ghost`}
             className="pointer-events-none fixed z-50 flex items-center gap-2.5 rounded-input border border-accent bg-surface px-3 shadow-2xl"
-            style={{ top: ghost.top, left: ghost.left, width: ghost.width, height: ghost.height }}
+            style={{ left: ghostRect.left, width: ghostRect.width, height: ghostRect.height }}
           >
             <Icon name={rows[drag.from].icon} size={19} color="var(--m-accent-deep)" />
             <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-ink">{rows[drag.from].label}</span>

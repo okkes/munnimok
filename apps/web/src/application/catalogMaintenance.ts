@@ -100,6 +100,31 @@ export async function migrateUnlinkedTransferKinds(store: StorageBackend, repo: 
   return touched;
 }
 
+/**
+ * Standard-kind rows whose stored type contradicts their sign (+€1000
+ * typed 'expense', user ss 2026-07-28): the old bulk-apply copied the
+ * decision's type verbatim across mixed-sign merchant groups (fixed at
+ * the source the same day). One pass re-derives those rows by sign.
+ */
+export async function migrateSignContradictions(store: StorageBackend, repo: Repo): Promise<number> {
+  const markerKey = 'txSignType_v1';
+  if (await store.metaGet(markerKey)) return 0;
+
+  let touched = 0;
+  const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0);
+  for (const space of spaces) {
+    for (const tx of await visibleTransactions(store, space.id)) {
+      if (tx.deleted !== 0 || kindOf(tx.txType) !== 'standard' || tx.amountCents === 0) continue;
+      const derived = standardTypeFor(tx.amountCents);
+      if (tx.txType === derived) continue;
+      await writeTxTransform(repo, tx, { txType: derived });
+      touched++;
+    }
+  }
+  await store.metaPut(markerKey, Date.now());
+  return touched;
+}
+
 async function migrateSpaceReimbursements(
   repo: Repo,
   txs: Awaited<ReturnType<typeof visibleTransactions>>,

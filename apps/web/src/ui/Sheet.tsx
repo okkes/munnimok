@@ -26,6 +26,9 @@ const IS_TEST = import.meta.env.MODE === 'test';
 //  - native shells: @capacitor/keyboard resize:"native" shrinks the webview
 const IS_ANDROID = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
 const VIEWPORT_RESIZES = IS_ANDROID || isNativeApp();
+/** true where the sheet library's avoidKeyboard is active — the global
+ *  keyboard reveal must stand down inside sheets there (AppLayout) */
+export const SHEET_OWNS_KEYBOARD = !VIEWPORT_RESIZES;
 
 // ── sheet stack ──────────────────────────────────────────────────────────
 // Only the TOP sheet may dismiss. Without this, opening a picker sheet on

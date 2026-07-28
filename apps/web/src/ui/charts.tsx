@@ -10,16 +10,19 @@ interface BarChartProps {
   onSelect: (index: number) => void;
   height?: number;
   accent?: string;
+  /** formatted amount shown on top of each non-empty bar (user request) */
+  valueLabels?: string[];
 }
 
-/** selectable period bars with the value on top of the active bar */
-export function BarChart({ values, labels, selected, onSelect, height = 90, accent = 'var(--m-accent)' }: BarChartProps) {
+/** selectable period bars, each carrying its amount on top */
+export function BarChart({ values, labels, selected, onSelect, height = 90, accent = 'var(--m-accent)', valueLabels }: BarChartProps) {
   const max = Math.max(...values.map((v) => Math.abs(v)), 1);
+  const reserve = valueLabels ? 46 : 34; // label row above the bar needs its share
   return (
     <div className="flex items-end gap-1.5" style={{ height }} data-testid="overview-barchart">
       {values.map((value, i) => {
         const active = i === selected;
-        const barHeight = Math.max((Math.abs(value) / max) * (height - 34), 3);
+        const barHeight = Math.max((Math.abs(value) / max) * (height - reserve), 3);
         return (
           <button
             key={labels[i]}
@@ -28,6 +31,11 @@ export function BarChart({ values, labels, selected, onSelect, height = 90, acce
             className="m-tap flex min-w-0 flex-1 flex-col items-center justify-end gap-1 border-none bg-transparent p-0"
             style={{ height: '100%' }}
           >
+            {valueLabels?.[i] && value !== 0 && (
+              <span className={`m-num max-w-full truncate text-[8px] leading-none ${active ? 'font-semibold text-ink' : 'text-ink-4'}`}>
+                {valueLabels[i]}
+              </span>
+            )}
             <div
               className="m-bar-in w-full origin-bottom rounded-t-[4px]"
               style={{
