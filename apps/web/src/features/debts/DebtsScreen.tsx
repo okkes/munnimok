@@ -15,6 +15,9 @@ import { parseCents } from '@/lib/money';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { HelpButton } from '@/features/help/HelpButton';
 import { IntroCard } from '@/features/help/IntroCard';
+import { MinaNote } from '@/features/mina/MinaNote';
+import { takeDebtHandoff } from './handoff';
+import type { DebtHandoff } from './handoff';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
@@ -29,7 +32,11 @@ const NEW_ACCOUNT = '__new__';
 /** create/edit sheet. A debt is ALWAYS backed by a loan account (user
  *  rule 2026-07-28): the account's balance is the remaining truth and
  *  only transactions move it — a missing account quick-creates here. */
-export function DebtFormSheet({ initial, onClose }: Readonly<{ initial: DebtRow | 'new' | null; onClose: () => void }>) {
+export function DebtFormSheet({
+  initial,
+  prefill,
+  onClose,
+}: Readonly<{ initial: DebtRow | 'new' | null; prefill?: DebtHandoff; onClose: () => void }>) {
   const { t } = useLang();
   const { fmt } = useDisplayMoney();
   const ops = useDebtOps();
@@ -49,10 +56,18 @@ export function DebtFormSheet({ initial, onClose }: Readonly<{ initial: DebtRow 
   // reseed class: re-emitted rows must not wipe mid-typing edits)
   const seedKey = initial === null ? null : (editing?.id ?? 'new');
   useEffect(() => {
-    setName(editing?.name ?? '');
+    // a fresh sheet may arrive PREFILLED (the recurring form's Debt
+    // kind hands its facts over)
+    setName(editing?.name ?? prefill?.name ?? '');
     setIcon(editing?.icon ?? DEBT_ICONS[0]);
     setAccountId(editing?.accountId ?? '');
-    setOriginal(editing?.originalCents ? (editing.originalCents / 100).toFixed(2) : '');
+    setOriginal(
+      editing?.originalCents
+        ? (editing.originalCents / 100).toFixed(2)
+        : prefill?.originalCents
+          ? (prefill.originalCents / 100).toFixed(2)
+          : '',
+    );
     setRemaining('');
     setApr(editing?.interestPctYear !== undefined ? String(editing.interestPctYear) : '');
     setPayment(editing?.paymentCents ? (editing.paymentCents / 100).toFixed(2) : '');
@@ -234,6 +249,13 @@ export function DebtsScreen() {
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const currency = space?.currency ?? 'EUR';
   const [formInitial, setFormInitial] = useState<DebtRow | 'new' | null>(null);
+  // arriving FROM the recurring form (its Debt kind, user design): the
+  // create sheet opens prefilled and Mina explains why debts are their
+  // own thing — a closable note, not a gate
+  const [handoff] = useState(() => takeDebtHandoff());
+  useEffect(() => {
+    if (handoff) setFormInitial('new');
+  }, [handoff]);
 
   const { fmt } = useDisplayMoney();
   const money = (cents: number) => fmt(cents, currency);
@@ -296,6 +318,7 @@ export function DebtsScreen() {
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <IntroCard tourId="debts" />
+        {handoff && <MinaNote testId="mina-debt-note" text={t('mina.debtFromRecurring')} />}
         {active.length > 0 && (
           <div className="grid grid-cols-2 gap-3 rounded-card border border-line bg-surface p-4" data-testid="debts-overview">
             <div>
@@ -317,7 +340,7 @@ export function DebtsScreen() {
           </div>
         )}
       </div>
-      <DebtFormSheet initial={formInitial} onClose={() => setFormInitial(null)} />
+      <DebtFormSheet initial={formInitial} prefill={handoff ?? undefined} onClose={() => setFormInitial(null)} />
     </div>
   );
 }

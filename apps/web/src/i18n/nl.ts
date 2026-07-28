@@ -1459,6 +1459,8 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'debts.linkAccount': 'Gekoppelde rekening',
   'debts.noAccount': 'Handmatig bijhouden',
   'debts.pickAccount': 'Kies de leenrekening…',
+  'recurring.kindDebt': 'Schuld',
+  'mina.debtFromRecurring': 'Een kost die iets AFLOST is een schuld, geen vaste last — hier krijgt hij een afbetaaldatum, rente en een eigen leenrekening. Ik heb je gegevens meegenomen.',
   'debts.newAccount': '＋ Nieuwe leenrekening (vernoemd naar deze schuld)',
   'debts.original': 'Oorspronkelijk bedrag',
   'debts.remaining': 'Nu nog open',

@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { txTitle } from '@/lib/text';
 import { useRecurringOps } from '@/application/recurring';
+import { setDebtHandoff } from '@/features/debts/handoff';
 import type { RecurringSuggestion } from '@/domain/detectRecurring';
 import type { RecurringEvery, RecurringKind, RecurringRow } from '@/db/types';
 import { BrandIconPicker } from './BrandIconPicker';
@@ -107,6 +109,7 @@ interface RecurringFormSheetProps {
 export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved }: Readonly<RecurringFormSheetProps>) {
   const { t, lang } = useLang();
   const ops = useRecurringOps();
+  const navigate = useNavigate();
   const [form, setForm] = useState<FormState | null>(null);
   const [brandPickerOpen, setBrandPickerOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -206,6 +209,25 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved }: Rea
               </Chip>
               <Chip testId="recform-kind-subscription" selected={form.kind === 'subscription'} onClick={() => setForm({ ...form, kind: 'subscription' })}>
                 {t('recurring.kindSub')}
+              </Chip>
+              {/* a structural cost that pays something OFF is a DEBT —
+                  picking it hands this form's facts over to debt
+                  creation (user design 2026-07-28) */}
+              <Chip
+                testId="recform-kind-debt"
+                selected={false}
+                onClick={() => {
+                  const cents = Math.round(Number.parseFloat(form.amount.replace(',', '.')) * 100);
+                  setDebtHandoff({
+                    name: form.name.trim() || undefined,
+                    originalCents: Number.isFinite(cents) && cents > 0 ? cents : undefined,
+                    merchantKey: form.merchantKey ?? undefined,
+                  });
+                  onClose();
+                  void navigate({ to: '/debts' });
+                }}
+              >
+                {t('recurring.kindDebt')}
               </Chip>
             </div>
 

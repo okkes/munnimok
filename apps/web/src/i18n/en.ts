@@ -1457,6 +1457,8 @@ export const en = {
   'debts.linkAccount': 'Loan account',
   'debts.noAccount': 'Track manually',
   'debts.pickAccount': 'Pick the loan account…',
+  'recurring.kindDebt': 'Debt',
+  'mina.debtFromRecurring': 'A cost that pays something OFF is a debt, not a recurring cost — here it gets a payoff date, interest and its own loan account. I brought your details along.',
   'debts.newAccount': '＋ New loan account (named after this debt)',
   'debts.original': 'Original amount',
   'debts.remaining': 'Remaining now',

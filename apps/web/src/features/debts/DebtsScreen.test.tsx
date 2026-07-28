@@ -83,6 +83,22 @@ describe('Debts (demo identity)', () => {
     await screen.findByTestId('debts-empty');
   }, 15_000);
 
+  it("the recurring form's Debt kind hands off into debt creation with Mina's note", async () => {
+    renderApp('/recurring');
+    await screen.findByTestId('screen-recurring');
+    fireEvent.click(await screen.findByTestId('recurring-add'));
+    fireEvent.change(await screen.findByTestId('recform-name'), { target: { value: 'Car loan' } });
+    fireEvent.change(screen.getByTestId('recform-amount'), { target: { value: '250' } });
+    fireEvent.click(screen.getByTestId('recform-kind-debt'));
+    // lands on debts with the create sheet prefilled from the form…
+    await screen.findByTestId('screen-debts');
+    await waitFor(() => expect((screen.getByTestId('debtform-name') as HTMLInputElement).value).toBe('Car loan'));
+    expect((screen.getByTestId('debtform-original') as HTMLInputElement).value).toBe('250.00');
+    // …and Mina explains why, closable
+    fireEvent.click(screen.getByTestId('mina-debt-note-close'));
+    expect(screen.queryByTestId('mina-debt-note')).toBeNull();
+  }, 15_000);
+
   it('the home block totals the debts; the settings row reaches debts', async () => {
     renderApp('/debts');
     await screen.findByTestId('screen-debts');

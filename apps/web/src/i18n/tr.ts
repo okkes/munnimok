@@ -1459,6 +1459,8 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'debts.linkAccount': 'Bağlı hesap',
   'debts.noAccount': 'Elle takip et',
   'debts.pickAccount': 'Kredi hesabını seç…',
+  'recurring.kindDebt': 'Borç',
+  'mina.debtFromRecurring': 'Bir şeyi ÖDEYEN bir gider borçtur, düzenli gider değil — burada bitiş tarihi, faiz ve kendi kredi hesabı olur. Bilgilerini yanımda getirdim.',
   'debts.newAccount': '＋ Yeni kredi hesabı (bu borcun adıyla)',
   'debts.original': 'Başlangıç tutarı',
   'debts.remaining': 'Şu an kalan',
