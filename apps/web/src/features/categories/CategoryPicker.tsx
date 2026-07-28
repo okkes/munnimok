@@ -22,10 +22,14 @@ interface CategoryPickerProps {
   /** categories other rows of a split already own — hidden here (user
    *  rule 2026-07-28: never offer picking the same category twice) */
   excludeIds?: readonly string[];
+  /** ALLOWLIST: when set, only these ids are offered — a recurring-linked
+   *  transaction picks between the recurring's category and expected
+   *  reimbursement, nothing else (user rule 2026-07-28) */
+  onlyIds?: readonly string[];
 }
 
 /** Bottom sheet listing the catalog (built-in + custom) grouped by parent, with search. */
-export function CategoryPicker({ open, onOpenChange, selectedId, onPick, direction, txType, excludeIds }: Readonly<CategoryPickerProps>) {
+export function CategoryPicker({ open, onOpenChange, selectedId, onPick, direction, txType, excludeIds, onlyIds }: Readonly<CategoryPickerProps>) {
   const { t } = useLang();
   const cats = useCategories();
   const navigate = useNavigate();
@@ -45,10 +49,11 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
           // the invariant: a transaction's category must speak its type
           .filter((c) => !txType || c.txTypes.includes(txType))
           .filter((c) => !excludeIds?.includes(c.id))
+          .filter((c) => !onlyIds || onlyIds.includes(c.id))
           .filter((c) => !q || catName(c, t).toLowerCase().includes(q)),
       }))
       .filter((g) => g.children.length > 0);
-  }, [cats, query, t, direction, txType, excludeIds]);
+  }, [cats, query, t, direction, txType, excludeIds, onlyIds]);
 
   const pick = (catId: string) => {
     onPick(catId);

@@ -1460,6 +1460,8 @@ export const en = {
   'recurring.kindDebt': 'Debt',
   'tx.paysDebt': 'pays “{name}”',
   'debts.rateReminderBody': '“{name}” still has no interest rate — even 0% counts. Fill it in for an honest payoff date.',
+  'recurring.pickCat': 'Pick a category…',
+  'tx.setByRecurring': 'Set by the recurring cost',
   'mina.debtFromRecurring': 'A cost that pays something OFF is a debt, not a recurring cost — here it gets a payoff date, interest and its own loan account. I brought your details along.',
   'debts.newAccount': '＋ New loan account (named after this debt)',
   'debts.original': 'Original amount',

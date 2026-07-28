@@ -1462,6 +1462,8 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'recurring.kindDebt': 'Schuld',
   'tx.paysDebt': 'lost “{name}” af',
   'debts.rateReminderBody': '“{name}” heeft nog geen rente — ook 0% telt. Vul hem in voor een eerlijke afbetaaldatum.',
+  'recurring.pickCat': 'Kies een categorie…',
+  'tx.setByRecurring': 'Bepaald door de vaste last',
   'mina.debtFromRecurring': 'Een kost die iets AFLOST is een schuld, geen vaste last — hier krijgt hij een afbetaaldatum, rente en een eigen leenrekening. Ik heb je gegevens meegenomen.',
   'debts.newAccount': '＋ Nieuwe leenrekening (vernoemd naar deze schuld)',
   'debts.original': 'Oorspronkelijk bedrag',

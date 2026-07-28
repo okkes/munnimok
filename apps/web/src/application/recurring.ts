@@ -35,6 +35,31 @@ export function useRecurrings(): RecurringRow[] | undefined {
   );
 }
 
+/**
+ * The recurring OWNS its transactions' category (user rule 2026-07-28):
+ * changing it re-files every linked transaction. The reimbursement
+ * exception survives: rows the user filed as EXPECTED reimbursement and
+ * rows settlement filed as REIMBURSED keep their attribution — those
+ * default back to the recurring's category only when the link/settling
+ * goes away, which the reimbursement flow already handles.
+ */
+export async function propagateRecurringCategory(
+  store: StorageBackend,
+  repo: Repo,
+  spaceId: string,
+  recurringId: string,
+  catId: string = 'uncategorized',
+): Promise<number> {
+  let touched = 0;
+  for (const tx of await visibleTransactions(store, spaceId)) {
+    if (tx.deleted !== 0 || tx.recurringId !== recurringId) continue;
+    if (tx.catId === catId || tx.catId === 'reimbursed' || tx.catId === 'expenseReimburse') continue;
+    await writeTxTransform(repo, tx, { catId });
+    touched++;
+  }
+  return touched;
+}
+
 /** merchant patterns this space already rejected as suggestions */
 export function useDismissedKeys(): ReadonlySet<string> | undefined {
   const { store, spaceId } = useData();

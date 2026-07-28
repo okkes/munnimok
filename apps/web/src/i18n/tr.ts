@@ -1462,6 +1462,8 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'recurring.kindDebt': 'Borç',
   'tx.paysDebt': '“{name}” borcunu öder',
   'debts.rateReminderBody': '“{name}” için hâlâ faiz oranı yok — %0 da sayılır. Dürüst bir bitiş tarihi için doldur.',
+  'recurring.pickCat': 'Bir kategori seç…',
+  'tx.setByRecurring': 'Düzenli gider belirler',
   'mina.debtFromRecurring': 'Bir şeyi ÖDEYEN bir gider borçtur, düzenli gider değil — burada bitiş tarihi, faiz ve kendi kredi hesabı olur. Bilgilerini yanımda getirdim.',
   'debts.newAccount': '＋ Yeni kredi hesabı (bu borcun adıyla)',
   'debts.original': 'Başlangıç tutarı',
