@@ -387,6 +387,14 @@ function ConnectingScreen({ failedAttempts = 0, errorDetail }: { failedAttempts?
       `logtoKeys: ${Object.keys(localStorage).filter((k) => k.startsWith('logto:')).length}`,
       `lastError: ${errorDetail ?? '-'}`,
     ];
+    // the definitive probe: can the auth SDK mint a token AT ALL? (the
+    // iOS field report showed logtoKeys:0 — evicted client auth storage)
+    try {
+      const token = await getAccessToken();
+      lines.push(`accessToken: ${token ? `present (${token.length} chars)` : 'ABSENT'}`);
+    } catch (err) {
+      lines.push(`accessToken threw: ${err instanceof Error ? `${err.name}: ${err.message}` : String(err)}`);
+    }
     try {
       const { apiFetch } = await import('@/lib/api');
       const res = await apiFetch('/me');
