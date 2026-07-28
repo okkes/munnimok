@@ -23,7 +23,7 @@ import { Icon } from '@/ui/Icon';
 import { Pill } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { givenCents, netAmountCents, netCreditCents, totalReimbursedCents } from '@/domain/reimbursement';
-import { REIMBURSED_ID } from '@/domain/categories';
+import { EXPECTED_REIMBURSE_ID, REIMBURSED_ID } from '@/domain/categories';
 import { normalizeIban } from '@/domain/feedIds';
 import { ReceiptSection } from '@/features/shopping/ReceiptSection';
 import { ReimburseSection } from './ReimburseSection';
@@ -423,6 +423,10 @@ export function TxDetailScreen() {
   // a credit that self-filed as Reimbursed keeps that category as long
   // as any link lives (user rule) — unlink first, then recategorize
   const categoryLocked = tx.catId === REIMBURSED_ID && givenOut > 0;
+  // the recurring OWNS the category (user rule 2026-07-28): a linked row
+  // only picks between the recurring's category and expected
+  // reimbursement — the editor's picker enforces it
+  const recurringAllowedCats = recurringCatConstraint(tx, recurrings);
 
   const setCategory = (catId: string) => {
     const txType = cats.byId(catId).txTypes[0] ?? tx.txType;
@@ -593,7 +597,7 @@ export function TxDetailScreen() {
 
         {/* block: categories — ONE edit affordance for the whole block
             (user: a pencil per slice read wrong); rows stay tappable */}
-        <CategoriesHeader locked={categoryLocked} onEdit={() => setSplitOpen(true)} />
+        <CategoriesHeader locked={categoryLocked} byRecurring={!!recurringAllowedCats} onEdit={() => setSplitOpen(true)} />
         <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="tx-detail-categories">
           <CategorySlices tx={tx} cats={cats} fallbackCat={cat} fallbackColor={color} onEdit={() => !categoryLocked && setSplitOpen(true)} />
           {bulkOffer && (
@@ -745,7 +749,7 @@ export function TxDetailScreen() {
       {/* ONE category flow (review parity): a single row edits the plain
           category through setCategory (which arms the bulk offer);
           added rows store a split write-through */}
-      <SplitEditorSheet open={splitOpen} onOpenChange={setSplitOpen} tx={tx} seedSingle onApplySingle={setCategory} />
+      <SplitEditorSheet open={splitOpen} onOpenChange={setSplitOpen} tx={tx} seedSingle onApplySingle={setCategory} allowedCatIds={recurringAllowedCats} />
       <RenameTitleSheet
         open={renameOpen}
         onOpenChange={setRenameOpen}
@@ -924,13 +928,33 @@ function NotesField({
  * account, otherwise EDITABLE (user remark: CAMT rows often ship
  * without one — picking an own account still works and suggests the
  * type through the same sheet as the type row) */
+/** a recurring-linked row's category allowlist: the recurring's own
+ *  category plus expected reimbursement (S3776: extracted) */
+function recurringCatConstraint(
+  tx: { recurringId?: string },
+  recurrings: { id: string; catId?: string }[] | undefined,
+): string[] | undefined {
+  const rec = tx.recurringId ? recurrings?.find((r) => r.id === tx.recurringId) : undefined;
+  return rec?.catId ? [rec.catId, EXPECTED_REIMBURSE_ID] : undefined;
+}
+
 /** the categories caption: one Edit for the block — or a lock while a
  *  reimbursement owns the attribution (user rule; S3776: extracted) */
-function CategoriesHeader({ locked, onEdit }: Readonly<{ locked: boolean; onEdit: () => void }>) {
+function CategoriesHeader({ locked, byRecurring, onEdit }: Readonly<{ locked: boolean; byRecurring?: boolean; onEdit: () => void }>) {
   const { t } = useLang();
   return (
     <div className="m-cap mt-5 mb-1 flex items-center justify-between px-1">
-      <span>{t('screen.categories')}</span>
+      <span>
+        {t('screen.categories')}
+        {/* informational, not a hard lock: Edit still opens the editor,
+            whose picker only offers the recurring's category and
+            expected reimbursement (user rule 2026-07-28) */}
+        {byRecurring && !locked && (
+          <span className="pl-2 font-normal text-ink-4" data-testid="tx-detail-cats-recurring">
+            {t('tx.setByRecurring')}
+          </span>
+        )}
+      </span>
       {locked ? (
         <span className="flex items-center gap-1 text-[11px] text-ink-4" data-testid="tx-detail-cats-locked">
           <Icon name="lock-outline" size={12} />

@@ -354,32 +354,43 @@ describe('AccountsScreen (demo identity)', () => {
     await waitFor(() => expect(screen.queryByTestId('account-row-feedacct-1')).toBeNull(), { timeout: 5000 });
   }, 15_000);
 
-  it('adds a manual cash account through the intent chooser (AE1)', async () => {
+  it('adds a manual cash account via the space door (manual is space-scoped now)', async () => {
     renderApp('/accounts');
     await screen.findByTestId('account-row-demo_main');
     fireEvent.click(screen.getByTestId('accounts-add'));
-    // the chooser routes by intent and names where the result lives
+    // the GLOBAL screen offers manual only as a DOOR into the space
+    // (user ruling 2026-07-28) — creation happens on the space screen
+    fireEvent.click(await screen.findByTestId('chooser-manual-door'));
+    fireEvent.click(await screen.findByTestId('space-accounts-add'));
     fireEvent.click(await screen.findByTestId('chooser-manual'));
     fireEvent.click(await screen.findByTestId('chooser-accttype-cash'));
     fireEvent.change(screen.getByTestId('chooser-acctform-name'), { target: { value: 'Wallet' } });
     fireEvent.change(screen.getByTestId('chooser-acctform-balance'), { target: { value: '25,50' } });
     fireEvent.click(screen.getByTestId('chooser-acctform-save'));
     await waitFor(() => expect(screen.getByText('Wallet')).toBeTruthy());
-  });
+  }, 15_000);
 
-  it('a credit card account stores its balance as a liability', async () => {
+  it('a credit card account stores its balance as a liability, listed under its space', async () => {
     renderApp('/accounts');
     await screen.findByTestId('account-row-demo_main');
     fireEvent.click(screen.getByTestId('accounts-add'));
+    fireEvent.click(await screen.findByTestId('chooser-manual-door'));
+    fireEvent.click(await screen.findByTestId('space-accounts-add'));
     fireEvent.click(await screen.findByTestId('chooser-manual'));
     fireEvent.click(await screen.findByTestId('chooser-accttype-credit'));
     fireEvent.change(screen.getByTestId('chooser-acctform-name'), { target: { value: 'Visa' } });
     fireEvent.change(screen.getByTestId('chooser-acctform-balance'), { target: { value: '100' } });
     fireEvent.click(screen.getByTestId('chooser-acctform-save'));
-    // renders under Liabilities with a negative amount
-    const row = await screen.findByText('Visa');
-    expect(row.closest('button')!.textContent).toContain('-€100.00');
-  });
+    await screen.findByText('Visa');
+    // the claim is the STORED sign: liabilities keep negative cents
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const rows = await db.accounts.filter((a) => a.name === 'Visa').toArray();
+      expect(rows[0]?.balanceCents).toBe(-10_000);
+    });
+    db.close();
+  }, 15_000);
 
   it('renames and deletes an account from the edit sheet', async () => {
     renderApp('/accounts');

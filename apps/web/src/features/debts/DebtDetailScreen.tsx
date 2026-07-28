@@ -42,7 +42,9 @@ export function DebtDetailScreen() {
     return txs
       .filter((tx) => {
         if (tx.deleted !== 0) return false;
-        if (debt.accountId) return tx.accountId === debt.accountId;
+        // a transfer NAMING the backing account as counterparty is this
+        // debt's payment — the main path since debts went account-backed
+        if (debt.accountId) return tx.accountId === debt.accountId || tx.linkedAccountId === debt.accountId;
         if (debt.merchantKey) return tx.txType === 'debtPayment' || merchantKey(tx.merchant) === debt.merchantKey;
         return tx.txType === 'debtPayment' && tx.linkedAccountId === undefined;
       })

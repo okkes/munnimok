@@ -29,30 +29,38 @@ function GateShade({ rect, blockHole }: Readonly<{ rect: DOMRect | null; blockHo
   // interactive targets BREATHE; info-only highlights glow softly and
   // steadily — attention without an invitation to press (user ruling)
   const glowClass = blockHole ? 'm-mina-glow-soft' : 'm-mina-glow';
-  // no target: shade collapses to the edges (nothing dimmed) — the next
-  // target's arrival then GROWS the shade toward it. Also kills the
-  // stray center square the old null-rect placeholder painted (user ss).
-  const r = rect ?? new DOMRect(0, 0, window.innerWidth, window.innerHeight);
-  const top = Math.max(0, r.top - PAD);
-  const left = Math.max(0, r.left - PAD);
-  const right = Math.min(window.innerWidth, r.right + PAD);
-  const bottom = Math.min(window.innerHeight, r.bottom + PAD);
-  const shade = 'fixed bg-black/15 z-[130] transition-all duration-500 ease-out';
+  // no resolved target: EVERYTHING is covered — a collapsed shade left
+  // the whole screen tappable and the step felt lost (user ss). The
+  // bubble's own Continue/skip still work above the shade.
+  if (!rect) return <div className="fixed inset-0 z-[130] bg-black/15" data-testid="mina-gate-cover" />;
+  const top = Math.max(0, rect.top - PAD);
+  const left = Math.max(0, rect.left - PAD);
+  const right = Math.min(window.innerWidth, rect.right + PAD);
+  const bottom = Math.min(window.innerHeight, rect.bottom + PAD);
+  // tap-swallowing happens on four INVISIBLE rects; the dim itself is a
+  // single ROUNDED cutout (giant box-shadow) so the shade edge and the
+  // glow share one shape — and it moves INSTANTLY: the glow is the
+  // guide now, the travelling shade animation retired (user rulings)
+  const blocker = 'fixed z-[130]';
   return (
     <>
-      <div className={shade} style={{ top: 0, left: 0, right: 0, height: top }} />
-      <div className={shade} style={{ top: bottom, left: 0, right: 0, bottom: 0 }} />
-      <div className={shade} style={{ top, left: 0, width: left, height: bottom - top }} />
-      <div className={shade} style={{ top, left: right, right: 0, height: bottom - top }} />
-      {rect && (
-        <div
-          className={`${glowClass} pointer-events-none fixed z-[130] rounded-xl transition-all duration-500 ease-out`}
-          style={{ top, left, width: right - left, height: bottom - top }}
-          data-testid="mina-gate-ring"
-        />
-      )}
+      <div className={blocker} style={{ top: 0, left: 0, right: 0, height: top }} />
+      <div className={blocker} style={{ top: bottom, left: 0, right: 0, bottom: 0 }} />
+      <div className={blocker} style={{ top, left: 0, width: left, height: bottom - top }} />
+      <div className={blocker} style={{ top, left: right, right: 0, height: bottom - top }} />
+      {/* the dim cutout (separate element: the glow's animation owns its
+          own box-shadow and would override an inline one) */}
+      <div
+        className="pointer-events-none fixed z-[129] rounded-2xl"
+        style={{ top, left, width: right - left, height: bottom - top, boxShadow: '0 0 0 200vmax rgba(0,0,0,0.15)' }}
+      />
+      <div
+        className={`${glowClass} pointer-events-none fixed z-[130] rounded-2xl`}
+        style={{ top, left, width: right - left, height: bottom - top }}
+        data-testid="mina-gate-ring"
+      />
       {/* info steps: the anchor is shown but must not be pressed */}
-      {rect && blockHole && <div className="fixed z-[130]" style={{ top, left, width: right - left, height: bottom - top }} />}
+      {blockHole && <div className="fixed z-[130]" style={{ top, left, width: right - left, height: bottom - top }} />}
     </>
   );
 }
@@ -106,6 +114,10 @@ export function MinaTutorial() {
     void (async () => {
       const state = (await store.metaGet(MINA_STATE_KEY))?.value as MinaRunState | undefined;
       if (cancelled || !state?.active) return;
+      // killed MID-ONBOARDING: the tutorial stays dormant — resuming
+      // dropped its bubble onto the profile form (user ss); finishing
+      // onboarding re-dispatches mina:start and the run restarts clean
+      if ((await store.metaGet('needsOnboarding'))?.value) return;
       // a killed app resumes at the nearest CHECKPOINT (mid-sheet steps
       // can't reconstruct their transient UI) and asks first instead of
       // dropping a mid-flow bubble onto whatever screen loaded (user ss)
@@ -177,17 +189,24 @@ export function MinaTutorial() {
           if (el.offsetParent !== null) return el; // the VISIBLE candidate (mobile vs desktop nav)
         }
       }
-      // a stale ledger must never leave a switching step highlight-less
-      // (user ss: no glow, tutorial felt stuck) — any real space row
-      // serves the lesson
-      if ((candidates ?? []).some((c) => c.includes('$s'))) {
-        for (const el of document.querySelectorAll<HTMLElement>('[data-testid^="space-pick-"]')) {
-          if (el.dataset.testid !== 'space-pick-manage' && el.offsetParent !== null) return el;
-        }
+      // a stale ledger must never leave a $s-anchored step targetless
+      // (user ss: no glow, tutorial felt stuck/lost) — fall back to any
+      // row of the same FAMILY, and for switch rows never the space that
+      // is already active (the lesson is switching AWAY, user ss)
+      for (const raw of candidates ?? []) {
+        const tokenAt = raw.indexOf('$s');
+        if (tokenAt < 0) continue;
+        const prefix = raw.slice(0, tokenAt);
+        const rows = [...document.querySelectorAll<HTMLElement>(`[data-testid^="${prefix}"]`)].filter(
+          (el) => el.dataset.testid !== 'space-pick-manage' && el.offsetParent !== null,
+        );
+        const notActive = rows.find((el) => el.dataset.testid !== `${prefix}${spaceId}`);
+        const pick = prefix === 'space-pick-' ? (notActive ?? rows[0]) : rows[0];
+        if (pick) return pick;
       }
       return null;
     },
-    [createdSpaces],
+    [createdSpaces, spaceId],
   );
 
   const advance = useCallback(() => {
@@ -218,7 +237,9 @@ export function MinaTutorial() {
   useEffect(() => {
     const changed = spaceId !== lastSpaceRef.current;
     lastSpaceRef.current = spaceId;
-    if (changed && (step?.id === 'pickPrivate' || step?.id === 'pickFamily')) setTimeout(advance, 400);
+    if (changed && (step?.id === 'pickPrivate' || step?.id === 'pickFamily' || step?.id === 'pickPrivateCleanup')) {
+      setTimeout(advance, 400);
+    }
   }, [spaceId, step?.id, advance]);
 
   // navigate to the step's screen (never mid-act — acts follow the user)
@@ -516,26 +537,26 @@ export function MinaTutorial() {
         </>
       )}
 
-      {/* skip confirm — Mina is SHOCKED (user spec); with a non-empty
-          ledger the revert question rides along */}
+      {/* skip confirm — a FULL SCREEN with Mina's shock front and center
+          (user redesign 2026-07-28); with a non-empty ledger the revert
+          question rides along */}
       {skipOpen && (
-        <div className="fixed inset-0 z-[150] flex items-end justify-center bg-black/50 lg:items-center" data-testid="mina-skip-sheet">
-          <div className="w-full max-w-[480px] rounded-t-[20px] bg-bg p-5 lg:rounded-[20px]">
-            <div className="flex items-start gap-3">
-              {/* full picture, aligned with the bubble (user request) */}
-              <img src={MINA_EXPR.surprised} alt="Mina" className="h-16 w-auto max-w-[64px] shrink-0 rounded-lg object-contain" />
-              <span className="min-w-0 flex-1">
-                <p className="text-[15px] font-semibold text-ink">{t('mina.skipConfirm.t')}</p>
-                <p className="mt-1 text-[13px] leading-relaxed text-ink-2">{t('mina.skipConfirm.b')}</p>
-              </span>
-            </div>
+        <div
+          className="fixed inset-0 z-[150] flex flex-col items-center justify-center overflow-y-auto bg-bg px-6"
+          style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 12px)' }}
+          data-testid="mina-skip-sheet"
+        >
+          <div className="flex w-full max-w-[420px] flex-col items-center text-center">
+            <img src={MINA_EXPR.surprised} alt="Mina" className="max-h-[38dvh] w-auto max-w-[240px] rounded-2xl object-contain" />
+            <p className="mt-5 text-[19px] font-semibold text-ink">{t('mina.skipConfirm.t')}</p>
+            <p className="mt-2 max-w-[360px] text-[14px] leading-relaxed text-ink-2">{t('mina.skipConfirm.b')}</p>
             {run.ledger.length > 0 && (
               <label className="mt-3 flex items-center gap-2 text-[13px] text-ink-2">
                 <input type="checkbox" data-testid="mina-skip-revert" checked={skipRevert} onChange={(e) => setSkipRevert(e.target.checked)} />
                 {t('mina.skipConfirm.revert')}
               </label>
             )}
-            <div className="mt-4 flex flex-col gap-2">
+            <div className="mt-6 flex w-full max-w-[360px] flex-col gap-2">
               <Button data-testid="mina-skip-confirm" onClick={() => void finish(run.ledger.length > 0 && skipRevert)}>
                 {t('mina.skipConfirm.yes')}
               </Button>

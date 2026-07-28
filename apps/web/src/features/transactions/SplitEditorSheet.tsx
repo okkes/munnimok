@@ -65,6 +65,7 @@ export function SplitEditorSheet({
   direction,
   onApplySingle,
   reason,
+  allowedCatIds,
 }: Readonly<{
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -89,6 +90,9 @@ export function SplitEditorSheet({
   onApplySingle?: (catId: string) => void;
   /** why the current category was suggested (review card) — shown inline */
   reason?: string | null;
+  /** recurring-linked rows pick between the recurring's category and
+   *  expected reimbursement only (user rule 2026-07-28) */
+  allowedCatIds?: readonly string[];
 }>) {
   const { t, lang } = useLang();
   const transform = useTxTransform();
@@ -370,6 +374,7 @@ export function SplitEditorSheet({
         txType={direction ? undefined : (txType ?? tx.txType)}
         selectedId={pickerFor === null ? undefined : rows[pickerFor]?.catId}
         excludeIds={excludedCatIds(rows, pickerFor)}
+        onlyIds={allowedCatIds}
         onPick={(catId) => {
           if (pickerFor !== null) setRows((r) => r.map((x, j) => (j === pickerFor ? { ...x, catId } : x)));
         }}

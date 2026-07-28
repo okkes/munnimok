@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
-import { screen } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { HlcClock } from '@/sync/hlc';
 import { MunniDB } from '@/db/schema';
@@ -62,4 +62,31 @@ describe('DataProvider startup (local-first)', () => {
     expect(await screen.findByTestId('data-loading', {}, { timeout: 2000 })).toBeTruthy();
     expect(screen.queryByTestId('screen-home')).toBeNull();
   });
+
+  it(
+    'repeated failures surface Diagnose, whose report includes the auth probes',
+    async () => {
+      // a REFUSING server (vs the hang above): bootstrap rounds fail fast,
+      // failedAttempts climbs, and the screen names the problem
+      const refuse = () => Promise.reject(new Error('connection refused'));
+      renderAppAsUser('/', {
+        api: {
+          'GET /health': refuse,
+          'GET /me/spaces': refuse,
+          'GET /me': refuse,
+        },
+      });
+
+      // round 1 fails instantly, round 2 after the 2s base backoff — from
+      // then on the Diagnose button is offered alongside Sign out
+      fireEvent.click(await screen.findByTestId('connect-diagnose', {}, { timeout: 9000 }));
+
+      const report = await screen.findByTestId('connect-diagnose-report', {}, { timeout: 4000 });
+      const text = (report as HTMLTextAreaElement).value;
+      expect(text).toContain('logtoKeys: 0');
+      expect(text).toContain('accessToken: ABSENT'); // no OIDC getter registered in tests
+      expect(text).toContain('GET /me threw'); // the refusing server, verbatim
+    },
+    15_000,
+  );
 });

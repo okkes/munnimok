@@ -27,6 +27,10 @@ for (const V of VARIANTS) {
     await base(page, V, { demo: true });
     await goToAccounts(page);
     await page.click('[data-testid="accounts-add"]');
+    // manual is a DOOR on the global screen now (2026-07-28): it leads
+    // into the space's own accounts screen, where creation lives
+    await page.click('[data-testid="chooser-manual-door"]');
+    await page.click('[data-testid="space-accounts-add"]');
     await page.click('[data-testid="chooser-manual"]');
     await page.waitForSelector('[data-testid="chooser-accttype-cash"]');
     await page.waitForTimeout(500); // sheet slide-in
@@ -37,8 +41,12 @@ for (const V of VARIANTS) {
     await shot(page, k('17-accounts-add') + '--s2');
     await page.click('[data-testid="chooser-acctform-save"]');
     await page.waitForTimeout(500); // sheet slide-out
-    await expect(page.locator('[data-testid="screen-accounts"]')).toContainText('Wallet');
-    await expect(page.locator('[data-testid="screen-accounts"]')).toContainText('52.50');
+    // the fresh manual account lists on the SPACE's accounts screen…
+    await expect(page.locator('[data-testid="screen-space-accounts"]')).toContainText('Wallet');
+    // …and the global overview shows it inside its space segment
+    await page.click('[data-testid="spaceaccounts-back"]');
+    await expect(page.locator('[data-testid^="accounts-space-"]')).toContainText('Wallet');
+    await expect(page.locator('[data-testid^="accounts-space-"]')).toContainText('52.50');
     // home total includes the new account: 11,570.55 + 52.50
     await page.click('[data-testid="tab-home"]');
     await expect(page.locator('[data-testid="home-total-balance"]')).toContainText('11,623.05');

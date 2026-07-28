@@ -22,9 +22,12 @@ async function gotoMembersOf(page, spaceName) {
 }
 
 async function addCashAccount(page, name, balance) {
+  // manual creation lives on the SPACE's accounts screen (2026-07-28)
   await gotoGlobalSettings(page);
   await page.click('[data-testid="settings-accounts-row"]');
   await page.click('[data-testid="accounts-add"]');
+  await page.click('[data-testid="chooser-manual-door"]');
+  await page.click('[data-testid="space-accounts-add"]');
   await page.click('[data-testid="chooser-manual"]');
   await page.click('[data-testid="chooser-accttype-cash"]');
   await page.fill('[data-testid="chooser-acctform-name"]', name);
@@ -45,6 +48,10 @@ for (const V of VARIANTS) {
     const a = await createPage(browser, V);
     await base(a.page, V, { userSub: sub });
     await addCashAccount(a.page, 'Sync Wallet', '12,34');
+    // creation lands on the SPACE's accounts screen; the global overview
+    // lists it inside the space's own segment
+    await expect(a.page.locator('[data-testid="screen-space-accounts"]')).toContainText('Sync Wallet');
+    await a.page.click('[data-testid="spaceaccounts-back"]');
     await expect(a.page.locator('[data-testid="screen-accounts"]')).toContainText('Sync Wallet');
     await shot(a.page, k('25-sync-devices') + '--s1');
     await a.page.waitForTimeout(3500); // nudge debounce (2s) + push

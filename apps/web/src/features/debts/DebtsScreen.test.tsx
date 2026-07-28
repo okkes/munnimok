@@ -8,6 +8,8 @@ async function createDebt(name: string, original: string, apr?: string, payment?
   fireEvent.click(await screen.findByTestId('debts-add'));
   await screen.findByTestId('debtform-name');
   fireEvent.change(screen.getByTestId('debtform-name'), { target: { value: name } });
+  // a debt is always backed by a loan account now — quick-create one
+  fireEvent.change(screen.getByTestId('debtform-account'), { target: { value: '__new__' } });
   fireEvent.change(screen.getByTestId('debtform-original'), { target: { value: original } });
   if (apr) fireEvent.change(screen.getByTestId('debtform-apr'), { target: { value: apr } });
   if (payment) fireEvent.change(screen.getByTestId('debtform-payment'), { target: { value: payment } });
@@ -32,10 +34,11 @@ describe('Debts (demo identity)', () => {
 
     fireEvent.click(screen.getByTestId('debts-add'));
     await screen.findByTestId('debtform-name');
-    // demo has no liability accounts, so the link select stays hidden
-    expect(screen.queryByTestId('debtform-account')).toBeNull();
     fireEvent.change(screen.getByTestId('debtform-name'), { target: { value: 'Student loan' } });
     fireEvent.change(screen.getByTestId('debtform-original'), { target: { value: '10000' } });
+    // save refuses until a loan account backs the debt (user rule)
+    expect((screen.getByTestId('debtform-save') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByTestId('debtform-account'), { target: { value: '__new__' } });
     fireEvent.change(screen.getByTestId('debtform-apr'), { target: { value: '12' } });
     fireEvent.change(screen.getByTestId('debtform-payment'), { target: { value: '500' } });
     fireEvent.click(screen.getByTestId('debtform-save'));
@@ -78,6 +81,22 @@ describe('Debts (demo identity)', () => {
     fireEvent.click(await screen.findByTestId('debtform-delete'));
     fireEvent.click(screen.getByTestId('debtform-delete'));
     await screen.findByTestId('debts-empty');
+  }, 15_000);
+
+  it("the recurring form's Debt kind hands off into debt creation with Mina's note", async () => {
+    renderApp('/recurring');
+    await screen.findByTestId('screen-recurring');
+    fireEvent.click(await screen.findByTestId('recurring-add'));
+    fireEvent.change(await screen.findByTestId('recform-name'), { target: { value: 'Car loan' } });
+    fireEvent.change(screen.getByTestId('recform-amount'), { target: { value: '250' } });
+    fireEvent.click(screen.getByTestId('recform-kind-debt'));
+    // lands on debts with the create sheet prefilled from the form…
+    await screen.findByTestId('screen-debts');
+    await waitFor(() => expect((screen.getByTestId('debtform-name') as HTMLInputElement).value).toBe('Car loan'));
+    expect((screen.getByTestId('debtform-original') as HTMLInputElement).value).toBe('250.00');
+    // …and Mina explains why, closable
+    fireEvent.click(screen.getByTestId('mina-debt-note-close'));
+    expect(screen.queryByTestId('mina-debt-note')).toBeNull();
   }, 15_000);
 
   it('the home block totals the debts; the settings row reaches debts', async () => {

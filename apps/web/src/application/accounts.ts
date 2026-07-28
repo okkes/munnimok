@@ -31,9 +31,19 @@ export interface GlobalAccount {
   sharedVia: SharedVia[];
 }
 
+export interface SpaceScopedAccounts {
+  spaceId: string;
+  spaceName: string;
+  accounts: GlobalAccount[];
+}
+
 export interface GlobalAccounts {
-  /** feed accounts + legacy rows across the user's own spaces */
+  /** feed accounts (bank connections + statement imports) — truly
+   *  user-level; the only rows that are "global" (user ruling 2026-07-28) */
   mine: GlobalAccount[];
+  /** manual accounts, which live INSIDE a space — grouped per space so
+   *  the overview says clearly where each one belongs */
+  spaceScoped: SpaceScopedAccounts[];
   /** accounts reaching the user only through someone else's attachment */
   sharedWithMe: GlobalAccount[];
 }
@@ -68,6 +78,7 @@ export function useGlobalAccounts(myFeedIds: ReadonlySet<string> | undefined): G
     }
 
     const mine: GlobalAccount[] = [];
+    const scopedBySpace = new Map<string, GlobalAccount[]>();
     const sharedWithMe: GlobalAccount[] = [];
     for (const account of accounts) {
       const isFeedAccount = !memberSpaceIds.has(account.spaceId);
@@ -76,9 +87,20 @@ export function useGlobalAccounts(myFeedIds: ReadonlySet<string> | undefined): G
         feedSpaceId: isFeedAccount ? account.spaceId : undefined,
         sharedVia: viaByAccount.get(account.id) ?? [],
       };
-      if (!isFeedAccount || !myFeedIds || myFeedIds.has(account.spaceId)) mine.push(entry);
-      else sharedWithMe.push(entry);
+      if (!isFeedAccount) {
+        // manual rows live inside their space — never in the global list
+        const list = scopedBySpace.get(account.spaceId) ?? [];
+        list.push(entry);
+        scopedBySpace.set(account.spaceId, list);
+      } else if (!myFeedIds || myFeedIds.has(account.spaceId)) {
+        mine.push(entry);
+      } else {
+        sharedWithMe.push(entry);
+      }
     }
-    return { mine, sharedWithMe };
+    const spaceScoped: SpaceScopedAccounts[] = [...scopedBySpace.entries()]
+      .map(([spaceId, list]) => ({ spaceId, spaceName: spaceNames.get(spaceId) ?? spaceId.slice(0, 8), accounts: list }))
+      .sort((a, b) => a.spaceName.localeCompare(b.spaceName));
+    return { mine, spaceScoped, sharedWithMe };
   }, [myFeedIds]);
 }

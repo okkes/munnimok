@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { minaSuggestedAccountName } from '@/features/mina/steps';
 import { useLang } from '@/i18n';
@@ -27,6 +27,8 @@ export function AddAccountChooser({
   onOpenChange,
   onConnect,
   onImport,
+  onCreated,
+  hideManual,
   gcAvailable,
 }: Readonly<{
   open: boolean;
@@ -35,6 +37,13 @@ export function AddAccountChooser({
   onConnect?: () => void;
   /** hosts with an in-place import flow pass it; others get the door */
   onImport?: () => void;
+  /** hosts that consume the fresh account (the transfer counterparty
+   *  picker) get the manual creation reported back */
+  onCreated?: (account: { id: string; type: AccountType }) => void;
+  /** the GLOBAL accounts screen hides manual creation — manual accounts
+   *  live inside a space, so it points at the space instead (user
+   *  ruling 2026-07-28) */
+  hideManual?: boolean;
   gcAvailable?: boolean;
 }>) {
   const { t } = useLang();
@@ -42,11 +51,13 @@ export function AddAccountChooser({
   const navigate = useNavigate();
   const syncing = useSession((s) => s.identity?.kind === 'user');
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
-  const [step, setStep] = useState<'intent' | 'manual'>('intent');
+  const [step, setStep] = useState<'intent' | 'manual' | 'shareWarn'>('intent');
   const [newType, setNewType] = useState<AccountType | null>(null);
   const [name, setName] = useState('');
   const [balance, setBalance] = useState('');
   const [currency, setCurrency] = useState<string | null>(null);
+  // the action a shared-space warning is holding back (connect/import)
+  const pendingRef = useRef<(() => void) | null>(null);
   const effectiveCurrency = currency ?? space?.currency ?? 'EUR';
 
   const close = (next: boolean) => {
@@ -57,6 +68,19 @@ export function AddAccountChooser({
       setName('');
       setBalance('');
       setCurrency(null);
+      pendingRef.current = null;
+    }
+  };
+
+  // bank-connected and imported accounts become visible to every member
+  // of a SHARED space — that deserves a conscious yes before the flow
+  // starts; manual accounts are exempt (user rule 2026-07-28)
+  const guarded = (action: () => void) => {
+    if (space?.kind === 'shared') {
+      pendingRef.current = action;
+      setStep('shareWarn');
+    } else {
+      action();
     }
   };
 
@@ -74,7 +98,8 @@ export function AddAccountChooser({
   const createManual = () => {
     const cents = parseCents(balance || '0');
     if (!newType || !name.trim() || cents === null) return;
-    void repo.upsert('account', spaceId, repo.newId(), {
+    const id = repo.newId();
+    void repo.upsert('account', spaceId, id, {
       name: name.trim(),
       type: newType,
       source: 'manual',
@@ -83,6 +108,7 @@ export function AddAccountChooser({
       balanceAsOf: manualBalanceDate(),
     });
     void logActivity(store, repo, spaceId, 'accountAdd', name.trim());
+    onCreated?.({ id, type: newType });
     close(false);
   };
 
@@ -97,11 +123,13 @@ export function AddAccountChooser({
               accent
               title={t('chooser.connect')}
               sub={t('chooser.connectSub')}
-              onClick={() => {
-                close(false);
-                if (onConnect) onConnect();
-                else void navigate({ to: '/accounts' });
-              }}
+              onClick={() =>
+                guarded(() => {
+                  close(false);
+                  if (onConnect) onConnect();
+                  else void navigate({ to: '/accounts' });
+                })
+              }
             />
           )}
           <IntentRow
@@ -109,20 +137,63 @@ export function AddAccountChooser({
             icon="file-upload-outline"
             title={t('chooser.import')}
             sub={t('chooser.importSub')}
-            onClick={() => {
-              if (onImport) {
+            onClick={() =>
+              guarded(() => {
+                if (onImport) {
+                  close(false);
+                  onImport();
+                } else goGlobal();
+              })
+            }
+          />
+          {hideManual ? (
+            <button
+              data-testid="chooser-manual-door"
+              onClick={() => {
                 close(false);
-                onImport();
-              } else goGlobal();
+                void navigate({ to: '/spaces/$spaceId/accounts', params: { spaceId } });
+              }}
+              className="m-tap flex items-center gap-3 rounded-card border border-dashed border-line bg-transparent p-4 text-left"
+            >
+              <Icon name="pencil-plus-outline" size={24} color="var(--m-ink-4)" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-[14px] font-semibold text-ink-2">{t('chooser.manual')}</span>
+                <span className="block text-[12px] text-ink-4">{t('chooser.manualSpaceDoor', { space: space?.name ?? '' })}</span>
+              </span>
+              <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
+            </button>
+          ) : (
+            <IntentRow
+              testId="chooser-manual"
+              icon="pencil-plus-outline"
+              title={t('chooser.manual')}
+              sub={t('chooser.manualSub', { space: space?.name ?? '' })}
+              onClick={() => setStep('manual')}
+            />
+          )}
+        </div>
+      )}
+
+      {step === 'shareWarn' && (
+        <div className="flex flex-col gap-3 pt-1" data-testid="chooser-share-warn">
+          <div className="flex items-center gap-2 text-[14px] font-semibold text-ink">
+            <Icon name="account-group-outline" size={20} color="var(--m-warning)" />
+            {t('chooser.shareWarnTitle')}
+          </div>
+          <p className="text-[13px] leading-relaxed text-ink-2">{t('chooser.shareWarnBody', { space: space?.name ?? '' })}</p>
+          <Button
+            data-testid="chooser-share-continue"
+            onClick={() => {
+              const action = pendingRef.current;
+              pendingRef.current = null;
+              action?.();
             }}
-          />
-          <IntentRow
-            testId="chooser-manual"
-            icon="pencil-plus-outline"
-            title={t('chooser.manual')}
-            sub={t('chooser.manualSub', { space: space?.name ?? '' })}
-            onClick={() => setStep('manual')}
-          />
+          >
+            {t('chooser.shareWarnContinue')}
+          </Button>
+          <Button variant="outline" data-testid="chooser-share-cancel" onClick={() => setStep('intent')}>
+            {t('action.cancel')}
+          </Button>
         </div>
       )}
 

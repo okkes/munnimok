@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { txTitle } from '@/lib/text';
-import { useRecurringOps } from '@/application/recurring';
+import { setDebtHandoff } from '@/features/debts/handoff';
+import { useData } from '@/app/data';
+import { propagateRecurringCategory, useRecurringOps } from '@/application/recurring';
+import { CategoryPicker } from '@/features/categories/CategoryPicker';
+import { catName, useCategories } from '@/features/categories/useCategories';
 import type { RecurringSuggestion } from '@/domain/detectRecurring';
 import type { RecurringEvery, RecurringKind, RecurringRow } from '@/db/types';
 import { BrandIconPicker } from './BrandIconPicker';
@@ -30,6 +35,7 @@ export interface FormState {
   notify: number;
   active: boolean;
   merchantKey?: string;
+  catId?: string;
 }
 
 export const emptyForm = (): FormState => ({
@@ -76,6 +82,7 @@ export const formFromRec = (rec: RecurringRow): FormState => ({
   notify: rec.notifyDaysBefore ?? 0,
   active: rec.active === 1,
   merchantKey: rec.merchantKey,
+  catId: rec.catId,
 });
 
 export const formFromSuggestion = (s: RecurringSuggestion): FormState => ({
@@ -107,8 +114,15 @@ interface RecurringFormSheetProps {
 export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved }: Readonly<RecurringFormSheetProps>) {
   const { t, lang } = useLang();
   const ops = useRecurringOps();
+  const navigate = useNavigate();
+  const { store, repo, spaceId } = useData();
+  const cats = useCategories();
   const [form, setForm] = useState<FormState | null>(null);
   const [brandPickerOpen, setBrandPickerOpen] = useState(false);
+  const [catPickerOpen, setCatPickerOpen] = useState(false);
+  // what the category was when the sheet opened -- propagation fires
+  // only on a real change
+  const initialCatIdRef = useRef<string | undefined>(undefined);
   const [confirmDelete, setConfirmDelete] = useState(false);
   // free-typed drafts so the '1' can be deleted while editing; clamped on blur
   const [dueDayText, setDueDayText] = useState('1');
@@ -123,6 +137,7 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved }: Rea
   useEffect(() => {
     if (seededRef.current === seedKey) return;
     seededRef.current = seedKey;
+    initialCatIdRef.current = initial?.catId;
     setForm(initial);
     setDueDayText(String(initial?.dueDay ?? 1));
     setEveryNText(String(initial?.everyN ?? 1));
@@ -165,7 +180,13 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved }: Rea
       active: form.active ? 1 : 0,
       notifyDaysBefore: form.notify || undefined,
       merchantKey: form.merchantKey,
+      catId: form.catId ?? '', // '' clears -- an absent field would not sync
     });
+    // the recurring OWNS its transactions' category (user rule
+    // 2026-07-28): a changed category re-files every linked transaction
+    if (form.id && form.catId !== initialCatIdRef.current) {
+      await propagateRecurringCategory(store, repo, spaceId, form.id, form.catId).catch(() => undefined);
+    }
     onSaved?.(savedId);
     onClose();
     // an accepted suggestion should immediately own its past payments
@@ -207,7 +228,38 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved }: Rea
               <Chip testId="recform-kind-subscription" selected={form.kind === 'subscription'} onClick={() => setForm({ ...form, kind: 'subscription' })}>
                 {t('recurring.kindSub')}
               </Chip>
+              {/* a structural cost that pays something OFF is a DEBT —
+                  picking it hands this form's facts over to debt
+                  creation (user design 2026-07-28) */}
+              <Chip
+                testId="recform-kind-debt"
+                selected={false}
+                onClick={() => {
+                  const cents = Math.round(Number.parseFloat(form.amount.replace(',', '.')) * 100);
+                  setDebtHandoff({
+                    name: form.name.trim() || undefined,
+                    originalCents: Number.isFinite(cents) && cents > 0 ? cents : undefined,
+                    merchantKey: form.merchantKey ?? undefined,
+                  });
+                  onClose();
+                  void navigate({ to: '/debts' });
+                }}
+              >
+                {t('recurring.kindDebt')}
+              </Chip>
             </div>
+
+            {/* the recurring OWNS its transactions' category (user rule
+                2026-07-28) — linked rows re-file here automatically */}
+            <button
+              data-testid="recform-cat"
+              onClick={() => setCatPickerOpen(true)}
+              className="m-tap flex h-11 w-full items-center gap-2 rounded-input border border-line bg-surface px-3 text-left text-[14px] text-ink"
+            >
+              <Icon name={form.catId ? cats.byId(form.catId).icon : 'shape-outline'} size={17} color="var(--m-accent-deep)" />
+              <span className="min-w-0 flex-1 truncate">{form.catId ? catName(cats.byId(form.catId), t) : t('recurring.pickCat')}</span>
+              <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+            </button>
 
             <div className="m-cap px-1">{t('recurring.amount')}</div>
             <input
@@ -399,6 +451,15 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved }: Rea
         initialQuery={form?.name ?? ''}
         onPick={({ logo }) => {
           if (form) setForm({ ...form, logo: logo ?? undefined });
+        }}
+      />
+      <CategoryPicker
+        open={catPickerOpen}
+        onOpenChange={setCatPickerOpen}
+        direction="debit"
+        selectedId={form?.catId}
+        onPick={(catId) => {
+          if (form) setForm({ ...form, catId });
         }}
       />
     </>

@@ -83,10 +83,13 @@ for (const V of VARIANTS) {
     await page.waitForSelector('[data-testid="tab-home"]');
     await gotoSpaces(page);
     await expect(page.locator('[data-testid="screen-spaces"]')).toContainText('Private');
-    // add a cash account, then a manual transaction (zero network)
+    // add a cash account, then a manual transaction (zero network) —
+    // manual creation lives on the SPACE's accounts screen (2026-07-28)
     await gotoGlobalSettings(page);
     await page.click('[data-testid="settings-accounts-row"]');
     await page.click('[data-testid="accounts-add"]');
+    await page.click('[data-testid="chooser-manual-door"]');
+    await page.click('[data-testid="space-accounts-add"]');
     await page.click('[data-testid="chooser-manual"]');
     await page.click('[data-testid="chooser-accttype-cash"]');
     await page.fill('[data-testid="chooser-acctform-name"]', 'Wallet');

@@ -35,6 +35,31 @@ export function useRecurrings(): RecurringRow[] | undefined {
   );
 }
 
+/**
+ * The recurring OWNS its transactions' category (user rule 2026-07-28):
+ * changing it re-files every linked transaction. The reimbursement
+ * exception survives: rows the user filed as EXPECTED reimbursement and
+ * rows settlement filed as REIMBURSED keep their attribution — those
+ * default back to the recurring's category only when the link/settling
+ * goes away, which the reimbursement flow already handles.
+ */
+export async function propagateRecurringCategory(
+  store: StorageBackend,
+  repo: Repo,
+  spaceId: string,
+  recurringId: string,
+  catId: string = 'uncategorized',
+): Promise<number> {
+  let touched = 0;
+  for (const tx of await visibleTransactions(store, spaceId)) {
+    if (tx.deleted !== 0 || tx.recurringId !== recurringId) continue;
+    if (tx.catId === catId || tx.catId === 'reimbursed' || tx.catId === 'expenseReimburse') continue;
+    await writeTxTransform(repo, tx, { catId });
+    touched++;
+  }
+  return touched;
+}
+
 /** merchant patterns this space already rejected as suggestions */
 export function useDismissedKeys(): ReadonlySet<string> | undefined {
   const { store, spaceId } = useData();
@@ -73,7 +98,15 @@ export function useRecurringOps(): RecurringOps {
     dismissSuggestion: (key) =>
       repo.upsert('recurringDismiss', spaceId, recurringDismissId(spaceId, key), { merchantKey: key }),
     linkTx: async (tx, recurringId) => {
-      await writeTxTransform(repo, tx, { recurringId });
+      // the recurring OWNS the category (user rule 2026-07-28): linking
+      // re-files the transaction — unless the user filed it as expected
+      // reimbursement or settlement filed it as reimbursed
+      const rec = recurringId ? await store.get('recurring', recurringId) : undefined;
+      const refile =
+        rec?.catId && tx.catId !== rec.catId && tx.catId !== 'reimbursed' && tx.catId !== 'expenseReimburse'
+          ? { catId: rec.catId }
+          : {};
+      await writeTxTransform(repo, tx, { recurringId, ...refile });
       void logActivity(store, repo, spaceId, 'txLink', txTitle(tx));
     },
     reconcile: () => reconcileRecurringLinks(store, repo, spaceId),
@@ -153,6 +186,26 @@ export function useRecurringReminders(): void {
           badge: 'icon-192.png',
           tag: `rec-remind-${rec.id}`,
           data: { url: './#/recurring' },
+        });
+      }
+
+      // debts saved without an interest rate get a WEEKLY nudge to fill
+      // it in — 0% is an answer, an empty rate is a question (user rule
+      // 2026-07-28); quick-add now, find out the rate later
+      const debts = (await store.allRows('debt')).filter(
+        (d) => d.deleted === 0 && d.archived !== 1 && d.interestPctYear === undefined,
+      );
+      for (const debt of debts) {
+        const key = `debtPctReminded_${debt.id}`;
+        const last = (await store.metaGet(key)) as number | undefined;
+        if (last && Date.now() - last < 7 * 86_400_000) continue;
+        await store.metaPut(key, Date.now());
+        await registration.showNotification('munni', {
+          body: t('debts.rateReminderBody', { name: debt.name }),
+          icon: 'icon-192.png',
+          badge: 'icon-192.png',
+          tag: `debt-rate-${debt.id}`,
+          data: { url: './#/debts' },
         });
       }
     })().catch(() => undefined); // reminders are best-effort; a closing db must not throw
