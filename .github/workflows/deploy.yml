@@ -30,9 +30,8 @@ jobs:
 
       - run: npm ci
 
-      # Chromium runs the gallery; WebKit runs the sheet-geometry guard
-      # (iOS Safari/PWA/webview layout bugs are invisible to Blink)
-      - run: npx playwright install --with-deps chromium webkit
+      # Install only the Chromium browser (faster than full install)
+      - run: npx playwright install --with-deps chromium
         working-directory: apps/web
 
       # Unit tests with coverage (finance app: correctness paths must be covered)
