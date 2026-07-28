@@ -34,6 +34,34 @@ export async function attachFeedToSpace(
   void logActivity(store, repo, spaceId, 'attach', (await store.get('account', accountId))?.name);
 }
 
+/**
+ * Server links → local accountLink mirrors, for attachments the CLIENT
+ * never saw being made. The bank-connect completion runs anonymously on
+ * the hosted page (native hop: that browser has no app session), so the
+ * server attaches the accounts to the initiating space but no device
+ * ever wrote the mirror — the connection existed server-side yet showed
+ * up NOWHERE in the app (the long-standing user issue, admin Diagnose
+ * confirmed dangling SpaceAccountLinks). Runs at space open, best-effort.
+ */
+export async function reconcileSpaceLinks(store: StorageBackend, repo: Repo, spaceId: string): Promise<number> {
+  const server = await fetchSpaceLinks(spaceId);
+  if (server.length === 0) return 0;
+  const local = (await store.bySpace('accountLink', spaceId)).filter((l) => l.deleted === 0);
+  const space = await store.get('space', spaceId);
+  let mirrored = 0;
+  for (const link of server) {
+    if (local.some((l) => l.feedSpaceId === link.feedSpaceId && l.accountId === link.accountId)) continue;
+    await repo.upsert('accountLink', spaceId, accountLinkId(spaceId, link.feedSpaceId), {
+      feedSpaceId: link.feedSpaceId,
+      accountId: link.accountId,
+      historyFrom: space?.historyStartDate ?? isoMonthsAgo(DEFAULT_HISTORY_MONTHS),
+      archived: 0,
+    });
+    mirrored++;
+  }
+  return mirrored;
+}
+
 export async function detachFeedFromSpace(
   store: StorageBackend,
   repo: Repo,
