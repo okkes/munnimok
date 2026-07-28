@@ -18,6 +18,37 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.26.0',
+    date: '2026-07-28',
+    items: [
+      {
+        en: 'Debts, rebuilt around the truth: every debt is backed by a loan account (create one on the spot, named after the debt), transfers to that account ARE the payments, and the payoff projection follows real money instead of hand-typed numbers. A recurring cost that pays something off can hand itself over to debt creation — Mina explains the difference — and munni nudges weekly until the interest rate is filled in, where 0% counts as an answer.',
+        nl: 'Schulden, herbouwd rond de waarheid: elke schuld heeft een leenrekening (maak er ter plekke één, vernoemd naar de schuld), overboekingen naar die rekening ZIJN de aflossingen, en de aflosprognose volgt echt geld in plaats van getypte getallen. Een vaste last die iets aflost kan zichzelf overdragen aan schuld-aanmaak — Mina legt het verschil uit — en munni herinnert je wekelijks tot de rente is ingevuld, waarbij 0% als antwoord telt.',
+        tr: 'Borçlar gerçeğin etrafında yeniden kuruldu: her borcun bir kredi hesabı var (anında oluştur, borcun adıyla), o hesaba yapılan transferler ödemelerin TA KENDİSİ ve bitiş projeksiyonu elle yazılmış sayılar yerine gerçek parayı izliyor. Bir şeyi ödeyen düzenli gider kendini borç oluşturmaya devredebilir — Mina farkı açıklar — ve munni faiz oranı doldurulana dek her hafta hatırlatır; %0 da bir cevaptır.',
+      },
+      {
+        en: 'Recurring costs own a category now: pick it once and every linked transaction files under it automatically — change it later and they all follow. A linked transaction only offers that category or Expected reimbursement, so a shared subscription still settles honestly.',
+        nl: 'Vaste lasten hebben nu een eigen categorie: kies hem één keer en elke gekoppelde transactie wordt er automatisch onder gearchiveerd — wijzig hem later en alles volgt. Een gekoppelde transactie biedt alleen die categorie of Verwachte terugbetaling, zodat een gedeeld abonnement eerlijk blijft.',
+        tr: 'Düzenli giderlerin artık kendi kategorisi var: bir kez seç, bağlı her işlem otomatik oraya dosyalanır — sonra değiştir, hepsi izler. Bağlı bir işlem yalnızca o kategoriyi veya Beklenen geri ödemeyi sunar; paylaşılan bir abonelik yine dürüstçe kapanır.',
+      },
+      {
+        en: 'The accounts overview finally says where everything lives: bank connections and imports first (global), then each space with its own manual accounts. A transfer can create its counterparty on the spot — quick manual, or the full setup with bank connect and import — and in a shared space, connecting a bank asks a conscious yes before members can see it.',
+        nl: 'Het rekeningenoverzicht zegt eindelijk waar alles leeft: bankkoppelingen en imports eerst (globaal), daarna elke ruimte met haar eigen handmatige rekeningen. Een overboeking kan haar tegenpartij ter plekke aanmaken — snel handmatig, of de volledige setup met bankkoppeling en import — en in een gedeelde ruimte vraagt een bankkoppeling eerst een bewuste ja voordat leden meekijken.',
+        tr: 'Hesap genel görünümü sonunda her şeyin nerede yaşadığını söylüyor: önce banka bağlantıları ve içe aktarımlar (genel), sonra her alan kendi manuel hesaplarıyla. Bir transfer karşı tarafını anında oluşturabilir — hızlı manuel ya da banka bağlama ve içe aktarmayla tam kurulum — ve paylaşılan bir alanda banka bağlamak, üyeler görmeden önce bilinçli bir evet ister.',
+      },
+      {
+        en: 'Mina’s tour flows like it should: the dimmed focus is a rounded spotlight that snaps to the target, switching lessons complete on the switch itself, the clean-up step hops back before deleting (the active space can’t delete itself), skipping asks on a full screen, and a run killed mid-onboarding stays quiet until onboarding is done.',
+        nl: 'Mina’s rondleiding loopt zoals het hoort: de gedimde focus is een afgeronde spotlight die naar het doel springt, wissellessen ronden af op de wissel zelf, de opruimstap wipt eerst terug voor het verwijderen (de actieve ruimte kan zichzelf niet verwijderen), overslaan vraagt het op een volledig scherm, en een run die midden in de onboarding werd afgebroken blijft stil tot de onboarding klaar is.',
+        tr: 'Mina’nın turu olması gerektiği gibi akıyor: karartılmış odak hedefe anında oturan yuvarlatılmış bir spot, geçiş dersleri geçişin kendisiyle tamamlanıyor, temizlik adımı silmeden önce geri dönüyor (aktif alan kendini silemez), atlama tam ekranda soruyor ve onboarding ortasında kapatılan bir tur onboarding bitene dek sessiz kalıyor.',
+      },
+      {
+        en: 'Signing in on iPhone got honest: if the connection screen can’t get through for 20 seconds it shows the real reason and a Diagnose button whose report you can copy straight to support — it already found its first real bug.',
+        nl: 'Inloggen op de iPhone werd eerlijk: komt het verbindingsscherm er 20 seconden niet doorheen, dan toont het de echte reden en een Diagnose-knop waarvan je het rapport zo naar support kopieert — hij vond zijn eerste echte bug al.',
+        tr: 'iPhone’da oturum açmak dürüstleşti: bağlantı ekranı 20 saniye boyunca geçemezse gerçek nedeni ve raporunu doğrudan desteğe kopyalayabileceğin bir Tanıla düğmesi gösterir — ilk gerçek hatasını çoktan buldu.',
+      },
+    ],
+  },
+  {
     version: '2.25.0',
     date: '2026-07-28',
     items: [
