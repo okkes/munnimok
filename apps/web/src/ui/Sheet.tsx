@@ -273,7 +273,10 @@ function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, foote
         }}
       >
         {title && <div className="m-h3 shrink-0 px-5 pt-5 pb-1 text-ink">{title}</div>}
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pt-2 pb-5">{children}</div>
+        {/* flex-auto, not flex-1: with no `size` this dialog is
+            auto-height, where basis 0% collapses in WebKit (Safari on
+            macOS/iPad) exactly like the mobile sheet did on iOS */}
+        <div className="min-h-0 flex-auto overflow-y-auto overscroll-contain px-5 pt-2 pb-5">{children}</div>
         {footer && <div className="shrink-0 border-t border-line-2 bg-bg px-5 pt-3 pb-5">{footer}</div>}
       </dialog>
     </div>,
@@ -400,9 +403,16 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
             child visibly recedes instead of hiding behind a thin bar —
             and grows back in step with the child's dismissal drag
             (styles written imperatively via registerCoveredEl) */}
+        {/* WebKit rule (iOS ss 2026-07-26): inside the auto-height
+            container (detent "content"), `flex-1`'s basis 0% overrides
+            `height` and min-h-0 drops the content minimum — WebKit then
+            resolves the body to ZERO and sheets open header-only, while
+            Blink grows it to content and hides the bug. Basis stays AUTO
+            (flex-initial) so `height` rules; min-h-0 only lets the
+            container's own max clamp shrink it on short screens. */}
         <div
           ref={(el) => registerCoveredEl(id, el)}
-          className="flex min-h-0 flex-1 flex-col"
+          className="flex min-h-0 flex-initial flex-col"
           style={{ transformOrigin: 'top center', height: fixedHeight }}
           // a pointer landing on an editable must NEVER become a sheet
           // drag (input-cancelled-while-typing, user report). Capture
@@ -424,7 +434,14 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
               semantics our hand-rolled touchmove guard gave vaul);
               bottom padding lives INSIDE the scroller because the lib
               writes its keyboard inset onto the scroller's own style */}
-          <ModalSheet.Content className="min-h-0 flex-1" scrollClassName="px-5">
+          {/* flex-auto (basis auto), same WebKit rule as the wrapper;
+              the scroller swaps the lib's `height: 100%` (indefinite
+              inside a flex-sized parent in WebKit) for flex sizing */}
+          <ModalSheet.Content
+            className="min-h-0 flex-auto"
+            scrollClassName="px-5"
+            scrollStyle={{ height: 'auto', flex: '1 1 auto', minHeight: 0 }}
+          >
             <div className={footer ? 'pb-2' : 'pb-[max(20px,env(safe-area-inset-bottom))]'}>{children}</div>
           </ModalSheet.Content>
           {/* pinned footer: OUTSIDE the scrollport, so it can never
