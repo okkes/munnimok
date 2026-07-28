@@ -8,6 +8,8 @@ async function createDebt(name: string, original: string, apr?: string, payment?
   fireEvent.click(await screen.findByTestId('debts-add'));
   await screen.findByTestId('debtform-name');
   fireEvent.change(screen.getByTestId('debtform-name'), { target: { value: name } });
+  // a debt is always backed by a loan account now — quick-create one
+  fireEvent.change(screen.getByTestId('debtform-account'), { target: { value: '__new__' } });
   fireEvent.change(screen.getByTestId('debtform-original'), { target: { value: original } });
   if (apr) fireEvent.change(screen.getByTestId('debtform-apr'), { target: { value: apr } });
   if (payment) fireEvent.change(screen.getByTestId('debtform-payment'), { target: { value: payment } });
@@ -32,10 +34,11 @@ describe('Debts (demo identity)', () => {
 
     fireEvent.click(screen.getByTestId('debts-add'));
     await screen.findByTestId('debtform-name');
-    // demo has no liability accounts, so the link select stays hidden
-    expect(screen.queryByTestId('debtform-account')).toBeNull();
     fireEvent.change(screen.getByTestId('debtform-name'), { target: { value: 'Student loan' } });
     fireEvent.change(screen.getByTestId('debtform-original'), { target: { value: '10000' } });
+    // save refuses until a loan account backs the debt (user rule)
+    expect((screen.getByTestId('debtform-save') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByTestId('debtform-account'), { target: { value: '__new__' } });
     fireEvent.change(screen.getByTestId('debtform-apr'), { target: { value: '12' } });
     fireEvent.change(screen.getByTestId('debtform-payment'), { target: { value: '500' } });
     fireEvent.click(screen.getByTestId('debtform-save'));

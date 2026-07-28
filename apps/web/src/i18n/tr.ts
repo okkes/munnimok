@@ -1458,6 +1458,8 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'debts.namePlaceholder': 'Ad (örn. Öğrenim kredisi)',
   'debts.linkAccount': 'Bağlı hesap',
   'debts.noAccount': 'Elle takip et',
+  'debts.pickAccount': 'Kredi hesabını seç…',
+  'debts.newAccount': '＋ Yeni kredi hesabı (bu borcun adıyla)',
   'debts.original': 'Başlangıç tutarı',
   'debts.remaining': 'Şu an kalan',
   'debts.remainingOf': 'başlangıçtaki {amount} borçtan',

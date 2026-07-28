@@ -11,6 +11,8 @@ async function createBigDebt() {
   fireEvent.click(await screen.findByTestId('debts-add'));
   await screen.findByTestId('debtform-name');
   fireEvent.change(screen.getByTestId('debtform-name'), { target: { value: 'Student loan' } });
+  // debts are always backed by a loan account now — quick-create one
+  fireEvent.change(screen.getByTestId('debtform-account'), { target: { value: '__new__' } });
   fireEvent.change(screen.getByTestId('debtform-original'), { target: { value: '25000' } });
   fireEvent.change(screen.getByTestId('debtform-apr'), { target: { value: '8' } });
   fireEvent.change(screen.getByTestId('debtform-payment'), { target: { value: '300' } });

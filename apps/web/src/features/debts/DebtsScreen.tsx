@@ -5,6 +5,8 @@ import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useDebtOps, useDebtStatuses } from '@/application/debts';
 import type { DebtStatus } from '@/application/debts';
+import { logActivity } from '@/application/activity';
+import { manualBalanceDate } from '@/features/accounts/accountTypes';
 import { useSpaceAccounts } from '@/application/transactions';
 import { localToday } from '@/application/recurring';
 import { projectPayoff } from '@/domain/debts';
@@ -21,12 +23,17 @@ import { Sheet } from '@/ui/Sheet';
 
 export const DEBT_ICONS = ['home-percent-outline', 'credit-card-outline', 'car-outline', 'school-outline', 'hand-coin-outline', 'account-cash-outline'] as const;
 const LIABILITY_TYPES = new Set(['credit', 'mortgage', 'loan']);
+/** select sentinel: quick-create a loan account named after the debt */
+const NEW_ACCOUNT = '__new__';
 
-/** create/edit sheet: link a liability account or track manually */
+/** create/edit sheet. A debt is ALWAYS backed by a loan account (user
+ *  rule 2026-07-28): the account's balance is the remaining truth and
+ *  only transactions move it — a missing account quick-creates here. */
 export function DebtFormSheet({ initial, onClose }: Readonly<{ initial: DebtRow | 'new' | null; onClose: () => void }>) {
   const { t } = useLang();
   const { fmt } = useDisplayMoney();
   const ops = useDebtOps();
+  const { store, repo, spaceId } = useData();
   const accounts = useSpaceAccounts();
   const editing = initial !== 'new' && initial !== null ? initial : null;
   const [name, setName] = useState('');
@@ -38,33 +45,56 @@ export function DebtFormSheet({ initial, onClose }: Readonly<{ initial: DebtRow 
   const [payment, setPayment] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
 
+  // seed keyed on the record's ID, never object identity (the iOS
+  // reseed class: re-emitted rows must not wipe mid-typing edits)
+  const seedKey = initial === null ? null : (editing?.id ?? 'new');
   useEffect(() => {
     setName(editing?.name ?? '');
     setIcon(editing?.icon ?? DEBT_ICONS[0]);
     setAccountId(editing?.accountId ?? '');
     setOriginal(editing?.originalCents ? (editing.originalCents / 100).toFixed(2) : '');
-    setRemaining(editing?.remainingCents ? (editing.remainingCents / 100).toFixed(2) : '');
-    setApr(editing?.interestPctYear ? String(editing.interestPctYear) : '');
+    setRemaining('');
+    setApr(editing?.interestPctYear !== undefined ? String(editing.interestPctYear) : '');
     setPayment(editing?.paymentCents ? (editing.paymentCents / 100).toFixed(2) : '');
     setConfirmDelete(false);
-  }, [initial, editing]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seedKey]);
 
   const liabilities = (accounts ?? []).filter((a) => a.archived !== 1 && LIABILITY_TYPES.has(a.type));
   const originalCents = parseCents(original);
-  const valid = name.trim().length > 0 && originalCents !== null && originalCents > 0;
+  const creating = accountId === NEW_ACCOUNT;
+  const valid = name.trim().length > 0 && originalCents !== null && originalCents > 0 && accountId !== '';
 
   const save = async () => {
     if (!valid || originalCents === null) return;
-    const remainingCents = parseCents(remaining);
     const paymentCents = parseCents(payment);
     const aprNumber = Number.parseFloat(apr.replace(',', '.'));
+    let backingId = accountId;
+    if (creating) {
+      // the quick-created loan account opens at the remaining value (or
+      // the original) — from here only transactions move it
+      const openingCents = parseCents(remaining) ?? originalCents;
+      backingId = repo.newId();
+      const space = await store.get('space', spaceId);
+      await repo.upsert('account', spaceId, backingId, {
+        name: name.trim(),
+        type: 'loan',
+        source: 'manual',
+        currency: space?.currency ?? 'EUR',
+        balanceCents: -Math.abs(openingCents),
+        balanceAsOf: manualBalanceDate(),
+      });
+      void logActivity(store, repo, spaceId, 'accountAdd', name.trim());
+    }
     await ops.save(editing?.id ?? null, {
       name: name.trim(),
       icon,
-      accountId: accountId || undefined,
+      accountId: backingId,
       originalCents,
-      remainingCents: !accountId && remainingCents !== null && remainingCents >= 0 ? remainingCents : undefined,
-      interestPctYear: Number.isFinite(aprNumber) && aprNumber > 0 ? aprNumber : undefined,
+      // remaining is the ACCOUNT's business now — never stored again
+      remainingCents: undefined,
+      // 0% is a real answer; only the EMPTY field means "remind me"
+      interestPctYear: Number.isFinite(aprNumber) && aprNumber >= 0 ? aprNumber : undefined,
       paymentCents: paymentCents && paymentCents > 0 ? paymentCents : undefined,
       archived: editing?.archived ?? 0,
     });
@@ -105,24 +135,23 @@ export function DebtFormSheet({ initial, onClose }: Readonly<{ initial: DebtRow 
           placeholder={t('debts.namePlaceholder')}
           className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
         />
-        {liabilities.length > 0 && (
-          <>
-            <div className="m-cap px-1">{t('debts.linkAccount')}</div>
-            <select
-              data-testid="debtform-account"
-              value={accountId}
-              onChange={(e) => setAccountId(e.target.value)}
-              className="h-12 w-full rounded-input border border-line bg-surface px-3 text-[14px] text-ink"
-            >
-              <option value="">{t('debts.noAccount')}</option>
-              {liabilities.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name} · {fmt(a.balanceCents, a.currency)}
-                </option>
-              ))}
-            </select>
-          </>
-        )}
+        {/* the backing loan account is MANDATORY — its balance is the
+            remaining truth, and only transactions move it */}
+        <div className="m-cap px-1">{t('debts.linkAccount')}</div>
+        <select
+          data-testid="debtform-account"
+          value={accountId}
+          onChange={(e) => setAccountId(e.target.value)}
+          className="h-12 w-full rounded-input border border-line bg-surface px-3 text-[14px] text-ink"
+        >
+          <option value="">{t('debts.pickAccount')}</option>
+          {liabilities.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name} · {fmt(a.balanceCents, a.currency)}
+            </option>
+          ))}
+          <option value={NEW_ACCOUNT}>{t('debts.newAccount')}</option>
+        </select>
         <div className="m-cap px-1">{t('debts.original')}</div>
         <input
           data-testid="debtform-original"
@@ -135,8 +164,10 @@ export function DebtFormSheet({ initial, onClose }: Readonly<{ initial: DebtRow 
           placeholder="0.00"
           className="h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[15px] text-ink outline-none placeholder:text-ink-4"
         />
-        {!accountId && (
+        {creating && (
           <>
+            {/* seeds the fresh loan account's opening balance, once —
+                afterwards only transactions move it */}
             <div className="m-cap px-1">{t('debts.remaining')}</div>
             <input
               data-testid="debtform-remaining"
@@ -146,7 +177,7 @@ export function DebtFormSheet({ initial, onClose }: Readonly<{ initial: DebtRow 
               min="0"
               value={remaining}
               onChange={(e) => setRemaining(e.target.value)}
-              placeholder="0.00"
+              placeholder={original || '0.00'}
               className="h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[15px] text-ink outline-none placeholder:text-ink-4"
             />
           </>

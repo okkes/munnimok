@@ -1458,6 +1458,8 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'debts.namePlaceholder': 'Naam (bijv. Studieschuld)',
   'debts.linkAccount': 'Gekoppelde rekening',
   'debts.noAccount': 'Handmatig bijhouden',
+  'debts.pickAccount': 'Kies de leenrekening…',
+  'debts.newAccount': '＋ Nieuwe leenrekening (vernoemd naar deze schuld)',
   'debts.original': 'Oorspronkelijk bedrag',
   'debts.remaining': 'Nu nog open',
   'debts.remainingOf': 'van oorspronkelijk {amount}',
