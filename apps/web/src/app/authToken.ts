@@ -56,3 +56,21 @@ export async function oidcSignOut(postLogoutRedirectUri: string): Promise<boolea
   await signOutHandler(postLogoutRedirectUri);
   return true;
 }
+
+/**
+ * Logto's signIn, registered by the provider — the 401 self-heal uses it
+ * to re-enter the OIDC flow when a signed-in user has no mintable token
+ * (evicted/wiped client keys while the IdP session cookie survives: the
+ * round-trip is silent and re-mints tokens).
+ */
+let signInHandler: ((redirectUri: string) => Promise<void>) | null = null;
+
+export function setOidcSignIn(fn: ((uri: string) => Promise<void>) | null): void {
+  signInHandler = fn;
+}
+
+export async function oidcSignIn(redirectUri: string): Promise<boolean> {
+  if (!signInHandler) return false;
+  await signInHandler(redirectUri);
+  return true;
+}

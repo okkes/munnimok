@@ -8,6 +8,7 @@ import { LangProvider } from '@/i18n';
 import { ThemeProvider } from '@/app/theme';
 import { DataProvider } from '@/app/data';
 import { useSession } from '@/app/session';
+import type { Identity } from '@/app/session';
 
 // vitest runs without globals, so RTL cannot self-register its cleanup
 afterEach(() => {
@@ -50,9 +51,10 @@ export function renderWithData(ui: ReactElement) {
  * as the demo identity (AppLayout provides DataProvider). Await the
  * screen's `screen-*` testid before asserting.
  */
-export function renderApp(path: string, { signedIn = true }: { signedIn?: boolean } = {}) {
+export function renderApp(path: string, { signedIn = true, identity }: { signedIn?: boolean; identity?: Identity } = {}) {
   localStorage.setItem('munni_lang', 'en');
-  if (signedIn) useSession.getState().login({ kind: 'demo' });
+  if (identity) useSession.getState().login(identity);
+  else if (signedIn) useSession.getState().login({ kind: 'demo' });
   else useSession.getState().logout();
   const router = createRouter({ routeTree, history: createMemoryHistory({ initialEntries: [path] }) });
   return render(

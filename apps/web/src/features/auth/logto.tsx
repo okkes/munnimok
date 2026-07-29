@@ -5,7 +5,7 @@ import { LogtoProvider, useHandleSignInCallback, useLogto } from '@logto/react';
 import * as Sentry from '@sentry/react';
 import { config, logtoConfigured, publicOrigin } from '@/app/config';
 import { NATIVE_CALLBACK_KEY, isNativeApp } from '@/lib/platform';
-import { setAccessTokenGetter, setOidcSignOut, signalAuthReady } from '@/app/authToken';
+import { setAccessTokenGetter, setOidcSignIn, setOidcSignOut, signalAuthReady } from '@/app/authToken';
 import { useSession } from '@/app/session';
 import { Logo } from '@/ui/Logo';
 
@@ -42,13 +42,18 @@ export function LogtoAppProvider({ children }: { children: ReactNode }) {
   );
 }
 
-/** exposes Logto access tokens + signOut to non-React code */
+/** exposes Logto access tokens + signIn/signOut to non-React code */
 function TokenBridge() {
-  const { getAccessToken, isAuthenticated, isLoading, signOut } = useLogto();
+  const { getAccessToken, isAuthenticated, isLoading, signIn, signOut } = useLogto();
   useEffect(() => {
     setOidcSignOut((uri) => signOut(uri));
-    return () => setOidcSignOut(null);
-  }, [signOut]);
+    // the 401 self-heal (data.tsx) re-enters the OIDC flow from outside React
+    setOidcSignIn((uri) => signIn(uri));
+    return () => {
+      setOidcSignOut(null);
+      setOidcSignIn(null);
+    };
+  }, [signIn, signOut]);
   useEffect(() => {
     if (isLoading) return; // session still restoring — keep sync waiting
     if (isAuthenticated) {
@@ -69,21 +74,29 @@ function TokenBridge() {
 }
 
 /** shared post-exchange step: adopt the session, then re-enter the app */
-function useFinishSignIn(): () => Promise<void> {
+function useFinishSignIn(): () => Promise<boolean> {
   const { getIdTokenClaims } = useLogto();
   const login = useSession((s) => s.login);
   return async () => {
     const claims = await getIdTokenClaims();
-    if (claims?.sub) {
-      login({ kind: 'user', sub: claims.sub });
-      // best-effort display name for friends/space members
-      const name = claims.name ?? claims.username ?? claims.email;
-      if (name) {
-        const { apiFetch } = await import('@/lib/api');
-        void apiFetch('/me', { method: 'PUT', body: JSON.stringify({ displayName: name }) }).catch(() => undefined);
-      }
+    // exchange ok but no readable identity — caller shows retry instead of
+    // bouncing a session-less user into the app shell
+    if (!claims?.sub) return false;
+    login({ kind: 'user', sub: claims.sub });
+    // best-effort display name for friends/space members. AWAITED (with a
+    // cap): fire-and-forget raced the /#/home navigation — iOS WebKit
+    // cancels the in-flight fetch ('Load failed'), which set the shared
+    // Logto context error and used to trigger the post-login key wipe
+    const name = claims.name ?? claims.username ?? claims.email;
+    if (name) {
+      const { apiFetch } = await import('@/lib/api');
+      await Promise.race([
+        apiFetch('/me', { method: 'PUT', body: JSON.stringify({ displayName: name }) }).catch(() => undefined),
+        new Promise((resolve) => setTimeout(resolve, 4000)),
+      ]);
     }
     window.location.replace(`${window.location.origin}/#/home`);
+    return true;
   };
 }
 
@@ -140,14 +153,14 @@ function NativeCallbackScreen({ url }: Readonly<{ url: string }>) {
       // the public origin so it matches the registered redirect_uri
       await client.handleSignInCallback(url.startsWith('/') ? `${publicOrigin()}${url}` : url);
       sessionStorage.removeItem(NATIVE_CALLBACK_KEY);
-      await finish();
+      if (!(await finish())) setFailed('no identity claims');
     })().catch((err: unknown) => {
       sessionStorage.removeItem(NATIVE_CALLBACK_KEY);
       // shown on screen AND reported: a native user cannot open devtools
       Sentry.captureException(err);
       // a failed exchange leaves poisoned SDK state behind — clear it so
       // the retry starts a fresh sign-in (password-change loop fix)
-      clearStaleLogtoState();
+      clearStaleLogtoState('native-callback-error');
       setFailed(err instanceof Error ? `${err.name}: ${err.message}` : String(err));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -157,12 +170,23 @@ function NativeCallbackScreen({ url }: Readonly<{ url: string }>) {
 
 function WebCallbackScreen() {
   const finish = useFinishSignIn();
-  const { error } = useHandleSignInCallback(() => void finish());
-  if (error) {
+  const [noClaims, setNoClaims] = useState(false);
+  const { error, isAuthenticated } = useHandleSignInCallback(() => {
+    void finish().then((ok) => {
+      if (!ok) setNoClaims(true);
+    });
+  });
+  useEffect(() => {
+    if (!error) return;
     Sentry.captureException(error);
-    clearStaleLogtoState(); // poisoned exchange state must not survive into the retry
-  }
-  return <CallbackShell failed={Boolean(error)} detail={error ? `${error.name}: ${error.message}` : undefined} />;
+    // wipe ONLY while the exchange itself failed. The context error is
+    // SHARED: any later useLogto call sets it too (iOS cancels the
+    // display-name PUT during the /#/home navigation), and wiping then
+    // stranded a freshly signed-in user with zero Logto keys — the
+    // signed-in-but-tokenless 401 loop (field report 2026-07-29)
+    if (!isAuthenticated) clearStaleLogtoState('web-callback-error');
+  }, [error, isAuthenticated]);
+  return <CallbackShell failed={Boolean(error) || noClaims} detail={error ? `${error.name}: ${error.message}` : undefined} />;
 }
 
 /** rendered at /auth-callback: finishes the OIDC exchange, then re-enters the app */
