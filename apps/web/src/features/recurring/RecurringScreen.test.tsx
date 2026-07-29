@@ -286,8 +286,12 @@ describe('RecurringScreen editing (demo identity)', () => {
     fireEvent.click(screen.getByTestId('recurring-add'));
     fireEvent.change(await screen.findByTestId('recform-name'), { target: { value: 'Rent' } });
     fireEvent.change(screen.getByTestId('recform-amount'), { target: { value: '740' } });
+    // stay inside the 7-day notify window on EVERY calendar day: clamping
+    // to 28 pushed the due date a month out on the 29th-31st, and this
+    // test failed only on those days (caught 2026-07-29)
+    const today = new Date().getDate();
     fireEvent.change(screen.getByTestId('recform-dueday'), {
-      target: { value: String(Math.min(new Date().getDate(), 28)) },
+      target: { value: String(today <= 28 ? today : 1) },
     });
     fireEvent.blur(screen.getByTestId('recform-dueday')); // draft commits on blur
     fireEvent.click(screen.getByTestId('recform-notify-7'));
