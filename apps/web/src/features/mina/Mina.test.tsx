@@ -89,6 +89,9 @@ describe('Mina tutorial run (signed-in identity, no space yet)', () => {
     expect(fs1.textContent).toContain(en['mina.welcome.t']);
     fireEvent.click(screen.getByTestId('mina-next')); // → home bubble
     await waitFor(() => expect(screen.getByTestId('mina-tutorial').dataset.step).toBe('home'), { timeout: 5000 });
+    // Continue-driven bubbles without a shade still block wandering off
+    // (user ss 2026-07-29: everything was tappable on the Home step)
+    expect(screen.getByTestId('mina-tap-blocker')).toBeTruthy();
     fireEvent.click(screen.getByTestId('mina-next')); // → spaces concept
     fireEvent.click(await screen.findByTestId('mina-next')); // → sharing
     fireEvent.click(await screen.findByTestId('mina-next')); // → openSwitcher gate
@@ -113,6 +116,11 @@ describe('Mina tutorial run (signed-in identity, no space yet)', () => {
     const db = new MunniDB(dbName);
     const spaces = await db.spaces.filter((s) => s.deleted === 0).toArray();
     expect(spaces.map((s) => s.name)).toEqual(['Mijn potje']);
+    // the ledger SURVIVES the delayed advance (regression: a stale
+    // closure once clobbered it back to [], losing $s1/$s2 and sending
+    // the cleanup lesson to the wrong space's cog — user ss 2026-07-29)
+    const state = (await db.meta.get('minaTutorialState'))?.value as { ledger: { entity: string; id: string }[] };
+    expect(state.ledger.filter((e) => e.entity === 'space')).toHaveLength(1);
     db.close();
   }, 30_000);
 

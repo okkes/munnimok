@@ -100,36 +100,11 @@ describe('LoginScreen', () => {
     fireEvent.click(await screen.findByTestId('login-offline-btn'));
     fireEvent.click(await screen.findByTestId('offline-continue'));
     const profileBtn = await screen.findByText('Okkes');
+    // deletion moved to Settings → Profile (user ruling 2026-07-29) —
+    // the chooser offers no destructive affordance any more
+    expect(document.querySelector('[data-testid^="offline-delete-"]')).toBeNull();
     fireEvent.click(profileBtn.closest('button')!);
     expect(await screen.findByTestId('screen-home')).toBeTruthy();
     await waitFor(() => expect(readSessionIdentity()).toEqual(identity));
   });
-
-  it('deletes the offline profile AND its data behind a danger confirm', async () => {
-    // create + use a profile so real data exists
-    const first = renderApp('/login', { signedIn: false });
-    fireEvent.click(await screen.findByTestId('login-offline-btn'));
-    fireEvent.click(await screen.findByTestId('offline-continue'));
-    fireEvent.change(await screen.findByTestId('offline-name'), { target: { value: 'Okkes' } });
-    fireEvent.click(screen.getByTestId('offline-create'));
-    await screen.findByTestId('screen-onboarding');
-    fireEvent.click(screen.getByTestId('onboarding-save'));
-    fireEvent.click(await screen.findByTestId('onboarding-lock-later'));
-    await screen.findByTestId('screen-home');
-    first.unmount();
-    localStorage.removeItem('munni_session');
-
-    renderApp('/login', { signedIn: false });
-    fireEvent.click(await screen.findByTestId('login-offline-btn'));
-    fireEvent.click(await screen.findByTestId('offline-continue'));
-    await screen.findByText('Okkes');
-    const del = document.querySelector('[data-testid^="offline-delete-"]') as HTMLElement;
-    fireEvent.click(del);
-    fireEvent.click(await screen.findByTestId('offline-delete-confirm'));
-    // registry emptied → the create input returns
-    expect(await screen.findByTestId('offline-name')).toBeTruthy();
-    expect(screen.queryByText('Okkes')).toBeNull();
-    expect(JSON.parse(localStorage.getItem('munni_offline_profiles') ?? '[]')).toHaveLength(0);
-  });
-
 });

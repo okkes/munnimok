@@ -2,6 +2,7 @@
 import 'fake-indexeddb/auto';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { readSessionIdentity } from '@/app/session';
 import { USER_TEST_DB, renderApp, renderAppAsUser } from '@/test/harness';
 
 // demo identity is fully local: profile edits must not touch the network
@@ -74,6 +75,41 @@ describe('ProfileScreen (demo identity)', () => {
     expect(screen.queryByTestId('profile-copy-id')).toBeNull();
     expect(screen.queryByTestId('profile-email')).toBeNull();
   });
+});
+
+describe('ProfileScreen (offline identity)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    vi.stubGlobal('fetch', fetchSpy);
+    fetchSpy.mockClear();
+  });
+
+  it('deletes the profile AND its data from the danger card (moved off the chooser)', async () => {
+    // create + use a profile so real data exists
+    const first = renderApp('/login', { signedIn: false });
+    fireEvent.click(await screen.findByTestId('login-offline-btn'));
+    fireEvent.click(await screen.findByTestId('offline-continue'));
+    fireEvent.change(await screen.findByTestId('offline-name'), { target: { value: 'Okkes' } });
+    fireEvent.click(screen.getByTestId('offline-create'));
+    await screen.findByTestId('screen-onboarding');
+    fireEvent.click(screen.getByTestId('onboarding-save'));
+    fireEvent.click(await screen.findByTestId('onboarding-lock-later'));
+    await screen.findByTestId('screen-home');
+    const identity = readSessionIdentity();
+    first.unmount();
+
+    // still signed in AS THE OFFLINE PROFILE (renderApp's default demo
+    // login would replace it): the delete now lives on the profile
+    // screen, mirroring the online account (user ruling 2026-07-29)
+    renderApp('/profile', { identity: identity ?? undefined });
+    fireEvent.click(await screen.findByTestId('settings-delete-profile'));
+    fireEvent.click(await screen.findByTestId('offline-delete-confirm'));
+    // signed out, registry emptied — back on the login screen
+    await screen.findByTestId('screen-login');
+    expect(JSON.parse(localStorage.getItem('munni_offline_profiles') ?? '[]')).toHaveLength(0);
+    expect(localStorage.getItem('munni_session')).toBeNull();
+  }, 15_000);
 });
 
 describe('ProfileScreen (user identity, scripted server)', () => {

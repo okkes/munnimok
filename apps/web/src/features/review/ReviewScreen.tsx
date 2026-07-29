@@ -556,6 +556,16 @@ export function ReviewScreen() {
     async () => (draft?.linkedAccountId ? store.get('account', draft.linkedAccountId) : undefined),
     [draft?.linkedAccountId],
   );
+  // a loan/mortgage counterparty makes this a DEBT payment (1:1
+  // debt↔backing account, user design 2026-07-28): the card then shows
+  // WHICH debt is being paid and retires the recurring row — a payoff
+  // transfer is not a recurring cost (user request 2026-07-29)
+  const debts = useQuery(store, async () => (await store.bySpace('debt', spaceId)).filter((d) => d.deleted === 0), [spaceId]);
+  const payingDebt = useMemo(
+    () => (draft?.linkedAccountId ? (debts ?? []).find((d) => d.accountId === draft.linkedAccountId) : undefined),
+    [debts, draft?.linkedAccountId],
+  );
+  const isLoanCounter = !!draftCounter && ['loan', 'mortgage'].includes(draftCounter.type);
   const events = useEvents();
   const activeEvents = useMemo(() => (events ?? []).filter((e) => e.archived !== 1), [events]);
   const pickedEvent = activeEvents.find((e) => e.id === eventPick);
@@ -644,9 +654,10 @@ export function ReviewScreen() {
   // stages its category once, and the editor then only offers that
   // category or expected reimbursement (the one allowed override)
   const chosenRec = useMemo(() => {
+    if (isLoanCounter) return undefined; // debt payments never carry a recurring link
     const id = chosenRecurringId(recMatch, linkRecurring, manualRecId);
     return id ? (recurrings ?? []).find((r) => r.id === id) : undefined;
-  }, [recMatch, linkRecurring, manualRecId, recurrings]);
+  }, [recMatch, linkRecurring, manualRecId, recurrings, isLoanCounter]);
   useEffect(() => {
     if (!chosenRec?.catId || !draft) return;
     if (draft.catId === chosenRec.catId || draft.catId === EXPECTED_REIMBURSE_ID) return;
@@ -668,7 +679,7 @@ export function ReviewScreen() {
     await writeConfirmation({
       tx,
       draft,
-      recurringId: chosenRecurringId(recMatch, linkRecurring, manualRecId),
+      recurringId: isLoanCounter ? undefined : chosenRecurringId(recMatch, linkRecurring, manualRecId),
       eventId: eventPick ?? undefined,
       bulk: similar.filter((s) => bulkSelected.has(s.id)),
       transform,
@@ -834,17 +845,26 @@ export function ReviewScreen() {
                   );
                 })}
 
-                <button
-                  data-testid="review-recurring-row"
-                  onClick={() => setRecPickOpen(true)}
-                  className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
-                >
-                  <Icon name="autorenew" size={18} color="var(--m-ink-3)" />
-                  <span className="min-w-0 flex-1 truncate">{recurringRowLabel(recMatch, linkRecurring, manualRec, t)}</span>
-                  <span className="text-[11px] text-ink-4">{t('recurring.linkTitle')}</span>
-                  <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
-                </button>
-                {recMatch && linkRecurring && Math.abs(Math.abs(tx.amountCents) - recMatch.amountCents) >= 50 && (
+                {isLoanCounter && (
+                  <div data-testid="review-debt-row" className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-[14px] text-ink">
+                    <Icon name="hand-coin-outline" size={18} color="var(--m-ink-3)" />
+                    <span className="min-w-0 flex-1 truncate">{payingDebt ? payingDebt.name : t('review.debtNone')}</span>
+                    <span className="text-[11px] text-ink-4">{t('review.debtRow')}</span>
+                  </div>
+                )}
+                {!isLoanCounter && (
+                  <button
+                    data-testid="review-recurring-row"
+                    onClick={() => setRecPickOpen(true)}
+                    className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
+                  >
+                    <Icon name="autorenew" size={18} color="var(--m-ink-3)" />
+                    <span className="min-w-0 flex-1 truncate">{recurringRowLabel(recMatch, linkRecurring, manualRec, t)}</span>
+                    <span className="text-[11px] text-ink-4">{t('recurring.linkTitle')}</span>
+                    <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+                  </button>
+                )}
+                {!isLoanCounter && recMatch && linkRecurring && Math.abs(Math.abs(tx.amountCents) - recMatch.amountCents) >= 50 && (
                   <div className="flex items-center gap-1 px-4 pb-1 text-[11px] text-warning" data-testid="review-rec-delta">
                     <Icon name={Math.abs(tx.amountCents) > recMatch.amountCents ? 'trending-up' : 'trending-down'} size={12} />
                     {t(Math.abs(tx.amountCents) > recMatch.amountCents ? 'review.recDeltaMore' : 'review.recDeltaLess', {

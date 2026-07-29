@@ -132,7 +132,7 @@ export function SpaceSettingsScreen() {
   };
 
   return (
-    <div className="m-fade flex h-full flex-col" data-testid="screen-space-settings">
+    <div className="m-fade flex h-full flex-col" data-testid="screen-space-settings" data-space-id={spaceId}>
       <AppBar
         title={space?.name ?? t('space.settings')}
         leading={

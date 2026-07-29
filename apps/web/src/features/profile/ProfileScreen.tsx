@@ -5,7 +5,8 @@ import { logtoConfigured } from '@/app/config';
 import { destroyIdentityData, useData } from '@/app/data';
 import { Row } from '@/ui/primitives';
 import { useSession } from '@/app/session';
-import { getOfflineProfile, updateOfflineProfile } from '@/features/auth/offlineProfiles';
+import { deleteOfflineProfile, getOfflineProfile, updateOfflineProfile } from '@/features/auth/offlineProfiles';
+import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { useLang } from '@/i18n';
 import { apiFetch } from '@/lib/api';
 import { downscaleImage, isDataImage } from '@/lib/image';
@@ -166,6 +167,7 @@ export function ProfileScreen() {
   const [deleteTyped, setDeleteTyped] = useState('');
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState(false);
+  const [deleteProfileOpen, setDeleteProfileOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const logout = useSession((s) => s.logout);
@@ -185,6 +187,18 @@ export function ProfileScreen() {
     }
     logout();
     await destroyIdentityData(current);
+    await navigate({ to: '/login' });
+  };
+
+  // offline mirror of deleteAccount (user ruling 2026-07-29: the delete
+  // lives HERE, consistent with the online account — not on the chooser):
+  // sign out first so the DataProvider closes the store, then the
+  // profile helper erases the database, lock config and registry row
+  const deleteOfflineData = async () => {
+    const current = identity;
+    if (current?.kind !== 'offline') return;
+    logout();
+    await deleteOfflineProfile(current.profileId);
     await navigate({ to: '/login' });
   };
 
@@ -456,7 +470,31 @@ export function ProfileScreen() {
             </button>
           </div>
         )}
+        {identity?.kind === 'offline' && (
+          <div className="mt-6 overflow-hidden rounded-card border border-line bg-surface">
+            <button
+              data-testid="settings-delete-profile"
+              onClick={() => setDeleteProfileOpen(true)}
+              className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-negative"
+            >
+              <Icon name="account-remove-outline" size={20} />
+              <span className="min-w-0 flex-1">
+                <span className="block">{t('offline.deleteRow')}</span>
+                <span className="block text-[11px] text-ink-4">{t('offline.deleteRowSub')}</span>
+              </span>
+            </button>
+          </div>
+        )}
       </div>
+
+      <DangerConfirmSheet
+        open={deleteProfileOpen}
+        onOpenChange={setDeleteProfileOpen}
+        title={t('offline.deleteTitle')}
+        body={t('offline.deleteBody', { name })}
+        onConfirm={() => void deleteOfflineData()}
+        testId="offline-delete"
+      />
 
       {/* the point of no return: everything the design promises, spelled
           out, then a typed confirmation — no accidental taps */}

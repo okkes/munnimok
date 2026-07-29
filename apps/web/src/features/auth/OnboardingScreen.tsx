@@ -187,6 +187,7 @@ export function OnboardingScreen() {
               </div>
             </div>
 
+            <div className="m-cap px-1">{t('profile.displayName')}</div>
             <input
               data-testid="onboarding-name"
               value={name}

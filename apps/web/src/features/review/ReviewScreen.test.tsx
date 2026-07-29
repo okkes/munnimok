@@ -65,6 +65,28 @@ describe('ReviewScreen (demo identity)', () => {
     expect((screen.getByTestId('review-counter-row') as HTMLButtonElement).disabled).toBe(false);
   }, 15_000);
 
+  it('a loan counterparty swaps the recurring row for the debt row', async () => {
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    expect(screen.getByTestId('review-recurring-row')).toBeTruthy();
+
+    // transfer → CREATE a loan counterparty in place (quick-create door)
+    fireEvent.click(screen.getByTestId('review-kind-row'));
+    await screen.findByTestId('txkind-options');
+    fireEvent.click(screen.getByTestId('txkind-transfer'));
+    await screen.findByTestId('counter-accounts');
+    fireEvent.click(screen.getByTestId('counter-create'));
+    fireEvent.change(await screen.findByTestId('counter-create-name'), { target: { value: 'Car loan' } });
+    fireEvent.click(screen.getByTestId('counter-newtype-loan'));
+    fireEvent.click(screen.getByTestId('counter-create-save'));
+
+    // a payoff transfer is a debt payment, not a recurring cost (user
+    // request 2026-07-29): the debt row appears, recurring retires
+    await waitFor(() => expect(screen.getByTestId('review-debt-row')).toBeTruthy(), { timeout: 5000 });
+    expect(screen.getByTestId('review-debt-row').textContent).toContain('No debt on this account yet');
+    expect(screen.queryByTestId('review-recurring-row')).toBeNull();
+  }, 15_000);
+
   it('dismissing the counterparty picker rolls a user-picked transfer back', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
