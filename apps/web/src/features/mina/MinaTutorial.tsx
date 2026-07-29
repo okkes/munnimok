@@ -22,7 +22,36 @@ const PAD = 6;
 // space — with no live $s2 the whole stretch is skipped ('deleteFamily'
 // itself is excluded: its absent-act legitimately runs while the ledger
 // empties, and a skip firing there would jump PAST the wrap screen)
-const CLEANUP_STEP_IDS = ['openSwitcherCleanup', 'pickPrivateCleanup', 'openSwitcherCleanup2', 'openManageCleanup', 'openFamilyCog'];
+const CLEANUP_STEP_IDS = new Set(['openSwitcherCleanup', 'pickPrivateCleanup', 'openSwitcherCleanup2', 'openManageCleanup', 'openFamilyCog']);
+
+/**
+ * A stale ledger must never leave a $s-anchored step targetless (user
+ * ss: no glow, tutorial felt stuck/lost) — but ONLY rows of spaces MADE
+ * THIS RUN are safe stand-ins: gate steps advance on a tap into
+ * whatever glows, and lighting up a user's own space once pointed the
+ * delete lesson at the wrong cog (user ss 2026-07-29).
+ */
+function fallbackAnchor(candidates: readonly string[] | undefined, createdSpaces: readonly string[], spaceId: string): HTMLElement | null {
+  for (const raw of candidates ?? []) {
+    const tokenAt = raw.indexOf('$s');
+    if (tokenAt < 0) continue;
+    const prefix = raw.slice(0, tokenAt);
+    const rows = [...document.querySelectorAll<HTMLElement>(`[data-testid^="${prefix}"]`)].filter(
+      (el) => el.dataset.testid !== 'space-pick-manage' && el.offsetParent !== null,
+    );
+    const mine = rows.filter((el) => createdSpaces.some((sid) => el.dataset.testid === `${prefix}${sid}`));
+    const mineNotActive = mine.find((el) => el.dataset.testid !== `${prefix}${spaceId}`);
+    if (mine.length > 0) return mineNotActive ?? mine[0];
+    // switching lessons advance on ANY switch (the space-change effect),
+    // so a non-active row still teaches them correctly — never the
+    // active one (the lesson is switching AWAY, user ss)
+    if (prefix === 'space-pick-') {
+      const notActive = rows.find((el) => el.dataset.testid !== `${prefix}${spaceId}`);
+      if (notActive) return notActive;
+    }
+  }
+  return null;
+}
 
 /**
  * Barely-there dim + a breathing mint glow on the target (user design
@@ -203,36 +232,13 @@ export function MinaTutorial() {
         // (defense in depth — a wrong glow here coaches deleting real data)
         if (id === 'space-edit-delete') {
           const settings = document.querySelector<HTMLElement>('[data-testid="screen-space-settings"]');
-          if (!settings || settings.dataset.spaceId !== createdSpaces[1]) continue;
+          if (settings?.dataset.spaceId !== createdSpaces[1]) continue;
         }
         for (const el of document.querySelectorAll<HTMLElement>(`[data-testid="${id}"]`)) {
           if (el.offsetParent !== null) return el; // the VISIBLE candidate (mobile vs desktop nav)
         }
       }
-      // a stale ledger must never leave a $s-anchored step targetless
-      // (user ss: no glow, tutorial felt stuck/lost) — but ONLY rows of
-      // spaces MADE THIS RUN are safe stand-ins: gate steps advance on a
-      // tap into whatever glows, and lighting up a user's own space once
-      // pointed the delete lesson at the wrong cog (user ss 2026-07-29)
-      for (const raw of candidates ?? []) {
-        const tokenAt = raw.indexOf('$s');
-        if (tokenAt < 0) continue;
-        const prefix = raw.slice(0, tokenAt);
-        const rows = [...document.querySelectorAll<HTMLElement>(`[data-testid^="${prefix}"]`)].filter(
-          (el) => el.dataset.testid !== 'space-pick-manage' && el.offsetParent !== null,
-        );
-        const mine = rows.filter((el) => createdSpaces.some((sid) => el.dataset.testid === `${prefix}${sid}`));
-        const mineNotActive = mine.find((el) => el.dataset.testid !== `${prefix}${spaceId}`);
-        if (mine.length > 0) return mineNotActive ?? mine[0];
-        // switching lessons advance on ANY switch (the space-change
-        // effect), so a non-active row still teaches them correctly —
-        // never the active one (the lesson is switching AWAY, user ss)
-        if (prefix === 'space-pick-') {
-          const notActive = rows.find((el) => el.dataset.testid !== `${prefix}${spaceId}`);
-          if (notActive) return notActive;
-        }
-      }
-      return null;
+      return fallbackAnchor(candidates, createdSpaces, spaceId);
     },
     [createdSpaces, spaceId],
   );
@@ -274,7 +280,7 @@ export function MinaTutorial() {
   // no live tutorial-made Family = nothing to clean up: jump to the wrap
   // instead of glowing an arbitrary cog (lost ledger from a pre-fix
   // build, or the space already gone — user ss 2026-07-29)
-  const inCleanup = !!step && CLEANUP_STEP_IDS.includes(step.id);
+  const inCleanup = !!step && CLEANUP_STEP_IDS.has(step.id);
   useEffect(() => {
     if (!run?.active || !inCleanup) return;
     let cancelled = false;

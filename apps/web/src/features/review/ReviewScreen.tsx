@@ -362,6 +362,66 @@ function BulkConfirmSection({
   );
 }
 
+/**
+ * The card's link row below categories: for a loan/mortgage counterparty
+ * it names WHICH debt the transfer pays (a payoff is a debt payment, not
+ * a recurring cost — user request 2026-07-29); otherwise the editable
+ * recurring link with its price-delta warning.
+ */
+function DebtOrRecurringRow({
+  isLoanCounter,
+  payingDebt,
+  recMatch,
+  linkRecurring,
+  manualRec,
+  amountCents,
+  currency,
+  onEdit,
+}: Readonly<{
+  isLoanCounter: boolean;
+  payingDebt: { name: string } | undefined;
+  recMatch: RecurringRow | undefined;
+  linkRecurring: boolean;
+  manualRec: RecurringRow | undefined;
+  amountCents: number;
+  currency: string;
+  onEdit: () => void;
+}>) {
+  const { t, lang } = useLang();
+  if (isLoanCounter) {
+    return (
+      <div data-testid="review-debt-row" className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-[14px] text-ink">
+        <Icon name="hand-coin-outline" size={18} color="var(--m-ink-3)" />
+        <span className="min-w-0 flex-1 truncate">{payingDebt ? payingDebt.name : t('review.debtNone')}</span>
+        <span className="text-[11px] text-ink-4">{t('review.debtRow')}</span>
+      </div>
+    );
+  }
+  const delta = recMatch ? Math.abs(Math.abs(amountCents) - recMatch.amountCents) : 0;
+  return (
+    <>
+      <button
+        data-testid="review-recurring-row"
+        onClick={onEdit}
+        className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
+      >
+        <Icon name="autorenew" size={18} color="var(--m-ink-3)" />
+        <span className="min-w-0 flex-1 truncate">{recurringRowLabel(recMatch, linkRecurring, manualRec, t)}</span>
+        <span className="text-[11px] text-ink-4">{t('recurring.linkTitle')}</span>
+        <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+      </button>
+      {recMatch && linkRecurring && delta >= 50 && (
+        <div className="flex items-center gap-1 px-4 pb-1 text-[11px] text-warning" data-testid="review-rec-delta">
+          <Icon name={Math.abs(amountCents) > recMatch.amountCents ? 'trending-up' : 'trending-down'} size={12} />
+          {t(Math.abs(amountCents) > recMatch.amountCents ? 'review.recDeltaMore' : 'review.recDeltaLess', {
+            amount: fmtCents(delta, currency, lang),
+          })}
+        </div>
+      )}
+    </>
+  );
+}
+
 /** the recurring row's display label: linked name or "None" */
 function recurringRowLabel(
   recMatch: RecurringRow | undefined,
@@ -845,33 +905,16 @@ export function ReviewScreen() {
                   );
                 })}
 
-                {isLoanCounter && (
-                  <div data-testid="review-debt-row" className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-[14px] text-ink">
-                    <Icon name="hand-coin-outline" size={18} color="var(--m-ink-3)" />
-                    <span className="min-w-0 flex-1 truncate">{payingDebt ? payingDebt.name : t('review.debtNone')}</span>
-                    <span className="text-[11px] text-ink-4">{t('review.debtRow')}</span>
-                  </div>
-                )}
-                {!isLoanCounter && (
-                  <button
-                    data-testid="review-recurring-row"
-                    onClick={() => setRecPickOpen(true)}
-                    className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
-                  >
-                    <Icon name="autorenew" size={18} color="var(--m-ink-3)" />
-                    <span className="min-w-0 flex-1 truncate">{recurringRowLabel(recMatch, linkRecurring, manualRec, t)}</span>
-                    <span className="text-[11px] text-ink-4">{t('recurring.linkTitle')}</span>
-                    <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
-                  </button>
-                )}
-                {!isLoanCounter && recMatch && linkRecurring && Math.abs(Math.abs(tx.amountCents) - recMatch.amountCents) >= 50 && (
-                  <div className="flex items-center gap-1 px-4 pb-1 text-[11px] text-warning" data-testid="review-rec-delta">
-                    <Icon name={Math.abs(tx.amountCents) > recMatch.amountCents ? 'trending-up' : 'trending-down'} size={12} />
-                    {t(Math.abs(tx.amountCents) > recMatch.amountCents ? 'review.recDeltaMore' : 'review.recDeltaLess', {
-                      amount: fmtCents(Math.abs(Math.abs(tx.amountCents) - recMatch.amountCents), tx.currency, lang),
-                    })}
-                  </div>
-                )}
+                <DebtOrRecurringRow
+                  isLoanCounter={isLoanCounter}
+                  payingDebt={payingDebt}
+                  recMatch={recMatch}
+                  linkRecurring={linkRecurring}
+                  manualRec={manualRec}
+                  amountCents={tx.amountCents}
+                  currency={tx.currency}
+                  onEdit={() => setRecPickOpen(true)}
+                />
 
                 <button
                   data-testid="review-event-row"
