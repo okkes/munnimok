@@ -11,31 +11,30 @@ import { applyTitleMemory } from '@/application/titleMemory';
 import { linkPaypalFunding } from '@/application/paypalLink';
 import type { ImportResult } from './importCamt';
 import { apiFeedGateway, fetchMyFeedIds } from './feedGateway';
-import { AttachSheet, SOURCE_KEYS } from './AttachSheet';
+import { AttachSheet } from './AttachSheet';
+import { EditAccountSheet } from './EditAccountSheet';
 import { ReconcileSheet } from './ReconcileSheet';
 import { normalizeIban } from '@/domain/feedIds';
 import { attachFeedToSpace } from '@/application/accountAttach';
 import { DEFAULT_HISTORY_MONTHS, isoMonthsAgo } from '@/features/spaces/spaceDefaults';
 import { useQuery } from '@/db/useQuery';
 import { AddAccountChooser } from './AddAccountChooser';
-import { BrandIconPicker } from '@/features/recurring/BrandIconPicker';
 import { BankConnectSheet } from './BankConnect';
 import { useInstitutionLogos } from './useInstitutionLogos';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { logActivity } from '@/application/activity';
-import { fmtCents, parseCents } from '@/lib/money';
+import { fmtCents } from '@/lib/money';
 import { fmtTimeAgo } from '@/lib/text';
 import type { AccountRow } from '@/db/types';
 import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
-import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { EmptyState } from '@/ui/EmptyState';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 
-import { typeDef, isLiability, manualBalanceDate } from './accountTypes';
+import { typeDef, isLiability } from './accountTypes';
 
 /** whole days between a yyyy-mm-dd date and now; 0 when absent */
 const daysSince = (date?: string | null): number =>
@@ -186,8 +185,6 @@ export function AccountsScreen() {
   const { store, repo, spaceId } = useData();
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<AccountRow | null>(null);
-  const [name, setName] = useState('');
-  const [balance, setBalance] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
   const [importPreview, setImportPreview] = useState<ParsedStatement[] | null>(null);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
@@ -210,7 +207,6 @@ export function AccountsScreen() {
   const [connectOpen, setConnectOpen] = useState(false);
   const [myFeedIds, setMyFeedIds] = useState<ReadonlySet<string> | undefined>(undefined);
   const [attaching, setAttaching] = useState<GlobalAccount | null>(null);
-  const [editLogoOpen, setEditLogoOpen] = useState(false);
 
   useEffect(() => {
     if (identity?.kind !== 'user') return;
@@ -368,38 +364,7 @@ export function AccountsScreen() {
 
   const openEntry = (entry: GlobalAccount) => {
     if (entry.feedSpaceId) setAttaching(entry); // bank feed: manage attachments
-    else openEdit(entry.account); // manual/legacy row: edit name/balance
-  };
-
-  const localToday = manualBalanceDate;
-
-  const saveEdit = () => {
-    if (!editing || !name.trim()) return;
-    const cents = parseCents(balance || '');
-    let signed: number | null = null;
-    if (cents !== null) signed = isLiability(editing.type) ? -Math.abs(cents) : cents;
-    const balanceChanged = signed !== null && signed !== editing.balanceCents;
-    void repo.upsert('account', spaceId, editing.id, {
-      name: name.trim(),
-      ...(balanceChanged ? { balanceCents: signed!, balanceAsOf: localToday() } : {}),
-    });
-    void logActivity(store, repo, spaceId, 'accountEdit', name.trim());
-    setEditing(null);
-  };
-  const [confirmRemove, setConfirmRemove] = useState(false);
-  const removeAccount = () => {
-    if (!editing) return;
-    void repo.remove('account', spaceId, editing.id);
-    void logActivity(store, repo, spaceId, 'accountRemove', editing.name);
-    setConfirmRemove(false);
-    setEditing(null);
-  };
-
-  const openEdit = (account: AccountRow) => {
-    setEditing(account);
-    setName(account.name);
-    // liabilities store negative cents but are edited as positive amounts
-    setBalance((Math.abs(account.balanceCents) / 100).toFixed(2));
+    else setEditing(entry.account); // manual/legacy row: EditAccountSheet
   };
 
   return (
@@ -556,19 +521,6 @@ export function AccountsScreen() {
 
       <BankConnectSheet open={connectOpen} onOpenChange={setConnectOpen} />
       <ReconcileSheet open={reconcileIds !== null} onOpenChange={(next) => !next && setReconcileIds(null)} accountIds={reconcileIds ?? []} />
-      <BrandIconPicker
-        open={editLogoOpen}
-        onOpenChange={setEditLogoOpen}
-        initialQuery={editing?.name ?? ''}
-        onPick={({ logo }) => {
-          if (editing) {
-            void repo.upsert('account', spaceId, editing.id, { logo: logo ?? (null as never) });
-            void logActivity(store, repo, spaceId, 'accountEdit', editing.name);
-            setEditing({ ...editing, logo: logo ?? undefined });
-          }
-          setEditLogoOpen(false);
-        }}
-      />
 
       {/* CAMT.053 import: preview then result */}
       <Sheet open={importPreview !== null} onOpenChange={(open) => !open && closeImport()} title={t('import.preview')} size="form">
@@ -644,60 +596,7 @@ export function AccountsScreen() {
         )}
       </Sheet>
 
-      {/* Edit account */}
-      <Sheet open={!!editing} onOpenChange={(open) => !open && setEditing(null)} title={t('acct.editAccount')} size="form">
-        <div className="flex flex-col gap-3 pt-1">
-          <input
-            data-testid="acctedit-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none"
-          />
-          <input
-            data-testid="acctedit-balance"
-            value={balance}
-            onChange={(e) => setBalance(e.target.value)}
-            inputMode="decimal"
-            placeholder={`${t('acct.balanceNow')} (${editing?.currency ?? 'EUR'})`}
-            className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
-          />
-          <button
-            data-testid="acctedit-change-icon"
-            onClick={() => setEditLogoOpen(true)}
-            className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink"
-          >
-            {editing?.logo ? (
-              <img src={editing.logo} alt="" className="h-6 w-6 rounded object-contain" />
-            ) : (
-              <Icon name={editing ? typeDef(editing.type).icon : 'bank-outline'} size={20} color="var(--m-ink-3)" />
-            )}
-            <span className="flex-1">{t('acct.changeIcon')}</span>
-            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-          </button>
-          {editing && (
-            <div className="flex items-center justify-between px-1 text-[12px]" data-testid="acctedit-source">
-              <span className="text-ink-4">{t('acct.source')}</span>
-              <span className="text-ink-2">{t(SOURCE_KEYS[editing.source])}</span>
-            </div>
-          )}
-          <Button data-testid="acctedit-save" onClick={saveEdit} disabled={!name.trim()}>
-            {t('action.save')}
-          </Button>
-          <Button variant="danger" data-testid="acctedit-delete" onClick={() => setConfirmRemove(true)}>
-            {t('action.delete')}
-          </Button>
-        </div>
-      </Sheet>
-      {/* aligned destructive confirm (user request): one-tap deletes are
-          gone everywhere — sheet + cooldown, same as space/store/bank */}
-      <DangerConfirmSheet
-        open={confirmRemove}
-        onOpenChange={setConfirmRemove}
-        title={t('acct.deleteConfirmTitle')}
-        body={t('acct.deleteManualBody')}
-        onConfirm={removeAccount}
-        testId="acctedit-remove"
-      />
+      <EditAccountSheet account={editing} onClose={() => setEditing(null)} />
     </div>
   );
 }

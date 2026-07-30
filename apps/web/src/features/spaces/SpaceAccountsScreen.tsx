@@ -8,6 +8,7 @@ import { attachFeedToSpace, detachFeedFromSpace } from '@/application/accountAtt
 import { fetchMyFeedIds } from '@/features/accounts/feedGateway';
 import { SOURCE_KEYS } from '@/features/accounts/AttachSheet';
 import { AddAccountChooser } from '@/features/accounts/AddAccountChooser';
+import { EditAccountSheet } from '@/features/accounts/EditAccountSheet';
 import type { AccountLinkRow, AccountRow } from '@/db/types';
 import { fmtTimeAgo } from '@/lib/text';
 import { HelpButton } from '@/features/help/HelpButton';
@@ -30,6 +31,8 @@ interface AttachedAccountEntry {
   stale: boolean;
   /** present = a detachable feed attachment */
   detach?: { feedSpaceId: string; accountId: string };
+  /** present = a space-owned manual account, editable in place */
+  manual?: AccountRow;
 }
 
 interface AttachCandidate {
@@ -101,6 +104,7 @@ export function SpaceAccountsScreen() {
   const [historyFrom, setHistoryFrom] = useState('');
   const [busy, setBusy] = useState(false);
   const [detachTarget, setDetachTarget] = useState<AttachedAccountEntry | null>(null);
+  const [editing, setEditing] = useState<AccountRow | null>(null);
   // AE1: creation goes through the shared chooser now
   const [addOpen, setAddOpen] = useState(false);
 
@@ -130,6 +134,7 @@ export function SpaceAccountsScreen() {
         .join(' · '),
       archived: !!account.archived,
       stale: isStale(account),
+      manual: account, // own row → tappable: edit/delete in place (user ss 2026-07-31)
     }));
     for (const link of links) {
       list.push(linkEntry(t, lang, link, feedAccounts.get(link.accountId), mySub));
@@ -214,6 +219,8 @@ export function SpaceAccountsScreen() {
                   icon="bank-outline"
                   title={entry.name}
                   sub={entry.subtitle || undefined}
+                  testId={`space-account-${entry.key}`}
+                  onClick={entry.manual ? () => setEditing(entry.manual ?? null) : undefined}
                   trailing={
                     <span className="flex items-center gap-1.5">
                       {entry.stale && (
@@ -276,6 +283,10 @@ export function SpaceAccountsScreen() {
 
       {/* AE1: the shared intent chooser — manual creates in place */}
       <AddAccountChooser open={addOpen} onOpenChange={setAddOpen} gcAvailable={syncing} />
+
+      {/* manual rows edit/delete in place — same surface as the global
+          screen (user ss 2026-07-31: they were view-only here) */}
+      <EditAccountSheet account={editing} onClose={() => setEditing(null)} />
 
       {/* pick an existing account, choose the history start, attach */}
       <Sheet open={attachOpen} onOpenChange={setAttachOpen} title={t('acct.attachToSpace')} size="tall">

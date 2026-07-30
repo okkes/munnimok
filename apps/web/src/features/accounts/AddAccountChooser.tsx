@@ -55,6 +55,9 @@ export function AddAccountChooser({
   const [newType, setNewType] = useState<AccountType | null>(null);
   const [name, setName] = useState('');
   const [balance, setBalance] = useState('');
+  // liabilities DEFAULT to a negative balance but the user decides — an
+  // overpaid credit card is legitimately positive (user rule 2026-07-31)
+  const [negative, setNegative] = useState(false);
   const [currency, setCurrency] = useState<string | null>(null);
   // the action a shared-space warning is holding back (connect/import)
   const pendingRef = useRef<(() => void) | null>(null);
@@ -67,6 +70,7 @@ export function AddAccountChooser({
       setNewType(null);
       setName('');
       setBalance('');
+      setNegative(false);
       setCurrency(null);
       pendingRef.current = null;
     }
@@ -104,7 +108,7 @@ export function AddAccountChooser({
       type: newType,
       source: 'manual',
       currency: effectiveCurrency,
-      balanceCents: isLiability(newType) ? -Math.abs(cents) : cents,
+      balanceCents: negative ? -Math.abs(cents) : Math.abs(cents),
       balanceAsOf: manualBalanceDate(),
     });
     void logActivity(store, repo, spaceId, 'accountAdd', name.trim());
@@ -213,14 +217,32 @@ export function AddAccountChooser({
                 placeholder={t('acct.accountName')}
                 className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
               />
-              <input
-                data-testid="chooser-acctform-balance"
-                value={balance}
-                onChange={(e) => setBalance(e.target.value)}
-                inputMode="decimal"
-                placeholder={`${t('acct.initialBalance')} (${effectiveCurrency})`}
-                className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
-              />
+              <div className="flex gap-2">
+                <div className="flex overflow-hidden rounded-input border border-line">
+                  <button
+                    data-testid="chooser-acctform-neg"
+                    onClick={() => setNegative(true)}
+                    className={`m-tap border-none px-3 text-[13px] font-medium ${negative ? 'bg-negative-soft text-negative' : 'bg-surface text-ink-3'}`}
+                  >
+                    −
+                  </button>
+                  <button
+                    data-testid="chooser-acctform-pos"
+                    onClick={() => setNegative(false)}
+                    className={`m-tap border-none px-3 text-[13px] font-medium ${negative ? 'bg-surface text-ink-3' : 'bg-accent-soft text-accent-deep'}`}
+                  >
+                    +
+                  </button>
+                </div>
+                <input
+                  data-testid="chooser-acctform-balance"
+                  value={balance}
+                  onChange={(e) => setBalance(e.target.value)}
+                  inputMode="decimal"
+                  placeholder={`${t('acct.initialBalance')} (${effectiveCurrency})`}
+                  className="h-12 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+                />
+              </div>
               <div className="m-cap px-1">{t('space.currency')}</div>
               <div className="flex gap-2 overflow-x-auto pb-1">
                 {CURRENCIES.map((c) => (
@@ -239,7 +261,10 @@ export function AddAccountChooser({
                 <button
                   key={def.type}
                   data-testid={`chooser-accttype-${def.type}`}
-                  onClick={() => setNewType(def.type)}
+                  onClick={() => {
+                    setNewType(def.type);
+                    setNegative(isLiability(def.type)); // default −, user can flip
+                  }}
                   className="m-tap flex flex-col items-start gap-2 rounded-card border border-line bg-surface p-4 text-left"
                 >
                   <Icon name={def.icon} size={22} color="var(--m-accent)" />

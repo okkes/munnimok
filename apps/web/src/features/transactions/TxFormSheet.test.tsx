@@ -9,8 +9,10 @@ const openForm = async () => {
   await screen.findByTestId('tx-list');
   fireEvent.click(screen.getByTestId('tx-add'));
   await screen.findByTestId('txform-save');
-  // the account chips load via liveQuery; without an account save can never enable
-  await screen.findByTestId('txform-account-demo_main');
+  // two demo manual accounts → nothing pre-selects (user redesign
+  // 2026-07-31): pick the main one through the account field + sheet
+  fireEvent.click(await screen.findByTestId('txform-account'));
+  fireEvent.click(await screen.findByTestId('txform-account-demo_main'));
 };
 
 describe('TxFormSheet (demo identity)', () => {
@@ -179,9 +181,27 @@ describe('TxFormSheet (demo identity)', () => {
 
     fireEvent.click(screen.getByTestId('tx-add'));
     await screen.findByTestId('txform-save');
-    await screen.findByTestId('txform-account-demo_save'); // the manual ones stay
-    // the cross-connection write lands via a live re-emission — await it
-    await waitFor(() => expect(screen.queryByTestId('txform-account-demo_main')).toBeNull(), { timeout: 5000 });
+    // demo_save is the ONLY manual account left → it picks itself on the
+    // field; the picker sheet never offers the bank-synced demo_main
+    await waitFor(() => expect(screen.getByTestId('txform-account').textContent).toContain('Demo Savings'), { timeout: 5000 });
+    fireEvent.click(screen.getByTestId('txform-account'));
+    await screen.findByTestId('txform-account-demo_save');
+    expect(screen.queryByTestId('txform-account-demo_main')).toBeNull();
+  });
+
+  it('with several manual accounts nothing pre-selects — save requires a pick', async () => {
+    renderApp('/transactions');
+    await screen.findByTestId('tx-list');
+    fireEvent.click(screen.getByTestId('tx-add'));
+    await screen.findByTestId('txform-save');
+    fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '4,50' } });
+    fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Bakker' } });
+    const save = screen.getByTestId('txform-save') as HTMLButtonElement;
+    expect((await screen.findByTestId('txform-account')).textContent).toContain('Pick an account');
+    expect(save.disabled).toBe(true); // valid amount+merchant, but no account
+    fireEvent.click(screen.getByTestId('txform-account'));
+    fireEvent.click(await screen.findByTestId('txform-account-demo_main'));
+    await waitFor(() => expect(save.disabled).toBe(false));
   });
 
   it('the income toggle stores a positive amount', async () => {

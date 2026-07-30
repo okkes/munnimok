@@ -8,11 +8,11 @@ import { useData } from '@/app/data';
 import { logActivity } from '@/application/activity';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { useRecurrings } from '@/application/recurring';
-import { parseCents } from '@/lib/money';
-import type { TransactionRow, TxSplit, TxType } from '@/db/types';
+import { fmtCents, parseCents } from '@/lib/money';
+import type { AccountRow, TransactionRow, TxSplit, TxType } from '@/db/types';
+import { typeDef } from '@/features/accounts/accountTypes';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
-import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { CategoryPicker } from '@/features/categories/CategoryPicker';
 import { SplitEditorSheet } from './SplitEditorSheet';
@@ -266,7 +266,7 @@ function RecurringPickSheet({
 }>) {
   const { t } = useLang();
   return (
-    <Sheet open={open} onOpenChange={onOpenChange} title={t('recurring.linkTitle')} size="form">
+    <Sheet open={open} onOpenChange={onOpenChange} title={t('recurring.linkTitle')} size="form" dragHandle>
       <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="txform-recurring-options">
         {optionRow(
           !recurringId,
@@ -282,6 +282,52 @@ function RecurringPickSheet({
             `txform-recurring-${r.id}`,
           ),
         )}
+      </div>
+    </Sheet>
+  );
+}
+
+/** the stacked account picker: name, type, masked number, balance —
+ *  replaces the chip strip (user redesign 2026-07-31) */
+function AccountPickSheet({
+  open,
+  onOpenChange,
+  accounts,
+  selectedId,
+  onPick,
+}: Readonly<{
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  accounts: readonly AccountRow[];
+  selectedId: string | null;
+  onPick: (id: string) => void;
+}>) {
+  const { t, lang } = useLang();
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange} title={t('txform.account')} size="form" dragHandle>
+      <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="txform-account-options">
+        {accounts.map((account) => (
+          <button
+            key={account.id}
+            data-testid={`txform-account-${account.id}`}
+            onClick={() => {
+              onPick(account.id);
+              onOpenChange(false);
+            }}
+            className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-4 py-3 text-left last:border-0"
+          >
+            <Icon name={typeDef(account.type).icon} size={18} color="var(--m-ink-2)" />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[14px] text-ink">{account.name}</span>
+              <span className="block truncate text-[11px] text-ink-4">
+                {t(typeDef(account.type).labelKey)}
+                {account.iban ? ` · …${account.iban.slice(-4)}` : ''}
+              </span>
+            </span>
+            <span className="m-num text-[12px] text-ink-3">{fmtCents(account.balanceCents, account.currency, lang)}</span>
+            {selectedId === account.id && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
+          </button>
+        ))}
       </div>
     </Sheet>
   );
@@ -317,6 +363,7 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
   const [kindOpen, setKindOpen] = useState(false);
   const [counterOpen, setCounterOpen] = useState(false);
   const [recurringOpen, setRecurringOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
 
   const allAccounts = useSpaceAccounts();
   const accounts = useMemo(() => allAccounts?.filter((a) => !a.archived), [allAccounts]);
@@ -347,7 +394,11 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
   }, [open, tx?.id]);
 
   const cat = cats.byId(catId);
-  const effectiveAccount = accountId ?? writable[0]?.id ?? null;
+  // exactly ONE manual account picks itself; with several, the user
+  // chooses explicitly — a silent first-account default booked rows on
+  // the wrong account (user redesign 2026-07-31)
+  const effectiveAccount = accountId ?? (writable.length === 1 ? writable[0].id : null);
+  const selectedAccount = writable.find((a) => a.id === effectiveAccount);
   const cents = parseCents(amount);
   const linkedAccount = (accounts ?? []).find((a) => a.id === linkedAccountId);
   const effectiveType: TxType = typeForKind(kind, isExpense, linkedAccount ? typeForLinkedAccount(linkedAccount.type) : null);
@@ -475,14 +526,22 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
             </span>
           </div>
 
-          {/* account chips — open-banking accounts are not offered */}
-          <div className="flex flex-wrap gap-2">
-            {writable.map((a) => (
-              <Chip key={a.id} testId={`txform-account-${a.id}`} selected={effectiveAccount === a.id} onClick={() => setAccountId(a.id)}>
-                {a.name}
-              </Chip>
-            ))}
-          </div>
+          {/* account — a full field + picker sheet (the chip strip felt
+              odd, user 2026-07-31); open-banking accounts are not offered */}
+          {writable.length > 0 && (
+            <button
+              data-testid="txform-account"
+              onClick={() => setAccountOpen(true)}
+              className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink"
+            >
+              <Icon name={selectedAccount ? typeDef(selectedAccount.type).icon : 'bank-outline'} size={20} color="var(--m-ink-3)" />
+              <span className={`min-w-0 flex-1 truncate ${selectedAccount ? '' : 'text-warning'}`}>
+                {selectedAccount?.name ?? t('txform.pickAccount')}
+              </span>
+              <span className="text-xs text-ink-4">{t('txform.account')}</span>
+              <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+            </button>
+          )}
           {writable.length === 0 && (
             <p className="px-1 text-[12px] text-ink-4" data-testid="txform-no-manual-account">
               {t('txform.manualOnly')}
@@ -550,6 +609,15 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
         excludeAccountId={effectiveAccount ?? ''}
         currentLinkedId={linkedAccountId ?? undefined}
         onChoose={(picked) => setLinkedAccountId(picked.id)}
+      />
+
+      {/* stacked: account picker */}
+      <AccountPickSheet
+        open={accountOpen}
+        onOpenChange={setAccountOpen}
+        accounts={writable}
+        selectedId={effectiveAccount}
+        onPick={(id) => setAccountId(id)}
       />
 
       {/* stacked: recurring cost */}

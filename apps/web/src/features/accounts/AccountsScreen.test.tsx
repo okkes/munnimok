@@ -392,6 +392,41 @@ describe('AccountsScreen (demo identity)', () => {
     db.close();
   }, 15_000);
 
+  it('the sign toggle stores an overpaid card POSITIVE; space rows edit in place', async () => {
+    renderApp('/accounts');
+    await screen.findByTestId('account-row-demo_main');
+    fireEvent.click(screen.getByTestId('accounts-add'));
+    fireEvent.click(await screen.findByTestId('chooser-manual-door'));
+    fireEvent.click(await screen.findByTestId('space-accounts-add'));
+    fireEvent.click(await screen.findByTestId('chooser-manual'));
+    fireEvent.click(await screen.findByTestId('chooser-accttype-credit'));
+    fireEvent.change(screen.getByTestId('chooser-acctform-name'), { target: { value: 'Amex' } });
+    fireEvent.change(screen.getByTestId('chooser-acctform-balance'), { target: { value: '100' } });
+    // liabilities DEFAULT to −, but the user decides (overpaid card rule)
+    fireEvent.click(screen.getByTestId('chooser-acctform-pos'));
+    fireEvent.click(screen.getByTestId('chooser-acctform-save'));
+
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    let id = '';
+    await waitFor(async () => {
+      const rows = await db.accounts.filter((a) => a.name === 'Amex').toArray();
+      expect(rows[0]?.balanceCents).toBe(10_000); // stored POSITIVE
+      id = rows[0]?.id ?? '';
+    }, { timeout: 5000 });
+
+    // the space screen row is tappable now (user ss: it was view-only)
+    // and opens the SAME edit sheet as the global screen
+    fireEvent.click(await screen.findByTestId(`space-account-${id}`));
+    fireEvent.change(await screen.findByTestId('acctedit-name'), { target: { value: 'Amex Gold' } });
+    fireEvent.click(screen.getByTestId('acctedit-save'));
+    await waitFor(async () => {
+      const rows = await db.accounts.filter((a) => a.name === 'Amex Gold').toArray();
+      expect(rows).toHaveLength(1);
+    }, { timeout: 5000 });
+    db.close();
+  }, 15_000);
+
   it('renames and deletes an account from the edit sheet', async () => {
     renderApp('/accounts');
     fireEvent.click(await screen.findByTestId('account-row-demo_save'));
