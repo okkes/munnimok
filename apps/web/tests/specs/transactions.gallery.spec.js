@@ -71,6 +71,10 @@ for (const V of VARIANTS) {
     await page.waitForSelector('[data-testid="txform-amount"]');
     await page.fill('[data-testid="txform-amount"]', '12,50');
     await page.fill('[data-testid="txform-merchant"]', 'Test Lunch');
+    // two demo manual accounts → nothing pre-selects (2026-07-31): pick
+    // the main one through the account field + sheet
+    await page.click('[data-testid="txform-account"]');
+    await page.click('[data-testid="txform-account-demo_main"]');
     await page.click('[data-testid="txform-category"]');
     // unified editor (same as review): per-row picker, Done stages it
     await page.click('[data-testid="split-cat-0"]');
