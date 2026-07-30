@@ -189,7 +189,7 @@ export function TrendsScreen() {
       </div>
 
       {/* main/sub picker: mains first, tapping a main offers its subs */}
-      <Sheet open={pickerOpen} onOpenChange={setPickerOpen} title={t('trends.pickCategory')} size="tall">
+      <Sheet open={pickerOpen} onOpenChange={setPickerOpen} title={t('trends.pickCategory')} size="tall" dragHandle>
         <div data-testid="trends-cat-list">
           <button
             data-testid="trends-cat-all"

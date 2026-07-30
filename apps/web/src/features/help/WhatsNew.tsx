@@ -10,7 +10,7 @@ export function WhatsNewSheet({ open, onOpenChange }: Readonly<{ open: boolean; 
   const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'long', year: 'numeric' });
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange} title={t('whatsnew.title')} size="tall">
+    <Sheet open={open} onOpenChange={onOpenChange} title={t('whatsnew.title')} size="tall" dragHandle>
       <div className="flex flex-col gap-4 pt-1" data-testid="whatsnew-list">
         {WHATS_NEW.map((entry) => (
           <div key={entry.version}>

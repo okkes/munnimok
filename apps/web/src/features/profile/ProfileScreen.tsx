@@ -339,7 +339,7 @@ export function ProfileScreen() {
         </button>
         <p className="mt-1 px-1 text-[12px] leading-snug text-ink-4">{t('profile.countryInfo')}</p>
 
-        <Sheet open={countryOpen} onOpenChange={setCountryOpen} title={t('onboarding.countryLabel')} size="tall">
+        <Sheet open={countryOpen} onOpenChange={setCountryOpen} title={t('onboarding.countryLabel')} size="tall" dragHandle>
           {COUNTRIES.map((c) => (
             <button
               key={c.code}
@@ -372,7 +372,7 @@ export function ProfileScreen() {
         <p className="mt-1 px-1 text-[12px] leading-snug text-ink-4">{t('profile.displayCurrencyInfo')}</p>
         {identity?.kind !== 'user' && displayCurrency && <ManualRatesEditor display={displayCurrency} />}
 
-        <Sheet open={displayCurrencyOpen} onOpenChange={setDisplayCurrencyOpen} title={t('profile.displayCurrency')} size="form">
+        <Sheet open={displayCurrencyOpen} onOpenChange={setDisplayCurrencyOpen} title={t('profile.displayCurrency')} size="form" dragHandle>
           <div className="flex flex-col pt-1">
             <button
               data-testid="display-currency-off"

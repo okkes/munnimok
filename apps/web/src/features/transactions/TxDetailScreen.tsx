@@ -207,7 +207,7 @@ function DetailBulkBar({
       </div>
 
       {/* selection sheet, same mechanics as the review bulk list */}
-      <Sheet open={open} onOpenChange={setOpen} title={t('tx.bulkOffer', { n: selected.size })} height={760}>
+      <Sheet open={open} onOpenChange={setOpen} title={t('tx.bulkOffer', { n: selected.size })} height={760} dragHandle>
         <div className="flex items-center justify-between pb-2">
           <span className="text-[12px] text-ink-3">{t('review.bulkCount', { n: targets.length })}</span>
           <button
@@ -794,7 +794,7 @@ export function TxDetailScreen() {
       </Sheet>
 
       {/* attach to an event */}
-      <Sheet open={eventOpen} onOpenChange={setEventOpen} title={t('events.linkTitle')} size="form">
+      <Sheet open={eventOpen} onOpenChange={setEventOpen} title={t('events.linkTitle')} size="form" dragHandle>
         <div className="pt-1" data-testid="tx-event-list">
           <button
             data-testid="tx-event-none"
@@ -848,7 +848,7 @@ export function TxDetailScreen() {
       )}
 
       {/* attach to a recurring cost */}
-      <Sheet open={recurringOpen} onOpenChange={setRecurringOpen} title={t('recurring.linkTitle')} size="form">
+      <Sheet open={recurringOpen} onOpenChange={setRecurringOpen} title={t('recurring.linkTitle')} size="form" dragHandle>
         <div className="pt-1" data-testid="tx-recurring-list">
           <button
             data-testid="tx-recurring-none"

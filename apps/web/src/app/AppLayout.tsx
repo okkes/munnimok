@@ -12,7 +12,7 @@ import { useStoreKeepAlive } from '@/application/stores';
 import { collectBudgetAlerts } from '@/sync/swBudgets';
 import { hapticNotify } from '@/lib/platform';
 import { EdgeSwipeBack } from '@/ui/EdgeSwipeBack';
-import { revealInScroller } from '@/lib/viewport';
+import { nearestScrollport, revealInScroller } from '@/lib/viewport';
 import { SHEET_OWNS_KEYBOARD } from '@/ui/Sheet';
 import { MinaTutorial } from '@/features/mina/MinaTutorial';
 import { Icon } from '@/ui/Icon';
@@ -39,6 +39,32 @@ const isEditable = (el: EventTarget | null): el is HTMLElement =>
   el instanceof HTMLElement && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
 
 /**
+ * iOS Safari/PWA never resizes the LAYOUT viewport for the keyboard —
+ * only the visual viewport shrinks — so a screen scroller has no slack
+ * to reveal a bottom field into (the notes textarea sat behind the
+ * keyboard, user ss 2026-07-31). While a screen-level editable is
+ * focused, the nearest scrollport borrows bottom padding equal to the
+ * keyboard inset. Measurement-driven: on Android/native the layout
+ * resizes, the inset reads ~0 and this is a no-op.
+ */
+let paddedScrollport: { el: HTMLElement; prev: string } | null = null;
+function restoreScrollportPad(): void {
+  if (!paddedScrollport) return;
+  paddedScrollport.el.style.paddingBottom = paddedScrollport.prev;
+  paddedScrollport = null;
+}
+function padScrollportForKeyboard(target: HTMLElement): void {
+  const vv = window.visualViewport;
+  const inset = Math.max(0, window.innerHeight - (vv?.height ?? window.innerHeight));
+  if (inset < 40) return; // no keyboard-without-resize in play
+  const scroller = nearestScrollport(target);
+  if (!scroller) return;
+  if (paddedScrollport && paddedScrollport.el !== scroller) restoreScrollportPad();
+  paddedScrollport ??= { el: scroller, prev: scroller.style.paddingBottom };
+  scroller.style.paddingBottom = `${inset + 16}px`;
+}
+
+/**
  * On-screen keyboard awareness (user report 2026-07-24): the viewport
  * RESIZES for the keyboard on Android + the native shells, which pushed
  * the tab bar right on top of it — hide the bar while an editable has
@@ -58,7 +84,10 @@ function scheduleKeyboardReveal(el: HTMLElement): () => void {
   const fire = () => {
     if (cancelled || done) return;
     done = true;
-    if (document.activeElement === el) revealInScroller(el);
+    if (document.activeElement === el) {
+      padScrollportForKeyboard(el); // creates the slack the reveal needs
+      revealInScroller(el);
+    }
   };
   if (!vv) {
     const timer = setTimeout(fire, 300);
@@ -109,7 +138,10 @@ function useKeyboardOpen(): boolean {
     const onFocusOut = () => {
       // focus often hops field-to-field — only a settled blur closes
       setTimeout(() => {
-        if (!isEditable(document.activeElement)) setOpen(false);
+        if (!isEditable(document.activeElement)) {
+          setOpen(false);
+          restoreScrollportPad();
+        }
       }, 100);
     };
     window.addEventListener('focusin', onFocusIn);

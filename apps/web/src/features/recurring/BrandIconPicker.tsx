@@ -127,7 +127,7 @@ export function BrandIconPicker({ open, onOpenChange, onPick, initialQuery = '' 
   };
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange} title={t('recurring.iconTitle')} size="tall">
+    <Sheet open={open} onOpenChange={onOpenChange} title={t('recurring.iconTitle')} size="tall" dragHandle>
       <div className="flex flex-col gap-3 pt-1">
         {/* the field arrives prefilled with the cost's name — the search
             glyph and the ✕ make it read as an editable search box */}

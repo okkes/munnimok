@@ -310,7 +310,7 @@ function BulkConfirmSection({
       {/* near-max-height sheet styled like the transactions list (user
           redesign): TxRow rows with a checkbox rail, select/unselect all,
           and a row tap opens a compact READ-ONLY detail as a stacked sheet */}
-      <Sheet open={open} onOpenChange={setOpen} title={t('review.alsoApply', { n: selected.size })} height={760}>
+      <Sheet open={open} onOpenChange={setOpen} title={t('review.alsoApply', { n: selected.size })} height={760} dragHandle>
         <div className="flex items-center justify-between pb-2">
           <span className="text-[12px] text-ink-3">{t('review.bulkCount', { n: similar.length })}</span>
           <button
@@ -464,7 +464,7 @@ function RecurringPickSheet({
 }>) {
   const { t, lang } = useLang();
   return (
-    <Sheet open={open} onOpenChange={onOpenChange} title={t('review.linkRecurringPick')} size="form">
+    <Sheet open={open} onOpenChange={onOpenChange} title={t('review.linkRecurringPick')} size="form" dragHandle>
       <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="recpick-list">
         <button
           data-testid="recpick-none"
@@ -1089,7 +1089,7 @@ export function ReviewScreen() {
         />
       )}
       {tx && (
-        <Sheet open={eventPickOpen} onOpenChange={setEventPickOpen} title={t('events.linkTitle')} size="form">
+        <Sheet open={eventPickOpen} onOpenChange={setEventPickOpen} title={t('events.linkTitle')} size="form" dragHandle>
           <div className="pt-1" data-testid="review-event-list">
             <button
               data-testid="review-event-none"

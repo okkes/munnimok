@@ -885,7 +885,7 @@ export function ManageCategoriesScreen() {
       </Sheet>
 
       {/* move-target picker (stacked over the edit sheet) */}
-      <Sheet open={moveSheetOpen} onOpenChange={setMoveSheetOpen} title={t('cats.moveTarget')} size="form">
+      <Sheet open={moveSheetOpen} onOpenChange={setMoveSheetOpen} title={t('cats.moveTarget')} size="form" dragHandle>
         {mode?.kind === 'editSub' && (
           <div className="pt-1" data-testid="catform-move-list">
             <button

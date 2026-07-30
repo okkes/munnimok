@@ -258,7 +258,7 @@ export function EventDetailScreen() {
       </div>
 
       {/* pick which suggestions belong to the event */}
-      <Sheet open={pickOpen} onOpenChange={(open) => !open && setPickOpen(false)} title={t('events.pickTitle')} size="tall">
+      <Sheet open={pickOpen} onOpenChange={(open) => !open && setPickOpen(false)} title={t('events.pickTitle')} size="tall" dragHandle>
         <div className="max-h-[46vh] overflow-y-auto" data-testid="eventpick-list">
           {view.suggestions.map((tx) => {
             const checked = picked.has(tx.id);

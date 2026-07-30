@@ -306,7 +306,7 @@ export function HomeScreen() {
 
       {/* quick display-currency picker (band fold-out shortcut) — the
           full setting with the offline manual rates lives on Profile */}
-      <Sheet open={lensOpen} onOpenChange={setLensOpen} title={t('profile.displayCurrency')} size="form">
+      <Sheet open={lensOpen} onOpenChange={setLensOpen} title={t('profile.displayCurrency')} size="form" dragHandle>
         <div className="flex flex-col pt-1">
           <button
             data-testid="band-lens-off"

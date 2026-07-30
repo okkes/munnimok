@@ -25,6 +25,22 @@ export const useLgViewport = (): boolean => useSyncExternalStore(subscribeLg, re
  * respects the visualViewport so a keyboard-shrunk browser viewport
  * centers against what is actually on screen.
  */
+/**
+ * Nearest ancestor whose computed overflow-y allows scrolling — unlike
+ * the reveal walk it does NOT require overflow to exist yet: the caller
+ * may be about to CREATE it (keyboard bottom padding on iOS, where the
+ * layout viewport never shrinks and a bottom field has no slack).
+ */
+export function nearestScrollport(el: HTMLElement): HTMLElement | null {
+  let node: HTMLElement | null = el.parentElement;
+  while (node && node !== document.body) {
+    const overflowY = getComputedStyle(node).overflowY;
+    if (overflowY === 'auto' || overflowY === 'scroll') return node;
+    node = node.parentElement;
+  }
+  return null;
+}
+
 export function revealInScroller(el: HTMLElement): void {
   const vv = window.visualViewport;
   const viewTop = vv?.offsetTop ?? 0;

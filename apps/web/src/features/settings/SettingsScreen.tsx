@@ -292,7 +292,7 @@ export function SettingsScreen() {
 
       {/* extracted space settings (user request): small single-purpose
           sheets — picking a value applies immediately (LWW makes it safe) */}
-      <Sheet open={currencyOpen} onOpenChange={setCurrencyOpen} title={t('space.ledgerCurrency')} size="form">
+      <Sheet open={currencyOpen} onOpenChange={setCurrencyOpen} title={t('space.ledgerCurrency')} size="form" dragHandle>
         <div className="flex flex-col gap-3 pt-1">
           {/* "ledger" is deliberate (currency plan CD5): this anchors
               budgets, goals and period totals for every member — how

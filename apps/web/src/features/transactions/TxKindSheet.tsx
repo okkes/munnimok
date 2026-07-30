@@ -162,7 +162,7 @@ export function CounterpartySheet({
   };
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange} title={t('tx.counterparty')} size="form">
+    <Sheet open={open} onOpenChange={onOpenChange} title={t('tx.counterparty')} size="form" dragHandle>
       <p className="pb-2 text-[12px] text-ink-3">{t('tx.counterAccountHint')}</p>
       <input
         data-testid="counter-search"

@@ -195,6 +195,12 @@ interface SheetProps {
    *  sticky` inside the scrollport: the keyboard translation and
    *  safe-area padding sent it drifting over the content (user ss) */
   footer?: ReactNode;
+  /** list sheets: the sheet drags/dismisses ONLY via the header drag
+   *  zone. Content touches never move the sheet — the lib's scroll
+   *  coordination watches its OWN scroller, so a nested list left content
+   *  drag armed on iOS (where touch-action pan-down is unimplemented) and
+   *  slow scrolls moved list + sheet together (user ss 2026-07-31). */
+  dragHandle?: boolean;
 }
 
 interface DesktopDialogProps {
@@ -294,7 +300,7 @@ function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, foote
  * cancelling inputs mid-typing, user report); stacked sheets lock their
  * parents automatically. Never build inline overlays.
  */
-export function Sheet({ open, onOpenChange, title, children, size, height, footer }: Readonly<SheetProps>) {
+export function Sheet({ open, onOpenChange, title, children, size, height, footer, dragHandle }: Readonly<SheetProps>) {
   const requested = height ?? (size ? SIZE_PX[size] : undefined);
   const { id, isLocked, depth } = useSheetStack(open);
   // registered while open so closeAllSheets() can dismiss leftovers
@@ -441,6 +447,7 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
               the scroller swaps the lib's `height: 100%` (indefinite
               inside a flex-sized parent in WebKit) for flex sizing */}
           <ModalSheet.Content
+            disableDrag={dragHandle}
             className="min-h-0 flex-auto"
             scrollClassName="px-5"
             scrollStyle={{ height: 'auto', flex: '1 1 auto', minHeight: 0 }}
