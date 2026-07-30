@@ -134,14 +134,19 @@ describe('Mina tutorial run (signed-in identity, no space yet)', () => {
     expect(screen.queryByTestId('mina-skip-revert')).toBeNull();
     fireEvent.click(screen.getByTestId('mina-skip-confirm'));
 
-    // the ≥1-space rule re-asserts: a default localized space exists
+    // the ≥1-space rule re-asserts: a default localized space exists —
+    // and the run's ledger is CLEARED, so a later replay can never sweep
+    // this run's (now real) resources into its own revert (user rule)
     await waitFor(async () => {
       const db = new MunniDB(dbName);
       const spaces = await db.spaces.filter((s) => s.deleted === 0).toArray();
       const done = (await db.meta.get('minaTutorialDone'))?.value;
+      const state = (await db.meta.get('minaTutorialState'))?.value as { active: boolean; ledger: unknown[] };
       db.close();
       expect(spaces.map((s) => s.name)).toEqual([en['mina.suggest.private']]);
       expect(done).toBe(true);
+      expect(state.active).toBe(false);
+      expect(state.ledger).toHaveLength(0);
     }, { timeout: 5000 });
     await waitFor(() => expect(screen.queryByTestId('mina-tutorial')).toBeNull());
   }, 30_000);

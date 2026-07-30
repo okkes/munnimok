@@ -24,6 +24,26 @@ const PAD = 6;
 // empties, and a skip firing there would jump PAST the wrap screen)
 const CLEANUP_STEP_IDS = new Set(['openSwitcherCleanup', 'pickPrivateCleanup', 'openSwitcherCleanup2', 'openManageCleanup', 'openFamilyCog']);
 
+// switching lessons advance on the SPACE CHANGE alone — the gate tap
+// listener must stay out of them: both scheduling an advance let a fast
+// IndexedDB commit land inside the tap's 50ms window, and the pair then
+// advanced TWICE (skipping the re-open-the-switcher step, leaving the
+// next pick step with a closed sheet and a full cover — user ss 2026-07-31)
+const PICK_STEP_IDS = new Set(['pickPrivate', 'pickFamily', 'pickPrivateCleanup']);
+
+// steps whose anchor lives INSIDE the switcher sheet → the step that
+// opens that sheet. A pick closes the sheet, a swipe can dismiss it, and
+// then the anchor can never resolve again — the full cover would block
+// the switcher button itself. The self-heal rewinds to the opener.
+const SHEET_ANCHOR_OPENER: Record<string, string> = {
+  openManage: 'openSwitcher',
+  openManage2: 'openSwitcher2',
+  pickPrivate: 'openSwitcherSwap',
+  pickFamily: 'openSwitcherSwap2',
+  pickPrivateCleanup: 'openSwitcherCleanup',
+  openManageCleanup: 'openSwitcherCleanup2',
+};
+
 /**
  * A stale ledger must never leave a $s-anchored step targetless (user
  * ss: no glow, tutorial felt stuck/lost) — but ONLY rows of spaces MADE
@@ -84,13 +104,17 @@ function GateShade({ rect, blockHole }: Readonly<{ rect: DOMRect | null; blockHo
       <div className={blocker} style={{ top, left: 0, width: left, height: bottom - top }} />
       <div className={blocker} style={{ top, left: right, right: 0, height: bottom - top }} />
       {/* the dim cutout (separate element: the glow's animation owns its
-          own box-shadow and would override an inline one) */}
+          own box-shadow and would override an inline one). The ring +
+          cutout GLIDE between targets (user asked the travel back,
+          2026-07-31) — only the invisible blockers stay instant, they
+          must never lag behind a tap. Keyframes own box-shadow, CSS
+          transitions the geometry: the two never fight. */}
       <div
-        className="pointer-events-none fixed z-[129] rounded-2xl"
+        className="pointer-events-none fixed z-[129] rounded-2xl transition-all duration-500"
         style={{ top, left, width: right - left, height: bottom - top, boxShadow: '0 0 0 200vmax rgba(0,0,0,0.15)' }}
       />
       <div
-        className={`${glowClass} pointer-events-none fixed z-[130] rounded-2xl`}
+        className={`${glowClass} pointer-events-none fixed z-[130] rounded-2xl transition-all duration-500`}
         style={{ top, left, width: right - left, height: bottom - top }}
         data-testid="mina-gate-ring"
       />
@@ -272,7 +296,7 @@ export function MinaTutorial() {
   useEffect(() => {
     const changed = spaceId !== lastSpaceRef.current;
     lastSpaceRef.current = spaceId;
-    if (changed && (step?.id === 'pickPrivate' || step?.id === 'pickFamily' || step?.id === 'pickPrivateCleanup')) {
+    if (changed && step && PICK_STEP_IDS.has(step.id)) {
       setTimeout(advance, 400);
     }
   }, [spaceId, step?.id, advance]);
@@ -375,16 +399,36 @@ export function MinaTutorial() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [run?.active, run?.step, anchorKey, labelKey, resolveAnchor]);
 
-  // gate advance: the tap lands on the REAL element; we advance alongside
+  // gate advance: the tap lands on the REAL element; we advance alongside.
+  // Pick steps are EXCLUDED — they advance on the space change itself
+  // (PICK_STEP_IDS), and a second scheduler here caused double-advances
+  const gateTapArmed = !!step?.gate && !PICK_STEP_IDS.has(step.id);
   useEffect(() => {
-    if (!step?.gate) return;
+    if (!gateTapArmed || !step) return;
     const onTap = (event: Event) => {
       const el = resolveAnchor(step.anchor);
       if (el && event.target instanceof Node && el.contains(event.target)) setTimeout(advance, 50);
     };
     document.addEventListener('click', onTap, { capture: true });
     return () => document.removeEventListener('click', onTap, { capture: true });
-  }, [step, resolveAnchor, advance]);
+  }, [gateTapArmed, step, resolveAnchor, advance]);
+
+  // sheet-anchored steps self-heal: with the switcher sheet gone (a pick
+  // closed it, a swipe dismissed it, or an older build double-advanced
+  // past the re-open step) the anchor can never resolve and the full
+  // cover would block the switcher button itself — rewind to the step
+  // that opens the sheet once the anchor stayed unresolved for 600ms
+  const openerId = step ? SHEET_ANCHOR_OPENER[step.id] : undefined;
+  useEffect(() => {
+    if (!run?.active || resumePending || !openerId) return;
+    if (sheetOpen || rect) return; // healthy: sheet up, or anchor resolved
+    const timer = setTimeout(() => {
+      const current = runRef.current;
+      if (!current?.active || hasOpenSheet()) return; // re-check live at fire time
+      persist({ ...current, step: minaStepIndex(openerId) });
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [run?.active, run?.step, openerId, sheetOpen, rect, resumePending, persist]);
 
   // replay detection for the Home copy (a lived-in account is not empty)
   const spacesLive = useQuery(store, async () => (await store.allRows('space')).filter((s) => s.deleted === 0).length, [run?.step]);

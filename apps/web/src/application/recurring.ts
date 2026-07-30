@@ -197,7 +197,9 @@ export function useRecurringReminders(): void {
       );
       for (const debt of debts) {
         const key = `debtPctReminded_${debt.id}`;
-        const last = (await store.metaGet(key)) as number | undefined;
+        // metaGet returns the {key, value} row — reading the row itself as
+        // a number made the 7-day check NaN and the nudge fired every open
+        const last = (await store.metaGet(key))?.value as number | undefined;
         if (last && Date.now() - last < 7 * 86_400_000) continue;
         await store.metaPut(key, Date.now());
         await registration.showNotification('munni', {
