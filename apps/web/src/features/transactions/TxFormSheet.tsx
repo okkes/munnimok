@@ -333,6 +333,23 @@ function AccountPickSheet({
   );
 }
 
+/** the account field on the form: picked account, or the pick prompt */
+function AccountFieldRow({ account, onOpen }: Readonly<{ account: AccountRow | undefined; onOpen: () => void }>) {
+  const { t } = useLang();
+  return (
+    <button
+      data-testid="txform-account"
+      onClick={onOpen}
+      className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink"
+    >
+      <Icon name={account ? typeDef(account.type).icon : 'bank-outline'} size={20} color="var(--m-ink-3)" />
+      <span className={`min-w-0 flex-1 truncate ${account ? '' : 'text-warning'}`}>{account?.name ?? t('txform.pickAccount')}</span>
+      <span className="text-xs text-ink-4">{t('txform.account')}</span>
+      <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+    </button>
+  );
+}
+
 /**
  * Create or edit a manual transaction. Bank-imported rows (importRef set)
  * never reach this sheet — their amount/date are the bank's truth — and
@@ -528,20 +545,7 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
 
           {/* account — a full field + picker sheet (the chip strip felt
               odd, user 2026-07-31); open-banking accounts are not offered */}
-          {writable.length > 0 && (
-            <button
-              data-testid="txform-account"
-              onClick={() => setAccountOpen(true)}
-              className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink"
-            >
-              <Icon name={selectedAccount ? typeDef(selectedAccount.type).icon : 'bank-outline'} size={20} color="var(--m-ink-3)" />
-              <span className={`min-w-0 flex-1 truncate ${selectedAccount ? '' : 'text-warning'}`}>
-                {selectedAccount?.name ?? t('txform.pickAccount')}
-              </span>
-              <span className="text-xs text-ink-4">{t('txform.account')}</span>
-              <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-            </button>
-          )}
+          {writable.length > 0 && <AccountFieldRow account={selectedAccount} onOpen={() => setAccountOpen(true)} />}
           {writable.length === 0 && (
             <p className="px-1 text-[12px] text-ink-4" data-testid="txform-no-manual-account">
               {t('txform.manualOnly')}
