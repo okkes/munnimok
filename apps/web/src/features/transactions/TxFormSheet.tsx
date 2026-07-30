@@ -333,6 +333,11 @@ function AccountPickSheet({
   );
 }
 
+/** exactly ONE manual account picks itself; with several, the user
+ *  chooses explicitly — a silent first-account default booked rows on
+ *  the wrong account (user redesign 2026-07-31) */
+const soleAccountId = (writable: readonly AccountRow[]): string | null => (writable.length === 1 ? writable[0].id : null);
+
 /** the account field on the form: picked account, or the pick prompt */
 function AccountFieldRow({ account, onOpen }: Readonly<{ account: AccountRow | undefined; onOpen: () => void }>) {
   const { t } = useLang();
@@ -411,10 +416,7 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
   }, [open, tx?.id]);
 
   const cat = cats.byId(catId);
-  // exactly ONE manual account picks itself; with several, the user
-  // chooses explicitly — a silent first-account default booked rows on
-  // the wrong account (user redesign 2026-07-31)
-  const effectiveAccount = accountId ?? (writable.length === 1 ? writable[0].id : null);
+  const effectiveAccount = accountId ?? soleAccountId(writable);
   const selectedAccount = writable.find((a) => a.id === effectiveAccount);
   const cents = parseCents(amount);
   const linkedAccount = (accounts ?? []).find((a) => a.id === linkedAccountId);

@@ -41,6 +41,34 @@ export function nearestScrollport(el: HTMLElement): HTMLElement | null {
   return null;
 }
 
+/**
+ * iOS Safari/PWA never resizes the LAYOUT viewport for the keyboard —
+ * only the visual viewport shrinks — so a screen scroller has no slack
+ * to reveal a bottom field into (the notes textarea sat behind the
+ * keyboard, user ss 2026-07-31). While a screen-level editable is
+ * focused, the nearest scrollport borrows bottom padding equal to the
+ * keyboard inset. Measurement-driven: on Android/native the layout
+ * resizes with the keyboard, the inset reads ~0 and this is a no-op.
+ */
+let paddedScrollport: { el: HTMLElement; prev: string } | null = null;
+
+export function restoreScrollportPad(): void {
+  if (!paddedScrollport) return;
+  paddedScrollport.el.style.paddingBottom = paddedScrollport.prev;
+  paddedScrollport = null;
+}
+
+export function padScrollportForKeyboard(target: HTMLElement): void {
+  const vv = window.visualViewport;
+  const inset = Math.max(0, window.innerHeight - (vv?.height ?? window.innerHeight));
+  if (inset < 40) return; // no keyboard-without-resize in play
+  const scroller = nearestScrollport(target);
+  if (!scroller) return;
+  if (paddedScrollport && paddedScrollport.el !== scroller) restoreScrollportPad();
+  paddedScrollport ??= { el: scroller, prev: scroller.style.paddingBottom };
+  scroller.style.paddingBottom = `${inset + 16}px`;
+}
+
 export function revealInScroller(el: HTMLElement): void {
   const vv = window.visualViewport;
   const viewTop = vv?.offsetTop ?? 0;
