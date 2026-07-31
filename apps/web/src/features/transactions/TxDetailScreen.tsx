@@ -33,7 +33,7 @@ import { CounterpartySheet, TX_KIND_VISUAL, TxKindSheet, kindDetail } from './Tx
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { kindOf, standardTypeFor } from '@/domain/txKind';
 import { createCounterTransaction } from '@/application/transferMatch';
-import { writeTxTransform } from '@/db/joined';
+import { visibleTransactions, writeTxTransform } from '@/db/joined';
 import { applyTypeChange, typeForLinkedAccount } from '@/domain/txType';
 import { merchantKey } from '@/domain/merchantKey';
 import { resolveTxDetailBlocks } from './TxDetailCustomizeScreen';
@@ -473,14 +473,21 @@ export function TxDetailScreen() {
   const kind = kindOf(tx.txType);
   const kindDetailType = kindDetail(tx.txType);
   const pairState = transferPairState(tx, linkedAccount);
-  // the OTHER leg's side of a release — its own row clears in the same write
-  const releasePeer = () => {
-    const peer = (allTxs ?? []).find((item) => item.id === tx.transferPeerId);
-    if (peer) void writeTxTransform(repo, peer, { transferPeerId: null as never });
+  // the OTHER leg's side of a release — its own row clears in the same
+  // write. The peer is fetched from the STORE when the live snapshot
+  // hasn't emitted it yet (a slow liveQuery beat left the peer's
+  // transferPeerId dangling — CI-only flake)
+  const releasePeer = async () => {
+    const peerId = tx.transferPeerId;
+    if (!peerId) return;
+    const peer =
+      (allTxs ?? []).find((item) => item.id === peerId) ??
+      (await visibleTransactions(store, spaceId)).find((item) => item.id === peerId);
+    if (peer) await writeTxTransform(repo, peer, { transferPeerId: null as never });
   };
   // unpairing releases BOTH legs — one activity entry covers the action
   const unpair = () => {
-    releasePeer();
+    void releasePeer();
     void transform(tx, { transferPeerId: null as never }, 'txLink');
   };
   // counter pick, bare label and kind pick all write through the same
@@ -496,7 +503,7 @@ export function TxDetailScreen() {
       amountCents: tx.amountCents,
     });
     const unpeer = !!tx.transferPeerId && tx.linkedAccountId !== nextLinkedId;
-    if (unpeer) releasePeer();
+    if (unpeer) void releasePeer();
     void transform(
       tx,
       { ...fields, linkedAccountId: nextLinkedId as never, ...(unpeer ? { transferPeerId: null as never } : {}) },
