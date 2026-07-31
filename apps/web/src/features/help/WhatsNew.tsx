@@ -1,8 +1,7 @@
-import { useState } from 'react';
 import { LOCALES, useLang } from '@/i18n';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
-import { WHATS_NEW, latestWhatsNewVersion, useMarkWhatsNewSeen, useWhatsNewUnseen } from './releaseNotes';
+import { WHATS_NEW } from './releaseNotes';
 
 /** the release-notes sheet — reachable any time from Help */
 export function WhatsNewSheet({ open, onOpenChange }: Readonly<{ open: boolean; onOpenChange: (open: boolean) => void }>) {
@@ -32,52 +31,6 @@ export function WhatsNewSheet({ open, onOpenChange }: Readonly<{ open: boolean; 
   );
 }
 
-/**
- * One-line nudge on Home after an update (user request: "news
- * notification for the latest changes"). Independent of the hide-tips
- * switch — release news is information, not teaching. Dismiss or open
- * marks the current version seen; it returns on the next release.
- */
-export function WhatsNewCard() {
-  const { t } = useLang();
-  const unseen = useWhatsNewUnseen();
-  const markSeen = useMarkWhatsNewSeen();
-  const [open, setOpen] = useState(false);
-
-  if (!unseen && !open) return null;
-
-  return (
-    <>
-      {unseen && (
-        <div
-          className="mt-3 flex items-center gap-3 rounded-card border border-accent/40 bg-accent-soft/40 px-4 py-2.5"
-          data-testid="whatsnew-card"
-        >
-          <Icon name="bullhorn-variant-outline" size={18} color="var(--m-accent-deep)" />
-          <span className="min-w-0 flex-1 text-[13px] text-ink-2">
-            {t('whatsnew.cardTitle', { version: latestWhatsNewVersion() ?? '' })}
-          </span>
-          <button
-            data-testid="whatsnew-open"
-            onClick={() => {
-              setOpen(true);
-              markSeen();
-            }}
-            className="m-tap border-none bg-transparent text-[13px] font-semibold text-accent-deep"
-          >
-            {t('whatsnew.see')}
-          </button>
-          <button
-            aria-label={t('action.dismiss')}
-            data-testid="whatsnew-dismiss"
-            onClick={markSeen}
-            className="m-tap flex h-7 w-7 items-center justify-center rounded-full border-none bg-transparent"
-          >
-            <Icon name="close" size={16} color="var(--m-ink-4)" />
-          </button>
-        </div>
-      )}
-      <WhatsNewSheet open={open} onOpenChange={setOpen} />
-    </>
-  );
-}
+// The one-line Home nudge retired with arc 6: release news now lands as
+// a row in the bell's Notifications tab (NotificationsBell appends one
+// inbox entry per version; the row opens this sheet and marks it seen).

@@ -146,23 +146,22 @@ describe('Tutorials (demo identity)', () => {
     expect(screen.queryByTestId('install-hint')).toBeNull();
   }, 15_000);
 
-  it('release notes: the home nudge shows once per version, help keeps the door', async () => {
+  it('release notes: land in the bell inbox once per version, help keeps the door (arc 6)', async () => {
     renderApp('/home');
     await screen.findByTestId('screen-home');
-    // fresh device: the newest release is unseen → the nudge shows
-    const card = await screen.findByTestId('whatsnew-card');
-    fireEvent.click(screen.getByTestId('whatsnew-open'));
-    expect(await screen.findByTestId('whatsnew-list')).toBeTruthy();
-    expect(card).toBeTruthy();
-
-    // acknowledged: a fresh mount stays quiet
-    cleanup();
-    renderApp('/home');
-    await screen.findByTestId('screen-home');
-    await screen.findByTestId('home-balance-band');
+    // the Home banner is retired — the news lives in the bell now
     expect(screen.queryByTestId('whatsnew-card')).toBeNull();
+    fireEvent.click(await screen.findByTestId('home-notifications'));
+    const row = await waitFor(() => {
+      const el = document.querySelector('[data-testid^="notif-inbox-"]');
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+    expect(row.textContent).toContain('What’s new');
+    fireEvent.click(row);
+    expect(await screen.findByTestId('whatsnew-list')).toBeTruthy();
 
-    // …but the help index keeps the release notes reachable
+    // …and the help index keeps the release notes reachable
     cleanup();
     renderApp('/help');
     await screen.findByTestId('screen-help');

@@ -98,7 +98,8 @@ describe('activity history', () => {
     fireEvent.click(screen.getAllByTestId('tab-home')[0]);
     await screen.findByTestId('screen-home');
     fireEvent.click(screen.getByTestId('home-notifications'));
-    // demo identity: no server alerts — the sheet opens straight on history
+    // the audit trail lives on the Activity tab now (arc 6)
+    fireEvent.click(await screen.findByTestId('notif-tab-activity'));
     const list = await screen.findByTestId('history-list');
     expect(list.textContent).toContain('Bakery');
 

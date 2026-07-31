@@ -3,6 +3,7 @@ import { useData } from '@/app/data';
 import { useQuery } from '@/db/useQuery';
 import { useLang } from '@/i18n';
 import { useBudgets } from './budgets';
+import { appendNotification } from './notifications';
 import { useRecurrings } from './recurring';
 import { useSpaceAccounts, useSpaceTransactions } from './transactions';
 import { collectInsights } from '@/domain/insights';
@@ -82,11 +83,15 @@ export function useInsightDigest(insights: Insight[] | undefined): void {
   const fired = useRef(false);
   useEffect(() => {
     if (fired.current || !insights || insights.length === 0) return;
-    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
     fired.current = true;
     void (async () => {
       const markerKey = `insightDigest_${isoWeek(new Date())}`;
       if (await store.metaGet(markerKey)) return;
+      await store.metaPut(markerKey, true);
+      // the inbox records the digest for every identity (arc 6); the OS
+      // notification is the optional second outlet, permission allowing
+      await appendNotification(store, 'digest', { n: String(insights.length) }, markerKey);
+      if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
       const registration = await navigator.serviceWorker?.ready.catch(() => undefined);
       if (!registration) return;
       await registration.showNotification(t('ins.digestTitle'), {
@@ -96,7 +101,6 @@ export function useInsightDigest(insights: Insight[] | undefined): void {
         tag: markerKey,
         data: { url: '/insights' },
       });
-      await store.metaPut(markerKey, true);
     })().catch(() => undefined); // best-effort; a closing db must not throw
   }, [insights, store, t]);
 }

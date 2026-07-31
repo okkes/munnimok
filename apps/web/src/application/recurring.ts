@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useData } from '@/app/data';
+import { appendNotification } from './notifications';
 import { LOCALES, useLang } from '@/i18n';
 import { visibleTransactions, writeTxTransform } from '@/db/joined';
 import type { SpaceTx } from '@/db/joined';
@@ -165,9 +166,10 @@ export function useRecurringReminders(): void {
   const { t, lang } = useLang();
   useEffect(() => {
     void (async () => {
-      if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
-      const registration = await navigator.serviceWorker?.ready.catch(() => undefined);
-      if (!registration) return;
+      // the in-app inbox records every event (arc 6) — the OS
+      // notification is the optional second outlet, permission allowing
+      const granted = typeof Notification !== 'undefined' && Notification.permission === 'granted';
+      const registration = granted ? await navigator.serviceWorker?.ready.catch(() => undefined) : undefined;
 
       const today = localToday();
       const recs = (await store.allRows('recurring')).filter(
@@ -180,13 +182,16 @@ export function useRecurringReminders(): void {
         if (await store.metaGet(key)) continue; // one reminder per due date
         await store.metaPut(key, Date.now());
         const date = new Date(next).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' });
-        await registration.showNotification('munni', {
-          body: t('recurring.reminderBody', { name: rec.name, date }),
-          icon: 'icon-192.png',
-          badge: 'icon-192.png',
-          tag: `rec-remind-${rec.id}`,
-          data: { url: './#/recurring' },
-        });
+        await appendNotification(store, 'recurringDue', { name: rec.name, date }, key);
+        if (registration) {
+          await registration.showNotification('munni', {
+            body: t('recurring.reminderBody', { name: rec.name, date }),
+            icon: 'icon-192.png',
+            badge: 'icon-192.png',
+            tag: `rec-remind-${rec.id}`,
+            data: { url: './#/recurring' },
+          });
+        }
       }
 
       // debts saved without an interest rate get a WEEKLY nudge to fill
@@ -202,13 +207,16 @@ export function useRecurringReminders(): void {
         const last = (await store.metaGet(key))?.value as number | undefined;
         if (last && Date.now() - last < 7 * 86_400_000) continue;
         await store.metaPut(key, Date.now());
-        await registration.showNotification('munni', {
-          body: t('debts.rateReminderBody', { name: debt.name }),
-          icon: 'icon-192.png',
-          badge: 'icon-192.png',
-          tag: `debt-rate-${debt.id}`,
-          data: { url: './#/debts' },
-        });
+        await appendNotification(store, 'debtRate', { name: debt.name }, `${key}_${Date.now()}`);
+        if (registration) {
+          await registration.showNotification('munni', {
+            body: t('debts.rateReminderBody', { name: debt.name }),
+            icon: 'icon-192.png',
+            badge: 'icon-192.png',
+            tag: `debt-rate-${debt.id}`,
+            data: { url: './#/debts' },
+          });
+        }
       }
     })().catch(() => undefined); // reminders are best-effort; a closing db must not throw
   }, [store, t, lang]);
