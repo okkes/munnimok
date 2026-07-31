@@ -505,7 +505,8 @@ describe('bulk apply from the detail (user request)', () => {
     await waitFor(async () => {
       expect(await db.transactions.get('blk-b')).toMatchObject({ catId: 'hobby', needsReview: 0 });
     });
-    expect(screen.queryByTestId('tx-detail-bulk-offer')).toBeNull(); // offer consumed
+    // offer consumed — but the dismissal render trails the DB write, so wait for it
+    await waitFor(() => expect(screen.queryByTestId('tx-detail-bulk-offer')).toBeNull());
     db.close();
   }, 15_000);
 
