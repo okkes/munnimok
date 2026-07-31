@@ -623,7 +623,9 @@ describe('detail sections customize (user request)', () => {
     // the detail shell mounts before the row loads — wait for the LOADED
     // screen (the customize door), not the shell testid, before poking it
     const customize = await screen.findByTestId('tx-detail-customize', {}, { timeout: 5000 });
-    expect(screen.queryByTestId('tx-detail-notes')).toBeNull();
+    // the hidden-notes pref rides the SPACE row's emission, which can trail
+    // the tx row that revealed the customize door — wait for it
+    await waitFor(() => expect(screen.queryByTestId('tx-detail-notes')).toBeNull());
 
     fireEvent.click(customize);
     await screen.findByTestId('tx-customize-list');
