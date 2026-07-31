@@ -267,13 +267,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // explicit reimbursed slice, once per identity (marker-gated;
       // ALL identities — demo/offline data migrates too)
       void (async () => {
-        const { migrateReimbursementSlices, migrateUnlinkedTransferKinds, migrateSignContradictions } = await import('@/application/catalogMaintenance');
+        const { migrateReimbursementSlices, migrateUnlinkedTransferKinds, migrateSignContradictions, migrateFamilySubs } = await import('@/application/catalogMaintenance');
         await migrateReimbursementSlices(store, repo);
         // kind simplification: counterparty-less transfer-family rows
-        // become plain income/expense by sign (marker-gated, all identities)
+        // become plain income/expense by sign (marker-gated, all
+        // identities; arc-2 bare labels wear their locked sub and skip)
         await migrateUnlinkedTransferKinds(store, repo);
         // heal rows the pre-2026-07-28 bulk-apply typed against their sign
         await migrateSignContradictions(store, repo);
+        // arc 2 back-fill: placeholder-categorized transfer-family rows
+        // file the sign-picked locked sub ("Set aside" over a blank line)
+        await migrateFamilySubs(store, repo);
         // transfers are ONE event with two legs — pair them within each
         // space's own books (never across: funding covers that case)
         const { linkTransferPairs } = await import('@/application/transferMatch');

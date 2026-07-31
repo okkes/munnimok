@@ -214,24 +214,52 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     indexedDB.deleteDatabase('munni_demo');
   });
 
-  it('a transfer to the savings account derives Saving and clears the conflicting category', async () => {
+  it('a transfer to the savings account derives Saving and files the locked sub', async () => {
     renderApp('/transactions/dm6');
-    // groceries expense → kind Transfer → the counterparty is mandatory
+    // groceries expense → kind Transfer → pick the savings counterparty
     fireEvent.click(await screen.findByTestId('tx-detail-kind-row'));
     await screen.findByTestId('txkind-options');
     fireEvent.click(screen.getByTestId('txkind-transfer'));
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
     // the savings counterparty derives Saving; groceries only speaks
-    // expense → category falls back to uncategorized for review
+    // expense → the invalidated category files the sign-picked locked
+    // sub (arc 2) instead of a review round-trip
     await waitFor(() => {
       expect(screen.getByTestId('tx-detail-kind-row').textContent).toContain('Saving');
-      expect(screen.getByTestId('tx-detail-category-row').textContent).toContain('Uncategorized');
+      expect(screen.getByTestId('tx-detail-category-row').textContent).toContain('Set aside');
     });
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
       const tx = await db.transactions.get('dm6');
       expect(tx?.txType).toBe('saving');
       expect(tx?.linkedAccountId).toBe('demo_save');
+      expect(tx?.catId).toBe('savingDeposit');
+    });
+    db.close();
+  }, 15_000);
+
+  it('the "no counter account" exit types the row bare with the locked sub', async () => {
+    renderApp('/transactions/dm6');
+    fireEvent.click(await screen.findByTestId('tx-detail-kind-row'));
+    await screen.findByTestId('txkind-options');
+    fireEvent.click(screen.getByTestId('txkind-transfer'));
+    await screen.findByTestId('counter-accounts');
+    fireEvent.click(screen.getByTestId('counter-none'));
+    await screen.findByTestId('counter-bare-options');
+    fireEvent.click(screen.getByTestId('counter-bare-debtPayment'));
+
+    // typed + locked sub, deliberately no account on the other side —
+    // the counterparty row states the bare label and stays a door
+    await waitFor(() => {
+      expect(screen.getByTestId('tx-detail-kind-row').textContent).toContain('Debt Payment');
+      expect(screen.getByTestId('tx-detail-counter-add').textContent).toContain('No counter account');
+    });
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const tx = await db.transactions.get('dm6');
+      expect(tx?.txType).toBe('debtPayment');
+      expect(tx?.catId).toBe('loanRepayment');
+      expect(tx?.linkedAccountId).toBeFalsy();
     });
     db.close();
   }, 15_000);

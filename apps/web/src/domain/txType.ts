@@ -1,3 +1,4 @@
+import { autoSubFor } from './categories';
 import type { AccountType, TxType } from '@/db/types';
 
 export const ALL_TX_TYPES: TxType[] = [
@@ -43,15 +44,26 @@ export function categoryConflictsWithType(catTxTypes: TxType[], txType: TxType):
 /**
  * Fields to write when the user changes the type or the linked account.
  * A conflicting category falls back to uncategorized (flagged for review)
- * instead of silently lying about what kind of money movement this is.
+ * instead of silently lying about what kind of money movement this is —
+ * except transfer-family types (arc 2 locked doors): with the money's
+ * sign known they file the family's locked sub, which is always truthful,
+ * so no review round-trip. needsReview stays untouched on that path: a
+ * row already in the deck keeps its confirmation stop, a settled row
+ * isn't dragged back.
  */
 export function applyTypeChange(options: {
   nextType: TxType;
   linkedAccountId: string | null;
   currentCatId: string | undefined;
   catTxTypes: TxType[];
+  amountCents?: number;
 }): { txType: TxType; linkedAccountId?: string; catId?: string; needsReview?: 0 | 1 } {
   const conflict = categoryConflictsWithType(options.catTxTypes, options.nextType);
+  const familySub = options.amountCents === undefined ? undefined : autoSubFor(options.nextType, options.amountCents);
+  const placeholder = !options.currentCatId || options.currentCatId === 'uncategorized';
+  if (familySub && (conflict || placeholder)) {
+    return { txType: options.nextType, linkedAccountId: options.linkedAccountId ?? undefined, catId: familySub };
+  }
   return {
     txType: options.nextType,
     linkedAccountId: options.linkedAccountId ?? undefined,

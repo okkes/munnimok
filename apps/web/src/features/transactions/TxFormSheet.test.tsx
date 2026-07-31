@@ -229,6 +229,40 @@ describe('TxFormSheet (demo identity)', () => {
     db.close();
   }, 15_000);
 
+  it('the "no counter account" exit types the row bare and files the locked sub', async () => {
+    await openForm();
+    fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '30,00' } });
+    fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Aflossing lening' } });
+    fireEvent.click(screen.getByTestId('txform-kind'));
+    await screen.findByTestId('txkind-options');
+    fireEvent.click(screen.getByTestId('txkind-transfer'));
+    await screen.findByTestId('counter-accounts');
+    expect((screen.getByTestId('txform-save') as HTMLButtonElement).disabled).toBe(true);
+
+    // the bare exit: name the family member directly, no account link
+    fireEvent.click(screen.getByTestId('counter-none'));
+    await screen.findByTestId('counter-bare-options');
+    fireEvent.click(screen.getByTestId('counter-bare-debtPayment'));
+
+    // the label completes the transfer intent: counter row says so, the
+    // kind row carries the named member, save is armed
+    await waitFor(() => expect(screen.getByTestId('txform-counter').textContent).toContain('No counter account'));
+    expect(screen.getByTestId('txform-kind').textContent).toContain('Debt Payment');
+    expect(screen.queryByTestId('txform-mirror')).toBeNull(); // nothing to mirror
+    expect((screen.getByTestId('txform-save') as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByTestId('txform-save'));
+
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const row = (await db.transactions.toArray()).find((r) => r.merchant === 'Aflossing lening');
+      // typed + sign-picked locked sub, deliberately NO counterparty
+      expect(row).toMatchObject({ txType: 'debtPayment', catId: 'loanRepayment', needsReview: 0 });
+      expect(row?.linkedAccountId).toBeFalsy();
+    }, { timeout: 5000 });
+    db.close();
+  }, 15_000);
+
   it('with several manual accounts nothing pre-selects — save requires a pick', async () => {
     renderApp('/transactions');
     await screen.findByTestId('tx-list');

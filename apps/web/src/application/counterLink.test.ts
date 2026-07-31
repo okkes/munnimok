@@ -46,7 +46,9 @@ describe('linkAllCounterparties', () => {
     expect(await linkAllCounterparties(new DexieBackend(db), repo, 's1')).toBe(2);
 
     const topup = await db.transactions.get('tx-topup');
-    expect(topup).toMatchObject({ linkedAccountId: 'acct-cc', txType: 'transfer' }); // credit = transfer (user ruling)
+    // credit = transfer (user ruling); the placeholder category files the
+    // sign-picked locked sub at the write edge (arc 2)
+    expect(topup).toMatchObject({ linkedAccountId: 'acct-cc', txType: 'transfer', catId: 'transferOut' });
     const deliberate = await db.transactions.get('tx-deliberate');
     expect(deliberate).toMatchObject({ linkedAccountId: 'acct-cc', txType: 'adjustment' }); // linked, type kept
     expect((await db.transactions.get('tx-linked'))?.linkedAccountId).toBe('acct-other'); // untouched
@@ -65,7 +67,7 @@ describe('linkAllCounterparties', () => {
     });
     await repo.upsert('account', 's1', 'acct-save', { name: 'Buffer', type: 'savings', source: 'manual', currency: 'EUR', iban: 'NL02 SAVE 0000 0000 02' });
     await linkAllCounterparties(new DexieBackend(db), repo, 's1');
-    expect(await db.transactions.get('tx-save')).toMatchObject({ linkedAccountId: 'acct-save', txType: 'saving' });
+    expect(await db.transactions.get('tx-save')).toMatchObject({ linkedAccountId: 'acct-save', txType: 'saving', catId: 'savingDeposit' });
     db.close();
   });
 });

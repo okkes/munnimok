@@ -473,11 +473,35 @@ export function TxDetailScreen() {
   const kind = kindOf(tx.txType);
   const kindDetailType = kindDetail(tx.txType);
   const pairState = transferPairState(tx, linkedAccount);
+  // the OTHER leg's side of a release — its own row clears in the same write
+  const releasePeer = () => {
+    const peer = (allTxs ?? []).find((item) => item.id === tx.transferPeerId);
+    if (peer) void writeTxTransform(repo, peer, { transferPeerId: null as never });
+  };
   // unpairing releases BOTH legs — one activity entry covers the action
   const unpair = () => {
-    const peer = (allTxs ?? []).find((item) => item.id === tx.transferPeerId);
+    releasePeer();
     void transform(tx, { transferPeerId: null as never }, 'txLink');
-    if (peer) void writeTxTransform(repo, peer, { transferPeerId: null as never });
+  };
+  // counter pick, bare label and kind pick all write through the same
+  // coherence rules (arc 2: the locked family sub files by sign); a
+  // peered leg whose link moves away releases its old mirror first —
+  // a stale transferPeerId would keep collapsing the pair in the list
+  const retype = (nextType: TxType, nextLinkedId: string | null, action: 'txLink' | 'txCategory') => {
+    const fields = applyTypeChange({
+      nextType,
+      linkedAccountId: nextLinkedId,
+      currentCatId: tx.catId,
+      catTxTypes: cats.byId(tx.catId).txTypes,
+      amountCents: tx.amountCents,
+    });
+    const unpeer = !!tx.transferPeerId && tx.linkedAccountId !== nextLinkedId;
+    if (unpeer) releasePeer();
+    void transform(
+      tx,
+      { ...fields, linkedAccountId: nextLinkedId as never, ...(unpeer ? { transferPeerId: null as never } : {}) },
+      action,
+    );
   };
   // a credit that self-filed as Reimbursed keeps that category as long
   // as any link lives (user rule) — unlink first, then recategorize
@@ -805,15 +829,8 @@ export function TxDetailScreen() {
         onOpenChange={setCounterPickOpen}
         excludeAccountId={tx.accountId}
         currentLinkedId={tx.linkedAccountId}
-        onChoose={(picked) => {
-          const fields = applyTypeChange({
-            nextType: typeForLinkedAccount(picked.type),
-            linkedAccountId: picked.id,
-            currentCatId: tx.catId,
-            catTxTypes: cats.byId(tx.catId).txTypes,
-          });
-          void transform(tx, { ...fields, linkedAccountId: picked.id }, 'txLink');
-        }}
+        onChoose={(picked) => retype(typeForLinkedAccount(picked.type), picked.id, 'txLink')}
+        onBare={(type) => retype(type, null, 'txLink')}
       />
       <TxKindSheet
         open={typePickOpen}
@@ -822,7 +839,8 @@ export function TxDetailScreen() {
         allowAdjustment={!tx.importRef && !tx.feedSpaceId}
         onPick={(nextKind) => {
           // transfer completes in the counterparty picker — nothing is
-          // written until the (mandatory) other side is chosen
+          // written until the other side is chosen (an account, or the
+          // bare "no counter account" label)
           if (nextKind === 'transfer') {
             setCounterPickOpen(true);
             return;
@@ -832,14 +850,7 @@ export function TxDetailScreen() {
             if (nextKind === 'funding') return 'funding'; // no counterparty by design
             return standardTypeFor(tx.amountCents);
           };
-          const fields = applyTypeChange({
-            nextType: directType(),
-            linkedAccountId: null,
-            currentCatId: tx.catId,
-            catTxTypes: cats.byId(tx.catId).txTypes,
-          });
-          // explicit null clears the link (undefined would be dropped by JSON)
-          void transform(tx, { ...fields, linkedAccountId: null as never }, 'txCategory');
+          retype(directType(), null, 'txCategory');
         }}
       />
       {/* ONE category flow (review parity): a single row edits the plain
@@ -1105,7 +1116,9 @@ function CounterpartyRow({
           <span className="block truncate">{primary}</span>
         ) : (
           <span className="block truncate text-ink-3" data-testid="tx-detail-counter-add">
-            {counterIban ?? (editable ? t('tx.counterAccountPick') : t('tx.counterNotApplicable'))}
+            {/* counterless transfers are legal (arc 2's bare exit): state
+                the fact calmly — the tap still doors into the picker */}
+            {counterIban ?? (editable ? t('tx.counterNone') : t('tx.counterNotApplicable'))}
           </span>
         )}
         {counterIban && primary && (

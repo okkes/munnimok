@@ -15,6 +15,7 @@ import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
+import { TX_TYPE_VISUAL } from './TxTypeSheet';
 
 /** the three choices a person actually makes (user simplification) */
 export const TX_KIND_VISUAL: Record<TxKind, { icon: string; color: string }> = {
@@ -87,12 +88,18 @@ export function TxKindSheet({
   );
 }
 
+/** the family members offered by the "no counter account" exit — funding
+ *  is NOT here: it has its own kind and never takes a counterparty */
+const BARE_TYPES: readonly TxType[] = ['saving', 'investment', 'debtPayment', 'transfer'];
+
 /**
  * The counterparty picker for transfers (user redesign): searchable like
  * the recurring/event pickers, with a quick-create door — a missing
  * savings pot or loan becomes a manual account without leaving the flow.
- * There is deliberately NO "none" row: a transfer without a counterparty
- * is unrepresentable; picking the standard kind is how a link clears.
+ * The "no counter account" exit (arc 2) replaces the old hard rule: the
+ * user can name the family member directly — the row is typed and files
+ * the locked sub by sign, but stays a reporting label that moves no
+ * other balance.
  */
 export function CounterpartySheet({
   open,
@@ -100,12 +107,14 @@ export function CounterpartySheet({
   excludeAccountId,
   currentLinkedId,
   onChoose,
+  onBare,
 }: Readonly<{
   open: boolean;
   onOpenChange: (open: boolean) => void;
   excludeAccountId: string;
   currentLinkedId?: string;
   onChoose: (account: { id: string; type: AccountType }) => void;
+  onBare?: (type: TxType) => void;
 }>) {
   const { t, lang } = useLang();
   const { store, repo, spaceId } = useData();
@@ -113,6 +122,7 @@ export function CounterpartySheet({
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const [query, setQuery] = useState('');
   const [creating, setCreating] = useState(false);
+  const [bareOpen, setBareOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [newType, setNewType] = useState<AccountType | null>(null);
   // the FULL addition flow (bank connect / statement import / manual
@@ -124,6 +134,7 @@ export function CounterpartySheet({
     if (!open) return;
     setQuery('');
     setCreating(false);
+    setBareOpen(false);
     setNewName('');
     setNewType(null);
   }, [open]);
@@ -171,11 +182,12 @@ export function CounterpartySheet({
         onChange={(e) => {
           setQuery(e.target.value);
           setCreating(false);
+          setBareOpen(false);
         }}
         placeholder={t('tx.counterSearch')}
         className="mb-2 h-11 w-full rounded-input border border-line bg-surface px-4 text-[14px] text-ink outline-none placeholder:text-ink-4"
       />
-      {!creating && (
+      {!creating && !bareOpen && (
         <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="counter-accounts">
           {candidates.map((account) => (
             <button
@@ -211,7 +223,7 @@ export function CounterpartySheet({
       {/* quick-create door — ALWAYS visible (user request: reaching a
           missing account must be fast, especially now that transfers
           demand a counterparty); a typed search pre-fills the name */}
-      {!creating && (
+      {!creating && !bareOpen && (
         <button
           data-testid="counter-create"
           onClick={() => {
@@ -224,7 +236,7 @@ export function CounterpartySheet({
           {query.trim() ? t('tx.counterCreate', { name: query.trim() }) : t('tx.counterNew')}
         </button>
       )}
-      {!creating && (
+      {!creating && !bareOpen && (
         <button
           data-testid="counter-full-setup"
           onClick={() => setChooserOpen(true)}
@@ -233,6 +245,39 @@ export function CounterpartySheet({
           <Icon name="bank-plus" size={18} />
           {t('tx.counterFullSetup')}
         </button>
+      )}
+      {/* the "no counter account" exit (arc 2): label the movement without
+          modeling the other side — the caller types the row directly */}
+      {!creating && !bareOpen && onBare && (
+        <button
+          data-testid="counter-none"
+          onClick={() => setBareOpen(true)}
+          className="m-tap mt-2 flex w-full items-center gap-2 rounded-card border border-dashed border-line bg-transparent px-4 py-3 text-left text-[14px] font-medium text-ink-2"
+        >
+          <Icon name="link-off" size={18} />
+          {t('tx.counterNone')}
+        </button>
+      )}
+      {bareOpen && onBare && (
+        <div className="mt-1" data-testid="counter-bare-options">
+          <p className="px-1 pb-2 text-[12px] text-ink-3">{t('tx.counterNoneHint')}</p>
+          <div className="overflow-hidden rounded-card border border-line bg-surface">
+            {BARE_TYPES.map((type) => (
+              <button
+                key={type}
+                data-testid={`counter-bare-${type}`}
+                onClick={() => {
+                  onBare(type);
+                  onOpenChange(false);
+                }}
+                className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-4 py-3 text-left last:border-0"
+              >
+                <Icon name={TX_TYPE_VISUAL[type].icon} size={18} color={TX_TYPE_VISUAL[type].color} />
+                <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{t(`tx.type.${type}`)}</span>
+              </button>
+            ))}
+          </div>
+        </div>
       )}
       <AddAccountChooser
         open={chooserOpen}

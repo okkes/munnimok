@@ -152,6 +152,7 @@ function initialFormState(tx: TransactionRow | undefined) {
       catId: suggested?.catId ?? UNCATEGORIZED_ID,
       kind: 'standard' as TxKind,
       linkedAccountId: null,
+      bareType: null as TxType | null,
       recurringId: null,
     };
   }
@@ -164,6 +165,9 @@ function initialFormState(tx: TransactionRow | undefined) {
     catId: tx.catId ?? UNCATEGORIZED_ID,
     kind: kindOf(tx.txType),
     linkedAccountId: tx.linkedAccountId ?? null,
+    // a counterless transfer-family row (the arc-2 bare exit) reopens
+    // with its typed label intact instead of demanding a counterparty
+    bareType: kindOf(tx.txType) === 'transfer' && !tx.linkedAccountId ? tx.txType : null,
     recurringId: tx.recurringId ?? null,
   };
 }
@@ -383,9 +387,10 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
   const [splitOpen, setSplitOpen] = useState(false);
   const [stagedSplits, setStagedSplits] = useState<TxSplit[] | null>(null);
   // the simplified kind (user redesign): standard / transfer / adjustment;
-  // a transfer refuses to save without its counterparty
+  // a transfer saves with a counterparty OR a bare family label (arc 2)
   const [kind, setKind] = useState<TxKind>('standard');
   const [linkedAccountId, setLinkedAccountId] = useState<string | null>(null);
+  const [bareType, setBareType] = useState<TxType | null>(null);
   const [recurringId, setRecurringId] = useState<string | null>(null);
   const [kindOpen, setKindOpen] = useState(false);
   const [counterOpen, setCounterOpen] = useState(false);
@@ -418,6 +423,7 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
     setCatId(initial.catId);
     setKind(initial.kind);
     setLinkedAccountId(initial.linkedAccountId);
+    setBareType(initial.bareType);
     setRecurringId(initial.recurringId);
     setStagedSplits(tx?.splits ?? null);
     setMirrorCounter(true);
@@ -429,9 +435,11 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
   const selectedAccount = writable.find((a) => a.id === effectiveAccount);
   const cents = parseCents(amount);
   const linkedAccount = (accounts ?? []).find((a) => a.id === linkedAccountId);
-  const effectiveType: TxType = typeForKind(kind, isExpense, linkedAccount ? typeForLinkedAccount(linkedAccount.type) : null);
-  // a transfer without its counterparty is unrepresentable (user rule)
-  const counterMissing = kind === 'transfer' && !linkedAccount;
+  // the counterparty derives the type; the bare exit (arc 2) names it directly
+  const effectiveType: TxType = typeForKind(kind, isExpense, linkedAccount ? typeForLinkedAccount(linkedAccount.type) : bareType);
+  // a transfer needs its other side decided: an account, or the explicit
+  // "no counter account" label (arc 2)
+  const counterMissing = kind === 'transfer' && !linkedAccount && !bareType;
   const kindDetailType = kindDetail(effectiveType);
   const valid = isValidManualTx({ merchant, cents, account: effectiveAccount, date, counterMissing });
 
@@ -587,7 +595,7 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
           <KindRows
             kind={kind}
             detailType={kindDetailType}
-            counterName={linkedAccount?.name}
+            counterName={linkedAccount?.name ?? (bareType ? t('tx.counterNone') : undefined)}
             onKind={() => setKindOpen(true)}
             onCounter={() => setCounterOpen(true)}
           />
@@ -649,8 +657,12 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
         allowAdjustment
         onPick={(next) => {
           setKind(next);
-          if (next === 'transfer') setCounterOpen(true);
-          else setLinkedAccountId(null);
+          if (next === 'transfer') {
+            setCounterOpen(true);
+          } else {
+            setLinkedAccountId(null);
+            setBareType(null);
+          }
         }}
       />
       <CounterpartySheet
@@ -658,7 +670,14 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
         onOpenChange={setCounterOpen}
         excludeAccountId={effectiveAccount ?? ''}
         currentLinkedId={linkedAccountId ?? undefined}
-        onChoose={(picked) => setLinkedAccountId(picked.id)}
+        onChoose={(picked) => {
+          setLinkedAccountId(picked.id);
+          setBareType(null);
+        }}
+        onBare={(type) => {
+          setBareType(type);
+          setLinkedAccountId(null);
+        }}
       />
 
       {/* stacked: account picker */}

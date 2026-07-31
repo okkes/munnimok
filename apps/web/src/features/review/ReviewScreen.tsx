@@ -8,7 +8,7 @@ import { useEvents } from '@/application/events';
 import { EventFormSheet } from '@/features/events/EventsScreen';
 import { RecurringFormSheet, formFromTx } from '@/features/recurring/RecurringFormSheet';
 import { merchantKey } from '@/domain/merchantKey';
-import { draftReady, initDraft, withCategory, withKind, withLinkedAccount, withSplits, withType } from '@/domain/reviewDraft';
+import { draftReady, initDraft, withBareType, withCategory, withKind, withLinkedAccount, withSplits, withType } from '@/domain/reviewDraft';
 import { kindOf, standardTypeFor } from '@/domain/txKind';
 import { EXPECTED_REIMBURSE_ID } from '@/domain/categories';
 import { Collapse } from '@/ui/Collapse';
@@ -149,10 +149,11 @@ function stageKind(
   return next;
 }
 
-/** the counterparty row's face: dimmed n/a, a warning prompt, or the name */
+/** the counterparty row's face: dimmed n/a, the account, or the bare
+ *  label — counterless is legal now (arc 2's exit), so no warning cry */
 function counterRowLabel(kind: TxKind, name: string | undefined, t: ReturnType<typeof useLang>['t']): string {
   if (kind !== 'transfer') return t('tx.counterNotApplicable');
-  return name ?? t('tx.counterAccountPick');
+  return name ?? t('tx.counterNone');
 }
 
 /** the card's kind + counterparty rows (S3776: out of the main screen);
@@ -197,9 +198,7 @@ function CardKindRows({
           className="m-tap m-fade flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
         >
           <Icon name="bank-transfer" size={18} color="var(--m-ink-3)" />
-          <span className={`min-w-0 flex-1 truncate ${counterName ? '' : 'text-warning'}`}>
-            {counterRowLabel(kind, counterName, t)}
-          </span>
+          <span className="min-w-0 flex-1 truncate">{counterRowLabel(kind, counterName, t)}</span>
           <span className="text-[11px] text-ink-4">{t('tx.counterparty')}</span>
           <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
         </button>
@@ -1047,6 +1046,12 @@ export function ReviewScreen() {
           onChoose={(account) => {
             counterChosen.current = true;
             setStagedDraft(withLinkedAccount(draft, account, cats, tx?.amountCents));
+          }}
+          // the bare label COMPLETES the transfer intent (arc 2) — the
+          // roll-back guard treats it exactly like an account pick
+          onBare={(type) => {
+            counterChosen.current = true;
+            setStagedDraft(withBareType(draft, type, tx.amountCents, cats));
           }}
         />
       )}

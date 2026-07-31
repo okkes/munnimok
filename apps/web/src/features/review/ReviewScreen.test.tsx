@@ -100,6 +100,29 @@ describe('ReviewScreen (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('review-kind-row').textContent).toContain('Standard'));
   }, 15_000);
 
+  it('the bare "no counter account" pick completes the transfer — no roll-back', async () => {
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    fireEvent.click(screen.getByTestId('review-kind-row'));
+    await screen.findByTestId('txkind-options');
+    fireEvent.click(screen.getByTestId('txkind-transfer'));
+    await screen.findByTestId('counter-accounts');
+
+    // the exit names the family member directly (arc 2); the sheet
+    // closes and the kind SURVIVES — a bare label is a complete answer
+    fireEvent.click(screen.getByTestId('counter-none'));
+    await screen.findByTestId('counter-bare-options');
+    fireEvent.click(screen.getByTestId('counter-bare-saving'));
+    await waitFor(() => expect(screen.getByTestId('review-kind-row').textContent).toContain('Saving'));
+
+    // the counter row states the bare label calmly (no warning cry —
+    // counterless is legal), the sign-picked locked sub sits on the
+    // chip, and Confirm is armed — no ask-again dead end
+    expect(screen.getByTestId('review-counter-row').textContent).toContain('No counter account');
+    expect(screen.getByTestId('review-category-chip').textContent).toContain('Set aside');
+    expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false);
+  }, 15_000);
+
   it('a picked category is staged and written on confirm', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');

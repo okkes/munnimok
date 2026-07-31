@@ -61,4 +61,54 @@ describe('applyTypeChange', () => {
       expect(applyTypeChange({ nextType: type, linkedAccountId: null, currentCatId: undefined, catTxTypes: [] }).txType).toBe(type);
     }
   });
+
+  describe('the locked family sub at the write edge (arc 2)', () => {
+    it('a conflicting category files the sign-picked sub instead of review', () => {
+      const fields = applyTypeChange({
+        nextType: 'transfer',
+        linkedAccountId: 'acc-2',
+        currentCatId: 'groceries',
+        catTxTypes: ['expense'],
+        amountCents: -5000,
+      });
+      expect(fields).toEqual({ txType: 'transfer', linkedAccountId: 'acc-2', catId: 'transferOut' });
+    });
+
+    it('a placeholder category files too — both signs', () => {
+      const bare = { linkedAccountId: null, catTxTypes: [] as TxType[] };
+      expect(applyTypeChange({ ...bare, nextType: 'saving', currentCatId: undefined, amountCents: -100 }).catId).toBe('savingDeposit');
+      expect(applyTypeChange({ ...bare, nextType: 'saving', currentCatId: 'uncategorized', amountCents: 100 }).catId).toBe('savingWithdraw');
+      expect(applyTypeChange({ ...bare, nextType: 'debtPayment', currentCatId: undefined, amountCents: -100 }).catId).toBe('loanRepayment');
+    });
+
+    it('a deliberate compatible category survives; standard types never file', () => {
+      const kept = applyTypeChange({
+        nextType: 'saving',
+        linkedAccountId: 'acc-2',
+        currentCatId: 'savingWithdraw',
+        catTxTypes: ['saving'],
+        amountCents: -100,
+      });
+      expect(kept.catId).toBeUndefined();
+      const standard = applyTypeChange({
+        nextType: 'expense',
+        linkedAccountId: null,
+        currentCatId: undefined,
+        catTxTypes: [],
+        amountCents: -100,
+      });
+      expect(standard.catId).toBeUndefined();
+    });
+
+    it('without the sign the old review fallback stands', () => {
+      const fields = applyTypeChange({
+        nextType: 'transfer',
+        linkedAccountId: 'acc-2',
+        currentCatId: 'groceries',
+        catTxTypes: ['expense'],
+      });
+      expect(fields.catId).toBe('uncategorized');
+      expect(fields.needsReview).toBe(1);
+    });
+  });
 });

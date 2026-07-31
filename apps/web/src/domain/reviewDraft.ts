@@ -93,6 +93,16 @@ export function withFamilyCategory(draft: ReviewDraft, amountCents: number): Rev
   return { ...draft, catId: sub };
 }
 
+/**
+ * The "no counter account" exit (arc 2): the user names the transfer-family
+ * member directly. The draft is typed, files under the sign-picked locked
+ * sub, and deliberately carries NO counterparty — a reporting label that
+ * moves no other balance.
+ */
+export function withBareType(draft: ReviewDraft, txType: TxType, amountCents: number, catalog: DraftCatalog): ReviewDraft {
+  return withFamilyCategory(withType({ ...draft, linkedAccountId: undefined }, txType, catalog), amountCents);
+}
+
 /** the counter-account suggests its type; the suggestion runs through
  *  withType, and a placeholder category files under the family's locked
  *  sub when the money's sign is known (arc 2) */
