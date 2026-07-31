@@ -347,6 +347,18 @@ function AccountPickSheet({
  *  the wrong account (user redesign 2026-07-31) */
 const soleAccountId = (writable: readonly AccountRow[]): string | null => (writable.length === 1 ? writable[0].id : null);
 
+/** a transfer's other side is decided by an account OR the bare
+ *  "no counter account" label (arc 2) — undecided blocks save */
+const counterUndecided = (kind: TxKind, linkedAccount: AccountRow | undefined, bareType: TxType | null): boolean =>
+  kind === 'transfer' && !linkedAccount && !bareType;
+
+/** the counter row's face: the account's name, or the bare label */
+const counterFieldLabel = (
+  linkedName: string | undefined,
+  bareType: TxType | null,
+  t: ReturnType<typeof useLang>['t'],
+): string | undefined => linkedName ?? (bareType ? t('tx.counterNone') : undefined);
+
 /** the account field on the form: picked account, or the pick prompt */
 function AccountFieldRow({ account, onOpen }: Readonly<{ account: AccountRow | undefined; onOpen: () => void }>) {
   const { t } = useLang();
@@ -437,9 +449,7 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
   const linkedAccount = (accounts ?? []).find((a) => a.id === linkedAccountId);
   // the counterparty derives the type; the bare exit (arc 2) names it directly
   const effectiveType: TxType = typeForKind(kind, isExpense, linkedAccount ? typeForLinkedAccount(linkedAccount.type) : bareType);
-  // a transfer needs its other side decided: an account, or the explicit
-  // "no counter account" label (arc 2)
-  const counterMissing = kind === 'transfer' && !linkedAccount && !bareType;
+  const counterMissing = counterUndecided(kind, linkedAccount, bareType);
   const kindDetailType = kindDetail(effectiveType);
   const valid = isValidManualTx({ merchant, cents, account: effectiveAccount, date, counterMissing });
 
@@ -595,7 +605,7 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
           <KindRows
             kind={kind}
             detailType={kindDetailType}
-            counterName={linkedAccount?.name ?? (bareType ? t('tx.counterNone') : undefined)}
+            counterName={counterFieldLabel(linkedAccount?.name, bareType, t)}
             onKind={() => setKindOpen(true)}
             onCounter={() => setCounterOpen(true)}
           />
