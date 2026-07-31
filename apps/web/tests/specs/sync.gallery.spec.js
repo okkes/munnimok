@@ -11,28 +11,31 @@ const CAMT_FIXTURE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 
 // the space-settings doors are gone (user remark: Settings is the one
 // place) — the Settings members row targets the ACTIVE space, so the
 // target space is activated from the spaces list first
-async function gotoMembersOf(page, spaceName) {
+async function gotoMembersOf(page, spaceName, { unlock = false } = {}) {
   await gotoSpaces(page);
   await page.locator(`[data-testid="screen-spaces"] button:has-text("${spaceName}")`).first().click();
   // the check-circle badge appearing on the row = the switch settled
   await page.locator(`[data-testid^="space-row-"]:has-text("${spaceName}") .mdi-check-circle`).waitFor();
-  // arc 4: spaces are born locked private — the owner lifts the lock in
-  // space settings before anyone can be invited (idempotent on re-entry).
-  // Retried: the active-switch re-render can swallow the first cog tap.
-  const row = page.locator(`[data-testid^="space-row-"]:has-text("${spaceName}")`).first();
-  const spaceId = (await row.getAttribute('data-testid')).replace('space-row-', '');
-  const lock = page.locator('[data-testid="space-invite-lock"]');
-  for (let attempt = 0; attempt < 3; attempt++) {
-    await page.click(`[data-testid="space-edit-${spaceId}"]`).catch(() => {});
-    const landed = await page
-      .waitForSelector('[data-testid="screen-space-settings"]', { timeout: 5000 })
-      .then(() => true)
-      .catch(() => false);
-    if (landed && (await lock.waitFor({ timeout: 5000 }).then(() => true).catch(() => false))) break;
+  if (unlock) {
+    // arc 4: spaces are born locked private — the OWNER lifts the lock in
+    // space settings on the FIRST visit (the toggle is owner-only, so the
+    // detour must never run for members). Retried: the active-switch
+    // re-render can swallow the first cog tap.
+    const row = page.locator(`[data-testid^="space-row-"]:has-text("${spaceName}")`).first();
+    const spaceId = (await row.getAttribute('data-testid')).replace('space-row-', '');
+    const lock = page.locator('[data-testid="space-invite-lock"]');
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await page.click(`[data-testid="space-edit-${spaceId}"]`).catch(() => {});
+      const landed = await page
+        .waitForSelector('[data-testid="screen-space-settings"]', { timeout: 5000 })
+        .then(() => true)
+        .catch(() => false);
+      if (landed && (await lock.waitFor({ timeout: 5000 }).then(() => true).catch(() => false))) break;
+    }
+    if (await lock.isChecked()) await lock.click();
+    await page.click('[data-testid="spacesettings-back"]');
+    await page.waitForSelector('[data-testid="screen-spaces"]');
   }
-  if (await lock.isChecked()) await lock.click();
-  await page.click('[data-testid="spacesettings-back"]');
-  await page.waitForSelector('[data-testid="screen-spaces"]');
   await page.click('[data-testid="tab-settings"]');
   await page.click('[data-testid="settings-space-members-row"]');
   await page.waitForSelector('[data-testid="space-members"]');
@@ -177,7 +180,7 @@ for (const V of VARIANTS) {
     await expect(bob.page.locator('[data-testid="friends-copy-id"] span')).toHaveText(/^[0-9a-f]{8}-/, { timeout: 10000 });
     const bobId = (await bob.page.locator('[data-testid="friends-copy-id"] span').textContent()).trim();
 
-    await gotoMembersOf(alice.page, 'Shared Home');
+    await gotoMembersOf(alice.page, 'Shared Home', { unlock: true });
     await alice.page.fill('[data-testid="space-addfriend-input"]', bobId);
     await alice.page.click('[data-testid="space-addfriend-send"]');
     await expect(alice.page.locator('[data-testid="space-addfriend-sent"]')).toBeVisible({ timeout: 10000 });
@@ -313,7 +316,7 @@ for (const V of VARIANTS) {
     await expect(bob.page.locator('[data-testid="friends-copy-id"] span')).toHaveText(/^[0-9a-f]{8}-/, { timeout: 10000 });
     const bobId = (await bob.page.locator('[data-testid="friends-copy-id"] span').textContent()).trim();
 
-    await gotoMembersOf(alice.page, 'Feed Home');
+    await gotoMembersOf(alice.page, 'Feed Home', { unlock: true });
     await alice.page.fill('[data-testid="space-addfriend-input"]', bobId);
     await alice.page.click('[data-testid="space-addfriend-send"]');
     await expect(alice.page.locator('[data-testid="space-addfriend-sent"]')).toBeVisible({ timeout: 10000 });
