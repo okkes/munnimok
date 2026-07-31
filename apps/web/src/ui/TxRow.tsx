@@ -44,6 +44,7 @@ export function TxRow({
   selected = false,
   accountName,
   givenCents = 0,
+  transferNote,
 }: {
   tx: TransactionRow;
   onClick?: () => void;
@@ -62,6 +63,8 @@ export function TxRow({
   accountName?: string;
   /** cents this credit gave away as reimbursements (derived by the list) */
   givenCents?: number;
+  /** collapsed transfer pair: "From → To" replaces the category line */
+  transferNote?: string;
 }) {
   const { t, lang } = useLang();
   const cats = useCategories();
@@ -104,7 +107,13 @@ export function TxRow({
               {!hideCategory && ' · '}
             </span>
           )}
-          {!hideCategory && categoryLabel}
+          {transferNote ? (
+            <span data-testid={`tx-row-pair-${tx.id}`}>
+              <Icon name="swap-horizontal" size={11} /> {transferNote}
+            </span>
+          ) : (
+            !hideCategory && categoryLabel
+          )}
           {tx.pending === 1 && (
             <Pill className={hideCategory && !showDate ? '' : 'ml-1.5'}>{t('tx.pendingBadge')}</Pill>
           )}

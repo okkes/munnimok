@@ -76,3 +76,32 @@ async function writePair(repo: Repo, out: SpaceTx | undefined, inc: SpaceTx | un
   await writeTxTransform(repo, out, { transferPeerId: inc.id });
   await writeTxTransform(repo, inc, { ...incExtra, transferPeerId: out.id });
 }
+
+/**
+ * Write the OTHER side of a transfer onto a manual counter account (user
+ * request: "-100 to savings used to update only half the picture").
+ * Mirror row: opposite amount, same date/merchant, same family member,
+ * pointing back, peered both ways, settled. The manual counter account's
+ * live balance moves by the mirror amount — the same rule every manual
+ * write follows.
+ */
+export async function createCounterTransaction(store: StorageBackend, repo: Repo, tx: SpaceTx, counterAccountId: string): Promise<string> {
+  const id = repo.newId();
+  await repo.upsert('transaction', tx.spaceId, id, {
+    accountId: counterAccountId,
+    date: tx.date,
+    amountCents: -tx.amountCents,
+    currency: tx.currency,
+    merchant: tx.merchant,
+    txType: tx.txType,
+    linkedAccountId: tx.accountId,
+    transferPeerId: tx.id,
+    needsReview: 0 as const,
+  });
+  await writeTxTransform(repo, tx, { transferPeerId: id });
+  const account = await store.get('account', counterAccountId);
+  if (account?.deleted === 0 && account.source === 'manual') {
+    await repo.upsert('account', account.spaceId, account.id, { balanceCents: account.balanceCents - tx.amountCents });
+  }
+  return id;
+}

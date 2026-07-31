@@ -103,9 +103,31 @@ export function TransactionsScreen() {
     });
     // quick filter (redesign): expected/received value still open
     if (unsettledOnly) matched = matched.filter(hasUnsettledReimbursement);
+    // paired transfers are ONE event (arc 1): the incoming leg hides when
+    // its outgoing peer is listed too — unless an account filter is on
+    // (a per-account view needs its own leg for the running story)
+    if (filters.accountIds.size === 0) {
+      const ids = new Set(matched.map((item) => item.id));
+      matched = matched.filter((item) => !(item.transferPeerId && item.amountCents > 0 && ids.has(item.transferPeerId)));
+    }
     matched.sort((a, b) => b.date.localeCompare(a.date));
     return matched.slice(0, 200);
   }, [allTxs, query, filters, uncatOnly, unsettledOnly, catIds]);
+
+  // the collapsed row says where the money went: "Checking → Savings"
+  const peerNotes = useMemo(() => {
+    if (filters.accountIds.size > 0) return new Map<string, string>();
+    const byId = new Map((allTxs ?? []).map((item) => [item.id, item]));
+    const map = new Map<string, string>();
+    for (const item of txs ?? []) {
+      if (!item.transferPeerId || item.amountCents > 0) continue;
+      const peer = byId.get(item.transferPeerId);
+      const from = accountNames.get(item.accountId);
+      const to = peer && accountNames.get(peer.accountId);
+      if (from && to) map.set(item.id, `${from} → ${to}`);
+    }
+    return map;
+  }, [txs, allTxs, accountNames, filters.accountIds]);
 
   // display-currency lens: rows convert at their own day's fixing —
   // warm the rate cache for every date this list is about to show
@@ -202,6 +224,7 @@ export function TransactionsScreen() {
                   selected={tx.id === openTxId}
                   accountName={accountNames.get(tx.accountId)}
                   givenCents={givenByCredit.get(tx.id) ?? 0}
+                  transferNote={peerNotes.get(tx.id)}
                   onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })}
                 />
               ))}

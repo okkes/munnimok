@@ -189,6 +189,46 @@ describe('TxFormSheet (demo identity)', () => {
     expect(screen.queryByTestId('txform-account-demo_main')).toBeNull();
   });
 
+  it('a manual-counter transfer writes the mirror; the list collapses the pair', async () => {
+    await openForm();
+    fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '100,00' } });
+    fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Naar spaarpot' } });
+    fireEvent.click(screen.getByTestId('txform-kind'));
+    await screen.findByTestId('txkind-options');
+    fireEvent.click(screen.getByTestId('txkind-transfer'));
+    await screen.findByTestId('counter-accounts');
+    fireEvent.click(screen.getByTestId('counter-pick-demo_save'));
+    // the mirror offer shows for a MANUAL counter, checked by default
+    const mirror = (await screen.findByTestId('txform-mirror')) as HTMLInputElement;
+    expect(mirror.checked).toBe(true);
+    fireEvent.click(screen.getByTestId('txform-save'));
+
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    let outId = '';
+    await waitFor(async () => {
+      const rows = await db.transactions.filter((r) => r.merchant === 'Naar spaarpot' && r.deleted === 0).toArray();
+      expect(rows).toHaveLength(2); // both legs exist…
+      const out = rows.find((r) => r.amountCents < 0)!;
+      const inc = rows.find((r) => r.amountCents > 0)!;
+      expect(out.transferPeerId).toBe(inc.id); // …peered both ways
+      expect(inc.transferPeerId).toBe(out.id);
+      expect(inc).toMatchObject({ accountId: 'demo_save', txType: 'saving', linkedAccountId: 'demo_main', needsReview: 0 });
+      outId = out.id;
+    }, { timeout: 5000 });
+
+    // the LIST shows the pair as ONE row: the outgoing leg with the
+    // "From → To" note; the incoming leg stays hidden
+    await waitFor(() => {
+      const rows = [...screen.getByTestId('tx-list').querySelectorAll('[data-testid^="tx-row-"]')].filter((r) =>
+        r.textContent?.includes('Naar spaarpot'),
+      );
+      expect(rows).toHaveLength(1);
+      expect(screen.getByTestId(`tx-row-pair-${outId}`).textContent).toContain('→');
+    }, { timeout: 5000 });
+    db.close();
+  }, 15_000);
+
   it('with several manual accounts nothing pre-selects — save requires a pick', async () => {
     renderApp('/transactions');
     await screen.findByTestId('tx-list');

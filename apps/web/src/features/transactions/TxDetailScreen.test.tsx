@@ -46,6 +46,48 @@ describe('TxDetailScreen (demo identity)', () => {
     db.close();
   }, 15_000);
 
+  it('a paired transfer shows the counterpart row; unpair releases BOTH legs', async () => {
+    // build the pair through the real form (mirror checkbox default ON)
+    renderApp('/transactions');
+    await screen.findByTestId('tx-list');
+    fireEvent.click(screen.getByTestId('tx-add'));
+    await screen.findByTestId('txform-save');
+    fireEvent.click(await screen.findByTestId('txform-account'));
+    fireEvent.click(await screen.findByTestId('txform-account-demo_main'));
+    fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '75,00' } });
+    fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Pot in' } });
+    fireEvent.click(screen.getByTestId('txform-kind'));
+    await screen.findByTestId('txkind-options');
+    fireEvent.click(screen.getByTestId('txkind-transfer'));
+    await screen.findByTestId('counter-accounts');
+    fireEvent.click(screen.getByTestId('counter-pick-demo_save'));
+    await screen.findByTestId('txform-mirror');
+    fireEvent.click(screen.getByTestId('txform-save'));
+
+    const db = new MunniDB('munni_demo');
+    let outId = '';
+    let mirrorId = '';
+    await waitFor(async () => {
+      const rows = await db.transactions.filter((r) => r.merchant === 'Pot in' && r.deleted === 0).toArray();
+      expect(rows).toHaveLength(2);
+      outId = rows.find((r) => r.amountCents < 0)!.id;
+      mirrorId = rows.find((r) => r.amountCents > 0)!.id;
+    }, { timeout: 5000 });
+
+    // the out-leg's detail offers the counterpart row; unpair frees both
+    cleanup();
+    renderApp(`/transactions/${outId}`);
+    await screen.findByTestId('screen-tx-detail');
+    fireEvent.click(await screen.findByTestId('tx-detail-unpair'));
+    await waitFor(async () => {
+      expect((await db.transactions.get(outId))?.transferPeerId).toBeFalsy();
+      expect((await db.transactions.get(mirrorId))?.transferPeerId).toBeFalsy();
+    }, { timeout: 5000 });
+    // with a MANUAL counter and no peer, the create door returns
+    await screen.findByTestId('tx-detail-create-counter');
+    db.close();
+  }, 20_000);
+
   it('opens a transaction from the list and shows its detail', async () => {
     renderApp('/transactions');
     const list = await screen.findByTestId('tx-list');

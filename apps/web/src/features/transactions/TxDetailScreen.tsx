@@ -32,6 +32,8 @@ import { TxFormSheet } from './TxFormSheet';
 import { CounterpartySheet, TX_KIND_VISUAL, TxKindSheet, kindDetail } from './TxKindSheet';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { kindOf, standardTypeFor } from '@/domain/txKind';
+import { createCounterTransaction } from '@/application/transferMatch';
+import { writeTxTransform } from '@/db/joined';
 import { applyTypeChange, typeForLinkedAccount } from '@/domain/txType';
 import { merchantKey } from '@/domain/merchantKey';
 import { resolveTxDetailBlocks } from './TxDetailCustomizeScreen';
@@ -132,6 +134,46 @@ function DetailFacts({ tx, givenOut }: Readonly<{ tx: SpaceTx; givenOut: number 
 /** every other transaction of this merchant that still differs */
 const similarTo = (allTxs: SpaceTx[] | undefined, tx: SpaceTx, differs: (item: SpaceTx) => boolean): SpaceTx[] =>
   (allTxs ?? []).filter((item) => item.id !== tx.id && merchantKey(item.merchant) === merchantKey(tx.merchant) && differs(item));
+
+/** where this transfer stands with its other leg (arc 1 pair UX) */
+function transferPairState(
+  tx: Pick<SpaceTx, 'txType' | 'linkedAccountId' | 'transferPeerId'>,
+  linkedAccount: { source: string } | undefined,
+): 'peered' | 'awaiting' | 'offerCreate' | null {
+  if (kindOf(tx.txType) !== 'transfer' || !tx.linkedAccountId) return null;
+  if (tx.transferPeerId) return 'peered';
+  if (!linkedAccount) return null;
+  // manual counter: the other side can be created right here; a feed
+  // counter's real row arrives with the bank — the matcher claims it
+  return linkedAccount.source === 'manual' ? 'offerCreate' : 'awaiting';
+}
+
+/** the pair row: jump to the other leg, or release the link */
+function TransferPeerRow({ t, onOpen, onUnpair }: Readonly<{ t: TFunc; onOpen: () => void; onUnpair: () => void }>) {
+  return (
+    <>
+      <div className="mx-4 h-px bg-line-2" />
+      <div className="flex w-full items-center gap-3 px-4 py-3 text-[15px]">
+        <Icon name="swap-horizontal" size={20} color="var(--m-ink-3)" />
+        <button
+          data-testid="tx-detail-peer"
+          onClick={onOpen}
+          className="m-tap min-w-0 flex-1 border-none bg-transparent p-0 text-left text-[14px] font-medium text-accent-deep"
+        >
+          {t('tx.pairedCounterpart')}
+        </button>
+        <button
+          aria-label={t('tx.unpair')}
+          data-testid="tx-detail-unpair"
+          onClick={onUnpair}
+          className="m-tap flex h-8 w-8 items-center justify-center border-none bg-transparent text-ink-4"
+        >
+          <Icon name="link-off" size={16} />
+        </button>
+      </div>
+    </>
+  );
+}
 
 /** desktop panes get a CLOSE (leave the detail); mobile keeps history-back */
 function DetailBackButton({ panes, onClose, t }: Readonly<{ panes: boolean; onClose: () => void; t: TFunc }>) {
@@ -430,6 +472,13 @@ export function TxDetailScreen() {
   const color = cat.color ?? parent?.color ?? 'var(--m-ink-3)';
   const kind = kindOf(tx.txType);
   const kindDetailType = kindDetail(tx.txType);
+  const pairState = transferPairState(tx, linkedAccount);
+  // unpairing releases BOTH legs — one activity entry covers the action
+  const unpair = () => {
+    const peer = (allTxs ?? []).find((item) => item.id === tx.transferPeerId);
+    void transform(tx, { transferPeerId: null as never }, 'txLink');
+    if (peer) void writeTxTransform(repo, peer, { transferPeerId: null as never });
+  };
   // a credit that self-filed as Reimbursed keeps that category as long
   // as any link lives (user rule) — unlink first, then recategorize
   const categoryLocked = tx.catId === REIMBURSED_ID && givenOut > 0;
@@ -608,6 +657,33 @@ export function TxDetailScreen() {
             onOpenAccount={() => setCounterOpen(true)}
             onEdit={() => setCounterPickOpen(true)}
           />
+          {pairState === 'peered' && (
+            <TransferPeerRow
+              t={t}
+              onOpen={() => {
+                const peerId = tx.transferPeerId;
+                if (peerId) void navigate({ to: '/transactions/$txId', params: { txId: peerId } });
+              }}
+              onUnpair={() => unpair()}
+            />
+          )}
+          {pairState === 'awaiting' && (
+            <div className="px-4 pb-3">
+              <Pill testId="tx-detail-awaiting">{t('tx.awaitingCounterpart')}</Pill>
+            </div>
+          )}
+          {pairState === 'offerCreate' && (
+            <button
+              data-testid="tx-detail-create-counter"
+              onClick={() => {
+                const counterId = tx.linkedAccountId;
+                if (counterId) void createCounterTransaction(store, repo, tx, counterId);
+              }}
+              className="m-tap w-full border-none bg-transparent px-4 pb-3 text-left text-[13px] font-medium text-accent-deep"
+            >
+              {t('tx.createCounterpart', { name: linkedAccount?.name ?? '' })}
+            </button>
+          )}
         </div>
 
         {/* block: categories — ONE edit affordance for the whole block

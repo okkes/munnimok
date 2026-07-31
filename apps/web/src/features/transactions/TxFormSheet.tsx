@@ -6,6 +6,7 @@ import { typeForLinkedAccount } from '@/domain/txType';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { logActivity } from '@/application/activity';
+import { createCounterTransaction } from '@/application/transferMatch';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { useRecurrings } from '@/application/recurring';
 import { fmtCents, parseCents } from '@/lib/money';
@@ -387,6 +388,9 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
   const [counterOpen, setCounterOpen] = useState(false);
   const [recurringOpen, setRecurringOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  // manual counterparty: the other side can be written in the same
+  // stroke (user: "-100 to savings updated only half the picture")
+  const [mirrorCounter, setMirrorCounter] = useState(true);
 
   const allAccounts = useSpaceAccounts();
   const accounts = useMemo(() => allAccounts?.filter((a) => !a.archived), [allAccounts]);
@@ -413,6 +417,7 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
     setLinkedAccountId(initial.linkedAccountId);
     setRecurringId(initial.recurringId);
     setStagedSplits(tx?.splits ?? null);
+    setMirrorCounter(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, tx?.id]);
 
@@ -444,12 +449,13 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
   const save = () => {
     if (!valid || !effectiveAccount || cents === null) return;
     const signed = isExpense ? -Math.abs(cents) : Math.abs(cents);
+    const rowId = tx?.id ?? repo.newId();
     applyManualBalanceDeltas(repo, spaceId, manualBalanceDeltas(accounts, tx, effectiveAccount, signed));
     void logActivity(store, repo, spaceId, tx ? 'txEdit' : 'txAdd', merchant.trim());
     void repo.upsert(
       'transaction',
       spaceId,
-      tx?.id ?? repo.newId(),
+      rowId,
       manualTxFields({
         tx,
         accountId: effectiveAccount,
@@ -464,6 +470,26 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
         recurringId,
       }),
     );
+    // the checked mirror writes the OTHER side onto the manual counter
+    // account in the same stroke (peered both ways, balance follows)
+    if (!tx && mirrorCounter && kind === 'transfer' && linkedAccount?.source === 'manual') {
+      void createCounterTransaction(
+        store,
+        repo,
+        {
+          id: rowId,
+          spaceId,
+          accountId: effectiveAccount,
+          date,
+          amountCents: signed,
+          currency: formCurrency,
+          merchant: merchant.trim(),
+          txType: effectiveType,
+          needsReview: 0,
+        } as Parameters<typeof createCounterTransaction>[2],
+        linkedAccount.id,
+      ).catch(() => undefined);
+    }
     onOpenChange(false);
   };
 
@@ -562,6 +588,20 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
             onKind={() => setKindOpen(true)}
             onCounter={() => setCounterOpen(true)}
           />
+
+          {/* manual counter account: offer to write the other side too —
+              without it "-100 to savings" updated only half the picture */}
+          {!tx && kind === 'transfer' && linkedAccount?.source === 'manual' && (
+            <label className="flex items-center gap-2 px-1 text-[13px] text-ink-2">
+              <input
+                type="checkbox"
+                data-testid="txform-mirror"
+                checked={mirrorCounter}
+                onChange={(e) => setMirrorCounter(e.target.checked)}
+              />
+              {t('txform.mirrorCreate', { name: linkedAccount.name })}
+            </label>
+          )}
 
           {/* category row — opens the SAME unified editor as review */}
           <button
