@@ -40,6 +40,8 @@ describe('SpacesScreen (demo identity)', () => {
 
     fireEvent.click(screen.getByTestId('spaces-add'));
     fireEvent.change(await screen.findByTestId('space-create-name'), { target: { value: 'Side hustle' } });
+    // arc 4: the private-lock note sits on the form; defaults carry the rest
+    expect(screen.getByTestId('space-create-lock-note')).toBeTruthy();
     fireEvent.click(screen.getByTestId('space-create-save'));
 
     // new space appears and becomes active
@@ -48,10 +50,84 @@ describe('SpacesScreen (demo identity)', () => {
       expect(activeRow()!.textContent).toContain('Side hustle');
     });
 
+    // born private (arc 4) with the persisted defaults
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    const made = (await db.spaces.toArray()).find((s) => s.name === 'Side hustle');
+    expect(made).toMatchObject({ inviteLock: 1, periodType: 'month', periodDay: 1, currency: 'EUR' });
+    expect(made?.historyStartDate).toBeTruthy();
+    db.close();
+
     // switch back to the original space
     fireEvent.click(screen.getByTestId(first));
     await waitFor(() => expect(activeRow()!.getAttribute('data-testid')).toBe(first));
   });
+
+  it('the full create form customizes period, currency, history and look (arc 4)', async () => {
+    renderApp('/spaces');
+    await screen.findByTestId('screen-spaces');
+
+    fireEvent.click(screen.getByTestId('spaces-add'));
+    fireEvent.change(await screen.findByTestId('space-create-name'), { target: { value: 'Reis' } });
+    fireEvent.click(screen.getByTestId('space-create-icon-airplane'));
+
+    // period: weekly, starting Wednesday — the settings screen's controls
+    fireEvent.click(screen.getByTestId('space-create-period'));
+    fireEvent.click(await screen.findByTestId('space-period-week'));
+    fireEvent.click(screen.getByTestId('space-weekday-3'));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.getByTestId('space-create-period').textContent).toContain('Weekly'));
+
+    // currency: USD via the chip sheet (closes itself on pick)
+    fireEvent.click(screen.getByTestId('space-create-currency'));
+    fireEvent.click(await screen.findByTestId('space-create-currency-USD'));
+    await waitFor(() => expect(screen.getByTestId('space-create-currency').textContent).toContain('USD'));
+
+    // history start: an explicit date + the start-small hint
+    fireEvent.click(screen.getByTestId('space-create-history'));
+    await screen.findByTestId('space-create-history-hint');
+    fireEvent.change(screen.getByTestId('space-create-history-date'), { target: { value: '2026-06-01' } });
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    fireEvent.click(screen.getByTestId('space-create-save'));
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const made = (await db.spaces.toArray()).find((s) => s.name === 'Reis');
+      expect(made).toMatchObject({
+        icon: 'airplane',
+        periodType: 'week',
+        periodDay: 3,
+        currency: 'USD',
+        historyStartDate: '2026-06-01',
+        inviteLock: 1,
+      });
+    }, { timeout: 5000 });
+    db.close();
+  }, 15_000);
+
+  it('the owner toggle lifts and re-arms the private lock (arc 4)', async () => {
+    renderApp('/spaces');
+    await screen.findByTestId('screen-spaces');
+    const id = (await findActiveRow()).getAttribute('data-testid')!.replace('space-row-', '');
+
+    fireEvent.click(screen.getByTestId(`space-edit-${id}`));
+    await screen.findByTestId('screen-space-settings');
+    // demo space predates the lock: unlocked until the owner arms it
+    const toggle = (await screen.findByTestId('space-invite-lock')) as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
+    fireEvent.click(toggle);
+
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => expect((await db.spaces.get(id))?.inviteLock).toBe(1), { timeout: 5000 });
+    // the controlled checkbox must SHOW the write before the next tap —
+    // clicking mid-liveQuery-emission would re-toggle from stale state
+    await waitFor(() => expect((screen.getByTestId('space-invite-lock') as HTMLInputElement).checked).toBe(true), { timeout: 5000 });
+    fireEvent.click(screen.getByTestId('space-invite-lock'));
+    await waitFor(async () => expect((await db.spaces.get(id))?.inviteLock).toBe(0), { timeout: 5000 });
+    db.close();
+  }, 15_000);
 
   it('renames a space from the edit sheet', async () => {
     renderApp('/spaces');

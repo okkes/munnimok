@@ -29,6 +29,9 @@ export interface SpaceRow extends SyncEnvelope {
   color?: string;
   /** default start date (yyyy-mm-dd) for transaction history when accounts get attached */
   historyStartDate?: string;
+  /** private lock (arc 4): 1 = invites disabled until the owner unlocks.
+   *  New spaces create locked; absent (pre-arc rows) reads unlocked. */
+  inviteLock?: 0 | 1;
   /** landing-zone layout: block order + visibility, per space (synced) */
   homeBlocks?: { id: string; hidden?: 0 | 1 }[];
   /** tx-detail layout: section order + visibility under the fixed details block */

@@ -1,15 +1,20 @@
 import { useState } from 'react';
 import { useQuery } from '@/db/useQuery';
 import { useNavigate } from '@tanstack/react-router';
-import { useLang } from '@/i18n';
+import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useSession } from '@/app/session';
 import { SpaceInvitesBanner } from './SpaceSharing';
-import { DEFAULT_HISTORY_MONTHS, isoMonthsAgo } from './spaceDefaults';
+import { DEFAULT_HISTORY_MONTHS, SPACE_COLORS, SPACE_ICONS, isoMonthsAgo } from './spaceDefaults';
+import { PERIOD_KEYS, PeriodControls } from './PeriodSettingsScreen';
+import { CURRENCIES } from '@/domain/countries';
+import type { SpacePeriodType } from '@/db/types';
 import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
+import { ColorPicker } from '@/ui/ColorPicker';
 import { Icon } from '@/ui/Icon';
+import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { minaSuggestedSpaceName } from '@/features/mina/steps';
 
@@ -19,7 +24,7 @@ import { minaSuggestedSpaceName } from '@/features/mina/steps';
  * space creation stays a sheet (one decision).
  */
 export function SpacesScreen() {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const { store, repo, spaceId, setActiveSpace } = useData();
   const identity = useSession((s) => s.identity);
   const navigate = useNavigate();
@@ -27,6 +32,19 @@ export function SpacesScreen() {
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState('');
   const [nameError, setNameError] = useState(false);
+  // the full create form (arc 4): identity + the three defaults, each
+  // editable through the SAME controls their settings screens use —
+  // everything except the name has a default, "type a name, press
+  // Create" still works (Mina's act step stays valid)
+  const [icon, setIcon] = useState(SPACE_ICONS[0]);
+  const [color, setColor] = useState(SPACE_COLORS[0]);
+  const [periodType, setPeriodType] = useState<SpacePeriodType>('month');
+  const [periodDay, setPeriodDay] = useState(1);
+  const [currency, setCurrency] = useState('EUR');
+  const [historyStart, setHistoryStart] = useState(isoMonthsAgo(DEFAULT_HISTORY_MONTHS));
+  const [periodOpen, setPeriodOpen] = useState(false);
+  const [currencyOpen, setCurrencyOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const spaces = useQuery(store, async () => (await store.allRows('space')).filter((s) => s.deleted === 0), []);
 
@@ -48,17 +66,44 @@ export function SpacesScreen() {
       .upsert('space', id, id, {
         name: name.trim(),
         kind: 'personal',
-        currency: 'EUR',
-        periodType: 'month',
-        periodDay: 1,
+        icon,
+        color,
+        currency,
+        periodType,
+        periodDay,
         // persisted, not just displayed — attaching an account must see
         // the same default the settings screen shows (user bug report)
-        historyStartDate: isoMonthsAgo(DEFAULT_HISTORY_MONTHS),
+        historyStartDate: historyStart,
+        // private by birth (arc 4): invites stay disabled until the
+        // owner explicitly unlocks in space settings
+        inviteLock: 1,
         ...(profile?.name ? { createdByName: profile.name } : {}),
       })
       .then(() => setActiveSpace(id));
     setCreateOpen(false);
     setName('');
+  };
+
+  const openCreate = () => {
+    // Mina suggests the first names ("Private", "Family") — the user
+    // still edits and presses Create themselves
+    setName(minaSuggestedSpaceName() ?? '');
+    setNameError(false);
+    setIcon(SPACE_ICONS[0]);
+    setColor(SPACE_COLORS[0]);
+    setPeriodType('month');
+    setPeriodDay(1);
+    setCurrency('EUR');
+    setHistoryStart(isoMonthsAgo(DEFAULT_HISTORY_MONTHS));
+    setCreateOpen(true);
+  };
+
+  /** "Monthly · day 1" / "Weekly · Mon" — the period row's face */
+  const periodSummary = () => {
+    const label = t(PERIOD_KEYS[periodType]);
+    if (periodType === 'month') return `${label} · ${periodDay}`;
+    const weekday = new Intl.DateTimeFormat(LOCALES[lang], { weekday: 'short' }).format(new Date(2020, 0, 5 + Math.min(Math.max(periodDay, 1), 7)));
+    return `${label} · ${weekday}`;
   };
 
   return (
@@ -73,16 +118,7 @@ export function SpacesScreen() {
         trailing={
           <>
             <HelpButton tourId="spaces" />
-            <IconButton
-              label={t('space.new')}
-              testId="spaces-add"
-              onClick={() => {
-                // Mina suggests the first names ("Private", "Family") —
-                // the user still edits and presses Create themselves
-                setName(minaSuggestedSpaceName() ?? '');
-                setCreateOpen(true);
-              }}
-            >
+            <IconButton label={t('space.new')} testId="spaces-add" onClick={openCreate}>
               <Icon name="plus" size={22} />
             </IconButton>
           </>
@@ -152,8 +188,10 @@ export function SpacesScreen() {
         <p className="mt-2 px-1 text-[11px] leading-snug text-ink-4">{t('space.listHint')}</p>
       </div>
 
-      {/* Create space */}
-      <Sheet open={createOpen} onOpenChange={setCreateOpen} title={t('space.new')} size="compact">
+      {/* Create space — the full form (arc 4): identity + the three
+          defaults, each behind a row that opens the same editor its
+          settings screen uses. Only the name is required. */}
+      <Sheet open={createOpen} onOpenChange={setCreateOpen} title={t('space.new')} size="tall">
         <div className="flex flex-col gap-3 pt-1">
           <input
             data-testid="space-create-name"
@@ -170,9 +208,109 @@ export function SpacesScreen() {
               {t('space.nameTaken')}
             </p>
           )}
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {SPACE_ICONS.map((candidate) => (
+              <button
+                key={candidate}
+                data-testid={`space-create-icon-${candidate}`}
+                onClick={() => setIcon(candidate)}
+                className={`m-tap flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${
+                  icon === candidate ? 'border-accent bg-accent-soft text-accent-deep' : 'border-line bg-surface text-ink-2'
+                }`}
+              >
+                <Icon name={candidate} size={19} />
+              </button>
+            ))}
+          </div>
+          <ColorPicker colors={SPACE_COLORS} value={color} onChange={setColor} testIdPrefix="space-create-color" customLabel={t('color.custom')} />
+
+          {(
+            [
+              { testId: 'space-create-period', icon: 'calendar-month-outline', label: t('space.periodTitle'), value: periodSummary(), open: () => setPeriodOpen(true) },
+              { testId: 'space-create-currency', icon: 'cash-100', label: t('space.ledgerCurrency'), value: currency, open: () => setCurrencyOpen(true) },
+              {
+                testId: 'space-create-history',
+                icon: 'history',
+                label: t('space.historyStart'),
+                value: new Date(historyStart).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short', year: 'numeric' }),
+                open: () => setHistoryOpen(true),
+              },
+            ] as const
+          ).map((row) => (
+            <button
+              key={row.testId}
+              data-testid={row.testId}
+              onClick={row.open}
+              className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[14px] text-ink"
+            >
+              <Icon name={row.icon} size={18} color="var(--m-ink-3)" />
+              <span className="min-w-0 flex-1 truncate">{row.label}</span>
+              <span className="text-[13px] text-ink-3">{row.value}</span>
+              <Icon name="chevron-right" size={17} color="var(--m-ink-4)" />
+            </button>
+          ))}
+
+          {/* private by birth: the lock lifts in space settings, not here */}
+          <p className="flex items-center gap-1.5 px-1 text-[11px] leading-snug text-ink-4" data-testid="space-create-lock-note">
+            <Icon name="lock-outline" size={13} /> {t('space.createLockNote')}
+          </p>
           <Button data-testid="space-create-save" onClick={() => void createSpace()} disabled={!name.trim()}>
             {t('space.create')}
           </Button>
+        </div>
+      </Sheet>
+
+      {/* stacked: the three default editors, mirroring their settings twins */}
+      <Sheet open={periodOpen} onOpenChange={setPeriodOpen} title={t('space.periodTitle')} size="form">
+        <div className="flex flex-col gap-3 pt-1">
+          <PeriodControls
+            periodType={periodType}
+            periodDay={periodDay}
+            onChange={(changes) => {
+              if (changes.periodType) {
+                setPeriodType(changes.periodType);
+                setPeriodDay(1); // month-day and weekday share the field — reset on switch
+              }
+              if (changes.periodDay !== undefined) setPeriodDay(changes.periodDay);
+            }}
+          />
+        </div>
+      </Sheet>
+      <Sheet open={currencyOpen} onOpenChange={setCurrencyOpen} title={t('space.ledgerCurrency')} size="form" dragHandle>
+        <div className="flex flex-col gap-3 pt-1">
+          <p className="text-[12px] text-ink-3">{t('space.ledgerCurrencyInfo')}</p>
+          <div className="flex flex-wrap gap-2">
+            {CURRENCIES.map((c) => (
+              <Chip
+                key={c}
+                className="font-mono"
+                testId={`space-create-currency-${c}`}
+                selected={currency === c}
+                onClick={() => {
+                  setCurrency(c);
+                  setCurrencyOpen(false);
+                }}
+              >
+                {c}
+              </Chip>
+            ))}
+          </div>
+        </div>
+      </Sheet>
+      <Sheet open={historyOpen} onOpenChange={setHistoryOpen} title={t('space.historyStart')} size="form">
+        <div className="flex flex-col gap-3 pt-1">
+          <p className="text-[12px] text-ink-3">{t('space.historyStartSub')}</p>
+          {/* start small (arc 5): review stays manageable */}
+          <p className="text-[12px] text-ink-3" data-testid="space-create-history-hint">{t('space.historyStartHint')}</p>
+          <input
+            data-testid="space-create-history-date"
+            type="date"
+            value={historyStart}
+            onChange={(e) => {
+              if (e.target.value) setHistoryStart(e.target.value);
+            }}
+            className="h-12 w-full appearance-none rounded-input border border-line bg-surface px-4 text-left text-[15px] text-ink outline-none"
+          />
         </div>
       </Sheet>
     </div>

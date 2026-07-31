@@ -14,11 +14,7 @@ import { Button } from '@/ui/Button';
 import { ColorPicker } from '@/ui/ColorPicker';
 import { Icon } from '@/ui/Icon';
 
-const SPACE_ICONS = [
-  'leaf', 'home-outline', 'account-group-outline', 'briefcase-outline', 'airplane', 'heart-outline',
-  'piggy-bank-outline', 'cart-outline', 'star-outline', 'beach', 'paw', 'baby-carriage',
-];
-const SPACE_COLORS = ['#08372B', '#3498DB', '#27AE60', '#9B59B6', '#E74C3C', '#F39C12', '#16A085', '#E91E63'];
+import { SPACE_COLORS, SPACE_ICONS } from './spaceDefaults';
 
 /**
  * A space's settings, slimmed to its IDENTITY: name, image/icon, color —
@@ -226,6 +222,31 @@ export function SpaceSettingsScreen() {
               <Button data-testid="space-edit-save" onClick={() => void save()} disabled={!name.trim()}>
                 {t('action.save')}
               </Button>
+            )}
+
+            {/* the private lock (arc 4): spaces are born locked; lifting
+                it is this explicit owner act — applies immediately (LWW),
+                nothing else batches with it */}
+            {myRole === 'owner' && (
+              <>
+                <div className="m-cap mt-4 px-1">{t('space.sharingTitle')}</div>
+                <label className="flex items-start gap-3 rounded-card border border-line bg-surface px-4 py-3">
+                  <input
+                    type="checkbox"
+                    data-testid="space-invite-lock"
+                    checked={space.inviteLock === 1}
+                    onChange={(e) => {
+                      void repo.upsert('space', space.id, space.id, { inviteLock: e.target.checked ? 1 : 0 });
+                      void logActivity(store, repo, space.id, 'spaceEdit', space.name);
+                    }}
+                    className="mt-0.5 h-4 w-4 accent-[var(--m-accent)]"
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[14px] font-medium text-ink">{t('space.inviteLockLabel')}</span>
+                    <span className="block text-[12px] leading-snug text-ink-3">{t('space.inviteLockSub')}</span>
+                  </span>
+                </label>
+              </>
             )}
 
             {/* danger zone last: deleting is the one action that must never sit

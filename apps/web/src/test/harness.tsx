@@ -76,7 +76,7 @@ export const USER_TEST_DB = `munni_user_${USER_TEST_SUB}`;
 
 export interface UserAppOptions {
   /** spaces the fake server owns; their rows arrive via the bootstrap pull */
-  spaces?: { id: string; name: string; kind?: 'personal' | 'shared' }[];
+  spaces?: { id: string; name: string; kind?: 'personal' | 'shared'; inviteLock?: 0 | 1 }[];
   /** REST handlers keyed `${METHOD} ${pathname}` — everything unhandled is 404 */
   api?: Record<string, (body: unknown, url: URL) => unknown>;
 }
@@ -120,7 +120,14 @@ export function renderAppAsUser(path: string, { spaces = [{ id: 's-user', name: 
               spaceId: space.id,
               entity: 'space',
               entityId: space.id,
-              fields: { name: space.name, kind: space.kind ?? 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 },
+              fields: {
+                name: space.name,
+                kind: space.kind ?? 'personal',
+                currency: 'EUR',
+                periodType: 'month',
+                periodDay: 1,
+                ...(space.inviteLock !== undefined ? { inviteLock: space.inviteLock } : {}),
+              },
               hlc: '000000100-0000-server',
             },
           ],
