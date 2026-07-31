@@ -162,6 +162,36 @@ describe('unlinked transfer-kind migration (kind simplification)', () => {
   });
 });
 
+describe('retired debt subs refile by sign (2026-08-01)', () => {
+  const stores: DexieBackend[] = [];
+  afterEach(async () => {
+    for (const s of stores.splice(0)) await s.destroy();
+  });
+
+  it('lendMoney/creditCardPayment rows land on Repaid or Borrowed; others untouched', async () => {
+    const { migrateRetiredDebtSubs } = await import('./catalogMaintenance');
+    const store = new DexieBackend(new MunniDB(`munni_rds_${Math.random().toString(36).slice(2)}`));
+    stores.push(store);
+    const repo = new Repo(store, new HlcClock('rds'), { trackOutbox: false });
+    await repo.upsert('space', SPACE, SPACE, { name: 'P', kind: 'personal', currency: 'EUR', periodType: 'month' });
+    const base = { accountId: 'a', currency: 'EUR', merchant: 'X', txType: 'debtPayment' as const, needsReview: 0 as const };
+    await repo.upsert('transaction', SPACE, 'lent', { ...base, date: '2026-01-01', amountCents: -5_000, catId: 'lendMoney' });
+    await repo.upsert('transaction', SPACE, 'cc', { ...base, date: '2026-01-02', amountCents: 4_000, catId: 'creditCardPayment' });
+    await repo.upsert('transaction', SPACE, 'kept', { ...base, date: '2026-01-03', amountCents: -2_000, catId: 'loanRepayment' });
+    // a per-space overlay on a raw feed row refiles too
+    await repo.upsert('transaction', 'feedX', 'rawTx', { accountId: 'af', currency: 'EUR', merchant: 'B', date: '2026-01-04', amountCents: -900 } as never);
+    await repo.upsert('txMeta', SPACE, 'meta1', { txId: 'rawTx', catId: 'creditCardPayment' } as never);
+
+    expect(await migrateRetiredDebtSubs(store, repo)).toBe(3);
+    expect((await store.get('transaction', 'lent'))?.catId).toBe('loanRepayment'); // debit → Repaid
+    expect((await store.get('transaction', 'cc'))?.catId).toBe('debtBorrowed'); // credit → Borrowed
+    expect((await store.get('transaction', 'kept'))?.catId).toBe('loanRepayment');
+    expect((await store.get('txMeta', 'meta1'))?.catId).toBe('loanRepayment');
+    // marker gates the rerun
+    expect(await migrateRetiredDebtSubs(store, repo)).toBe(0);
+  });
+});
+
 describe('family-sub back-fill (arc 2 locked doors)', () => {
   const stores: DexieBackend[] = [];
   afterEach(async () => {

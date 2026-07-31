@@ -26,10 +26,10 @@ export function apiFeedGateway(sub: string): FeedGateway {
       }
       throw new Error(`feed registration failed (${res.status})`);
     },
-    async attach(spaceId, feedSpaceId, accountId) {
+    async attach(spaceId, feedSpaceId, accountId, historyFrom) {
       const res = await apiFetch(`/spaces/${spaceId}/accounts`, {
         method: 'POST',
-        body: JSON.stringify({ feedSpaceId, accountId }),
+        body: JSON.stringify({ feedSpaceId, accountId, historyFrom: historyFrom || undefined }),
       });
       if (!res.ok) throw new Error(`attach failed (${res.status})`);
     },

@@ -248,6 +248,33 @@ describe('importCamtStatements', () => {
     expect(await db.txMeta.count()).toBe(3);
   });
 
+  it('the import attach carries the space start date as the history gate (user bug: it attached ungated)', async () => {
+    const attachedFrom: (string | undefined)[] = [];
+    const gateway = {
+      register: async (id: string) => id,
+      attach: async (_s: string, _f: string, _a: string, historyFrom?: string) => {
+        attachedFrom.push(historyFrom);
+      },
+    };
+    await repo.upsert('space', 's1', 's1', {
+      name: 'P', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1, historyStartDate: '2026-07-01',
+    });
+
+    await importCamtStatements(repo, new DexieBackend(db), 's1', [statement()], gateway);
+    const link = (await db.accountLinks.where('spaceId').equals('s1').toArray())[0];
+    expect(link.historyFrom).toBe('2026-07-01');
+    expect(attachedFrom[0]).toBe('2026-07-01');
+    // the gate holds: June rows stay stored but out of sight
+    const visible = await visibleTransactions(new DexieBackend(db), 's1');
+    expect(visible.map((tx) => tx.date)).toEqual(['2026-07-05']);
+
+    // a user-customized gate survives a re-import untouched
+    await repo.upsert('accountLink', 's1', link.id, { historyFrom: '2026-06-01' });
+    await importCamtStatements(repo, new DexieBackend(db), 's1', [statement()], gateway);
+    expect((await db.accountLinks.where('spaceId').equals('s1').toArray())[0].historyFrom).toBe('2026-06-01');
+    expect(attachedFrom[1]).toBe('2026-06-01');
+  });
+
   it('a manual balance dated after the statement is kept', async () => {
     await repo.upsert('account', 's1', 'acct-manual', {
       name: 'Mijn ING',

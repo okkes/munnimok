@@ -107,9 +107,10 @@ describe('withKind (simplified kinds)', () => {
   });
 
   it('the locked family sub follows the sign; a deliberate category survives', async () => {
-    const { withFamilyCategory, withKind } = await import('./reviewDraft');
-    // funding kind: debit files "to another space", credit "from"
-    expect(withKind(initDraft(expenseTx, undefined, catalog), 'funding', -1000, catalog).catId).toBe('fundingOut');
+    const { withBareType, withFamilyCategory } = await import('./reviewDraft');
+    // funding is a transfer-family member picked by NAME (user correction
+    // 2026-08-01): debit files "to shared account", credit "from"
+    expect(withBareType(initDraft(expenseTx, undefined, catalog), 'funding', -1000, catalog).catId).toBe('fundingOut');
     expect(withFamilyCategory({ txType: 'funding', catId: undefined }, 2000).catId).toBe('fundingIn');
     // a deliberately picked category is never clobbered
     expect(withFamilyCategory({ txType: 'saving', catId: 'savingWithdraw' }, -1000).catId).toBe('savingWithdraw');

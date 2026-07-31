@@ -852,12 +852,7 @@ export function TxDetailScreen() {
             setCounterPickOpen(true);
             return;
           }
-          const directType = (): TxType => {
-            if (nextKind === 'adjustment') return 'adjustment';
-            if (nextKind === 'funding') return 'funding'; // no counterparty by design
-            return standardTypeFor(tx.amountCents);
-          };
-          retype(directType(), null, 'txCategory');
+          retype(nextKind === 'adjustment' ? 'adjustment' : standardTypeFor(tx.amountCents), null, 'txCategory');
         }}
       />
       {/* ONE category flow (review parity): a single row edits the plain

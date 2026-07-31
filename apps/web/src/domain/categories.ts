@@ -132,6 +132,8 @@ export const BUILTIN_CATEGORIES: BuiltinCategory[] = [
   {"id":"charity","parentId":"extra","nameKey":"cat.charity","icon":"handshake-outline","txTypes":["expense"],"direction":"debit"},
   {"id":"taxes","parentId":"extra","nameKey":"cat.taxes","icon":"bank-transfer-in","txTypes":["expense"],"direction":"debit"},
   {"id":"fee","parentId":"extra","nameKey":"cat.fee","icon":"credit-card-check-outline","txTypes":["expense"],"direction":"debit"},
+  // 2026-08-01 (user request): overdraft/loan interest charges
+  {"id":"interest","parentId":"extra","nameKey":"cat.interest","icon":"percent-outline","txTypes":["expense"],"direction":"debit"},
   {"id":"workExpense","parentId":"extra","nameKey":"cat.workExpense","icon":"briefcase-outline","txTypes":["expense"],"direction":"debit"},
   {"id":"familyCare","parentId":"extra","nameKey":"cat.familyCare","icon":"account-child-outline","txTypes":["expense"],"direction":"debit"},
   // moved from shopping: child care is rarely a "shopping" decision (catalog plan C2)
@@ -146,11 +148,11 @@ export const BUILTIN_CATEGORIES: BuiltinCategory[] = [
   {"id":"transferIn","parentId":"transfer","nameKey":"cat.transferIn","icon":"bank-transfer-in","txTypes":["transfer"],"direction":"credit"},
   {"id":"cashWithdraw","parentId":"transfer","nameKey":"cat.cashWithdraw","icon":"atm","txTypes":["transfer"],"direction":"debit"},
   {"id":"cashDeposit","parentId":"transfer","nameKey":"cat.cashDeposit","icon":"cash-plus","txTypes":["transfer"],"direction":"credit"},
+  // 2026-08-01 (user, ss review): the debt family is exactly the arc-2
+  // pair — Repaid (debit) / Borrowed (credit). lendMoney and
+  // creditCardPayment retired; migrateRetiredDebtSubs refiles their rows.
   {"id":"debt","nameKey":"cat.debt","icon":"credit-card-outline","color":"#9C27B0","isParent":true,"txTypes":["debtPayment"],"direction":"both"},
-  {"id":"lendMoney","parentId":"debt","nameKey":"cat.lendMoney","icon":"hand-coin-outline","txTypes":["debtPayment"],"direction":"debit"},
   {"id":"loanRepayment","parentId":"debt","nameKey":"cat.loanRepayment","icon":"bank-outline","txTypes":["debtPayment"],"direction":"debit"},
-  {"id":"creditCardPayment","parentId":"debt","nameKey":"cat.creditCardPayment","icon":"credit-card-clock-outline","txTypes":["debtPayment"],"direction":"debit"},
-  // arc 2 (2026-08-01): the credit side of the debt family — a drawdown
   {"id":"debtBorrowed","parentId":"debt","nameKey":"cat.debtBorrowed","icon":"bank-transfer-in","txTypes":["debtPayment"],"direction":"credit"},
   {"id":"investment","nameKey":"cat.investment","icon":"chart-timeline-variant","color":"#673AB7","isParent":true,"txTypes":["investment"],"direction":"both"},
   {"id":"invest","parentId":"investment","nameKey":"cat.invest","icon":"chart-areaspline","txTypes":["investment"],"direction":"both"},

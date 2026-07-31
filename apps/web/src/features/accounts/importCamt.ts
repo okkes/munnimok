@@ -6,6 +6,7 @@ import { cachedCatalog } from '@/sync/catalogSync';
 import type { MerchantMemory } from '@/domain/merchantMemory';
 import { buildSpaceMerchantMemory } from '@/application/prediction';
 import { UNCATEGORIZED_ID } from '@/domain/categories';
+import { DEFAULT_HISTORY_MONTHS, isoMonthsAgo } from '@/features/spaces/spaceDefaults';
 import type { Repo } from '@/db/repo';
 import type { StorageBackend } from '@/db/backend';
 import type { TxType } from '@/db/types';
@@ -139,7 +140,7 @@ export interface FeedGateway {
    *  else owns it (S1 squatting defence, never blocks the user) */
   register(preferredFeedId: string, accountRef: string): Promise<string>;
   /** server-authoritative attachment of the feed to the target space */
-  attach(spaceId: string, feedSpaceId: string, accountId: string): Promise<void>;
+  attach(spaceId: string, feedSpaceId: string, accountId: string, historyFrom?: string): Promise<void>;
 }
 
 /** Match statements to existing accounts by IBAN (creating where needed) and import entries idempotently. */
@@ -293,11 +294,19 @@ async function importIntoFeeds(
     }
 
     // attach to the space the user imported from (server first — the
-    // synced link row is the offline mirror of that authoritative fact)
-    await feeds.attach(spaceId, feedId, accountId);
-    await repo.upsert('accountLink', spaceId, accountLinkId(spaceId, feedId), {
+    // synced link row is the offline mirror of that authoritative fact).
+    // The link CARRIES the history gate (bug: it used to attach without
+    // one, so imported rows ignored the space's start date entirely);
+    // an existing link keeps whatever gate the user already chose.
+    const linkId = accountLinkId(spaceId, feedId);
+    const existingLink = await store.get('accountLink', linkId);
+    const historyFrom =
+      existingLink?.historyFrom ?? (await store.get('space', spaceId))?.historyStartDate ?? isoMonthsAgo(DEFAULT_HISTORY_MONTHS);
+    await feeds.attach(spaceId, feedId, accountId, historyFrom);
+    await repo.upsert('accountLink', spaceId, linkId, {
       feedSpaceId: feedId,
       accountId,
+      historyFrom,
     });
 
     accounts.push({

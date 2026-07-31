@@ -44,7 +44,6 @@ const todayIso = () => new Date().toISOString().slice(0, 10);
  */
 const typeForKind = (kind: TxKind, isExpense: boolean, counterType: TxType | null): TxType => {
   if (kind === 'adjustment') return 'adjustment';
-  if (kind === 'funding') return 'funding'; // no counterparty by design
   if (kind === 'transfer') return counterType ?? 'transfer';
   return isExpense ? 'expense' : 'income';
 };

@@ -40,7 +40,10 @@ async function linkSpacePairs(store: StorageBackend, repo: Repo, spaceId: string
     transferPeerId: tx.transferPeerId,
   });
 
-  const typed = all.filter((tx) => kindOf(tx.txType) === 'transfer');
+  // funding sits in the transfer family since 2026-08-01 but never has a
+  // second leg in these books (the shared account keeps its own) — it
+  // must not enter the pairing pool
+  const typed = all.filter((tx) => kindOf(tx.txType) === 'transfer' && tx.txType !== 'funding');
   const pairs = matchTransferPairs(typed.map(asLeg));
   let linked = 0;
   for (const [outId, incId] of pairs) {

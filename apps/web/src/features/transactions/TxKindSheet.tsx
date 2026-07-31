@@ -21,7 +21,6 @@ import { TX_TYPE_VISUAL } from './TxTypeSheet';
 export const TX_KIND_VISUAL: Record<TxKind, { icon: string; color: string }> = {
   standard: { icon: 'cash-multiple', color: '#27AE60' },
   transfer: { icon: 'swap-horizontal', color: '#2980B9' },
-  funding: { icon: 'hand-coin', color: '#16A085' },
   adjustment: { icon: 'tune-variant', color: '#7F8C8D' },
 };
 
@@ -88,9 +87,10 @@ export function TxKindSheet({
   );
 }
 
-/** the family members offered by the "no counter account" exit — funding
- *  is NOT here: it has its own kind and never takes a counterparty */
-const BARE_TYPES: readonly TxType[] = ['saving', 'investment', 'debtPayment', 'transfer'];
+/** the family members offered by the "no counter account" exit —
+ *  funding included (user correction 2026-08-01): money for a shared
+ *  bank account held with family or friends is only ever picked by name */
+const BARE_TYPES: readonly TxType[] = ['saving', 'investment', 'debtPayment', 'funding', 'transfer'];
 
 /**
  * The counterparty picker for transfers (user redesign): searchable like

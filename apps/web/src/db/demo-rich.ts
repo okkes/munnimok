@@ -23,7 +23,13 @@ const monthStartIso = (): string => iso(new Date(now().getFullYear(), now().getM
 const monthDay = (offset: number, day: number): string => {
   const base = new Date(now().getFullYear(), now().getMonth() + offset, 1);
   const last = new Date(base.getFullYear(), base.getMonth() + 1, 0).getDate();
-  return iso(new Date(base.getFullYear(), base.getMonth(), Math.min(day, last)));
+  const candidate = new Date(base.getFullYear(), base.getMonth(), Math.min(day, last));
+  if (candidate <= now()) return iso(candidate);
+  // never strand a row in the future (caught on Aug 1: "this month's
+  // 4th" hadn't happened) — an unarrived current-month day slides back
+  const prev = new Date(base.getFullYear(), base.getMonth() - 1, 1);
+  const prevLast = new Date(prev.getFullYear(), prev.getMonth() + 1, 0).getDate();
+  return iso(new Date(prev.getFullYear(), prev.getMonth(), Math.min(day, prevLast)));
 };
 
 export async function seedRichDemo(repo: Repo): Promise<void> {

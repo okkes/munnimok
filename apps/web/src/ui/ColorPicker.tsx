@@ -112,10 +112,11 @@ function ColorWheelSheet({ open, onOpenChange, initial, onApply }: Readonly<Colo
     (e.target as Element).setPointerCapture?.(e.pointerId);
     hueFromEvent(e);
   };
-
-  // same for the sliders — a vertical wobble while sliding must not drag
-  // the sheet
-  const keepGesture = (e: React.PointerEvent) => e.stopPropagation();
+  // …and the TOUCH stream must stay with the wheel too: the sheet's
+  // drag/scroll machinery listens to touch events separately from
+  // pointer events, and on iOS it swallowed the downward half of the
+  // ring drag as a swipe-to-dismiss (user ss 2026-08-01)
+  const keepTouch = (e: React.TouchEvent) => e.stopPropagation();
 
   const applyHexDraft = (raw: string) => {
     setHexDraft(raw);
@@ -141,6 +142,8 @@ function ColorWheelSheet({ open, onOpenChange, initial, onApply }: Readonly<Colo
           data-testid="colorwheel-ring"
           onPointerDown={onWheelPointerDown}
           onPointerMove={(e) => e.buttons === 1 && hueFromEvent(e)}
+          onTouchStart={keepTouch}
+          onTouchMove={keepTouch}
           className="relative shrink-0 touch-none rounded-full"
           style={{
             width: WHEEL,
@@ -172,7 +175,6 @@ function ColorWheelSheet({ open, onOpenChange, initial, onApply }: Readonly<Colo
             type="range"
             min={0}
             max={100}
-            onPointerDown={keepGesture}
             value={Math.round(s)}
             onChange={(e) => {
               setS(Number(e.target.value));
@@ -189,7 +191,6 @@ function ColorWheelSheet({ open, onOpenChange, initial, onApply }: Readonly<Colo
             type="range"
             min={5}
             max={95}
-            onPointerDown={keepGesture}
             value={Math.round(l)}
             onChange={(e) => {
               setL(Number(e.target.value));

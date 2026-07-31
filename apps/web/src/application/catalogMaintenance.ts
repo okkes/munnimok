@@ -114,6 +114,36 @@ export async function migrateUnlinkedTransferKinds(store: StorageBackend, repo: 
 }
 
 /**
+ * 2026-08-01 (user, ss review): the debt family shrank to exactly the
+ * arc-2 pair — Repaid / Borrowed. Rows on the retired lendMoney /
+ * creditCardPayment subs refile under the sign-picked family sub, raw
+ * rows and per-space overlays alike; review status stays untouched.
+ */
+const RETIRED_DEBT_SUBS = new Set(['lendMoney', 'creditCardPayment']);
+
+export async function migrateRetiredDebtSubs(store: StorageBackend, repo: Repo): Promise<number> {
+  const markerKey = 'debtSubsRetired_v1';
+  if (await store.metaGet(markerKey)) return 0;
+
+  let touched = 0;
+  for (const tx of await store.allRows('transaction')) {
+    if (tx.deleted === 0 && tx.catId && RETIRED_DEBT_SUBS.has(tx.catId)) {
+      await repo.upsert('transaction', tx.spaceId, tx.id, { catId: autoSubFor('debtPayment', tx.amountCents) });
+      touched++;
+    }
+  }
+  for (const meta of await store.allRows('txMeta')) {
+    if (meta.deleted === 0 && meta.catId && RETIRED_DEBT_SUBS.has(meta.catId)) {
+      const raw = await store.get('transaction', meta.txId);
+      await repo.upsert('txMeta', meta.spaceId, meta.id, { catId: autoSubFor('debtPayment', raw?.amountCents ?? -1) });
+      touched++;
+    }
+  }
+  await store.metaPut(markerKey, Date.now());
+  return touched;
+}
+
+/**
  * Arc 2 (locked doors) back-fill: transfer-family rows that still sit on
  * the uncategorized placeholder file under the family's sign-picked
  * locked sub — the list reads "Set aside" instead of a blank category

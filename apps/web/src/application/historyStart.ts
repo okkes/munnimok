@@ -61,6 +61,29 @@ export async function historyMoveImpact(store: StorageBackend, spaceId: string, 
 }
 
 /**
+ * One-shot heal (marker-gated): links attached by the OLD import flow
+ * carried no history gate at all, so imported rows ignored the space's
+ * start date. Back-fill every gateless link from its space's date; the
+ * import path writes the gate itself from here on.
+ */
+export async function migrateUngatedLinks(store: StorageBackend, repo: Repo): Promise<number> {
+  const markerKey = 'linkHistoryFrom_v1';
+  if (await store.metaGet(markerKey)) return 0;
+  let touched = 0;
+  const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0);
+  for (const space of spaces) {
+    if (!space.historyStartDate) continue;
+    for (const link of await spaceAccountLinks(store, space.id)) {
+      if (link.historyFrom) continue;
+      await repo.upsert('accountLink', space.id, link.id, { historyFrom: space.historyStartDate });
+      touched++;
+    }
+  }
+  await store.metaPut(markerKey, Date.now());
+  return touched;
+}
+
+/**
  * The write half: the space's date moves, every attachment's gate moves
  * with it (the settings sheet is the space-wide control), and — moving
  * newer — the space's own rows before the new start tombstone.

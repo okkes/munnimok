@@ -195,12 +195,33 @@ interface SheetProps {
    *  sticky` inside the scrollport: the keyboard translation and
    *  safe-area padding sent it drifting over the content (user ss) */
   footer?: ReactNode;
-  /** list sheets: the sheet drags/dismisses ONLY via the header drag
-   *  zone. Content touches never move the sheet — the lib's scroll
-   *  coordination watches its OWN scroller, so a nested list left content
-   *  drag armed on iOS (where touch-action pan-down is unimplemented) and
-   *  slow scrolls moved list + sheet together (user ss 2026-07-31). */
+  /** DEPRECATED no-op (2026-08-01): content drag is back for every
+   *  sheet — the capture guard below hands the gesture to whichever
+   *  scroller isn't at its top, which is what the header-only regime
+   *  tried (and failed) to approximate. Kept so ~20 call sites don't
+   *  churn; remove opportunistically. */
   dragHandle?: boolean;
+}
+
+/**
+ * Should this pointer/touch stay with the CONTENT instead of arming the
+ * sheet drag? Yes when it lands on an editable, an element that owns its
+ * gesture (`data-sheet-no-drag`, e.g. the color wheel), or inside ANY
+ * scroller — nested or the lib's own — that is not scrolled to its top:
+ * there, the gesture is a scroll. At the top, the drag arms and
+ * downward movement dismisses — scroll when you can, drag when you
+ * can't, the behavior the user asked for (2026-08-01, replacing the
+ * header-only drag regime of 2026-07-31).
+ */
+function gestureBelongsToContent(target: HTMLElement, stopAt: HTMLElement): boolean {
+  if (target.closest('input, textarea, select, [contenteditable="true"], [data-sheet-no-drag]')) return true;
+  for (let el: HTMLElement | null = target; el && el !== stopAt; el = el.parentElement) {
+    if (el.scrollHeight > el.clientHeight + 1 && el.scrollTop > 0) {
+      const overflowY = getComputedStyle(el).overflowY;
+      if (overflowY === 'auto' || overflowY === 'scroll') return true;
+    }
+  }
+  return false;
 }
 
 interface DesktopDialogProps {
@@ -300,7 +321,7 @@ function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, foote
  * cancelling inputs mid-typing, user report); stacked sheets lock their
  * parents automatically. Never build inline overlays.
  */
-export function Sheet({ open, onOpenChange, title, children, size, height, footer, dragHandle }: Readonly<SheetProps>) {
+export function Sheet({ open, onOpenChange, title, children, size, height, footer }: Readonly<SheetProps>) {
   const requested = height ?? (size ? SIZE_PX[size] : undefined);
   const { id, isLocked, depth } = useSheetStack(open);
   // registered while open so closeAllSheets() can dismiss leftovers
@@ -423,14 +444,18 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
           ref={(el) => registerCoveredEl(id, el)}
           className="flex min-h-0 flex-initial flex-col"
           style={{ transformOrigin: 'top center', height: fixedHeight }}
-          // a pointer landing on an editable must NEVER become a sheet
-          // drag (input-cancelled-while-typing, user report). Capture
-          // phase: the drag gesture binds natively on the lib's
-          // Header/Content elements, so a bubble-phase stop fires too
-          // late to keep the pointer stream with the input.
+          // a gesture landing on an editable, a self-handling element or
+          // a mid-scroll list must NEVER become a sheet drag (inputs:
+          // cancelled-while-typing report; lists: scroll moved list +
+          // sheet together, ss 2026-07-31). Capture phase on BOTH event
+          // families: the lib's drag binds pointer events, its scroll
+          // coordination touch events — a bubble-phase stop fires too
+          // late for either.
           onPointerDownCapture={(e) => {
-            const el = e.target as HTMLElement;
-            if (el.closest('input, textarea, select, [contenteditable="true"]')) e.stopPropagation();
+            if (gestureBelongsToContent(e.target as HTMLElement, e.currentTarget)) e.stopPropagation();
+          }}
+          onTouchStartCapture={(e) => {
+            if (gestureBelongsToContent(e.target as HTMLElement, e.currentTarget)) e.stopPropagation();
           }}
         >
           {/* full-height drag zone across the title area */}
@@ -439,15 +464,15 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
             {title && <div className="m-h3 px-5 pt-3 pb-1 text-ink">{title}</div>}
           </ModalSheet.Header>
           {/* content drags the sheet only at scroll-top or when nothing
-              scrolls (the lib's scroll-position coordination — the same
-              semantics our hand-rolled touchmove guard gave vaul);
-              bottom padding lives INSIDE the scroller because the lib
-              writes its keyboard inset onto the scroller's own style */}
+              scrolls: the lib coordinates its OWN scroller, and the
+              capture guard above extends the same at-top rule to every
+              nested scroller; bottom padding lives INSIDE the scroller
+              because the lib writes its keyboard inset onto the
+              scroller's own style */}
           {/* flex-auto (basis auto), same WebKit rule as the wrapper;
               the scroller swaps the lib's `height: 100%` (indefinite
               inside a flex-sized parent in WebKit) for flex sizing */}
           <ModalSheet.Content
-            disableDrag={dragHandle}
             className="min-h-0 flex-auto"
             scrollClassName="px-5"
             scrollStyle={{ height: 'auto', flex: '1 1 auto', minHeight: 0 }}

@@ -77,4 +77,19 @@ describe('history start moves (arc 5)', () => {
     const visible = (await visibleTransactions(store, SPACE)).map((t) => t.id).sort((a, b) => a.localeCompare(b));
     expect(visible).toEqual(['feed-in', 'feed-older', 'own-in', 'own-old']);
   });
+
+  it('back-fills gateless links from the space start, once (old-import heal)', async () => {
+    const { migrateUngatedLinks } = await import('./historyStart');
+    const { store, repo } = await seeded();
+    // an old-import link: attached with NO gate — every feed row leaked
+    await repo.upsert('accountLink', SPACE, accountLinkId(SPACE, 'feed2'), {
+      feedSpaceId: 'feed2', accountId: 'a-feed2', archived: 0,
+    });
+    expect(await migrateUngatedLinks(store, repo)).toBe(1);
+    expect((await store.get('accountLink', accountLinkId(SPACE, 'feed2')))?.historyFrom).toBe('2026-05-01');
+    // the seeded link already had its gate — untouched
+    expect((await store.get('accountLink', accountLinkId(SPACE, FEED)))?.historyFrom).toBe('2026-05-01');
+    // marker gates the rerun
+    expect(await migrateUngatedLinks(store, repo)).toBe(0);
+  });
 });

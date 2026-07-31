@@ -69,13 +69,9 @@ export function withType(draft: ReviewDraft, txType: TxType, catalog: DraftCatal
 export function withKind(draft: ReviewDraft, kind: TxKind, amountCents: number, catalog: DraftCatalog): ReviewDraft {
   if (kind === 'standard') return withType({ ...draft, linkedAccountId: undefined }, standardTypeFor(amountCents), catalog);
   if (kind === 'adjustment') return withType({ ...draft, linkedAccountId: undefined }, 'adjustment', catalog);
-  // funding: money to/from another space's pot — deliberately NO
-  // counterparty, the other side keeps its own books (user 2026-08-01)
-  if (kind === 'funding') {
-    return withFamilyCategory(withType({ ...draft, linkedAccountId: undefined }, 'funding', catalog), amountCents);
-  }
   // transfer: an already-linked counterparty keeps its derived member;
-  // otherwise plain 'transfer' until the (mandatory) pick lands
+  // otherwise plain 'transfer' until the pick (account or bare name —
+  // funding included, user correction 2026-08-01) lands
   return withFamilyCategory(withType(draft, draft.linkedAccountId ? draft.txType : 'transfer', catalog), amountCents);
 }
 

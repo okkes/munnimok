@@ -564,7 +564,7 @@ export function AccountsScreen() {
                       const stale = daysSince(through) > 7;
                       return (
                         <span
-                          className={`block truncate text-[11px] ${stale ? 'text-warning' : 'text-ink-4'}`}
+                          className={`block text-[11px] leading-snug ${stale ? 'text-warning' : 'text-ink-4'}`}
                           data-testid={`import-through-${i}`}
                         >
                           {t(stale ? 'import.throughStale' : 'import.through', { when: fmtTimeAgo(through, lang) })}
@@ -578,7 +578,7 @@ export function AccountsScreen() {
                       const preStart = start ? stmt.entries.filter((e) => e.date < start).length : 0;
                       if (preStart === 0) return null;
                       return (
-                        <span className="block truncate text-[11px] text-ink-4" data-testid={`import-prestart-${i}`}>
+                        <span className="block text-[11px] leading-snug text-ink-4" data-testid={`import-prestart-${i}`}>
                           {t('import.preStart', { n: preStart })}
                         </span>
                       );
