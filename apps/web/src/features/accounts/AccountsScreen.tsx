@@ -571,6 +571,18 @@ export function AccountsScreen() {
                         </span>
                       );
                     })()}
+                    {/* rows before the space's start import fine — say
+                        NOW that they will sit stored-but-hidden (arc 5) */}
+                    {(() => {
+                      const start = activeSpace?.historyStartDate;
+                      const preStart = start ? stmt.entries.filter((e) => e.date < start).length : 0;
+                      if (preStart === 0) return null;
+                      return (
+                        <span className="block truncate text-[11px] text-ink-4" data-testid={`import-prestart-${i}`}>
+                          {t('import.preStart', { n: preStart })}
+                        </span>
+                      );
+                    })()}
                   </span>
                   <span className="text-[12px] text-ink-3">
                     {stmt.entries.length === 1
@@ -591,6 +603,18 @@ export function AccountsScreen() {
             <p className="text-[14px] text-ink-2">
               {t('import.done', { n: importResult.imported, s: importResult.skipped })}
             </p>
+            {(() => {
+              const start = activeSpace?.historyStartDate;
+              const preStart = start
+                ? (importPreview ?? []).reduce((sum, stmt) => sum + stmt.entries.filter((e) => e.date < start).length, 0)
+                : 0;
+              if (preStart === 0) return null;
+              return (
+                <p className="text-[12px] text-ink-4" data-testid="import-result-prestart">
+                  {t('import.preStart', { n: preStart })}
+                </p>
+              );
+            })()}
             <Button variant="outline" data-testid="import-close" onClick={closeImport}>
               {t('action.done')}
             </Button>

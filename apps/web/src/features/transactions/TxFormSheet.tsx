@@ -5,6 +5,7 @@ import { UNCATEGORIZED_ID, autoSubFor } from '@/domain/categories';
 import { typeForLinkedAccount } from '@/domain/txType';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
+import { useQuery } from '@/db/useQuery';
 import { logActivity } from '@/application/activity';
 import { createCounterTransaction } from '@/application/transferMatch';
 import { catName, useCategories } from '@/features/categories/useCategories';
@@ -418,6 +419,9 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
 
   const allAccounts = useSpaceAccounts();
   const accounts = useMemo(() => allAccounts?.filter((a) => !a.archived), [allAccounts]);
+  // manual rows before the space's history start are refused (arc 5) —
+  // they would vanish behind the display gate the moment they saved
+  const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   // tier rule: hand-typed rows belong on MANUAL accounts only — linked
   // feeds are the bank's and imported (camt/csv) accounts are the next
   // upload's; manual entries there would duplicate or contradict them
@@ -454,8 +458,9 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
   // the counterparty derives the type; the bare exit (arc 2) names it directly
   const effectiveType: TxType = typeForKind(kind, isExpense, linkedAccount ? typeForLinkedAccount(linkedAccount.type) : bareType);
   const counterMissing = counterUndecided(kind, linkedAccount, bareType);
+  const beforeStart = !!space?.historyStartDate && !!date && date < space.historyStartDate;
   const kindDetailType = kindDetail(effectiveType);
-  const valid = isValidManualTx({ merchant, cents, account: effectiveAccount, date, counterMissing });
+  const valid = isValidManualTx({ merchant, cents, account: effectiveAccount, date, counterMissing }) && !beforeStart;
 
   const formCurrency = accounts?.find((a) => a.id === effectiveAccount)?.currency ?? 'EUR';
   // the editor needs a SpaceTx shape; a NEW manual tx builds it from the
@@ -596,6 +601,24 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
               <Icon name="chevron-down" size={18} color="var(--m-ink-4)" />
             </span>
           </div>
+          {/* before the space starts (arc 5): refuse with the way out —
+              one tap moves the start back to this very date */}
+          {beforeStart && space?.historyStartDate && (
+            <div className="flex flex-col gap-2 rounded-card border border-line bg-bg-2 px-4 py-3" data-testid="txform-before-start">
+              <p className="text-[12px] text-negative">{t('txform.beforeStart', { date: space.historyStartDate })}</p>
+              <Button
+                size="sm"
+                variant="outline"
+                data-testid="txform-move-start"
+                onClick={() => {
+                  void repo.upsert('space', spaceId, spaceId, { historyStartDate: date });
+                  void logActivity(store, repo, spaceId, 'spaceEdit', space.name);
+                }}
+              >
+                {t('txform.moveStart')}
+              </Button>
+            </div>
+          )}
 
           {/* account — a full field + picker sheet (the chip strip felt
               odd, user 2026-07-31); open-banking accounts are not offered */}

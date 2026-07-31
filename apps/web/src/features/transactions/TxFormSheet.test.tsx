@@ -278,6 +278,41 @@ describe('TxFormSheet (demo identity)', () => {
     await waitFor(() => expect(save.disabled).toBe(false));
   });
 
+  it('a date before the space start is refused; one tap moves the start (arc 5)', async () => {
+    renderApp('/transactions');
+    await screen.findByTestId('tx-list');
+    const [{ MunniDB }, { DexieBackend }, { Repo }, { HlcClock }] = await Promise.all([
+      import('@/db/schema'),
+      import('@/db/backend'),
+      import('@/db/repo'),
+      import('@/sync/hlc'),
+    ]);
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('hs'), { trackOutbox: false });
+    await repo.upsert('space', 'demo_space', 'demo_space', { historyStartDate: '2026-06-01' });
+
+    fireEvent.click(screen.getByTestId('tx-add'));
+    await screen.findByTestId('txform-save');
+    fireEvent.click(await screen.findByTestId('txform-account'));
+    fireEvent.click(await screen.findByTestId('txform-account-demo_main'));
+    fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '9,99' } });
+    fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Oud bonnetje' } });
+    fireEvent.change(screen.getByTestId('txform-date'), { target: { value: '2026-05-15' } });
+
+    // refused with the way out, not a dead end
+    await screen.findByTestId('txform-before-start');
+    expect((screen.getByTestId('txform-save') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByTestId('txform-move-start'));
+
+    // the space start moved to the row's date — the error clears, save arms
+    await waitFor(async () => {
+      expect((await db.spaces.get('demo_space'))?.historyStartDate).toBe('2026-05-15');
+    }, { timeout: 5000 });
+    await waitFor(() => expect(screen.queryByTestId('txform-before-start')).toBeNull());
+    expect((screen.getByTestId('txform-save') as HTMLButtonElement).disabled).toBe(false);
+    db.close();
+  }, 15_000);
+
   it('the income toggle stores a positive amount', async () => {
     await openForm();
     fireEvent.click(screen.getByTestId('txform-income'));

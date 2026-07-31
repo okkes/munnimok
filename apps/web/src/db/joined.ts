@@ -53,12 +53,18 @@ export async function spaceAccountLinks(store: StorageBackend, spaceId: string):
 
 /** every transaction the space sees: legacy merged rows + joined feed rows */
 export async function visibleTransactions(store: StorageBackend, spaceId: string): Promise<SpaceTx[]> {
-  const [own, links, metas] = await Promise.all([
+  const [own, links, metas, space] = await Promise.all([
     store.bySpace('transaction', spaceId),
     spaceAccountLinks(store, spaceId),
     store.bySpace('txMeta', spaceId),
+    store.get('space', spaceId),
   ]);
-  const legacy = own.filter((t) => t.deleted === 0);
+  // the space's own rows respect the history start too (arc 5): stored
+  // in full, filtered at display — exactly like attached feed rows.
+  // Rows from before the start (sync races, a start date moved newer)
+  // stay in the database but out of every screen.
+  const startGate = space?.historyStartDate;
+  const legacy = own.filter((t) => t.deleted === 0 && (!startGate || t.date >= startGate));
   const metaByTx = new Map(metas.filter((m) => m.deleted === 0).map((m) => [m.txId, m]));
 
   const out: SpaceTx[] = [...legacy];
