@@ -63,6 +63,12 @@ const TILE_META: Record<OverviewKind, { icon: string; color: string; field: keyo
   debt: { icon: 'hand-coin-outline', color: 'var(--m-special)', field: 'debtCents', signed: true },
 };
 
+/** signed tiles color their VALUE by direction; the rest stay plain ink */
+const tileValueClass = (kind: OverviewKind, cents: number): string => {
+  if (!TILE_META[kind].signed) return 'text-ink';
+  return cents < 0 ? 'text-negative' : 'text-accent-deep';
+};
+
 export function HomeScreen() {
   const { t, lang } = useLang();
   const { store, spaceId } = useData();
@@ -451,11 +457,7 @@ export function HomeScreen() {
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block text-[10px] font-medium text-ink-3">{t(`overview.${kind}`)}</span>
-                <span
-                  className={`m-num block truncate text-[13px] font-semibold ${
-                    TILE_META[kind].signed ? (summary[TILE_META[kind].field] < 0 ? 'text-negative' : 'text-accent-deep') : 'text-ink'
-                  }`}
-                >
+                <span className={`m-num block truncate text-[13px] font-semibold ${tileValueClass(kind, summary[TILE_META[kind].field])}`}>
                   {fmt(summary[TILE_META[kind].field], currency)}
                 </span>
               </span>
