@@ -214,9 +214,10 @@ function applyOwnCounterDefault(
   baseDraft: ReviewDraft | null,
   ownCounter: { id: string; type: AccountType } | undefined,
   cats: ReturnType<typeof useCategories>,
+  amountCents: number,
 ): ReviewDraft | null {
   if (!baseDraft || !ownCounter || baseDraft.linkedAccountId) return baseDraft;
-  const linked = withLinkedAccount(baseDraft, { id: ownCounter.id, type: ownCounter.type }, cats);
+  const linked = withLinkedAccount(baseDraft, { id: ownCounter.id, type: ownCounter.type }, cats, amountCents);
   return linked.catId ? linked : withCategory(linked, 'uncategorized', cats);
 }
 
@@ -606,7 +607,7 @@ export function ReviewScreen() {
   // untouched cards follow the tx + the (async) prediction live
   const baseDraft = tx ? initDraft(tx, prediction?.catId, cats) : null;
   const ownTransferDraft = useMemo(
-    () => applyOwnCounterDefault(baseDraft, ownCounter, cats),
+    () => applyOwnCounterDefault(baseDraft, ownCounter, cats, tx?.amountCents ?? 0),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [tx?.id, ownCounter, prediction?.catId, cats],
   );
@@ -1045,7 +1046,7 @@ export function ReviewScreen() {
           currentLinkedId={draft.linkedAccountId}
           onChoose={(account) => {
             counterChosen.current = true;
-            setStagedDraft(withLinkedAccount(draft, account, cats));
+            setStagedDraft(withLinkedAccount(draft, account, cats, tx?.amountCents));
           }}
         />
       )}

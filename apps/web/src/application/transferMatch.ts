@@ -3,6 +3,7 @@ import type { SpaceTx } from '@/db/joined';
 import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
 import { kindOf } from '@/domain/txKind';
+import { autoSubFor } from '@/domain/categories';
 import { matchTransferPairs } from '@/domain/transferMatch';
 import type { TransferLeg } from '@/domain/transferMatch';
 
@@ -64,8 +65,14 @@ async function linkSpacePairs(store: StorageBackend, repo: Repo, spaceId: string
     paired.add(out.id);
     paired.add(twin.id);
     // the twin becomes the typed mirror: same family member, pointing
-    // back, settled — exactly what a manual link would have produced
-    await writePair(repo, out, twin, { txType: out.txType, linkedAccountId: out.accountId, needsReview: 0 });
+    // back, settled, filed under the family's sign-picked locked sub —
+    // exactly what a manual link would have produced
+    await writePair(repo, out, twin, {
+      txType: out.txType,
+      linkedAccountId: out.accountId,
+      needsReview: 0,
+      catId: autoSubFor(out.txType, twin.amountCents),
+    });
     linked++;
   }
   return linked;
@@ -94,6 +101,7 @@ export async function createCounterTransaction(store: StorageBackend, repo: Repo
     currency: tx.currency,
     merchant: tx.merchant,
     txType: tx.txType,
+    catId: autoSubFor(tx.txType, -tx.amountCents),
     linkedAccountId: tx.accountId,
     transferPeerId: tx.id,
     needsReview: 0 as const,

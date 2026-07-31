@@ -100,8 +100,19 @@ describe('withKind (simplified kinds)', () => {
     expect(withKind(linked, 'transfer', -1000, catalog).txType).toBe('saving');
     expect(withKind(initDraft(expenseTx, 'groceries', catalog), 'transfer', -1000, catalog)).toMatchObject({
       txType: 'transfer',
-      catId: undefined, // groceries does not speak transfer — ask again
+      // arc 2 locked doors: the invalidated spending category files under
+      // the family's sign-picked sub instead of asking again
+      catId: 'transferOut',
     });
+  });
+
+  it('the locked family sub follows the sign; a deliberate category survives', async () => {
+    const { withFamilyCategory, withKind } = await import('./reviewDraft');
+    // funding kind: debit files "to another space", credit "from"
+    expect(withKind(initDraft(expenseTx, undefined, catalog), 'funding', -1000, catalog).catId).toBe('fundingOut');
+    expect(withFamilyCategory({ txType: 'funding', catId: undefined }, 2000).catId).toBe('fundingIn');
+    // a deliberately picked category is never clobbered
+    expect(withFamilyCategory({ txType: 'saving', catId: 'savingWithdraw' }, -1000).catId).toBe('savingWithdraw');
   });
 
   it('adjustment clears the counterparty and confirms without a real category', async () => {

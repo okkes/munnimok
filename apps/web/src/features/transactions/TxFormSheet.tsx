@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useSpaceAccounts } from '@/application/transactions';
-import { UNCATEGORIZED_ID } from '@/domain/categories';
+import { UNCATEGORIZED_ID, autoSubFor } from '@/domain/categories';
 import { typeForLinkedAccount } from '@/domain/txType';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
@@ -224,13 +224,16 @@ function manualTxFields(args: {
   linkedAccountId: string | null;
   recurringId: string | null;
 }): Partial<Omit<TransactionRow, 'id' | 'spaceId'>> {
+  // arc 2 locked doors: an uncategorized transfer-family row files under
+  // the family's sign-picked sub instead of the hidden placeholder
+  const familySub = args.catId === UNCATEGORIZED_ID && !args.stagedSplits?.length ? autoSubFor(args.txType, args.signed) : undefined;
   return {
     accountId: args.accountId,
     date: args.date,
     amountCents: args.signed,
     currency: args.currency,
     merchant: args.merchant,
-    catId: args.catId,
+    catId: familySub ?? args.catId,
     txType: args.txType,
     needsReview: 0 as const,
     // splits staged in the unified editor travel with the write

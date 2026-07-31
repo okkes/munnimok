@@ -1,4 +1,4 @@
-import { UNCATEGORIZED_ID } from './categories';
+import { UNCATEGORIZED_ID, autoSubFor } from './categories';
 import { primaryCatId } from './splits';
 import { standardTypeFor } from './txKind';
 import type { TxKind } from './txKind';
@@ -71,20 +71,40 @@ export function withKind(draft: ReviewDraft, kind: TxKind, amountCents: number, 
   if (kind === 'adjustment') return withType({ ...draft, linkedAccountId: undefined }, 'adjustment', catalog);
   // funding: money to/from another space's pot — deliberately NO
   // counterparty, the other side keeps its own books (user 2026-08-01)
-  if (kind === 'funding') return withType({ ...draft, linkedAccountId: undefined }, 'funding', catalog);
+  if (kind === 'funding') {
+    return withFamilyCategory(withType({ ...draft, linkedAccountId: undefined }, 'funding', catalog), amountCents);
+  }
   // transfer: an already-linked counterparty keeps its derived member;
   // otherwise plain 'transfer' until the (mandatory) pick lands
-  return withType(draft, draft.linkedAccountId ? draft.txType : 'transfer', catalog);
+  return withFamilyCategory(withType(draft, draft.linkedAccountId ? draft.txType : 'transfer', catalog), amountCents);
 }
 
-/** the counter-account suggests its type; the suggestion runs through withType */
+/**
+ * Arc 2 (locked doors): a transfer-family draft without a REAL category
+ * files under the family's sign-picked locked sub — the card reads
+ * "Transfer out" instead of hiding behind the uncategorized placeholder.
+ * A deliberate category (splits included) is never touched.
+ */
+export function withFamilyCategory(draft: ReviewDraft, amountCents: number): ReviewDraft {
+  if (draft.splits?.length) return draft;
+  const sub = autoSubFor(draft.txType, amountCents);
+  if (!sub) return draft;
+  if (draft.catId && draft.catId !== UNCATEGORIZED_ID) return draft;
+  return { ...draft, catId: sub };
+}
+
+/** the counter-account suggests its type; the suggestion runs through
+ *  withType, and a placeholder category files under the family's locked
+ *  sub when the money's sign is known (arc 2) */
 export function withLinkedAccount(
   draft: ReviewDraft,
   account: { id: string; type: AccountType } | null,
   catalog: DraftCatalog,
+  amountCents?: number,
 ): ReviewDraft {
   if (!account) return { ...draft, linkedAccountId: undefined };
-  return withType({ ...draft, linkedAccountId: account.id }, typeForLinkedAccount(account.type), catalog);
+  const next = withType({ ...draft, linkedAccountId: account.id }, typeForLinkedAccount(account.type), catalog);
+  return amountCents === undefined ? next : withFamilyCategory(next, amountCents);
 }
 
 /** splits carry the category: the largest slice represents the whole */
