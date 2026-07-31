@@ -7,6 +7,7 @@ import { getApiCapabilities } from '@/lib/api';
 import { useSession } from '@/app/session';
 import { importCamtStatements, statementCoverageEnd } from './importCamt';
 import { linkAllCounterparties } from '@/application/counterLink';
+import { linkTransferPairs } from '@/application/transferMatch';
 import { applyTitleMemory } from '@/application/titleMemory';
 import { linkPaypalFunding } from '@/application/paypalLink';
 import type { ImportResult } from './importCamt';
@@ -260,6 +261,7 @@ export function AccountsScreen() {
     // (and vice versa) — retro-link them (user rule)
     await linkAllCounterparties(store, repo, spaceId).catch(() => undefined);
     await linkPaypalFunding(store, repo, spaceId).catch(() => undefined);
+    await linkTransferPairs(store, repo).catch(() => undefined);
     await applyTitleMemory(store, repo, spaceId).catch(() => undefined);
     // the import may have registered new feeds — refresh ownership so the
     // new accounts classify under MINE, not "shared with me"

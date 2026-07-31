@@ -147,6 +147,10 @@ export interface TransactionRow extends SyncEnvelope {
   reimbursements?: TxReimbursement[];
   /** counter-account for transfers/savings/debt payments — locks txType */
   linkedAccountId?: string;
+  /** the MIRROR transaction of a transfer pair (the other account's leg)
+   *  — written on both legs by the matcher or a manual link; the list
+   *  collapses a visible pair into one row */
+  transferPeerId?: string;
   /** the recurring cost this expense pays (rent, a subscription, …) */
   recurringId?: string;
   /** the event this transaction belongs to (holiday, wedding, …) */
@@ -175,6 +179,7 @@ export interface TxMetaRow extends SyncEnvelope {
   splits?: TxSplit[];
   reimbursements?: TxReimbursement[];
   linkedAccountId?: string;
+  transferPeerId?: string;
   recurringId?: string;
   eventId?: string;
 }

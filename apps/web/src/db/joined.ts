@@ -40,6 +40,7 @@ function joinTx(raw: TransactionRow, meta: TxMetaRow | undefined, spaceId: strin
     splits: meta?.splits,
     reimbursements: meta?.reimbursements,
     linkedAccountId: meta?.linkedAccountId,
+    transferPeerId: meta?.transferPeerId,
     recurringId: meta?.recurringId,
     eventId: meta?.eventId,
   };
@@ -91,7 +92,10 @@ export async function visibleAccounts(store: StorageBackend, spaceId: string): P
 
 /** transformation fields a space may hold an opinion on */
 export type TxTransformFields = Partial<
-  Pick<TxMetaRow, 'catId' | 'txType' | 'needsReview' | 'notes' | 'titleOverride' | 'splits' | 'reimbursements' | 'linkedAccountId' | 'recurringId' | 'eventId'>
+  Pick<
+    TxMetaRow,
+    'catId' | 'txType' | 'needsReview' | 'notes' | 'titleOverride' | 'splits' | 'reimbursements' | 'linkedAccountId' | 'transferPeerId' | 'recurringId' | 'eventId'
+  >
 >;
 
 /**
