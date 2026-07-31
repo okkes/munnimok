@@ -751,8 +751,13 @@ export function TxDetailScreen() {
             setCounterPickOpen(true);
             return;
           }
+          const directType = (): TxType => {
+            if (nextKind === 'adjustment') return 'adjustment';
+            if (nextKind === 'funding') return 'funding'; // no counterparty by design
+            return standardTypeFor(tx.amountCents);
+          };
           const fields = applyTypeChange({
-            nextType: nextKind === 'adjustment' ? 'adjustment' : standardTypeFor(tx.amountCents),
+            nextType: directType(),
             linkedAccountId: null,
             currentCatId: tx.catId,
             catTxTypes: cats.byId(tx.catId).txTypes,

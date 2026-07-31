@@ -56,7 +56,7 @@ describe('applyTypeChange', () => {
   });
 
   it('covers every type in the catalog list', () => {
-    expect(ALL_TX_TYPES).toHaveLength(7);
+    expect(ALL_TX_TYPES).toHaveLength(8); // + funding (2026-08-01)
     for (const type of ALL_TX_TYPES) {
       expect(applyTypeChange({ nextType: type, linkedAccountId: null, currentCatId: undefined, catTxTypes: [] }).txType).toBe(type);
     }

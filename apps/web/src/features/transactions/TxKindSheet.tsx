@@ -20,6 +20,7 @@ import { Sheet } from '@/ui/Sheet';
 export const TX_KIND_VISUAL: Record<TxKind, { icon: string; color: string }> = {
   standard: { icon: 'cash-multiple', color: '#27AE60' },
   transfer: { icon: 'swap-horizontal', color: '#2980B9' },
+  funding: { icon: 'hand-coin', color: '#16A085' },
   adjustment: { icon: 'tune-variant', color: '#7F8C8D' },
 };
 

@@ -7,6 +7,7 @@ export const ALL_TX_TYPES: TxType[] = [
   'transfer',
   'debtPayment',
   'investment',
+  'funding',
   'adjustment',
 ];
 

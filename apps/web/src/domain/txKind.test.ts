@@ -10,9 +10,10 @@ describe('txKind', () => {
     expect(kindOf('saving')).toBe('transfer');
     expect(kindOf('debtPayment')).toBe('transfer');
     expect(kindOf('investment')).toBe('transfer');
+    expect(kindOf('funding')).toBe('funding'); // its own kind: no counterparty, other space keeps its books
     expect(kindOf('adjustment')).toBe('adjustment');
     // the mapping must stay total — a new TxType without a kind is a bug
-    for (const type of ALL_TX_TYPES) expect(['standard', 'transfer', 'adjustment']).toContain(kindOf(type));
+    for (const type of ALL_TX_TYPES) expect(['standard', 'transfer', 'funding', 'adjustment']).toContain(kindOf(type));
   });
 
   it('standard resolves by sign', () => {

@@ -274,8 +274,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
         await migrateUnlinkedTransferKinds(store, repo);
         // heal rows the pre-2026-07-28 bulk-apply typed against their sign
         await migrateSignContradictions(store, repo);
-        // transfers are ONE event with two legs — pair everything this
-        // device sees (spans spaces: the family case's legs live apart)
+        // transfers are ONE event with two legs — pair them within each
+        // space's own books (never across: funding covers that case)
         const { linkTransferPairs } = await import('@/application/transferMatch');
         await linkTransferPairs(store, repo);
       })().catch(() => undefined);

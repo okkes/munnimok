@@ -7,13 +7,10 @@ import { matchTransferPairs } from '@/domain/transferMatch';
 import type { TransferLeg } from '@/domain/transferMatch';
 
 /**
- * Pair the two legs of a transfer across EVERYTHING this device sees —
- * the union of all spaces' visible transactions. That deliberately spans
- * spaces: the family case sends money from a private-space account to a
- * joint account attached only to the shared space; neither space sees
- * both legs, the union does. Each leg's peer id is written through its
- * OWN space's transform path (overlay for feed rows), so members who
- * cannot see the other space simply see an unpaired transfer.
+ * Pair the two legs of a transfer WITHIN each space's own books. Spaces
+ * never reference each other's transactions (user rule 2026-08-01 — the
+ * cross-space case is the FUNDING type instead: each side keeps its own
+ * books, nothing points across).
  *
  * Idempotent and conservative (PayPal-matcher rules): peered rows never
  * re-enter, ambiguity leaves legs alone. Second pass: an out-leg whose
@@ -23,15 +20,16 @@ import type { TransferLeg } from '@/domain/transferMatch';
  */
 export async function linkTransferPairs(store: StorageBackend, repo: Repo): Promise<number> {
   const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0 && !!s.kind);
-  const byId = new Map<string, SpaceTx>();
+  let linked = 0;
   for (const space of spaces) {
-    for (const tx of await visibleTransactions(store, space.id)) {
-      // the same feed row can be visible in several spaces — first view
-      // wins; the peer link is about the EVENT, not the viewing space
-      if (!byId.has(tx.id)) byId.set(tx.id, tx);
-    }
+    linked += await linkSpacePairs(store, repo, space.id);
   }
-  const all = [...byId.values()];
+  return linked;
+}
+
+async function linkSpacePairs(store: StorageBackend, repo: Repo, spaceId: string): Promise<number> {
+  const all = await visibleTransactions(store, spaceId);
+  const byId = new Map(all.map((tx) => [tx.id, tx]));
   const asLeg = (tx: SpaceTx): TransferLeg => ({
     id: tx.id,
     accountId: tx.accountId,

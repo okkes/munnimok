@@ -68,7 +68,7 @@ export interface AccountRow extends SyncEnvelope {
   archived?: 0 | 1;
 }
 
-export type TxType = 'income' | 'expense' | 'saving' | 'transfer' | 'debtPayment' | 'investment' | 'adjustment';
+export type TxType = 'income' | 'expense' | 'saving' | 'transfer' | 'debtPayment' | 'investment' | 'funding' | 'adjustment';
 
 export type CatDirection = 'debit' | 'credit' | 'both';
 

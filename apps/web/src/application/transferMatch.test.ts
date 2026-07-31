@@ -50,7 +50,7 @@ describe('matchTransferPairs (domain rules)', () => {
   });
 });
 
-describe('linkTransferPairs (application, spans spaces)', () => {
+describe('linkTransferPairs (application, per space)', () => {
   const DB = 'munni_transfer_match';
   let db: MunniDB;
   let store: DexieBackend;
@@ -68,21 +68,34 @@ describe('linkTransferPairs (application, spans spaces)', () => {
       await repo.upsert('space', id, id, { name, kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
     }
     await repo.upsert('account', 'priv', 'checking', { name: 'Checking', type: 'checking', source: 'manual', currency: 'EUR', balanceCents: 0 });
+    await repo.upsert('account', 'priv', 'pot', { name: 'Pot', type: 'savings', source: 'manual', currency: 'EUR', balanceCents: 0 });
     await repo.upsert('account', 'fam', 'joint', { name: 'Joint', type: 'checking', source: 'manual', currency: 'EUR', balanceCents: 0 });
   });
 
-  it('pairs typed legs across two spaces (the family contribution)', async () => {
+  it('pairs typed legs within one space; never ACROSS spaces (funding covers that)', async () => {
+    // same-space pair: checking → pot, both legs in 'priv'
     await repo.upsert('transaction', 'priv', 'out', {
       accountId: 'checking',
       date: '2026-07-25',
       amountCents: -50000,
       currency: 'EUR',
-      merchant: 'Monthly to joint',
-      txType: 'transfer',
-      linkedAccountId: 'joint',
+      merchant: 'To the pot',
+      txType: 'saving',
+      linkedAccountId: 'pot',
       needsReview: 0,
     });
-    await repo.upsert('transaction', 'fam', 'in', {
+    await repo.upsert('transaction', 'priv', 'in', {
+      accountId: 'pot',
+      date: '2026-07-26',
+      amountCents: 50000,
+      currency: 'EUR',
+      merchant: 'From checking',
+      txType: 'saving',
+      needsReview: 0,
+    });
+    // a cross-space would-be twin: same amount, in the family space —
+    // spaces keep their own books, so this must never be referenced
+    await repo.upsert('transaction', 'fam', 'famIn', {
       accountId: 'joint',
       date: '2026-07-26',
       amountCents: 50000,
@@ -95,6 +108,7 @@ describe('linkTransferPairs (application, spans spaces)', () => {
     expect(await linkTransferPairs(store, repo)).toBe(1);
     expect((await db.transactions.get('out'))?.transferPeerId).toBe('in');
     expect((await db.transactions.get('in'))?.transferPeerId).toBe('out');
+    expect((await db.transactions.get('famIn'))?.transferPeerId).toBeUndefined();
     // idempotent: a second run finds nothing new
     expect(await linkTransferPairs(store, repo)).toBe(0);
   });
@@ -107,12 +121,12 @@ describe('linkTransferPairs (application, spans spaces)', () => {
       currency: 'EUR',
       merchant: 'To savings',
       txType: 'saving',
-      linkedAccountId: 'joint',
+      linkedAccountId: 'pot',
       needsReview: 0,
     });
-    // the bank booked the other side as plain income, untouched
-    await repo.upsert('transaction', 'fam', 'twin', {
-      accountId: 'joint',
+    // the other side sits as plain income, untouched
+    await repo.upsert('transaction', 'priv', 'twin', {
+      accountId: 'pot',
       date: '2026-07-25',
       amountCents: 10000,
       currency: 'EUR',
@@ -137,12 +151,12 @@ describe('linkTransferPairs (application, spans spaces)', () => {
       currency: 'EUR',
       merchant: 'To savings',
       txType: 'saving',
-      linkedAccountId: 'joint',
+      linkedAccountId: 'pot',
       needsReview: 0,
     });
     for (const id of ['twin1', 'twin2']) {
-      await repo.upsert('transaction', 'fam', id, {
-        accountId: 'joint',
+      await repo.upsert('transaction', 'priv', id, {
+        accountId: 'pot',
         date: '2026-07-25',
         amountCents: 10000,
         currency: 'EUR',

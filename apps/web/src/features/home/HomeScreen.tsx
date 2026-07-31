@@ -52,11 +52,15 @@ import { Icon } from '@/ui/Icon';
 import { ProgressBar, Tile } from '@/ui/primitives';
 import { TxRow } from '@/ui/TxRow';
 
-const TILE_META: Record<OverviewKind, { icon: string; color: string; field: keyof OverviewSummary }> = {
+const TILE_META: Record<OverviewKind, { icon: string; color: string; field: keyof OverviewSummary; signed?: boolean }> = {
   income: { icon: 'cash-plus', color: 'var(--m-accent)', field: 'incomeCents' },
   expense: { icon: 'cash-remove', color: 'var(--m-negative)', field: 'expenseCents' },
   saving: { icon: 'piggy-bank-outline', color: 'var(--m-warning)', field: 'savingCents' },
   investment: { icon: 'chart-timeline-variant', color: 'var(--m-special)', field: 'investmentCents' },
+  // signed: contributing to a pot is green, drawing from it is red; a
+  // borrowing-heavy period flips Repaid the same way (user rule 2026-08-01)
+  funding: { icon: 'hand-coin', color: 'var(--m-accent-deep)', field: 'fundingCents', signed: true },
+  debt: { icon: 'hand-coin-outline', color: 'var(--m-special)', field: 'debtCents', signed: true },
 };
 
 export function HomeScreen() {
@@ -447,7 +451,11 @@ export function HomeScreen() {
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block text-[10px] font-medium text-ink-3">{t(`overview.${kind}`)}</span>
-                <span className="m-num block truncate text-[13px] font-semibold text-ink">
+                <span
+                  className={`m-num block truncate text-[13px] font-semibold ${
+                    TILE_META[kind].signed ? (summary[TILE_META[kind].field] < 0 ? 'text-negative' : 'text-accent-deep') : 'text-ink'
+                  }`}
+                >
                   {fmt(summary[TILE_META[kind].field], currency)}
                 </span>
               </span>

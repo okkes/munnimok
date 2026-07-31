@@ -69,6 +69,9 @@ export function withType(draft: ReviewDraft, txType: TxType, catalog: DraftCatal
 export function withKind(draft: ReviewDraft, kind: TxKind, amountCents: number, catalog: DraftCatalog): ReviewDraft {
   if (kind === 'standard') return withType({ ...draft, linkedAccountId: undefined }, standardTypeFor(amountCents), catalog);
   if (kind === 'adjustment') return withType({ ...draft, linkedAccountId: undefined }, 'adjustment', catalog);
+  // funding: money to/from another space's pot — deliberately NO
+  // counterparty, the other side keeps its own books (user 2026-08-01)
+  if (kind === 'funding') return withType({ ...draft, linkedAccountId: undefined }, 'funding', catalog);
   // transfer: an already-linked counterparty keeps its derived member;
   // otherwise plain 'transfer' until the (mandatory) pick lands
   return withType(draft, draft.linkedAccountId ? draft.txType : 'transfer', catalog);
@@ -96,8 +99,9 @@ export function withSplits(draft: ReviewDraft, splits: TxSplit[] | undefined): R
  *  use the hidden 'uncategorized' builtin as a by-design placeholder. */
 export const draftReady = (draft: ReviewDraft): boolean => {
   if (!draft.catId) return false;
-  // adjustments are corrections, not spending — same placeholder story
-  if (draft.txType === 'transfer' || draft.txType === 'adjustment') return true;
+  // adjustments are corrections and funding moves between books — not
+  // spending; same placeholder story as plain transfers
+  if (draft.txType === 'transfer' || draft.txType === 'funding' || draft.txType === 'adjustment') return true;
   if (draft.catId === 'uncategorized') return false;
   return !draft.splits?.some((slice) => slice.catId === 'uncategorized');
 };

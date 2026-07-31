@@ -40,6 +40,7 @@ function toggled<T>(set: ReadonlySet<T>, value: T): Set<T> {
 const KIND_FILTER_TYPES: Record<TxKind, readonly TxType[]> = {
   standard: ['income', 'expense'],
   transfer: TRANSFER_TYPES,
+  funding: ['funding'],
   adjustment: ['adjustment'],
 };
 
