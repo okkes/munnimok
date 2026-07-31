@@ -29,26 +29,27 @@ export function listOfflineProfiles(): OfflineProfile[] {
   }
 }
 
+/**
+ * Mint a profile — ALWAYS a fresh one (arc 8 lifted the one-per-device
+ * rule; the old silent return-the-first was a landmine once multiples
+ * exist). Each profile is a fully separate world with its own store;
+ * spaces INSIDE a profile are how bookkeeping splits.
+ */
 export function addOfflineProfile(name: string): OfflineProfile {
-  // ONE profile per device (user ruling): bookkeeping separates through
-  // spaces, not parallel profiles — a second create returns the first
-  const existing = listOfflineProfiles()[0];
-  if (existing) return existing;
   const profile: OfflineProfile = { id: uuidv7(), name: name.trim(), createdAt: Date.now() };
-  localStorage.setItem(KEY, JSON.stringify([profile]));
+  localStorage.setItem(KEY, JSON.stringify([...listOfflineProfiles(), profile]));
   return profile;
 }
 
 /**
  * OO1: mint the profile for an online→offline conversion. It ADOPTS the
  * signed-in identity's store (no copying — the local-first store IS the
- * data). Refuses when a profile already exists: one per device stands,
- * and silently merging two stores would be a lie.
+ * data). Lives happily next to existing profiles (arc 8): every profile
+ * keeps its own store, nothing merges.
  */
-export function adoptOfflineProfile(name: string, picture: string | undefined, storeKey: string): OfflineProfile | null {
-  if (listOfflineProfiles().length > 0) return null;
+export function adoptOfflineProfile(name: string, picture: string | undefined, storeKey: string): OfflineProfile {
   const profile: OfflineProfile = { id: uuidv7(), name: name.trim() || 'munni', createdAt: Date.now(), picture, storeKey };
-  localStorage.setItem(KEY, JSON.stringify([profile]));
+  localStorage.setItem(KEY, JSON.stringify([...listOfflineProfiles(), profile]));
   return profile;
 }
 

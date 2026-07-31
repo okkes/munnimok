@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from '@tanstack/react-router';
 import { useLogto } from '@logto/react';
 import { LANG_NAMES, LANGS, useLang } from '@/i18n';
@@ -10,6 +11,47 @@ import { Flag, langFlagCode } from '@/ui/Flag';
 import { Logo } from '@/ui/Logo';
 import { callbackUri } from './logto';
 import { addOfflineProfile, listOfflineProfiles } from './offlineProfiles';
+import { MINA_EXPR } from '@/features/mina/assets';
+
+/**
+ * Mina's fullscreen heads-up before a SECOND offline profile (arc 8, the
+ * DebtHandoffInterstitial layout): profiles are fully separate worlds —
+ * spaces INSIDE one profile are how family/business/private split.
+ * Browser back = "go back" (standing rule).
+ */
+function ProfilesInterstitial({ onContinue, onBack }: Readonly<{ onContinue: () => void; onBack: () => void }>) {
+  const { t } = useLang();
+  const backRef = useRef(onBack);
+  backRef.current = onBack;
+  useEffect(() => {
+    window.history.pushState({ minaProfiles: true }, '');
+    const onPop = () => backRef.current();
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[130] flex flex-col items-center justify-center overflow-y-auto bg-bg px-6"
+      style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 12px)' }}
+      data-testid="mina-profiles-ask"
+    >
+      <div className="flex w-full max-w-[420px] flex-col items-center text-center">
+        <img src={MINA_EXPR.thinking} alt="Mina" className="max-h-[38dvh] w-auto max-w-[240px] rounded-2xl object-contain" />
+        <p className="mt-5 text-[19px] font-semibold text-ink">{t('mina.profiles.t')}</p>
+        <p className="mt-2 max-w-[360px] text-[14px] leading-relaxed text-ink-2">{t('mina.profiles.b')}</p>
+        <div className="mt-6 flex w-full max-w-[360px] flex-col gap-2">
+          <Button data-testid="mina-profiles-continue" onClick={onContinue}>
+            {t('mina.profiles.continue')}
+          </Button>
+          <Button variant="outline" data-testid="mina-profiles-back" onClick={onBack}>
+            {t('mina.profiles.back')}
+          </Button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
 import leafUrl from '@/assets/leaf.png';
 import loginBgUrl from '@/assets/login-bg.png';
 // re-encoded from the provided PNG (2.2MB) — the login screen is precached
@@ -123,6 +165,8 @@ export function LoginScreen() {
   // back button — manual pushState + popstate, since /login is one route
   const [offlineView, setOfflineView] = useState<'intro' | 'profiles' | null>(null);
   const [profileName, setProfileName] = useState('');
+  // Mina's heads-up before minting a SECOND world (arc 8)
+  const [profilesAsk, setProfilesAsk] = useState(false);
   const profiles = listOfflineProfiles();
 
   useEffect(() => {
@@ -154,6 +198,17 @@ export function LoginScreen() {
 
   const createOffline = () => {
     if (!profileName.trim()) return;
+    // the 2nd+ profile gets Mina's fullscreen heads-up first (arc 8):
+    // profiles are separate worlds — spaces split WITHIN one
+    if (profiles.length > 0) {
+      setProfilesAsk(true);
+      return;
+    }
+    enterOffline(addOfflineProfile(profileName).id);
+  };
+
+  const confirmSecondProfile = () => {
+    setProfilesAsk(false);
     enterOffline(addOfflineProfile(profileName).id);
   };
 
@@ -244,12 +299,12 @@ export function LoginScreen() {
             {/* the headline follows reality (user ss): with no profile
                 yet there is nothing to "choose" */}
             <h1 className="m-h2 text-ink">{t(profiles.length ? 'offline.chooseProfile' : 'offline.createProfileTitle')}</h1>
-            {/* ONE profile per device (user ruling): spaces are how you
-                separate bookkeeping — parallel profiles would bury that */}
-            <p className="max-w-[300px] text-sm text-ink-3">{t(profiles.length ? 'offline.oneProfileHint' : 'offline.profileSub')}</p>
+            {/* multiple worlds are allowed now (arc 8) — the hint says
+                what a profile IS instead of forbidding a second one */}
+            <p className="max-w-[300px] text-sm text-ink-3">{t(profiles.length ? 'offline.profilesHint' : 'offline.profileSub')}</p>
           </div>
-          {profiles.length > 0 ? (
-            <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="offline-profiles">
+          {profiles.length > 0 && (
+            <div className="mb-4 overflow-hidden rounded-card border border-line bg-surface" data-testid="offline-profiles">
               {/* deleting a profile moved to Settings → Profile (user
                   ruling 2026-07-29: consistent with the online account) */}
               {profiles.map((p) => (
@@ -265,21 +320,22 @@ export function LoginScreen() {
                 </button>
               ))}
             </div>
-          ) : (
-            <div className="flex gap-2">
-              <input
-                data-testid="offline-name"
-                value={profileName}
-                onChange={(e) => setProfileName(e.target.value)}
-                placeholder={t('login.namePlaceholder')}
-                className="h-11 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 text-[14px] text-ink outline-none placeholder:text-ink-4"
-              />
-              <Button size="sm" className="h-11" data-testid="offline-create" onClick={createOffline} disabled={!profileName.trim()}>
-                {t('offline.addProfile')}
-              </Button>
-            </div>
           )}
+          {/* the add row stays available — "Add another profile" (arc 8) */}
+          <div className="flex gap-2">
+            <input
+              data-testid="offline-name"
+              value={profileName}
+              onChange={(e) => setProfileName(e.target.value)}
+              placeholder={t('login.namePlaceholder')}
+              className="h-11 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 text-[14px] text-ink outline-none placeholder:text-ink-4"
+            />
+            <Button size="sm" className="h-11" data-testid="offline-create" onClick={createOffline} disabled={!profileName.trim()}>
+              {t(profiles.length ? 'offline.addAnother' : 'offline.addProfile')}
+            </Button>
+          </div>
         </div>
+        {profilesAsk && <ProfilesInterstitial onContinue={confirmSecondProfile} onBack={() => setProfilesAsk(false)} />}
       </div>
     );
   }

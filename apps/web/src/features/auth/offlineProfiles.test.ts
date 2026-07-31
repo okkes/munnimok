@@ -5,16 +5,17 @@ import { addOfflineProfile, listOfflineProfiles, offlineProfileName } from './of
 describe('offline profile registry', () => {
   beforeEach(() => localStorage.clear());
 
-  it('starts empty and holds exactly ONE profile per device', () => {
+  it('starts empty and mints a FRESH profile every time (arc 8)', () => {
     expect(listOfflineProfiles()).toEqual([]);
     const a = addOfflineProfile('  Okkes ');
     expect(a.name).toBe('Okkes');
-    // user ruling: no parallel profiles — spaces separate bookkeeping;
-    // a second create returns the existing profile instead
+    // arc 8 lifted one-per-device: each profile is its own world — the
+    // old silent return-the-first was a landmine once multiples exist
     const b = addOfflineProfile('Partner');
-    expect(b.id).toBe(a.id);
-    expect(listOfflineProfiles().map((p) => p.name)).toEqual(['Okkes']);
+    expect(b.id).not.toBe(a.id);
+    expect(listOfflineProfiles().map((p) => p.name)).toEqual(['Okkes', 'Partner']);
     expect(offlineProfileName(a.id)).toBe('Okkes');
+    expect(offlineProfileName(b.id)).toBe('Partner');
   });
 
   it('survives corrupted storage', () => {

@@ -9,7 +9,6 @@ import { Button } from '@/ui/Button';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
-import { listOfflineProfiles } from './offlineProfiles';
 import { convertToOffline } from './goOffline';
 
 const KEEP_ROWS = [
@@ -47,8 +46,6 @@ export function GoOfflineScreen() {
   const [dropIds, setDropIds] = useState<ReadonlySet<string>>(new Set());
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  // one offline profile per device: conversion cannot mint a second
-  const blocked = listOfflineProfiles().length > 0;
 
   const toggleDrop = (id: string, drop: boolean) => {
     const next = new Set(dropIds);
@@ -75,7 +72,7 @@ export function GoOfflineScreen() {
     );
     if (!profileId) {
       setBusy(false);
-      return; // blocked — the note above the button explains
+      return; // not a user identity — nothing to convert
     }
     logout();
     login({ kind: 'offline', profileId });
@@ -140,12 +137,7 @@ export function GoOfflineScreen() {
         )}
 
         <p className="mb-3 px-1 text-[12px] leading-snug text-ink-3">{t('goOffline.noWayBack')}</p>
-        {blocked && (
-          <p className="mb-3 px-1 text-[13px] text-negative" data-testid="gooffline-blocked">
-            {t('goOffline.blocked')}
-          </p>
-        )}
-        <Button variant="danger" data-testid="gooffline-open-confirm" disabled={blocked || busy} onClick={() => setConfirmOpen(true)}>
+        <Button variant="danger" data-testid="gooffline-open-confirm" disabled={busy} onClick={() => setConfirmOpen(true)}>
           {t('goOffline.confirm')}
         </Button>
       </div>
