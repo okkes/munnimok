@@ -70,15 +70,17 @@ describe('ReviewScreen (demo identity)', () => {
     await screen.findByTestId('review-card');
     expect(screen.getByTestId('review-recurring-row')).toBeTruthy();
 
-    // transfer → CREATE a loan counterparty in place (quick-create door)
+    // transfer → the Create door opens the FULL chooser (user redesign
+    // 2026-08-01: quick-create retired); manual loan built in place
     fireEvent.click(screen.getByTestId('review-kind-row'));
     await screen.findByTestId('txkind-options');
     fireEvent.click(screen.getByTestId('txkind-transfer'));
     await screen.findByTestId('counter-accounts');
-    fireEvent.click(screen.getByTestId('counter-create'));
-    fireEvent.change(await screen.findByTestId('counter-create-name'), { target: { value: 'Car loan' } });
-    fireEvent.click(screen.getByTestId('counter-newtype-loan'));
-    fireEvent.click(screen.getByTestId('counter-create-save'));
+    fireEvent.click(screen.getByTestId('counter-full-setup'));
+    fireEvent.click(await screen.findByTestId('chooser-manual'));
+    fireEvent.click(await screen.findByTestId('chooser-accttype-loan'));
+    fireEvent.change(await screen.findByTestId('chooser-acctform-name'), { target: { value: 'Car loan' } });
+    fireEvent.click(screen.getByTestId('chooser-acctform-save'));
 
     // a payoff transfer is a debt payment, not a recurring cost (user
     // request 2026-07-29): the debt row appears, recurring retires

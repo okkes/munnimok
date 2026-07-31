@@ -136,21 +136,20 @@ describe('TxFormSheet (demo identity)', () => {
     db.close();
   }, 15_000);
 
-  it('the counterparty picker searches and quick-creates a missing account', async () => {
+  it('the Create door builds a missing counterparty through the full chooser', async () => {
     await openForm();
     fireEvent.click(screen.getByTestId('txform-kind'));
     await screen.findByTestId('txkind-options');
     fireEvent.click(screen.getByTestId('txkind-transfer'));
     await screen.findByTestId('counter-accounts');
 
-    // search narrows; no match offers the create door (user request:
-    // "search … and create one quickly if it does not exist")
-    fireEvent.change(screen.getByTestId('counter-search'), { target: { value: 'Vakantiepot' } });
-    await screen.findByTestId('counter-empty');
-    fireEvent.click(screen.getByTestId('counter-create'));
-    await screen.findByTestId('counter-create-form');
-    fireEvent.click(screen.getByTestId('counter-newtype-savings'));
-    fireEvent.click(screen.getByTestId('counter-create-save'));
+    // one creation door now (user redesign 2026-08-01): the chooser's
+    // manual path, built in place and handed straight back
+    fireEvent.click(screen.getByTestId('counter-full-setup'));
+    fireEvent.click(await screen.findByTestId('chooser-manual'));
+    fireEvent.click(await screen.findByTestId('chooser-accttype-savings'));
+    fireEvent.change(await screen.findByTestId('chooser-acctform-name'), { target: { value: 'Vakantiepot' } });
+    fireEvent.click(screen.getByTestId('chooser-acctform-save'));
 
     // the fresh manual account IS the counterparty; savings → Saving
     await waitFor(() => expect(screen.getByTestId('txform-counter').textContent).toContain('Vakantiepot'));

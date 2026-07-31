@@ -7,7 +7,7 @@ import exprLaugh from '@/assets/mina/expr-laugh.webp';
 import exprSad from '@/assets/mina/expr-sad.webp';
 import exprSurprised from '@/assets/mina/expr-surprised.webp';
 import fullGreeting from '@/assets/mina/full-greeting.webp';
-import fullHandOpen from '@/assets/mina/full-handopen.webp';
+import fullGreetingHd from '@/assets/mina/full-greeting-hd.webp';
 import sceneSpaces from '@/assets/mina/scene-spaces.webp';
 import sceneFamily from '@/assets/mina/scene-family.webp';
 import sceneAcctManual from '@/assets/mina/scene-acct-manual.webp';
@@ -27,7 +27,9 @@ export type MinaExpr = keyof typeof MINA_EXPR;
 
 export const MINA_ART = {
   greeting: fullGreeting,
-  handopen: fullHandOpen,
+  // the wrap screen's figure — the HD greeting (user request 2026-08-01,
+  // converted from mina/full-body/mina-greeting-hd.png)
+  handopen: fullGreetingHd,
   spaces: sceneSpaces,
   family: sceneFamily,
   // art↔content mapping corrected against the actual files (user ss):

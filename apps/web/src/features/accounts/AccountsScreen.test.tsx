@@ -223,8 +223,8 @@ describe('AccountsScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('space-attach-save'));
     // the chosen start date reaches the server…
     await waitFor(() => expect(attachBody?.historyFrom).toBe('2026-01-01'), { timeout: 5000 });
-    // …and the synced mirror renders the attachment (with a detach)
-    await waitFor(() => expect(screen.queryByTestId(/^space-account-detach-/)).toBeTruthy(), { timeout: 5000 });
+    // …and the synced mirror renders the attachment as a tappable row
+    await waitFor(() => expect(screen.getByTestId('space-accounts-list').textContent).toContain('ING Betaal'), { timeout: 5000 });
   }, 15_000);
 
   it('space accounts screen detaches through the danger sheet', async () => {
@@ -261,11 +261,13 @@ describe('AccountsScreen (demo identity)', () => {
       },
     });
 
-    fireEvent.click(await screen.findByTestId('space-account-detach-link-1'));
-    // destructive: the shared danger sheet asks first (cooldown 0 in tests)
+    // detach moved into the row's info sheet (redesign ss13): tap the
+    // row, then the sheet's Detach, then the shared danger confirm
+    fireEvent.click(await screen.findByTestId('space-account-link-1'));
+    fireEvent.click(await screen.findByTestId('space-account-sheet-detach'));
     fireEvent.click(await screen.findByTestId('space-account-detach-confirm'));
     await waitFor(() => expect(detached).toBe(true), { timeout: 5000 });
-    await waitFor(() => expect(screen.queryByTestId('space-account-detach-link-1')).toBeNull(), { timeout: 5000 });
+    await waitFor(() => expect(screen.queryByTestId('space-account-link-1')).toBeNull(), { timeout: 5000 });
   }, 15_000);
 
   it('global sheet lists only attached spaces and detaches from there too', async () => {
@@ -361,8 +363,8 @@ describe('AccountsScreen (demo identity)', () => {
     // the GLOBAL screen offers manual only as a DOOR into the space
     // (user ruling 2026-07-28) — creation happens on the space screen
     fireEvent.click(await screen.findByTestId('chooser-manual-door'));
+    // "Add a manual account" opens the type grid directly (redesign ss13)
     fireEvent.click(await screen.findByTestId('space-accounts-add'));
-    fireEvent.click(await screen.findByTestId('chooser-manual'));
     fireEvent.click(await screen.findByTestId('chooser-accttype-cash'));
     fireEvent.change(screen.getByTestId('chooser-acctform-name'), { target: { value: 'Wallet' } });
     fireEvent.change(screen.getByTestId('chooser-acctform-balance'), { target: { value: '25,50' } });
@@ -376,7 +378,6 @@ describe('AccountsScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('accounts-add'));
     fireEvent.click(await screen.findByTestId('chooser-manual-door'));
     fireEvent.click(await screen.findByTestId('space-accounts-add'));
-    fireEvent.click(await screen.findByTestId('chooser-manual'));
     fireEvent.click(await screen.findByTestId('chooser-accttype-credit'));
     fireEvent.change(screen.getByTestId('chooser-acctform-name'), { target: { value: 'Visa' } });
     fireEvent.change(screen.getByTestId('chooser-acctform-balance'), { target: { value: '100' } });
@@ -398,7 +399,6 @@ describe('AccountsScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('accounts-add'));
     fireEvent.click(await screen.findByTestId('chooser-manual-door'));
     fireEvent.click(await screen.findByTestId('space-accounts-add'));
-    fireEvent.click(await screen.findByTestId('chooser-manual'));
     fireEvent.click(await screen.findByTestId('chooser-accttype-credit'));
     fireEvent.change(screen.getByTestId('chooser-acctform-name'), { target: { value: 'Amex' } });
     fireEvent.change(screen.getByTestId('chooser-acctform-balance'), { target: { value: '100' } });
@@ -415,9 +415,10 @@ describe('AccountsScreen (demo identity)', () => {
       id = rows[0]?.id ?? '';
     }, { timeout: 5000 });
 
-    // the space screen row is tappable now (user ss: it was view-only)
-    // and opens the SAME edit sheet as the global screen
+    // the row opens the info sheet; Edit inside it reaches the SAME
+    // edit sheet as the global screen (redesign ss13)
     fireEvent.click(await screen.findByTestId(`space-account-${id}`));
+    fireEvent.click(await screen.findByTestId('space-account-sheet-edit'));
     fireEvent.change(await screen.findByTestId('acctedit-name'), { target: { value: 'Amex Gold' } });
     fireEvent.click(screen.getByTestId('acctedit-save'));
     await waitFor(async () => {

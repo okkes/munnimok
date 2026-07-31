@@ -470,11 +470,21 @@ export function MinaTutorial() {
     if (!step.act.absent && baselineRef.current?.step !== run.step) return;
     if (step.act.absent) {
       const family = createdSpaces[1];
-      if (family && !live.has(family)) {
-        persist({ ...run, step: run.step, ledger: run.ledger.filter((e) => e.id !== family && e.spaceId !== family) });
+      if (!family || live.has(family)) return;
+      // the live query's FIRST emission after the step change can be a
+      // stale snapshot missing the family row — believing it wrapped
+      // the tour from under the user right as the delete step armed
+      // (user ss 2026-08-01). Confirm against the store before acting;
+      // the same class the non-absent baseline (below) already guards.
+      void (async () => {
+        const reallyGone = !(await store.allRows('space')).some((s) => s.id === family && s.deleted === 0);
+        if (!reallyGone) return;
+        const current = runRef.current;
+        if (!current?.active) return;
+        persist({ ...current, ledger: current.ledger.filter((e) => e.id !== family && e.spaceId !== family) });
         setTimeout(advance, 400);
         baselineRef.current = null;
-      }
+      })().catch(() => undefined);
       return;
     }
     const fresh = actRows.filter(

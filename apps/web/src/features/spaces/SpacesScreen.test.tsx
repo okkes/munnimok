@@ -243,9 +243,15 @@ describe('SpacesScreen (demo identity)', () => {
     await screen.findByTestId('screen-settings');
     fireEvent.click(await screen.findByTestId('settings-space-accounts-row'));
     const section = await screen.findByTestId('space-accounts');
-    // the demo space owns its seeded accounts directly — provenance says so
     await waitFor(() => expect(section.textContent).toContain('Demo Savings'), { timeout: 5000 });
-    expect(section.textContent).toContain('created in this space');
+    // provenance moved into the tap-through info sheet (redesign ss13)
+    const row = [...section.querySelectorAll('[data-testid^="space-account-"]')].find((el) =>
+      el.textContent?.includes('Demo Savings'),
+    ) as HTMLElement;
+    fireEvent.click(row);
+    const infoSheet = await screen.findByTestId('space-account-info');
+    expect(infoSheet.textContent).toContain('created in this space');
+    fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.getByTestId('space-accounts-manage')).toBeTruthy();
   }, 10_000);
 
@@ -256,9 +262,8 @@ describe('SpacesScreen (demo identity)', () => {
     await screen.findByTestId('space-accounts');
 
     fireEvent.click(screen.getByTestId('space-accounts-add'));
-    // the shared chooser: manual creates in place, and its sub-line
-    // says plainly that the account is space-scoped
-    fireEvent.click(await screen.findByTestId('chooser-manual'));
+    // "Add a manual account" opens the type grid DIRECTLY (redesign
+    // ss13/ss14) — no intent step in between
     expect(await screen.findByTestId('chooser-manual-form')).toBeTruthy();
     fireEvent.click(screen.getByTestId('chooser-accttype-cash'));
     fireEvent.change(await screen.findByTestId('chooser-acctform-name'), { target: { value: 'Holiday jar' } });

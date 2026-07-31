@@ -1,20 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useGlobalAccounts } from '@/application/accounts';
 import type { GlobalAccount } from '@/application/accounts';
-import { parseStatement } from '@/lib/statements/parseStatement';
-import type { ParsedStatement } from '@/lib/statements/parseStatement';
 import { getApiCapabilities } from '@/lib/api';
 import { useSession } from '@/app/session';
-import { importCamtStatements, statementCoverageEnd } from './importCamt';
 import { linkAllCounterparties } from '@/application/counterLink';
-import { linkTransferPairs } from '@/application/transferMatch';
 import { applyTitleMemory } from '@/application/titleMemory';
 import { linkPaypalFunding } from '@/application/paypalLink';
-import type { ImportResult } from './importCamt';
-import { apiFeedGateway, fetchMyFeedIds } from './feedGateway';
+import { fetchMyFeedIds } from './feedGateway';
 import { AttachSheet } from './AttachSheet';
 import { EditAccountSheet } from './EditAccountSheet';
 import { ReconcileSheet } from './ReconcileSheet';
+import { StatementImportFlow } from './StatementImportFlow';
 import { normalizeIban } from '@/domain/feedIds';
 import { attachFeedToSpace } from '@/application/accountAttach';
 import { DEFAULT_HISTORY_MONTHS, isoMonthsAgo } from '@/features/spaces/spaceDefaults';
@@ -24,7 +20,6 @@ import { BankConnectSheet } from './BankConnect';
 import { useInstitutionLogos } from './useInstitutionLogos';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
-import { logActivity } from '@/application/activity';
 import { fmtCents } from '@/lib/money';
 import { fmtTimeAgo } from '@/lib/text';
 import type { AccountRow } from '@/db/types';
@@ -33,7 +28,6 @@ import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { EmptyState } from '@/ui/EmptyState';
 import { Icon } from '@/ui/Icon';
-import { Sheet } from '@/ui/Sheet';
 
 import { typeDef, isLiability } from './accountTypes';
 
@@ -186,14 +180,9 @@ export function AccountsScreen() {
   const { store, repo, spaceId } = useData();
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<AccountRow | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [importPreview, setImportPreview] = useState<ParsedStatement[] | null>(null);
-  const [importResult, setImportResult] = useState<ImportResult | null>(null);
-  const [importError, setImportError] = useState(false);
-  const [runFailed, setRunFailed] = useState(false);
-  const [importing, setImporting] = useState(false);
-  // export-steps hint per format before the file dialog (user request)
-  const [importPickOpen, setImportPickOpen] = useState(false);
+  // the whole import journey lives in StatementImportFlow (extracted
+  // 2026-08-01); this screen only opens its format-pick sheet
+  const [importOpen, setImportOpen] = useState(false);
   const identity = useSession((s) => s.identity);
 
   // GoCardless accounts arrive via sync, so there is no local "account
@@ -217,64 +206,6 @@ export function AccountsScreen() {
     // for a single-user device until the fetch lands)
     void fetchMyFeedIds().then(setMyFeedIds).catch(() => undefined);
   }, [identity?.kind]);
-
-  const onFilePicked = async (files: FileList | null) => {
-    const picked = [...(files ?? [])];
-    if (picked.length === 0) return;
-    setImportError(false);
-    setImportResult(null);
-    try {
-      // several exports in one go (user request): parse each file and
-      // pool the statements — dedupe refs make overlaps import cleanly
-      const statements: ParsedStatement[] = [];
-      for (const file of picked) {
-        statements.push(...parseStatement(await file.text(), file.name));
-      }
-      setImportPreview(statements);
-    } catch {
-      setImportPreview(null);
-      setImportError(true);
-      setImportPreview([]); // open the sheet to show the error
-    }
-  };
-
-  const runImport = async () => {
-    if (!importPreview?.length || importing) return; // double-taps fired PARALLEL imports (user report 2026-07-25)
-    setImporting(true);
-    // syncing identities import into feed spaces (shared-accounts model);
-    // demo/offline keep everything merged in the current space
-    const feeds = identity?.kind === 'user' ? apiFeedGateway(identity.sub) : undefined;
-    try {
-      setImportResult(await importCamtStatements(repo, store, spaceId, importPreview, feeds));
-    } catch {
-      // a failed run (feed registration, server away) must SAY so —
-      // a silently unchanged screen reads as "the app is broken"
-      // (user report 2026-07-24); the preview stays for a retry
-      setRunFailed(true);
-      return;
-    } finally {
-      setImporting(false);
-    }
-    setRunFailed(false);
-    void logActivity(store, repo, spaceId, 'importRun', `${importPreview.length}`);
-    // a just-imported account may BE the counterparty of older rows
-    // (and vice versa) — retro-link them (user rule)
-    await linkAllCounterparties(store, repo, spaceId).catch(() => undefined);
-    await linkPaypalFunding(store, repo, spaceId).catch(() => undefined);
-    await linkTransferPairs(store, repo).catch(() => undefined);
-    await applyTitleMemory(store, repo, spaceId).catch(() => undefined);
-    // the import may have registered new feeds — refresh ownership so the
-    // new accounts classify under MINE, not "shared with me"
-    if (feeds) void fetchMyFeedIds().then(setMyFeedIds).catch(() => undefined);
-  };
-
-  const closeImport = () => {
-    setRunFailed(false);
-    setImportPreview(null);
-    setImportResult(null);
-    setImportError(false);
-    if (fileRef.current) fileRef.current.value = '';
-  };
 
   // GLOBAL overview (user decision): every account I own across all my
   // spaces and feeds, plus what others share with me via shared spaces
@@ -384,7 +315,7 @@ export function AccountsScreen() {
             <IconButton
               label={t('import.statement')}
               testId="accounts-import"
-              onClick={() => setImportPickOpen(true)}
+              onClick={() => setImportOpen(true)}
             >
               <Icon name="file-upload-outline" size={21} />
             </IconButton>
@@ -393,15 +324,6 @@ export function AccountsScreen() {
             </IconButton>
           </>
         }
-      />
-      <input
-        ref={fileRef}
-        type="file"
-        accept=".xml,.csv,text/xml,application/xml,text/csv"
-        multiple
-        hidden
-        data-testid="accounts-import-input"
-        onChange={(e) => void onFilePicked(e.target.files)}
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         {identity?.kind === 'user' && unattached.length > 0 && activeSpace && (
@@ -429,7 +351,7 @@ export function AccountsScreen() {
                   <Icon name="plus" size={16} />
                   {t('acct.addAccount')}
                 </Button>
-                <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()}>
+                <Button size="sm" variant="outline" onClick={() => setImportOpen(true)}>
                   <Icon name="file-upload-outline" size={16} />
                   {t('import.statement')}
                 </Button>
@@ -481,33 +403,12 @@ export function AccountsScreen() {
         canEdit={!!attaching && !global?.sharedWithMe.includes(attaching)}
       />
 
-      {/* which export is this? each row explains how to get the file */}
-      <Sheet open={importPickOpen} onOpenChange={setImportPickOpen} title={t('import.pickFormat')} size="form">
-        <div className="flex flex-col gap-2 pt-1" data-testid="import-format-pick">
-          {(
-            [
-              ['import-format-camt', 'file-xml-box', 'import.formatCamt', 'import.formatCamtSub'],
-              ['import-format-ing', 'file-delimited-outline', 'import.formatIng', 'import.formatIngSub'],
-            ] as const
-          ).map(([testId, icon, titleKey, subKey]) => (
-            <button
-              key={testId}
-              data-testid={testId}
-              onClick={() => {
-                setImportPickOpen(false);
-                fileRef.current?.click();
-              }}
-              className="m-tap flex items-start gap-3 rounded-card border border-line bg-surface p-4 text-left"
-            >
-              <Icon name={icon} size={22} color="var(--m-accent)" />
-              <span className="min-w-0 flex-1">
-                <span className="block text-[14px] font-semibold text-ink">{t(titleKey)}</span>
-                <span className="block pt-0.5 text-[12px] leading-snug text-ink-3">{t(subKey)}</span>
-              </span>
-            </button>
-          ))}
-        </div>
-      </Sheet>
+      {/* the extracted import journey: format pick → preview → result */}
+      <StatementImportFlow
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onImported={() => void fetchMyFeedIds().then(setMyFeedIds).catch(() => undefined)}
+      />
 
       {/* AE1: the ONE Add-account chooser (intent-routed). Manual is a
           DOOR here: this screen is the global overview, and manual
@@ -518,109 +419,11 @@ export function AccountsScreen() {
         gcAvailable={gcAvailable}
         hideManual
         onConnect={() => setConnectOpen(true)}
-        onImport={() => setImportPickOpen(true)}
+        onImport={() => setImportOpen(true)}
       />
 
       <BankConnectSheet open={connectOpen} onOpenChange={setConnectOpen} />
       <ReconcileSheet open={reconcileIds !== null} onOpenChange={(next) => !next && setReconcileIds(null)} accountIds={reconcileIds ?? []} />
-
-      {/* CAMT.053 import: preview then result */}
-      <Sheet open={importPreview !== null} onOpenChange={(open) => !open && closeImport()} title={t('import.preview')} size="form">
-        {importError && (
-          <div className="flex items-center gap-2 rounded-card bg-negative-soft px-4 py-3 text-[14px] text-negative" data-testid="import-error">
-            <Icon name="alert-circle-outline" size={18} />
-            {t('import.invalidFile')}
-          </div>
-        )}
-        {!importError && !importResult && (
-          <div className="flex flex-col gap-3 pt-1" data-testid="import-preview">
-            {runFailed && (
-              <div className="flex items-center gap-2 rounded-card bg-negative-soft px-4 py-3 text-[14px] text-negative" data-testid="import-run-error">
-                <Icon name="alert-circle-outline" size={18} />
-                {t('import.runFailed')}
-              </div>
-            )}
-            {(importPreview ?? []).map((stmt, i) => {
-              const iban = stmt.iban.replace(/\s/g, '').toUpperCase();
-              // IBAN matching spans BOTH pools — an existing manual
-              // account (space-scoped) is a match exactly like a feed
-              const match = suggestionPool.find((e) => e.account.iban?.replace(/\s/g, '').toUpperCase() === iban)?.account;
-              return (
-                // key by index: monthly exports repeat the same IBAN per statement
-                <div key={`${stmt.iban}-${i}`} className="flex items-center gap-3 rounded-card border border-line bg-surface px-4 py-3">
-                  <Icon name={match ? 'bank-check' : 'bank-plus'} size={22} color="var(--m-accent)" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[14px] font-medium text-ink">
-                      {match?.name ?? t('import.newAccount')}
-                    </span>
-                    <span className="block truncate font-mono text-[11px] text-ink-4">{stmt.iban}</span>
-                    {/* export-vs-upload insight: an old export imports
-                        fine and silently misses everything after it —
-                        warn BEFORE the import, when a fresh export is
-                        one download away */}
-                    {(() => {
-                      const through = statementCoverageEnd(stmt);
-                      if (!through) return null;
-                      const stale = daysSince(through) > 7;
-                      return (
-                        <span
-                          className={`block text-[11px] leading-snug ${stale ? 'text-warning' : 'text-ink-4'}`}
-                          data-testid={`import-through-${i}`}
-                        >
-                          {t(stale ? 'import.throughStale' : 'import.through', { when: fmtTimeAgo(through, lang) })}
-                        </span>
-                      );
-                    })()}
-                    {/* rows before the space's start import fine — say
-                        NOW that they will sit stored-but-hidden (arc 5) */}
-                    {(() => {
-                      const start = activeSpace?.historyStartDate;
-                      const preStart = start ? stmt.entries.filter((e) => e.date < start).length : 0;
-                      if (preStart === 0) return null;
-                      return (
-                        <span className="block text-[11px] leading-snug text-ink-4" data-testid={`import-prestart-${i}`}>
-                          {t('import.preStart', { n: preStart })}
-                        </span>
-                      );
-                    })()}
-                  </span>
-                  <span className="text-[12px] text-ink-3">
-                    {stmt.entries.length === 1
-                      ? t('import.txCountOne')
-                      : t('import.txCount', { n: stmt.entries.length })}
-                  </span>
-                </div>
-              );
-            })}
-            <Button data-testid="import-run" onClick={() => void runImport()} disabled={!importPreview?.length || importing}>
-              {t('import.doImport')}
-            </Button>
-          </div>
-        )}
-        {importResult && (
-          <div className="flex flex-col items-center gap-3 pt-4 text-center" data-testid="import-result">
-            <Icon name="check-circle-outline" size={40} color="var(--m-accent)" />
-            <p className="text-[14px] text-ink-2">
-              {t('import.done', { n: importResult.imported, s: importResult.skipped })}
-            </p>
-            {(() => {
-              const start = activeSpace?.historyStartDate;
-              const preStart = start
-                ? (importPreview ?? []).reduce((sum, stmt) => sum + stmt.entries.filter((e) => e.date < start).length, 0)
-                : 0;
-              if (preStart === 0) return null;
-              return (
-                <p className="text-[12px] text-ink-4" data-testid="import-result-prestart">
-                  {t('import.preStart', { n: preStart })}
-                </p>
-              );
-            })()}
-            <Button variant="outline" data-testid="import-close" onClick={closeImport}>
-              {t('action.done')}
-            </Button>
-          </div>
-        )}
-      </Sheet>
 
       <EditAccountSheet account={editing} onClose={() => setEditing(null)} />
     </div>

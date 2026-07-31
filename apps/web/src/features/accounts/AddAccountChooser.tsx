@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { minaSuggestedAccountName } from '@/features/mina/steps';
+import { getApiCapabilities } from '@/lib/api';
+import { BankConnectSheet } from './BankConnect';
+import { StatementImportFlow } from './StatementImportFlow';
 import { useLang } from '@/i18n';
 import { useQuery } from '@/db/useQuery';
 import { useData } from '@/app/data';
@@ -30,6 +33,7 @@ export function AddAccountChooser({
   onCreated,
   hideManual,
   gcAvailable,
+  initialStep,
 }: Readonly<{
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -45,13 +49,31 @@ export function AddAccountChooser({
    *  ruling 2026-07-28) */
   hideManual?: boolean;
   gcAvailable?: boolean;
+  /** 'manual' opens straight on the type grid — the space screen's
+   *  "Add a manual account" button (user redesign 2026-08-01) */
+  initialStep?: 'intent' | 'manual';
 }>) {
   const { t } = useLang();
   const { store, repo, spaceId } = useData();
   const navigate = useNavigate();
   const syncing = useSession((s) => s.identity?.kind === 'user');
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
-  const [step, setStep] = useState<'intent' | 'manual' | 'shareWarn'>('intent');
+  const [step, setStep] = useState<'intent' | 'manual' | 'shareWarn'>(initialStep ?? 'intent');
+  // hosts that know pass gcAvailable; everyone else (the counterparty
+  // picker's Create door, ss 2026-08-01: the bank option was missing
+  // there) gets it resolved right here
+  const [gcSelf, setGcSelf] = useState(false);
+  useEffect(() => {
+    if (!syncing || gcAvailable !== undefined) return;
+    void getApiCapabilities()
+      .then((caps) => setGcSelf(caps.gocardless))
+      .catch(() => undefined);
+  }, [syncing, gcAvailable]);
+  const bankAvailable = gcAvailable ?? gcSelf;
+  // no in-place import host? the flow itself embeds (user request: the
+  // old door bounced to the global overview mid-flow)
+  const [importOpen, setImportOpen] = useState(false);
+  const [connectOpen, setConnectOpen] = useState(false);
   const [newType, setNewType] = useState<AccountType | null>(null);
   const [name, setName] = useState('');
   const [balance, setBalance] = useState('');
@@ -66,7 +88,7 @@ export function AddAccountChooser({
   const close = (next: boolean) => {
     onOpenChange(next);
     if (!next) {
-      setStep('intent');
+      setStep(initialStep ?? 'intent');
       setNewType(null);
       setName('');
       setBalance('');
@@ -86,11 +108,6 @@ export function AddAccountChooser({
     } else {
       action();
     }
-  };
-
-  const goGlobal = () => {
-    close(false);
-    void navigate({ to: '/accounts' });
   };
 
   // Mina suggests the demo account's name; the user still presses Add
@@ -117,10 +134,11 @@ export function AddAccountChooser({
   };
 
   return (
+    <>
     <Sheet open={open} onOpenChange={close} title={t('acct.addAccount')} size="tall">
       {step === 'intent' && (
         <div className="flex flex-col gap-2 pt-1" data-testid="add-account-chooser">
-          {syncing && gcAvailable && (
+          {syncing && bankAvailable && (
             <IntentRow
               testId="chooser-connect"
               icon="bank-transfer"
@@ -131,7 +149,7 @@ export function AddAccountChooser({
                 guarded(() => {
                   close(false);
                   if (onConnect) onConnect();
-                  else void navigate({ to: '/accounts' });
+                  else setConnectOpen(true);
                 })
               }
             />
@@ -143,10 +161,9 @@ export function AddAccountChooser({
             sub={t('chooser.importSub')}
             onClick={() =>
               guarded(() => {
-                if (onImport) {
-                  close(false);
-                  onImport();
-                } else goGlobal();
+                close(false);
+                if (onImport) onImport();
+                else setImportOpen(true);
               })
             }
           />
@@ -276,6 +293,20 @@ export function AddAccountChooser({
         </div>
       )}
     </Sheet>
+    {/* embedded flows ONLY for hosts without their own (the counterparty
+        picker's Create door) — a host that passes onImport/onConnect owns
+        the flow and must not get a duplicate mount. Beside the chooser
+        sheet so they survive its close. Imports are global but attach to
+        THIS space — the note says so instead of bouncing to the overview */}
+    {!onImport && (
+      <StatementImportFlow
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        note={t('chooser.importGlobalNote', { space: space?.name ?? '' })}
+      />
+    )}
+    {!onConnect && <BankConnectSheet open={connectOpen} onOpenChange={setConnectOpen} />}
+    </>
   );
 }
 
