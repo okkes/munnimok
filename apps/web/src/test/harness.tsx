@@ -91,6 +91,23 @@ const json = (body: unknown, status = 200) =>
  * handlers the test supplies. This is how user-only UI — members,
  * friends, invites, bank connect — gets exercised without a server.
  */
+/** the bootstrap pull's one space op (S3776: out of the fetch mock) */
+const bootstrapSpaceOp = (space: NonNullable<UserAppOptions['spaces']>[number]) => ({
+  opId: `srv-${space.id}`,
+  spaceId: space.id,
+  entity: 'space',
+  entityId: space.id,
+  fields: {
+    name: space.name,
+    kind: space.kind ?? 'personal',
+    currency: 'EUR',
+    periodType: 'month',
+    periodDay: 1,
+    ...(space.inviteLock !== undefined ? { inviteLock: space.inviteLock } : {}),
+  },
+  hlc: '000000100-0000-server',
+});
+
 export function renderAppAsUser(path: string, { spaces = [{ id: 's-user', name: 'Personal' }], api = {} }: UserAppOptions = {}) {
   localStorage.setItem('munni_lang', 'en');
   useSession.getState().login({ kind: 'user', sub: USER_TEST_SUB, testAuth: true });
@@ -112,28 +129,7 @@ export function renderAppAsUser(path: string, { spaces = [{ id: 's-user', name: 
     if (pull) {
       const space = spaces.find((s) => s.id === decodeURIComponent(pull[1]));
       const since = Number(url.searchParams.get('since') ?? 0);
-      if (space && since === 0) {
-        return json({
-          ops: [
-            {
-              opId: `srv-${space.id}`,
-              spaceId: space.id,
-              entity: 'space',
-              entityId: space.id,
-              fields: {
-                name: space.name,
-                kind: space.kind ?? 'personal',
-                currency: 'EUR',
-                periodType: 'month',
-                periodDay: 1,
-                ...(space.inviteLock !== undefined ? { inviteLock: space.inviteLock } : {}),
-              },
-              hlc: '000000100-0000-server',
-            },
-          ],
-          latestSeq: 1,
-        });
-      }
+      if (space && since === 0) return json({ ops: [bootstrapSpaceOp(space)], latestSeq: 1 });
       return json({ ops: [], latestSeq: since });
     }
     // SSE stream: an immediately-closed stream — the engine falls back to polling

@@ -230,22 +230,22 @@ export function SpaceSettingsScreen() {
             {myRole === 'owner' && (
               <>
                 <div className="m-cap mt-4 px-1">{t('space.sharingTitle')}</div>
-                <label className="flex items-start gap-3 rounded-card border border-line bg-surface px-4 py-3">
-                  <input
-                    type="checkbox"
-                    data-testid="space-invite-lock"
-                    checked={space.inviteLock === 1}
-                    onChange={(e) => {
-                      void repo.upsert('space', space.id, space.id, { inviteLock: e.target.checked ? 1 : 0 });
-                      void logActivity(store, repo, space.id, 'spaceEdit', space.name);
-                    }}
-                    className="mt-0.5 h-4 w-4 accent-[var(--m-accent)]"
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-[14px] font-medium text-ink">{t('space.inviteLockLabel')}</span>
-                    <span className="block text-[12px] leading-snug text-ink-3">{t('space.inviteLockSub')}</span>
-                  </span>
-                </label>
+                <div className="rounded-card border border-line bg-surface px-4 py-3">
+                  <label className="flex items-center gap-3 text-[14px] font-medium text-ink">
+                    <input
+                      type="checkbox"
+                      data-testid="space-invite-lock"
+                      checked={space.inviteLock === 1}
+                      onChange={(e) => {
+                        void repo.upsert('space', space.id, space.id, { inviteLock: e.target.checked ? 1 : 0 });
+                        void logActivity(store, repo, space.id, 'spaceEdit', space.name);
+                      }}
+                      className="h-4 w-4 accent-[var(--m-accent)]"
+                    />
+                    {t('space.inviteLockLabel')}
+                  </label>
+                  <p className="mt-1 pl-7 text-[12px] leading-snug text-ink-3">{t('space.inviteLockSub')}</p>
+                </div>
               </>
             )}
 
