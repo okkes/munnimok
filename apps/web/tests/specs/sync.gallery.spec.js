@@ -16,6 +16,16 @@ async function gotoMembersOf(page, spaceName) {
   await page.locator(`[data-testid="screen-spaces"] button:has-text("${spaceName}")`).first().click();
   // the check-circle badge appearing on the row = the switch settled
   await page.locator(`[data-testid^="space-row-"]:has-text("${spaceName}") .mdi-check-circle`).waitFor();
+  // arc 4: spaces are born locked private — the owner lifts the lock in
+  // space settings before anyone can be invited (idempotent on re-entry)
+  const row = page.locator(`[data-testid^="space-row-"]:has-text("${spaceName}")`).first();
+  const spaceId = (await row.getAttribute('data-testid')).replace('space-row-', '');
+  await page.click(`[data-testid="space-edit-${spaceId}"]`);
+  const lock = page.locator('[data-testid="space-invite-lock"]');
+  await lock.waitFor({ timeout: 10000 });
+  if (await lock.isChecked()) await lock.click();
+  await page.click('[data-testid="spacesettings-back"]');
+  await page.waitForSelector('[data-testid="screen-spaces"]');
   await page.click('[data-testid="tab-settings"]');
   await page.click('[data-testid="settings-space-members-row"]');
   await page.waitForSelector('[data-testid="space-members"]');

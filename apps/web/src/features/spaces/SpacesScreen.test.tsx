@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { renderApp } from '@/test/harness';
 
@@ -104,6 +104,35 @@ describe('SpacesScreen (demo identity)', () => {
       });
     }, { timeout: 5000 });
     db.close();
+  }, 15_000);
+
+  it('attention pills on the switcher; the avatar dots for OTHER spaces (arc 7)', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    const [{ MunniDB }, { DexieBackend }, { Repo }, { HlcClock }] = await Promise.all([
+      import('@/db/schema'),
+      import('@/db/backend'),
+      import('@/db/repo'),
+      import('@/sync/hlc'),
+    ]);
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('sa'), { trackOutbox: false });
+    await repo.upsert('space', 'busy', 'busy', { name: 'Busy', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
+    await repo.upsert('transaction', 'busy', 'bz1', {
+      accountId: 'a', date: '2026-07-30', amountCents: -500, currency: 'EUR', merchant: 'Z', txType: 'expense', needsReview: 1,
+    });
+    db.close();
+
+    // the dot computes on mount — a fresh Home sees the other space's backlog
+    cleanup();
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    await screen.findByTestId('home-space-switcher-dot', {}, { timeout: 5000 });
+
+    // the sheet counts lazily on open: the busy space wears its pill
+    fireEvent.click(screen.getByTestId('home-space-switcher'));
+    const pill = await screen.findByTestId('space-attn-busy', {}, { timeout: 5000 });
+    expect(pill.textContent).toContain('1');
   }, 15_000);
 
   it('the owner toggle lifts and re-arms the private lock (arc 4)', async () => {

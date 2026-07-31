@@ -5,6 +5,7 @@ import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useSession } from '@/app/session';
 import { SpaceInvitesBanner } from './SpaceSharing';
+import { useAttentionMap } from '@/application/spaceAttention';
 import { DEFAULT_HISTORY_MONTHS, SPACE_COLORS, SPACE_ICONS, isoMonthsAgo } from './spaceDefaults';
 import { PERIOD_KEYS, PeriodControls } from './PeriodSettingsScreen';
 import { CURRENCIES } from '@/domain/countries';
@@ -47,6 +48,8 @@ export function SpacesScreen() {
   const [historyOpen, setHistoryOpen] = useState(false);
 
   const spaces = useQuery(store, async () => (await store.allRows('space')).filter((s) => s.deleted === 0), []);
+  // attention pills (arc 7): counted once when the screen mounts
+  const attention = useAttentionMap(true);
 
   // duplicate PRIVATE names are a footgun (user rule: private unique;
   // shared may collide — they get a creator line to tell them apart)
@@ -170,6 +173,18 @@ export function SpacesScreen() {
                         )}
                       </span>
                     </span>
+                    {/* what this space would ask of you (arc 7) */}
+                    {(attention?.get(space.id)?.reviewCount ?? 0) > 0 && (
+                      <span
+                        data-testid={`space-attn-${space.id}`}
+                        className="shrink-0 rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-medium text-accent-deep"
+                      >
+                        {t('space.toReview', { n: attention!.get(space.id)!.reviewCount })}
+                      </span>
+                    )}
+                    {attention?.get(space.id)?.budgetOver && (
+                      <span data-testid={`space-attn-budget-${space.id}`} className="h-2 w-2 shrink-0 rounded-full bg-negative" />
+                    )}
                     {active && <Icon name="check-circle" size={19} color="var(--m-accent)" />}
                   </button>
                   <button

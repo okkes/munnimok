@@ -3,6 +3,7 @@ import { useQuery } from '@/db/useQuery';
 import { useNavigate } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
+import { useAttentionMap, useOtherSpacesDot } from '@/application/spaceAttention';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 import type { SpaceRow } from '@/db/types';
@@ -24,6 +25,10 @@ export function SpaceSwitcher() {
 
   const spaces = useQuery(store, async () => (await store.allRows('space')).filter((s) => s.deleted === 0), []);
   const active = spaces?.find((s) => s.id === spaceId);
+  // attention (arc 7): counted lazily when the sheet opens; the avatar
+  // dot says "somewhere ELSE needs you" without opening anything
+  const attention = useAttentionMap(open);
+  const otherDot = useOtherSpacesDot();
 
   return (
     <>
@@ -31,7 +36,7 @@ export function SpaceSwitcher() {
         aria-label={t('space.switch')}
         data-testid="home-space-switcher"
         onClick={() => setOpen(true)}
-        className="m-tap flex h-9 w-9 items-center justify-center rounded-full border-none bg-transparent"
+        className="m-tap relative flex h-9 w-9 items-center justify-center rounded-full border-none bg-transparent"
       >
         {active?.picture ? (
           <img src={active.picture} alt="" className="h-8 w-8 rounded-full object-cover" />
@@ -45,6 +50,12 @@ export function SpaceSwitcher() {
           >
             <Icon name={active ? avatarIcon(active) : 'leaf'} size={17} />
           </span>
+        )}
+        {otherDot && (
+          <span
+            data-testid="home-space-switcher-dot"
+            className="absolute top-0.5 right-0.5 h-2 w-2 rounded-full bg-negative ring-2 ring-[var(--m-bg)]"
+          />
         )}
       </button>
 
@@ -77,6 +88,18 @@ export function SpaceSwitcher() {
                 <span className="block truncate text-[15px] font-medium text-ink">{space.name}</span>
                 {space.id === spaceId && <span className="block text-xs text-accent-deep">{t('space.active')}</span>}
               </span>
+              {/* what this space would ask of you (arc 7) */}
+              {(attention?.get(space.id)?.reviewCount ?? 0) > 0 && (
+                <span
+                  data-testid={`space-attn-${space.id}`}
+                  className="shrink-0 rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-medium text-accent-deep"
+                >
+                  {t('space.toReview', { n: attention!.get(space.id)!.reviewCount })}
+                </span>
+              )}
+              {attention?.get(space.id)?.budgetOver && (
+                <span data-testid={`space-attn-budget-${space.id}`} className="h-2 w-2 shrink-0 rounded-full bg-negative" />
+              )}
               {space.id === spaceId && <Icon name="check" size={18} color="var(--m-accent)" />}
             </button>
           ))}
