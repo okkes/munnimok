@@ -251,7 +251,9 @@ export function SettingsScreen() {
                 // big) space-settings screen — user remark; period,
                 // currency and history start were extracted next (same
                 // remark: that screen kept only the space's identity)
-                { testId: 'settings-space-accounts-row', icon: 'bank-outline', labelKey: 'space.financialAccounts', to: '/spaces/$spaceId/accounts' },
+                // wallet vs bank (arc 9): the space's own pocket, not the
+                // global bank overview — the icons carry the distinction
+                { testId: 'settings-space-accounts-row', icon: 'wallet-outline', labelKey: 'space.financialAccounts', to: '/spaces/$spaceId/accounts' },
                 { testId: 'settings-space-members-row', icon: 'account-multiple-outline', labelKey: 'space.members', to: '/spaces/$spaceId/members', userOnly: true },
                 { testId: 'settings-categories-row', icon: 'shape-outline', labelKey: 'screen.categories', to: '/categories' },
                 { testId: 'settings-period-row', icon: 'calendar-month-outline', labelKey: 'space.periodTitle', to: '/spaces/$spaceId/period' },
