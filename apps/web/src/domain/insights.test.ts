@@ -139,6 +139,8 @@ describe('insight detectors', () => {
     expect(hits[0].impactCents).toBeGreaterThan(2_000);
 
     expect(debtAcceleration(base({ debts: [{ ...debt, paymentCents: undefined } as DebtRow] }))).toHaveLength(0);
+    // per-MONTH claim: a weekly payer (arc 3 cadence) is out of scope
+    expect(debtAcceleration(base({ debts: [{ ...debt, paymentEvery: 'week' } as DebtRow] }))).toHaveLength(0);
   });
 
   it('the engine ranks work by impact and caps the wins', () => {

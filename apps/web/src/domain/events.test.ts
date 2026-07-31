@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { AccountRow, DebtRow, GoalRow, TransactionRow } from '@/db/types';
+import type { AccountRow, GoalRow, TransactionRow } from '@/db/types';
 import { eventCategoryBreakdown, eventPerDayCents, eventSpentCents, eventSubcategoryBreakdown, suggestableTxs } from './events';
 import { goalOverview, goalProgress, paceCentsPerMonth, savingsTotalCents } from './goals';
-import { debtProgress, debtRemainingCents, debtsOverview, projectPayoff } from './debts';
 
 const tx = (partial: Partial<TransactionRow>): TransactionRow =>
   ({
@@ -109,38 +108,5 @@ describe('goals math', () => {
   });
 });
 
-describe('debts math', () => {
-  const debt = (partial: Partial<DebtRow>): DebtRow =>
-    ({ id: 'd', spaceId: 's1', name: 'd', originalCents: 100_000, deleted: 0, fieldVersions: {}, ...partial }) as DebtRow;
-
-  it('remaining prefers the linked liability balance (negative → owed)', () => {
-    const acct = account({ id: 'loan1', type: 'loan', balanceCents: -35_000 });
-    const byId = new Map([[acct.id, acct]]);
-    expect(debtRemainingCents(debt({ accountId: 'loan1' }), byId)).toBe(35_000);
-    expect(debtRemainingCents(debt({ remainingCents: 12_000 }), new Map())).toBe(12_000);
-    expect(debtRemainingCents(debt({}), new Map())).toBe(100_000);
-    expect(debtProgress(debt({}), 35_000)).toBeCloseTo(0.65);
-  });
-
-  it('projects payoff with monthly compounding; impossible payments return null', () => {
-    // 10k at 12% APR, 500/mo → ~22 months, some interest paid
-    const projection = projectPayoff(1_000_000, 50_000, 12, '2026-07-09');
-    expect(projection).not.toBeNull();
-    expect(projection!.months).toBeGreaterThan(20);
-    expect(projection!.totalInterestCents).toBeGreaterThan(0);
-    expect(projection!.endMonth > '2028-01').toBe(true);
-
-    expect(projectPayoff(1_000_000, 5_000, 12, '2026-07-09')).toBeNull(); // payment < interest
-    expect(projectPayoff(1_000_000, undefined, 12, '2026-07-09')).toBeNull();
-    // zero interest is a plain division
-    expect(projectPayoff(120_000, 10_000, undefined, '2026-07-09')!.months).toBe(12);
-  });
-
-  it('overview sums owed + monthly payments of active debts', () => {
-    const overview = debtsOverview(
-      [debt({ remainingCents: 5000, paymentCents: 100 }), debt({ remainingCents: 7000, paymentCents: 200, archived: 1 })],
-      new Map(),
-    );
-    expect(overview).toEqual({ totalOwedCents: 5000, totalMonthlyCents: 100 });
-  });
-});
+// debts math moved to its own file (src/domain/debts.test.ts) when the
+// arc-3 loan work outgrew this guest spot

@@ -28,6 +28,9 @@ interface TxFormSheetProps {
   onOpenChange: (open: boolean) => void;
   /** present = edit an existing (manual) transaction */
   tx?: TransactionRow;
+  /** a caller-staged payment (arc 3: the debt detail's "add payment"
+   *  door): the form opens as a transfer onto this counterparty */
+  prefill?: { linkedAccountId: string; merchant?: string };
 }
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
@@ -136,9 +139,10 @@ function KindRows({
   );
 }
 
-/** what the form opens with: the edited row's values, or a blank slate
- *  (S3776: the branch lives out of the component) */
-function initialFormState(tx: TransactionRow | undefined) {
+/** what the form opens with: the edited row's values, a caller-staged
+ *  payment, or a blank slate (S3776: the branch lives out of the
+ *  component) */
+function initialFormState(tx: TransactionRow | undefined, prefill?: TxFormSheetProps['prefill']) {
   if (!tx) {
     // Mina's demo suggestion pre-fills (category included — user
     // remark); the user edits freely and the act accepts ANY values
@@ -146,12 +150,12 @@ function initialFormState(tx: TransactionRow | undefined) {
     return {
       amount: suggested?.amount ?? '',
       isExpense: true,
-      merchant: suggested?.merchant ?? '',
+      merchant: prefill?.merchant ?? suggested?.merchant ?? '',
       date: todayIso(),
       accountId: null,
       catId: suggested?.catId ?? UNCATEGORIZED_ID,
-      kind: 'standard' as TxKind,
-      linkedAccountId: null,
+      kind: (prefill ? 'transfer' : 'standard') as TxKind,
+      linkedAccountId: prefill?.linkedAccountId ?? null,
       bareType: null as TxType | null,
       recurringId: null,
     };
@@ -382,7 +386,7 @@ function AccountFieldRow({ account, onOpen }: Readonly<{ account: AccountRow | u
  * automatically synced accounts (open banking) never take manual rows:
  * the bank feed is their single source of truth (user rule).
  */
-export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
+export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProps) {
   const { t } = useLang();
   const navigate = useNavigate();
   const { store, repo, spaceId } = useData();
@@ -426,7 +430,7 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
   // identity-keyed reseed overwrote what the user was typing (iOS ss)
   useEffect(() => {
     if (!open) return;
-    const initial = initialFormState(tx);
+    const initial = initialFormState(tx, prefill);
     setAmount(initial.amount);
     setIsExpense(initial.isExpense);
     setMerchant(initial.merchant);

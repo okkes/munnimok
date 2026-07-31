@@ -6,15 +6,17 @@ import { useData } from '@/app/data';
 import { useDebtStatuses } from '@/application/debts';
 import { useSpaceTransactions } from '@/application/transactions';
 import { localToday } from '@/application/recurring';
-import { projectPayoff } from '@/domain/debts';
+import { estimatePaymentPlan, paymentsPerYear, projectPayoff } from '@/domain/debts';
 import { merchantKey } from '@/domain/merchantKey';
 import type { DebtRow } from '@/db/types';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
+import { TxFormSheet } from '@/features/transactions/TxFormSheet';
 import { AppBar, IconButton } from '@/ui/AppBar';
+import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { HeroCard, ProgressBar, Tile } from '@/ui/primitives';
 import { TxRow } from '@/ui/TxRow';
-import { DebtFormSheet } from './DebtsScreen';
+import { DebtFormSheet, paymentLabelKey } from './DebtsScreen';
 
 /** One debt: the payoff story — numbers, projection, payment history. */
 export function DebtDetailScreen() {
@@ -26,6 +28,7 @@ export function DebtDetailScreen() {
   const txs = useSpaceTransactions();
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const [formInitial, setFormInitial] = useState<DebtRow | 'new' | null>(null);
+  const [paymentOpen, setPaymentOpen] = useState(false);
 
   const status = statuses?.find((s) => s.debt.id === debtId);
   // deleted here or on another device: leave the orphaned detail
@@ -58,7 +61,12 @@ export function DebtDetailScreen() {
   const { debt, remainingCents, progress } = status;
   const currency = space?.currency ?? 'EUR';
   const money = (cents: number) => fmt(cents, currency);
-  const projection = projectPayoff(remainingCents, debt.paymentCents, debt.interestPctYear, today);
+  // the explicit plan wins; with the fields empty, ≥3 payments speak for
+  // themselves ("estimated from payments", arc 3) — never stored
+  const estimate = debt.paymentCents ? null : estimatePaymentPlan(payments);
+  const projection = debt.paymentCents
+    ? projectPayoff(remainingCents, debt.paymentCents, debt.interestPctYear, today, paymentsPerYear(debt.paymentEvery, debt.paymentEveryN))
+    : projectPayoff(remainingCents, estimate?.paymentCents, debt.interestPctYear, today, estimate?.perYear ?? 12);
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-debt-detail">
@@ -80,12 +88,25 @@ export function DebtDetailScreen() {
           testId="debtdetail-hero"
           tile={<Tile size={48} tone="negative" icon={debt.icon ?? 'hand-coin-outline'} />}
           number={<span data-testid="debtdetail-remaining">{money(remainingCents)}</span>}
-          sub={t('debts.remainingOf', { amount: money(debt.originalCents) })}
-          right={<span className="m-num shrink-0 text-[14px] font-semibold text-accent-deep">{Math.round(progress * 100)}%</span>}
-          progress={<ProgressBar value={progress} />}
+          // without the original size there is no "of …" story and no
+          // honest progress — the hero stays a plain remaining figure
+          sub={debt.originalCents ? t('debts.remainingOf', { amount: money(debt.originalCents) }) : undefined}
+          right={
+            debt.originalCents ? (
+              <span className="m-num shrink-0 text-[14px] font-semibold text-accent-deep">{Math.round(progress * 100)}%</span>
+            ) : undefined
+          }
+          progress={debt.originalCents ? <ProgressBar value={progress} /> : undefined}
           meta={
             <>
-              {debt.paymentCents && <span>{t('debts.perMonth', { amount: money(debt.paymentCents) })}</span>}
+              {debt.paymentCents && (
+                <span>{t(paymentLabelKey(debt.paymentEvery), { amount: money(debt.paymentCents) })}</span>
+              )}
+              {estimate && (
+                <span data-testid="debtdetail-estimate">
+                  {t('debts.estimatedPlan', { amount: money(estimate.paymentCents), days: estimate.everyDays })}
+                </span>
+              )}
               {debt.interestPctYear !== undefined && <span>{debt.interestPctYear}% {t('debts.aprShort')}</span>}
               {projection && (
                 <span data-testid="debtdetail-projection">
@@ -98,6 +119,24 @@ export function DebtDetailScreen() {
             </>
           }
         />
+        {debt.note && (
+          <p className="mt-3 rounded-card border border-line bg-surface px-4 py-3 text-[13px] leading-relaxed text-ink-2" data-testid="debtdetail-note">
+            {debt.note}
+          </p>
+        )}
+
+        {/* a hand-entered payment, pre-staged onto this loan (arc 3):
+            the manual form opens as a transfer to the backing account */}
+        {debt.accountId && (
+          <Button
+            variant="outline"
+            className="mt-4 w-full"
+            data-testid="debtdetail-add-payment"
+            onClick={() => setPaymentOpen(true)}
+          >
+            <Icon name="plus" size={16} /> {t('debts.addPayment')}
+          </Button>
+        )}
 
         <div className="m-cap mt-5 mb-1 px-1">
           {t('debts.payments')} · {payments.length}
@@ -115,6 +154,13 @@ export function DebtDetailScreen() {
         )}
       </div>
       <DebtFormSheet initial={formInitial} onClose={() => setFormInitial(null)} />
+      {debt.accountId && (
+        <TxFormSheet
+          open={paymentOpen}
+          onOpenChange={setPaymentOpen}
+          prefill={{ linkedAccountId: debt.accountId, merchant: debt.name }}
+        />
+      )}
     </div>
   );
 }

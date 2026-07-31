@@ -208,15 +208,18 @@ export function budgetRealityCheck(inputs: InsightInputs): Insight[] {
 
 // ── wins ────────────────────────────────────────────────────────────────
 
-/** €25/month extra on the biggest debt: months and interest saved */
+/** €25/month extra on the biggest debt: months and interest saved.
+ *  Monthly payers only — the claim is per MONTH, and a weekly or yearly
+ *  cadence (arc 3) would make that copy lie. */
 export function debtAcceleration(inputs: InsightInputs): Insight[] {
   const EXTRA = 2_500;
+  const monthlyCadence = (d: (typeof inputs.debts)[number]) => !d.paymentEvery || (d.paymentEvery === 'month' && (d.paymentEveryN ?? 1) === 1);
   const candidates = inputs.debts
-    .filter((d) => d.deleted === 0 && d.archived !== 1 && d.paymentCents && d.interestPctYear)
+    .filter((d) => d.deleted === 0 && d.archived !== 1 && d.paymentCents && d.interestPctYear && monthlyCadence(d))
     .map((debt) => {
       const remaining = debt.accountId
         ? Math.max(0, -(inputs.accountsById.get(debt.accountId)?.balanceCents ?? 0))
-        : (debt.remainingCents ?? debt.originalCents);
+        : (debt.remainingCents ?? debt.originalCents ?? 0);
       return { debt, remaining };
     })
     .filter((c) => c.remaining > 0)

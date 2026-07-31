@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@/db/useQuery';
 import { LOCALES, useLang } from '@/i18n';
@@ -7,10 +7,11 @@ import { useDebtOps, useDebtStatuses } from '@/application/debts';
 import type { DebtStatus } from '@/application/debts';
 import { logActivity } from '@/application/activity';
 import { manualBalanceDate } from '@/features/accounts/accountTypes';
-import { useSpaceAccounts } from '@/application/transactions';
+import { useSpaceAccounts, useSpaceTransactions, useTxTransform } from '@/application/transactions';
+import type { SpaceTx } from '@/application/transactions';
 import { localToday } from '@/application/recurring';
-import { projectPayoff } from '@/domain/debts';
-import type { DebtRow } from '@/db/types';
+import { monthlyPaymentCents, paymentsPerYear, projectPayoff } from '@/domain/debts';
+import type { DebtRow, RecurringEvery } from '@/db/types';
 import { parseCents } from '@/lib/money';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { HelpButton } from '@/features/help/HelpButton';
@@ -20,17 +21,68 @@ import type { DebtHandoff } from './handoff';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
-import { ProgressBar, Tile } from '@/ui/primitives';
+import { Chip, ProgressBar, Tile } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
+import { TxRow } from '@/ui/TxRow';
 
 export const DEBT_ICONS = ['home-percent-outline', 'credit-card-outline', 'car-outline', 'school-outline', 'hand-coin-outline', 'account-cash-outline'] as const;
 const LIABILITY_TYPES = new Set(['credit', 'mortgage', 'loan']);
-/** select sentinel: quick-create a loan account named after the debt */
-const NEW_ACCOUNT = '__new__';
+const CADENCES = ['week', 'month', 'year'] as const;
+const CADENCE_LABEL = { week: 'recurring.everyWeek', month: 'recurring.everyMonth', year: 'recurring.everyYear' } as const;
+const PAYMENT_LABEL = { week: 'debts.perWeek', month: 'debts.perMonth', year: 'debts.perYear' } as const;
 
-/** create/edit sheet. A debt is ALWAYS backed by a loan account (user
- *  rule 2026-07-28): the account's balance is the remaining truth and
- *  only transactions move it — a missing account quick-creates here. */
+/** "{amount} / week|month|year" — the payment line follows the cadence */
+export const paymentLabelKey = (every?: RecurringEvery): (typeof PAYMENT_LABEL)[keyof typeof PAYMENT_LABEL] =>
+  PAYMENT_LABEL[every ?? 'month'];
+
+type LoanDeps = { store: ReturnType<typeof useData>['store']; repo: ReturnType<typeof useData>['repo']; spaceId: string };
+
+/** mint the backing loan account, or correct a manual one's anchor
+ *  balance + IBAN; bank-fed accounts are the bank's and stay untouched
+ *  (S3776: the form's account half lives out of the component) */
+async function ensureBackingAccount(
+  deps: LoanDeps,
+  backing: { id: string; source: string; balanceCents: number; iban?: string } | undefined,
+  args: { name: string; iban: string; currentCents: number | null },
+): Promise<string> {
+  const { store, repo, spaceId } = deps;
+  if (!backing) {
+    const backingId = repo.newId();
+    const space = await store.get('space', spaceId);
+    await repo.upsert('account', spaceId, backingId, {
+      name: args.name,
+      type: 'loan',
+      source: 'manual',
+      currency: space?.currency ?? 'EUR',
+      balanceCents: -Math.abs(args.currentCents ?? 0),
+      balanceAsOf: manualBalanceDate(),
+      ...(args.iban ? { iban: args.iban } : {}),
+    });
+    void logActivity(store, repo, spaceId, 'accountAdd', args.name);
+    return backingId;
+  }
+  if (backing.source === 'manual') {
+    const nextBalance = -Math.abs(args.currentCents ?? 0);
+    if (nextBalance !== backing.balanceCents || args.iban !== (backing.iban ?? '')) {
+      await repo.upsert('account', spaceId, backing.id, {
+        balanceCents: nextBalance,
+        balanceAsOf: manualBalanceDate(),
+        ...(args.iban ? { iban: args.iban } : {}),
+      });
+    }
+  }
+  return backing.id;
+}
+
+/**
+ * The merged Loan form (arc 3): ONE sheet mints the backing loan account
+ * and the debt together — the old two-object dance was the friction.
+ * Current value is the required truth anchor (the account's balance,
+ * stored negative); the original size is optional garnish, and the
+ * payment gets a cadence. Picking an existing liability account stays
+ * possible for bank-fed loans — their balance is the bank's and reads
+ * read-only here.
+ */
 export function DebtFormSheet({
   initial,
   prefill,
@@ -44,12 +96,19 @@ export function DebtFormSheet({
   const editing = initial !== 'new' && initial !== null ? initial : null;
   const [name, setName] = useState('');
   const [icon, setIcon] = useState<string>(DEBT_ICONS[0]);
+  /** '' = mint a fresh manual loan account on save (the default) */
   const [accountId, setAccountId] = useState('');
+  const [current, setCurrent] = useState('');
   const [original, setOriginal] = useState('');
-  const [remaining, setRemaining] = useState('');
+  const [iban, setIban] = useState('');
   const [apr, setApr] = useState('');
   const [payment, setPayment] = useState('');
+  const [paymentEvery, setPaymentEvery] = useState<(typeof CADENCES)[number]>('month');
+  const [note, setNote] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const backing = (accounts ?? []).find((a) => a.id === accountId);
+  const bankBacked = !!backing && backing.source !== 'manual';
 
   // seed keyed on the record's ID, never object identity (the iOS
   // reseed class: re-emitted rows must not wipe mid-typing edits)
@@ -62,39 +121,44 @@ export function DebtFormSheet({
     setAccountId(editing?.accountId ?? '');
     const seededOriginal = editing?.originalCents ?? prefill?.originalCents;
     setOriginal(seededOriginal ? (seededOriginal / 100).toFixed(2) : '');
-    setRemaining('');
+    setCurrent('');
+    setIban('');
     setApr(editing?.interestPctYear === undefined ? '' : String(editing.interestPctYear));
     setPayment(editing?.paymentCents ? (editing.paymentCents / 100).toFixed(2) : '');
+    setPaymentEvery(editing?.paymentEvery ?? 'month');
+    setNote(editing?.note ?? '');
     setConfirmDelete(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seedKey]);
 
+  // the picked account seeds current value + IBAN (its balance IS the
+  // remaining truth); a re-pick re-seeds, mid-typing edits survive a
+  // background re-emit because accountId itself is state
+  useEffect(() => {
+    if (backing) {
+      setCurrent((Math.abs(backing.balanceCents) / 100).toFixed(2));
+      setIban(backing.iban ?? '');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [backing?.id]);
+
   const liabilities = (accounts ?? []).filter((a) => a.archived !== 1 && LIABILITY_TYPES.has(a.type));
   const originalCents = parseCents(original);
-  const creating = accountId === NEW_ACCOUNT;
-  const valid = name.trim().length > 0 && originalCents !== null && originalCents > 0 && accountId !== '';
+  const currentCents = parseCents(current);
+  // name + a current value are the whole ask; bank-fed balances are the
+  // bank's truth and need no typing
+  const valid = name.trim().length > 0 && (bankBacked || currentCents !== null);
 
   const save = async () => {
-    if (!valid || originalCents === null) return;
+    if (!valid) return;
     const paymentCents = parseCents(payment);
     const aprNumber = Number.parseFloat(apr.replace(',', '.'));
-    let backingId = accountId;
-    if (creating) {
-      // the quick-created loan account opens at the remaining value (or
-      // the original) — from here only transactions move it
-      const openingCents = parseCents(remaining) ?? originalCents;
-      backingId = repo.newId();
-      const space = await store.get('space', spaceId);
-      await repo.upsert('account', spaceId, backingId, {
-        name: name.trim(),
-        type: 'loan',
-        source: 'manual',
-        currency: space?.currency ?? 'EUR',
-        balanceCents: -Math.abs(openingCents),
-        balanceAsOf: manualBalanceDate(),
-      });
-      void logActivity(store, repo, spaceId, 'accountAdd', name.trim());
-    }
+    const backingId = await ensureBackingAccount({ store, repo, spaceId }, backing, {
+      name: name.trim(),
+      iban: iban.trim(),
+      currentCents,
+    });
+    const hasPayment = !!paymentCents && paymentCents > 0;
     await ops.save(editing?.id ?? null, {
       name: name.trim(),
       icon,
@@ -102,12 +166,16 @@ export function DebtFormSheet({
       // an auto-detected recurring hands its merchant over — the debt's
       // payment history then includes those past transactions
       ...(editing ? {} : { merchantKey: prefill?.merchantKey }),
-      originalCents,
+      originalCents: originalCents && originalCents > 0 ? originalCents : undefined,
       // remaining is the ACCOUNT's business now — never stored again
       remainingCents: undefined,
       // 0% is a real answer; only the EMPTY field means "remind me"
       interestPctYear: Number.isFinite(aprNumber) && aprNumber >= 0 ? aprNumber : undefined,
-      paymentCents: paymentCents && paymentCents > 0 ? paymentCents : undefined,
+      paymentCents: hasPayment ? paymentCents : undefined,
+      // stored explicitly with the payment; null CLEARS a stale cadence
+      // (undefined would drop from the op and leave 'week' standing)
+      paymentEvery: hasPayment ? paymentEvery : (null as never),
+      note: note.trim() || undefined,
       archived: editing?.archived ?? 0,
     });
     onClose();
@@ -147,8 +215,29 @@ export function DebtFormSheet({
           placeholder={t('debts.namePlaceholder')}
           className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
         />
-        {/* the backing loan account is MANDATORY — its balance is the
-            remaining truth, and only transactions move it */}
+        {/* the truth anchor: what is owed RIGHT NOW — it becomes (or
+            corrects) the backing account's balance; bank-fed balances
+            are the bank's and read read-only */}
+        <div className="m-cap px-1">{t('debts.current')}</div>
+        {backing && bankBacked ? (
+          <p className="px-1 text-[13px] text-ink-3" data-testid="debtform-current-bank">
+            {fmt(Math.abs(backing.balanceCents), backing.currency)} · {t('debts.currentBank')}
+          </p>
+        ) : (
+          <input
+            data-testid="debtform-current"
+            type="number"
+            inputMode="decimal"
+            step="0.01"
+            min="0"
+            value={current}
+            onChange={(e) => setCurrent(e.target.value)}
+            placeholder="0.00"
+            className="h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[15px] text-ink outline-none placeholder:text-ink-4"
+          />
+        )}
+        {/* default: the loan mints its own account; picking an existing
+            liability covers bank-fed loans */}
         <div className="m-cap px-1">{t('debts.linkAccount')}</div>
         <select
           data-testid="debtform-account"
@@ -156,45 +245,37 @@ export function DebtFormSheet({
           onChange={(e) => setAccountId(e.target.value)}
           className="h-12 w-full rounded-input border border-line bg-surface px-3 text-[14px] text-ink"
         >
-          <option value="">{t('debts.pickAccount')}</option>
+          <option value="">{t('debts.autoAccount')}</option>
           {liabilities.map((a) => (
             <option key={a.id} value={a.id}>
               {a.name} · {fmt(a.balanceCents, a.currency)}
             </option>
           ))}
-          <option value={NEW_ACCOUNT}>{t('debts.newAccount')}</option>
         </select>
-        <div className="m-cap px-1">{t('debts.original')}</div>
-        <input
-          data-testid="debtform-original"
-          type="number"
-          inputMode="decimal"
-          step="0.01"
-          min="0"
-          value={original}
-          onChange={(e) => setOriginal(e.target.value)}
-          placeholder="0.00"
-          className="h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[15px] text-ink outline-none placeholder:text-ink-4"
-        />
-        {creating && (
-          <>
-            {/* seeds the fresh loan account's opening balance, once —
-                afterwards only transactions move it */}
-            <div className="m-cap px-1">{t('debts.remaining')}</div>
+        {!bankBacked && (
+          <input
+            data-testid="debtform-iban"
+            value={iban}
+            onChange={(e) => setIban(e.target.value)}
+            placeholder={t('debts.iban')}
+            className="h-11 w-full rounded-input border border-line bg-surface px-4 font-mono text-[13px] text-ink outline-none placeholder:text-ink-4"
+          />
+        )}
+        <div className="flex gap-2">
+          <label className="min-w-0 flex-1 text-[12px] text-ink-3">
+            {t('debts.original')}
             <input
-              data-testid="debtform-remaining"
+              data-testid="debtform-original"
               type="number"
               inputMode="decimal"
               step="0.01"
               min="0"
-              value={remaining}
-              onChange={(e) => setRemaining(e.target.value)}
-              placeholder={original || '0.00'}
-              className="h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[15px] text-ink outline-none placeholder:text-ink-4"
+              value={original}
+              onChange={(e) => setOriginal(e.target.value)}
+              placeholder="0.00"
+              className="mt-1 h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
             />
-          </>
-        )}
-        <div className="flex gap-2">
+          </label>
           <label className="min-w-0 flex-1 text-[12px] text-ink-3">
             {t('debts.apr')}
             <input
@@ -209,6 +290,8 @@ export function DebtFormSheet({
               className="mt-1 h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
             />
           </label>
+        </div>
+        <div className="flex items-end gap-2">
           <label className="min-w-0 flex-1 text-[12px] text-ink-3">
             {t('debts.payment')}
             <input
@@ -223,7 +306,23 @@ export function DebtFormSheet({
               className="mt-1 h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
             />
           </label>
+          {/* the payment's cadence (arc 3) — the projection follows it */}
+          <div className="flex gap-1.5">
+            {CADENCES.map((cadence) => (
+              <Chip key={cadence} testId={`debtform-every-${cadence}`} selected={paymentEvery === cadence} onClick={() => setPaymentEvery(cadence)}>
+                {t(CADENCE_LABEL[cadence])}
+              </Chip>
+            ))}
+          </div>
         </div>
+        <textarea
+          data-testid="debtform-note"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder={t('debts.note')}
+          rows={2}
+          className="w-full resize-none rounded-input border border-line bg-surface px-4 py-2.5 text-[14px] text-ink outline-none placeholder:text-ink-4"
+        />
         <Button data-testid="debtform-save" onClick={() => void save()} disabled={!valid}>
           {editing ? t('action.save') : t('action.create')}
         </Button>
@@ -237,12 +336,81 @@ export function DebtFormSheet({
   );
 }
 
+/**
+ * The virtual "Unassigned payments" bucket (arc 3): bare debt-payment
+ * rows (no counter account — the arc-2 exit, or imports) summed as a
+ * computed card, never a stored debt. Each row assigns to a loan with
+ * one tap — the link files it under that debt's history.
+ */
+function UnassignedPaymentsCard({
+  bare,
+  debts,
+  currency,
+}: Readonly<{ bare: SpaceTx[]; debts: readonly DebtRow[]; currency: string }>) {
+  const { t } = useLang();
+  const { fmt } = useDisplayMoney();
+  const transform = useTxTransform();
+  const [open, setOpen] = useState(false);
+  const [assignTx, setAssignTx] = useState<SpaceTx | null>(null);
+  const targets = debts.filter((d) => d.deleted === 0 && d.archived !== 1 && d.accountId);
+  if (bare.length === 0) return null;
+  const total = bare.reduce((sum, tx) => sum + Math.abs(tx.amountCents), 0);
+  return (
+    <>
+      <button
+        data-testid="debts-unassigned"
+        onClick={() => setOpen(true)}
+        className="m-tap mt-3 flex w-full items-center gap-3 rounded-card border border-dashed border-line bg-surface p-4 text-left"
+      >
+        <Tile icon="help-circle-outline" tone="neutral" />
+        <span className="min-w-0 flex-1">
+          <span className="flex items-baseline justify-between gap-2">
+            <span className="truncate text-[15px] font-semibold text-ink">{t('debts.unassigned')}</span>
+            <span className="m-num shrink-0 text-[14px] font-semibold text-ink">{fmt(total, currency)}</span>
+          </span>
+          <span className="block text-[11px] text-ink-4">{t('debts.unassignedSub', { n: bare.length })}</span>
+        </span>
+      </button>
+      <Sheet open={open} onOpenChange={setOpen} title={t('debts.unassigned')} size="tall" dragHandle>
+        <p className="pb-2 text-[12px] text-ink-3">{t('debts.unassignedHint')}</p>
+        <div className="rounded-card border border-line bg-surface px-3 py-1" data-testid="debts-unassigned-list">
+          {bare.map((tx) => (
+            <TxRow key={tx.id} tx={tx} showDate onClick={() => setAssignTx(tx)} />
+          ))}
+        </div>
+      </Sheet>
+      <Sheet open={assignTx !== null} onOpenChange={(next) => !next && setAssignTx(null)} title={t('debts.assignTo')} size="form">
+        <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="debts-assign-options">
+          {targets.map((debt) => (
+            <button
+              key={debt.id}
+              data-testid={`debts-assign-${debt.id}`}
+              onClick={() => {
+                // the link makes it THIS loan's payment (history + matcher
+                // agree); the locked category already fits, review stands
+                if (assignTx) void transform(assignTx, { linkedAccountId: debt.accountId }, 'txLink');
+                setAssignTx(null);
+              }}
+              className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-4 py-3 text-left last:border-0"
+            >
+              <Icon name={debt.icon ?? 'hand-coin-outline'} size={18} color="var(--m-ink-2)" />
+              <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{debt.name}</span>
+            </button>
+          ))}
+          {targets.length === 0 && <p className="px-4 py-3 text-[13px] text-ink-4">{t('debts.assignNone')}</p>}
+        </div>
+      </Sheet>
+    </>
+  );
+}
+
 /** All debts: how deep, how fast out. */
 export function DebtsScreen() {
   const { t, lang } = useLang();
   const navigate = useNavigate();
   const { store, spaceId } = useData();
   const statuses = useDebtStatuses();
+  const txs = useSpaceTransactions();
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const currency = space?.currency ?? 'EUR';
   const [formInitial, setFormInitial] = useState<DebtRow | 'new' | null>(null);
@@ -253,20 +421,37 @@ export function DebtsScreen() {
   useEffect(() => {
     if (handoff) setFormInitial('new');
   }, [handoff]);
+  // counterparty-less debt payments — the virtual bucket's contents
+  const bare = useMemo(
+    () => (txs ?? []).filter((tx) => tx.deleted === 0 && tx.txType === 'debtPayment' && !tx.linkedAccountId),
+    [txs],
+  );
 
   const { fmt } = useDisplayMoney();
   const money = (cents: number) => fmt(cents, currency);
   const active = (statuses ?? []).filter((s) => s.debt.archived !== 1);
   const totalOwed = active.reduce((sum, s) => sum + s.remainingCents, 0);
-  const totalMonthly = active.reduce((sum, s) => sum + (s.debt.paymentCents ?? 0), 0);
+  // cadence-normalized (arc 3): a weekly €100 reads as ~€433 here
+  const totalMonthly = active.reduce((sum, s) => sum + monthlyPaymentCents(s.debt), 0);
   const today = localToday();
 
   const renderCard = (status: DebtStatus) => {
     const { debt, remainingCents, progress } = status;
-    const projection = projectPayoff(remainingCents, debt.paymentCents, debt.interestPctYear, today);
+    const projection = projectPayoff(
+      remainingCents,
+      debt.paymentCents,
+      debt.interestPctYear,
+      today,
+      paymentsPerYear(debt.paymentEvery, debt.paymentEveryN),
+    );
     const freeLabel = projection
       ? new Date(`${projection.endMonth}-01`).toLocaleDateString(LOCALES[lang], { month: 'short', year: 'numeric' })
       : null;
+    const subParts = [
+      debt.originalCents ? t('budgets.of', { amount: money(debt.originalCents) }) : null,
+      debt.paymentCents ? t(paymentLabelKey(debt.paymentEvery), { amount: money(debt.paymentCents) }) : null,
+      freeLabel ? t('debts.freeBy', { date: freeLabel }) : null,
+    ].filter(Boolean);
     return (
       <button
         key={debt.id}
@@ -283,14 +468,11 @@ export function DebtsScreen() {
                 {money(remainingCents)}
               </span>
             </span>
-            <span className="block text-[11px] text-ink-4">
-              {t('budgets.of', { amount: money(debt.originalCents) })}
-              {debt.paymentCents ? ` · ${t('debts.perMonth', { amount: money(debt.paymentCents) })}` : ''}
-              {freeLabel ? ` · ${t('debts.freeBy', { date: freeLabel })}` : ''}
-            </span>
+            {subParts.length > 0 && <span className="block text-[11px] text-ink-4">{subParts.join(' · ')}</span>}
           </span>
         </div>
-        <ProgressBar className="mt-3" value={progress} />
+        {/* progress needs the original size — without it the bar would lie 0% */}
+        {!!debt.originalCents && <ProgressBar className="mt-3" value={progress} />}
       </button>
     );
   };
@@ -327,6 +509,7 @@ export function DebtsScreen() {
             </div>
           </div>
         )}
+        <UnassignedPaymentsCard bare={bare} debts={(statuses ?? []).map((s) => s.debt)} currency={currency} />
         <div className="flex flex-col gap-2.5 pt-3">{(statuses ?? []).map(renderCard)}</div>
         {statuses?.length === 0 && (
           <div className="flex flex-col items-center gap-2 px-6 pt-16 text-center" data-testid="debts-empty">

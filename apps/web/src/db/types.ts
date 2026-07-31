@@ -333,13 +333,21 @@ export interface DebtRow extends SyncEnvelope {
   icon?: string;
   /** liability account whose balance is the remaining truth */
   accountId?: string;
-  originalCents: number;
+  /** starting size — optional since the merged Loan form (arc 3): the
+   *  current value is the truth anchor, the original only adds progress */
+  originalCents?: number;
   /** manual remaining when no account is linked */
   remainingCents?: number;
   /** informational APR, e.g. 3.5 */
   interestPctYear?: number;
   paymentCents?: number;
   paymentDay?: number;
+  /** payment cadence (arc 3), recurring-shaped: every N week/month/year;
+   *  absent = monthly, estimates fill the gap when payments exist */
+  paymentEvery?: RecurringEvery;
+  paymentEveryN?: number;
+  /** free-form note (arc 3) */
+  note?: string;
   /** auto-link payments by merchant (recurring-style) */
   merchantKey?: string;
   archived?: 0 | 1;
