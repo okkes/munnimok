@@ -505,6 +505,11 @@ function RecurringPickSheet({
   );
 }
 
+/** v2: the loan/mortgage counterparty IS the debt being paid (S3776:
+ *  the branch lives out of the component) */
+const loanCounterOf = (counter: { type: string; name: string } | undefined): { name: string } | undefined =>
+  counter && ['loan', 'mortgage'].includes(counter.type) ? { name: counter.name } : undefined;
+
 /**
  * Review queue, rebuilt around the legacy mechanics with a calmer face:
  * one card at a time, the prediction pre-applied WITH its reason, bulk
@@ -621,8 +626,8 @@ export function ReviewScreen() {
   // IS the loan (v2), so the card names the counterparty itself and
   // retires the recurring row — a payoff transfer is not a recurring
   // cost (user request 2026-07-29)
-  const isLoanCounter = !!draftCounter && ['loan', 'mortgage'].includes(draftCounter.type);
-  const payingDebt = isLoanCounter && draftCounter ? { name: draftCounter.name } : undefined;
+  const payingDebt = loanCounterOf(draftCounter);
+  const isLoanCounter = payingDebt !== undefined;
   const events = useEvents();
   const activeEvents = useMemo(() => (events ?? []).filter((e) => e.archived !== 1), [events]);
   const pickedEvent = activeEvents.find((e) => e.id === eventPick);
