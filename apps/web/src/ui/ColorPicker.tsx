@@ -104,19 +104,50 @@ function ColorWheelSheet({ open, onOpenChange, initial, onApply }: Readonly<Colo
     setH(Math.round((angle + 360) % 360));
     setHexDraft('');
   };
+  const hueRef = useRef(hueFromEvent);
+  hueRef.current = hueFromEvent;
 
-  const onWheelPointerDown = (e: React.PointerEvent) => {
-    // the gesture belongs to the wheel: without this, dragging downward
-    // from the ring reads as a swipe-to-dismiss on the sheet
-    e.stopPropagation();
-    (e.target as Element).setPointerCapture?.(e.pointerId);
-    hueFromEvent(e);
-  };
-  // …and the TOUCH stream must stay with the wheel too: the sheet's
-  // drag/scroll machinery listens to touch events separately from
-  // pointer events, and on iOS it swallowed the downward half of the
-  // ring drag as a swipe-to-dismiss (user ss 2026-08-01)
-  const keepTouch = (e: React.TouchEvent) => e.stopPropagation();
+  // The wheel owns its gesture — with NATIVE target-phase listeners.
+  // React synthetic stopPropagation was a no-op here (second user ss
+  // 2026-08-01): React handles events at the ROOT, so by the time the
+  // synthetic handler ran, the sheet library's native pointerdown on
+  // its container (an ancestor between wheel and root) had ALREADY
+  // armed the drag — downward ring drags kept dismissing the sheet.
+  // Stopping at the target phase runs before any ancestor bubble
+  // listener, pointer and touch families both. Keyed on the ELEMENT
+  // (state via callback ref), not `open`: the sheet's content mounts a
+  // render after `open` flips, and an open-keyed effect ran too early.
+  const [wheelEl, setWheelEl] = useState<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = wheelEl;
+    if (!el) return;
+    const down = (e: PointerEvent) => {
+      e.stopPropagation();
+      hueRef.current(e);
+      try {
+        el.setPointerCapture?.(e.pointerId);
+      } catch {
+        // test DOMs throw on capture without an active pointer — the
+        // hue is already applied, capture is a real-device nicety
+      }
+    };
+    const move = (e: PointerEvent) => {
+      if (e.buttons !== 1) return;
+      e.stopPropagation();
+      hueRef.current(e);
+    };
+    const keepTouch = (e: TouchEvent) => e.stopPropagation();
+    el.addEventListener('pointerdown', down);
+    el.addEventListener('pointermove', move);
+    el.addEventListener('touchstart', keepTouch, { passive: true });
+    el.addEventListener('touchmove', keepTouch, { passive: true });
+    return () => {
+      el.removeEventListener('pointerdown', down);
+      el.removeEventListener('pointermove', move);
+      el.removeEventListener('touchstart', keepTouch);
+      el.removeEventListener('touchmove', keepTouch);
+    };
+  }, [wheelEl]);
 
   const applyHexDraft = (raw: string) => {
     setHexDraft(raw);
@@ -138,12 +169,11 @@ function ColorWheelSheet({ open, onOpenChange, initial, onApply }: Readonly<Colo
       <div className="flex flex-col items-center gap-4 pt-2">
         {/* hue ring with live preview in the middle */}
         <div
-          ref={wheelRef}
+          ref={(el) => {
+            wheelRef.current = el;
+            setWheelEl(el);
+          }}
           data-testid="colorwheel-ring"
-          onPointerDown={onWheelPointerDown}
-          onPointerMove={(e) => e.buttons === 1 && hueFromEvent(e)}
-          onTouchStart={keepTouch}
-          onTouchMove={keepTouch}
           className="relative shrink-0 touch-none rounded-full"
           style={{
             width: WHEEL,

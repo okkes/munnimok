@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useSpaceAccounts } from '@/application/transactions';
 import { UNCATEGORIZED_ID, autoSubFor } from '@/domain/categories';
@@ -35,6 +35,14 @@ interface TxFormSheetProps {
 }
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
+
+/** one string per form state — the dirty guard compares it to the
+ *  seeded baseline (order fixed; JSON keeps null/undefined distinct) */
+const formFingerprint = (state: Record<string, unknown>): string =>
+  JSON.stringify([
+    state.amount, state.isExpense, state.merchant, state.date, state.accountId, state.catId,
+    state.kind, state.linkedAccountId, state.bareType, state.recurringId, state.splits,
+  ]);
 
 /**
  * The kind resolves the stored technical type (user simplification):
@@ -424,6 +432,7 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
   // manual counterparty: the other side can be written in the same
   // stroke (user: "-100 to savings updated only half the picture")
   const [mirrorCounter, setMirrorCounter] = useState(true);
+  const baselineRef = useRef('');
 
   const allAccounts = useSpaceAccounts();
   const accounts = useMemo(() => allAccounts?.filter((a) => !a.archived), [allAccounts]);
@@ -455,6 +464,14 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
     setRecurringId(initial.recurringId);
     setStagedSplits(tx?.splits ?? null);
     setMirrorCounter(true);
+    // dirty baseline (user request 2026-08-01): a stray backdrop tap on
+    // an EDITED form asks before dropping it; an untouched one closes
+    baselineRef.current = formFingerprint({
+      amount: initial.amount, isExpense: initial.isExpense, merchant: initial.merchant, date: initial.date,
+      accountId: initial.accountId, catId: initial.catId, kind: initial.kind,
+      linkedAccountId: initial.linkedAccountId, bareType: initial.bareType, recurringId: initial.recurringId,
+      splits: tx?.splits ?? null,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, tx?.id]);
 
@@ -538,6 +555,7 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
         onOpenChange={onOpenChange}
         title={tx ? t('txform.editTitle') : t('txform.addTitle')}
         size="tall"
+        dirty={open && formFingerprint({ amount, isExpense, merchant, date, accountId, catId, kind, linkedAccountId, bareType, recurringId, splits: stagedSplits }) !== baselineRef.current}
       >
         {/* no manual account yet: explain WHY the form can't work and
             hand over a one-tap path to fix it (user UX request) */}

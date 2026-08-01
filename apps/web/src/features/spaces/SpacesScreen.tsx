@@ -206,7 +206,7 @@ export function SpacesScreen() {
       {/* Create space — the full form (arc 4): identity + the three
           defaults, each behind a row that opens the same editor its
           settings screen uses. Only the name is required. */}
-      <Sheet open={createOpen} onOpenChange={setCreateOpen} title={t('space.new')} size="tall">
+      <Sheet open={createOpen} onOpenChange={setCreateOpen} title={t('space.new')} size="tall" dirty={name.trim() !== ''}>
         <div className="flex flex-col gap-3 pt-1">
           <input
             data-testid="space-create-name"

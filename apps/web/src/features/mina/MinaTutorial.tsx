@@ -13,6 +13,7 @@ import { Icon } from '@/ui/Icon';
 import { closeAllSheets, hasOpenSheet } from '@/ui/Sheet';
 import { MINA_ART, MINA_EXPR } from './assets';
 import { MINA_DONE_KEY, MINA_STATE_KEY, MINA_STEPS, minaStepIndex, minaSuggestedAccountName, minaSuggestedSpaceName, minaSuggestedTx, setMinaSuggestions } from './steps';
+import { setMinaSheetGuard } from './lock';
 import type { MinaLedgerEntry, MinaRunState } from './steps';
 import { revertMinaRun } from './revert';
 
@@ -162,9 +163,20 @@ export function MinaTutorial() {
   const [minimized, setMinimized] = useState(false);
   const [targetLabel, setTargetLabel] = useState('');
   const [sheetOpen, setSheetOpen] = useState(false);
+  // act steps: a gentle glow on the form's save button (user request
+  // 2026-08-01) — attention without gating, the form stays editable
+  const [softRect, setSoftRect] = useState<DOMRect | null>(null);
   const [resumePending, setResumePending] = useState(false);
   // per-act baseline: ids that existed when the act step became current
   const baselineRef = useRef<{ step: number; ids: Set<string> } | null>(null);
+
+  // while the run is live, sheets refuse USER dismissal (backdrop tap,
+  // drag-down, Escape) — a stray swipe tore the create form out from
+  // under the lesson (user ss 2026-08-01); programmatic closes still work
+  useEffect(() => {
+    setMinaSheetGuard(!!run?.active);
+    return () => setMinaSheetGuard(false);
+  }, [run?.active]);
 
   // load persisted state (resume after kill); demo identities never run
   useEffect(() => {
@@ -391,6 +403,14 @@ export function MinaTutorial() {
         return next;
       });
       setTargetLabel(elementLabel(resolveAnchor(step?.labelFrom ?? step?.anchor)));
+      // act steps: track the save button for the soft glow
+      const softEl = step?.act && !step.anchor ? resolveAnchor(step.labelFrom) : null;
+      const softNext = softEl?.getBoundingClientRect() ?? null;
+      setSoftRect((prev) => {
+        if (!prev && !softNext) return prev;
+        if (prev && softNext && Math.abs(prev.top - softNext.top) < 1 && Math.abs(prev.left - softNext.left) < 1 && Math.abs(prev.width - softNext.width) < 1) return prev;
+        return softNext;
+      });
       setSheetOpen(hasOpenSheet());
       raf = requestAnimationFrame(tick);
     };
@@ -601,6 +621,17 @@ export function MinaTutorial() {
               full-screen blocker swallows everything; the bubble itself
               sits above it at z-140. Act steps stay fully interactive. */}
           {!showShade && !step.act && <div className="fixed inset-0 z-[130]" data-testid="mina-tap-blocker" />}
+          {/* act steps: the form stays fully editable, and the button
+              that finishes the lesson wears a soft breathing ring so the
+              way forward is visible without being forced (user ss:
+              "gentle highlight on the create button, allow edits") */}
+          {step.act && softRect && (
+            <div
+              data-testid="mina-soft-glow"
+              className="m-mina-glow pointer-events-none fixed z-[60] rounded-2xl transition-all duration-500"
+              style={{ top: softRect.top - 4, left: softRect.left - 4, width: softRect.width + 8, height: softRect.height + 8 }}
+            />
+          )}
           {minimized ? (
             // tucked away: a glowing corner orb brings Mina back (user
             // ruling — sometimes she simply IS in the way)

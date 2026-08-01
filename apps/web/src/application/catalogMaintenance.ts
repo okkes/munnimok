@@ -178,7 +178,10 @@ export async function migrateFamilySubs(store: StorageBackend, repo: Repo): Prom
  * the source the same day). One pass re-derives those rows by sign.
  */
 export async function migrateSignContradictions(store: StorageBackend, repo: Repo): Promise<number> {
-  const markerKey = 'txSignType_v1';
+  // v2 (2026-08-01): rerun once — sign-blind MEMORY predictions kept
+  // writing contradicting standard types into txMeta overlays (which
+  // invariants never see) until predictTx learned the sign rule
+  const markerKey = 'txSignType_v2';
   if (await store.metaGet(markerKey)) return 0;
 
   let touched = 0;

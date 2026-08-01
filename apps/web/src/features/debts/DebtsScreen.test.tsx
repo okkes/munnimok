@@ -52,8 +52,10 @@ describe('Debts (demo identity)', () => {
     fireEvent.change(screen.getByTestId('chooser-acctform-iban'), { target: { value: 'NL77LOAN0000000077' } });
     fireEvent.change(screen.getByTestId('chooser-acctform-apr'), { target: { value: '12' } });
     fireEvent.change(screen.getByTestId('chooser-acctform-payment'), { target: { value: '120' } });
-    // weekly cadence (arc 3): the projection follows it
-    fireEvent.click(screen.getByTestId('chooser-acctform-every-week'));
+    // weekly cadence lives under Custom now (recurring-style mechanics,
+    // user request 2026-08-01): the projection follows it
+    fireEvent.click(screen.getByTestId('chooser-acctform-every-custom'));
+    fireEvent.change(screen.getByTestId('chooser-acctform-every-unit'), { target: { value: 'week' } });
     fireEvent.change(screen.getByTestId('chooser-acctform-note'), { target: { value: 'DUO, samen met Kim' } });
     fireEvent.click(screen.getByTestId('chooser-acctform-save'));
 

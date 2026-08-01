@@ -90,8 +90,15 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
     onClose();
   };
 
+  // dirty vs the seeded values (user request 2026-08-01)
+  const dirty =
+    initial !== null &&
+    (name !== (editing?.name ?? '') ||
+      target !== (editing?.targetCents ? (editing.targetCents / 100).toFixed(2) : '') ||
+      targetDate !== (editing?.targetDate ?? ''));
+
   return (
-    <Sheet open={initial !== null} onOpenChange={(open) => !open && onClose()} title={editing ? t('goals.edit') : t('goals.new')} size="tall">
+    <Sheet open={initial !== null} onOpenChange={(open) => !open && onClose()} title={editing ? t('goals.edit') : t('goals.new')} size="tall" dirty={dirty}>
       <div className="flex flex-col gap-3 pt-1">
         {/* optional cover, same mechanics as events (user request) */}
         <div className="flex gap-2 overflow-x-auto pb-1" data-testid="goalform-pictures">

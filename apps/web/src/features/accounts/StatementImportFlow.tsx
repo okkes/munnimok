@@ -230,7 +230,18 @@ export function StatementImportFlow({
               );
             })}
             <Button data-testid="import-run" onClick={() => void runImport()} disabled={!importPreview?.length || importing}>
-              {t('import.doImport')}
+              {importing ? (
+                // big statements take a while — say so instead of freezing
+                // on a dead button (user ss 2026-08-01)
+                <span className="inline-flex items-center gap-2" data-testid="import-running">
+                  <span className="inline-flex animate-spin">
+                    <Icon name="loading" size={16} />
+                  </span>
+                  {t('import.importing')}
+                </span>
+              ) : (
+                t('import.doImport')
+              )}
             </Button>
           </div>
         )}

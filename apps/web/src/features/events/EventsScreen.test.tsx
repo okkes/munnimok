@@ -26,6 +26,28 @@ describe('Events (demo identity)', () => {
     indexedDB.deleteDatabase('munni_demo');
   });
 
+  it('an edited form asks before a stray dismissal drops it (dirty guard)', async () => {
+    renderApp('/events');
+    await screen.findByTestId('screen-events');
+    fireEvent.click(await screen.findByTestId('events-add'));
+    fireEvent.change(await screen.findByTestId('eventform-name'), { target: { value: 'Ski trip' } });
+
+    // Escape = a dismissal gesture: the guard asks instead of dropping
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await screen.findByTestId('sheet-discard');
+    fireEvent.click(screen.getByTestId('sheet-keep-editing'));
+    // the form survived the gesture (test-mode sheets stay mounted, so
+    // the retained value is the observable, not the confirm's absence)
+    expect((screen.getByTestId('eventform-name') as HTMLInputElement).value).toBe('Ski trip');
+
+    // choosing Discard really closes the form: the host clears `initial`,
+    // dirty drops, and the guard subtree unmounts with it
+    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.click(await screen.findByTestId('sheet-discard'));
+    await waitFor(() => expect(screen.queryByTestId('sheet-discard')).toBeNull());
+    expect(document.querySelector('[data-testid^="event-card-"]')).toBeNull();
+  }, 15_000);
+
   it('creates an event; the card shows range and a zero total', async () => {
     renderApp('/events');
     await screen.findByTestId('screen-events');

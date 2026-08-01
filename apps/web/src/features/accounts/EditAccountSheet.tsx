@@ -10,11 +10,9 @@ import { Button } from '@/ui/Button';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
-import { Chip } from '@/ui/primitives';
 import { SOURCE_KEYS } from './AttachSheet';
 import { isLiability, manualBalanceDate, typeDef } from './accountTypes';
-
-const CADENCE_LABEL = { week: 'recurring.everyWeek', month: 'recurring.everyMonth', year: 'recurring.everyYear' } as const;
+import { isCustomCadence, LoanCadenceControl } from './LoanCadenceControl';
 
 /** an emptied field must CLEAR the row (null); undefined would drop from
  *  the op and leave the stale value standing */
@@ -32,6 +30,8 @@ const seedFrom = (account: AccountRow) => ({
   apr: account.interestPctYear === undefined ? '' : String(account.interestPctYear),
   payment: account.paymentCents ? (account.paymentCents / 100).toFixed(2) : '',
   payEvery: account.paymentEvery ?? ('month' as RecurringEvery),
+  payEveryN: Math.max(1, account.paymentEveryN ?? 1),
+  payCustom: isCustomCadence(account.paymentEvery, account.paymentEveryN),
   note: account.note ?? '',
   // the switch shows the EFFECTIVE state (type default or explicit)
   track: isDebtTracked(account),
@@ -62,6 +62,8 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
   const [apr, setApr] = useState('');
   const [payment, setPayment] = useState('');
   const [payEvery, setPayEvery] = useState<RecurringEvery>('month');
+  const [payEveryN, setPayEveryN] = useState(1);
+  const [payCustom, setPayCustom] = useState(false);
   const [note, setNote] = useState('');
   const [track, setTrack] = useState(false);
 
@@ -79,6 +81,8 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
     setApr(seed.apr);
     setPayment(seed.payment);
     setPayEvery(seed.payEvery);
+    setPayEveryN(seed.payEveryN);
+    setPayCustom(seed.payCustom);
     setNote(seed.note);
     setTrack(seed.track);
   }
@@ -86,6 +90,24 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
 
   const manual = account?.source === 'manual';
   const liability = !!account && isLiability(account.type);
+
+  // dirty vs the row-derived seed: an untouched sheet closes freely, an
+  // edited one asks (user request 2026-08-01); the logo saves on pick
+  // and stays out of the comparison
+  const seedNow = account ? seedFrom(account) : null;
+  const dirty =
+    !!seedNow &&
+    (name !== seedNow.name ||
+      (manual && (balance !== seedNow.balance || negative !== seedNow.negative)) ||
+      (liability &&
+        (iban !== seedNow.iban ||
+          original !== seedNow.original ||
+          apr !== seedNow.apr ||
+          payment !== seedNow.payment ||
+          payEvery !== seedNow.payEvery ||
+          payEveryN !== seedNow.payEveryN ||
+          note !== seedNow.note ||
+          track !== seedNow.track)));
 
   /** what the liability form asks of the row — empties null-clear */
   const storyChanges = (): Partial<AccountRow> => {
@@ -100,6 +122,7 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
       interestPctYear: orClear(Number.isFinite(aprNumber) && aprNumber >= 0 ? aprNumber : undefined) as never,
       paymentCents: orClear(hasPayment ? paymentCents : undefined) as never,
       paymentEvery: orClear(hasPayment ? payEvery : undefined) as never,
+      paymentEveryN: orClear(hasPayment && payEveryN > 1 ? payEveryN : undefined) as never,
       note: orClear(note.trim() || undefined) as never,
       trackAsDebt: track ? 1 : 0,
     };
@@ -133,7 +156,7 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
 
   return (
     <>
-      <Sheet open={!!account} onOpenChange={(open) => !open && onClose()} title={t('acct.editAccount')} size={liability ? 'tall' : 'form'}>
+      <Sheet open={!!account} onOpenChange={(open) => !open && onClose()} title={t('acct.editAccount')} size={liability ? 'tall' : 'form'} dirty={dirty}>
         <div className="flex flex-col gap-3 pt-1">
           <input
             data-testid="acctedit-name"
@@ -225,29 +248,30 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
                   />
                 </label>
               </div>
-              <div className="flex items-end gap-2">
-                <label className="min-w-0 flex-1 text-[12px] text-ink-3">
-                  {t('debts.payment')}
-                  <input
-                    data-testid="acctedit-payment"
-                    type="number"
-                    inputMode="decimal"
-                    step="0.01"
-                    min="0"
-                    value={payment}
-                    onChange={(e) => setPayment(e.target.value)}
-                    placeholder="0.00"
-                    className="mt-1 h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
-                  />
-                </label>
-                <div className="flex gap-1.5">
-                  {(['week', 'month', 'year'] as const).map((cadence) => (
-                    <Chip key={cadence} testId={`acctedit-every-${cadence}`} selected={payEvery === cadence} onClick={() => setPayEvery(cadence)}>
-                      {t(CADENCE_LABEL[cadence])}
-                    </Chip>
-                  ))}
-                </div>
-              </div>
+              <label className="text-[12px] text-ink-3">
+                {t('debts.payment')}
+                <input
+                  data-testid="acctedit-payment"
+                  type="number"
+                  inputMode="decimal"
+                  step="0.01"
+                  min="0"
+                  value={payment}
+                  onChange={(e) => setPayment(e.target.value)}
+                  placeholder="0.00"
+                  className="mt-1 h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
+                />
+              </label>
+              <LoanCadenceControl
+                value={{ every: payEvery, everyN: payEveryN }}
+                custom={payCustom}
+                onChange={(next, isCustom) => {
+                  setPayEvery(next.every);
+                  setPayEveryN(next.everyN);
+                  setPayCustom(isCustom);
+                }}
+                testIdPrefix="acctedit"
+              />
               <textarea
                 data-testid="acctedit-note"
                 value={note}

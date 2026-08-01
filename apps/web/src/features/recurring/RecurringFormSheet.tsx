@@ -144,8 +144,13 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved }: Rea
     setDueDayText(String(initial?.dueDay ?? 1));
     setEveryNText(String(initial?.everyN ?? 1));
     setConfirmDelete(false);
+    // dirty baseline (user request 2026-08-01): edited forms ask before
+    // a stray dismissal drops them
+    baselineRef.current = JSON.stringify(initial);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seedKey]);
+  const baselineRef = useRef('');
+  const dirty = form !== null && JSON.stringify(form) !== baselineRef.current;
 
   const save = async () => {
     if (!form?.name.trim()) return;
@@ -213,6 +218,7 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved }: Rea
         onOpenChange={(open) => !open && onClose()}
         title={form?.id ? t('recurring.edit') : t('recurring.add')}
         size="tall"
+        dirty={dirty}
       >
         {form && (
           <div className="flex flex-col gap-3 pt-1">

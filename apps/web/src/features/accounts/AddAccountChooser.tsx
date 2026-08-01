@@ -15,10 +15,9 @@ import type { AccountRow, AccountType, RecurringEvery } from '@/db/types';
 import { ACCOUNT_TYPES, isLiability, manualBalanceDate, typeDef } from './accountTypes';
 import { Button } from '@/ui/Button';
 import { Chip } from '@/ui/primitives';
+import { isCustomCadence, LoanCadenceControl } from './LoanCadenceControl';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
-
-const CADENCE_LABEL = { week: 'recurring.everyWeek', month: 'recurring.everyMonth', year: 'recurring.everyYear' } as const;
 
 /**
  * THE one "Add an account" entry (account-entry-flow plan, AE1): every
@@ -98,6 +97,8 @@ export function AddAccountChooser({
   const [apr, setApr] = useState('');
   const [payment, setPayment] = useState(prefill?.paymentCents ? (prefill.paymentCents / 100).toFixed(2) : '');
   const [payEvery, setPayEvery] = useState<RecurringEvery>(prefill?.paymentEvery ?? 'month');
+  const [payEveryN, setPayEveryN] = useState(1);
+  const [payCustom, setPayCustom] = useState(isCustomCadence(prefill?.paymentEvery, 1));
   const [note, setNote] = useState('');
   // the action a shared-space warning is holding back (connect/import)
   const pendingRef = useRef<(() => void) | null>(null);
@@ -117,6 +118,8 @@ export function AddAccountChooser({
       setApr('');
       setPayment('');
       setPayEvery('month');
+      setPayEveryN(1);
+      setPayCustom(false);
       setNote('');
       pendingRef.current = null;
     }
@@ -156,7 +159,9 @@ export function AddAccountChooser({
       ...(originalCents && originalCents > 0 ? { originalCents } : {}),
       // 0% is a real answer; only the EMPTY field means "remind me"
       ...(Number.isFinite(aprNumber) && aprNumber >= 0 ? { interestPctYear: aprNumber } : {}),
-      ...(paymentCents && paymentCents > 0 ? { paymentCents, paymentEvery: payEvery } : {}),
+      ...(paymentCents && paymentCents > 0
+        ? { paymentCents, paymentEvery: payEvery, ...(payEveryN > 1 ? { paymentEveryN: payEveryN } : {}) }
+        : {}),
       ...(note.trim() ? { note: note.trim() } : {}),
       ...(prefill?.merchantKey ? { merchantKey: prefill.merchantKey } : {}),
     };
@@ -180,9 +185,16 @@ export function AddAccountChooser({
     close(false);
   };
 
+  // a filled manual form deserves a "discard?" before a stray backdrop
+  // tap drops it (user request 2026-08-01) — the intent step never asks
+  const manualDirty =
+    step === 'manual' &&
+    newType !== null &&
+    (name.trim() !== '' || balance !== '' || iban !== '' || original !== '' || apr !== '' || payment !== '' || note !== '');
+
   return (
     <>
-    <Sheet open={open} onOpenChange={close} title={t('acct.addAccount')} size="tall">
+    <Sheet open={open} onOpenChange={close} title={t('acct.addAccount')} size="tall" dirty={manualDirty}>
       {step === 'intent' && (
         <div className="flex flex-col gap-2 pt-1" data-testid="add-account-chooser">
           {syncing && bankAvailable && (
@@ -303,7 +315,10 @@ export function AddAccountChooser({
                   value={balance}
                   onChange={(e) => setBalance(e.target.value)}
                   inputMode="decimal"
-                  placeholder={`${t('acct.initialBalance')} (${effectiveCurrency})`}
+                  // a liability's balance is what's owed RIGHT NOW — not a
+                  // starting value (user ss: "Initial balance" next to
+                  // "Original amount" read as the same thing twice)
+                  placeholder={`${t(isLiability(newType) ? 'debts.current' : 'acct.initialBalance')} (${effectiveCurrency})`}
                   className="h-12 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
                 />
               </div>
@@ -357,29 +372,30 @@ export function AddAccountChooser({
                       />
                     </label>
                   </div>
-                  <div className="flex items-end gap-2">
-                    <label className="min-w-0 flex-1 text-[12px] text-ink-3">
-                      {t('debts.payment')}
-                      <input
-                        data-testid="chooser-acctform-payment"
-                        type="number"
-                        inputMode="decimal"
-                        step="0.01"
-                        min="0"
-                        value={payment}
-                        onChange={(e) => setPayment(e.target.value)}
-                        placeholder="0.00"
-                        className="mt-1 h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
-                      />
-                    </label>
-                    <div className="flex gap-1.5">
-                      {(['week', 'month', 'year'] as const).map((cadence) => (
-                        <Chip key={cadence} testId={`chooser-acctform-every-${cadence}`} selected={payEvery === cadence} onClick={() => setPayEvery(cadence)}>
-                          {t(CADENCE_LABEL[cadence])}
-                        </Chip>
-                      ))}
-                    </div>
-                  </div>
+                  <label className="text-[12px] text-ink-3">
+                    {t('debts.payment')}
+                    <input
+                      data-testid="chooser-acctform-payment"
+                      type="number"
+                      inputMode="decimal"
+                      step="0.01"
+                      min="0"
+                      value={payment}
+                      onChange={(e) => setPayment(e.target.value)}
+                      placeholder="0.00"
+                      className="mt-1 h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
+                    />
+                  </label>
+                  <LoanCadenceControl
+                    value={{ every: payEvery, everyN: payEveryN }}
+                    custom={payCustom}
+                    onChange={(next, isCustom) => {
+                      setPayEvery(next.every);
+                      setPayEveryN(next.everyN);
+                      setPayCustom(isCustom);
+                    }}
+                    testIdPrefix="chooser-acctform"
+                  />
                   <textarea
                     data-testid="chooser-acctform-note"
                     value={note}

@@ -58,7 +58,9 @@ export const MINA_STEPS: readonly MinaStep[] = [
   { id: 'goSettings', checkpoint: true, kind: 'bubble', expr: 'sad', titleKey: 'mina.makeAccount.t', bodyKey: 'mina.goSettings.b', anchor: ['tab-settings', 'side-tab-settings'], gate: true },
   { id: 'openSpaceCard', kind: 'bubble', expr: 'smile', titleKey: 'mina.makeAccount.t', bodyKey: 'mina.openSpaceCard.b', anchor: ['settings-space-accounts-row'], gate: true, labelFrom: ['settings-space-accounts-row'] },
   { id: 'openAdd', kind: 'bubble', expr: 'smile', titleKey: 'mina.makeAccount.t', bodyKey: 'mina.openAdd.b', anchor: ['space-accounts-add'], gate: true, labelFrom: ['space-accounts-add'] },
-  { id: 'pickManual', kind: 'bubble', expr: 'smile', titleKey: 'mina.makeAccount.t', bodyKey: 'mina.pickTarget.b', anchor: ['chooser-manual'], gate: true, labelFrom: ['chooser-manual'] },
+  // (the old pickManual step died with the chooser's intent hop: "Add a
+  // manual account" opens the TYPE GRID directly since 2026-08-01 — its
+  // gate waited forever on a testid that never renders, user ss)
   { id: 'pickChecking', kind: 'bubble', expr: 'smile', titleKey: 'mina.makeAccount.t', bodyKey: 'mina.pickTargetDo.b', anchor: ['chooser-accttype-checking'], gate: true, labelFrom: ['chooser-accttype-checking'] },
   { id: 'createAccount', kind: 'bubble', expr: 'thinking', titleKey: 'mina.makeAccount.t', bodyKey: 'mina.createAccount.b', act: { entity: 'account' }, suggestKey: 'mina.suggest.mainbank', labelFrom: ['chooser-acctform-save'] },
   { id: 'txConcept', checkpoint: true, kind: 'fullscreen', art: 'txAccount', titleKey: 'mina.txConcept.t', bodyKey: 'mina.txConcept.b' },

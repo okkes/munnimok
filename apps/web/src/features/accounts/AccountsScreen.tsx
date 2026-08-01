@@ -346,7 +346,9 @@ export function AccountsScreen() {
             icon="bank-outline"
             text={t('acct.emptyList')}
             action={
-              <div className="flex gap-2">
+              // stacked (user ss 2026-08-01): side by side the two
+              // wrapped into ragged two-line pills
+              <div className="flex w-full max-w-[280px] flex-col gap-2">
                 <Button size="sm" onClick={() => setAddOpen(true)}>
                   <Icon name="plus" size={16} />
                   {t('acct.addAccount')}

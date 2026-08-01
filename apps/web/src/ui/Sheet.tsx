@@ -2,11 +2,14 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import type { ReactNode } from 'react';
 import { Sheet as ModalSheet, type SheetRef } from 'react-modal-sheet';
+import { useLang } from '@/i18n';
+import { isMinaSheetGuarded } from '@/features/mina/lock';
 // desktop ruling (2026-07-17, replaces §4.3's right panel the user
 // disliked): at lg a sheet renders as a centered dialog — the familiar
 // desktop shape, with the page still visible around it
 import { useLgViewport as usePanelMode } from '@/lib/viewport';
 import { isNativeApp } from '@/lib/platform';
+import { Button } from './Button';
 
 /** the three sheet heights; per-pixel values stay out of call sites */
 export type SheetSize = 'compact' | 'form' | 'tall';
@@ -201,6 +204,11 @@ interface SheetProps {
    *  tried (and failed) to approximate. Kept so ~20 call sites don't
    *  churn; remove opportunistically. */
   dragHandle?: boolean;
+  /** unsaved edits present (user request 2026-08-01): a dismissal
+   *  gesture (backdrop tap, drag-down, Escape) asks "discard changes?"
+   *  first instead of silently dropping the form. Programmatic closes
+   *  (the host's own save calling onOpenChange) are unaffected. */
+  dirty?: boolean;
 }
 
 /**
@@ -232,12 +240,14 @@ interface DesktopDialogProps {
   title?: string;
   children: ReactNode;
   footer?: ReactNode;
-  onOpenChange: (open: boolean) => void;
+  /** USER dismissal request (backdrop/ESC) — the owner decides whether
+   *  it closes, asks about unsaved edits, or is tutorial-locked */
+  onDismiss: () => void;
 }
 
 /** desktop (2026-07-18 fix): a plain centered dialog — vaul's drawer
  *  transforms fought the centered layout and pinned it to the top */
-function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, footer, onOpenChange }: Readonly<DesktopDialogProps>) {
+function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, footer, onDismiss }: Readonly<DesktopDialogProps>) {
   // enter/exit: grow from the click point, shrink back to it
   const [phase, setPhase] = useState<'closed' | 'hidden' | 'open'>('closed');
   const originRef = useRef({ x: 0, y: 0 });
@@ -257,11 +267,11 @@ function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, foote
   useEffect(() => {
     if (!open || isLocked) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onOpenChange(false);
+      if (e.key === 'Escape') onDismiss();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, isLocked, onOpenChange]);
+  }, [open, isLocked, onDismiss]);
 
   if (!open && phase === 'closed') return null;
   const hidden = phase !== 'open';
@@ -277,7 +287,7 @@ function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, foote
       <button
         aria-label="close"
         tabIndex={-1}
-        onClick={() => !isLocked && onOpenChange(false)}
+        onClick={() => !isLocked && onDismiss()}
         className="absolute inset-0 cursor-default border-none bg-black/40"
         style={{ opacity: hidden ? 0 : 1, transition: `opacity ${PANEL_MS}ms ease-out` }}
       />
@@ -321,9 +331,25 @@ function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, foote
  * cancelling inputs mid-typing, user report); stacked sheets lock their
  * parents automatically. Never build inline overlays.
  */
-export function Sheet({ open, onOpenChange, title, children, size, height, footer }: Readonly<SheetProps>) {
+export function Sheet({ open, onOpenChange, title, children, size, height, footer, dirty }: Readonly<SheetProps>) {
+  const { t } = useLang();
   const requested = height ?? (size ? SIZE_PX[size] : undefined);
   const { id, isLocked, depth } = useSheetStack(open);
+  // USER-initiated dismissals route through here: the Mina tutorial owns
+  // the flow while it runs, and unsaved edits get a conscious "discard?"
+  // before the form is dropped (both 2026-08-01 user requests)
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  useEffect(() => {
+    if (!open) setConfirmDiscard(false);
+  }, [open]);
+  const requestDismiss = () => {
+    if (isMinaSheetGuarded()) return;
+    if (dirty) {
+      setConfirmDiscard(true);
+      return;
+    }
+    onOpenChange(false);
+  };
   // registered while open so closeAllSheets() can dismiss leftovers
   useEffect(() => {
     if (!open) return;
@@ -357,14 +383,16 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
   }, [isLocked]);
   // ESC closes the TOP sheet (vaul inherited this from Radix; the lib
   // doesn't do keyboard dismissal itself)
+  const requestRef = useRef(requestDismiss);
+  requestRef.current = requestDismiss;
   useEffect(() => {
     if (!open || panel || isLocked) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onOpenChange(false);
+      if (e.key === 'Escape') requestRef.current();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, panel, isLocked, onOpenChange]);
+  }, [open, panel, isLocked]);
   useEffect(() => {
     if (!open || panel) return;
     // the ref populates once the portal mounts — subscribe a frame later
@@ -384,21 +412,48 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
     };
   }, [open, panel]);
 
+  // the "discard changes?" ask — its own stacked sheet, so the parent
+  // recedes and the choice is explicit (never window.confirm)
+  const discardConfirm = dirty ? (
+    <Sheet open={confirmDiscard} onOpenChange={setConfirmDiscard} title={t('sheet.discardTitle')} size="compact">
+      <div className="flex flex-col gap-3 pt-1">
+        <p className="text-[13px] leading-relaxed text-ink-2">{t('sheet.discardBody')}</p>
+        <Button data-testid="sheet-keep-editing" onClick={() => setConfirmDiscard(false)}>
+          {t('sheet.keepEditing')}
+        </Button>
+        <Button
+          variant="danger"
+          data-testid="sheet-discard"
+          onClick={() => {
+            setConfirmDiscard(false);
+            onOpenChange(false);
+          }}
+        >
+          {t('sheet.discardConfirm')}
+        </Button>
+      </div>
+    </Sheet>
+  ) : null;
+
   if (panel) {
     return (
-      <DesktopDialog id={id} open={open} isLocked={isLocked} fixedHeight={fixedHeight} title={title} footer={footer} onOpenChange={onOpenChange}>
-        {children}
-      </DesktopDialog>
+      <>
+        <DesktopDialog id={id} open={open} isLocked={isLocked} fixedHeight={fixedHeight} title={title} footer={footer} onDismiss={requestDismiss}>
+          {children}
+        </DesktopDialog>
+        {discardConfirm}
+      </>
     );
   }
 
   return (
+    <>
     <ModalSheet
       ref={sheetRef}
       isOpen={IS_TEST ? everOpen : open}
       onClose={() => {
         syncCoveredStyles(); // a settled dismissal ends the drag
-        if (!isLocked) onOpenChange(false);
+        if (!isLocked && !isMinaSheetGuarded() && !dirty) onOpenChange(false);
       }}
       onCloseStart={() => {
         syncCoveredStyles();
@@ -410,7 +465,9 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
       }}
       detent="content"
       avoidKeyboard={!VIEWPORT_RESIZES}
-      disableDismiss={isLocked}
+      // dirty forms and the Mina tutorial refuse the drag-dismissal too:
+      // the sheet snaps back, and the backdrop path asks "discard?"
+      disableDismiss={isLocked || !!dirty || isMinaSheetGuarded()}
       prefersReducedMotion={IS_TEST}
       unstyled
       // z-50 like the old drawer: the Mina tutorial overlay must still be
@@ -420,12 +477,12 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
       <ModalSheet.Backdrop
         className="bg-black/40"
         onTap={() => {
-          if (!isLocked) onOpenChange(false);
+          if (!isLocked) requestDismiss();
         }}
         // plain-click fallback (mouse/emulated environments where the
         // tap gesture doesn't materialize); double-firing is a no-op
         onClick={() => {
-          if (!isLocked) onOpenChange(false);
+          if (!isLocked) requestDismiss();
         }}
       />
       <ModalSheet.Container className="inset-x-0 mx-auto w-full max-w-[560px] overflow-hidden rounded-t-[20px] bg-bg shadow-[0_-16px_48px_rgba(0,0,0,0.30)] outline-none">
@@ -490,5 +547,7 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
         </div>
       </ModalSheet.Container>
     </ModalSheet>
+    {discardConfirm}
+    </>
   );
 }

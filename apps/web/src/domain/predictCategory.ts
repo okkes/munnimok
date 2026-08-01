@@ -3,6 +3,7 @@ import { KEYWORD_RULES } from './keyword-categories';
 import type { KeywordRule } from './keyword-categories';
 import { predictFromMemory } from './merchantMemory';
 import type { MerchantMemory } from './merchantMemory';
+import { kindOf } from './txKind';
 import type { TxType } from '@/db/types';
 
 /**
@@ -84,13 +85,23 @@ export interface PredictInput {
  * transaction TYPE (a DEGIRO transfer the user marked as saving stays
  * saving), keywords derive it from the category.
  */
+/** a learned STANDARD type never overrules the row's sign: the same
+ *  counterparty is an expense when you pay them and income when they
+ *  pay you (user ss 2026-08-01: a +€2,000 credit predicted 'expense'
+ *  from outgoing history). Transfer-family types carry meaning on both
+ *  signs and pass through. */
+function signSafeType(txType: TxType, amountCents: number): TxType {
+  if (kindOf(txType) !== 'standard') return txType;
+  return amountCents >= 0 ? 'income' : 'expense';
+}
+
 export function predictTx(input: PredictInput): TxPrediction | null {
   if (input.memory) {
     const hit = predictFromMemory(input.memory, input.merchant, input.amountCents);
     if (hit) {
       return {
         catId: hit.catId,
-        txType: hit.txType,
+        txType: signSafeType(hit.txType, input.amountCents),
         source: hit.amountMatch ? 'history-amount' : 'history',
         evidence: hit.evidence,
       };
@@ -104,7 +115,7 @@ export function predictTx(input: PredictInput): TxPrediction | null {
   );
   if (!catId) return null;
   const txType = CATEGORY_BY_ID.get(catId)?.txTypes[0] ?? (direction === 'credit' ? 'income' : 'expense');
-  return { catId, txType, source: 'keyword' };
+  return { catId, txType: signSafeType(txType, input.amountCents), source: 'keyword' };
 }
 
 /**
