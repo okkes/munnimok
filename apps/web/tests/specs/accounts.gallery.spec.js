@@ -30,8 +30,8 @@ for (const V of VARIANTS) {
     // manual is a DOOR on the global screen now (2026-07-28): it leads
     // into the space's own accounts screen, where creation lives
     await page.click('[data-testid="chooser-manual-door"]');
+    // "Add a manual account" opens the type grid directly (2026-08-01)
     await page.click('[data-testid="space-accounts-add"]');
-    await page.click('[data-testid="chooser-manual"]');
     await page.waitForSelector('[data-testid="chooser-accttype-cash"]');
     await page.waitForTimeout(500); // sheet slide-in
     await shot(page, k('17-accounts-add') + '--s1');

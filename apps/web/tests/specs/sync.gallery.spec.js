@@ -47,8 +47,8 @@ async function addCashAccount(page, name, balance) {
   await page.click('[data-testid="settings-accounts-row"]');
   await page.click('[data-testid="accounts-add"]');
   await page.click('[data-testid="chooser-manual-door"]');
+  // "Add a manual account" opens the type grid directly (2026-08-01)
   await page.click('[data-testid="space-accounts-add"]');
-  await page.click('[data-testid="chooser-manual"]');
   await page.click('[data-testid="chooser-accttype-cash"]');
   await page.fill('[data-testid="chooser-acctform-name"]', name);
   await page.fill('[data-testid="chooser-acctform-balance"]', balance);
