@@ -1,4 +1,27 @@
 import { describe, expect, it } from 'vitest';
+import { evalAmountCents } from './money';
+
+describe('evalAmountCents (little arithmetic in amount fields)', () => {
+  it('evaluates + − * / with precedence and parentheses', () => {
+    expect(evalAmountCents('3*250+100')).toBe(85_000);
+    expect(evalAmountCents('(100-25)/2')).toBe(3_750);
+    expect(evalAmountCents('100-3*10')).toBe(7_000);
+    expect(evalAmountCents('-50+20')).toBe(-3_000);
+  });
+
+  it('keeps the EU comma rule: with a comma, dots are thousand separators', () => {
+    expect(evalAmountCents('1.250,50+100')).toBe(135_050);
+    expect(evalAmountCents('12.5*2')).toBe(2_500);
+  });
+
+  it('refuses garbage, unbalanced parens and division by zero', () => {
+    expect(evalAmountCents('abc')).toBeNull();
+    expect(evalAmountCents('1+(2')).toBeNull();
+    expect(evalAmountCents('10/0')).toBeNull();
+    expect(evalAmountCents('')).toBeNull();
+    expect(evalAmountCents('1+2)')).toBeNull();
+  });
+});
 import { fmtCents, parseCents } from './money';
 
 describe('parseCents (user input -> integer cents)', () => {

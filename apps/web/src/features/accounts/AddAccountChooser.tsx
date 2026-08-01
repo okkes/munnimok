@@ -10,7 +10,7 @@ import { useData } from '@/app/data';
 import { useSession } from '@/app/session';
 import { logActivity } from '@/application/activity';
 import { CURRENCIES } from '@/domain/countries';
-import { parseCents } from '@/lib/money';
+import { evalAmountCents, parseCents } from '@/lib/money';
 import type { AccountRow, AccountType, RecurringEvery } from '@/db/types';
 import { ACCOUNT_TYPES, isLiability, manualBalanceDate, typeDef } from './accountTypes';
 import { Button } from '@/ui/Button';
@@ -38,6 +38,7 @@ export function AddAccountChooser({
   gcAvailable,
   initialStep,
   manualTypes,
+  loanFlavor,
   prefill,
 }: Readonly<{
   open: boolean;
@@ -60,6 +61,10 @@ export function AddAccountChooser({
   /** limit the manual type grid — the Debts screen's "+" offers the
    *  liability types only (loans v2: the account IS the debt) */
   manualTypes?: readonly AccountType[];
+  /** the Debts "+" flavor (user request 2026-08-01): titled "New loan"
+   *  and the note says the loan is stored as an account behind the
+   *  scenes — the generic space-scoped copy read like a stranger here */
+  loanFlavor?: boolean;
   /** the recurring→loan handoff seeds the liability form */
   prefill?: { name?: string; paymentCents?: number; paymentEvery?: RecurringEvery; merchantKey?: string };
 }>) {
@@ -143,6 +148,14 @@ export function AddAccountChooser({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, newType]);
 
+  // amount fields accept little arithmetic ("3*250+100", user request):
+  // evaluated on blur into a plain number the rest of the form reads
+  const evalField = (raw: string, set: (next: string) => void) => {
+    if (!/[+*/]|.-/.test(raw)) return; // plain numbers pass through
+    const cents = evalAmountCents(raw);
+    if (cents !== null) set((cents / 100).toFixed(2));
+  };
+
   // a loan/mortgage exists to track what's owed — its current value is
   // the whole point and can't default to zero (v2: "current required")
   const balanceRequired = newType === 'loan' || newType === 'mortgage';
@@ -194,7 +207,7 @@ export function AddAccountChooser({
 
   return (
     <>
-    <Sheet open={open} onOpenChange={close} title={t('acct.addAccount')} size="tall" dirty={manualDirty}>
+    <Sheet open={open} onOpenChange={close} title={t(loanFlavor ? 'debts.new' : 'acct.addAccount')} size="tall" dirty={manualDirty}>
       {step === 'intent' && (
         <div className="flex flex-col gap-2 pt-1" data-testid="add-account-chooser">
           {syncing && bankAvailable && (
@@ -279,7 +292,9 @@ export function AddAccountChooser({
 
       {step === 'manual' && (
         <div className="flex flex-col gap-3 pt-1" data-testid="chooser-manual-form">
-          <p className="text-[12px] leading-snug text-ink-4">{t('acct.spaceScopedNote', { space: space?.name ?? '' })}</p>
+          <p className="text-[12px] leading-snug text-ink-4">
+            {loanFlavor ? t('debts.chooserNote') : t('acct.spaceScopedNote', { space: space?.name ?? '' })}
+          </p>
           {newType ? (
             <>
               <div className="flex items-center gap-2 text-[13px] text-ink-3">
@@ -314,6 +329,7 @@ export function AddAccountChooser({
                   data-testid="chooser-acctform-balance"
                   value={balance}
                   onChange={(e) => setBalance(e.target.value)}
+                  onBlur={() => evalField(balance, setBalance)}
                   inputMode="decimal"
                   // a liability's balance is what's owed RIGHT NOW — not a
                   // starting value (user ss: "Initial balance" next to
@@ -347,12 +363,10 @@ export function AddAccountChooser({
                       {t('debts.original')}
                       <input
                         data-testid="chooser-acctform-original"
-                        type="number"
                         inputMode="decimal"
-                        step="0.01"
-                        min="0"
                         value={original}
                         onChange={(e) => setOriginal(e.target.value)}
+                        onBlur={() => evalField(original, setOriginal)}
                         placeholder="0.00"
                         className="mt-1 h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
                       />
@@ -376,12 +390,10 @@ export function AddAccountChooser({
                     {t('debts.payment')}
                     <input
                       data-testid="chooser-acctform-payment"
-                      type="number"
                       inputMode="decimal"
-                      step="0.01"
-                      min="0"
                       value={payment}
                       onChange={(e) => setPayment(e.target.value)}
+                      onBlur={() => evalField(payment, setPayment)}
                       placeholder="0.00"
                       className="mt-1 h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
                     />

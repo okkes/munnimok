@@ -506,6 +506,20 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
     const signed = isExpense ? -Math.abs(cents) : Math.abs(cents);
     const rowId = tx?.id ?? repo.newId();
     applyManualBalanceDeltas(repo, spaceId, manualBalanceDeltas(accounts, tx, effectiveAccount, signed));
+    // loans v2 (review finding): the edit form writes the raw row
+    // directly, so the loan link coupling must ride here too — a
+    // retargeted or cleared counterparty moves the manual loans exactly
+    // like the same gesture in the detail screen. The mirror path stays
+    // exempt: createCounterTransaction skips liability counters now.
+    const prevLinked = tx?.linkedAccountId ?? undefined;
+    const nextLinked = linkedAccountId ?? undefined; // mirrors manualTxFields' write
+    if (prevLinked !== nextLinked) {
+      void import('@/application/loanBalance')
+        .then(({ applyLoanLinkDelta }) =>
+          applyLoanLinkDelta(store, repo, { amountCents: signed, date, transferPeerId: tx?.transferPeerId, loanCounted: tx?.loanCounted }, prevLinked, nextLinked),
+        )
+        .catch(() => undefined);
+    }
     void logActivity(store, repo, spaceId, tx ? 'txEdit' : 'txAdd', merchant.trim());
     void repo.upsert(
       'transaction',

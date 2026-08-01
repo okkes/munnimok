@@ -43,6 +43,7 @@ function joinTx(raw: TransactionRow, meta: TxMetaRow | undefined, spaceId: strin
     transferPeerId: meta?.transferPeerId,
     recurringId: meta?.recurringId,
     eventId: meta?.eventId,
+    loanCounted: meta?.loanCounted,
   };
 }
 
@@ -127,7 +128,7 @@ export async function visibleAccounts(store: StorageBackend, spaceId: string): P
 export type TxTransformFields = Partial<
   Pick<
     TxMetaRow,
-    'catId' | 'txType' | 'needsReview' | 'notes' | 'titleOverride' | 'splits' | 'reimbursements' | 'linkedAccountId' | 'transferPeerId' | 'recurringId' | 'eventId'
+    'catId' | 'txType' | 'needsReview' | 'notes' | 'titleOverride' | 'splits' | 'reimbursements' | 'linkedAccountId' | 'transferPeerId' | 'recurringId' | 'eventId' | 'loanCounted'
   >
 >;
 
@@ -138,18 +139,43 @@ export type TxTransformFields = Partial<
  */
 export async function writeTxTransform(
   repo: Repo,
-  tx: Pick<SpaceTx, 'id' | 'spaceId' | 'feedSpaceId' | 'txType' | 'needsReview'>,
+  tx: Pick<SpaceTx, 'id' | 'spaceId' | 'feedSpaceId' | 'txType' | 'needsReview'> &
+    Partial<Pick<SpaceTx, 'amountCents' | 'date' | 'linkedAccountId' | 'transferPeerId' | 'loanCounted'>>,
   fields: TxTransformFields,
 ): Promise<void> {
+  // loans v2 (review finding): the balance coupling lives at THIS choke
+  // point — every linkedAccountId writer (user edits, auto-linkers, the
+  // match sheet) moves the manual loan exactly once; hanging it off one
+  // hook left frozen balances and wrong-way refunds on the other paths
+  const linkChanged = Object.hasOwn(fields, 'linkedAccountId');
+  const prevLinked = linkChanged ? tx.linkedAccountId : undefined;
+
   if (!tx.feedSpaceId) {
     await repo.upsert('transaction', tx.spaceId, tx.id, fields);
-    return;
+  } else {
+    await repo.upsert('txMeta', tx.spaceId, txMetaId(tx.spaceId, tx.id), {
+      txId: tx.id,
+      // first write materializes the current effective view alongside the edit
+      txType: tx.txType,
+      needsReview: tx.needsReview,
+      ...fields,
+    });
   }
-  await repo.upsert('txMeta', tx.spaceId, txMetaId(tx.spaceId, tx.id), {
-    txId: tx.id,
-    // first write materializes the current effective view alongside the edit
-    txType: tx.txType,
-    needsReview: tx.needsReview,
-    ...fields,
-  });
+
+  if (linkChanged && prevLinked !== (fields.linkedAccountId ?? undefined)) {
+    // re-read the MERGED row post-write: the caller's snapshot may carry
+    // a stale transferPeerId or miss a loanCounted written a beat ago
+    const { applyLoanLinkDelta } = await import('@/application/loanBalance');
+    const raw = await repo.store.get('transaction', tx.id);
+    const meta = tx.feedSpaceId ? await repo.store.get('txMeta', txMetaId(tx.spaceId, tx.id)) : undefined;
+    if (raw) {
+      const merged = {
+        amountCents: raw.amountCents,
+        date: raw.date,
+        transferPeerId: tx.feedSpaceId ? meta?.transferPeerId : raw.transferPeerId,
+        loanCounted: tx.feedSpaceId ? meta?.loanCounted : raw.loanCounted,
+      };
+      await applyLoanLinkDelta(repo.store, repo, merged, prevLinked, fields.linkedAccountId ?? undefined).catch(() => undefined);
+    }
+  }
 }

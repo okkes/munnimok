@@ -14,6 +14,8 @@ import { useLang } from '@/i18n';
 import type { TFunc } from '@/i18n';
 import { useData } from '@/app/data';
 import { logActivity } from '@/application/activity';
+import { countPreAnchorTx } from '@/application/loanBalance';
+import { isLiability } from '@/features/accounts/accountTypes';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { fmtCents } from '@/lib/money';
 import { cleanBankText, humanizeBankKeys, txTitle } from '@/lib/text';
@@ -376,6 +378,7 @@ export function TxDetailScreen() {
   // sheet surprised — tapping one showed the other's content too)
   const [counterPickOpen, setCounterPickOpen] = useState(false);
   const [typePickOpen, setTypePickOpen] = useState(false);
+  const [loanCountBusy, setLoanCountBusy] = useState(false);
   const [splitOpen, setSplitOpen] = useState(false);
   const [recurringOpen, setRecurringOpen] = useState(false);
   // create-and-return doors (user request): snapshot of pre-existing ids
@@ -650,6 +653,28 @@ export function TxDetailScreen() {
                   {t('tx.paysDebt', { name: linkedAccount.name })}
                 </span>
               )}
+              {/* pre-anchor payment (loans v2): dated before the loan's
+                  known-true balance, so it did NOT move the balance —
+                  the user can deliberately count it in, once */}
+              {tx && linkedAccount && linkedAccount.source === 'manual' && isLiability(linkedAccount.type) &&
+                !tx.transferPeerId && tx.loanCounted !== 1 && !!linkedAccount.balanceAsOf && tx.date < linkedAccount.balanceAsOf && (
+                  <button
+                    data-testid="tx-detail-loan-count"
+                    disabled={loanCountBusy}
+                    onClick={() => {
+                      // one-shot with a busy latch: the liveQuery re-emit
+                      // that hides this button trails the write (review
+                      // finding: a double-tap applied the delta twice)
+                      setLoanCountBusy(true);
+                      void countPreAnchorTx(store, repo, { ...tx, linkedAccountId: linkedAccount.id } as never, () =>
+                        writeTxTransform(repo, tx, { loanCounted: 1 }),
+                      ).finally(() => setLoanCountBusy(false));
+                    }}
+                    className="m-tap mt-0.5 block border-none bg-transparent p-0 text-left text-[11px] text-warning underline disabled:opacity-50"
+                  >
+                    {t('tx.loanNotCounted')}
+                  </button>
+                )}
             </span>
             <span className="text-xs text-ink-4">{t('txform.account')}</span>
           </div>

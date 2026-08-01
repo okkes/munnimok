@@ -54,6 +54,8 @@ export function useSpaceTransaction(txId: string): SpaceTx | undefined {
 export function useTxTransform(): (tx: SpaceTx, fields: TxTransformFields, activity?: string | null) => Promise<void> {
   const { store, repo, spaceId } = useData();
   return async (tx, fields, activity = 'txEdit') => {
+    // the loan balance coupling rides INSIDE writeTxTransform (loans v2
+    // review): every linkedAccountId writer shares it, not just this hook
     await writeTxTransform(repo, tx, fields);
     if (activity) void logActivity(store, repo, spaceId, activity, txTitle(tx));
   };

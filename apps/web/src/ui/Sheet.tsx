@@ -295,6 +295,7 @@ function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, foote
       <dialog
         open
         aria-modal="true"
+        data-sheet-body=""
         ref={(el) => registerCoveredEl(id, el)}
         className="relative z-10 m-0 flex w-[480px] max-w-[92vw] flex-col rounded-[20px] border-none bg-bg p-0 text-ink shadow-2xl outline-none"
         style={{
@@ -343,7 +344,10 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
     if (!open) setConfirmDiscard(false);
   }, [open]);
   const requestDismiss = () => {
-    if (isMinaSheetGuarded()) return;
+    // the tutorial locks only the ROOT sheet (the lesson's form) — a
+    // nested picker (budget period, currency…) must stay dismissible or
+    // the user is trapped one level down (user ss 2026-08-01)
+    if (isMinaSheetGuarded() && depth === 0) return;
     if (dirty) {
       setConfirmDiscard(true);
       return;
@@ -453,7 +457,7 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
       isOpen={IS_TEST ? everOpen : open}
       onClose={() => {
         syncCoveredStyles(); // a settled dismissal ends the drag
-        if (!isLocked && !isMinaSheetGuarded() && !dirty) onOpenChange(false);
+        if (!isLocked && !(isMinaSheetGuarded() && depth === 0) && !dirty) onOpenChange(false);
       }}
       onCloseStart={() => {
         syncCoveredStyles();
@@ -467,7 +471,8 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
       avoidKeyboard={!VIEWPORT_RESIZES}
       // dirty forms and the Mina tutorial refuse the drag-dismissal too:
       // the sheet snaps back, and the backdrop path asks "discard?"
-      disableDismiss={isLocked || !!dirty || isMinaSheetGuarded()}
+      // (tutorial: root sheet only — nested pickers stay dismissible)
+      disableDismiss={isLocked || !!dirty || (isMinaSheetGuarded() && depth === 0)}
       prefersReducedMotion={IS_TEST}
       unstyled
       // z-50 like the old drawer: the Mina tutorial overlay must still be
@@ -499,6 +504,7 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
             container's own max clamp shrink it on short screens. */}
         <div
           ref={(el) => registerCoveredEl(id, el)}
+          data-sheet-body=""
           className="flex min-h-0 flex-initial flex-col"
           style={{ transformOrigin: 'top center', height: fixedHeight }}
           // a gesture landing on an editable, a self-handling element or

@@ -166,6 +166,10 @@ export function MinaTutorial() {
   // act steps: a gentle glow on the form's save button (user request
   // 2026-08-01) — attention without gating, the form stays editable
   const [softRect, setSoftRect] = useState<DOMRect | null>(null);
+  // a sheet open OVER an off-sheet anchor (the delete-confirm covering
+  // the gated danger button, user ss): the z-130 shade would swallow
+  // every tap on the sheet — it stands down until the sheet closes
+  const [anchorInSheet, setAnchorInSheet] = useState(false);
   const [resumePending, setResumePending] = useState(false);
   // per-act baseline: ids that existed when the act step became current
   const baselineRef = useRef<{ step: number; ids: Set<string> } | null>(null);
@@ -403,6 +407,7 @@ export function MinaTutorial() {
         return next;
       });
       setTargetLabel(elementLabel(resolveAnchor(step?.labelFrom ?? step?.anchor)));
+      setAnchorInSheet(!!el?.closest('[data-sheet-body]'));
       // act steps: track the save button for the soft glow
       const softEl = step?.act && !step.anchor ? resolveAnchor(step.labelFrom) : null;
       const softNext = softEl?.getBoundingClientRect() ?? null;
@@ -562,7 +567,13 @@ export function MinaTutorial() {
   }
 
   const bubbleSide = bubblePlacement(rect, sheetOpen);
-  const showShade = !!step.anchor || step.gate || step.info;
+  // a sheet covering an OFF-sheet anchor owns the screen: the shade
+  // stands down so the sheet is usable (delete-confirm, user ss) — it
+  // returns the moment the sheet closes. ACT steps only: gate taps that
+  // OPEN a sheet flip sheetOpen a frame before the step advances, and
+  // an unconditional stand-down blinked the dim on every such tap
+  // (review finding). Sheet-anchored steps keep the shade regardless.
+  const showShade = (!!step.anchor || step.gate || step.info) && !(sheetOpen && !anchorInSheet && !!step.act);
   // copy quotes the live target and the (deduped) suggested name
   const bodyParams = {
     target: targetLabel,
@@ -581,9 +592,12 @@ export function MinaTutorial() {
           // camera/notch cut Mina's head off on tall pictures)
           style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 12px)' }}
         >
-          <div className="flex w-full max-w-[420px] flex-1 flex-col items-center px-6 pb-8 lg:max-w-[860px] lg:flex-row lg:items-center lg:gap-10">
-            <img src={MINA_ART[step.art!]} alt="Mina" className="mt-4 max-h-[42dvh] w-auto max-w-full rounded-2xl object-contain lg:mt-0 lg:max-h-[70dvh] lg:flex-1" />
-            <div className="flex w-full flex-col items-center text-center lg:items-start lg:text-left">
+          {/* one centered column on EVERY viewport (user ss 2026-08-01:
+              the desktop side-by-side left the text as an odd sliver
+              beside the art) — the text sits below the image, centered */}
+          <div className="flex w-full max-w-[420px] flex-1 flex-col items-center px-6 pb-8 lg:max-w-[560px] lg:justify-center">
+            <img src={MINA_ART[step.art!]} alt="Mina" className="mt-4 max-h-[42dvh] w-auto max-w-full rounded-2xl object-contain lg:max-h-[52dvh]" />
+            <div className="flex w-full flex-col items-center text-center">
               <h1 className="m-h2 mt-5 text-ink">{t(step.titleKey)}</h1>
               <p className="mt-2 max-w-[360px] text-[14px] leading-relaxed text-ink-2">{t(step.bodyKey)}</p>
               {step.id === 'sharing' && identity?.kind === 'offline' && (

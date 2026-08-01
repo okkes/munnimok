@@ -5,7 +5,7 @@ import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { logActivity } from '@/application/activity';
 import { useLoanStatuses } from '@/application/debts';
-import { useSpaceTransactions } from '@/application/transactions';
+import { useSpaceHistoryTransactions } from '@/application/transactions';
 import { localToday } from '@/application/recurring';
 import { estimatePaymentPlan, paymentsPerYear, projectPayoff } from '@/domain/debts';
 import { merchantKey } from '@/domain/merchantKey';
@@ -19,6 +19,7 @@ import { Icon } from '@/ui/Icon';
 import { HeroCard, ProgressBar } from '@/ui/primitives';
 import { TxRow } from '@/ui/TxRow';
 import { LoanTile, paymentLabelKey } from './DebtsScreen';
+import { LoanMatchSheet } from './LoanMatchSheet';
 
 /** One loan: the payoff story — numbers, projection, payment history.
  *  The account row IS the loan (v2); Edit opens the account editor. */
@@ -28,10 +29,14 @@ export function DebtDetailScreen() {
   const { store, repo, spaceId } = useData();
   const { debtId } = useParams({ strict: false }) as { debtId: string };
   const statuses = useLoanStatuses();
-  const txs = useSpaceTransactions();
+  // the FULL history: the match sheet deliberately links pre-start
+  // payments (count-optional), and a payment list that can't show them
+  // would look like the link vanished (review finding)
+  const txs = useSpaceHistoryTransactions();
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const [editing, setEditing] = useState<AccountRow | null>(null);
   const [paymentOpen, setPaymentOpen] = useState(false);
+  const [matchOpen, setMatchOpen] = useState(false);
 
   const status = statuses?.find((s) => s.account.id === debtId);
   // deleted or untracked here or on another device: leave the orphan
@@ -141,14 +146,25 @@ export function DebtDetailScreen() {
 
         {/* a hand-entered payment, pre-staged onto this loan (arc 3):
             the manual form opens as a transfer to the loan account */}
-        <Button
-          variant="outline"
-          className="mt-4 w-full"
-          data-testid="debtdetail-add-payment"
-          onClick={() => setPaymentOpen(true)}
-        >
-          <Icon name="plus" size={16} /> {t('debts.addPayment')}
-        </Button>
+        <div className="mt-4 flex gap-2">
+          <Button
+            variant="outline"
+            className="min-w-0 flex-1"
+            data-testid="debtdetail-add-payment"
+            onClick={() => setPaymentOpen(true)}
+          >
+            <Icon name="plus" size={16} /> {t('debts.addPayment')}
+          </Button>
+          {/* re-run the payment search any time (user request) */}
+          <Button
+            variant="outline"
+            className="min-w-0 flex-1"
+            data-testid="debtdetail-find-payments"
+            onClick={() => setMatchOpen(true)}
+          >
+            <Icon name="magnify" size={16} /> {t('debts.matchFind')}
+          </Button>
+        </div>
 
         <div className="m-cap mt-5 mb-1 px-1">
           {t('debts.payments')} · {payments.length}
@@ -175,6 +191,7 @@ export function DebtDetailScreen() {
         onOpenChange={setPaymentOpen}
         prefill={{ linkedAccountId: account.id, merchant: account.name }}
       />
+      <LoanMatchSheet accountId={matchOpen ? account.id : null} onClose={() => setMatchOpen(false)} />
     </div>
   );
 }

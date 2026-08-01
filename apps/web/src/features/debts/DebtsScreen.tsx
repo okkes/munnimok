@@ -16,6 +16,7 @@ import { typeDef } from '@/features/accounts/accountTypes';
 import { HelpButton } from '@/features/help/HelpButton';
 import { IntroCard } from '@/features/help/IntroCard';
 import { takeDebtHandoff } from './handoff';
+import { LoanMatchSheet } from './LoanMatchSheet';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
 import { ProgressBar, Tile } from '@/ui/primitives';
@@ -116,6 +117,8 @@ export function DebtsScreen() {
   // "+" mints a loan like any other account — the chooser opens on the
   // liability types only (v2: creating the account IS creating the debt)
   const [addOpen, setAddOpen] = useState(false);
+  // right after creating, offer the matching payments from history
+  const [matchFor, setMatchFor] = useState<string | null>(null);
   // arriving FROM the recurring form (its Debt kind): the chooser opens
   // prefilled with what the recurring already knew
   const [handoff] = useState(() => takeDebtHandoff());
@@ -225,8 +228,11 @@ export function DebtsScreen() {
         onOpenChange={setAddOpen}
         initialStep="manual"
         manualTypes={['loan', 'mortgage', 'credit']}
+        loanFlavor
         prefill={handoff ?? undefined}
+        onCreated={({ id }) => setMatchFor(id)}
       />
+      <LoanMatchSheet accountId={matchFor} onClose={() => setMatchFor(null)} />
     </div>
   );
 }

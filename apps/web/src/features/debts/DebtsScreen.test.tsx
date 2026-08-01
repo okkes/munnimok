@@ -22,6 +22,10 @@ async function createLoan(name: string, current: string, apr?: string, payment?:
   await waitFor(() => {
     expect(document.querySelector('[data-testid^="debt-card-"]')).toBeTruthy();
   });
+  // creation auto-offers matching payments — close the (empty) sheet so
+  // its candidate rows never shadow the test's own tx rows
+  await screen.findByTestId('loanmatch-empty');
+  fireEvent.keyDown(window, { key: 'Escape' });
   return document.querySelector('[data-testid^="debt-card-"]')!;
 }
 
@@ -231,6 +235,50 @@ describe('Debts (demo identity)', () => {
     expect((screen.getByTestId('txform-merchant') as HTMLInputElement).value).toBe('Car loan');
     db.close();
   }, 15_000);
+
+  it('found-payments links history to the loan; pre-anchor rows count only on request', async () => {
+    renderApp('/debts');
+    await screen.findByTestId('screen-debts');
+    const card = await createLoan('Car loan', '5000');
+    const accountId = card.getAttribute('data-testid')!.replace('debt-card-', '');
+
+    // a bare debt payment from YESTERDAY — before the loan's balance
+    // date (typed in today), so linking must not move the number
+    const db = new MunniDB('munni_demo');
+    const repo = demoRepo(db);
+    const y = new Date(Date.now() - 86_400_000);
+    const yesterday = `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, '0')}-${String(y.getDate()).padStart(2, '0')}`;
+    await repo.upsert('transaction', 'demo_space', 'oldpay', {
+      accountId: 'demo_main', date: yesterday, amountCents: -15_000, merchant: 'Aflossing',
+      currency: 'EUR', needsReview: 0, txType: 'debtPayment', catId: 'loanRepayment',
+    });
+
+    fireEvent.click(card);
+    await screen.findByTestId('debtdetail-hero');
+    fireEvent.click(screen.getByTestId('debtdetail-find-payments'));
+    // strong match (debt-payment label) arrives pre-checked, flagged old
+    await screen.findByTestId('loanmatch-pick-oldpay');
+    // the strong-match pre-check settles an effect tick after the row
+    await waitFor(() => expect((screen.getByTestId('loanmatch-pick-oldpay') as HTMLInputElement).checked).toBe(true));
+    expect(screen.getByTestId('loanmatch-count-oldpay')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('loanmatch-apply'));
+
+    await waitFor(async () => {
+      expect((await db.transactions.get('oldpay'))?.linkedAccountId).toBe(accountId);
+    }, { timeout: 5000 });
+    // linked but NOT counted: the typed balance already contained it
+    expect((await db.accounts.get(accountId))?.balanceCents).toBe(-500_000);
+
+    // the transaction detail offers the deliberate count-it-in, once
+    cleanup();
+    renderApp('/transactions/oldpay');
+    fireEvent.click(await screen.findByTestId('tx-detail-loan-count', {}, { timeout: 5000 }));
+    await waitFor(async () => {
+      expect((await db.accounts.get(accountId))?.balanceCents).toBe(-485_000);
+    }, { timeout: 5000 });
+    expect((await db.transactions.get('oldpay'))?.loanCounted).toBe(1);
+    db.close();
+  }, 20_000);
 
   it('a paid-off loan archives from the detail; a card stops tracking instead', async () => {
     renderApp('/debts');

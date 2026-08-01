@@ -260,7 +260,9 @@ export function LoginScreen() {
             ))}
           </div>
 
-          <Button className="mt-auto w-full" data-testid="offline-continue" onClick={openProfiles}>
+          {/* right below the trade-off cards — mt-auto floated it to the
+              bottom of tall desktop viewports (user ss 2026-08-01) */}
+          <Button className="w-full" data-testid="offline-continue" onClick={openProfiles}>
             {t('offline.continueBtn')}
           </Button>
         </div>

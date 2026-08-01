@@ -24,6 +24,7 @@ import type { HomeBlockId } from './HomeCustomizeScreen';
 import { SpaceSwitcher } from '@/features/spaces/SpaceSwitcher';
 import { useCategories } from '@/features/categories/useCategories';
 import { safeToSpend } from '@/domain/cashflow';
+import { BAND_MODES, bandEligible, bandIncludes, bandModeOf } from '@/domain/balanceBand';
 import { minIso, netWorthSeries } from '@/domain/trends';
 import { Line } from '@/ui/charts/Line';
 import { cleanBankText } from '@/lib/text';
@@ -70,7 +71,7 @@ const tileValueClass = (kind: OverviewKind, cents: number): string => {
 
 export function HomeScreen() {
   const { t, lang } = useLang();
-  const { store, spaceId } = useData();
+  const { store, repo, spaceId } = useData();
   const navigate = useNavigate();
   const identity = useSession((s) => s.identity);
   const topSplit = useTopSplit();
@@ -95,17 +96,23 @@ export function HomeScreen() {
   const { display, fmt, displayCurrency } = useDisplayMoney();
   const [lensOpen, setLensOpen] = useState(false);
   const bandCurrency = display?.currency ?? currency;
+  // the band's MEANING is a per-space choice now (user design
+  // 2026-08-01): net worth (default, the old behavior), liquid cash,
+  // safe-to-spend, or a hand-picked account set — with per-account
+  // exclusions where they make sense
+  const bandMode = bandModeOf(space);
   const bandTotal = useMemo(
     () =>
       sumCents(
-        (accounts ?? []).map((a) => ({ cents: a.balanceCents, currency: a.currency })),
+        (accounts ?? [])
+          .filter((a) => bandIncludes(bandMode, a, space))
+          .map((a) => ({ cents: a.balanceCents, currency: a.currency })),
         bandCurrency,
         display?.cache.days.latest,
         display?.manual,
       ),
-    [accounts, bandCurrency, display],
+    [accounts, bandCurrency, display, bandMode, space],
   );
-  const bandLabel = `${bandTotal.approximate ? '≈ ' : ''}${fmtCents(bandTotal.cents, bandCurrency, lang)}`;
   const period = useMemo(
     () => periodHistory(space?.periodType ?? 'month', space?.periodDay ?? 1, 1)[0],
     [space?.periodType, space?.periodDay],
@@ -194,6 +201,27 @@ export function HomeScreen() {
   }, [accounts, allTxs, recurrings, allocations, cats, period]);
   const [forecastOpen, setForecastOpen] = useState(false);
 
+  // the include/exclude toggle: custom keeps its own include list, the
+  // sum modes keep an exclusion list (absent = everything counts)
+  const toggleBandAccount = async (accountId: string) => {
+    // read the row FRESH: two quick toggles from the render-stale space
+    // object dropped the first write (review finding)
+    const live = await store.get('space', spaceId);
+    if (!live) return;
+    const key = bandMode === 'custom' ? 'balanceBandAccounts' : 'balanceBandExclude';
+    const current = live[key] ?? [];
+    const next = current.includes(accountId) ? current.filter((id) => id !== accountId) : [...current, accountId];
+    await repo.upsert('space', spaceId, spaceId, { [key]: next });
+  };
+
+  // spendable rides the forecast (ledger currency, no conversion lens);
+  // no payday/liquid yet → an honest dash beats a wrong number
+  const bandCents = bandMode === 'spendable' ? (forecast?.cents ?? null) : bandTotal.cents;
+  const bandLabel =
+    bandCents === null
+      ? '—'
+      : `${bandMode !== 'spendable' && bandTotal.approximate ? '≈ ' : ''}${fmtCents(bandCents, bandMode === 'spendable' ? currency : bandCurrency, lang)}`;
+
   // each landing-zone block renders through this registry so the
   // per-space layout (order + visibility) can rearrange them
   const blockRenderers: Record<HomeBlockId, () => React.ReactNode> = {
@@ -247,7 +275,10 @@ export function HomeScreen() {
                 className="m-tap w-full border-none bg-transparent p-0 text-left text-on-brand"
               >
                 <div className="flex items-baseline justify-between gap-3">
-                  <span className="text-xs font-medium tracking-wider uppercase opacity-70">{t('home.balance')}</span>
+                  {/* the heading names what the number IS (mode-aware) */}
+                  <span className="text-xs font-medium tracking-wider uppercase opacity-70" data-testid="band-mode-label">
+                    {t(`home.band.${bandMode}`)}
+                  </span>
                   <Icon name={accountsOpen ? 'chevron-up' : 'chevron-down'} size={16} color="currentColor" />
                 </div>
                 <div className="m-num mt-0.5 text-[28px]" data-testid="home-total-balance">
@@ -256,13 +287,43 @@ export function HomeScreen() {
               </button>
               {accountsOpen && (
                 <>
-                  <div className="mt-2 flex flex-col gap-1" data-testid="home-balance-accounts">
-                    {(accounts ?? []).map((a) => (
-                      <div key={a.id} className="flex items-center justify-between text-[13px] opacity-90">
-                        <span className="truncate">{a.name}</span>
-                        <span className="m-num">{fmt(a.balanceCents, a.currency)}</span>
-                      </div>
+                  {/* what the number means — switching persists per space */}
+                  <div className="mt-2.5 flex flex-wrap gap-1.5" data-testid="band-mode-row">
+                    {BAND_MODES.map((m) => (
+                      <button
+                        key={m}
+                        data-testid={`band-mode-${m}`}
+                        onClick={() => void repo.upsert('space', spaceId, spaceId, { balanceBandMode: m })}
+                        className={`m-tap rounded-full border px-3 py-1 text-[11px] font-semibold ${
+                          bandMode === m ? 'border-on-brand bg-on-brand/20 text-on-brand' : 'border-on-brand/30 bg-transparent text-on-brand/70'
+                        }`}
+                      >
+                        {t(`home.band.${m}`)}
+                      </button>
                     ))}
+                  </div>
+                  <div className="mt-2 flex flex-col gap-1" data-testid="home-balance-accounts">
+                    {(accounts ?? []).map((a) => {
+                      const eligible = bandEligible(bandMode, a);
+                      const included = bandIncludes(bandMode, a, space);
+                      return (
+                        <div key={a.id} className={`flex items-center gap-2 text-[13px] ${eligible && !included ? 'opacity-45' : 'opacity-90'}`}>
+                          {/* per-account say in the sum (user request) —
+                              spendable is a formula and takes no toggles */}
+                          {eligible && (
+                            <input
+                              data-testid={`band-acct-${a.id}`}
+                              type="checkbox"
+                              checked={included}
+                              onChange={() => void toggleBandAccount(a.id)}
+                              className="h-4 w-4 shrink-0 accent-[var(--m-bg)]"
+                            />
+                          )}
+                          <span className="min-w-0 flex-1 truncate">{a.name}</span>
+                          <span className="m-num">{fmt(a.balanceCents, a.currency)}</span>
+                        </div>
+                      );
+                    })}
                   </div>
                   {/* quick display-currency lens (currency plan CD4) */}
                   <button

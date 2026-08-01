@@ -4,6 +4,7 @@ import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
 import { kindOf } from '@/domain/txKind';
 import { autoSubFor } from '@/domain/categories';
+import { isLiability } from '@/features/accounts/accountTypes';
 import { matchTransferPairs } from '@/domain/transferMatch';
 import type { TransferLeg } from '@/domain/transferMatch';
 
@@ -111,7 +112,11 @@ export async function createCounterTransaction(store: StorageBackend, repo: Repo
   });
   await writeTxTransform(repo, tx, { transferPeerId: id });
   const account = await store.get('account', counterAccountId);
-  if (account?.deleted === 0 && account.source === 'manual') {
+  // manual LIABILITIES are owned by the loan link coupling (loans v2):
+  // linking already moved the balance once, and mirroring on top of it
+  // double-charged the loan (review finding). Other manual counters
+  // (savings, cash…) keep getting their mirror-side move here.
+  if (account?.deleted === 0 && account.source === 'manual' && !isLiability(account.type)) {
     await repo.upsert('account', account.spaceId, account.id, { balanceCents: account.balanceCents - tx.amountCents });
   }
   return id;

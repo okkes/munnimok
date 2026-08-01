@@ -40,6 +40,13 @@ export interface SpaceRow extends SyncEnvelope {
   allocRollover?: 0 | 1;
   /** main categories switched off for this space (picker filtering only — data never blocks) */
   hiddenMains?: string[];
+  /** Home balance band (user design 2026-08-01): what the big number IS.
+   *  Absent = 'networth' (the pre-config behavior: every account summed). */
+  balanceBandMode?: 'networth' | 'cash' | 'spendable' | 'custom';
+  /** accounts excluded from the networth/cash band sums */
+  balanceBandExclude?: string[];
+  /** the custom mode's explicit include list */
+  balanceBandAccounts?: string[];
 }
 
 export type AccountType = 'checking' | 'savings' | 'cash' | 'brokerage' | 'credit' | 'mortgage' | 'loan';
@@ -176,6 +183,9 @@ export interface TransactionRow extends SyncEnvelope {
   recurringId?: string;
   /** the event this transaction belongs to (holiday, wedding, …) */
   eventId?: string;
+  /** loans v2 (2026-08-01): pre-anchor row deliberately counted into
+   *  the linked manual loan's balance (one-shot marker) */
+  loanCounted?: 1;
 }
 
 /**
@@ -203,6 +213,9 @@ export interface TxMetaRow extends SyncEnvelope {
   transferPeerId?: string;
   recurringId?: string;
   eventId?: string;
+  /** loans v2 (2026-08-01): this row predates the loan's known-true
+   *  balance date but the user chose to count it in anyway (one-shot) */
+  loanCounted?: 1;
 }
 
 export type RecurringKind = 'fixed' | 'subscription';
