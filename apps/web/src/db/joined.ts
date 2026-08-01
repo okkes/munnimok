@@ -80,6 +80,33 @@ export async function visibleTransactions(store: StorageBackend, spaceId: string
   return out;
 }
 
+/**
+ * The space's transactions WITHOUT the history gates (user design
+ * 2026-08-01): recurring DETECTION reads the full stored history — a
+ * yearly subscription needs charges from before the space's start date
+ * to show a pattern at all, and banks may backfill years of data that
+ * the display gate deliberately hides. Deletion and attachment rules
+ * still apply; only the date gates are lifted. Screens keep reading
+ * visibleTransactions — the extra rows serve as pattern EVIDENCE, they
+ * never enter the space's lists.
+ */
+export async function historyTransactions(store: StorageBackend, spaceId: string): Promise<SpaceTx[]> {
+  const [own, links, metas] = await Promise.all([
+    store.bySpace('transaction', spaceId),
+    spaceAccountLinks(store, spaceId),
+    store.bySpace('txMeta', spaceId),
+  ]);
+  const metaByTx = new Map(metas.filter((m) => m.deleted === 0).map((m) => [m.txId, m]));
+  const out: SpaceTx[] = own.filter((t) => t.deleted === 0);
+  for (const link of links) {
+    const feedTxs = (await store.bySpace('transaction', link.feedSpaceId)).filter(
+      (t) => t.deleted === 0 && t.accountId === link.accountId,
+    );
+    for (const raw of feedTxs) out.push(joinTx(raw, metaByTx.get(raw.id), spaceId, link.feedSpaceId));
+  }
+  return out;
+}
+
 export interface SpaceAccount extends AccountRow {
   /** present when the account arrives via an attachment */
   link?: AccountLinkRow;

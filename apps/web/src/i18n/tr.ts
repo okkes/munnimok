@@ -1107,6 +1107,8 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'gc.connectSub': 'İşlemler her gece otomatik senkronize edilir',
   'gc.completing': 'Banka bağlanıyor…',
   'gc.done': 'Banka bağlandı',
+  'login.language': 'Dil',
+  'gc.cancelled': 'Bağlantı iptal edildi — hiçbir şey bağlanmadı.',
   'gc.failed': 'Banka bağlantısı başarısız — lütfen tekrar deneyin',
   'gc.backToApp': 'munni\'ye geri dön',
   'gc.closeTabHint': 'Bankan bağlandı. munni telefonunda uygulama olarak yüklüyse bu sekmeyi kapatabilirsin — işlemler oraya kendiliğinden gelir.',

@@ -1,4 +1,4 @@
-import { visibleAccounts, visibleTransactions, writeTxTransform } from '@/db/joined';
+import { historyTransactions, visibleAccounts, visibleTransactions, writeTxTransform } from '@/db/joined';
 import type { SpaceAccount, SpaceTx, TxTransformFields } from '@/db/joined';
 import { useQuery } from '@/db/useQuery';
 import { useData } from '@/app/data';
@@ -25,6 +25,13 @@ export function useSpaceTransactions(): SpaceTx[] | undefined {
 export function useSpaceAccounts(): SpaceAccount[] | undefined {
   const { store, spaceId } = useData();
   return useQuery(store, async () => visibleAccounts(store, spaceId), [spaceId]);
+}
+
+/** the space's FULL stored history, gates lifted — recurring detection
+ *  only (user design 2026-08-01): patterns need the pre-start tail */
+export function useSpaceHistoryTransactions(): SpaceTx[] | undefined {
+  const { store, spaceId } = useData();
+  return useQuery(store, async () => historyTransactions(store, spaceId), [spaceId]);
 }
 
 /** one visible transaction by id (detail screens) */

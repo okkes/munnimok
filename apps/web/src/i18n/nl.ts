@@ -1107,6 +1107,8 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'gc.connectSub': 'Transacties synchroniseren automatisch elke nacht',
   'gc.completing': 'Bank wordt gekoppeld…',
   'gc.done': 'Bank verbonden',
+  'login.language': 'Taal',
+  'gc.cancelled': 'Verbinding geannuleerd — er is niets gekoppeld.',
   'gc.failed': 'Bankverbinding mislukt — probeer het opnieuw',
   'gc.backToApp': 'Terug naar munni',
   'gc.closeTabHint': 'Je bank is gekoppeld. Staat munni als app op je telefoon, dan kun je dit tabblad gewoon sluiten — de transacties komen daar vanzelf binnen.',

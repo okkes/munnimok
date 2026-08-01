@@ -204,7 +204,7 @@ function GcCallbackWithLogto() {
 }
 
 function GcCallbackInner({ bearer }: Readonly<{ bearer: string | null }>) {
-  const [state, setState] = useState<'working' | 'done' | 'failed'>('working');
+  const [state, setState] = useState<'working' | 'done' | 'failed' | 'cancelled'>('working');
   const [detail, setDetail] = useState<string | null>(null);
   const [appScheme, setAppScheme] = useState<string | null>(null);
   const started = useRef(false);
@@ -223,6 +223,14 @@ function GcCallbackInner({ bearer }: Readonly<{ bearer: string | null }>) {
       }
       // Enable Banking puts the reference in `state` and adds a `code`;
       // GoCardless echoes `ref` and needs no code
+      // the BANK said no — the user cancelled or the consent was refused
+      // upstream (GlitchTip 81: completing anyway 404'd and captured a
+      // non-error). No completion call, no capture, a calm way back.
+      if (params.get('error')) {
+        sessionStorage.removeItem('munni_gc_ref');
+        setState('cancelled');
+        return;
+      }
       const reference = params.get('ref') ?? params.get('state') ?? sessionStorage.getItem('munni_gc_ref');
       const code = params.get('code');
       if (!reference) {
@@ -251,14 +259,14 @@ function GcCallbackInner({ bearer }: Readonly<{ bearer: string | null }>) {
   return <GcCallbackShell state={state} appScheme={appScheme} detail={detail} />;
 }
 
-const SHELL_ICONS = { working: 'bank-outline', done: 'check-circle-outline', failed: 'alert-circle-outline' } as const;
-const SHELL_TEXT_KEYS = { working: 'gc.completing', done: 'gc.done', failed: 'gc.failed' } as const;
+const SHELL_ICONS = { working: 'bank-outline', done: 'check-circle-outline', failed: 'alert-circle-outline', cancelled: 'close-circle-outline' } as const;
+const SHELL_TEXT_KEYS = { working: 'gc.completing', done: 'gc.done', failed: 'gc.failed', cancelled: 'gc.cancelled' } as const;
 
 function GcCallbackShell({
   state,
   appScheme,
   detail,
-}: Readonly<{ state: 'working' | 'done' | 'failed'; appScheme?: string | null; detail?: string | null }>) {
+}: Readonly<{ state: 'working' | 'done' | 'failed' | 'cancelled'; appScheme?: string | null; detail?: string | null }>) {
   const { t } = useLang();
 
   // consent started in the native app: the moment the hosted page is

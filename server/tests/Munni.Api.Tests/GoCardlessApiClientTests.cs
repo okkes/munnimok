@@ -15,6 +15,7 @@ public class GoCardlessApiClientTests
     private sealed class ScriptedHandler : HttpMessageHandler
     {
         public int TokenCalls;
+        public string? LastRequisitionBody;
         public List<(string Method, string Path, string? Auth)> Requests { get; } = [];
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
@@ -30,9 +31,21 @@ public class GoCardlessApiClientTests
                 Assert.Equal("sid", payload.RootElement.GetProperty("secret_id").GetString());
                 body = """{"access":"tok-1","access_expires":86400}""";
             }
+            else if (path.Contains("institutions/ING_NL"))
+            {
+                // the single-institution detail powering the history ask
+                body = """{"id":"ING_NL","transaction_total_days":"730"}""";
+            }
             else if (path.Contains("institutions"))
             {
                 body = """[{"id":"ING_NL","name":"ING","bic":"INGBNL2A","transaction_total_days":"730","logo":null}]""";
+            }
+            else if (path.EndsWith("agreements/enduser/"))
+            {
+                // the deep-history consent: capped at the institution max
+                var agreementPayload = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct));
+                Assert.Equal(730, agreementPayload.RootElement.GetProperty("max_historical_days").GetInt32());
+                body = """{"id":"agr-1"}""";
             }
             else if (path.EndsWith("/details/"))
             {
@@ -62,6 +75,7 @@ public class GoCardlessApiClientTests
             }
             else if (path.EndsWith("requisitions/") && request.Method == HttpMethod.Post)
             {
+                LastRequisitionBody = await request.Content!.ReadAsStringAsync(ct);
                 body = """{"id":"req-1","link":"https://gc/auth","status":"CR"}""";
             }
             else if (path.Contains("requisitions/?limit"))
@@ -111,7 +125,7 @@ public class GoCardlessApiClientTests
     [Fact]
     public async Task Envelopes_unwrap_and_query_parameters_are_shaped_correctly()
     {
-        var (api, _) = Create();
+        var (api, handler) = Create();
         Assert.Equal("NL69INGB0123456789", (await api.GetAccountDetailsAsync("a1")).Iban);
         Assert.Equal("closingBooked", (await api.GetBalancesAsync("a1"))[0].BalanceType);
         var page = await api.GetTransactionsAsync("a1", new DateOnly(2026, 1, 15));
@@ -120,6 +134,8 @@ public class GoCardlessApiClientTests
         Assert.Equal(new GcRateInfo(4, 3, 3600), page.Rate); // budget headers parsed
         Assert.Equal("LN", (await api.ListRequisitionsAsync())[0].Status);
         Assert.Equal("https://gc/auth", (await api.CreateRequisitionAsync("ING_NL", "https://app", "ref-1")).Link);
+        // the deep-history agreement rode along on the consent (2y ask)
+        Assert.Contains("agr-1", handler.LastRequisitionBody);
         await api.DeleteRequisitionAsync("req-9"); // 204 is success
     }
 

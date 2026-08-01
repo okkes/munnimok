@@ -67,7 +67,18 @@ if (config.glitchtipDsn) {
     // pure connectivity noise, not bugs: the browser's generic fetch
     // network errors (WebKit / Chromium / Firefox wording) fire whenever
     // the API or IdP is unreachable — offline is a supported state here
-    ignoreErrors: ['Load failed', 'Failed to fetch', 'NetworkError when attempting to fetch resource'],
+    ignoreErrors: [
+      'Load failed',
+      'Failed to fetch',
+      'NetworkError when attempting to fetch resource',
+      // store-teardown noise (GlitchTip 79/80/82): sign-out closes the
+      // local store while the sync engine's in-flight queries settle —
+      // these signatures only occur around that close and say nothing
+      'DatabaseClosedError',
+      'The connection was closed',
+      /Connection to munni_\w+ not available/,
+      /No available connection for database munni_\w+/,
+    ],
     beforeSend: (event) => (isZeroNetworkIdentity() ? null : event),
   });
 }

@@ -1105,6 +1105,8 @@ export const en = {
   'gc.connectSub': 'Transactions sync automatically every night',
   'gc.completing': 'Linking your bank…',
   'gc.done': 'Bank connected',
+  'login.language': 'Language',
+  'gc.cancelled': 'Connection cancelled — nothing was linked.',
   'gc.failed': 'Bank connection failed — please try again',
   'gc.backToApp': 'Back to munni',
   'gc.closeTabHint': 'Your bank is connected. If munni is installed as an app, you can simply close this tab — the transactions arrive there by themselves.',

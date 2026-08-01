@@ -40,6 +40,11 @@ builder.WebHost.UseSentry((SentryAspNetCoreOptions options) =>
     // Error level and the SDK forwarded every one as an event — pure noise
     // that buried real failures (GlitchTip issues 66–74).
     options.SetBeforeSend((sentryEvent, _) => SentryNoise.IsHandledRace(sentryEvent) ? null : sentryEvent);
+    // the SDK's failed-HTTP-request handler shipped every upstream 5xx
+    // (GoCardless had a 502 hour → four events, GlitchTip 75–78) even
+    // though the fetch loop handles them and retries next cycle. Real
+    // failures still surface: unhandled exceptions and LogError paths.
+    options.CaptureFailedRequests = false;
 });
 
 builder.Services.AddDbContext<AppDbContext>(options =>

@@ -292,7 +292,9 @@ public static partial class GcEndpoints
             try
             {
                 balances = await gc.GetBalancesAsync(gcAccountId);
-                page = await gc.GetTransactionsAsync(gcAccountId, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-90)));
+                // two-year ask (user design 2026-08-01) — the provider
+                // clamps to what the consent allows
+                page = await gc.GetTransactionsAsync(gcAccountId, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-GoCardlessApi.MaxHistoryDays)));
             }
             catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
             {

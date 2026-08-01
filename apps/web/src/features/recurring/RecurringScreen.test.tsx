@@ -140,6 +140,34 @@ describe('RecurringScreen (demo identity)', () => {
     db.close();
   }, 15_000);
 
+  it('detection reads PAST the space start date — pre-start charges are the evidence', async () => {
+    const db = new MunniDB('munni_demo');
+    renderApp('/recurring');
+    await screen.findByTestId('screen-recurring');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-gate'), { trackOutbox: false });
+    // the space starts on the 1st of THIS month — all four charges that
+    // make the pattern are display-gated; detection must still see them
+    await repo.upsert('space', DEMO_SPACE_ID, DEMO_SPACE_ID, { historyStartDate: monthsAgo(0, 1) });
+    for (let i = 1; i <= 4; i++) {
+      await repo.upsert('transaction', DEMO_SPACE_ID, `gym_${i}`, {
+        accountId: 'demo_main',
+        date: monthsAgo(i, 1),
+        amountCents: -2999,
+        currency: 'EUR',
+        merchant: 'BASIC-FIT',
+        catId: 'subs',
+        txType: 'expense',
+        needsReview: 0,
+      });
+    }
+    fireEvent.click(await screen.findByTestId('recurring-suggestions-banner', {}, { timeout: 5000 }));
+    await screen.findByTestId('screen-recurring-suggestions');
+    // the pattern shows although every charge predates the start date
+    const card = await screen.findByTestId('recsuggest-card-basic fit', {}, { timeout: 5000 });
+    expect(card.querySelectorAll('[data-testid^="recsuggest-tx-"]').length).toBeGreaterThanOrEqual(3);
+    db.close();
+  }, 15_000);
+
   it('the brand picker offers vendored icons and picking stores the logo', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) =>
       String(url).includes('brands/index.json')

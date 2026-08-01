@@ -9,6 +9,7 @@ import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Flag, langFlagCode } from '@/ui/Flag';
 import { Logo } from '@/ui/Logo';
+import { Sheet } from '@/ui/Sheet';
 import { callbackUri } from './logto';
 import { addOfflineProfile, listOfflineProfiles } from './offlineProfiles';
 import { MINA_EXPR } from '@/features/mina/assets';
@@ -98,37 +99,26 @@ function LogtoSignInButton({ onLine }: Readonly<{ onLine: boolean }>) {
   );
 }
 
-/** compact top-right language pill (legacy parity); code badges, no flag emoji */
+/** compact top-right language pill (legacy parity); code badges, no flag
+ *  emoji. The picker itself is the standard bottom Sheet now (user ss
+ *  2026-08-01: this was the app's one remaining popover-style modal). */
 function LangPill() {
-  const { lang, setLang } = useLang();
+  const { lang, setLang, t } = useLang();
   const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-
-  // tap anywhere else closes the popover (user report: it only closed
-  // by tapping the pill again)
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (e: PointerEvent) => {
-      const target = e.target instanceof Node ? e.target : null;
-      if (!rootRef.current?.contains(target)) setOpen(false);
-    };
-    document.addEventListener('pointerdown', onPointerDown);
-    return () => document.removeEventListener('pointerdown', onPointerDown);
-  }, [open]);
 
   return (
-    <div className="relative" ref={rootRef}>
+    <>
       <button
         data-testid="login-lang-trigger"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setOpen(true)}
         className="m-tap flex items-center gap-1.5 rounded-full border border-line bg-surface py-1.5 pr-2.5 pl-3 text-[12px] font-semibold text-ink-2 shadow-[0_2px_12px_rgba(0,0,0,0.10)]"
       >
         <Flag code={langFlagCode(lang)} size={18} />
         {LANG_NAMES[lang]}
         <Icon name={open ? 'chevron-up' : 'chevron-down'} size={14} color="var(--m-ink-3)" />
       </button>
-      {open && (
-        <div className="absolute top-[calc(100%+8px)] right-0 z-50 min-w-[180px] overflow-hidden rounded-card border border-line bg-surface shadow-[0_8px_32px_rgba(0,0,0,0.16)]">
+      <Sheet open={open} onOpenChange={setOpen} title={t('login.language')} size="compact">
+        <div className="overflow-hidden rounded-card border border-line bg-surface">
           {LANGS.map((code) => (
             <button
               key={code}
@@ -145,8 +135,8 @@ function LangPill() {
             </button>
           ))}
         </div>
-      )}
-    </div>
+      </Sheet>
+    </>
   );
 }
 
