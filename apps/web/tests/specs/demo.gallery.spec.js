@@ -13,7 +13,7 @@ for (const V of VARIANTS) {
     await shot(page, k('06-demo-login') + '--s1');
     await page.click('[data-testid="login-demo-btn"]');
     await page.waitForSelector('[data-testid="home-total-balance"]');
-    // demo checking €3,420.55 + savings €8,150.00
+    // checking €3,420.55 + savings €8,150.00 − the v2 loans €3,490.00
     await expect(page.locator('[data-testid="home-total-balance"]')).toContainText('8,080.55');
     await shot(page, k('06-demo-login'));
     await teardown(page, ctx, k('06-demo-login'));

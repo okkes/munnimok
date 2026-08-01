@@ -76,7 +76,9 @@ for (const V of VARIANTS) {
     await removeConfirm.click();
     await expect(page.locator('[data-testid="account-row-demo_save"]')).toHaveCount(0);
     await page.click('[data-testid="tab-home"]');
-    await expect(page.locator('[data-testid="home-total-balance"]')).toContainText('3,420.55');
+    // 8,080.55 − 8,150.00 savings: the v2 demo loans keep weighing in,
+    // so deleting the big savings account honestly dips below zero
+    await expect(page.locator('[data-testid="home-total-balance"]')).toContainText('69.45');
     await shot(page, k('18-accounts-edit'));
     await teardown(page, ctx, k('18-accounts-edit'));
   });
