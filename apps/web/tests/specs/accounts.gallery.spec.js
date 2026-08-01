@@ -47,9 +47,10 @@ for (const V of VARIANTS) {
     await page.click('[data-testid="spaceaccounts-back"]');
     await expect(page.locator('[data-testid^="accounts-space-"]')).toContainText('Wallet');
     await expect(page.locator('[data-testid^="accounts-space-"]')).toContainText('52.50');
-    // home total includes the new account: 11,570.55 + 52.50
+    // home total includes the new account: 8,080.55 + 52.50 (the demo's
+    // v2 loan accounts weigh on the band now)
     await page.click('[data-testid="tab-home"]');
-    await expect(page.locator('[data-testid="home-total-balance"]')).toContainText('11,623.05');
+    await expect(page.locator('[data-testid="home-total-balance"]')).toContainText('8,133.05');
     await shot(page, k('17-accounts-add'));
     await teardown(page, ctx, k('17-accounts-add'));
   });

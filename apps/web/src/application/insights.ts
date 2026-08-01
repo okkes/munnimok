@@ -8,6 +8,7 @@ import { useRecurrings } from './recurring';
 import { useSpaceAccounts, useSpaceTransactions } from './transactions';
 import { collectInsights } from '@/domain/insights';
 import type { Insight } from '@/domain/insights';
+import { isDebtTracked } from '@/domain/debts';
 import { periodHistory } from '@/domain/periods';
 import { useCategories } from '@/features/categories/useCategories';
 
@@ -22,11 +23,6 @@ export function useInsights(): Insight[] | undefined {
   const recurrings = useRecurrings();
   const budgets = useBudgets();
   const catalog = useCategories();
-  const debts = useQuery(
-    store,
-    async () => (await store.bySpace('debt', spaceId)).filter((d) => d.deleted === 0),
-    [spaceId],
-  );
   const dismissals = useQuery(
     store,
     async () => (await store.bySpace('insightDismiss', spaceId)).filter((d) => d.deleted === 0),
@@ -34,20 +30,21 @@ export function useInsights(): Insight[] | undefined {
   );
 
   return useMemo(() => {
-    if (!txs || !accounts || !recurrings || !budgets || !debts || !dismissals) return undefined;
+    if (!txs || !accounts || !recurrings || !budgets || !dismissals) return undefined;
     const periods = periodHistory(space?.periodType ?? 'month', space?.periodDay ?? 1, PERIOD_WINDOW);
     const dismissed = new Set(dismissals.map((d) => d.insightId));
     return collectInsights({
       txs,
       recurrings,
       budgets,
-      debts,
+      // loans v2: the tracked liability accounts ARE the debts
+      loans: accounts.filter((a) => a.deleted === 0 && isDebtTracked(a)),
       accountsById: new Map(accounts.map((a) => [a.id, a])),
       catalog,
       periods,
       today: new Date().toISOString().slice(0, 10),
     }).filter((insight) => !dismissed.has(insight.id));
-  }, [txs, accounts, recurrings, budgets, debts, dismissals, catalog, space?.periodType, space?.periodDay]);
+  }, [txs, accounts, recurrings, budgets, dismissals, catalog, space?.periodType, space?.periodDay]);
 }
 
 export interface InsightOps {

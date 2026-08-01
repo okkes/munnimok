@@ -35,7 +35,7 @@ for (const V of VARIANTS) {
     await gotoSpaces(page);
     await page.click('[data-testid="space-row-demo_space"]');
     await page.click('[data-testid="tab-home"]');
-    await expect(page.locator('[data-testid="home-total-balance"]')).toContainText('11,570.55');
+    await expect(page.locator('[data-testid="home-total-balance"]')).toContainText('8,080.55');
     await shot(page, k('23-spaces-create'));
     await teardown(page, ctx, k('23-spaces-create'));
   });

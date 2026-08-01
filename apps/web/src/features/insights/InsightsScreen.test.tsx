@@ -8,15 +8,15 @@ import { renderApp } from '@/test/harness';
 async function createBigDebt() {
   renderApp('/debts');
   await screen.findByTestId('screen-debts');
+  // loans v2: the "+" opens the account chooser — the loan IS an account
   fireEvent.click(await screen.findByTestId('debts-add'));
-  await screen.findByTestId('debtform-name');
-  fireEvent.change(screen.getByTestId('debtform-name'), { target: { value: 'Student loan' } });
-  // the merged Loan form (arc 3): current value anchors, account auto-mints
-  fireEvent.change(screen.getByTestId('debtform-current'), { target: { value: '25000' } });
-  fireEvent.change(screen.getByTestId('debtform-original'), { target: { value: '25000' } });
-  fireEvent.change(screen.getByTestId('debtform-apr'), { target: { value: '8' } });
-  fireEvent.change(screen.getByTestId('debtform-payment'), { target: { value: '300' } });
-  fireEvent.click(screen.getByTestId('debtform-save'));
+  fireEvent.click(await screen.findByTestId('chooser-accttype-loan'));
+  fireEvent.change(await screen.findByTestId('chooser-acctform-name'), { target: { value: 'Student loan' } });
+  fireEvent.change(screen.getByTestId('chooser-acctform-balance'), { target: { value: '25000' } });
+  fireEvent.change(screen.getByTestId('chooser-acctform-original'), { target: { value: '25000' } });
+  fireEvent.change(screen.getByTestId('chooser-acctform-apr'), { target: { value: '8' } });
+  fireEvent.change(screen.getByTestId('chooser-acctform-payment'), { target: { value: '300' } });
+  fireEvent.click(screen.getByTestId('chooser-acctform-save'));
   await waitFor(() => expect(document.querySelector('[data-testid^="debt-card-"]')).toBeTruthy());
 }
 

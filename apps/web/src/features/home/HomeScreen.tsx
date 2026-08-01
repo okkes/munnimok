@@ -31,7 +31,7 @@ import { Sheet } from '@/ui/Sheet';
 import { useBudgetStatuses, useBudgets } from '@/application/budgets';
 import { useEvents } from '@/application/events';
 import { useGoals } from '@/application/goals';
-import { useDebtStatuses } from '@/application/debts';
+import { useLoanStatuses } from '@/application/debts';
 import { useAllocations } from '@/application/allocation';
 import { useInsights } from '@/application/insights';
 import { useNewTransactions } from '@/application/newTxs';
@@ -162,12 +162,9 @@ export function HomeScreen() {
         .slice(0, 2),
     [goals],
   );
-  const debtStatuses = useDebtStatuses();
-  const activeDebts = useMemo(() => (debtStatuses ?? []).filter((s) => s.debt.archived !== 1), [debtStatuses]);
-  const debtTotals = useMemo(() => {
-    const accountsById = new Map((accounts ?? []).map((a) => [a.id, a]));
-    return debtsOverview(activeDebts.map((s) => s.debt), accountsById);
-  }, [activeDebts, accounts]);
+  const debtStatuses = useLoanStatuses();
+  const activeDebts = useMemo(() => (debtStatuses ?? []).filter((s) => s.account.archived !== 1), [debtStatuses]);
+  const debtTotals = useMemo(() => debtsOverview(activeDebts.map((s) => s.account)), [activeDebts]);
   // insights block: the top undismissed finding
   const insights = useInsights();
   // allocation block: only once the space actually allocates

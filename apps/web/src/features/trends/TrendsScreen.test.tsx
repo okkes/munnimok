@@ -32,7 +32,8 @@ describe('TrendsScreen (demo identity)', () => {
 
     fireEvent.click(screen.getByTestId('trends-view-networth'));
     await screen.findByTestId('trends-worth-chart');
-    // the line ends at the sum of today's balances (demo: €11,570.55)
+    // the line ends at the sum of today's balances (LEAN demo — the rich
+    // seed with its v2 loan accounts is e2e-only; the specs pin 8,080.55)
     expect(screen.getByTestId('trends-worth-now').textContent).toContain('11,570.55');
   }, 15_000);
 

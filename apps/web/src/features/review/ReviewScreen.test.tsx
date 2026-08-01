@@ -80,12 +80,15 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.click(await screen.findByTestId('chooser-manual'));
     fireEvent.click(await screen.findByTestId('chooser-accttype-loan'));
     fireEvent.change(await screen.findByTestId('chooser-acctform-name'), { target: { value: 'Car loan' } });
+    // v2: a loan account's current value is required (it IS the debt)
+    fireEvent.change(screen.getByTestId('chooser-acctform-balance'), { target: { value: '5000' } });
     fireEvent.click(screen.getByTestId('chooser-acctform-save'));
 
     // a payoff transfer is a debt payment, not a recurring cost (user
-    // request 2026-07-29): the debt row appears, recurring retires
+    // request 2026-07-29): the debt row appears, recurring retires —
+    // and it names the loan account itself (v2: the account IS the debt)
     await waitFor(() => expect(screen.getByTestId('review-debt-row')).toBeTruthy(), { timeout: 5000 });
-    expect(screen.getByTestId('review-debt-row').textContent).toContain('No debt on this account yet');
+    expect(screen.getByTestId('review-debt-row').textContent).toContain('Car loan');
     expect(screen.queryByTestId('review-recurring-row')).toBeNull();
   }, 15_000);
 

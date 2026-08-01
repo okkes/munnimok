@@ -457,9 +457,12 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved }: Rea
           onStay={() => setDebtIntent(false)}
           onContinue={() => {
             const cents = Math.round(Number.parseFloat(form.amount.replace(',', '.')) * 100);
+            // v2: the recurring's amount and rhythm are the loan's
+            // PAYMENT plan (they were never its original size)
             setDebtHandoff({
               name: form.name.trim() || undefined,
-              originalCents: Number.isFinite(cents) && cents > 0 ? cents : undefined,
+              paymentCents: Number.isFinite(cents) && cents > 0 ? cents : undefined,
+              paymentEvery: form.every,
               merchantKey: form.merchantKey ?? undefined,
             });
             setDebtIntent(false);

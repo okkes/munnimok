@@ -392,7 +392,8 @@ function DebtOrRecurringRow({
     return (
       <div data-testid="review-debt-row" className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-[14px] text-ink">
         <Icon name="hand-coin-outline" size={18} color="var(--m-ink-3)" />
-        <span className="min-w-0 flex-1 truncate">{payingDebt ? payingDebt.name : t('review.debtNone')}</span>
+        {/* v2: the counterparty account IS the loan — name it directly */}
+        <span className="min-w-0 flex-1 truncate">{payingDebt?.name}</span>
         <span className="text-[11px] text-ink-4">{t('review.debtRow')}</span>
       </div>
     );
@@ -616,16 +617,12 @@ export function ReviewScreen() {
     async () => (draft?.linkedAccountId ? store.get('account', draft.linkedAccountId) : undefined),
     [draft?.linkedAccountId],
   );
-  // a loan/mortgage counterparty makes this a DEBT payment (1:1
-  // debt↔backing account, user design 2026-07-28): the card then shows
-  // WHICH debt is being paid and retires the recurring row — a payoff
-  // transfer is not a recurring cost (user request 2026-07-29)
-  const debts = useQuery(store, async () => (await store.bySpace('debt', spaceId)).filter((d) => d.deleted === 0), [spaceId]);
-  const payingDebt = useMemo(
-    () => (draft?.linkedAccountId ? (debts ?? []).find((d) => d.accountId === draft.linkedAccountId) : undefined),
-    [debts, draft?.linkedAccountId],
-  );
+  // a loan/mortgage counterparty makes this a DEBT payment: the account
+  // IS the loan (v2), so the card names the counterparty itself and
+  // retires the recurring row — a payoff transfer is not a recurring
+  // cost (user request 2026-07-29)
   const isLoanCounter = !!draftCounter && ['loan', 'mortgage'].includes(draftCounter.type);
+  const payingDebt = isLoanCounter && draftCounter ? { name: draftCounter.name } : undefined;
   const events = useEvents();
   const activeEvents = useMemo(() => (events ?? []).filter((e) => e.archived !== 1), [events]);
   const pickedEvent = activeEvents.find((e) => e.id === eventPick);

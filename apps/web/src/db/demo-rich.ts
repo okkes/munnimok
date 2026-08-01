@@ -196,14 +196,19 @@ async function seedGoals(repo: Repo): Promise<void> {
   await contrib('demo_gc_lap1', 'demo_goal_laptop', 15_000, daysAgo(10));
 }
 
-// ── debts: loan, high-interest card, a friend ──────────────────────────
+// ── debts: loan, high-interest card, a friend (loans v2: the account
+//    IS the debt — story fields live right on the liability row) ───────
 async function seedDebts(repo: Repo): Promise<void> {
-  const debt = (id: string, fields: Record<string, unknown>) => repo.upsert('debt', DEMO_SPACE_ID, id, fields as never);
-  await debt('demo_debt_duo', { name: 'Student loan (DUO)', icon: 'school-outline', originalCents: 1_800_000, remainingCents: 1_240_000, interestPctYear: 2.56, paymentCents: 9_500, paymentDay: 27 });
-  // credit card — edge case: high interest, small balance
-  await debt('demo_debt_card', { name: 'Credit card', icon: 'credit-card-outline', originalCents: 120_000, remainingCents: 84_000, interestPctYear: 14, paymentCents: 15_000, paymentDay: 1 });
+  const loan = (id: string, fields: Record<string, unknown>) =>
+    repo.upsert('account', DEMO_SPACE_ID, id, { source: 'manual', currency: 'EUR', ...fields } as never);
+  // v2 note: these are REAL accounts now, so they honestly weigh on the
+  // balance band — sized so the demo stays in the black
+  await loan('demo_loan_duo', { name: 'Student loan (DUO)', type: 'loan', balanceCents: -240_000, originalCents: 1_800_000, interestPctYear: 2.56, paymentCents: 9_500 });
+  // credit card — edge case: high interest, small balance; the debt
+  // story is what puts a card on the debts screen at all
+  await loan('demo_loan_card', { name: 'Credit card', type: 'credit', balanceCents: -84_000, originalCents: 120_000, interestPctYear: 14, paymentCents: 15_000 });
   // money lent to a friend — edge case: no interest, no schedule
-  await debt('demo_debt_friend', { name: 'Lent to Sam', icon: 'hand-coin-outline', originalCents: 25_000, remainingCents: 25_000 });
+  await loan('demo_loan_friend', { name: 'Lent to Sam', type: 'loan', balanceCents: -25_000, originalCents: 25_000 });
 }
 
 // ── events: running now (with spend) + an archived past trip ────────────

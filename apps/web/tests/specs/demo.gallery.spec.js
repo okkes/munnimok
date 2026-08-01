@@ -14,7 +14,7 @@ for (const V of VARIANTS) {
     await page.click('[data-testid="login-demo-btn"]');
     await page.waitForSelector('[data-testid="home-total-balance"]');
     // demo checking €3,420.55 + savings €8,150.00
-    await expect(page.locator('[data-testid="home-total-balance"]')).toContainText('11,570.55');
+    await expect(page.locator('[data-testid="home-total-balance"]')).toContainText('8,080.55');
     await shot(page, k('06-demo-login'));
     await teardown(page, ctx, k('06-demo-login'));
   });

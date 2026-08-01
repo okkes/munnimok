@@ -3,53 +3,54 @@ import { useQuery } from '@/db/useQuery';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
-import { useDebtStatuses } from '@/application/debts';
+import { logActivity } from '@/application/activity';
+import { useLoanStatuses } from '@/application/debts';
 import { useSpaceTransactions } from '@/application/transactions';
 import { localToday } from '@/application/recurring';
 import { estimatePaymentPlan, paymentsPerYear, projectPayoff } from '@/domain/debts';
 import { merchantKey } from '@/domain/merchantKey';
-import type { DebtRow } from '@/db/types';
+import type { AccountRow } from '@/db/types';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
+import { EditAccountSheet } from '@/features/accounts/EditAccountSheet';
 import { TxFormSheet } from '@/features/transactions/TxFormSheet';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
-import { HeroCard, ProgressBar, Tile } from '@/ui/primitives';
+import { HeroCard, ProgressBar } from '@/ui/primitives';
 import { TxRow } from '@/ui/TxRow';
-import { DebtFormSheet, paymentLabelKey } from './DebtsScreen';
+import { LoanTile, paymentLabelKey } from './DebtsScreen';
 
-/** One debt: the payoff story — numbers, projection, payment history. */
+/** One loan: the payoff story — numbers, projection, payment history.
+ *  The account row IS the loan (v2); Edit opens the account editor. */
 export function DebtDetailScreen() {
   const { t, lang } = useLang();
   const navigate = useNavigate();
-  const { store, spaceId } = useData();
+  const { store, repo, spaceId } = useData();
   const { debtId } = useParams({ strict: false }) as { debtId: string };
-  const statuses = useDebtStatuses();
+  const statuses = useLoanStatuses();
   const txs = useSpaceTransactions();
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
-  const [formInitial, setFormInitial] = useState<DebtRow | 'new' | null>(null);
+  const [editing, setEditing] = useState<AccountRow | null>(null);
   const [paymentOpen, setPaymentOpen] = useState(false);
 
-  const status = statuses?.find((s) => s.debt.id === debtId);
-  // deleted here or on another device: leave the orphaned detail
+  const status = statuses?.find((s) => s.account.id === debtId);
+  // deleted or untracked here or on another device: leave the orphan
   useEffect(() => {
     if (statuses && !status) void navigate({ to: '/debts', replace: true });
   }, [statuses, status, navigate]);
   const today = localToday();
 
-  // payment history: transactions on the linked account, or expenses
-  // matching the debt's merchant pattern (read-only view)
+  // payment history: transactions ON the loan account, transfers naming
+  // it as counterparty, and — for handoff-created loans — debt payments
+  // matching the remembered merchant
   const payments = useMemo(() => {
     if (!status || !txs) return [];
-    const { debt } = status;
+    const { account } = status;
     return txs
       .filter((tx) => {
         if (tx.deleted !== 0) return false;
-        // a transfer NAMING the backing account as counterparty is this
-        // debt's payment — the main path since debts went account-backed
-        if (debt.accountId) return tx.accountId === debt.accountId || tx.linkedAccountId === debt.accountId;
-        if (debt.merchantKey) return tx.txType === 'debtPayment' || merchantKey(tx.merchant) === debt.merchantKey;
-        return tx.txType === 'debtPayment' && tx.linkedAccountId === undefined;
+        if (tx.accountId === account.id || tx.linkedAccountId === account.id) return true;
+        return !!account.merchantKey && tx.txType === 'debtPayment' && merchantKey(tx.merchant) === account.merchantKey;
       })
       .sort((a, b) => b.date.localeCompare(a.date))
       .slice(0, 50);
@@ -58,27 +59,40 @@ export function DebtDetailScreen() {
   const { fmt } = useDisplayMoney();
   if (!status) return <div className="h-full" data-testid="screen-debt-detail" />;
 
-  const { debt, remainingCents, progress } = status;
+  const { account, remainingCents, progress } = status;
   const currency = space?.currency ?? 'EUR';
   const money = (cents: number) => fmt(cents, currency);
   // the explicit plan wins; with the fields empty, ≥3 payments speak for
   // themselves ("estimated from payments", arc 3) — never stored
-  const estimate = debt.paymentCents ? null : estimatePaymentPlan(payments);
-  const projection = debt.paymentCents
-    ? projectPayoff(remainingCents, debt.paymentCents, debt.interestPctYear, today, paymentsPerYear(debt.paymentEvery, debt.paymentEveryN))
-    : projectPayoff(remainingCents, estimate?.paymentCents, debt.interestPctYear, today, estimate?.perYear ?? 12);
+  const estimate = account.paymentCents ? null : estimatePaymentPlan(payments);
+  const projection = account.paymentCents
+    ? projectPayoff(remainingCents, account.paymentCents, account.interestPctYear, today, paymentsPerYear(account.paymentEvery, account.paymentEveryN))
+    : projectPayoff(remainingCents, estimate?.paymentCents, account.interestPctYear, today, estimate?.perYear ?? 12);
+
+  // the way out (v2): a paid-off loan ARCHIVES (milestone, history kept);
+  // a credit card just stops tracking — the card is still a live account
+  const isCredit = account.type === 'credit';
+  const wayOut = () => {
+    const fields = isCredit ? { trackAsDebt: 0 as const } : { archived: account.archived === 1 ? (0 as const) : (1 as const) };
+    void repo.upsert('account', account.spaceId, account.id, fields);
+    void logActivity(store, repo, account.spaceId, 'accountEdit', account.name);
+  };
+  const wayOutLabel = () => {
+    if (isCredit) return t('debts.stopTracking');
+    return account.archived === 1 ? t('debts.reopen') : t('debts.markPaidOff');
+  };
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-debt-detail">
       <AppBar
-        title={debt.name}
+        title={account.name}
         leading={
           <IconButton label={t('action.back')} testId="debtdetail-back" onClick={() => window.history.back()}>
             <Icon name="arrow-left" size={22} />
           </IconButton>
         }
         trailing={
-          <IconButton label={t('debts.edit')} testId="debtdetail-edit" onClick={() => setFormInitial(debt)}>
+          <IconButton label={t('acct.editAccount')} testId="debtdetail-edit" onClick={() => setEditing(account)}>
             <Icon name="pencil-outline" size={20} />
           </IconButton>
         }
@@ -86,28 +100,28 @@ export function DebtDetailScreen() {
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <HeroCard
           testId="debtdetail-hero"
-          tile={<Tile size={48} tone="negative" icon={debt.icon ?? 'hand-coin-outline'} />}
+          tile={<LoanTile account={account} size={48} />}
           number={<span data-testid="debtdetail-remaining">{money(remainingCents)}</span>}
           // without the original size there is no "of …" story and no
           // honest progress — the hero stays a plain remaining figure
-          sub={debt.originalCents ? t('debts.remainingOf', { amount: money(debt.originalCents) }) : undefined}
+          sub={account.originalCents ? t('debts.remainingOf', { amount: money(account.originalCents) }) : undefined}
           right={
-            debt.originalCents ? (
+            account.originalCents ? (
               <span className="m-num shrink-0 text-[14px] font-semibold text-accent-deep">{Math.round(progress * 100)}%</span>
             ) : undefined
           }
-          progress={debt.originalCents ? <ProgressBar value={progress} /> : undefined}
+          progress={account.originalCents ? <ProgressBar value={progress} /> : undefined}
           meta={
             <>
-              {debt.paymentCents && (
-                <span>{t(paymentLabelKey(debt.paymentEvery), { amount: money(debt.paymentCents) })}</span>
+              {account.paymentCents && (
+                <span>{t(paymentLabelKey(account.paymentEvery), { amount: money(account.paymentCents) })}</span>
               )}
               {estimate && (
                 <span data-testid="debtdetail-estimate">
                   {t('debts.estimatedPlan', { amount: money(estimate.paymentCents), days: estimate.everyDays })}
                 </span>
               )}
-              {debt.interestPctYear !== undefined && <span>{debt.interestPctYear}% {t('debts.aprShort')}</span>}
+              {account.interestPctYear !== undefined && <span>{account.interestPctYear}% {t('debts.aprShort')}</span>}
               {projection && (
                 <span data-testid="debtdetail-projection">
                   {t('debts.projection', {
@@ -119,24 +133,22 @@ export function DebtDetailScreen() {
             </>
           }
         />
-        {debt.note && (
+        {account.note && (
           <p className="mt-3 rounded-card border border-line bg-surface px-4 py-3 text-[13px] leading-relaxed text-ink-2" data-testid="debtdetail-note">
-            {debt.note}
+            {account.note}
           </p>
         )}
 
         {/* a hand-entered payment, pre-staged onto this loan (arc 3):
-            the manual form opens as a transfer to the backing account */}
-        {debt.accountId && (
-          <Button
-            variant="outline"
-            className="mt-4 w-full"
-            data-testid="debtdetail-add-payment"
-            onClick={() => setPaymentOpen(true)}
-          >
-            <Icon name="plus" size={16} /> {t('debts.addPayment')}
-          </Button>
-        )}
+            the manual form opens as a transfer to the loan account */}
+        <Button
+          variant="outline"
+          className="mt-4 w-full"
+          data-testid="debtdetail-add-payment"
+          onClick={() => setPaymentOpen(true)}
+        >
+          <Icon name="plus" size={16} /> {t('debts.addPayment')}
+        </Button>
 
         <div className="m-cap mt-5 mb-1 px-1">
           {t('debts.payments')} · {payments.length}
@@ -152,15 +164,17 @@ export function DebtDetailScreen() {
             {t('debts.noPayments')}
           </p>
         )}
+
+        <Button variant="outline" className="mt-5 w-full" data-testid="debtdetail-archive" onClick={wayOut}>
+          <Icon name={isCredit ? 'eye-off-outline' : 'flag-checkered'} size={16} /> {wayOutLabel()}
+        </Button>
       </div>
-      <DebtFormSheet initial={formInitial} onClose={() => setFormInitial(null)} />
-      {debt.accountId && (
-        <TxFormSheet
-          open={paymentOpen}
-          onOpenChange={setPaymentOpen}
-          prefill={{ linkedAccountId: debt.accountId, merchant: debt.name }}
-        />
-      )}
+      <EditAccountSheet account={editing} onClose={() => setEditing(null)} />
+      <TxFormSheet
+        open={paymentOpen}
+        onOpenChange={setPaymentOpen}
+        prefill={{ linkedAccountId: account.id, merchant: account.name }}
+      />
     </div>
   );
 }

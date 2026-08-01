@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import type { AccountRow, DebtRow } from '@/db/types';
+import type { AccountRow } from '@/db/types';
 import {
-  debtProgress,
-  debtRemainingCents,
   debtsOverview,
   estimatePaymentPlan,
+  isDebtTracked,
+  loanProgress,
+  loanRemainingCents,
   monthlyPaymentCents,
   paymentsPerYear,
   projectPayoff,
@@ -24,22 +25,30 @@ const account = (partial: Partial<AccountRow>): AccountRow =>
     ...partial,
   }) as AccountRow;
 
-const debt = (partial: Partial<DebtRow>): DebtRow =>
-  ({ id: 'd', spaceId: 's1', name: 'd', originalCents: 100_000, deleted: 0, fieldVersions: {}, ...partial }) as DebtRow;
-
-describe('debts math', () => {
-  it('remaining prefers the linked liability balance (negative → owed)', () => {
-    const acct = account({ id: 'loan1', balanceCents: -35_000 });
-    const byId = new Map([[acct.id, acct]]);
-    expect(debtRemainingCents(debt({ accountId: 'loan1' }), byId)).toBe(35_000);
-    expect(debtRemainingCents(debt({ remainingCents: 12_000 }), new Map())).toBe(12_000);
-    expect(debtRemainingCents(debt({}), new Map())).toBe(100_000);
-    expect(debtProgress(debt({}), 35_000)).toBeCloseTo(0.65);
+describe('loan math (v2: the account IS the debt)', () => {
+  it('remaining is the balance magnitude; an overpaid card owes nothing', () => {
+    expect(loanRemainingCents(account({ balanceCents: -35_000 }))).toBe(35_000);
+    expect(loanRemainingCents(account({ balanceCents: 12_000 }))).toBe(0);
+    expect(loanProgress(account({ originalCents: 100_000 }), 35_000)).toBeCloseTo(0.65);
   });
 
-  it('an original-less loan (arc 3) still answers: remaining 0-fallback, progress unknown', () => {
-    expect(debtRemainingCents(debt({ originalCents: undefined }), new Map())).toBe(0);
-    expect(debtProgress(debt({ originalCents: undefined }), 35_000)).toBe(0);
+  it('an original-less loan still answers: progress unknown reads 0', () => {
+    expect(loanProgress(account({}), 35_000)).toBe(0);
+  });
+
+  it('membership: loans by nature, cards by story or toggle', () => {
+    expect(isDebtTracked(account({ type: 'loan' }))).toBe(true);
+    expect(isDebtTracked(account({ type: 'mortgage' }))).toBe(true);
+    expect(isDebtTracked(account({ type: 'checking' }))).toBe(false);
+    // a bare card is an account with a balance, not a payoff journey
+    expect(isDebtTracked(account({ type: 'credit' }))).toBe(false);
+    // …until it carries a debt story
+    expect(isDebtTracked(account({ type: 'credit', interestPctYear: 14 }))).toBe(true);
+    expect(isDebtTracked(account({ type: 'credit', paymentCents: 5_000 }))).toBe(true);
+    // …and the explicit switch always wins, both ways
+    expect(isDebtTracked(account({ type: 'credit', trackAsDebt: 1 }))).toBe(true);
+    expect(isDebtTracked(account({ type: 'loan', trackAsDebt: 0 }))).toBe(false);
+    expect(isDebtTracked(account({ type: 'credit', interestPctYear: 14, trackAsDebt: 0 }))).toBe(false);
   });
 
   it('projects payoff with monthly compounding; impossible payments return null', () => {
@@ -103,15 +112,17 @@ describe('debts math', () => {
     expect(estimatePaymentPlan([])).toBeNull();
   });
 
-  it('overview sums owed + cadence-normalized monthly payments of active debts', () => {
-    const overview = debtsOverview(
-      [debt({ remainingCents: 5000, paymentCents: 100 }), debt({ remainingCents: 7000, paymentCents: 200, archived: 1 })],
-      new Map(),
-    );
+  it('overview sums owed + cadence-normalized monthly payments of active tracked loans', () => {
+    const overview = debtsOverview([
+      account({ balanceCents: -5000, paymentCents: 100 }),
+      account({ balanceCents: -7000, paymentCents: 200, archived: 1 }),
+      // an untracked card never counts toward the debt totals
+      account({ type: 'credit', balanceCents: -9000 }),
+    ]);
     expect(overview).toEqual({ totalOwedCents: 5000, totalMonthlyCents: 100 });
     // €100 weekly ≈ €433 a month on the overview
-    expect(monthlyPaymentCents(debt({ paymentCents: 10_000, paymentEvery: 'week' }))).toBe(43_333);
-    expect(monthlyPaymentCents(debt({ paymentCents: 120_000, paymentEvery: 'year' }))).toBe(10_000);
-    expect(monthlyPaymentCents(debt({}))).toBe(0);
+    expect(monthlyPaymentCents(account({ paymentCents: 10_000, paymentEvery: 'week' }))).toBe(43_333);
+    expect(monthlyPaymentCents(account({ paymentCents: 120_000, paymentEvery: 'year' }))).toBe(10_000);
+    expect(monthlyPaymentCents(account({}))).toBe(0);
   });
 });

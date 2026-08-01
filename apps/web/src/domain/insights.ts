@@ -1,4 +1,4 @@
-import type { AccountRow, BudgetRow, DebtRow, RecurringRow, TransactionRow } from '@/db/types';
+import type { AccountRow, BudgetRow, RecurringRow, TransactionRow } from '@/db/types';
 import type { TranslationKey } from '@/i18n';
 import { budgetFamily, budgetPeriodAt, budgetSpentCents, cycleIndex } from './budgets';
 import { projectPayoff } from './debts';
@@ -41,7 +41,8 @@ export interface InsightInputs {
   txs: readonly TransactionRow[];
   recurrings: readonly RecurringRow[];
   budgets: readonly BudgetRow[];
-  debts: readonly DebtRow[];
+  /** loans v2: the tracked liability accounts (the account IS the debt) */
+  loans: readonly AccountRow[];
   accountsById: ReadonlyMap<string, AccountRow>;
   catalog: CatalogLookup;
   /** oldest → current, e.g. the last 6 space periods */
@@ -213,35 +214,30 @@ export function budgetRealityCheck(inputs: InsightInputs): Insight[] {
  *  cadence (arc 3) would make that copy lie. */
 export function debtAcceleration(inputs: InsightInputs): Insight[] {
   const EXTRA = 2_500;
-  const monthlyCadence = (d: (typeof inputs.debts)[number]) => !d.paymentEvery || (d.paymentEvery === 'month' && (d.paymentEveryN ?? 1) === 1);
-  const candidates = inputs.debts
-    .filter((d) => d.deleted === 0 && d.archived !== 1 && d.paymentCents && d.interestPctYear && monthlyCadence(d))
-    .map((debt) => {
-      const remaining = debt.accountId
-        ? Math.max(0, -(inputs.accountsById.get(debt.accountId)?.balanceCents ?? 0))
-        : (debt.remainingCents ?? debt.originalCents ?? 0);
-      return { debt, remaining };
-    })
+  const monthlyCadence = (a: AccountRow) => !a.paymentEvery || (a.paymentEvery === 'month' && (a.paymentEveryN ?? 1) === 1);
+  const candidates = inputs.loans
+    .filter((a) => a.deleted === 0 && a.archived !== 1 && a.paymentCents && a.interestPctYear && monthlyCadence(a))
+    .map((loan) => ({ loan, remaining: Math.max(0, -loan.balanceCents) }))
     .filter((c) => c.remaining > 0)
     .sort((a, b) => b.remaining - a.remaining);
   const top = candidates[0];
   if (!top) return [];
-  const base = projectPayoff(top.remaining, top.debt.paymentCents, top.debt.interestPctYear, inputs.today);
-  const boosted = projectPayoff(top.remaining, top.debt.paymentCents! + EXTRA, top.debt.interestPctYear, inputs.today);
+  const base = projectPayoff(top.remaining, top.loan.paymentCents, top.loan.interestPctYear, inputs.today);
+  const boosted = projectPayoff(top.remaining, top.loan.paymentCents! + EXTRA, top.loan.interestPctYear, inputs.today);
   if (!base || !boosted) return [];
   const monthsSaved = base.months - boosted.months;
   const interestSaved = base.totalInterestCents - boosted.totalInterestCents;
   if (monthsSaved < 2 || interestSaved < 2_000) return [];
   return [
     {
-      id: `debtacc:${top.debt.id}:${top.remaining}`,
+      id: `debtacc:${top.loan.id}:${top.remaining}`,
       severity: 'win',
       impactCents: interestSaved,
       icon: 'rocket-launch-outline',
       titleKey: 'ins.debtacc.title',
       detailKey: 'ins.debtacc.detail',
-      params: { name: top.debt.name, extra: EXTRA, months: monthsSaved, interest: interestSaved },
-      actionTo: `/debts/${top.debt.id}`,
+      params: { name: top.loan.name, extra: EXTRA, months: monthsSaved, interest: interestSaved },
+      actionTo: `/debts/${top.loan.id}`,
     },
   ];
 }

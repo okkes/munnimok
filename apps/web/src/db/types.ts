@@ -69,6 +69,24 @@ export interface AccountRow extends SyncEnvelope {
    *  wins over the institution logo derived from bankId */
   logo?: string;
   archived?: 0 | 1;
+  // ── loans v2 (2026-08-01): the liability account IS the debt — the
+  //    old DebtRow's story fields live here now, one object, no seams
+  /** informational APR, e.g. 3.5 — empty means "remind me", 0 is an answer */
+  interestPctYear?: number;
+  /** starting size of the loan — optional garnish powering the progress bar */
+  originalCents?: number;
+  /** free-form note */
+  note?: string;
+  paymentCents?: number;
+  /** payment cadence, recurring-shaped: every N week/month/year; absent =
+   *  monthly, estimates from payments fill the gap */
+  paymentEvery?: RecurringEvery;
+  paymentEveryN?: number;
+  /** auto-link payments by merchant (the recurring→loan handoff) */
+  merchantKey?: string;
+  /** debts-screen membership: absent = by type (loan/mortgage in, credit
+   *  out unless it carries a debt story) — the explicit toggle wins */
+  trackAsDebt?: 0 | 1;
 }
 
 export type TxType = 'income' | 'expense' | 'saving' | 'transfer' | 'debtPayment' | 'investment' | 'funding' | 'adjustment';
@@ -325,9 +343,10 @@ export interface GoalContributionRow extends SyncEnvelope {
 }
 
 /**
- * A debt's payoff story on top of a liability account (or manual
- * numbers): original size, payment rhythm, projection. Per-space,
- * informational interest only (approved debts design).
+ * DEPRECATED (loans v2, 2026-08-01): debts fold into their liability
+ * account at boot (foldDebtsIntoAccounts) — the account row is the one
+ * object now. The table stays registered so old devices' rows still
+ * sync in and get folded; nothing reads it for display anymore.
  */
 export interface DebtRow extends SyncEnvelope {
   id: string;

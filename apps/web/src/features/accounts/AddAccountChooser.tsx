@@ -11,19 +11,23 @@ import { useSession } from '@/app/session';
 import { logActivity } from '@/application/activity';
 import { CURRENCIES } from '@/domain/countries';
 import { parseCents } from '@/lib/money';
-import type { AccountType } from '@/db/types';
+import type { AccountRow, AccountType, RecurringEvery } from '@/db/types';
 import { ACCOUNT_TYPES, isLiability, manualBalanceDate, typeDef } from './accountTypes';
 import { Button } from '@/ui/Button';
 import { Chip } from '@/ui/primitives';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 
+const CADENCE_LABEL = { week: 'recurring.everyWeek', month: 'recurring.everyMonth', year: 'recurring.everyYear' } as const;
+
 /**
  * THE one "Add an account" entry (account-entry-flow plan, AE1): every
  * surface opens this chooser, which routes by INTENT and says where
  * the result lives. Vocabulary lock-in: Connect (bank) · Import
  * (statement) · Add (manual) · Attach/Detach (space visibility).
- * The manual form is embedded, so any host creates in place.
+ * The manual form is embedded, so any host creates in place; liability
+ * types extend it with the debt story (loans v2 — the account IS the
+ * loan, so the Debts "+" lands here too, pre-filtered).
  */
 export function AddAccountChooser({
   open,
@@ -34,6 +38,8 @@ export function AddAccountChooser({
   hideManual,
   gcAvailable,
   initialStep,
+  manualTypes,
+  prefill,
 }: Readonly<{
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -52,6 +58,11 @@ export function AddAccountChooser({
   /** 'manual' opens straight on the type grid — the space screen's
    *  "Add a manual account" button (user redesign 2026-08-01) */
   initialStep?: 'intent' | 'manual';
+  /** limit the manual type grid — the Debts screen's "+" offers the
+   *  liability types only (loans v2: the account IS the debt) */
+  manualTypes?: readonly AccountType[];
+  /** the recurring→loan handoff seeds the liability form */
+  prefill?: { name?: string; paymentCents?: number; paymentEvery?: RecurringEvery; merchantKey?: string };
 }>) {
   const { t } = useLang();
   const { store, repo, spaceId } = useData();
@@ -75,12 +86,19 @@ export function AddAccountChooser({
   const [importOpen, setImportOpen] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
   const [newType, setNewType] = useState<AccountType | null>(null);
-  const [name, setName] = useState('');
+  const [name, setName] = useState(prefill?.name ?? '');
   const [balance, setBalance] = useState('');
   // liabilities DEFAULT to a negative balance but the user decides — an
   // overpaid credit card is legitimately positive (user rule 2026-07-31)
   const [negative, setNegative] = useState(false);
   const [currency, setCurrency] = useState<string | null>(null);
+  // the debt story (loans v2): liability types carry it on the account
+  const [iban, setIban] = useState('');
+  const [original, setOriginal] = useState('');
+  const [apr, setApr] = useState('');
+  const [payment, setPayment] = useState(prefill?.paymentCents ? (prefill.paymentCents / 100).toFixed(2) : '');
+  const [payEvery, setPayEvery] = useState<RecurringEvery>(prefill?.paymentEvery ?? 'month');
+  const [note, setNote] = useState('');
   // the action a shared-space warning is holding back (connect/import)
   const pendingRef = useRef<(() => void) | null>(null);
   const effectiveCurrency = currency ?? space?.currency ?? 'EUR';
@@ -94,6 +112,12 @@ export function AddAccountChooser({
       setBalance('');
       setNegative(false);
       setCurrency(null);
+      setIban('');
+      setOriginal('');
+      setApr('');
+      setPayment('');
+      setPayEvery('month');
+      setNote('');
       pendingRef.current = null;
     }
   };
@@ -116,9 +140,31 @@ export function AddAccountChooser({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, newType]);
 
+  // a loan/mortgage exists to track what's owed — its current value is
+  // the whole point and can't default to zero (v2: "current required")
+  const balanceRequired = newType === 'loan' || newType === 'mortgage';
+  const saveDisabled = !name.trim() || (balanceRequired && parseCents(balance) === null);
+
+  /** the debt story a LIABILITY account carries (loans v2) — blank
+   *  fields stay off the row entirely */
+  const liabilityFields = (): Partial<AccountRow> => {
+    const originalCents = parseCents(original);
+    const paymentCents = parseCents(payment);
+    const aprNumber = Number.parseFloat(apr.replace(',', '.'));
+    return {
+      ...(iban.trim() ? { iban: iban.trim() } : {}),
+      ...(originalCents && originalCents > 0 ? { originalCents } : {}),
+      // 0% is a real answer; only the EMPTY field means "remind me"
+      ...(Number.isFinite(aprNumber) && aprNumber >= 0 ? { interestPctYear: aprNumber } : {}),
+      ...(paymentCents && paymentCents > 0 ? { paymentCents, paymentEvery: payEvery } : {}),
+      ...(note.trim() ? { note: note.trim() } : {}),
+      ...(prefill?.merchantKey ? { merchantKey: prefill.merchantKey } : {}),
+    };
+  };
+
   const createManual = () => {
     const cents = parseCents(balance || '0');
-    if (!newType || !name.trim() || cents === null) return;
+    if (!newType || saveDisabled || cents === null) return;
     const id = repo.newId();
     void repo.upsert('account', spaceId, id, {
       name: name.trim(),
@@ -127,6 +173,7 @@ export function AddAccountChooser({
       currency: effectiveCurrency,
       balanceCents: negative ? -Math.abs(cents) : Math.abs(cents),
       balanceAsOf: manualBalanceDate(),
+      ...(isLiability(newType) ? liabilityFields() : {}),
     });
     void logActivity(store, repo, spaceId, 'accountAdd', name.trim());
     onCreated?.({ id, type: newType });
@@ -268,13 +315,88 @@ export function AddAccountChooser({
                   </Chip>
                 ))}
               </div>
-              <Button data-testid="chooser-acctform-save" onClick={createManual} disabled={!name.trim()}>
+              {/* the debt story (loans v2): a liability account IS the
+                  loan — interest, size and plan live right on it */}
+              {isLiability(newType) && (
+                <>
+                  <div className="m-cap px-1 pt-1">{t('debts.loanDetails')}</div>
+                  <input
+                    data-testid="chooser-acctform-iban"
+                    value={iban}
+                    onChange={(e) => setIban(e.target.value)}
+                    placeholder={t('debts.iban')}
+                    className="h-11 w-full rounded-input border border-line bg-surface px-4 font-mono text-[13px] text-ink outline-none placeholder:text-ink-4"
+                  />
+                  <div className="flex gap-2">
+                    <label className="min-w-0 flex-1 text-[12px] text-ink-3">
+                      {t('debts.original')}
+                      <input
+                        data-testid="chooser-acctform-original"
+                        type="number"
+                        inputMode="decimal"
+                        step="0.01"
+                        min="0"
+                        value={original}
+                        onChange={(e) => setOriginal(e.target.value)}
+                        placeholder="0.00"
+                        className="mt-1 h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
+                      />
+                    </label>
+                    <label className="min-w-0 flex-1 text-[12px] text-ink-3">
+                      {t('debts.apr')}
+                      <input
+                        data-testid="chooser-acctform-apr"
+                        type="number"
+                        inputMode="decimal"
+                        step="0.1"
+                        min="0"
+                        value={apr}
+                        onChange={(e) => setApr(e.target.value)}
+                        placeholder="0.0"
+                        className="mt-1 h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
+                      />
+                    </label>
+                  </div>
+                  <div className="flex items-end gap-2">
+                    <label className="min-w-0 flex-1 text-[12px] text-ink-3">
+                      {t('debts.payment')}
+                      <input
+                        data-testid="chooser-acctform-payment"
+                        type="number"
+                        inputMode="decimal"
+                        step="0.01"
+                        min="0"
+                        value={payment}
+                        onChange={(e) => setPayment(e.target.value)}
+                        placeholder="0.00"
+                        className="mt-1 h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
+                      />
+                    </label>
+                    <div className="flex gap-1.5">
+                      {(['week', 'month', 'year'] as const).map((cadence) => (
+                        <Chip key={cadence} testId={`chooser-acctform-every-${cadence}`} selected={payEvery === cadence} onClick={() => setPayEvery(cadence)}>
+                          {t(CADENCE_LABEL[cadence])}
+                        </Chip>
+                      ))}
+                    </div>
+                  </div>
+                  <textarea
+                    data-testid="chooser-acctform-note"
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    placeholder={t('debts.note')}
+                    rows={2}
+                    className="w-full resize-none rounded-input border border-line bg-surface px-4 py-2.5 text-[14px] text-ink outline-none placeholder:text-ink-4"
+                  />
+                </>
+              )}
+              <Button data-testid="chooser-acctform-save" onClick={createManual} disabled={saveDisabled}>
                 {t('action.add')}
               </Button>
             </>
           ) : (
             <div className="grid grid-cols-2 gap-2">
-              {ACCOUNT_TYPES.map((def) => (
+              {ACCOUNT_TYPES.filter((def) => !manualTypes || manualTypes.includes(def.type)).map((def) => (
                 <button
                   key={def.type}
                   data-testid={`chooser-accttype-${def.type}`}

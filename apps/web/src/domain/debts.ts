@@ -1,21 +1,35 @@
-import type { AccountRow, DebtRow, RecurringEvery } from '@/db/types';
+import type { AccountRow, AccountType, RecurringEvery } from '@/db/types';
 
-/** Debt math (approved debts design) — all pure, interest informational. */
+/**
+ * Loan math (loans v2, 2026-08-01) — all pure, interest informational.
+ * The liability ACCOUNT is the debt: its balance is the remaining truth
+ * and the story fields (interest, original, payment plan) live on it.
+ */
 
-/** remaining owed: the linked liability account's balance is the truth
- *  (stored negative → owed is its magnitude); manual debts carry their
- *  own remaining, defaulting to the original size */
-export function debtRemainingCents(debt: DebtRow, accountsById: ReadonlyMap<string, AccountRow>): number {
-  if (debt.accountId) {
-    const account = accountsById.get(debt.accountId);
-    if (account) return Math.max(0, -account.balanceCents);
-  }
-  return Math.max(0, debt.remainingCents ?? debt.originalCents ?? 0);
+export const DEBT_ACCOUNT_TYPES: ReadonlySet<AccountType> = new Set(['loan', 'mortgage', 'credit']);
+
+/**
+ * Debts-screen membership: the explicit toggle wins; absent, loans and
+ * mortgages are in by nature while a credit card only joins when the
+ * user gave it a debt story (mature-app ruling: a card paid off monthly
+ * is an account with a balance, not a payoff journey).
+ */
+export function isDebtTracked(account: Pick<AccountRow, 'type' | 'trackAsDebt' | 'interestPctYear' | 'originalCents' | 'paymentCents'>): boolean {
+  if (!DEBT_ACCOUNT_TYPES.has(account.type)) return false;
+  if (account.trackAsDebt !== undefined) return account.trackAsDebt === 1;
+  if (account.type !== 'credit') return true;
+  return account.interestPctYear !== undefined || account.originalCents !== undefined || !!account.paymentCents;
+}
+
+/** remaining owed: the account's balance is the truth (stored negative →
+ *  owed is its magnitude); an overpaid card sits at 0 owed */
+export function loanRemainingCents(account: Pick<AccountRow, 'balanceCents'>): number {
+  return Math.max(0, -account.balanceCents);
 }
 
 /** 0..1 paid-off share — unknowable without the original size */
-export function debtProgress(debt: DebtRow, remainingCents: number): number {
-  const original = debt.originalCents ?? 0;
+export function loanProgress(account: Pick<AccountRow, 'originalCents'>, remainingCents: number): number {
+  const original = account.originalCents ?? 0;
   if (original <= 0) return 0;
   return Math.min(1, Math.max(0, 1 - remainingCents / original));
 }
@@ -38,7 +52,7 @@ const MAX_STEPS = 2600; // 50 years of weekly payments — beyond that the payme
 /**
  * Amortization walk: fixed payment per period against per-period
  * compounding of the (informational) APR — the period follows the
- * debt's cadence (arc 3: a weekly payer is done ~4× sooner than the
+ * loan's cadence (arc 3: a weekly payer is done ~4× sooner than the
  * old monthly assumption claimed). Null when there's no payment or the
  * payment doesn't beat the interest.
  */
@@ -119,10 +133,10 @@ export function estimatePaymentPlan(payments: readonly { date: string; amountCen
   };
 }
 
-/** the debt's explicit payment as a monthly figure (cadence-normalized) */
-export function monthlyPaymentCents(debt: Pick<DebtRow, 'paymentCents' | 'paymentEvery' | 'paymentEveryN'>): number {
-  if (!debt.paymentCents) return 0;
-  return Math.round((debt.paymentCents * paymentsPerYear(debt.paymentEvery, debt.paymentEveryN)) / 12);
+/** the loan's explicit payment as a monthly figure (cadence-normalized) */
+export function monthlyPaymentCents(loan: Pick<AccountRow, 'paymentCents' | 'paymentEvery' | 'paymentEveryN'>): number {
+  if (!loan.paymentCents) return 0;
+  return Math.round((loan.paymentCents * paymentsPerYear(loan.paymentEvery, loan.paymentEveryN)) / 12);
 }
 
 export interface DebtsOverview {
@@ -130,10 +144,10 @@ export interface DebtsOverview {
   totalMonthlyCents: number;
 }
 
-export function debtsOverview(debts: readonly DebtRow[], accountsById: ReadonlyMap<string, AccountRow>): DebtsOverview {
-  const active = debts.filter((d) => d.deleted === 0 && d.archived !== 1);
+export function debtsOverview(loans: readonly AccountRow[]): DebtsOverview {
+  const active = loans.filter((a) => a.deleted === 0 && a.archived !== 1 && isDebtTracked(a));
   return {
-    totalOwedCents: active.reduce((sum, d) => sum + debtRemainingCents(d, accountsById), 0),
-    totalMonthlyCents: active.reduce((sum, d) => sum + monthlyPaymentCents(d), 0),
+    totalOwedCents: active.reduce((sum, a) => sum + loanRemainingCents(a), 0),
+    totalMonthlyCents: active.reduce((sum, a) => sum + monthlyPaymentCents(a), 0),
   };
 }

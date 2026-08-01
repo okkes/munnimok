@@ -36,7 +36,10 @@ describe('rich demo seed', () => {
   it('populates every feature so each surface has something to show', async () => {
     expect(live(await db.budgets.toArray()).length).toBeGreaterThanOrEqual(4);
     expect(live(await db.goals.toArray()).length).toBeGreaterThanOrEqual(3);
-    expect(live(await db.debts.toArray()).length).toBeGreaterThanOrEqual(3);
+    // loans v2: the demo debts ARE liability accounts now
+    const loans = live(await db.accounts.toArray()).filter((a) => ['loan', 'mortgage', 'credit'].includes(a.type));
+    expect(loans.length).toBeGreaterThanOrEqual(3);
+    expect(live(await db.debts.toArray())).toHaveLength(0);
     expect(live(await db.events.toArray()).length).toBeGreaterThanOrEqual(2);
     expect(live(await db.recurrings.toArray()).length).toBeGreaterThanOrEqual(5);
     expect(live(await db.allocations.toArray()).length).toBeGreaterThanOrEqual(3);

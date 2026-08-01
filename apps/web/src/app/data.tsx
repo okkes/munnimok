@@ -284,6 +284,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
         // their space's start date (imported rows ignored it entirely)
         const { migrateUngatedLinks } = await import('@/application/historyStart');
         await migrateUngatedLinks(store, repo);
+        // loans v2: debt rows fold into their liability account (every
+        // boot, idempotent — late-syncing debts from old devices heal)
+        const { foldDebtsIntoAccounts } = await import('@/application/debts');
+        await foldDebtsIntoAccounts(store, repo);
         // transfers are ONE event with two legs — pair them within each
         // space's own books (never across: funding covers that case)
         const { linkTransferPairs } = await import('@/application/transferMatch');

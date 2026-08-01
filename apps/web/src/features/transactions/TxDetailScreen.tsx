@@ -416,16 +416,8 @@ export function TxDetailScreen() {
     async () => (tx?.linkedAccountId ? store.get('account', tx.linkedAccountId) : undefined),
     [tx?.linkedAccountId],
   );
-  // a transfer into a debt's backing account IS a payment on that debt
-  // (1:1 debt↔account) — say so, matching the review card's debt row
-  const paysDebt = useQuery(
-    store,
-    async () =>
-      tx?.linkedAccountId
-        ? (await store.bySpace('debt', spaceId)).find((d) => d.deleted === 0 && d.accountId === tx.linkedAccountId)
-        : undefined,
-    [tx?.linkedAccountId, spaceId],
-  );
+  // a transfer into a loan account IS a payment on that loan (v2: the
+  // account is the debt) — say so, matching the review card's debt row
   // read-time join (user request): the moment an account with this IBAN
   // exists locally — e.g. it was attached to a space later — every
   // transaction's counterparty upgrades from plain text to a live door
@@ -653,9 +645,9 @@ export function TxDetailScreen() {
                   → {linkedAccount.name}
                 </span>
               )}
-              {paysDebt && (
+              {linkedAccount && ['loan', 'mortgage'].includes(linkedAccount.type) && (
                 <span className="block truncate text-[11px] text-accent-deep" data-testid="tx-detail-pays-debt">
-                  {t('tx.paysDebt', { name: paysDebt.name })}
+                  {t('tx.paysDebt', { name: linkedAccount.name })}
                 </span>
               )}
             </span>

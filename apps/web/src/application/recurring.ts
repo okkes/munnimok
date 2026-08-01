@@ -4,6 +4,7 @@ import { appendNotification } from './notifications';
 import { LOCALES, useLang } from '@/i18n';
 import { visibleTransactions, writeTxTransform } from '@/db/joined';
 import type { SpaceTx } from '@/db/joined';
+import { isDebtTracked } from '@/domain/debts';
 import { merchantKey } from '@/domain/merchantKey';
 import { addDays, cycleKeyOf, nextDueDate, recurringAmountMatches } from '@/domain/recurring';
 import { recurringDismissId } from '@/domain/feedIds';
@@ -194,26 +195,27 @@ export function useRecurringReminders(): void {
         }
       }
 
-      // debts saved without an interest rate get a WEEKLY nudge to fill
+      // loans saved without an interest rate get a WEEKLY nudge to fill
       // it in — 0% is an answer, an empty rate is a question (user rule
-      // 2026-07-28); quick-add now, find out the rate later
-      const debts = (await store.allRows('debt')).filter(
-        (d) => d.deleted === 0 && d.archived !== 1 && d.interestPctYear === undefined,
+      // 2026-07-28); quick-add now, find out the rate later. Loans v2:
+      // the tracked liability ACCOUNTS are the debts now
+      const loans = (await store.allRows('account')).filter(
+        (a) => a.deleted === 0 && a.archived !== 1 && a.interestPctYear === undefined && isDebtTracked(a),
       );
-      for (const debt of debts) {
-        const key = `debtPctReminded_${debt.id}`;
+      for (const loan of loans) {
+        const key = `debtPctReminded_${loan.id}`;
         // metaGet returns the {key, value} row — reading the row itself as
         // a number made the 7-day check NaN and the nudge fired every open
         const last = (await store.metaGet(key))?.value as number | undefined;
         if (last && Date.now() - last < 7 * 86_400_000) continue;
         await store.metaPut(key, Date.now());
-        await appendNotification(store, 'debtRate', { name: debt.name }, `${key}_${Date.now()}`);
+        await appendNotification(store, 'debtRate', { name: loan.name }, `${key}_${Date.now()}`);
         if (registration) {
           await registration.showNotification('munni', {
-            body: t('debts.rateReminderBody', { name: debt.name }),
+            body: t('debts.rateReminderBody', { name: loan.name }),
             icon: 'icon-192.png',
             badge: 'icon-192.png',
-            tag: `debt-rate-${debt.id}`,
+            tag: `debt-rate-${loan.id}`,
             data: { url: './#/debts' },
           });
         }

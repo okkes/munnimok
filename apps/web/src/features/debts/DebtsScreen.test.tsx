@@ -8,17 +8,17 @@ import { DexieBackend } from '@/db/backend';
 import { Repo } from '@/db/repo';
 import { HlcClock } from '@/sync/hlc';
 
-/** the merged Loan form (arc 3): name + current value are the whole ask;
- *  the backing account mints itself by default */
-async function createDebt(name: string, current: string, apr?: string, payment?: string, original?: string) {
+/** loans v2: the Debts "+" opens the account chooser on the liability
+ *  type grid — creating the loan ACCOUNT is creating the debt */
+async function createLoan(name: string, current: string, apr?: string, payment?: string, original?: string) {
   fireEvent.click(await screen.findByTestId('debts-add'));
-  await screen.findByTestId('debtform-name');
-  fireEvent.change(screen.getByTestId('debtform-name'), { target: { value: name } });
-  fireEvent.change(screen.getByTestId('debtform-current'), { target: { value: current } });
-  fireEvent.change(screen.getByTestId('debtform-original'), { target: { value: original ?? current } });
-  if (apr) fireEvent.change(screen.getByTestId('debtform-apr'), { target: { value: apr } });
-  if (payment) fireEvent.change(screen.getByTestId('debtform-payment'), { target: { value: payment } });
-  fireEvent.click(screen.getByTestId('debtform-save'));
+  fireEvent.click(await screen.findByTestId('chooser-accttype-loan'));
+  fireEvent.change(await screen.findByTestId('chooser-acctform-name'), { target: { value: name } });
+  fireEvent.change(screen.getByTestId('chooser-acctform-balance'), { target: { value: current } });
+  if (original) fireEvent.change(screen.getByTestId('chooser-acctform-original'), { target: { value: original } });
+  if (apr) fireEvent.change(screen.getByTestId('chooser-acctform-apr'), { target: { value: apr } });
+  if (payment) fireEvent.change(screen.getByTestId('chooser-acctform-payment'), { target: { value: payment } });
+  fireEvent.click(screen.getByTestId('chooser-acctform-save'));
   await waitFor(() => {
     expect(document.querySelector('[data-testid^="debt-card-"]')).toBeTruthy();
   });
@@ -34,25 +34,28 @@ describe('Debts (demo identity)', () => {
     indexedDB.deleteDatabase('munni_demo');
   });
 
-  it('the merged Loan form mints the backing account; cadence + note stored', async () => {
+  it('the Debts + mints a loan account carrying the whole story', async () => {
     renderApp('/debts');
     await screen.findByTestId('screen-debts');
     await screen.findByTestId('debts-empty');
 
     fireEvent.click(screen.getByTestId('debts-add'));
-    await screen.findByTestId('debtform-name');
-    fireEvent.change(screen.getByTestId('debtform-name'), { target: { value: 'Student loan' } });
-    fireEvent.change(screen.getByTestId('debtform-original'), { target: { value: '12000' } });
-    // save refuses until the CURRENT value anchors the loan (arc 3)
-    expect((screen.getByTestId('debtform-save') as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.change(screen.getByTestId('debtform-current'), { target: { value: '10000' } });
-    fireEvent.change(screen.getByTestId('debtform-iban'), { target: { value: 'NL77LOAN0000000077' } });
-    fireEvent.change(screen.getByTestId('debtform-apr'), { target: { value: '12' } });
-    fireEvent.change(screen.getByTestId('debtform-payment'), { target: { value: '120' } });
+    // the grid is pre-filtered to liability types (v2)
+    await screen.findByTestId('chooser-accttype-loan');
+    expect(screen.queryByTestId('chooser-accttype-cash')).toBeNull();
+    fireEvent.click(screen.getByTestId('chooser-accttype-loan'));
+    fireEvent.change(await screen.findByTestId('chooser-acctform-name'), { target: { value: 'Student loan' } });
+    fireEvent.change(screen.getByTestId('chooser-acctform-original'), { target: { value: '12000' } });
+    // save refuses until the CURRENT value anchors the loan
+    expect((screen.getByTestId('chooser-acctform-save') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByTestId('chooser-acctform-balance'), { target: { value: '10000' } });
+    fireEvent.change(screen.getByTestId('chooser-acctform-iban'), { target: { value: 'NL77LOAN0000000077' } });
+    fireEvent.change(screen.getByTestId('chooser-acctform-apr'), { target: { value: '12' } });
+    fireEvent.change(screen.getByTestId('chooser-acctform-payment'), { target: { value: '120' } });
     // weekly cadence (arc 3): the projection follows it
-    fireEvent.click(screen.getByTestId('debtform-every-week'));
-    fireEvent.change(screen.getByTestId('debtform-note'), { target: { value: 'DUO, samen met Kim' } });
-    fireEvent.click(screen.getByTestId('debtform-save'));
+    fireEvent.click(screen.getByTestId('chooser-acctform-every-week'));
+    fireEvent.change(screen.getByTestId('chooser-acctform-note'), { target: { value: 'DUO, samen met Kim' } });
+    fireEvent.click(screen.getByTestId('chooser-acctform-save'));
 
     const card = await waitFor(() => {
       const el = document.querySelector('[data-testid^="debt-card-"]');
@@ -60,50 +63,62 @@ describe('Debts (demo identity)', () => {
       return el!;
     });
     expect(card.textContent).toContain('Student loan');
-    expect(card.textContent).toMatch(/10.000/); // current value is the remaining truth
+    expect(card.textContent).toMatch(/10.000/); // the balance is the remaining truth
     expect(card.textContent).toMatch(/of.*12.000/); // the optional original adds the story
     expect(card.textContent).toMatch(/week/);
     expect(card.textContent).toMatch(/free by/);
 
-    // ONE save minted account + debt together
+    // ONE object: the account row carries the debt story; no debt row
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
-      const debt = (await db.debts.toArray()).find((d) => d.name === 'Student loan');
-      expect(debt).toMatchObject({ paymentEvery: 'week', paymentCents: 12_000, note: 'DUO, samen met Kim' });
-      const account = await db.accounts.get(debt!.accountId!);
-      expect(account).toMatchObject({ type: 'loan', source: 'manual', balanceCents: -1_000_000, iban: 'NL77LOAN0000000077' });
+      const account = (await db.accounts.toArray()).find((a) => a.name === 'Student loan');
+      expect(account).toMatchObject({
+        type: 'loan',
+        source: 'manual',
+        balanceCents: -1_000_000,
+        iban: 'NL77LOAN0000000077',
+        originalCents: 1_200_000,
+        interestPctYear: 12,
+        paymentCents: 12_000,
+        paymentEvery: 'week',
+        note: 'DUO, samen met Kim',
+      });
+      expect(await db.debts.toArray()).toHaveLength(0);
     }, { timeout: 5000 });
     // weekly €120 ≈ €520/month on the overview (cadence-normalized)
     expect(screen.getByTestId('debts-overview').textContent).toMatch(/520/);
     db.close();
   }, 15_000);
 
-  it('detail projects the payoff; edit round-trips; delete leaves cleanly', async () => {
+  it('detail projects the payoff; the account editor round-trips; delete leaves cleanly', async () => {
     renderApp('/debts');
     await screen.findByTestId('screen-debts');
-    const card = await createDebt('Student loan', '10000', '12', '500');
+    const card = await createLoan('Student loan', '10000', '12', '500');
 
     fireEvent.click(card);
     await screen.findByTestId('debtdetail-hero');
     expect(screen.getByTestId('debtdetail-remaining').textContent).toMatch(/10.000/);
     expect(screen.getByTestId('debtdetail-projection').textContent).toMatch(/interest/);
 
-    // edit opens prefilled and saves a faster payment
+    // edit opens the ACCOUNT editor prefilled (v2) and saves a faster payment
     fireEvent.click(screen.getByTestId('debtdetail-edit'));
-    await waitFor(() => expect((screen.getByTestId('debtform-name') as HTMLInputElement).value).toBe('Student loan'));
-    // the manual backing account seeds the anchor field with its balance
-    await waitFor(() => expect((screen.getByTestId('debtform-current') as HTMLInputElement).value).toBe('10000.00'));
-    fireEvent.change(screen.getByTestId('debtform-payment'), { target: { value: '1000' } });
-    fireEvent.click(screen.getByTestId('debtform-save'));
-    // the sheet's onClose commits after the async save — reopening before
-    // it lands would get shut by the stale close (CI-only race)
-    await waitFor(() => expect(screen.queryByTestId('debtform-delete')).toBeNull());
+    await waitFor(() => expect((screen.getByTestId('acctedit-name') as HTMLInputElement).value).toBe('Student loan'));
+    expect((screen.getByTestId('acctedit-balance') as HTMLInputElement).value).toBe('10000.00');
+    fireEvent.change(screen.getByTestId('acctedit-payment'), { target: { value: '1000' } });
+    fireEvent.click(screen.getByTestId('acctedit-save'));
+    // the write is the truth (the sheet lingers through its close animation)
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const account = (await db.accounts.toArray()).find((a) => a.name === 'Student loan');
+      expect(account?.paymentCents).toBe(100_000);
+    }, { timeout: 5000 });
+    db.close();
     await waitFor(() => expect(screen.getByTestId('debtdetail-projection')).toBeTruthy());
 
-    // two-tap delete: the orphaned detail hands back to the list
+    // delete (confirm sheet) — the orphaned detail hands back to the list
     fireEvent.click(screen.getByTestId('debtdetail-edit'));
-    fireEvent.click(await screen.findByTestId('debtform-delete'));
-    fireEvent.click(screen.getByTestId('debtform-delete'));
+    fireEvent.click(await screen.findByTestId('acctedit-delete'));
+    fireEvent.click(await screen.findByTestId('acctedit-remove-confirm'));
     await screen.findByTestId('debts-empty');
   }, 15_000);
 
@@ -125,16 +140,19 @@ describe('Debts (demo identity)', () => {
     fireEvent.click(screen.getByTestId('recform-kind-debt'));
     await screen.findByTestId('mina-debt-handoff');
     fireEvent.click(screen.getByTestId('mina-debt-handoff-continue'));
-    // lands on debts with the create sheet prefilled from the form
+    // lands on debts with the CHOOSER open on the liability grid; picking
+    // a type shows the form seeded from the recurring — its amount and
+    // rhythm are the loan's PAYMENT plan (v2), never its original size
     await screen.findByTestId('screen-debts');
-    await waitFor(() => expect((screen.getByTestId('debtform-name') as HTMLInputElement).value).toBe('Car loan'));
-    expect((screen.getByTestId('debtform-original') as HTMLInputElement).value).toBe('250.00');
+    fireEvent.click(await screen.findByTestId('chooser-accttype-loan'));
+    await waitFor(() => expect((screen.getByTestId('chooser-acctform-name') as HTMLInputElement).value).toBe('Car loan'));
+    expect((screen.getByTestId('chooser-acctform-payment') as HTMLInputElement).value).toBe('250.00');
   }, 15_000);
 
   it('the home block totals the debts; the settings row reaches debts', async () => {
     renderApp('/debts');
     await screen.findByTestId('screen-debts');
-    await createDebt('Car loan', '5000', undefined, '250');
+    await createLoan('Car loan', '5000', undefined, '250');
 
     cleanup();
     renderApp('/home');
@@ -153,8 +171,9 @@ describe('Debts (demo identity)', () => {
   it('bare debt payments gather in the virtual card and assign to a loan', async () => {
     renderApp('/debts');
     await screen.findByTestId('screen-debts');
-    const card = await createDebt('Car loan', '5000');
-    const debtId = card.getAttribute('data-testid')!.replace('debt-card-', '');
+    const card = await createLoan('Car loan', '5000');
+    // v2: the card id IS the loan account's id
+    const accountId = card.getAttribute('data-testid')!.replace('debt-card-', '');
 
     // two counterparty-less debt payments (the arc-2 bare label)
     const db = new MunniDB('munni_demo');
@@ -171,12 +190,11 @@ describe('Debts (demo identity)', () => {
     await screen.findByTestId('debts-unassigned-list');
     fireEvent.click(await screen.findByTestId('tx-row-bare1'));
     await screen.findByTestId('debts-assign-options');
-    fireEvent.click(screen.getByTestId(`debts-assign-${debtId}`));
+    fireEvent.click(screen.getByTestId(`debts-assign-${accountId}`));
 
     // the link files it under the loan; the bucket shrinks to the other row
-    const debt = (await db.debts.toArray()).find((d) => d.id === debtId)!;
     await waitFor(async () => {
-      expect((await db.transactions.get('bare1'))?.linkedAccountId).toBe(debt.accountId);
+      expect((await db.transactions.get('bare1'))?.linkedAccountId).toBe(accountId);
     }, { timeout: 5000 });
     db.close();
   }, 15_000);
@@ -184,13 +202,12 @@ describe('Debts (demo identity)', () => {
   it('empty payment fields estimate from ≥3 payments; the add-payment door pre-stages the loan', async () => {
     renderApp('/debts');
     await screen.findByTestId('screen-debts');
-    const card = await createDebt('Car loan', '5000');
-    const debtId = card.getAttribute('data-testid')!.replace('debt-card-', '');
+    const card = await createLoan('Car loan', '5000');
+    const accountId = card.getAttribute('data-testid')!.replace('debt-card-', '');
 
     const db = new MunniDB('munni_demo');
     const repo = demoRepo(db);
-    const debt = (await db.debts.toArray()).find((d) => d.id === debtId)!;
-    const base = { accountId: 'demo_main', currency: 'EUR', needsReview: 0 as const, txType: 'debtPayment' as const, catId: 'loanRepayment', linkedAccountId: debt.accountId! };
+    const base = { accountId: 'demo_main', currency: 'EUR', needsReview: 0 as const, txType: 'debtPayment' as const, catId: 'loanRepayment', linkedAccountId: accountId };
     await repo.upsert('transaction', 'demo_space', 'pay1', { ...base, date: '2026-04-01', amountCents: -25_000, merchant: 'Termijn' });
     await repo.upsert('transaction', 'demo_space', 'pay2', { ...base, date: '2026-05-01', amountCents: -25_000, merchant: 'Termijn' });
     await repo.upsert('transaction', 'demo_space', 'pay3', { ...base, date: '2026-06-01', amountCents: -25_000, merchant: 'Termijn' });
@@ -211,5 +228,26 @@ describe('Debts (demo identity)', () => {
     expect(screen.getByTestId('txform-counter').textContent).toContain('Car loan');
     expect((screen.getByTestId('txform-merchant') as HTMLInputElement).value).toBe('Car loan');
     db.close();
+  }, 15_000);
+
+  it('a paid-off loan archives from the detail; a card stops tracking instead', async () => {
+    renderApp('/debts');
+    await screen.findByTestId('screen-debts');
+    const card = await createLoan('Car loan', '5000');
+    fireEvent.click(card);
+    await screen.findByTestId('debtdetail-hero');
+
+    // the way out (v2): archiving keeps the history and the milestone
+    fireEvent.click(screen.getByTestId('debtdetail-archive'));
+    await waitFor(() => expect(screen.getByTestId('debtdetail-archive').textContent).toContain('Reopen'));
+    // archived loans trail the list dimmed instead of disappearing
+    cleanup();
+    renderApp('/debts');
+    const archived = await waitFor(() => {
+      const el = document.querySelector('[data-testid^="debt-card-"]');
+      expect(el).toBeTruthy();
+      return el!;
+    }, { timeout: 5000 });
+    expect(archived.className).toContain('opacity-60');
   }, 15_000);
 });

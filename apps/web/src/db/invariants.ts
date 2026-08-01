@@ -18,7 +18,7 @@ export class InvariantViolation extends Error {
   }
 }
 
-const TX_TYPES = new Set(['income', 'expense', 'saving', 'transfer', 'debtPayment', 'investment', 'adjustment']);
+const TX_TYPES = new Set(['income', 'expense', 'saving', 'transfer', 'debtPayment', 'investment', 'funding', 'adjustment']);
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 const isIntCents = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v);
