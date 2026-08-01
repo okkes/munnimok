@@ -42,7 +42,7 @@ import { resolveTxDetailBlocks } from './TxDetailCustomizeScreen';
 import type { TxDetailBlockId } from './TxDetailCustomizeScreen';
 import { TxRow } from '@/ui/TxRow';
 import type { SpaceTx } from '@/application/transactions';
-import type { TxType } from '@/db/types';
+import type { AccountRow, TxType } from '@/db/types';
 
 const DATE_FMT: Record<string, string> = { en: 'en-GB', nl: 'nl-NL', tr: 'tr-TR' };
 
@@ -136,6 +136,20 @@ function DetailFacts({ tx, givenOut }: Readonly<{ tx: SpaceTx; givenOut: number 
 /** every other transaction of this merchant that still differs */
 const similarTo = (allTxs: SpaceTx[] | undefined, tx: SpaceTx, differs: (item: SpaceTx) => boolean): SpaceTx[] =>
   (allTxs ?? []).filter((item) => item.id !== tx.id && merchantKey(item.merchant) === merchantKey(tx.merchant) && differs(item));
+
+/** pre-anchor payment on a manual loan that was never counted in — the
+ *  deliberate one-shot override applies (loans v2). `<=` mirrors the
+ *  strictly-newer rule in countsTowardLoan. */
+const offersLoanCount = (
+  tx: Pick<SpaceTx, 'transferPeerId' | 'loanCounted' | 'date'>,
+  linked: Pick<AccountRow, 'source' | 'type' | 'balanceAsOf'>,
+): boolean =>
+  linked.source === 'manual' &&
+  isLiability(linked.type) &&
+  !tx.transferPeerId &&
+  tx.loanCounted !== 1 &&
+  !!linked.balanceAsOf &&
+  tx.date <= linked.balanceAsOf;
 
 /** where this transfer stands with its other leg (arc 1 pair UX) */
 function transferPairState(
@@ -656,8 +670,7 @@ export function TxDetailScreen() {
               {/* pre-anchor payment (loans v2): dated before the loan's
                   known-true balance, so it did NOT move the balance —
                   the user can deliberately count it in, once */}
-              {tx && linkedAccount && linkedAccount.source === 'manual' && isLiability(linkedAccount.type) &&
-                !tx.transferPeerId && tx.loanCounted !== 1 && !!linkedAccount.balanceAsOf && tx.date < linkedAccount.balanceAsOf && (
+              {tx && linkedAccount && offersLoanCount(tx, linkedAccount) && (
                   <button
                     data-testid="tx-detail-loan-count"
                     disabled={loanCountBusy}

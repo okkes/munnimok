@@ -14,7 +14,7 @@ import { closeAllSheets, hasOpenSheet } from '@/ui/Sheet';
 import { MINA_ART, MINA_EXPR } from './assets';
 import { MINA_DONE_KEY, MINA_STATE_KEY, MINA_STEPS, minaStepIndex, minaSuggestedAccountName, minaSuggestedSpaceName, minaSuggestedTx, setMinaSuggestions } from './steps';
 import { setMinaSheetGuard } from './lock';
-import type { MinaLedgerEntry, MinaRunState } from './steps';
+import type { MinaLedgerEntry, MinaRunState, MinaStep } from './steps';
 import { revertMinaRun } from './revert';
 
 const PAD = 6;
@@ -148,6 +148,17 @@ function elementLabel(el: HTMLElement | null): string {
   }
   return (el.textContent ?? '').trim().slice(0, 40);
 }
+
+/**
+ * A sheet covering an OFF-sheet anchor owns the screen: the shade
+ * stands down so the sheet is usable (the delete-confirm's taps hit the
+ * invisible blockers, user ss) and returns the moment the sheet closes.
+ * ACT steps only: gate taps that OPEN a sheet flip sheetOpen a frame
+ * before the step advances, and an unconditional stand-down blinked the
+ * dim on every such tap. Sheet-anchored steps keep the shade regardless.
+ */
+const shadeVisible = (step: MinaStep, sheetOpen: boolean, anchorInSheet: boolean): boolean =>
+  (!!step.anchor || !!step.gate || !!step.info) && !(sheetOpen && !anchorInSheet && !!step.act);
 
 export function MinaTutorial() {
   const { t, lang } = useLang();
@@ -567,13 +578,7 @@ export function MinaTutorial() {
   }
 
   const bubbleSide = bubblePlacement(rect, sheetOpen);
-  // a sheet covering an OFF-sheet anchor owns the screen: the shade
-  // stands down so the sheet is usable (delete-confirm, user ss) — it
-  // returns the moment the sheet closes. ACT steps only: gate taps that
-  // OPEN a sheet flip sheetOpen a frame before the step advances, and
-  // an unconditional stand-down blinked the dim on every such tap
-  // (review finding). Sheet-anchored steps keep the shade regardless.
-  const showShade = (!!step.anchor || step.gate || step.info) && !(sheetOpen && !anchorInSheet && !!step.act);
+  const showShade = shadeVisible(step, sheetOpen, anchorInSheet);
   // copy quotes the live target and the (deduped) suggested name
   const bodyParams = {
     target: targetLabel,

@@ -216,11 +216,10 @@ export function HomeScreen() {
 
   // spendable rides the forecast (ledger currency, no conversion lens);
   // no payday/liquid yet → an honest dash beats a wrong number
-  const bandCents = bandMode === 'spendable' ? (forecast?.cents ?? null) : bandTotal.cents;
-  const bandLabel =
-    bandCents === null
-      ? '—'
-      : `${bandMode !== 'spendable' && bandTotal.approximate ? '≈ ' : ''}${fmtCents(bandCents, bandMode === 'spendable' ? currency : bandCurrency, lang)}`;
+  const spendableBand = bandMode === 'spendable';
+  const bandCents = spendableBand ? (forecast?.cents ?? null) : bandTotal.cents;
+  const bandApprox = !spendableBand && bandTotal.approximate ? '≈ ' : '';
+  const bandLabel = bandCents === null ? '—' : `${bandApprox}${fmtCents(bandCents, spendableBand ? currency : bandCurrency, lang)}`;
 
   // each landing-zone block renders through this registry so the
   // per-space layout (order + visibility) can rearrange them
