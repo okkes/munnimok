@@ -1,5 +1,39 @@
 # Changelog
 
+## [2.27.0](https://github.com/okkes/munnimok/compare/v2.26.0...v2.27.0) (2026-08-02)
+
+
+### ✨ Features
+
+* **accounts:** device-batch 2 — counterparty create door, space-accounts redesign, Mina wrap fix ([fece21a](https://github.com/okkes/munnimok/commit/fece21a9a34fb4036f4cc6ab361b2af66ff5e647))
+* **accounts:** edit manual accounts in place, choose the balance sign, account picker field ([784bc92](https://github.com/okkes/munnimok/commit/784bc924ec0c5e8a753d67ab1766564fb1843f68))
+* **accounts:** name the two account screens by scope (arc 9) ([ad82cdb](https://github.com/okkes/munnimok/commit/ad82cdb979a46dd21d3ac8cc69a96ea97214e335))
+* **auth:** multiple offline profiles + Mina's second-world ask (arc 8) ([398aecb](https://github.com/okkes/munnimok/commit/398aecb6c497afff4f5895fdcb2d28252ce81610))
+* **cats:** locked transfer-family doors with sign-picked subs (arc 2 core) ([498d274](https://github.com/okkes/munnimok/commit/498d27473d5d05f4de6adeff15687cfd0be24426))
+* **cats:** the "no counter account" exit + family-sub back-fill (arc 2 finish) ([191eb87](https://github.com/okkes/munnimok/commit/191eb87597d7e22b51913480b17aa67fb99e2598))
+* **debts:** loans v2 — the liability account IS the debt ([f8ad48b](https://github.com/okkes/munnimok/commit/f8ad48b3be29fe6950c377482c08e973403915df))
+* **debts:** merged Loan form, payment cadence + estimates, unassigned bucket (arc 3) ([a03839a](https://github.com/okkes/munnimok/commit/a03839a558a2af46f1f18f6c3005ecabdd07b384))
+* **loans:** balance coupling + payment matching; band modes; tutorial and desktop fixes ([c09994b](https://github.com/okkes/munnimok/commit/c09994b24c19957f237a3eadcdd8bef348c5befc))
+* **notifs:** in-app notifications center + bell badge (arc 6) ([22b74ee](https://github.com/okkes/munnimok/commit/22b74eee67a084302adebc2eb3e160722019b955))
+* **recurring:** detection reads past the start date; 2-year bank history; GlitchTip triage ([accbae1](https://github.com/okkes/munnimok/commit/accbae1e281dd455c28bdbfc8d0686e13820c7cf))
+* **spaces:** full create form + private invite lock (arc 4) ([a5570eb](https://github.com/okkes/munnimok/commit/a5570ebc2970bcabc7bbf6be43a6752ed6cb7f14))
+* **spaces:** per-space attention pills + avatar dot (arc 7) ([66f554e](https://github.com/okkes/munnimok/commit/66f554e6c53b815ca7df3029df8683d3b9e2bcf0))
+* **spaces:** start-date mechanics — gate, counted moves, refusal (arc 5) ([9344b6d](https://github.com/okkes/munnimok/commit/9344b6dc998d806a4638768cf220208abd4dc4e7))
+* **tx:** the FUNDING type - money to/from another space's pot ([42950c7](https://github.com/okkes/munnimok/commit/42950c73db9f9030e79795d938ce07eba79a9f11))
+* **tx:** the pair is ONE row - collapse, mirror write, peer row, unpair (arc 1) ([9eebded](https://github.com/okkes/munnimok/commit/9eebdedc04a9062406fe46793bb33563d313a09a))
+* **tx:** transfer legs pair up - the matcher spans spaces (arc 1 slice 1) ([bc69c2b](https://github.com/okkes/munnimok/commit/bc69c2bba895f0d928d3f12edb10b9501113a93b))
+* **ux:** device-batch 2026-07-29 - debt surfaces, handoff ask, tour hardening ([b70b4d6](https://github.com/okkes/munnimok/commit/b70b4d68b2e3569792e109e237bfe75aa6cffb04))
+
+
+### 🐞 Bug Fixes
+
+* **app:** device-batch 3 — sign-safe predictions, wheel gesture, dirty guard, Mina locks ([83d5d6f](https://github.com/okkes/munnimok/commit/83d5d6fef7036e74ee99eb9c433c2ad6ed80efe5))
+* **auth:** never wipe fresh Logto keys after login; self-heal tokenless 401s ([1ac2fc6](https://github.com/okkes/munnimok/commit/1ac2fc6a3f1698a3af58e93fcb314c734de91ae6))
+* **core:** device-batch 1 — start-date gate on imports, funding as transfer member, debt catalog, sheet gestures ([6346d21](https://github.com/okkes/munnimok/commit/6346d21cda4b7d11f5b5ddb34c910fc734e19260))
+* **mina:** pick-step double-advance, sheet-closed self-heal, glow travel; weekly nudge throttle ([15bf084](https://github.com/okkes/munnimok/commit/15bf084d204c9763e522463ed2a4b8e86788316a))
+* **tx:** release the transfer peer from the store, not the live snapshot ([dc839c6](https://github.com/okkes/munnimok/commit/dc839c6f1daebd65ef54fc7f5ed63295fb04561f))
+* **ux:** list sheets drag via header only; iOS keyboard slack; search reveal tuning ([3309733](https://github.com/okkes/munnimok/commit/3309733eb7d396884682db8381bc965f6988827a))
+
 ## [2.26.0](https://github.com/okkes/munnimok/compare/v2.25.0...v2.26.0) (2026-07-28)
 
 
