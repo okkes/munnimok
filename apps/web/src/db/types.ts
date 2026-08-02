@@ -29,6 +29,9 @@ export interface SpaceRow extends SyncEnvelope {
   color?: string;
   /** default start date (yyyy-mm-dd) for transaction history when accounts get attached */
   historyStartDate?: string;
+  /** private lock (arc 4): 1 = invites disabled until the owner unlocks.
+   *  New spaces create locked; absent (pre-arc rows) reads unlocked. */
+  inviteLock?: 0 | 1;
   /** landing-zone layout: block order + visibility, per space (synced) */
   homeBlocks?: { id: string; hidden?: 0 | 1 }[];
   /** tx-detail layout: section order + visibility under the fixed details block */
@@ -37,6 +40,13 @@ export interface SpaceRow extends SyncEnvelope {
   allocRollover?: 0 | 1;
   /** main categories switched off for this space (picker filtering only — data never blocks) */
   hiddenMains?: string[];
+  /** Home balance band (user design 2026-08-01): what the big number IS.
+   *  Absent = 'networth' (the pre-config behavior: every account summed). */
+  balanceBandMode?: 'networth' | 'cash' | 'spendable' | 'custom';
+  /** accounts excluded from the networth/cash band sums */
+  balanceBandExclude?: string[];
+  /** the custom mode's explicit include list */
+  balanceBandAccounts?: string[];
 }
 
 export type AccountType = 'checking' | 'savings' | 'cash' | 'brokerage' | 'credit' | 'mortgage' | 'loan';
@@ -66,9 +76,27 @@ export interface AccountRow extends SyncEnvelope {
    *  wins over the institution logo derived from bankId */
   logo?: string;
   archived?: 0 | 1;
+  // ── loans v2 (2026-08-01): the liability account IS the debt — the
+  //    old DebtRow's story fields live here now, one object, no seams
+  /** informational APR, e.g. 3.5 — empty means "remind me", 0 is an answer */
+  interestPctYear?: number;
+  /** starting size of the loan — optional garnish powering the progress bar */
+  originalCents?: number;
+  /** free-form note */
+  note?: string;
+  paymentCents?: number;
+  /** payment cadence, recurring-shaped: every N week/month/year; absent =
+   *  monthly, estimates from payments fill the gap */
+  paymentEvery?: RecurringEvery;
+  paymentEveryN?: number;
+  /** auto-link payments by merchant (the recurring→loan handoff) */
+  merchantKey?: string;
+  /** debts-screen membership: absent = by type (loan/mortgage in, credit
+   *  out unless it carries a debt story) — the explicit toggle wins */
+  trackAsDebt?: 0 | 1;
 }
 
-export type TxType = 'income' | 'expense' | 'saving' | 'transfer' | 'debtPayment' | 'investment' | 'adjustment';
+export type TxType = 'income' | 'expense' | 'saving' | 'transfer' | 'debtPayment' | 'investment' | 'funding' | 'adjustment';
 
 export type CatDirection = 'debit' | 'credit' | 'both';
 
@@ -147,10 +175,17 @@ export interface TransactionRow extends SyncEnvelope {
   reimbursements?: TxReimbursement[];
   /** counter-account for transfers/savings/debt payments — locks txType */
   linkedAccountId?: string;
+  /** the MIRROR transaction of a transfer pair (the other account's leg)
+   *  — written on both legs by the matcher or a manual link; the list
+   *  collapses a visible pair into one row */
+  transferPeerId?: string;
   /** the recurring cost this expense pays (rent, a subscription, …) */
   recurringId?: string;
   /** the event this transaction belongs to (holiday, wedding, …) */
   eventId?: string;
+  /** loans v2 (2026-08-01): pre-anchor row deliberately counted into
+   *  the linked manual loan's balance (one-shot marker) */
+  loanCounted?: 1;
 }
 
 /**
@@ -175,8 +210,12 @@ export interface TxMetaRow extends SyncEnvelope {
   splits?: TxSplit[];
   reimbursements?: TxReimbursement[];
   linkedAccountId?: string;
+  transferPeerId?: string;
   recurringId?: string;
   eventId?: string;
+  /** loans v2 (2026-08-01): this row predates the loan's known-true
+   *  balance date but the user chose to count it in anyway (one-shot) */
+  loanCounted?: 1;
 }
 
 export type RecurringKind = 'fixed' | 'subscription';
@@ -317,9 +356,10 @@ export interface GoalContributionRow extends SyncEnvelope {
 }
 
 /**
- * A debt's payoff story on top of a liability account (or manual
- * numbers): original size, payment rhythm, projection. Per-space,
- * informational interest only (approved debts design).
+ * DEPRECATED (loans v2, 2026-08-01): debts fold into their liability
+ * account at boot (foldDebtsIntoAccounts) — the account row is the one
+ * object now. The table stays registered so old devices' rows still
+ * sync in and get folded; nothing reads it for display anymore.
  */
 export interface DebtRow extends SyncEnvelope {
   id: string;
@@ -328,13 +368,21 @@ export interface DebtRow extends SyncEnvelope {
   icon?: string;
   /** liability account whose balance is the remaining truth */
   accountId?: string;
-  originalCents: number;
+  /** starting size — optional since the merged Loan form (arc 3): the
+   *  current value is the truth anchor, the original only adds progress */
+  originalCents?: number;
   /** manual remaining when no account is linked */
   remainingCents?: number;
   /** informational APR, e.g. 3.5 */
   interestPctYear?: number;
   paymentCents?: number;
   paymentDay?: number;
+  /** payment cadence (arc 3), recurring-shaped: every N week/month/year;
+   *  absent = monthly, estimates fill the gap when payments exist */
+  paymentEvery?: RecurringEvery;
+  paymentEveryN?: number;
+  /** free-form note (arc 3) */
+  note?: string;
   /** auto-link payments by merchant (recurring-style) */
   merchantKey?: string;
   archived?: 0 | 1;

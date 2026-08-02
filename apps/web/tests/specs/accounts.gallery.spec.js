@@ -30,8 +30,8 @@ for (const V of VARIANTS) {
     // manual is a DOOR on the global screen now (2026-07-28): it leads
     // into the space's own accounts screen, where creation lives
     await page.click('[data-testid="chooser-manual-door"]');
+    // "Add a manual account" opens the type grid directly (2026-08-01)
     await page.click('[data-testid="space-accounts-add"]');
-    await page.click('[data-testid="chooser-manual"]');
     await page.waitForSelector('[data-testid="chooser-accttype-cash"]');
     await page.waitForTimeout(500); // sheet slide-in
     await shot(page, k('17-accounts-add') + '--s1');
@@ -47,9 +47,10 @@ for (const V of VARIANTS) {
     await page.click('[data-testid="spaceaccounts-back"]');
     await expect(page.locator('[data-testid^="accounts-space-"]')).toContainText('Wallet');
     await expect(page.locator('[data-testid^="accounts-space-"]')).toContainText('52.50');
-    // home total includes the new account: 11,570.55 + 52.50
+    // home total includes the new account: 8,080.55 + 52.50 (the demo's
+    // v2 loan accounts weigh on the band now)
     await page.click('[data-testid="tab-home"]');
-    await expect(page.locator('[data-testid="home-total-balance"]')).toContainText('11,623.05');
+    await expect(page.locator('[data-testid="home-total-balance"]')).toContainText('8,133.05');
     await shot(page, k('17-accounts-add'));
     await teardown(page, ctx, k('17-accounts-add'));
   });
@@ -75,7 +76,9 @@ for (const V of VARIANTS) {
     await removeConfirm.click();
     await expect(page.locator('[data-testid="account-row-demo_save"]')).toHaveCount(0);
     await page.click('[data-testid="tab-home"]');
-    await expect(page.locator('[data-testid="home-total-balance"]')).toContainText('3,420.55');
+    // 8,080.55 − 8,150.00 savings: the v2 demo loans keep weighing in,
+    // so deleting the big savings account honestly dips below zero
+    await expect(page.locator('[data-testid="home-total-balance"]')).toContainText('69.45');
     await shot(page, k('18-accounts-edit'));
     await teardown(page, ctx, k('18-accounts-edit'));
   });

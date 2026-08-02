@@ -46,6 +46,48 @@ describe('TxDetailScreen (demo identity)', () => {
     db.close();
   }, 15_000);
 
+  it('a paired transfer shows the counterpart row; unpair releases BOTH legs', async () => {
+    // build the pair through the real form (mirror checkbox default ON)
+    renderApp('/transactions');
+    await screen.findByTestId('tx-list');
+    fireEvent.click(screen.getByTestId('tx-add'));
+    await screen.findByTestId('txform-save');
+    fireEvent.click(await screen.findByTestId('txform-account'));
+    fireEvent.click(await screen.findByTestId('txform-account-demo_main'));
+    fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '75,00' } });
+    fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Pot in' } });
+    fireEvent.click(screen.getByTestId('txform-kind'));
+    await screen.findByTestId('txkind-options');
+    fireEvent.click(screen.getByTestId('txkind-transfer'));
+    await screen.findByTestId('counter-accounts');
+    fireEvent.click(screen.getByTestId('counter-pick-demo_save'));
+    await screen.findByTestId('txform-mirror');
+    fireEvent.click(screen.getByTestId('txform-save'));
+
+    const db = new MunniDB('munni_demo');
+    let outId = '';
+    let mirrorId = '';
+    await waitFor(async () => {
+      const rows = await db.transactions.filter((r) => r.merchant === 'Pot in' && r.deleted === 0).toArray();
+      expect(rows).toHaveLength(2);
+      outId = rows.find((r) => r.amountCents < 0)!.id;
+      mirrorId = rows.find((r) => r.amountCents > 0)!.id;
+    }, { timeout: 5000 });
+
+    // the out-leg's detail offers the counterpart row; unpair frees both
+    cleanup();
+    renderApp(`/transactions/${outId}`);
+    await screen.findByTestId('screen-tx-detail');
+    fireEvent.click(await screen.findByTestId('tx-detail-unpair'));
+    await waitFor(async () => {
+      expect((await db.transactions.get(outId))?.transferPeerId).toBeFalsy();
+      expect((await db.transactions.get(mirrorId))?.transferPeerId).toBeFalsy();
+    }, { timeout: 5000 });
+    // with a MANUAL counter and no peer, the create door returns
+    await screen.findByTestId('tx-detail-create-counter');
+    db.close();
+  }, 20_000);
+
   it('opens a transaction from the list and shows its detail', async () => {
     renderApp('/transactions');
     const list = await screen.findByTestId('tx-list');
@@ -172,24 +214,52 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     indexedDB.deleteDatabase('munni_demo');
   });
 
-  it('a transfer to the savings account derives Saving and clears the conflicting category', async () => {
+  it('a transfer to the savings account derives Saving and files the locked sub', async () => {
     renderApp('/transactions/dm6');
-    // groceries expense → kind Transfer → the counterparty is mandatory
+    // groceries expense → kind Transfer → pick the savings counterparty
     fireEvent.click(await screen.findByTestId('tx-detail-kind-row'));
     await screen.findByTestId('txkind-options');
     fireEvent.click(screen.getByTestId('txkind-transfer'));
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
     // the savings counterparty derives Saving; groceries only speaks
-    // expense → category falls back to uncategorized for review
+    // expense → the invalidated category files the sign-picked locked
+    // sub (arc 2) instead of a review round-trip
     await waitFor(() => {
       expect(screen.getByTestId('tx-detail-kind-row').textContent).toContain('Saving');
-      expect(screen.getByTestId('tx-detail-category-row').textContent).toContain('Uncategorized');
+      expect(screen.getByTestId('tx-detail-category-row').textContent).toContain('Set aside');
     });
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
       const tx = await db.transactions.get('dm6');
       expect(tx?.txType).toBe('saving');
       expect(tx?.linkedAccountId).toBe('demo_save');
+      expect(tx?.catId).toBe('savingDeposit');
+    });
+    db.close();
+  }, 15_000);
+
+  it('the "no counter account" exit types the row bare with the locked sub', async () => {
+    renderApp('/transactions/dm6');
+    fireEvent.click(await screen.findByTestId('tx-detail-kind-row'));
+    await screen.findByTestId('txkind-options');
+    fireEvent.click(screen.getByTestId('txkind-transfer'));
+    await screen.findByTestId('counter-accounts');
+    fireEvent.click(screen.getByTestId('counter-none'));
+    await screen.findByTestId('counter-bare-options');
+    fireEvent.click(screen.getByTestId('counter-bare-debtPayment'));
+
+    // typed + locked sub, deliberately no account on the other side —
+    // the counterparty row states the bare label and stays a door
+    await waitFor(() => {
+      expect(screen.getByTestId('tx-detail-kind-row').textContent).toContain('Debt Payment');
+      expect(screen.getByTestId('tx-detail-counter-add').textContent).toContain('No counter account');
+    });
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const tx = await db.transactions.get('dm6');
+      expect(tx?.txType).toBe('debtPayment');
+      expect(tx?.catId).toBe('loanRepayment');
+      expect(tx?.linkedAccountId).toBeFalsy();
     });
     db.close();
   }, 15_000);
@@ -435,7 +505,8 @@ describe('bulk apply from the detail (user request)', () => {
     await waitFor(async () => {
       expect(await db.transactions.get('blk-b')).toMatchObject({ catId: 'hobby', needsReview: 0 });
     });
-    expect(screen.queryByTestId('tx-detail-bulk-offer')).toBeNull(); // offer consumed
+    // offer consumed — but the dismissal render trails the DB write, so wait for it
+    await waitFor(() => expect(screen.queryByTestId('tx-detail-bulk-offer')).toBeNull());
     db.close();
   }, 15_000);
 
@@ -549,10 +620,14 @@ describe('detail sections customize (user request)', () => {
     await waitFor(async () => expect(await notesHidden()).toBe(true), { timeout: 5000 });
     cleanup();
     renderApp('/transactions/cust-a');
-    await screen.findByTestId('screen-tx-detail');
+    // the detail shell mounts before the row loads — wait for the LOADED
+    // screen (the customize door), not the shell testid, before poking it
+    const customize = await screen.findByTestId('tx-detail-customize', {}, { timeout: 5000 });
+    // the hidden-notes pref rides the SPACE row's emission, which can trail
+    // the tx row that revealed the customize door — wait for it
     await waitFor(() => expect(screen.queryByTestId('tx-detail-notes')).toBeNull());
 
-    fireEvent.click(screen.getByTestId('tx-detail-customize'));
+    fireEvent.click(customize);
     await screen.findByTestId('tx-customize-list');
     fireEvent.click(screen.getByTestId('tx-block-toggle-notes'));
     await waitFor(async () => expect(await notesHidden()).toBe(false), { timeout: 5000 });

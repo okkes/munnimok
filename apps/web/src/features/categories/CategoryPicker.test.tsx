@@ -15,7 +15,10 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
     renderApp('/transactions');
     await screen.findByTestId('tx-list');
     fireEvent.click(screen.getByTestId('tx-add'));
-    await screen.findByTestId('txform-account-demo_main');
+    // the account field replaced the chips (2026-07-31): the CategoryPicker
+    // direction only needs AN account — pick the main one through the sheet
+    fireEvent.click(await screen.findByTestId('txform-account'));
+    fireEvent.click(await screen.findByTestId('txform-account-demo_main'));
 
     // expense (debit): the custom Padel main's Other sub (direction both)
     // is offered once the catalog's live query delivers the custom rows…
@@ -31,7 +34,10 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
     renderApp('/transactions');
     await screen.findByTestId('tx-list');
     fireEvent.click(screen.getByTestId('tx-add'));
-    await screen.findByTestId('txform-account-demo_main');
+    // the account field replaced the chips (2026-07-31): the CategoryPicker
+    // direction only needs AN account — pick the main one through the sheet
+    fireEvent.click(await screen.findByTestId('txform-account'));
+    fireEvent.click(await screen.findByTestId('txform-account-demo_main'));
     // toggle BEFORE opening the editor: a fresh stack per direction
     fireEvent.click(screen.getByTestId('txform-income'));
     fireEvent.click(screen.getByTestId('txform-category'));
@@ -44,7 +50,10 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
     renderApp('/transactions');
     await screen.findByTestId('tx-list');
     fireEvent.click(screen.getByTestId('tx-add'));
-    await screen.findByTestId('txform-account-demo_main');
+    // the account field replaced the chips (2026-07-31): the CategoryPicker
+    // direction only needs AN account — pick the main one through the sheet
+    fireEvent.click(await screen.findByTestId('txform-account'));
+    fireEvent.click(await screen.findByTestId('txform-account-demo_main'));
     fireEvent.click(screen.getByTestId('txform-category'));
     fireEvent.click(await screen.findByTestId('split-cat-0'));
     await screen.findByTestId('catpicker-groceries');
@@ -62,7 +71,10 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
     renderApp('/transactions');
     await screen.findByTestId('tx-list');
     fireEvent.click(screen.getByTestId('tx-add'));
-    await screen.findByTestId('txform-account-demo_main');
+    // the account field replaced the chips (2026-07-31): the CategoryPicker
+    // direction only needs AN account — pick the main one through the sheet
+    fireEvent.click(await screen.findByTestId('txform-account'));
+    fireEvent.click(await screen.findByTestId('txform-account-demo_main'));
     fireEvent.click(screen.getByTestId('txform-category'));
     fireEvent.click(await screen.findByTestId('split-cat-0'));
     await screen.findByTestId('catpicker-alcohol');

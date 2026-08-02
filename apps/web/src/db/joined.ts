@@ -40,8 +40,10 @@ function joinTx(raw: TransactionRow, meta: TxMetaRow | undefined, spaceId: strin
     splits: meta?.splits,
     reimbursements: meta?.reimbursements,
     linkedAccountId: meta?.linkedAccountId,
+    transferPeerId: meta?.transferPeerId,
     recurringId: meta?.recurringId,
     eventId: meta?.eventId,
+    loanCounted: meta?.loanCounted,
   };
 }
 
@@ -52,12 +54,18 @@ export async function spaceAccountLinks(store: StorageBackend, spaceId: string):
 
 /** every transaction the space sees: legacy merged rows + joined feed rows */
 export async function visibleTransactions(store: StorageBackend, spaceId: string): Promise<SpaceTx[]> {
-  const [own, links, metas] = await Promise.all([
+  const [own, links, metas, space] = await Promise.all([
     store.bySpace('transaction', spaceId),
     spaceAccountLinks(store, spaceId),
     store.bySpace('txMeta', spaceId),
+    store.get('space', spaceId),
   ]);
-  const legacy = own.filter((t) => t.deleted === 0);
+  // the space's own rows respect the history start too (arc 5): stored
+  // in full, filtered at display — exactly like attached feed rows.
+  // Rows from before the start (sync races, a start date moved newer)
+  // stay in the database but out of every screen.
+  const startGate = space?.historyStartDate;
+  const legacy = own.filter((t) => t.deleted === 0 && (!startGate || t.date >= startGate));
   const metaByTx = new Map(metas.filter((m) => m.deleted === 0).map((m) => [m.txId, m]));
 
   const out: SpaceTx[] = [...legacy];
@@ -67,6 +75,33 @@ export async function visibleTransactions(store: StorageBackend, spaceId: string
         t.deleted === 0 &&
         t.accountId === link.accountId &&
         (!link.historyFrom || t.date >= link.historyFrom),
+    );
+    for (const raw of feedTxs) out.push(joinTx(raw, metaByTx.get(raw.id), spaceId, link.feedSpaceId));
+  }
+  return out;
+}
+
+/**
+ * The space's transactions WITHOUT the history gates (user design
+ * 2026-08-01): recurring DETECTION reads the full stored history — a
+ * yearly subscription needs charges from before the space's start date
+ * to show a pattern at all, and banks may backfill years of data that
+ * the display gate deliberately hides. Deletion and attachment rules
+ * still apply; only the date gates are lifted. Screens keep reading
+ * visibleTransactions — the extra rows serve as pattern EVIDENCE, they
+ * never enter the space's lists.
+ */
+export async function historyTransactions(store: StorageBackend, spaceId: string): Promise<SpaceTx[]> {
+  const [own, links, metas] = await Promise.all([
+    store.bySpace('transaction', spaceId),
+    spaceAccountLinks(store, spaceId),
+    store.bySpace('txMeta', spaceId),
+  ]);
+  const metaByTx = new Map(metas.filter((m) => m.deleted === 0).map((m) => [m.txId, m]));
+  const out: SpaceTx[] = own.filter((t) => t.deleted === 0);
+  for (const link of links) {
+    const feedTxs = (await store.bySpace('transaction', link.feedSpaceId)).filter(
+      (t) => t.deleted === 0 && t.accountId === link.accountId,
     );
     for (const raw of feedTxs) out.push(joinTx(raw, metaByTx.get(raw.id), spaceId, link.feedSpaceId));
   }
@@ -91,7 +126,10 @@ export async function visibleAccounts(store: StorageBackend, spaceId: string): P
 
 /** transformation fields a space may hold an opinion on */
 export type TxTransformFields = Partial<
-  Pick<TxMetaRow, 'catId' | 'txType' | 'needsReview' | 'notes' | 'titleOverride' | 'splits' | 'reimbursements' | 'linkedAccountId' | 'recurringId' | 'eventId'>
+  Pick<
+    TxMetaRow,
+    'catId' | 'txType' | 'needsReview' | 'notes' | 'titleOverride' | 'splits' | 'reimbursements' | 'linkedAccountId' | 'transferPeerId' | 'recurringId' | 'eventId' | 'loanCounted'
+  >
 >;
 
 /**
@@ -101,18 +139,43 @@ export type TxTransformFields = Partial<
  */
 export async function writeTxTransform(
   repo: Repo,
-  tx: Pick<SpaceTx, 'id' | 'spaceId' | 'feedSpaceId' | 'txType' | 'needsReview'>,
+  tx: Pick<SpaceTx, 'id' | 'spaceId' | 'feedSpaceId' | 'txType' | 'needsReview'> &
+    Partial<Pick<SpaceTx, 'amountCents' | 'date' | 'linkedAccountId' | 'transferPeerId' | 'loanCounted'>>,
   fields: TxTransformFields,
 ): Promise<void> {
+  // loans v2 (review finding): the balance coupling lives at THIS choke
+  // point — every linkedAccountId writer (user edits, auto-linkers, the
+  // match sheet) moves the manual loan exactly once; hanging it off one
+  // hook left frozen balances and wrong-way refunds on the other paths
+  const linkChanged = Object.hasOwn(fields, 'linkedAccountId');
+  const prevLinked = linkChanged ? tx.linkedAccountId : undefined;
+
   if (!tx.feedSpaceId) {
     await repo.upsert('transaction', tx.spaceId, tx.id, fields);
-    return;
+  } else {
+    await repo.upsert('txMeta', tx.spaceId, txMetaId(tx.spaceId, tx.id), {
+      txId: tx.id,
+      // first write materializes the current effective view alongside the edit
+      txType: tx.txType,
+      needsReview: tx.needsReview,
+      ...fields,
+    });
   }
-  await repo.upsert('txMeta', tx.spaceId, txMetaId(tx.spaceId, tx.id), {
-    txId: tx.id,
-    // first write materializes the current effective view alongside the edit
-    txType: tx.txType,
-    needsReview: tx.needsReview,
-    ...fields,
-  });
+
+  if (linkChanged && prevLinked !== (fields.linkedAccountId ?? undefined)) {
+    // re-read the MERGED row post-write: the caller's snapshot may carry
+    // a stale transferPeerId or miss a loanCounted written a beat ago
+    const { applyLoanLinkDelta } = await import('@/application/loanBalance');
+    const raw = await repo.store.get('transaction', tx.id);
+    const meta = tx.feedSpaceId ? await repo.store.get('txMeta', txMetaId(tx.spaceId, tx.id)) : undefined;
+    if (raw) {
+      const merged = {
+        amountCents: raw.amountCents,
+        date: raw.date,
+        transferPeerId: tx.feedSpaceId ? meta?.transferPeerId : raw.transferPeerId,
+        loanCounted: tx.feedSpaceId ? meta?.loanCounted : raw.loanCounted,
+      };
+      await applyLoanLinkDelta(repo.store, repo, merged, prevLinked, fields.linkedAccountId ?? undefined).catch(() => undefined);
+    }
+  }
 }

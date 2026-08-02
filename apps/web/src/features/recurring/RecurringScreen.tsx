@@ -3,7 +3,7 @@ import { useQuery } from '@/db/useQuery';
 import { useNavigate } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
-import { useSpaceTransactions } from '@/application/transactions';
+import { useSpaceHistoryTransactions, useSpaceTransactions } from '@/application/transactions';
 import { localToday, useDismissedKeys, useRecurringOps, useRecurrings } from '@/application/recurring';
 import { computeRange, summarize } from '@/domain/recurring';
 import type { RecurringComputed } from '@/domain/recurring';
@@ -73,11 +73,14 @@ export function RecurringScreen() {
   );
   const summary = summarize(computed.filter((c) => c.rec.active === 1));
 
+  // detection reads the FULL stored history (user design 2026-08-01):
+  // yearly patterns live in the pre-start tail the display gate hides
+  const historyTxs = useSpaceHistoryTransactions();
   const suggestionCount = useMemo(() => {
-    if (!txs || !recs || !dismissed) return 0;
+    if (!historyTxs || !recs || !dismissed) return 0;
     const exclude = new Set([...dismissed, ...recs.flatMap((r) => (r.merchantKey ? [r.merchantKey] : []))]);
-    return detectRecurring(txs, { excludeKeys: exclude, today }).length;
-  }, [txs, recs, dismissed, today]);
+    return detectRecurring(historyTxs, { excludeKeys: exclude, today }).length;
+  }, [historyTxs, recs, dismissed, today]);
 
   const fixed = computed.filter((c) => c.rec.kind === 'fixed' && c.rec.active === 1);
   const subs = computed.filter((c) => c.rec.kind === 'subscription' && c.rec.active === 1);

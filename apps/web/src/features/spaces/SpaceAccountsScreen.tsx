@@ -8,6 +8,8 @@ import { attachFeedToSpace, detachFeedFromSpace } from '@/application/accountAtt
 import { fetchMyFeedIds } from '@/features/accounts/feedGateway';
 import { SOURCE_KEYS } from '@/features/accounts/AttachSheet';
 import { AddAccountChooser } from '@/features/accounts/AddAccountChooser';
+import { useInstitutionLogos } from '@/features/accounts/useInstitutionLogos';
+import { EditAccountSheet } from '@/features/accounts/EditAccountSheet';
 import type { AccountLinkRow, AccountRow } from '@/db/types';
 import { fmtTimeAgo } from '@/lib/text';
 import { HelpButton } from '@/features/help/HelpButton';
@@ -15,7 +17,7 @@ import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { Icon } from '@/ui/Icon';
-import { Pill, Row } from '@/ui/primitives';
+import { Pill } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 
 /** bank-linked data older than this smells like a dead consent (90/180d
@@ -30,7 +32,20 @@ interface AttachedAccountEntry {
   stale: boolean;
   /** present = a detachable feed attachment */
   detach?: { feedSpaceId: string; accountId: string };
+  /** present = a space-owned manual account, editable in place */
+  manual?: AccountRow;
+  /** the backing account row (own or feed) — icon, IBAN, sync details */
+  account?: AccountRow;
+  /** the attachment row (feed entries) — provenance + history gate */
+  link?: AccountLinkRow;
 }
+
+/** manual · imported · bank-linked at a glance (user redesign ss13) */
+const SOURCE_ICONS: Record<AccountRow['source'], string> = {
+  manual: 'pencil-outline',
+  camt053: 'file-document-outline',
+  gocardless: 'bank-transfer',
+};
 
 interface AttachCandidate {
   accountId: string;
@@ -58,24 +73,19 @@ function linkProvenance(t: T, link: AccountLinkRow, mySub?: string): string | un
   return undefined;
 }
 
-/** one feed attachment as a display row (S3776: out of the query fn) */
-function linkEntry(t: T, lang: Lang, link: AccountLinkRow, account: AccountRow | undefined, mySub?: string): AttachedAccountEntry {
+/** one feed attachment as a display row (S3776: out of the query fn) —
+ *  the row itself stays calm (iban · source); the rest of the story
+ *  moved into the tap-through info sheet (user redesign ss13) */
+function linkEntry(t: T, link: AccountLinkRow, account: AccountRow | undefined): AttachedAccountEntry {
   return {
     key: link.id,
     name: account?.name ?? t('acct.bank'),
-    subtitle: [
-      ibanTail(account?.iban),
-      account ? t(SOURCE_KEYS[account.source]) : undefined,
-      linkProvenance(t, link, mySub),
-      link.historyFrom ? `${t('acct.historyFrom')} ${link.historyFrom}` : undefined,
-      // last-sync on the space overview too (user request)
-      syncLine(t, lang, account),
-    ]
-      .filter(Boolean)
-      .join(' · '),
+    subtitle: [ibanTail(account?.iban), account ? t(SOURCE_KEYS[account.source]) : undefined].filter(Boolean).join(' · '),
     archived: !!link.archived,
     stale: isStale(account),
     detach: { feedSpaceId: link.feedSpaceId, accountId: link.accountId },
+    account,
+    link,
   };
 }
 
@@ -101,8 +111,12 @@ export function SpaceAccountsScreen() {
   const [historyFrom, setHistoryFrom] = useState('');
   const [busy, setBusy] = useState(false);
   const [detachTarget, setDetachTarget] = useState<AttachedAccountEntry | null>(null);
+  const [editing, setEditing] = useState<AccountRow | null>(null);
   // AE1: creation goes through the shared chooser now
   const [addOpen, setAddOpen] = useState(false);
+  // the tap-through info sheet (user redesign ss13)
+  const [info, setInfo] = useState<AttachedAccountEntry | null>(null);
+  const logos = useInstitutionLogos();
 
   const mySub = identity?.kind === 'user' ? identity.sub : undefined;
 
@@ -120,19 +134,19 @@ export function SpaceAccountsScreen() {
     for (const account of linked) {
       if (account) feedAccounts.set(account.id, account);
     }
-    // provenance is spelled out per row (user request): space-scoped
-    // manual, your global account, or shared into this space by someone
+    // rows stay calm (iban · source); provenance, sync freshness and the
+    // history gate live in the tap-through sheet (user redesign ss13)
     const list: AttachedAccountEntry[] = ownAccounts.map((account) => ({
       key: account.id,
       name: account.name,
-      subtitle: [ibanTail(account.iban), t(SOURCE_KEYS[account.source]), t('acct.provSpace'), syncLine(t, lang, account)]
-        .filter(Boolean)
-        .join(' · '),
+      subtitle: [ibanTail(account.iban), t(SOURCE_KEYS[account.source])].filter(Boolean).join(' · '),
       archived: !!account.archived,
       stale: isStale(account),
+      manual: account,
+      account,
     }));
     for (const link of links) {
-      list.push(linkEntry(t, lang, link, feedAccounts.get(link.accountId), mySub));
+      list.push(linkEntry(t, link, feedAccounts.get(link.accountId)));
     }
     list.sort((x, y) => x.name.localeCompare(y.name));
     return list;
@@ -206,36 +220,42 @@ export function SpaceAccountsScreen() {
             </p>
           )}
           {!!entries?.length && (
-            <div className="overflow-hidden rounded-card border border-line bg-surface">
-              {entries.map((entry) => (
-                <Row
-                  key={entry.key}
-                  kind="data"
-                  icon="bank-outline"
-                  title={entry.name}
-                  sub={entry.subtitle || undefined}
-                  trailing={
-                    <span className="flex items-center gap-1.5">
-                      {entry.stale && (
-                        <Pill tone="warning" testId={`space-account-stale-${entry.key}`}>
-                          {t('acct.reconnectHint')}
-                        </Pill>
-                      )}
-                      {entry.archived && <Pill>{t('acct.archived')}</Pill>}
-                      {entry.detach && (
-                        <button
-                          aria-label={t('acct.detach')}
-                          data-testid={`space-account-detach-${entry.key}`}
-                          onClick={() => setDetachTarget(entry)}
-                          className="m-tap flex h-8 w-8 items-center justify-center border-none bg-transparent text-ink-4"
-                        >
-                          <Icon name="link-off" size={16} />
-                        </button>
-                      )}
+            <div className="flex flex-col gap-2.5" data-testid="space-accounts-list">
+              {entries.map((entry) => {
+                const logo = entry.account?.logo ?? (entry.account?.bankId ? logos.get(entry.account.bankId) : undefined);
+                return (
+                  <button
+                    key={entry.key}
+                    data-testid={`space-account-${entry.key}`}
+                    onClick={() => setInfo(entry)}
+                    className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3.5 text-left"
+                  >
+                    {/* the real bank mark where we have it (user request) */}
+                    {logo ? (
+                      <img src={logo} alt="" className="h-9 w-9 shrink-0 rounded-full object-contain" />
+                    ) : (
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-bg-2">
+                        <Icon name="bank-outline" size={18} color="var(--m-ink-3)" />
+                      </span>
+                    )}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[15px] font-medium text-ink">{entry.name}</span>
+                      <span className="block truncate text-[12px] text-ink-4">{entry.subtitle}</span>
                     </span>
-                  }
-                />
-              ))}
+                    {entry.stale && (
+                      <Pill tone="warning" testId={`space-account-stale-${entry.key}`}>
+                        {t('acct.reconnectHint')}
+                      </Pill>
+                    )}
+                    {entry.archived && <Pill>{t('acct.archived')}</Pill>}
+                    {/* manual · imported · linked at a glance */}
+                    {entry.account && (
+                      <Icon name={SOURCE_ICONS[entry.account.source]} size={16} color="var(--m-ink-4)" />
+                    )}
+                    <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
+                  </button>
+                );
+              })}
             </div>
           )}
           {syncing ? (
@@ -268,14 +288,74 @@ export function SpaceAccountsScreen() {
             data-testid="space-accounts-add"
             onClick={() => setAddOpen(true)}
           >
-            <Icon name="plus" size={17} />
-            {t('acct.addAccount')}
+            <Icon name="pencil-plus-outline" size={17} />
+            {t('acct.addManualHere')}
           </Button>
         </div>
       </div>
 
-      {/* AE1: the shared intent chooser — manual creates in place */}
-      <AddAccountChooser open={addOpen} onOpenChange={setAddOpen} gcAvailable={syncing} />
+      {/* the manual type grid directly — this button SAYS manual now
+          (user redesign ss13/ss14); connect/import live behind Attach
+          and the global overview */}
+      <AddAccountChooser open={addOpen} onOpenChange={setAddOpen} gcAvailable={syncing} initialStep="manual" />
+
+      {/* tap-through info: the full story per account, with the actions
+          (edit / detach) moved off the row (user redesign ss13) */}
+      <Sheet open={info !== null} onOpenChange={(next) => !next && setInfo(null)} title={info?.name} size="form">
+        {info && (
+          <div className="flex flex-col gap-3 pt-1" data-testid="space-account-info">
+            <div className="flex items-center gap-2 text-[13px] text-ink-2">
+              {info.account && <Icon name={SOURCE_ICONS[info.account.source]} size={16} color="var(--m-ink-3)" />}
+              {info.account ? t(SOURCE_KEYS[info.account.source]) : t('acct.bank')}
+              {info.manual && <span className="text-ink-4"> · {t('acct.provSpace')}</span>}
+            </div>
+            <div className="overflow-hidden rounded-card border border-line bg-surface">
+              {[
+                info.account?.iban ? ([t('accounts.ibanLabel'), info.account.iban] as const) : null,
+                info.link ? ([t('acct.historyFrom'), info.link.historyFrom ?? '—'] as const) : null,
+                info.link && linkProvenance(t, info.link, mySub) ? ([t('acct.attachedBy'), linkProvenance(t, info.link, mySub)!] as const) : null,
+                syncLine(t, lang, info.account) ? ([t('acct.lastSyncedLabel'), syncLine(t, lang, info.account)!] as const) : null,
+              ]
+                .filter((row): row is readonly [string, string] => row !== null)
+                .map(([label, value]) => (
+                  <div key={label} className="flex items-center justify-between gap-3 border-b border-line-2 px-4 py-3 text-[13px] last:border-0">
+                    <span className="text-ink-3">{label}</span>
+                    <span className="min-w-0 truncate text-right font-mono text-[12px] text-ink">{value}</span>
+                  </div>
+                ))}
+            </div>
+            {info.stale && <Pill tone="warning">{t('acct.reconnectHint')}</Pill>}
+            {info.manual && (
+              <Button
+                variant="outline"
+                data-testid="space-account-sheet-edit"
+                onClick={() => {
+                  setEditing(info.manual ?? null);
+                  setInfo(null);
+                }}
+              >
+                <Icon name="pencil-outline" size={16} /> {t('action.edit')}
+              </Button>
+            )}
+            {info.detach && (
+              <Button
+                variant="danger"
+                data-testid="space-account-sheet-detach"
+                onClick={() => {
+                  setDetachTarget(info);
+                  setInfo(null);
+                }}
+              >
+                <Icon name="link-off" size={16} /> {t('acct.detach')}
+              </Button>
+            )}
+          </div>
+        )}
+      </Sheet>
+
+      {/* manual rows edit/delete in place — same surface as the global
+          screen (user ss 2026-07-31: they were view-only here) */}
+      <EditAccountSheet account={editing} onClose={() => setEditing(null)} />
 
       {/* pick an existing account, choose the history start, attach */}
       <Sheet open={attachOpen} onOpenChange={setAttachOpen} title={t('acct.attachToSpace')} size="tall">

@@ -15,7 +15,8 @@ import { config } from './config';
 import { requestOutboxSync } from './pwa';
 import { clearSwSession, jwtExpiryMs, mirrorSessionForSw } from '@/lib/swBridge';
 import { ensurePersistentStorage } from '@/lib/platform';
-import { getAccessToken, waitForAuthReady } from './authToken';
+import { getAccessToken, oidcSignIn, waitForAuthReady } from './authToken';
+import { LOGTO_WIPE_KEY } from '@/lib/authState';
 import { identityKey, useSession } from './session';
 import type { Identity } from './session';
 
@@ -266,13 +267,31 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // explicit reimbursed slice, once per identity (marker-gated;
       // ALL identities — demo/offline data migrates too)
       void (async () => {
-        const { migrateReimbursementSlices, migrateUnlinkedTransferKinds, migrateSignContradictions } = await import('@/application/catalogMaintenance');
+        const { migrateReimbursementSlices, migrateUnlinkedTransferKinds, migrateSignContradictions, migrateFamilySubs, migrateRetiredDebtSubs } = await import('@/application/catalogMaintenance');
         await migrateReimbursementSlices(store, repo);
         // kind simplification: counterparty-less transfer-family rows
-        // become plain income/expense by sign (marker-gated, all identities)
+        // become plain income/expense by sign (marker-gated, all
+        // identities; arc-2 bare labels wear their locked sub and skip)
         await migrateUnlinkedTransferKinds(store, repo);
         // heal rows the pre-2026-07-28 bulk-apply typed against their sign
         await migrateSignContradictions(store, repo);
+        // arc 2 back-fill: placeholder-categorized transfer-family rows
+        // file the sign-picked locked sub ("Set aside" over a blank line)
+        await migrateFamilySubs(store, repo);
+        // retired debt subs (lendMoney/creditCardPayment) refile by sign
+        await migrateRetiredDebtSubs(store, repo);
+        // links the old import attached without a history gate pick up
+        // their space's start date (imported rows ignored it entirely)
+        const { migrateUngatedLinks } = await import('@/application/historyStart');
+        await migrateUngatedLinks(store, repo);
+        // loans v2: debt rows fold into their liability account (every
+        // boot, idempotent — late-syncing debts from old devices heal)
+        const { foldDebtsIntoAccounts } = await import('@/application/debts');
+        await foldDebtsIntoAccounts(store, repo);
+        // transfers are ONE event with two legs — pair them within each
+        // space's own books (never across: funding covers that case)
+        const { linkTransferPairs } = await import('@/application/transferMatch');
+        await linkTransferPairs(store, repo);
       })().catch(() => undefined);
       // bank-connect completions attach server-side from an anonymous
       // page — mirror any link no device ever saw being made (also heals
@@ -353,9 +372,32 @@ async function mirrorSpaceLinks(store: StorageBackend, repo: Repo): Promise<void
  * failed rounds the screen names the problem (broken API/proxy is a
  * config error, not a loading state) and offers a way out.
  */
+const REHEAL_KEY = 'munni_auth_reheal';
+
 function ConnectingScreen({ failedAttempts = 0, errorDetail }: { failedAttempts?: number; errorDetail?: string | null }) {
   const { t } = useLang();
   const logout = useSession((s) => s.logout);
+  const identity = useSession((s) => s.identity);
+  // SELF-HEAL (iOS field 401, 2026-07-29): signed-in user + 401s + NO
+  // mintable token = the client-side Logto keys are gone while the IdP
+  // session cookie usually survives — a silent re-sign-in round-trip
+  // re-mints them. Capped per tab so a dead IdP session cannot loop; at
+  // the cap the screen keeps its Sign out / Diagnose exits.
+  useEffect(() => {
+    if (identity?.kind !== 'user' || identity.testAuth) return;
+    if (!(errorDetail ?? '').includes('401')) return;
+    void (async () => {
+      if (await getAccessToken()) {
+        sessionStorage.removeItem(REHEAL_KEY); // tokens mint — the 401 is not evicted state
+        return;
+      }
+      const attempts = Number(sessionStorage.getItem(REHEAL_KEY) ?? '0');
+      if (attempts >= 2) return;
+      sessionStorage.setItem(REHEAL_KEY, String(attempts + 1));
+      const { callbackUri } = await import('@/features/auth/logto');
+      if (!(await oidcSignIn(callbackUri()))) sessionStorage.removeItem(REHEAL_KEY);
+    })();
+  }, [identity, errorDetail]);
   const [slow, setSlow] = useState(false);
   useEffect(() => {
     const timer = setTimeout(() => setSlow(true), 1_500);
@@ -379,14 +421,39 @@ function ConnectingScreen({ failedAttempts = 0, errorDetail }: { failedAttempts?
   // know how to provide you info")
   const [report, setReport] = useState<string | null>(null);
   const diagnose = async () => {
+    // key SUFFIXES only (idToken/refreshToken/accessToken/signInSession) —
+    // discriminates "exchange never persisted" vs "refresh gone" vs
+    // "signInSession stranded"; never values
+    const logtoSuffixes = (store: Storage) => {
+      const names = Object.keys(store)
+        .filter((k) => k.startsWith('logto:'))
+        .map((k) => k.split(':').pop() ?? '');
+      return names.join(',') || '-';
+    };
     const lines = [
+      `build: v${__APP_VERSION__} (${String(__BUILD_NUMBER__)})`,
       `ua: ${navigator.userAgent}`,
       `standalone: ${window.matchMedia?.('(display-mode: standalone)')?.matches ?? false}`,
       `online: ${navigator.onLine}`,
       `sw: ${navigator.serviceWorker?.controller ? 'controlling' : 'none'}`,
+      `session: ${identity?.kind ?? 'absent'}`,
       `logtoKeys: ${Object.keys(localStorage).filter((k) => k.startsWith('logto:')).length}`,
+      `logtoLs: ${logtoSuffixes(localStorage)}`,
+      `logtoSs: ${logtoSuffixes(sessionStorage)}`,
+      `lsKeys: ${Object.keys(localStorage).length} ssKeys: ${Object.keys(sessionStorage).length}`,
+      `lastLogtoWipe: ${localStorage.getItem(LOGTO_WIPE_KEY) ?? '-'}`,
+      `rehealAttempts: ${sessionStorage.getItem(REHEAL_KEY) ?? '0'}`,
       `lastError: ${errorDetail ?? '-'}`,
     ];
+    try {
+      localStorage.setItem('munni_probe', '1');
+      const ok = localStorage.getItem('munni_probe') === '1';
+      localStorage.removeItem('munni_probe');
+      lines.push(`lsWrite: ${ok}`);
+    } catch (err) {
+      const detail = err instanceof Error ? err.name : String(err);
+      lines.push(`lsWrite threw: ${detail}`);
+    }
     // the definitive probe: can the auth SDK mint a token AT ALL? (the
     // iOS field report showed logtoKeys:0 — evicted client auth storage)
     try {

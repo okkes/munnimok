@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@/db/useQuery';
 import { LOCALES, useLang } from '@/i18n';
-import { REIMBURSEMENT_MAIN_ID } from '@/domain/categories';
+import { LOCKED_MAIN_IDS } from '@/domain/categories';
 import { useData } from '@/app/data';
 import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
 import { localToday } from '@/application/recurring';
@@ -189,7 +189,7 @@ export function TrendsScreen() {
       </div>
 
       {/* main/sub picker: mains first, tapping a main offers its subs */}
-      <Sheet open={pickerOpen} onOpenChange={setPickerOpen} title={t('trends.pickCategory')} size="tall">
+      <Sheet open={pickerOpen} onOpenChange={setPickerOpen} title={t('trends.pickCategory')} size="tall" dragHandle>
         <div data-testid="trends-cat-list">
           <button
             data-testid="trends-cat-all"
@@ -204,7 +204,7 @@ export function TrendsScreen() {
             {catId === undefined && <Icon name="check" size={16} color="var(--m-accent-deep)" />}
           </button>
           {cats.parents
-            .filter((parent) => parent.txTypes.includes('expense') && parent.id !== REIMBURSEMENT_MAIN_ID)
+            .filter((parent) => parent.txTypes.includes('expense') && !LOCKED_MAIN_IDS.has(parent.id))
             .map((parent) => (
               <div key={parent.id}>
                 <button

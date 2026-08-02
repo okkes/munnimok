@@ -175,7 +175,7 @@ export function AttachSheet({
     .filter((row) => !!row.via);
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange} title={account.name} size="tall">
+    <Sheet open={open} onOpenChange={onOpenChange} title={account.name} size="tall" dragHandle>
       {canEdit && (
         <div className="mb-3 flex flex-col gap-2">
           <label className="flex items-center gap-3 text-[13px] text-ink-2">

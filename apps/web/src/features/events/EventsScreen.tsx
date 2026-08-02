@@ -105,8 +105,18 @@ export function EventFormSheet({
     onClose();
   };
 
+  // dirty vs the seeded values (user request 2026-08-01) — the picture
+  // stays out: picking a bundled one is reversible and uploads are rare
+  const dirty =
+    initial !== null &&
+    (name !== (editing?.name ?? '') ||
+      from !== (editing?.from ?? '') ||
+      to !== (editing?.to ?? '') ||
+      estimate !== (editing?.budgetCents ? (editing.budgetCents / 100).toFixed(2) : '') ||
+      note !== (editing?.note ?? ''));
+
   return (
-    <Sheet open={initial !== null} onOpenChange={(open) => !open && onClose()} title={editing ? t('events.edit') : t('events.new')} size="tall">
+    <Sheet open={initial !== null} onOpenChange={(open) => !open && onClose()} title={editing ? t('events.edit') : t('events.new')} size="tall" dirty={dirty}>
       <div className="flex flex-col gap-3 pt-1">
         {/* the picture defines the event — pick a bundled one or upload */}
         <div className="flex gap-2 overflow-x-auto pb-1" data-testid="eventform-pictures">

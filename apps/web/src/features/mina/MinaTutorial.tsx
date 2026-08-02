@@ -12,11 +12,67 @@ import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { closeAllSheets, hasOpenSheet } from '@/ui/Sheet';
 import { MINA_ART, MINA_EXPR } from './assets';
-import { MINA_DONE_KEY, MINA_STATE_KEY, MINA_STEPS, minaSuggestedAccountName, minaSuggestedSpaceName, minaSuggestedTx, setMinaSuggestions } from './steps';
-import type { MinaLedgerEntry, MinaRunState } from './steps';
+import { MINA_DONE_KEY, MINA_STATE_KEY, MINA_STEPS, minaStepIndex, minaSuggestedAccountName, minaSuggestedSpaceName, minaSuggestedTx, setMinaSuggestions } from './steps';
+import { setMinaSheetGuard } from './lock';
+import type { MinaLedgerEntry, MinaRunState, MinaStep } from './steps';
 import { revertMinaRun } from './revert';
 
 const PAD = 6;
+
+// the walk to Family's cog exists only to delete the run's OWN second
+// space — with no live $s2 the whole stretch is skipped ('deleteFamily'
+// itself is excluded: its absent-act legitimately runs while the ledger
+// empties, and a skip firing there would jump PAST the wrap screen)
+const CLEANUP_STEP_IDS = new Set(['openSwitcherCleanup', 'pickPrivateCleanup', 'openSwitcherCleanup2', 'openManageCleanup', 'openFamilyCog']);
+
+// switching lessons advance on the SPACE CHANGE alone — the gate tap
+// listener must stay out of them: both scheduling an advance let a fast
+// IndexedDB commit land inside the tap's 50ms window, and the pair then
+// advanced TWICE (skipping the re-open-the-switcher step, leaving the
+// next pick step with a closed sheet and a full cover — user ss 2026-07-31)
+const PICK_STEP_IDS = new Set(['pickPrivate', 'pickFamily', 'pickPrivateCleanup']);
+
+// steps whose anchor lives INSIDE the switcher sheet → the step that
+// opens that sheet. A pick closes the sheet, a swipe can dismiss it, and
+// then the anchor can never resolve again — the full cover would block
+// the switcher button itself. The self-heal rewinds to the opener.
+const SHEET_ANCHOR_OPENER: Record<string, string> = {
+  openManage: 'openSwitcher',
+  openManage2: 'openSwitcher2',
+  pickPrivate: 'openSwitcherSwap',
+  pickFamily: 'openSwitcherSwap2',
+  pickPrivateCleanup: 'openSwitcherCleanup',
+  openManageCleanup: 'openSwitcherCleanup2',
+};
+
+/**
+ * A stale ledger must never leave a $s-anchored step targetless (user
+ * ss: no glow, tutorial felt stuck/lost) — but ONLY rows of spaces MADE
+ * THIS RUN are safe stand-ins: gate steps advance on a tap into
+ * whatever glows, and lighting up a user's own space once pointed the
+ * delete lesson at the wrong cog (user ss 2026-07-29).
+ */
+function fallbackAnchor(candidates: readonly string[] | undefined, createdSpaces: readonly string[], spaceId: string): HTMLElement | null {
+  for (const raw of candidates ?? []) {
+    const tokenAt = raw.indexOf('$s');
+    if (tokenAt < 0) continue;
+    const prefix = raw.slice(0, tokenAt);
+    const rows = [...document.querySelectorAll<HTMLElement>(`[data-testid^="${prefix}"]`)].filter(
+      (el) => el.dataset.testid !== 'space-pick-manage' && el.offsetParent !== null,
+    );
+    const mine = rows.filter((el) => createdSpaces.some((sid) => el.dataset.testid === `${prefix}${sid}`));
+    const mineNotActive = mine.find((el) => el.dataset.testid !== `${prefix}${spaceId}`);
+    if (mine.length > 0) return mineNotActive ?? mine[0];
+    // switching lessons advance on ANY switch (the space-change effect),
+    // so a non-active row still teaches them correctly — never the
+    // active one (the lesson is switching AWAY, user ss)
+    if (prefix === 'space-pick-') {
+      const notActive = rows.find((el) => el.dataset.testid !== `${prefix}${spaceId}`);
+      if (notActive) return notActive;
+    }
+  }
+  return null;
+}
 
 /**
  * Barely-there dim + a breathing mint glow on the target (user design
@@ -49,13 +105,17 @@ function GateShade({ rect, blockHole }: Readonly<{ rect: DOMRect | null; blockHo
       <div className={blocker} style={{ top, left: 0, width: left, height: bottom - top }} />
       <div className={blocker} style={{ top, left: right, right: 0, height: bottom - top }} />
       {/* the dim cutout (separate element: the glow's animation owns its
-          own box-shadow and would override an inline one) */}
+          own box-shadow and would override an inline one). The ring +
+          cutout GLIDE between targets (user asked the travel back,
+          2026-07-31) — only the invisible blockers stay instant, they
+          must never lag behind a tap. Keyframes own box-shadow, CSS
+          transitions the geometry: the two never fight. */}
       <div
-        className="pointer-events-none fixed z-[129] rounded-2xl"
+        className="pointer-events-none fixed z-[129] rounded-2xl transition-all duration-500"
         style={{ top, left, width: right - left, height: bottom - top, boxShadow: '0 0 0 200vmax rgba(0,0,0,0.15)' }}
       />
       <div
-        className={`${glowClass} pointer-events-none fixed z-[130] rounded-2xl`}
+        className={`${glowClass} pointer-events-none fixed z-[130] rounded-2xl transition-all duration-500`}
         style={{ top, left, width: right - left, height: bottom - top }}
         data-testid="mina-gate-ring"
       />
@@ -89,6 +149,17 @@ function elementLabel(el: HTMLElement | null): string {
   return (el.textContent ?? '').trim().slice(0, 40);
 }
 
+/**
+ * A sheet covering an OFF-sheet anchor owns the screen: the shade
+ * stands down so the sheet is usable (the delete-confirm's taps hit the
+ * invisible blockers, user ss) and returns the moment the sheet closes.
+ * ACT steps only: gate taps that OPEN a sheet flip sheetOpen a frame
+ * before the step advances, and an unconditional stand-down blinked the
+ * dim on every such tap. Sheet-anchored steps keep the shade regardless.
+ */
+const shadeVisible = (step: MinaStep, sheetOpen: boolean, anchorInSheet: boolean): boolean =>
+  (!!step.anchor || !!step.gate || !!step.info) && !(sheetOpen && !anchorInSheet && !!step.act);
+
 export function MinaTutorial() {
   const { t, lang } = useLang();
   const { store, repo, spaceId, setActiveSpace } = useData();
@@ -103,9 +174,24 @@ export function MinaTutorial() {
   const [minimized, setMinimized] = useState(false);
   const [targetLabel, setTargetLabel] = useState('');
   const [sheetOpen, setSheetOpen] = useState(false);
+  // act steps: a gentle glow on the form's save button (user request
+  // 2026-08-01) — attention without gating, the form stays editable
+  const [softRect, setSoftRect] = useState<DOMRect | null>(null);
+  // a sheet open OVER an off-sheet anchor (the delete-confirm covering
+  // the gated danger button, user ss): the z-130 shade would swallow
+  // every tap on the sheet — it stands down until the sheet closes
+  const [anchorInSheet, setAnchorInSheet] = useState(false);
   const [resumePending, setResumePending] = useState(false);
   // per-act baseline: ids that existed when the act step became current
   const baselineRef = useRef<{ step: number; ids: Set<string> } | null>(null);
+
+  // while the run is live, sheets refuse USER dismissal (backdrop tap,
+  // drag-down, Escape) — a stray swipe tore the create form out from
+  // under the lesson (user ss 2026-08-01); programmatic closes still work
+  useEffect(() => {
+    setMinaSheetGuard(!!run?.active);
+    return () => setMinaSheetGuard(false);
+  }, [run?.active]);
 
   // load persisted state (resume after kill); demo identities never run
   useEffect(() => {
@@ -140,6 +226,13 @@ export function MinaTutorial() {
   }, [store, identity]);
 
   const step = run?.active ? MINA_STEPS[run.step] : undefined;
+
+  // delayed advances (gate taps, the 400ms act settle) must never act on
+  // the render they were scheduled in: a stale closure once rebuilt the
+  // run WITHOUT the just-ledgered space ids, losing $s1/$s2 and sending
+  // the cleanup lesson to the wrong space's cog (user ss 2026-07-29)
+  const runRef = useRef(run);
+  runRef.current = run;
 
   const persist = useCallback(
     (next: MinaRunState | null) => {
@@ -185,43 +278,36 @@ export function MinaTutorial() {
     (candidates: readonly string[] | undefined): HTMLElement | null => {
       for (const raw of candidates ?? []) {
         const id = raw.replace('$s1', createdSpaces[0] ?? '').replace('$s2', createdSpaces[1] ?? '');
+        // the delete lesson only ever means the TUTORIAL's second space:
+        // on any other space's settings screen the button stays covered
+        // (defense in depth — a wrong glow here coaches deleting real data)
+        if (id === 'space-edit-delete') {
+          const settings = document.querySelector<HTMLElement>('[data-testid="screen-space-settings"]');
+          if (settings?.dataset.spaceId !== createdSpaces[1]) continue;
+        }
         for (const el of document.querySelectorAll<HTMLElement>(`[data-testid="${id}"]`)) {
           if (el.offsetParent !== null) return el; // the VISIBLE candidate (mobile vs desktop nav)
         }
       }
-      // a stale ledger must never leave a $s-anchored step targetless
-      // (user ss: no glow, tutorial felt stuck/lost) — fall back to any
-      // row of the same FAMILY, and for switch rows never the space that
-      // is already active (the lesson is switching AWAY, user ss)
-      for (const raw of candidates ?? []) {
-        const tokenAt = raw.indexOf('$s');
-        if (tokenAt < 0) continue;
-        const prefix = raw.slice(0, tokenAt);
-        const rows = [...document.querySelectorAll<HTMLElement>(`[data-testid^="${prefix}"]`)].filter(
-          (el) => el.dataset.testid !== 'space-pick-manage' && el.offsetParent !== null,
-        );
-        const notActive = rows.find((el) => el.dataset.testid !== `${prefix}${spaceId}`);
-        const pick = prefix === 'space-pick-' ? (notActive ?? rows[0]) : rows[0];
-        if (pick) return pick;
-      }
-      return null;
+      return fallbackAnchor(candidates, createdSpaces, spaceId);
     },
     [createdSpaces, spaceId],
   );
 
   const advance = useCallback(() => {
-    if (!run) return;
+    const current = runRef.current; // ALWAYS the latest run — see runRef
+    if (!current) return;
     setMinaSuggestions({});
-    if (run.step + 1 >= MINA_STEPS.length) {
+    if (current.step + 1 >= MINA_STEPS.length) {
       void finish(false);
       return;
     }
-    const nextStep = MINA_STEPS[run.step + 1];
+    const nextStep = MINA_STEPS[current.step + 1];
     // steps that play OUTSIDE any sheet close leftovers (the no-account
     // form, the switcher…) — UI control, not a data write
     if (nextStep.kind === 'fullscreen' || nextStep.anchor?.some((a) => a.startsWith('tab-') || a.startsWith('side-tab-'))) closeAllSheets();
-    persist({ ...run, step: run.step + 1 });
-  }, [run, persist, finish]);
+    persist({ ...current, step: current.step + 1 });
+  }, [persist, finish]);
 
   // a fresh dialogue always shows itself — leaving Mina minimized after
   // the user completed a step read as the tutorial dying (user request)
@@ -237,10 +323,29 @@ export function MinaTutorial() {
   useEffect(() => {
     const changed = spaceId !== lastSpaceRef.current;
     lastSpaceRef.current = spaceId;
-    if (changed && (step?.id === 'pickPrivate' || step?.id === 'pickFamily' || step?.id === 'pickPrivateCleanup')) {
+    if (changed && step && PICK_STEP_IDS.has(step.id)) {
       setTimeout(advance, 400);
     }
   }, [spaceId, step?.id, advance]);
+
+  // no live tutorial-made Family = nothing to clean up: jump to the wrap
+  // instead of glowing an arbitrary cog (lost ledger from a pre-fix
+  // build, or the space already gone — user ss 2026-07-29)
+  const inCleanup = !!step && CLEANUP_STEP_IDS.has(step.id);
+  useEffect(() => {
+    if (!run?.active || !inCleanup) return;
+    let cancelled = false;
+    void (async () => {
+      const family = createdSpaces[1];
+      const alive = family ? (await store.allRows('space')).some((s) => s.id === family && s.deleted === 0) : false;
+      if (cancelled || alive) return;
+      const current = runRef.current;
+      if (current) persist({ ...current, step: minaStepIndex('wrap') });
+    })().catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [run?.active, run?.step, inCleanup, createdSpaces, store, persist]);
 
   // navigate to the step's screen (never mid-act — acts follow the user)
   const screen = step?.screen;
@@ -313,6 +418,15 @@ export function MinaTutorial() {
         return next;
       });
       setTargetLabel(elementLabel(resolveAnchor(step?.labelFrom ?? step?.anchor)));
+      setAnchorInSheet(!!el?.closest('[data-sheet-body]'));
+      // act steps: track the save button for the soft glow
+      const softEl = step?.act && !step.anchor ? resolveAnchor(step.labelFrom) : null;
+      const softNext = softEl?.getBoundingClientRect() ?? null;
+      setSoftRect((prev) => {
+        if (!prev && !softNext) return prev;
+        if (prev && softNext && Math.abs(prev.top - softNext.top) < 1 && Math.abs(prev.left - softNext.left) < 1 && Math.abs(prev.width - softNext.width) < 1) return prev;
+        return softNext;
+      });
       setSheetOpen(hasOpenSheet());
       raf = requestAnimationFrame(tick);
     };
@@ -321,16 +435,36 @@ export function MinaTutorial() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [run?.active, run?.step, anchorKey, labelKey, resolveAnchor]);
 
-  // gate advance: the tap lands on the REAL element; we advance alongside
+  // gate advance: the tap lands on the REAL element; we advance alongside.
+  // Pick steps are EXCLUDED — they advance on the space change itself
+  // (PICK_STEP_IDS), and a second scheduler here caused double-advances
+  const gateTapArmed = !!step?.gate && !PICK_STEP_IDS.has(step.id);
   useEffect(() => {
-    if (!step?.gate) return;
+    if (!gateTapArmed || !step) return;
     const onTap = (event: Event) => {
       const el = resolveAnchor(step.anchor);
       if (el && event.target instanceof Node && el.contains(event.target)) setTimeout(advance, 50);
     };
     document.addEventListener('click', onTap, { capture: true });
     return () => document.removeEventListener('click', onTap, { capture: true });
-  }, [step, resolveAnchor, advance]);
+  }, [gateTapArmed, step, resolveAnchor, advance]);
+
+  // sheet-anchored steps self-heal: with the switcher sheet gone (a pick
+  // closed it, a swipe dismissed it, or an older build double-advanced
+  // past the re-open step) the anchor can never resolve and the full
+  // cover would block the switcher button itself — rewind to the step
+  // that opens the sheet once the anchor stayed unresolved for 600ms
+  const openerId = step ? SHEET_ANCHOR_OPENER[step.id] : undefined;
+  useEffect(() => {
+    if (!run?.active || resumePending || !openerId) return;
+    if (sheetOpen || rect) return; // healthy: sheet up, or anchor resolved
+    const timer = setTimeout(() => {
+      const current = runRef.current;
+      if (!current?.active || hasOpenSheet()) return; // re-check live at fire time
+      persist({ ...current, step: minaStepIndex(openerId) });
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [run?.active, run?.step, openerId, sheetOpen, rect, resumePending, persist]);
 
   // replay detection for the Home copy (a lived-in account is not empty)
   const spacesLive = useQuery(store, async () => (await store.allRows('space')).filter((s) => s.deleted === 0).length, [run?.step]);
@@ -372,11 +506,21 @@ export function MinaTutorial() {
     if (!step.act.absent && baselineRef.current?.step !== run.step) return;
     if (step.act.absent) {
       const family = createdSpaces[1];
-      if (family && !live.has(family)) {
-        persist({ ...run, step: run.step, ledger: run.ledger.filter((e) => e.id !== family && e.spaceId !== family) });
+      if (!family || live.has(family)) return;
+      // the live query's FIRST emission after the step change can be a
+      // stale snapshot missing the family row — believing it wrapped
+      // the tour from under the user right as the delete step armed
+      // (user ss 2026-08-01). Confirm against the store before acting;
+      // the same class the non-absent baseline (below) already guards.
+      void (async () => {
+        const reallyGone = !(await store.allRows('space')).some((s) => s.id === family && s.deleted === 0);
+        if (!reallyGone) return;
+        const current = runRef.current;
+        if (!current?.active) return;
+        persist({ ...current, ledger: current.ledger.filter((e) => e.id !== family && e.spaceId !== family) });
         setTimeout(advance, 400);
         baselineRef.current = null;
-      }
+      })().catch(() => undefined);
       return;
     }
     const fresh = actRows.filter(
@@ -434,7 +578,7 @@ export function MinaTutorial() {
   }
 
   const bubbleSide = bubblePlacement(rect, sheetOpen);
-  const showShade = !!step.anchor || step.gate || step.info;
+  const showShade = shadeVisible(step, sheetOpen, anchorInSheet);
   // copy quotes the live target and the (deduped) suggested name
   const bodyParams = {
     target: targetLabel,
@@ -453,9 +597,12 @@ export function MinaTutorial() {
           // camera/notch cut Mina's head off on tall pictures)
           style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 12px)' }}
         >
-          <div className="flex w-full max-w-[420px] flex-1 flex-col items-center px-6 pb-8 lg:max-w-[860px] lg:flex-row lg:items-center lg:gap-10">
-            <img src={MINA_ART[step.art!]} alt="Mina" className="mt-4 max-h-[42dvh] w-auto max-w-full rounded-2xl object-contain lg:mt-0 lg:max-h-[70dvh] lg:flex-1" />
-            <div className="flex w-full flex-col items-center text-center lg:items-start lg:text-left">
+          {/* one centered column on EVERY viewport (user ss 2026-08-01:
+              the desktop side-by-side left the text as an odd sliver
+              beside the art) — the text sits below the image, centered */}
+          <div className="flex w-full max-w-[420px] flex-1 flex-col items-center px-6 pb-8 lg:max-w-[560px] lg:justify-center">
+            <img src={MINA_ART[step.art!]} alt="Mina" className="mt-4 max-h-[42dvh] w-auto max-w-full rounded-2xl object-contain lg:max-h-[52dvh]" />
+            <div className="flex w-full flex-col items-center text-center">
               <h1 className="m-h2 mt-5 text-ink">{t(step.titleKey)}</h1>
               <p className="mt-2 max-w-[360px] text-[14px] leading-relaxed text-ink-2">{t(step.bodyKey)}</p>
               {step.id === 'sharing' && identity?.kind === 'offline' && (
@@ -488,6 +635,22 @@ export function MinaTutorial() {
       {step.kind === 'bubble' && (
         <>
           {showShade && <GateShade rect={rect} blockHole={!!step.info} />}
+          {/* Continue-driven bubbles without a shade still must not let
+              the user wander off and get lost (user ss) — a transparent
+              full-screen blocker swallows everything; the bubble itself
+              sits above it at z-140. Act steps stay fully interactive. */}
+          {!showShade && !step.act && <div className="fixed inset-0 z-[130]" data-testid="mina-tap-blocker" />}
+          {/* act steps: the form stays fully editable, and the button
+              that finishes the lesson wears a soft breathing ring so the
+              way forward is visible without being forced (user ss:
+              "gentle highlight on the create button, allow edits") */}
+          {step.act && softRect && (
+            <div
+              data-testid="mina-soft-glow"
+              className="m-mina-glow pointer-events-none fixed z-[60] rounded-2xl transition-all duration-500"
+              style={{ top: softRect.top - 4, left: softRect.left - 4, width: softRect.width + 8, height: softRect.height + 8 }}
+            />
+          )}
           {minimized ? (
             // tucked away: a glowing corner orb brings Mina back (user
             // ruling — sometimes she simply IS in the way)

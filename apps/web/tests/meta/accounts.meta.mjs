@@ -1,5 +1,5 @@
 export const FEATURE       = 'accounts';
-export const FEATURE_LABEL = 'Financial Accounts';
+export const FEATURE_LABEL = 'All accounts';
 
 export const GROUPS = [
   {
@@ -8,7 +8,7 @@ export const GROUPS = [
       {
         key: '16-accounts-list',
         title: 'Assets & liabilities list',
-        desc: 'Settings → Financial Accounts lists accounts grouped into Assets and Liabilities with balances and IBANs.',
+        desc: 'Settings → All accounts lists accounts grouped into Assets and Liabilities with balances and IBANs.',
         tags: ['state'],
       },
       {

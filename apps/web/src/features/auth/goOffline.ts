@@ -21,8 +21,8 @@ import { adoptOfflineProfile } from './offlineProfiles';
  *   default ON in the UI.
  *
  * Every server call is best-effort: going offline must work while
- * offline. Returns the new profile id, or null when a profile already
- * exists on this device (one per device — the UI explains).
+ * offline. Returns the new profile id (arc 8 lifted the one-per-device
+ * rule — the conversion mints its profile next to any existing ones).
  */
 export interface GoOfflineContext {
   store: StorageBackend;
@@ -41,10 +41,9 @@ export interface GoOfflineOptions {
 export async function convertToOffline(ctx: GoOfflineContext, opts: GoOfflineOptions): Promise<string | null> {
   if (ctx.identity.kind !== 'user') return null;
 
-  // the registry rebind FIRST — if a profile already exists we must
-  // refuse before touching the server or the store
+  // the registry rebind first — the new profile adopts this identity's
+  // existing store and lives next to any profiles already on the device
   const profile = adoptOfflineProfile(opts.profileName, opts.profilePicture, identityKey(ctx.identity));
-  if (!profile) return null;
 
   // server exit, best-effort (user ruling: going offline always deletes
   // the server data — as if the app had been offline from day one).

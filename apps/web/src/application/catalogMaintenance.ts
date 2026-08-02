@@ -2,7 +2,7 @@ import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
 import { visibleTransactions, writeTxTransform } from '@/db/joined';
 import { tombstonedIds } from '@/domain/catalogDoc';
-import { UNCATEGORIZED_ID } from '@/domain/categories';
+import { UNCATEGORIZED_ID, autoSubFor } from '@/domain/categories';
 import { givenCents, settledSplits, totalReimbursedCents } from '@/domain/reimbursement';
 import { kindOf, standardTypeFor } from '@/domain/txKind';
 import { cachedCatalog } from '@/sync/catalogSync';
@@ -73,15 +73,27 @@ export async function migrateReimbursementSlices(store: StorageBackend, repo: Re
   return touched;
 }
 
+/** a transfer-family row wearing its family's locked sub is a DELIBERATE
+ *  arc-2 bare label ("no counter account") — never a pre-2026-07-25
+ *  orphan: old rows kept their spending category, bare picks always file
+ *  the sub at the write edge */
+const isBareFamilyLabel = (tx: { txType: Parameters<typeof autoSubFor>[0]; catId?: string }): boolean =>
+  !!tx.catId && (tx.catId === autoSubFor(tx.txType, -1) || tx.catId === autoSubFor(tx.txType, 1));
+
 /**
  * Kind simplification migration (user ruling 2026-07-25, "auto-migrate
  * to regular"): the old UI let anyone pick saving / investment / debt
  * payment / transfer WITHOUT a counterparty — under the simplified model
- * a transfer-kind row without one is unrepresentable. One pass per
- * identity rewrites those orphans to plain income/expense by sign.
- * Categories stay untouched (like all silent migrations, coherence is
- * enforced on the next human edit), and rows WITH a counterparty keep
+ * of that era a transfer-kind row without one was unrepresentable. One
+ * pass per identity rewrites those orphans to plain income/expense by
+ * sign. Categories stay untouched (like all silent migrations, coherence
+ * is enforced on the next human edit), and rows WITH a counterparty keep
  * their derived type exactly as-is.
+ *
+ * Arc 2 made counterless rows legal again (the bare "no counter account"
+ * label): those wear their family's locked sub and are skipped — else a
+ * fresh device re-running this pass over synced rows would flatten a
+ * deliberate choice.
  */
 export async function migrateUnlinkedTransferKinds(store: StorageBackend, repo: Repo): Promise<number> {
   const markerKey = 'txKindUnlinked_v1';
@@ -92,7 +104,66 @@ export async function migrateUnlinkedTransferKinds(store: StorageBackend, repo: 
   for (const space of spaces) {
     for (const tx of await visibleTransactions(store, space.id)) {
       if (tx.deleted !== 0 || kindOf(tx.txType) !== 'transfer' || tx.linkedAccountId) continue;
+      if (isBareFamilyLabel(tx)) continue;
       await writeTxTransform(repo, tx, { txType: standardTypeFor(tx.amountCents) });
+      touched++;
+    }
+  }
+  await store.metaPut(markerKey, Date.now());
+  return touched;
+}
+
+/**
+ * 2026-08-01 (user, ss review): the debt family shrank to exactly the
+ * arc-2 pair — Repaid / Borrowed. Rows on the retired lendMoney /
+ * creditCardPayment subs refile under the sign-picked family sub, raw
+ * rows and per-space overlays alike; review status stays untouched.
+ */
+const RETIRED_DEBT_SUBS = new Set(['lendMoney', 'creditCardPayment']);
+
+export async function migrateRetiredDebtSubs(store: StorageBackend, repo: Repo): Promise<number> {
+  const markerKey = 'debtSubsRetired_v1';
+  if (await store.metaGet(markerKey)) return 0;
+
+  let touched = 0;
+  for (const tx of await store.allRows('transaction')) {
+    if (tx.deleted === 0 && tx.catId && RETIRED_DEBT_SUBS.has(tx.catId)) {
+      await repo.upsert('transaction', tx.spaceId, tx.id, { catId: autoSubFor('debtPayment', tx.amountCents) });
+      touched++;
+    }
+  }
+  for (const meta of await store.allRows('txMeta')) {
+    if (meta.deleted === 0 && meta.catId && RETIRED_DEBT_SUBS.has(meta.catId)) {
+      const raw = await store.get('transaction', meta.txId);
+      await repo.upsert('txMeta', meta.spaceId, meta.id, { catId: autoSubFor('debtPayment', raw?.amountCents ?? -1) });
+      touched++;
+    }
+  }
+  await store.metaPut(markerKey, Date.now());
+  return touched;
+}
+
+/**
+ * Arc 2 (locked doors) back-fill: transfer-family rows that still sit on
+ * the uncategorized placeholder file under the family's sign-picked
+ * locked sub — the list reads "Set aside" instead of a blank category
+ * line. Deliberate categories and splits stay untouched; new writes file
+ * at the edges, this one pass covers what already exists. Per-space
+ * overlays each file their own sub (transformation data is per-space).
+ */
+export async function migrateFamilySubs(store: StorageBackend, repo: Repo): Promise<number> {
+  const markerKey = 'txFamilySubs_v1';
+  if (await store.metaGet(markerKey)) return 0;
+
+  let touched = 0;
+  const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0);
+  for (const space of spaces) {
+    for (const tx of await visibleTransactions(store, space.id)) {
+      if (tx.deleted !== 0 || tx.splits?.length) continue;
+      if (tx.catId && tx.catId !== UNCATEGORIZED_ID) continue;
+      const sub = autoSubFor(tx.txType, tx.amountCents);
+      if (!sub) continue;
+      await writeTxTransform(repo, tx, { catId: sub });
       touched++;
     }
   }
@@ -107,7 +178,10 @@ export async function migrateUnlinkedTransferKinds(store: StorageBackend, repo: 
  * the source the same day). One pass re-derives those rows by sign.
  */
 export async function migrateSignContradictions(store: StorageBackend, repo: Repo): Promise<number> {
-  const markerKey = 'txSignType_v1';
+  // v2 (2026-08-01): rerun once — sign-blind MEMORY predictions kept
+  // writing contradicting standard types into txMeta overlays (which
+  // invariants never see) until predictTx learned the sign rule
+  const markerKey = 'txSignType_v2';
   if (await store.metaGet(markerKey)) return 0;
 
   let touched = 0;

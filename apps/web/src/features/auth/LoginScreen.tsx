@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from '@tanstack/react-router';
 import { useLogto } from '@logto/react';
 import { LANG_NAMES, LANGS, useLang } from '@/i18n';
@@ -8,9 +9,50 @@ import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Flag, langFlagCode } from '@/ui/Flag';
 import { Logo } from '@/ui/Logo';
-import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
+import { Sheet } from '@/ui/Sheet';
 import { callbackUri } from './logto';
-import { addOfflineProfile, deleteOfflineProfile, listOfflineProfiles } from './offlineProfiles';
+import { addOfflineProfile, listOfflineProfiles } from './offlineProfiles';
+import { MINA_EXPR } from '@/features/mina/assets';
+
+/**
+ * Mina's fullscreen heads-up before a SECOND offline profile (arc 8, the
+ * DebtHandoffInterstitial layout): profiles are fully separate worlds —
+ * spaces INSIDE one profile are how family/business/private split.
+ * Browser back = "go back" (standing rule).
+ */
+function ProfilesInterstitial({ onContinue, onBack }: Readonly<{ onContinue: () => void; onBack: () => void }>) {
+  const { t } = useLang();
+  const backRef = useRef(onBack);
+  backRef.current = onBack;
+  useEffect(() => {
+    window.history.pushState({ minaProfiles: true }, '');
+    const onPop = () => backRef.current();
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[130] flex flex-col items-center justify-center overflow-y-auto bg-bg px-6"
+      style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 12px)' }}
+      data-testid="mina-profiles-ask"
+    >
+      <div className="flex w-full max-w-[420px] flex-col items-center text-center">
+        <img src={MINA_EXPR.thinking} alt="Mina" className="max-h-[38dvh] w-auto max-w-[240px] rounded-2xl object-contain" />
+        <p className="mt-5 text-[19px] font-semibold text-ink">{t('mina.profiles.t')}</p>
+        <p className="mt-2 max-w-[360px] text-[14px] leading-relaxed text-ink-2">{t('mina.profiles.b')}</p>
+        <div className="mt-6 flex w-full max-w-[360px] flex-col gap-2">
+          <Button data-testid="mina-profiles-continue" onClick={onContinue}>
+            {t('mina.profiles.continue')}
+          </Button>
+          <Button variant="outline" data-testid="mina-profiles-back" onClick={onBack}>
+            {t('mina.profiles.back')}
+          </Button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
 import leafUrl from '@/assets/leaf.png';
 import loginBgUrl from '@/assets/login-bg.png';
 // re-encoded from the provided PNG (2.2MB) — the login screen is precached
@@ -57,37 +99,26 @@ function LogtoSignInButton({ onLine }: Readonly<{ onLine: boolean }>) {
   );
 }
 
-/** compact top-right language pill (legacy parity); code badges, no flag emoji */
+/** compact top-right language pill (legacy parity); code badges, no flag
+ *  emoji. The picker itself is the standard bottom Sheet now (user ss
+ *  2026-08-01: this was the app's one remaining popover-style modal). */
 function LangPill() {
-  const { lang, setLang } = useLang();
+  const { lang, setLang, t } = useLang();
   const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-
-  // tap anywhere else closes the popover (user report: it only closed
-  // by tapping the pill again)
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (e: PointerEvent) => {
-      const target = e.target instanceof Node ? e.target : null;
-      if (!rootRef.current?.contains(target)) setOpen(false);
-    };
-    document.addEventListener('pointerdown', onPointerDown);
-    return () => document.removeEventListener('pointerdown', onPointerDown);
-  }, [open]);
 
   return (
-    <div className="relative" ref={rootRef}>
+    <>
       <button
         data-testid="login-lang-trigger"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setOpen(true)}
         className="m-tap flex items-center gap-1.5 rounded-full border border-line bg-surface py-1.5 pr-2.5 pl-3 text-[12px] font-semibold text-ink-2 shadow-[0_2px_12px_rgba(0,0,0,0.10)]"
       >
         <Flag code={langFlagCode(lang)} size={18} />
         {LANG_NAMES[lang]}
         <Icon name={open ? 'chevron-up' : 'chevron-down'} size={14} color="var(--m-ink-3)" />
       </button>
-      {open && (
-        <div className="absolute top-[calc(100%+8px)] right-0 z-50 min-w-[180px] overflow-hidden rounded-card border border-line bg-surface shadow-[0_8px_32px_rgba(0,0,0,0.16)]">
+      <Sheet open={open} onOpenChange={setOpen} title={t('login.language')} size="compact">
+        <div className="overflow-hidden rounded-card border border-line bg-surface">
           {LANGS.map((code) => (
             <button
               key={code}
@@ -104,8 +135,8 @@ function LangPill() {
             </button>
           ))}
         </div>
-      )}
-    </div>
+      </Sheet>
+    </>
   );
 }
 
@@ -124,18 +155,9 @@ export function LoginScreen() {
   // back button — manual pushState + popstate, since /login is one route
   const [offlineView, setOfflineView] = useState<'intro' | 'profiles' | null>(null);
   const [profileName, setProfileName] = useState('');
-  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
-  const [profilesVersion, setProfilesVersion] = useState(0);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const profiles = listOfflineProfiles(); // re-read after a delete (profilesVersion)
-  void profilesVersion;
-
-  const removeProfile = async () => {
-    if (!deleteTarget) return;
-    await deleteOfflineProfile(deleteTarget.id);
-    setDeleteTarget(null);
-    setProfilesVersion((v) => v + 1);
-  };
+  // Mina's heads-up before minting a SECOND world (arc 8)
+  const [profilesAsk, setProfilesAsk] = useState(false);
+  const profiles = listOfflineProfiles();
 
   useEffect(() => {
     if (!offlineView) return;
@@ -166,6 +188,17 @@ export function LoginScreen() {
 
   const createOffline = () => {
     if (!profileName.trim()) return;
+    // the 2nd+ profile gets Mina's fullscreen heads-up first (arc 8):
+    // profiles are separate worlds — spaces split WITHIN one
+    if (profiles.length > 0) {
+      setProfilesAsk(true);
+      return;
+    }
+    enterOffline(addOfflineProfile(profileName).id);
+  };
+
+  const confirmSecondProfile = () => {
+    setProfilesAsk(false);
     enterOffline(addOfflineProfile(profileName).id);
   };
 
@@ -227,7 +260,9 @@ export function LoginScreen() {
             ))}
           </div>
 
-          <Button className="mt-auto w-full" data-testid="offline-continue" onClick={openProfiles}>
+          {/* right below the trade-off cards — mt-auto floated it to the
+              bottom of tall desktop viewports (user ss 2026-08-01) */}
+          <Button className="w-full" data-testid="offline-continue" onClick={openProfiles}>
             {t('offline.continueBtn')}
           </Button>
         </div>
@@ -256,58 +291,43 @@ export function LoginScreen() {
             {/* the headline follows reality (user ss): with no profile
                 yet there is nothing to "choose" */}
             <h1 className="m-h2 text-ink">{t(profiles.length ? 'offline.chooseProfile' : 'offline.createProfileTitle')}</h1>
-            {/* ONE profile per device (user ruling): spaces are how you
-                separate bookkeeping — parallel profiles would bury that */}
-            <p className="max-w-[300px] text-sm text-ink-3">{t(profiles.length ? 'offline.oneProfileHint' : 'offline.profileSub')}</p>
+            {/* multiple worlds are allowed now (arc 8) — the hint says
+                what a profile IS instead of forbidding a second one */}
+            <p className="max-w-[300px] text-sm text-ink-3">{t(profiles.length ? 'offline.profilesHint' : 'offline.profileSub')}</p>
           </div>
-          {profiles.length > 0 ? (
-            <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="offline-profiles">
+          {profiles.length > 0 && (
+            <div className="mb-4 overflow-hidden rounded-card border border-line bg-surface" data-testid="offline-profiles">
+              {/* deleting a profile moved to Settings → Profile (user
+                  ruling 2026-07-29: consistent with the online account) */}
               {profiles.map((p) => (
-                <div key={p.id} className="flex items-center">
-                  <button
-                    data-testid={`offline-profile-${p.id}`}
-                    onClick={() => enterOffline(p.id)}
-                    className="m-tap flex min-w-0 flex-1 items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
-                  >
-                    <Icon name="account-lock-outline" size={19} color="var(--m-ink-3)" />
-                    <span className="flex-1 truncate">{p.name}</span>
-                    <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
-                  </button>
-                  {/* delete the profile + ALL its data (user request) */}
-                  <button
-                    aria-label={t('action.delete')}
-                    data-testid={`offline-delete-${p.id}`}
-                    onClick={() => setDeleteTarget({ id: p.id, name: p.name })}
-                    className="m-tap flex h-10 w-10 shrink-0 items-center justify-center border-none bg-transparent pr-2 text-ink-4"
-                  >
-                    <Icon name="trash-can-outline" size={17} />
-                  </button>
-                </div>
+                <button
+                  key={p.id}
+                  data-testid={`offline-profile-${p.id}`}
+                  onClick={() => enterOffline(p.id)}
+                  className="m-tap flex w-full min-w-0 items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+                >
+                  <Icon name="account-lock-outline" size={19} color="var(--m-ink-3)" />
+                  <span className="flex-1 truncate">{p.name}</span>
+                  <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
+                </button>
               ))}
             </div>
-          ) : (
-            <div className="flex gap-2">
-              <input
-                data-testid="offline-name"
-                value={profileName}
-                onChange={(e) => setProfileName(e.target.value)}
-                placeholder={t('login.namePlaceholder')}
-                className="h-11 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 text-[14px] text-ink outline-none placeholder:text-ink-4"
-              />
-              <Button size="sm" className="h-11" data-testid="offline-create" onClick={createOffline} disabled={!profileName.trim()}>
-                {t('offline.addProfile')}
-              </Button>
-            </div>
           )}
-          <DangerConfirmSheet
-            open={deleteTarget !== null}
-            onOpenChange={(open) => !open && setDeleteTarget(null)}
-            title={t('offline.deleteTitle')}
-            body={t('offline.deleteBody', { name: deleteTarget?.name ?? '' })}
-            onConfirm={() => void removeProfile()}
-            testId="offline-delete"
-          />
+          {/* the add row stays available — "Add another profile" (arc 8) */}
+          <div className="flex gap-2">
+            <input
+              data-testid="offline-name"
+              value={profileName}
+              onChange={(e) => setProfileName(e.target.value)}
+              placeholder={t('login.namePlaceholder')}
+              className="h-11 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 text-[14px] text-ink outline-none placeholder:text-ink-4"
+            />
+            <Button size="sm" className="h-11" data-testid="offline-create" onClick={createOffline} disabled={!profileName.trim()}>
+              {t(profiles.length ? 'offline.addAnother' : 'offline.addProfile')}
+            </Button>
+          </div>
         </div>
+        {profilesAsk && <ProfilesInterstitial onContinue={confirmSecondProfile} onBack={() => setProfilesAsk(false)} />}
       </div>
     );
   }

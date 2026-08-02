@@ -1,4 +1,4 @@
-import { UNCATEGORIZED_ID } from './categories';
+import { UNCATEGORIZED_ID, autoSubFor } from './categories';
 import { primaryCatId } from './splits';
 import { standardTypeFor } from './txKind';
 import type { TxKind } from './txKind';
@@ -70,18 +70,47 @@ export function withKind(draft: ReviewDraft, kind: TxKind, amountCents: number, 
   if (kind === 'standard') return withType({ ...draft, linkedAccountId: undefined }, standardTypeFor(amountCents), catalog);
   if (kind === 'adjustment') return withType({ ...draft, linkedAccountId: undefined }, 'adjustment', catalog);
   // transfer: an already-linked counterparty keeps its derived member;
-  // otherwise plain 'transfer' until the (mandatory) pick lands
-  return withType(draft, draft.linkedAccountId ? draft.txType : 'transfer', catalog);
+  // otherwise plain 'transfer' until the pick (account or bare name —
+  // funding included, user correction 2026-08-01) lands
+  return withFamilyCategory(withType(draft, draft.linkedAccountId ? draft.txType : 'transfer', catalog), amountCents);
 }
 
-/** the counter-account suggests its type; the suggestion runs through withType */
+/**
+ * Arc 2 (locked doors): a transfer-family draft without a REAL category
+ * files under the family's sign-picked locked sub — the card reads
+ * "Transfer out" instead of hiding behind the uncategorized placeholder.
+ * A deliberate category (splits included) is never touched.
+ */
+export function withFamilyCategory(draft: ReviewDraft, amountCents: number): ReviewDraft {
+  if (draft.splits?.length) return draft;
+  const sub = autoSubFor(draft.txType, amountCents);
+  if (!sub) return draft;
+  if (draft.catId && draft.catId !== UNCATEGORIZED_ID) return draft;
+  return { ...draft, catId: sub };
+}
+
+/**
+ * The "no counter account" exit (arc 2): the user names the transfer-family
+ * member directly. The draft is typed, files under the sign-picked locked
+ * sub, and deliberately carries NO counterparty — a reporting label that
+ * moves no other balance.
+ */
+export function withBareType(draft: ReviewDraft, txType: TxType, amountCents: number, catalog: DraftCatalog): ReviewDraft {
+  return withFamilyCategory(withType({ ...draft, linkedAccountId: undefined }, txType, catalog), amountCents);
+}
+
+/** the counter-account suggests its type; the suggestion runs through
+ *  withType, and a placeholder category files under the family's locked
+ *  sub when the money's sign is known (arc 2) */
 export function withLinkedAccount(
   draft: ReviewDraft,
   account: { id: string; type: AccountType } | null,
   catalog: DraftCatalog,
+  amountCents?: number,
 ): ReviewDraft {
   if (!account) return { ...draft, linkedAccountId: undefined };
-  return withType({ ...draft, linkedAccountId: account.id }, typeForLinkedAccount(account.type), catalog);
+  const next = withType({ ...draft, linkedAccountId: account.id }, typeForLinkedAccount(account.type), catalog);
+  return amountCents === undefined ? next : withFamilyCategory(next, amountCents);
 }
 
 /** splits carry the category: the largest slice represents the whole */
@@ -96,8 +125,9 @@ export function withSplits(draft: ReviewDraft, splits: TxSplit[] | undefined): R
  *  use the hidden 'uncategorized' builtin as a by-design placeholder. */
 export const draftReady = (draft: ReviewDraft): boolean => {
   if (!draft.catId) return false;
-  // adjustments are corrections, not spending — same placeholder story
-  if (draft.txType === 'transfer' || draft.txType === 'adjustment') return true;
+  // adjustments are corrections and funding moves between books — not
+  // spending; same placeholder story as plain transfers
+  if (draft.txType === 'transfer' || draft.txType === 'funding' || draft.txType === 'adjustment') return true;
   if (draft.catId === 'uncategorized') return false;
   return !draft.splits?.some((slice) => slice.catId === 'uncategorized');
 };

@@ -63,6 +63,36 @@ describe('LoginScreen', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it('a SECOND profile passes Mina’s heads-up first (arc 8)', async () => {
+    localStorage.setItem('munni_offline_profiles', JSON.stringify([{ id: 'p1', name: 'Okkes', createdAt: 1 }]));
+    renderApp('/login', { signedIn: false });
+    fireEvent.click(await screen.findByTestId('login-offline-btn'));
+    fireEvent.click(screen.getByTestId('offline-continue'));
+    await screen.findByTestId('screen-offline-profiles');
+
+    // the existing world is offered AND the add row stays available
+    expect(screen.getByTestId('offline-profile-p1')).toBeTruthy();
+    fireEvent.change(screen.getByTestId('offline-name'), { target: { value: 'Partner' } });
+    fireEvent.click(screen.getByTestId('offline-create'));
+
+    // Mina explains separate worlds; Go back changes nothing
+    await screen.findByTestId('mina-profiles-ask');
+    fireEvent.click(screen.getByTestId('mina-profiles-back'));
+    await waitFor(() => expect(screen.queryByTestId('mina-profiles-ask')).toBeNull());
+    expect(JSON.parse(localStorage.getItem('munni_offline_profiles')!)).toHaveLength(1);
+
+    // Continue mints the second world and enters it
+    fireEvent.click(screen.getByTestId('offline-create'));
+    await screen.findByTestId('mina-profiles-ask');
+    fireEvent.click(screen.getByTestId('mina-profiles-continue'));
+    await waitFor(() => {
+      const profiles = JSON.parse(localStorage.getItem('munni_offline_profiles')!) as { name: string }[];
+      expect(profiles.map((p) => p.name)).toEqual(['Okkes', 'Partner']);
+    });
+    expect(readSessionIdentity()?.kind).toBe('offline');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  }, 15_000);
+
   it('the language pill switches the UI language and persists it', async () => {
     renderApp('/login', { signedIn: false });
     fireEvent.click(await screen.findByTestId('login-lang-trigger'));
@@ -100,36 +130,11 @@ describe('LoginScreen', () => {
     fireEvent.click(await screen.findByTestId('login-offline-btn'));
     fireEvent.click(await screen.findByTestId('offline-continue'));
     const profileBtn = await screen.findByText('Okkes');
+    // deletion moved to Settings → Profile (user ruling 2026-07-29) —
+    // the chooser offers no destructive affordance any more
+    expect(document.querySelector('[data-testid^="offline-delete-"]')).toBeNull();
     fireEvent.click(profileBtn.closest('button')!);
     expect(await screen.findByTestId('screen-home')).toBeTruthy();
     await waitFor(() => expect(readSessionIdentity()).toEqual(identity));
   });
-
-  it('deletes the offline profile AND its data behind a danger confirm', async () => {
-    // create + use a profile so real data exists
-    const first = renderApp('/login', { signedIn: false });
-    fireEvent.click(await screen.findByTestId('login-offline-btn'));
-    fireEvent.click(await screen.findByTestId('offline-continue'));
-    fireEvent.change(await screen.findByTestId('offline-name'), { target: { value: 'Okkes' } });
-    fireEvent.click(screen.getByTestId('offline-create'));
-    await screen.findByTestId('screen-onboarding');
-    fireEvent.click(screen.getByTestId('onboarding-save'));
-    fireEvent.click(await screen.findByTestId('onboarding-lock-later'));
-    await screen.findByTestId('screen-home');
-    first.unmount();
-    localStorage.removeItem('munni_session');
-
-    renderApp('/login', { signedIn: false });
-    fireEvent.click(await screen.findByTestId('login-offline-btn'));
-    fireEvent.click(await screen.findByTestId('offline-continue'));
-    await screen.findByText('Okkes');
-    const del = document.querySelector('[data-testid^="offline-delete-"]') as HTMLElement;
-    fireEvent.click(del);
-    fireEvent.click(await screen.findByTestId('offline-delete-confirm'));
-    // registry emptied → the create input returns
-    expect(await screen.findByTestId('offline-name')).toBeTruthy();
-    expect(screen.queryByText('Okkes')).toBeNull();
-    expect(JSON.parse(localStorage.getItem('munni_offline_profiles') ?? '[]')).toHaveLength(0);
-  });
-
 });

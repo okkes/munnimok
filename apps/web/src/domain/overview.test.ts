@@ -95,6 +95,10 @@ describe('overviewSummary', () => {
       tx({ amountCents: -2_000 }),
       tx({ txType: 'saving', amountCents: -40_000 }),
       tx({ txType: 'investment', amountCents: -25_000 }),
+      // -500 into the family pot, +100 taken back: net +400 funded (green)
+      tx({ txType: 'funding', amountCents: -50_000 }),
+      tx({ txType: 'funding', amountCents: 10_000 }),
+      tx({ txType: 'debtPayment', amountCents: -30_000 }),
       tx({ amountCents: -99_900, date: '2026-06-30' }), // outside period
       tx({ amountCents: -99_900, deleted: 1 } as Partial<TransactionRow>),
     ];
@@ -104,6 +108,8 @@ describe('overviewSummary', () => {
       expenseCents: 7_000,
       savingCents: 40_000,
       investmentCents: 25_000,
+      fundingCents: 40_000,
+      debtCents: 30_000,
     });
   });
 

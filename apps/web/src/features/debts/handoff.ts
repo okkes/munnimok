@@ -1,13 +1,18 @@
 /**
- * One-shot handoff into debt creation (user design 2026-07-28): the
- * recurring form's Debt kind — and the auto-detected recurring
- * suggestions — redirect here carrying what they already know. Module
- * state, not storage: it only needs to survive the client-side
- * navigation to /debts, and a reload starting fresh is correct.
+ * One-shot handoff into loan creation (user design 2026-07-28; loans
+ * v2 2026-08-01: the target is the account chooser now — the account
+ * IS the debt): the recurring form's Debt kind — and the auto-detected
+ * recurring suggestions — redirect to /debts carrying what they
+ * already know. The recurring's amount and rhythm become the loan's
+ * PAYMENT plan. Module state, not storage: it only needs to survive
+ * the client-side navigation, and a reload starting fresh is correct.
  */
+import type { RecurringEvery } from '@/db/types';
+
 export interface DebtHandoff {
   name?: string;
-  originalCents?: number;
+  paymentCents?: number;
+  paymentEvery?: RecurringEvery;
   merchantKey?: string;
 }
 

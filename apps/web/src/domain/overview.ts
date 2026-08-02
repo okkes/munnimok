@@ -16,15 +16,17 @@ import type { Period } from './periods';
  * savings/brokerage accounts are excluded from those buckets.
  */
 
-export type OverviewKind = 'income' | 'expense' | 'saving' | 'investment';
+export type OverviewKind = 'income' | 'expense' | 'saving' | 'investment' | 'funding' | 'debt';
 
-export const OVERVIEW_KINDS: OverviewKind[] = ['income', 'expense', 'saving', 'investment'];
+export const OVERVIEW_KINDS: OverviewKind[] = ['income', 'expense', 'saving', 'investment', 'funding', 'debt'];
 
 const MIRROR_ACCOUNT_TYPES: Record<OverviewKind, string[]> = {
   income: [],
   expense: [],
   saving: ['savings'],
   investment: ['brokerage'],
+  funding: [], // the other side lives in ANOTHER space's books — no in-space mirror
+  debt: ['loan', 'mortgage'],
 };
 
 /** signed contribution of one transaction to a bucket (cents) */
@@ -37,6 +39,12 @@ export function contributionCents(kind: OverviewKind, tx: TransactionRow): numbe
     case 'saving':
     case 'investment':
       return -tx.amountCents; // -400 out of checking = +400 put aside
+    case 'funding':
+      // -500 into the family pot = +500 funded (green); taking money
+      // back OUT of a pot turns the period negative (user rule)
+      return -tx.amountCents;
+    case 'debt':
+      return -tx.amountCents; // -300 to the loan = +300 repaid; borrowing flips it
   }
 }
 
@@ -45,6 +53,8 @@ const KIND_TX_TYPE: Record<OverviewKind, TxType> = {
   expense: 'expense',
   saving: 'saving',
   investment: 'investment',
+  funding: 'funding',
+  debt: 'debtPayment',
 };
 
 export function txsForKind(
@@ -66,6 +76,8 @@ export interface OverviewSummary {
   expenseCents: number;
   savingCents: number;
   investmentCents: number;
+  fundingCents: number;
+  debtCents: number;
 }
 
 export function overviewSummary(
@@ -80,6 +92,8 @@ export function overviewSummary(
     expenseCents: total('expense'),
     savingCents: total('saving'),
     investmentCents: total('investment'),
+    fundingCents: total('funding'),
+    debtCents: total('debt'),
   };
 }
 

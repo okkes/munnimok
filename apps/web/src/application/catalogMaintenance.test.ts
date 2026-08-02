@@ -144,6 +144,85 @@ describe('unlinked transfer-kind migration (kind simplification)', () => {
     // marker gates the rerun
     expect(await migrateUnlinkedTransferKinds(store, repo)).toBe(0);
   });
+
+  it('a bare "no counter account" label (arc 2) is deliberate — never flattened', async () => {
+    const store = new DexieBackend(new MunniDB(`munni_tkm_${Math.random().toString(36).slice(2)}`));
+    stores.push(store);
+    const repo = new Repo(store, new HlcClock('tkm'), { trackOutbox: false });
+    await repo.upsert('space', SPACE, SPACE, { name: 'P', kind: 'personal', currency: 'EUR', periodType: 'month' });
+    const base = { accountId: 'a', currency: 'EUR', merchant: 'X', needsReview: 0 as const };
+    // fresh-device scenario: synced rows include a deliberate bare pick
+    // (locked sub filed at the write edge) next to a true old orphan
+    await repo.upsert('transaction', SPACE, 'bare', { ...base, date: '2026-01-01', amountCents: -5_000, txType: 'debtPayment', catId: 'loanRepayment' });
+    await repo.upsert('transaction', SPACE, 'orphan', { ...base, date: '2026-01-02', amountCents: -5_000, txType: 'debtPayment', catId: 'housing' });
+
+    expect(await migrateUnlinkedTransferKinds(store, repo)).toBe(1);
+    expect(await store.get('transaction', 'bare')).toMatchObject({ txType: 'debtPayment', catId: 'loanRepayment' });
+    expect((await store.get('transaction', 'orphan'))?.txType).toBe('expense');
+  });
+});
+
+describe('retired debt subs refile by sign (2026-08-01)', () => {
+  const stores: DexieBackend[] = [];
+  afterEach(async () => {
+    for (const s of stores.splice(0)) await s.destroy();
+  });
+
+  it('lendMoney/creditCardPayment rows land on Repaid or Borrowed; others untouched', async () => {
+    const { migrateRetiredDebtSubs } = await import('./catalogMaintenance');
+    const store = new DexieBackend(new MunniDB(`munni_rds_${Math.random().toString(36).slice(2)}`));
+    stores.push(store);
+    const repo = new Repo(store, new HlcClock('rds'), { trackOutbox: false });
+    await repo.upsert('space', SPACE, SPACE, { name: 'P', kind: 'personal', currency: 'EUR', periodType: 'month' });
+    const base = { accountId: 'a', currency: 'EUR', merchant: 'X', txType: 'debtPayment' as const, needsReview: 0 as const };
+    await repo.upsert('transaction', SPACE, 'lent', { ...base, date: '2026-01-01', amountCents: -5_000, catId: 'lendMoney' });
+    await repo.upsert('transaction', SPACE, 'cc', { ...base, date: '2026-01-02', amountCents: 4_000, catId: 'creditCardPayment' });
+    await repo.upsert('transaction', SPACE, 'kept', { ...base, date: '2026-01-03', amountCents: -2_000, catId: 'loanRepayment' });
+    // a per-space overlay on a raw feed row refiles too
+    await repo.upsert('transaction', 'feedX', 'rawTx', { accountId: 'af', currency: 'EUR', merchant: 'B', date: '2026-01-04', amountCents: -900 } as never);
+    await repo.upsert('txMeta', SPACE, 'meta1', { txId: 'rawTx', catId: 'creditCardPayment' } as never);
+
+    expect(await migrateRetiredDebtSubs(store, repo)).toBe(3);
+    expect((await store.get('transaction', 'lent'))?.catId).toBe('loanRepayment'); // debit → Repaid
+    expect((await store.get('transaction', 'cc'))?.catId).toBe('debtBorrowed'); // credit → Borrowed
+    expect((await store.get('transaction', 'kept'))?.catId).toBe('loanRepayment');
+    expect((await store.get('txMeta', 'meta1'))?.catId).toBe('loanRepayment');
+    // marker gates the rerun
+    expect(await migrateRetiredDebtSubs(store, repo)).toBe(0);
+  });
+});
+
+describe('family-sub back-fill (arc 2 locked doors)', () => {
+  const stores: DexieBackend[] = [];
+  afterEach(async () => {
+    for (const s of stores.splice(0)) await s.destroy();
+  });
+
+  it('placeholder transfer-family rows file the sign-picked sub, once; deliberate data survives', async () => {
+    const { migrateFamilySubs } = await import('./catalogMaintenance');
+    const store = new DexieBackend(new MunniDB(`munni_tfs_${Math.random().toString(36).slice(2)}`));
+    stores.push(store);
+    const repo = new Repo(store, new HlcClock('tfs'), { trackOutbox: false });
+    await repo.upsert('space', SPACE, SPACE, { name: 'P', kind: 'personal', currency: 'EUR', periodType: 'month' });
+    const base = { accountId: 'a', currency: 'EUR', merchant: 'X', needsReview: 0 as const };
+    // linked pre-arc-2 transfers on the hidden placeholder — both signs
+    await repo.upsert('transaction', SPACE, 'out', { ...base, date: '2026-01-01', amountCents: -5_000, txType: 'saving', linkedAccountId: 'b', catId: 'uncategorized' });
+    await repo.upsert('transaction', SPACE, 'in', { ...base, date: '2026-01-02', amountCents: 5_000, txType: 'transfer', linkedAccountId: 'b' });
+    // deliberate category, splits, and standard rows stay untouched
+    await repo.upsert('transaction', SPACE, 'kept', { ...base, date: '2026-01-03', amountCents: -2_000, txType: 'saving', linkedAccountId: 'b', catId: 'savingWithdraw' });
+    await repo.upsert('transaction', SPACE, 'split', { ...base, date: '2026-01-04', amountCents: -2_000, txType: 'saving', linkedAccountId: 'b', splits: [{ catId: 'groceries', amountCents: 2_000 }] });
+    await repo.upsert('transaction', SPACE, 'ex', { ...base, date: '2026-01-05', amountCents: -300, txType: 'expense' });
+
+    expect(await migrateFamilySubs(store, repo)).toBe(2);
+    expect((await store.get('transaction', 'out'))?.catId).toBe('savingDeposit');
+    expect((await store.get('transaction', 'in'))?.catId).toBe('transferIn');
+    expect((await store.get('transaction', 'kept'))?.catId).toBe('savingWithdraw');
+    expect((await store.get('transaction', 'split'))?.catId).toBeUndefined();
+    expect((await store.get('transaction', 'ex'))?.catId).toBeUndefined();
+
+    // marker gates the rerun
+    expect(await migrateFamilySubs(store, repo)).toBe(0);
+  });
 });
 
 describe('sign-contradiction heal (pre-2026-07-28 bulk-apply damage)', () => {

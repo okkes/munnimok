@@ -5,10 +5,13 @@ import { isNativeApp } from '@/lib/platform';
 import { LOCALES, useLang } from '@/i18n';
 import { destroyIdentityData, useData } from '@/app/data';
 import { logActivity } from '@/application/activity';
+import { applyHistoryMove, historyMoveImpact } from '@/application/historyStart';
+import type { HistoryMoveImpact } from '@/application/historyStart';
 import { OFFLINE_REASON_KEYS, useOfflineReason } from '@/app/OfflineBanner';
 import { oidcSignOut } from '@/app/authToken';
 import { useSession } from '@/app/session';
 import { AppBar } from '@/ui/AppBar';
+import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Chip, Row } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
@@ -110,6 +113,10 @@ export function SettingsScreen() {
   const navigate = useNavigate();
   const [currencyOpen, setCurrencyOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  // moving the history start is impactful (arc 5): the picked date stays
+  // a DRAFT with its consequences counted out loud until Apply
+  const [historyDraft, setHistoryDraft] = useState<string | null>(null);
+  const [historyImpact, setHistoryImpact] = useState<HistoryMoveImpact | null>(null);
   // readers can look at the space's period/currency/history but not change them
   const myRole = useMyRole(spaceId, identity?.kind === 'user');
   const readOnly = myRole === 'reader';
@@ -119,6 +126,31 @@ export function SettingsScreen() {
     await repo.upsert('space', activeSpace.id, activeSpace.id, changes);
     void logActivity(store, repo, activeSpace.id, 'spaceEdit', activeSpace.name);
   };
+
+  const stageHistoryDate = (value: string) => {
+    setHistoryDraft(value);
+    setHistoryImpact(null);
+    void historyMoveImpact(store, spaceId, value).then(setHistoryImpact);
+  };
+  const closeHistory = (open: boolean) => {
+    setHistoryOpen(open);
+    if (!open) {
+      setHistoryDraft(null);
+      setHistoryImpact(null);
+    }
+  };
+  const applyHistory = async () => {
+    if (!historyDraft || readOnly) return;
+    await applyHistoryMove(store, repo, spaceId, historyDraft);
+    setHistoryDraft(null);
+    setHistoryImpact(null);
+    setHistoryOpen(false);
+  };
+  // a jump further than ~a month back deserves the step-slowly hint
+  const bigOlderJump =
+    historyImpact?.direction === 'older' &&
+    !!historyDraft &&
+    (new Date(activeSpace?.historyStartDate ?? historyDraft).getTime() - new Date(historyDraft).getTime()) / 86_400_000 > 31;
 
   // extracted settings show their current value on the row (like the
   // language row in Global settings) — the list doubles as an overview
@@ -219,7 +251,9 @@ export function SettingsScreen() {
                 // big) space-settings screen — user remark; period,
                 // currency and history start were extracted next (same
                 // remark: that screen kept only the space's identity)
-                { testId: 'settings-space-accounts-row', icon: 'bank-outline', labelKey: 'space.financialAccounts', to: '/spaces/$spaceId/accounts' },
+                // wallet vs bank (arc 9): the space's own pocket, not the
+                // global bank overview — the icons carry the distinction
+                { testId: 'settings-space-accounts-row', icon: 'wallet-outline', labelKey: 'space.financialAccounts', to: '/spaces/$spaceId/accounts' },
                 { testId: 'settings-space-members-row', icon: 'account-multiple-outline', labelKey: 'space.members', to: '/spaces/$spaceId/members', userOnly: true },
                 { testId: 'settings-categories-row', icon: 'shape-outline', labelKey: 'screen.categories', to: '/categories' },
                 { testId: 'settings-period-row', icon: 'calendar-month-outline', labelKey: 'space.periodTitle', to: '/spaces/$spaceId/period' },
@@ -292,7 +326,7 @@ export function SettingsScreen() {
 
       {/* extracted space settings (user request): small single-purpose
           sheets — picking a value applies immediately (LWW makes it safe) */}
-      <Sheet open={currencyOpen} onOpenChange={setCurrencyOpen} title={t('space.ledgerCurrency')} size="form">
+      <Sheet open={currencyOpen} onOpenChange={setCurrencyOpen} title={t('space.ledgerCurrency')} size="form" dragHandle>
         <div className="flex flex-col gap-3 pt-1">
           {/* "ledger" is deliberate (currency plan CD5): this anchors
               budgets, goals and period totals for every member — how
@@ -319,20 +353,50 @@ export function SettingsScreen() {
         </div>
       </Sheet>
 
-      <Sheet open={historyOpen} onOpenChange={setHistoryOpen} title={t('space.historyStart')} size="form">
+      <Sheet open={historyOpen} onOpenChange={closeHistory} title={t('space.historyStart')} size="form">
         <div className="flex flex-col gap-3 pt-1">
           <p className="text-[12px] text-ink-3">{t('space.historyStartSub')}</p>
           {readOnly && <p className="text-[12px] text-ink-3">{t('space.readerNote')}</p>}
           <input
             data-testid="space-history-start"
             type="date"
-            value={activeSpace?.historyStartDate ?? isoMonthsAgo(DEFAULT_HISTORY_MONTHS)}
+            value={historyDraft ?? activeSpace?.historyStartDate ?? isoMonthsAgo(DEFAULT_HISTORY_MONTHS)}
             disabled={readOnly}
             onChange={(e) => {
-              if (e.target.value) void updateSpace({ historyStartDate: e.target.value });
+              if (e.target.value) stageHistoryDate(e.target.value);
             }}
             className="h-12 w-full appearance-none rounded-input border border-line bg-surface px-4 text-left text-[15px] text-ink outline-none"
           />
+          {/* the consequences, counted BEFORE anything happens (arc 5) */}
+          {historyDraft && historyImpact && historyImpact.direction !== 'none' && (
+            <div className="flex flex-col gap-2 rounded-card border border-line bg-bg-2 px-4 py-3" data-testid="space-history-impact">
+              {historyImpact.direction === 'newer' ? (
+                <>
+                  {historyImpact.feedHiddenCount > 0 && (
+                    <p className="text-[12px] text-ink-2">{t('space.historyHideCount', { n: historyImpact.feedHiddenCount })}</p>
+                  )}
+                  {historyImpact.manualDeleteCount > 0 && (
+                    <p className="text-[12px] font-medium text-negative" data-testid="space-history-delete-warn">
+                      {t('space.historyDeleteCount', { n: historyImpact.manualDeleteCount })}
+                    </p>
+                  )}
+                  {historyImpact.feedHiddenCount === 0 && historyImpact.manualDeleteCount === 0 && (
+                    <p className="text-[12px] text-ink-3">{t('space.historyNoImpact')}</p>
+                  )}
+                </>
+              ) : (
+                <>
+                  <p className="text-[12px] text-ink-2" data-testid="space-history-surface-note">
+                    {t('space.historySurfaceCount', { n: historyImpact.surfacedCount })}
+                  </p>
+                  {bigOlderJump && <p className="text-[12px] text-ink-3">{t('space.historyStepHint')}</p>}
+                </>
+              )}
+              <Button size="sm" data-testid="space-history-apply" onClick={() => void applyHistory()}>
+                {t('space.historyApply')}
+              </Button>
+            </div>
+          )}
         </div>
       </Sheet>
     </div>

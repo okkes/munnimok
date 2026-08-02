@@ -89,13 +89,17 @@ describe('activity history', () => {
     fireEvent.click(screen.getByTestId('tx-add'));
     fireEvent.change(await screen.findByTestId('txform-amount'), { target: { value: '4,50' } });
     fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Bakery' } });
+    // two demo manual accounts → the account must be picked explicitly
+    fireEvent.click(await screen.findByTestId('txform-account'));
+    fireEvent.click(await screen.findByTestId('txform-account-demo_main'));
     fireEvent.click(screen.getByTestId('txform-save'));
     await waitFor(() => expect(screen.getByTestId('tx-list').textContent).toContain('Bakery'));
 
     fireEvent.click(screen.getAllByTestId('tab-home')[0]);
     await screen.findByTestId('screen-home');
     fireEvent.click(screen.getByTestId('home-notifications'));
-    // demo identity: no server alerts — the sheet opens straight on history
+    // the audit trail lives on the Activity tab now (arc 6)
+    fireEvent.click(await screen.findByTestId('notif-tab-activity'));
     const list = await screen.findByTestId('history-list');
     expect(list.textContent).toContain('Bakery');
 

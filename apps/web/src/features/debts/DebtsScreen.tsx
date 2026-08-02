@@ -1,297 +1,182 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@/db/useQuery';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
-import { useDebtOps, useDebtStatuses } from '@/application/debts';
-import type { DebtStatus } from '@/application/debts';
-import { logActivity } from '@/application/activity';
-import { manualBalanceDate } from '@/features/accounts/accountTypes';
-import { useSpaceAccounts } from '@/application/transactions';
+import { useLoanStatuses } from '@/application/debts';
+import type { LoanStatus } from '@/application/debts';
+import { useSpaceTransactions, useTxTransform } from '@/application/transactions';
+import type { SpaceTx } from '@/application/transactions';
 import { localToday } from '@/application/recurring';
-import { projectPayoff } from '@/domain/debts';
-import type { DebtRow } from '@/db/types';
-import { parseCents } from '@/lib/money';
+import { monthlyPaymentCents, paymentsPerYear, projectPayoff } from '@/domain/debts';
+import type { AccountRow, RecurringEvery } from '@/db/types';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
+import { AddAccountChooser } from '@/features/accounts/AddAccountChooser';
+import { typeDef } from '@/features/accounts/accountTypes';
 import { HelpButton } from '@/features/help/HelpButton';
 import { IntroCard } from '@/features/help/IntroCard';
-import { MinaNote } from '@/features/mina/MinaNote';
 import { takeDebtHandoff } from './handoff';
-import type { DebtHandoff } from './handoff';
+import { LoanMatchSheet } from './LoanMatchSheet';
 import { AppBar, IconButton } from '@/ui/AppBar';
-import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { ProgressBar, Tile } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
+import { TxRow } from '@/ui/TxRow';
 
-export const DEBT_ICONS = ['home-percent-outline', 'credit-card-outline', 'car-outline', 'school-outline', 'hand-coin-outline', 'account-cash-outline'] as const;
-const LIABILITY_TYPES = new Set(['credit', 'mortgage', 'loan']);
-/** select sentinel: quick-create a loan account named after the debt */
-const NEW_ACCOUNT = '__new__';
+const PAYMENT_LABEL = { week: 'debts.perWeek', month: 'debts.perMonth', year: 'debts.perYear' } as const;
 
-/** create/edit sheet. A debt is ALWAYS backed by a loan account (user
- *  rule 2026-07-28): the account's balance is the remaining truth and
- *  only transactions move it — a missing account quick-creates here. */
-export function DebtFormSheet({
-  initial,
-  prefill,
-  onClose,
-}: Readonly<{ initial: DebtRow | 'new' | null; prefill?: DebtHandoff; onClose: () => void }>) {
+/** "{amount} / week|month|year" — the payment line follows the cadence */
+export const paymentLabelKey = (every?: RecurringEvery): (typeof PAYMENT_LABEL)[keyof typeof PAYMENT_LABEL] =>
+  PAYMENT_LABEL[every ?? 'month'];
+
+/** the loan's tile: its chosen logo, else the account type's icon */
+export function LoanTile({ account, size }: Readonly<{ account: AccountRow; size?: 36 | 48 }>) {
+  if (account.logo) {
+    return <img src={account.logo} alt="" className="h-10 w-10 shrink-0 rounded-xl object-contain" style={size ? { width: size, height: size } : undefined} />;
+  }
+  return <Tile icon={typeDef(account.type).icon} tone="negative" size={size} />;
+}
+
+/**
+ * The virtual "Unassigned payments" bucket (arc 3): bare debt-payment
+ * rows (no counter account — the arc-2 exit, or imports) summed as a
+ * computed card, never stored. Each row assigns to a loan account with
+ * one tap — the link files it under that loan's history.
+ */
+function UnassignedPaymentsCard({
+  bare,
+  loans,
+  currency,
+}: Readonly<{ bare: SpaceTx[]; loans: readonly AccountRow[]; currency: string }>) {
   const { t } = useLang();
   const { fmt } = useDisplayMoney();
-  const ops = useDebtOps();
-  const { store, repo, spaceId } = useData();
-  const accounts = useSpaceAccounts();
-  const editing = initial !== 'new' && initial !== null ? initial : null;
-  const [name, setName] = useState('');
-  const [icon, setIcon] = useState<string>(DEBT_ICONS[0]);
-  const [accountId, setAccountId] = useState('');
-  const [original, setOriginal] = useState('');
-  const [remaining, setRemaining] = useState('');
-  const [apr, setApr] = useState('');
-  const [payment, setPayment] = useState('');
-  const [confirmDelete, setConfirmDelete] = useState(false);
-
-  // seed keyed on the record's ID, never object identity (the iOS
-  // reseed class: re-emitted rows must not wipe mid-typing edits)
-  const seedKey = initial === null ? null : (editing?.id ?? 'new');
-  useEffect(() => {
-    // a fresh sheet may arrive PREFILLED (the recurring form's Debt
-    // kind hands its facts over)
-    setName(editing?.name ?? prefill?.name ?? '');
-    setIcon(editing?.icon ?? DEBT_ICONS[0]);
-    setAccountId(editing?.accountId ?? '');
-    const seededOriginal = editing?.originalCents ?? prefill?.originalCents;
-    setOriginal(seededOriginal ? (seededOriginal / 100).toFixed(2) : '');
-    setRemaining('');
-    setApr(editing?.interestPctYear === undefined ? '' : String(editing.interestPctYear));
-    setPayment(editing?.paymentCents ? (editing.paymentCents / 100).toFixed(2) : '');
-    setConfirmDelete(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seedKey]);
-
-  const liabilities = (accounts ?? []).filter((a) => a.archived !== 1 && LIABILITY_TYPES.has(a.type));
-  const originalCents = parseCents(original);
-  const creating = accountId === NEW_ACCOUNT;
-  const valid = name.trim().length > 0 && originalCents !== null && originalCents > 0 && accountId !== '';
-
-  const save = async () => {
-    if (!valid || originalCents === null) return;
-    const paymentCents = parseCents(payment);
-    const aprNumber = Number.parseFloat(apr.replace(',', '.'));
-    let backingId = accountId;
-    if (creating) {
-      // the quick-created loan account opens at the remaining value (or
-      // the original) — from here only transactions move it
-      const openingCents = parseCents(remaining) ?? originalCents;
-      backingId = repo.newId();
-      const space = await store.get('space', spaceId);
-      await repo.upsert('account', spaceId, backingId, {
-        name: name.trim(),
-        type: 'loan',
-        source: 'manual',
-        currency: space?.currency ?? 'EUR',
-        balanceCents: -Math.abs(openingCents),
-        balanceAsOf: manualBalanceDate(),
-      });
-      void logActivity(store, repo, spaceId, 'accountAdd', name.trim());
-    }
-    await ops.save(editing?.id ?? null, {
-      name: name.trim(),
-      icon,
-      accountId: backingId,
-      // an auto-detected recurring hands its merchant over — the debt's
-      // payment history then includes those past transactions
-      ...(editing ? {} : { merchantKey: prefill?.merchantKey }),
-      originalCents,
-      // remaining is the ACCOUNT's business now — never stored again
-      remainingCents: undefined,
-      // 0% is a real answer; only the EMPTY field means "remind me"
-      interestPctYear: Number.isFinite(aprNumber) && aprNumber >= 0 ? aprNumber : undefined,
-      paymentCents: paymentCents && paymentCents > 0 ? paymentCents : undefined,
-      archived: editing?.archived ?? 0,
-    });
-    onClose();
-  };
-
-  const removeDebt = async () => {
-    if (!editing) return;
-    if (!confirmDelete) {
-      setConfirmDelete(true);
-      return;
-    }
-    await ops.remove(editing.id);
-    onClose();
-  };
-
+  const transform = useTxTransform();
+  const [open, setOpen] = useState(false);
+  const [assignTx, setAssignTx] = useState<SpaceTx | null>(null);
+  const targets = loans.filter((a) => a.archived !== 1);
+  if (bare.length === 0) return null;
+  const total = bare.reduce((sum, tx) => sum + Math.abs(tx.amountCents), 0);
   return (
-    <Sheet open={initial !== null} onOpenChange={(open) => !open && onClose()} title={editing ? t('debts.edit') : t('debts.new')} size="tall">
-      <div className="flex flex-col gap-3 pt-1">
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {DEBT_ICONS.map((candidate) => (
+    <>
+      <button
+        data-testid="debts-unassigned"
+        onClick={() => setOpen(true)}
+        className="m-tap mt-3 flex w-full items-center gap-3 rounded-card border border-dashed border-line bg-surface p-4 text-left"
+      >
+        <Tile icon="help-circle-outline" tone="neutral" />
+        <span className="min-w-0 flex-1">
+          <span className="flex items-baseline justify-between gap-2">
+            <span className="truncate text-[15px] font-semibold text-ink">{t('debts.unassigned')}</span>
+            <span className="m-num shrink-0 text-[14px] font-semibold text-ink">{fmt(total, currency)}</span>
+          </span>
+          <span className="block text-[11px] text-ink-4">{t('debts.unassignedSub', { n: bare.length })}</span>
+        </span>
+      </button>
+      <Sheet open={open} onOpenChange={setOpen} title={t('debts.unassigned')} size="tall">
+        <p className="pb-2 text-[12px] text-ink-3">{t('debts.unassignedHint')}</p>
+        <div className="rounded-card border border-line bg-surface px-3 py-1" data-testid="debts-unassigned-list">
+          {bare.map((tx) => (
+            <TxRow key={tx.id} tx={tx} showDate onClick={() => setAssignTx(tx)} />
+          ))}
+        </div>
+      </Sheet>
+      <Sheet open={assignTx !== null} onOpenChange={(next) => !next && setAssignTx(null)} title={t('debts.assignTo')} size="form">
+        <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="debts-assign-options">
+          {targets.map((account) => (
             <button
-              key={candidate}
-              data-testid={`debtform-icon-${candidate}`}
-              onClick={() => setIcon(candidate)}
-              className={`m-tap flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${
-                icon === candidate ? 'border-accent bg-accent-soft text-accent-deep' : 'border-line bg-surface text-ink-2'
-              }`}
+              key={account.id}
+              data-testid={`debts-assign-${account.id}`}
+              onClick={() => {
+                // the link makes it THIS loan's payment (history + matcher
+                // agree); the locked category already fits, review stands
+                if (assignTx) void transform(assignTx, { linkedAccountId: account.id }, 'txLink');
+                setAssignTx(null);
+              }}
+              className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-4 py-3 text-left last:border-0"
             >
-              <Icon name={candidate} size={19} />
+              <Icon name={typeDef(account.type).icon} size={18} color="var(--m-ink-2)" />
+              <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{account.name}</span>
             </button>
           ))}
+          {targets.length === 0 && <p className="px-4 py-3 text-[13px] text-ink-4">{t('debts.assignNone')}</p>}
         </div>
-        <input
-          data-testid="debtform-name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder={t('debts.namePlaceholder')}
-          className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
-        />
-        {/* the backing loan account is MANDATORY — its balance is the
-            remaining truth, and only transactions move it */}
-        <div className="m-cap px-1">{t('debts.linkAccount')}</div>
-        <select
-          data-testid="debtform-account"
-          value={accountId}
-          onChange={(e) => setAccountId(e.target.value)}
-          className="h-12 w-full rounded-input border border-line bg-surface px-3 text-[14px] text-ink"
-        >
-          <option value="">{t('debts.pickAccount')}</option>
-          {liabilities.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name} · {fmt(a.balanceCents, a.currency)}
-            </option>
-          ))}
-          <option value={NEW_ACCOUNT}>{t('debts.newAccount')}</option>
-        </select>
-        <div className="m-cap px-1">{t('debts.original')}</div>
-        <input
-          data-testid="debtform-original"
-          type="number"
-          inputMode="decimal"
-          step="0.01"
-          min="0"
-          value={original}
-          onChange={(e) => setOriginal(e.target.value)}
-          placeholder="0.00"
-          className="h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[15px] text-ink outline-none placeholder:text-ink-4"
-        />
-        {creating && (
-          <>
-            {/* seeds the fresh loan account's opening balance, once —
-                afterwards only transactions move it */}
-            <div className="m-cap px-1">{t('debts.remaining')}</div>
-            <input
-              data-testid="debtform-remaining"
-              type="number"
-              inputMode="decimal"
-              step="0.01"
-              min="0"
-              value={remaining}
-              onChange={(e) => setRemaining(e.target.value)}
-              placeholder={original || '0.00'}
-              className="h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[15px] text-ink outline-none placeholder:text-ink-4"
-            />
-          </>
-        )}
-        <div className="flex gap-2">
-          <label className="min-w-0 flex-1 text-[12px] text-ink-3">
-            {t('debts.apr')}
-            <input
-              data-testid="debtform-apr"
-              type="number"
-              inputMode="decimal"
-              step="0.1"
-              min="0"
-              value={apr}
-              onChange={(e) => setApr(e.target.value)}
-              placeholder="0.0"
-              className="mt-1 h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
-            />
-          </label>
-          <label className="min-w-0 flex-1 text-[12px] text-ink-3">
-            {t('debts.payment')}
-            <input
-              data-testid="debtform-payment"
-              type="number"
-              inputMode="decimal"
-              step="0.01"
-              min="0"
-              value={payment}
-              onChange={(e) => setPayment(e.target.value)}
-              placeholder="0.00"
-              className="mt-1 h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
-            />
-          </label>
-        </div>
-        <Button data-testid="debtform-save" onClick={() => void save()} disabled={!valid}>
-          {editing ? t('action.save') : t('action.create')}
-        </Button>
-        {editing && (
-          <Button variant="danger" data-testid="debtform-delete" onClick={() => void removeDebt()}>
-            {confirmDelete ? t('action.confirm') : t('action.delete')}
-          </Button>
-        )}
-      </div>
-    </Sheet>
+      </Sheet>
+    </>
   );
 }
 
-/** All debts: how deep, how fast out. */
+/** All loans: how deep, how fast out. The account row IS the loan (v2). */
 export function DebtsScreen() {
   const { t, lang } = useLang();
   const navigate = useNavigate();
   const { store, spaceId } = useData();
-  const statuses = useDebtStatuses();
+  const statuses = useLoanStatuses();
+  const txs = useSpaceTransactions();
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const currency = space?.currency ?? 'EUR';
-  const [formInitial, setFormInitial] = useState<DebtRow | 'new' | null>(null);
-  // arriving FROM the recurring form (its Debt kind, user design): the
-  // create sheet opens prefilled and Mina explains why debts are their
-  // own thing — a closable note, not a gate
+  // "+" mints a loan like any other account — the chooser opens on the
+  // liability types only (v2: creating the account IS creating the debt)
+  const [addOpen, setAddOpen] = useState(false);
+  // right after creating, offer the matching payments from history
+  const [matchFor, setMatchFor] = useState<string | null>(null);
+  // arriving FROM the recurring form (its Debt kind): the chooser opens
+  // prefilled with what the recurring already knew
   const [handoff] = useState(() => takeDebtHandoff());
   useEffect(() => {
-    if (handoff) setFormInitial('new');
+    if (handoff) setAddOpen(true);
   }, [handoff]);
+  // counterparty-less debt payments — the virtual bucket's contents
+  const bare = useMemo(
+    () => (txs ?? []).filter((tx) => tx.deleted === 0 && tx.txType === 'debtPayment' && !tx.linkedAccountId),
+    [txs],
+  );
 
   const { fmt } = useDisplayMoney();
   const money = (cents: number) => fmt(cents, currency);
-  const active = (statuses ?? []).filter((s) => s.debt.archived !== 1);
+  const active = (statuses ?? []).filter((s) => s.account.archived !== 1);
   const totalOwed = active.reduce((sum, s) => sum + s.remainingCents, 0);
-  const totalMonthly = active.reduce((sum, s) => sum + (s.debt.paymentCents ?? 0), 0);
+  // cadence-normalized (arc 3): a weekly €100 reads as ~€433 here
+  const totalMonthly = active.reduce((sum, s) => sum + monthlyPaymentCents(s.account), 0);
   const today = localToday();
 
-  const renderCard = (status: DebtStatus) => {
-    const { debt, remainingCents, progress } = status;
-    const projection = projectPayoff(remainingCents, debt.paymentCents, debt.interestPctYear, today);
+  const renderCard = (status: LoanStatus) => {
+    const { account, remainingCents, progress } = status;
+    const projection = projectPayoff(
+      remainingCents,
+      account.paymentCents,
+      account.interestPctYear,
+      today,
+      paymentsPerYear(account.paymentEvery, account.paymentEveryN),
+    );
     const freeLabel = projection
       ? new Date(`${projection.endMonth}-01`).toLocaleDateString(LOCALES[lang], { month: 'short', year: 'numeric' })
       : null;
+    const subParts = [
+      account.originalCents ? t('budgets.of', { amount: money(account.originalCents) }) : null,
+      account.paymentCents ? t(paymentLabelKey(account.paymentEvery), { amount: money(account.paymentCents) }) : null,
+      freeLabel ? t('debts.freeBy', { date: freeLabel }) : null,
+    ].filter(Boolean);
     return (
       <button
-        key={debt.id}
-        data-testid={`debt-card-${debt.id}`}
-        onClick={() => void navigate({ to: '/debts/$debtId', params: { debtId: debt.id } })}
-        className={`m-tap w-full rounded-card border border-line bg-surface p-4 text-left ${debt.archived === 1 ? 'opacity-60' : ''}`}
+        key={account.id}
+        data-testid={`debt-card-${account.id}`}
+        onClick={() => void navigate({ to: '/debts/$debtId', params: { debtId: account.id } })}
+        className={`m-tap w-full rounded-card border border-line bg-surface p-4 text-left ${account.archived === 1 ? 'opacity-60' : ''}`}
       >
         <div className="flex items-center gap-3">
-          <Tile icon={debt.icon ?? 'hand-coin-outline'} tone="negative" />
+          <LoanTile account={account} />
           <span className="min-w-0 flex-1">
             <span className="flex items-baseline justify-between gap-2">
-              <span className="truncate text-[15px] font-semibold text-ink">{debt.name}</span>
-              <span className="m-num shrink-0 text-[14px] font-semibold text-ink" data-testid={`debt-remaining-${debt.id}`}>
+              <span className="truncate text-[15px] font-semibold text-ink">{account.name}</span>
+              <span className="m-num shrink-0 text-[14px] font-semibold text-ink" data-testid={`debt-remaining-${account.id}`}>
                 {money(remainingCents)}
               </span>
             </span>
-            <span className="block text-[11px] text-ink-4">
-              {t('budgets.of', { amount: money(debt.originalCents) })}
-              {debt.paymentCents ? ` · ${t('debts.perMonth', { amount: money(debt.paymentCents) })}` : ''}
-              {freeLabel ? ` · ${t('debts.freeBy', { date: freeLabel })}` : ''}
-            </span>
+            {subParts.length > 0 && <span className="block text-[11px] text-ink-4">{subParts.join(' · ')}</span>}
           </span>
         </div>
-        <ProgressBar className="mt-3" value={progress} />
+        {/* progress needs the original size — without it the bar would lie 0% */}
+        {!!account.originalCents && <ProgressBar className="mt-3" value={progress} />}
       </button>
     );
   };
@@ -308,7 +193,7 @@ export function DebtsScreen() {
         trailing={
           <>
             <HelpButton tourId="debts" />
-            <IconButton label={t('debts.new')} testId="debts-add" onClick={() => setFormInitial('new')}>
+            <IconButton label={t('debts.new')} testId="debts-add" onClick={() => setAddOpen(true)}>
               <Icon name="plus" size={22} />
             </IconButton>
           </>
@@ -316,7 +201,6 @@ export function DebtsScreen() {
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <IntroCard tourId="debts" />
-        {handoff && <MinaNote testId="mina-debt-note" text={t('mina.debtFromRecurring')} />}
         {active.length > 0 && (
           <div className="grid grid-cols-2 gap-3 rounded-card border border-line bg-surface p-4" data-testid="debts-overview">
             <div>
@@ -329,6 +213,7 @@ export function DebtsScreen() {
             </div>
           </div>
         )}
+        <UnassignedPaymentsCard bare={bare} loans={(statuses ?? []).map((s) => s.account)} currency={currency} />
         <div className="flex flex-col gap-2.5 pt-3">{(statuses ?? []).map(renderCard)}</div>
         {statuses?.length === 0 && (
           <div className="flex flex-col items-center gap-2 px-6 pt-16 text-center" data-testid="debts-empty">
@@ -338,7 +223,16 @@ export function DebtsScreen() {
           </div>
         )}
       </div>
-      <DebtFormSheet initial={formInitial} prefill={handoff ?? undefined} onClose={() => setFormInitial(null)} />
+      <AddAccountChooser
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        initialStep="manual"
+        manualTypes={['loan', 'mortgage', 'credit']}
+        loanFlavor
+        prefill={handoff ?? undefined}
+        onCreated={({ id }) => setMatchFor(id)}
+      />
+      <LoanMatchSheet accountId={matchFor} onClose={() => setMatchFor(null)} />
     </div>
   );
 }

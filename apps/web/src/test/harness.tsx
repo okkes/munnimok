@@ -8,6 +8,7 @@ import { LangProvider } from '@/i18n';
 import { ThemeProvider } from '@/app/theme';
 import { DataProvider } from '@/app/data';
 import { useSession } from '@/app/session';
+import type { Identity } from '@/app/session';
 
 // vitest runs without globals, so RTL cannot self-register its cleanup
 afterEach(() => {
@@ -50,9 +51,10 @@ export function renderWithData(ui: ReactElement) {
  * as the demo identity (AppLayout provides DataProvider). Await the
  * screen's `screen-*` testid before asserting.
  */
-export function renderApp(path: string, { signedIn = true }: { signedIn?: boolean } = {}) {
+export function renderApp(path: string, { signedIn = true, identity }: { signedIn?: boolean; identity?: Identity } = {}) {
   localStorage.setItem('munni_lang', 'en');
-  if (signedIn) useSession.getState().login({ kind: 'demo' });
+  if (identity) useSession.getState().login(identity);
+  else if (signedIn) useSession.getState().login({ kind: 'demo' });
   else useSession.getState().logout();
   const router = createRouter({ routeTree, history: createMemoryHistory({ initialEntries: [path] }) });
   return render(
@@ -74,7 +76,7 @@ export const USER_TEST_DB = `munni_user_${USER_TEST_SUB}`;
 
 export interface UserAppOptions {
   /** spaces the fake server owns; their rows arrive via the bootstrap pull */
-  spaces?: { id: string; name: string; kind?: 'personal' | 'shared' }[];
+  spaces?: { id: string; name: string; kind?: 'personal' | 'shared'; inviteLock?: 0 | 1 }[];
   /** REST handlers keyed `${METHOD} ${pathname}` — everything unhandled is 404 */
   api?: Record<string, (body: unknown, url: URL) => unknown>;
 }
@@ -89,6 +91,23 @@ const json = (body: unknown, status = 200) =>
  * handlers the test supplies. This is how user-only UI — members,
  * friends, invites, bank connect — gets exercised without a server.
  */
+/** the bootstrap pull's one space op (S3776: out of the fetch mock) */
+const bootstrapSpaceOp = (space: NonNullable<UserAppOptions['spaces']>[number]) => ({
+  opId: `srv-${space.id}`,
+  spaceId: space.id,
+  entity: 'space',
+  entityId: space.id,
+  fields: {
+    name: space.name,
+    kind: space.kind ?? 'personal',
+    currency: 'EUR',
+    periodType: 'month',
+    periodDay: 1,
+    ...(space.inviteLock !== undefined ? { inviteLock: space.inviteLock } : {}),
+  },
+  hlc: '000000100-0000-server',
+});
+
 export function renderAppAsUser(path: string, { spaces = [{ id: 's-user', name: 'Personal' }], api = {} }: UserAppOptions = {}) {
   localStorage.setItem('munni_lang', 'en');
   useSession.getState().login({ kind: 'user', sub: USER_TEST_SUB, testAuth: true });
@@ -110,21 +129,7 @@ export function renderAppAsUser(path: string, { spaces = [{ id: 's-user', name: 
     if (pull) {
       const space = spaces.find((s) => s.id === decodeURIComponent(pull[1]));
       const since = Number(url.searchParams.get('since') ?? 0);
-      if (space && since === 0) {
-        return json({
-          ops: [
-            {
-              opId: `srv-${space.id}`,
-              spaceId: space.id,
-              entity: 'space',
-              entityId: space.id,
-              fields: { name: space.name, kind: space.kind ?? 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 },
-              hlc: '000000100-0000-server',
-            },
-          ],
-          latestSeq: 1,
-        });
-      }
+      if (space && since === 0) return json({ ops: [bootstrapSpaceOp(space)], latestSeq: 1 });
       return json({ ops: [], latestSeq: since });
     }
     // SSE stream: an immediately-closed stream — the engine falls back to polling

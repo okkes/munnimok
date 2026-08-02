@@ -3,6 +3,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { txTitle } from '@/lib/text';
 import { setDebtHandoff } from '@/features/debts/handoff';
+import { DebtHandoffInterstitial } from '@/features/debts/DebtHandoffInterstitial';
 import { useData } from '@/app/data';
 import { propagateRecurringCategory, useRecurringOps } from '@/application/recurring';
 import { CategoryPicker } from '@/features/categories/CategoryPicker';
@@ -120,6 +121,7 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved }: Rea
   const [form, setForm] = useState<FormState | null>(null);
   const [brandPickerOpen, setBrandPickerOpen] = useState(false);
   const [catPickerOpen, setCatPickerOpen] = useState(false);
+  const [debtIntent, setDebtIntent] = useState(false);
   // what the category was when the sheet opened -- propagation fires
   // only on a real change
   const initialCatIdRef = useRef<string | undefined>(undefined);
@@ -142,8 +144,13 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved }: Rea
     setDueDayText(String(initial?.dueDay ?? 1));
     setEveryNText(String(initial?.everyN ?? 1));
     setConfirmDelete(false);
+    // dirty baseline (user request 2026-08-01): edited forms ask before
+    // a stray dismissal drops them
+    baselineRef.current = JSON.stringify(initial);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seedKey]);
+  const baselineRef = useRef('');
+  const dirty = form !== null && JSON.stringify(form) !== baselineRef.current;
 
   const save = async () => {
     if (!form?.name.trim()) return;
@@ -211,6 +218,7 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved }: Rea
         onOpenChange={(open) => !open && onClose()}
         title={form?.id ? t('recurring.edit') : t('recurring.add')}
         size="tall"
+        dirty={dirty}
       >
         {form && (
           <div className="flex flex-col gap-3 pt-1">
@@ -229,22 +237,10 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved }: Rea
                 {t('recurring.kindSub')}
               </Chip>
               {/* a structural cost that pays something OFF is a DEBT —
-                  picking it hands this form's facts over to debt
-                  creation (user design 2026-07-28) */}
-              <Chip
-                testId="recform-kind-debt"
-                selected={false}
-                onClick={() => {
-                  const cents = Math.round(Number.parseFloat(form.amount.replace(',', '.')) * 100);
-                  setDebtHandoff({
-                    name: form.name.trim() || undefined,
-                    originalCents: Number.isFinite(cents) && cents > 0 ? cents : undefined,
-                    merchantKey: form.merchantKey ?? undefined,
-                  });
-                  onClose();
-                  void navigate({ to: '/debts' });
-                }}
-              >
+                  picking it asks first on a fullscreen Mina moment, then
+                  hands this form's facts over to debt creation (user
+                  design 2026-07-28, fullscreen ask 2026-07-29) */}
+              <Chip testId="recform-kind-debt" selected={false} onClick={() => setDebtIntent(true)}>
                 {t('recurring.kindDebt')}
               </Chip>
             </div>
@@ -462,6 +458,25 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved }: Rea
           if (form) setForm({ ...form, catId });
         }}
       />
+      {debtIntent && form && (
+        <DebtHandoffInterstitial
+          onStay={() => setDebtIntent(false)}
+          onContinue={() => {
+            const cents = Math.round(Number.parseFloat(form.amount.replace(',', '.')) * 100);
+            // v2: the recurring's amount and rhythm are the loan's
+            // PAYMENT plan (they were never its original size)
+            setDebtHandoff({
+              name: form.name.trim() || undefined,
+              paymentCents: Number.isFinite(cents) && cents > 0 ? cents : undefined,
+              paymentEvery: form.every,
+              merchantKey: form.merchantKey ?? undefined,
+            });
+            setDebtIntent(false);
+            onClose();
+            void navigate({ to: '/debts' });
+          }}
+        />
+      )}
     </>
   );
 }

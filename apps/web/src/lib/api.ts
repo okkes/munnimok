@@ -84,7 +84,7 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
       const { reportError } = await import('@/lib/report');
       reportError('auth', new Error('refresh token dead: forced re-login after double 401'));
       const { clearStaleLogtoState } = await import('@/lib/authState');
-      clearStaleLogtoState(); // dead refresh token must not poison the next sign-in
+      clearStaleLogtoState('double-401'); // dead refresh token must not poison the next sign-in
       const { useSession } = await import('@/app/session');
       useSession.getState().logout();
       globalThis.location.assign('/#/login');

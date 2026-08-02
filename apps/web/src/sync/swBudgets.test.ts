@@ -10,6 +10,12 @@ import { collectBudgetAlerts } from './swBudgets';
 const DB = 'munni_test_budget_alerts';
 const SPACE = 's1';
 
+// LOCAL date, like the app's localToday — toISOString() is UTC and puts
+// the seeded spend in yesterday's period during the first local hours
+// of a new month (caught 2026-08-01 00:xx CEST)
+const localIso = (d = new Date()) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
 async function seed(db: MunniDB, opts: { spentCents: number; notifyAtPct: number }) {
   const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
   await repo.upsert('space', SPACE, SPACE, { name: 'P', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
@@ -24,7 +30,7 @@ async function seed(db: MunniDB, opts: { spentCents: number; notifyAtPct: number
   });
   await repo.upsert('transaction', SPACE, 't1', {
     accountId: 'a',
-    date: new Date().toISOString().slice(0, 10),
+    date: localIso(),
     amountCents: -opts.spentCents,
     currency: 'EUR',
     merchant: 'AH',

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { renderApp } from '@/test/harness';
 
@@ -40,6 +40,8 @@ describe('SpacesScreen (demo identity)', () => {
 
     fireEvent.click(screen.getByTestId('spaces-add'));
     fireEvent.change(await screen.findByTestId('space-create-name'), { target: { value: 'Side hustle' } });
+    // arc 4: the private-lock note sits on the form; defaults carry the rest
+    expect(screen.getByTestId('space-create-lock-note')).toBeTruthy();
     fireEvent.click(screen.getByTestId('space-create-save'));
 
     // new space appears and becomes active
@@ -48,10 +50,113 @@ describe('SpacesScreen (demo identity)', () => {
       expect(activeRow()!.textContent).toContain('Side hustle');
     });
 
+    // born private (arc 4) with the persisted defaults
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    const made = (await db.spaces.toArray()).find((s) => s.name === 'Side hustle');
+    expect(made).toMatchObject({ inviteLock: 1, periodType: 'month', periodDay: 1, currency: 'EUR' });
+    expect(made?.historyStartDate).toBeTruthy();
+    db.close();
+
     // switch back to the original space
     fireEvent.click(screen.getByTestId(first));
     await waitFor(() => expect(activeRow()!.getAttribute('data-testid')).toBe(first));
   });
+
+  it('the full create form customizes period, currency, history and look (arc 4)', async () => {
+    renderApp('/spaces');
+    await screen.findByTestId('screen-spaces');
+
+    fireEvent.click(screen.getByTestId('spaces-add'));
+    fireEvent.change(await screen.findByTestId('space-create-name'), { target: { value: 'Reis' } });
+    fireEvent.click(screen.getByTestId('space-create-icon-airplane'));
+
+    // period: weekly, starting Wednesday — the settings screen's controls
+    fireEvent.click(screen.getByTestId('space-create-period'));
+    fireEvent.click(await screen.findByTestId('space-period-week'));
+    fireEvent.click(screen.getByTestId('space-weekday-3'));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.getByTestId('space-create-period').textContent).toContain('Weekly'));
+
+    // currency: USD via the chip sheet (closes itself on pick)
+    fireEvent.click(screen.getByTestId('space-create-currency'));
+    fireEvent.click(await screen.findByTestId('space-create-currency-USD'));
+    await waitFor(() => expect(screen.getByTestId('space-create-currency').textContent).toContain('USD'));
+
+    // history start: an explicit date + the start-small hint
+    fireEvent.click(screen.getByTestId('space-create-history'));
+    await screen.findByTestId('space-create-history-hint');
+    fireEvent.change(screen.getByTestId('space-create-history-date'), { target: { value: '2026-06-01' } });
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    fireEvent.click(screen.getByTestId('space-create-save'));
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const made = (await db.spaces.toArray()).find((s) => s.name === 'Reis');
+      expect(made).toMatchObject({
+        icon: 'airplane',
+        periodType: 'week',
+        periodDay: 3,
+        currency: 'USD',
+        historyStartDate: '2026-06-01',
+        inviteLock: 1,
+      });
+    }, { timeout: 5000 });
+    db.close();
+  }, 15_000);
+
+  it('attention pills on the switcher; the avatar dots for OTHER spaces (arc 7)', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    const [{ MunniDB }, { DexieBackend }, { Repo }, { HlcClock }] = await Promise.all([
+      import('@/db/schema'),
+      import('@/db/backend'),
+      import('@/db/repo'),
+      import('@/sync/hlc'),
+    ]);
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('sa'), { trackOutbox: false });
+    await repo.upsert('space', 'busy', 'busy', { name: 'Busy', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
+    await repo.upsert('transaction', 'busy', 'bz1', {
+      accountId: 'a', date: '2026-07-30', amountCents: -500, currency: 'EUR', merchant: 'Z', txType: 'expense', needsReview: 1,
+    });
+    db.close();
+
+    // the dot computes on mount — a fresh Home sees the other space's backlog
+    cleanup();
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    await screen.findByTestId('home-space-switcher-dot', {}, { timeout: 5000 });
+
+    // the sheet counts lazily on open: the busy space wears its pill
+    fireEvent.click(screen.getByTestId('home-space-switcher'));
+    const pill = await screen.findByTestId('space-attn-busy', {}, { timeout: 5000 });
+    expect(pill.textContent).toContain('1');
+  }, 15_000);
+
+  it('the owner toggle lifts and re-arms the private lock (arc 4)', async () => {
+    renderApp('/spaces');
+    await screen.findByTestId('screen-spaces');
+    const id = (await findActiveRow()).getAttribute('data-testid')!.replace('space-row-', '');
+
+    fireEvent.click(screen.getByTestId(`space-edit-${id}`));
+    await screen.findByTestId('screen-space-settings');
+    // demo space predates the lock: unlocked until the owner arms it
+    const toggle = (await screen.findByTestId('space-invite-lock')) as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
+    fireEvent.click(toggle);
+
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => expect((await db.spaces.get(id))?.inviteLock).toBe(1), { timeout: 5000 });
+    // the controlled checkbox must SHOW the write before the next tap —
+    // clicking mid-liveQuery-emission would re-toggle from stale state
+    await waitFor(() => expect((screen.getByTestId('space-invite-lock') as HTMLInputElement).checked).toBe(true), { timeout: 5000 });
+    fireEvent.click(screen.getByTestId('space-invite-lock'));
+    await waitFor(async () => expect((await db.spaces.get(id))?.inviteLock).toBe(0), { timeout: 5000 });
+    db.close();
+  }, 15_000);
 
   it('renames a space from the edit sheet', async () => {
     renderApp('/spaces');
@@ -138,9 +243,15 @@ describe('SpacesScreen (demo identity)', () => {
     await screen.findByTestId('screen-settings');
     fireEvent.click(await screen.findByTestId('settings-space-accounts-row'));
     const section = await screen.findByTestId('space-accounts');
-    // the demo space owns its seeded accounts directly — provenance says so
     await waitFor(() => expect(section.textContent).toContain('Demo Savings'), { timeout: 5000 });
-    expect(section.textContent).toContain('created in this space');
+    // provenance moved into the tap-through info sheet (redesign ss13)
+    const row = [...section.querySelectorAll('[data-testid^="space-account-"]')].find((el) =>
+      el.textContent?.includes('Demo Savings'),
+    ) as HTMLElement;
+    fireEvent.click(row);
+    const infoSheet = await screen.findByTestId('space-account-info');
+    expect(infoSheet.textContent).toContain('created in this space');
+    fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.getByTestId('space-accounts-manage')).toBeTruthy();
   }, 10_000);
 
@@ -151,9 +262,8 @@ describe('SpacesScreen (demo identity)', () => {
     await screen.findByTestId('space-accounts');
 
     fireEvent.click(screen.getByTestId('space-accounts-add'));
-    // the shared chooser: manual creates in place, and its sub-line
-    // says plainly that the account is space-scoped
-    fireEvent.click(await screen.findByTestId('chooser-manual'));
+    // "Add a manual account" opens the type grid DIRECTLY (redesign
+    // ss13/ss14) — no intent step in between
     expect(await screen.findByTestId('chooser-manual-form')).toBeTruthy();
     fireEvent.click(screen.getByTestId('chooser-accttype-cash'));
     fireEvent.change(await screen.findByTestId('chooser-acctform-name'), { target: { value: 'Holiday jar' } });

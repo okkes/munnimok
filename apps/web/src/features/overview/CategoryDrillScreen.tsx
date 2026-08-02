@@ -21,6 +21,8 @@ const KIND_ACCENT: Record<OverviewKind, string> = {
   expense: 'var(--m-negative)',
   saving: 'var(--m-warning)',
   investment: 'var(--m-special)',
+  funding: '#16A085',
+  debt: 'var(--m-special)',
 };
 
 /**

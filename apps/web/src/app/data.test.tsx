@@ -1,12 +1,21 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
-import { fireEvent, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { setOidcSignIn } from '@/app/authToken';
 import { HlcClock } from '@/sync/hlc';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
 import { DexieBackend } from '@/db/backend';
-import { USER_TEST_DB, renderAppAsUser } from '@/test/harness';
+import { USER_TEST_DB, renderApp, renderAppAsUser } from '@/test/harness';
+
+// deterministic regardless of the developer's .env.local — with Logto
+// "configured", the real TokenBridge would overwrite the test's
+// setOidcSignIn spy and auth-ready would wait on a live provider
+vi.mock('@/app/config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/app/config')>()),
+  logtoConfigured: false,
+}));
 
 /**
  * Local-first startup: a RETURNING device (local spaces exist) must render
@@ -86,6 +95,35 @@ describe('DataProvider startup (local-first)', () => {
       expect(text).toContain('logtoKeys: 0');
       expect(text).toContain('accessToken: ABSENT'); // no OIDC getter registered in tests
       expect(text).toContain('GET /me threw'); // the refusing server, verbatim
+      // the 2026-07-29 probes: session kind, storage write, wipe breadcrumb
+      expect(text).toContain('session: user');
+      expect(text).toContain('lsWrite: true');
+      expect(text).toContain('lastLogtoWipe: -');
+    },
+    15_000,
+  );
+
+  it(
+    'a signed-in OIDC user with 401s and no mintable token silently re-enters sign-in (capped)',
+    async () => {
+      const calls: string[] = [];
+      setOidcSignIn(async (uri) => {
+        calls.push(uri);
+      });
+      vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 401 })));
+      await new Promise((resolve) => {
+        const req = indexedDB.deleteDatabase('munni_user_heal-user');
+        req.onsuccess = req.onerror = req.onblocked = () => resolve(undefined);
+      });
+      // a NON-testAuth user: the self-heal only fires for real OIDC
+      // sessions whose client-side keys are gone (evicted/wiped) while
+      // the server keeps saying 401 to tokenless requests
+      renderApp('/', { identity: { kind: 'user', sub: 'heal-user' } });
+
+      await waitFor(() => expect(calls.length).toBeGreaterThan(0), { timeout: 8000 });
+      expect(calls[0]).toContain('/auth-callback');
+      expect(sessionStorage.getItem('munni_auth_reheal')).toBe('1');
+      setOidcSignIn(null);
     },
     15_000,
   );

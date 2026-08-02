@@ -129,11 +129,51 @@ public sealed class GoCardlessApi(HttpClient http, IConfiguration config) : IGoC
     public Task<IReadOnlyList<GcInstitution>> GetInstitutionsAsync(string country, CancellationToken ct = default) =>
         GetAsync<IReadOnlyList<GcInstitution>>($"institutions/?country={Uri.EscapeDataString(country)}", ct);
 
+    private sealed record InstitutionDetail([property: JsonPropertyName("transaction_total_days")] string? TransactionTotalDays);
+    private sealed record AgreementCreated([property: JsonPropertyName("id")] string Id);
+
+    /// <summary>
+    /// History depth the consent asks for (user design 2026-08-01): the
+    /// default agreement exposes 90 days — far too short for yearly
+    /// recurring-cost detection. We request the institution's own maximum,
+    /// capped at two years; the display start-date gate keeps the older
+    /// rows out of the space until they are wanted.
+    /// </summary>
+    internal const int MaxHistoryDays = 730;
+
     public async Task<GcRequisitionCreated> CreateRequisitionAsync(string institutionId, string redirect, string reference, CancellationToken ct = default)
     {
+        // deep-history agreement is best-effort: a refusal must never block
+        // the connect journey — the default 90-day consent still works
+        string? agreementId = null;
+        try
+        {
+            var detail = await GetAsync<InstitutionDetail>($"institutions/{Uri.EscapeDataString(institutionId)}/", ct);
+            var institutionDays = int.TryParse(detail.TransactionTotalDays, out var days) ? days : 90;
+            var wanted = Math.Min(institutionDays, MaxHistoryDays);
+            if (wanted > 90)
+            {
+                using var agreementRequest = new HttpRequestMessage(HttpMethod.Post, "agreements/enduser/")
+                {
+                    Content = JsonContent.Create(new { institution_id = institutionId, max_historical_days = wanted }),
+                };
+                agreementRequest.Headers.Authorization = new(BearerScheme, await GetTokenAsync(ct));
+                var agreementResponse = await http.SendAsync(agreementRequest, ct);
+                agreementResponse.EnsureSuccessStatusCode();
+                agreementId = (await agreementResponse.Content.ReadFromJsonAsync<AgreementCreated>(ct))!.Id;
+            }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException)
+        {
+            // institution lookup or agreement refused (or answered with an
+            // unexpected shape) — fall back to the default 90-day consent
+        }
+
         using var request = new HttpRequestMessage(HttpMethod.Post, "requisitions/")
         {
-            Content = JsonContent.Create(new { redirect, institution_id = institutionId, reference }),
+            Content = JsonContent.Create(agreementId is null
+                ? new { redirect, institution_id = institutionId, reference }
+                : (object)new { redirect, institution_id = institutionId, reference, agreement = agreementId }),
         };
         request.Headers.Authorization = new(BearerScheme, await GetTokenAsync(ct));
         var response = await http.SendAsync(request, ct);

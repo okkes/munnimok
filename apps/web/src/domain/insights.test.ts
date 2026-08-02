@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { budgetRealityCheck, collectInsights, debtAcceleration, priceCreep, smallHabit, subscriptionOverlap, weekendMultiplier } from './insights';
 import type { InsightInputs } from './insights';
-import type { BudgetRow, DebtRow, RecurringRow, TransactionRow } from '@/db/types';
+import type { AccountRow, BudgetRow, RecurringRow, TransactionRow } from '@/db/types';
 
 const tx = (partial: Partial<TransactionRow>): TransactionRow =>
   ({
@@ -30,7 +30,7 @@ const base = (partial: Partial<InsightInputs>): InsightInputs => ({
   txs: [],
   recurrings: [],
   budgets: [],
-  debts: [],
+  loans: [],
   accountsById: new Map(),
   catalog,
   periods: [
@@ -122,29 +122,35 @@ describe('insight detectors', () => {
   });
 
   it('debt acceleration quantifies €25/month extra on the biggest debt', () => {
-    const debt: DebtRow = {
+    // v2: the loan IS a liability account — remaining is its balance
+    const loan: AccountRow = {
       id: 'd1',
       spaceId: 's1',
       name: 'Student loan',
+      type: 'loan',
+      source: 'manual',
+      currency: 'EUR',
+      balanceCents: -2_500_000,
       originalCents: 2_500_000,
-      remainingCents: 2_500_000,
       interestPctYear: 8,
       paymentCents: 30_000,
       deleted: 0,
-    } as DebtRow;
-    const hits = debtAcceleration(base({ debts: [debt] }));
+    } as AccountRow;
+    const hits = debtAcceleration(base({ loans: [loan] }));
     expect(hits).toHaveLength(1);
     expect(hits[0].severity).toBe('win');
     expect(hits[0].params.months).toBeGreaterThan(0);
     expect(hits[0].impactCents).toBeGreaterThan(2_000);
 
-    expect(debtAcceleration(base({ debts: [{ ...debt, paymentCents: undefined } as DebtRow] }))).toHaveLength(0);
+    expect(debtAcceleration(base({ loans: [{ ...loan, paymentCents: undefined } as AccountRow] }))).toHaveLength(0);
+    // per-MONTH claim: a weekly payer (arc 3 cadence) is out of scope
+    expect(debtAcceleration(base({ loans: [{ ...loan, paymentEvery: 'week' } as AccountRow] }))).toHaveLength(0);
   });
 
   it('the engine ranks work by impact and caps the wins', () => {
-    const debt = { id: 'd1', spaceId: 's1', name: 'L', originalCents: 2_500_000, remainingCents: 2_500_000, interestPctYear: 8, paymentCents: 30_000, deleted: 0 } as DebtRow;
+    const loan = { id: 'd1', spaceId: 's1', name: 'L', type: 'loan', source: 'manual', currency: 'EUR', balanceCents: -2_500_000, originalCents: 2_500_000, interestPctYear: 8, paymentCents: 30_000, deleted: 0 } as AccountRow;
     const subs = [rec({ id: 'r1', catId: 'streaming' }), rec({ id: 'r2', name: 'HBO', catId: 'streaming' })];
-    const ranked = collectInsights(base({ debts: [debt], recurrings: subs }));
+    const ranked = collectInsights(base({ loans: [loan], recurrings: subs }));
     expect(ranked.length).toBeGreaterThanOrEqual(2);
     // the win never outranks the leak
     expect(ranked[0].severity).not.toBe('win');

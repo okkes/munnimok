@@ -39,16 +39,31 @@ export function ReimburseLinkScreen() {
   const [chosen, setChosen] = useState<SpaceTx | null>(null);
   const [amount, setAmount] = useState('');
 
-  // the search bar rides along: it scrolls away with the content, but
-  // ANY upward scroll sneaks it back in — searching must never require
-  // travelling back to the top of a long list (user request)
+  // the search bar rides along: it scrolls away with the content and a
+  // DELIBERATE upward scroll brings it back — one search-field's worth of
+  // travel, not a single jittery pixel (user tuning 2026-07-31); iOS
+  // rubber-band frames must never fake that gesture
   const [searchShown, setSearchShown] = useState(true);
   const lastScrollTop = useRef(0);
+  const upTravel = useRef(0);
+  // the wrapper's real height: h-11 input (44) + pt-1 (4) + pb-2 (8)
+  const SEARCH_H = 56;
   const onListScroll = (e: UIEvent<HTMLDivElement>) => {
-    const top = e.currentTarget.scrollTop;
-    const goingUp = top < lastScrollTop.current;
+    const el = e.currentTarget;
+    const top = el.scrollTop;
+    const delta = lastScrollTop.current - top; // > 0 → upward
     lastScrollTop.current = top;
-    setSearchShown(goingUp || top < 56);
+    const maxTop = el.scrollHeight - el.clientHeight;
+    // rubber-band guard: overscroll runs scrollTop past [0, maxTop] and
+    // the spring-back frames read as "upward" — near the edges nothing
+    // counts, in either direction
+    if (top < 0 || top > maxTop - SEARCH_H) {
+      upTravel.current = 0;
+      return;
+    }
+    if (delta > 0) upTravel.current += delta;
+    else if (delta < 0) upTravel.current = 0; // any downward move re-arms
+    setSearchShown(upTravel.current >= SEARCH_H || top < SEARCH_H);
   };
 
   const anchorIsExpense = (tx?.amountCents ?? 0) < 0;
@@ -129,12 +144,14 @@ export function ReimburseLinkScreen() {
           </IconButton>
         }
       />
+      {/* the origin transaction stays PINNED above the list (user
+          request 2026-07-31) — the one fact the whole screen is about */}
+      {tx && (
+        <div className="shrink-0 border-b border-line-2 px-5 pb-2 text-[12px] text-ink-3" data-testid="reimb-link-anchor">
+          {cleanBankText(tx.merchant)} · {fmtCents(tx.amountCents, tx.currency, lang, { sign: true })}
+        </div>
+      )}
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6" onScroll={onListScroll}>
-        {tx && (
-          <div className="pb-2 text-[12px] text-ink-3" data-testid="reimb-link-anchor">
-            {cleanBankText(tx.merchant)} · {fmtCents(tx.amountCents, tx.currency, lang, { sign: true })}
-          </div>
-        )}
         <div
           className="sticky top-0 z-10 -mx-5 bg-bg px-5 pt-1 pb-2 transition-all duration-200 ease-out"
           style={searchShown ? undefined : { transform: 'translateY(-110%)', opacity: 0, pointerEvents: 'none' }}

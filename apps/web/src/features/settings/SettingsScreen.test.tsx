@@ -52,11 +52,15 @@ describe('SettingsScreen (demo identity)', () => {
     db.close();
   });
 
-  it('default history start is its own setting: the sheet date persists immediately', async () => {
+  it('history start stages as a draft with counted impact; Apply commits (arc 5)', async () => {
     renderApp('/settings');
     await screen.findByTestId('screen-settings');
     fireEvent.click(await screen.findByTestId('settings-history-row'));
     fireEvent.change(await screen.findByTestId('space-history-start'), { target: { value: '2026-01-01' } });
+    // nothing writes yet — the consequences show first, then Apply
+    const impact = await screen.findByTestId('space-history-impact');
+    expect(impact).toBeTruthy();
+    fireEvent.click(screen.getByTestId('space-history-apply'));
     const { MunniDB } = await import('@/db/schema');
     const db = new MunniDB('munni_demo');
     await waitFor(

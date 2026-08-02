@@ -16,6 +16,25 @@ describe('SpaceSharing (user identity, scripted server)', () => {
     indexedDB.deleteDatabase(USER_TEST_DB);
   });
 
+  it('a locked space disables inviting with an explainer (arc 4)', async () => {
+    renderAppAsUser('/spaces/s-user/members', {
+      spaces: [{ id: 's-user', name: 'Personal', inviteLock: 1 }],
+      api: {
+        'GET /me': () => ({ userId: ME, displayName: 'Me' }),
+        'GET /me/invites': () => [],
+        'GET /spaces/s-user/members': () => [member(ME, 'Me', 'owner')],
+        'GET /friends': () => ({ friends: [{ userId: BOB, displayName: 'Bob' }], sentPending: [], receivedPending: [] }),
+        'GET /spaces/s-user/invites': () => [],
+      },
+    });
+
+    // the explainer replaces every invite tool — no friend chips, no
+    // add-friend form; the lock lifts in the space's settings
+    expect(await screen.findByTestId('space-invite-locked')).toBeTruthy();
+    expect(screen.queryByTestId(`space-invite-${BOB}`)).toBeNull();
+    expect(screen.queryByTestId('space-addfriend-input')).toBeNull();
+  }, 15_000);
+
   it('owner invites a friend: feedback note, pending row, revoke', async () => {
     let outgoing: { id: string; toUserId: string; toName: string; role: string }[] = [];
     const sentBodies: unknown[] = [];

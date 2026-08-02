@@ -65,6 +65,33 @@ describe('ReviewScreen (demo identity)', () => {
     expect((screen.getByTestId('review-counter-row') as HTMLButtonElement).disabled).toBe(false);
   }, 15_000);
 
+  it('a loan counterparty swaps the recurring row for the debt row', async () => {
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    expect(screen.getByTestId('review-recurring-row')).toBeTruthy();
+
+    // transfer → the Create door opens the FULL chooser (user redesign
+    // 2026-08-01: quick-create retired); manual loan built in place
+    fireEvent.click(screen.getByTestId('review-kind-row'));
+    await screen.findByTestId('txkind-options');
+    fireEvent.click(screen.getByTestId('txkind-transfer'));
+    await screen.findByTestId('counter-accounts');
+    fireEvent.click(screen.getByTestId('counter-full-setup'));
+    fireEvent.click(await screen.findByTestId('chooser-manual'));
+    fireEvent.click(await screen.findByTestId('chooser-accttype-loan'));
+    fireEvent.change(await screen.findByTestId('chooser-acctform-name'), { target: { value: 'Car loan' } });
+    // v2: a loan account's current value is required (it IS the debt)
+    fireEvent.change(screen.getByTestId('chooser-acctform-balance'), { target: { value: '5000' } });
+    fireEvent.click(screen.getByTestId('chooser-acctform-save'));
+
+    // a payoff transfer is a debt payment, not a recurring cost (user
+    // request 2026-07-29): the debt row appears, recurring retires —
+    // and it names the loan account itself (v2: the account IS the debt)
+    await waitFor(() => expect(screen.getByTestId('review-debt-row')).toBeTruthy(), { timeout: 5000 });
+    expect(screen.getByTestId('review-debt-row').textContent).toContain('Car loan');
+    expect(screen.queryByTestId('review-recurring-row')).toBeNull();
+  }, 15_000);
+
   it('dismissing the counterparty picker rolls a user-picked transfer back', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
@@ -76,6 +103,29 @@ describe('ReviewScreen (demo identity)', () => {
     await screen.findByTestId('counter-accounts');
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(screen.getByTestId('review-kind-row').textContent).toContain('Standard'));
+  }, 15_000);
+
+  it('the bare "no counter account" pick completes the transfer — no roll-back', async () => {
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    fireEvent.click(screen.getByTestId('review-kind-row'));
+    await screen.findByTestId('txkind-options');
+    fireEvent.click(screen.getByTestId('txkind-transfer'));
+    await screen.findByTestId('counter-accounts');
+
+    // the exit names the family member directly (arc 2); the sheet
+    // closes and the kind SURVIVES — a bare label is a complete answer
+    fireEvent.click(screen.getByTestId('counter-none'));
+    await screen.findByTestId('counter-bare-options');
+    fireEvent.click(screen.getByTestId('counter-bare-saving'));
+    await waitFor(() => expect(screen.getByTestId('review-kind-row').textContent).toContain('Saving'));
+
+    // the counter row states the bare label calmly (no warning cry —
+    // counterless is legal), the sign-picked locked sub sits on the
+    // chip, and Confirm is armed — no ask-again dead end
+    expect(screen.getByTestId('review-counter-row').textContent).toContain('No counter account');
+    expect(screen.getByTestId('review-category-chip').textContent).toContain('Set aside');
+    expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false);
   }, 15_000);
 
   it('a picked category is staged and written on confirm', async () => {
@@ -375,7 +425,7 @@ describe('ReviewScreen (demo identity)', () => {
     db.close();
   }, 15_000);
 
-  it('a type change that invalidates the staged category asks again (ruling)', async () => {
+  it('a type change that invalidates the category files the locked family sub (arc 2)', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
 
@@ -387,8 +437,9 @@ describe('ReviewScreen (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Coffee'));
     expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false);
 
-    // flip the kind to Transfer with the savings counterparty — the
-    // derived Saving type is one Coffee does not speak: ask again
+    // flip the kind to Transfer with the savings counterparty — Coffee
+    // does not speak Saving, and the MACHINE has the right answer now:
+    // the locked sign-picked sub replaces the ask-again dead end
     fireEvent.click(screen.getByTestId('review-kind-row'));
     await screen.findByTestId('txkind-options');
     fireEvent.click(screen.getByTestId('txkind-transfer'));
@@ -396,7 +447,9 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('counter-pick-demo_save'));
     await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).not.toContain('Coffee'));
     expect(screen.getByTestId('review-kind-row').textContent).toContain('Saving');
-    expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(true);
+    // the debit files as "Set aside" and Confirm stays armed
+    await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Set aside'));
+    expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false);
 
     // nothing was written mid-flight: the tx still holds its own type
     const db = new MunniDB('munni_demo');
@@ -404,14 +457,6 @@ describe('ReviewScreen (demo identity)', () => {
       .sort((a, b) => a.date.localeCompare(b.date))[0]; // oldest first (user rule)
     expect(current.txType).not.toBe('saving');
     db.close();
-
-    // a saving-compatible category re-arms Confirm (the editor's picker
-    // filters by the staged saving type)
-    fireEvent.click(screen.getByTestId('review-category-chip'));
-    fireEvent.click(await screen.findByTestId('split-cat-0'));
-    fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
-    fireEvent.click(screen.getByTestId('split-save'));
-    await waitFor(() => expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false));
   }, 15_000);
 
   it('skip moves on and the skipped pile can be revisited', async () => {

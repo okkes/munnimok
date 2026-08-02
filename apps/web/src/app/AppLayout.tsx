@@ -12,7 +12,7 @@ import { useStoreKeepAlive } from '@/application/stores';
 import { collectBudgetAlerts } from '@/sync/swBudgets';
 import { hapticNotify } from '@/lib/platform';
 import { EdgeSwipeBack } from '@/ui/EdgeSwipeBack';
-import { revealInScroller } from '@/lib/viewport';
+import { padScrollportForKeyboard, restoreScrollportPad, revealInScroller } from '@/lib/viewport';
 import { SHEET_OWNS_KEYBOARD } from '@/ui/Sheet';
 import { MinaTutorial } from '@/features/mina/MinaTutorial';
 import { Icon } from '@/ui/Icon';
@@ -38,6 +38,7 @@ const TABS: TabDef[] = [
 const isEditable = (el: EventTarget | null): el is HTMLElement =>
   el instanceof HTMLElement && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
 
+
 /**
  * On-screen keyboard awareness (user report 2026-07-24): the viewport
  * RESIZES for the keyboard on Android + the native shells, which pushed
@@ -58,7 +59,10 @@ function scheduleKeyboardReveal(el: HTMLElement): () => void {
   const fire = () => {
     if (cancelled || done) return;
     done = true;
-    if (document.activeElement === el) revealInScroller(el);
+    if (document.activeElement === el) {
+      padScrollportForKeyboard(el); // creates the slack the reveal needs
+      revealInScroller(el);
+    }
   };
   if (!vv) {
     const timer = setTimeout(fire, 300);
@@ -109,7 +113,10 @@ function useKeyboardOpen(): boolean {
     const onFocusOut = () => {
       // focus often hops field-to-field — only a settled blur closes
       setTimeout(() => {
-        if (!isEditable(document.activeElement)) setOpen(false);
+        if (!isEditable(document.activeElement)) {
+          setOpen(false);
+          restoreScrollportPad();
+        }
       }, 100);
     };
     window.addEventListener('focusin', onFocusIn);

@@ -282,10 +282,13 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
         var balances = await gc.GetBalancesAsync(linked.GcAccountId, ct);
         // no backfill marker → fetch the full window regardless of
         // LastFetchAt: accounts linked before the feed-space migration had
-        // a LastFetchAt but their FEED space only ever received deltas
+        // a LastFetchAt but their FEED space only ever received deltas.
+        // The window asks for TWO YEARS (user design 2026-08-01: yearly
+        // recurring detection needs the tail); the provider clamps to
+        // whatever the consent actually allows
         var from = linked.HistoryBackfilledAt is null
-            ? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-90))
-            : DateOnly.FromDateTime((linked.LastFetchAt?.UtcDateTime ?? DateTime.UtcNow.AddDays(-90)).AddDays(-3));
+            ? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-GoCardlessApi.MaxHistoryDays))
+            : DateOnly.FromDateTime((linked.LastFetchAt?.UtcDateTime ?? DateTime.UtcNow.AddDays(-GoCardlessApi.MaxHistoryDays)).AddDays(-3));
         var page = await gc.GetTransactionsAsync(linked.GcAccountId, from, ct);
 
         var accepted = await new GcIngest(db).IngestAccountAsync(space, linked, details, balances, page.Booked, page.Pending);

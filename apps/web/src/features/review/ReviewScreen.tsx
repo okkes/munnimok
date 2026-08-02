@@ -8,7 +8,7 @@ import { useEvents } from '@/application/events';
 import { EventFormSheet } from '@/features/events/EventsScreen';
 import { RecurringFormSheet, formFromTx } from '@/features/recurring/RecurringFormSheet';
 import { merchantKey } from '@/domain/merchantKey';
-import { draftReady, initDraft, withCategory, withKind, withLinkedAccount, withSplits, withType } from '@/domain/reviewDraft';
+import { draftReady, initDraft, withBareType, withCategory, withKind, withLinkedAccount, withSplits, withType } from '@/domain/reviewDraft';
 import { kindOf, standardTypeFor } from '@/domain/txKind';
 import { EXPECTED_REIMBURSE_ID } from '@/domain/categories';
 import { Collapse } from '@/ui/Collapse';
@@ -149,10 +149,11 @@ function stageKind(
   return next;
 }
 
-/** the counterparty row's face: dimmed n/a, a warning prompt, or the name */
+/** the counterparty row's face: dimmed n/a, the account, or the bare
+ *  label — counterless is legal now (arc 2's exit), so no warning cry */
 function counterRowLabel(kind: TxKind, name: string | undefined, t: ReturnType<typeof useLang>['t']): string {
   if (kind !== 'transfer') return t('tx.counterNotApplicable');
-  return name ?? t('tx.counterAccountPick');
+  return name ?? t('tx.counterNone');
 }
 
 /** the card's kind + counterparty rows (S3776: out of the main screen);
@@ -197,9 +198,7 @@ function CardKindRows({
           className="m-tap m-fade flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
         >
           <Icon name="bank-transfer" size={18} color="var(--m-ink-3)" />
-          <span className={`min-w-0 flex-1 truncate ${counterName ? '' : 'text-warning'}`}>
-            {counterRowLabel(kind, counterName, t)}
-          </span>
+          <span className="min-w-0 flex-1 truncate">{counterRowLabel(kind, counterName, t)}</span>
           <span className="text-[11px] text-ink-4">{t('tx.counterparty')}</span>
           <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
         </button>
@@ -214,9 +213,10 @@ function applyOwnCounterDefault(
   baseDraft: ReviewDraft | null,
   ownCounter: { id: string; type: AccountType } | undefined,
   cats: ReturnType<typeof useCategories>,
+  amountCents: number,
 ): ReviewDraft | null {
   if (!baseDraft || !ownCounter || baseDraft.linkedAccountId) return baseDraft;
-  const linked = withLinkedAccount(baseDraft, { id: ownCounter.id, type: ownCounter.type }, cats);
+  const linked = withLinkedAccount(baseDraft, { id: ownCounter.id, type: ownCounter.type }, cats, amountCents);
   return linked.catId ? linked : withCategory(linked, 'uncategorized', cats);
 }
 
@@ -310,7 +310,7 @@ function BulkConfirmSection({
       {/* near-max-height sheet styled like the transactions list (user
           redesign): TxRow rows with a checkbox rail, select/unselect all,
           and a row tap opens a compact READ-ONLY detail as a stacked sheet */}
-      <Sheet open={open} onOpenChange={setOpen} title={t('review.alsoApply', { n: selected.size })} height={760}>
+      <Sheet open={open} onOpenChange={setOpen} title={t('review.alsoApply', { n: selected.size })} height={760} dragHandle>
         <div className="flex items-center justify-between pb-2">
           <span className="text-[12px] text-ink-3">{t('review.bulkCount', { n: similar.length })}</span>
           <button
@@ -362,6 +362,67 @@ function BulkConfirmSection({
   );
 }
 
+/**
+ * The card's link row below categories: for a loan/mortgage counterparty
+ * it names WHICH debt the transfer pays (a payoff is a debt payment, not
+ * a recurring cost — user request 2026-07-29); otherwise the editable
+ * recurring link with its price-delta warning.
+ */
+function DebtOrRecurringRow({
+  isLoanCounter,
+  payingDebt,
+  recMatch,
+  linkRecurring,
+  manualRec,
+  amountCents,
+  currency,
+  onEdit,
+}: Readonly<{
+  isLoanCounter: boolean;
+  payingDebt: { name: string } | undefined;
+  recMatch: RecurringRow | undefined;
+  linkRecurring: boolean;
+  manualRec: RecurringRow | undefined;
+  amountCents: number;
+  currency: string;
+  onEdit: () => void;
+}>) {
+  const { t, lang } = useLang();
+  if (isLoanCounter) {
+    return (
+      <div data-testid="review-debt-row" className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-[14px] text-ink">
+        <Icon name="hand-coin-outline" size={18} color="var(--m-ink-3)" />
+        {/* v2: the counterparty account IS the loan — name it directly */}
+        <span className="min-w-0 flex-1 truncate">{payingDebt?.name}</span>
+        <span className="text-[11px] text-ink-4">{t('review.debtRow')}</span>
+      </div>
+    );
+  }
+  const delta = recMatch ? Math.abs(Math.abs(amountCents) - recMatch.amountCents) : 0;
+  return (
+    <>
+      <button
+        data-testid="review-recurring-row"
+        onClick={onEdit}
+        className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
+      >
+        <Icon name="autorenew" size={18} color="var(--m-ink-3)" />
+        <span className="min-w-0 flex-1 truncate">{recurringRowLabel(recMatch, linkRecurring, manualRec, t)}</span>
+        <span className="text-[11px] text-ink-4">{t('recurring.linkTitle')}</span>
+        <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+      </button>
+      {recMatch && linkRecurring && delta >= 50 && (
+        <div className="flex items-center gap-1 px-4 pb-1 text-[11px] text-warning" data-testid="review-rec-delta">
+          <Icon name={Math.abs(amountCents) > recMatch.amountCents ? 'trending-up' : 'trending-down'} size={12} />
+          {t(Math.abs(amountCents) > recMatch.amountCents ? 'review.recDeltaMore' : 'review.recDeltaLess', {
+            amount: fmtCents(delta, currency, lang),
+          })}
+        </div>
+      )}
+    </>
+  );
+}
+
 /** the recurring row's display label: linked name or "None" */
 function recurringRowLabel(
   recMatch: RecurringRow | undefined,
@@ -404,7 +465,7 @@ function RecurringPickSheet({
 }>) {
   const { t, lang } = useLang();
   return (
-    <Sheet open={open} onOpenChange={onOpenChange} title={t('review.linkRecurringPick')} size="form">
+    <Sheet open={open} onOpenChange={onOpenChange} title={t('review.linkRecurringPick')} size="form" dragHandle>
       <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="recpick-list">
         <button
           data-testid="recpick-none"
@@ -443,6 +504,11 @@ function RecurringPickSheet({
     </Sheet>
   );
 }
+
+/** v2: the loan/mortgage counterparty IS the debt being paid (S3776:
+ *  the branch lives out of the component) */
+const loanCounterOf = (counter: { type: string; name: string } | undefined): { name: string } | undefined =>
+  counter && ['loan', 'mortgage'].includes(counter.type) ? { name: counter.name } : undefined;
 
 /**
  * Review queue, rebuilt around the legacy mechanics with a calmer face:
@@ -546,7 +612,7 @@ export function ReviewScreen() {
   // untouched cards follow the tx + the (async) prediction live
   const baseDraft = tx ? initDraft(tx, prediction?.catId, cats) : null;
   const ownTransferDraft = useMemo(
-    () => applyOwnCounterDefault(baseDraft, ownCounter, cats),
+    () => applyOwnCounterDefault(baseDraft, ownCounter, cats, tx?.amountCents ?? 0),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [tx?.id, ownCounter, prediction?.catId, cats],
   );
@@ -556,6 +622,12 @@ export function ReviewScreen() {
     async () => (draft?.linkedAccountId ? store.get('account', draft.linkedAccountId) : undefined),
     [draft?.linkedAccountId],
   );
+  // a loan/mortgage counterparty makes this a DEBT payment: the account
+  // IS the loan (v2), so the card names the counterparty itself and
+  // retires the recurring row — a payoff transfer is not a recurring
+  // cost (user request 2026-07-29)
+  const payingDebt = loanCounterOf(draftCounter);
+  const isLoanCounter = payingDebt !== undefined;
   const events = useEvents();
   const activeEvents = useMemo(() => (events ?? []).filter((e) => e.archived !== 1), [events]);
   const pickedEvent = activeEvents.find((e) => e.id === eventPick);
@@ -644,9 +716,10 @@ export function ReviewScreen() {
   // stages its category once, and the editor then only offers that
   // category or expected reimbursement (the one allowed override)
   const chosenRec = useMemo(() => {
+    if (isLoanCounter) return undefined; // debt payments never carry a recurring link
     const id = chosenRecurringId(recMatch, linkRecurring, manualRecId);
     return id ? (recurrings ?? []).find((r) => r.id === id) : undefined;
-  }, [recMatch, linkRecurring, manualRecId, recurrings]);
+  }, [recMatch, linkRecurring, manualRecId, recurrings, isLoanCounter]);
   useEffect(() => {
     if (!chosenRec?.catId || !draft) return;
     if (draft.catId === chosenRec.catId || draft.catId === EXPECTED_REIMBURSE_ID) return;
@@ -668,7 +741,7 @@ export function ReviewScreen() {
     await writeConfirmation({
       tx,
       draft,
-      recurringId: chosenRecurringId(recMatch, linkRecurring, manualRecId),
+      recurringId: isLoanCounter ? undefined : chosenRecurringId(recMatch, linkRecurring, manualRecId),
       eventId: eventPick ?? undefined,
       bulk: similar.filter((s) => bulkSelected.has(s.id)),
       transform,
@@ -834,24 +907,16 @@ export function ReviewScreen() {
                   );
                 })}
 
-                <button
-                  data-testid="review-recurring-row"
-                  onClick={() => setRecPickOpen(true)}
-                  className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
-                >
-                  <Icon name="autorenew" size={18} color="var(--m-ink-3)" />
-                  <span className="min-w-0 flex-1 truncate">{recurringRowLabel(recMatch, linkRecurring, manualRec, t)}</span>
-                  <span className="text-[11px] text-ink-4">{t('recurring.linkTitle')}</span>
-                  <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
-                </button>
-                {recMatch && linkRecurring && Math.abs(Math.abs(tx.amountCents) - recMatch.amountCents) >= 50 && (
-                  <div className="flex items-center gap-1 px-4 pb-1 text-[11px] text-warning" data-testid="review-rec-delta">
-                    <Icon name={Math.abs(tx.amountCents) > recMatch.amountCents ? 'trending-up' : 'trending-down'} size={12} />
-                    {t(Math.abs(tx.amountCents) > recMatch.amountCents ? 'review.recDeltaMore' : 'review.recDeltaLess', {
-                      amount: fmtCents(Math.abs(Math.abs(tx.amountCents) - recMatch.amountCents), tx.currency, lang),
-                    })}
-                  </div>
-                )}
+                <DebtOrRecurringRow
+                  isLoanCounter={isLoanCounter}
+                  payingDebt={payingDebt}
+                  recMatch={recMatch}
+                  linkRecurring={linkRecurring}
+                  manualRec={manualRec}
+                  amountCents={tx.amountCents}
+                  currency={tx.currency}
+                  onEdit={() => setRecPickOpen(true)}
+                />
 
                 <button
                   data-testid="review-event-row"
@@ -982,7 +1047,13 @@ export function ReviewScreen() {
           currentLinkedId={draft.linkedAccountId}
           onChoose={(account) => {
             counterChosen.current = true;
-            setStagedDraft(withLinkedAccount(draft, account, cats));
+            setStagedDraft(withLinkedAccount(draft, account, cats, tx?.amountCents));
+          }}
+          // the bare label COMPLETES the transfer intent (arc 2) — the
+          // roll-back guard treats it exactly like an account pick
+          onBare={(type) => {
+            counterChosen.current = true;
+            setStagedDraft(withBareType(draft, type, tx.amountCents, cats));
           }}
         />
       )}
@@ -1026,7 +1097,7 @@ export function ReviewScreen() {
         />
       )}
       {tx && (
-        <Sheet open={eventPickOpen} onOpenChange={setEventPickOpen} title={t('events.linkTitle')} size="form">
+        <Sheet open={eventPickOpen} onOpenChange={setEventPickOpen} title={t('events.linkTitle')} size="form" dragHandle>
           <div className="pt-1" data-testid="review-event-list">
             <button
               data-testid="review-event-none"

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { LOCALES, useLang } from '@/i18n';
-import { useSpaceTransactions } from '@/application/transactions';
+import { useSpaceHistoryTransactions } from '@/application/transactions';
 import { localToday, useDismissedKeys, useRecurringOps, useRecurrings } from '@/application/recurring';
 import { detectRecurring } from '@/domain/detectRecurring';
 import type { RecurringSuggestion } from '@/domain/detectRecurring';
@@ -25,7 +25,11 @@ export function RecurringSuggestionsScreen() {
   const { store, spaceId } = useData();
   const recs = useRecurrings();
   const dismissed = useDismissedKeys();
-  const txs = useSpaceTransactions();
+  // the FULL stored history (user design 2026-08-01): detection and its
+  // evidence read past the space's start date — a yearly subscription
+  // only shows a pattern in the long tail. Accepting still links only
+  // the VISIBLE rows; the older charges stay stored-but-hidden.
+  const txs = useSpaceHistoryTransactions();
   const ops = useRecurringOps();
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const [formInitial, setFormInitial] = useState<FormState | null>(null);

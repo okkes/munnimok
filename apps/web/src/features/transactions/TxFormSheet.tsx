@@ -1,18 +1,20 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useSpaceAccounts } from '@/application/transactions';
-import { UNCATEGORIZED_ID } from '@/domain/categories';
+import { UNCATEGORIZED_ID, autoSubFor } from '@/domain/categories';
 import { typeForLinkedAccount } from '@/domain/txType';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
+import { useQuery } from '@/db/useQuery';
 import { logActivity } from '@/application/activity';
+import { createCounterTransaction } from '@/application/transferMatch';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { useRecurrings } from '@/application/recurring';
-import { parseCents } from '@/lib/money';
-import type { TransactionRow, TxSplit, TxType } from '@/db/types';
+import { fmtCents, parseCents } from '@/lib/money';
+import type { AccountRow, TransactionRow, TxSplit, TxType } from '@/db/types';
+import { typeDef } from '@/features/accounts/accountTypes';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
-import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { CategoryPicker } from '@/features/categories/CategoryPicker';
 import { SplitEditorSheet } from './SplitEditorSheet';
@@ -27,9 +29,20 @@ interface TxFormSheetProps {
   onOpenChange: (open: boolean) => void;
   /** present = edit an existing (manual) transaction */
   tx?: TransactionRow;
+  /** a caller-staged payment (arc 3: the debt detail's "add payment"
+   *  door): the form opens as a transfer onto this counterparty */
+  prefill?: { linkedAccountId: string; merchant?: string };
 }
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
+
+/** one string per form state — the dirty guard compares it to the
+ *  seeded baseline (order fixed; JSON keeps null/undefined distinct) */
+const formFingerprint = (state: Record<string, unknown>): string =>
+  JSON.stringify([
+    state.amount, state.isExpense, state.merchant, state.date, state.accountId, state.catId,
+    state.kind, state.linkedAccountId, state.bareType, state.recurringId, state.splits,
+  ]);
 
 /**
  * The kind resolves the stored technical type (user simplification):
@@ -134,9 +147,10 @@ function KindRows({
   );
 }
 
-/** what the form opens with: the edited row's values, or a blank slate
- *  (S3776: the branch lives out of the component) */
-function initialFormState(tx: TransactionRow | undefined) {
+/** what the form opens with: the edited row's values, a caller-staged
+ *  payment, or a blank slate (S3776: the branch lives out of the
+ *  component) */
+function initialFormState(tx: TransactionRow | undefined, prefill?: TxFormSheetProps['prefill']) {
   if (!tx) {
     // Mina's demo suggestion pre-fills (category included — user
     // remark); the user edits freely and the act accepts ANY values
@@ -144,12 +158,13 @@ function initialFormState(tx: TransactionRow | undefined) {
     return {
       amount: suggested?.amount ?? '',
       isExpense: true,
-      merchant: suggested?.merchant ?? '',
+      merchant: prefill?.merchant ?? suggested?.merchant ?? '',
       date: todayIso(),
       accountId: null,
       catId: suggested?.catId ?? UNCATEGORIZED_ID,
-      kind: 'standard' as TxKind,
-      linkedAccountId: null,
+      kind: (prefill ? 'transfer' : 'standard') as TxKind,
+      linkedAccountId: prefill?.linkedAccountId ?? null,
+      bareType: null as TxType | null,
       recurringId: null,
     };
   }
@@ -162,6 +177,9 @@ function initialFormState(tx: TransactionRow | undefined) {
     catId: tx.catId ?? UNCATEGORIZED_ID,
     kind: kindOf(tx.txType),
     linkedAccountId: tx.linkedAccountId ?? null,
+    // a counterless transfer-family row (the arc-2 bare exit) reopens
+    // with its typed label intact instead of demanding a counterparty
+    bareType: kindOf(tx.txType) === 'transfer' && !tx.linkedAccountId ? tx.txType : null,
     recurringId: tx.recurringId ?? null,
   };
 }
@@ -196,15 +214,18 @@ function buildPseudoTx(
   }) as never;
 }
 
-/** save gate: real merchant, positive amount, an account, a date, and —
- *  for transfers — the mandatory counterparty (user rule) */
+/** save gate: real merchant, positive amount, an account, a date not
+ *  before the space starts (arc 5), and — for transfers — a decided
+ *  other side */
 const isValidManualTx = (args: {
   merchant: string;
   cents: number | null;
   account: string | null;
   date: string;
   counterMissing: boolean;
-}): boolean => !!args.merchant.trim() && args.cents !== null && args.cents > 0 && !!args.account && !!args.date && !args.counterMissing;
+  beforeStart: boolean;
+}): boolean =>
+  !!args.merchant.trim() && args.cents !== null && args.cents > 0 && !!args.account && !!args.date && !args.counterMissing && !args.beforeStart;
 
 /** the row the manual form writes (S3776: field assembly out of the
  *  component). Explicit nulls clear previously set links on edit —
@@ -222,13 +243,16 @@ function manualTxFields(args: {
   linkedAccountId: string | null;
   recurringId: string | null;
 }): Partial<Omit<TransactionRow, 'id' | 'spaceId'>> {
+  // arc 2 locked doors: an uncategorized transfer-family row files under
+  // the family's sign-picked sub instead of the hidden placeholder
+  const familySub = args.catId === UNCATEGORIZED_ID && !args.stagedSplits?.length ? autoSubFor(args.txType, args.signed) : undefined;
   return {
     accountId: args.accountId,
     date: args.date,
     amountCents: args.signed,
     currency: args.currency,
     merchant: args.merchant,
-    catId: args.catId,
+    catId: familySub ?? args.catId,
     txType: args.txType,
     needsReview: 0 as const,
     // splits staged in the unified editor travel with the write
@@ -266,7 +290,7 @@ function RecurringPickSheet({
 }>) {
   const { t } = useLang();
   return (
-    <Sheet open={open} onOpenChange={onOpenChange} title={t('recurring.linkTitle')} size="form">
+    <Sheet open={open} onOpenChange={onOpenChange} title={t('recurring.linkTitle')} size="form" dragHandle>
       <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="txform-recurring-options">
         {optionRow(
           !recurringId,
@@ -287,13 +311,99 @@ function RecurringPickSheet({
   );
 }
 
+/** the stacked account picker: name, type, masked number, balance —
+ *  replaces the chip strip (user redesign 2026-07-31) */
+function AccountPickSheet({
+  open,
+  onOpenChange,
+  accounts,
+  selectedId,
+  onPick,
+}: Readonly<{
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  accounts: readonly AccountRow[];
+  selectedId: string | null;
+  onPick: (id: string) => void;
+}>) {
+  const { t, lang } = useLang();
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange} title={t('txform.account')} size="form" dragHandle>
+      <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="txform-account-options">
+        {accounts.map((account) => (
+          <button
+            key={account.id}
+            data-testid={`txform-account-${account.id}`}
+            onClick={() => {
+              onPick(account.id);
+              onOpenChange(false);
+            }}
+            className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-4 py-3 text-left last:border-0"
+          >
+            <Icon name={typeDef(account.type).icon} size={18} color="var(--m-ink-2)" />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[14px] text-ink">{account.name}</span>
+              <span className="block truncate text-[11px] text-ink-4">
+                {t(typeDef(account.type).labelKey)}
+                {account.iban ? ` · …${account.iban.slice(-4)}` : ''}
+              </span>
+            </span>
+            <span className="m-num text-[12px] text-ink-3">{fmtCents(account.balanceCents, account.currency, lang)}</span>
+            {selectedId === account.id && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
+          </button>
+        ))}
+      </div>
+    </Sheet>
+  );
+}
+
+/** exactly ONE manual account picks itself; with several, the user
+ *  chooses explicitly — a silent first-account default booked rows on
+ *  the wrong account (user redesign 2026-07-31) */
+const soleAccountId = (writable: readonly AccountRow[]): string | null => (writable.length === 1 ? writable[0].id : null);
+
+/** a transfer's other side is decided by an account OR the bare
+ *  "no counter account" label (arc 2) — undecided blocks save */
+const counterUndecided = (kind: TxKind, linkedAccount: AccountRow | undefined, bareType: TxType | null): boolean =>
+  kind === 'transfer' && !linkedAccount && !bareType;
+
+/** the space's start date IF the picked date falls before it (arc 5) —
+ *  such a row would vanish behind the display gate the moment it saved,
+ *  so a truthy return blocks save and renders the way out */
+const blockingStartDate = (space: { historyStartDate?: string } | undefined, date: string): string | undefined =>
+  space?.historyStartDate && date && date < space.historyStartDate ? space.historyStartDate : undefined;
+
+/** the counter row's face: the account's name, or the bare label */
+const counterFieldLabel = (
+  linkedName: string | undefined,
+  bareType: TxType | null,
+  t: ReturnType<typeof useLang>['t'],
+): string | undefined => linkedName ?? (bareType ? t('tx.counterNone') : undefined);
+
+/** the account field on the form: picked account, or the pick prompt */
+function AccountFieldRow({ account, onOpen }: Readonly<{ account: AccountRow | undefined; onOpen: () => void }>) {
+  const { t } = useLang();
+  return (
+    <button
+      data-testid="txform-account"
+      onClick={onOpen}
+      className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink"
+    >
+      <Icon name={account ? typeDef(account.type).icon : 'bank-outline'} size={20} color="var(--m-ink-3)" />
+      <span className={`min-w-0 flex-1 truncate ${account ? '' : 'text-warning'}`}>{account?.name ?? t('txform.pickAccount')}</span>
+      <span className="text-xs text-ink-4">{t('txform.account')}</span>
+      <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+    </button>
+  );
+}
+
 /**
  * Create or edit a manual transaction. Bank-imported rows (importRef set)
  * never reach this sheet — their amount/date are the bank's truth — and
  * automatically synced accounts (open banking) never take manual rows:
  * the bank feed is their single source of truth (user rule).
  */
-export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
+export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProps) {
   const { t } = useLang();
   const navigate = useNavigate();
   const { store, repo, spaceId } = useData();
@@ -310,16 +420,25 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
   const [splitOpen, setSplitOpen] = useState(false);
   const [stagedSplits, setStagedSplits] = useState<TxSplit[] | null>(null);
   // the simplified kind (user redesign): standard / transfer / adjustment;
-  // a transfer refuses to save without its counterparty
+  // a transfer saves with a counterparty OR a bare family label (arc 2)
   const [kind, setKind] = useState<TxKind>('standard');
   const [linkedAccountId, setLinkedAccountId] = useState<string | null>(null);
+  const [bareType, setBareType] = useState<TxType | null>(null);
   const [recurringId, setRecurringId] = useState<string | null>(null);
   const [kindOpen, setKindOpen] = useState(false);
   const [counterOpen, setCounterOpen] = useState(false);
   const [recurringOpen, setRecurringOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  // manual counterparty: the other side can be written in the same
+  // stroke (user: "-100 to savings updated only half the picture")
+  const [mirrorCounter, setMirrorCounter] = useState(true);
+  const baselineRef = useRef('');
 
   const allAccounts = useSpaceAccounts();
   const accounts = useMemo(() => allAccounts?.filter((a) => !a.archived), [allAccounts]);
+  // manual rows before the space's history start are refused (arc 5) —
+  // they would vanish behind the display gate the moment they saved
+  const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   // tier rule: hand-typed rows belong on MANUAL accounts only — linked
   // feeds are the bank's and imported (camt/csv) accounts are the next
   // upload's; manual entries there would duplicate or contradict them
@@ -332,7 +451,7 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
   // identity-keyed reseed overwrote what the user was typing (iOS ss)
   useEffect(() => {
     if (!open) return;
-    const initial = initialFormState(tx);
+    const initial = initialFormState(tx, prefill);
     setAmount(initial.amount);
     setIsExpense(initial.isExpense);
     setMerchant(initial.merchant);
@@ -341,20 +460,32 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
     setCatId(initial.catId);
     setKind(initial.kind);
     setLinkedAccountId(initial.linkedAccountId);
+    setBareType(initial.bareType);
     setRecurringId(initial.recurringId);
     setStagedSplits(tx?.splits ?? null);
+    setMirrorCounter(true);
+    // dirty baseline (user request 2026-08-01): a stray backdrop tap on
+    // an EDITED form asks before dropping it; an untouched one closes
+    baselineRef.current = formFingerprint({
+      amount: initial.amount, isExpense: initial.isExpense, merchant: initial.merchant, date: initial.date,
+      accountId: initial.accountId, catId: initial.catId, kind: initial.kind,
+      linkedAccountId: initial.linkedAccountId, bareType: initial.bareType, recurringId: initial.recurringId,
+      splits: tx?.splits ?? null,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, tx?.id]);
 
   const cat = cats.byId(catId);
-  const effectiveAccount = accountId ?? writable[0]?.id ?? null;
+  const effectiveAccount = accountId ?? soleAccountId(writable);
+  const selectedAccount = writable.find((a) => a.id === effectiveAccount);
   const cents = parseCents(amount);
   const linkedAccount = (accounts ?? []).find((a) => a.id === linkedAccountId);
-  const effectiveType: TxType = typeForKind(kind, isExpense, linkedAccount ? typeForLinkedAccount(linkedAccount.type) : null);
-  // a transfer without its counterparty is unrepresentable (user rule)
-  const counterMissing = kind === 'transfer' && !linkedAccount;
+  // the counterparty derives the type; the bare exit (arc 2) names it directly
+  const effectiveType: TxType = typeForKind(kind, isExpense, linkedAccount ? typeForLinkedAccount(linkedAccount.type) : bareType);
+  const counterMissing = counterUndecided(kind, linkedAccount, bareType);
+  const startGateBlocking = blockingStartDate(space, date);
   const kindDetailType = kindDetail(effectiveType);
-  const valid = isValidManualTx({ merchant, cents, account: effectiveAccount, date, counterMissing });
+  const valid = isValidManualTx({ merchant, cents, account: effectiveAccount, date, counterMissing, beforeStart: !!startGateBlocking });
 
   const formCurrency = accounts?.find((a) => a.id === effectiveAccount)?.currency ?? 'EUR';
   // the editor needs a SpaceTx shape; a NEW manual tx builds it from the
@@ -373,12 +504,27 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
   const save = () => {
     if (!valid || !effectiveAccount || cents === null) return;
     const signed = isExpense ? -Math.abs(cents) : Math.abs(cents);
+    const rowId = tx?.id ?? repo.newId();
     applyManualBalanceDeltas(repo, spaceId, manualBalanceDeltas(accounts, tx, effectiveAccount, signed));
+    // loans v2 (review finding): the edit form writes the raw row
+    // directly, so the loan link coupling must ride here too — a
+    // retargeted or cleared counterparty moves the manual loans exactly
+    // like the same gesture in the detail screen. The mirror path stays
+    // exempt: createCounterTransaction skips liability counters now.
+    const prevLinked = tx?.linkedAccountId ?? undefined;
+    const nextLinked = linkedAccountId ?? undefined; // mirrors manualTxFields' write
+    if (prevLinked !== nextLinked) {
+      void import('@/application/loanBalance')
+        .then(({ applyLoanLinkDelta }) =>
+          applyLoanLinkDelta(store, repo, { amountCents: signed, date, transferPeerId: tx?.transferPeerId, loanCounted: tx?.loanCounted }, prevLinked, nextLinked),
+        )
+        .catch(() => undefined);
+    }
     void logActivity(store, repo, spaceId, tx ? 'txEdit' : 'txAdd', merchant.trim());
     void repo.upsert(
       'transaction',
       spaceId,
-      tx?.id ?? repo.newId(),
+      rowId,
       manualTxFields({
         tx,
         accountId: effectiveAccount,
@@ -393,6 +539,26 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
         recurringId,
       }),
     );
+    // the checked mirror writes the OTHER side onto the manual counter
+    // account in the same stroke (peered both ways, balance follows)
+    if (!tx && mirrorCounter && kind === 'transfer' && linkedAccount?.source === 'manual') {
+      void createCounterTransaction(
+        store,
+        repo,
+        {
+          id: rowId,
+          spaceId,
+          accountId: effectiveAccount,
+          date,
+          amountCents: signed,
+          currency: formCurrency,
+          merchant: merchant.trim(),
+          txType: effectiveType,
+          needsReview: 0,
+        } as Parameters<typeof createCounterTransaction>[2],
+        linkedAccount.id,
+      ).catch(() => undefined);
+    }
     onOpenChange(false);
   };
 
@@ -403,6 +569,7 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
         onOpenChange={onOpenChange}
         title={tx ? t('txform.editTitle') : t('txform.addTitle')}
         size="tall"
+        dirty={open && formFingerprint({ amount, isExpense, merchant, date, accountId, catId, kind, linkedAccountId, bareType, recurringId, splits: stagedSplits }) !== baselineRef.current}
       >
         {/* no manual account yet: explain WHY the form can't work and
             hand over a one-tap path to fix it (user UX request) */}
@@ -474,15 +641,28 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
               <Icon name="chevron-down" size={18} color="var(--m-ink-4)" />
             </span>
           </div>
+          {/* before the space starts (arc 5): refuse with the way out —
+              one tap moves the start back to this very date */}
+          {startGateBlocking && (
+            <div className="flex flex-col gap-2 rounded-card border border-line bg-bg-2 px-4 py-3" data-testid="txform-before-start">
+              <p className="text-[12px] text-negative">{t('txform.beforeStart', { date: startGateBlocking })}</p>
+              <Button
+                size="sm"
+                variant="outline"
+                data-testid="txform-move-start"
+                onClick={() => {
+                  void repo.upsert('space', spaceId, spaceId, { historyStartDate: date });
+                  void logActivity(store, repo, spaceId, 'spaceEdit', space?.name ?? '');
+                }}
+              >
+                {t('txform.moveStart')}
+              </Button>
+            </div>
+          )}
 
-          {/* account chips — open-banking accounts are not offered */}
-          <div className="flex flex-wrap gap-2">
-            {writable.map((a) => (
-              <Chip key={a.id} testId={`txform-account-${a.id}`} selected={effectiveAccount === a.id} onClick={() => setAccountId(a.id)}>
-                {a.name}
-              </Chip>
-            ))}
-          </div>
+          {/* account — a full field + picker sheet (the chip strip felt
+              odd, user 2026-07-31); open-banking accounts are not offered */}
+          {writable.length > 0 && <AccountFieldRow account={selectedAccount} onOpen={() => setAccountOpen(true)} />}
           {writable.length === 0 && (
             <p className="px-1 text-[12px] text-ink-4" data-testid="txform-no-manual-account">
               {t('txform.manualOnly')}
@@ -492,10 +672,24 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
           <KindRows
             kind={kind}
             detailType={kindDetailType}
-            counterName={linkedAccount?.name}
+            counterName={counterFieldLabel(linkedAccount?.name, bareType, t)}
             onKind={() => setKindOpen(true)}
             onCounter={() => setCounterOpen(true)}
           />
+
+          {/* manual counter account: offer to write the other side too —
+              without it "-100 to savings" updated only half the picture */}
+          {!tx && kind === 'transfer' && linkedAccount?.source === 'manual' && (
+            <label className="flex items-center gap-2 px-1 text-[13px] text-ink-2">
+              <input
+                type="checkbox"
+                data-testid="txform-mirror"
+                checked={mirrorCounter}
+                onChange={(e) => setMirrorCounter(e.target.checked)}
+              />
+              {t('txform.mirrorCreate', { name: linkedAccount.name })}
+            </label>
+          )}
 
           {/* category row — opens the SAME unified editor as review */}
           <button
@@ -540,8 +734,12 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
         allowAdjustment
         onPick={(next) => {
           setKind(next);
-          if (next === 'transfer') setCounterOpen(true);
-          else setLinkedAccountId(null);
+          if (next === 'transfer') {
+            setCounterOpen(true);
+          } else {
+            setLinkedAccountId(null);
+            setBareType(null);
+          }
         }}
       />
       <CounterpartySheet
@@ -549,7 +747,23 @@ export function TxFormSheet({ open, onOpenChange, tx }: TxFormSheetProps) {
         onOpenChange={setCounterOpen}
         excludeAccountId={effectiveAccount ?? ''}
         currentLinkedId={linkedAccountId ?? undefined}
-        onChoose={(picked) => setLinkedAccountId(picked.id)}
+        onChoose={(picked) => {
+          setLinkedAccountId(picked.id);
+          setBareType(null);
+        }}
+        onBare={(type) => {
+          setBareType(type);
+          setLinkedAccountId(null);
+        }}
+      />
+
+      {/* stacked: account picker */}
+      <AccountPickSheet
+        open={accountOpen}
+        onOpenChange={setAccountOpen}
+        accounts={writable}
+        selectedId={effectiveAccount}
+        onPick={(id) => setAccountId(id)}
       />
 
       {/* stacked: recurring cost */}

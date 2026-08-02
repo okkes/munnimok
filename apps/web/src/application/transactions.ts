@@ -1,4 +1,4 @@
-import { visibleAccounts, visibleTransactions, writeTxTransform } from '@/db/joined';
+import { historyTransactions, visibleAccounts, visibleTransactions, writeTxTransform } from '@/db/joined';
 import type { SpaceAccount, SpaceTx, TxTransformFields } from '@/db/joined';
 import { useQuery } from '@/db/useQuery';
 import { useData } from '@/app/data';
@@ -27,6 +27,13 @@ export function useSpaceAccounts(): SpaceAccount[] | undefined {
   return useQuery(store, async () => visibleAccounts(store, spaceId), [spaceId]);
 }
 
+/** the space's FULL stored history, gates lifted — recurring detection
+ *  only (user design 2026-08-01): patterns need the pre-start tail */
+export function useSpaceHistoryTransactions(): SpaceTx[] | undefined {
+  const { store, spaceId } = useData();
+  return useQuery(store, async () => historyTransactions(store, spaceId), [spaceId]);
+}
+
 /** one visible transaction by id (detail screens) */
 export function useSpaceTransaction(txId: string): SpaceTx | undefined {
   const { store, spaceId } = useData();
@@ -47,6 +54,8 @@ export function useSpaceTransaction(txId: string): SpaceTx | undefined {
 export function useTxTransform(): (tx: SpaceTx, fields: TxTransformFields, activity?: string | null) => Promise<void> {
   const { store, repo, spaceId } = useData();
   return async (tx, fields, activity = 'txEdit') => {
+    // the loan balance coupling rides INSIDE writeTxTransform (loans v2
+    // review): every linkedAccountId writer shares it, not just this hook
     await writeTxTransform(repo, tx, fields);
     if (activity) void logActivity(store, repo, spaceId, activity, txTitle(tx));
   };

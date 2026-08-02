@@ -48,6 +48,7 @@ export async function linkPaypalFunding(store: StorageBackend, repo: Repo, space
       linkedAccountId: paypal.id,
       currentCatId: debit.catId,
       catTxTypes: catalog.byId(debit.catId).txTypes,
+      amountCents: debit.amountCents,
     });
     await writeTxTransform(repo, debit, { ...fields, needsReview: 0 });
     linked++;

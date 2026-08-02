@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@/db/useQuery';
 import { useSpaceAccounts } from '@/application/transactions';
-import { logActivity } from '@/application/activity';
 import { useData } from '@/app/data';
-import { ACCOUNT_TYPES, isLiability, manualBalanceDate, typeDef } from '@/features/accounts/accountTypes';
+import { typeDef } from '@/features/accounts/accountTypes';
 import { AddAccountChooser } from '@/features/accounts/AddAccountChooser';
 import { TX_KINDS, kindOf } from '@/domain/txKind';
 import type { TxKind } from '@/domain/txKind';
@@ -11,10 +10,9 @@ import { typeForLinkedAccount } from '@/domain/txType';
 import type { AccountType, TxType } from '@/db/types';
 import { useLang } from '@/i18n';
 import { fmtCents } from '@/lib/money';
-import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
-import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
+import { TX_TYPE_VISUAL } from './TxTypeSheet';
 
 /** the three choices a person actually makes (user simplification) */
 export const TX_KIND_VISUAL: Record<TxKind, { icon: string; color: string }> = {
@@ -86,12 +84,19 @@ export function TxKindSheet({
   );
 }
 
+/** the family members offered by the "no counter account" exit —
+ *  funding included (user correction 2026-08-01): money for a shared
+ *  bank account held with family or friends is only ever picked by name */
+const BARE_TYPES: readonly TxType[] = ['saving', 'investment', 'debtPayment', 'funding', 'transfer'];
+
 /**
  * The counterparty picker for transfers (user redesign): searchable like
  * the recurring/event pickers, with a quick-create door — a missing
  * savings pot or loan becomes a manual account without leaving the flow.
- * There is deliberately NO "none" row: a transfer without a counterparty
- * is unrepresentable; picking the standard kind is how a link clears.
+ * The "no counter account" exit (arc 2) replaces the old hard rule: the
+ * user can name the family member directly — the row is typed and files
+ * the locked sub by sign, but stays a reporting label that moves no
+ * other balance.
  */
 export function CounterpartySheet({
   open,
@@ -99,40 +104,34 @@ export function CounterpartySheet({
   excludeAccountId,
   currentLinkedId,
   onChoose,
+  onBare,
 }: Readonly<{
   open: boolean;
   onOpenChange: (open: boolean) => void;
   excludeAccountId: string;
   currentLinkedId?: string;
   onChoose: (account: { id: string; type: AccountType }) => void;
+  onBare?: (type: TxType) => void;
 }>) {
   const { t, lang } = useLang();
-  const { store, repo, spaceId } = useData();
+  const { store, spaceId } = useData();
   const allAccounts = useSpaceAccounts();
-  const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
-  const [query, setQuery] = useState('');
-  const [creating, setCreating] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [newType, setNewType] = useState<AccountType | null>(null);
-  // the FULL addition flow (bank connect / statement import / manual
-  // with balance+currency), one sheet deeper — the quick-create stays
-  // for the fast path (user request 2026-07-28)
+  const [bareOpen, setBareOpen] = useState(false);
+  // the FULL creation flow (bank connect / statement import / manual),
+  // one sheet deeper — search and quick-create retired (user redesign
+  // 2026-08-01: the field confused, and Create covers the missing-
+  // account case properly)
   const [chooserOpen, setChooserOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return;
-    setQuery('');
-    setCreating(false);
-    setNewName('');
-    setNewType(null);
+    setBareOpen(false);
   }, [open]);
 
-  const candidates = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return (allAccounts ?? [])
-      .filter((a) => a.id !== excludeAccountId && !a.archived)
-      .filter((a) => !q || a.name.toLowerCase().includes(q));
-  }, [allAccounts, excludeAccountId, query]);
+  const candidates = useMemo(
+    () => (allAccounts ?? []).filter((a) => a.id !== excludeAccountId && !a.archived),
+    [allAccounts, excludeAccountId],
+  );
 
   // a loan account is a DEBT's backing account (1:1, user design
   // 2026-07-28): transferring to it IS paying that debt off — the row
@@ -145,36 +144,10 @@ export function CounterpartySheet({
     onOpenChange(false);
   };
 
-  const create = () => {
-    const name = newName.trim();
-    if (!name || !newType) return;
-    const id = repo.newId();
-    void repo.upsert('account', spaceId, id, {
-      name,
-      type: newType,
-      source: 'manual',
-      currency: space?.currency ?? 'EUR',
-      balanceCents: 0,
-      balanceAsOf: manualBalanceDate(),
-    });
-    void logActivity(store, repo, spaceId, 'accountAdd', name);
-    choose({ id, type: newType });
-  };
-
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title={t('tx.counterparty')} size="form">
       <p className="pb-2 text-[12px] text-ink-3">{t('tx.counterAccountHint')}</p>
-      <input
-        data-testid="counter-search"
-        value={query}
-        onChange={(e) => {
-          setQuery(e.target.value);
-          setCreating(false);
-        }}
-        placeholder={t('tx.counterSearch')}
-        className="mb-2 h-11 w-full rounded-input border border-line bg-surface px-4 text-[14px] text-ink outline-none placeholder:text-ink-4"
-      />
-      {!creating && (
+      {!bareOpen && (
         <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="counter-accounts">
           {candidates.map((account) => (
             <button
@@ -207,64 +180,56 @@ export function CounterpartySheet({
           )}
         </div>
       )}
-      {/* quick-create door — ALWAYS visible (user request: reaching a
-          missing account must be fast, especially now that transfers
-          demand a counterparty); a typed search pre-fills the name */}
-      {!creating && (
-        <button
-          data-testid="counter-create"
-          onClick={() => {
-            setNewName(query.trim());
-            setCreating(true);
-          }}
-          className="m-tap mt-2 flex w-full items-center gap-2 rounded-card border border-dashed border-line bg-transparent px-4 py-3 text-left text-[14px] font-medium text-accent-deep"
-        >
-          <Icon name="plus-circle-outline" size={18} />
-          {query.trim() ? t('tx.counterCreate', { name: query.trim() }) : t('tx.counterNew')}
-        </button>
-      )}
-      {!creating && (
+      {/* the ONE creation door (user redesign 2026-08-01): the full
+          chooser — bank connect, statement import (in place) or manual */}
+      {!bareOpen && (
         <button
           data-testid="counter-full-setup"
           onClick={() => setChooserOpen(true)}
-          className="m-tap mt-2 flex w-full items-center gap-2 rounded-card border border-dashed border-line bg-transparent px-4 py-3 text-left text-[14px] font-medium text-ink-2"
+          className="m-tap mt-2 flex w-full items-center gap-2 rounded-card border border-dashed border-line bg-transparent px-4 py-3 text-left text-[14px] font-medium text-accent-deep"
         >
-          <Icon name="bank-plus" size={18} />
+          <Icon name="plus-circle-outline" size={18} />
           {t('tx.counterFullSetup')}
         </button>
+      )}
+      {/* the "no counter account" exit (arc 2): label the movement without
+          modeling the other side — the caller types the row directly */}
+      {!bareOpen && onBare && (
+        <button
+          data-testid="counter-none"
+          onClick={() => setBareOpen(true)}
+          className="m-tap mt-2 flex w-full items-center gap-2 rounded-card border border-dashed border-line bg-transparent px-4 py-3 text-left text-[14px] font-medium text-ink-2"
+        >
+          <Icon name="link-off" size={18} />
+          {t('tx.counterNone')}
+        </button>
+      )}
+      {bareOpen && onBare && (
+        <div className="mt-1" data-testid="counter-bare-options">
+          <p className="px-1 pb-2 text-[12px] text-ink-3">{t('tx.counterNoneHint')}</p>
+          <div className="overflow-hidden rounded-card border border-line bg-surface">
+            {BARE_TYPES.map((type) => (
+              <button
+                key={type}
+                data-testid={`counter-bare-${type}`}
+                onClick={() => {
+                  onBare(type);
+                  onOpenChange(false);
+                }}
+                className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-4 py-3 text-left last:border-0"
+              >
+                <Icon name={TX_TYPE_VISUAL[type].icon} size={18} color={TX_TYPE_VISUAL[type].color} />
+                <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{t(`tx.type.${type}`)}</span>
+              </button>
+            ))}
+          </div>
+        </div>
       )}
       <AddAccountChooser
         open={chooserOpen}
         onOpenChange={setChooserOpen}
         onCreated={(account) => choose(account)}
       />
-      {creating && (
-        <div className="mt-2 flex flex-col gap-2" data-testid="counter-create-form">
-          <input
-            data-testid="counter-create-name"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            placeholder={t('acct.accountName')}
-            className="h-11 w-full rounded-input border border-line bg-surface px-4 text-[14px] text-ink outline-none placeholder:text-ink-4"
-          />
-          <div className="m-cap px-1">{t('acct.accountType')}</div>
-          <div className="flex flex-wrap gap-2">
-            {ACCOUNT_TYPES.map((def) => (
-              <Chip key={def.type} testId={`counter-newtype-${def.type}`} selected={newType === def.type} onClick={() => setNewType(def.type)}>
-                <Icon name={def.icon} size={13} /> {t(def.labelKey)}
-              </Chip>
-            ))}
-          </div>
-          {/* new liability accounts start at zero too — the user tracks
-              the real balance on the account screen afterwards */}
-          {newType && isLiability(newType) && (
-            <p className="px-1 text-[11px] text-ink-4">{t('tx.counterCreateLiability')}</p>
-          )}
-          <Button data-testid="counter-create-save" disabled={!newType || !newName.trim()} onClick={create}>
-            {newName.trim() ? t('tx.counterCreate', { name: newName.trim() }) : t('tx.counterNew')}
-          </Button>
-        </div>
-      )}
     </Sheet>
   );
 }

@@ -752,7 +752,7 @@ export function SplitDetailScreen() {
 
       {/* SP2: pick expenses from MY attached space's transactions — the
           list is read from the LOCAL database, never another member's */}
-      <Sheet open={txOpen} onOpenChange={setTxOpen} title={t('splits.fromTx')} size="tall">
+      <Sheet open={txOpen} onOpenChange={setTxOpen} title={t('splits.fromTx')} size="tall" dragHandle>
         <div className="flex h-full flex-col gap-3 pt-1">
           <input
             data-testid="split-tx-search"

@@ -18,6 +18,42 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.27.0',
+    date: '2026-08-02',
+    items: [
+      {
+        en: 'Loans became one thing: the account IS the debt. Interest, size, note and payment rhythm live right on the loan account, existing debts fold in by themselves, and paying one off is a milestone (archive), not a delete. Link a payment and the balance moves with it — draws deepen it, unlinking gives it back — while older payments stay out of a freshly typed balance unless you deliberately count them in. After creating a loan, munni searches your whole history for its payments by account number, amount, label and name; and the amount fields do little arithmetic, so 3*250+100 just works.',
+        nl: 'Leningen werden één ding: de rekening IS de schuld. Rente, omvang, notitie en aflosritme staan op de leenrekening zelf, bestaande schulden vouwen zichzelf erin, en aflossen is een mijlpaal (archiveren), geen verwijderen. Koppel een aflossing en het saldo beweegt mee — opnames verdiepen het, ontkoppelen geeft het terug — terwijl oudere betalingen buiten een net getypt saldo blijven tenzij je ze bewust meetelt. Na het aanmaken doorzoekt munni je hele geschiedenis op aflossingen via rekeningnummer, bedrag, label en naam; en de bedragvelden rekenen mee, dus 3*250+100 werkt gewoon.',
+        tr: 'Krediler tek şey oldu: hesap borcun TA KENDİSİ. Faiz, tutar, not ve ödeme ritmi kredi hesabının üzerinde durur, mevcut borçlar kendiliğinden içine katlanır ve bitirmek bir kilometre taşıdır (arşiv), silme değil. Bir ödemeyi bağla, bakiye onunla oynar — çekimler derinleştirir, bağı kaldırmak geri verir — yeni yazılmış bir bakiyenin öncesindeki ödemelerse sen bilerek saydırmadıkça dışarıda kalır. Kredi oluşturunca munni tüm geçmişini hesap numarası, tutar, etiket ve ada göre ödemeler için tarar; tutar alanları da hesap yapar, 3*250+100 çalışır.',
+      },
+      {
+        en: 'Yearly subscriptions finally get spotted: recurring-cost detection reads your FULL bank history — even charges older than the space’s start date count as pattern evidence while your lists stay clean — and new bank connections ask for up to two years of history where the bank allows it.',
+        nl: 'Jaarabonnementen worden eindelijk herkend: detectie van vaste lasten leest je VOLLEDIGE bankgeschiedenis — ook afschrijvingen ouder dan de startdatum van de ruimte tellen als bewijs terwijl je lijsten schoon blijven — en nieuwe bankkoppelingen vragen tot twee jaar geschiedenis waar de bank het toestaat.',
+        tr: 'Yıllık abonelikler sonunda yakalanıyor: düzenli gider tespiti TÜM banka geçmişini okur — alanın başlangıç tarihinden eski çekimler bile desen kanıtı sayılır, listelerin temiz kalır — ve yeni banka bağlantıları, banka izin verdiği ölçüde iki yıla kadar geçmiş ister.',
+      },
+      {
+        en: 'The big number on Home is your choice now, per space: net worth, total cash, safe to spend, or hand-picked accounts — unfold the band to switch and to give each account a say in the sum.',
+        nl: 'Het grote getal op Home is nu jouw keuze, per ruimte: vermogen, totaal contant, vrij te besteden of gekozen rekeningen — klap de balk uit om te wisselen en elke rekening zeggenschap in de som te geven.',
+        tr: 'Ana ekrandaki büyük sayı artık senin seçimin, alan başına: net varlık, toplam nakit, harcanabilir veya seçilen hesaplar — bandı aç, değiştir ve her hesaba toplamda söz hakkı ver.',
+      },
+      {
+        en: 'Sheets protect your work: an accidental swipe or tap outside a form with unsaved edits asks "Discard changes?" first, lists inside sheets scroll when they can and drag the sheet when they can’t, and the color wheel is properly draggable in every direction.',
+        nl: 'Panelen beschermen je werk: een onbedoelde veeg of tik buiten een formulier met niet-opgeslagen wijzigingen vraagt eerst "Wijzigingen weggooien?", lijsten in panelen scrollen als het kan en slepen het paneel als het niet kan, en het kleurenwiel is in elke richting netjes sleepbaar.',
+        tr: 'Paneller emeğini korur: kaydedilmemiş düzenlemeleri olan bir formun dışına yanlışlıkla kaydırma ya da dokunma önce "Değişiklikler silinsin mi?" diye sorar, panellerdeki listeler kayabiliyorken kayar, kayamıyorken paneli sürükler ve renk tekerleği her yönde düzgünce sürüklenir.',
+      },
+      {
+        en: 'Accounts got clearer everywhere: the space’s account rows open an info sheet with the full story (source, IBAN, start date, last sync), the transfer counterparty picker has ONE Create door that includes bank connect and in-place imports, imports show progress and readable previews, the start date is truly honored by imports, and money for a shared bank account is simply a transfer marked "To/From shared account".',
+        nl: 'Rekeningen werden overal duidelijker: de rijen van een ruimte openen een infopaneel met het hele verhaal (bron, IBAN, startdatum, laatste synchronisatie), de tegenpartij-kiezer heeft ÉÉN Aanmaken-deur inclusief bankkoppeling en importeren ter plekke, imports tonen voortgang en leesbare voorbeelden, de startdatum wordt door imports echt gerespecteerd, en geld voor een gedeelde rekening is gewoon een overboeking "Naar/Van gedeelde rekening".',
+        tr: 'Hesaplar her yerde netleşti: alanın hesap satırları tüm hikâyeyi anlatan bir bilgi paneli açar (kaynak, IBAN, başlangıç tarihi, son eşitleme), transfer karşı taraf seçicisinde banka bağlama ve yerinde içe aktarmayı da içeren TEK Oluştur kapısı var, içe aktarmalar ilerleme ve okunur önizleme gösterir, başlangıç tarihine içe aktarmalar gerçekten uyar ve ortak hesaba giden para "Ortak hesaba/hesaptan" işaretli sıradan bir transferdir.',
+      },
+      {
+        en: 'Mina’s tour is sturdier: lesson sheets can’t be swiped away mid-lesson (nested pickers still close), the create buttons wear a gentle glow while you stay free to edit, the delete lesson works to the end, and her pages are one calm centered column on desktop too. Recurring costs can wear your own uploaded image, and the login language picker is a proper bottom sheet.',
+        nl: 'Mina’s rondleiding is steviger: lespanelen kun je niet midden in een les wegvegen (geneste kiezers sluiten gewoon), de aanmaakknoppen dragen een zachte gloed terwijl jij vrij blijft bewerken, de verwijderles werkt tot het einde, en haar pagina’s zijn ook op desktop één rustige gecentreerde kolom. Vaste lasten kunnen je eigen geüploade afbeelding dragen, en de taalkiezer bij het inloggen is een echt onderpaneel.',
+        tr: 'Mina’nın turu daha sağlam: ders panelleri dersin ortasında kaydırılıp atılamaz (iç içe seçiciler yine kapanır), oluştur düğmeleri sen düzenlemekte özgürken yumuşak bir ışıltı taşır, silme dersi sonuna dek çalışır ve sayfaları masaüstünde de tek sakin ortalanmış sütun. Düzenli giderler kendi yüklediğin görseli taşıyabilir ve girişteki dil seçici gerçek bir alt panel.',
+      },
+    ],
+  },
+  {
     version: '2.26.0',
     date: '2026-07-28',
     items: [

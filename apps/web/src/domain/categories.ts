@@ -132,6 +132,8 @@ export const BUILTIN_CATEGORIES: BuiltinCategory[] = [
   {"id":"charity","parentId":"extra","nameKey":"cat.charity","icon":"handshake-outline","txTypes":["expense"],"direction":"debit"},
   {"id":"taxes","parentId":"extra","nameKey":"cat.taxes","icon":"bank-transfer-in","txTypes":["expense"],"direction":"debit"},
   {"id":"fee","parentId":"extra","nameKey":"cat.fee","icon":"credit-card-check-outline","txTypes":["expense"],"direction":"debit"},
+  // 2026-08-01 (user request): overdraft/loan interest charges
+  {"id":"interest","parentId":"extra","nameKey":"cat.interest","icon":"percent-outline","txTypes":["expense"],"direction":"debit"},
   {"id":"workExpense","parentId":"extra","nameKey":"cat.workExpense","icon":"briefcase-outline","txTypes":["expense"],"direction":"debit"},
   {"id":"familyCare","parentId":"extra","nameKey":"cat.familyCare","icon":"account-child-outline","txTypes":["expense"],"direction":"debit"},
   // moved from shopping: child care is rarely a "shopping" decision (catalog plan C2)
@@ -146,10 +148,12 @@ export const BUILTIN_CATEGORIES: BuiltinCategory[] = [
   {"id":"transferIn","parentId":"transfer","nameKey":"cat.transferIn","icon":"bank-transfer-in","txTypes":["transfer"],"direction":"credit"},
   {"id":"cashWithdraw","parentId":"transfer","nameKey":"cat.cashWithdraw","icon":"atm","txTypes":["transfer"],"direction":"debit"},
   {"id":"cashDeposit","parentId":"transfer","nameKey":"cat.cashDeposit","icon":"cash-plus","txTypes":["transfer"],"direction":"credit"},
+  // 2026-08-01 (user, ss review): the debt family is exactly the arc-2
+  // pair — Repaid (debit) / Borrowed (credit). lendMoney and
+  // creditCardPayment retired; migrateRetiredDebtSubs refiles their rows.
   {"id":"debt","nameKey":"cat.debt","icon":"credit-card-outline","color":"#9C27B0","isParent":true,"txTypes":["debtPayment"],"direction":"both"},
-  {"id":"lendMoney","parentId":"debt","nameKey":"cat.lendMoney","icon":"hand-coin-outline","txTypes":["debtPayment"],"direction":"debit"},
   {"id":"loanRepayment","parentId":"debt","nameKey":"cat.loanRepayment","icon":"bank-outline","txTypes":["debtPayment"],"direction":"debit"},
-  {"id":"creditCardPayment","parentId":"debt","nameKey":"cat.creditCardPayment","icon":"credit-card-clock-outline","txTypes":["debtPayment"],"direction":"debit"},
+  {"id":"debtBorrowed","parentId":"debt","nameKey":"cat.debtBorrowed","icon":"bank-transfer-in","txTypes":["debtPayment"],"direction":"credit"},
   {"id":"investment","nameKey":"cat.investment","icon":"chart-timeline-variant","color":"#673AB7","isParent":true,"txTypes":["investment"],"direction":"both"},
   {"id":"invest","parentId":"investment","nameKey":"cat.invest","icon":"chart-areaspline","txTypes":["investment"],"direction":"both"},
   {"id":"investBuy","parentId":"investment","nameKey":"cat.investBuy","icon":"trending-up","txTypes":["investment"],"direction":"debit"},
@@ -157,6 +161,11 @@ export const BUILTIN_CATEGORIES: BuiltinCategory[] = [
   {"id":"investContribution","parentId":"investment","nameKey":"cat.investContribution","icon":"bank-plus","txTypes":["investment"],"direction":"debit"},
   {"id":"adjustment","nameKey":"cat.adjustment","icon":"tune-variant","color":"#607D8B","isParent":true,"txTypes":["adjustment"],"direction":"both"},
   {"id":"balanceAdjustment","parentId":"adjustment","nameKey":"cat.balanceAdjustment","icon":"scale-balance","txTypes":["adjustment"],"direction":"both"},
+  // arc 2 (2026-08-01): funding — money to/from another SPACE's pot; the
+  // sub is machine-picked by sign, direction-true in every space's books
+  {"id":"funding","nameKey":"cat.funding","icon":"hand-coin","color":"#16A085","isParent":true,"txTypes":["funding"],"direction":"both"},
+  {"id":"fundingOut","parentId":"funding","nameKey":"cat.fundingOut","icon":"bank-transfer-out","txTypes":["funding"],"direction":"debit"},
+  {"id":"fundingIn","parentId":"funding","nameKey":"cat.fundingIn","icon":"bank-transfer-in","txTypes":["funding"],"direction":"credit"},
 ];
 
 export const CATEGORY_BY_ID: ReadonlyMap<string, BuiltinCategory> = new Map(
@@ -171,6 +180,38 @@ export const UNCATEGORIZED_ID = 'uncategorized';
 // the locked reimbursement tree (docs/reimbursement-redesign.md): the
 // user may PICK these but never edit them or add siblings
 export const REIMBURSEMENT_MAIN_ID = 'reimbursement';
+
+/**
+ * Arc 2 (user-approved 2026-08-01): the transfer-family category mains
+ * are LOCKED system doors like Reimbursement — pickable, never editable,
+ * no user subs, absent from budget/trends pickers. The machine files the
+ * sub by the money's sign (FAMILY_AUTO_SUB below).
+ */
+export const LOCKED_MAIN_IDS: ReadonlySet<string> = new Set([
+  REIMBURSEMENT_MAIN_ID,
+  'saving',
+  'transfer',
+  'debt',
+  'investment',
+  'funding',
+]);
+
+/** the machine-picked sub per transfer-family type: debit = money out */
+const FAMILY_AUTO_SUB: Partial<Record<TxType, { debit: string; credit: string }>> = {
+  saving: { debit: 'savingDeposit', credit: 'savingWithdraw' },
+  transfer: { debit: 'transferOut', credit: 'transferIn' },
+  debtPayment: { debit: 'loanRepayment', credit: 'debtBorrowed' },
+  investment: { debit: 'investBuy', credit: 'investSell' },
+  funding: { debit: 'fundingOut', credit: 'fundingIn' },
+};
+
+/** the sign-picked locked sub for a transfer-family row; undefined for
+ *  standard/adjustment types (they categorize freely) */
+export function autoSubFor(txType: TxType, amountCents: number): string | undefined {
+  const pair = FAMILY_AUTO_SUB[txType];
+  if (!pair) return undefined;
+  return amountCents < 0 ? pair.debit : pair.credit;
+}
 /** settled value, both sides of a link */
 export const REIMBURSED_ID = 'reimbursed';
 /** money you expect back (negative side, pre-settlement) */

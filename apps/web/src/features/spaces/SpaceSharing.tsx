@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useQuery } from '@/db/useQuery';
 import { useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
 import { useData } from '@/app/data';
@@ -159,6 +160,10 @@ interface SpaceMembersSectionProps {
 export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: SpaceMembersSectionProps) {
   const { t } = useLang();
   const { store, repo, engine, setActiveSpace, spaceId: activeSpaceId } = useData();
+  // the private lock (arc 4): a locked space renders the invite tools as
+  // an explainer — unlocking is an explicit owner act in space settings
+  const spaceRow = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
+  const locked = spaceRow?.inviteLock === 1;
   const [members, setMembers] = useState<MemberDto[] | null>(null);
   const [friends, setFriends] = useState<FriendDto[]>([]);
   const [outgoing, setOutgoing] = useState<OutgoingInviteDto[]>([]);
@@ -318,7 +323,15 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
           </div>
         </>
       )}
-      {isOwner && (
+      {isOwner && locked && (
+        <div className="mt-3 flex items-start gap-3 rounded-card border border-line bg-bg-2 px-4 py-3" data-testid="space-invite-locked">
+          <Icon name="lock-outline" size={18} color="var(--m-ink-3)" />
+          <span className="min-w-0 flex-1 text-[12px] leading-relaxed text-ink-3">
+            {t('space.inviteLockedBody')}
+          </span>
+        </div>
+      )}
+      {isOwner && !locked && (
         <>
           <div className="m-cap mt-3 mb-1 px-1">{t('space.addMember')}</div>
           {inviteSentTo && (

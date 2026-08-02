@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLang } from '@/i18n';
 import { readSessionIdentity } from '@/app/session';
 import { apiFetch, getApiCapabilities } from '@/lib/api';
+import { downscaleImage } from '@/lib/image';
 import { Highlight } from '@/ui/Highlight';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
@@ -64,6 +65,7 @@ export function BrandIconPicker({ open, onOpenChange, onPick, initialQuery = '' 
   const { t } = useLang();
   const [query, setQuery] = useState('');
   const prefilled = useRef(false);
+  const uploadRef = useRef<HTMLInputElement>(null);
 
   // search starts from the name the user already typed — usually exactly
   // the brand they want; one tap on the field starts a fresh query
@@ -127,7 +129,7 @@ export function BrandIconPicker({ open, onOpenChange, onPick, initialQuery = '' 
   };
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange} title={t('recurring.iconTitle')} size="tall">
+    <Sheet open={open} onOpenChange={onOpenChange} title={t('recurring.iconTitle')} size="tall" dragHandle>
       <div className="flex flex-col gap-3 pt-1">
         {/* the field arrives prefilled with the cost's name — the search
             glyph and the ✕ make it read as an editable search box */}
@@ -165,6 +167,34 @@ export function BrandIconPicker({ open, onOpenChange, onPick, initialQuery = '' 
           <Icon name="autorenew" size={18} color="var(--m-ink-3)" />
           {t('recurring.iconNone')}
         </button>
+        {/* own image (user request 2026-08-01): third source beside the
+            vendored set and logo.dev — downscaled like event pictures so
+            it syncs as a field */}
+        <button
+          data-testid="brandpicker-upload"
+          onClick={() => uploadRef.current?.click()}
+          className="m-tap flex items-center gap-3 rounded-card border border-dashed border-line bg-surface px-4 py-2.5 text-left text-[13px] text-ink-2"
+        >
+          <Icon name="image-plus-outline" size={18} color="var(--m-accent)" />
+          {t('recurring.iconUpload')}
+        </button>
+        <input
+          ref={uploadRef}
+          data-testid="brandpicker-upload-input"
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = '';
+            if (!file) return;
+            // undecodable files (HEIC on desktop…) reject — swallow like
+            // the sibling upload sites; the picker simply stays open
+            void downscaleImage(file, 256, 0.85)
+              .then((dataUrl) => pick(dataUrl))
+              .catch(() => undefined);
+          }}
+        />
 
         {remoteState === 'unavailable' && (
           <p className="px-1 text-[12px] text-ink-3" data-testid="brandpicker-offline-note">

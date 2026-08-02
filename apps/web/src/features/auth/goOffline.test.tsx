@@ -111,7 +111,7 @@ describe('Go offline (user identity, scripted server)', () => {
     db.close();
   }, 20_000);
 
-  it('refuses when an offline profile already exists on the device', async () => {
+  it('converts happily next to an existing offline profile (arc 8)', async () => {
     await seedStore();
     localStorage.setItem(
       'munni_offline_profiles',
@@ -119,8 +119,9 @@ describe('Go offline (user identity, scripted server)', () => {
     );
     renderAppAsUser('/settings/go-offline', { spaces: [{ id: 's-user', name: 'Personal' }], api: api([]) });
 
+    // the one-per-device refusal is gone: no blocked note, the confirm arms
     await screen.findByTestId('screen-go-offline');
-    expect(await screen.findByTestId('gooffline-blocked')).toBeTruthy();
-    expect((screen.getByTestId('gooffline-open-confirm') as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByTestId('gooffline-blocked')).toBeNull();
+    expect((screen.getByTestId('gooffline-open-confirm') as HTMLButtonElement).disabled).toBe(false);
   }, 15_000);
 });

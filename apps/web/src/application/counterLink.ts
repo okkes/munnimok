@@ -43,6 +43,7 @@ export async function linkAllCounterparties(store: StorageBackend, repo: Repo, s
       linkedAccountId: account.id,
       currentCatId: tx.catId,
       catTxTypes: catalog.byId(tx.catId).txTypes,
+      amountCents: tx.amountCents,
     });
     await writeTxTransform(repo, tx, fields);
     linked++;

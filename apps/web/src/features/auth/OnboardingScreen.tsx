@@ -187,6 +187,7 @@ export function OnboardingScreen() {
               </div>
             </div>
 
+            <div className="m-cap px-1">{t('profile.displayName')}</div>
             <input
               data-testid="onboarding-name"
               value={name}
@@ -281,7 +282,7 @@ export function OnboardingScreen() {
         )}
       </div>
 
-      <Sheet open={countryOpen} onOpenChange={setCountryOpen} title={t('onboarding.countryLabel')} size="tall">
+      <Sheet open={countryOpen} onOpenChange={setCountryOpen} title={t('onboarding.countryLabel')} size="tall" dragHandle>
         <input
           data-testid="onboarding-country-search"
           value={query}

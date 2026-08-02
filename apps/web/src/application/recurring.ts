@@ -1,8 +1,10 @@
 import { useEffect } from 'react';
 import { useData } from '@/app/data';
+import { appendNotification } from './notifications';
 import { LOCALES, useLang } from '@/i18n';
 import { visibleTransactions, writeTxTransform } from '@/db/joined';
 import type { SpaceTx } from '@/db/joined';
+import { isDebtTracked } from '@/domain/debts';
 import { merchantKey } from '@/domain/merchantKey';
 import { addDays, cycleKeyOf, nextDueDate, recurringAmountMatches } from '@/domain/recurring';
 import { recurringDismissId } from '@/domain/feedIds';
@@ -165,9 +167,10 @@ export function useRecurringReminders(): void {
   const { t, lang } = useLang();
   useEffect(() => {
     void (async () => {
-      if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
-      const registration = await navigator.serviceWorker?.ready.catch(() => undefined);
-      if (!registration) return;
+      // the in-app inbox records every event (arc 6) — the OS
+      // notification is the optional second outlet, permission allowing
+      const granted = typeof Notification !== 'undefined' && Notification.permission === 'granted';
+      const registration = granted ? await navigator.serviceWorker?.ready.catch(() => undefined) : undefined;
 
       const today = localToday();
       const recs = (await store.allRows('recurring')).filter(
@@ -180,33 +183,42 @@ export function useRecurringReminders(): void {
         if (await store.metaGet(key)) continue; // one reminder per due date
         await store.metaPut(key, Date.now());
         const date = new Date(next).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' });
-        await registration.showNotification('munni', {
-          body: t('recurring.reminderBody', { name: rec.name, date }),
-          icon: 'icon-192.png',
-          badge: 'icon-192.png',
-          tag: `rec-remind-${rec.id}`,
-          data: { url: './#/recurring' },
-        });
+        await appendNotification(store, 'recurringDue', { name: rec.name, date }, key);
+        if (registration) {
+          await registration.showNotification('munni', {
+            body: t('recurring.reminderBody', { name: rec.name, date }),
+            icon: 'icon-192.png',
+            badge: 'icon-192.png',
+            tag: `rec-remind-${rec.id}`,
+            data: { url: './#/recurring' },
+          });
+        }
       }
 
-      // debts saved without an interest rate get a WEEKLY nudge to fill
+      // loans saved without an interest rate get a WEEKLY nudge to fill
       // it in — 0% is an answer, an empty rate is a question (user rule
-      // 2026-07-28); quick-add now, find out the rate later
-      const debts = (await store.allRows('debt')).filter(
-        (d) => d.deleted === 0 && d.archived !== 1 && d.interestPctYear === undefined,
+      // 2026-07-28); quick-add now, find out the rate later. Loans v2:
+      // the tracked liability ACCOUNTS are the debts now
+      const loans = (await store.allRows('account')).filter(
+        (a) => a.deleted === 0 && a.archived !== 1 && a.interestPctYear === undefined && isDebtTracked(a),
       );
-      for (const debt of debts) {
-        const key = `debtPctReminded_${debt.id}`;
-        const last = (await store.metaGet(key)) as number | undefined;
+      for (const loan of loans) {
+        const key = `debtPctReminded_${loan.id}`;
+        // metaGet returns the {key, value} row — reading the row itself as
+        // a number made the 7-day check NaN and the nudge fired every open
+        const last = (await store.metaGet(key))?.value as number | undefined;
         if (last && Date.now() - last < 7 * 86_400_000) continue;
         await store.metaPut(key, Date.now());
-        await registration.showNotification('munni', {
-          body: t('debts.rateReminderBody', { name: debt.name }),
-          icon: 'icon-192.png',
-          badge: 'icon-192.png',
-          tag: `debt-rate-${debt.id}`,
-          data: { url: './#/debts' },
-        });
+        await appendNotification(store, 'debtRate', { name: loan.name }, `${key}_${Date.now()}`);
+        if (registration) {
+          await registration.showNotification('munni', {
+            body: t('debts.rateReminderBody', { name: loan.name }),
+            icon: 'icon-192.png',
+            badge: 'icon-192.png',
+            tag: `debt-rate-${loan.id}`,
+            data: { url: './#/debts' },
+          });
+        }
       }
     })().catch(() => undefined); // reminders are best-effort; a closing db must not throw
   }, [store, t, lang]);

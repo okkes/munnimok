@@ -14,6 +14,8 @@ import { useLang } from '@/i18n';
 import type { TFunc } from '@/i18n';
 import { useData } from '@/app/data';
 import { logActivity } from '@/application/activity';
+import { countPreAnchorTx } from '@/application/loanBalance';
+import { isLiability } from '@/features/accounts/accountTypes';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { fmtCents } from '@/lib/money';
 import { cleanBankText, humanizeBankKeys, txTitle } from '@/lib/text';
@@ -32,13 +34,15 @@ import { TxFormSheet } from './TxFormSheet';
 import { CounterpartySheet, TX_KIND_VISUAL, TxKindSheet, kindDetail } from './TxKindSheet';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { kindOf, standardTypeFor } from '@/domain/txKind';
+import { createCounterTransaction } from '@/application/transferMatch';
+import { visibleTransactions, writeTxTransform } from '@/db/joined';
 import { applyTypeChange, typeForLinkedAccount } from '@/domain/txType';
 import { merchantKey } from '@/domain/merchantKey';
 import { resolveTxDetailBlocks } from './TxDetailCustomizeScreen';
 import type { TxDetailBlockId } from './TxDetailCustomizeScreen';
 import { TxRow } from '@/ui/TxRow';
 import type { SpaceTx } from '@/application/transactions';
-import type { TxType } from '@/db/types';
+import type { AccountRow, TxType } from '@/db/types';
 
 const DATE_FMT: Record<string, string> = { en: 'en-GB', nl: 'nl-NL', tr: 'tr-TR' };
 
@@ -133,6 +137,60 @@ function DetailFacts({ tx, givenOut }: Readonly<{ tx: SpaceTx; givenOut: number 
 const similarTo = (allTxs: SpaceTx[] | undefined, tx: SpaceTx, differs: (item: SpaceTx) => boolean): SpaceTx[] =>
   (allTxs ?? []).filter((item) => item.id !== tx.id && merchantKey(item.merchant) === merchantKey(tx.merchant) && differs(item));
 
+/** pre-anchor payment on a manual loan that was never counted in — the
+ *  deliberate one-shot override applies (loans v2). `<=` mirrors the
+ *  strictly-newer rule in countsTowardLoan. */
+const offersLoanCount = (
+  tx: Pick<SpaceTx, 'transferPeerId' | 'loanCounted' | 'date'>,
+  linked: Pick<AccountRow, 'source' | 'type' | 'balanceAsOf'>,
+): boolean =>
+  linked.source === 'manual' &&
+  isLiability(linked.type) &&
+  !tx.transferPeerId &&
+  tx.loanCounted !== 1 &&
+  !!linked.balanceAsOf &&
+  tx.date <= linked.balanceAsOf;
+
+/** where this transfer stands with its other leg (arc 1 pair UX) */
+function transferPairState(
+  tx: Pick<SpaceTx, 'txType' | 'linkedAccountId' | 'transferPeerId'>,
+  linkedAccount: { source: string } | undefined,
+): 'peered' | 'awaiting' | 'offerCreate' | null {
+  if (kindOf(tx.txType) !== 'transfer' || !tx.linkedAccountId) return null;
+  if (tx.transferPeerId) return 'peered';
+  if (!linkedAccount) return null;
+  // manual counter: the other side can be created right here; a feed
+  // counter's real row arrives with the bank — the matcher claims it
+  return linkedAccount.source === 'manual' ? 'offerCreate' : 'awaiting';
+}
+
+/** the pair row: jump to the other leg, or release the link */
+function TransferPeerRow({ t, onOpen, onUnpair }: Readonly<{ t: TFunc; onOpen: () => void; onUnpair: () => void }>) {
+  return (
+    <>
+      <div className="mx-4 h-px bg-line-2" />
+      <div className="flex w-full items-center gap-3 px-4 py-3 text-[15px]">
+        <Icon name="swap-horizontal" size={20} color="var(--m-ink-3)" />
+        <button
+          data-testid="tx-detail-peer"
+          onClick={onOpen}
+          className="m-tap min-w-0 flex-1 border-none bg-transparent p-0 text-left text-[14px] font-medium text-accent-deep"
+        >
+          {t('tx.pairedCounterpart')}
+        </button>
+        <button
+          aria-label={t('tx.unpair')}
+          data-testid="tx-detail-unpair"
+          onClick={onUnpair}
+          className="m-tap flex h-8 w-8 items-center justify-center border-none bg-transparent text-ink-4"
+        >
+          <Icon name="link-off" size={16} />
+        </button>
+      </div>
+    </>
+  );
+}
+
 /** desktop panes get a CLOSE (leave the detail); mobile keeps history-back */
 function DetailBackButton({ panes, onClose, t }: Readonly<{ panes: boolean; onClose: () => void; t: TFunc }>) {
   if (panes) {
@@ -207,7 +265,7 @@ function DetailBulkBar({
       </div>
 
       {/* selection sheet, same mechanics as the review bulk list */}
-      <Sheet open={open} onOpenChange={setOpen} title={t('tx.bulkOffer', { n: selected.size })} height={760}>
+      <Sheet open={open} onOpenChange={setOpen} title={t('tx.bulkOffer', { n: selected.size })} height={760} dragHandle>
         <div className="flex items-center justify-between pb-2">
           <span className="text-[12px] text-ink-3">{t('review.bulkCount', { n: targets.length })}</span>
           <button
@@ -334,6 +392,7 @@ export function TxDetailScreen() {
   // sheet surprised — tapping one showed the other's content too)
   const [counterPickOpen, setCounterPickOpen] = useState(false);
   const [typePickOpen, setTypePickOpen] = useState(false);
+  const [loanCountBusy, setLoanCountBusy] = useState(false);
   const [splitOpen, setSplitOpen] = useState(false);
   const [recurringOpen, setRecurringOpen] = useState(false);
   // create-and-return doors (user request): snapshot of pre-existing ids
@@ -374,6 +433,8 @@ export function TxDetailScreen() {
     async () => (tx?.linkedAccountId ? store.get('account', tx.linkedAccountId) : undefined),
     [tx?.linkedAccountId],
   );
+  // a transfer into a loan account IS a payment on that loan (v2: the
+  // account is the debt) — say so, matching the review card's debt row
   // read-time join (user request): the moment an account with this IBAN
   // exists locally — e.g. it was attached to a space later — every
   // transaction's counterparty upgrades from plain text to a live door
@@ -420,6 +481,44 @@ export function TxDetailScreen() {
   const color = cat.color ?? parent?.color ?? 'var(--m-ink-3)';
   const kind = kindOf(tx.txType);
   const kindDetailType = kindDetail(tx.txType);
+  const pairState = transferPairState(tx, linkedAccount);
+  // the OTHER leg's side of a release — its own row clears in the same
+  // write. The peer is fetched from the STORE when the live snapshot
+  // hasn't emitted it yet (a slow liveQuery beat left the peer's
+  // transferPeerId dangling — CI-only flake)
+  const releasePeer = async () => {
+    const peerId = tx.transferPeerId;
+    if (!peerId) return;
+    const peer =
+      (allTxs ?? []).find((item) => item.id === peerId) ??
+      (await visibleTransactions(store, spaceId)).find((item) => item.id === peerId);
+    if (peer) await writeTxTransform(repo, peer, { transferPeerId: null as never });
+  };
+  // unpairing releases BOTH legs — one activity entry covers the action
+  const unpair = () => {
+    void releasePeer();
+    void transform(tx, { transferPeerId: null as never }, 'txLink');
+  };
+  // counter pick, bare label and kind pick all write through the same
+  // coherence rules (arc 2: the locked family sub files by sign); a
+  // peered leg whose link moves away releases its old mirror first —
+  // a stale transferPeerId would keep collapsing the pair in the list
+  const retype = (nextType: TxType, nextLinkedId: string | null, action: 'txLink' | 'txCategory') => {
+    const fields = applyTypeChange({
+      nextType,
+      linkedAccountId: nextLinkedId,
+      currentCatId: tx.catId,
+      catTxTypes: cats.byId(tx.catId).txTypes,
+      amountCents: tx.amountCents,
+    });
+    const unpeer = !!tx.transferPeerId && tx.linkedAccountId !== nextLinkedId;
+    if (unpeer) void releasePeer();
+    void transform(
+      tx,
+      { ...fields, linkedAccountId: nextLinkedId as never, ...(unpeer ? { transferPeerId: null as never } : {}) },
+      action,
+    );
+  };
   // a credit that self-filed as Reimbursed keeps that category as long
   // as any link lives (user rule) — unlink first, then recategorize
   const categoryLocked = tx.catId === REIMBURSED_ID && givenOut > 0;
@@ -563,6 +662,32 @@ export function TxDetailScreen() {
                   → {linkedAccount.name}
                 </span>
               )}
+              {linkedAccount && ['loan', 'mortgage'].includes(linkedAccount.type) && (
+                <span className="block truncate text-[11px] text-accent-deep" data-testid="tx-detail-pays-debt">
+                  {t('tx.paysDebt', { name: linkedAccount.name })}
+                </span>
+              )}
+              {/* pre-anchor payment (loans v2): dated before the loan's
+                  known-true balance, so it did NOT move the balance —
+                  the user can deliberately count it in, once */}
+              {tx && linkedAccount && offersLoanCount(tx, linkedAccount) && (
+                  <button
+                    data-testid="tx-detail-loan-count"
+                    disabled={loanCountBusy}
+                    onClick={() => {
+                      // one-shot with a busy latch: the liveQuery re-emit
+                      // that hides this button trails the write (review
+                      // finding: a double-tap applied the delta twice)
+                      setLoanCountBusy(true);
+                      void countPreAnchorTx(store, repo, { ...tx, linkedAccountId: linkedAccount.id } as never, () =>
+                        writeTxTransform(repo, tx, { loanCounted: 1 }),
+                      ).finally(() => setLoanCountBusy(false));
+                    }}
+                    className="m-tap mt-0.5 block border-none bg-transparent p-0 text-left text-[11px] text-warning underline disabled:opacity-50"
+                  >
+                    {t('tx.loanNotCounted')}
+                  </button>
+                )}
             </span>
             <span className="text-xs text-ink-4">{t('txform.account')}</span>
           </div>
@@ -593,6 +718,33 @@ export function TxDetailScreen() {
             onOpenAccount={() => setCounterOpen(true)}
             onEdit={() => setCounterPickOpen(true)}
           />
+          {pairState === 'peered' && (
+            <TransferPeerRow
+              t={t}
+              onOpen={() => {
+                const peerId = tx.transferPeerId;
+                if (peerId) void navigate({ to: '/transactions/$txId', params: { txId: peerId } });
+              }}
+              onUnpair={() => unpair()}
+            />
+          )}
+          {pairState === 'awaiting' && (
+            <div className="px-4 pb-3">
+              <Pill testId="tx-detail-awaiting">{t('tx.awaitingCounterpart')}</Pill>
+            </div>
+          )}
+          {pairState === 'offerCreate' && (
+            <button
+              data-testid="tx-detail-create-counter"
+              onClick={() => {
+                const counterId = tx.linkedAccountId;
+                if (counterId) void createCounterTransaction(store, repo, tx, counterId);
+              }}
+              className="m-tap w-full border-none bg-transparent px-4 pb-3 text-left text-[13px] font-medium text-accent-deep"
+            >
+              {t('tx.createCounterpart', { name: linkedAccount?.name ?? '' })}
+            </button>
+          )}
         </div>
 
         {/* block: categories — ONE edit affordance for the whole block
@@ -714,15 +866,8 @@ export function TxDetailScreen() {
         onOpenChange={setCounterPickOpen}
         excludeAccountId={tx.accountId}
         currentLinkedId={tx.linkedAccountId}
-        onChoose={(picked) => {
-          const fields = applyTypeChange({
-            nextType: typeForLinkedAccount(picked.type),
-            linkedAccountId: picked.id,
-            currentCatId: tx.catId,
-            catTxTypes: cats.byId(tx.catId).txTypes,
-          });
-          void transform(tx, { ...fields, linkedAccountId: picked.id }, 'txLink');
-        }}
+        onChoose={(picked) => retype(typeForLinkedAccount(picked.type), picked.id, 'txLink')}
+        onBare={(type) => retype(type, null, 'txLink')}
       />
       <TxKindSheet
         open={typePickOpen}
@@ -731,19 +876,13 @@ export function TxDetailScreen() {
         allowAdjustment={!tx.importRef && !tx.feedSpaceId}
         onPick={(nextKind) => {
           // transfer completes in the counterparty picker — nothing is
-          // written until the (mandatory) other side is chosen
+          // written until the other side is chosen (an account, or the
+          // bare "no counter account" label)
           if (nextKind === 'transfer') {
             setCounterPickOpen(true);
             return;
           }
-          const fields = applyTypeChange({
-            nextType: nextKind === 'adjustment' ? 'adjustment' : standardTypeFor(tx.amountCents),
-            linkedAccountId: null,
-            currentCatId: tx.catId,
-            catTxTypes: cats.byId(tx.catId).txTypes,
-          });
-          // explicit null clears the link (undefined would be dropped by JSON)
-          void transform(tx, { ...fields, linkedAccountId: null as never }, 'txCategory');
+          retype(nextKind === 'adjustment' ? 'adjustment' : standardTypeFor(tx.amountCents), null, 'txCategory');
         }}
       />
       {/* ONE category flow (review parity): a single row edits the plain
@@ -779,7 +918,7 @@ export function TxDetailScreen() {
       </Sheet>
 
       {/* attach to an event */}
-      <Sheet open={eventOpen} onOpenChange={setEventOpen} title={t('events.linkTitle')} size="form">
+      <Sheet open={eventOpen} onOpenChange={setEventOpen} title={t('events.linkTitle')} size="form" dragHandle>
         <div className="pt-1" data-testid="tx-event-list">
           <button
             data-testid="tx-event-none"
@@ -833,7 +972,7 @@ export function TxDetailScreen() {
       )}
 
       {/* attach to a recurring cost */}
-      <Sheet open={recurringOpen} onOpenChange={setRecurringOpen} title={t('recurring.linkTitle')} size="form">
+      <Sheet open={recurringOpen} onOpenChange={setRecurringOpen} title={t('recurring.linkTitle')} size="form" dragHandle>
         <div className="pt-1" data-testid="tx-recurring-list">
           <button
             data-testid="tx-recurring-none"
@@ -1009,7 +1148,9 @@ function CounterpartyRow({
           <span className="block truncate">{primary}</span>
         ) : (
           <span className="block truncate text-ink-3" data-testid="tx-detail-counter-add">
-            {counterIban ?? (editable ? t('tx.counterAccountPick') : t('tx.counterNotApplicable'))}
+            {/* counterless transfers are legal (arc 2's bare exit): state
+                the fact calmly — the tap still doors into the picker */}
+            {counterIban ?? (editable ? t('tx.counterNone') : t('tx.counterNotApplicable'))}
           </span>
         )}
         {counterIban && primary && (

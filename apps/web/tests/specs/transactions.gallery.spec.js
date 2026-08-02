@@ -71,6 +71,10 @@ for (const V of VARIANTS) {
     await page.waitForSelector('[data-testid="txform-amount"]');
     await page.fill('[data-testid="txform-amount"]', '12,50');
     await page.fill('[data-testid="txform-merchant"]', 'Test Lunch');
+    // two demo manual accounts → nothing pre-selects (2026-07-31): pick
+    // the main one through the account field + sheet
+    await page.click('[data-testid="txform-account"]');
+    await page.click('[data-testid="txform-account-demo_main"]');
     await page.click('[data-testid="txform-category"]');
     // unified editor (same as review): per-row picker, Done stages it
     await page.click('[data-testid="split-cat-0"]');
@@ -141,9 +145,10 @@ for (const V of VARIANTS) {
     await page.waitForSelector('[data-testid="counter-accounts"]');
     await page.click('[data-testid="counter-pick-demo_save"]');
     await page.waitForTimeout(500);
-    // the savings counterparty derives Saving; the conflicting category resets
+    // the savings counterparty derives Saving; the conflicting category
+    // files under the sign-picked locked sub (arc 2) instead of resetting
     await expect(page.locator('[data-testid="tx-detail-kind-row"]')).toContainText('Saving');
-    await expect(page.locator('[data-testid="tx-detail-category-row"]')).toContainText('Uncategorized');
+    await expect(page.locator('[data-testid="tx-detail-category-row"]')).toContainText('Set aside');
     await expect(page.locator('[data-testid="tx-detail-linked-account"]')).toBeVisible();
     await shot(page, k('35-tx-type-link'));
     // back to Standard: the sign resolves Expense and the link clears
