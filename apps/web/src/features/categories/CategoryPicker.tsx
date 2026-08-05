@@ -7,6 +7,7 @@ import { Highlight } from '@/ui/Highlight';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 import { catName, useCategories } from './useCategories';
+import { SpecialCatMark } from './SpecialCatMark';
 
 import type { TxType } from '@/db/types';
 
@@ -84,7 +85,8 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
               className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-1 py-2.5 text-left text-[14px] text-ink"
             >
               <Icon name={cat.icon} size={19} color={cat.color ?? parent.color} />
-              <span className="flex-1">
+              <span className="flex flex-1 items-center gap-1.5">
+                <SpecialCatMark cat={cat} color={cat.color ?? parent.color} />
                 <Highlight text={catName(cat, t)} query={query} />
               </span>
               {selectedId === cat.id && <Icon name="check" size={18} color="var(--m-accent)" />}

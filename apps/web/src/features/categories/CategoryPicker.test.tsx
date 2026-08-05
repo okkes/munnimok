@@ -46,6 +46,20 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
     expect(screen.queryByTestId('catpicker-savingDeposit')).toBeNull(); // builtin debit-only
   }, 15_000);
 
+  it('special categories wear the diamond mark, ordinary ones do not (user 2026-08-05)', async () => {
+    renderApp('/transactions');
+    await screen.findByTestId('tx-list');
+    fireEvent.click(screen.getByTestId('tx-add'));
+    fireEvent.click(await screen.findByTestId('txform-account'));
+    fireEvent.click(await screen.findByTestId('txform-account-demo_main'));
+    fireEvent.click(screen.getByTestId('txform-category'));
+    fireEvent.click(await screen.findByTestId('split-cat-0'));
+    // debit picker without a type gate offers the saving family — marked
+    await screen.findByTestId('speccat-savingDeposit');
+    await screen.findByTestId('catpicker-groceries');
+    expect(screen.queryByTestId('speccat-groceries')).toBeNull();
+  }, 15_000);
+
   it('a dead-end search offers creating a custom category (user request)', async () => {
     renderApp('/transactions');
     await screen.findByTestId('tx-list');

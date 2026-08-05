@@ -38,6 +38,10 @@ export const BUILTIN_CATEGORIES: BuiltinCategory[] = [
   {"id":"saving","nameKey":"cat.saving","icon":"piggy-bank-outline","color":"#A8782B","isParent":true,"txTypes":["saving"],"direction":"both"},
   {"id":"savingWithdraw","parentId":"saving","nameKey":"cat.savingWithdraw","icon":"bank-remove","txTypes":["saving"],"direction":"credit"},
   {"id":"savingDeposit","parentId":"saving","nameKey":"cat.savingDeposit","icon":"bank-plus","txTypes":["saving"],"direction":"debit"},
+  // typed-splits v2 (2026-08-05, approved table): saving-account rows no
+  // transfer caused — interest grows the pot (+), fees shrink it (−)
+  {"id":"savingInterest","parentId":"saving","nameKey":"cat.savingInterest","icon":"percent-outline","positive":true,"txTypes":["saving"],"direction":"credit"},
+  {"id":"savingFees","parentId":"saving","nameKey":"cat.savingFees","icon":"cash-minus","txTypes":["saving"],"direction":"debit"},
   {"id":"expense","nameKey":"cat.expense","icon":"cash-remove","isParent":true,"hidden":true,"txTypes":["expense"],"direction":"debit"},
   {"id":"housing","nameKey":"cat.housing","icon":"home-outline","color":"#E67E22","isParent":true,"txTypes":["expense"],"direction":"debit"},
   {"id":"housingRent","parentId":"housing","nameKey":"cat.housingRent","icon":"home-import-outline","txTypes":["expense"],"direction":"debit"},
@@ -154,11 +158,21 @@ export const BUILTIN_CATEGORIES: BuiltinCategory[] = [
   {"id":"debt","nameKey":"cat.debt","icon":"credit-card-outline","color":"#9C27B0","isParent":true,"txTypes":["debtPayment"],"direction":"both"},
   {"id":"loanRepayment","parentId":"debt","nameKey":"cat.loanRepayment","icon":"bank-outline","txTypes":["debtPayment"],"direction":"debit"},
   {"id":"debtBorrowed","parentId":"debt","nameKey":"cat.debtBorrowed","icon":"bank-transfer-in","txTypes":["debtPayment"],"direction":"credit"},
+  // typed-splits v2 (2026-08-05, approved table): debt-account rows no
+  // transfer caused — the lender's interest and fees both grow the debt (−)
+  {"id":"debtInterest","parentId":"debt","nameKey":"cat.debtInterest","icon":"percent-outline","txTypes":["debtPayment"],"direction":"debit"},
+  {"id":"debtFees","parentId":"debt","nameKey":"cat.debtFees","icon":"cash-minus","txTypes":["debtPayment"],"direction":"debit"},
   {"id":"investment","nameKey":"cat.investment","icon":"chart-timeline-variant","color":"#673AB7","isParent":true,"txTypes":["investment"],"direction":"both"},
   {"id":"invest","parentId":"investment","nameKey":"cat.invest","icon":"chart-areaspline","txTypes":["investment"],"direction":"both"},
   {"id":"investBuy","parentId":"investment","nameKey":"cat.investBuy","icon":"trending-up","txTypes":["investment"],"direction":"debit"},
   {"id":"investSell","parentId":"investment","nameKey":"cat.investSell","icon":"trending-down","txTypes":["investment"],"direction":"credit"},
   {"id":"investContribution","parentId":"investment","nameKey":"cat.investContribution","icon":"bank-plus","txTypes":["investment"],"direction":"debit"},
+  // typed-splits v2 (2026-08-05, approved table): the movement's way out
+  // ('both': − on the investment account, + on the receiving leg) and the
+  // no-transfer rows — dividends land (+), broker fees drain (−)
+  {"id":"investWithdraw","parentId":"investment","nameKey":"cat.investWithdraw","icon":"bank-remove","txTypes":["investment"],"direction":"both"},
+  {"id":"investDividend","parentId":"investment","nameKey":"cat.investDividend","icon":"cash-plus","positive":true,"txTypes":["investment"],"direction":"credit"},
+  {"id":"investFees","parentId":"investment","nameKey":"cat.investFees","icon":"cash-minus","txTypes":["investment"],"direction":"debit"},
   {"id":"adjustment","nameKey":"cat.adjustment","icon":"tune-variant","color":"#607D8B","isParent":true,"txTypes":["adjustment"],"direction":"both"},
   {"id":"balanceAdjustment","parentId":"adjustment","nameKey":"cat.balanceAdjustment","icon":"scale-balance","txTypes":["adjustment"],"direction":"both"},
   // arc 2 (2026-08-01): funding — money to/from another SPACE's pot; the
@@ -212,6 +226,16 @@ export function autoSubFor(txType: TxType, amountCents: number): string | undefi
   if (!pair) return undefined;
   return amountCents < 0 ? pair.debit : pair.credit;
 }
+/**
+ * Typed-splits v2 (2026-08-05, user): special categories carry system
+ * meaning — buckets count them and movements force them — so every
+ * picker marks them as not-a-random-category. Membership = the locked
+ * family trees (custom categories can never join: locked mains refuse
+ * user subs).
+ */
+export const isSpecialCategory = (cat: { id: string; parentId?: string }): boolean =>
+  LOCKED_MAIN_IDS.has(cat.parentId ?? cat.id);
+
 /** settled value, both sides of a link */
 export const REIMBURSED_ID = 'reimbursed';
 /** money you expect back (negative side, pre-settlement) */
