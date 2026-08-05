@@ -1,240 +1,177 @@
-# Transaction splitting — typed parts of one payment (design plan, 2026-08-04)
+# Transaction types & splitting v2 — accounts tell the story (design plan)
 
-Status: **PROPOSED — awaiting user pick.** Nothing here is implemented.
-Companion visual: the published design artifact (mockups + impact map).
+Status: **PROPOSED v2 — 2026-08-05, user answers folded in; awaiting the
+category-table approval + go.** v1 (2026-08-04) proposed typed split
+parts; the user then redesigned the surrounding type system (three
+scenarios, 2026-08-05) and answered the evaluation questions. This file
+is the consolidated plan. Companion visual: the published design
+artifact.
 
-## What you asked for
+## The four rules (user model, locked)
 
-One bank transaction, several *kinds* of money. The €87.40 card payment
-that is mostly groceries but also pays €25 off a friend-loan; the salary
-that is partly income, partly the expense your employer passed through.
-Your call: split the transaction into parts — a sheet showing the single
-transaction where you add splits, each split carrying its own value (sum
-must equal the transaction), info auto-copied with "– split 1/2/…"
-labels, and visuals that make the parts feel connected. You asked if I
-had a better idea, and for a design plan covering review + detail + the
-whole-app impact.
+- **R1 — the account stamps its rows.** Every transaction on a saving
+  account is type *saving*; on a debt account *debt*; on an investment
+  account *investment* (Q5: yes). The sign reads the direction: + on
+  saving = set aside, + on debt = repaid. Special-account rows only
+  offer their own category family (Q1), and rows not caused by a
+  transfer — interest, fees, dividends — get their own subs (table
+  below, Q4).
+- **R2 — transfer is strictly between two tracked accounts.**
+  Counterparty mandatory, category locked to Transfer out/in. The
+  special-account leg wears its stamp instead (scenario 2: x-leg =
+  transfer, y-leg = saving/set aside). With a counterparty set on a
+  special-account row, the category is FORCED to the movement pair
+  (set aside/withdrawn, repaid/borrowed — Q8: yes).
+- **R3 — on regular accounts, special categories carry the meaning.**
+  "Set aside" without a tracked savings account, "Loan payment" in the
+  flat structure, funding — all are categories on a regular-typed row,
+  never transfers. Special categories get a visible marker so they
+  never read as 'random' categories (user remark, Q3).
+- **R4 — a split parent is a pure container.** No type, category or
+  counterparty of its own; the parts carry everything (source account
+  derived, immutable). Linking pairs the PART, never the parent. No
+  row-pairing inside review.
 
-## What munni already has (and the ruling this reverses)
+## Decisions locked by the answers
 
-This is deliberately NOT greenfield. `TxSplit` already partitions one
-transaction across categories (`splits?: TxSplit[]` on the raw row AND
-the per-space `txMeta` overlay — the transformation layer carries it),
-with a mature editor (`SplitEditorSheet`: € and % modes, exact-partition
-validation, auto-balance, per-slice category pickers, the reimbursed
-slice held aside), and half the app already fans slices out: overview,
-trends, budgets, CSV export ("part" rows), category ops, review drafts.
+1. **Funding stops being a type** (Q3). The 2026-08-01 funding TxType
+   retires; funding becomes a marked special category on regular rows
+   (locked subs fundingOut/In already exist). Migration: funding-typed
+   rows → sign-resolved income/expense keeping their funding category
+   (marker `txFundingCat_v1`).
+2. **Mint-on-link** (Q1): picking a MANUAL special account as transfer
+   counterparty auto-creates the mirror row on that account (typed by
+   its stamp, movement category by sign) and pairs the two. For
+   bank-fed special accounts nothing is minted — the real row arrives
+   and pairing links it. On link the user chooses **create new** or
+   **pick an existing row** (Q2) — the pick list scored like
+   reimbursement suggestions; conflict rule: refuse when either side
+   names a different counterparty; auto-fill a null counterparty.
+3. **The balance delta relocates to the mirror row's lifecycle.**
+   Loans v2's applyLoanLinkDelta fired on the SOURCE row's link; in v2
+   the minted mirror row is the visible record, and its create/delete
+   carries the manual-balance delta (manual balances stay
+   balanceCents-driven — rows never sum into balances, so minting is
+   otherwise balance-neutral). Unlink deletes the minted mirror and
+   refunds. countsTowardLoan/pre-anchor rules keep gating deltas.
+4. **Flat loans structure** (Q1): a "Loan payment"/"Borrowed" special
+   category on a regular row asks — optionally — WHICH loan; declining
+   files it under the **default loan** (today's Unassigned-payments
+   bucket, promoted to that name). Picking a manual loan behaves like
+   mint-on-link.
+5. **History migration** (my call, flagged): existing
+   saving/debtPayment/investment rows that carry a linkedAccountId to
+   a tracked special account re-type to transfer + locked category,
+   and the special-account mirror is MINTED with a deterministic id
+   (`uuidv5('mirror:' + rowId)`) — idempotent, sync-safe, and
+   balance-neutral because the old delta already moved the balance at
+   link time. Counterparty-less family rows stay as R3 category rows
+   untouched.
+6. **Buckets read the special categories, wherever they live** (Q6):
+   "Saved" = saving-family categories on any account (R1 rows on the
+   saving account + R3 bare rows on regular accounts). Done right, the
+   regular-account leg of a tracked pair is transfer-categorized and
+   never double-counts. The done-wrong edge (bare set-aside on
+   checking while the tracked savings twin also lands) gets a
+   **nudge**: when a likely twin exists, munni suggests the transfer;
+   it never force-blocks.
+7. **Review stages fields, never pairs rows** (Q7 clarified): the card
+   may set kind = Transfer and pick the counterparty ACCOUNT (plain
+   bulk-safe fields — today's own-transfer chip survives as exactly
+   this); choosing or creating the specific counter TRANSACTION (and
+   any minting) happens after confirm — by the background matcher or
+   from the detail screen. Bulk therefore never replays row-pairing.
+8. **Splitting details from v1 stand**: labels "split 1/2/…" (A),
+   ONE list row with the segment underline + parts unfolding in detail
+   (E), and **per-part events ship in this arc** (D): `eventId` joins
+   the part fields.
 
-What a slice CANNOT have today is its own **type** — `reviewDraft.ts`
-encodes the old ruling "splits are single-type" and nukes splits on a
-conflicting type change. Your request reverses that ruling: **slices
-grow up into typed parts.** That framing is the whole design — we
-mature the existing mechanism instead of building a rival one.
+## The category table (Q4 — for approval)
 
-## Better-idea check: three models, one winner
+Special categories are LOCKED subs under family mains, marked in every
+picker and chip with the family glyph + tint (the "not a random
+category" marker). Movement subs are forced when a counterparty is set
+(Q8); the others exist for rows no transfer caused.
 
-1. **Real child transactions** (materialize N rows, hide the parent).
-   Every consumer would work untouched — but it breaks raw-vs-
-   transformation for bank rows (a split is a per-space *opinion* about
-   one global raw row), double-counts against balances, bloats sync,
-   and invents orphan/consistency problems (parent deleted, children
-   stranded). Rejected.
-2. **Virtual expansion in the join** (joinTx mints pseudo-rows).
-   Seductive, but every write path would need virtual-id routing, and
-   every real reference (`reimbursements[].txId`, `transferPeerId`,
-   testids, activity) would need a second addressing scheme. Rejected.
-3. **Typed slices on the existing partition** — extend `TxSplit`, keep
-   one row per transaction, present the parts as connected sub-rows in
-   detail and as a segmented visual in lists. One storage shape, one
-   editor, one canonical read helper. **This is the plan.**
+**Saving account rows** (stamp: saving; regular rows via R3 use the
+same family):
+| sign | sub | notes |
+|---|---|---|
+| + | Set aside | movement (forced w/ counterparty) |
+| − | Withdrawn | movement (forced w/ counterparty) |
+| + | Interest | bank-paid growth; counts in the Saved bucket |
+| − | Fees | account costs; subtracts from the Saved bucket |
 
-So: your instinct (split it up) is right, and the best mechanics for
-munni are "the split you already know, now with type identity" — which
-is also exactly the "like multi categories" feel you asked for.
+**Debt account rows** (stamp: debt; flat-structure R3 rows use the
+same family; loans v2 already ships Repaid/Borrowed/Interest):
+| sign | sub | notes |
+|---|---|---|
+| + | Repaid | movement (forced w/ counterparty) |
+| − | Borrowed | movement (forced w/ counterparty) |
+| − | Interest | debt growth charged by the lender |
+| − | Fees | account costs |
 
-## The model
+**Investment account rows** (stamp: investment):
+| sign | sub | notes |
+|---|---|---|
+| + | Contributed | movement (forced w/ counterparty) |
+| − | Withdrawn | movement (forced w/ counterparty) |
+| − | Buy | cash → position (existing investBuy) |
+| + | Sell | position → cash (existing investSell) |
+| + | Dividends | payouts landing as cash |
+| − | Fees | broker costs |
 
-```ts
-export interface TxSplit {
-  catId: string;
-  amountCents: number;      // positive magnitude; direction = the row's sign (unchanged)
-  pct?: number;             // % mode, materialized — unchanged
-  // typed splits (2026-08-04), all optional — a bare slice behaves exactly as today:
-  id?: string;              // stable slice identity (repo.newId()), minted on save
-  label?: string;           // stored ONLY when the user edits it; the default
-                            // "<title> – split N" is rendered at read time (localized)
-  txType?: TxType;          // absent = inherit the row's type (every legacy slice)
-  linkedAccountId?: string; // transfer-family slices: the MANUAL counter account
-}
-```
+**Regular account rows**: the full normal catalog, plus — marked — the
+special families above (R3), plus Funding (To/From the shared pot,
+regular-only by definition), plus locked Transfer out/in (never
+pickable by hand; set by R2).
 
-- **Effective type**: `slice.txType ?? row.txType`. The row's stored
-  `txType`/`catId` stay the **largest slice's** (today's `primaryCatId`
-  rule, extended to the type) — recurring detection, the pair matcher,
-  merchant memory and filters keep seeing a sane primary.
-- **Sign coherence per slice**: standard slices resolve by the row's
-  sign (a negative row offers expense categories, a positive row income
-  — `standardTypeFor`, automatic). Transfer-family and adjustment
-  slices carry no sign rule, same as rows. New invariants: slice type
-  in `TX_TYPES`; expense/income slices must match the row sign.
-- **Slice kinds = the row's kind language.** Each part picks through
-  the same `TxKindSheet` (Standard / Transfer / Adjustment) and the
-  same `CounterpartySheet` (manual accounts + the bare family exits:
-  saving, investment, loan payment, funding, transfer). Adjustment
-  slices only on hand-made rows (same `allowAdjustment` rule).
-- **v1 restriction — no bank-fed counterparties on slices.** A real
-  transfer between two bank-fed accounts arrives as two whole raw rows
-  and pairs whole-row (`transferPeerId` stays row-level, the list
-  collapse untouched). Slices link **manual** accounts only, exactly
-  the loans-v2 lane.
-- **Balance coupling generalizes loans v2.** `applyLoanLinkDelta`
-  becomes slice-aware: on split save, `writeTxTransform` diffs old vs
-  new slices' `(linkedAccountId, magnitude)` and applies deltas to
-  manual counter accounts — loans keep `countsTowardLoan` (row-date
-  cutoff + the row-level `loanCounted` one-shot), savings/investment
-  pots move by the slice magnitude. `transferPeerId` rows still skip
-  (the mirror already carried it); no `balanceAsOf` stamping; the
-  `TxFormSheet` direct-save path applies the same diff. Slice links do
-  NOT mint mirror rows (loans already work this way; a per-slice
-  mirror leg is a possible v2).
-- **Reimbursements unchanged.** The `REIMBURSED_ID` slice stays a
-  typeless bookkeeping slice, held aside by the editor and re-attached
-  on save; `reimbursements[].txId` keeps pointing at rows.
+Stored type vocabulary after v2: income, expense, saving, transfer,
+debtPayment, investment, adjustment — funding retired. UI kinds stay
+Regular / Transfer / Adjustment; stamped rows show their stamp and
+lock the kind row.
 
-### One canonical read helper — `domain/txSlices.ts`
+## What this means per surface (revised pick list)
 
-```ts
-interface SliceView { catId; amountCents /* signed */; effType; label; index; count; linkedAccountId? }
-txSliceViews(tx): SliceView[]   // unsplit row → one view of the whole
-```
+1. **Catalog & markers** — the family subs above (new: saving
+   Interest/Fees, debt Fees, investment Contributed/Withdrawn/
+   Dividends/Fees), the special-category marker in CategoryPicker,
+   chips and slices, funding→category migration.
+2. **Account stamps (R1)** — joined defaults + kind-row lock on
+   special accounts, forced movement categories with counterparty
+   (Q8), review/detail coherence.
+3. **Transfer v2 (R2)** — mandatory tracked counterparty; locked cats;
+   mint-on-link with create-new / pick-existing (Q2) and suggestion
+   scoring; conflict + auto-fill rules; background matcher unchanged;
+   review = fields only (Q7).
+4. **Loans handoff** — flat-structure loan pick + default loan bucket;
+   linked-history migration minting mirrors (decision 5); delta
+   relocation to mirror lifecycle (decision 3); DebtDetail payments
+   read the debt account's own ledger.
+5. **Splitting** — container parent (R4), typed parts, the part-card
+   sheet from v1 (labels, arithmetic amounts, per-part kind +
+   counterparty + category, remainder seeding, dirty guard), part
+   fields: id, label, txType, linkedAccountId, eventId,
+   transferPeerId (+ mirror rows carry transferPeerSplitId back).
+6. **Per-part events (D)** — event screens fan per part.
+7. **Aggregation** — buckets from special categories (decision 6) via
+   the canonical slice-view helper; closes the pre-existing
+   split-blind spots; CSV gains type + label columns; double-count
+   nudge.
+8. **Lists/detail/review visuals** — one row + segment underline (E),
+   spine in detail, staged split summary in review, "Multiple" kind
+   row.
+9. **Filters & search** — slice- and special-category-aware filters,
+   part labels searchable.
+10. **Polish pack** — i18n EN/NL/TR, tours + guide, demo sample,
+    What's New, DEV annotations, unit tests + core-flow e2e, Sonar.
 
-Today every consumer type-filters at ROW level and only some fan
-slices. All aggregation consumers migrate to this one helper, so
-per-slice types are honest everywhere — and the pre-existing
-split-blind spots (events, allocation, insights' smallHabit/weekend,
-category search filter) get fixed by the same migration.
+Suggested build order: 1→2→3→4 (the type system lands coherent), then
+5→6 (splitting on top), then 7→8→9→10. Each step ships green on its
+own.
 
-## The UX, surface by surface
+## Open items
 
-**The sheet** — `SplitEditorSheet` grows from compact rows into
-**part cards** and retitles to "Split transaction". Pinned header: the
-single transaction (icon, title, account · date, immutable total) with
-a live **segmented bar** — one segment per part in its category color,
-hatched grey for the unassigned remainder. Each card: editable label
-(placeholder "<title> – split N"), amount (text input with arithmetic —
-`evalAmountCents`, the loans pattern — EU decimals, focus-empties),
-kind chip row (opens TxKindSheet/CounterpartySheet per part), category
-button (type-gated per PART), remove ×. "+ Add split" appends a card
-pre-filled with the current remainder and the next auto-label; blocked
-while a card is unfinished (existing rule). Remainder pill still
-auto-balances on tap; €/% modes, the reimbursed holdout, review's
-controlled draft mode, and the dirty guard all carry over. All three
-existing doors (detail, manual form, review card) get the new powers by
-construction.
-
-**Lists** — one row per transaction stays (chronology, search counts,
-pair collapse intact). `TxRow` gains: a thin segmented underline under
-the amount when parts exist, and the subline upgrades from the neutral
-"Mixed" to the top parts by size — "Groceries · Loan payment". Scoped
-lists (category drill, budgets, event, loan payments) already show
-slice amounts via `amountOverrideCents`; they add the part label.
-
-**Transaction detail** — the categories section becomes the **split
-section**: the segmented bar under the headline amount, then the parts
-as connected sub-rows — a left spine (vertical line + a node per part)
-visually tying them to the parent; each sub-row shows label, type chip
-(only when it differs from the row's kind), category chip, signed
-amount. Tapping a part opens the sheet focused on that card. Per-part
-extras surface inline: a loan-linked part shows "pays debt →" and the
-pre-anchor count-it-in CTA. The kind row reads "Multiple · 2 types"
-when parts diverge and routes to the sheet instead of `TxKindSheet`.
-The actions block (recurring/event links) unlocks when ANY part is an
-expense, not just the row primary.
-
-**Review** — the card already renders one category row per slice;
-those rows gain the part label + type chip. The staged summary shows
-the segmented bar. Draft coherence moves per-slice: a row-kind change
-re-checks only INHERITING slices (typed parts keep their own type);
-`draftReady` requires a real category per part unless the part's
-effective type is transfer/funding/adjustment (the locked-sub
-placeholder, `withFamilyCategory` per slice). Bulk "also apply to
-similar" keeps its rules (absolute splits ride only to identical
-amounts; % splits rescale) — but per-slice `linkedAccountId` is
-**stripped** from bulk copies: a balance-moving link is this row's
-reality, and `LoanMatchSheet` is the mass-linking door.
-
-**Filters & search** — the type filter matches "row type OR any part's
-type"; the category filter matches part catIds (today it is
-catId-blind); the free-text search haystack gains part labels.
-
-## What stays untouched
-
-Recurring stays row-level (`recurringId`, detection on the primary
-type: the bank-level pattern is the row). Transfer pairing stays
-whole-row. Predictions and merchant memory read the primary. Sync is
-additive fields inside an existing LWW value — the server stores rows
-opaquely, zero server change. The service-worker budget alert reads
-raw rows without the join (pre-existing limitation, unchanged).
-
-## Migration & compat (both directions)
-
-Purely additive optional fields: no data migration, old rows valid,
-new rows pass old invariants (unknown slice fields ignored). Offline
-works fully — splits are client data. The honest edge: an **old app
-version** re-saving a typed row's splits rebuilds the array from
-catId+amount and drops type/label/link metadata (whole-array LWW).
-Visually self-healing (re-split), but a dropped slice-link would leave
-a stale balance delta on the counter account — same exposure class as
-every LWW array field; accepted and documented, mitigated by how rare
-cross-version same-row split edits are.
-
-## Impacted surfaces (pick what to include)
-
-1. **Model + helper** — `TxSplit` extended fields; primary type/cat
-   derivation; per-slice invariants; `domain/txSlices.ts` + tests.
-2. **The sheet** — SplitEditorSheet → part cards (label, kind,
-   counterparty, category, arithmetic amount), auto-labels, segmented
-   bar, all three doors, i18n EN/NL/TR.
-3. **Balance coupling** — slice-aware link deltas (generalized
-   `applyLoanLinkDelta`, unlink refunds, loans cutoff honored,
-   TxFormSheet direct path).
-4. **Aggregation migration** — overview, trends, budgets, events,
-   allocation, insights, CSV export move to `txSliceViews`; closes the
-   pre-existing split-blind gaps; export gains type + label columns.
-5. **Lists** — TxRow segmented underline + part summary subline; part
-   labels in scoped lists.
-6. **Detail** — split section with spine + per-part chips and loan
-   CTAs; "Multiple" kind row; segmented bar under the amount.
-7. **Review** — part labels/type chips on the card, per-slice draft
-   coherence, staged split summary, bulk link-stripping.
-8. **Filters & search** — slice-aware type/category filters, labels
-   searchable.
-9. **Optional: per-part events** — `eventId` on a slice ("this €30 of
-   the dinner belongs to the trip"); event screens fan per part.
-10. **Optional: LoanMatchSheet partial link** — "link part of this
-    payment" mints a split + linked slice in one move.
-11. **Polish pack** — activity entries, tours + user guide (the
-    transactions section + split shot), DEV annotations, demo sample
-    (rich seed only — amounts unchanged, e2e pins safe), What's New
-    (next release), unit tests + one core-flow e2e, Sonar.
-
-My recommendation: 1–8 + 11 as the arc; 9 and 10 are natural
-follow-ups once the foundation is in.
-
-## Open questions
-
-- **A. Naming**: parts are labeled "split 1/2/…" (your word). The
-  settle-up tab is also called "Splits" — different context, and I
-  think it survives, but say the word and I'll use "part 1/2/…"
-  (NL "deel", TR "bölüm") instead.
-- **B. Bulk links**: strip per-slice loan/savings links from "also
-  apply to similar" (my rec), or let them ride so four identical
-  payments each move the loan?
-- **C. Transfer scope v1**: slice counterparties = manual accounts +
-  bare family names only; whole-row stays the door for bank↔bank
-  transfers. OK?
-- **D. Per-part events**: now (item 9) or later?
-- **E. List presentation**: my rec is ONE row with the segmented
-  underline (chronology/search/pair-collapse intact) and the connected
-  sub-rows living in detail — the alternative (expanded child rows in
-  every list) changes list semantics app-wide.
+- Approve (or edit) the category table above — the only blocking item.
+- Decision 5 (mint historical mirrors) and decision 7 (fields-only
+  review) are my calls consistent with the answers — veto if wrong.
