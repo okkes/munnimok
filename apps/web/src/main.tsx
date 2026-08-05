@@ -16,6 +16,7 @@ import { useSession } from '@/app/session';
 import { initPwa } from '@/app/pwa';
 import { initDeepLinks } from '@/lib/platform';
 import { installViewportGuard } from '@/lib/viewportGuard';
+import { installKeyboardDismiss } from '@/lib/keyboardDismiss';
 import { initPressFeedback } from '@/app/pressFeedback';
 import { ThemeProvider } from '@/app/theme';
 import { router } from '@/app/router';
@@ -88,6 +89,7 @@ initLockWatcher();
 initPressFeedback();
 initDeepLinks(); // native shell only: munni:// callbacks re-enter here
 installViewportGuard(); // iOS keyboard focus-scroll must never displace the shell
+installKeyboardDismiss(); // touch-scroll or Enter closes the mobile keyboard
 
 // OIDC / bank-consent redirects land outside the hash router
 function AppEntry() {
