@@ -63,30 +63,50 @@ function CategorySlices({
   onEdit: () => void;
 }>) {
   const { t, lang } = useLang();
+  const parts = tx.splits?.length ? tx.splits : [null];
+  const spine = parts.length > 1;
   return (
-    <>
-      {(tx.splits?.length ? tx.splits : [null]).map((slice, i) => {
+    <div className={spine ? "relative pl-4 before:absolute before:top-5 before:bottom-5 before:left-[7px] before:w-[2px] before:rounded-full before:bg-line before:content-['']" : ''}>
+      {parts.map((slice, i) => {
         const rowCat = slice ? cats.byId(slice.catId) : fallbackCat;
         const rowColor = slice ? (rowCat.color ?? cats.byId(rowCat.parentId ?? '').color) : fallbackColor;
         const parentName = rowCat.parentId ? catName(cats.byId(rowCat.parentId), t) : t(`tx.type.${tx.txType}`);
+        // typed-splits v2: the part wears its OWN story — the copied-info
+        // label ("<title> – split N" unless renamed) and, when its type
+        // differs from the row's kind, a quiet type chip
+        const partLabel = slice?.label ?? (spine ? `${txTitle(tx)} – ${t('split.partN', { n: i + 1 })}` : undefined);
+        const partType = slice?.txType && slice.txType !== tx.txType ? slice.txType : undefined;
         return (
           <button
-            key={slice?.catId ?? 'single'}
+            key={slice?.id ?? slice?.catId ?? 'single'}
             data-testid={i === 0 ? 'tx-detail-category-row' : `tx-detail-cat-${slice?.catId}`}
             onClick={onEdit}
-            className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-4 py-3.5 text-left last:border-0"
+            className="m-tap relative flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-4 py-3.5 text-left last:border-0"
           >
+            {spine && (
+              <span
+                className="absolute top-1/2 -left-[13px] h-2 w-2 -translate-y-1/2 rounded-full border-2 bg-surface"
+                style={{ borderColor: rowColor ?? 'var(--m-ink-4)' }}
+              />
+            )}
             <Icon name={rowCat.icon} size={20} color={rowColor ?? 'var(--m-ink-3)'} />
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-[15px] text-ink">{catName(rowCat, t)}</span>
-              <span className="block text-[11px] text-ink-4">{parentName}</span>
+              <span className="block truncate text-[15px] text-ink">{spine ? partLabel : catName(rowCat, t)}</span>
+              <span className="block truncate text-[11px] text-ink-4">
+                {spine ? catName(rowCat, t) : parentName}
+                {partType && (
+                  <span className="text-accent-deep" data-testid={`tx-detail-part-type-${slice?.id ?? i}`}>
+                    {' '}· {t(`tx.type.${partType}`)}
+                  </span>
+                )}
+              </span>
             </span>
             {i === 0 && tx.needsReview === 1 && <Pill tone="warning">{t('tx.unreviewed')}</Pill>}
             {slice && <span className="m-num text-[13px] text-ink-2">{fmtCents(slice.amountCents, tx.currency, lang)}</span>}
           </button>
         );
       })}
-    </>
+    </div>
   );
 }
 

@@ -133,6 +133,24 @@ export function TxRow({
         <span className={`m-num block text-[14px] font-semibold ${positive ? 'text-accent-deep' : 'text-ink'}`}>
           {fmt(display, tx.currency, { sign: true, date: tx.date })}
         </span>
+        {/* the split, shrunk to 2px (typed-splits v2): one segment per
+            part in its category color — quiet until it matters. The
+            testid prefix is deliberately NOT tx-row- : list tests count
+            rows by that prefix, and the bar lives inside one. */}
+        {(tx.splits?.length ?? 0) > 1 && (
+          <span className="mt-0.5 flex h-[2px] w-full gap-[1.5px] overflow-hidden rounded-full" data-testid={`tx-segments-${tx.id}`}>
+            {tx.splits!.filter((s) => s.amountCents !== 0).map((s, i) => (
+              <span
+                key={s.id ?? i}
+                className="h-full rounded-full"
+                style={{
+                  flex: Math.abs(s.amountCents),
+                  background: cats.byId(s.catId).color ?? cats.byId(cats.byId(s.catId).parentId ?? '').color ?? 'var(--m-ink-4)',
+                }}
+              />
+            ))}
+          </span>
+        )}
         {amountOverrideCents === undefined && reimbursed && (
           <span className="m-num block text-[11px] text-ink-4 line-through">
             {fmt(tx.amountCents, tx.currency, { sign: true, date: tx.date })}

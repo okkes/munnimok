@@ -886,14 +886,17 @@ export function ReviewScreen() {
                     setCounterOpen(true);
                   }}
                 />
-                {(draft?.splits?.length ? draft.splits : [null]).map((slice) => {
+                {(draft?.splits?.length ? draft.splits : [null]).map((slice, sliceIndex) => {
                   const sliceCat = slice ? cats.byId(slice.catId) : cat;
                   const sliceColor = slice
                     ? (sliceCat.color ?? cats.byId(sliceCat.parentId ?? '').color)
                     : parentColor;
+                  // typed-splits v2: a part wears its label + own type
+                  const partLabel = slice && (draft?.splits?.length ?? 0) > 1 ? (slice.label ?? t('split.partN', { n: sliceIndex + 1 })) : undefined;
+                  const partType = slice?.txType && slice.txType !== draft?.txType ? slice.txType : undefined;
                   return (
                     <button
-                      key={slice?.catId ?? 'single'}
+                      key={slice?.id ?? slice?.catId ?? 'single'}
                       data-testid={slice ? `review-cat-${slice.catId}` : 'review-category-chip'}
                       onClick={() => setSplitOpen(true)}
                       className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] font-medium text-ink"
@@ -906,6 +909,12 @@ export function ReviewScreen() {
                             {/* the parent gives the sub its context (user request) */}
                             {sliceCat.parentId && (
                               <span className="text-[12px] font-normal text-ink-4"> · {catName(cats.byId(sliceCat.parentId), t)}</span>
+                            )}
+                            {partLabel && (
+                              <span className="block truncate text-[11px] font-normal text-ink-4">
+                                {partLabel}
+                                {partType && <span className="text-accent-deep"> · {t(`tx.type.${partType}`)}</span>}
+                              </span>
                             )}
                           </>
                         ) : (

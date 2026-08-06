@@ -52,7 +52,7 @@ export function toCsvRows(txs: readonly TransactionRow[], ctx: ExportContext): s
     const cat = ctx.catalog.byId(tx.catId);
     const main = cat.parentId ? ctx.catalog.byId(cat.parentId) : cat;
     const net = tx.amountCents > 0 ? netCreditCents(tx, givenCents(txs, tx.id)) : netAmountCents(tx);
-    const base = (split: string, catOf: Cat, mainOf: Cat, amount: number): string[] => [
+    const base = (split: string, catOf: Cat, mainOf: Cat, amount: number, typeOf = tx.txType, eventOf = tx.eventId): string[] => [
       ...(ctx.spaceName === undefined ? [] : [ctx.spaceName]),
       tx.date,
       tx.time ?? '',
@@ -64,21 +64,31 @@ export function toCsvRows(txs: readonly TransactionRow[], ctx: ExportContext): s
       cents(net),
       ctx.catName(catOf),
       ctx.catName(mainOf),
-      ctx.typeName(tx.txType),
+      ctx.typeName(typeOf),
       statusOf(tx),
       split,
       tx.notes ?? '',
       tx.counterIban ?? '',
       tx.recurringId ? (recurringById.get(tx.recurringId) ?? '') : '',
-      tx.eventId ? (eventById.get(tx.eventId) ?? '') : '',
+      eventOf ? (eventById.get(eventOf) ?? '') : '',
       ...(ctx.technical ? [tx.id, tx.accountId] : []),
     ];
     rows.push(base('', cat, main, tx.amountCents));
     for (const part of tx.splits ?? []) {
       const partCat = ctx.catalog.byId(part.catId);
       const partMain = partCat.parentId ? ctx.catalog.byId(partCat.parentId) : partCat;
-      // split parts carry the expense sign of their parent
-      rows.push(base('part', partCat, partMain, Math.sign(tx.amountCents) * Math.abs(part.amountCents)));
+      // split parts carry the expense sign of their parent, their OWN
+      // type/event (typed-splits v2), and the label rides the marker
+      rows.push(
+        base(
+          part.label ? `part:${part.label}` : 'part',
+          partCat,
+          partMain,
+          Math.sign(tx.amountCents) * Math.abs(part.amountCents),
+          part.txType ?? tx.txType,
+          part.eventId ?? tx.eventId,
+        ),
+      );
     }
   }
   return rows;
