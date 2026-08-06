@@ -21,15 +21,19 @@ import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 
-/** one row in the unified editor = a plain category, always valid */
+/** the partition must always add up — a lone row included: it means
+ *  "no split", which is only sound when it still covers the WHOLE
+ *  (50% typed on a single row held Done armed — user report #126 r3) */
 function sheetError(options: {
-  seedSingle: boolean;
-  rowCount: number;
   mode: 'amount' | 'pct';
   referenceCents: number;
   splits: TxSplit[];
 }): ReturnType<typeof validateSplits> {
-  if (options.seedSingle && options.rowCount === 1) return null;
+  if (options.splits.length === 1) {
+    const off =
+      options.mode === 'pct' ? pctRemainder(options.splits) : splitRemainderCents(options.referenceCents, options.splits);
+    return off === 0 ? null : 'notBalanced';
+  }
   if (options.mode === 'pct') return validatePctSplits(options.splits);
   return validateSplits(options.referenceCents, options.splits);
 }
@@ -633,7 +637,7 @@ export function SplitEditorSheet({
       ? rows.map((r) => ({ catId: r.catId, amountCents: 0, pct: parsePct(r.amount), ...partFields(r) }))
       : rows.map((r) => rowToSplit(r, partMode));
   const remainder = mode === 'pct' ? pctRemainder(splits) : splitRemainderCents(referenceCents, splits);
-  const error = sheetError({ seedSingle, rowCount: rows.length, mode, referenceCents, splits });
+  const error = sheetError({ mode, referenceCents, splits });
 
   const effectiveType = txType ?? tx.txType;
   // values-only: categories are invisible here — never block on them

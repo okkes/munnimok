@@ -1166,6 +1166,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'split.title': 'İşlemi böl',
   'split.partN': 'bölüm {n}',
   'review.splitParts': '{n} parça',
+  'review.manageSplits': 'Bölmeleri yönet',
   'split.labelPlaceholder': 'Bu parçaya ad ver',
   'split.done': 'Tamam',
   'split.action': 'Böl',

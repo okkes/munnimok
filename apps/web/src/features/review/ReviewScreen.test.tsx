@@ -400,10 +400,29 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.change(screen.getByTestId('deck-label-1'), { target: { value: 'Office snacks' } });
     await waitFor(() => expect((screen.getByTestId('deck-label-1') as HTMLInputElement).value).toBe('Office snacks'));
 
-    // the part's kind chips stand ready too
-    expect(screen.getByTestId('deck-kind-standard-1')).toBeTruthy();
-    expect(screen.getByTestId('deck-kind-transfer-1')).toBeTruthy();
+    // r3: the part wears the NORMAL type row (kind + caption), not chips
+    const kindRow = screen.getByTestId('deck-kind-row-1');
+    expect(kindRow.textContent).toContain('Standard');
+    expect(kindRow.textContent).toContain('Type');
+    expect(screen.queryByTestId('deck-kind-standard-1')).toBeNull();
   }, 15_000);
+
+  it('a lone 50% row holds Done — the partition must always add up (#126 r3)', async () => {
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    fireEvent.click(await screen.findByTestId('review-split-row'));
+    await screen.findByTestId('split-editor');
+    fireEvent.click(screen.getByTestId('split-mode-pct'));
+    const amount0 = (await screen.findByTestId('split-amount-0')) as HTMLInputElement;
+    fireEvent.focus(amount0);
+    fireEvent.change(amount0, { target: { value: '50' } });
+    fireEvent.blur(amount0);
+    await waitFor(() => expect((screen.getByTestId('split-save') as HTMLButtonElement).disabled).toBe(true));
+    fireEvent.focus(amount0);
+    fireEvent.change(amount0, { target: { value: '100' } });
+    fireEvent.blur(amount0);
+    await waitFor(() => expect((screen.getByTestId('split-save') as HTMLButtonElement).disabled).toBe(false));
+  });
 
   it('splitting stays on the card; amounts clear on focus and restore on blur', async () => {
     renderApp('/review');
@@ -463,12 +482,15 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('split-save'));
 
     // draft model (review redesign): saving the split STAGES it — the
-    // parts stand as a DECK under the main card (#126 v2), the card
-    // itself carries the compact summary, and a ghost card grows the split
+    // parts stand as a DECK under the main card (#126 r3): the main
+    // card drops kind/recurring/event (each part carries its own) and
+    // the dashed door manages the whole split
     await waitFor(() => expect(screen.getByTestId('review-part-deck')).toBeTruthy());
     expect(screen.getAllByTestId(/^deck-part-/)).toHaveLength(2);
-    expect(screen.getByTestId('review-split-summary').textContent).toContain('2');
-    expect(screen.getByTestId('review-part-add')).toBeTruthy();
+    expect(screen.queryByTestId('review-kind-row')).toBeNull();
+    expect(screen.queryByTestId('review-recurring-row')).toBeNull();
+    expect(screen.queryByTestId('review-event-row')).toBeNull();
+    expect(screen.getByTestId('review-manage-splits')).toBeTruthy();
     expect(screen.getByTestId('review-card').textContent).toContain('SPLITCAFE');
     expect((await db.transactions.get('tx-split'))?.splits).toBeUndefined();
 
