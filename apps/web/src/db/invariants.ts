@@ -38,11 +38,16 @@ function amountAndTypeProblems(row: Record<string, unknown>): string[] {
   return problems;
 }
 
-function splitProblems(splits: { catId?: unknown; amountCents?: unknown }[]): string[] {
+function splitProblems(splits: { catId?: unknown; amountCents?: unknown; txType?: unknown }[]): string[] {
   const problems: string[] = [];
   for (const split of splits) {
     if (typeof split.catId !== 'string' || split.catId.length === 0) problems.push('split without a category');
     if (!isIntCents(split.amountCents) || split.amountCents < 0) problems.push('split amount must be non-negative integer cents');
+    // typed splits v2: a part's own type must be a known one — sign
+    // coherence stays UI-side (parts are magnitudes; the row signs them)
+    if (split.txType !== undefined && !(typeof split.txType === 'string' && TX_TYPES.has(split.txType))) {
+      problems.push('unknown split txType');
+    }
   }
   return problems;
 }

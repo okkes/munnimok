@@ -1,4 +1,5 @@
 import type { BudgetRow, TransactionRow } from '@/db/types';
+import { txSliceViews } from './txSlices';
 import type { Period } from './periods';
 
 /**
@@ -73,8 +74,10 @@ export function budgetFamily(catIds: readonly string[], catalog: CatalogLookup):
 }
 
 /** positive cents spent by the family inside a period (refunds reduce it).
- *  Slice-aware (reimbursement redesign): a split transaction contributes
- *  only its family slices, so reimbursed value never counts as spending. */
+ *  Slice-aware (reimbursement redesign; typed-splits v2): a split
+ *  transaction contributes only its family slices, so reimbursed value
+ *  never counts as spending — and a typed part answers to its OWN kind
+ *  (a loan part inside the phone bill never eats the telecom budget). */
 export function budgetSpentCents(
   txs: readonly TransactionRow[],
   family: ReadonlySet<string>,
@@ -82,14 +85,11 @@ export function budgetSpentCents(
 ): number {
   let total = 0;
   for (const tx of txs) {
-    if (tx.deleted !== 0 || tx.txType !== 'expense') continue;
+    if (tx.deleted !== 0) continue;
     if (tx.date < period.start || tx.date > period.end) continue;
-    if (tx.splits?.length) {
-      for (const slice of tx.splits) {
-        if (family.has(slice.catId)) total += slice.amountCents;
-      }
-    } else if (family.has(tx.catId ?? '')) {
-      total += -tx.amountCents;
+    for (const view of txSliceViews(tx)) {
+      if (view.effType !== 'expense' || !family.has(view.catId ?? '')) continue;
+      total += view.count === 1 ? -view.amountCents : Math.abs(view.amountCents);
     }
   }
   return total;

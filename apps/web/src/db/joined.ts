@@ -207,19 +207,106 @@ async function planLinkChange(
 }
 
 /**
+ * A splits write plans the PART-level mirror consequences (typed-splits
+ * v2): each part that gained, moved or lost its counterparty mints or
+ * retires its own counter leg — keyed on row+part identity, so a part's
+ * mirror survives sibling edits. Returns the splits with the parts'
+ * peers applied plus the plans to run after the write.
+ */
+async function planPartLinkChanges(
+  repo: Repo,
+  tx: TransformTx,
+  fields: TxTransformFields,
+): Promise<{ splits: TxTransformFields['splits']; plans: Array<{ execute: (repo: Repo) => Promise<void> }> } | null> {
+  const nextParts = fields.splits;
+  if (!nextParts) return null; // clearing splits: row-level linking owns any cleanup
+  const raw = await repo.store.get('transaction', tx.id);
+  if (!raw) return null;
+  const feed = !!tx.feedSpaceId;
+  const meta = feed ? await repo.store.get('txMeta', txMetaId(tx.spaceId, tx.id)) : undefined;
+  const prevParts = (feed ? meta?.splits : raw.splits) ?? [];
+  const prevById = new Map(prevParts.filter((p) => p.id).map((p) => [p.id!, p]));
+  const { planMirrorChange } = await import('@/application/mirrorMint');
+  const { partMirrorSourceId } = await import('@/domain/feedIds');
+  const sign = raw.amountCents < 0 ? -1 : 1;
+  const plans: Array<{ execute: (repo: Repo) => Promise<void> }> = [];
+  const adjusted = [...nextParts];
+
+  const planFor = async (partId: string, magnitude: number, prevLinked?: string, nextLinked?: string, currentPeer?: string) =>
+    planMirrorChange(
+      repo.store,
+      {
+        id: partMirrorSourceId(tx.id, partId),
+        accountId: raw.accountId,
+        amountCents: sign * Math.abs(magnitude),
+        date: raw.date,
+        time: raw.time,
+        currency: raw.currency,
+        merchant: raw.merchant,
+      },
+      prevLinked,
+      nextLinked,
+      currentPeer,
+      undefined,
+    ).catch(() => null);
+
+  await diffPartPlans(nextParts, prevById, planFor, adjusted, plans);
+  return plans.length || adjusted.some((p, i) => p !== nextParts[i]) ? { splits: adjusted, plans } : null;
+}
+
+type PartPlanner = (
+  partId: string,
+  magnitude: number,
+  prevLinked?: string,
+  nextLinked?: string,
+  currentPeer?: string,
+) => Promise<{ sourceFields: { transferPeerId?: string | null }; execute: (repo: Repo) => Promise<void> } | null>;
+
+/** walk the part diff: changed links plan their move (the part's peer
+ *  rides back into the write), vanished parts take their mints along */
+async function diffPartPlans(
+  nextParts: NonNullable<TxTransformFields['splits']>,
+  prevById: Map<string, NonNullable<TxTransformFields['splits']>[number]>,
+  planFor: PartPlanner,
+  adjusted: NonNullable<TxTransformFields['splits']>,
+  plans: Array<{ execute: (repo: Repo) => Promise<void> }>,
+): Promise<void> {
+  for (const [index, part] of nextParts.entries()) {
+    if (!part.id) continue;
+    const prev = prevById.get(part.id);
+    prevById.delete(part.id);
+    if ((prev?.linkedAccountId ?? undefined) === (part.linkedAccountId ?? undefined)) continue;
+    const plan = await planFor(part.id, part.amountCents, prev?.linkedAccountId, part.linkedAccountId, prev?.transferPeerId);
+    if (!plan) continue;
+    if (Object.hasOwn(plan.sourceFields, 'transferPeerId')) {
+      adjusted[index] = { ...part, transferPeerId: (plan.sourceFields.transferPeerId ?? undefined) as string | undefined };
+    }
+    plans.push(plan);
+  }
+  for (const gone of prevById.values()) {
+    if (!gone.id || !gone.linkedAccountId) continue;
+    const plan = await planFor(gone.id, gone.amountCents, gone.linkedAccountId, undefined, gone.transferPeerId);
+    if (plan) plans.push(plan);
+  }
+}
+
+/**
  * The single write path for transformation edits: joined feed rows get
  * their overlay written (creating it deterministically on first edit);
  * legacy merged rows keep writing in place until migrated. The
  * mirror-mint lifecycle lives at THIS choke point (the loans-v2 lesson,
  * generalized) — every linkedAccountId writer (user edits, auto-linkers,
  * the match sheet, review confirms) mints or retires the manual counter
- * leg exactly once, and the balance rides the mirror's lifecycle.
+ * leg exactly once — row-level AND per part — and the balance rides the
+ * mirror's lifecycle.
  */
 export async function writeTxTransform(repo: Repo, tx: TransformTx, fields: TxTransformFields): Promise<void> {
   const plan = Object.hasOwn(fields, 'linkedAccountId') ? await planLinkChange(repo, tx, fields) : null;
+  const partPlan = Object.hasOwn(fields, 'splits') ? await planPartLinkChanges(repo, tx, fields) : null;
   // a pick-existing peer in `fields` outranks the plan's own idea
-  const write: TxTransformFields =
+  let write: TxTransformFields =
     plan && !Object.hasOwn(fields, 'transferPeerId') ? { ...fields, ...(plan.sourceFields as TxTransformFields) } : fields;
+  if (partPlan) write = { ...write, splits: partPlan.splits };
 
   if (!tx.feedSpaceId) {
     await repo.upsert('transaction', tx.spaceId, tx.id, write);
@@ -234,4 +321,5 @@ export async function writeTxTransform(repo: Repo, tx: TransformTx, fields: TxTr
   }
 
   if (plan) await plan.execute(repo).catch(() => undefined);
+  for (const p of partPlan?.plans ?? []) await p.execute(repo).catch(() => undefined);
 }

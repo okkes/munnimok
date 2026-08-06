@@ -1,14 +1,22 @@
 import type { TransactionRow } from '@/db/types';
+import { txSliceViews } from './txSlices';
+import type { TxSliceView } from './txSlices';
 
-/** Event math (approved events design) — all pure. */
+/** Event math (approved events design; typed-splits v2: per-part events
+ *  — "this €30 of the dinner is the trip") — all pure. */
+
+/** the row's parts that belong to this event as EXPENSES */
+function eventViews(tx: TransactionRow, eventId: string): TxSliceView[] {
+  if (tx.deleted !== 0) return [];
+  return txSliceViews(tx).filter((view) => view.eventId === eventId && view.effType === 'expense');
+}
+
+const viewSpent = (view: TxSliceView): number => (view.count === 1 ? -view.amountCents : Math.abs(view.amountCents));
 
 /** positive cents spent inside the event (expenses; refunds reduce) */
 export function eventSpentCents(txs: readonly TransactionRow[], eventId: string): number {
   let total = 0;
-  for (const tx of txs) {
-    if (tx.deleted !== 0 || tx.eventId !== eventId || tx.txType !== 'expense') continue;
-    total += -tx.amountCents;
-  }
+  for (const tx of txs) for (const view of eventViews(tx, eventId)) total += viewSpent(view);
   return total;
 }
 
@@ -24,10 +32,11 @@ export function eventCategoryBreakdown(
 ): { catId: string; totalCents: number }[] {
   const totals = new Map<string, number>();
   for (const tx of txs) {
-    if (tx.deleted !== 0 || tx.eventId !== eventId || tx.txType !== 'expense') continue;
-    const cat = catalog.byId(tx.catId);
-    const mainId = cat.parentId ?? cat.id;
-    totals.set(mainId, (totals.get(mainId) ?? 0) + -tx.amountCents);
+    for (const view of eventViews(tx, eventId)) {
+      const cat = catalog.byId(view.catId);
+      const mainId = cat.parentId ?? cat.id;
+      totals.set(mainId, (totals.get(mainId) ?? 0) + viewSpent(view));
+    }
   }
   return [...totals.entries()]
     .map(([catId, totalCents]) => ({ catId, totalCents }))
@@ -43,10 +52,11 @@ export function eventSubcategoryBreakdown(
 ): { catId: string; totalCents: number }[] {
   const totals = new Map<string, number>();
   for (const tx of txs) {
-    if (tx.deleted !== 0 || tx.eventId !== eventId || tx.txType !== 'expense') continue;
-    const cat = catalog.byId(tx.catId);
-    if ((cat.parentId ?? cat.id) !== mainCatId) continue;
-    totals.set(cat.id, (totals.get(cat.id) ?? 0) + -tx.amountCents);
+    for (const view of eventViews(tx, eventId)) {
+      const cat = catalog.byId(view.catId);
+      if ((cat.parentId ?? cat.id) !== mainCatId) continue;
+      totals.set(cat.id, (totals.get(cat.id) ?? 0) + viewSpent(view));
+    }
   }
   return [...totals.entries()]
     .map(([catId, totalCents]) => ({ catId, totalCents }))

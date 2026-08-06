@@ -6,7 +6,7 @@ import { DexieBackend } from '@/db/backend';
 import { Repo } from '@/db/repo';
 import { HlcClock } from '@/sync/hlc';
 import { writeTxTransform } from '@/db/joined';
-import { mirrorTxId } from '@/domain/feedIds';
+import { mirrorTxId, partMirrorSourceId } from '@/domain/feedIds';
 import { planMirrorChange } from './mirrorMint';
 
 /**
@@ -100,5 +100,33 @@ describe('mirror mint lifecycle (typed-splits v2)', () => {
     await writeTxTransform(repo, { ...src2, feedSpaceId: undefined }, { linkedAccountId: 'loan', loanCounted: 1 });
     expect((await db.accounts.get('loan'))?.balanceCents).toBe(-40_000); // counted in exactly once
     expect((await db.transactions.get('src2'))?.transferPeerId).toBe(mirrorTxId('src2'));
+  });
+
+  it('a PART with a counterparty mints its own leg; dropping the part retires it (typed-splits v2)', async () => {
+    const src = (await db.transactions.get('src'))!;
+    // the phone bill: €50 telecom + €50 paying the device loan off
+    await writeTxTransform(repo, { ...src, feedSpaceId: undefined }, {
+      splits: [
+        { id: 'p1', catId: 'telecom', amountCents: 5_000 },
+        { id: 'p2', catId: 'transferOut', amountCents: 5_000, txType: 'transfer', linkedAccountId: 'loan' },
+      ],
+    });
+    const mid = mirrorTxId(partMirrorSourceId('src', 'p2'));
+    // the part's own mirror sits on the loan, stamped + movement-sub,
+    // sized to the PART — and the loan moved by €50, not €100
+    expect(await db.transactions.get(mid)).toMatchObject({
+      accountId: 'loan', amountCents: 5_000, txType: 'debtPayment', catId: 'loanRepayment',
+    });
+    expect((await db.accounts.get('loan'))?.balanceCents).toBe(-45_000);
+    const stored = (await db.transactions.get('src'))!.splits!;
+    expect(stored.find((p) => p.id === 'p2')?.transferPeerId).toBe(mid);
+
+    // unsplitting the loan part takes its mint and money along
+    const fresh = (await db.transactions.get('src'))!;
+    await writeTxTransform(repo, { ...fresh, feedSpaceId: undefined }, {
+      splits: [{ id: 'p1', catId: 'telecom', amountCents: 10_000 }],
+    });
+    expect((await db.transactions.get(mid))?.deleted).toBe(1);
+    expect((await db.accounts.get('loan'))?.balanceCents).toBe(-50_000);
   });
 });

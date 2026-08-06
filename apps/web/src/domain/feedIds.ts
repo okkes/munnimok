@@ -31,6 +31,10 @@ export const txMetaId = (spaceId: string, txId: string): string => uuidv5(`meta:
  *  converge on ONE mirror instead of duplicating it */
 export const mirrorTxId = (txId: string): string => uuidv5(`mirror:${txId}`, IMPORT_NS);
 
+/** a PART's minted counter leg: keyed on row + part identity — ':' can
+ *  never occur inside real ids (uuid charset), so the key is unambiguous */
+export const partMirrorSourceId = (txId: string, partId: string): string => `${txId}:${partId}`;
+
 /** attachment row id (one per account per space) */
 export const accountLinkId = (spaceId: string, feedId: string): string =>
   uuidv5(`link:${spaceId}:${feedId}`, IMPORT_NS);

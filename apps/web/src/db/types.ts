@@ -132,10 +132,27 @@ export interface CategoryRow extends SyncEnvelope {
 
 export interface TxSplit {
   catId: string;
+  /** positive magnitude; the parent row's sign gives the direction */
   amountCents: number;
   /** percentage split (0–100): scales to any amount, so bulk apply
    *  works across different charges; amountCents stays materialized */
   pct?: number;
+  // ── typed splits v2 (2026-08-05, approved plan) — all optional; a
+  // bare slice behaves exactly as the classic category slice ──
+  /** stable part identity (repo.newId()), minted when the sheet saves */
+  id?: string;
+  /** stored ONLY when the user edits it; the default
+   *  "<title> – split N" is rendered, localized, at read time */
+  label?: string;
+  /** the part's own type (R4: the parent is a container) —
+   *  absent = the part inherits the row's type */
+  txType?: TxType;
+  /** transfer parts: the tracked counter account (mint-on-link) */
+  linkedAccountId?: string;
+  /** the paired row on that account (the part's minted mirror) */
+  transferPeerId?: string;
+  /** per-part event membership ("this €30 of the dinner is the trip") */
+  eventId?: string;
 }
 
 /** money received back against an expense (owned by the expense side) */

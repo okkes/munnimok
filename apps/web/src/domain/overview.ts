@@ -1,6 +1,8 @@
 import type { AccountRow, TransactionRow } from '@/db/types';
 import { REIMBURSEMENT_MAIN_ID, mainCatOf } from './categories';
 import { inPeriod } from './periods';
+import { txSliceViews } from './txSlices';
+import type { TxSliceView } from './txSlices';
 import { accountStamp } from './txType';
 import type { Period } from './periods';
 
@@ -50,22 +52,42 @@ const SPECIAL_CONTRIB: Record<string, 1 | -1> = {
   fundingIn: -1,
 };
 
-/** signed contribution of one transaction to a bucket (cents) */
-export function contributionCents(kind: OverviewKind, tx: TransactionRow, accountsById?: Map<string, AccountRow>): number {
+/** does one PART belong to this bucket? (typed-splits v2: a split row
+ *  answers per part — the container itself has no bucket) */
+function viewInKind(kind: OverviewKind, view: TxSliceView): boolean {
+  const familyMain = FAMILY_MAIN[kind];
+  if (familyMain) return mainCatOf(view.catId) === familyMain;
+  // income/expense: type-driven, minus the funding family (standard-
+  // typed since the type retired, but the pot is not income/spending)
+  return view.effType === kind && mainCatOf(view.catId) !== 'funding';
+}
+
+/** one part's signed contribution to a bucket */
+function viewContribution(kind: OverviewKind, view: TxSliceView, tx: TransactionRow, accountsById?: Map<string, AccountRow>): number {
   switch (kind) {
     case 'income':
-      return tx.amountCents; // income txs are positive by construction
+      return view.amountCents; // income parts are positive by construction
     case 'expense':
-      return -tx.amountCents; // spent is a positive number; refunds reduce it
+      return -view.amountCents; // spent is a positive number; refunds reduce it
     default: {
-      const sign = SPECIAL_CONTRIB[tx.catId ?? ''];
-      if (sign !== undefined) return sign * Math.abs(tx.amountCents);
+      const sign = SPECIAL_CONTRIB[view.catId ?? ''];
+      if (sign !== undefined) return sign * Math.abs(view.amountCents);
       // invest Buy/Sell/General on the brokerage's OWN ledger move cash
       // within the account — no new money invested, no bucket movement
       if (kind === 'investment' && accountStamp(accountsById?.get(tx.accountId)?.type)) return 0;
-      return -tx.amountCents; // legacy family rows: the checking-side flip
+      return -view.amountCents; // legacy family rows: the checking-side flip
     }
   }
+}
+
+/** signed contribution of one transaction to a bucket (cents) —
+ *  summed over its matching parts. An UNSPLIT row keeps the classic
+ *  contract (membership is the caller's txsForKind filter); only a
+ *  split row's parts answer per kind themselves. */
+export function contributionCents(kind: OverviewKind, tx: TransactionRow, accountsById?: Map<string, AccountRow>): number {
+  return txSliceViews(tx)
+    .filter((view) => view.count === 1 || viewInKind(kind, view))
+    .reduce((sum, view) => sum + viewContribution(kind, view, tx, accountsById), 0);
 }
 
 export function txsForKind(
@@ -74,14 +96,9 @@ export function txsForKind(
   _accountsById: Map<string, AccountRow>,
   period: Period,
 ): TransactionRow[] {
-  const familyMain = FAMILY_MAIN[kind];
-  return txs.filter((tx) => {
-    if (tx.deleted !== 0 || !inPeriod(tx.date, period)) return false;
-    if (familyMain) return mainCatOf(tx.catId) === familyMain;
-    // income/expense: type-driven, minus the funding family (standard-
-    // typed since the type retired, but the pot is not income/spending)
-    return tx.txType === kind && mainCatOf(tx.catId) !== 'funding';
-  });
+  return txs.filter(
+    (tx) => tx.deleted === 0 && inPeriod(tx.date, period) && txSliceViews(tx).some((view) => viewInKind(kind, view)),
+  );
 }
 
 export interface OverviewSummary {
@@ -144,19 +161,18 @@ export function categoryContributionCents(
   catalog: CatalogLookup,
   accountsById?: Map<string, AccountRow>,
 ): number {
-  if (tx.splits?.length) {
-    let cents = 0;
-    for (const slice of tx.splits) {
-      const cat = catalog.byId(slice.catId);
-      // settled/expected/received value is not spending (redesign rule c)
-      if ((cat.parentId ?? cat.id) === REIMBURSEMENT_MAIN_ID) continue;
-      if (cat.id === catId || cat.parentId === catId) cents += slice.amountCents;
-    }
-    return cents;
+  let cents = 0;
+  for (const view of txSliceViews(tx)) {
+    const cat = catalog.byId(view.catId);
+    // settled/expected/received value is not spending (redesign rule c)
+    if ((cat.parentId ?? cat.id) === REIMBURSEMENT_MAIN_ID) continue;
+    if (cat.id !== catId && cat.parentId !== catId) continue;
+    // typed parts answer to their OWN kind (a loan part never lands in
+    // the expense breakdown); the unsplit whole keeps the kind's math
+    if (view.count > 1 && !viewInKind(kind, view)) continue;
+    cents += view.count === 1 ? viewContribution(kind, view, tx, accountsById) : Math.abs(view.amountCents);
   }
-  const cat = catalog.byId(tx.catId);
-  if ((cat.parentId ?? cat.id) === REIMBURSEMENT_MAIN_ID) return 0;
-  return cat.id === catId || cat.parentId === catId ? contributionCents(kind, tx, accountsById) : 0;
+  return cents;
 }
 
 export function txsForCategory(
@@ -208,10 +224,9 @@ export function categoryBreakdown(
     sub.count += 1;
   };
   for (const tx of txsForKind(kind, txs, accountsById, period)) {
-    if (tx.splits?.length) {
-      for (const slice of tx.splits) add(slice.catId, slice.amountCents);
-    } else {
-      add(tx.catId, contributionCents(kind, tx, accountsById));
+    for (const view of txSliceViews(tx)) {
+      if (view.count > 1 && !viewInKind(kind, view)) continue; // parts answer per kind (v2)
+      add(view.catId, view.count === 1 ? viewContribution(kind, view, tx, accountsById) : Math.abs(view.amountCents));
     }
   }
   return [...groups.values()]
