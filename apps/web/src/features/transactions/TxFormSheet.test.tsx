@@ -37,6 +37,23 @@ describe('TxFormSheet (demo identity)', () => {
     await waitFor(() => expect(save.disabled).toBe(false));
   });
 
+  it('register-style amount entry: bare digits fill cents from the right (user request)', async () => {
+    await openForm();
+    const amount = screen.getByTestId('txform-amount') as HTMLInputElement;
+    fireEvent.focus(amount);
+    fireEvent.change(amount, { target: { value: '5' } });
+    expect(amount.value).toBe('0,05');
+    fireEvent.change(amount, { target: { value: '0,055' } });
+    expect(amount.value).toBe('0,55');
+    fireEvent.change(amount, { target: { value: '0,550' } });
+    expect(amount.value).toBe('5,50');
+    // the comma path stays: it promotes the digits to euros
+    fireEvent.change(amount, { target: { value: '5,50,' } });
+    expect(amount.value).toBe('550,');
+    fireEvent.change(amount, { target: { value: '550,7' } });
+    expect(amount.value).toBe('550,7');
+  });
+
   it('adds an expense with a picked category and shows it in the list', async () => {
     await openForm();
     fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '12,34' } });

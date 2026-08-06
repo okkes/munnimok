@@ -10,6 +10,8 @@ import { logActivity } from '@/application/activity';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { useRecurrings } from '@/application/recurring';
 import { fmtCents, parseCents } from '@/lib/money';
+import { focusEntryMode, nextAmountEntry } from '@/lib/amountRegister';
+import type { AmountEntryMode } from '@/lib/amountRegister';
 import type { AccountRow, TransactionRow, TxSplit, TxType } from '@/db/types';
 import { typeDef } from '@/features/accounts/accountTypes';
 import { Button } from '@/ui/Button';
@@ -402,6 +404,8 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
   const { store, repo, spaceId } = useData();
   const cats = useCategories();
   const [amount, setAmount] = useState('');
+  // register-style entry state for the amount field (lib/amountRegister)
+  const [amountEntryMode, setAmountEntryMode] = useState<AmountEntryMode>('register');
   const [isExpense, setIsExpense] = useState(true);
   const [merchant, setMerchant] = useState('');
   const [date, setDate] = useState(todayIso());
@@ -608,7 +612,14 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
             <input
               data-testid="txform-amount"
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              onFocus={() => setAmountEntryMode(focusEntryMode(amount))}
+              onChange={(e) => {
+                // register-style entry (user request): digits fill cents
+                // from the right; a comma or operator frees the field
+                const next = nextAmountEntry(amountEntryMode, amount, e.target.value);
+                setAmountEntryMode(next.mode);
+                setAmount(next.text);
+              }}
               inputMode="decimal"
               placeholder={`${t('txform.amount')} (EUR)`}
               className="h-12 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"

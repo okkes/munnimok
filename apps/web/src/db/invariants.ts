@@ -38,7 +38,9 @@ function amountAndTypeProblems(row: Record<string, unknown>): string[] {
   return problems;
 }
 
-function splitProblems(splits: { catId?: unknown; amountCents?: unknown; txType?: unknown }[]): string[] {
+function splitProblems(
+  splits: { catId?: unknown; amountCents?: unknown; txType?: unknown; cats?: unknown }[],
+): string[] {
   const problems: string[] = [];
   for (const split of splits) {
     if (typeof split.catId !== 'string' || split.catId.length === 0) problems.push('split without a category');
@@ -48,7 +50,22 @@ function splitProblems(splits: { catId?: unknown; amountCents?: unknown; txType?
     if (split.txType !== undefined && !(typeof split.txType === 'string' && TX_TYPES.has(split.txType))) {
       problems.push('unknown split txType');
     }
+    if (split.cats !== undefined) problems.push(...splitCatProblems(split));
   }
+  return problems;
+}
+
+/** v2.1 category spread: entries must be sound and sum to the part */
+function splitCatProblems(split: { amountCents?: unknown; cats?: unknown }): string[] {
+  if (!Array.isArray(split.cats) || split.cats.length < 2) return ['split cats must hold at least two entries'];
+  const problems: string[] = [];
+  let sum = 0;
+  for (const cat of split.cats as { catId?: unknown; amountCents?: unknown }[]) {
+    if (typeof cat.catId !== 'string' || cat.catId.length === 0) problems.push('split cat without a category');
+    if (!isIntCents(cat.amountCents) || cat.amountCents < 0) problems.push('split cat amount must be non-negative integer cents');
+    else sum += cat.amountCents as number;
+  }
+  if (problems.length === 0 && sum !== split.amountCents) problems.push('split cats must sum to the part amount');
   return problems;
 }
 

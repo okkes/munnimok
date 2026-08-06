@@ -153,6 +153,16 @@ export interface TxSplit {
   transferPeerId?: string;
   /** per-part event membership ("this €30 of the dinner is the trip") */
   eventId?: string;
+  /** per-part category partition (splits v2.1): a part can spread across
+   *  several categories. Magnitudes sum to the part's amountCents; catId
+   *  stays the largest entry as the compat shadow. Absent = single cat. */
+  cats?: TxSplitCat[];
+}
+
+export interface TxSplitCat {
+  catId: string;
+  /** positive magnitude, same sign convention as the part */
+  amountCents: number;
 }
 
 /** money received back against an expense (owned by the expense side) */

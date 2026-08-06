@@ -38,6 +38,38 @@ const statusOf = (tx: TransactionRow): string => {
   return tx.needsReview === 1 ? 'unreviewed' : 'reviewed';
 };
 
+type BaseRow = (
+  split: string,
+  catOf: Cat,
+  mainOf: Cat,
+  amount: number,
+  typeOf?: TransactionRow['txType'],
+  eventOf?: string,
+) => string[];
+
+/** split parts carry the expense sign of their parent, their OWN
+ *  type/event (typed-splits v2), and the label rides the marker; a part
+ *  spread across categories (v2.1) exports one honest row per entry */
+function pushPartRows(rows: string[][], tx: TransactionRow, catalog: Catalog, base: BaseRow): void {
+  for (const part of tx.splits ?? []) {
+    const entries = part.cats?.length ? part.cats : [{ catId: part.catId, amountCents: part.amountCents }];
+    for (const entry of entries) {
+      const partCat = catalog.byId(entry.catId);
+      const partMain = partCat.parentId ? catalog.byId(partCat.parentId) : partCat;
+      rows.push(
+        base(
+          part.label ? `part:${part.label}` : 'part',
+          partCat,
+          partMain,
+          Math.sign(tx.amountCents) * Math.abs(entry.amountCents),
+          part.txType ?? tx.txType,
+          part.eventId ?? tx.eventId,
+        ),
+      );
+    }
+  }
+}
+
 /** one export row per transaction; split parts fan out beneath it */
 export function toCsvRows(txs: readonly TransactionRow[], ctx: ExportContext): string[][] {
   const accountById = new Map(ctx.accounts.map((a) => [a.id, a]));
@@ -74,22 +106,7 @@ export function toCsvRows(txs: readonly TransactionRow[], ctx: ExportContext): s
       ...(ctx.technical ? [tx.id, tx.accountId] : []),
     ];
     rows.push(base('', cat, main, tx.amountCents));
-    for (const part of tx.splits ?? []) {
-      const partCat = ctx.catalog.byId(part.catId);
-      const partMain = partCat.parentId ? ctx.catalog.byId(partCat.parentId) : partCat;
-      // split parts carry the expense sign of their parent, their OWN
-      // type/event (typed-splits v2), and the label rides the marker
-      rows.push(
-        base(
-          part.label ? `part:${part.label}` : 'part',
-          partCat,
-          partMain,
-          Math.sign(tx.amountCents) * Math.abs(part.amountCents),
-          part.txType ?? tx.txType,
-          part.eventId ?? tx.eventId,
-        ),
-      );
-    }
+    pushPartRows(rows, tx, ctx.catalog, base);
   }
   return rows;
 }

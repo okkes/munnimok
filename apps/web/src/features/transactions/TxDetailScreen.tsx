@@ -36,6 +36,7 @@ import { CounterpartySheet, TX_KIND_VISUAL, TxKindSheet, kindDetail } from './Tx
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { kindOf, standardTypeFor } from '@/domain/txKind';
 import type { TxKind } from '@/domain/txKind';
+import { hasTypedParts } from '@/domain/txSlices';
 import { mintMirrorForExistingLink, removeMirrorForDeletedSource } from '@/application/mirrorMint';
 import { visibleTransactions, writeTxTransform } from '@/db/joined';
 import { accountStamp, applyTypeChange, typeForLinkedAccount } from '@/domain/txType';
@@ -65,7 +66,9 @@ function CategorySlices({
 }>) {
   const { t, lang } = useLang();
   const parts = tx.splits?.length ? tx.splits : [null];
-  const spine = parts.length > 1;
+  // v2.1: only a real part story (labels/kinds/spreads) earns the spine
+  // presentation — plain multi-category keeps the classic slice list
+  const spine = parts.length > 1 && hasTypedParts(tx);
   return (
     <div className={spine ? "relative pl-4 before:absolute before:top-5 before:bottom-5 before:left-[7px] before:w-[2px] before:rounded-full before:bg-line before:content-['']" : ''}>
       {parts.map((slice, i) => {
@@ -77,6 +80,10 @@ function CategorySlices({
         // differs from the row's kind, a quiet type chip
         const partLabel = slice?.label ?? (spine ? `${txTitle(tx)} – ${t('split.partN', { n: i + 1 })}` : undefined);
         const partType = slice?.txType && slice.txType !== tx.txType ? slice.txType : undefined;
+        // a spread part's subline lists ALL its categories (v2.1)
+        const spreadNames = slice?.cats?.length
+          ? slice.cats.map((c) => catName(cats.byId(c.catId), t)).join(' · ')
+          : undefined;
         return (
           <button
             key={slice?.id ?? slice?.catId ?? 'single'}
@@ -94,7 +101,7 @@ function CategorySlices({
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[15px] text-ink">{spine ? partLabel : catName(rowCat, t)}</span>
               <span className="block truncate text-[11px] text-ink-4">
-                {spine ? catName(rowCat, t) : parentName}
+                {spine ? (spreadNames ?? catName(rowCat, t)) : parentName}
                 {partType && (
                   <span className="text-accent-deep" data-testid={`tx-detail-part-type-${slice?.id ?? i}`}>
                     {' '}· {t(`tx.type.${partType}`)}

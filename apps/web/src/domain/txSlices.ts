@@ -50,22 +50,45 @@ export function txSliceViews(tx: SliceSource): TxSliceView[] {
     ];
   }
   const sign = tx.amountCents < 0 ? -1 : 1;
-  return parts.map((part, index) => ({
-    amountCents: sign * Math.abs(part.amountCents),
-    catId: part.catId,
-    effType: part.txType ?? tx.txType,
-    // a part without its own event still belongs to the row's (the
-    // row-level attachment predates per-part events and stays honest)
-    eventId: part.eventId ?? tx.eventId,
-    linkedAccountId: part.linkedAccountId,
-    transferPeerId: part.transferPeerId,
-    sliceId: part.id,
-    label: part.label,
-    index,
-    count: parts.length,
-  }));
+  const views = parts.flatMap((part) => {
+    const base = {
+      effType: part.txType ?? tx.txType,
+      // a part without its own event still belongs to the row's (the
+      // row-level attachment predates per-part events and stays honest)
+      eventId: part.eventId ?? tx.eventId,
+      linkedAccountId: part.linkedAccountId,
+      transferPeerId: part.transferPeerId,
+      sliceId: part.id,
+      label: part.label,
+    };
+    // v2.1: a part spread across categories fans one view per category
+    // entry — the part's story (type/link/event/label) rides on each
+    const cats = part.cats?.filter((c) => c.amountCents !== 0);
+    if (cats?.length) {
+      return cats.map((c) => ({
+        ...base,
+        amountCents: sign * Math.abs(c.amountCents),
+        catId: c.catId,
+      }));
+    }
+    return [{ ...base, amountCents: sign * Math.abs(part.amountCents), catId: part.catId }];
+  });
+  return views.map((view, index) => ({ ...view, index, count: views.length }));
 }
 
 /** does ANY part of this row carry the given effective type? (filters) */
 export const hasSliceOfType = (tx: SliceSource, txType: TxType): boolean =>
   txSliceViews(tx).some((view) => view.effType === txType);
+
+/**
+ * The presentation discriminator (v2.1): a split renders as PARTS (labels,
+ * spine, type chips) only when some part actually tells a part story —
+ * its own type, link, event, label or category spread. A plain
+ * multi-category assignment keeps the classic slice look everywhere.
+ * `id` deliberately doesn't count: the editor mints ids on every save.
+ */
+export const hasTypedParts = (tx: Pick<TransactionRow, 'splits'>): boolean =>
+  !!tx.splits?.some(
+    (s) => s.label !== undefined || s.txType !== undefined || s.linkedAccountId !== undefined
+      || s.eventId !== undefined || !!s.cats?.length,
+  );

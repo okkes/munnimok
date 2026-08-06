@@ -1169,6 +1169,8 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'split.done': 'Tamam',
   'split.action': 'Böl',
   'split.addRow': 'Kategori ekle',
+  'split.addPart': 'Parça ekle',
+  'split.toParts': 'Parçalara böl',
   'split.remaining': 'Atanacak {amount} kaldı',
   'split.over': '{amount} fazla atandı',
   'split.clear': 'Bölmeyi kaldır',

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hasSliceOfType, txSliceViews } from './txSlices';
+import { hasSliceOfType, hasTypedParts, txSliceViews } from './txSlices';
 import type { TransactionRow } from '@/db/types';
 
 const row = (over: Partial<TransactionRow>): Parameters<typeof txSliceViews>[0] =>
@@ -48,6 +48,40 @@ describe('txSliceViews (typed-splits v2 canonical fan-out)', () => {
     expect(views).toHaveLength(2);
     expect(views[0].eventId).toBe('trip');
     expect(views[1].eventId).toBe('other');
+  });
+
+  it('a part spread across categories fans one view per entry, the story riding each (v2.1)', () => {
+    const views = txSliceViews(
+      row({
+        splits: [
+          {
+            id: 'p1',
+            label: 'Weekly shop',
+            catId: 'groceries',
+            amountCents: 3000,
+            eventId: 'trip',
+            cats: [
+              { catId: 'groceries', amountCents: 2000 },
+              { catId: 'householdSupplies', amountCents: 1000 },
+            ],
+          },
+          { catId: 'restaurants', amountCents: 2240 },
+        ],
+      }),
+    );
+    expect(views).toHaveLength(3);
+    expect(views[0]).toMatchObject({ amountCents: -2000, catId: 'groceries', label: 'Weekly shop', eventId: 'trip', sliceId: 'p1', count: 3 });
+    expect(views[1]).toMatchObject({ amountCents: -1000, catId: 'householdSupplies', label: 'Weekly shop', sliceId: 'p1', index: 1 });
+    expect(views[2]).toMatchObject({ amountCents: -2240, catId: 'restaurants', index: 2 });
+  });
+
+  it('hasTypedParts: plain multi-category (even with minted ids) is NOT a part story; labels, types, links, events or spreads are', () => {
+    const classic = row({ splits: [{ id: 'a', catId: 'groceries', amountCents: 5000 }, { id: 'b', catId: 'restaurants', amountCents: 3740 }] });
+    expect(hasTypedParts(classic)).toBe(false);
+    expect(hasTypedParts(row({}))).toBe(false);
+    expect(hasTypedParts(row({ splits: [{ catId: 'g', amountCents: 1, label: 'x' }] }))).toBe(true);
+    expect(hasTypedParts(row({ splits: [{ catId: 'g', amountCents: 1, txType: 'saving' }] }))).toBe(true);
+    expect(hasTypedParts(row({ splits: [{ catId: 'g', amountCents: 2, cats: [{ catId: 'g', amountCents: 1 }, { catId: 'h', amountCents: 1 }] }] }))).toBe(true);
   });
 
   it('hasSliceOfType answers filters per effective type', () => {

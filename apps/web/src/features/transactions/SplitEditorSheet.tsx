@@ -4,11 +4,14 @@ import { useSpaceAccounts, useSpaceTransactions, useTxTransform } from '@/applic
 import type { SpaceTx } from '@/application/transactions';
 import { useLang } from '@/i18n';
 import { evalAmountCents, fmtCents, parseCents } from '@/lib/money';
+import { nextAmountEntry } from '@/lib/amountRegister';
+import type { AmountEntryMode } from '@/lib/amountRegister';
 import { txTitle } from '@/lib/text';
 import { balanceLastRow, pctRemainder, primaryCatId, resolveSplitsFor, splitRemainderCents, splitsArePct, validatePctSplits, validateSplits } from '@/domain/splits';
 import { givenCents, netAmountCents, netCreditCents, totalReimbursedCents } from '@/domain/reimbursement';
 import { REIMBURSED_ID, UNCATEGORIZED_ID, autoSubFor, specialCatType } from '@/domain/categories';
 import { kindOf } from '@/domain/txKind';
+import { hasTypedParts } from '@/domain/txSlices';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { CategoryPicker } from '@/features/categories/CategoryPicker';
 import { CounterpartySheet } from './TxKindSheet';
@@ -31,6 +34,13 @@ function sheetError(options: {
   return validateSplits(options.referenceCents, options.splits);
 }
 
+/** an extra category entry inside a PART (v2.1 per-part spread) */
+interface EntryDraft {
+  key: string;
+  catId: string;
+  amount: string;
+}
+
 interface Row {
   /** stable key for React list rendering (rows have no natural id) */
   key: string;
@@ -44,20 +54,27 @@ interface Row {
   linkedAccountId?: string;
   transferPeerId?: string;
   eventId?: string;
+  /** part mode: the part's categories beyond the first (v2.1) */
+  extraCats: EntryDraft[];
 }
 
 let rowCounter = 0;
-const newRow = (catId: string, amount: string, part?: Partial<Row>): Row => ({
-  key: `r${rowCounter++}`,
+const newKey = () => `r${rowCounter++}`;
+const newRow = (catId: string, amount: string, part?: Partial<Omit<Row, 'key'>>): Row => ({
+  key: newKey(),
   catId,
   amount,
   label: '',
+  extraCats: [],
   ...part,
 });
 
 /** the part's face when the user typed nothing: "<title> – split N" */
 const defaultLabel = (title: string, index: number, t: ReturnType<typeof useLang>['t']): string =>
   `${title} – ${t('split.partN', { n: index + 1 })}`;
+
+/** every category a row speaks for: the main entry + the part spread */
+const rowCatIds = (row: Row): string[] => [row.catId, ...row.extraCats.map((x) => x.catId)];
 
 /** a mid-edit TYPE change can strand categories that don't speak the
  *  new type (user ss: Income + Maintenance) — flag them and hold Done.
@@ -66,11 +83,13 @@ const defaultLabel = (title: string, index: number, t: ReturnType<typeof useLang
  *  (R3) and is never a stranded conflict. Out of the component (S3776). */
 function computeRowConflicts(rows: Row[], effectiveType: TxType, cats: ReturnType<typeof useCategories>): boolean[] {
   return rows.map((r) => {
-    if (r.catId === UNCATEGORIZED_ID) return false;
     const partType = r.txType ?? effectiveType;
-    if (kindOf(partType) === 'standard' && specialCatType(r.catId)) return false;
-    const speaks = cats.byId(r.catId).txTypes;
-    return !!speaks && !speaks.includes(partType);
+    return rowCatIds(r).some((catId) => {
+      if (catId === UNCATEGORIZED_ID) return false;
+      if (kindOf(partType) === 'standard' && specialCatType(catId)) return false;
+      const speaks = cats.byId(catId).txTypes;
+      return !!speaks && !speaks.includes(partType);
+    });
   });
 }
 
@@ -100,6 +119,23 @@ const partFields = (r: Row): Partial<TxSplit> => ({
   ...(r.transferPeerId ? { transferPeerId: r.transferPeerId } : {}),
   ...(r.eventId ? { eventId: r.eventId } : {}),
 });
+
+/** the stored slice a row becomes: a plain category slice, or a part
+ *  spread across categories (v2.1 — amount = the spread's sum, catId =
+ *  the largest entry as the compat shadow) */
+function rowToSplit(r: Row, partMode: boolean): TxSplit {
+  const main = { catId: r.catId, amountCents: parseCents(r.amount) ?? 0 };
+  const extras = partMode ? r.extraCats.map((x) => ({ catId: x.catId, amountCents: parseCents(x.amount) ?? 0 })) : [];
+  if (extras.length === 0) return { ...main, ...partFields(r) };
+  const entries = [main, ...extras];
+  const primary = entries.reduce((best, e) => (e.amountCents > best.amountCents ? e : best), entries[0]);
+  return {
+    catId: primary.catId,
+    amountCents: entries.reduce((sum, e) => sum + e.amountCents, 0),
+    cats: entries,
+    ...partFields(r),
+  };
+}
 
 /** a part card's head: the copied-info label ("<title> – split N",
  *  editable) + the part's own kind (typed-splits v2 — R4: parts carry
@@ -162,8 +198,102 @@ function RemainderPill({
   );
 }
 
-/** one editor row — flat category+amount, or a part CARD the moment a
- *  real split exists (typed-splits v2). Out of the editor for S3776. */
+/** where an amount/category edit lands: the row's main entry (cat 0)
+ *  or one of its extra spread entries (cat = extras index + 1) */
+interface EntryAddress {
+  row: number;
+  cat: number;
+}
+
+/** one category+amount line — the editor's atom, shared by classic rows
+ *  and the entries inside a part card. Testids keep the historical
+ *  main-entry names (split-cat-0) and suffix spread entries (-0-1). */
+function EntryRow({
+  at,
+  catId,
+  amount,
+  conflict,
+  removable,
+  linkedAccountId,
+  cats,
+  accountName,
+  onPickCat,
+  onAmount,
+  onAmountFocus,
+  onAmountBlur,
+  onRemove,
+}: Readonly<{
+  at: EntryAddress;
+  catId: string;
+  amount: string;
+  conflict: boolean;
+  removable: boolean;
+  linkedAccountId?: string;
+  cats: ReturnType<typeof useCategories>;
+  accountName: (id: string) => string;
+  onPickCat: (at: EntryAddress) => void;
+  onAmount: (at: EntryAddress, amount: string) => void;
+  onAmountFocus: (at: EntryAddress) => void;
+  onAmountBlur: (at: EntryAddress) => void;
+  onRemove: (at: EntryAddress) => void;
+}>) {
+  const { t } = useLang();
+  const suffix = at.cat === 0 ? `${at.row}` : `${at.row}-${at.cat}`;
+  return (
+    <div className="flex items-center gap-2">
+      <button
+        data-testid={`split-cat-${suffix}`}
+        onClick={() => onPickCat(at)}
+        className={`m-tap flex h-11 min-w-0 flex-1 items-center gap-2 rounded-input border bg-surface px-3 text-left text-[14px] text-ink ${
+          conflict ? 'border-negative' : 'border-line'
+        }`}
+      >
+        <Icon name={cats.byId(catId).icon} size={17} color={cats.byId(cats.byId(catId).parentId ?? '').color ?? cats.byId(catId).color} />
+        <span className="truncate">{catName(cats.byId(catId), t)}</span>
+        {linkedAccountId && (
+          <span className="truncate text-[11px] text-ink-4" data-testid={`split-counter-${suffix}`}>
+            → {accountName(linkedAccountId)}
+          </span>
+        )}
+      </button>
+      <input
+        data-testid={`split-amount-${suffix}`}
+        value={amount}
+        onChange={(e) => onAmount(at, e.target.value)}
+        onFocus={() => onAmountFocus(at)}
+        onBlur={() => onAmountBlur(at)}
+        inputMode="decimal"
+        className="h-11 w-24 rounded-input border border-line bg-surface px-3 text-right text-[14px] text-ink outline-none"
+      />
+      {removable && (
+        <button
+          aria-label={t('action.delete')}
+          data-testid={`split-remove-${suffix}`}
+          onClick={() => onRemove(at)}
+          className="m-tap border-none bg-transparent text-ink-4"
+        >
+          <Icon name="close" size={16} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** shared entry handlers, bundled once — the card and the flat row pass
+ *  them straight through to EntryRow (out of the editor for S3776) */
+interface EntryHandlers {
+  cats: ReturnType<typeof useCategories>;
+  accountName: (id: string) => string;
+  onPickCat: (at: EntryAddress) => void;
+  onAmount: (at: EntryAddress, amount: string) => void;
+  onAmountFocus: (at: EntryAddress) => void;
+  onAmountBlur: (at: EntryAddress) => void;
+  onRemove: (at: EntryAddress) => void;
+}
+
+/** one editor row — a flat category line by default; a part CARD (label,
+ *  kind, its own category spread) only in part mode (v2.1: plain
+ *  multi-category keeps the classic look). Out of the editor for S3776. */
 function PartRowView({
   row,
   index,
@@ -171,76 +301,83 @@ function PartRowView({
   conflict,
   removable,
   title,
-  cats,
-  accountName,
+  handlers,
   onLabel,
   onStandard,
   onTransfer,
-  onPickCat,
-  onAmount,
-  onAmountFocus,
-  onAmountBlur,
-  onRemove,
+  onAddCat,
 }: Readonly<{
   row: Row;
   index: number;
   card: boolean;
   conflict: boolean;
   removable: boolean;
+  /** spread entries can always go; the main entry follows the row rule */
+  entryRemovable: boolean;
   title: string;
-  cats: ReturnType<typeof useCategories>;
-  accountName: (id: string) => string;
+  handlers: EntryHandlers;
   onLabel: (index: number, label: string) => void;
   onStandard: (index: number) => void;
   onTransfer: (index: number) => void;
-  onPickCat: (index: number) => void;
-  onAmount: (index: number, amount: string) => void;
-  onAmountFocus: (index: number) => void;
-  onAmountBlur: (index: number) => void;
-  onRemove: (index: number) => void;
+  onAddCat: (index: number) => void;
 }>) {
   const { t } = useLang();
+  // inside a card the part removes as a whole (header ×) — the main
+  // entry itself never does; classic flat rows keep the row rule
+  const mainEntry = (
+    <EntryRow
+      at={{ row: index, cat: 0 }}
+      catId={row.catId}
+      amount={row.amount}
+      conflict={conflict}
+      removable={!card && removable}
+      linkedAccountId={row.linkedAccountId}
+      {...handlers}
+    />
+  );
+  if (!card) return mainEntry;
+  const transferPart = !!row.txType && kindOf(row.txType) === 'transfer';
   return (
-    <div className={card ? 'flex flex-col gap-1.5 rounded-card border border-line bg-surface p-2' : 'flex items-center gap-2'}>
-      {card && (
-        <PartHeader row={row} index={index} title={title} onLabel={onLabel} onStandard={onStandard} onTransfer={onTransfer} />
-      )}
+    <div className="flex flex-col gap-1.5 rounded-card border border-line bg-surface p-2">
       <div className="flex items-center gap-2">
-        <button
-          data-testid={`split-cat-${index}`}
-          onClick={() => onPickCat(index)}
-          className={`m-tap flex h-11 min-w-0 flex-1 items-center gap-2 rounded-input border bg-surface px-3 text-left text-[14px] text-ink ${
-            conflict ? 'border-negative' : 'border-line'
-          }`}
-        >
-          <Icon name={cats.byId(row.catId).icon} size={17} color={cats.byId(cats.byId(row.catId).parentId ?? '').color ?? cats.byId(row.catId).color} />
-          <span className="truncate">{catName(cats.byId(row.catId), t)}</span>
-          {row.linkedAccountId && (
-            <span className="truncate text-[11px] text-ink-4" data-testid={`split-counter-${index}`}>
-              → {accountName(row.linkedAccountId)}
-            </span>
-          )}
-        </button>
-        <input
-          data-testid={`split-amount-${index}`}
-          value={row.amount}
-          onChange={(e) => onAmount(index, e.target.value)}
-          onFocus={() => onAmountFocus(index)}
-          onBlur={() => onAmountBlur(index)}
-          inputMode="decimal"
-          className="h-11 w-24 rounded-input border border-line bg-surface px-3 text-right text-[14px] text-ink outline-none"
-        />
+        <div className="min-w-0 flex-1">
+          <PartHeader row={row} index={index} title={title} onLabel={onLabel} onStandard={onStandard} onTransfer={onTransfer} />
+        </div>
         {removable && (
           <button
             aria-label={t('action.delete')}
-            data-testid={`split-remove-${index}`}
-            onClick={() => onRemove(index)}
+            data-testid={`split-remove-part-${index}`}
+            onClick={() => handlers.onRemove({ row: index, cat: 0 })}
             className="m-tap border-none bg-transparent text-ink-4"
           >
             <Icon name="close" size={16} />
           </button>
         )}
       </div>
+      {mainEntry}
+      {row.extraCats.map((entry, k) => (
+        <EntryRow
+          key={entry.key}
+          at={{ row: index, cat: k + 1 }}
+          catId={entry.catId}
+          amount={entry.amount}
+          conflict={conflict}
+          removable
+          {...handlers}
+        />
+      ))}
+      {/* a transfer part's category is the locked movement sub — a
+          spread across categories only makes sense for standard parts */}
+      {!transferPart && (
+        <button
+          data-testid={`split-addcat-${index}`}
+          onClick={() => onAddCat(index)}
+          className="m-tap flex items-center gap-1.5 self-start border-none bg-transparent px-1 py-0.5 text-[12px] font-medium text-accent-deep"
+        >
+          <Icon name="plus" size={14} />
+          {t('split.addRow')}
+        </button>
+      )}
     </div>
   );
 }
@@ -254,10 +391,64 @@ function pulledTypePatch(row: Row, catId: string): Partial<Row> {
   return row.txType && !row.linkedAccountId ? { txType: undefined } : {};
 }
 
-/** categories the OTHER rows already own — hidden in the picker; a
+// ── pure row transforms (module level for S2004: the setRows updaters
+// stay one arrow deep) ──
+
+/** rows with one entry (main or spread) patched at the address */
+function patchRowsAt(rows: Row[], at: EntryAddress, patch: { catId?: string; amount?: string }): Row[] {
+  return rows.map((row, i) => {
+    if (i !== at.row) return row;
+    if (at.cat === 0) return { ...row, ...patch };
+    return { ...row, extraCats: row.extraCats.map((x, k) => (k === at.cat - 1 ? { ...x, ...patch } : x)) };
+  });
+}
+
+/** part mode auto-balance: the tail entry of the LAST row absorbs the
+ *  remainder — same "fix the tail" gesture the classic rows have */
+function absorbIntoTail(rows: Row[], remainder: number): Row[] {
+  const bump = (amount: string) => toText(Math.max(0, (parseCents(amount) ?? 0) + remainder));
+  return rows.map((row, i) => {
+    if (i !== rows.length - 1) return row;
+    if (row.extraCats.length === 0) return { ...row, amount: bump(row.amount) };
+    const last = row.extraCats.length - 1;
+    return { ...row, extraCats: row.extraCats.map((x, k) => (k === last ? { ...x, amount: bump(x.amount) } : x)) };
+  });
+}
+
+/** the addressed spread entry dropped from its row */
+const dropExtraAt = (rows: Row[], at: EntryAddress): Row[] =>
+  rows.map((row, i) => (i === at.row ? { ...row, extraCats: row.extraCats.filter((_, k) => k !== at.cat - 1) } : row));
+
+/** a fresh uncategorized spread entry appended to one row (v2.1) */
+const appendExtraAt = (rows: Row[], index: number, amount: string): Row[] =>
+  rows.map((row, i) =>
+    i === index ? { ...row, extraCats: [...row.extraCats, { key: newKey(), catId: UNCATEGORIZED_ID, amount }] } : row,
+  );
+
+/** the category pick applied at the address — the type pull (R3)
+ *  follows the part's MAIN pick; spread entries refine the money,
+ *  not the part's story */
+function pickCatAt(rows: Row[], at: EntryAddress, catId: string): Row[] {
+  return rows.map((row, i) => {
+    if (i !== at.row) return row;
+    if (at.cat === 0) return { ...row, catId, ...pulledTypePatch(row, catId) };
+    return { ...row, extraCats: row.extraCats.map((e, k) => (k === at.cat - 1 ? { ...e, catId } : e)) };
+  });
+}
+
+/** categories the OTHER entries already own — hidden in the picker; a
  *  split across "Rent" and "Rent" is never meaningful (user ss) */
-const excludedCatIds = (rows: Row[], pickerFor: number | null): string[] | undefined =>
-  pickerFor === null ? undefined : rows.filter((x, j) => j !== pickerFor && x.catId !== UNCATEGORIZED_ID).map((x) => x.catId);
+function excludedCatIds(rows: Row[], pickerFor: EntryAddress | null): string[] | undefined {
+  if (pickerFor === null) return undefined;
+  const taken: string[] = [];
+  rows.forEach((row, i) => {
+    rowCatIds(row).forEach((catId, k) => {
+      if (i === pickerFor.row && k === pickerFor.cat) return;
+      if (catId !== UNCATEGORIZED_ID) taken.push(catId);
+    });
+  });
+  return taken;
+}
 
 const toText = (cents: number) => (cents / 100).toFixed(2).replace('.', ',');
 const toPctText = (pct: number) => String(pct).replace('.', ',');
@@ -317,12 +508,18 @@ export function SplitEditorSheet({
   const cats = useCategories();
   const [rows, setRows] = useState<Row[]>([]);
   const [mode, setMode] = useState<'amount' | 'pct'>('amount');
-  const [pickerFor, setPickerFor] = useState<number | null>(null);
+  // v2.1: plain multi-category (classic flat rows) vs typed PARTS with
+  // labels, kinds and per-part category spreads — an explicit door
+  const [partMode, setPartMode] = useState(false);
+  const [pickerFor, setPickerFor] = useState<EntryAddress | null>(null);
   // which part is picking its counterparty (typed-splits v2)
   const [counterFor, setCounterFor] = useState<number | null>(null);
   // focusing an amount empties it so typing replaces instead of appending
   // (user request); blurring an untouched empty field restores the value
-  const [focusStash, setFocusStash] = useState<{ index: number; amount: string } | null>(null);
+  const [focusStash, setFocusStash] = useState<{ at: EntryAddress; amount: string } | null>(null);
+  // register-style entry for the focused amount (lib/amountRegister) —
+  // one field is focused at a time, so one mode is enough
+  const [entryMode, setEntryMode] = useState<AmountEntryMode>('register');
 
   const allTxs = useSpaceTransactions();
   const accounts = useSpaceAccounts();
@@ -341,25 +538,33 @@ export function SplitEditorSheet({
     if (source?.length) {
       const pctMode = splitsArePct(source);
       setMode(pctMode ? 'pct' : 'amount');
+      // a stored part story (labels, kinds, spreads) reopens in part
+      // mode; a plain category partition reopens classic (v2.1)
+      setPartMode(hasTypedParts({ splits: source }));
       setRows(
-        source.map((s) =>
-          newRow(s.catId, pctMode ? toPctText(s.pct!) : toText(s.amountCents), {
+        source.map((s) => {
+          const spread = s.cats?.length ? s.cats : undefined;
+          const main = spread?.[0];
+          return newRow(main?.catId ?? s.catId, pctMode ? toPctText(s.pct!) : toText(main?.amountCents ?? s.amountCents), {
             id: s.id,
             label: s.label ?? '',
             txType: s.txType,
             linkedAccountId: s.linkedAccountId,
             transferPeerId: s.transferPeerId,
             eventId: s.eventId,
-          }),
-        ),
+            extraCats: (spread?.slice(1) ?? []).map((c) => ({ key: newKey(), catId: c.catId, amount: toText(c.amountCents) })),
+          });
+        }),
       );
     } else if (seedSingle) {
       // review's unified editor (user redesign): open on JUST the current
       // category owning the full amount — rows are added explicitly
       setMode('amount');
+      setPartMode(false);
       setRows([newRow(seedCatId ?? tx.catId ?? UNCATEGORIZED_ID, toText(Math.abs(referenceCents)))]);
     } else {
       setMode('amount');
+      setPartMode(false);
       // start from the current category + an empty second row
       setRows([newRow(tx.catId ?? UNCATEGORIZED_ID, toText(Math.abs(referenceCents))), newRow(UNCATEGORIZED_ID, '0,00')]);
     }
@@ -373,7 +578,7 @@ export function SplitEditorSheet({
   const splits: TxSplit[] =
     mode === 'pct'
       ? rows.map((r) => ({ catId: r.catId, amountCents: 0, pct: parsePct(r.amount), ...partFields(r) }))
-      : rows.map((r) => ({ catId: r.catId, amountCents: parseCents(r.amount) ?? 0, ...partFields(r) }));
+      : rows.map((r) => rowToSplit(r, partMode));
   const remainder = mode === 'pct' ? pctRemainder(splits) : splitRemainderCents(referenceCents, splits);
   const error = sheetError({ seedSingle, rowCount: rows.length, mode, referenceCents, splits });
 
@@ -381,14 +586,16 @@ export function SplitEditorSheet({
   const rowConflicts = computeRowConflicts(rows, effectiveType, cats);
   const hasTypeConflict = rowConflicts.some(Boolean);
 
-  // an empty or zero row must be finished before ANOTHER row appears
+  // an empty or zero entry must be finished before ANOTHER one appears
   // (user request: + Add category waits for the current one)
-  const rowUnfinished = (index: number) => {
-    if (rows[index].catId === UNCATEGORIZED_ID) return true;
-    const value = mode === 'pct' ? parsePct(rows[index].amount) : (parseCents(rows[index].amount) ?? 0);
+  const entryUnfinished = (catId: string, amount: string) => {
+    if (catId === UNCATEGORIZED_ID) return true;
+    const value = mode === 'pct' ? parsePct(amount) : (parseCents(amount) ?? 0);
     return value <= 0;
   };
-  const addBlocked = rows.some((_, i) => rowUnfinished(i));
+  const addBlocked = rows.some(
+    (r) => entryUnfinished(r.catId, r.amount) || r.extraCats.some((x) => entryUnfinished(x.catId, x.amount)),
+  );
 
   const switchMode = (next: 'amount' | 'pct') => {
     if (next === mode) return;
@@ -419,7 +626,7 @@ export function SplitEditorSheet({
     if (error || hasTypeConflict) return;
     // a lone row in the unified editor means "just this category" — no
     // split is stored, the category rides through onApplySingle
-    if (seedSingle && rows.length === 1) {
+    if (seedSingle && rows.length === 1 && !partMode) {
       onApplySingle?.(rows[0].catId);
       onOpenChange(false);
       return;
@@ -479,20 +686,41 @@ export function SplitEditorSheet({
       });
       return;
     }
+    if (partMode) {
+      setRows((r) => absorbIntoTail(r, remainder));
+      return;
+    }
     setRows((r) => {
       const abs = r.map((row) => ({ catId: row.catId, amountCents: parseCents(row.amount) ?? 0 }));
       return balanceLastRow(referenceCents, abs).map((s, i) => ({ ...r[i], catId: s.catId, amount: toText(s.amountCents) }));
     });
   };
 
-  const setRowAmount = (index: number, amount: string) =>
-    setRows((r) => r.map((x, j) => (j === index ? { ...x, amount } : x)));
+  const patchEntry = (at: EntryAddress, patch: { catId?: string; amount?: string }) =>
+    setRows((r) => patchRowsAt(r, at, patch));
+  const entryAmount = (at: EntryAddress): string =>
+    at.cat === 0 ? (rows[at.row]?.amount ?? '') : (rows[at.row]?.extraCats[at.cat - 1]?.amount ?? '');
   const setRowLabel = (index: number, label: string) =>
     setRows((r) => r.map((x, j) => (j === index ? { ...x, label } : x)));
-  const removeRow = (index: number) => setRows((r) => r.filter((_, j) => j !== index));
+  const removeEntry = (at: EntryAddress) => {
+    if (at.cat > 0) {
+      setRows((r) => dropExtraAt(r, at));
+      return;
+    }
+    setRows((r) => r.filter((_, j) => j !== at.row));
+  };
   // a new part takes the current remainder — the natural next slice
   // (user design: adding a split copies the info and offers what's left)
   const addRow = () => setRows((r) => [...r, newRow(UNCATEGORIZED_ID, addRowSeed(mode, remainder))]);
+  // v2.1: a part spreads across one more category, seeded the same way
+  const addCatToRow = (index: number) => setRows((r) => appendExtraAt(r, index, addRowSeed(mode, remainder)));
+  // the explicit door out of plain categories into typed parts (v2.1);
+  // pct is a classic-slices concept, so the door lands on exact euros
+  const enterPartMode = () => {
+    if (mode === 'pct') switchMode('amount');
+    setPartMode(true);
+    if (rows.length === 1) addRow();
+  };
 
   /** Standard part: inherits the row's type, drops any counterparty —
    *  its old mint retires through the choke point at save */
@@ -500,11 +728,39 @@ export function SplitEditorSheet({
     setRows((r) => r.map((x, j) => (j === index ? { ...x, txType: undefined, linkedAccountId: undefined } : x)));
   const accountName = (id: string) => accountNameOf(accounts, id);
 
-  const blurAmount = (i: number) => {
-    const next = blurredAmount(rows[i]?.amount ?? '', focusStash?.index === i ? focusStash.amount : undefined, mode === 'amount');
-    if (next !== null) setRowAmount(i, next);
+  const blurEntry = (at: EntryAddress) => {
+    const stashed = focusStash?.at.row === at.row && focusStash?.at.cat === at.cat ? focusStash?.amount : undefined;
+    const next = blurredAmount(entryAmount(at), stashed, mode === 'amount');
+    if (next !== null) patchEntry(at, { amount: next });
     setFocusStash(null);
   };
+
+  const entryHandlers: EntryHandlers = {
+    cats,
+    accountName,
+    onPickCat: setPickerFor,
+    onAmount: (at, raw) => {
+      // register-style entry (user request): digits fill cents from the
+      // right — euros only; percentages keep plain typing
+      if (mode !== 'amount') {
+        patchEntry(at, { amount: raw });
+        return;
+      }
+      const next = nextAmountEntry(entryMode, entryAmount(at), raw);
+      setEntryMode(next.mode);
+      patchEntry(at, { amount: next.text });
+    },
+    onAmountFocus: (at) => {
+      setFocusStash({ at, amount: entryAmount(at) });
+      patchEntry(at, { amount: '' });
+      // the field just emptied — the register is armed
+      setEntryMode('register');
+    },
+    onAmountBlur: blurEntry,
+    onRemove: removeEntry,
+  };
+
+  const pickedCatId = pickerFor === null ? undefined : rowCatIds(rows[pickerFor.row] ?? newRow(UNCATEGORIZED_ID, ''))[pickerFor.cat];
 
   return (
     <>
@@ -518,37 +774,33 @@ export function SplitEditorSheet({
               {reason}
             </div>
           )}
-          {/* exact euros for one charge, percentages when the shape repeats */}
-          <div className="flex gap-1.5">
-            <Chip className="flex-1" testId="split-mode-amount" selected={mode === 'amount'} onClick={() => switchMode('amount')}>
-              {t('split.modeAmount')}
-            </Chip>
-            <Chip className="flex-1" testId="split-mode-pct" selected={mode === 'pct'} onClick={() => switchMode('pct')}>
-              {t('split.modePct')}
-            </Chip>
-          </div>
+          {/* exact euros for one charge, percentages when the shape repeats
+              — parts are always exact, so the choice hides behind the door */}
+          {!partMode && (
+            <div className="flex gap-1.5">
+              <Chip className="flex-1" testId="split-mode-amount" selected={mode === 'amount'} onClick={() => switchMode('amount')}>
+                {t('split.modeAmount')}
+              </Chip>
+              <Chip className="flex-1" testId="split-mode-pct" selected={mode === 'pct'} onClick={() => switchMode('pct')}>
+                {t('split.modePct')}
+              </Chip>
+            </div>
+          )}
           {rows.map((row, i) => (
             <PartRowView
               key={row.key}
               row={row}
               index={i}
-              card={rows.length > 1}
+              card={partMode}
               conflict={rowConflicts[i]}
               removable={rows.length > (seedSingle ? 1 : 2)}
+              entryRemovable={rows.length > (seedSingle ? 1 : 2)}
               title={txTitle(tx)}
-              cats={cats}
-              accountName={accountName}
+              handlers={entryHandlers}
               onLabel={setRowLabel}
               onStandard={setPartStandard}
               onTransfer={setCounterFor}
-              onPickCat={setPickerFor}
-              onAmount={setRowAmount}
-              onAmountFocus={(index) => {
-                setFocusStash({ index, amount: rows[index].amount });
-                setRowAmount(index, '');
-              }}
-              onAmountBlur={blurAmount}
-              onRemove={removeRow}
+              onAddCat={addCatToRow}
             />
           ))}
 
@@ -561,8 +813,21 @@ export function SplitEditorSheet({
             className="m-tap flex items-center gap-1.5 border-none bg-transparent px-1 py-1 text-[13px] font-medium text-accent-deep disabled:opacity-40"
           >
             <Icon name="plus" size={16} />
-            {t('split.addRow')}
+            {partMode ? t('split.addPart') : t('split.addRow')}
           </button>
+
+          {/* the door into typed parts: labels, own kinds, per-part
+              category spreads (v2.1 — plain categories stay plain) */}
+          {!partMode && (
+            <button
+              data-testid="split-to-parts"
+              onClick={enterPartMode}
+              className="m-tap flex items-center gap-1.5 border-none bg-transparent px-1 py-1 text-[13px] font-medium text-accent-deep"
+            >
+              <Icon name="call-split" size={16} />
+              {t('split.toParts')}
+            </button>
+          )}
 
           {hasTypeConflict && (
             <p className="rounded-card bg-negative-soft px-3 py-2 text-[12px] leading-relaxed text-negative" data-testid="split-type-conflict">
@@ -596,12 +861,12 @@ export function SplitEditorSheet({
         // fallback type follows the category and would hide the other
         // direction's categories before one is picked (old form behavior)
         txType={direction ? undefined : (txType ?? tx.txType)}
-        selectedId={pickerFor === null ? undefined : rows[pickerFor]?.catId}
+        selectedId={pickedCatId}
         excludeIds={excludedCatIds(rows, pickerFor)}
         onlyIds={allowedCatIds}
         onPick={(catId) => {
           if (pickerFor === null) return;
-          setRows((r) => r.map((x, j) => (j === pickerFor ? { ...x, catId, ...pulledTypePatch(x, catId) } : x)));
+          setRows((r) => pickCatAt(r, pickerFor, catId));
         }}
       />
       {/* per-part counterparty (typed-splits v2): a transfer part links a

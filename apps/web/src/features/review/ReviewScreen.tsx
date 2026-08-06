@@ -10,6 +10,7 @@ import { RecurringFormSheet, formFromTx } from '@/features/recurring/RecurringFo
 import { merchantKey } from '@/domain/merchantKey';
 import { draftReady, initDraft, withCategory, withKind, withLinkedAccount, withSplits, withType } from '@/domain/reviewDraft';
 import { kindOf, standardTypeFor } from '@/domain/txKind';
+import { hasTypedParts } from '@/domain/txSlices';
 import { EXPECTED_REIMBURSE_ID, RECEIVED_REIMBURSE_ID } from '@/domain/categories';
 import { Collapse } from '@/ui/Collapse';
 import type { TxKind } from '@/domain/txKind';
@@ -891,8 +892,13 @@ export function ReviewScreen() {
                   const sliceColor = slice
                     ? (sliceCat.color ?? cats.byId(sliceCat.parentId ?? '').color)
                     : parentColor;
-                  // typed-splits v2: a part wears its label + own type
-                  const partLabel = slice && (draft?.splits?.length ?? 0) > 1 ? (slice.label ?? t('split.partN', { n: sliceIndex + 1 })) : undefined;
+                  // typed-splits v2: a part wears its label + own type —
+                  // v2.1: only when a real part story exists (plain
+                  // multi-category keeps the classic slice look)
+                  const partLabel =
+                    slice && (draft?.splits?.length ?? 0) > 1 && hasTypedParts({ splits: draft?.splits })
+                      ? (slice.label ?? t('split.partN', { n: sliceIndex + 1 }))
+                      : undefined;
                   const partType = slice?.txType && slice.txType !== draft?.txType ? slice.txType : undefined;
                   return (
                     <button

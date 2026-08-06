@@ -1167,6 +1167,8 @@ export const en = {
   'split.done': 'Done',
   'split.action': 'Split',
   'split.addRow': 'Add category',
+  'split.addPart': 'Add part',
+  'split.toParts': 'Split into parts',
   'split.remaining': '{amount} left to assign',
   'split.over': '{amount} assigned too much',
   'split.clear': 'Remove split',

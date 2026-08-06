@@ -505,6 +505,74 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     await waitFor(() => expect((screen.getByTestId('split-amount-0') as HTMLInputElement).value).toBe('60'));
     expect((screen.getByTestId('split-amount-1') as HTMLInputElement).value).toBe('40');
   });
+
+  it('plain multi-category keeps the classic look; the parts door opens the part story with per-part category spreads (v2.1)', async () => {
+    renderApp('/transactions/dm6');
+    fireEvent.click(await screen.findByTestId('tx-detail-category-row'));
+    await screen.findByTestId('split-editor');
+    fireEvent.click(screen.getByTestId('split-add-row'));
+
+    // classic multi-category: NO labels, NO kind chips — the pre-parts
+    // look (user report: splitting hijacked the plain flow)
+    expect(screen.queryByTestId('split-label-0')).toBeNull();
+    expect(screen.queryByTestId('split-kind-standard-0')).toBeNull();
+
+    // the explicit door tells the part story: cards with labels appear
+    fireEvent.click(screen.getByTestId('split-to-parts'));
+    await screen.findByTestId('split-label-0');
+    expect(screen.getByTestId('split-label-1')).toBeTruthy();
+    // pct is a classic concept — the chips hid behind the door
+    expect(screen.queryByTestId('split-mode-pct')).toBeNull();
+
+    // part 1 spreads across two categories: groceries 20 + coffee 10
+    fireEvent.change(screen.getByTestId('split-amount-0'), { target: { value: '20,00' } });
+    fireEvent.click(screen.getByTestId('split-addcat-0'));
+    fireEvent.click(await screen.findByTestId('split-cat-0-1'));
+    fireEvent.click(await screen.findByTestId('catpicker-coffee'));
+    fireEvent.change(screen.getByTestId('split-amount-0-1'), { target: { value: '10,00' } });
+
+    // part 2 takes the rest
+    fireEvent.click(screen.getByTestId('split-cat-1'));
+    fireEvent.click(await screen.findByTestId('catpicker-restaurants'));
+    fireEvent.change(screen.getByTestId('split-amount-1'), { target: { value: '22,40' } });
+    await waitFor(() => expect((screen.getByTestId('split-save') as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByTestId('split-save'));
+
+    // the detail earns the spine and the spread subline
+    const catBlock = await screen.findByTestId('tx-detail-categories');
+    await waitFor(() => expect(catBlock.textContent).toContain('€30.00'));
+    expect(catBlock.textContent).toContain('Grocery · Coffee');
+    expect(catBlock.textContent).toContain('€22.40');
+
+    // reopening lands straight in part mode with the spread intact
+    fireEvent.click(screen.getByTestId('tx-detail-category-row'));
+    await screen.findByTestId('split-editor');
+    await screen.findByTestId('split-label-0');
+    await waitFor(() => expect((screen.getByTestId('split-amount-0-1') as HTMLInputElement).value).toBe('10,00'));
+
+    // removing the spread entry folds the part back to one category
+    fireEvent.click(screen.getByTestId('split-remove-0-1'));
+    await waitFor(() => expect(screen.queryByTestId('split-amount-0-1')).toBeNull());
+  }, 15_000);
+
+  it('register-style amount entry: digits fill cents from the right (user request)', async () => {
+    renderApp('/transactions/dm6');
+    fireEvent.click(await screen.findByTestId('tx-detail-category-row'));
+    await screen.findByTestId('split-editor');
+    fireEvent.click(screen.getByTestId('split-add-row'));
+
+    const amount = screen.getByTestId('split-amount-1') as HTMLInputElement;
+    fireEvent.focus(amount); // arms the register (and empties the field)
+    fireEvent.change(amount, { target: { value: '5' } });
+    expect(amount.value).toBe('0,05');
+    fireEvent.change(amount, { target: { value: '0,055' } });
+    expect(amount.value).toBe('0,55');
+    fireEvent.change(amount, { target: { value: '0,550' } });
+    expect(amount.value).toBe('5,50');
+    // a comma promotes typed digits to euros and frees the field
+    fireEvent.change(amount, { target: { value: '5,50,' } });
+    expect(amount.value).toBe('550,');
+  });
 });
 
 describe('bulk apply from the detail (user request)', () => {
