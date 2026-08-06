@@ -1,5 +1,6 @@
 import type { TransactionRow, TxType } from '@/db/types';
 import { cleanBankText } from '@/lib/text';
+import { txSliceViews } from './txSlices';
 
 export interface TxFilter {
   /** matches merchant and bank description, case/whitespace-insensitive */
@@ -17,14 +18,21 @@ export interface TxFilter {
   to?: string;
 }
 
-/** text hit on merchant/description, or — for numeric queries ('10',
- *  '10,99') — a digit-substring hit on the amount: '10' finds 10,99 and
- *  210,15 alike (user request) */
+/** text hit on merchant/description — part labels included (typed-splits
+ *  v2: "Sarah's loan" finds the payment it names) — or, for numeric
+ *  queries ('10', '10,99'), a digit-substring hit on the amount: '10'
+ *  finds 10,99 and 210,15 alike (user request) */
 function matchesQuery(tx: TransactionRow, q: string, amountQ: string | null): boolean {
-  const haystack = `${tx.titleOverride ?? ''} ${cleanBankText(tx.merchant)} ${cleanBankText(tx.description)}`.toLowerCase();
+  const labels = (tx.splits ?? []).map((s) => s.label ?? '').join(' ');
+  const haystack = `${tx.titleOverride ?? ''} ${cleanBankText(tx.merchant)} ${cleanBankText(tx.description)} ${labels}`.toLowerCase();
   if (haystack.includes(q)) return true;
   return !!amountQ && String(Math.abs(tx.amountCents)).includes(amountQ);
 }
+
+/** a row answers a category/type filter through its PARTS (typed-splits
+ *  v2): the phone bill with a loan part shows under Debt payment too */
+const anySlice = (tx: TransactionRow, hit: (view: ReturnType<typeof txSliceViews>[number]) => boolean): boolean =>
+  txSliceViews(tx).some(hit);
 
 /** transfers carry no category by design — they never count as uncategorized */
 const isUncategorized = (tx: TransactionRow): boolean =>
@@ -38,8 +46,8 @@ export function filterTxs(txs: TransactionRow[], filter: TxFilter): TransactionR
     if (filter.accountIds?.size && !filter.accountIds.has(tx.accountId)) return false;
     if (filter.onlyNeedsReview && tx.needsReview !== 1) return false;
     if (filter.onlyUncategorized && !isUncategorized(tx)) return false;
-    if (filter.catIds?.size && !filter.catIds.has(tx.catId ?? '')) return false;
-    if (filter.txTypes?.size && !filter.txTypes.has(tx.txType)) return false;
+    if (filter.catIds?.size && !anySlice(tx, (v) => filter.catIds!.has(v.catId ?? ''))) return false;
+    if (filter.txTypes?.size && !anySlice(tx, (v) => filter.txTypes!.has(v.effType))) return false;
     if (filter.from && tx.date < filter.from) return false;
     if (filter.to && tx.date > filter.to) return false;
     return !q || matchesQuery(tx, q, amountQ);
