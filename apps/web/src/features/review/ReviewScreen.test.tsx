@@ -352,13 +352,58 @@ describe('ReviewScreen (demo identity)', () => {
     db.close();
   }, 15_000);
 
-  it('the split door stands in the open on an unsplit card (#126)', async () => {
+  it('the split door opens the VALUES editor — pure money, no category rows (#126 v2)', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
     // visible row, not hidden under the category pencil
     fireEvent.click(await screen.findByTestId('review-split-row'));
-    expect(await screen.findByTestId('split-editor')).toBeTruthy();
+    await screen.findByTestId('split-editor');
+    // the split as transactions: label + amount, value/pct modes —
+    // categories belong to the deck, not this sheet
+    await screen.findByTestId('split-label-0');
+    expect(screen.queryByTestId('split-cat-0')).toBeNull();
+    expect(screen.getByTestId('split-mode-pct')).toBeTruthy();
   });
+
+  it('the part deck: one card expanded, tap to toggle, per-part category staged in place (#126 v2)', async () => {
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+
+    // stage a 6/4 split through the values door
+    fireEvent.click(await screen.findByTestId('review-split-row'));
+    await screen.findByTestId('split-editor');
+    fireEvent.click(screen.getByTestId('split-add-row'));
+    const amount0 = (await screen.findByTestId('split-amount-0')) as HTMLInputElement;
+    fireEvent.focus(amount0);
+    fireEvent.change(amount0, { target: { value: '6,00' } });
+    fireEvent.blur(amount0);
+    fireEvent.click(await screen.findByTestId('split-remainder'));
+    await waitFor(() => expect((screen.getByTestId('split-save') as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByTestId('split-save'));
+
+    // the deck: part 0 expanded (its category row is live), part 1 a
+    // slim header — tapping it brings it on top
+    await screen.findByTestId('review-part-deck');
+    await screen.findByTestId('deck-cat-0');
+    expect(screen.queryByTestId('deck-cat-1')).toBeNull();
+    fireEvent.click(screen.getByTestId('deck-part-1'));
+    await screen.findByTestId('deck-cat-1');
+    expect(screen.queryByTestId('deck-cat-0')).toBeNull();
+
+    // part 1 takes its own category right on the card; the new pick
+    // shows in place and Confirm arms once nothing is Uncategorized
+    fireEvent.click(screen.getByTestId('deck-cat-1'));
+    fireEvent.click(await screen.findByTestId('catpicker-coffee'));
+    await waitFor(() => expect(screen.getByTestId('deck-cat-1').textContent).toContain('Coffee'));
+
+    // its label is editable in place and rides the staged draft
+    fireEvent.change(screen.getByTestId('deck-label-1'), { target: { value: 'Office snacks' } });
+    await waitFor(() => expect((screen.getByTestId('deck-label-1') as HTMLInputElement).value).toBe('Office snacks'));
+
+    // the part's kind chips stand ready too
+    expect(screen.getByTestId('deck-kind-standard-1')).toBeTruthy();
+    expect(screen.getByTestId('deck-kind-transfer-1')).toBeTruthy();
+  }, 15_000);
 
   it('splitting stays on the card; amounts clear on focus and restore on blur', async () => {
     renderApp('/review');
@@ -418,10 +463,10 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('split-save'));
 
     // draft model (review redesign): saving the split STAGES it — the
-    // parts stand as stacked cards UNDER the main card (#126), the card
+    // parts stand as a DECK under the main card (#126 v2), the card
     // itself carries the compact summary, and a ghost card grows the split
-    await waitFor(() => expect(screen.getAllByTestId(/^review-cat-/).length).toBeGreaterThanOrEqual(2));
-    expect(screen.getByTestId('review-part-stack')).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId('review-part-deck')).toBeTruthy());
+    expect(screen.getAllByTestId(/^deck-part-/)).toHaveLength(2);
     expect(screen.getByTestId('review-split-summary').textContent).toContain('2');
     expect(screen.getByTestId('review-part-add')).toBeTruthy();
     expect(screen.getByTestId('review-card').textContent).toContain('SPLITCAFE');

@@ -205,6 +205,57 @@ interface EntryAddress {
   cat: number;
 }
 
+/** #126 v2: the values-only row — the split as pure money: label +
+ *  amount, exact euros or percentages. Categories, kinds and events are
+ *  the part deck's job on the review screen. */
+function ValuesRow({
+  row,
+  index,
+  removable,
+  title,
+  onLabel,
+  handlers,
+}: Readonly<{
+  row: Row;
+  index: number;
+  removable: boolean;
+  title: string;
+  onLabel: (index: number, label: string) => void;
+  handlers: EntryHandlers;
+}>) {
+  const { t } = useLang();
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        data-testid={`split-label-${index}`}
+        value={row.label}
+        placeholder={defaultLabel(title, index, t)}
+        onChange={(e) => onLabel(index, e.target.value)}
+        className="h-11 min-w-0 flex-1 rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none placeholder:text-ink-4"
+      />
+      <input
+        data-testid={`split-amount-${index}`}
+        value={row.amount}
+        onChange={(e) => handlers.onAmount({ row: index, cat: 0 }, e.target.value)}
+        onFocus={() => handlers.onAmountFocus({ row: index, cat: 0 })}
+        onBlur={() => handlers.onAmountBlur({ row: index, cat: 0 })}
+        inputMode="decimal"
+        className="h-11 w-24 rounded-input border border-line bg-surface px-3 text-right text-[14px] text-ink outline-none"
+      />
+      {removable && (
+        <button
+          aria-label={t('action.delete')}
+          data-testid={`split-remove-${index}`}
+          onClick={() => handlers.onRemove({ row: index, cat: 0 })}
+          className="m-tap border-none bg-transparent text-ink-4"
+        >
+          <Icon name="close" size={16} />
+        </button>
+      )}
+    </div>
+  );
+}
+
 /** one category+amount line — the editor's atom, shared by classic rows
  *  and the entries inside a part card. Testids keep the historical
  *  main-entry names (split-cat-0) and suffix spread entries (-0-1). */
@@ -312,8 +363,6 @@ function PartRowView({
   card: boolean;
   conflict: boolean;
   removable: boolean;
-  /** spread entries can always go; the main entry follows the row rule */
-  entryRemovable: boolean;
   title: string;
   handlers: EntryHandlers;
   onLabel: (index: number, label: string) => void;
@@ -474,6 +523,7 @@ export function SplitEditorSheet({
   onApplySingle,
   reason,
   allowedCatIds,
+  valuesOnly = false,
 }: Readonly<{
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -501,6 +551,9 @@ export function SplitEditorSheet({
   /** recurring-linked rows pick between the recurring's category and
    *  expected reimbursement only (user rule 2026-07-28) */
   allowedCatIds?: readonly string[];
+  /** #126 v2 (review): the split as pure money — label + amount rows,
+   *  exact or percentage; categories/kinds live on the part deck */
+  valuesOnly?: boolean;
 }>) {
   const { t } = useLang();
   const transform = useTxTransform();
@@ -583,13 +636,14 @@ export function SplitEditorSheet({
   const error = sheetError({ seedSingle, rowCount: rows.length, mode, referenceCents, splits });
 
   const effectiveType = txType ?? tx.txType;
-  const rowConflicts = computeRowConflicts(rows, effectiveType, cats);
+  // values-only: categories are invisible here — never block on them
+  const rowConflicts = valuesOnly ? rows.map(() => false) : computeRowConflicts(rows, effectiveType, cats);
   const hasTypeConflict = rowConflicts.some(Boolean);
 
   // an empty or zero entry must be finished before ANOTHER one appears
   // (user request: + Add category waits for the current one)
   const entryUnfinished = (catId: string, amount: string) => {
-    if (catId === UNCATEGORIZED_ID) return true;
+    if (!valuesOnly && catId === UNCATEGORIZED_ID) return true;
     const value = mode === 'pct' ? parsePct(amount) : (parseCents(amount) ?? 0);
     return value <= 0;
   };
@@ -786,23 +840,34 @@ export function SplitEditorSheet({
               </Chip>
             </div>
           )}
-          {rows.map((row, i) => (
-            <PartRowView
-              key={row.key}
-              row={row}
-              index={i}
-              card={partMode}
-              conflict={rowConflicts[i]}
-              removable={rows.length > (seedSingle ? 1 : 2)}
-              entryRemovable={rows.length > (seedSingle ? 1 : 2)}
-              title={txTitle(tx)}
-              handlers={entryHandlers}
-              onLabel={setRowLabel}
-              onStandard={setPartStandard}
-              onTransfer={setCounterFor}
-              onAddCat={addCatToRow}
-            />
-          ))}
+          {rows.map((row, i) =>
+            valuesOnly ? (
+              <ValuesRow
+                key={row.key}
+                row={row}
+                index={i}
+                removable={rows.length > (seedSingle ? 1 : 2)}
+                title={txTitle(tx)}
+                onLabel={setRowLabel}
+                handlers={entryHandlers}
+              />
+            ) : (
+              <PartRowView
+                key={row.key}
+                row={row}
+                index={i}
+                card={partMode}
+                conflict={rowConflicts[i]}
+                removable={rows.length > (seedSingle ? 1 : 2)}
+                title={txTitle(tx)}
+                handlers={entryHandlers}
+                onLabel={setRowLabel}
+                onStandard={setPartStandard}
+                onTransfer={setCounterFor}
+                onAddCat={addCatToRow}
+              />
+            ),
+          )}
 
           {/* finish the open row first (user request): no new row while
               one is still uncategorized or worth nothing */}
@@ -813,12 +878,12 @@ export function SplitEditorSheet({
             className="m-tap flex items-center gap-1.5 border-none bg-transparent px-1 py-1 text-[13px] font-medium text-accent-deep disabled:opacity-40"
           >
             <Icon name="plus" size={16} />
-            {partMode ? t('split.addPart') : t('split.addRow')}
+            {partMode || valuesOnly ? t('split.addPart') : t('split.addRow')}
           </button>
 
           {/* the door into typed parts: labels, own kinds, per-part
               category spreads (v2.1 — plain categories stay plain) */}
-          {!partMode && (
+          {!partMode && !valuesOnly && (
             <button
               data-testid="split-to-parts"
               onClick={enterPartMode}
