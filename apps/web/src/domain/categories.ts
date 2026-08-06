@@ -36,8 +36,10 @@ export const BUILTIN_CATEGORIES: BuiltinCategory[] = [
   {"id":"investIncome","parentId":"income","nameKey":"cat.investIncome","icon":"chart-timeline-variant","positive":true,"txTypes":["income"],"direction":"credit"},
   {"id":"incomeOther","parentId":"income","nameKey":"cat.incomeOther","icon":"cash-plus","positive":true,"txTypes":["income"],"direction":"credit"},
   {"id":"saving","nameKey":"cat.saving","icon":"piggy-bank-outline","color":"#A8782B","isParent":true,"txTypes":["saving"],"direction":"both"},
-  {"id":"savingWithdraw","parentId":"saving","nameKey":"cat.savingWithdraw","icon":"bank-remove","txTypes":["saving"],"direction":"credit"},
-  {"id":"savingDeposit","parentId":"saving","nameKey":"cat.savingDeposit","icon":"bank-plus","txTypes":["saving"],"direction":"debit"},
+  // typed-splits v2: movement subs live on BOTH legs now (R1 stamps put
+  // them on the special account's own rows, where the signs invert)
+  {"id":"savingWithdraw","parentId":"saving","nameKey":"cat.savingWithdraw","icon":"bank-remove","txTypes":["saving"],"direction":"both"},
+  {"id":"savingDeposit","parentId":"saving","nameKey":"cat.savingDeposit","icon":"bank-plus","txTypes":["saving"],"direction":"both"},
   // typed-splits v2 (2026-08-05, approved table): saving-account rows no
   // transfer caused — interest grows the pot (+), fees shrink it (−)
   {"id":"savingInterest","parentId":"saving","nameKey":"cat.savingInterest","icon":"percent-outline","positive":true,"txTypes":["saving"],"direction":"credit"},
@@ -156,8 +158,8 @@ export const BUILTIN_CATEGORIES: BuiltinCategory[] = [
   // pair — Repaid (debit) / Borrowed (credit). lendMoney and
   // creditCardPayment retired; migrateRetiredDebtSubs refiles their rows.
   {"id":"debt","nameKey":"cat.debt","icon":"credit-card-outline","color":"#9C27B0","isParent":true,"txTypes":["debtPayment"],"direction":"both"},
-  {"id":"loanRepayment","parentId":"debt","nameKey":"cat.loanRepayment","icon":"bank-outline","txTypes":["debtPayment"],"direction":"debit"},
-  {"id":"debtBorrowed","parentId":"debt","nameKey":"cat.debtBorrowed","icon":"bank-transfer-in","txTypes":["debtPayment"],"direction":"credit"},
+  {"id":"loanRepayment","parentId":"debt","nameKey":"cat.loanRepayment","icon":"bank-outline","txTypes":["debtPayment"],"direction":"both"},
+  {"id":"debtBorrowed","parentId":"debt","nameKey":"cat.debtBorrowed","icon":"bank-transfer-in","txTypes":["debtPayment"],"direction":"both"},
   // typed-splits v2 (2026-08-05, approved table): debt-account rows no
   // transfer caused — the lender's interest and fees both grow the debt (−)
   {"id":"debtInterest","parentId":"debt","nameKey":"cat.debtInterest","icon":"percent-outline","txTypes":["debtPayment"],"direction":"debit"},
@@ -166,7 +168,7 @@ export const BUILTIN_CATEGORIES: BuiltinCategory[] = [
   {"id":"invest","parentId":"investment","nameKey":"cat.invest","icon":"chart-areaspline","txTypes":["investment"],"direction":"both"},
   {"id":"investBuy","parentId":"investment","nameKey":"cat.investBuy","icon":"trending-up","txTypes":["investment"],"direction":"debit"},
   {"id":"investSell","parentId":"investment","nameKey":"cat.investSell","icon":"trending-down","txTypes":["investment"],"direction":"credit"},
-  {"id":"investContribution","parentId":"investment","nameKey":"cat.investContribution","icon":"bank-plus","txTypes":["investment"],"direction":"debit"},
+  {"id":"investContribution","parentId":"investment","nameKey":"cat.investContribution","icon":"bank-plus","txTypes":["investment"],"direction":"both"},
   // typed-splits v2 (2026-08-05, approved table): the movement's way out
   // ('both': − on the investment account, + on the receiving leg) and the
   // no-transfer rows — dividends land (+), broker fees drain (−)
@@ -175,11 +177,12 @@ export const BUILTIN_CATEGORIES: BuiltinCategory[] = [
   {"id":"investFees","parentId":"investment","nameKey":"cat.investFees","icon":"cash-minus","txTypes":["investment"],"direction":"debit"},
   {"id":"adjustment","nameKey":"cat.adjustment","icon":"tune-variant","color":"#607D8B","isParent":true,"txTypes":["adjustment"],"direction":"both"},
   {"id":"balanceAdjustment","parentId":"adjustment","nameKey":"cat.balanceAdjustment","icon":"scale-balance","txTypes":["adjustment"],"direction":"both"},
-  // arc 2 (2026-08-01): funding — money to/from another SPACE's pot; the
-  // sub is machine-picked by sign, direction-true in every space's books
-  {"id":"funding","nameKey":"cat.funding","icon":"hand-coin","color":"#16A085","isParent":true,"txTypes":["funding"],"direction":"both"},
-  {"id":"fundingOut","parentId":"funding","nameKey":"cat.fundingOut","icon":"bank-transfer-out","txTypes":["funding"],"direction":"debit"},
-  {"id":"fundingIn","parentId":"funding","nameKey":"cat.fundingIn","icon":"bank-transfer-in","txTypes":["funding"],"direction":"credit"},
+  // typed-splits v2 Q3 (2026-08-05): the funding TYPE retired — funding
+  // is a marked special CATEGORY on standard rows now ('funding' kept in
+  // txTypes only so unmigrated rows never read as conflicts)
+  {"id":"funding","nameKey":"cat.funding","icon":"hand-coin","color":"#16A085","isParent":true,"txTypes":["expense","income","funding"],"direction":"both"},
+  {"id":"fundingOut","parentId":"funding","nameKey":"cat.fundingOut","icon":"bank-transfer-out","txTypes":["expense","funding"],"direction":"debit"},
+  {"id":"fundingIn","parentId":"funding","nameKey":"cat.fundingIn","icon":"bank-transfer-in","txTypes":["income","funding"],"direction":"credit"},
 ];
 
 export const CATEGORY_BY_ID: ReadonlyMap<string, BuiltinCategory> = new Map(
@@ -226,6 +229,24 @@ export function autoSubFor(txType: TxType, amountCents: number): string | undefi
   if (!pair) return undefined;
   return amountCents < 0 ? pair.debit : pair.credit;
 }
+
+/**
+ * Q8 (typed-splits v2, user 2026-08-05): a STAMPED row that names a
+ * counterparty is a movement by definition — its category is forced to
+ * the movement pair, signed from the special account's own side
+ * (+ = money in: set aside / repaid / contributed).
+ */
+const STAMP_MOVEMENT_SUB: Partial<Record<TxType, { in: string; out: string }>> = {
+  saving: { in: 'savingDeposit', out: 'savingWithdraw' },
+  debtPayment: { in: 'loanRepayment', out: 'debtBorrowed' },
+  investment: { in: 'investContribution', out: 'investWithdraw' },
+};
+
+export function stampMovementSub(stamp: TxType, amountCents: number): string | undefined {
+  const pair = STAMP_MOVEMENT_SUB[stamp];
+  if (!pair) return undefined;
+  return amountCents >= 0 ? pair.in : pair.out;
+}
 /**
  * Typed-splits v2 (2026-08-05, user): special categories carry system
  * meaning — buckets count them and movements force them — so every
@@ -235,6 +256,33 @@ export function autoSubFor(txType: TxType, amountCents: number): string | undefi
  */
 export const isSpecialCategory = (cat: { id: string; parentId?: string }): boolean =>
   LOCKED_MAIN_IDS.has(cat.parentId ?? cat.id);
+
+/** the BUILTIN main a category belongs to (itself when parentless);
+ *  undefined for custom categories — they can never be special */
+export const mainCatOf = (catId: string | undefined): string | undefined => {
+  if (!catId) return undefined;
+  const cat = CATEGORY_BY_ID.get(catId);
+  return cat ? (cat.parentId ?? cat.id) : undefined;
+};
+
+/**
+ * R3 (typed-splits v2): the type a special-category pick pulls onto a
+ * standard row — "Set aside" makes it a saving, "Repaid" a debt payment.
+ * Funding cats stay standard (the pot has no type since 2026-08-05) and
+ * transfer subs are machine-only, so both return undefined.
+ */
+export const specialCatType = (catId: string | undefined): TxType | undefined => {
+  switch (mainCatOf(catId)) {
+    case 'saving':
+      return 'saving';
+    case 'debt':
+      return 'debtPayment';
+    case 'investment':
+      return 'investment';
+    default:
+      return undefined;
+  }
+};
 
 /** settled value, both sides of a link */
 export const REIMBURSED_ID = 'reimbursed';

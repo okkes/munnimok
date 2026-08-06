@@ -88,24 +88,26 @@ describe('contribution sign mechanics (user spec)', () => {
 });
 
 describe('overviewSummary', () => {
-  it('sums per type within the period and skips other periods/deleted rows', () => {
+  it('sums the family buckets from the special CATEGORIES (typed-splits v2, Q6)', () => {
     const txs = [
       tx({ txType: 'income', amountCents: 220_000 }),
       tx({ amountCents: -5_000 }),
       tx({ amountCents: -2_000 }),
-      tx({ txType: 'saving', amountCents: -40_000 }),
-      tx({ txType: 'investment', amountCents: -25_000 }),
+      // R3 bare rows on regular accounts: the sub carries the meaning
+      tx({ txType: 'saving', catId: 'savingDeposit', amountCents: -40_000 }),
+      tx({ txType: 'investment', catId: 'investContribution', amountCents: -25_000 }),
       // -500 into the family pot, +100 taken back: net +400 funded (green)
-      tx({ txType: 'funding', amountCents: -50_000 }),
-      tx({ txType: 'funding', amountCents: 10_000 }),
-      tx({ txType: 'debtPayment', amountCents: -30_000 }),
+      // — funding rows are standard-typed since the type retired
+      tx({ txType: 'expense', catId: 'fundingOut', amountCents: -50_000 }),
+      tx({ txType: 'income', catId: 'fundingIn', amountCents: 10_000 }),
+      tx({ txType: 'debtPayment', catId: 'loanRepayment', amountCents: -30_000 }),
       tx({ amountCents: -99_900, date: '2026-06-30' }), // outside period
       tx({ amountCents: -99_900, deleted: 1 } as Partial<TransactionRow>),
     ];
     const summary = overviewSummary(txs, accounts, PERIOD);
     expect(summary).toEqual({
-      incomeCents: 220_000,
-      expenseCents: 7_000,
+      incomeCents: 220_000, // fundingIn stays OUT of income
+      expenseCents: 7_000, // fundingOut stays OUT of spending
       savingCents: 40_000,
       investmentCents: 25_000,
       fundingCents: 40_000,
@@ -113,22 +115,31 @@ describe('overviewSummary', () => {
     });
   });
 
-  it('mirror rows on the savings/brokerage account do not double-count', () => {
+  it('a linked pair counts once by construction: the transfer leg has no bucket', () => {
     const txs = [
-      // transfer visible from BOTH sides (both accounts attached)
-      tx({ txType: 'saving', amountCents: -40_000, accountId: 'checking' }),
-      tx({ txType: 'saving', amountCents: 40_000, accountId: 'savings' }), // mirror — excluded
-      tx({ txType: 'investment', amountCents: -25_000, accountId: 'checking' }),
-      tx({ txType: 'investment', amountCents: 25_000, accountId: 'broker' }), // mirror — excluded
+      // both sides attached: the regular leg wears the locked Transfer
+      // category (R2), only the stamped side carries the family meaning
+      tx({ txType: 'transfer', catId: 'transferOut', amountCents: -40_000, accountId: 'checking' }),
+      tx({ txType: 'saving', catId: 'savingDeposit', amountCents: 40_000, accountId: 'savings' }),
+      tx({ txType: 'transfer', catId: 'transferOut', amountCents: -25_000, accountId: 'checking' }),
+      tx({ txType: 'investment', catId: 'investContribution', amountCents: 25_000, accountId: 'broker' }),
     ];
     const summary = overviewSummary(txs, accounts, PERIOD);
     expect(summary.savingCents).toBe(40_000);
     expect(summary.investmentCents).toBe(25_000);
   });
 
-  it('interest earned ON a savings account still counts as income', () => {
-    const txs = [tx({ txType: 'income', amountCents: 52, accountId: 'savings' })];
-    expect(overviewSummary(txs, accounts, PERIOD).incomeCents).toBe(52);
+  it('the approved table on the stamped ledgers: interest counts as Saved, Buy/Sell stay internal', () => {
+    const txs = [
+      tx({ txType: 'saving', catId: 'savingInterest', amountCents: 52, accountId: 'savings' }),
+      tx({ txType: 'saving', catId: 'savingFees', amountCents: -30, accountId: 'savings' }),
+      // cash → position inside the brokerage moves no new money
+      tx({ txType: 'investment', catId: 'investBuy', amountCents: -9_000, accountId: 'broker' }),
+      tx({ txType: 'investment', catId: 'investDividend', amountCents: 700, accountId: 'broker' }),
+    ];
+    const summary = overviewSummary(txs, accounts, PERIOD);
+    expect(summary.savingCents).toBe(22); // +52 interest − 30 fees
+    expect(summary.investmentCents).toBe(700); // dividends only
   });
 });
 

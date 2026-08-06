@@ -66,21 +66,27 @@ describe('Events (demo identity)', () => {
 
     fireEvent.click(card);
     await screen.findByTestId('eventdetail-hero');
-    const banner = await screen.findByTestId('eventdetail-suggest');
+    // the one-boot type-core chain (typed-splits v2: migrations, mirror
+    // mints, the enriched pair matcher) keeps writing behind this test
+    // longer than before, and a warm worker slows every emission — the
+    // waits get real headroom instead of racing the burst
+    const banner = await screen.findByTestId('eventdetail-suggest', {}, { timeout: 15_000 });
     expect(banner.textContent).toMatch(/[1-9]/);
 
-    // the picker opens pre-checked; unticking one keeps it out
+    // the picker opens pre-checked; unticking one keeps it out — a REAL
+    // row, by id: the old prefix query grabbed the eventpick-list
+    // CONTAINER (first in document order), so the exclusion never
+    // toggled and the flow silently attached everything
     fireEvent.click(screen.getByTestId('eventdetail-attach-all'));
     await screen.findByTestId('eventpick-list');
-    const firstPick = document.querySelector('[data-testid^="eventpick-"]')!;
-    fireEvent.click(firstPick); // exclude one
+    fireEvent.click(await screen.findByTestId('eventpick-dm2')); // exclude the rent
     fireEvent.click(screen.getByTestId('eventpick-attach'));
-    await waitFor(() => expect(screen.getByTestId('eventdetail-total').textContent).toMatch(/€[1-9]/), { timeout: 8000 });
+    await waitFor(() => expect(screen.getByTestId('eventdetail-total').textContent).toMatch(/€[1-9]/), { timeout: 15_000 });
     // the excluded transaction keeps the banner alive with exactly one left
-    await waitFor(() => expect(screen.getByTestId('eventdetail-suggest').textContent).toMatch(/1 /));
+    await waitFor(() => expect(screen.getByTestId('eventdetail-suggest').textContent).toMatch(/1 /), { timeout: 8000 });
     expect(screen.getByTestId('eventdetail-cats')).toBeTruthy();
     expect(screen.getByTestId('eventdetail-txs')).toBeTruthy();
-  }, 20_000);
+  }, 45_000);
 
   it('tapping a breakdown category unfolds subs and filters the payments (user request)', async () => {
     renderApp('/events');

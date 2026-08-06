@@ -6,6 +6,7 @@ import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
 import { DexieBackend } from '@/db/backend';
 import { linkAllCounterparties } from './counterLink';
+import { mirrorTxId } from '@/domain/feedIds';
 
 /**
  * User rule 2026-07-17: connect the credit card AFTER months of checking
@@ -59,15 +60,23 @@ describe('linkAllCounterparties', () => {
     db.close();
   });
 
-  it('a savings counterparty retypes to saving', async () => {
+  it('a savings counterparty makes a TRANSFER and mints the pot leg (typed-splits v2)', async () => {
     const { db, repo } = await setup();
     await repo.upsert('transaction', 's1', 'tx-save', {
       accountId: 'acct-main', currency: 'EUR', needsReview: 0, date: '2026-07-01',
       amountCents: -10000, merchant: 'TO SAVINGS', txType: 'expense', counterIban: 'NL02SAVE0000000002',
     });
-    await repo.upsert('account', 's1', 'acct-save', { name: 'Buffer', type: 'savings', source: 'manual', currency: 'EUR', iban: 'NL02 SAVE 0000 0000 02' });
+    await repo.upsert('account', 's1', 'acct-save', { name: 'Buffer', type: 'savings', source: 'manual', currency: 'EUR', balanceCents: 0, iban: 'NL02 SAVE 0000 0000 02' });
     await linkAllCounterparties(new DexieBackend(db), repo, 's1');
-    expect(await db.transactions.get('tx-save')).toMatchObject({ linkedAccountId: 'acct-save', txType: 'saving', catId: 'savingDeposit' });
+    // R2 inversion: the source leg is a plain transfer with the locked sub
+    const source = await db.transactions.get('tx-save');
+    expect(source).toMatchObject({ linkedAccountId: 'acct-save', txType: 'transfer', catId: 'transferOut' });
+    // …and the linked MANUAL pot got its mirror leg minted: the pot's own
+    // ledger holds the saving story, and its balance moved with it
+    expect(source?.transferPeerId).toBe(mirrorTxId('tx-save'));
+    const mirror = await db.transactions.get(mirrorTxId('tx-save'));
+    expect(mirror).toMatchObject({ accountId: 'acct-save', amountCents: 10000, txType: 'saving', catId: 'savingDeposit', transferPeerId: 'tx-save' });
+    expect((await db.accounts.get('acct-save'))?.balanceCents).toBe(10000);
     db.close();
   });
 });

@@ -52,14 +52,15 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('split-save'));
 
     // picking Transfer opens the MANDATORY counterparty picker; choosing
-    // the savings account derives the Saving member on the kind row
+    // the savings account keeps the leg a plain TRANSFER (R2 inversion —
+    // the saving story lives on the pot's own ledger now)
     fireEvent.click(kindRow);
     await screen.findByTestId('txkind-options');
     fireEvent.click(screen.getByTestId('txkind-transfer'));
     await screen.findByTestId('counter-accounts');
     fireEvent.click(screen.getByTestId('counter-pick-demo_save'));
     await waitFor(() => {
-      expect(screen.getByTestId('review-kind-row').textContent).toContain('Saving');
+      expect(screen.getByTestId('review-kind-row').textContent).toContain('Transfer');
       expect(screen.getByTestId('review-counter-row').textContent).toContain('Demo Savings');
     });
     expect((screen.getByTestId('review-counter-row') as HTMLButtonElement).disabled).toBe(false);
@@ -105,26 +106,25 @@ describe('ReviewScreen (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('review-kind-row').textContent).toContain('Standard'));
   }, 15_000);
 
-  it('the bare "no counter account" pick completes the transfer — no roll-back', async () => {
+  it('the marked special category carries the bare story (typed-splits v2)', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
-    fireEvent.click(screen.getByTestId('review-kind-row'));
-    await screen.findByTestId('txkind-options');
-    fireEvent.click(screen.getByTestId('txkind-transfer'));
-    await screen.findByTestId('counter-accounts');
 
-    // the exit names the family member directly (arc 2); the sheet
-    // closes and the kind SURVIVES — a bare label is a complete answer
-    fireEvent.click(screen.getByTestId('counter-none'));
-    await screen.findByTestId('counter-bare-options');
-    fireEvent.click(screen.getByTestId('counter-bare-saving'));
-    await waitFor(() => expect(screen.getByTestId('review-kind-row').textContent).toContain('Saving'));
+    // the bare-type exit retired: "set aside without a tracked pot" is
+    // now the marked Set aside category, offered right in the unified
+    // editor on a standard row — picking it pulls the saving type along
+    fireEvent.click(screen.getByTestId('review-category-chip'));
+    fireEvent.click(await screen.findByTestId('split-cat-0'));
+    await screen.findByTestId('speccat-savingDeposit'); // the diamond mark
+    fireEvent.click(screen.getByTestId('catpicker-savingDeposit'));
+    fireEvent.click(await screen.findByTestId('split-save'));
 
-    // the counter row states the bare label calmly (no warning cry —
-    // counterless is legal), the sign-picked locked sub sits on the
-    // chip, and Confirm is armed — no ask-again dead end
+    // the kind row reads the pulled family type, the counter row states
+    // the missing account calmly (optional for the bare story), Confirm
+    // is armed — no ask-again dead end
+    await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Set aside'));
+    expect(screen.getByTestId('review-kind-row').textContent).toContain('Saving');
     expect(screen.getByTestId('review-counter-row').textContent).toContain('No counter account');
-    expect(screen.getByTestId('review-category-chip').textContent).toContain('Set aside');
     expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false);
   }, 15_000);
 
@@ -446,9 +446,9 @@ describe('ReviewScreen (demo identity)', () => {
     await screen.findByTestId('counter-accounts');
     fireEvent.click(screen.getByTestId('counter-pick-demo_save'));
     await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).not.toContain('Coffee'));
-    expect(screen.getByTestId('review-kind-row').textContent).toContain('Saving');
-    // the debit files as "Set aside" and Confirm stays armed
-    await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Set aside'));
+    expect(screen.getByTestId('review-kind-row').textContent).toContain('Transfer');
+    // R2: the linked leg files the locked Transfer sub and stays armed
+    await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Transfer Out'));
     expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false);
 
     // nothing was written mid-flight: the tx still holds its own type
@@ -529,7 +529,9 @@ describe('ReviewScreen (user identity, split settlements)', () => {
     expect(chip.textContent).toContain('Barcelona');
 
     fireEvent.click(chip);
-    // the staged draft flips to transfer; confirming persists it
+    // a settlement is money from a PERSON — R2 makes transfer strictly
+    // account-to-account, so the chip stages the app's own concept for
+    // money-back-from-people: received reimbursement
     await waitFor(() =>
       expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false),
     );
@@ -538,7 +540,7 @@ describe('ReviewScreen (user identity, split settlements)', () => {
       const check = new MunniDB(USER_TEST_DB);
       const tx = await check.transactions.get('tx-in');
       check.close();
-      expect(tx).toMatchObject({ txType: 'transfer', needsReview: 0 });
+      expect(tx).toMatchObject({ txType: 'income', catId: 'reimburse', needsReview: 0 });
     });
   }, 15_000);
 });

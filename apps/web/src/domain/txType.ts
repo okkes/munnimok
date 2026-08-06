@@ -13,27 +13,37 @@ export const ALL_TX_TYPES: TxType[] = [
 ];
 
 /**
- * When a transaction is linked to a counter-account, its type is derived
- * from what that account IS — moving money to savings is a saving, paying
- * a credit card is a debt payment — and can't be chosen freely.
+ * R1 (typed-splits v2, user 2026-08-05): special accounts STAMP every
+ * one of their rows' type — a savings account's ledger is all saving,
+ * a loan's all debt, a brokerage's all investment; the sign reads the
+ * direction. Credit is deliberately NOT stamped: its feed rows are
+ * ordinary purchases, its top-up legs stay transfers (2026-07-17
+ * ruling), and trackAsDebt keeps the debts screen opt-in.
  */
-export function typeForLinkedAccount(accountType: AccountType): TxType {
+export function accountStamp(accountType: AccountType | undefined): TxType | undefined {
   switch (accountType) {
     case 'savings':
       return 'saving';
-    case 'credit':
-      // user ruling 2026-07-17: topping up your own credit card is a
-      // transfer between own accounts, not a debt payment
-      return 'transfer';
     case 'mortgage':
     case 'loan':
       return 'debtPayment';
     case 'brokerage':
       return 'investment';
-    case 'checking':
-    case 'cash':
-      return 'transfer';
+    default:
+      return undefined;
   }
+}
+
+/**
+ * R2 (typed-splits v2, user 2026-08-05 — the inversion): a row linked
+ * to ANY tracked counter-account is a TRANSFER; the special meaning
+ * (saving, debt payment, investment) now lives on the counter leg,
+ * stamped by that account's own type. Before this, the source row wore
+ * the family member — that made the checking side carry the story and
+ * the special account's own ledger stay empty.
+ */
+export function typeForLinkedAccount(_accountType: AccountType): TxType {
+  return 'transfer';
 }
 
 /** category supports a type only if it's one of its declared txTypes */

@@ -1,4 +1,4 @@
-import { UNCATEGORIZED_ID, autoSubFor } from './categories';
+import { UNCATEGORIZED_ID, autoSubFor, stampMovementSub } from './categories';
 import { primaryCatId } from './splits';
 import { standardTypeFor } from './txKind';
 import type { TxKind } from './txKind';
@@ -89,26 +89,31 @@ export function withFamilyCategory(draft: ReviewDraft, amountCents: number): Rev
   return { ...draft, catId: sub };
 }
 
-/**
- * The "no counter account" exit (arc 2): the user names the transfer-family
- * member directly. The draft is typed, files under the sign-picked locked
- * sub, and deliberately carries NO counterparty — a reporting label that
- * moves no other balance.
- */
-export function withBareType(draft: ReviewDraft, txType: TxType, amountCents: number, catalog: DraftCatalog): ReviewDraft {
-  return withFamilyCategory(withType({ ...draft, linkedAccountId: undefined }, txType, catalog), amountCents);
-}
+// withBareType retired 2026-08-05 (typed-splits v2, R2): the bare
+// stories live on the marked special CATEGORIES of standard rows now —
+// picking one pulls the type through withCategory's coherence rules.
 
-/** the counter-account suggests its type; the suggestion runs through
- *  withType, and a placeholder category files under the family's locked
- *  sub when the money's sign is known (arc 2) */
+/** the counter-account makes the leg a transfer (R2); a placeholder
+ *  category files under the locked sub when the money's sign is known.
+ *  A STAMPED row (R1) keeps its stamp instead — naming a counterparty
+ *  makes it a movement, so the movement sub is FORCED from the special
+ *  account's own side (Q8: + = set aside / repaid / contributed). */
 export function withLinkedAccount(
   draft: ReviewDraft,
   account: { id: string; type: AccountType } | null,
   catalog: DraftCatalog,
   amountCents?: number,
+  ownStamp?: TxType,
 ): ReviewDraft {
   if (!account) return { ...draft, linkedAccountId: undefined };
+  if (ownStamp) {
+    return {
+      ...draft,
+      linkedAccountId: account.id,
+      txType: ownStamp,
+      ...(amountCents === undefined ? {} : { catId: stampMovementSub(ownStamp, amountCents) }),
+    };
+  }
   const next = withType({ ...draft, linkedAccountId: account.id }, typeForLinkedAccount(account.type), catalog);
   return amountCents === undefined ? next : withFamilyCategory(next, amountCents);
 }
@@ -125,9 +130,12 @@ export function withSplits(draft: ReviewDraft, splits: TxSplit[] | undefined): R
  *  use the hidden 'uncategorized' builtin as a by-design placeholder. */
 export const draftReady = (draft: ReviewDraft): boolean => {
   if (!draft.catId) return false;
-  // adjustments are corrections and funding moves between books — not
-  // spending; same placeholder story as plain transfers
-  if (draft.txType === 'transfer' || draft.txType === 'funding' || draft.txType === 'adjustment') return true;
+  // R2 (typed-splits v2): a transfer strictly needs its tracked counter
+  // account — there is no bare exit anymore
+  if (draft.txType === 'transfer') return !!draft.linkedAccountId;
+  // adjustments are corrections — not spending; same placeholder story.
+  // ('funding' only serves unmigrated rows since the type retired.)
+  if (draft.txType === 'funding' || draft.txType === 'adjustment') return true;
   if (draft.catId === 'uncategorized') return false;
   return !draft.splits?.some((slice) => slice.catId === 'uncategorized');
 };

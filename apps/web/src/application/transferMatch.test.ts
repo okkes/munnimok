@@ -6,7 +6,9 @@ import { DexieBackend } from '@/db/backend';
 import { Repo } from '@/db/repo';
 import { HlcClock } from '@/sync/hlc';
 import { matchTransferPairs } from '@/domain/transferMatch';
-import { createCounterTransaction, linkTransferPairs } from './transferMatch';
+import { linkTransferPairs } from './transferMatch';
+import { mintMirrorForExistingLink } from './mirrorMint';
+import { mirrorTxId } from '@/domain/feedIds';
 
 describe('matchTransferPairs (domain rules)', () => {
   const leg = (id: string, accountId: string, amountCents: number, date: string, extra: object = {}) => ({
@@ -143,31 +145,35 @@ describe('linkTransferPairs (application, per space)', () => {
     expect(twin?.needsReview).toBe(0);
   });
 
-  it('createCounterTransaction writes the mirror, peers both legs, moves the manual balance', async () => {
+  it('mintMirrorForExistingLink writes the stamped mirror, peers it, moves the manual balance', async () => {
     await repo.upsert('transaction', 'priv', 'out', {
       accountId: 'checking',
       date: '2026-07-25',
       amountCents: -10000,
       currency: 'EUR',
       merchant: 'To the pot',
-      txType: 'saving',
+      txType: 'transfer',
       linkedAccountId: 'pot',
       needsReview: 0,
     });
     const out = (await db.transactions.get('out'))!;
-    const mirrorId = await createCounterTransaction(store, repo, { ...out }, 'pot');
+    const mirrorId = await mintMirrorForExistingLink(store, repo, { ...out }, 'pot', undefined);
 
-    const mirror = await db.transactions.get(mirrorId);
+    expect(mirrorId).toBe(mirrorTxId('out'));
+    const mirror = await db.transactions.get(mirrorId!);
     expect(mirror).toMatchObject({
       accountId: 'pot',
       amountCents: 10000,
-      txType: 'saving',
+      txType: 'saving', // the pot's R1 stamp
+      catId: 'savingDeposit', // + on the pot = set aside (Q8 movement)
       linkedAccountId: 'checking',
       transferPeerId: 'out',
       needsReview: 0,
     });
-    expect((await db.transactions.get('out'))?.transferPeerId).toBe(mirrorId);
     // the manual pot's live balance moved by the mirror amount
+    expect((await db.accounts.get('pot'))?.balanceCents).toBe(10000);
+    // a second call converges on the SAME mirror and never re-moves money
+    expect(await mintMirrorForExistingLink(store, repo, { ...out }, 'pot', mirrorId!)).toBe(mirrorId);
     expect((await db.accounts.get('pot'))?.balanceCents).toBe(10000);
   });
 

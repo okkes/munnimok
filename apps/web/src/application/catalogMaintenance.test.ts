@@ -5,7 +5,8 @@ import { DexieBackend } from '@/db/backend';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
 import { HlcClock } from '@/sync/hlc';
-import { applyCatalogTombstones, migrateReimbursementSlices, migrateSignContradictions, migrateUnlinkedTransferKinds } from './catalogMaintenance';
+import { applyCatalogTombstones, migrateFundingRows, migrateLinkedFamilyRows, migrateReimbursementSlices, migrateSignContradictions, migrateUnlinkedTransferKinds } from './catalogMaintenance';
+import { mirrorTxId } from '@/domain/feedIds';
 
 const SPACE = 's1';
 
@@ -256,5 +257,64 @@ describe('sign-contradiction heal (pre-2026-07-28 bulk-apply damage)', () => {
 
     // marker gates the rerun
     expect(await migrateSignContradictions(store, repo)).toBe(0);
+  });
+});
+
+
+describe('typed-splits v2 migrations (funding retirement + linked-family inversion)', () => {
+  const stores: DexieBackend[] = [];
+  afterEach(async () => {
+    for (const s of stores.splice(0)) await s.destroy();
+  });
+
+  const fresh = () => {
+    const store = new DexieBackend(new MunniDB(`munni_tsv2_${Math.random().toString(36).slice(2)}`));
+    stores.push(store);
+    return { store, repo: new Repo(store, new HlcClock('tsv2'), { trackOutbox: false }) };
+  };
+
+  it('funding rows re-type by sign and keep (or gain) their funding category, once', async () => {
+    const { store, repo } = fresh();
+    await repo.upsert('space', SPACE, SPACE, { name: 'P', kind: 'personal', currency: 'EUR', periodType: 'month' });
+    const base = { accountId: 'a', currency: 'EUR', merchant: 'Pot', needsReview: 0 as const };
+    await repo.upsert('transaction', SPACE, 'f-out', { ...base, date: '2026-01-01', amountCents: -5_000, txType: 'funding', catId: 'fundingOut' });
+    await repo.upsert('transaction', SPACE, 'f-bare', { ...base, date: '2026-01-02', amountCents: 2_000, txType: 'funding' });
+    await repo.upsert('txMeta', SPACE, 'f-meta', { txId: 'raw-f', txType: 'funding', needsReview: 0 });
+    await repo.upsert('transaction', SPACE, 'raw-f', { ...base, date: '2026-01-03', amountCents: -700, txType: 'expense' });
+
+    expect(await migrateFundingRows(store, repo)).toBe(3);
+    expect(await store.get('transaction', 'f-out')).toMatchObject({ txType: 'expense', catId: 'fundingOut' });
+    // a category-less funding row GAINS the sign-picked funding sub so no meaning is lost
+    expect(await store.get('transaction', 'f-bare')).toMatchObject({ txType: 'income', catId: 'fundingIn' });
+    expect(await store.get('txMeta', 'f-meta')).toMatchObject({ txType: 'expense', catId: 'fundingOut' });
+    expect(await migrateFundingRows(store, repo)).toBe(0); // marker gates the rerun
+  });
+
+  it('linked family rows invert: transfer + locked sub, mirror minted WITHOUT a balance move', async () => {
+    const { store, repo } = fresh();
+    await repo.upsert('space', SPACE, SPACE, { name: 'P', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
+    await repo.upsert('account', SPACE, 'checking', { name: 'Checking', type: 'checking', source: 'manual', currency: 'EUR', balanceCents: 0 });
+    await repo.upsert('account', SPACE, 'loan', { name: 'Loan', type: 'loan', source: 'manual', currency: 'EUR', balanceCents: -40_000 });
+    // the loans-v2 shape: payment on checking, family-typed, linked, NO mirror
+    await repo.upsert('transaction', SPACE, 'pay', {
+      accountId: 'checking', date: '2026-01-10', amountCents: -10_000, currency: 'EUR', merchant: 'Loan payment',
+      txType: 'debtPayment', catId: 'loanRepayment', linkedAccountId: 'loan', needsReview: 0,
+    });
+    // a row ON the (stamped) loan account stays untouched — R1 owns it
+    await repo.upsert('transaction', SPACE, 'onloan', {
+      accountId: 'loan', date: '2026-01-11', amountCents: 5_000, currency: 'EUR', merchant: 'Repaid',
+      txType: 'debtPayment', catId: 'loanRepayment', linkedAccountId: 'checking', needsReview: 0,
+    });
+
+    expect(await migrateLinkedFamilyRows(store, repo)).toBe(1);
+    const pay = await store.get('transaction', 'pay');
+    expect(pay).toMatchObject({ txType: 'transfer', catId: 'transferOut', transferPeerId: mirrorTxId('pay') });
+    expect(await store.get('transaction', mirrorTxId('pay'))).toMatchObject({
+      accountId: 'loan', amountCents: 10_000, txType: 'debtPayment', catId: 'loanRepayment', transferPeerId: 'pay',
+    });
+    // NO delta: the old lane already moved the balance when the link was made
+    expect((await store.get('account', 'loan'))?.balanceCents).toBe(-40_000);
+    expect((await store.get('transaction', 'onloan'))?.txType).toBe('debtPayment');
+    expect(await migrateLinkedFamilyRows(store, repo)).toBe(0); // marker gates the rerun
   });
 });

@@ -1,4 +1,5 @@
 import type { AccountRow, TransactionRow } from '@/db/types';
+import { mainCatOf } from './categories';
 import { netAmountCents } from './reimbursement';
 import type { Period } from './periods';
 
@@ -16,8 +17,10 @@ interface CatalogLookup {
 /** the earlier of two ISO dates (lexicographic — these are strings, not numbers) */
 export const minIso = (a: string, b: string): string => (a < b ? a : b); // NOSONAR(S7766)
 
+// funding rows are standard-typed since the type retired (2026-08-05)
+// but the shared pot is not spending — the category family excludes them
 const countable = (tx: TransactionRow): boolean =>
-  tx.deleted === 0 && tx.pending !== 1 && tx.txType === 'expense';
+  tx.deleted === 0 && tx.pending !== 1 && tx.txType === 'expense' && mainCatOf(tx.catId) !== 'funding';
 
 /** the cat ids a selection covers: a main includes its subs, a sub itself */
 function coveredIds(catalog: CatalogLookup, catId: string): Set<string> {
@@ -74,6 +77,7 @@ export function cashflowSeries(txs: readonly TransactionRow[], periods: readonly
     let expense = 0;
     for (const tx of txs) {
       if (tx.deleted !== 0 || tx.pending === 1 || tx.date < period.start || tx.date > period.end) continue;
+      if (mainCatOf(tx.catId) === 'funding') continue; // the pot is not cashflow
       if (tx.txType === 'income') income += tx.amountCents;
       else if (tx.txType === 'expense') expense += Math.abs(netAmountCents(tx));
     }

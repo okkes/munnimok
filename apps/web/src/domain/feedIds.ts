@@ -26,6 +26,11 @@ export const personalFeedSpaceId = (iban: string, sub: string): string =>
 /** per-space overlay row id for a raw transaction */
 export const txMetaId = (spaceId: string, txId: string): string => uuidv5(`meta:${spaceId}:${txId}`, IMPORT_NS);
 
+/** typed-splits v2 (2026-08-05): the minted counter leg of a transfer to
+ *  a MANUAL account — deterministic so two devices linking the same row
+ *  converge on ONE mirror instead of duplicating it */
+export const mirrorTxId = (txId: string): string => uuidv5(`mirror:${txId}`, IMPORT_NS);
+
 /** attachment row id (one per account per space) */
 export const accountLinkId = (spaceId: string, feedId: string): string =>
   uuidv5(`link:${spaceId}:${feedId}`, IMPORT_NS);

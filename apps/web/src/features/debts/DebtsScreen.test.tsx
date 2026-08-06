@@ -227,10 +227,12 @@ describe('Debts (demo identity)', () => {
     // the estimate also powers the projection despite empty explicit fields
     expect(screen.getByTestId('debtdetail-projection')).toBeTruthy();
 
-    // the add-payment door opens the manual form staged onto this loan
+    // the add-payment door opens the manual form staged onto this loan —
+    // the leg is a plain Transfer now (R2), the loan's minted mirror
+    // will carry the debt story
     fireEvent.click(screen.getByTestId('debtdetail-add-payment'));
     await screen.findByTestId('txform-save');
-    await waitFor(() => expect(screen.getByTestId('txform-kind').textContent).toContain('Debt Payment'));
+    await waitFor(() => expect(screen.getByTestId('txform-kind').textContent).toContain('Transfer'));
     expect(screen.getByTestId('txform-counter').textContent).toContain('Car loan');
     expect((screen.getByTestId('txform-merchant') as HTMLInputElement).value).toBe('Car loan');
     db.close();

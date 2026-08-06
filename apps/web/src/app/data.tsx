@@ -266,8 +266,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // reimbursement redesign: legacy NET slices become gross + an
       // explicit reimbursed slice, once per identity (marker-gated;
       // ALL identities — demo/offline data migrates too)
-      void (async () => {
-        const { migrateReimbursementSlices, migrateUnlinkedTransferKinds, migrateSignContradictions, migrateFamilySubs, migrateRetiredDebtSubs } = await import('@/application/catalogMaintenance');
+      const bootChain = (async () => {
+        const { migrateReimbursementSlices, migrateUnlinkedTransferKinds, migrateSignContradictions, migrateFamilySubs, migrateRetiredDebtSubs, migrateFundingRows, migrateLinkedFamilyRows } = await import('@/application/catalogMaintenance');
         await migrateReimbursementSlices(store, repo);
         // kind simplification: counterparty-less transfer-family rows
         // become plain income/expense by sign (marker-gated, all
@@ -280,6 +280,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
         await migrateFamilySubs(store, repo);
         // retired debt subs (lendMoney/creditCardPayment) refile by sign
         await migrateRetiredDebtSubs(store, repo);
+        // typed-splits v2: the funding TYPE retires into its category…
+        await migrateFundingRows(store, repo);
+        // …and linked family rows invert — regular leg = transfer with
+        // the locked cat, the manual counter's mirror minted (no delta:
+        // the old lane already moved the balance at link time)
+        await migrateLinkedFamilyRows(store, repo);
         // links the old import attached without a history gate pick up
         // their space's start date (imported rows ignored it entirely)
         const { migrateUngatedLinks } = await import('@/application/historyStart');
@@ -293,6 +299,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
         const { linkTransferPairs } = await import('@/application/transferMatch');
         await linkTransferPairs(store, repo);
       })().catch(() => undefined);
+      // test seam: the chain writes fire-and-forget, and a test that
+      // deletes the database while a PREVIOUS boot's chain still holds
+      // the connection boots the next app on a dying handle (its live
+      // queries collapse mid-test). Tests drain this before deleting.
+      if (import.meta.env.VITEST) (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain = bootChain;
+      void bootChain;
       // bank-connect completions attach server-side from an anonymous
       // page — mirror any link no device ever saw being made (also heals
       // the historic "connected but shows up nowhere" danglers)

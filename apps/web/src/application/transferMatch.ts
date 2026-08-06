@@ -3,8 +3,8 @@ import type { SpaceTx } from '@/db/joined';
 import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
 import { kindOf } from '@/domain/txKind';
-import { autoSubFor } from '@/domain/categories';
-import { isLiability } from '@/features/accounts/accountTypes';
+import { autoSubFor, stampMovementSub } from '@/domain/categories';
+import { accountStamp } from '@/domain/txType';
 import { matchTransferPairs } from '@/domain/transferMatch';
 import type { TransferLeg } from '@/domain/transferMatch';
 
@@ -41,14 +41,13 @@ async function linkSpacePairs(store: StorageBackend, repo: Repo, spaceId: string
     transferPeerId: tx.transferPeerId,
   });
 
-  // funding sits in the transfer family since 2026-08-01 but never has a
-  // second leg in these books (the shared account keeps its own) — it
-  // must not enter the pairing pool
-  const typed = all.filter((tx) => kindOf(tx.txType) === 'transfer' && tx.txType !== 'funding');
+  // funding left the transfer family when its type retired (2026-08-05)
+  // — kindOf files leftover unmigrated rows as standard, out of the pool
+  const typed = all.filter((tx) => kindOf(tx.txType) === 'transfer');
   const pairs = matchTransferPairs(typed.map(asLeg));
   let linked = 0;
   for (const [outId, incId] of pairs) {
-    await writePair(repo, byId.get(outId), byId.get(incId), {});
+    await writePair(store, repo, byId.get(outId), byId.get(incId), {});
     linked++;
   }
 
@@ -68,56 +67,40 @@ async function linkSpacePairs(store: StorageBackend, repo: Repo, spaceId: string
     const twin = twins[0];
     paired.add(out.id);
     paired.add(twin.id);
-    // the twin becomes the typed mirror: same family member, pointing
-    // back, settled, filed under the family's sign-picked locked sub —
-    // exactly what a manual link would have produced
-    await writePair(repo, out, twin, {
-      txType: out.txType,
+    // the twin becomes the typed mirror: pointing back, settled, wearing
+    // its own account's STAMP with the forced movement sub (R1/Q8) — a
+    // regular counter account keeps the plain transfer pair
+    const stamp = accountStamp((await store.get('account', twin.accountId))?.type);
+    await writePair(store, repo, out, twin, {
+      txType: stamp ?? 'transfer',
       linkedAccountId: out.accountId,
       needsReview: 0,
-      catId: autoSubFor(out.txType, twin.amountCents),
+      catId: (stamp ? stampMovementSub(stamp, twin.amountCents) : undefined) ?? autoSubFor('transfer', twin.amountCents),
     });
     linked++;
   }
   return linked;
 }
 
-async function writePair(repo: Repo, out: SpaceTx | undefined, inc: SpaceTx | undefined, incExtra: Parameters<typeof writeTxTransform>[2]): Promise<void> {
+async function writePair(store: StorageBackend, repo: Repo, out: SpaceTx | undefined, inc: SpaceTx | undefined, incExtra: Parameters<typeof writeTxTransform>[2]): Promise<void> {
   if (!out || !inc) return;
-  await writeTxTransform(repo, out, { transferPeerId: inc.id });
-  await writeTxTransform(repo, inc, { ...incExtra, transferPeerId: out.id });
+  // the model's pairing rules (typed-splits v2): a null counterparty
+  // auto-fills from the other leg, and a STAMPED leg stores its stamp +
+  // the forced movement sub (Q8) so the raw row reads true too. The
+  // peer in the same write keeps the choke point from minting — pairing
+  // two REAL rows is the pick-existing case by construction.
+  const enrich = async (leg: SpaceTx, other: SpaceTx): Promise<Parameters<typeof writeTxTransform>[2]> => {
+    const stamp = accountStamp((await store.get('account', leg.accountId))?.type);
+    return {
+      ...(leg.linkedAccountId ? {} : { linkedAccountId: other.accountId }),
+      ...(stamp ? { txType: stamp, catId: stampMovementSub(stamp, leg.amountCents), needsReview: 0 as const } : {}),
+    };
+  };
+  await writeTxTransform(repo, out, { ...(await enrich(out, inc)), transferPeerId: inc.id });
+  await writeTxTransform(repo, inc, { ...(await enrich(inc, out)), ...incExtra, transferPeerId: out.id });
 }
 
-/**
- * Write the OTHER side of a transfer onto a manual counter account (user
- * request: "-100 to savings used to update only half the picture").
- * Mirror row: opposite amount, same date/merchant, same family member,
- * pointing back, peered both ways, settled. The manual counter account's
- * live balance moves by the mirror amount — the same rule every manual
- * write follows.
- */
-export async function createCounterTransaction(store: StorageBackend, repo: Repo, tx: SpaceTx, counterAccountId: string): Promise<string> {
-  const id = repo.newId();
-  await repo.upsert('transaction', tx.spaceId, id, {
-    accountId: counterAccountId,
-    date: tx.date,
-    amountCents: -tx.amountCents,
-    currency: tx.currency,
-    merchant: tx.merchant,
-    txType: tx.txType,
-    catId: autoSubFor(tx.txType, -tx.amountCents),
-    linkedAccountId: tx.accountId,
-    transferPeerId: tx.id,
-    needsReview: 0 as const,
-  });
-  await writeTxTransform(repo, tx, { transferPeerId: id });
-  const account = await store.get('account', counterAccountId);
-  // manual LIABILITIES are owned by the loan link coupling (loans v2):
-  // linking already moved the balance once, and mirroring on top of it
-  // double-charged the loan (review finding). Other manual counters
-  // (savings, cash…) keep getting their mirror-side move here.
-  if (account?.deleted === 0 && account.source === 'manual' && !isLiability(account.type)) {
-    await repo.upsert('account', account.spaceId, account.id, { balanceCents: account.balanceCents - tx.amountCents });
-  }
-  return id;
-}
+// createCounterTransaction retired 2026-08-05 (typed-splits v2): the
+// mirror leg is minted by the writeTxTransform choke point the moment a
+// MANUAL counter account is linked (application/mirrorMint.ts) — one
+// deterministic mirror per source row, balance riding its lifecycle.

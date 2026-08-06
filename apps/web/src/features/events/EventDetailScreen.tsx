@@ -67,10 +67,15 @@ export function EventDetailScreen() {
     };
   }, [event, txs, cats]);
 
-  // opening the picker starts with everything selected — excluding is the review
+  // opening the picker starts with everything selected — excluding is
+  // the review. Seeded ONCE per open: a background emission (sync, the
+  // boot chain) re-emits suggestions as a fresh array, and re-seeding
+  // on identity wiped the user's unticks mid-review (LoanMatchSheet's
+  // seed-once lesson, resurfaced by typed-splits v2's longer boot).
   useEffect(() => {
     if (pickOpen) setPicked(new Set(view?.suggestions.map((tx) => tx.id) ?? []));
-  }, [pickOpen, view?.suggestions]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pickOpen]);
 
   if (!event || !view) return <div className="h-full" data-testid="screen-event-detail" />;
 

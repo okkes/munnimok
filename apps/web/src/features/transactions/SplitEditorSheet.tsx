@@ -5,7 +5,8 @@ import { useLang } from '@/i18n';
 import { fmtCents, parseCents } from '@/lib/money';
 import { balanceLastRow, pctRemainder, primaryCatId, resolveSplitsFor, splitRemainderCents, splitsArePct, validatePctSplits, validateSplits } from '@/domain/splits';
 import { givenCents, netAmountCents, netCreditCents, totalReimbursedCents } from '@/domain/reimbursement';
-import { REIMBURSED_ID, UNCATEGORIZED_ID } from '@/domain/categories';
+import { REIMBURSED_ID, UNCATEGORIZED_ID, specialCatType } from '@/domain/categories';
+import { kindOf } from '@/domain/txKind';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { CategoryPicker } from '@/features/categories/CategoryPicker';
 import type { TxSplit } from '@/db/types';
@@ -150,6 +151,9 @@ export function SplitEditorSheet({
   const effectiveType = txType ?? tx.txType;
   const rowConflicts = rows.map((r) => {
     if (r.catId === UNCATEGORIZED_ID) return false;
+    // R3 (typed-splits v2): a marked special pick on a standard row
+    // pulls the type along at apply — never a stranded conflict
+    if (kindOf(effectiveType) === 'standard' && specialCatType(r.catId)) return false;
     const speaks = cats.byId(r.catId).txTypes;
     return !!speaks && !speaks.includes(effectiveType);
   });

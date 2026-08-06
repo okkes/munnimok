@@ -1,19 +1,32 @@
 import { describe, expect, it } from 'vitest';
-import { ALL_TX_TYPES, applyTypeChange, categoryConflictsWithType, typeForLinkedAccount } from './txType';
+import { ALL_TX_TYPES, accountStamp, applyTypeChange, categoryConflictsWithType, typeForLinkedAccount } from './txType';
 import type { AccountType, TxType } from '@/db/types';
 
-describe('typeForLinkedAccount', () => {
-  const cases: [AccountType, TxType][] = [
+describe('typeForLinkedAccount (R2 inversion, 2026-08-05)', () => {
+  // ANY tracked counterparty makes the source leg a plain transfer —
+  // the special meaning lives on the counter account's own ledger now
+  const cases: AccountType[] = ['savings', 'credit', 'mortgage', 'loan', 'brokerage', 'checking', 'cash'];
+  it.each(cases)('%s account -> transfer', (accountType) => {
+    expect(typeForLinkedAccount(accountType)).toBe('transfer');
+  });
+});
+
+describe('accountStamp (R1)', () => {
+  const cases: [AccountType, TxType | undefined][] = [
     ['savings', 'saving'],
-    ['credit', 'transfer'], // user ruling: own credit card = transfer
     ['mortgage', 'debtPayment'],
     ['loan', 'debtPayment'],
     ['brokerage', 'investment'],
-    ['checking', 'transfer'],
-    ['cash', 'transfer'],
+    // credit deliberately unstamped: its feed rows are purchases
+    ['credit', undefined],
+    ['checking', undefined],
+    ['cash', undefined],
   ];
   it.each(cases)('%s account -> %s', (accountType, expected) => {
-    expect(typeForLinkedAccount(accountType)).toBe(expected);
+    expect(accountStamp(accountType)).toBe(expected);
+  });
+  it('no account, no stamp', () => {
+    expect(accountStamp(undefined)).toBeUndefined();
   });
 });
 

@@ -43,7 +43,9 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
     fireEvent.click(screen.getByTestId('txform-category'));
     fireEvent.click(await screen.findByTestId('split-cat-0'));
     await screen.findByTestId('catpicker-demo_cat_sidegig');
-    expect(screen.queryByTestId('catpicker-savingDeposit')).toBeNull(); // builtin debit-only
+    // movement subs went direction-both in typed-splits v2 (they live on
+    // either leg now) — groceries is the debit-only witness instead
+    expect(screen.queryByTestId('catpicker-groceries')).toBeNull();
   }, 15_000);
 
   it('special categories wear the diamond mark, ordinary ones do not (user 2026-08-05)', async () => {

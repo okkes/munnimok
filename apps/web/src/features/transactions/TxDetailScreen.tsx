@@ -25,8 +25,8 @@ import { Icon } from '@/ui/Icon';
 import { Pill } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { givenCents, netAmountCents, netCreditCents, totalReimbursedCents } from '@/domain/reimbursement';
-import { EXPECTED_REIMBURSE_ID, REIMBURSED_ID } from '@/domain/categories';
-import { normalizeIban } from '@/domain/feedIds';
+import { EXPECTED_REIMBURSE_ID, REIMBURSED_ID, specialCatType } from '@/domain/categories';
+import { mirrorTxId, normalizeIban } from '@/domain/feedIds';
 import { ReceiptSection } from '@/features/shopping/ReceiptSection';
 import { ReimburseSection } from './ReimburseSection';
 import { SplitEditorSheet } from './SplitEditorSheet';
@@ -34,9 +34,10 @@ import { TxFormSheet } from './TxFormSheet';
 import { CounterpartySheet, TX_KIND_VISUAL, TxKindSheet, kindDetail } from './TxKindSheet';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { kindOf, standardTypeFor } from '@/domain/txKind';
-import { createCounterTransaction } from '@/application/transferMatch';
+import type { TxKind } from '@/domain/txKind';
+import { mintMirrorForExistingLink, removeMirrorForDeletedSource } from '@/application/mirrorMint';
 import { visibleTransactions, writeTxTransform } from '@/db/joined';
-import { applyTypeChange, typeForLinkedAccount } from '@/domain/txType';
+import { accountStamp, applyTypeChange, typeForLinkedAccount } from '@/domain/txType';
 import { merchantKey } from '@/domain/merchantKey';
 import { resolveTxDetailBlocks } from './TxDetailCustomizeScreen';
 import type { TxDetailBlockId } from './TxDetailCustomizeScreen';
@@ -139,17 +140,80 @@ const similarTo = (allTxs: SpaceTx[] | undefined, tx: SpaceTx, differs: (item: S
 
 /** pre-anchor payment on a manual loan that was never counted in — the
  *  deliberate one-shot override applies (loans v2). `<=` mirrors the
- *  strictly-newer rule in countsTowardLoan. */
+ *  strictly-newer rule in countsTowardLoan. A peer only disqualifies
+ *  when it is a REAL other leg (bank twin, picked row — its own write
+ *  already carried the value); the row's own gated MINT moved nothing
+ *  for pre-anchor dates, so the offer stays. */
 const offersLoanCount = (
-  tx: Pick<SpaceTx, 'transferPeerId' | 'loanCounted' | 'date'>,
+  tx: Pick<SpaceTx, 'id' | 'transferPeerId' | 'loanCounted' | 'date'>,
   linked: Pick<AccountRow, 'source' | 'type' | 'balanceAsOf'>,
 ): boolean =>
   linked.source === 'manual' &&
   isLiability(linked.type) &&
-  !tx.transferPeerId &&
+  (!tx.transferPeerId || tx.transferPeerId === mirrorTxId(tx.id)) &&
   tx.loanCounted !== 1 &&
   !!linked.balanceAsOf &&
   tx.date <= linked.balanceAsOf;
+
+/** deleting a manual row (S3776: out of the screen): its mint goes with
+ *  it — the manual counter's mirror is tombstoned and the balance it
+ *  moved comes back (typed-splits v2) — and the row's own manual account
+ *  hands the amount back (bank-linked balances stay the bank's) */
+async function deleteManualTxRow(
+  store: ReturnType<typeof useData>['store'],
+  repo: ReturnType<typeof useData>['repo'],
+  spaceId: string,
+  tx: SpaceTx,
+  account: AccountRow | undefined,
+): Promise<void> {
+  await removeMirrorForDeletedSource(store, repo, tx, tx.linkedAccountId).catch(() => undefined);
+  if (account && account.source !== 'gocardless') {
+    const fresh = await store.get('account', account.id);
+    if (fresh?.deleted === 0) {
+      await repo.upsert('account', tx.spaceId, fresh.id, { balanceCents: fresh.balanceCents - tx.amountCents });
+    }
+  }
+  await repo.remove('transaction', tx.spaceId, tx.id);
+  void logActivity(store, repo, spaceId, 'txDelete', txTitle(tx));
+}
+
+/** the create-counter heal door (S3776: out of the screen): mint the
+ *  manual counter's missing leg for a pre-engine link, then peer to it */
+async function healMissingMirror(
+  store: ReturnType<typeof useData>['store'],
+  repo: ReturnType<typeof useData>['repo'],
+  tx: SpaceTx,
+): Promise<void> {
+  const mid = await mintMirrorForExistingLink(store, repo, tx, tx.linkedAccountId, tx.transferPeerId);
+  if (mid) await writeTxTransform(repo, tx, { transferPeerId: mid });
+}
+
+/** kind before counterparty (user simplification): WHAT it is, then WHO
+ *  the other side is. R1: a stamped account types every one of its rows
+ *  — the row locks there (S3776: out of the screen) */
+function DetailKindRow({
+  kind,
+  detailType,
+  locked,
+  onOpen,
+}: Readonly<{ kind: TxKind; detailType: TxType | null; locked: boolean; onOpen: () => void }>) {
+  const { t } = useLang();
+  return (
+    <button
+      data-testid="tx-detail-kind-row"
+      onClick={locked ? undefined : onOpen}
+      className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+    >
+      <Icon name={TX_KIND_VISUAL[kind].icon} size={20} color={TX_KIND_VISUAL[kind].color} />
+      <span className="min-w-0 flex-1 truncate">
+        {t(`tx.kind.${kind}`)}
+        {detailType && <span className="text-[12px] text-ink-4"> · {t(`tx.type.${detailType}`)}</span>}
+      </span>
+      <span className="text-xs text-ink-4">{t('tx.kindTitle')}</span>
+      <Icon name={locked ? 'lock-outline' : 'chevron-right'} size={locked ? 14 : 18} color="var(--m-ink-4)" />
+    </button>
+  );
+}
 
 /** where this transfer stands with its other leg (arc 1 pair UX) */
 function transferPairState(
@@ -480,6 +544,8 @@ export function TxDetailScreen() {
   const parent = cat.parentId ? cats.byId(cat.parentId) : undefined;
   const color = cat.color ?? parent?.color ?? 'var(--m-ink-3)';
   const kind = kindOf(tx.txType);
+  // R1: the row's own account stamps its type — the kind row locks
+  const ownStamp = accountStamp(account?.type);
   const kindDetailType = kindDetail(tx.txType);
   const pairState = transferPairState(tx, linkedAccount);
   // the OTHER leg's side of a release — its own row clears in the same
@@ -528,7 +594,10 @@ export function TxDetailScreen() {
   const recurringAllowedCats = recurringCatConstraint(tx, recurrings);
 
   const setCategory = (catId: string) => {
-    const txType = cats.byId(catId).txTypes[0] ?? tx.txType;
+    // R3: a marked special category carries the bare story — the type
+    // follows the pick (Set aside → saving); ordinary cats keep the old
+    // first-declared-type rule
+    const txType = specialCatType(catId) ?? cats.byId(catId).txTypes[0] ?? tx.txType;
     void transform(tx, { catId, txType, needsReview: 0 }, 'txCategory');
     // bulk mechanism from the detail too (user request) — unlike review
     // it reaches EVERYTHING of this merchant, reviewed included. The
@@ -578,13 +647,7 @@ export function TxDetailScreen() {
 
   // two-tap confirm, matching the app's other destructive rows
   const deleteManualTx = async () => {
-    // manual accounts keep a LIVE balance: deleting the row hands its
-    // amount back (bank-linked balances stay the bank's)
-    if (account && account.source !== 'gocardless') {
-      await repo.upsert('account', tx.spaceId, account.id, { balanceCents: account.balanceCents - tx.amountCents });
-    }
-    await repo.remove('transaction', tx.spaceId, tx.id);
-    void logActivity(store, repo, spaceId, 'txDelete', txTitle(tx));
+    await deleteManualTxRow(store, repo, spaceId, tx, account);
     void navigate({ to: '/transactions' });
   };
 
@@ -692,23 +755,7 @@ export function TxDetailScreen() {
             <span className="text-xs text-ink-4">{t('txform.account')}</span>
           </div>
           <div className="mx-4 h-px bg-line-2" />
-          {/* kind before counterparty (user simplification): WHAT it is,
-              then WHO the other side is — editable only for transfers */}
-          <button
-            data-testid="tx-detail-kind-row"
-            onClick={() => setTypePickOpen(true)}
-            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
-          >
-            <Icon name={TX_KIND_VISUAL[kind].icon} size={20} color={TX_KIND_VISUAL[kind].color} />
-            <span className="min-w-0 flex-1 truncate">
-              {t(`tx.kind.${kind}`)}
-              {kindDetailType && (
-                <span className="text-[12px] text-ink-4"> · {t(`tx.type.${kindDetailType}`)}</span>
-              )}
-            </span>
-            <span className="text-xs text-ink-4">{t('tx.kindTitle')}</span>
-            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-          </button>
+          <DetailKindRow kind={kind} detailType={kindDetailType} locked={!!ownStamp} onOpen={() => setTypePickOpen(true)} />
           <div className="mx-4 h-px bg-line-2" />
           <CounterpartyRow
             counterIban={tx.counterIban}
@@ -736,10 +783,7 @@ export function TxDetailScreen() {
           {pairState === 'offerCreate' && (
             <button
               data-testid="tx-detail-create-counter"
-              onClick={() => {
-                const counterId = tx.linkedAccountId;
-                if (counterId) void createCounterTransaction(store, repo, tx, counterId);
-              }}
+              onClick={() => void healMissingMirror(store, repo, tx).catch(() => undefined)}
               className="m-tap w-full border-none bg-transparent px-4 pb-3 text-left text-[13px] font-medium text-accent-deep"
             >
               {t('tx.createCounterpart', { name: linkedAccount?.name ?? '' })}
@@ -867,7 +911,6 @@ export function TxDetailScreen() {
         excludeAccountId={tx.accountId}
         currentLinkedId={tx.linkedAccountId}
         onChoose={(picked) => retype(typeForLinkedAccount(picked.type), picked.id, 'txLink')}
-        onBare={(type) => retype(type, null, 'txLink')}
       />
       <TxKindSheet
         open={typePickOpen}

@@ -1,10 +1,24 @@
 import { configure } from '@testing-library/react';
-import { afterAll } from 'vitest';
+import { afterAll, beforeEach } from 'vitest';
 
 // coverage instrumentation slows liveQuery round-trips well past RTL's
 // 1s default — every findBy*/waitFor gets headroom instead of piecemeal
 // per-test timeouts (repeated flake source)
 configure({ asyncUtilTimeout: 5000 });
+
+// The boot chain (migrations + linkers, app/data.tsx) writes
+// fire-and-forget. A test that deletes the database while the PREVIOUS
+// test's chain still holds the connection blocks the delete and boots
+// the next app on a dying handle — its live queries collapse mid-test
+// (EventsScreen 'detail suggests', typed-splits v2). Drain the previous
+// boot's chain before every test body runs its own deleteDatabase.
+beforeEach(async () => {
+  const g = globalThis as { __munniBootChain?: Promise<unknown> };
+  if (g.__munniBootChain) {
+    await g.__munniBootChain.catch(() => undefined);
+    g.__munniBootChain = undefined;
+  }
+});
 
 /**
  * Global vitest setup. Unmounting a screen closes the per-identity

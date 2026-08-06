@@ -8,11 +8,12 @@ import { useEvents } from '@/application/events';
 import { EventFormSheet } from '@/features/events/EventsScreen';
 import { RecurringFormSheet, formFromTx } from '@/features/recurring/RecurringFormSheet';
 import { merchantKey } from '@/domain/merchantKey';
-import { draftReady, initDraft, withBareType, withCategory, withKind, withLinkedAccount, withSplits, withType } from '@/domain/reviewDraft';
+import { draftReady, initDraft, withCategory, withKind, withLinkedAccount, withSplits, withType } from '@/domain/reviewDraft';
 import { kindOf, standardTypeFor } from '@/domain/txKind';
-import { EXPECTED_REIMBURSE_ID } from '@/domain/categories';
+import { EXPECTED_REIMBURSE_ID, RECEIVED_REIMBURSE_ID } from '@/domain/categories';
 import { Collapse } from '@/ui/Collapse';
 import type { TxKind } from '@/domain/txKind';
+import { accountStamp } from '@/domain/txType';
 import { normalizeIban } from '@/domain/feedIds';
 import { isPaypalAccount, isPaypalFunding } from '@/domain/paypal';
 import { hapticNotify } from '@/lib/platform';
@@ -129,11 +130,12 @@ function bulkFieldsFor(item: SpaceTx, draft: ReviewDraft, recurringId: string | 
 /** "also apply to n similar": a compact summary row on the card; the full
  *  list lives in a Sheet so long histories never squeeze the card
  *  (user request), with per-row read-only detail expansion */
-/** transfers carry no spending category — the hidden 'uncategorized'
- * builtin keeps the confirm armed (settle-match chip) */
-function stageAsTransfer(draft: ReviewDraft, cats: ReturnType<typeof useCategories>): ReviewDraft {
-  const next = withType(draft, 'transfer', cats);
-  return next.catId ? next : withCategory(next, 'uncategorized', cats);
+/** an incoming settlement is money from a PERSON, not one of your
+ *  accounts — R2 makes transfer strictly account-to-account, and the
+ *  old ruling already said outside money is standard. The app's own
+ *  concept for money-back-from-people is the received reimbursement. */
+function stageAsSettlement(draft: ReviewDraft, cats: ReturnType<typeof useCategories>): ReviewDraft {
+  return withCategory(withType({ ...draft, linkedAccountId: undefined }, 'income', cats), RECEIVED_REIMBURSE_ID, cats);
 }
 
 /** a kind pick keeps the confirm armed the way transfers always did:
@@ -162,12 +164,16 @@ function CardKindRows({
   kind,
   detail,
   counterName,
+  locked = false,
   onKind,
   onCounter,
 }: Readonly<{
   kind: TxKind;
   detail: TxType | null;
   counterName: string | undefined;
+  /** R1: a stamped account types every one of its rows — the kind is
+   *  not the user's to change, only the counterparty and category are */
+  locked?: boolean;
   onKind: () => void;
   onCounter: () => void;
 }>) {
@@ -177,7 +183,7 @@ function CardKindRows({
     <>
       <button
         data-testid="review-kind-row"
-        onClick={onKind}
+        onClick={locked ? undefined : onKind}
         className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
       >
         <Icon name={TX_KIND_VISUAL[kind].icon} size={18} color={TX_KIND_VISUAL[kind].color} />
@@ -186,7 +192,7 @@ function CardKindRows({
           {detail && <span className="text-[12px] font-normal text-ink-4"> · {t(`tx.type.${detail}`)}</span>}
         </span>
         <span className="text-[11px] text-ink-4">{t('tx.kindTitle')}</span>
-        <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+        <Icon name={locked ? 'lock-outline' : 'pencil-outline'} size={13} color="var(--m-ink-4)" />
       </button>
       {/* fields show only when they MEAN something: the counterparty
           eases in when Transfer is picked instead of sitting disabled
@@ -214,9 +220,10 @@ function applyOwnCounterDefault(
   ownCounter: { id: string; type: AccountType } | undefined,
   cats: ReturnType<typeof useCategories>,
   amountCents: number,
+  ownStamp?: TxType,
 ): ReviewDraft | null {
   if (!baseDraft || !ownCounter || baseDraft.linkedAccountId) return baseDraft;
-  const linked = withLinkedAccount(baseDraft, { id: ownCounter.id, type: ownCounter.type }, cats, amountCents);
+  const linked = withLinkedAccount(baseDraft, { id: ownCounter.id, type: ownCounter.type }, cats, amountCents, ownStamp);
   return linked.catId ? linked : withCategory(linked, 'uncategorized', cats);
 }
 
@@ -590,6 +597,9 @@ export function ReviewScreen() {
   // report: credit-card top-ups showed up as expense + income pairs)
   // the funding account, named on the card (user request)
   const cardAccount = useQuery(store, async () => (tx ? store.get('account', tx.accountId) : undefined), [tx?.accountId]);
+  // R1: the row's own account stamps its type — the kind row locks and
+  // a counterparty pick keeps the stamp with the forced movement sub
+  const ownStamp = accountStamp(cardAccount?.type);
   const ownCounter = useQuery(
     store,
     async () => {
@@ -612,9 +622,9 @@ export function ReviewScreen() {
   // untouched cards follow the tx + the (async) prediction live
   const baseDraft = tx ? initDraft(tx, prediction?.catId, cats) : null;
   const ownTransferDraft = useMemo(
-    () => applyOwnCounterDefault(baseDraft, ownCounter, cats, tx?.amountCents ?? 0),
+    () => applyOwnCounterDefault(baseDraft, ownCounter, cats, tx?.amountCents ?? 0, ownStamp),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [tx?.id, ownCounter, prediction?.catId, cats],
+    [tx?.id, ownCounter, prediction?.catId, cats, ownStamp],
   );
   const draft = stagedDraft ?? ownTransferDraft;
   const draftCounter = useQuery(
@@ -869,6 +879,7 @@ export function ReviewScreen() {
                   kind={draftKind}
                   detail={draftKindDetail}
                   counterName={draftCounter?.name}
+                  locked={!!ownStamp}
                   onKind={() => setKindOpen(true)}
                   onCounter={() => {
                     counterFallback.current = null;
@@ -948,7 +959,7 @@ export function ReviewScreen() {
                   <Chip
                     testId="review-settle-match"
                     selected={draft.txType === 'transfer'}
-                    onClick={() => setStagedDraft(stageAsTransfer(draft, cats))}
+                    onClick={() => setStagedDraft(stageAsSettlement(draft, cats))}
                   >
                     <Icon name="handshake-outline" size={13} />
                     {t('review.settleMatch', {
@@ -1047,13 +1058,7 @@ export function ReviewScreen() {
           currentLinkedId={draft.linkedAccountId}
           onChoose={(account) => {
             counterChosen.current = true;
-            setStagedDraft(withLinkedAccount(draft, account, cats, tx?.amountCents));
-          }}
-          // the bare label COMPLETES the transfer intent (arc 2) — the
-          // roll-back guard treats it exactly like an account pick
-          onBare={(type) => {
-            counterChosen.current = true;
-            setStagedDraft(withBareType(draft, type, tx.amountCents, cats));
+            setStagedDraft(withLinkedAccount(draft, account, cats, tx?.amountCents, ownStamp));
           }}
         />
       )}

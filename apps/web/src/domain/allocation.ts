@@ -1,4 +1,5 @@
 import type { AccountRow, AllocationRow, TransactionRow } from '@/db/types';
+import { LOCKED_MAIN_IDS } from './categories';
 import { contributionCents, txsForKind } from './overview';
 import type { Period } from './periods';
 
@@ -33,6 +34,9 @@ export function spentByMainCat(txs: readonly TransactionRow[], catalog: CatalogL
     if (tx.date < period.start || tx.date > period.end) continue;
     const cat = catalog.byId(tx.catId);
     const mainId = cat.parentId ?? cat.id;
+    // special families (funding after its type retired) are not
+    // allocatable spending — locked mains never appear as pots
+    if (LOCKED_MAIN_IDS.has(mainId)) continue;
     totals.set(mainId, (totals.get(mainId) ?? 0) + -tx.amountCents);
   }
   return totals;

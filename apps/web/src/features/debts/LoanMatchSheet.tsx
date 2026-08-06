@@ -107,16 +107,17 @@ export function LoanMatchSheet({ accountId, onClose }: Readonly<{ accountId: str
       for (const { tx } of candidates) {
         if (!picked.has(tx.id)) continue;
         // a loan link IS a debt payment (review finding: leaving the
-        // spending category would double-count consumption) — the same
-        // retype every other counterparty path performs, family sub by
-        // sign. The count-it marker lands in the SAME write; the
-        // coupling re-reads the merged row so the balance follows.
+        // spending category would double-count consumption). R2: the
+        // linked leg is a plain TRANSFER with the locked sub — the loan's
+        // own ledger gets the minted mirror (typed by its stamp) from the
+        // choke point, and the count-it marker rides the SAME write so a
+        // pre-anchor mint moves the balance exactly when opted in.
         await transform(
           tx,
           {
             linkedAccountId: accountId,
-            txType: 'debtPayment',
-            catId: autoSubFor('debtPayment', tx.amountCents),
+            txType: 'transfer',
+            catId: autoSubFor('transfer', tx.amountCents),
             ...(counted.has(tx.id) ? { loanCounted: 1 as const } : {}),
           },
           'txLink',

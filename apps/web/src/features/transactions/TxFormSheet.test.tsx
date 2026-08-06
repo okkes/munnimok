@@ -109,9 +109,10 @@ describe('TxFormSheet (demo identity)', () => {
     // save is blocked while the counterparty is missing
     expect((screen.getByTestId('txform-save') as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByTestId('counter-pick-demo_save'));
-    // the savings counterparty derives Saving on the kind row
-    await waitFor(() => expect(screen.getByTestId('txform-kind').textContent).toContain('Saving'));
-    expect(screen.getByTestId('txform-counter').textContent).toContain('Demo Savings');
+    // R2 inversion: the linked leg stays a plain Transfer — the saving
+    // story lives on the pot's own ledger (the minted mirror)
+    await waitFor(() => expect(screen.getByTestId('txform-counter').textContent).toContain('Demo Savings'));
+    expect(screen.getByTestId('txform-kind').textContent).toContain('Transfer');
     expect((screen.getByTestId('txform-save') as HTMLButtonElement).disabled).toBe(false);
 
     // back to Standard: the counterparty row leaves with the kind
@@ -151,9 +152,10 @@ describe('TxFormSheet (demo identity)', () => {
     fireEvent.change(await screen.findByTestId('chooser-acctform-name'), { target: { value: 'Vakantiepot' } });
     fireEvent.click(screen.getByTestId('chooser-acctform-save'));
 
-    // the fresh manual account IS the counterparty; savings → Saving
+    // the fresh manual account IS the counterparty; the leg stays a
+    // plain Transfer (R2 — the pot's ledger will carry the saving story)
     await waitFor(() => expect(screen.getByTestId('txform-counter').textContent).toContain('Vakantiepot'));
-    expect(screen.getByTestId('txform-kind').textContent).toContain('Saving');
+    expect(screen.getByTestId('txform-kind').textContent).toContain('Transfer');
     const { MunniDB } = await import('@/db/schema');
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
@@ -197,9 +199,9 @@ describe('TxFormSheet (demo identity)', () => {
     fireEvent.click(screen.getByTestId('txkind-transfer'));
     await screen.findByTestId('counter-accounts');
     fireEvent.click(screen.getByTestId('counter-pick-demo_save'));
-    // the mirror offer shows for a MANUAL counter, checked by default
-    const mirror = (await screen.findByTestId('txform-mirror')) as HTMLInputElement;
-    expect(mirror.checked).toBe(true);
+    // the mirror checkbox retired (typed-splits v2): a MANUAL counter's
+    // leg is ALWAYS minted — the pot's own ledger is the record
+    expect(screen.queryByTestId('txform-mirror')).toBeNull();
     fireEvent.click(screen.getByTestId('txform-save'));
 
     const { MunniDB } = await import('@/db/schema');
@@ -212,7 +214,8 @@ describe('TxFormSheet (demo identity)', () => {
       const inc = rows.find((r) => r.amountCents > 0)!;
       expect(out.transferPeerId).toBe(inc.id); // …peered both ways
       expect(inc.transferPeerId).toBe(out.id);
-      expect(inc).toMatchObject({ accountId: 'demo_save', txType: 'saving', linkedAccountId: 'demo_main', needsReview: 0 });
+      // the mirror wears the pot's R1 stamp + the Q8 movement sub
+      expect(inc).toMatchObject({ accountId: 'demo_save', txType: 'saving', catId: 'savingDeposit', linkedAccountId: 'demo_main', needsReview: 0 });
       outId = out.id;
     }, { timeout: 5000 });
 
@@ -228,26 +231,21 @@ describe('TxFormSheet (demo identity)', () => {
     db.close();
   }, 15_000);
 
-  it('the "no counter account" exit types the row bare and files the locked sub', async () => {
+  it('the marked special category carries the flat-loan story (typed-splits v2)', async () => {
     await openForm();
     fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '30,00' } });
     fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Aflossing lening' } });
-    fireEvent.click(screen.getByTestId('txform-kind'));
-    await screen.findByTestId('txkind-options');
-    fireEvent.click(screen.getByTestId('txkind-transfer'));
-    await screen.findByTestId('counter-accounts');
-    expect((screen.getByTestId('txform-save') as HTMLButtonElement).disabled).toBe(true);
 
-    // the bare exit: name the family member directly, no account link
-    fireEvent.click(screen.getByTestId('counter-none'));
-    await screen.findByTestId('counter-bare-options');
-    fireEvent.click(screen.getByTestId('counter-bare-debtPayment'));
+    // the bare-type exit retired: the flat structure's "Loan payment" is
+    // the marked Repaid category, picked in the unified editor — the
+    // debt type follows the pick, no counterparty demanded
+    fireEvent.click(screen.getByTestId('txform-category'));
+    fireEvent.click(await screen.findByTestId('split-cat-0'));
+    await screen.findByTestId('speccat-loanRepayment'); // the diamond mark
+    fireEvent.click(screen.getByTestId('catpicker-loanRepayment'));
+    fireEvent.click(await screen.findByTestId('split-save'));
 
-    // the label completes the transfer intent: counter row says so, the
-    // kind row carries the named member, save is armed
-    await waitFor(() => expect(screen.getByTestId('txform-counter').textContent).toContain('No counter account'));
-    expect(screen.getByTestId('txform-kind').textContent).toContain('Debt Payment');
-    expect(screen.queryByTestId('txform-mirror')).toBeNull(); // nothing to mirror
+    await waitFor(() => expect(screen.getByTestId('txform-kind').textContent).toContain('Debt Payment'));
     expect((screen.getByTestId('txform-save') as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(screen.getByTestId('txform-save'));
 
@@ -255,7 +253,8 @@ describe('TxFormSheet (demo identity)', () => {
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
       const row = (await db.transactions.toArray()).find((r) => r.merchant === 'Aflossing lening');
-      // typed + sign-picked locked sub, deliberately NO counterparty
+      // typed + the picked special sub, deliberately NO counterparty —
+      // the default-loan bucket (unassigned payments) picks it up
       expect(row).toMatchObject({ txType: 'debtPayment', catId: 'loanRepayment', needsReview: 0 });
       expect(row?.linkedAccountId).toBeFalsy();
     }, { timeout: 5000 });

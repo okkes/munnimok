@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useSpaceAccounts } from '@/application/transactions';
-import { UNCATEGORIZED_ID, autoSubFor } from '@/domain/categories';
-import { typeForLinkedAccount } from '@/domain/txType';
+import { UNCATEGORIZED_ID, autoSubFor, specialCatType, stampMovementSub } from '@/domain/categories';
+import { accountStamp, typeForLinkedAccount } from '@/domain/txType';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useQuery } from '@/db/useQuery';
 import { logActivity } from '@/application/activity';
-import { createCounterTransaction } from '@/application/transferMatch';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { useRecurrings } from '@/application/recurring';
 import { fmtCents, parseCents } from '@/lib/money';
@@ -41,7 +40,7 @@ const todayIso = () => new Date().toISOString().slice(0, 10);
 const formFingerprint = (state: Record<string, unknown>): string =>
   JSON.stringify([
     state.amount, state.isExpense, state.merchant, state.date, state.accountId, state.catId,
-    state.kind, state.linkedAccountId, state.bareType, state.recurringId, state.splits,
+    state.kind, state.linkedAccountId, state.recurringId, state.splits,
   ]);
 
 /**
@@ -102,12 +101,16 @@ function KindRows({
   kind,
   detailType,
   counterName,
+  locked = false,
   onKind,
   onCounter,
 }: Readonly<{
   kind: TxKind;
   detailType: TxType | null;
   counterName: string | undefined;
+  /** R1: a stamped account types every one of its rows — the kind is
+   *  not the user's to change here */
+  locked?: boolean;
   onKind: () => void;
   onCounter: () => void;
 }>) {
@@ -118,7 +121,7 @@ function KindRows({
           — the third option exists exactly here, on hand-entered rows */}
       <button
         data-testid="txform-kind"
-        onClick={onKind}
+        onClick={locked ? undefined : onKind}
         className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink"
       >
         <Icon name={TX_KIND_VISUAL[kind].icon} size={20} color={TX_KIND_VISUAL[kind].color} />
@@ -127,7 +130,7 @@ function KindRows({
           {detailType && <span className="text-[12px] text-ink-4"> · {t(`tx.type.${detailType}`)}</span>}
         </span>
         <span className="text-xs text-ink-4">{t('tx.kindTitle')}</span>
-        <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+        <Icon name={locked ? 'lock-outline' : 'chevron-right'} size={locked ? 14 : 18} color="var(--m-ink-4)" />
       </button>
       {kind === 'transfer' && (
         <button
@@ -164,7 +167,6 @@ function initialFormState(tx: TransactionRow | undefined, prefill?: TxFormSheetP
       catId: suggested?.catId ?? UNCATEGORIZED_ID,
       kind: (prefill ? 'transfer' : 'standard') as TxKind,
       linkedAccountId: prefill?.linkedAccountId ?? null,
-      bareType: null as TxType | null,
       recurringId: null,
     };
   }
@@ -177,9 +179,6 @@ function initialFormState(tx: TransactionRow | undefined, prefill?: TxFormSheetP
     catId: tx.catId ?? UNCATEGORIZED_ID,
     kind: kindOf(tx.txType),
     linkedAccountId: tx.linkedAccountId ?? null,
-    // a counterless transfer-family row (the arc-2 bare exit) reopens
-    // with its typed label intact instead of demanding a counterparty
-    bareType: kindOf(tx.txType) === 'transfer' && !tx.linkedAccountId ? tx.txType : null,
     recurringId: tx.recurringId ?? null,
   };
 }
@@ -362,23 +361,17 @@ function AccountPickSheet({
  *  the wrong account (user redesign 2026-07-31) */
 const soleAccountId = (writable: readonly AccountRow[]): string | null => (writable.length === 1 ? writable[0].id : null);
 
-/** a transfer's other side is decided by an account OR the bare
- *  "no counter account" label (arc 2) — undecided blocks save */
-const counterUndecided = (kind: TxKind, linkedAccount: AccountRow | undefined, bareType: TxType | null): boolean =>
-  kind === 'transfer' && !linkedAccount && !bareType;
+/** R2 (typed-splits v2): a transfer strictly needs its tracked counter
+ *  account — except on a STAMPED account, where the row already carries
+ *  its meaning and the counterparty is optional (Q2's hand-typed leg) */
+const counterUndecided = (kind: TxKind, linkedAccount: AccountRow | undefined, ownStamp: TxType | undefined): boolean =>
+  kind === 'transfer' && !linkedAccount && !ownStamp;
 
 /** the space's start date IF the picked date falls before it (arc 5) —
  *  such a row would vanish behind the display gate the moment it saved,
  *  so a truthy return blocks save and renders the way out */
 const blockingStartDate = (space: { historyStartDate?: string } | undefined, date: string): string | undefined =>
   space?.historyStartDate && date && date < space.historyStartDate ? space.historyStartDate : undefined;
-
-/** the counter row's face: the account's name, or the bare label */
-const counterFieldLabel = (
-  linkedName: string | undefined,
-  bareType: TxType | null,
-  t: ReturnType<typeof useLang>['t'],
-): string | undefined => linkedName ?? (bareType ? t('tx.counterNone') : undefined);
 
 /** the account field on the form: picked account, or the pick prompt */
 function AccountFieldRow({ account, onOpen }: Readonly<{ account: AccountRow | undefined; onOpen: () => void }>) {
@@ -423,15 +416,11 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
   // a transfer saves with a counterparty OR a bare family label (arc 2)
   const [kind, setKind] = useState<TxKind>('standard');
   const [linkedAccountId, setLinkedAccountId] = useState<string | null>(null);
-  const [bareType, setBareType] = useState<TxType | null>(null);
   const [recurringId, setRecurringId] = useState<string | null>(null);
   const [kindOpen, setKindOpen] = useState(false);
   const [counterOpen, setCounterOpen] = useState(false);
   const [recurringOpen, setRecurringOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
-  // manual counterparty: the other side can be written in the same
-  // stroke (user: "-100 to savings updated only half the picture")
-  const [mirrorCounter, setMirrorCounter] = useState(true);
   const baselineRef = useRef('');
 
   const allAccounts = useSpaceAccounts();
@@ -460,16 +449,14 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
     setCatId(initial.catId);
     setKind(initial.kind);
     setLinkedAccountId(initial.linkedAccountId);
-    setBareType(initial.bareType);
     setRecurringId(initial.recurringId);
     setStagedSplits(tx?.splits ?? null);
-    setMirrorCounter(true);
     // dirty baseline (user request 2026-08-01): a stray backdrop tap on
     // an EDITED form asks before dropping it; an untouched one closes
     baselineRef.current = formFingerprint({
       amount: initial.amount, isExpense: initial.isExpense, merchant: initial.merchant, date: initial.date,
       accountId: initial.accountId, catId: initial.catId, kind: initial.kind,
-      linkedAccountId: initial.linkedAccountId, bareType: initial.bareType, recurringId: initial.recurringId,
+      linkedAccountId: initial.linkedAccountId, recurringId: initial.recurringId,
       splits: tx?.splits ?? null,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -480,9 +467,16 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
   const selectedAccount = writable.find((a) => a.id === effectiveAccount);
   const cents = parseCents(amount);
   const linkedAccount = (accounts ?? []).find((a) => a.id === linkedAccountId);
-  // the counterparty derives the type; the bare exit (arc 2) names it directly
-  const effectiveType: TxType = typeForKind(kind, isExpense, linkedAccount ? typeForLinkedAccount(linkedAccount.type) : bareType);
-  const counterMissing = counterUndecided(kind, linkedAccount, bareType);
+  // R1: a stamped account types every one of its rows; R3: a marked
+  // special category pulls its type onto a standard row; otherwise the
+  // kind resolves it (a tracked counterparty = plain transfer, R2)
+  const ownStamp = accountStamp(selectedAccount?.type);
+  const effectiveType: TxType =
+    ownStamp ?? specialCatType(catId) ?? typeForKind(kind, isExpense, linkedAccount ? typeForLinkedAccount(linkedAccount.type) : null);
+  // the face follows the EFFECTIVE type: a stamp or a special-category
+  // pull shows its family even while the picked kind state lags
+  const shownKind = kindOf(effectiveType);
+  const counterMissing = counterUndecided(kind, linkedAccount, ownStamp);
   const startGateBlocking = blockingStartDate(space, date);
   const kindDetailType = kindDetail(effectiveType);
   const valid = isValidManualTx({ merchant, cents, account: effectiveAccount, date, counterMissing, beforeStart: !!startGateBlocking });
@@ -505,60 +499,62 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
     if (!valid || !effectiveAccount || cents === null) return;
     const signed = isExpense ? -Math.abs(cents) : Math.abs(cents);
     const rowId = tx?.id ?? repo.newId();
+    // Q8: a stamped row that names a counterparty is a movement — the
+    // category is forced from the special account's own side; a bare
+    // uncategorized one defaults there too (interest/fees are re-picks)
+    const forcedCat = ownStamp && (linkedAccountId || catId === UNCATEGORIZED_ID) ? stampMovementSub(ownStamp, signed) : undefined;
     applyManualBalanceDeltas(repo, spaceId, manualBalanceDeltas(accounts, tx, effectiveAccount, signed));
-    // loans v2 (review finding): the edit form writes the raw row
-    // directly, so the loan link coupling must ride here too — a
-    // retargeted or cleared counterparty moves the manual loans exactly
-    // like the same gesture in the detail screen. The mirror path stays
-    // exempt: createCounterTransaction skips liability counters now.
     const prevLinked = tx?.linkedAccountId ?? undefined;
     const nextLinked = linkedAccountId ?? undefined; // mirrors manualTxFields' write
-    if (prevLinked !== nextLinked) {
-      void import('@/application/loanBalance')
-        .then(({ applyLoanLinkDelta }) =>
-          applyLoanLinkDelta(store, repo, { amountCents: signed, date, transferPeerId: tx?.transferPeerId, loanCounted: tx?.loanCounted }, prevLinked, nextLinked),
-        )
-        .catch(() => undefined);
-    }
     void logActivity(store, repo, spaceId, tx ? 'txEdit' : 'txAdd', merchant.trim());
-    void repo.upsert(
-      'transaction',
-      spaceId,
-      rowId,
-      manualTxFields({
-        tx,
-        accountId: effectiveAccount,
-        date,
-        signed,
-        currency: formCurrency,
-        merchant: merchant.trim(),
-        catId,
-        txType: effectiveType,
-        stagedSplits,
-        linkedAccountId,
-        recurringId,
-      }),
-    );
-    // the checked mirror writes the OTHER side onto the manual counter
-    // account in the same stroke (peered both ways, balance follows)
-    if (!tx && mirrorCounter && kind === 'transfer' && linkedAccount?.source === 'manual') {
-      void createCounterTransaction(
-        store,
-        repo,
-        {
-          id: rowId,
-          spaceId,
+    // the form writes the raw row directly (not through writeTxTransform),
+    // so the mirror-mint lifecycle must ride here too: a linked MANUAL
+    // counter gets its leg minted (typed by its stamp, balance follows),
+    // a retargeted or cleared counterparty retires the old mint — the
+    // same engine as every other linkedAccountId writer (typed-splits v2)
+    void (async () => {
+      await repo.upsert(
+        'transaction',
+        spaceId,
+        rowId,
+        manualTxFields({
+          tx,
           accountId: effectiveAccount,
           date,
-          amountCents: signed,
+          signed,
           currency: formCurrency,
           merchant: merchant.trim(),
+          catId: forcedCat ?? catId,
           txType: effectiveType,
-          needsReview: 0,
-        } as Parameters<typeof createCounterTransaction>[2],
-        linkedAccount.id,
-      ).catch(() => undefined);
-    }
+          stagedSplits,
+          linkedAccountId,
+          recurringId,
+        }),
+      );
+      if (prevLinked !== nextLinked) {
+        const { planMirrorChange } = await import('@/application/mirrorMint');
+        const plan = await planMirrorChange(
+          store,
+          {
+            id: rowId,
+            accountId: effectiveAccount,
+            amountCents: signed,
+            date,
+            currency: formCurrency,
+            merchant: merchant.trim(),
+            ...(tx?.loanCounted === 1 ? { loanCounted: 1 as const } : {}),
+          },
+          prevLinked,
+          nextLinked,
+          tx?.transferPeerId,
+          undefined,
+        );
+        if (Object.hasOwn(plan.sourceFields, 'transferPeerId')) {
+          await repo.upsert('transaction', spaceId, rowId, { transferPeerId: (plan.sourceFields.transferPeerId ?? null) as never });
+        }
+        await plan.execute(repo);
+      }
+    })().catch(() => undefined);
     onOpenChange(false);
   };
 
@@ -569,7 +565,7 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
         onOpenChange={onOpenChange}
         title={tx ? t('txform.editTitle') : t('txform.addTitle')}
         size="tall"
-        dirty={open && formFingerprint({ amount, isExpense, merchant, date, accountId, catId, kind, linkedAccountId, bareType, recurringId, splits: stagedSplits }) !== baselineRef.current}
+        dirty={open && formFingerprint({ amount, isExpense, merchant, date, accountId, catId, kind, linkedAccountId, recurringId, splits: stagedSplits }) !== baselineRef.current}
       >
         {/* no manual account yet: explain WHY the form can't work and
             hand over a one-tap path to fix it (user UX request) */}
@@ -670,26 +666,19 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
           )}
 
           <KindRows
-            kind={kind}
+            kind={shownKind}
             detailType={kindDetailType}
-            counterName={counterFieldLabel(linkedAccount?.name, bareType, t)}
+            counterName={linkedAccount?.name}
+            locked={!!ownStamp}
             onKind={() => setKindOpen(true)}
             onCounter={() => setCounterOpen(true)}
           />
 
           {/* manual counter account: offer to write the other side too —
               without it "-100 to savings" updated only half the picture */}
-          {!tx && kind === 'transfer' && linkedAccount?.source === 'manual' && (
-            <label className="flex items-center gap-2 px-1 text-[13px] text-ink-2">
-              <input
-                type="checkbox"
-                data-testid="txform-mirror"
-                checked={mirrorCounter}
-                onChange={(e) => setMirrorCounter(e.target.checked)}
-              />
-              {t('txform.mirrorCreate', { name: linkedAccount.name })}
-            </label>
-          )}
+          {/* the mirror checkbox retired 2026-08-05: a MANUAL counter's
+              leg is always minted now — the special account's ledger IS
+              the record (typed-splits v2) */}
 
           {/* category row — opens the SAME unified editor as review */}
           <button
@@ -738,7 +727,6 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
             setCounterOpen(true);
           } else {
             setLinkedAccountId(null);
-            setBareType(null);
           }
         }}
       />
@@ -747,14 +735,7 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
         onOpenChange={setCounterOpen}
         excludeAccountId={effectiveAccount ?? ''}
         currentLinkedId={linkedAccountId ?? undefined}
-        onChoose={(picked) => {
-          setLinkedAccountId(picked.id);
-          setBareType(null);
-        }}
-        onBare={(type) => {
-          setBareType(type);
-          setLinkedAccountId(null);
-        }}
+        onChoose={(picked) => setLinkedAccountId(picked.id)}
       />
 
       {/* stacked: account picker */}

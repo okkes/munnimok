@@ -1,6 +1,7 @@
 import type { AccountRow, BudgetRow, RecurringRow, TransactionRow } from '@/db/types';
 import type { TranslationKey } from '@/i18n';
 import { budgetFamily, budgetPeriodAt, budgetSpentCents, cycleIndex } from './budgets';
+import { mainCatOf } from './categories';
 import { projectPayoff } from './debts';
 import { cycleMonths } from './recurring';
 import { detectPriceChange } from './recurringPrice';
@@ -115,7 +116,7 @@ export function smallHabit(inputs: InsightInputs): Insight[] {
   if (!period) return [];
   const groups = new Map<string, { name: string; count: number; totalCents: number }>();
   for (const tx of inputs.txs) {
-    if (tx.deleted !== 0 || tx.txType !== 'expense') continue;
+    if (tx.deleted !== 0 || tx.txType !== 'expense' || mainCatOf(tx.catId) === 'funding') continue;
     if (tx.date < period.start || tx.date > period.end) continue;
     const spent = -tx.amountCents;
     if (spent <= 0 || spent > 1000) continue;
@@ -154,7 +155,7 @@ export function weekendMultiplier(inputs: InsightInputs): Insight[] {
   let weekend = 0;
   let weekday = 0;
   for (const tx of inputs.txs) {
-    if (tx.deleted !== 0 || tx.txType !== 'expense') continue;
+    if (tx.deleted !== 0 || tx.txType !== 'expense' || mainCatOf(tx.catId) === 'funding') continue;
     if (tx.date < start || tx.date > end) continue;
     const day = new Date(tx.date).getDay();
     if (day === 5 || day === 6 || day === 0) weekend += -tx.amountCents;

@@ -9,6 +9,7 @@ const TYPES: Record<string, TxType[]> = {
   groceries: ['expense'],
   entertainment: ['expense'],
   savingDeposit: ['saving'],
+  loanRepayment: ['debtPayment'],
   refund: ['income'],
 };
 const catalog: DraftCatalog = { byId: (id) => ({ txTypes: TYPES[id ?? ''] ?? [] }) };
@@ -26,8 +27,10 @@ describe('reviewDraft', () => {
   it('Uncategorized never confirms — except as the transfer placeholder (user rule)', () => {
     const uncategorized = { ...initDraft(expenseTx, undefined, catalog), catId: 'uncategorized' };
     expect(draftReady(uncategorized)).toBe(false);
-    // transfers carry no spending category: the hidden builtin stays confirmable
-    expect(draftReady({ ...uncategorized, txType: 'transfer' as TxType })).toBe(true);
+    // transfers carry no spending category, but R2 makes the tracked
+    // counterparty mandatory — the placeholder confirms only linked
+    expect(draftReady({ ...uncategorized, txType: 'transfer' as TxType })).toBe(false);
+    expect(draftReady({ ...uncategorized, txType: 'transfer' as TxType, linkedAccountId: 'a-save' })).toBe(true);
     // a split with an uncategorized slice blocks too
     const withUncatSlice = {
       ...initDraft(expenseTx, 'groceries', catalog),
@@ -65,11 +68,12 @@ describe('reviewDraft', () => {
     expect(flipped.catId).toBeUndefined();
   });
 
-  it('linking an account suggests its type through the same coherence rules', () => {
+  it('linking an account makes the leg a TRANSFER with the locked sub (R2 inversion)', () => {
     const staged = withCategory(initDraft(expenseTx, undefined, catalog), 'entertainment', catalog);
-    const linked = withLinkedAccount(staged, { id: 'a-save', type: 'savings' }, catalog);
-    expect(linked).toMatchObject({ linkedAccountId: 'a-save', txType: 'saving' });
-    expect(linked.catId).toBeUndefined(); // entertainment cannot be a saving
+    const linked = withLinkedAccount(staged, { id: 'a-save', type: 'savings' }, catalog, -1000);
+    // the special meaning lives on the counter ledger now — the source
+    // leg is a plain transfer filed under the sign-picked locked sub
+    expect(linked).toMatchObject({ linkedAccountId: 'a-save', txType: 'transfer', catId: 'transferOut' });
     // unlinking keeps the chosen type but frees the account
     expect(withLinkedAccount(linked, null, catalog).linkedAccountId).toBeUndefined();
   });
@@ -89,15 +93,15 @@ describe('withKind (simplified kinds)', () => {
   it('standard resolves by sign and drops the counterparty', async () => {
     const { withKind } = await import('./reviewDraft');
     const linked = withLinkedAccount(initDraft(expenseTx, 'groceries', catalog), { id: 'a-save', type: 'savings' }, catalog);
-    expect(linked.txType).toBe('saving');
+    expect(linked.txType).toBe('transfer'); // R2: every tracked counterparty
     expect(withKind(linked, 'standard', -1000, catalog)).toMatchObject({ txType: 'expense', linkedAccountId: undefined });
     expect(withKind(linked, 'standard', 1000, catalog).txType).toBe('income');
   });
 
-  it('transfer keeps a linked counterparty and its derived member; unlinked starts plain', async () => {
+  it('transfer keeps a linked counterparty; unlinked starts plain', async () => {
     const { withKind } = await import('./reviewDraft');
     const linked = withLinkedAccount(initDraft(expenseTx, 'groceries', catalog), { id: 'a-save', type: 'savings' }, catalog);
-    expect(withKind(linked, 'transfer', -1000, catalog).txType).toBe('saving');
+    expect(withKind(linked, 'transfer', -1000, catalog).txType).toBe('transfer');
     expect(withKind(initDraft(expenseTx, 'groceries', catalog), 'transfer', -1000, catalog)).toMatchObject({
       txType: 'transfer',
       // arc 2 locked doors: the invalidated spending category files under
@@ -107,23 +111,22 @@ describe('withKind (simplified kinds)', () => {
   });
 
   it('the locked family sub follows the sign; a deliberate category survives', async () => {
-    const { withBareType, withFamilyCategory } = await import('./reviewDraft');
-    // funding is a transfer-family member picked by NAME (user correction
-    // 2026-08-01): debit files "to shared account", credit "from"
-    expect(withBareType(initDraft(expenseTx, undefined, catalog), 'funding', -1000, catalog).catId).toBe('fundingOut');
-    expect(withFamilyCategory({ txType: 'funding', catId: undefined }, 2000).catId).toBe('fundingIn');
+    const { withFamilyCategory } = await import('./reviewDraft');
+    expect(withFamilyCategory({ txType: 'transfer', catId: undefined }, -1000).catId).toBe('transferOut');
+    expect(withFamilyCategory({ txType: 'transfer', catId: undefined }, 2000).catId).toBe('transferIn');
     // a deliberately picked category is never clobbered
     expect(withFamilyCategory({ txType: 'saving', catId: 'savingWithdraw' }, -1000).catId).toBe('savingWithdraw');
   });
 
-  it('the bare "no counter account" exit types the draft, drops the link and files the sub', async () => {
-    const { withBareType } = await import('./reviewDraft');
-    const linked = withLinkedAccount(initDraft(expenseTx, 'groceries', catalog), { id: 'a-save', type: 'savings' }, catalog);
-    const bare = withBareType(linked, 'debtPayment', -1000, catalog);
-    expect(bare).toMatchObject({ txType: 'debtPayment', linkedAccountId: undefined, catId: 'loanRepayment' });
+  it('a special CATEGORY pick carries the bare story: the type follows (typed-splits v2)', () => {
+    // the bare-type exit retired — picking the marked category on a
+    // standard row pulls the type through the coherence rules
+    const bare = withCategory(initDraft(expenseTx, 'groceries', catalog), 'savingDeposit', catalog);
+    expect(bare.txType).toBe('saving');
+    expect(bare.catId).toBe('savingDeposit');
     expect(draftReady(bare)).toBe(true);
-    // credit side of the same exit
-    expect(withBareType(initDraft(expenseTx, undefined, catalog), 'saving', 1000, catalog).catId).toBe('savingWithdraw');
+    const loan = withCategory(initDraft(expenseTx, undefined, catalog), 'loanRepayment', catalog);
+    expect(loan.txType).toBe('debtPayment');
   });
 
   it('adjustment clears the counterparty and confirms without a real category', async () => {

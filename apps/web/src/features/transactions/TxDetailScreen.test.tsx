@@ -4,6 +4,7 @@ import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { renderApp } from '@/test/harness';
 import { DEMO_SPACE_ID } from '@/db/seed';
+import { mirrorTxId } from '@/domain/feedIds';
 import { HlcClock } from '@/sync/hlc';
 import { Repo } from '@/db/repo';
 import { DexieBackend } from '@/db/backend';
@@ -61,7 +62,8 @@ describe('TxDetailScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('txkind-transfer'));
     await screen.findByTestId('counter-accounts');
     fireEvent.click(screen.getByTestId('counter-pick-demo_save'));
-    await screen.findByTestId('txform-mirror');
+    // the mirror checkbox retired (typed-splits v2): the pot's leg is
+    // always minted for a manual counter
     fireEvent.click(screen.getByTestId('txform-save'));
 
     const db = new MunniDB('munni_demo');
@@ -214,42 +216,44 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     indexedDB.deleteDatabase('munni_demo');
   });
 
-  it('a transfer to the savings account derives Saving and files the locked sub', async () => {
+  it('a transfer to the savings account stays a Transfer and mints the pot leg', async () => {
     renderApp('/transactions/dm6');
     // groceries expense → kind Transfer → pick the savings counterparty
     fireEvent.click(await screen.findByTestId('tx-detail-kind-row'));
     await screen.findByTestId('txkind-options');
     fireEvent.click(screen.getByTestId('txkind-transfer'));
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
-    // the savings counterparty derives Saving; groceries only speaks
-    // expense → the invalidated category files the sign-picked locked
-    // sub (arc 2) instead of a review round-trip
+    // R2 inversion: the linked leg is a plain transfer with the locked
+    // sub — the pot's own minted mirror carries the saving story
     await waitFor(() => {
-      expect(screen.getByTestId('tx-detail-kind-row').textContent).toContain('Saving');
-      expect(screen.getByTestId('tx-detail-category-row').textContent).toContain('Set aside');
+      expect(screen.getByTestId('tx-detail-kind-row').textContent).toContain('Transfer');
+      expect(screen.getByTestId('tx-detail-category-row').textContent).toContain('Transfer Out');
     });
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
       const tx = await db.transactions.get('dm6');
-      expect(tx?.txType).toBe('saving');
+      expect(tx?.txType).toBe('transfer');
       expect(tx?.linkedAccountId).toBe('demo_save');
-      expect(tx?.catId).toBe('savingDeposit');
+      expect(tx?.catId).toBe('transferOut');
+      // the deterministic mirror sits on the pot, stamped + movement-sub
+      const mirror = await db.transactions.get(mirrorTxId('dm6'));
+      expect(mirror).toMatchObject({ accountId: 'demo_save', amountCents: 5240, txType: 'saving', catId: 'savingDeposit', transferPeerId: 'dm6' });
     });
     db.close();
   }, 15_000);
 
-  it('the "no counter account" exit types the row bare with the locked sub', async () => {
+  it('the marked special category carries the flat-loan story (typed-splits v2)', async () => {
     renderApp('/transactions/dm6');
-    fireEvent.click(await screen.findByTestId('tx-detail-kind-row'));
-    await screen.findByTestId('txkind-options');
-    fireEvent.click(screen.getByTestId('txkind-transfer'));
-    await screen.findByTestId('counter-accounts');
-    fireEvent.click(screen.getByTestId('counter-none'));
-    await screen.findByTestId('counter-bare-options');
-    fireEvent.click(screen.getByTestId('counter-bare-debtPayment'));
+    // the bare-type exit retired: pick the marked Repaid category in the
+    // unified editor — the debt type follows, no counterparty demanded
+    fireEvent.click(await screen.findByTestId('tx-detail-cats-edit'));
+    fireEvent.click(await screen.findByTestId('split-cat-0'));
+    await screen.findByTestId('speccat-loanRepayment'); // the diamond mark
+    fireEvent.click(screen.getByTestId('catpicker-loanRepayment'));
+    fireEvent.click(await screen.findByTestId('split-save'));
 
-    // typed + locked sub, deliberately no account on the other side —
-    // the counterparty row states the bare label and stays a door
+    // typed + the picked special sub, deliberately no account on the
+    // other side — the counterparty row stays a door
     await waitFor(() => {
       expect(screen.getByTestId('tx-detail-kind-row').textContent).toContain('Debt Payment');
       expect(screen.getByTestId('tx-detail-counter-add').textContent).toContain('No counter account');
@@ -271,7 +275,7 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     fireEvent.click(screen.getByTestId('txkind-transfer'));
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
     const db = new MunniDB('munni_demo');
-    await waitFor(async () => expect((await db.transactions.get('dm6'))?.txType).toBe('saving'));
+    await waitFor(async () => expect((await db.transactions.get('dm6'))?.txType).toBe('transfer'));
 
     // standard on a negative amount = expense again, link gone
     fireEvent.click(screen.getByTestId('tx-detail-kind-row'));

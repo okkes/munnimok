@@ -1,10 +1,12 @@
 import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
-import { visibleTransactions, writeTxTransform } from '@/db/joined';
+import { historyTransactions, visibleTransactions, writeTxTransform } from '@/db/joined';
 import { tombstonedIds } from '@/domain/catalogDoc';
-import { UNCATEGORIZED_ID, autoSubFor } from '@/domain/categories';
+import { UNCATEGORIZED_ID, autoSubFor, stampMovementSub } from '@/domain/categories';
+import { mirrorTxId } from '@/domain/feedIds';
 import { givenCents, settledSplits, totalReimbursedCents } from '@/domain/reimbursement';
 import { kindOf, standardTypeFor } from '@/domain/txKind';
+import { accountStamp } from '@/domain/txType';
 import { cachedCatalog } from '@/sync/catalogSync';
 
 /**
@@ -164,6 +166,111 @@ export async function migrateFamilySubs(store: StorageBackend, repo: Repo): Prom
       const sub = autoSubFor(tx.txType, tx.amountCents);
       if (!sub) continue;
       await writeTxTransform(repo, tx, { catId: sub });
+      touched++;
+    }
+  }
+  await store.metaPut(markerKey, Date.now());
+  return touched;
+}
+
+/**
+ * Typed-splits v2, Q3 (user 2026-08-05): the funding TYPE retires —
+ * funding is a marked special CATEGORY on standard rows now. Every
+ * funding-typed row (raw and overlay alike) re-derives its type by
+ * sign and keeps — or gains — its funding category so no meaning is
+ * lost. The stored TxType union keeps 'funding' for old devices.
+ */
+export async function migrateFundingRows(store: StorageBackend, repo: Repo): Promise<number> {
+  const markerKey = 'txFundingCat_v1';
+  if (await store.metaGet(markerKey)) return 0;
+
+  let touched = 0;
+  for (const tx of await store.allRows('transaction')) {
+    if (tx.deleted !== 0 || tx.txType !== 'funding') continue;
+    await repo.upsert('transaction', tx.spaceId, tx.id, {
+      txType: standardTypeFor(tx.amountCents),
+      catId: tx.catId && tx.catId !== UNCATEGORIZED_ID ? tx.catId : autoSubFor('funding', tx.amountCents),
+    });
+    touched++;
+  }
+  for (const meta of await store.allRows('txMeta')) {
+    if (meta.deleted !== 0 || meta.txType !== 'funding') continue;
+    const raw = await store.get('transaction', meta.txId);
+    const amount = raw?.amountCents ?? -1;
+    await repo.upsert('txMeta', meta.spaceId, meta.id, {
+      txType: standardTypeFor(amount),
+      catId: meta.catId && meta.catId !== UNCATEGORIZED_ID ? meta.catId : autoSubFor('funding', amount),
+    });
+    touched++;
+  }
+  await store.metaPut(markerKey, Date.now());
+  return touched;
+}
+
+/**
+ * Typed-splits v2, the R2 inversion (user 2026-08-05): rows LINKED to a
+ * tracked counter-account used to wear the family member (saving, debt
+ * payment, investment) — now the regular-side leg is a plain TRANSFER
+ * with the locked category, and the special account's own ledger holds
+ * the story. This pass re-types the linked regular-side rows and MINTS
+ * the missing mirror on manual counter accounts (deterministic id, NO
+ * balance move — the old delta lane already moved the money at link
+ * time; only post-migration links move balances, via the choke point).
+ * Rows sitting ON stamped accounts are left alone — R1 stamps them.
+ */
+/** the migration's NO-DELTA mint: the mirror row appears, the balance
+ *  stays — the old delta lane already moved the money at link time.
+ *  Returns the mirror id when the source should peer to it. */
+async function mintMigrationMirror(
+  store: StorageBackend,
+  repo: Repo,
+  tx: Awaited<ReturnType<typeof historyTransactions>>[number],
+): Promise<string | undefined> {
+  if (tx.transferPeerId || !tx.linkedAccountId) return undefined;
+  const counter = await store.get('account', tx.linkedAccountId);
+  if (counter?.deleted !== 0 || counter.source !== 'manual') return undefined;
+  const mid = mirrorTxId(tx.id);
+  const existing = await store.get('transaction', mid);
+  if (existing?.deleted === 0 && existing.accountId !== counter.id) return undefined;
+  const stamp = accountStamp(counter.type);
+  const mirrorAmount = -tx.amountCents;
+  await repo.upsert('transaction', counter.spaceId, mid, {
+    accountId: counter.id,
+    date: tx.date,
+    ...(tx.time ? { time: tx.time } : {}),
+    amountCents: mirrorAmount,
+    currency: tx.currency,
+    merchant: tx.merchant,
+    txType: stamp ?? 'transfer',
+    catId: (stamp ? stampMovementSub(stamp, mirrorAmount) : undefined) ?? autoSubFor('transfer', mirrorAmount),
+    needsReview: 0,
+    linkedAccountId: tx.accountId,
+    transferPeerId: tx.id,
+  });
+  return mid;
+}
+
+export async function migrateLinkedFamilyRows(store: StorageBackend, repo: Repo): Promise<number> {
+  const markerKey = 'txTransferV2_v1';
+  if (await store.metaGet(markerKey)) return 0;
+
+  const FAMILY = new Set(['saving', 'debtPayment', 'investment']);
+  let touched = 0;
+  const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0);
+  for (const space of spaces) {
+    for (const tx of await historyTransactions(store, space.id)) {
+      if (tx.deleted !== 0 || !tx.linkedAccountId || !FAMILY.has(tx.txType)) continue;
+      // the special side keeps its stamp (historyTransactions already
+      // serves it stamped — FAMILY-typed here means a REGULAR-side row)
+      if (accountStamp((await store.get('account', tx.accountId))?.type)) continue;
+      const mid = await mintMigrationMirror(store, repo, tx);
+      // linkedAccountId untouched → the choke point plans no mirror and
+      // moves no balance: exactly the no-delta rule this pass needs
+      await writeTxTransform(repo, tx, {
+        txType: 'transfer',
+        catId: autoSubFor('transfer', tx.amountCents),
+        ...(mid ? { transferPeerId: mid } : {}),
+      });
       touched++;
     }
   }
