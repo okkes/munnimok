@@ -145,10 +145,10 @@ for (const V of VARIANTS) {
     await page.waitForSelector('[data-testid="counter-accounts"]');
     await page.click('[data-testid="counter-pick-demo_save"]');
     await page.waitForTimeout(500);
-    // the savings counterparty derives Saving; the conflicting category
-    // files under the sign-picked locked sub (arc 2) instead of resetting
-    await expect(page.locator('[data-testid="tx-detail-kind-row"]')).toContainText('Saving');
-    await expect(page.locator('[data-testid="tx-detail-category-row"]')).toContainText('Set aside');
+    // R2 inversion (typed-splits v2): the linked leg is a plain Transfer
+    // with the locked sub — the saving story lives on the pot's ledger
+    await expect(page.locator('[data-testid="tx-detail-kind-row"]')).toContainText('Transfer');
+    await expect(page.locator('[data-testid="tx-detail-category-row"]')).toContainText('Transfer Out');
     await expect(page.locator('[data-testid="tx-detail-linked-account"]')).toBeVisible();
     await shot(page, k('35-tx-type-link'));
     // back to Standard: the sign resolves Expense and the link clears

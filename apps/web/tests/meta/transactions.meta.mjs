@@ -67,7 +67,7 @@ export const GROUPS = [
       {
         key: '35-tx-type-link',
         title: 'Counter-account locks the type',
-        desc: 'Linking a counter-account derives the type from what that account is (savings → Saving, credit → Debt Payment); manual type choice locks, conflicting categories reset to Uncategorized for review, and unlinking restores free typing.',
+        desc: 'Linking a counter-account makes the leg a plain Transfer with the locked Transfer out/in category — the special story (saving, debt) lives on the counter account’s own ledger; unlinking restores free typing.',
         tags: ['state', 'edge-case'],
       },
       {
