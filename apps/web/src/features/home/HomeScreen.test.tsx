@@ -58,4 +58,10 @@ describe('Home balance band (demo identity)', () => {
     fireEvent.click(await screen.findByTestId('home-explore-goals'));
     expect(await screen.findByTestId('screen-goals')).toBeTruthy();
   }, 15_000);
+
+  it('Explore is a first-class block: it appears in Customize Home like any other (#121 v2)', async () => {
+    renderApp('/home/customize');
+    const rows = await screen.findAllByText('Explore');
+    expect(rows.length).toBeGreaterThanOrEqual(1);
+  }, 15_000);
 });
