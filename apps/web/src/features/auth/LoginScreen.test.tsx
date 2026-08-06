@@ -31,6 +31,14 @@ describe('LoginScreen', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it('carries the dark-mode top scrim so status icons and wordmark read on the light hero (#122)', async () => {
+    renderApp('/login', { signedIn: false });
+    const scrim = await screen.findByTestId('login-top-scrim');
+    // dark-only visibility: hidden by default, shown via the dark variant
+    expect(scrim.className).toContain('hidden');
+    expect(scrim.className).toContain('dark:block');
+  });
+
   it('creates an offline profile and enters a personal space named after it', async () => {
     renderApp('/login', { signedIn: false });
     fireEvent.click(await screen.findByTestId('login-offline-btn'));

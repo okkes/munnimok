@@ -334,6 +334,14 @@ export function LoginScreen() {
 
   return (
     <div className="m-fade relative flex h-full flex-col overflow-y-auto bg-bg md:flex-row md:overflow-hidden" data-testid="screen-login">
+      {/* #122: in dark mode the OS status icons and the wordmark float
+          over LIGHT hero art and drown — a top scrim buys them contrast.
+          Light mode needs none: dark icons read on light art. */}
+      <div
+        aria-hidden="true"
+        data-testid="login-top-scrim"
+        className="pointer-events-none absolute inset-x-0 top-0 z-[5] hidden h-28 bg-gradient-to-b from-black/55 via-black/25 to-transparent dark:block"
+      />
       {/* logo + language: overlays the hero on mobile, spans both panes on desktop */}
       <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between px-5 pt-[max(12px,env(safe-area-inset-top))] md:px-8 md:pt-6">
         <div className="flex items-center gap-2.5">
