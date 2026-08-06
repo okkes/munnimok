@@ -1,11 +1,16 @@
 # Transaction types & splitting v2 — accounts tell the story (design plan)
 
-Status: **PROPOSED v2 — 2026-08-05, user answers folded in; awaiting the
-category-table approval + go.** v1 (2026-08-04) proposed typed split
-parts; the user then redesigned the surrounding type system (three
-scenarios, 2026-08-05) and answered the evaluation questions. This file
-is the consolidated plan. Companion visual: the published design
-artifact.
+Status: **SHIPPED 2026-08-06** (approved 2026-08-05: "the table looks
+good. everything else too"). Landed on dev across arcs A–E2: catalog +
+markers (e7a16165), the type core — stamps, transfer inversion, mint
+engine, funding retirement, category-driven buckets, migrations
+(bf880068), typed parts + part cards + per-part mint (6a0271b8), the
+connected-parts visuals (90a7d6f4), slice-aware filters/search
+(fdb27f34), and the flat-loan question (E2). Deferred to a follow-up:
+the pick-existing-row door (Q2's second half — create-new IS the
+default and works), the per-part event chip in the editor (per-part
+eventId is stored and counted; the UI chip is pending), and the
+set-aside twin nudge. Companion visual: the published design artifact.
 
 ## The four rules (user model, locked)
 

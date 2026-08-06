@@ -25,7 +25,8 @@ import { Icon } from '@/ui/Icon';
 import { Pill } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { givenCents, netAmountCents, netCreditCents, totalReimbursedCents } from '@/domain/reimbursement';
-import { EXPECTED_REIMBURSE_ID, REIMBURSED_ID, specialCatType } from '@/domain/categories';
+import { EXPECTED_REIMBURSE_ID, REIMBURSED_ID, autoSubFor, specialCatType } from '@/domain/categories';
+import { LoanPickSheet } from '@/features/debts/LoanPickSheet';
 import { mirrorTxId, normalizeIban } from '@/domain/feedIds';
 import { ReceiptSection } from '@/features/shopping/ReceiptSection';
 import { ReimburseSection } from './ReimburseSection';
@@ -494,6 +495,7 @@ export function TxDetailScreen() {
   // request: see and pick them, not a blind apply-all)
   const [bulkSelected, setBulkSelected] = useState<ReadonlySet<string>>(new Set());
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [loanPickOpen, setLoanPickOpen] = useState(false);
   const navigate = useNavigate();
   const panes = useLgViewport();
 
@@ -619,6 +621,9 @@ export function TxDetailScreen() {
     // first-declared-type rule
     const txType = specialCatType(catId) ?? cats.byId(catId).txTypes[0] ?? tx.txType;
     void transform(tx, { catId, txType, needsReview: 0 }, 'txCategory');
+    // the flat structure's loan question (Q1): a debt-family pick asks —
+    // optionally — WHICH loan; skipping keeps the default-loan bucket
+    if (specialCatType(catId) === 'debtPayment' && !tx.linkedAccountId && !ownStamp) setLoanPickOpen(true);
     // bulk mechanism from the detail too (user request) — unlike review
     // it reaches EVERYTHING of this merchant, reviewed included. The
     // settlement category is never a bulk suggestion (user rule).
@@ -921,6 +926,17 @@ export function TxDetailScreen() {
         cooldown={0}
         onConfirm={() => void deleteManualTx()}
         testId="tx-delete"
+      />
+
+      {/* the flat structure's loan question (Q1): picking one converts
+          to the transfer approach — the choke point mints the loan's leg */}
+      <LoanPickSheet
+        open={loanPickOpen}
+        onOpenChange={setLoanPickOpen}
+        onPick={(accountId) =>
+          void transform(tx, { linkedAccountId: accountId, txType: 'transfer', catId: autoSubFor('transfer', tx.amountCents) }, 'txLink')
+        }
+        onSkip={() => undefined}
       />
 
       {/* write-through: choosing a counterparty derives the transfer's

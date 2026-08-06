@@ -268,6 +268,38 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     db.close();
   }, 15_000);
 
+  it('the flat-loan question: a debt-family pick offers WHICH loan; picking one mints its leg (Q1)', async () => {
+    // the lean demo carries no loans (rich seed skips under vitest) —
+    // give the space one so the question has an answer
+    const seed = new MunniDB('munni_demo');
+    const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('loanpick'), { trackOutbox: false });
+    await seedRepo.upsert('account', DEMO_SPACE_ID, 'lp_loan', {
+      name: 'Phone plan loan', type: 'loan', source: 'manual', currency: 'EUR', balanceCents: -30_000,
+    });
+    seed.close();
+
+    renderApp('/transactions/dm6');
+    fireEvent.click(await screen.findByTestId('tx-detail-cats-edit'));
+    fireEvent.click(await screen.findByTestId('split-cat-0'));
+    fireEvent.click(await screen.findByTestId('catpicker-loanRepayment'));
+    fireEvent.click(await screen.findByTestId('split-save'));
+
+    // the optional loan question opens with the seeded loan on offer
+    const loanId = 'lp_loan';
+    fireEvent.click(await screen.findByTestId(`loanpick-${loanId}`));
+
+    // picking converts to the transfer approach: link + locked sub, and
+    // the loan's own minted leg appears at the deterministic id
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const tx = await db.transactions.get('dm6');
+      expect(tx?.linkedAccountId).toBe(loanId);
+      expect(tx?.txType).toBe('transfer');
+      expect((await db.transactions.get(mirrorTxId('dm6')))?.accountId).toBe(loanId);
+    }, { timeout: 8000 });
+    db.close();
+  }, 20_000);
+
   it('back to Standard: the sign resolves the type and the counterparty clears', async () => {
     renderApp('/transactions/dm6');
     fireEvent.click(await screen.findByTestId('tx-detail-kind-row'));

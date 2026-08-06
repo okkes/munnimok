@@ -93,6 +93,19 @@ async function seedHistory(repo: Repo): Promise<void> {
     await spend(`demo_hist_ns_${m}`, monthDay(-m, 6), 4500, 'NS Groep', 'transportPublic');
     if (m % 2 === 0) await spend(`demo_hist_fuel_${m}`, monthDay(-m, 20), 6240, 'Shell', 'transportFuel');
   }
+  // the typed-splits showcase (v2): the phone bill is TWO kinds of money
+  // — telecom plus paying the device off. Counterparty-less debt part →
+  // the default-loan bucket; amounts unchanged, so every pinned total
+  // stays put.
+  await repo.upsert('transaction', DEMO_SPACE_ID, 'demo_split_phone', {
+    accountId: 'demo_main', date: monthDay(0, 2), amountCents: -6500, currency: 'EUR',
+    merchant: 'Vodafone', catId: 'telecom', txType: 'expense', needsReview: 0,
+    description: 'VODAFONE ABONNEMENT + TOESTEL',
+    splits: [
+      { id: 'demo_split_phone_p1', catId: 'telecom', amountCents: 4000 },
+      { id: 'demo_split_phone_p2', label: 'Device plan', catId: 'loanRepayment', amountCents: 2500, txType: 'debtPayment' },
+    ],
+  } as never);
   // small weekly coffee + occasional fun money
   for (let week = 1; week <= 26; week += 2) {
     await spend(`demo_hist_cof_${week}`, daysAgo(week * 7), 380, 'Coffee District', 'coffee');
