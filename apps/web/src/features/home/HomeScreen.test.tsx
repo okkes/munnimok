@@ -43,4 +43,19 @@ describe('Home balance band (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('band-mode-label').textContent).toContain('Total cash'));
     await waitFor(() => expect(screen.getByTestId('home-total-balance').textContent).toContain('3,420.55'));
   }, 15_000);
+
+  it('unused features collapse into ONE Explore block instead of a pile of teaser cards (#121)', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    // the lean demo has no budgets, goals or debts — three teasers'
+    // worth of unused features, one compact door
+    const explore = await screen.findByTestId('home-explore');
+    expect(explore.textContent).toContain('Explore');
+    expect(screen.queryByTestId('home-budgets-teaser')).toBeNull();
+    expect(screen.queryByTestId('home-goals-teaser')).toBeNull();
+    expect(screen.queryByTestId('home-debts-teaser')).toBeNull();
+    // rows lead straight to the feature
+    fireEvent.click(await screen.findByTestId('home-explore-goals'));
+    expect(await screen.findByTestId('screen-goals')).toBeTruthy();
+  }, 15_000);
 });

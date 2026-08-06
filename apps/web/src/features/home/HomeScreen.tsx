@@ -10,6 +10,7 @@ import { addDays, nextDueDate } from '@/domain/recurring';
 import { RecurringVisual } from '@/features/recurring/RecurringVisual';
 import type { RecurringRow } from '@/db/types';
 import { LOCALES, useLang } from '@/i18n';
+import type { TFunc, TranslationKey } from '@/i18n';
 import { useSession } from '@/app/session';
 import { useTopSplit } from '@/features/splits/useTopSplit';
 import { useData } from '@/app/data';
@@ -68,6 +69,92 @@ const tileValueClass = (kind: OverviewKind, cents: number): string => {
   if (!TILE_META[kind].signed) return 'text-ink';
   return cents < 0 ? 'text-negative' : 'text-accent-deep';
 };
+
+/** a block's teaser descriptor (#121) — present only while the feature
+ *  is unused AND its data has loaded enough to know */
+interface TeaserDesc {
+  icon: string;
+  titleKey: TranslationKey;
+  subKey: TranslationKey;
+  to: string;
+  testId: string;
+}
+
+interface TeaserSlotCtx {
+  teaserOf: Partial<Record<HomeBlockId, TeaserDesc>>;
+  /** teaser-state blocks in the user's layout order */
+  exploreIds: HomeBlockId[];
+  renderTeaser: (testId: string, icon: string, titleKey: TranslationKey, subKey: TranslationKey, to: string) => React.ReactNode;
+  go: (to: string) => void;
+  t: TFunc;
+}
+
+/** #121: which blocks are in their unused/teaser state right now — the
+ *  conditions mirror each block's own teaser branch. Out of the
+ *  component for S3776. */
+function buildTeaserMap(state: {
+  hasBudgets: boolean;
+  identityKind: string | undefined;
+  topSplit: unknown;
+  eventsLoaded: boolean;
+  featuredEvent: unknown;
+  goalsLoaded: boolean;
+  topGoalsCount: number;
+  debtsLoaded: boolean;
+  activeDebtsCount: number;
+}): Partial<Record<HomeBlockId, TeaserDesc>> {
+  const map: Partial<Record<HomeBlockId, TeaserDesc>> = {};
+  if (!state.hasBudgets) {
+    map.budgets = { icon: 'wallet-outline', titleKey: 'home.budgetsTeaserTitle', subKey: 'home.budgetsTeaserSub', to: '/budgets', testId: 'home-budgets-teaser' };
+  }
+  if (state.identityKind === 'user' && state.topSplit === null) {
+    map.splits = { icon: 'account-cash-outline', titleKey: 'home.splitsTeaserTitle', subKey: 'home.splitsTeaserSub', to: '/splits', testId: 'home-splits-teaser' };
+  }
+  if (state.eventsLoaded && !state.featuredEvent) {
+    map.events = { icon: 'party-popper', titleKey: 'home.eventsTeaserTitle', subKey: 'home.eventsTeaserSub', to: '/events', testId: 'home-events-teaser' };
+  }
+  if (state.goalsLoaded && state.topGoalsCount === 0) {
+    map.goals = { icon: 'flag-outline', titleKey: 'home.goalsTeaserTitle', subKey: 'home.goalsTeaserSub', to: '/goals', testId: 'home-goals-teaser' };
+  }
+  if (state.debtsLoaded && state.activeDebtsCount === 0) {
+    map.debts = { icon: 'hand-coin-outline', titleKey: 'home.debtsTeaserTitle', subKey: 'home.debtsTeaserSub', to: '/debts', testId: 'home-debts-teaser' };
+  }
+  return map;
+}
+
+/** #121: one Explore door instead of a pile of dashed cards — with two
+ *  or more unused features their teasers collapse into a single compact
+ *  block sitting at the FIRST teaser's slot, so the user's block order
+ *  still rules; a lone teaser keeps its richer card. Out of the
+ *  component for S3776. */
+function renderTeaserSlot(id: HomeBlockId, ctx: TeaserSlotCtx): React.ReactNode {
+  const desc = ctx.teaserOf[id];
+  if (!desc) return null;
+  if (ctx.exploreIds.length < 2) return ctx.renderTeaser(desc.testId, desc.icon, desc.titleKey, desc.subKey, desc.to);
+  if (id !== ctx.exploreIds[0]) return null;
+  return (
+    <div className="mt-5" data-testid="home-explore">
+      <div className="m-cap mb-1 px-1">{ctx.t('home.exploreTitle')}</div>
+      <div className="overflow-hidden rounded-card border border-dashed border-line bg-surface">
+        {ctx.exploreIds.map((eid) => {
+          const row = ctx.teaserOf[eid]!;
+          return (
+            <button
+              key={eid}
+              data-testid={`home-explore-${eid}`}
+              onClick={() => ctx.go(row.to)}
+              className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-2.5 text-left last:border-0"
+            >
+              <Icon name={row.icon} size={17} color="var(--m-accent-deep)" />
+              <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">{ctx.t(row.titleKey)}</span>
+              <Icon name="chevron-right" size={14} color="var(--m-ink-4)" />
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 export function HomeScreen() {
   const { t, lang } = useLang();
@@ -241,6 +328,22 @@ export function HomeScreen() {
   };
   const layout = resolveHomeBlocks(space);
   const visibleBlocks = layout.filter((entry) => !entry.hidden);
+
+  // #121: the unused/teaser states, resolved in one place (module fn)
+  const teaserOf = buildTeaserMap({
+    hasBudgets,
+    identityKind: identity?.kind,
+    topSplit,
+    eventsLoaded: !!events,
+    featuredEvent,
+    goalsLoaded: !!goals,
+    topGoalsCount: topGoals.length,
+    debtsLoaded: !!debtStatuses,
+    activeDebtsCount: activeDebts.length,
+  });
+  const exploreIds = visibleBlocks.map((entry) => entry.id).filter((id) => teaserOf[id]);
+  const teaserCtx: TeaserSlotCtx = { teaserOf, exploreIds, renderTeaser, go: (to) => void navigate({ to }), t };
+  const teaserSlot = (id: HomeBlockId) => renderTeaserSlot(id, teaserCtx);
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-home">
@@ -620,23 +723,8 @@ export function HomeScreen() {
 
   function renderBudgetsBlock() {
     // never made a budget? a quiet get-started teaser instead of silence —
-    // hideable like any block via Customize Home
-    if (!hasBudgets) {
-      return (
-        <button
-          data-testid="home-budgets-teaser"
-          onClick={() => void navigate({ to: '/budgets' })}
-          className="m-tap mt-5 flex w-full items-center gap-3 rounded-card border border-dashed border-line bg-surface px-4 py-3.5 text-left"
-        >
-          <Tile icon="wallet-outline" />
-          <span className="min-w-0 flex-1">
-            <span className="block text-[14px] font-semibold text-ink">{t('home.budgetsTeaserTitle')}</span>
-            <span className="block text-[12px] text-ink-3">{t('home.budgetsTeaserSub')}</span>
-          </span>
-          <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
-        </button>
-      );
-    }
+    // hideable like any block; collapses into Explore with company (#121)
+    if (!hasBudgets) return teaserSlot('budgets');
     if (urgentBudgets.length === 0) return null;
     return (
       <>
@@ -790,9 +878,7 @@ export function HomeScreen() {
     // reach the current split from Home, or all of them via see-all)
     if (identity?.kind !== 'user') return null;
     if (topSplit === undefined) return null;
-    if (topSplit === null) {
-      return renderTeaser('home-splits-teaser', 'account-cash-outline', 'home.splitsTeaserTitle', 'home.splitsTeaserSub', '/splits');
-    }
+    if (topSplit === null) return teaserSlot('splits');
     const netLine = () => {
       if (topSplit.net > 0) return t('splits.summaryOwed', { amount: fmt(topSplit.net, topSplit.currency) });
       if (topSplit.net < 0) return t('splits.summaryOwe', { amount: fmt(-topSplit.net, topSplit.currency) });
@@ -827,9 +913,7 @@ export function HomeScreen() {
   }
 
   function renderEventsBlock() {
-    if (!featuredEvent) {
-      return events ? renderTeaser('home-events-teaser', 'party-popper', 'home.eventsTeaserTitle', 'home.eventsTeaserSub', '/events') : null;
-    }
+    if (!featuredEvent) return events ? teaserSlot('events') : null;
     const today = localToday();
     const spent = eventSpentCents(allTxs ?? [], featuredEvent.id);
     const from = featuredEvent.from;
@@ -868,9 +952,7 @@ export function HomeScreen() {
   }
 
   function renderGoalsBlock() {
-    if (topGoals.length === 0) {
-      return goals ? renderTeaser('home-goals-teaser', 'flag-outline', 'home.goalsTeaserTitle', 'home.goalsTeaserSub', '/goals') : null;
-    }
+    if (topGoals.length === 0) return goals ? teaserSlot('goals') : null;
     return (
       <>
         <div className="m-cap mt-5 mb-1 flex items-baseline justify-between px-1">
@@ -912,9 +994,7 @@ export function HomeScreen() {
   }
 
   function renderDebtsBlock() {
-    if (activeDebts.length === 0) {
-      return debtStatuses ? renderTeaser('home-debts-teaser', 'hand-coin-outline', 'home.debtsTeaserTitle', 'home.debtsTeaserSub', '/debts') : null;
-    }
+    if (activeDebts.length === 0) return debtStatuses ? teaserSlot('debts') : null;
     return (
       <>
         <div className="m-cap mt-5 mb-1 flex items-baseline justify-between px-1">
