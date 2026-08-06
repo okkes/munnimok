@@ -352,6 +352,14 @@ describe('ReviewScreen (demo identity)', () => {
     db.close();
   }, 15_000);
 
+  it('the split door stands in the open on an unsplit card (#126)', async () => {
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    // visible row, not hidden under the category pencil
+    fireEvent.click(await screen.findByTestId('review-split-row'));
+    expect(await screen.findByTestId('split-editor')).toBeTruthy();
+  });
+
   it('splitting stays on the card; amounts clear on focus and restore on blur', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
@@ -409,9 +417,13 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.click(await screen.findByTestId('catpicker-coffee'));
     fireEvent.click(screen.getByTestId('split-save'));
 
-    // draft model (review redesign): saving the split STAGES it — the card
-    // previews it in the unified category list, nothing is written yet
+    // draft model (review redesign): saving the split STAGES it — the
+    // parts stand as stacked cards UNDER the main card (#126), the card
+    // itself carries the compact summary, and a ghost card grows the split
     await waitFor(() => expect(screen.getAllByTestId(/^review-cat-/).length).toBeGreaterThanOrEqual(2));
+    expect(screen.getByTestId('review-part-stack')).toBeTruthy();
+    expect(screen.getByTestId('review-split-summary').textContent).toContain('2');
+    expect(screen.getByTestId('review-part-add')).toBeTruthy();
     expect(screen.getByTestId('review-card').textContent).toContain('SPLITCAFE');
     expect((await db.transactions.get('tx-split'))?.splits).toBeUndefined();
 

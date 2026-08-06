@@ -11,7 +11,7 @@ import { merchantKey } from '@/domain/merchantKey';
 import { draftReady, initDraft, withCategory, withKind, withLinkedAccount, withSplits, withType } from '@/domain/reviewDraft';
 import { kindOf, standardTypeFor } from '@/domain/txKind';
 import { hasTypedParts } from '@/domain/txSlices';
-import { EXPECTED_REIMBURSE_ID, RECEIVED_REIMBURSE_ID } from '@/domain/categories';
+import { EXPECTED_REIMBURSE_ID, RECEIVED_REIMBURSE_ID, REIMBURSED_ID } from '@/domain/categories';
 import { Collapse } from '@/ui/Collapse';
 import type { TxKind } from '@/domain/txKind';
 import { accountStamp } from '@/domain/txType';
@@ -23,7 +23,7 @@ import { fetchSettlementCandidates } from '@/features/splits/settlementCandidate
 import type { SettlementCandidate } from '@/features/splits/settlementCandidates';
 import { useSession } from '@/app/session';
 import type { ReviewDraft } from '@/domain/reviewDraft';
-import type { AccountType, RecurringRow, TxType } from '@/db/types';
+import type { AccountType, RecurringRow, TxSplit, TxType } from '@/db/types';
 import { resolveSplitsFor, splitsArePct } from '@/domain/splits';
 import { predictTx } from '@/domain/predictCategory';
 import { recurringAmountMatches } from '@/domain/recurring';
@@ -211,6 +211,179 @@ function CardKindRows({
         </button>
       </Collapse>
     </>
+  );
+}
+
+/** one slice's story lines (#126): the typed part's label/own type and
+ *  a spread part's category list — shared by the card summary region
+ *  and the stacked part cards */
+function sliceStory(
+  slice: TxSplit,
+  index: number,
+  splits: readonly TxSplit[] | undefined,
+  rowType: TxType | undefined,
+  cats: ReturnType<typeof useCategories>,
+  t: ReturnType<typeof useLang>['t'],
+): { label?: string; type?: TxType; spread?: string } {
+  const typed = (splits?.length ?? 0) > 1 && hasTypedParts({ splits: splits as TxSplit[] });
+  return {
+    label: typed ? (slice.label ?? t('split.partN', { n: index + 1 })) : undefined,
+    type: slice.txType && slice.txType !== rowType ? slice.txType : undefined,
+    spread: slice.cats?.length ? slice.cats.map((c) => catName(cats.byId(c.catId), t)).join(' · ') : undefined,
+  };
+}
+
+/** the card's category region (#126 redesign): a single category row
+ *  when the draft is whole; a compact "Split transaction · N parts"
+ *  summary when it's split — the parts themselves stand as stacked
+ *  cards UNDER the main card. The settled Reimbursed slice is not a
+ *  part and keeps its own row either way. A visible "Split" row ends
+ *  the old hide-out under the category pencil. */
+function CardCategoryRows({
+  draft,
+  fallbackCat,
+  fallbackColor,
+  currency,
+  onOpen,
+}: Readonly<{
+  draft: ReviewDraft | null;
+  fallbackCat: ReturnType<ReturnType<typeof useCategories>['byId']>;
+  fallbackColor: string | undefined;
+  currency: string;
+  onOpen: () => void;
+}>) {
+  const { t, lang } = useLang();
+  const cats = useCategories();
+  const slices = draft?.splits ?? [];
+  const parts = slices.filter((s) => s.catId !== REIMBURSED_ID);
+  const settled = slices.filter((s) => s.catId === REIMBURSED_ID);
+  const multi = parts.length > 1;
+  const single = parts.length === 1 ? parts[0] : null;
+  const singleCat = single ? cats.byId(single.catId) : fallbackCat;
+  const singleColor = single ? (singleCat.color ?? cats.byId(singleCat.parentId ?? '').color) : fallbackColor;
+  const spread = single ? sliceStory(single, 0, slices, draft?.txType, cats, t).spread : undefined;
+  return (
+    <>
+      {multi ? (
+        <button
+          data-testid="review-split-summary"
+          onClick={onOpen}
+          className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] font-medium text-ink"
+        >
+          <Icon name="call-split" size={18} color="var(--m-ink-3)" />
+          <span className="min-w-0 flex-1 truncate">
+            {t('split.title')}
+            <span className="text-[12px] font-normal text-ink-4"> · {t('review.splitParts', { n: parts.length })}</span>
+          </span>
+          <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+        </button>
+      ) : (
+        <>
+          <button
+            data-testid={single ? `review-cat-${single.catId}` : 'review-category-chip'}
+            onClick={onOpen}
+            className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] font-medium text-ink"
+          >
+            <Icon name={singleCat.icon} size={18} color={singleColor ?? 'var(--m-ink-3)'} />
+            <span className="min-w-0 flex-1 truncate">
+              {single || draft?.catId ? (
+                <>
+                  {catName(singleCat, t)}
+                  {/* the parent gives the sub its context (user request) */}
+                  {singleCat.parentId && (
+                    <span className="text-[12px] font-normal text-ink-4"> · {catName(cats.byId(singleCat.parentId), t)}</span>
+                  )}
+                  {spread && <span className="block truncate text-[11px] font-normal text-ink-4">{spread}</span>}
+                </>
+              ) : (
+                t('review.pickPrompt')
+              )}
+            </span>
+            {single && <span className="m-num text-[12px] text-ink-2">{fmtCents(single.amountCents, currency, lang)}</span>}
+            <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+          </button>
+          {/* the split door, in the open (#126) */}
+          <button
+            data-testid="review-split-row"
+            onClick={onOpen}
+            className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
+          >
+            <Icon name="call-split" size={18} color="var(--m-ink-3)" />
+            <span className="min-w-0 flex-1 truncate">{t('split.title')}</span>
+            <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+          </button>
+        </>
+      )}
+      {settled.map((slice) => (
+        <button
+          key={slice.id ?? slice.catId}
+          data-testid={`review-cat-${slice.catId}`}
+          onClick={onOpen}
+          className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] font-medium text-ink"
+        >
+          <Icon name={cats.byId(slice.catId).icon} size={18} color="var(--m-ink-3)" />
+          <span className="min-w-0 flex-1 truncate">{catName(cats.byId(slice.catId), t)}</span>
+          <span className="m-num text-[12px] text-ink-2">{fmtCents(slice.amountCents, currency, lang)}</span>
+          <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+        </button>
+      ))}
+    </>
+  );
+}
+
+/** the split, made physical (#126): each part is its own card stacked
+ *  under the main one — tap any to adjust all values in the editor —
+ *  plus a ghost card that grows the split */
+function ReviewPartStack({
+  draft,
+  currency,
+  onOpen,
+}: Readonly<{ draft: ReviewDraft | null; currency: string; onOpen: () => void }>) {
+  const { t, lang } = useLang();
+  const cats = useCategories();
+  const slices = draft?.splits ?? [];
+  const parts = slices.filter((s) => s.catId !== REIMBURSED_ID);
+  if (parts.length <= 1) return null;
+  return (
+    <div className="flex flex-col gap-2" data-testid="review-part-stack">
+      {parts.map((slice, i) => {
+        const sliceCat = cats.byId(slice.catId);
+        const color = sliceCat.color ?? cats.byId(sliceCat.parentId ?? '').color;
+        const story = sliceStory(slice, i, slices, draft?.txType, cats, t);
+        return (
+          <button
+            key={slice.id ?? `${slice.catId}-${i}`}
+            data-testid={`review-cat-${slice.catId}`}
+            onClick={onOpen}
+            className="m-tap flex w-full items-center gap-2.5 rounded-card border border-line bg-surface px-4 py-3 text-left text-[14px] font-medium text-ink"
+          >
+            <Icon name={sliceCat.icon} size={18} color={color ?? 'var(--m-ink-3)'} />
+            <span className="min-w-0 flex-1 truncate">
+              {story.spread ?? catName(sliceCat, t)}
+              {!story.spread && sliceCat.parentId && (
+                <span className="text-[12px] font-normal text-ink-4"> · {catName(cats.byId(sliceCat.parentId), t)}</span>
+              )}
+              {story.label && (
+                <span className="block truncate text-[11px] font-normal text-ink-4">
+                  {story.label}
+                  {story.type && <span className="text-accent-deep"> · {t(`tx.type.${story.type}`)}</span>}
+                </span>
+              )}
+            </span>
+            <span className="m-num text-[12px] text-ink-2">{fmtCents(slice.amountCents, currency, lang)}</span>
+            <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+          </button>
+        );
+      })}
+      <button
+        data-testid="review-part-add"
+        onClick={onOpen}
+        className="m-tap flex w-full items-center justify-center gap-1.5 rounded-card border border-dashed border-line bg-transparent px-4 py-2.5 text-[13px] font-medium text-accent-deep"
+      >
+        <Icon name="plus" size={15} />
+        {t('split.addPart')}
+      </button>
+    </div>
   );
 }
 
@@ -887,51 +1060,13 @@ export function ReviewScreen() {
                     setCounterOpen(true);
                   }}
                 />
-                {(draft?.splits?.length ? draft.splits : [null]).map((slice, sliceIndex) => {
-                  const sliceCat = slice ? cats.byId(slice.catId) : cat;
-                  const sliceColor = slice
-                    ? (sliceCat.color ?? cats.byId(sliceCat.parentId ?? '').color)
-                    : parentColor;
-                  // typed-splits v2: a part wears its label + own type —
-                  // v2.1: only when a real part story exists (plain
-                  // multi-category keeps the classic slice look)
-                  const partLabel =
-                    slice && (draft?.splits?.length ?? 0) > 1 && hasTypedParts({ splits: draft?.splits })
-                      ? (slice.label ?? t('split.partN', { n: sliceIndex + 1 }))
-                      : undefined;
-                  const partType = slice?.txType && slice.txType !== draft?.txType ? slice.txType : undefined;
-                  return (
-                    <button
-                      key={slice?.id ?? slice?.catId ?? 'single'}
-                      data-testid={slice ? `review-cat-${slice.catId}` : 'review-category-chip'}
-                      onClick={() => setSplitOpen(true)}
-                      className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] font-medium text-ink"
-                    >
-                      <Icon name={sliceCat.icon} size={18} color={sliceColor ?? 'var(--m-ink-3)'} />
-                      <span className="min-w-0 flex-1 truncate">
-                        {slice || draft?.catId ? (
-                          <>
-                            {catName(sliceCat, t)}
-                            {/* the parent gives the sub its context (user request) */}
-                            {sliceCat.parentId && (
-                              <span className="text-[12px] font-normal text-ink-4"> · {catName(cats.byId(sliceCat.parentId), t)}</span>
-                            )}
-                            {partLabel && (
-                              <span className="block truncate text-[11px] font-normal text-ink-4">
-                                {partLabel}
-                                {partType && <span className="text-accent-deep"> · {t(`tx.type.${partType}`)}</span>}
-                              </span>
-                            )}
-                          </>
-                        ) : (
-                          t('review.pickPrompt')
-                        )}
-                      </span>
-                      {slice && <span className="m-num text-[12px] text-ink-2">{fmtCents(slice.amountCents, tx.currency, lang)}</span>}
-                      <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
-                    </button>
-                  );
-                })}
+                <CardCategoryRows
+                  draft={draft}
+                  fallbackCat={cat}
+                  fallbackColor={parentColor}
+                  currency={tx.currency}
+                  onOpen={() => setSplitOpen(true)}
+                />
 
                 <DebtOrRecurringRow
                   isLoanCounter={isLoanCounter}
@@ -985,6 +1120,9 @@ export function ReviewScreen() {
                 </div>
               )}
             </div>
+
+            {/* #126: the split stands as stacked cards under the main one */}
+            <ReviewPartStack draft={draft} currency={tx.currency} onOpen={() => setSplitOpen(true)} />
 
             <BulkConfirmSection similar={similar} selected={bulkSelected} onChange={setBulkSelected} />
             </div>
