@@ -29,13 +29,22 @@ export function primaryCatId(splits: TxSplit[]): string | undefined {
   return [...splits].sort((a, b) => b.amountCents - a.amountCents)[0]?.catId;
 }
 
-/** set the last row to whatever is still open (never below zero) */
-export function balanceLastRow(amountCents: number, splits: TxSplit[]): TxSplit[] {
+/** the row auto-balance should fill: the first EMPTY one — the row the
+ *  user is working on — else the last as the correction slot (#130:
+ *  always writing the LAST row clobbered a filled value whenever an
+ *  earlier row was the open one) */
+export const balanceTargetIndex = (values: readonly number[]): number => {
+  const empty = values.indexOf(0);
+  return empty === -1 ? values.length - 1 : empty;
+};
+
+/** fill the still-open remainder into the balance target (never below zero) */
+export function balanceOpenRow(amountCents: number, splits: TxSplit[]): TxSplit[] {
   if (splits.length === 0) return splits;
-  const head = splits.slice(0, -1);
-  const last = splits.at(-1)!;
-  const open = Math.abs(amountCents) - splitsTotalCents(head);
-  return [...head, { ...last, amountCents: Math.max(0, open) }];
+  const target = balanceTargetIndex(splits.map((s) => s.amountCents));
+  const others = splits.reduce((sum, s, i) => (i === target ? sum : sum + s.amountCents), 0);
+  const open = Math.max(0, Math.abs(amountCents) - others);
+  return splits.map((s, i) => (i === target ? { ...s, amountCents: open } : s));
 }
 
 // ── percentage splits (user feature): scale to any amount ───────────────

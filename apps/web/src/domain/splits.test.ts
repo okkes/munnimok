@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { balanceLastRow, pctRemainder, primaryCatId, resolveSplitsFor, splitRemainderCents, splitsArePct, splitsTotalCents, validatePctSplits, validateSplits } from './splits';
+import { balanceOpenRow, balanceTargetIndex, pctRemainder, primaryCatId, resolveSplitsFor, splitRemainderCents, splitsArePct, splitsTotalCents, validatePctSplits, validateSplits } from './splits';
 
 const split = (catId: string, amountCents: number) => ({ catId, amountCents });
 const pct = (catId: string, value: number) => ({ catId, amountCents: 0, pct: value });
@@ -28,13 +28,21 @@ describe('split math', () => {
     expect(primaryCatId([split('small', 100), split('big', 900)])).toBe('big');
   });
 
-  it('balanceLastRow fills exactly the open remainder, floored at zero', () => {
-    expect(balanceLastRow(-1000, [split('a', 300), split('b', 0)])).toEqual([split('a', 300), split('b', 700)]);
-    expect(balanceLastRow(-1000, [split('a', 1200), split('b', 500)])).toEqual([split('a', 1200), split('b', 0)]);
-    expect(balanceLastRow(-1000, [])).toEqual([]);
+  it('balanceOpenRow fills exactly the open remainder, floored at zero', () => {
+    expect(balanceOpenRow(-1000, [split('a', 300), split('b', 0)])).toEqual([split('a', 300), split('b', 700)]);
+    expect(balanceOpenRow(-1000, [split('a', 1200), split('b', 500)])).toEqual([split('a', 1200), split('b', 0)]);
+    expect(balanceOpenRow(-1000, [])).toEqual([]);
     // a balanced result validates
-    const balanced = balanceLastRow(-1000, [split('a', 250), split('b', 1)]);
+    const balanced = balanceOpenRow(-1000, [split('a', 250), split('b', 1)]);
     expect(validateSplits(-1000, balanced)).toBeNull();
+  });
+
+  it('balanceOpenRow targets the row being worked on: the FIRST empty one (#130)', () => {
+    // the user filled the SECOND row and left the first open — the pill
+    // must fill the first, not clobber the second
+    expect(balanceOpenRow(-1000, [split('a', 0), split('b', 500)])).toEqual([split('a', 500), split('b', 500)]);
+    expect(balanceTargetIndex([0, 500])).toBe(0);
+    expect(balanceTargetIndex([300, 700])).toBe(1);
   });
 });
 
