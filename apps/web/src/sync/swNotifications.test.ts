@@ -7,9 +7,13 @@ describe('buildNotification', () => {
   it('announces new transactions with count, per-space tag and a pre-sync pull', () => {
     const one = buildNotification({ type: 'new-transactions', spaceId: 's1', count: 1 }, 'en')!;
     expect(one).toMatchObject({ body: '1 new transaction arrived', tag: 'new-tx-s1', pull: true, pullSpaceId: 's1' });
+    // #132: the tap lands in the announced space's REVIEW — the space
+    // rides the hash query so cold starts carry it too
+    expect(one.url).toBe('./#/review?space=s1');
     const many = buildNotification({ type: 'new-transactions', count: 7 }, 'nl')!;
     expect(many.body).toBe('7 nieuwe transacties ontvangen');
     expect(many.tag).toBe('new-tx-all');
+    expect(many.url).toBe('./#/review');
   });
 
   it('localizes social events and routes their clicks', () => {

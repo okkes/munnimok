@@ -102,7 +102,8 @@ self.addEventListener('sync', (event: Event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const url = (event.notification.data as { url?: string } | undefined)?.url ?? './#/transactions';
+  const data = event.notification.data as { url?: string; spaceId?: string } | undefined;
+  const url = data?.url ?? './#/transactions';
   event.waitUntil(
     (async () => {
       const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
@@ -111,10 +112,12 @@ self.addEventListener('notificationclick', (event) => {
       // pulling the announced transactions immediately
       if (existing) {
         // a focused client keeps its current screen — post the target so
-        // the app's listener routes there (friend request → friends, …)
-        existing.postMessage({ type: 'NAVIGATE', url });
+        // the app's listener routes there (friend request → friends,
+        // new transactions → the announced space's review, …)
+        existing.postMessage({ type: 'NAVIGATE', url, spaceId: data?.spaceId });
         await existing.focus();
       } else {
+        // cold start: the space rides the url itself (hash query)
         await self.clients.openWindow(url);
       }
     })(),

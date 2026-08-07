@@ -32,6 +32,18 @@ describe('handleWorkerMessage (notification deep-link)', () => {
     await vi.waitFor(() => expect(router.state.location.pathname).toBe('/budgets/b42'));
   });
 
+  it('a new-transactions tap lands in the announced space review (#132)', async () => {
+    handleWorkerMessage({ type: 'NAVIGATE', url: './#/review?space=sp42', spaceId: 'sp42' });
+    await vi.waitFor(() => expect(router.state.location.pathname).toBe('/review'));
+    expect(router.state.location.search).toMatchObject({ space: 'sp42' });
+    // cold-start shape: the space rides only the url's hash query
+    handleWorkerMessage({ type: 'NAVIGATE', url: './#/spaces' });
+    await vi.waitFor(() => expect(router.state.location.pathname).toBe('/spaces'));
+    handleWorkerMessage({ type: 'NAVIGATE', url: './#/review?space=sp99' });
+    await vi.waitFor(() => expect(router.state.location.pathname).toBe('/review'));
+    expect(router.state.location.search).toMatchObject({ space: 'sp99' });
+  });
+
   it('re-broadcasts worker PUSH messages as a window event', () => {
     const seen = vi.fn();
     window.addEventListener('munni-push', seen);

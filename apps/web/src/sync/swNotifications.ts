@@ -99,7 +99,9 @@ export function buildNotification(payload: PushPayload, lang: string): WorkerNot
       title: texts.title,
       body: count === 1 ? texts.one : texts.many.replace('{n}', String(count)),
       tag: `new-tx-${payload.spaceId ?? 'all'}`, // coalesce per space
-      url: './#/transactions',
+      // #132 (user request): the tap lands IN the announced space's
+      // review — the space rides the hash query for cold starts
+      url: payload.spaceId ? `./#/review?space=${payload.spaceId}` : './#/review',
       pullSpaceId: payload.spaceId,
       pull: true,
     };

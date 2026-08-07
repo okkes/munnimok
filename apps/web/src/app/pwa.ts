@@ -36,6 +36,8 @@ export function initPwa(): void {
 // only routes a notification may ever target — a whitelist keeps the
 // worker message from steering the router anywhere else
 const NOTIFICATION_TARGETS = ['/transactions', '/friends', '/spaces'] as const;
+/** id shapes riding worker messages are validated before the router sees them */
+const ID_SHAPE = /^[A-Za-z0-9_-]+$/;
 
 /** window event re-broadcast when the worker receives a push while the
  *  app is open — screens with server-backed lists refresh on it */
@@ -48,13 +50,23 @@ export const PUSH_EVENT = 'munni-push';
  * event. Exported for tests.
  */
 export function handleWorkerMessage(data: unknown): void {
-  const message = data as { type?: string; url?: string } | undefined;
+  const message = data as { type?: string; url?: string; spaceId?: string } | undefined;
   if (message?.type === 'PUSH') {
     window.dispatchEvent(new Event(PUSH_EVENT));
     return;
   }
   if (message?.type !== 'NAVIGATE' || typeof message.url !== 'string') return;
-  const path = message.url.split('#')[1]; // './#/friends' → '/friends'
+  const path = message.url.split('#')[1]?.split('?')[0]; // './#/review?space=x' → '/review'
+  // #132: a new-transactions tap lands in the ANNOUNCED space's review —
+  // the space id rides the message (or the url query on cold starts)
+  if (path === '/review') {
+    const spaceId = message.spaceId ?? /[?&]space=([A-Za-z0-9_-]+)/.exec(message.url)?.[1];
+    void router.navigate({
+      to: '/review',
+      search: spaceId && ID_SHAPE.test(spaceId) ? { space: spaceId } : {},
+    });
+    return;
+  }
   const target = NOTIFICATION_TARGETS.find((route) => route === path);
   if (target) {
     void router.navigate({ to: target });
@@ -74,7 +86,7 @@ function initNotificationNav(): void {
   onNativePushTap((payload) => {
     const lang = localStorage.getItem('munni_lang') ?? 'en';
     const target = buildNotification(payload as PushPayload, lang);
-    if (target?.url) handleWorkerMessage({ type: 'NAVIGATE', url: target.url });
+    if (target?.url) handleWorkerMessage({ type: 'NAVIGATE', url: target.url, spaceId: target.pullSpaceId });
   });
 }
 

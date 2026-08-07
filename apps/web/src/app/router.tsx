@@ -165,7 +165,15 @@ const goOfflineRoute = createRoute({
   path: '/settings/go-offline',
   component: GoOfflineScreen,
 });
-const reviewRoute = createRoute({ getParentRoute: () => appRoute, path: '/review', component: ReviewScreen });
+const reviewRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/review',
+  component: ReviewScreen,
+  // #132: a new-transactions notification lands in the ANNOUNCED space —
+  // the space id rides the hash query so cold starts carry it too
+  validateSearch: (search: Record<string, unknown>): { space?: string } =>
+    typeof search.space === 'string' && search.space.length > 0 ? { space: search.space } : {},
+});
 const accountsRoute = createRoute({ getParentRoute: () => appRoute, path: '/accounts', component: AccountsScreen });
 const categoriesRoute = createRoute({
   getParentRoute: () => appRoute,
