@@ -1,6 +1,6 @@
 import { UNCATEGORIZED_ID, autoSubFor, stampMovementSub } from './categories';
 import { primaryCatId } from './splits';
-import { duplicatePartTypes } from './txSlices';
+import { conflictingPartKinds } from './txSlices';
 import { standardTypeFor } from './txKind';
 import type { TxKind } from './txKind';
 import { categoryConflictsWithType, typeForLinkedAccount } from './txType';
@@ -139,7 +139,7 @@ export const draftReady = (draft: ReviewDraft): boolean => {
   if (draft.txType === 'funding' || draft.txType === 'adjustment') return true;
   if (draft.catId === 'uncategorized') return false;
   if (draft.splits?.some((slice) => slice.catId === 'uncategorized')) return false;
-  // #126 r4 (user rule): a split exists to carry SEVERAL kinds of money —
-  // two parts of the same effective type never confirm
-  return !duplicatePartTypes(draft.splits, draft.txType);
+  // #126 r6 (user rule refined): standard parts may repeat — only twin
+  // transfer/special parts (the same story told twice) never confirm
+  return !conflictingPartKinds(draft.splits, draft.txType);
 };

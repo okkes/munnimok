@@ -1,5 +1,6 @@
 import type { TransactionRow, TxSplit, TxType } from '@/db/types';
 import { REIMBURSED_ID } from './categories';
+import { kindOf } from './txKind';
 
 /**
  * The canonical slice fan-out (typed-splits v2, approved plan): every
@@ -82,39 +83,30 @@ export const hasSliceOfType = (tx: SliceSource, txType: TxType): boolean =>
   txSliceViews(tx).some((view) => view.effType === txType);
 
 /**
- * The point of a split is MULTIPLE kinds of money (#126 r4, user rule):
- * two parts with the same effective type beat the purpose — same-type
- * spreading is what the category spread within ONE part (or the classic
- * flat multi-category partition) is for. The rule therefore bites only
- * once the split tells a PART story (types/labels/links/events/spreads);
- * plain multi-category stays untouched. The settled Reimbursed slice is
- * bookkeeping, not a part.
+ * Twin parts are refused, honest repeats are not (#126 r6, user
+ * correction of the r5 blanket rule): a five-way expense split is
+ * legitimate — each part is its own transaction, distinguished by its
+ * categories, note and event. What stays refused is the SAME story told
+ * twice: two transfer-family parts to the same counterparty (or both
+ * bare), or the same special type twice — those are one part, split for
+ * no reason. Standard (expense/income) parts repeat freely. The settled
+ * Reimbursed slice is bookkeeping, not a part.
  */
-export function duplicatePartTypes(
-  splits: readonly TxSplit[] | undefined,
-  rowType: TxType,
-): boolean {
-  const parts = (splits ?? []).filter((s) => s.catId !== REIMBURSED_ID);
-  if (parts.length <= 1 || !hasTypedParts({ splits: parts as TxSplit[] })) return false;
-  const types = parts.map((s) => s.txType ?? rowType);
-  return new Set(types).size !== types.length;
-}
-
-/**
- * The STRICT version for the parts world (#126 r5, user rule: "we can't
- * have two expense types"): in the split flows — completion deck,
- * values-staged review drafts, part pages — even two UNTYPED parts
- * (both inheriting 'expense') are refused. The lenient version above
- * keeps classic multi-category confirmable everywhere else.
- */
-export function duplicatePartTypesStrict(
+export function conflictingPartKinds(
   splits: readonly TxSplit[] | undefined,
   rowType: TxType,
 ): boolean {
   const parts = (splits ?? []).filter((s) => s.catId !== REIMBURSED_ID);
   if (parts.length <= 1) return false;
-  const types = parts.map((s) => s.txType ?? rowType);
-  return new Set(types).size !== types.length;
+  const seen = new Set<string>();
+  for (const part of parts) {
+    const effType = part.txType ?? rowType;
+    if (kindOf(effType) === 'standard') continue;
+    const key = `${effType}:${part.linkedAccountId ?? ''}`;
+    if (seen.has(key)) return true;
+    seen.add(key);
+  }
+  return false;
 }
 
 /**

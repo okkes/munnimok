@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { duplicatePartTypes, hasSliceOfType, hasTypedParts, txSliceViews } from './txSlices';
+import { conflictingPartKinds, hasSliceOfType, hasTypedParts, txSliceViews } from './txSlices';
 import type { TransactionRow } from '@/db/types';
 
 const row = (over: Partial<TransactionRow>): Parameters<typeof txSliceViews>[0] =>
@@ -84,21 +84,40 @@ describe('txSliceViews (typed-splits v2 canonical fan-out)', () => {
     expect(hasTypedParts(row({ splits: [{ catId: 'g', amountCents: 2, cats: [{ catId: 'g', amountCents: 1 }, { catId: 'h', amountCents: 1 }] }] }))).toBe(true);
   });
 
-  it('duplicatePartTypes: a TYPED split is MULTIPLE kinds of money — same effective type twice fails (#126 r4)', () => {
-    // a labeled part tells a part story; its sibling inherits the same
-    // 'expense' → duplicate
-    expect(duplicatePartTypes([{ catId: 'a', amountCents: 1, label: 'x' }, { catId: 'b', amountCents: 1 }], 'expense')).toBe(true);
-    expect(duplicatePartTypes([{ catId: 'a', amountCents: 1, txType: 'saving' }, { catId: 'b', amountCents: 1, txType: 'saving' }], 'expense')).toBe(true);
-    // one standard + one typed part is the point of splitting
-    expect(duplicatePartTypes([{ catId: 'a', amountCents: 1 }, { catId: 'b', amountCents: 1, txType: 'debtPayment' }], 'expense')).toBe(false);
-    // classic flat multi-category (no part stories) spreads ONE kind of
-    // money across categories — the rule leaves it alone
-    expect(duplicatePartTypes([{ catId: 'a', amountCents: 1 }, { catId: 'b', amountCents: 1 }], 'expense')).toBe(false);
+  it('conflictingPartKinds: twin transfer/special parts fail, honest repeats pass (#126 r6)', () => {
+    // standard parts repeat FREELY — a five-way expense split is each
+    // part its own transaction (user correction of the r5 blanket rule)
+    expect(conflictingPartKinds([{ catId: 'a', amountCents: 1, label: 'x' }, { catId: 'b', amountCents: 1 }], 'expense')).toBe(false);
+    expect(conflictingPartKinds(
+      [{ catId: 'a', amountCents: 1 }, { catId: 'b', amountCents: 1 }, { catId: 'c', amountCents: 1 }],
+      'expense',
+    )).toBe(false);
+    // the same special type twice is one part told twice
+    expect(conflictingPartKinds([{ catId: 'a', amountCents: 1, txType: 'saving' }, { catId: 'b', amountCents: 1, txType: 'saving' }], 'expense')).toBe(true);
+    // transfers clash per counterparty: same account (or both bare)
+    // twice fails, two different destinations are two real movements
+    expect(conflictingPartKinds(
+      [{ catId: 'a', amountCents: 1, txType: 'transfer', linkedAccountId: 'acc1' }, { catId: 'b', amountCents: 1, txType: 'transfer', linkedAccountId: 'acc1' }],
+      'expense',
+    )).toBe(true);
+    expect(conflictingPartKinds(
+      [{ catId: 'a', amountCents: 1, txType: 'transfer', linkedAccountId: 'acc1' }, { catId: 'b', amountCents: 1, txType: 'transfer', linkedAccountId: 'acc2' }],
+      'expense',
+    )).toBe(false);
+    expect(conflictingPartKinds(
+      [{ catId: 'a', amountCents: 1, txType: 'transfer' }, { catId: 'b', amountCents: 1, txType: 'transfer' }],
+      'expense',
+    )).toBe(true);
+    // one standard + one special part stays the classic point of splitting
+    expect(conflictingPartKinds([{ catId: 'a', amountCents: 1 }, { catId: 'b', amountCents: 1, txType: 'debtPayment' }], 'expense')).toBe(false);
+    // a transfer-typed CONTAINER makes untyped parts inherit 'transfer':
+    // two of them are the same movement twice
+    expect(conflictingPartKinds([{ catId: 'a', amountCents: 1 }, { catId: 'b', amountCents: 1 }], 'transfer')).toBe(true);
     // the settled Reimbursed slice is bookkeeping, never a "part"
-    expect(duplicatePartTypes([{ catId: 'a', amountCents: 1, label: 'x' }, { catId: 'reimbursed', amountCents: 1 }], 'expense')).toBe(false);
+    expect(conflictingPartKinds([{ catId: 'a', amountCents: 1, txType: 'saving' }, { catId: 'reimbursed', amountCents: 1, txType: 'saving' }], 'expense')).toBe(false);
     // unsplit and single-part rows can't collide
-    expect(duplicatePartTypes(undefined, 'expense')).toBe(false);
-    expect(duplicatePartTypes([{ catId: 'a', amountCents: 1, txType: 'saving' }], 'expense')).toBe(false);
+    expect(conflictingPartKinds(undefined, 'expense')).toBe(false);
+    expect(conflictingPartKinds([{ catId: 'a', amountCents: 1, txType: 'saving' }], 'expense')).toBe(false);
   });
 
   it('hasSliceOfType answers filters per effective type', () => {

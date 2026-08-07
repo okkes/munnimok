@@ -534,17 +534,17 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     // part 2 is still Uncategorized — incomplete holds Apply
     expect((screen.getByTestId('split-apply') as HTMLButtonElement).disabled).toBe(true);
 
-    // naming part 2 makes it a real PART — and both still say 'expense',
-    // so the same-kind rule speaks up and keeps holding Apply
+    // naming part 2 makes it a real PART — two 'expense' parts are fine
+    // now (r6): no warning, only the missing category still holds Apply
     fireEvent.click(screen.getByTestId('deck-part-1'));
     fireEvent.change(await screen.findByTestId('deck-label-1'), { target: { value: 'Device plan' } });
-    await screen.findByTestId('deck-type-duplicate');
+    expect(screen.queryByTestId('deck-type-duplicate')).toBeNull();
+    expect((screen.getByTestId('split-apply') as HTMLButtonElement).disabled).toBe(true);
 
-    // Set aside (◆ pulls the saving type) → distinct → complete →
-    // Apply arms and lands the whole split in one write
+    // Set aside (◆ pulls the saving type) → complete → Apply arms and
+    // lands the whole split in one write
     fireEvent.click(await screen.findByTestId('deck-cat-1'));
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
-    await waitFor(() => expect(screen.queryByTestId('deck-type-duplicate')).toBeNull());
     await waitFor(() => expect((screen.getByTestId('split-apply') as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByTestId('split-apply'));
     await waitFor(async () => {
@@ -594,11 +594,22 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
       needsReview: 0,
     });
 
-    // r5: the container row is GONE — the sub-transactions stand as
-    // first-class rows, the shared rail linking them
+    // r5/r6: the container row is GONE — a compact header band names the
+    // original transaction with the FULL amount and the part count, and
+    // the sub-transactions stand as first-class rows branching off it
     await screen.findByTestId('tx-parts-tx-parts', {}, { timeout: 5000 });
     expect(screen.queryByTestId('tx-row-tx-parts')).toBeNull();
+    const head = screen.getByTestId('tx-parts-head-tx-parts');
+    expect(head.textContent).toContain('Vodafone');
+    expect(head.textContent).toContain('2 linked parts');
+    expect(head.textContent).toMatch(/65\.00/);
     expect(screen.getByTestId('tx-part-row-tx-parts-1').textContent).toContain('Device plan');
+
+    // r6: the chevron folds the parts under the band and back out
+    fireEvent.click(screen.getByTestId('tx-parts-toggle-tx-parts'));
+    expect(screen.queryByTestId('tx-part-row-tx-parts-1')).toBeNull();
+    fireEvent.click(screen.getByTestId('tx-parts-toggle-tx-parts'));
+    await screen.findByTestId('tx-part-row-tx-parts-1');
 
     // tapping a part opens ITS page: its share, its own type, its story
     fireEvent.click(screen.getByTestId('tx-part-row-tx-parts-1'));
@@ -633,6 +644,34 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     fireEvent.click(screen.getByTestId('tx-part-category'));
     fireEvent.click(await screen.findByTestId('catpicker-coffee'));
     await waitFor(() => expect(screen.getByTestId('tx-part-category').textContent).toContain('Coffee'));
+
+    // r6: the part spreads its own €40.00 across TWO categories — the
+    // door seeds the current one owning the whole share, the pill puts
+    // the rest on the new row, and the write carries the cats spread
+    fireEvent.click(screen.getByTestId('tx-part-spread'));
+    await screen.findByTestId('part-cats-editor');
+    fireEvent.click(screen.getByTestId('part-cat-add'));
+    fireEvent.click(await screen.findByTestId('part-cat-1'));
+    // the part page's own picker stays mounted in tests — the spread
+    // editor's picker is the LAST mounted instance of these testids
+    const telecomOptions = await screen.findAllByTestId('catpicker-telecom');
+    fireEvent.click(telecomOptions.at(-1)!);
+    const spreadAmount0 = screen.getByTestId('part-cat-amount-0') as HTMLInputElement;
+    fireEvent.focus(spreadAmount0);
+    fireEvent.change(spreadAmount0, { target: { value: '15,00' } });
+    fireEvent.blur(spreadAmount0);
+    fireEvent.click(await screen.findByTestId('part-cat-remainder'));
+    await waitFor(() => expect((screen.getByTestId('part-cat-save') as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByTestId('part-cat-save'));
+    await waitFor(async () => {
+      const row = await db.transactions.get('tx-parts');
+      expect(row?.splits?.[0]?.cats).toEqual([
+        { catId: 'coffee', amountCents: 1500 },
+        { catId: 'telecom', amountCents: 2500 },
+      ]);
+      expect(row?.splits?.[0]?.catId).toBe('telecom');
+    }, { timeout: 5000 });
+    await waitFor(() => expect(screen.getByTestId('tx-part-category').textContent).toContain('·'));
 
     // the part's event membership edits right here as well
     fireEvent.click(screen.getByTestId('tx-part-event'));

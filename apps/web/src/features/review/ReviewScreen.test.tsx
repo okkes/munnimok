@@ -420,7 +420,7 @@ describe('ReviewScreen (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('deck-notes-1').textContent).toContain('Half for Sam'));
   }, 15_000);
 
-  it('a values-born split refuses two parts of the SAME kind — even untyped (#126 r5)', async () => {
+  it('standard parts repeat freely; the SAME special kind twice is refused on the spot (#126 r6)', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
     fireEvent.click(await screen.findByTestId('review-split-row'));
@@ -434,21 +434,103 @@ describe('ReviewScreen (demo identity)', () => {
     await waitFor(() => expect((screen.getByTestId('split-save') as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByTestId('split-save'));
 
-    // both parts carry a category but the SAME kind of money — the
-    // strict rule names it and Confirm stays down
+    // two EXPENSE parts, each with its own category: the r6 rule lets
+    // the split through — every part is a full transaction of its own
     await screen.findByTestId('review-part-deck');
     fireEvent.click(screen.getByTestId('deck-part-1'));
     fireEvent.click(await screen.findByTestId('deck-cat-1'));
     fireEvent.click(await screen.findByTestId('catpicker-coffee'));
-    await screen.findByTestId('deck-type-duplicate');
-    expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(true);
-
-    // one part becomes Set aside (◆ pulls saving) → kinds diverge →
-    // the warning clears and Confirm arms
-    fireEvent.click(screen.getByTestId('deck-cat-1'));
-    fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
     await waitFor(() => expect(screen.queryByTestId('deck-type-duplicate')).toBeNull());
     await waitFor(() => expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false));
+
+    // part 1 becomes Set aside (◆ pulls saving); the SAME pick on part 0
+    // would tell that story twice — refused on the spot, said plainly
+    fireEvent.click(screen.getByTestId('deck-cat-1'));
+    fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
+    fireEvent.click(screen.getByTestId('deck-part-0'));
+    fireEvent.click(await screen.findByTestId('deck-cat-0'));
+    fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
+    await screen.findByTestId('deck-type-duplicate');
+  }, 15_000);
+
+  it('a split holds MORE than two parts: pct rows seed the leftover, Done stays armed, the stepper walks the stack (#126 r6)', async () => {
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    fireEvent.click(await screen.findByTestId('review-split-row'));
+    await screen.findByTestId('split-editor');
+    fireEvent.click(screen.getByTestId('split-mode-pct'));
+    const amount0 = (await screen.findByTestId('split-amount-0')) as HTMLInputElement;
+    fireEvent.focus(amount0);
+    fireEvent.change(amount0, { target: { value: '50' } });
+    fireEvent.blur(amount0);
+    // every added row seeds the remaining PERCENTAGE (a '0,00' euro text
+    // inside a percentage list was the r6 glitch)
+    fireEvent.click(screen.getByTestId('split-add-row'));
+    await waitFor(() => expect((screen.getByTestId('split-amount-1') as HTMLInputElement).value).toBe('50'));
+    const amount1 = screen.getByTestId('split-amount-1') as HTMLInputElement;
+    fireEvent.focus(amount1);
+    fireEvent.change(amount1, { target: { value: '30' } });
+    fireEvent.blur(amount1);
+    fireEvent.click(screen.getByTestId('split-add-row'));
+    await waitFor(() => expect((screen.getByTestId('split-amount-2') as HTMLInputElement).value).toBe('20'));
+    // three parts, two of them still uncategorized — the shared
+    // placeholder no longer jams Done (the "can't add past two" report)
+    await waitFor(() => expect((screen.getByTestId('split-save') as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByTestId('split-save'));
+
+    // the deck holds all three; the stepper walks the stack both ways
+    await screen.findByTestId('review-part-deck');
+    await screen.findByTestId('deck-label-0');
+    fireEvent.click(screen.getByTestId('deck-next'));
+    await screen.findByTestId('deck-label-1');
+    fireEvent.click(screen.getByTestId('deck-next'));
+    await screen.findByTestId('deck-label-2');
+    fireEvent.click(screen.getByTestId('deck-prev'));
+    await screen.findByTestId('deck-label-1');
+
+    // three parts — two of them plain expense — confirm fine under r6
+    fireEvent.click(await screen.findByTestId('deck-cat-1'));
+    fireEvent.click(await screen.findByTestId('catpicker-coffee'));
+    fireEvent.click(screen.getByTestId('deck-next'));
+    await screen.findByTestId('deck-label-2');
+    fireEvent.click(screen.getByTestId('deck-cat-2'));
+    fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
+    await waitFor(() => expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false));
+  }, 15_000);
+
+  it('a part spreads its own money across several categories from the deck (#126 r6)', async () => {
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    fireEvent.click(await screen.findByTestId('review-split-row'));
+    await screen.findByTestId('split-editor');
+    const amount0 = (await screen.findByTestId('split-amount-0')) as HTMLInputElement;
+    fireEvent.focus(amount0);
+    fireEvent.change(amount0, { target: { value: '6,00' } });
+    fireEvent.blur(amount0);
+    fireEvent.click(screen.getByTestId('split-add-row'));
+    await waitFor(() => expect((screen.getByTestId('split-save') as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByTestId('split-save'));
+
+    // the active card's door: spread THIS part across categories — the
+    // editor opens seeded with the part's category owning its full share
+    await screen.findByTestId('review-part-deck');
+    fireEvent.click(await screen.findByTestId('deck-spread-0'));
+    await screen.findByTestId('part-cats-editor');
+    fireEvent.click(screen.getByTestId('part-cat-add'));
+    fireEvent.click(await screen.findByTestId('part-cat-1'));
+    fireEvent.click(await screen.findByTestId('catpicker-coffee'));
+    const spread0 = screen.getByTestId('part-cat-amount-0') as HTMLInputElement;
+    fireEvent.focus(spread0);
+    fireEvent.change(spread0, { target: { value: '2,00' } });
+    fireEvent.blur(spread0);
+    // the pill drops the leftover on the still-open entry
+    fireEvent.click(await screen.findByTestId('part-cat-remainder'));
+    await waitFor(() => expect((screen.getByTestId('part-cat-save') as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByTestId('part-cat-save'));
+
+    // the card's category row now tells the whole spread
+    await waitFor(() => expect(screen.getByTestId('deck-cat-0').textContent).toContain('Coffee'));
+    expect(screen.getByTestId('deck-cat-0').textContent).toContain('·');
   }, 15_000);
 
   it('the pill fills the FOCUSED field even though its blur restores the stash first (#130 r2)', async () => {

@@ -25,9 +25,11 @@ import { TxFormSheet } from './TxFormSheet';
 
 const DATE_FMT: Record<string, string> = { en: 'en-GB', nl: 'nl-NL', tr: 'tr-TR' };
 
-/** a split's parts standing IN the list (#126 r5): the container row is
- *  gone — the sub-transactions rank as first-class rows, the shared
- *  rail saying they belong together. Module-level for S2004. */
+/** a split's parts standing IN the list (#126 r5, restyled r6 to the
+ *  user's inspiration): a compact header band names the original
+ *  transaction — split badge, part count, the FULL amount, a collapse
+ *  chevron — and a curved branch line walks into each sub-transaction
+ *  row below it. Module-level for S2004. */
 function TxPartGroupRows({
   tx,
   parts,
@@ -41,47 +43,77 @@ function TxPartGroupRows({
 }>) {
   const { t } = useLang();
   const cats = useCategories();
+  const [collapsed, setCollapsed] = useState(false);
   const sign = tx.amountCents < 0 ? -1 : 1;
+  const totalCents = sign * parts.reduce((sum, part) => sum + Math.abs(part.amountCents), 0);
   return (
-    <div
-      className="relative my-0.5 border-l-2 border-accent-deep/40 pl-1"
-      data-testid={`tx-parts-${tx.id}`}
-    >
-      {parts.map((part, i) => {
-        const partCat = cats.byId(part.catId);
-        const partColor = partCat.color ?? cats.byId(partCat.parentId ?? '').color;
-        return (
-          <button
-            key={part.id ?? i}
-            data-testid={`tx-part-row-${tx.id}-${i}`}
-            onClick={() => onOpen(part.id)}
-            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-2 py-2 text-left"
-          >
-            <span
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
-              style={{ background: `color-mix(in srgb, ${partColor ?? 'var(--m-ink-4)'} 14%, transparent)` }}
+    <div className="my-1" data-testid={`tx-parts-${tx.id}`}>
+      <div className="flex items-center overflow-hidden rounded-card bg-accent-soft/45">
+        <button
+          data-testid={`tx-parts-head-${tx.id}`}
+          onClick={() => onOpen(undefined)}
+          className="m-tap flex min-w-0 flex-1 items-center gap-2 border-none bg-transparent px-3 py-2 text-left"
+        >
+          <Icon name="call-split" size={15} color="var(--m-accent-deep)" />
+          <span className="min-w-0 truncate text-[13px] font-medium text-ink">{txTitle(tx)}</span>
+          <span className="shrink-0 text-[12px] text-ink-3">· {t('tx.linkedParts', { n: parts.length })}</span>
+          <span className="m-num ml-auto shrink-0 pl-2 text-[13px] font-medium text-ink">
+            {fmt(totalCents, tx.currency, { date: tx.date })}
+          </span>
+        </button>
+        <button
+          aria-label={t('split.title')}
+          data-testid={`tx-parts-toggle-${tx.id}`}
+          onClick={() => setCollapsed((v) => !v)}
+          className="m-tap shrink-0 border-none bg-transparent py-2 pr-3 pl-1 text-ink-3"
+        >
+          <Icon name={collapsed ? 'chevron-down' : 'chevron-up'} size={15} />
+        </button>
+      </div>
+      {!collapsed &&
+        parts.map((part, i) => {
+          const partCat = cats.byId(part.catId);
+          const partColor = partCat.color ?? cats.byId(partCat.parentId ?? '').color;
+          return (
+            <button
+              key={part.id ?? i}
+              data-testid={`tx-part-row-${tx.id}-${i}`}
+              onClick={() => onOpen(part.id)}
+              className="m-tap flex w-full items-center gap-3 border-none bg-transparent py-2 pr-2 pl-0 text-left"
             >
-              <Icon name={partCat.icon} size={17} color={partColor ?? 'var(--m-ink-3)'} />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-[14px] font-medium text-ink">
-                {part.label ?? `${txTitle(tx)} – ${t('split.partN', { n: i + 1 })}`}
-              </span>
-              <span className="flex items-center gap-1.5 text-[12px] text-ink-3">
-                <span className="truncate">{catName(partCat, t)}</span>
-                {i === 0 && tx.needsReview === 1 && (
-                  <span className="shrink-0 rounded-full bg-warning-soft px-1.5 py-0.5 text-[10px] font-semibold text-warning">
-                    {t('tx.unreviewed')}
-                  </span>
+              {/* the branch: a spine from the header curving into this
+                  row's icon (the arrows of the user's inspiration) */}
+              <span aria-hidden className="relative w-7 shrink-0 self-stretch">
+                <span className="absolute top-[-8px] left-[13px] h-[26px] w-[12px] rounded-bl-[10px] border-b-2 border-l-2 border-accent-deep/35" />
+                {i < parts.length - 1 && (
+                  <span className="absolute top-[-8px] bottom-[-8px] left-[13px] border-l-2 border-accent-deep/35" />
                 )}
               </span>
-            </span>
-            <span className="m-num text-[14px] text-ink">
-              {fmt(sign * Math.abs(part.amountCents), tx.currency, { date: tx.date })}
-            </span>
-          </button>
-        );
-      })}
+              <span
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+                style={{ background: `color-mix(in srgb, ${partColor ?? 'var(--m-ink-4)'} 14%, transparent)` }}
+              >
+                <Icon name={partCat.icon} size={17} color={partColor ?? 'var(--m-ink-3)'} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[14px] font-medium text-ink">
+                  {part.label ?? `${txTitle(tx)} – ${t('split.partN', { n: i + 1 })}`}
+                </span>
+                <span className="flex items-center gap-1.5 text-[12px] text-ink-3">
+                  <span className="truncate">{catName(partCat, t)}</span>
+                  {i === 0 && tx.needsReview === 1 && (
+                    <span className="shrink-0 rounded-full bg-warning-soft px-1.5 py-0.5 text-[10px] font-semibold text-warning">
+                      {t('tx.unreviewed')}
+                    </span>
+                  )}
+                </span>
+              </span>
+              <span className="m-num text-[14px] text-ink">
+                {fmt(sign * Math.abs(part.amountCents), tx.currency, { date: tx.date })}
+              </span>
+            </button>
+          );
+        })}
     </div>
   );
 }

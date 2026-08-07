@@ -34,12 +34,13 @@ import { mirrorTxId, normalizeIban } from '@/domain/feedIds';
 import { ReceiptSection } from '@/features/shopping/ReceiptSection';
 import { ReimburseSection } from './ReimburseSection';
 import { SplitEditorSheet } from './SplitEditorSheet';
+import { PartCatsSheet, catsPatch } from './PartCatsSheet';
 import { TxFormSheet } from './TxFormSheet';
 import { CounterpartySheet, TX_KIND_VISUAL, TxKindSheet, kindDetail } from './TxKindSheet';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { kindOf, standardTypeFor } from '@/domain/txKind';
 import type { TxKind } from '@/domain/txKind';
-import { duplicatePartTypes, duplicatePartTypesStrict, hasTypedParts } from '@/domain/txSlices';
+import { conflictingPartKinds, hasTypedParts } from '@/domain/txSlices';
 import { mintMirrorForExistingLink, removeMirrorForDeletedSource } from '@/application/mirrorMint';
 import { visibleTransactions, writeTxTransform } from '@/db/joined';
 import { accountStamp, applyTypeChange, typeForLinkedAccount } from '@/domain/txType';
@@ -620,11 +621,11 @@ function detailScreenTitle(tx: SpaceTx, parts: readonly TxSplit[], partView: TxS
 }
 
 /** drafted-until-complete (#126 r4): the staged split may Apply only
- *  when every part has a real category and no two parts carry the same
- *  kind of money — STRICT (r5): even two untyped 'expense' parts must
- *  diverge before the split lands. Module-level for S3776. */
+ *  when every part has a real category and no two parts tell the same
+ *  transfer/special story twice (r6: standard parts repeat freely).
+ *  Module-level for S3776. */
 const stagedSplitComplete = (stage: TxSplit[] | null, rowType: TxType): boolean =>
-  !!stage && stage.every((s) => s.catId !== UNCATEGORIZED_ID) && !duplicatePartTypesStrict(stage, rowType);
+  !!stage && stage.every((s) => s.catId !== UNCATEGORIZED_ID) && !conflictingPartKinds(stage, rowType);
 
 /** back to a whole transaction: one category, split gone — the settled
  *  Reimbursed slice keeps the gross partition when it exists.
@@ -736,7 +737,6 @@ function DetailSplitSheets({
             activeEvents={activeEvents}
             allowedCatIds={allowedCatIds}
             lockedKind={lockedKind}
-            strict
             onOpenValues={() => {
               setCompleteOpen(false);
               openValuesEditor();
@@ -828,6 +828,8 @@ function PartDetailBody({
   const [counterOpen, setCounterOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [eventOpen, setEventOpen] = useState(false);
+  // r6: the part's money spreading across several categories
+  const [spreadOpen, setSpreadOpen] = useState(false);
   const [typeClash, setTypeClash] = useState(false);
 
   const sign = tx.amountCents < 0 ? -1 : 1;
@@ -855,12 +857,12 @@ function PartDetailBody({
     return credit ? txTitle(credit) : id;
   };
 
-  /** per-part write-through — refused when it would leave two parts of
-   *  the same kind of money (#126 r4 user rule) */
+  /** per-part write-through — refused when it would leave two parts
+   *  telling the same transfer/special story twice (#126 r4/r6) */
   const patchPart = (patch: Partial<TxSplit>): void => {
     const nextSplits = (tx.splits ?? []).map((s) => (s.id === part.id ? { ...s, ...patch } : s));
     const nonReimb = nextSplits.filter((s) => s.catId !== REIMBURSED_ID);
-    if (duplicatePartTypes(nonReimb, tx.txType)) {
+    if (conflictingPartKinds(nonReimb, tx.txType)) {
       setTypeClash(true);
       return;
     }
@@ -909,20 +911,34 @@ function PartDetailBody({
         )}
       </div>
 
-      <button
-        data-testid="tx-part-category"
-        onClick={() => setPickerOpen(true)}
-        className="m-tap mt-3 flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3.5 text-left"
-      >
-        <Icon name={partCat.icon} size={20} color={partColor ?? 'var(--m-ink-3)'} />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[15px] text-ink">{spread ?? catName(partCat, t)}</span>
-          {!spread && partCat.parentId && (
-            <span className="block truncate text-[11px] text-ink-4">{catName(cats.byId(partCat.parentId), t)}</span>
-          )}
-        </span>
-        <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
-      </button>
+      <div className="mt-3 overflow-hidden rounded-card border border-line bg-surface">
+        <button
+          data-testid="tx-part-category"
+          onClick={spread ? () => setSpreadOpen(true) : () => setPickerOpen(true)}
+          className="m-tap flex w-full items-center gap-3 bg-transparent px-4 py-3.5 text-left"
+        >
+          <Icon name={partCat.icon} size={20} color={partColor ?? 'var(--m-ink-3)'} />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[15px] text-ink">{spread ?? catName(partCat, t)}</span>
+            {!spread && partCat.parentId && (
+              <span className="block truncate text-[11px] text-ink-4">{catName(cats.byId(partCat.parentId), t)}</span>
+            )}
+          </span>
+          <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+        </button>
+        {/* r6 (user request): a part is a full transaction — its money
+            may spread across SEVERAL categories of its own */}
+        {!transferPart && !spread && (
+          <button
+            data-testid="tx-part-spread"
+            onClick={() => setSpreadOpen(true)}
+            className="m-tap flex w-full items-center gap-2 bg-transparent px-4 pb-3 text-left text-[12px] font-medium text-accent-deep"
+          >
+            <Icon name="plus" size={13} />
+            {t('split.spreadDoor')}
+          </button>
+        )}
+      </div>
 
       <button
         data-testid="tx-part-event"
@@ -1042,6 +1058,20 @@ function PartDetailBody({
           // a deliberate single pick flattens any category spread — the
           // stale cats array would otherwise keep telling the old story
           patchPart({ catId, cats: undefined, ...(pulled ? { txType: pulled } : clearPulled) });
+        }}
+      />
+      {/* r6: several categories inside THIS part, scoped to its amount */}
+      <PartCatsSheet
+        open={spreadOpen}
+        onOpenChange={setSpreadOpen}
+        part={part}
+        currency={tx.currency}
+        direction={partDirection}
+        txType={tx.txType}
+        allowedCatIds={allowedCatIds}
+        onApply={(entries) => {
+          patchPart(catsPatch(entries));
+          setSpreadOpen(false);
         }}
       />
       <Sheet

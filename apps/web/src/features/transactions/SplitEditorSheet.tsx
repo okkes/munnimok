@@ -28,14 +28,21 @@ function sheetError(options: {
   mode: 'amount' | 'pct';
   referenceCents: number;
   splits: TxSplit[];
+  /** parts may share a category (#126 r6): two full sub-transactions
+   *  with the same category differ by note/event/identity — only the
+   *  classic flat category partition keeps the no-duplicate rule. In the
+   *  values flow every added row is still Uncategorized, and the shared
+   *  placeholder held Done hostage past two parts (user report). */
+  sharedCatsOk?: boolean;
 }): ReturnType<typeof validateSplits> {
   if (options.splits.length === 1) {
     const off =
       options.mode === 'pct' ? pctRemainder(options.splits) : splitRemainderCents(options.referenceCents, options.splits);
     return off === 0 ? null : 'notBalanced';
   }
-  if (options.mode === 'pct') return validatePctSplits(options.splits);
-  return validateSplits(options.referenceCents, options.splits);
+  const error =
+    options.mode === 'pct' ? validatePctSplits(options.splits) : validateSplits(options.referenceCents, options.splits);
+  return options.sharedCatsOk && error === 'duplicateCategory' ? null : error;
 }
 
 /** an extra category entry inside a PART (v2.1 per-part spread) */
@@ -98,9 +105,10 @@ function computeRowConflicts(rows: Row[], effectiveType: TxType, cats: ReturnTyp
 }
 
 /** a fresh part's opening amount: the current remainder — the natural
- *  next slice (pct mode starts blank-ish at zero) */
+ *  next slice, in the mode's own units (a pct row seeded '0,00' read as
+ *  euros inside a percentage list, user ss r6) */
 const addRowSeed = (mode: 'amount' | 'pct', remainder: number): string =>
-  toText(mode === 'amount' ? Math.max(remainder, 0) : 0);
+  mode === 'amount' ? toText(Math.max(remainder, 0)) : toPctText(Math.max(remainder, 0));
 
 const accountNameOf = (accounts: readonly { id: string; name: string }[] | undefined, id: string): string =>
   accounts?.find((a) => a.id === id)?.name ?? '';
@@ -657,7 +665,7 @@ export function SplitEditorSheet({
       ? rows.map((r) => ({ catId: r.catId, amountCents: 0, pct: parsePct(r.amount), ...partFields(r) }))
       : rows.map((r) => rowToSplit(r, partMode));
   const remainder = mode === 'pct' ? pctRemainder(splits) : splitRemainderCents(referenceCents, splits);
-  const error = sheetError({ mode, referenceCents, splits });
+  const error = sheetError({ mode, referenceCents, splits, sharedCatsOk: valuesOnly || partMode });
 
   const effectiveType = txType ?? tx.txType;
   // values-only: categories are invisible here — never block on them
@@ -921,15 +929,21 @@ export function SplitEditorSheet({
           )}
 
           {/* "Done", not "Save": in review this only stages the draft — the
-              card's Confirm is the real write (user: Save felt misleading) */}
-          <Button data-testid="split-save" onClick={save} disabled={!!error || hasTypeConflict}>
-            {t('split.done')}
-          </Button>
-          {!!source?.length && (
-            <Button variant="outline" data-testid="split-clear" onClick={clearSplit}>
-              {t('split.clear')}
+              card's Confirm is the real write (user: Save felt misleading).
+              translateZ pins the buttons to their own compositor layer:
+              adding a row shifts them down while Done flips to disabled
+              opacity, and iOS kept painting the OLD enabled button at the
+              old spot as a dark ghost band (user ss r6). */}
+          <div className="flex flex-col gap-2" style={{ transform: 'translateZ(0)' }}>
+            <Button data-testid="split-save" onClick={save} disabled={!!error || hasTypeConflict}>
+              {t('split.done')}
             </Button>
-          )}
+            {!!source?.length && (
+              <Button variant="outline" data-testid="split-clear" onClick={clearSplit}>
+                {t('split.clear')}
+              </Button>
+            )}
+          </div>
         </div>
       </Sheet>
       <CategoryPicker

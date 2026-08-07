@@ -57,7 +57,7 @@
 
   <section id="home">
     <h2>Home is yours</h2>
-    <p>Home is a landing zone of blocks: review queue, this period, new transactions, budgets, upcoming costs and more. Reorder or hide blocks with Customize Home at the bottom. The avatar on the top right switches spaces.</p>
+    <p>Home is a landing zone of blocks: review queue, this period, new transactions, budgets, upcoming costs and more. Features you haven't tried yet gather in one compact Explore block instead of filling the page — tap a row to start; each disappears once it's in use, and Explore is a block like any other, so Customize Home orders or hides it too. Reorder or hide blocks with Customize Home at the bottom. The avatar on the top right switches spaces.</p>
     <ul class="tips"><li>The balance band folds out to show every account — and you pick what the big number MEANS per space: net worth, total cash, safe to spend, or hand-picked accounts, with a per-account say in the sum.</li>
 <li>Portfolio has its own tab at the bottom.</li>
 <li>The bell has two tabs now: Notifications collects release news, due reminders, the interest-rate nudge and the weekly digest (a numbered badge counts what you haven’t seen — opening the tab clears it), and Activity keeps the space’s audit trail with who did what.</li>
@@ -92,8 +92,10 @@
     <p>The review deck shows one transaction at a time with a suggested category and the reason behind it. Everything you change — kind, counterparty, category, splits — stays a draft until you hit Confirm. "Also apply to similar" catches the rest of the same merchant in one go.</p>
     <ul class="tips"><li>Tap the description to read the full bank text.</li>
 <li>Skip is honest: it leaves no trace and the card returns later.</li>
-<li>The card leads with the kind: Standard files itself as income or expense by the sign; Transfer asks for the counterparty and derives saving, investment or debt payment from it — or pick "No counter account" and name the kind directly.</li>
-<li>A loan counterparty turns the card into a debt payment: it shows which debt it pays and the recurring link steps aside.</li>
+<li>The card leads with the kind: Standard files itself as income or expense by the sign; Transfer strictly needs one of your tracked accounts as the counterparty — the special stories (set aside without a pot, a loan payment, money to the shared account) live on the marked ◆ special categories instead.</li>
+<li>On a savings, loan or investment account the kind is locked: the account itself types every one of its rows, and the sign reads the direction (+ on a loan = repaid).</li>
+<li>Splitting sits in the open: a Split row on every card sets the amounts — exact euros or percentages — and the parts stack like cards in a deck, the others peeking full-width from behind; tap one (or step with the ‹ › arrows — ten parts stay walkable) and it swaps to the top to take its type, category, event and note right there. Each part can spread its own money across several categories too. Manage splits reshapes the amounts.</li>
+<li>Parts are full transactions, so honest repeats are fine — five expense parts is a real split. What is refused, on the spot, is the same story told twice: two transfers to the same account, or the same special kind (◆) twice — that is one part, not two. Nothing half-lands: from the detail screen a split stays a draft until every part is complete, then applies in one go.</li>
 <li>Missing a category, recurring cost or event? Create it right from the picker — the card keeps your place.</li></ul>
     <div class="shots"><figure><img src="shots/13-review-banner--en-light-mobile.png" alt="Reviewing transactions" loading="lazy"></figure>
 <figure><img src="shots/14-review-flow--en-light-mobile.png" alt="Reviewing transactions" loading="lazy"></figure>
@@ -102,12 +104,14 @@
 
   <section id="transactions">
     <h2>Transaction details</h2>
-    <p>Open any transaction to recategorize, split across categories, set its kind (Standard, Transfer or — on manual rows — Adjustment; a Transfer names the counterparty account, which decides saving, investment or debt payment — or carries no counter account at all and just says which kind it is), attach receipts, link recurring costs or events, and record reimbursements that show the net cost. Settled value moves into the special Reimbursed category — real categories keep only what you truly paid — and the transactions tab has an "Unsettled reimbursements" quick filter for everything still waiting on money.</p>
-    <ul class="tips"><li>Search matches amounts too: typing 10 finds 10.99 and 210.15.</li>
-<li>A transfer between two of your accounts shows as ONE row ("Checking → Savings"); filtering by account brings each leg back. Saving a transfer to a manual account can write the matching transaction in the same stroke.</li>
-<li>If the counterparty is one of your own accounts, its row becomes tappable.</li>
+    <p>Open any transaction to recategorize, SPLIT IT, set its kind (Standard, Transfer or — on manual rows — Adjustment; a Transfer strictly links one of your tracked accounts, and a manual counterpart gets its own leg written automatically), attach receipts, link recurring costs or events, and record reimbursements that show the net cost. Splitting has two gears. Spreading one payment across several categories is the light one: add categories in the editor, exact euros or percentages, done. "Split into parts" is the heavy one — when one payment carries several kinds of money: each part has its own name ("Albert Heijn – split 1", rename freely), its own type, even its own category spread — the €100 phone bill can be €50 telecom and €50 paying the device loan off, and the loan moves by exactly its €50. Settled value moves into the special Reimbursed category — real categories keep only what you truly paid — and the transactions tab has an "Unsettled reimbursements" quick filter for everything still waiting on money.</p>
+    <ul class="tips"><li>Search matches amounts too: typing 10 finds 10.99 and 210.15 — and part names, so "Sarah\u2019s loan" finds the payment that carries it.</li>
+<li>A split shows its sub-transactions as rows of their own in the list, branching off a compact header that names the original payment with its full amount — the chevron folds them away; each row opens as its own page with its own type, categories, event, note and reimbursements, its sisters one tap away, and the whole transaction one more.</li>
+<li>Amount fields in the split editor do math: type 87,40-25 and leave the field.</li>
+<li>Amount fields also type like a register: 5 means 0,05, then 55 is 0,55, then 550 is 5,50 — or type the comma yourself, both work.</li>
+<li>Labeling a row "Loan payment" asks which loan — optional; skipping files it under the default loan.</li>
+<li>A transfer between two of your accounts shows as ONE row ("Checking → Savings"); filtering by account brings each leg back.</li>
 <li>Recategorizing offers a bulk apply — tap the bar to pick exactly which transactions it touches.</li>
-<li>"Customize this view" reorders or hides the sections below the details.</li>
 <li>Rename a transaction via the pencil — munni remembers and auto-renames future arrivals; the bank original stays under Details.</li>
 <li>Linking a reimbursement opens its own screen: search by name or amount, or take the suggestion — munni spots likely matches by timing, wording and size.</li></ul>
     <div class="shots"><figure><img src="shots/09-tx-detail--en-light-mobile.png" alt="Transaction details" loading="lazy"></figure>
@@ -169,7 +173,7 @@
 <figure><img src="shots/58-sync-live--en-light-mobile.png" alt="Devices &amp; offline" loading="lazy"></figure>
 <figure><img src="shots/38-offline--en-light-mobile.png" alt="Devices &amp; offline" loading="lazy"></figure></div>
   </section>
-  <footer>Generated 2026-08-01 from the app's own test screenshots — always the current UI.</footer>
+  <footer>Generated 2026-08-07 from the app's own test screenshots — always the current UI.</footer>
 </main>
 </body>
 </html>

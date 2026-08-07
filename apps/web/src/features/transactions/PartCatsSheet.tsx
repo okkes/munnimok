@@ -1,0 +1,237 @@
+import { useEffect, useRef, useState } from 'react';
+import { useLang } from '@/i18n';
+import { fmtCents, parseCents } from '@/lib/money';
+import { nextAmountEntry } from '@/lib/amountRegister';
+import type { AmountEntryMode } from '@/lib/amountRegister';
+import { UNCATEGORIZED_ID } from '@/domain/categories';
+import { catName, useCategories } from '@/features/categories/useCategories';
+import { CategoryPicker } from '@/features/categories/CategoryPicker';
+import type { TxSplit, TxSplitCat, TxType } from '@/db/types';
+import { Button } from '@/ui/Button';
+import { Icon } from '@/ui/Icon';
+import { Sheet } from '@/ui/Sheet';
+
+/** one category's share of the part while editing */
+interface CatEntry {
+  key: string;
+  catId: string;
+  amount: string; // user-facing text, EU decimals
+}
+
+let entryCounter = 0;
+const newKey = () => `pc${entryCounter++}`;
+const toText = (cents: number) => (cents / 100).toFixed(2).replace('.', ',');
+
+/** the part patch a finished spread becomes: one entry collapses back to
+ *  a plain category, several keep the spread with the largest entry as
+ *  the compat shadow (v2.1 storage rule) */
+export function catsPatch(entries: TxSplitCat[]): Partial<TxSplit> {
+  if (entries.length <= 1) return { catId: entries[0]?.catId ?? UNCATEGORIZED_ID, cats: undefined };
+  const primary = entries.reduce((best, entry) => (entry.amountCents > best.amountCents ? entry : best), entries[0]);
+  return { catId: primary.catId, cats: entries };
+}
+
+const seedEntries = (part: TxSplit): CatEntry[] =>
+  (part.cats?.length ? part.cats : [{ catId: part.catId, amountCents: Math.abs(part.amountCents) }]).map((entry) => ({
+    key: newKey(),
+    catId: entry.catId,
+    amount: toText(entry.amountCents),
+  }));
+
+/**
+ * #126 r6 (user request): a part is a full transaction — its money may
+ * spread across SEVERAL categories of its own. This sheet partitions
+ * ONE part's amount the way the split editor partitions the whole
+ * transaction: category + amount rows, register-style entry, and the
+ * leftover pill that fills the field it was tapped from (#130).
+ */
+export function PartCatsSheet({
+  open,
+  onOpenChange,
+  part,
+  currency,
+  direction,
+  txType,
+  allowedCatIds,
+  onApply,
+}: Readonly<{
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** the part whose money is being spread; undefined while closed */
+  part?: TxSplit;
+  currency: string;
+  direction: 'debit' | 'credit';
+  /** the container's type gates the picker, same as the split editor */
+  txType: TxType;
+  allowedCatIds?: readonly string[];
+  onApply: (entries: TxSplitCat[]) => void;
+}>) {
+  const { t, lang } = useLang();
+  const cats = useCategories();
+  const [entries, setEntries] = useState<CatEntry[]>([]);
+  const [pickerFor, setPickerFor] = useState<number | null>(null);
+  // focusing empties the field so typing replaces; blurring an untouched
+  // empty field restores the stashed value (split-editor behavior)
+  const [focusStash, setFocusStash] = useState<{ index: number; amount: string } | null>(null);
+  const [entryMode, setEntryMode] = useState<AmountEntryMode>('register');
+  // #130: the pill's pointerdown runs BEFORE the focused field blurs —
+  // capture WHICH field the user meant here
+  const pendingTarget = useRef<number | null>(null);
+
+  const refCents = Math.abs(part?.amountCents ?? 0);
+  useEffect(() => {
+    if (!open || !part) return;
+    setEntries(seedEntries(part));
+    // deliberately only on open: the sheet owns its rows while open
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, part?.id]);
+
+  const centsOf = (entry: CatEntry) => parseCents(entry.amount) ?? 0;
+  const remainder = refCents - entries.reduce((sum, entry) => sum + centsOf(entry), 0);
+  const unpicked = entries.some((entry) => entry.catId === UNCATEGORIZED_ID);
+  const duplicate = new Set(entries.map((entry) => entry.catId)).size !== entries.length;
+  const ready =
+    entries.length > 0 && remainder === 0 && !unpicked && !duplicate && entries.every((entry) => centsOf(entry) > 0);
+  // finish the open entry first (split-editor rule): no new row while
+  // one is still uncategorized or worth nothing
+  const addBlocked = entries.some((entry) => entry.catId === UNCATEGORIZED_ID || centsOf(entry) <= 0);
+
+  const patchEntry = (index: number, patch: Partial<CatEntry>) =>
+    setEntries((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
+
+  const onAmount = (index: number, raw: string) => {
+    const next = nextAmountEntry(entryMode, entries[index]?.amount ?? '', raw);
+    setEntryMode(next.mode);
+    patchEntry(index, { amount: next.text });
+  };
+  const onFocus = (index: number) => {
+    setFocusStash({ index, amount: entries[index]?.amount ?? '' });
+    patchEntry(index, { amount: '' });
+    setEntryMode('register');
+  };
+  const onBlur = (index: number) => {
+    if (focusStash?.index === index && (entries[index]?.amount ?? '').trim() === '') {
+      patchEntry(index, { amount: focusStash.amount });
+    }
+    setFocusStash(null);
+  };
+
+  const balance = () => {
+    const forced = pendingTarget.current;
+    pendingTarget.current = null;
+    setEntries((rows) => {
+      const values = rows.map((row) => parseCents(row.amount) ?? 0);
+      const firstEmpty = values.indexOf(0);
+      const target = forced ?? (firstEmpty === -1 ? rows.length - 1 : firstEmpty);
+      const others = values.reduce((sum, v, i) => (i === target ? sum : sum + v), 0);
+      const open = Math.max(0, refCents - others);
+      return rows.map((row, i) => (i === target ? { ...row, amount: toText(open) } : row));
+    });
+  };
+
+  const addEntry = () =>
+    setEntries((rows) => [...rows, { key: newKey(), catId: UNCATEGORIZED_ID, amount: toText(Math.max(remainder, 0)) }]);
+  const removeEntry = (index: number) => setEntries((rows) => rows.filter((_, i) => i !== index));
+
+  const apply = () => {
+    if (!ready) return;
+    onApply(entries.map((entry) => ({ catId: entry.catId, amountCents: centsOf(entry) })));
+  };
+
+  const pickedCatId = pickerFor === null ? undefined : entries[pickerFor]?.catId;
+  const excluded = entries
+    .filter((_, i) => i !== pickerFor)
+    .map((entry) => entry.catId)
+    .filter((catId) => catId !== UNCATEGORIZED_ID);
+
+  return (
+    <>
+      <Sheet open={open} onOpenChange={onOpenChange} title={t('split.partCatsTitle')} size="tall">
+        <div className="flex flex-col gap-2 pt-1" data-testid="part-cats-editor">
+          {/* whose money is being spread */}
+          <div className="flex items-center justify-between gap-2 rounded-xl bg-bg-2 px-3 py-2 text-[12px] text-ink-3">
+            <span className="min-w-0 truncate">{part?.label ?? t('split.title')}</span>
+            <span className="m-num shrink-0 font-semibold text-ink">{fmtCents(refCents, currency, lang)}</span>
+          </div>
+          {entries.map((entry, i) => (
+            <div key={entry.key} className="flex items-center gap-2">
+              <button
+                data-testid={`part-cat-${i}`}
+                onClick={() => setPickerFor(i)}
+                className="m-tap flex h-11 min-w-0 flex-1 items-center gap-2 rounded-input border border-line bg-surface px-3 text-left text-[14px] text-ink"
+              >
+                <Icon
+                  name={cats.byId(entry.catId).icon}
+                  size={17}
+                  color={cats.byId(cats.byId(entry.catId).parentId ?? '').color ?? cats.byId(entry.catId).color}
+                />
+                <span className="truncate">{catName(cats.byId(entry.catId), t)}</span>
+              </button>
+              <input
+                data-testid={`part-cat-amount-${i}`}
+                value={entry.amount}
+                onChange={(e) => onAmount(i, e.target.value)}
+                onFocus={() => onFocus(i)}
+                onBlur={() => onBlur(i)}
+                inputMode="decimal"
+                className="h-11 w-24 rounded-input border border-line bg-surface px-3 text-right text-[14px] text-ink outline-none"
+              />
+              {entries.length > 1 && (
+                <button
+                  aria-label={t('action.delete')}
+                  data-testid={`part-cat-remove-${i}`}
+                  onClick={() => removeEntry(i)}
+                  className="m-tap border-none bg-transparent text-ink-4"
+                >
+                  <Icon name="close" size={16} />
+                </button>
+              )}
+            </div>
+          ))}
+          <button
+            data-testid="part-cat-add"
+            onClick={addEntry}
+            disabled={addBlocked}
+            className="m-tap flex items-center gap-1.5 border-none bg-transparent px-1 py-1 text-[13px] font-medium text-accent-deep disabled:opacity-40"
+          >
+            <Icon name="plus" size={16} />
+            {t('split.addRow')}
+          </button>
+          {remainder !== 0 && (
+            <button
+              data-testid="part-cat-remainder"
+              onPointerDown={() => {
+                pendingTarget.current = focusStash?.index ?? null;
+              }}
+              onClick={balance}
+              className={`m-tap rounded-card border-none px-3 py-2 text-left text-[13px] ${
+                remainder > 0 ? 'bg-warning-soft text-warning' : 'bg-negative-soft text-negative'
+              }`}
+            >
+              {remainder > 0
+                ? t('split.remaining', { amount: fmtCents(remainder, currency, lang) })
+                : t('split.over', { amount: fmtCents(-remainder, currency, lang) })}
+            </button>
+          )}
+          <Button data-testid="part-cat-save" onClick={apply} disabled={!ready}>
+            {t('split.done')}
+          </Button>
+        </div>
+      </Sheet>
+      <CategoryPicker
+        open={pickerFor !== null}
+        onOpenChange={(next) => {
+          if (!next) setPickerFor(null);
+        }}
+        direction={direction}
+        txType={txType}
+        selectedId={pickedCatId}
+        excludeIds={excluded}
+        onlyIds={allowedCatIds}
+        onPick={(catId) => {
+          if (pickerFor !== null) patchEntry(pickerFor, { catId });
+        }}
+      />
+    </>
+  );
+}
